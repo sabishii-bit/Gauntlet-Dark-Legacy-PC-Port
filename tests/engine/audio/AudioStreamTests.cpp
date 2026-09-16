@@ -81,4 +81,19 @@ TEST_CASE("a finished stream drains once its queue is consumed", "[audio][stream
     REQUIRE(stream.queuedSeconds() == 0.0);
 }
 
+TEST_CASE("stopping discards queued audio at once", "[audio][stream]") {
+    AudioStream stream(AudioStreamDesc{48000, 1}, 48000);
+    const std::array<f32, 4> kInput{0.25f, 0.5f, 0.75f, 1.0f};
+    stream.push(kInput);
+    stream.stop();
+    REQUIRE(stream.finished());
+    REQUIRE(stream.drained());
+    REQUIRE(stream.queuedSeconds() == 0.0);
+    std::vector<f32> out(8, 0.0f);
+    stream.mixInto(out);
+    for (const f32 sample : out) {
+        CHECK_THAT(sample, WithinAbs(0.0, kEpsilon));
+    }
+}
+
 } // namespace

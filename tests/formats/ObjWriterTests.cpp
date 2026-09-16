@@ -1,0 +1,43 @@
+#include <string>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "engine/render/Mesh.h"
+
+#include "formats/ObjWriter.h"
+
+namespace {
+
+using namespace gdl;
+using namespace gdl::formats;
+
+TEST_CASE("meshes are written as one OBJ object with a group per texture", "[formats][obj]") {
+    Mesh mesh;
+    mesh.vertices.push_back(
+        MeshVertex{Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 1.0f}, Vec2{0.0f, 0.0f}});
+    mesh.vertices.push_back(
+        MeshVertex{Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 1.0f}, Vec2{1.0f, 0.0f}});
+    mesh.vertices.push_back(
+        MeshVertex{Vec3{0.0f, 1.0f, 0.5f}, Vec3{0.0f, 0.0f, 1.0f}, Vec2{0.0f, 0.25f}});
+    MeshPart part;
+    part.texture = 326;
+    part.indices = {0, 1, 2};
+    mesh.parts.push_back(part);
+
+    const std::string expected = "o ARROW\n"
+                                 "v 0 0 0\n"
+                                 "v 1 0 0\n"
+                                 "v 0 1 0.5\n"
+                                 "vt 0 1\n"
+                                 "vt 1 1\n"
+                                 "vt 0 0.75\n"
+                                 "vn 0 0 1\n"
+                                 "vn 0 0 1\n"
+                                 "vn 0 0 1\n"
+                                 "g part0\n"
+                                 "usemtl tex326\n"
+                                 "f 1/1/1 2/2/2 3/3/3\n";
+    REQUIRE(encodeObj(mesh, "ARROW") == expected);
+}
+
+} // namespace

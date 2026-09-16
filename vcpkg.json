@@ -9,6 +9,7 @@
     "glfw3",
     "glm",
     "miniaudio",
+    "nlohmann-json",
     "stb",
     "volk",
     "vulkan-memory-allocator",

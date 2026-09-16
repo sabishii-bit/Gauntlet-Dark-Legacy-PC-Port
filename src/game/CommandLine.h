@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
@@ -13,6 +14,8 @@ enum class CommandLineAction : u8 { Run, ShowHelp, Fail };
 
 struct GameOptions {
     std::string playMovie; ///< play this VQ movie (name without extension) and quit
+    std::filesystem::path unpackedDirectory; ///< output of gdlunpack (PNG images, JSON manifests)
+    bool startAtTitle = false;               ///< skip the intro movies and open the title screen
 };
 
 struct CommandLineResult {
@@ -23,8 +26,8 @@ struct CommandLineResult {
 };
 
 /** Applies the process arguments (without argv[0]) on top of `defaults`. */
-CommandLineResult parseCommandLine(std::span<const std::string_view> args,
-                                   ApplicationDesc defaults);
+CommandLineResult parseCommandLine(std::span<const std::string_view> args, ApplicationDesc defaults,
+                                   GameOptions defaultOptions = {});
 
 const char* usageText();
 

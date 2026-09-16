@@ -23,7 +23,7 @@ bool MovieScene::open(RenderDevice& device, AudioMixer& mixer, const std::filesy
 
 void MovieScene::close() {
     if (m_audio) {
-        m_audio->finish();
+        m_audio->stop();
         m_audio.reset();
     }
     m_mixer = nullptr;

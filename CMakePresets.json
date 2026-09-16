@@ -24,7 +24,7 @@
     {
       "name": "windows-ninja-debug",
       "displayName": "Windows x64 Debug (Ninja + MSVC)",
-      "description": "Fast incremental builds. Run from a Visual Studio developer shell (scripts/configure.ps1 does this for you).",
+      "description": "Fast incremental builds. Run from a Visual Studio developer shell (python scripts/configure.py sets one up).",
       "inherits": "windows-base",
       "generator": "Ninja",
       "cacheVariables": {

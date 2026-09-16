@@ -22,6 +22,14 @@ void AudioStream::finish() {
     m_finished = true;
 }
 
+void AudioStream::stop() {
+    const std::scoped_lock lock(m_mutex);
+    m_queue.clear();
+    m_readFrame = 0;
+    m_fraction = 0.0;
+    m_finished = true;
+}
+
 bool AudioStream::finished() const {
     const std::scoped_lock lock(m_mutex);
     return m_finished;

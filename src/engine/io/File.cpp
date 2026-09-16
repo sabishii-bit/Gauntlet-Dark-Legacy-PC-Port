@@ -1,5 +1,6 @@
 #include "engine/io/File.h"
 
+#include <cstring>
 #include <format>
 #include <system_error>
 
@@ -31,6 +32,12 @@ void writeFile(const std::filesystem::path& path, std::span<const u8> bytes) {
     if (written != bytes.size() || closed != 0) {
         throw FileError(std::format("cannot write {}", path.string()));
     }
+}
+
+void writeTextFile(const std::filesystem::path& path, std::string_view text) {
+    std::vector<u8> bytes(text.size());
+    std::memcpy(bytes.data(), text.data(), text.size());
+    writeFile(path, bytes);
 }
 
 FileStream::FileStream(const std::filesystem::path& path)

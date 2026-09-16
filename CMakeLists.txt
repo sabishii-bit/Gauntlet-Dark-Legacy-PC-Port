@@ -27,12 +27,15 @@ option(GDL_BUILD_TESTS "Build the test suite" ON)
 
 set(GDL_ASSET_DIR "${CMAKE_SOURCE_DIR}/assets/GUNE5D/Gauntlet" CACHE PATH
     "Game asset directory (the GUNE5D/Gauntlet tree)")
+set(GDL_UNPACKED_DIR "${CMAKE_SOURCE_DIR}/assets/unpacked" CACHE PATH
+    "Directory gdlunpack writes to and the game reads unpacked assets from")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(GdlCompilerOptions)
 include(GdlShaders)
 
 add_subdirectory(src/engine)
+add_subdirectory(src/formats)
 add_subdirectory(src/game)
 add_subdirectory(tools)
 
@@ -54,3 +57,4 @@ if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
 endif()
 
 message(STATUS "GDL asset directory: ${GDL_ASSET_DIR}")
+message(STATUS "GDL unpacked directory: ${GDL_UNPACKED_DIR}")

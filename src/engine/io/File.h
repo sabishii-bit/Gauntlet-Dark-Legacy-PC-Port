@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "engine/core/Types.h"
@@ -15,6 +16,9 @@ std::vector<u8> readFile(const std::filesystem::path& path);
 
 /** Writes a whole file, replacing any existing one; throws FileError. */
 void writeFile(const std::filesystem::path& path, std::span<const u8> bytes);
+
+/** Writes text as UTF-8 bytes, replacing any existing file; throws FileError. */
+void writeTextFile(const std::filesystem::path& path, std::string_view text);
 
 /** Sequential binary file access with seeking; every failure throws FileError. */
 class FileStream {

@@ -8,6 +8,8 @@
 #include "engine/platform/Input.h"
 #include "engine/render/RenderTypes.h"
 
+#include "game/MenuInput.h"
+
 namespace gdl::game {
 
 namespace {
@@ -22,6 +24,7 @@ Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options)
 
 void Gauntlet::onInit() {
     m_audio = std::make_unique<AudioDevice>();
+    m_sounds = std::make_unique<SoundPlayer>(m_audio->mixer());
     m_assets = std::make_unique<AssetLocator>(assetDirectory());
     m_smokeTest.init(renderDevice());
 
@@ -29,6 +32,9 @@ void Gauntlet::onInit() {
         if (!startMovie(m_options.playMovie)) {
             requestQuit();
         }
+        return;
+    }
+    if (m_options.startAtTitle && startTitleScreen()) {
         return;
     }
     startNextAttractScreen();
@@ -40,17 +46,11 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
     }
 
     if (m_movieActive) {
-        const bool playing = !skipRequested() && m_movie.update(deltaSeconds);
-        if (!playing) {
-            m_movie.close();
-            m_movieActive = false;
-            if (!m_options.playMovie.empty()) {
-                requestQuit();
-            } else {
-                startNextAttractScreen();
-            }
-        }
+        updateMovie(deltaSeconds);
+    } else if (m_title.isOpen()) {
+        updateTitle(deltaSeconds);
     }
+    m_sounds->update();
 
     m_fpsAccumulator += deltaSeconds;
     ++m_fpsFrames;
@@ -59,6 +59,34 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         m_fpsAccumulator = 0.0;
         m_fpsFrames = 0;
     }
+}
+
+void Gauntlet::updateMovie(f64 deltaSeconds) {
+    const bool toTitle = m_options.playMovie.empty() && startRequested();
+    const bool playing = !toTitle && !skipRequested() && m_movie.update(deltaSeconds);
+    if (playing) {
+        return;
+    }
+    m_movie.close();
+    m_movieActive = false;
+    if (!m_options.playMovie.empty()) {
+        requestQuit();
+    } else if (!(toTitle && startTitleScreen())) {
+        startNextAttractScreen();
+    }
+}
+
+void Gauntlet::updateTitle(f64 deltaSeconds) {
+    const TitleOutcome outcome = m_title.update(deltaSeconds, readMenuInput(input()));
+    if (outcome == TitleOutcome::Running) {
+        return;
+    }
+    m_title.close();
+    if (outcome == TitleOutcome::StartGame) {
+        log::info("Player select is not built yet; restarting the attract loop");
+        m_attract.reset();
+    }
+    startNextAttractScreen();
 }
 
 void Gauntlet::onRender(RenderDevice& device) {
@@ -70,13 +98,19 @@ void Gauntlet::onRender(RenderDevice& device) {
         m_movie.render(device, projection, Rect{0.0f, 0.0f, kFrameWidth, kFrameHeight});
         return;
     }
+    if (m_title.isOpen()) {
+        m_title.render(device, projection, kFrameWidth, kFrameHeight);
+        return;
+    }
     m_smokeTest.render(device, projection, static_cast<f32>(clock().totalSeconds()));
 }
 
 void Gauntlet::onShutdown() {
     m_movie.close();
+    m_title.close();
     m_smokeTest.shutdown();
     m_assets.reset();
+    m_sounds.reset();
     m_audio.reset();
 }
 
@@ -93,9 +127,27 @@ bool Gauntlet::startMovie(std::string_view name) {
     return true;
 }
 
+bool Gauntlet::startTitleScreen() {
+    if (m_title.open(renderDevice(), m_sounds.get(), m_options.unpackedDirectory)) {
+        return true;
+    }
+    if (!m_titleWarned) {
+        m_titleWarned = true;
+        log::warn("Title screen unavailable; unpack the game data into {} with gdlunpack",
+                  m_options.unpackedDirectory.string());
+    }
+    return false;
+}
+
 void Gauntlet::startNextAttractScreen() {
     for (usize attempts = 0; attempts < AttractSequencer::kScreenTable.size(); ++attempts) {
         const AttractStep step = m_attract.next();
+        if (step.screen == AttractScreen::TitleScreen) {
+            if (startTitleScreen()) {
+                return;
+            }
+            continue;
+        }
         if (step.movie.empty()) {
             continue;
         }
@@ -103,16 +155,27 @@ void Gauntlet::startNextAttractScreen() {
             return;
         }
     }
-    log::warn("No attract movie could be played; showing the smoke test scene");
+    log::warn("No attract screen could be shown; showing the smoke test scene");
 }
 
 bool Gauntlet::skipRequested() const {
-    if (input().wasKeyPressed(Key::Enter) || input().wasKeyPressed(Key::Space)) {
+    if (input().wasKeyPressed(Key::Space)) {
         return true;
     }
     for (int pad = 0; pad < Input::kMaxPads; ++pad) {
-        if (input().wasPadButtonPressed(pad, PadButton::Start) ||
-            input().wasPadButtonPressed(pad, PadButton::A)) {
+        if (input().wasPadButtonPressed(pad, PadButton::A)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Gauntlet::startRequested() const {
+    if (input().wasKeyPressed(Key::Enter)) {
+        return true;
+    }
+    for (int pad = 0; pad < Input::kMaxPads; ++pad) {
+        if (input().wasPadButtonPressed(pad, PadButton::Start)) {
             return true;
         }
     }
