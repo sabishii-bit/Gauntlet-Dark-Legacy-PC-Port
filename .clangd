@@ -1,0 +1,15 @@
+CompileFlags:
+  Add:
+    # The MSVC STL rejects a clangd older than the version it was tested with; relax that for indexing.
+    - -D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH
+    # MSVC builds use /std:c++latest, which clangd cannot carry over when it borrows a .cpp command
+    # for a header (it falls back to C++14). Pinning the standard through -Xclang works in both the
+    # clang-cl and GCC driver modes.
+    - -Xclang
+    - -std=c++26
+  Remove:
+    - /MP
+    - /Zc:preprocessor
+
+Diagnostics:
+  UnusedIncludes: Strict

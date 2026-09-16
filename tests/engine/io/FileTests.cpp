@@ -1,0 +1,56 @@
+#include <array>
+#include <vector>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "engine/core/Error.h"
+#include "engine/io/File.h"
+
+#include "TestSupport.h"
+
+namespace {
+
+using namespace gdl;
+
+TEST_CASE("files round-trip through writeFile and readFile", "[io][file]") {
+    const auto dir = test::scratchDirectory("file-roundtrip");
+    const std::vector<u8> payload{1, 2, 3, 250, 251, 252};
+    writeFile(dir / "data.bin", payload);
+    REQUIRE(readFile(dir / "data.bin") == payload);
+}
+
+TEST_CASE("FileStream seeks and reads", "[io][file]") {
+    const auto dir = test::scratchDirectory("file-stream");
+    std::vector<u8> payload(100);
+    for (usize i = 0; i < payload.size(); ++i) {
+        payload[i] = static_cast<u8>(i);
+    }
+    writeFile(dir / "stream.bin", payload);
+
+    FileStream stream(dir / "stream.bin");
+    REQUIRE(stream.size() == 100);
+    REQUIRE(stream.position() == 0);
+
+    std::array<u8, 4> head{};
+    REQUIRE(stream.read(head) == 4);
+    REQUIRE(head == std::array<u8, 4>{0, 1, 2, 3});
+    REQUIRE(stream.position() == 4);
+
+    stream.seek(96);
+    const auto tail = stream.readExact(4);
+    REQUIRE(tail == std::vector<u8>{96, 97, 98, 99});
+    REQUIRE(stream.position() == 100);
+
+    std::array<u8, 4> beyond{};
+    REQUIRE(stream.read(beyond) == 0);
+    REQUIRE_THROWS_AS(stream.readExact(1), FileError);
+    REQUIRE_THROWS_AS(stream.seek(101), FileError);
+}
+
+TEST_CASE("missing files throw FileError", "[io][file]") {
+    const auto dir = test::scratchDirectory("file-missing");
+    REQUIRE_THROWS_AS(readFile(dir / "nope.bin"), FileError);
+    REQUIRE_THROWS_AS(FileStream(dir / "nope.bin"), FileError);
+}
+
+} // namespace

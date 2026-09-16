@@ -1,0 +1,21 @@
+# Game data: supply your own copy, see assets/README.md
+assets/*
+!assets/README.md
+
+# Build output
+build/
+out/
+vcpkg_installed/
+compile_commands.json
+
+# IDE / tooling (.vscode is versioned on purpose)
+.vs/
+.idea/
+.cache/
+*.user
+*.suo
+CMakeUserPresets.json
+
+# OS noise
+Thumbs.db
+.DS_Store

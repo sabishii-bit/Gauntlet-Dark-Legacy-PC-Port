@@ -1,0 +1,17 @@
+# Normalise line endings: LF in the repository, native on checkout, except
+# for Windows-only script types which stay CRLF.
+* text=auto eol=lf
+
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell scripts must stay LF and executable.
+*.sh text eol=lf
+
+*.png binary
+*.jpg binary
+*.spv binary
+*.ngc binary
+*.PS2 binary
+*.WAD binary

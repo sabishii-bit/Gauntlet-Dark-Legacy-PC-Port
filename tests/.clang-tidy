@@ -1,0 +1,10 @@
+# Test sources inherit the project rules, minus checks that fight the Catch2 macros.
+---
+InheritParentConfig: true
+Checks: >
+  -bugprone-unchecked-optional-access,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-type-vararg,
+  -misc-use-anonymous-namespace,
+  -readability-function-size
