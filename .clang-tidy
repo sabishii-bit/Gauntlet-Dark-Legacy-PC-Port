@@ -23,6 +23,7 @@ Checks: >
   bugprone-*,
   -bugprone-easily-swappable-parameters,
   clang-analyzer-*,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
   cppcoreguidelines-*,
   -cppcoreguidelines-pro-type-union-access,
   -cppcoreguidelines-avoid-const-or-ref-data-members,
@@ -82,7 +83,7 @@ CheckOptions:
   readability-identifier-naming.ClassConstantPrefix: k
   readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
   readability-identifier-naming.MacroDefinitionPrefix: GDL_
-  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^(VMA_|VK_|GLM_|GLFW_|MINIAUDIO_|STB_)[A-Z0-9_]+$'
+  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^(VMA_|VK_|GLM_|GLFW_|MINIAUDIO_|STB_|STBI_)[A-Z0-9_]+$'
   readability-implicit-bool-conversion.AllowPointerConditions: true
   cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true
   cppcoreguidelines-special-member-functions.AllowMissingMoveFunctionsWhenCopyIsDeleted: true

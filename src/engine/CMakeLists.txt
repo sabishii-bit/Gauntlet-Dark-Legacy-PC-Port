@@ -5,6 +5,8 @@ find_package(volk CONFIG REQUIRED)
 find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
+find_package(Stb REQUIRED)
+find_package(nlohmann_json CONFIG REQUIRED)
 
 add_library(engine STATIC
     core/Types.h
@@ -15,6 +17,8 @@ add_library(engine STATIC
     core/Assert.cpp
     core/Clock.h
     core/Clock.cpp
+    core/Strings.h
+    core/Strings.cpp
     math/Math.h
     io/ByteReader.h
     io/File.h
@@ -30,6 +34,7 @@ add_library(engine STATIC
     platform/GlfwWindow.cpp
     render/RenderTypes.h
     render/VulkanHandles.h
+    render/Mesh.h
     render/Image.h
     render/Image.cpp
     render/ImmediateBatch.h
@@ -69,19 +74,46 @@ add_library(engine STATIC
     audio/AudioDevice.h
     audio/AudioDevice.cpp
     audio/MiniaudioImplementation.cpp
+    audio/SoundClip.h
+    audio/SoundPlayer.h
+    audio/SoundPlayer.cpp
+    assets/PngImage.h
+    assets/PngImage.cpp
+    assets/StbImageImplementation.cpp
+    assets/TextureSet.h
+    assets/TextureSet.cpp
+    assets/BitmapFont.h
+    assets/BitmapFont.cpp
+    assets/WavFile.h
+    assets/WavFile.cpp
+    assets/SoundSet.h
+    assets/SoundSet.cpp
+    assets/ObjModel.h
+    assets/ObjModel.cpp
+    assets/ModelSet.h
+    assets/ModelSet.cpp
+    assets/AnimationSet.h
+    assets/AnimationSet.cpp
+    ui/Canvas.h
+    ui/Canvas.cpp
+    ui/TextPainter.h
+    ui/TextPainter.cpp
+    ui/ModelSprite.h
+    ui/ModelSprite.cpp
     app/Application.h
     app/Application.cpp)
 
 add_library(gdl::engine ALIAS engine)
 
 target_include_directories(engine PUBLIC ${CMAKE_SOURCE_DIR}/src)
-target_include_directories(engine SYSTEM PRIVATE ${MINIAUDIO_INCLUDE_DIR})
+target_include_directories(engine SYSTEM PRIVATE ${MINIAUDIO_INCLUDE_DIR} ${Stb_INCLUDE_DIR})
 
 target_link_libraries(engine
     PUBLIC
         glm::glm
     PRIVATE
         glfw
+        nlohmann_json::nlohmann_json
         Vulkan::Headers
         volk::volk
         GPUOpen::VulkanMemoryAllocator

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <span>
 #include <string_view>
@@ -13,6 +14,9 @@
 
 #ifndef GDL_TEST_ASSET_DIR
 #define GDL_TEST_ASSET_DIR ""
+#endif
+#ifndef GDL_TEST_UNPACKED_DIR
+#define GDL_TEST_UNPACKED_DIR ""
 #endif
 
 namespace gdl::test {
@@ -34,6 +38,23 @@ inline std::filesystem::path assetOrSkip(std::string_view relative) {
     }
     return found.value_or(std::filesystem::path{});
 }
+
+/** The gdlunpack output directory, or skips the current test when it has not been produced. */
+inline std::filesystem::path unpackedOrSkip(std::string_view relative) {
+    const std::filesystem::path path = std::filesystem::path(GDL_TEST_UNPACKED_DIR) / relative;
+    if (!std::filesystem::exists(path)) {
+        SKIP("unpacked asset " << relative << " is not available; run gdlunpack");
+    }
+    return path;
+}
+
+/** A 2x2 RGBA PNG: red, green on the top row; blue, transparent white below. */
+inline constexpr std::array<u8, 76> kTinyPng{
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x08, 0x06, 0x00, 0x00, 0x00, 0x72, 0xB6, 0x0D,
+    0x24, 0x00, 0x00, 0x00, 0x13, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
+    0x1F, 0x0C, 0x81, 0x34, 0x08, 0x30, 0x00, 0x00, 0x48, 0xC9, 0x08, 0xF8, 0x71, 0xC5, 0x31, 0xE0,
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82};
 
 /** Little-endian byte builder for synthetic files. */
 class ByteWriter {

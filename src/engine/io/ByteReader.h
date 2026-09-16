@@ -23,6 +23,14 @@ constexpr u32 readU32LE(std::span<const u8> bytes, usize offset) {
            (u32{bytes[offset + 3]} << 24U);
 }
 
+constexpr u16 readU16BE(std::span<const u8> bytes, usize offset) {
+    return static_cast<u16>((u16{bytes[offset]} << 8U) | u16{bytes[offset + 1]});
+}
+
+constexpr u32 readU32BE(std::span<const u8> bytes, usize offset) {
+    return (u32{readU16BE(bytes, offset)} << 16U) | u32{readU16BE(bytes, offset + 2)};
+}
+
 constexpr s32 readS32LE(std::span<const u8> bytes, usize offset) {
     return static_cast<s32>(readU32LE(bytes, offset));
 }

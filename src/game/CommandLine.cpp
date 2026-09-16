@@ -19,10 +19,11 @@ CommandLineResult fail(ApplicationDesc desc, std::string message) {
 
 } // namespace
 
-CommandLineResult parseCommandLine(std::span<const std::string_view> args,
-                                   ApplicationDesc defaults) {
+CommandLineResult parseCommandLine(std::span<const std::string_view> args, ApplicationDesc defaults,
+                                   GameOptions defaultOptions) {
     CommandLineResult result;
     result.desc = std::move(defaults);
+    result.options = std::move(defaultOptions);
     ApplicationDesc& desc = result.desc;
 
     for (usize i = 0; i < args.size(); ++i) {
@@ -39,6 +40,13 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args,
                 return fail(std::move(desc), "--movie requires a movie name");
             }
             result.options.playMovie = args[++i];
+        } else if (arg == "--unpacked") {
+            if (!hasValue) {
+                return fail(std::move(desc), "--unpacked requires a directory");
+            }
+            result.options.unpackedDirectory = args[++i];
+        } else if (arg == "--title") {
+            result.options.startAtTitle = true;
         } else if (arg == "--no-vsync") {
             desc.vsync = false;
         } else if (arg == "--validation") {
@@ -73,6 +81,8 @@ const char* usageText() {
     return "gauntlet [options]\n"
            "  --assets <dir>     game asset directory (the GUNE5D/Gauntlet tree)\n"
            "  --movie <name>     play one VQ movie (e.g. opening) and quit\n"
+           "  --unpacked <dir>   gdlunpack output directory (default assets/unpacked)\n"
+           "  --title            start at the title screen instead of the intro movies\n"
            "  --no-vsync         present as fast as possible\n"
            "  --validation       force the Vulkan validation layer on\n"
            "  --no-validation    force it off (default on in Debug builds)\n"

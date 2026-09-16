@@ -6,6 +6,12 @@ add_library(game STATIC
     AttractSequencer.cpp
     MovieScene.h
     MovieScene.cpp
+    MenuInput.h
+    MenuInput.cpp
+    OptionMenu.h
+    OptionMenu.cpp
+    TitleScene.h
+    TitleScene.cpp
     Gauntlet.h
     Gauntlet.cpp
     SmokeTestScene.h
@@ -22,7 +28,8 @@ add_executable(gauntlet main.cpp)
 target_link_libraries(gauntlet PRIVATE gdl::game)
 
 target_compile_definitions(gauntlet PRIVATE
-    GDL_DEFAULT_ASSET_DIR="${GDL_ASSET_DIR}")
+    GDL_DEFAULT_ASSET_DIR="${GDL_ASSET_DIR}"
+    GDL_DEFAULT_UNPACKED_DIR="${GDL_UNPACKED_DIR}")
 
 gdl_apply_compiler_options(gauntlet)
 

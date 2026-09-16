@@ -28,6 +28,9 @@ public:
 
     /** Marks the end of the data; the stream is drained once the queue empties. */
     void finish();
+
+    /** Drops everything still queued and finishes at once, for cutting playback short. */
+    void stop();
     bool finished() const;
     bool drained() const;
 

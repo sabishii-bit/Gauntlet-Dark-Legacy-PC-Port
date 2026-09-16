@@ -15,6 +15,9 @@
 #ifndef GDL_DEFAULT_ASSET_DIR
 #define GDL_DEFAULT_ASSET_DIR ""
 #endif
+#ifndef GDL_DEFAULT_UNPACKED_DIR
+#define GDL_DEFAULT_UNPACKED_DIR ""
+#endif
 
 namespace {
 
@@ -29,7 +32,11 @@ int runGauntlet(std::span<char*> rawArgs) {
     defaults.assetDirectory = GDL_DEFAULT_ASSET_DIR;
     defaults.enableValidation = GDL_DEBUG != 0;
 
-    gdl::game::CommandLineResult parsed = gdl::game::parseCommandLine(args, std::move(defaults));
+    gdl::game::GameOptions defaultOptions;
+    defaultOptions.unpackedDirectory = GDL_DEFAULT_UNPACKED_DIR;
+
+    gdl::game::CommandLineResult parsed =
+        gdl::game::parseCommandLine(args, std::move(defaults), std::move(defaultOptions));
     switch (parsed.action) {
     case gdl::game::CommandLineAction::ShowHelp: std::puts(gdl::game::usageText()); return 0;
     case gdl::game::CommandLineAction::Fail:
