@@ -1,0 +1,51 @@
+{
+  "[c]": {
+    "files.encoding": "utf8",
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true
+  },
+  "[cpp]": {
+    "files.encoding": "utf8",
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+    "editor.formatOnSave": true
+  },
+  "files.autoSave": "onFocusChange",
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+  "problems.autoReveal": true,
+  "files.associations": {
+    ".clangd": "yaml",
+    ".clang-tidy": "yaml",
+    ".clang-format": "yaml",
+    "*.vert": "glsl",
+    "*.frag": "glsl",
+    "CMakePresets.json": "jsonc",
+    "CMakeUserPresets.json": "jsonc"
+  },
+  "files.exclude": {
+    "**/.git": true
+  },
+  "search.exclude": {
+    "assets/**": true,
+    "build/**": true,
+    "compile_commands.json": true
+  },
+  // clangd provides diagnostics, completion and formatting. cpptools stays installed
+  // only for its debugger; every language feature of it is turned off to avoid the
+  // conflicting (and less capable) EDG parser reporting phantom errors.
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "C_Cpp.autocomplete": "disabled",
+  "C_Cpp.errorSquiggles": "disabled",
+  "C_Cpp.formatting": "disabled",
+  "C_Cpp.codeAnalysis.runAutomatically": false,
+  "clangd.arguments": [
+    "--background-index",
+    "--clang-tidy",
+    "--header-insertion=never",
+    "--compile-commands-dir=${workspaceFolder}"
+  ],
+  "cmake.useCMakePresets": "always",
+  "cmake.copyCompileCommands": "${workspaceFolder}/compile_commands.json",
+  "cmake.ctest.testExplorerIntegrationEnabled": true
+}

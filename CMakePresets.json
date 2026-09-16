@@ -1,0 +1,116 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 30, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+
+    {
+      "name": "windows-base",
+      "hidden": true,
+      "inherits": "base",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "windows-ninja-debug",
+      "displayName": "Windows x64 Debug (Ninja + MSVC)",
+      "description": "Fast incremental builds. Run from a Visual Studio developer shell (scripts/configure.ps1 does this for you).",
+      "inherits": "windows-base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "cl"
+      }
+    },
+    {
+      "name": "windows-ninja-release",
+      "displayName": "Windows x64 RelWithDebInfo (Ninja + MSVC)",
+      "inherits": "windows-ninja-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "windows-vs2022",
+      "displayName": "Windows x64 (Visual Studio 2022 solution)",
+      "description": "Multi-config solution. Works from any shell; open build/windows-vs2022/GauntletDarkLegacy.sln.",
+      "inherits": "windows-base",
+      "generator": "Visual Studio 17 2022",
+      "architecture": { "value": "x64", "strategy": "set" }
+    },
+
+    {
+      "name": "linux-base",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" },
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-linux"
+      }
+    },
+    {
+      "name": "linux-ninja-debug",
+      "displayName": "Linux x64 Debug (Ninja, default compiler)",
+      "description": "Uses the system default C++ compiler (GCC 14+ or Clang 17+).",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "linux-ninja-release",
+      "displayName": "Linux x64 RelWithDebInfo (Ninja, default compiler)",
+      "inherits": "linux-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "linux-clang-debug",
+      "displayName": "Linux x64 Debug (Ninja + Clang)",
+      "inherits": "linux-ninja-debug",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "linux-clang-release",
+      "displayName": "Linux x64 RelWithDebInfo (Ninja + Clang)",
+      "inherits": "linux-ninja-release",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-ninja-debug", "configurePreset": "windows-ninja-debug" },
+    { "name": "windows-ninja-release", "configurePreset": "windows-ninja-release" },
+    { "name": "windows-vs2022-debug", "configurePreset": "windows-vs2022", "configuration": "Debug" },
+    { "name": "windows-vs2022-release", "configurePreset": "windows-vs2022", "configuration": "RelWithDebInfo" },
+    { "name": "linux-ninja-debug", "configurePreset": "linux-ninja-debug" },
+    { "name": "linux-ninja-release", "configurePreset": "linux-ninja-release" },
+    { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug" },
+    { "name": "linux-clang-release", "configurePreset": "linux-clang-release" }
+  ],
+  "testPresets": [
+    { "name": "windows-ninja-debug", "configurePreset": "windows-ninja-debug", "output": { "outputOnFailure": true } },
+    { "name": "windows-ninja-release", "configurePreset": "windows-ninja-release", "output": { "outputOnFailure": true } },
+    { "name": "windows-vs2022-debug", "configurePreset": "windows-vs2022", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "windows-vs2022-release", "configurePreset": "windows-vs2022", "configuration": "RelWithDebInfo", "output": { "outputOnFailure": true } },
+    { "name": "linux-ninja-debug", "configurePreset": "linux-ninja-debug", "output": { "outputOnFailure": true } },
+    { "name": "linux-ninja-release", "configurePreset": "linux-ninja-release", "output": { "outputOnFailure": true } },
+    { "name": "linux-clang-debug", "configurePreset": "linux-clang-debug", "output": { "outputOnFailure": true } },
+    { "name": "linux-clang-release", "configurePreset": "linux-clang-release", "output": { "outputOnFailure": true } }
+  ]
+}

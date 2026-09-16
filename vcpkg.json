@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "gauntlet-dark-legacy",
+  "version-string": "0.1.0",
+  "description": "C++26 / Vulkan reconstruction of the Gauntlet Dark Legacy engine.",
+  "builtin-baseline": "1577f17ee57f42a0ef6d75bbb82cb37d0b76d7e8",
+  "dependencies": [
+    "catch2",
+    "glfw3",
+    "glm",
+    "miniaudio",
+    "stb",
+    "volk",
+    "vulkan-memory-allocator",
+    {
+      "name": "glslang",
+      "features": [ "tools" ]
+    }
+  ]
+}

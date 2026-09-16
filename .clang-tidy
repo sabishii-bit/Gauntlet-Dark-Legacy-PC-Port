@@ -1,0 +1,92 @@
+# clang-tidy configuration. clangd applies these checks live in the editor;
+# scripts/lint.py runs them over the whole tree.
+#
+# Disabled checks and why:
+#   *-magic-numbers, readability-identifier-length     too noisy for graphics and math code
+#   bugprone-easily-swappable-parameters                 flags every (width, height) pair
+#   cppcoreguidelines-avoid-const-or-ref-data-members    reference members express non-owning, non-null dependencies
+#   cppcoreguidelines-avoid-do-while, -macro-usage       the GDL_* assertion macros need do/while and __FILE__
+#   cppcoreguidelines-pro-bounds-array-to-pointer-decay  fires on every C API call
+#   cppcoreguidelines-pro-bounds-constant-array-index    would require gsl::at everywhere
+#   cppcoreguidelines-non-private-member-variables-in-classes, misc-*  plain structs are allowed public data
+#   misc-include-cleaner                                 clangd's include cleaner already covers this
+#   modernize-use-trailing-return-type                   style choice: leading return types
+#   modernize-use-nodiscard                              attribute noise on every getter
+#   readability-function-cognitive-complexity            Vulkan setup code is long but linear
+#   readability-make-member-function-const               false positives on handle-wrapper classes
+#   readability-uppercase-literal-suffix                 1.0f is the convention, not 1.0F
+#   misc-misplaced-const                                 Vulkan handles are opaque pointer typedefs; `const VkDevice` means an immutable handle
+#   cppcoreguidelines-pro-type-union-access              glm vector components are union members
+---
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-pro-type-union-access,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-do-while,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-non-private-member-variables-in-classes,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  misc-*,
+  -misc-include-cleaner,
+  -misc-misplaced-const,
+  -misc-non-private-member-variables-in-classes,
+  modernize-*,
+  -modernize-use-nodiscard,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-uppercase-literal-suffix,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-make-member-function-const
+
+WarningsAsErrors: ''
+HeaderFilterRegex: '.*'
+FormatStyle: file
+
+CheckOptions:
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypeAliasIgnoredRegexp: '^(u8|u16|u32|u64|s8|s16|s32|s64|f32|f64|usize)$'
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.TemplateParameterCase: CamelCase
+  readability-identifier-naming.FunctionCase: camelBack
+  readability-identifier-naming.MethodCase: camelBack
+  readability-identifier-naming.VariableCase: camelBack
+  readability-identifier-naming.ParameterCase: camelBack
+  readability-identifier-naming.PublicMemberCase: camelBack
+  readability-identifier-naming.ProtectedMemberCase: camelBack
+  readability-identifier-naming.ProtectedMemberPrefix: m_
+  readability-identifier-naming.PrivateMemberCase: camelBack
+  readability-identifier-naming.PrivateMemberPrefix: m_
+  readability-identifier-naming.ConstexprVariableCase: CamelCase
+  readability-identifier-naming.ConstexprVariablePrefix: k
+  readability-identifier-naming.GlobalConstantCase: CamelCase
+  readability-identifier-naming.GlobalConstantPrefix: k
+  readability-identifier-naming.StaticConstantCase: CamelCase
+  readability-identifier-naming.StaticConstantPrefix: k
+  readability-identifier-naming.ClassConstantCase: CamelCase
+  readability-identifier-naming.ClassConstantPrefix: k
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+  readability-identifier-naming.MacroDefinitionPrefix: GDL_
+  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^(VMA_|VK_|GLM_|GLFW_|MINIAUDIO_|STB_)[A-Z0-9_]+$'
+  readability-implicit-bool-conversion.AllowPointerConditions: true
+  cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true
+  cppcoreguidelines-special-member-functions.AllowMissingMoveFunctionsWhenCopyIsDeleted: true
+  misc-const-correctness.WarnPointersAsValues: false
+  # C stdio handles are wrapped in unique_ptr; the gsl::owner convention is not used here.
+  cppcoreguidelines-owning-memory.LegacyResourceProducers: ''
+  cppcoreguidelines-owning-memory.LegacyResourceConsumers: ''

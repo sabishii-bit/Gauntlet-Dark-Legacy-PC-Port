@@ -1,0 +1,39 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: Latest
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+AccessModifierOffset: -4
+
+BreakBeforeBraces: Attach
+PointerAlignment: Left
+ReferenceAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+IndentCaseLabels: false
+NamespaceIndentation: None
+FixNamespaceComments: true
+
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+BinPackArguments: true
+BinPackParameters: true
+
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<[a-z_]+>'          # C++ standard library
+    Priority: 1
+  - Regex: '^<'                  # third-party (<volk.h>, <GLFW/...>, <glm/...>, <catch2/...>)
+    Priority: 2
+  - Regex: '^"engine/'           # engine headers
+    Priority: 3
+  - Regex: '^"'                  # game / local headers
+    Priority: 4
+...
