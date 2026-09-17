@@ -140,6 +140,7 @@ void GameConfig::mergeJson(std::string_view json) {
             readKeys(k, "select", menu.select);
             readKeys(k, "back", menu.back);
             readKeys(k, "start", menu.start);
+            readKeys(k, "escape", menu.escape);
         }
         if (c.contains("pad")) {
             const Json& p = c.at("pad");
@@ -150,6 +151,24 @@ void GameConfig::mergeJson(std::string_view json) {
             readButtons(p, "select", menu.padSelect);
             readButtons(p, "back", menu.padBack);
             readButtons(p, "start", menu.padStart);
+        }
+        if (c.contains("play")) {
+            const Json& moves = c.at("play");
+            if (moves.contains("keyboard")) {
+                const Json& k = moves.at("keyboard");
+                readKeys(k, "up", play.up);
+                readKeys(k, "down", play.down);
+                readKeys(k, "left", play.left);
+                readKeys(k, "right", play.right);
+            }
+            if (moves.contains("pad")) {
+                const Json& p = moves.at("pad");
+                readButtons(p, "up", play.padUp);
+                readButtons(p, "down", play.padDown);
+                readButtons(p, "left", play.padLeft);
+                readButtons(p, "right", play.padRight);
+            }
+            read(moves, "stickDeadZone", play.stickDeadZone);
         }
     }
     if (save.slots == 0 || timing.tickRate == 0 || display.virtualWidth == 0 ||
@@ -184,7 +203,8 @@ std::string GameConfig::toJson() const {
                           {"right", keyNames(menu.right)},
                           {"select", keyNames(menu.select)},
                           {"back", keyNames(menu.back)},
-                          {"start", keyNames(menu.start)}}},
+                          {"start", keyNames(menu.start)},
+                          {"escape", keyNames(menu.escape)}}},
                         {"pad",
                          {{"up", buttonNames(menu.padUp)},
                           {"down", buttonNames(menu.padDown)},
@@ -192,7 +212,19 @@ std::string GameConfig::toJson() const {
                           {"right", buttonNames(menu.padRight)},
                           {"select", buttonNames(menu.padSelect)},
                           {"back", buttonNames(menu.padBack)},
-                          {"start", buttonNames(menu.padStart)}}}};
+                          {"start", buttonNames(menu.padStart)}}},
+                        {"play",
+                         {{"keyboard",
+                           {{"up", keyNames(play.up)},
+                            {"down", keyNames(play.down)},
+                            {"left", keyNames(play.left)},
+                            {"right", keyNames(play.right)}}},
+                          {"pad",
+                           {{"up", buttonNames(play.padUp)},
+                            {"down", buttonNames(play.padDown)},
+                            {"left", buttonNames(play.padLeft)},
+                            {"right", buttonNames(play.padRight)}}},
+                          {"stickDeadZone", play.stickDeadZone}}}};
     return root.dump(2) + "\n";
 }
 

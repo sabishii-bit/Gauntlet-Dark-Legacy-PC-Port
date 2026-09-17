@@ -110,7 +110,18 @@ gauntlet [--assets <dir>] [--unpacked <dir>] [--data <dir>] [--movie <name>] [--
 `assets/unpacked` and `--data` to `data/` (all baked in at configure time as
 `GDL_ASSET_DIR`, `GDL_UNPACKED_DIR` and `GDL_DATA_DIR`). `--movie opening`
 plays one movie from `VQMOVIES` and quits; `--title` skips the intro movies.
-`--frames <n>` quits after `n` frames, handy for smoke tests. Escape quits.
+`--frames <n>` quits after `n` frames, handy for smoke tests. Escape quits, except
+while a name is being typed, where it leaves the name entry instead (Backspace
+only erases).
+
+`--scenario <file>` skips the title and select screens and opens the tower
+straight onto a described start, for testing one moment without walking there
+every time. The file is JSON: a `party` list of members (`player` 0 to 3,
+`class` and `color` by their asset codes such as `WAR` and `BLU`, `name`,
+`level`, and `crystals` gathered per realm), an optional `position` and `yaw`
+for where the party stands, and `welcome` to force Sumner's welcome on or off.
+`tests/scenarios/` holds a few: the entrance, the crystals, a gargoyle gate, a force
+field.
 
 The window shows the game's memory-card icon once the card art is unpacked, and
 on Windows the executable carries it too: the build converts
@@ -118,8 +129,8 @@ on Windows the executable carries it too: the build converts
 
 ### Settings and text
 
-`data/config.json` holds the shipped defaults: the window size, vsync and an
-optional frame-rate cap; the virtual screen (512x384) and frame (640x448) the
+`data/config.json` holds the shipped defaults: the window size, vsync and the
+30 frames per second the game runs at; the virtual screen (512x384) and frame (640x448) the
 2D layer is laid out in; the logic tick rate (60 Hz) and the 30 fps the
 gameplay was tuned for; the camera's field of view; master, music and effects
 volumes; the text language; and the keyboard and pad bindings for the menus.
@@ -145,48 +156,121 @@ one per player. The keyboard and the first pad drive lane one; pads two to four
 drive the other lanes, and a lane joins when its Start is pressed. Each lane
 offers New (enter a name with up/down, holding either to race through the
 letters, right or Select to take a letter and left to remove one, or just type
-it: letters, digits and space go straight in, Backspace erases, Enter takes it,
-and W/A/S/D spell rather than steer while the name is open; then pick a class
+it: letters, digits and space go straight in, Backspace erases (and does
+nothing more on an empty name), Enter takes it, Escape or B leaves the name for
+the menu, and W/A/S/D spell rather than steer while the name is open; then pick
+a class
 with left/right and a costume colour with up/down) or Load (pick a saved
 character). Sumner greets each locked-in character by costume and class. The
 status box under each lane shows its class, name, level, gold and health in
 the costume's colour. A locked-in player can press Start while
 others are still choosing to save, load, change class or quit. The screen ends
-once every player is ready; the tower that follows is not built yet, so the
-game returns to the title for now.
+once every player is ready, and the party enters the tower.
 
 Characters are JSON files, one per slot, under
 `%APPDATA%\GauntletDarkLegacy\saves` on Windows and
 `~/.config/GauntletDarkLegacy/saves` elsewhere; `save.directory` and
 `save.slots` in the settings change the place and the count.
 
+### The tower
+
+Locked-in characters arrive side by side at the tower's entrance and walk under
+their players' control: the arrows, W/A/S/D, a pad's left stick or its d-pad,
+relative to the camera, at the class's speed. The level's collision keeps them
+on the floor, up steps and out of walls, and the camera follows the party from
+the angles the level's own camera markers give, turning to the nearest marker as
+the party moves and pulling back with more players, within the range the realm's
+data sets for it. The level is lit as the original lights it: its record's grey
+ambient plus one directional light where a surface faces it, and the baked
+lightmaps the level's geometry carries as a second texture coordinate scale
+each surface by their intensity. Characters standing in the level take the same
+light. Surfaces face one way, as on the console: each strip is wound the way
+the original culls it, so walls and floors hide what stands behind them, and
+translucent surfaces drop their clear texels rather than blotting out what is
+behind. The level moves as the original moves it: its keyframed objects (the
+tower's magic circle, snakes, eagles and gears) play at thirty frames a second,
+its texture animations flip through their frames and slide their coordinates
+(the lamps, the water, the sunbeams), and its particle systems burn at their
+markers, the braziers' and torches' flames rising and fading from the
+templates the level ships. The pickups the level places stand a tenth of a unit
+above its floor for a party large enough to see them: the crystals Sumner keeps
+for a new party glow in beside the lectern during his welcome's cut, nearest
+first, and turn in place; walking onto one takes it with the original's burst of
+sparks swirling up from where it stood and its chime, a card slides up over the
+taker's status box, and a count above every box shows the realm's crystals
+gathered of those its gate wants. The scroll's words go before it burns. The level's triggers work as the original's
+do: a world object a trigger names waits shut (its opening animation held at
+its first frame, its collision moving with it), a player stepping into the
+trigger's spot opens it and whatever is chained after it, and the realms' force
+fields ask every player for the realm's crystals first, then thin out and stop
+blocking; until then they stand solid across their gates, glowing at full
+strength however they face the light. The gargoyle gates that want the golden icons stay shut, as the icons
+cannot be gathered yet. The follow camera takes its angles from the level's
+game camera markers, and objects the level flags to face the camera (the torch
+flames, the crystals' glow) turn its way. The level's music loops from the stream its realm names (`STREAMS/tower.ads`
+for the tower), decoded as it plays at the level's own volume under the music
+setting, and each half stride of a walk or run sets a foot down with the common
+bank's stone footsteps. Sumner stands at the lookout the level marks for him,
+idling through his stance, his reading and his thinking, and a party whose
+characters have no experience yet gets his welcome as the original gives it:
+his five-page scroll unrolls over the tower (sized to each page, the next page
+on any joined player's button, burning away after the last), then he gestures
+at the crystals while the camera cuts to them for five seconds with the party
+held still; the scroll's text is the parchment's dark ink, and Back does not
+leave the tower while it is up. The scroll, Sumner, the torch flames and the
+crystals need the item sets unpacked with the levels (`ITEMS/levelL`, and the
+`POWERUPS` archive the default unpack writes). The status boxes line the bottom of the screen. Each character's body plays its class's sequences the way
+the original sequences them: the entrance once as the level begins, the stance
+loop, a fidget after a minute standing still and a second one twenty seconds
+later that then loops, and the two halves of the walk and run cycles taking
+turns (a stick past three quarters runs). Sequences step at 900 over their rate
+frames a second on whole frames, one-shots hold their last frame, and coming
+back to the stance blends over two ticks. Backspace or B leaves for the title
+screen for now. The tower needs the level and the player figures unpacked
+(`--levels`; the base costumes and every class's `ANIM` folder come with the
+default unpack, the levelled costumes with `--tiers`).
+
 ### Tools
 
-`gdlunpack <asset-root> <out-root> [--only <directory>]` converts every
-`objects.ngc` / `textures.ngc` archive with its `ANIM.PS2`, the `AUDIO`
-sound banks, `FONTS/*.fnt` fonts, `TEXT/*.rom` string tables and the
-memory-card art in `carddemo` beside the asset root into standard files
-(about 130 MB in total):
+`gdlunpack <asset-root> <out-root> [--only <directory>] [--levels] [--tiers]`
+converts every `objects.ngc` / `textures.ngc` archive with its `ANIM.PS2`
+(folders holding only an `ANIM.PS2`, like a class's `ANIM`, still get their
+trees), the player figures, the `AUDIO` sound banks, `FONTS/*.fnt` fonts,
+`TEXT/*.rom` string tables and the memory-card art in `carddemo` beside the
+asset root into standard files (about 200 MB in total):
 
 ```
 assets/unpacked/<ARCHIVE>/textures/<index>_<NAME>.png   decoded textures (RGBA PNG)
 assets/unpacked/<ARCHIVE>/textures.json                  names, sizes, flags, animation frames
-assets/unpacked/<ARCHIVE>/models/<index>_<NAME>.obj      meshes (Wavefront OBJ, one group per texture)
+assets/unpacked/<ARCHIVE>/models/<index>_<NAME>.obj      meshes (Wavefront OBJ, one group per texture and lightmap)
 assets/unpacked/<ARCHIVE>/objects.json                   object names, mesh files and sub-object data
-assets/unpacked/<ARCHIVE>/animations.json                animation trees: node hierarchy, objects, sequences
+assets/unpacked/<ARCHIVE>/animations.json                animation trees: node hierarchy, objects, sequences and keys
 assets/unpacked/audio/<BANK>/samples/<index>.wav         decoded samples (16-bit PCM)
 assets/unpacked/audio/<BANK>/sounds.json                 named sounds: sample sequences, loops, volumes
 assets/unpacked/fonts/<name>.json                        glyph cells of each bitmap font
 assets/unpacked/pdata/<CLASS>.json                       per-class stat ranges and body size
+assets/unpacked/wdata/<REALM>.json                       a realm's levels: light, fog, camera range, sound bank and stream
 assets/unpacked/LEVELS/<LEVEL>/world.json                a level's placed objects and marker points (with --levels)
+assets/unpacked/LEVELS/<LEVEL>/collision.json            its collision triangles, in world space, per object
+assets/unpacked/PLAYERS/<CLASS>/<COSTUME>/...            a character's figure: models, textures and its tree
+assets/unpacked/PLAYERS/<CLASS>/ANIM/animations.json     the class's sequences, keyed on the same node names
+assets/unpacked/ITEMS/<LEVEL>/...                        a level's item set, Sumner included (with --levels)
 assets/unpacked/text/<name>.json                         fonts, named messages and message lists
 assets/unpacked/carddemo/icon<n>.png                     the memory-card icon's animation frames
 assets/unpacked/carddemo/banner.png                      the memory-card banner
 assets/unpacked/carddemo/icon.ico                        the icon at 32 to 256 pixels, for Windows
 ```
 
-Keyframe data of the animation trees is not exported yet; the trees are
-static poses.
+A lightmapped mesh names its lightmap in the material (`usemtl tex185_lm507`)
+and carries one `vl u v` line per vertex after the normals, the lightmap
+coordinates in texels of the lightmap, indexed like `vt`; other OBJ readers
+ignore the extra lines.
+
+Each sequence in `animations.json` lists its `tracks`: per skeletal node the
+channel flags (rotation, position and scale, x y z each, plus `0x8000` for the
+pitch-yaw-roll order), the `frames` holding keys (always from 0) and that many
+`values` per key. Compressed keys, stored in the console files as byte steps
+through shared delta tables, are summed back to plain values on the way out.
 
 The game reads only these unpacked files; the console formats are handled by
 the `formats` library and this tool.

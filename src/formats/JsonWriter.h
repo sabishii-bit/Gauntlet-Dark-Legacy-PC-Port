@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -27,6 +28,11 @@ public:
     JsonWriter& value(int number) { return value(static_cast<s64>(number)); }
     JsonWriter& value(u32 number) { return value(static_cast<u64>(number)); }
     JsonWriter& value(f64 number);
+    JsonWriter& value(f32 number);
+
+    /** Writes a whole list of numbers as one array on a single line. */
+    JsonWriter& numbers(std::span<const f32> values);
+    JsonWriter& numbers(std::span<const u16> values);
 
     std::string take();
     const std::string& text() const { return m_text; }

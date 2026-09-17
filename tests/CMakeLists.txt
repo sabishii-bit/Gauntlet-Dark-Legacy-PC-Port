@@ -35,14 +35,30 @@ add_executable(tests
     engine/assets/WavFileTests.cpp
     engine/assets/SoundSetTests.cpp
     engine/audio/SoundPlayerTests.cpp
+    engine/audio/AdsStreamTests.cpp
     engine/assets/ObjModelTests.cpp
     engine/assets/ModelSetTests.cpp
     engine/assets/AnimationSetTests.cpp
     engine/ui/ModelSpriteTests.cpp
     engine/world/WorldCameraTests.cpp
     engine/world/WorldSceneTests.cpp
+    engine/world/TextureAnimatorTests.cpp
+    engine/world/WorldAnimatorTests.cpp
+    engine/world/ParticleSystemTests.cpp
+    engine/world/ParticleFieldTests.cpp
+    engine/world/WorldCollisionTests.cpp
+    engine/world/TreeModelTests.cpp
+    engine/world/AnimationPlayerTests.cpp
+    engine/world/TreePoseTests.cpp
     engine/assets/WorldLayoutTests.cpp
     formats/WorldFileTests.cpp
+    formats/WorldDataWadTests.cpp
+    engine/assets/WorldDataTests.cpp
+    engine/assets/MessageTableTests.cpp
+    game/menu/ScrollBoxTests.cpp
+    game/world/SumnerFigureTests.cpp
+    game/world/PlacedItemsTests.cpp
+    engine/world/WorldLightingTests.cpp
     engine/ui/CanvasTests.cpp
     engine/ui/TextPainterTests.cpp
     formats/ModelArchiveTests.cpp
@@ -57,6 +73,7 @@ add_executable(tests
     formats/AnimationTreeTests.cpp
     formats/ObjWriterTests.cpp
     game/app/CommandLineTests.cpp
+    game/app/ScenarioTests.cpp
     game/app/AttractSequencerTests.cpp
     game/screens/MovieSceneTests.cpp
     game/menu/MenuInputTests.cpp
@@ -66,6 +83,14 @@ add_executable(tests
     game/players/ClassDataTests.cpp
     game/players/ProgressionTests.cpp
     game/players/CharacterSaveTests.cpp
+    game/players/PlayerControlsTests.cpp
+    game/players/PlayerActorTests.cpp
+    game/players/PlayerAnimatorTests.cpp
+    game/world/TowerWorldTests.cpp
+    game/world/TowerCameraTests.cpp
+    game/screens/StatusBoxTests.cpp
+    game/screens/PickupHudTests.cpp
+    game/screens/TowerSceneTests.cpp
     game/menu/NameEntryTests.cpp
     game/screens/SelectLaneTests.cpp
     game/screens/PlayerSelectSceneTests.cpp

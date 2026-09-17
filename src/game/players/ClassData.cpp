@@ -1,5 +1,7 @@
 #include "game/players/ClassData.h"
 
+#include "engine/core/Strings.h"
+
 #include <exception>
 #include <string>
 
@@ -46,6 +48,7 @@ ClassStats parseClassStats(std::string_view text) {
     readRange(root, "magic", stats.magicMin, stats.magicMax);
     stats.height = root.value("height", 0.0f);
     stats.width = root.value("width", 0.0f);
+    stats.collisionY = root.value("collisionY", 0.0f);
     return stats;
 }
 
@@ -63,6 +66,26 @@ std::string_view colorCode(s32 color) {
         return {};
     }
     return kColorCodes[static_cast<usize>(color)];
+}
+
+std::optional<s32> classIndexOf(std::string_view code) {
+    const std::string wanted = normalizeAssetName(code);
+    for (s32 i = 0; i < kClassCount; ++i) {
+        if (kClassCodes[static_cast<usize>(i)] == wanted) {
+            return i;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<s32> colorIndexOf(std::string_view code) {
+    const std::string wanted = normalizeAssetName(code);
+    for (s32 i = 0; i < kColorCount; ++i) {
+        if (kColorCodes[static_cast<usize>(i)] == wanted) {
+            return i;
+        }
+    }
+    return std::nullopt;
 }
 
 Color playerColor(s32 color) {

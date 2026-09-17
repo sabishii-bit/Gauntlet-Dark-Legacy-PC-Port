@@ -3,6 +3,7 @@
 #include <charconv>
 #include <format>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -66,9 +67,20 @@ struct Corner {
 
 } // namespace
 
+/** The number a material name carries after `tex` or `_lm`, or nothing when it is not one. */
+std::optional<u32> materialIndex(std::string_view digits) {
+    u32 value = 0;
+    const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value);
+    if (error != std::errc{} || end != digits.data() + digits.size()) {
+        return std::nullopt;
+    }
+    return value;
+}
+
 Mesh parseObj(std::string_view text) {
     std::vector<Vec3> positions;
     std::vector<Vec2> texcoords;
+    std::vector<Vec2> lightmapCoords;
     std::vector<Vec3> normals;
     Mesh mesh;
     MeshPart part;
@@ -84,6 +96,9 @@ Mesh parseObj(std::string_view text) {
         v.position = positions[static_cast<usize>(corner.position)];
         if (corner.texcoord >= 0) {
             v.uv = texcoords[static_cast<usize>(corner.texcoord)];
+            if (static_cast<usize>(corner.texcoord) < lightmapCoords.size()) {
+                v.lightmapUv = lightmapCoords[static_cast<usize>(corner.texcoord)];
+            }
         }
         if (corner.normal >= 0) {
             v.normal = normals[static_cast<usize>(corner.normal)];
@@ -121,6 +136,9 @@ Mesh parseObj(std::string_view text) {
         } else if (key == "vt" && words.size() >= 3) {
             texcoords.emplace_back(parseFloat(words[1], lineNumber),
                                    1.0f - parseFloat(words[2], lineNumber));
+        } else if (key == "vl" && words.size() >= 3) {
+            lightmapCoords.emplace_back(parseFloat(words[1], lineNumber),
+                                        parseFloat(words[2], lineNumber));
         } else if (key == "vn" && words.size() >= 4) {
             normals.emplace_back(parseFloat(words[1], lineNumber), parseFloat(words[2], lineNumber),
                                  parseFloat(words[3], lineNumber));
@@ -129,12 +147,11 @@ Mesh parseObj(std::string_view text) {
             partOpen = true;
             const std::string_view material = words[1];
             if (material.starts_with("tex")) {
-                u32 texture = 0;
-                const std::string_view digits = material.substr(3);
-                const auto [end, error] =
-                    std::from_chars(digits.data(), digits.data() + digits.size(), texture);
-                if (error == std::errc{} && end == digits.data() + digits.size()) {
-                    part.texture = texture;
+                const std::string_view rest = material.substr(3);
+                const usize lightmapAt = rest.find("_lm");
+                part.texture = materialIndex(rest.substr(0, lightmapAt)).value_or(0);
+                if (lightmapAt != std::string_view::npos) {
+                    part.lightmap = materialIndex(rest.substr(lightmapAt + 3)).value_or(0);
                 }
             }
         } else if (key == "f" && words.size() >= 4) {

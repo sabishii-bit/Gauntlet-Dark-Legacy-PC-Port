@@ -82,4 +82,45 @@ Mat4 WorldCamera::clipTransform(f32 horizontalFov, f32 frameWidth, f32 frameHeig
            projection(horizontalFov, frameWidth / frameHeight) * view();
 }
 
+CameraFrame CameraFrame::of(const WorldCamera& camera) {
+    CameraFrame frame;
+    frame.position = camera.position;
+    frame.right = camera.right();
+    frame.up = camera.up();
+    frame.forward = camera.forward();
+    return frame;
+}
+
+CameraFrame CameraFrame::at(const Vec3& eye) {
+    CameraFrame frame;
+    frame.position = eye;
+    return frame;
+}
+
+Mat4 CameraFrame::face(const Mat4& placement, u32 mode) const {
+    if (mode == 0) {
+        return placement;
+    }
+    Mat4 faced = placement;
+    const Vec3 at{placement[3]};
+    if (mode == kFacingFull) {
+        // A proper rotation whose z points back at the camera.
+        faced[0] = Vec4{-right, 0.0f};
+        faced[1] = Vec4{up, 0.0f};
+        faced[2] = Vec4{-forward, 0.0f};
+        return faced;
+    }
+    const Vec3 toCamera = position - at;
+    if (toCamera.x * toCamera.x + toCamera.z * toCamera.z < 1e-8f) {
+        return placement;
+    }
+    const f32 yaw = std::atan2(toCamera.x, toCamera.z);
+    const f32 c = std::cos(yaw);
+    const f32 s = std::sin(yaw);
+    faced[0] = Vec4{c, 0.0f, -s, 0.0f};
+    faced[1] = Vec4{0.0f, 1.0f, 0.0f, 0.0f};
+    faced[2] = Vec4{s, 0.0f, c, 0.0f};
+    return faced;
+}
+
 } // namespace gdl

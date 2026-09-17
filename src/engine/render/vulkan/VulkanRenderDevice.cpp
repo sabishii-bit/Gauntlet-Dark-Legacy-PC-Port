@@ -1,5 +1,6 @@
 #include "engine/render/vulkan/VulkanRenderDevice.h"
 
+#include <array>
 #include <algorithm>
 #include <cstring>
 #include <limits>
@@ -43,15 +44,18 @@ VulkanRenderDevice::VulkanRenderDevice(Window& window, const RenderDeviceDesc& d
         std::make_unique<VulkanSwapchain>(*m_context, window.framebufferSize(), desc.vsync);
 
     createDescriptorResources();
-    m_pipeline = std::make_unique<VulkanPipeline>(*m_context, desc.shaderDirectory,
-                                                  m_swapchain->colorFormat(),
-                                                  m_swapchain->depthFormat(), m_textureSetLayout);
+    m_pipeline = std::make_unique<VulkanPipeline>(
+        *m_context, desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
+        m_textureSetLayout, BlendMode::Alpha);
+    m_additivePipeline = std::make_unique<VulkanPipeline>(
+        *m_context, desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
+        m_textureSetLayout, BlendMode::Additive);
     createFrameResources();
     createPresentSemaphores();
 
     constexpr std::array<u8, 4> kWhitePixel{255, 255, 255, 255};
     m_whiteTexture = std::make_unique<VulkanTexture>(
-        *m_context, m_descriptorPool, m_textureSetLayout,
+        *m_context, descriptorPoolForTexture(), m_textureSetLayout,
         samplerFor(TextureDesc{1, 1, TextureFilter::Nearest}), TextureDesc{1, 1}, kWhitePixel);
 
     log::info("Vulkan render device ready ({} frames in flight)", kFramesInFlight);
@@ -78,6 +82,7 @@ VulkanRenderDevice::~VulkanRenderDevice() {
             vkDestroyCommandPool(device, frame.commandPool, nullptr);
         }
     }
+    m_additivePipeline.reset();
     m_pipeline.reset();
     for (VkSampler& sampler : m_samplers) {
         if (sampler != VK_NULL_HANDLE) {
@@ -85,9 +90,10 @@ VulkanRenderDevice::~VulkanRenderDevice() {
             sampler = VK_NULL_HANDLE;
         }
     }
-    if (m_descriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, m_descriptorPool, nullptr);
+    for (const VkDescriptorPool pool : m_descriptorPools) {
+        vkDestroyDescriptorPool(device, pool, nullptr);
     }
+    m_descriptorPools.clear();
     if (m_textureSetLayout != VK_NULL_HANDLE) {
         vkDestroyDescriptorSetLayout(device, m_textureSetLayout, nullptr);
     }
@@ -110,18 +116,7 @@ void VulkanRenderDevice::createDescriptorResources() {
     layoutInfo.pBindings = &binding;
     GDL_VK_CHECK(vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_textureSetLayout));
 
-    constexpr u32 kMaxTextures = 512;
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSize.descriptorCount = kMaxTextures;
-
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    poolInfo.maxSets = kMaxTextures;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    GDL_VK_CHECK(vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_descriptorPool));
+    m_poolTexturesLeft = 0;
 
     m_samplers[samplerIndex(TextureFilter::Linear, TextureWrap::Repeat)] =
         createSampler(device, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT);
@@ -347,6 +342,7 @@ void VulkanRenderDevice::beginRendering() {
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->handle());
+    m_boundBlend = BlendMode::Alpha;
     const VkDeviceSize zeroOffset = 0;
     vkCmdBindVertexBuffers(cmd, 0, 1, &frame.vertexBuffer, &zeroOffset);
     m_renderingStarted = true;
@@ -393,10 +389,17 @@ void VulkanRenderDevice::updateTexture(Texture& texture, std::span<const u8> rgb
 }
 
 void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& texture,
-                              const Mat4& transform) {
+                              const Mat4& transform, const DrawState& state) {
     GDL_ASSERT(m_frameOpen, "draw called outside beginFrame/endFrame");
     if (!m_renderingStarted) {
         beginRendering();
+    }
+    if (state.blend != m_boundBlend) {
+        const VulkanPipeline& pipeline =
+            state.blend == BlendMode::Additive ? *m_additivePipeline : *m_pipeline;
+        vkCmdBindPipeline(m_frames[m_frameIndex].commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          pipeline.handle());
+        m_boundBlend = state.blend;
     }
     const auto triangles = batch.triangles();
     if (triangles.empty()) {
@@ -420,11 +423,21 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
                 triangles.size_bytes());
 
     const VkCommandBuffer cmd = frame.commandBuffer;
-    const VkDescriptorSet set = dynamic_cast<const VulkanTexture&>(texture).descriptorSet();
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(), 0, 1, &set,
-                            0, nullptr);
-    vkCmdPushConstants(cmd, m_pipeline->layout(), VK_SHADER_STAGE_VERTEX_BIT, 0,
-                       VulkanPipeline::kPushConstantSize, glm::value_ptr(transform));
+    const Texture& second = state.lightmap != nullptr ? *state.lightmap : *m_whiteTexture;
+    const std::array<VkDescriptorSet, 2> sets{
+        dynamic_cast<const VulkanTexture&>(texture).descriptorSet(),
+        dynamic_cast<const VulkanTexture&>(second).descriptorSet()};
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(), 0,
+                            static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
+    const VulkanPipeline::PushConstants constants{
+        transform, Vec4{state.uvOffset.x, state.uvOffset.y, state.alphaTest, 0.0f}};
+    vkCmdPushConstants(cmd, m_pipeline->layout(),
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                       VulkanPipeline::kPushConstantSize, &constants);
+    // The additive pipeline never writes depth; the others do unless the draw says not to.
+    vkCmdSetCullMode(cmd, state.cullBack ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE);
+    vkCmdSetDepthWriteEnable(
+        cmd, (state.depthWrite && state.blend != BlendMode::Additive) ? VK_TRUE : VK_FALSE);
     vkCmdDraw(cmd, count, 1, frame.vertexCursor, 0);
 
     frame.vertexCursor += count;
@@ -488,10 +501,33 @@ void VulkanRenderDevice::endFrame() {
     m_frameIndex = (m_frameIndex + 1) % kFramesInFlight;
 }
 
+/** The pool the next texture's descriptor set comes from: a fresh one whenever the last is
+ * full, since a level and the archives it borrows from can hold thousands of textures. */
+VkDescriptorPool VulkanRenderDevice::descriptorPoolForTexture() {
+    if (m_poolTexturesLeft == 0) {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSize.descriptorCount = kTexturesPerPool;
+        VkDescriptorPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        poolInfo.maxSets = kTexturesPerPool;
+        poolInfo.poolSizeCount = 1;
+        poolInfo.pPoolSizes = &poolSize;
+        VkDescriptorPool pool = VK_NULL_HANDLE;
+        GDL_VK_CHECK(vkCreateDescriptorPool(m_context->device(), &poolInfo, nullptr, &pool));
+        m_descriptorPools.push_back(pool);
+        m_poolTexturesLeft = kTexturesPerPool;
+    }
+    --m_poolTexturesLeft;
+    return m_descriptorPools.back();
+}
+
 std::unique_ptr<Texture> VulkanRenderDevice::createTexture(const TextureDesc& desc,
                                                            std::span<const u8> rgba8Pixels) {
-    return std::make_unique<VulkanTexture>(*m_context, m_descriptorPool, m_textureSetLayout,
-                                           samplerFor(desc), desc, rgba8Pixels);
+    return std::make_unique<VulkanTexture>(*m_context, descriptorPoolForTexture(),
+                                           m_textureSetLayout, samplerFor(desc), desc,
+                                           rgba8Pixels);
 }
 
 const Texture& VulkanRenderDevice::whiteTexture() const {

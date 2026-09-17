@@ -1,4 +1,5 @@
 #include <array>
+#include <filesystem>
 #include <string_view>
 
 #include <catch2/catch_test_macros.hpp>
@@ -57,6 +58,15 @@ TEST_CASE("the movie flag selects a single movie to play", "[game][commandline]"
     REQUIRE(parseCommandLine({}, defaults()).options.playMovie.empty());
     constexpr std::array<std::string_view, 1> kMissing{"--movie"};
     REQUIRE(parseCommandLine(kMissing, defaults()).action == CommandLineAction::Fail);
+}
+
+TEST_CASE("the scenario flag names the start to open into", "[game][commandline]") {
+    const std::array<std::string_view, 2> args{"--scenario", "tests/scenarios/tower.json"};
+    const CommandLineResult result = parseCommandLine(args, defaults());
+    REQUIRE(result.action == CommandLineAction::Run);
+    REQUIRE(result.options.scenario == std::filesystem::path("tests/scenarios/tower.json"));
+    const std::array<std::string_view, 1> bare{"--scenario"};
+    REQUIRE(parseCommandLine(bare, defaults()).action == CommandLineAction::Fail);
 }
 
 TEST_CASE("the data flag points at the configuration directory", "[game][commandline]") {

@@ -52,6 +52,11 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
             result.options.dataDirectory = args[++i];
         } else if (arg == "--title") {
             result.options.startAtTitle = true;
+        } else if (arg == "--scenario") {
+            if (!hasValue) {
+                return fail(std::move(desc), "--scenario requires a file");
+            }
+            result.options.scenario = args[++i];
         } else if (arg == "--no-vsync") {
             desc.vsync = false;
         } else if (arg == "--validation") {
@@ -89,6 +94,7 @@ const char* usageText() {
            "  --unpacked <dir>   gdlunpack output directory (default assets/unpacked)\n"
            "  --data <dir>       configuration and text directory (default data/)\n"
            "  --title            start at the title screen instead of the intro movies\n"
+           "  --scenario <file>  open the tower straight into the start the file describes\n"
            "  --no-vsync         present as fast as possible\n"
            "  --validation       force the Vulkan validation layer on\n"
            "  --no-validation    force it off (default on in Debug builds)\n"

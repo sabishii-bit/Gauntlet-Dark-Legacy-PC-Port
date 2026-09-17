@@ -104,6 +104,21 @@ TEST_CASE("held directions are reported alongside presses", "[game][menu]") {
     REQUIRE_FALSE(readMenuInput(input, MenuBindings{}, MenuInputSource::forPlayer(0)).leftHeld);
 }
 
+TEST_CASE("the escape binding is read from the keyboard alone, typing or not", "[game][menu]") {
+    Input input;
+    input.beginPoll();
+    input.setKey(Key::Escape, true);
+    REQUIRE(readMenuInput(input, MenuBindings{}).escape);
+    REQUIRE(readMenuInput(input, MenuBindings{}, MenuInputSource{}.typing()).escape);
+    REQUIRE_FALSE(readMenuInput(input, MenuBindings{}, MenuInputSource::forPlayer(1)).escape);
+    MenuBindings bindings;
+    bindings.escape = {Key::Q};
+    REQUIRE_FALSE(readMenuInput(input, bindings).escape);
+    input.beginPoll();
+    input.setKey(Key::Escape, false);
+    REQUIRE_FALSE(readMenuInput(input, MenuBindings{}).escape);
+}
+
 TEST_CASE("a text field takes the typing keys away from the menu", "[game][menu]") {
     Input input;
     input.beginPoll();

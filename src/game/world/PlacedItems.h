@@ -1,0 +1,152 @@
+#pragma once
+
+#include <array>
+#include <span>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
+#include "engine/math/Math.h"
+#include "engine/render/RenderDevice.h"
+#include "engine/world/AnimationPlayer.h"
+#include "engine/world/ParticleField.h"
+#include "engine/world/TreeModel.h"
+#include "engine/world/TreePose.h"
+#include "engine/world/WorldCollision.h"
+#include "engine/world/WorldLighting.h"
+
+namespace gdl::game {
+
+/** A character who can pick things up: where they stand and how big they are. */
+struct Collector {
+    Vec3 position{0.0f, 0.0f, 0.0f};
+    f32 radius = 0.75f;
+    f32 height = 5.0f;
+};
+
+/** Something a collector took this update. */
+struct Pickup {
+    usize item = 0;
+    usize collector = 0; ///< which of the collectors took it
+    s32 subtype = 0;
+    s32 realm = -1; ///< for a crystal, the realm it counts towards
+    Vec3 position{0.0f, 0.0f, 0.0f};
+};
+
+/**
+ * The pickups a level places, as far as the tower needs them: each powerup's figure, found
+ * by name in the archives it is given (the level's own before the powerups'), stood at its
+ * instance a tenth of a unit above the floor the collision finds under it, and shown while
+ * the party is large enough (an instance's minimum, or exactly that when it is marked so).
+ * Each figure plays its first sequence over and over (the crystals turn). A collector
+ * touching one takes it: it goes, and a crystal's gem burst plays where it was, its tree's
+ * sequence carrying the emitters. The crystals can start unseen and be revealed the way
+ * Sumner's welcome does it: from the world's origin outward, each fading in as the reveal
+ * reaches it.
+ */
+class PlacedItems {
+public:
+    static constexpr f32 kFloorLift = 0.1f;
+    static constexpr f32 kFloorReachAbove = 0.5f; ///< a floor this far over the instance
+    static constexpr f32 kFloorReachBelow = 3.0f; ///< or this far under it
+    static constexpr s32 kExactPlayersMark = 10; ///< a minimum past this means exactly
+    static constexpr f32 kTouchHeight = 1.0f;    ///< slack over an item's height when touching
+    static constexpr f32 kFrameRate = 30.0f;
+    static constexpr f32 kRevealSpread = 15.0f; ///< units a second the reveal moves out
+    static constexpr f32 kRevealLead = 1.75f;   ///< seconds' worth it starts out at
+    static constexpr f32 kRevealStep = 8.0f / 255.0f; ///< alpha gained a frame once reached
+    static constexpr f32 kBurstFallbackSeconds = 1.0f; ///< a burst whose tree has no sequence
+    /** The realm each crystal value counts towards, the way the original tables it. */
+    static constexpr std::array<s32, 14> kCrystalRealms{4, 2, 6, 5, 1, 7, 8, 3, 10, 5, 2, 5, 10, 15};
+    /** The gem burst played for each realm's crystal, by realm. */
+    static constexpr std::array<std::string_view, 9> kGemEffects{
+        "", "GETGEMORANGE", "GETGEMRED", "GETGEMPURPLE", "GETGEMBLUE",
+        "GETGEMGREEN", "GETGEMYELLOW", "GETGEMWHITE", "GETGEMBLACK"};
+
+    /** One placed pickup and its figure. */
+    struct Item {
+        std::string name;
+        s32 instance = -1; ///< which of the layout's instances it is
+        s32 info = -1;
+        s32 subtype = 0;
+        s32 value = 0;
+        s32 minPlayers = 0;
+        f32 radius = 0.0f; ///< how far out it can be touched
+        f32 height = 0.0f;
+        Vec3 position{0.0f, 0.0f, 0.0f};
+        Mat4 transform{1.0f};
+        TreeModel model;
+        TreePose pose;
+        const TreeInfo* figure = nullptr; ///< the tree the model and pose come from
+        AnimationPlayer player;           ///< its first sequence, on a loop
+        f32 alpha = 1.0f;                 ///< under one while it fades in
+        bool visible = false;
+        bool taken = false;
+
+        /** Whether a party of `players` sees it. */
+        bool shownTo(s32 players) const;
+        /** Whether a collector is on it. */
+        bool touchedBy(const Collector& collector) const;
+        /** The realm a crystal counts towards, or -1 for anything else. */
+        s32 realm() const;
+    };
+
+    /** A burst playing where an item was taken: its tree's sequence, the pose it drives, and
+     * the field emitters riding the tree's particle nodes. */
+    struct Effect {
+        const TreeInfo* figure = nullptr;
+        Vec3 position{0.0f, 0.0f, 0.0f};
+        AnimationPlayer player;
+        TreePose pose;
+        std::vector<std::pair<usize, usize>> emitters; ///< tree node, field emitter
+        f32 secondsLeft = 0.0f; ///< the time left when the tree has no sequence
+        bool emitting = true;
+    };
+
+    /** Stands every powerup instance of the layout whose figure an archive holds; false
+     * when none could be placed. The collision, when given, sets their height. */
+    bool bind(RenderDevice& device, const WorldLayout& layout, const WorldCollision* collision,
+              std::span<ItemArchive* const> archives);
+    void clear();
+    usize size() const { return m_items.size(); }
+    const Item& item(usize index) const { return m_items[index]; }
+    usize visibleCount() const;
+    s32 playerCount() const { return m_players; }
+
+    /** Shows the items a party of `players` sees. */
+    void setPlayerCount(s32 players);
+    /** Takes whatever the collectors touch and starts its burst; the pickups are returned
+     * for the game to hand out. */
+    std::vector<Pickup> collect(RenderDevice& device, std::span<const Collector> collectors);
+    /** Turns the figures and plays the bursts on by `seconds`. */
+    void update(f32 seconds);
+    usize effectCount() const { return m_effects.size(); }
+    const Effect& effect(usize index) const { return m_effects[index]; }
+    const ParticleField& bursts() const { return m_bursts; }
+    /** Hides the crystals for reveal() to bring in. */
+    void hideCrystals();
+    /** Moves the reveal `seconds` on: crystals within its reach fade in. */
+    void reveal(f32 seconds);
+    bool revealing() const { return m_revealing; }
+    /** Particles alive over every burst. */
+    usize burstParticleCount() const { return m_bursts.particleCount(); }
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const CameraFrame* camera = nullptr) const;
+
+private:
+    void startEffect(RenderDevice& device, std::string_view tree, const Vec3& position);
+
+    std::vector<Item> m_items;
+    std::vector<Effect> m_effects;
+    ParticleField m_bursts;
+    std::vector<ItemArchive*> m_archives;
+    s32 m_players = 0;
+    f32 m_revealTime = 0.0f;
+    bool m_revealing = false;
+};
+
+} // namespace gdl::game

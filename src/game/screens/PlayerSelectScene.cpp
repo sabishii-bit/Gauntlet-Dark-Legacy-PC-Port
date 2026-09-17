@@ -16,32 +16,15 @@ namespace {
 constexpr std::string_view kSelectDirectory = "SELECT";
 constexpr std::string_view kStaticDirectory = "STATIC";
 constexpr std::string_view kClassDataDirectory = "pdata";
-constexpr std::string_view kTowerLevel = "LEVELS/LEVELL1"; ///< the hub the screen looks into
 constexpr std::string_view kFont32File = "fonts/font32.json";
 constexpr std::string_view kFont8File = "fonts/font8x8.json";
 constexpr std::string_view kInitialsFile = "fonts/initials.json";
-constexpr std::string_view kScoreFile = "fonts/score.json";
-constexpr std::string_view kSmallCapsFile = "fonts/8hifonts.json";
 constexpr std::string_view kCommonSounds = "audio/COMMON";
 constexpr std::string_view kSelectSounds = "audio/SELECT";
 constexpr std::string_view kSoundMusic = "S_SELECTMUS";
 constexpr s32 kFont32SpaceWidth = 16;
 constexpr s32 kFont8SpaceWidth = 8;
 constexpr s32 kInitialsSpaceWidth = 12;
-constexpr s32 kScoreSpaceWidth = 9;
-constexpr s32 kSmallCapsSpaceWidth = 8;
-constexpr s32 kBoxY = 320;
-constexpr s32 kBoxHeight = 64;
-constexpr s32 kBoxIconSize = 20;
-constexpr s32 kBoxIconY = 357;
-constexpr s32 kBoxCoinX = 6;
-constexpr s32 kBoxHeartX = 61;
-constexpr s32 kBoxGoldRight = 60;
-constexpr s32 kBoxHealthRight = 116;
-constexpr s32 kBoxValueY = 359;
-constexpr s32 kBoxNameY = 339;
-constexpr s32 kBoxLevelY = 326;
-constexpr f32 kBoxNameScale = 0.667f;
 constexpr s32 kMaxTicksPerFrame = 6;
 constexpr s32 kPanelTopHeight = 256;
 constexpr s32 kPanelBottomHeight = 64;
@@ -88,12 +71,15 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
         return false;
     }
     m_device = &device;
+    if (!m_boxes.load(device, m_context.unpackedRoot, m_context.strings)) {
+        log::warn("Player select: the status boxes are unavailable");
+    }
     m_open = true;
     m_tickRemainder = 0.0;
     m_time = 0;
     m_idleFrames = 0;
     loadSounds(m_context.unpackedRoot);
-    loadTower(device, m_context.unpackedRoot);
+    loadTower(device);
 
     if (!m_classes.load(m_context.unpackedRoot / kClassDataDirectory)) {
         log::warn("Player select: class stats are unavailable (run gdlunpack)");
@@ -141,16 +127,14 @@ void PlayerSelectScene::close() {
     for (s32 i = 0; i < kLaneCount; ++i) {
         m_lanes[static_cast<usize>(i)].reset(i, nullptr);
     }
-    m_tower.clear();
     m_camera.reset();
-    m_towerTextures.releaseTextures();
+    m_tower = nullptr;
+    m_boxes.release();
     m_selectTextures.releaseTextures();
     m_staticTextures.releaseTextures();
     m_large.setFont(nullptr, nullptr);
     m_small.setFont(nullptr, nullptr);
     m_initials.setFont(nullptr, nullptr);
-    m_score.setFont(nullptr, nullptr);
-    m_smallCaps.setFont(nullptr, nullptr);
     m_device = nullptr;
     m_open = false;
 }
@@ -179,13 +163,6 @@ bool PlayerSelectScene::loadResources(RenderDevice& device,
     m_large.setFont(&m_font32, font32);
     m_small.setFont(&m_font8, font8);
     m_initials.setFont(&m_fontInitials, initials);
-    // The status boxes' number and caption fonts are optional: the boxes draw without them.
-    if (m_fontScore.load(unpackedRoot / kScoreFile, kScoreSpaceWidth)) {
-        m_score.setFont(&m_fontScore, staticTexture("SCORE"));
-    }
-    if (m_fontSmallCaps.load(unpackedRoot / kSmallCapsFile, kSmallCapsSpaceWidth)) {
-        m_smallCaps.setFont(&m_fontSmallCaps, staticTexture("8HIFONTS"));
-    }
     for (s32 i = 0; i < kLaneCount; ++i) {
         if (selectTexture(std::format("S1_PLYR{}", i + 1)) == nullptr ||
             selectTexture(std::format("S2_PLYR{}", i + 1)) == nullptr) {
@@ -207,93 +184,38 @@ void PlayerSelectScene::loadSounds(const std::filesystem::path& unpackedRoot) {
 }
 
 /** The tower hub stands behind the lanes, seen from its entrance camera. */
-void PlayerSelectScene::loadTower(RenderDevice& device, const std::filesystem::path& unpackedRoot) {
-    m_tower.clear();
+/** Looks into the shared tower from its entrance camera, loading it the first time. */
+void PlayerSelectScene::loadTower(RenderDevice& device) {
     m_camera.reset();
-    const std::filesystem::path directory = unpackedRoot / kTowerLevel;
-    if (!std::filesystem::exists(directory / "world.json")) {
-        log::info("Player select: the tower level is not unpacked ({}); drawing without it",
-                  directory.string());
+    m_tower = m_context.tower;
+    if (m_tower == nullptr) {
         return;
     }
-    if (!m_towerLayout.load(directory) || !m_towerModels.load(directory) ||
-        !m_towerTextures.load(directory)) {
+    if (!m_tower->built() && !m_tower->load(device, m_context.unpackedRoot)) {
         return;
     }
-    const WorldLocator* locator = m_towerLayout.findLocator(LocatorKind::CameraStart);
-    if (locator == nullptr) {
-        locator = m_towerLayout.findLocator(LocatorKind::CameraGame);
+    m_camera = m_tower->entranceCamera();
+    if (!m_camera.has_value()) {
+        log::warn("Player select: the tower has no entrance camera");
     }
-    if (locator == nullptr) {
-        log::warn("Player select: the tower level has no camera");
-        return;
-    }
-    if (!m_tower.build(m_towerLayout, m_towerModels, m_towerTextures, device)) {
-        return;
-    }
-    WorldCamera camera;
-    camera.position = locator->position;
-    camera.pitch = locator->rotation.x;
-    camera.yaw = locator->rotation.y;
-    camera.roll = locator->rotation.z;
-    m_camera = camera;
-    log::info("Player select: tower placed {} objects in {} batches ({} triangles)",
-              m_tower.placedCount(), m_tower.batchCount(), m_tower.triangleCount());
 }
 
 /** The player's status box under the lane, as the in-game bar shows it. */
 void PlayerSelectScene::drawStatusBox(const SelectLane& lane) {
-    const auto left = static_cast<f32>(lane.x());
-    const Rect box{left, static_cast<f32>(kBoxY), static_cast<f32>(SelectLane::kWidth),
-                   static_cast<f32>(kBoxHeight)};
-    const SelectLane::BoxMode mode = lane.boxMode();
-    const s32 color = lane.active() ? lane.boxColor() : lane.index();
-    const Texture* panel = nullptr;
-    if (mode != SelectLane::BoxMode::Plain) {
-        panel = selectTexture(std::format("S4_{}", classCode(lane.boxClass())));
+    StatusBoxView view;
+    view.active = lane.active();
+    switch (lane.boxMode()) {
+    case SelectLane::BoxMode::Character: view.mode = StatusBoxView::Mode::Character; break;
+    case SelectLane::BoxMode::Status: view.mode = StatusBoxView::Mode::Status; break;
+    default: view.mode = StatusBoxView::Mode::Plain; break;
     }
-    if (panel != nullptr) {
-        m_canvas.draw(*panel, box);
-    } else if (const Texture* stone = staticTexture("S4")) {
-        m_canvas.draw(*stone, box, boxTint(color, lane.active()));
-    }
-    if (const Texture* frame = staticTexture("S4_FRAME")) {
-        m_canvas.draw(*frame, box);
-    }
-    if (mode == SelectLane::BoxMode::Plain) {
-        return;
-    }
-    const Color tint = playerColor(color);
-    const auto icon = [&](std::string_view name, s32 x) {
-        if (const Texture* texture = staticTexture(name)) {
-            m_canvas.draw(*texture,
-                          Rect{static_cast<f32>(lane.x() + x), static_cast<f32>(kBoxIconY),
-                               static_cast<f32>(kBoxIconSize), static_cast<f32>(kBoxIconSize)});
-        }
-    };
-    icon("COIN", kBoxCoinX);
-    icon("HEART", kBoxHeartX);
-    if (m_score.ready()) {
-        TextStyle style;
-        style.color = tint;
-        const std::string gold = std::format("{}", lane.save().gold);
-        const std::string health = std::format("{}", lane.save().health());
-        m_score.draw(m_canvas, lane.x() + kBoxGoldRight - m_score.measure(gold), kBoxValueY, gold,
-                     style);
-        m_score.draw(m_canvas, lane.x() + kBoxHealthRight - m_score.measure(health), kBoxValueY,
-                     health, style);
-    }
-    const s32 centerX = -(lane.x() + SelectLane::kWidth / 2);
-    if (mode == SelectLane::BoxMode::Status && m_smallCaps.ready()) {
-        const s32 level = experienceLevel(lane.save().experience());
-        m_smallCaps.draw(m_canvas, centerX, kBoxLevelY,
-                         std::vformat(text("select.levelShort"), std::make_format_args(level)),
-                         TextStyle{});
-    }
-    TextStyle nameStyle;
-    nameStyle.scale = kBoxNameScale;
-    nameStyle.color = tint;
-    m_initials.draw(m_canvas, centerX, kBoxNameY, lane.save().name, nameStyle);
+    view.classIndex = lane.boxClass();
+    view.color = lane.active() ? lane.boxColor() : lane.index();
+    view.name = lane.save().name;
+    view.level = experienceLevel(lane.save().experience());
+    view.gold = lane.save().gold;
+    view.health = lane.save().health();
+    m_boxes.draw(m_canvas, lane.index(), view, false);
 }
 
 const Texture* PlayerSelectScene::selectTexture(std::string_view name) {
@@ -405,6 +327,9 @@ SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
         return SelectOutcome::Running;
     }
     m_time += ticks;
+    if (m_tower != nullptr && m_tower->built()) {
+        m_tower->update(static_cast<f32>(ticks) / static_cast<f32>(m_tickRate));
+    }
 
     for (s32 i = 0; i < kLaneCount; ++i) {
         SelectLane& lane = m_lanes[static_cast<usize>(i)];
@@ -454,10 +379,12 @@ void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection
     }
     const auto width = static_cast<f32>(m_screen.width);
     const auto height = static_cast<f32>(m_screen.height);
-    if (m_tower.built() && m_camera.has_value()) {
+    if (towerVisible()) {
         const WorldCamera& camera = *m_camera;
-        m_tower.draw(device, camera.clipTransform(m_screen.horizontalFov, frameWidth, frameHeight,
-                                                  frameProjection));
+        m_tower->draw(device,
+                      camera.clipTransform(m_screen.horizontalFov, frameWidth, frameHeight,
+                                           frameProjection),
+                      camera);
     }
     m_canvas.begin(device, makeVirtualScreenTransform(frameProjection, width, height, frameWidth,
                                                       frameHeight));

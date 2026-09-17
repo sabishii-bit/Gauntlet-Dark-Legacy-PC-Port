@@ -57,13 +57,15 @@ u16 packNormal(int x, int y, int z, bool kick) {
     return static_cast<u16>((x + 15) | ((y + 15) << 5) | ((z + 15) << 10) | (kick ? 0x8000 : 0));
 }
 
-/** One packet of five short-position vertices whose fourth vertex restarts the strip. */
-std::vector<u8> samplePacket() {
+/** One packet of five short-position vertices whose fourth vertex restarts the strip;
+ * `lightmapped` gives each vertex four texture values, the lightmap's pair after its own,
+ * and `flat` sets the flag that starts the packet's strips wound the other way. */
+std::vector<u8> samplePacket(bool lightmapped = false, bool flat = true) {
     StreamBuilder b;
-    b.word(0, 7); // 8 quadwords in total, header included
+    b.word(0, lightmapped ? 8 : 7); // quadwords in total, header included
     b.word(2, 0x6C018000);
     b.word(3, 5);
-    b.word(5, 0x3F800000);
+    b.word(5, flat ? 0x3F800000 : 0);
     b.word(7, 0x69000000);
     const std::array<std::array<s16, 3>, 5> kPositions{
         {{128, 0, 0}, {0, 128, 0}, {0, 0, 128}, {256, 0, 0}, {0, 256, 0}}};
@@ -78,6 +80,18 @@ std::vector<u8> samplePacket() {
                                       packNormal(0, 0, 15, false)};
     for (usize v = 0; v < 5; ++v) {
         b.shortAt(18, v * 2, static_cast<s16>(kNormals[v]));
+    }
+    if (lightmapped) {
+        b.word(21, 0x6D000000);
+        for (usize v = 0; v < 5; ++v) {
+            b.shortAt(22, v * 8, static_cast<s16>(64 * v));
+            b.shortAt(22, v * 8 + 2, 128);
+            b.shortAt(22, v * 8 + 4, static_cast<s16>(32 * v));
+            b.shortAt(22, v * 8 + 6, 256);
+        }
+        b.word(32, 0x17000000);
+        b.word(33, 0);
+        return b.finish(36);
     }
     b.word(21, 0x65000000);
     for (usize v = 0; v < 5; ++v) {
@@ -96,7 +110,12 @@ TEST_CASE("packets decode into strips split at kick vertices", "[formats][geomet
     REQUIRE(mesh.parts[0].texture == 42);
     REQUIRE(mesh.vertices.size() == 6);
     REQUIRE(mesh.triangleCount() == 2);
-    REQUIRE(mesh.parts[0].indices == std::vector<u32>{0, 1, 2, 3, 4, 5});
+    // The flag is set and both strips start on even vertices, so both are turned; without
+    // it they keep their order.
+    REQUIRE(mesh.parts[0].indices == std::vector<u32>{1, 0, 2, 4, 3, 5});
+    Mesh plain;
+    decodeGeometryStream(samplePacket(false, false), 42, plain);
+    REQUIRE(plain.parts[0].indices == std::vector<u32>{0, 1, 2, 3, 4, 5});
 
     REQUIRE(mesh.vertices[0].position == Vec3{1.0f, 0.0f, 0.0f});
     REQUIRE(mesh.vertices[1].position == Vec3{0.0f, 1.0f, 0.0f});
@@ -108,6 +127,22 @@ TEST_CASE("packets decode into strips split at kick vertices", "[formats][geomet
     REQUIRE(mesh.vertices[1].uv.x == Approx(0.5f));
     REQUIRE(mesh.vertices[1].uv.y == Approx(1.0f));
     REQUIRE(mesh.vertices[5].uv.x == Approx(2.0f));
+    REQUIRE(mesh.parts[0].lightmap == 0);
+    REQUIRE(mesh.vertices[1].lightmapUv == Vec2{0.0f, 0.0f});
+}
+
+TEST_CASE("four-value texture coordinates carry the lightmap's pair", "[formats][geometry]") {
+    Mesh mesh;
+    decodeGeometryStream(samplePacket(true), 42, 507, mesh);
+    REQUIRE(mesh.parts.size() == 1);
+    REQUIRE(mesh.parts[0].texture == 42);
+    REQUIRE(mesh.parts[0].lightmap == 507);
+    REQUIRE(mesh.vertices.size() == 6);
+    REQUIRE(mesh.vertices[1].uv.x == Approx(0.5f));
+    REQUIRE(mesh.vertices[1].uv.y == Approx(1.0f));
+    REQUIRE(mesh.vertices[1].lightmapUv.x == Approx(0.25f));
+    REQUIRE(mesh.vertices[1].lightmapUv.y == Approx(2.0f));
+    REQUIRE(mesh.vertices[5].lightmapUv.x == Approx(1.0f));
 }
 
 TEST_CASE("broken streams are rejected", "[formats][geometry]") {

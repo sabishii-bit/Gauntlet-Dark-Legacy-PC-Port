@@ -12,11 +12,36 @@ namespace gdl {
 
 class Window;
 class ImmediateBatch;
+class Texture;
 
 struct RenderDeviceDesc {
     bool vsync = true;
     bool enableValidation = false;
     std::filesystem::path shaderDirectory;
+};
+
+/** How a draw combines with what is already in the frame. */
+enum class BlendMode : u8 {
+    Alpha,   ///< blended by alpha, writing depth
+    Additive ///< added onto the frame without writing depth, for glows and flames
+};
+
+/** How one batch is drawn. */
+struct DrawState {
+    /** The alpha test translucent surfaces use, so their clear texels neither show nor
+     * write depth, like the console's compare. */
+    static constexpr f32 kTranslucentAlphaTest = 3.0f / 255.0f;
+
+    BlendMode blend = BlendMode::Alpha;
+    /** Sampled with the vertices' second coordinates, its alpha scales the colour; null
+     * leaves the colour alone. */
+    const Texture* lightmap = nullptr;
+    Vec2 uvOffset{0.0f, 0.0f}; ///< added to every texture coordinate
+    f32 alphaTest = 0.0f;      ///< texels with less alpha than this are dropped; 0 keeps all
+    bool cullBack = false;     ///< triangles facing away are skipped
+    bool depthWrite = true;
+
+    bool operator==(const DrawState&) const = default;
 };
 
 /** The GPU interface the engine draws through. */
@@ -46,10 +71,10 @@ public:
     /** 1x1 opaque white texture for untextured drawing. */
     virtual const Texture& whiteTexture() const = 0;
 
-    /** Draws a batch; `transform` maps positions to clip space. Valid between beginFrame and
-     * endFrame. */
-    virtual void draw(const ImmediateBatch& batch, const Texture& texture,
-                      const Mat4& transform) = 0;
+    /** Draws a batch; `transform` maps positions to clip space and `state` says how the
+     * texels land. Valid between beginFrame and endFrame. */
+    virtual void draw(const ImmediateBatch& batch, const Texture& texture, const Mat4& transform,
+                      const DrawState& state = {}) = 0;
 
     virtual void waitIdle() = 0;
 };

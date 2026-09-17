@@ -24,6 +24,14 @@ struct TextureSetEntry {
     bool halfResolution = false; ///< drawn at twice its pixel size
     bool clamp = false;          ///< sampled without wrapping, so edges do not bleed
     std::filesystem::path file;
+
+    static constexpr u32 kExternal = 0x20; ///< the flag of textures another archive holds
+    static constexpr u32 kHasAlpha = 0x80; ///< the flag of textures drawn blended
+
+    /** Whether geometry with this texture is translucent and must draw after the opaque. */
+    bool translucent() const { return (flags & kHasAlpha) != 0; }
+    /** Whether the image is another archive's, found there by name. */
+    bool external() const { return (flags & kExternal) != 0; }
 };
 
 /**

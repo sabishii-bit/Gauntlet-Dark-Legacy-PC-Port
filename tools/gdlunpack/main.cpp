@@ -28,6 +28,7 @@
 #include "formats/ModelArchive.h"
 #include "formats/ObjWriter.h"
 #include "formats/PlayerDataWad.h"
+#include "formats/WorldDataWad.h"
 #include "formats/SoundBank.h"
 #include "formats/TextRom.h"
 #include "formats/TplFile.h"
@@ -38,6 +39,8 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::formats;
+
+void writeParticleTemplate(JsonWriter& json, const ParticleTemplateRecord& particle);
 
 void print(std::string_view text) {
     std::fputs(text.data(), stdout);
@@ -52,6 +55,7 @@ struct Summary {
     u32 fonts = 0;
     u32 classes = 0;
     u32 worlds = 0;
+    u32 realms = 0;
     u32 skippedLevels = 0;
     u32 textRoms = 0;
     u32 cardImages = 0;
@@ -98,7 +102,7 @@ std::vector<std::string> bitmapNames(const ModelArchive& archive) {
     return names;
 }
 
-/** Writes the archive's animation trees (hierarchy and object names; keyframes are pending). */
+/** Writes the archive's animation trees: hierarchy, object names and every sequence's keys. */
 void unpackAnimations(const AssetLocator& locator, const std::filesystem::path& outDir,
                       Summary& summary) {
     const auto animPath = locator.find("anim.ps2");
@@ -106,9 +110,31 @@ void unpackAnimations(const AssetLocator& locator, const std::filesystem::path& 
         return;
     }
     try {
+        std::filesystem::create_directories(outDir);
         const AnimationFile file = AnimationFile::parse(readFile(*animPath));
         JsonWriter json;
         json.beginObject();
+        json.key("textureAnimations").beginArray();
+        for (const TextureAnimation& animation : file.textureAnimations) {
+            json.beginObject();
+            json.key("name").value(animation.name);
+            json.key("frameName").value(animation.frameName);
+            json.key("texture").value(animation.texture);
+            json.key("source").value(animation.source);
+            json.key("frames").value(animation.frames);
+            json.key("start").value(animation.start);
+            json.key("rate").value(animation.rate);
+            json.key("offset").value(animation.offset);
+            json.key("flag").value(static_cast<int>(animation.flag));
+            json.key("scrollIndex").value(static_cast<int>(animation.scrollIndex));
+            json.endObject();
+        }
+        json.endArray();
+        json.key("particles").beginArray();
+        for (const ParticleTemplateRecord& particle : file.particles) {
+            writeParticleTemplate(json, particle);
+        }
+        json.endArray();
         json.key("trees").beginArray();
         for (const TreeDefinition& tree : file.trees) {
             json.beginObject();
@@ -121,7 +147,18 @@ void unpackAnimations(const AssetLocator& locator, const std::filesystem::path& 
                 json.key("frames").value(static_cast<s64>(sequence.frameCount));
                 json.key("frameRate").value(static_cast<s64>(sequence.frameRate));
                 json.key("repeats").value(sequence.repeats);
+                json.key("fixesPosition").value(sequence.fixesPosition);
                 json.key("flags").value(u32{sequence.flags});
+                json.key("tracks").beginArray();
+                for (const NodeTrack& track : sequence.tracks) {
+                    json.beginObject();
+                    json.key("node").value(track.node);
+                    json.key("flags").value(u32{track.flags});
+                    json.key("frames").numbers(track.frames);
+                    json.key("values").numbers(track.values);
+                    json.endObject();
+                }
+                json.endArray();
                 json.endObject();
             }
             json.endArray();
@@ -134,6 +171,14 @@ void unpackAnimations(const AssetLocator& locator, const std::filesystem::path& 
                 json.key("flags").value(u32{node.flags});
                 json.key("objectFlags").value(node.objectFlags);
                 json.key("parent").value(static_cast<s64>(node.parent));
+                if (node.particle >= 0) {
+                    json.key("particle").value(node.particle);
+                    json.key("direction").beginArray();
+                    json.value(static_cast<f64>(node.direction.x));
+                    json.value(static_cast<f64>(node.direction.y));
+                    json.value(static_cast<f64>(node.direction.z));
+                    json.endArray();
+                }
                 json.key("position").beginArray();
                 json.value(static_cast<f64>(node.position.x));
                 json.value(static_cast<f64>(node.position.y));
@@ -160,6 +205,11 @@ void unpackArchive(const std::filesystem::path& directory, const std::filesystem
     const auto objectsPath = locator.find("objects.ngc");
     const auto texturesPath = locator.find("textures.ngc");
     if (!objectsPath.has_value()) {
+        // A folder of animations alone, like a class's ANIM folder, still has trees to write.
+        if (locator.find("anim.ps2").has_value()) {
+            print(std::format("animations {}", directory.filename().string()));
+            unpackAnimations(locator, outDir, summary);
+        }
         return;
     }
     const std::string label = directory.filename().string();
@@ -242,7 +292,7 @@ void unpackArchive(const std::filesystem::path& directory, const std::filesystem
         try {
             Mesh mesh;
             for (const ArchiveSubObject& sub : object.subObjects) {
-                decodeGeometryStream(sub.geometry, sub.textureIndex, mesh);
+                decodeGeometryStream(sub.geometry, sub.textureIndex, sub.lightmapIndex, mesh);
             }
             const std::string file = std::format("models/{:03}_{}.obj", i, fileSafe(name));
             writeTextFile(outDir / file, encodeObj(mesh, name.empty() ? "unnamed" : name));
@@ -421,7 +471,87 @@ void unpackTextRom(const std::filesystem::path& file, const std::filesystem::pat
     ++summary.textRoms;
 }
 
-/** Writes a level's placed objects and marker points. */
+/** Writes one particle template as the manifests carry it. */
+void writeParticleTemplate(JsonWriter& json, const ParticleTemplateRecord& particle) {
+    const auto vec3 = [&](const Vec3& v) {
+        json.beginArray();
+        json.value(static_cast<f64>(v.x)).value(static_cast<f64>(v.y));
+        json.value(static_cast<f64>(v.z));
+        json.endArray();
+    };
+    json.beginObject();
+    json.key("id").value(std::string(1, particle.id));
+    json.key("preset").value(u32{particle.preset});
+    json.key("flags").value(particle.flags);
+    json.key("flagMask").value(particle.flagMask);
+    json.key("enables").value(particle.enables);
+    json.key("maxParticles").value(particle.maxParticles);
+    json.key("maxDirections").value(particle.maxDirections);
+    json.key("maxPositions").value(particle.maxPositions);
+    json.key("emitterLife").numbers(particle.emitterLife);
+    json.key("particleLife").numbers(particle.particleLife);
+    json.key("angle").value(particle.angle);
+    json.key("textureCount").value(particle.textureCount);
+    json.key("texture").value(particle.texture);
+    json.key("direction");
+    vec3(particle.direction);
+    json.key("volume");
+    vec3(particle.volume);
+    json.key("rate").numbers(particle.rate);
+    json.key("rateRandom").value(particle.rateRandom);
+    json.key("gravity").value(particle.gravity);
+    json.key("drag").value(particle.drag);
+    json.key("speed").value(particle.speed);
+    json.key("rgba").beginArray();
+    for (const u32 value : particle.rgba) {
+        json.value(value);
+    }
+    json.endArray();
+    json.key("width").numbers(particle.width);
+    json.key("delay").value(particle.delay);
+    json.endObject();
+}
+
+/** The collision triangles grouped by the object that owns them, in world space. */
+std::string collisionJson(const WorldFile& world) {
+    JsonWriter json;
+    json.beginObject();
+    json.key("objects").beginArray();
+    for (usize i = 0; i < world.objects.size(); ++i) {
+        const WorldObjectRecord& object = world.objects[i];
+        if (object.collisionTriangleCount <= 0 || object.collisionTriangleIndex < 0) {
+            continue;
+        }
+        const auto first = static_cast<usize>(object.collisionTriangleIndex);
+        const auto count = static_cast<usize>(object.collisionTriangleCount);
+        if (first + count > world.collision.size()) {
+            continue;
+        }
+        json.beginObject();
+        json.key("object").value(static_cast<u64>(i));
+        json.key("normals").beginArray();
+        for (usize t = first; t < first + count; ++t) {
+            const Vec3& n = world.collision[t].normal;
+            json.value(static_cast<f64>(n.x)).value(static_cast<f64>(n.y));
+            json.value(static_cast<f64>(n.z));
+        }
+        json.endArray();
+        json.key("vertices").beginArray();
+        for (usize t = first; t < first + count; ++t) {
+            for (const Vec3& v : world.collision[t].vertices) {
+                json.value(static_cast<f64>(v.x)).value(static_cast<f64>(v.y));
+                json.value(static_cast<f64>(v.z));
+            }
+        }
+        json.endArray();
+        json.endObject();
+    }
+    json.endArray();
+    json.endObject();
+    return json.take();
+}
+
+/** Writes a level's placed objects, marker points and collision triangles. */
 void unpackWorld(const AssetLocator& files, const std::filesystem::path& outDir,
                  Summary& summary) {
     const auto worldPath = files.find("worlds.ps2");
@@ -447,7 +577,6 @@ void unpackWorld(const AssetLocator& files, const std::filesystem::path& outDir,
         json.key("collisionTriangles").value(world.collisionTriangleCount);
         json.key("itemInfos").value(world.itemInfoCount);
         json.key("itemInstances").value(world.itemInstanceCount);
-        json.key("animations").value(world.animationCount);
         json.key("particleSystems").value(world.particleSystemCount);
         json.key("objects").beginArray();
         for (const WorldObjectRecord& object : world.objects) {
@@ -460,7 +589,76 @@ void unpackWorld(const AssetLocator& files, const std::filesystem::path& outDir,
             json.key("next").value(static_cast<s64>(object.nextIndex));
             json.key("child").value(static_cast<s64>(object.childIndex));
             json.key("radius").value(static_cast<f64>(object.radius));
+            if (object.noCollision) {
+                json.key("noCollision").value(true);
+            }
             json.endObject();
+        }
+        json.endArray();
+        json.key("animations").beginArray();
+        for (const WorldAnimationRecord& animation : world.animations) {
+            json.beginObject();
+            json.key("object").value(animation.objectIndex);
+            json.key("frames").value(animation.frameCount);
+            json.key("state").value(animation.state);
+            json.key("start").value(animation.startFrame);
+            json.key("track").beginObject();
+            json.key("flags").value(u32{animation.track.flags});
+            json.key("frames").numbers(animation.track.frames);
+            json.key("values").numbers(animation.track.values);
+            json.endObject();
+            json.endObject();
+        }
+        json.endArray();
+        json.key("itemInfos").beginArray();
+        for (const ItemInfoRecord& info : world.itemInfos) {
+            json.beginObject();
+            json.key("type").value(info.type);
+            json.key("subtype").value(info.subtype);
+            json.key("name").value(info.name);
+            json.key("collisionType").value(static_cast<s64>(info.collisionType));
+            json.key("collisionFlags").value(static_cast<s64>(info.collisionFlags));
+            json.key("radius").value(info.radius);
+            json.key("height").value(info.height);
+            json.key("xSize").value(info.xSize);
+            json.key("zSize").value(info.zSize);
+            json.key("collisionOffset");
+            vec3(info.collisionOffset);
+            json.key("objectFlags").value(info.objectFlags);
+            json.key("properties").value(info.properties);
+            json.key("value").value(static_cast<s64>(info.value));
+            json.key("armor").value(static_cast<s64>(info.armor));
+            json.key("hitPoints").value(static_cast<s64>(info.hitPoints));
+            json.key("activeType").value(static_cast<s64>(info.activeType));
+            json.key("activeOff").value(static_cast<s64>(info.activeOff));
+            json.key("activeOn").value(static_cast<s64>(info.activeOn));
+            json.endObject();
+        }
+        json.endArray();
+        json.key("itemInstances").beginArray();
+        for (const ItemInstanceRecord& instance : world.itemInstances) {
+            json.beginObject();
+            json.key("info").value(static_cast<s64>(instance.info));
+            json.key("minPlayers").value(static_cast<s64>(instance.minPlayers));
+            json.key("flags").value(u32{instance.flags});
+            json.key("triangleIndex").value(static_cast<s64>(instance.triangleIndex));
+            json.key("triangleCount").value(static_cast<s64>(instance.triangleCount));
+            json.key("name").value(instance.name);
+            json.key("position");
+            vec3(instance.position);
+            json.key("rotation");
+            vec3(instance.rotation);
+            json.key("params").beginArray();
+            for (const u8 value : instance.params) {
+                json.value(u32{value});
+            }
+            json.endArray();
+            json.endObject();
+        }
+        json.endArray();
+        json.key("particles").beginArray();
+        for (const ParticleTemplateRecord& particle : world.particles) {
+            writeParticleTemplate(json, particle);
         }
         json.endArray();
         json.key("locators").beginArray();
@@ -479,10 +677,52 @@ void unpackWorld(const AssetLocator& files, const std::filesystem::path& outDir,
         json.endObject();
         std::filesystem::create_directories(outDir);
         writeTextFile(outDir / "world.json", json.take());
+        writeTextFile(outDir / "collision.json", collisionJson(world));
         ++summary.worlds;
     } catch (const std::exception& e) {
         ++summary.failures;
         print(std::format("  world: {}", e.what()));
+    }
+}
+
+/**
+ * The player folder: one archive per class and costume (`WAR/BLU`), the costumes worn from
+ * level 10 upwards (`WAR/BLU10`) only when `tiers` is set, the select-screen figures, and each
+ * class's `ANIM` folder holding the sequences every costume of the class plays.
+ */
+void unpackPlayers(const std::filesystem::path& directory, const std::filesystem::path& outDir,
+                   bool tiers, Summary& summary) {
+    std::vector<std::filesystem::path> classes;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.is_directory()) {
+            classes.push_back(entry.path());
+        }
+    }
+    std::ranges::sort(classes);
+    u32 skipped = 0;
+    for (const auto& classDirectory : classes) {
+        std::vector<std::filesystem::path> costumes;
+        for (const auto& entry : std::filesystem::directory_iterator(classDirectory)) {
+            if (entry.is_directory()) {
+                costumes.push_back(entry.path());
+            }
+        }
+        std::ranges::sort(costumes);
+        for (const auto& costume : costumes) {
+            const std::string name = normalizeAssetName(costume.filename().string());
+            const bool tier = name.size() >= 2 && std::isdigit(static_cast<unsigned char>(name.back())) != 0 &&
+                              std::isdigit(static_cast<unsigned char>(name[name.size() - 2])) != 0;
+            if (tier && !tiers) {
+                ++skipped;
+                continue;
+            }
+            const std::string className = normalizeAssetName(classDirectory.filename().string());
+            unpackArchive(costume, outDir / className / name, summary);
+        }
+    }
+    if (skipped > 0) {
+        print(std::format("PLAYERS: {} levelled costumes skipped; pass --tiers to unpack them",
+                          skipped));
     }
 }
 
@@ -550,8 +790,116 @@ void unpackCardArt(const std::filesystem::path& directory, const std::filesystem
     }
 }
 
+/** A realm's data wad: its levels with their light, camera and audio records. */
+void unpackWorldData(const std::filesystem::path& file, const std::filesystem::path& outDir,
+                     Summary& summary) {
+    const WorldDataFile data = WorldDataFile::parse(readFile(file));
+    JsonWriter json;
+    json.beginObject();
+    json.key("realm").value(data.realm);
+    json.key("prefix").value(data.prefix);
+    json.key("levels").beginArray();
+    for (const LevelRecord& level : data.levels) {
+        json.beginObject();
+        json.key("name").value(level.name);
+        json.key("title").value(level.title);
+        json.key("flags").value(level.flags);
+        json.key("audioBank").value(level.audioBank);
+        json.key("movie").value(level.movie);
+        json.key("bossType").value(level.bossType);
+        json.key("cameraIndex").value(static_cast<int>(level.cameraIndex));
+        json.key("audioIndex").value(static_cast<int>(level.audioIndex));
+        json.key("mapIndex").value(static_cast<int>(level.mapIndex));
+        json.key("rune").value(static_cast<int>(level.rune));
+        json.key("legend").value(static_cast<int>(level.legend));
+        json.key("maxEnemies").value(static_cast<int>(level.maxEnemies));
+        json.key("musicVolume").value(level.musicVolume);
+        json.key("soundVolume").value(level.soundVolume);
+        json.key("ambient").value(level.ambient);
+        json.key("lightDirection").numbers(std::array<f32, 3>{
+            level.lightDirection.x, level.lightDirection.y, level.lightDirection.z});
+        json.key("lightColor").numbers(
+            std::array<f32, 3>{level.lightColor.x, level.lightColor.y, level.lightColor.z});
+        json.key("lightIntensity").value(level.lightIntensity);
+        json.key("fog").beginObject();
+        json.key("type").value(u32{level.fog.type});
+        json.key("color").numbers(std::array<u16, 3>{level.fog.color[0], level.fog.color[1],
+                                                     level.fog.color[2]});
+        json.key("intensity").value(level.fog.intensity);
+        json.key("density").value(level.fog.density);
+        json.key("min").value(level.fog.min);
+        json.key("max").value(level.fog.max);
+        json.key("near").value(level.fog.near);
+        json.key("far").value(level.fog.far);
+        json.endObject();
+        json.endObject();
+    }
+    json.endArray();
+    json.key("cameras").beginArray();
+    for (const CameraRecord& camera : data.cameras) {
+        json.beginObject();
+        json.key("direction").value(static_cast<int>(camera.direction));
+        json.key("pitchDirection").value(static_cast<int>(camera.pitchDirection));
+        json.key("dp").value(camera.dp);
+        json.key("minPitch").value(camera.minPitch);
+        json.key("maxPitch").value(camera.maxPitch);
+        json.key("boundsMin").numbers(
+            std::array<f32, 3>{camera.boundsMin.x, camera.boundsMin.y, camera.boundsMin.z});
+        json.key("boundsMax").numbers(
+            std::array<f32, 3>{camera.boundsMax.x, camera.boundsMax.y, camera.boundsMax.z});
+        json.key("limits").value(u32{camera.limits});
+        json.key("startEvent").value(u32{camera.startEvent});
+        json.key("attentionCamera").value(static_cast<int>(camera.attentionCamera));
+        json.key("attention").value(camera.attention);
+        json.key("radiusMin").value(camera.radiusMin);
+        json.key("radiusMax").value(camera.radiusMax);
+        json.key("enemyMax").value(static_cast<int>(camera.enemyMax));
+        json.key("specialRadius").value(static_cast<int>(camera.specialRadius));
+        json.key("pitchSub").value(camera.pitchSub);
+        json.key("pitchMul").value(camera.pitchMul);
+        json.key("pitchAdd").value(camera.pitchAdd);
+        json.key("distMulAdd").value(camera.distMulAdd);
+        json.key("distMulFactor").value(camera.distMulFactor);
+        json.key("distMulMin").value(camera.distMulMin);
+        json.key("distMulMax").value(camera.distMulMax);
+        json.key("smooth").value(camera.smooth);
+        json.key("minYaw").value(camera.minYaw);
+        json.key("maxYaw").value(camera.maxYaw);
+        json.key("bossRadiusMin").value(camera.bossRadiusMin);
+        json.key("bossRadiusMax").value(camera.bossRadiusMax);
+        json.endObject();
+    }
+    json.endArray();
+    json.key("audio").beginArray();
+    for (const AudioRecord& audio : data.audio) {
+        json.beginObject();
+        json.key("bank").value(audio.bank);
+        json.key("stream").value(audio.stream);
+        json.key("enterSound").value(static_cast<int>(audio.enterSound));
+        json.key("hitSound").value(static_cast<int>(audio.hitSound));
+        json.key("nameSound").value(audio.nameSound);
+        json.key("areas").value(static_cast<int>(audio.areas));
+        json.key("stereo").value(static_cast<int>(audio.stereo));
+        json.endObject();
+    }
+    json.endArray();
+    json.key("sounds").beginArray();
+    for (const SoundRecord& sound : data.sounds) {
+        json.beginObject();
+        json.key("name").value(sound.name);
+        json.key("volume").value(static_cast<int>(sound.volume));
+        json.key("priority").value(static_cast<int>(sound.priority));
+        json.endObject();
+    }
+    json.endArray();
+    json.endObject();
+    std::filesystem::create_directories(outDir);
+    writeTextFile(outDir / (normalizeAssetName(file.stem().string()) + ".json"), json.take());
+    ++summary.realms;
+}
+
 int run(const std::filesystem::path& assetRoot, const std::filesystem::path& outRoot,
-        std::string_view only, bool levels) {
+        std::string_view only, bool levels, bool tiers) {
     Summary summary;
     std::vector<std::filesystem::path> directories;
     for (const auto& entry : std::filesystem::directory_iterator(assetRoot)) {
@@ -564,7 +912,8 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
     for (const auto& directory : directories) {
         const std::string name = directory.filename().string();
         const std::string upper = normalizeAssetName(name);
-        if (!only.empty() && upper != normalizeAssetName(only) && upper != "LEVELS") {
+        if (!only.empty() && upper != normalizeAssetName(only) && upper != "LEVELS" &&
+            upper != "ITEMS") {
             continue;
         }
         try {
@@ -595,6 +944,36 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
                         continue;
                     }
                     unpackLevel(level, outRoot / "LEVELS" / levelName, summary);
+                }
+            } else if (upper == "ITEMS") {
+                // Each level's item set is its own archive, opt-in alongside the levels.
+                if (!levels && only.empty()) {
+                    print("ITEMS: skipped; pass --levels to unpack the level item sets");
+                    continue;
+                }
+                std::vector<std::filesystem::path> itemDirectories;
+                for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                    if (entry.is_directory()) {
+                        itemDirectories.push_back(entry.path());
+                    }
+                }
+                std::ranges::sort(itemDirectories);
+                for (const auto& items : itemDirectories) {
+                    const std::string itemName = normalizeAssetName(items.filename().string());
+                    if (!only.empty() && normalizeAssetName(only) != "ITEMS" &&
+                        itemName != normalizeAssetName(only)) {
+                        ++summary.skippedLevels;
+                        continue;
+                    }
+                    unpackArchive(items, outRoot / "ITEMS" / itemName, summary);
+                }
+            } else if (upper == "PLAYERS") {
+                unpackPlayers(directory, outRoot / "PLAYERS", tiers, summary);
+            } else if (upper == "WDATA") {
+                for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                    if (toLowerAscii(entry.path().extension().string()) == ".wad") {
+                        unpackWorldData(entry.path(), outRoot / "wdata", summary);
+                    }
                 }
             } else if (upper == "PDATA") {
                 for (const auto& entry : std::filesystem::directory_iterator(directory)) {
@@ -636,10 +1015,11 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
     }
     print(std::format("{} archives, {} textures, {} models, {} animation trees, {} fonts, "
                       "{} text roms, {} sound banks, {} samples, {} classes, {} worlds, "
-                      "{} card images, {} failures",
+                      "{} realms, {} card images, {} failures",
                       summary.archives, summary.textures, summary.models, summary.animations,
                       summary.fonts, summary.textRoms, summary.banks, summary.samples,
-                      summary.classes, summary.worlds, summary.cardImages, summary.failures));
+                      summary.classes, summary.worlds, summary.realms, summary.cardImages,
+                      summary.failures));
     return summary.failures == 0 ? 0 : 3;
 }
 
@@ -654,22 +1034,25 @@ int main(int argc, char* argv[]) {
         }
         std::string_view only;
         bool levels = false;
+        bool tiers = false;
         std::vector<std::string_view> positional;
         for (usize i = 0; i < args.size(); ++i) {
             if (args[i] == "--only" && i + 1 < args.size()) {
                 only = args[++i];
             } else if (args[i] == "--levels") {
                 levels = true;
+            } else if (args[i] == "--tiers") {
+                tiers = true;
             } else {
                 positional.push_back(args[i]);
             }
         }
         if (positional.size() != 2) {
             print("usage: gdlunpack <asset-root> <output-root> [--only <directory|level>] "
-                  "[--levels]");
+                  "[--levels] [--tiers]");
             return 2;
         }
-        return run(positional[0], positional[1], only, levels);
+        return run(positional[0], positional[1], only, levels, tiers);
     } catch (const std::exception& e) {
         std::fputs("error: ", stdout);
         std::fputs(e.what(), stdout);

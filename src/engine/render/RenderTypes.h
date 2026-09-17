@@ -25,11 +25,12 @@ struct ImmediateVertex {
     Vec3 position{0.0f, 0.0f, 0.0f};
     Color color = Color::white();
     Vec2 uv{0.0f, 0.0f};
+    Vec2 uv2{0.0f, 0.0f}; ///< into the lightmap, when the draw has one
 
     bool operator==(const ImmediateVertex&) const = default;
 };
 
-static_assert(sizeof(ImmediateVertex) == 24);
+static_assert(sizeof(ImmediateVertex) == 32);
 
 enum class TextureFilter : u8 { Nearest, Linear };
 enum class TextureWrap : u8 { Repeat, ClampToEdge };

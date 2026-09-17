@@ -19,6 +19,9 @@ s32 levelExperience(s32 level);
 s32 experienceLevel(s32 experience);
 
 /** A character's progress with one class; the bonuses are added to the displayed stats. */
+/** The realms the tower keeps records for, the tower itself first. */
+inline constexpr usize kRealmCount = 14;
+
 struct ClassProgress {
     s32 experience = 0;
     s32 health = 0;
@@ -26,6 +29,7 @@ struct ClassProgress {
     f32 armorAdd = 0.0f;
     f32 magicAdd = 0.0f;
     f32 speedAdd = 0.0f;
+    std::array<s32, kRealmCount> crystals{}; ///< gathered towards each realm's gate
 };
 
 /** Stats as the select screen shows them, in its row order. */

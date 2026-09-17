@@ -17,7 +17,7 @@ struct DisplayConfig {
     u32 windowWidth = 1280;
     u32 windowHeight = 896;
     bool vsync = true;
-    u32 maxFrameRate = 0; ///< 0 leaves the frame rate to vsync
+    u32 maxFrameRate = 30; ///< frames per second the game runs at, as the original did; 0 leaves it to vsync
 };
 
 struct TimingConfig {
@@ -54,6 +54,7 @@ struct MenuBindings {
     std::vector<Key> select{Key::Enter, Key::Space};
     std::vector<Key> back{Key::Backspace};
     std::vector<Key> start{Key::Enter};
+    std::vector<Key> escape{Key::Escape}; ///< leaves a name being typed; quits elsewhere
     std::vector<PadButton> padUp{PadButton::DpadUp};
     std::vector<PadButton> padDown{PadButton::DpadDown};
     std::vector<PadButton> padLeft{PadButton::DpadLeft};
@@ -61,6 +62,19 @@ struct MenuBindings {
     std::vector<PadButton> padSelect{PadButton::A};
     std::vector<PadButton> padBack{PadButton::B};
     std::vector<PadButton> padStart{PadButton::Start};
+};
+
+/** Keys, pad buttons and the stick that walk a character. */
+struct PlayBindings {
+    std::vector<Key> up{Key::Up, Key::W};
+    std::vector<Key> down{Key::Down, Key::S};
+    std::vector<Key> left{Key::Left, Key::A};
+    std::vector<Key> right{Key::Right, Key::D};
+    std::vector<PadButton> padUp{PadButton::DpadUp};
+    std::vector<PadButton> padDown{PadButton::DpadDown};
+    std::vector<PadButton> padLeft{PadButton::DpadLeft};
+    std::vector<PadButton> padRight{PadButton::DpadRight};
+    f32 stickDeadZone = 0.25f; ///< stick deflection ignored as rest
 };
 
 /**
@@ -75,6 +89,7 @@ struct GameConfig {
     TextConfig text;
     SaveConfig save;
     MenuBindings menu;
+    PlayBindings play;
 
     /** Merges every value the file provides; false (with a warning) when it cannot be read. */
     bool loadFile(const std::filesystem::path& file);

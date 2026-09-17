@@ -416,8 +416,8 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
         break;
 
     case State::NameEntry: {
-        const bool eraseNothing = input.erase && m_nameEntry.length() == 0;
-        if ((input.back || eraseNothing) && m_nameEntry.editing()) {
+        // Erasing an empty name does nothing, so a held Backspace cannot leave by accident.
+        if ((input.back || input.escape) && m_nameEntry.editing()) {
             returnBack();
             break;
         }

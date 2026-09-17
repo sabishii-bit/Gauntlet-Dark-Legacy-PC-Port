@@ -22,6 +22,10 @@ std::string_view classCode(s32 classIndex);
 /** The asset suffix of a costume colour ("RED"). */
 std::string_view colorCode(s32 color);
 
+/** The index of a class or colour code, in any case; nullopt for an unknown one. */
+std::optional<s32> classIndexOf(std::string_view code);
+std::optional<s32> colorIndexOf(std::string_view code);
+
 /** The tint a player's text and marks take from their costume colour. */
 Color playerColor(s32 color);
 
@@ -43,6 +47,7 @@ struct ClassStats {
     f32 magicMax = 0.0f;
     f32 height = 0.0f;
     f32 width = 0.0f;
+    f32 collisionY = 0.0f; ///< the body's centre above the feet, which the camera follows
 };
 
 /** Every class's stats, read from `<directory>/<CODE>.json`. */

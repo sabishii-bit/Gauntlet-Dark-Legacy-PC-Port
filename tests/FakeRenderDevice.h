@@ -30,6 +30,10 @@ struct RecordedDraw {
     const Texture* texture = nullptr;
     std::vector<ImmediateVertex> vertices;
     Mat4 transform{1.0f};
+    DrawState state;
+    /** Shorthands for the state's blend and lightmap. */
+    BlendMode blend() const { return state.blend; }
+    const Texture* lightmap() const { return state.lightmap; }
 };
 
 /** A RenderDevice that records what is drawn instead of touching a GPU. */
@@ -58,11 +62,13 @@ public:
 
     const Texture& whiteTexture() const override { return m_white; }
 
-    void draw(const ImmediateBatch& batch, const Texture& texture, const Mat4& transform) override {
+    void draw(const ImmediateBatch& batch, const Texture& texture, const Mat4& transform,
+              const DrawState& state) override {
         RecordedDraw record;
         record.texture = &texture;
         record.vertices.assign(batch.triangles().begin(), batch.triangles().end());
         record.transform = transform;
+        record.state = state;
         draws.push_back(std::move(record));
     }
 

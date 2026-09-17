@@ -1,9 +1,12 @@
 #include "game/app/Gauntlet.h"
 
+#include "game/app/Scenario.h"
+
 #include <filesystem>
 #include <format>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include "engine/assets/PngImage.h"
 #include "engine/core/Log.h"
@@ -12,6 +15,7 @@
 #include "engine/render/RenderTypes.h"
 
 #include "game/menu/MenuInput.h"
+#include "game/players/PlayerControls.h"
 
 namespace gdl::game {
 
@@ -61,23 +65,45 @@ void Gauntlet::onInit() {
         }
         return;
     }
+    if (!m_options.scenario.empty()) {
+        if (!startScenario(m_options.scenario)) {
+            requestQuit();
+        }
+        return;
+    }
     if (m_options.startAtTitle && startTitleScreen()) {
         return;
     }
     startNextAttractScreen();
 }
 
-GameContext Gauntlet::context() const {
+/** Opens the tower onto the start a scenario file describes; false (with the reason logged)
+ * when the file or the level cannot be used. */
+bool Gauntlet::startScenario(const std::filesystem::path& file) {
+    try {
+        const Scenario scenario = Scenario::load(file);
+        log::info("Scenario {}: {} in the party", file.string(), scenario.party.size());
+        return startTower(scenario.partyMembers(), scenario.tower);
+    } catch (const std::exception& e) {
+        log::error("Scenario {}: {}", file.string(), e.what());
+        return false;
+    }
+}
+
+GameContext Gauntlet::context() {
     GameContext context;
     context.config = &m_config;
     context.strings = &m_strings;
     context.sounds = m_sounds.get();
+    context.assets = m_assets.get();
+    context.tower = &m_towerWorld;
     context.unpackedRoot = m_options.unpackedDirectory;
     return context;
 }
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
-    if (input().wasKeyPressed(Key::Escape)) {
+    // Escape quits, except while a name is being typed, where it leaves the name instead.
+    if (readMenuInput(input(), m_config.menu).escape && !(m_select.isOpen() && m_select.typing())) {
         requestQuit();
     }
 
@@ -87,6 +113,8 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         updateTitle(deltaSeconds);
     } else if (m_select.isOpen()) {
         updateSelect(deltaSeconds);
+    } else if (m_tower.isOpen()) {
+        updateTower(deltaSeconds);
     }
     m_sounds->update();
 
@@ -159,12 +187,48 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     if (outcome == SelectOutcome::Running) {
         return;
     }
+    std::vector<PartyMember> party;
+    for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+        const SelectLane& lane = m_select.lane(player);
+        if (lane.lockedIn()) {
+            party.push_back(PartyMember{player, lane.save()});
+        }
+    }
     m_select.close();
-    if (outcome == SelectOutcome::Done) {
-        log::info("Every player is ready; the tower is not built yet, so back to the title");
+    if (outcome == SelectOutcome::Done && startTower(party)) {
+        return;
     }
     if (!startTitleScreen()) {
         startNextAttractScreen();
+    }
+}
+
+bool Gauntlet::startTower(std::span<const PartyMember> party, const TowerOptions& options) {
+    if (party.empty()) {
+        return false;
+    }
+    if (m_tower.open(renderDevice(), context(), m_towerWorld, party, options)) {
+        log::info("Every player is ready; entering the tower");
+        return true;
+    }
+    log::warn("The tower is unavailable; unpack the levels with gdlunpack --levels");
+    return false;
+}
+
+void Gauntlet::updateTower(f64 deltaSeconds) {
+    TowerScene::Inputs inputs;
+    for (s32 player = 0; player < TowerScene::kPlayerCount; ++player) {
+        const MenuInputSource source = MenuInputSource::forPlayer(player);
+        PlayInput& in = inputs[static_cast<usize>(player)];
+        in.move = readMoveInput(input(), m_config.play, source.keyboard, source.pad);
+        in.menu = readMenuInput(input(), m_config.menu, source);
+    }
+    if (m_tower.update(deltaSeconds, inputs) == TowerOutcome::Leave) {
+        m_tower.close();
+        log::info("Leaving the tower for the title screen");
+        if (!startTitleScreen()) {
+            startNextAttractScreen();
+        }
     }
 }
 
@@ -187,6 +251,10 @@ void Gauntlet::onRender(RenderDevice& device) {
         m_select.render(device, projection, frameWidth, frameHeight);
         return;
     }
+    if (m_tower.isOpen()) {
+        m_tower.render(device, projection, frameWidth, frameHeight);
+        return;
+    }
     m_smokeTest.render(device, projection, static_cast<f32>(clock().totalSeconds()));
 }
 
@@ -194,6 +262,8 @@ void Gauntlet::onShutdown() {
     m_movie.close();
     m_title.close();
     m_select.close();
+    m_tower.close();
+    m_towerWorld.clear();
     m_smokeTest.shutdown();
     m_assets.reset();
     m_sounds.reset();

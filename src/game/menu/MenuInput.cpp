@@ -89,6 +89,7 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
     out.select = pressed(bindings.select, bindings.padSelect);
     out.back = pressed(bindings.back, bindings.padBack);
     out.start = pressed(bindings.start, bindings.padStart);
+    out.escape = pressed(bindings.escape, {});
     out.upHeld = held(bindings.up, bindings.padUp);
     out.downHeld = held(bindings.down, bindings.padDown);
     out.leftHeld = held(bindings.left, bindings.padLeft);

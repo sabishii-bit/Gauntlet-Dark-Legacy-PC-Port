@@ -7,7 +7,7 @@
     "windowWidth": 1280,
     "windowHeight": 896,
     "vsync": true,
-    "maxFrameRate": 0
+    "maxFrameRate": 30
   },
   "timing": {
     "tickRate": 60,
@@ -36,7 +36,8 @@
       "right": ["Right", "D"],
       "select": ["Enter", "Space"],
       "back": ["Backspace"],
-      "start": ["Enter"]
+      "start": ["Enter"],
+      "escape": ["Escape"]
     },
     "pad": {
       "up": ["DpadUp"],
@@ -46,6 +47,21 @@
       "select": ["A"],
       "back": ["B"],
       "start": ["Start"]
+    },
+    "play": {
+      "keyboard": {
+        "up": ["Up", "W"],
+        "down": ["Down", "S"],
+        "left": ["Left", "A"],
+        "right": ["Right", "D"]
+      },
+      "pad": {
+        "up": ["DpadUp"],
+        "down": ["DpadDown"],
+        "left": ["DpadLeft"],
+        "right": ["DpadRight"]
+      },
+      "stickDeadZone": 0.25
     }
   }
 }

@@ -39,6 +39,24 @@ SoundHandle SoundPlayer::playAfter(SoundHandle previous, const SoundSequence& se
     return m_nextHandle++;
 }
 
+SoundHandle SoundPlayer::playStream(std::shared_ptr<StreamSource> source, bool loop, f32 volume,
+                                    SoundCategory category) {
+    if (source == nullptr || source->desc().sampleRate == 0 || source->desc().channels == 0) {
+        return kNoSound;
+    }
+    Voice voice;
+    voice.handle = m_nextHandle++;
+    voice.stream = m_mixer.createStream(source->desc());
+    voice.source = std::move(source);
+    voice.loop = loop;
+    voice.category = category;
+    voice.volume = volume;
+    applyVolume(voice);
+    feed(voice);
+    m_voices.push_back(std::move(voice));
+    return m_voices.back().handle;
+}
+
 SoundHandle SoundPlayer::start(const SoundSequence& sequence, f32 volume,
                                SoundCategory category, SoundHandle handle) {
     Voice voice;
@@ -121,7 +139,30 @@ void SoundPlayer::update() {
     }
 }
 
+void SoundPlayer::feedSource(Voice& voice) {
+    const AudioStreamDesc desc = voice.source->desc();
+    const auto pieceFrames = static_cast<usize>(desc.sampleRate / 2);
+    while (!voice.finished && voice.stream->queuedSeconds() < kLookaheadSeconds) {
+        m_scratch.clear();
+        bool more = voice.source->read(m_scratch, pieceFrames);
+        if (!more && voice.loop) {
+            voice.source->rewind();
+            more = voice.source->read(m_scratch, pieceFrames);
+        }
+        if (!more) {
+            voice.stream->finish();
+            voice.finished = true;
+            break;
+        }
+        voice.stream->push(m_scratch);
+    }
+}
+
 void SoundPlayer::feed(Voice& voice) {
+    if (voice.source != nullptr) {
+        feedSource(voice);
+        return;
+    }
     const std::vector<SoundSequenceStep>& steps = voice.sequence.steps;
     while (!voice.finished && voice.stream->queuedSeconds() < kLookaheadSeconds) {
         if (voice.nextStep >= steps.size()) {

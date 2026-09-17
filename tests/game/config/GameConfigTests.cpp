@@ -31,7 +31,7 @@ TEST_CASE("the defaults describe the original's screen and clock", "[game][confi
 TEST_CASE("JSON merges over the defaults and leaves the rest alone", "[game][config]") {
     GameConfig config;
     config.mergeJson(R"({
-  "display": {"windowWidth": 800, "vsync": false, "maxFrameRate": 30},
+  "display": {"windowWidth": 800, "vsync": false, "maxFrameRate": 24},
   "timing": {"tickRate": 120},
   "audio": {"musicVolume": 0.25},
   "text": {"language": "fr"},
@@ -40,7 +40,7 @@ TEST_CASE("JSON merges over the defaults and leaves the rest alone", "[game][con
     REQUIRE(config.display.windowWidth == 800);
     REQUIRE(config.display.windowHeight == 896);
     REQUIRE_FALSE(config.display.vsync);
-    REQUIRE(config.display.maxFrameRate == 30);
+    REQUIRE(config.display.maxFrameRate == 24);
     REQUIRE(config.timing.tickRate == 120);
     REQUIRE(config.timing.gameplayFrameRate == 30);
     REQUIRE(config.audio.musicVolume == 0.25f);

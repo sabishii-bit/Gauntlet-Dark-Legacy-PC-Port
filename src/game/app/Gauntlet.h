@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string_view>
 
 #include "engine/app/Application.h"
@@ -18,6 +19,8 @@
 #include "game/screens/MovieScene.h"
 #include "game/screens/PlayerSelectScene.h"
 #include "game/screens/SmokeTestScene.h"
+#include "game/screens/TowerScene.h"
+#include "game/world/TowerWorld.h"
 #include "game/screens/TitleScene.h"
 
 namespace gdl::game {
@@ -40,9 +43,12 @@ private:
     void updateMovie(f64 deltaSeconds);
     void updateTitle(f64 deltaSeconds);
     void updateSelect(f64 deltaSeconds);
+    void updateTower(f64 deltaSeconds);
+    bool startTower(std::span<const PartyMember> party, const TowerOptions& options = {});
+    bool startScenario(const std::filesystem::path& file);
     bool startPlayerSelect(s32 startingPlayer);
     s32 playerPressingStart() const;
-    GameContext context() const;
+    GameContext context();
     void applyWindowIcon();
 
     GameOptions m_options;
@@ -55,6 +61,8 @@ private:
     MovieScene m_movie;
     TitleScene m_title;
     PlayerSelectScene m_select;
+    TowerWorld m_towerWorld;
+    TowerScene m_tower;
     SmokeTestScene m_smokeTest;
     bool m_movieActive = false;
     bool m_titleWarned = false;

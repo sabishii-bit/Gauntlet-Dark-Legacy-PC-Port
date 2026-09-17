@@ -21,6 +21,10 @@ void ImmediateBatch::vertex(const Vec3& position, Color color, const Vec2& uv) {
     vertex(ImmediateVertex{position, color, uv});
 }
 
+void ImmediateBatch::vertex(const Vec3& position, Color color, const Vec2& uv, const Vec2& uv2) {
+    vertex(ImmediateVertex{position, color, uv, uv2});
+}
+
 void ImmediateBatch::vertex(const ImmediateVertex& v) {
     GDL_ASSERT(m_open, "ImmediateBatch::vertex called outside begin/end");
     m_pending.push_back(v);

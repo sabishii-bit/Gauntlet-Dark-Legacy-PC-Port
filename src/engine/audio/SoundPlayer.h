@@ -6,6 +6,7 @@
 
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/AudioStream.h"
+#include "engine/audio/StreamSource.h"
 #include "engine/audio/SoundClip.h"
 #include "engine/core/Types.h"
 
@@ -19,7 +20,8 @@ enum class SoundCategory : u8 { Effects, Music, Count };
 
 /**
  * Plays sound sequences through the mixer, feeding each voice's stream clip by clip so that
- * looping music keeps going and one-shot effects end on their own.
+ * looping music keeps going and one-shot effects end on their own, and plays stream sources
+ * (music decoded from disk as it goes) the same way.
  */
 class SoundPlayer {
 public:
@@ -35,6 +37,10 @@ public:
      * returns the handle it plays under, which reports playing while it waits. */
     SoundHandle playAfter(SoundHandle previous, const SoundSequence& sequence,
                           f32 volume = 1.0f, SoundCategory category = SoundCategory::Effects);
+    /** Plays a source, decoding it a piece ahead of the mixer; a looping one starts over
+     * whenever it runs out. Null or an unplayable source gives kNoSound. */
+    SoundHandle playStream(std::shared_ptr<StreamSource> source, bool loop, f32 volume = 1.0f,
+                           SoundCategory category = SoundCategory::Music);
 
     /** Volumes in [0, 1]; a voice plays at master x category x its own volume. */
     void setMasterVolume(f32 volume);
@@ -54,6 +60,8 @@ private:
     struct Voice {
         SoundHandle handle = kNoSound;
         std::shared_ptr<AudioStream> stream;
+        std::shared_ptr<StreamSource> source; ///< set for a stream voice
+        bool loop = false;
         SoundSequence sequence;
         SoundCategory category = SoundCategory::Effects;
         f32 volume = 1.0f;
@@ -75,12 +83,14 @@ private:
 
     void applyVolume(Voice& voice) const;
 
-    static void feed(Voice& voice);
+    void feed(Voice& voice);
+    void feedSource(Voice& voice);
     static void pushClip(AudioStream& stream, const SoundClip& clip);
 
     AudioMixer& m_mixer;
     std::vector<Voice> m_voices;
     std::vector<Pending> m_pending;
+    std::vector<f32> m_scratch; ///< frames read from a source on their way to its stream
     SoundHandle m_nextHandle = 1;
     f32 m_masterVolume = 1.0f;
     std::array<f32, static_cast<usize>(SoundCategory::Count)> m_categoryVolumes{1.0f, 1.0f};

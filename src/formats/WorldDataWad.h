@@ -1,0 +1,116 @@
+#pragma once
+
+#include <array>
+#include <span>
+#include <string>
+#include <vector>
+
+#include "engine/core/Types.h"
+#include "engine/math/Math.h"
+
+namespace gdl::formats {
+
+/** A level's fog settings (the GameCube build leaves fog off; kept for completeness). */
+struct LevelFog {
+    u8 type = 0;
+    std::array<u8, 3> color{255, 255, 255};
+    f32 intensity = 0.0f;
+    f32 density = 0.0f;
+    f32 min = 0.0f;
+    f32 max = 0.0f;
+    f32 near = 0.0f;
+    f32 far = 0.0f;
+};
+
+/** One level of a realm: its names, which camera and audio records it uses, and its light. */
+struct LevelRecord {
+    u32 flags = 0;
+    std::string name;      ///< up to four characters, "L1"
+    std::string title;     ///< "Tower"
+    std::string audioBank; ///< usually empty; the audio record names the bank
+    std::string movie;
+    s32 bossType = 0;
+    s16 cameraIndex = -1;
+    s16 audioIndex = -1;
+    s16 mapIndex = -1;
+    s16 rune = 0;
+    s16 legend = 0;
+    s16 maxEnemies = 0;
+    f32 musicVolume = 0.0f;
+    f32 soundVolume = 0.0f;
+    f32 ambient = 1.0f;                            ///< grey ambient light
+    Vec3 lightDirection{-0.3f, -1.4f, 1.0f};       ///< the way the light travels
+    Vec3 lightColor{1.0f, 1.0f, 1.0f};
+    f32 lightIntensity = 1.0f;
+    LevelFog fog;
+};
+
+/** How the follow camera behaves in a level. */
+struct CameraRecord {
+    s16 direction = 0;
+    s16 pitchDirection = 0;
+    f32 dp = 0.0f;
+    f32 minPitch = 0.0f;
+    Vec3 boundsMin{0.0f, 0.0f, 0.0f};
+    Vec3 boundsMax{0.0f, 0.0f, 0.0f};
+    u8 limits = 0;
+    u8 startEvent = 0;
+    s16 attentionCamera = -1;
+    f32 attention = 0.0f;
+    f32 radiusMin = 0.0f;
+    f32 radiusMax = 0.0f;
+    s16 enemyMax = 0;
+    s16 specialRadius = 0;
+    f32 maxPitch = 0.0f;
+    f32 pitchSub = 0.0f;
+    f32 pitchMul = 0.0f;
+    f32 pitchAdd = 0.0f;
+    f32 distMulAdd = 0.0f;
+    f32 distMulFactor = 0.0f;
+    f32 distMulMin = 0.0f;
+    f32 distMulMax = 0.0f;
+    f32 smooth = 0.0f;
+    f32 minYaw = 0.0f;
+    f32 maxYaw = 0.0f;
+    f32 bossRadiusMin = 0.0f;
+    f32 bossRadiusMax = 0.0f;
+};
+
+/** A level's sound bank, music stream and the sounds it plays on entry and on hits. */
+struct AudioRecord {
+    std::string bank;
+    s16 enterSound = -1;
+    s16 hitSound = -1;
+    s32 nameSound = -1;
+    std::string stream; ///< under STREAMS, without its extension
+    s16 areas = 0;
+    s16 stereo = 0;
+    std::array<s16, 8> parts{};
+};
+
+/** A sound the realm looks up by name when it loads. */
+struct SoundRecord {
+    std::string name;
+    s16 volume = 0;
+    s16 priority = 0;
+};
+
+/** A realm's data wad: the levels of one world and the records they share. */
+struct WorldDataFile {
+    static constexpr usize kLevelSize = 0x10C;
+    static constexpr usize kCameraSize = 0x6C;
+    static constexpr usize kAudioSize = 0x3C;
+    static constexpr usize kSoundSize = 0x18;
+
+    u32 realm = 0;
+    std::string prefix; ///< the level folders' name without their number, "levelL"
+    std::vector<LevelRecord> levels;
+    std::vector<CameraRecord> cameras;
+    std::vector<AudioRecord> audio;
+    std::vector<SoundRecord> sounds;
+
+    /** Parses a little-endian WDATA wad; throws FormatError. */
+    static WorldDataFile parse(std::span<const u8> bytes);
+};
+
+} // namespace gdl::formats
