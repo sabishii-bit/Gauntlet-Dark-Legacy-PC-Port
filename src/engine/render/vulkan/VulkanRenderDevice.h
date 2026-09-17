@@ -59,6 +59,14 @@ private:
         VkDeviceSize uploadCursor = 0;
     };
 
+    static constexpr usize samplerIndex(TextureFilter filter, TextureWrap wrap) {
+        return (filter == TextureFilter::Nearest ? 1U : 0U) +
+               (wrap == TextureWrap::ClampToEdge ? 2U : 0U);
+    }
+    VkSampler samplerFor(const TextureDesc& desc) const {
+        return m_samplers[samplerIndex(desc.filter, desc.wrap)];
+    }
+
     void createDescriptorResources();
     void createFrameResources();
     void createPresentSemaphores();
@@ -75,8 +83,7 @@ private:
 
     VkDescriptorSetLayout m_textureSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
-    VkSampler m_linearSampler = VK_NULL_HANDLE;
-    VkSampler m_nearestSampler = VK_NULL_HANDLE;
+    std::array<VkSampler, 4> m_samplers{}; ///< by samplerIndex(filter, wrap)
     std::unique_ptr<VulkanTexture> m_whiteTexture;
 
     std::array<FrameResources, kFramesInFlight> m_frames{};

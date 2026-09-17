@@ -1,4 +1,4 @@
-#include "game/CommandLine.h"
+#include "game/app/CommandLine.h"
 
 #include <charconv>
 #include <format>
@@ -45,6 +45,11 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
                 return fail(std::move(desc), "--unpacked requires a directory");
             }
             result.options.unpackedDirectory = args[++i];
+        } else if (arg == "--data") {
+            if (!hasValue) {
+                return fail(std::move(desc), "--data requires a directory");
+            }
+            result.options.dataDirectory = args[++i];
         } else if (arg == "--title") {
             result.options.startAtTitle = true;
         } else if (arg == "--no-vsync") {
@@ -82,6 +87,7 @@ const char* usageText() {
            "  --assets <dir>     game asset directory (the GUNE5D/Gauntlet tree)\n"
            "  --movie <name>     play one VQ movie (e.g. opening) and quit\n"
            "  --unpacked <dir>   gdlunpack output directory (default assets/unpacked)\n"
+           "  --data <dir>       configuration and text directory (default data/)\n"
            "  --title            start at the title screen instead of the intro movies\n"
            "  --no-vsync         present as fast as possible\n"
            "  --validation       force the Vulkan validation layer on\n"

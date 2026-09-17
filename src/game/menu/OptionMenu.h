@@ -11,13 +11,16 @@
 #include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
 
-#include "game/MenuInput.h"
+#include "game/menu/MenuInput.h"
 
 namespace gdl::game {
 
-/** The screen menus draw into a 512x384 virtual space. */
-inline constexpr s32 kMenuScreenWidth = 512;
-inline constexpr s32 kMenuScreenHeight = 384;
+/** The virtual screen a menu lays itself out on, and the camera its 3D icon is sized for. */
+struct MenuScreen {
+    s32 width = 512;
+    s32 height = 384;
+    f32 horizontalFov = glm::radians(60.0f);
+};
 
 struct MenuItem {
     std::string text;
@@ -40,12 +43,14 @@ struct MenuDefinition {
     std::vector<MenuItem> items;
     MenuColors colors;
     bool startSelects = false; ///< Start confirms like Select
-    bool prompts = false;      ///< draw the "Back" / "Select" row
+    bool prompts = false;      ///< draw the back / select prompt row
+    std::string backLabel;
+    std::string selectLabel;
     s32 promptY = 304;
     bool fades = false;         ///< fade in when opened and out when closed
     bool parchmentFont = false; ///< unselected items use the parchment glyph sheet
     bool garamondIntro = false; ///< items flip through the ornate sheets when opened
-    bool playerTag = false;     ///< "Player 1" label on the backdrop
+    std::string playerLabel;    ///< drawn on the backdrop when set, e.g. "Player 1"
     std::string backdrop;       ///< texture name; empty for none
     s32 backdropX = -1;         ///< -1 sizes and centres the backdrop on the column
     s32 backdropY = -1;
@@ -93,19 +98,29 @@ public:
     static constexpr s32 kPlayerTagMargin = 34;
     static constexpr s32 kIconOffsetX = -16;
     static constexpr s32 kGlowExpand = 2;
-    static constexpr f32 kIconPixelsPerUnit = 10.0f;
     static constexpr f32 kPromptScale = 0.667f;
+    static constexpr f32 kIconWorldScale = 0.05f; ///< the arrow model's scale in the original
+    static constexpr f32 kIconDepth = 1.1f;       ///< its distance from the camera
 
-    /** Opens the menu and lays it out with the painter's font. */
-    void open(const MenuDefinition& definition, const TextPainter& painter, s32 selection = 0);
+    /** Pixels per model unit for the selection arrow on `screen`. */
+    static f32 iconPixelsPerUnit(const MenuScreen& screen);
+
+    /** Opens the menu and lays it out with the painter's font on `screen`. */
+    void open(const MenuDefinition& definition, const TextPainter& painter,
+              const MenuScreen& screen, s32 selection = 0);
 
     /** Starts the fade-out for fading menus; removes others at once. */
     void close();
 
+    /** Stops drawing the backdrop, its flames and the icon; used when the backdrop is handed to
+     * a burn effect while the text still fades. */
+    void releaseBackdrop() { m_backdropReleased = true; }
+
     bool isOpen() const { return m_open; }
     bool closing() const { return m_open && m_finishTimer > 0; }
+    bool backdropReleased() const { return m_backdropReleased; }
 
-    /** Applies one frame of input; `ticks` is the elapsed 60 Hz tick count. */
+    /** Applies one frame of input; `ticks` is the elapsed tick count. */
     MenuEvent update(const MenuInput& input, s32 ticks);
 
     void draw(Canvas& canvas, const TextPainter& painter, const MenuTextures& textures) const;
@@ -120,10 +135,11 @@ public:
     s32 itemY(usize index) const;
     s32 lineHeight() const { return m_lineHeight; }
     s32 iconY() const { return m_iconDrawY; }
+    f32 iconScale() const { return m_iconScale; }
+    Rect backdropArea() const { return m_backdrop; }
 
     /** Turn of the selection arrow about the horizontal axis: it flips over on every move. */
     f32 iconAngle() const;
-    Rect backdropArea() const { return m_backdrop; }
 
     /** Alpha the whole menu is drawn with in [0, 255], from the fade in and out. */
     u8 fadeOpacity() const;
@@ -133,7 +149,9 @@ private:
     const Texture* itemSheet(const MenuTextures& textures, bool selected) const;
 
     MenuDefinition m_definition;
+    MenuScreen m_screen;
     bool m_open = false;
+    bool m_backdropReleased = false;
     s32 m_selection = 0;
     s32 m_time = 0;
     s32 m_finishTimer = 0;
@@ -142,6 +160,7 @@ private:
     s32 m_columnY = 0;
     s32 m_columnWidth = 0;
     s32 m_columnHeight = 0;
+    f32 m_iconScale = 0.0f;
     Rect m_backdrop;
     s32 m_iconY = 0;
     s32 m_iconTimer = kIconGlideTicks;

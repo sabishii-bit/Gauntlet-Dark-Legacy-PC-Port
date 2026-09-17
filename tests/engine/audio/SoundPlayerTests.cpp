@@ -47,6 +47,29 @@ TEST_CASE("one-shot sounds play once and are dropped when drained", "[audio][pla
     REQUIRE(player.voiceCount() == 0);
 }
 
+TEST_CASE("category and master volumes scale voices, live and on start", "[audio][player]") {
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const SoundClip clip = tone(48000, 400, 1.0f);
+    SoundSequence sequence;
+    sequence.steps.push_back(SoundSequenceStep{&clip, false, false});
+    player.setCategoryVolume(SoundCategory::Music, 0.5f);
+    REQUIRE(player.categoryVolume(SoundCategory::Music) == 0.5f);
+    REQUIRE(player.categoryVolume(SoundCategory::Effects) == 1.0f);
+
+    player.play(sequence, 0.5f, SoundCategory::Music);
+    std::vector<f32> out = pull(mixer, 10);
+    REQUIRE(out[0] == 0.25f);
+
+    player.setMasterVolume(0.5f);
+    out = pull(mixer, 10);
+    REQUIRE(out[0] == 0.125f);
+
+    player.setCategoryVolume(SoundCategory::Music, 1.0f);
+    out = pull(mixer, 10);
+    REQUIRE(out[0] == 0.25f);
+}
+
 TEST_CASE("looping sequences keep feeding and stop on request", "[audio][player]") {
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);

@@ -17,7 +17,7 @@ namespace gdl {
 /**
  * Draws a static animation tree (its meshes at their node offsets) as a lit 3D object at a
  * position on the virtual screen, in front of the canvas' sprites. Chrome nodes take their
- * texture coordinates from the view-space normal.
+ * texture coordinates from the view-space normal, like the original's environment mapping.
  */
 class ModelSprite {
 public:

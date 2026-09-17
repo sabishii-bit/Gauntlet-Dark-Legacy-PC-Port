@@ -2,14 +2,17 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/math/Math.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "game/MenuInput.h"
-#include "game/TitleScene.h"
+#include "game/config/GameConfig.h"
+#include "game/menu/MenuInput.h"
+#include "game/screens/GameContext.h"
+#include "game/screens/TitleScene.h"
 
 namespace {
 
@@ -29,18 +32,36 @@ std::filesystem::path unpackedRoot() {
     return test::unpackedOrSkip("TITLE/textures.json").parent_path().parent_path();
 }
 
+struct Fixture {
+    GameConfig config;
+    StringTable strings;
+
+    Fixture() { strings.load(test::dataDirectory() / "text", config.text.language); }
+
+    GameContext context(SoundPlayer* sounds, std::filesystem::path root = unpackedRoot()) const {
+        GameContext out;
+        out.config = &config;
+        out.strings = &strings;
+        out.sounds = sounds;
+        out.unpackedRoot = std::move(root);
+        return out;
+    }
+};
+
 TEST_CASE("the title screen refuses to open without unpacked data", "[game][title]") {
     test::FakeRenderDevice device;
+    const Fixture f;
     TitleScene scene;
-    REQUIRE_FALSE(scene.open(device, nullptr, test::scratchDirectory("title-empty")));
+    REQUIRE_FALSE(scene.open(device, f.context(nullptr, test::scratchDirectory("title-empty"))));
     REQUIRE_FALSE(scene.isOpen());
     REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
 }
 
 TEST_CASE("the glow fades in and the screen times out when idle", "[game][title][unpacked]") {
     test::FakeRenderDevice device;
+    const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, nullptr, unpackedRoot()));
+    REQUIRE(scene.open(device, f.context(nullptr)));
     REQUIRE(scene.isOpen());
     REQUIRE(scene.arrowBound());
     REQUIRE(scene.step(1, MenuInput{}) == TitleOutcome::Running);
@@ -60,8 +81,9 @@ TEST_CASE("the glow fades in and the screen times out when idle", "[game][title]
 TEST_CASE("start opens the menu and choosing start leads into the game",
           "[game][title][unpacked]") {
     test::FakeRenderDevice device;
+    const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, nullptr, unpackedRoot()));
+    REQUIRE(scene.open(device, f.context(nullptr)));
     scene.step(100, MenuInput{});
     REQUIRE_FALSE(scene.menuOpen());
     REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
@@ -87,8 +109,9 @@ TEST_CASE("start opens the menu and choosing start leads into the game",
 
 TEST_CASE("the options menu opens over the title menu and fades away", "[game][title][unpacked]") {
     test::FakeRenderDevice device;
+    const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, nullptr, unpackedRoot()));
+    REQUIRE(scene.open(device, f.context(nullptr)));
     scene.step(1, press(true));
     scene.step(1, press(false, false, true));
     scene.step(1, press(false, true));
@@ -103,8 +126,9 @@ TEST_CASE("the options menu opens over the title menu and fades away", "[game][t
 
 TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][unpacked]") {
     test::FakeRenderDevice device;
+    const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, nullptr, unpackedRoot()));
+    REQUIRE(scene.open(device, f.context(nullptr)));
     scene.step(30, MenuInput{});
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
     scene.render(device, projection, 640.0f, 448.0f);
@@ -126,17 +150,74 @@ TEST_CASE("the title screen plays its music and menu sounds", "[game][title][unp
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);
+    const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, &player, unpackedRoot()));
+    REQUIRE(scene.open(device, f.context(&player)));
     REQUIRE(scene.musicPlaying());
     REQUIRE(player.voiceCount() == 1);
     scene.step(1, press(true));
     REQUIRE(player.voiceCount() == 2);
     scene.step(1, press(false, false, true));
     REQUIRE(player.voiceCount() == 3);
+    scene.step(1, press(false, true));
+    REQUIRE(scene.optionsOpen());
+    REQUIRE(player.voiceCount() == 4);
+    scene.step(1, press(false, false, false, true));
+    REQUIRE(scene.burning());
+    REQUIRE(player.voiceCount() == 5);
     scene.close();
     player.update();
     REQUIRE_FALSE(scene.musicPlaying());
+}
+
+TEST_CASE("backing out of the options burns the scroll and blanks the controls",
+          "[game][title][unpacked]") {
+    test::FakeRenderDevice device;
+    const Fixture f;
+    TitleScene scene;
+    REQUIRE(scene.open(device, f.context(nullptr)));
+    scene.step(1, press(true));
+    scene.step(1, press(false, false, true));
+    scene.step(1, press(false, true));
+    REQUIRE(scene.optionsOpen());
+    REQUIRE_FALSE(scene.burning());
+    device.draws.clear();
+    device.textureUpdates = 0;
+
+    scene.step(1, press(false, false, false, true));
+    REQUIRE(scene.burning());
+    REQUIRE(scene.optionsOpen());
+    const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
+    scene.render(device, projection, 640.0f, 448.0f);
+    REQUIRE(device.textureUpdates == 1);
+    REQUIRE_FALSE(device.draws.empty());
+
+    // Input is ignored until the burn ends: Back would otherwise close the title menu.
+    scene.step(OptionMenu::kFadeTicks, press(false, false, false, true));
+    REQUIRE_FALSE(scene.optionsOpen());
+    REQUIRE(scene.burning());
+    REQUIRE(scene.menuOpen());
+    scene.step(FireScroll::kFrameCount * FireScroll::kTicksPerFrame,
+               press(false, false, false, true));
+    REQUIRE_FALSE(scene.burning());
+    REQUIRE(scene.menuOpen());
+    scene.step(1, press(false, false, false, true));
+    REQUIRE_FALSE(scene.menuOpen());
+}
+
+TEST_CASE("the clock and screen come from the configuration", "[game][title][unpacked]") {
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.config.timing.tickRate = 120;
+    f.config.display.virtualWidth = 1024;
+    TitleScene scene;
+    REQUIRE(scene.open(device, f.context(nullptr)));
+    REQUIRE(scene.tickRate() == 120);
+    REQUIRE(scene.screen().width == 1024);
+    REQUIRE(scene.update(0.5, MenuInput{}) == TitleOutcome::Running);
+    REQUIRE(scene.time() == 6); // capped at six ticks per frame
+    REQUIRE(scene.update(1.0 / 120.0 + 1e-6, MenuInput{}) == TitleOutcome::Running);
+    REQUIRE(scene.time() == 7);
 }
 
 } // namespace

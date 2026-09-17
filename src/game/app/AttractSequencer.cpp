@@ -1,4 +1,4 @@
-#include "game/AttractSequencer.h"
+#include "game/app/AttractSequencer.h"
 
 namespace gdl::game {
 

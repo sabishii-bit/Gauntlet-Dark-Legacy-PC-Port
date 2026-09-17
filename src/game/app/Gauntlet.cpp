@@ -1,4 +1,4 @@
-#include "game/Gauntlet.h"
+#include "game/app/Gauntlet.h"
 
 #include <format>
 #include <utility>
@@ -8,23 +8,31 @@
 #include "engine/platform/Input.h"
 #include "engine/render/RenderTypes.h"
 
-#include "game/MenuInput.h"
+#include "game/menu/MenuInput.h"
 
 namespace gdl::game {
 
 namespace {
 
 constexpr std::string_view kMovieDirectory = "VQMOVIES";
+constexpr std::string_view kTextDirectory = "text";
 constexpr f64 kFpsReportInterval = 2.0;
 
 } // namespace
 
-Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options)
-    : Application(std::move(desc)), m_options(std::move(options)) {}
+Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config)
+    : Application(std::move(desc)), m_options(std::move(options)), m_config(std::move(config)) {}
 
 void Gauntlet::onInit() {
+    if (!m_strings.load(m_options.dataDirectory / kTextDirectory, m_config.text.language)) {
+        log::warn("No text tables under {}; identifiers will show instead of text",
+                  (m_options.dataDirectory / kTextDirectory).string());
+    }
     m_audio = std::make_unique<AudioDevice>();
     m_sounds = std::make_unique<SoundPlayer>(m_audio->mixer());
+    m_sounds->setMasterVolume(m_config.audio.masterVolume);
+    m_sounds->setCategoryVolume(SoundCategory::Music, m_config.audio.musicVolume);
+    m_sounds->setCategoryVolume(SoundCategory::Effects, m_config.audio.effectsVolume);
     m_assets = std::make_unique<AssetLocator>(assetDirectory());
     m_smokeTest.init(renderDevice());
 
@@ -38,6 +46,15 @@ void Gauntlet::onInit() {
         return;
     }
     startNextAttractScreen();
+}
+
+GameContext Gauntlet::context() const {
+    GameContext context;
+    context.config = &m_config;
+    context.strings = &m_strings;
+    context.sounds = m_sounds.get();
+    context.unpackedRoot = m_options.unpackedDirectory;
+    return context;
 }
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
@@ -62,8 +79,9 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
 }
 
 void Gauntlet::updateMovie(f64 deltaSeconds) {
-    const bool toTitle = m_options.playMovie.empty() && startRequested();
-    const bool playing = !toTitle && !skipRequested() && m_movie.update(deltaSeconds);
+    const MenuInput menu = readMenuInput(input(), m_config.menu);
+    const bool toTitle = m_options.playMovie.empty() && menu.start;
+    const bool playing = !toTitle && !menu.select && m_movie.update(deltaSeconds);
     if (playing) {
         return;
     }
@@ -77,7 +95,8 @@ void Gauntlet::updateMovie(f64 deltaSeconds) {
 }
 
 void Gauntlet::updateTitle(f64 deltaSeconds) {
-    const TitleOutcome outcome = m_title.update(deltaSeconds, readMenuInput(input()));
+    const TitleOutcome outcome =
+        m_title.update(deltaSeconds, readMenuInput(input(), m_config.menu));
     if (outcome == TitleOutcome::Running) {
         return;
     }
@@ -91,15 +110,17 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
 
 void Gauntlet::onRender(RenderDevice& device) {
     const Extent2D framebuffer = device.framebufferExtent();
+    const auto frameWidth = static_cast<f32>(m_config.display.frameWidth);
+    const auto frameHeight = static_cast<f32>(m_config.display.frameHeight);
     const Mat4 projection =
-        makeLetterboxProjection(kFrameWidth, kFrameHeight, static_cast<f32>(framebuffer.width),
+        makeLetterboxProjection(frameWidth, frameHeight, static_cast<f32>(framebuffer.width),
                                 static_cast<f32>(framebuffer.height));
     if (m_movieActive) {
-        m_movie.render(device, projection, Rect{0.0f, 0.0f, kFrameWidth, kFrameHeight});
+        m_movie.render(device, projection, Rect{0.0f, 0.0f, frameWidth, frameHeight});
         return;
     }
     if (m_title.isOpen()) {
-        m_title.render(device, projection, kFrameWidth, kFrameHeight);
+        m_title.render(device, projection, frameWidth, frameHeight);
         return;
     }
     m_smokeTest.render(device, projection, static_cast<f32>(clock().totalSeconds()));
@@ -128,7 +149,7 @@ bool Gauntlet::startMovie(std::string_view name) {
 }
 
 bool Gauntlet::startTitleScreen() {
-    if (m_title.open(renderDevice(), m_sounds.get(), m_options.unpackedDirectory)) {
+    if (m_title.open(renderDevice(), context())) {
         return true;
     }
     if (!m_titleWarned) {
@@ -156,30 +177,6 @@ void Gauntlet::startNextAttractScreen() {
         }
     }
     log::warn("No attract screen could be shown; showing the smoke test scene");
-}
-
-bool Gauntlet::skipRequested() const {
-    if (input().wasKeyPressed(Key::Space)) {
-        return true;
-    }
-    for (int pad = 0; pad < Input::kMaxPads; ++pad) {
-        if (input().wasPadButtonPressed(pad, PadButton::A)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool Gauntlet::startRequested() const {
-    if (input().wasKeyPressed(Key::Enter)) {
-        return true;
-    }
-    for (int pad = 0; pad < Input::kMaxPads; ++pad) {
-        if (input().wasPadButtonPressed(pad, PadButton::Start)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 } // namespace gdl::game

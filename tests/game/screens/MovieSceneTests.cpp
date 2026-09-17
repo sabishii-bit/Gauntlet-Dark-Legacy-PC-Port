@@ -11,7 +11,7 @@
 #include "engine/render/RenderTypes.h"
 
 #include "TestSupport.h"
-#include "game/MovieScene.h"
+#include "game/screens/MovieScene.h"
 
 namespace {
 

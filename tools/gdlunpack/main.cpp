@@ -192,6 +192,8 @@ void unpackArchive(const std::filesystem::path& directory, const std::filesystem
         textures.key("format").value(u32{bitmap.format});
         textures.key("flags").value(u32{bitmap.flags});
         textures.key("halfResolution").value((bitmap.flags & bitmap_flags::kHalfResolution) != 0);
+        textures.key("clampU").value((bitmap.flags & bitmap_flags::kClampU) != 0);
+        textures.key("clampV").value((bitmap.flags & bitmap_flags::kClampV) != 0);
         textures.key("hasAlpha").value((bitmap.flags & bitmap_flags::kHasAlpha) != 0);
         textures.key("frames").value(u32{bitmap.frameCount});
         textures.key("mipmaps").value(u32{bitmap.mipmapCount});

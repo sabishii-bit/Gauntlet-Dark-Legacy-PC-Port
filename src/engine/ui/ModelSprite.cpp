@@ -9,8 +9,8 @@ namespace gdl {
 
 namespace {
 
-constexpr f32 kAmbient = 0.4f;
-constexpr f32 kDiffuse = 0.6f;
+constexpr f32 kAmbient = 0.55f;
+constexpr f32 kDiffuse = 0.75f;
 const Vec3 kLightDirection = glm::normalize(Vec3{0.3f, 0.6f, 1.0f});
 
 } // namespace
@@ -69,8 +69,9 @@ void ModelSprite::draw(Canvas& canvas, Vec2 position, f32 scale, f32 pitch,
                 const Vec3 normal = glm::normalize(normalRotation * v.normal);
                 const f32 light =
                     std::clamp(kAmbient + kDiffuse * glm::dot(normal, kLightDirection), 0.0f, 1.0f);
+                // Chrome samples the sheet by the view-space normal, mirrored as the original does.
                 const Vec2 uv =
-                    node.chrome ? Vec2{normal.x * 0.5f + 0.5f, 0.5f - normal.y * 0.5f} : v.uv;
+                    node.chrome ? Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)} : v.uv;
                 m_batch.vertex(v.position + node.offset, Color::fromFloats(light, light, light),
                                uv);
             }

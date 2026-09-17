@@ -29,6 +29,8 @@ set(GDL_ASSET_DIR "${CMAKE_SOURCE_DIR}/assets/GUNE5D/Gauntlet" CACHE PATH
     "Game asset directory (the GUNE5D/Gauntlet tree)")
 set(GDL_UNPACKED_DIR "${CMAKE_SOURCE_DIR}/assets/unpacked" CACHE PATH
     "Directory gdlunpack writes to and the game reads unpacked assets from")
+set(GDL_DATA_DIR "${CMAKE_SOURCE_DIR}/data" CACHE PATH
+    "Shipped configuration defaults and text tables")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(GdlCompilerOptions)

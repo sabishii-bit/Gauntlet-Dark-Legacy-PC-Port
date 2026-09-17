@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "game/AttractSequencer.h"
+#include "game/app/AttractSequencer.h"
 
 namespace {
 

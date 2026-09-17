@@ -27,6 +27,27 @@ TEST_CASE("keys report down, pressed and released edges across polls", "[platfor
     REQUIRE(input.wasKeyReleased(Key::Space));
 }
 
+TEST_CASE("keys and pad buttons round-trip through their names", "[platform][input]") {
+    REQUIRE(keyName(Key::Enter) == "Enter");
+    REQUIRE(keyName(Key::W) == "W");
+    REQUIRE(keyFromName("enter") == Key::Enter);
+    REQUIRE(keyFromName("BACKSPACE") == Key::Backspace);
+    REQUIRE_FALSE(keyFromName("NoSuchKey").has_value());
+    REQUIRE_FALSE(keyFromName("").has_value());
+    REQUIRE(padButtonName(PadButton::DpadUp) == "DpadUp");
+    REQUIRE(padButtonFromName("dpadup") == PadButton::DpadUp);
+    REQUIRE(padButtonFromName("start") == PadButton::Start);
+    REQUIRE_FALSE(padButtonFromName("Select").has_value());
+    for (usize i = 1; i < static_cast<usize>(Key::Count); ++i) {
+        const auto key = static_cast<Key>(i);
+        REQUIRE(keyFromName(keyName(key)) == key);
+    }
+    for (usize i = 0; i < static_cast<usize>(PadButton::Count); ++i) {
+        const auto button = static_cast<PadButton>(i);
+        REQUIRE(padButtonFromName(padButtonName(button)) == button);
+    }
+}
+
 TEST_CASE("the Unknown and Count sentinels are ignored", "[platform][input]") {
     Input input;
     input.setKey(Key::Unknown, true);

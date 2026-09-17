@@ -5,7 +5,7 @@
 
 #include "engine/app/Application.h"
 
-#include "game/CommandLine.h"
+#include "game/app/CommandLine.h"
 
 namespace {
 
@@ -56,6 +56,15 @@ TEST_CASE("the movie flag selects a single movie to play", "[game][commandline]"
     REQUIRE(result.options.playMovie == "opening");
     REQUIRE(parseCommandLine({}, defaults()).options.playMovie.empty());
     constexpr std::array<std::string_view, 1> kMissing{"--movie"};
+    REQUIRE(parseCommandLine(kMissing, defaults()).action == CommandLineAction::Fail);
+}
+
+TEST_CASE("the data flag points at the configuration directory", "[game][commandline]") {
+    constexpr std::array<std::string_view, 2> kArgs{"--data", "W:/conf"};
+    const CommandLineResult result = parseCommandLine(kArgs, defaults());
+    REQUIRE(result.action == CommandLineAction::Run);
+    REQUIRE(result.options.dataDirectory == "W:/conf");
+    constexpr std::array<std::string_view, 1> kMissing{"--data"};
     REQUIRE(parseCommandLine(kMissing, defaults()).action == CommandLineAction::Fail);
 }
 

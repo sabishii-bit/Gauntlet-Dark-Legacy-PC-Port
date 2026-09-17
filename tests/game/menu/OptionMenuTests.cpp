@@ -1,3 +1,4 @@
+#include <cmath>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,8 +14,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "game/MenuInput.h"
-#include "game/OptionMenu.h"
+#include "game/menu/MenuInput.h"
+#include "game/menu/OptionMenu.h"
 
 namespace {
 
@@ -57,7 +58,7 @@ struct Fixture {
 
 TEST_CASE("a menu lays its column out around the screen centre", "[game][menu]") {
     Fixture f;
-    f.menu.open(threeItems(), f.painter);
+    f.menu.open(threeItems(), f.painter, MenuScreen{});
     REQUIRE(f.menu.isOpen());
     REQUIRE(f.menu.lineHeight() == 10);
     REQUIRE(f.menu.columnHeight() == 30);
@@ -71,7 +72,7 @@ TEST_CASE("a menu lays its column out around the screen centre", "[game][menu]")
     placed.x = 128;
     placed.y = 300;
     placed.items[0].extraSpacing = 6;
-    f.menu.open(placed, f.painter, 5);
+    f.menu.open(placed, f.painter, MenuScreen{}, 5);
     REQUIRE(f.menu.selection() == 2);
     REQUIRE(f.menu.columnX() == 128);
     REQUIRE(f.menu.itemY(1) == 316);
@@ -80,7 +81,7 @@ TEST_CASE("a menu lays its column out around the screen centre", "[game][menu]")
 
 TEST_CASE("navigation wraps and reports choices and backing out", "[game][menu]") {
     Fixture f;
-    f.menu.open(threeItems(), f.painter);
+    f.menu.open(threeItems(), f.painter, MenuScreen{});
     REQUIRE(f.menu.update(pressed(false, true, false, false), 1).action == MenuAction::Moved);
     REQUIRE(f.menu.selection() == 1);
     REQUIRE(f.menu.update(pressed(true, false, false, false), 1).action == MenuAction::Moved);
@@ -99,7 +100,7 @@ TEST_CASE("navigation wraps and reports choices and backing out", "[game][menu]"
 
     MenuDefinition title = threeItems();
     title.startSelects = true;
-    f.menu.open(title, f.painter, 1);
+    f.menu.open(title, f.painter, MenuScreen{}, 1);
     const MenuEvent started = f.menu.update(pressed(false, false, false, false, true), 1);
     REQUIRE(started.action == MenuAction::Choice);
     REQUIRE(started.code == 2);
@@ -107,14 +108,14 @@ TEST_CASE("navigation wraps and reports choices and backing out", "[game][menu]"
 
 TEST_CASE("fading menus close over thirty ticks and others at once", "[game][menu]") {
     Fixture f;
-    f.menu.open(threeItems(), f.painter);
+    f.menu.open(threeItems(), f.painter, MenuScreen{});
     REQUIRE(f.menu.fadeOpacity() == 255);
     f.menu.close();
     REQUIRE_FALSE(f.menu.isOpen());
 
     MenuDefinition fading = threeItems();
     fading.fades = true;
-    f.menu.open(fading, f.painter);
+    f.menu.open(fading, f.painter, MenuScreen{});
     REQUIRE(f.menu.fadeOpacity() == 0);
     f.menu.update(MenuInput{}, 15);
     REQUIRE(f.menu.fadeOpacity() == 128);
@@ -133,7 +134,7 @@ TEST_CASE("fading menus close over thirty ticks and others at once", "[game][men
 
 TEST_CASE("the selection icon glides between items", "[game][menu]") {
     Fixture f;
-    f.menu.open(threeItems(), f.painter);
+    f.menu.open(threeItems(), f.painter, MenuScreen{});
     const s32 first = f.menu.itemY(0) + 5;
     const s32 second = f.menu.itemY(1) + 5;
     REQUIRE(f.menu.iconY() == first);
@@ -176,7 +177,7 @@ TEST_CASE("drawing emits the glow, the labels, the icon and the prompts", "[game
     definition.title = "OPTIONS";
     definition.backdrop = "SCROLL";
     definition.prompts = true;
-    f.menu.open(definition, f.painter);
+    f.menu.open(definition, f.painter, MenuScreen{});
     Canvas canvas;
     canvas.begin(device, Mat4{1.0f});
     f.menu.draw(canvas, f.painter, textures);
@@ -226,7 +227,7 @@ TEST_CASE("a bound arrow model replaces the flat arrow glyph", "[game][menu]") {
     textures.font = &f.sheet;
     textures.arrows = &arrows;
     textures.icon = &arrow;
-    f.menu.open(threeItems(), f.painter);
+    f.menu.open(threeItems(), f.painter, MenuScreen{});
     REQUIRE(f.menu.iconAngle() == 0.0f);
     Canvas canvas;
     canvas.begin(device, Mat4{1.0f});
@@ -247,6 +248,57 @@ TEST_CASE("a bound arrow model replaces the flat arrow glyph", "[game][menu]") {
     f.menu.update(MenuInput{}, 5);
     REQUIRE(f.menu.iconAngle() > kPi);
     REQUIRE(f.menu.iconAngle() < 2.0f * kPi);
+}
+
+TEST_CASE("the selection arrow is sized by the camera it was modelled for", "[game][menu]") {
+    // 512 wide at a 60 degree horizontal field of view: focal length 443.4, scale 0.05 at 1.1.
+    REQUIRE(std::abs(OptionMenu::iconPixelsPerUnit(MenuScreen{}) - 20.155f) < 0.01f);
+    MenuScreen wide;
+    wide.width = 1024;
+    REQUIRE(std::abs(OptionMenu::iconPixelsPerUnit(wide) - 40.31f) < 0.01f);
+
+    Fixture f;
+    f.menu.open(threeItems(), f.painter, wide);
+    REQUIRE(f.menu.iconScale() == OptionMenu::iconPixelsPerUnit(wide));
+    // A backdrop without a placement centres on the screen, whatever its width.
+    REQUIRE(f.menu.backdropArea().x == 1024.0f / 2.0f - f.menu.backdropArea().width / 2.0f);
+}
+
+TEST_CASE("releasing the backdrop keeps the text fading without it", "[game][menu]") {
+    Fixture f;
+    MenuDefinition definition = threeItems();
+    definition.fades = true;
+    definition.backdrop = "SCROLL";
+    definition.backdropWidth = 100;
+    definition.backdropHeight = 100;
+    f.menu.open(definition, f.painter, MenuScreen{});
+    f.menu.update(pressed(false, false, false, false), OptionMenu::kFadeTicks);
+    test::FakeTexture backdrop{8, 8};
+    MenuTextures textures;
+    textures.font = &f.sheet;
+    textures.backdrop = &backdrop;
+    textures.arrows = &f.sheet;
+
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1.0f});
+    f.menu.draw(canvas, f.painter, textures);
+    canvas.end();
+    const auto withBackdrop = device.draws.size();
+    REQUIRE(device.draws[0].texture == &backdrop);
+
+    f.menu.releaseBackdrop();
+    f.menu.close();
+    REQUIRE(f.menu.backdropReleased());
+    REQUIRE(f.menu.closing());
+    device.draws.clear();
+    canvas.begin(device, Mat4{1.0f});
+    f.menu.draw(canvas, f.painter, textures);
+    canvas.end();
+    REQUIRE(device.draws.size() < withBackdrop);
+    for (const auto& draw : device.draws) {
+        REQUIRE(draw.texture != &backdrop);
+    }
 }
 
 } // namespace

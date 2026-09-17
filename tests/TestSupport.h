@@ -18,6 +18,9 @@
 #ifndef GDL_TEST_UNPACKED_DIR
 #define GDL_TEST_UNPACKED_DIR ""
 #endif
+#ifndef GDL_TEST_DATA_DIR
+#define GDL_TEST_DATA_DIR ""
+#endif
 
 namespace gdl::test {
 
@@ -46,6 +49,11 @@ inline std::filesystem::path unpackedOrSkip(std::string_view relative) {
         SKIP("unpacked asset " << relative << " is not available; run gdlunpack");
     }
     return path;
+}
+
+/** The repository's shipped data directory (configuration defaults and text). */
+inline std::filesystem::path dataDirectory() {
+    return {GDL_TEST_DATA_DIR};
 }
 
 /** A 2x2 RGBA PNG: red, green on the top row; blue, transparent white below. */

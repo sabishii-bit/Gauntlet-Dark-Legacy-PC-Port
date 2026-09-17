@@ -52,18 +52,22 @@ add_executable(tests
     formats/GeometryStreamTests.cpp
     formats/AnimationTreeTests.cpp
     formats/ObjWriterTests.cpp
-    game/CommandLineTests.cpp
-    game/AttractSequencerTests.cpp
-    game/MovieSceneTests.cpp
-    game/MenuInputTests.cpp
-    game/OptionMenuTests.cpp
-    game/TitleSceneTests.cpp)
+    game/app/CommandLineTests.cpp
+    game/app/AttractSequencerTests.cpp
+    game/screens/MovieSceneTests.cpp
+    game/menu/MenuInputTests.cpp
+    game/menu/OptionMenuTests.cpp
+    game/screens/TitleSceneTests.cpp
+    game/config/GameConfigTests.cpp
+    game/menu/FireScrollTests.cpp
+    engine/assets/StringTableTests.cpp)
 
 target_link_libraries(tests PRIVATE gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain)
 target_include_directories(tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(tests PRIVATE
     GDL_TEST_ASSET_DIR="${GDL_ASSET_DIR}"
-    GDL_TEST_UNPACKED_DIR="${GDL_UNPACKED_DIR}")
+    GDL_TEST_UNPACKED_DIR="${GDL_UNPACKED_DIR}"
+    GDL_TEST_DATA_DIR="${GDL_DATA_DIR}")
 
 gdl_apply_compiler_options(tests)
 

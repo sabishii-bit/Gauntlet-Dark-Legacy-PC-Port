@@ -45,6 +45,7 @@ bool TextureSet::load(const std::filesystem::path& directory) {
             entry.flags = bitmap.value("flags", 0U);
             entry.frames = bitmap.value("frames", 0U);
             entry.halfResolution = bitmap.value("halfResolution", false);
+            entry.clamp = bitmap.value("clampU", false) || bitmap.value("clampV", false);
             entry.file = directory / bitmap.at("file").get<std::string>();
             m_entries.push_back(std::move(entry));
         }
@@ -98,9 +99,10 @@ const Texture& TextureSet::texture(RenderDevice& device, u32 index) {
     std::unique_ptr<Texture>& texture = m_textures[index];
     if (!texture) {
         const Image& pixels = image(index);
+        const TextureWrap wrap =
+            m_entries[index].clamp ? TextureWrap::ClampToEdge : TextureWrap::Repeat;
         texture = device.createTexture(
-            TextureDesc{pixels.width, pixels.height, TextureFilter::Linear, TextureWrap::Repeat},
-            pixels.pixels);
+            TextureDesc{pixels.width, pixels.height, TextureFilter::Linear, wrap}, pixels.pixels);
     }
     return *texture;
 }

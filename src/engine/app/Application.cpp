@@ -1,7 +1,9 @@
 #include "engine/app/Application.h"
 
+#include <chrono>
 #include <exception>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include "engine/core/Log.h"
@@ -28,6 +30,7 @@ int Application::run() {
         onInit();
 
         while (!m_window->shouldClose() && !m_quitRequested) {
+            const auto frameStart = std::chrono::steady_clock::now();
             m_window->pollEvents();
             m_clock.tick();
             onUpdate(m_clock.deltaSeconds());
@@ -37,6 +40,13 @@ int Application::run() {
                 m_device->endFrame();
             } else {
                 m_window->waitWhileMinimized();
+            }
+
+            if (m_desc.maxFrameRate != 0) {
+                const auto frameTime = std::chrono::duration<f64>(1.0 / m_desc.maxFrameRate);
+                std::this_thread::sleep_until(
+                    frameStart +
+                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(frameTime));
             }
 
             if (m_desc.maxFrames != 0 && m_clock.frameIndex() >= m_desc.maxFrames) {

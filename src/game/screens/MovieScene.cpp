@@ -1,4 +1,4 @@
-#include "game/MovieScene.h"
+#include "game/screens/MovieScene.h"
 
 namespace gdl::game {
 
