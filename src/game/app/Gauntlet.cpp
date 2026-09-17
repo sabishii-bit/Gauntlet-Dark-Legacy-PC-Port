@@ -1,8 +1,11 @@
 #include "game/app/Gauntlet.h"
 
+#include <filesystem>
 #include <format>
+#include <span>
 #include <utility>
 
+#include "engine/assets/PngImage.h"
 #include "engine/core/Log.h"
 #include "engine/math/Math.h"
 #include "engine/platform/Input.h"
@@ -17,13 +20,29 @@ namespace {
 constexpr std::string_view kMovieDirectory = "VQMOVIES";
 constexpr std::string_view kTextDirectory = "text";
 constexpr f64 kFpsReportInterval = 2.0;
+constexpr std::string_view kWindowIcon = "carddemo/icon0.png"; ///< unpacked memory-card icon
 
 } // namespace
 
 Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config)
     : Application(std::move(desc)), m_options(std::move(options)), m_config(std::move(config)) {}
 
+/** The memory-card icon as the window's icon, when the card art has been unpacked. */
+void Gauntlet::applyWindowIcon() {
+    const std::filesystem::path file = m_options.unpackedDirectory / kWindowIcon;
+    if (!std::filesystem::exists(file)) {
+        return;
+    }
+    try {
+        const Image icon = loadImageFile(file);
+        window().setIcon(std::span<const Image>(&icon, 1));
+    } catch (const std::exception& e) {
+        log::warn("Window icon {} unusable: {}", file.string(), e.what());
+    }
+}
+
 void Gauntlet::onInit() {
+    applyWindowIcon();
     if (!m_strings.load(m_options.dataDirectory / kTextDirectory, m_config.text.language)) {
         log::warn("No text tables under {}; identifiers will show instead of text",
                   (m_options.dataDirectory / kTextDirectory).string());
@@ -134,7 +153,7 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     PlayerSelectScene::Inputs inputs;
     for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         inputs[static_cast<usize>(player)] =
-            readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
+            readMenuInput(input(), m_config.menu, m_select.inputSource(player));
     }
     const SelectOutcome outcome = m_select.update(deltaSeconds, inputs);
     if (outcome == SelectOutcome::Running) {

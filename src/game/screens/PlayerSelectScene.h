@@ -53,6 +53,10 @@ public:
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);
 
     const SelectLane& lane(s32 index) const { return m_lanes[static_cast<usize>(index)]; }
+
+    /** The devices lane `index` reads this frame: its player's, typing while it takes a
+     * name. */
+    MenuInputSource inputSource(s32 index) const;
     s32 time() const { return m_time; }
     bool musicPlaying() const;
     const SaveSlots& saves() const { return m_saves; }

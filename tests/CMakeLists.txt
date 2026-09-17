@@ -70,6 +70,8 @@ add_executable(tests
     game/screens/SelectLaneTests.cpp
     game/screens/PlayerSelectSceneTests.cpp
     formats/PlayerDataWadTests.cpp
+    formats/TplFileTests.cpp
+    formats/IcoWriterTests.cpp
     game/menu/FireScrollTests.cpp
     engine/assets/StringTableTests.cpp)
 

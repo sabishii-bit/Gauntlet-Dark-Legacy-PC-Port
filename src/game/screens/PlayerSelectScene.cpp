@@ -118,6 +118,7 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_services.selectTexture = [this](std::string_view name) { return selectTexture(name); };
     m_services.staticTexture = [this](std::string_view name) { return staticTexture(name); };
     m_services.glowSheet = staticTexture("FONT32_GLOW");
+    m_services.keyboardLane = MenuInputSource::kKeyboardPlayer;
     m_services.menuTextures.font = staticTexture("FONT32");
     m_services.menuTextures.glow = m_services.glowSheet;
     for (s32 i = 0; i < kLaneCount; ++i) {
@@ -361,6 +362,12 @@ void PlayerSelectScene::startMusic() {
 bool PlayerSelectScene::musicPlaying() const {
     return m_context.sounds != nullptr && m_music != kNoSound &&
            m_context.sounds->isPlaying(m_music);
+}
+
+MenuInputSource PlayerSelectScene::inputSource(s32 index) const {
+    MenuInputSource source = MenuInputSource::forPlayer(index);
+    source.text = lane(index).typing();
+    return source;
 }
 
 SelectOutcome PlayerSelectScene::update(f64 deltaSeconds, const Inputs& inputs) {

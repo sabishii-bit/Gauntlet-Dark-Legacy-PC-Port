@@ -1,11 +1,13 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "engine/core/Types.h"
 #include "engine/platform/Input.h"
+#include "engine/render/Image.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/render/VulkanHandles.h"
 
@@ -37,6 +39,10 @@ public:
     virtual void waitWhileMinimized() = 0;
 
     virtual const Input& input() const = 0;
+
+    /** The window's icon at one or more sizes; the system picks. Ignored where the
+     * platform has no window icons. */
+    virtual void setIcon(std::span<const Image> images) = 0;
 
     virtual std::vector<const char*> requiredVulkanInstanceExtensions() const = 0;
     virtual bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* outSurface) const = 0;

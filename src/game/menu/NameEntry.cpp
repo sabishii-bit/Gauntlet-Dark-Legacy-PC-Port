@@ -37,6 +37,19 @@ std::string_view NameEntry::randomName(u32 seed) {
     return kRandomNames[seed % kRandomNames.size()];
 }
 
+std::optional<char> NameEntry::typedLetter(char typed) {
+    if (typed >= 'a' && typed <= 'z') {
+        return static_cast<char>(typed - 'a' + 'A');
+    }
+    if ((typed >= 'A' && typed <= 'Z') || (typed >= '0' && typed <= '9')) {
+        return typed;
+    }
+    if (typed == ' ' || typed == '_') {
+        return '_';
+    }
+    return std::nullopt;
+}
+
 void NameEntry::begin(std::string_view existing) {
     m_phase = Phase::Editing;
     m_timer = 0;
@@ -81,6 +94,21 @@ bool NameEntry::repeat(const MenuInput& input, s32 ticks) {
     return true;
 }
 
+NameEntry::Event NameEntry::removeLast() {
+    m_pending = m_name.back();
+    m_name.pop_back();
+    return Event::LetterRemoved;
+}
+
+NameEntry::Event NameEntry::finish() {
+    if (m_name.empty()) {
+        m_name = randomName(static_cast<u32>(m_timer));
+    }
+    m_phase = Phase::Flashing;
+    m_timer = kFlashTicks;
+    return Event::Accepted;
+}
+
 NameEntry::Event NameEntry::update(const MenuInput& input, s32 ticks) {
     if (m_phase == Phase::Flashing) {
         m_timer -= ticks;
@@ -94,7 +122,21 @@ NameEntry::Event NameEntry::update(const MenuInput& input, s32 ticks) {
         return Event::None;
     }
 
+    if (input.erase && !m_name.empty()) {
+        return removeLast();
+    }
     Event event = Event::None;
+    for (const char typed : input.typed) {
+        const std::optional<char> letter = typedLetter(typed);
+        if (letter.has_value() && m_name.size() < kMaxLength) {
+            m_name.push_back(*letter);
+            m_pending = kEndMark;
+            event = Event::LetterAdded;
+        }
+    }
+    if (event == Event::LetterAdded && m_name.size() >= kMaxLength) {
+        return finish();
+    }
     if (!input.select) {
         if (input.up || input.down) {
             cycle(input.up ? 1 : -1);
@@ -107,9 +149,7 @@ NameEntry::Event NameEntry::update(const MenuInput& input, s32 ticks) {
         }
     }
     if (input.left && !m_name.empty()) {
-        m_pending = m_name.back();
-        m_name.pop_back();
-        return Event::LetterRemoved;
+        return removeLast();
     }
     if (input.select || input.right) {
         bool finished = false;
@@ -124,12 +164,7 @@ NameEntry::Event NameEntry::update(const MenuInput& input, s32 ticks) {
             event = Event::LetterAdded;
         }
         if (finished) {
-            if (m_name.empty()) {
-                m_name = randomName(static_cast<u32>(m_timer));
-            }
-            m_phase = Phase::Flashing;
-            m_timer = kFlashTicks;
-            return Event::Accepted;
+            return finish();
         }
     }
     m_timer += ticks;

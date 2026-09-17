@@ -2,7 +2,9 @@
 
 #include <array>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <vector>
 
 #include "engine/core/Types.h"
 
@@ -124,10 +126,14 @@ public:
     /** Sticks report -1..1, triggers 0..1. */
     f32 padAxis(int pad, PadAxis axis) const;
 
+    /** Characters typed since the last poll, as Unicode code points in order. */
+    std::span<const u32> typedText() const { return m_typed; }
+
     /** Platform-layer entry points. */
     void beginPoll();
     void setKey(Key key, bool down);
     void setPad(int pad, const PadSnapshot& snapshot);
+    void addTypedChar(u32 codepoint);
 
 private:
     static constexpr usize kKeyCount = static_cast<usize>(Key::Count);
@@ -136,6 +142,7 @@ private:
     std::array<bool, kKeyCount> m_previousKeys{};
     std::array<PadSnapshot, kMaxPads> m_pads{};
     std::array<PadSnapshot, kMaxPads> m_previousPads{};
+    std::vector<u32> m_typed;
 };
 
 } // namespace gdl

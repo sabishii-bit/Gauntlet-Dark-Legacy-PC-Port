@@ -36,6 +36,7 @@
   "select.editLetter": "Edit",
   "select.accept": "Accept",
   "select.cancel": "Cancel",
+  "select.typeName": "Or type it",
   "select.lockedIn": "Press START\nto Save/Load\nor Change\nCharacter",
   "select.unsavedLoad": "Current\nCharacter\nNot Saved.\nLoad new\nCharacter\nAnyway?",
   "select.quitConfirm": "Character\nNot Saved.\nQuit Anyway?",

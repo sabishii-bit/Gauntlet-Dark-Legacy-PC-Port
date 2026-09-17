@@ -73,6 +73,12 @@ TEST_CASE("the starting player joins and others join on Start", "[game][select][
     REQUIRE(scene.step(1, player(0, false, false, true)) == SelectOutcome::Running);
     REQUIRE(scene.lane(0).active());
     REQUIRE(scene.lane(0).state() == SelectLane::State::TopMenu);
+    REQUIRE(scene.inputSource(0).keyboard);
+    REQUIRE_FALSE(scene.inputSource(0).text);
+    REQUIRE(scene.step(1, player(0, true)) == SelectOutcome::Running); // New
+    REQUIRE(scene.lane(0).state() == SelectLane::State::NameEntry);
+    REQUIRE(scene.inputSource(0).text);
+    REQUIRE_FALSE(scene.inputSource(2).text);
 
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
     scene.render(device, projection, 640.0f, 448.0f);

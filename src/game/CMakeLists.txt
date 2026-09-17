@@ -49,6 +49,25 @@ add_executable(gauntlet main.cpp)
 
 target_link_libraries(gauntlet PRIVATE gdl::game)
 
+# On Windows the executable carries the memory-card icon from the disc, which gdlunpack
+# converts while building; nothing from the assets is checked in.
+get_filename_component(GDL_DISC_DIR "${GDL_ASSET_DIR}" DIRECTORY)
+set(GDL_CARD_ICON "${GDL_DISC_DIR}/carddemo/icon.tpl")
+if(WIN32 AND EXISTS "${GDL_CARD_ICON}")
+    enable_language(RC)
+    set(GDL_ICON_FILE "${CMAKE_BINARY_DIR}/icon/carddemo/icon.ico")
+    add_custom_command(
+        OUTPUT "${GDL_ICON_FILE}"
+        COMMAND gdlunpack "${GDL_ASSET_DIR}" "${CMAKE_BINARY_DIR}/icon" --only carddemo
+        DEPENDS gdlunpack "${GDL_CARD_ICON}"
+        COMMENT "Converting the memory-card icon for the executable"
+        VERBATIM)
+    configure_file(app/gauntlet.rc.in "${CMAKE_BINARY_DIR}/gauntlet.rc" @ONLY)
+    set_source_files_properties("${CMAKE_BINARY_DIR}/gauntlet.rc" PROPERTIES
+        OBJECT_DEPENDS "${GDL_ICON_FILE}")
+    target_sources(gauntlet PRIVATE "${CMAKE_BINARY_DIR}/gauntlet.rc" "${GDL_ICON_FILE}")
+endif()
+
 target_compile_definitions(gauntlet PRIVATE
     GDL_DEFAULT_ASSET_DIR="${GDL_ASSET_DIR}"
     GDL_DEFAULT_UNPACKED_DIR="${GDL_UNPACKED_DIR}"
