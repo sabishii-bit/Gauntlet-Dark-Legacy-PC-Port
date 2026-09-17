@@ -1,0 +1,16 @@
+{
+  "title.pressStart": "Press Start",
+  "title.loading": "Loading...",
+  "menu.start": "Start",
+  "menu.options": "Options",
+  "menu.audio": "Audio",
+  "menu.gameOptions": "Game Options",
+  "menu.compass": "Compass",
+  "menu.controls": "Controls",
+  "menu.back": "Back",
+  "menu.select": "Select",
+  "menu.accept": "Accept",
+  "menu.change": "Change",
+  "menu.center": "Center",
+  "menu.player": "Player {}"
+}

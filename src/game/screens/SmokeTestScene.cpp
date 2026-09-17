@@ -1,4 +1,4 @@
-#include "game/SmokeTestScene.h"
+#include "game/screens/SmokeTestScene.h"
 
 #include <array>
 #include <cmath>

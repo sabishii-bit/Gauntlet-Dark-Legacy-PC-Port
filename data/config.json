@@ -1,0 +1,43 @@
+{
+  "display": {
+    "virtualWidth": 512,
+    "virtualHeight": 384,
+    "frameWidth": 640,
+    "frameHeight": 448,
+    "windowWidth": 1280,
+    "windowHeight": 896,
+    "vsync": true,
+    "maxFrameRate": 0
+  },
+  "timing": {
+    "tickRate": 60,
+    "gameplayFrameRate": 30
+  },
+  "camera": {
+    "horizontalFovDegrees": 60.0
+  },
+  "audio": {
+    "masterVolume": 1.0,
+    "musicVolume": 0.7,
+    "effectsVolume": 1.0
+  },
+  "text": {
+    "language": "en"
+  },
+  "controls": {
+    "keyboard": {
+      "up": ["Up", "W"],
+      "down": ["Down", "S"],
+      "select": ["Enter", "Space"],
+      "back": ["Backspace"],
+      "start": ["Enter"]
+    },
+    "pad": {
+      "up": ["DpadUp"],
+      "down": ["DpadDown"],
+      "select": ["A"],
+      "back": ["B"],
+      "start": ["Start"]
+    }
+  }
+}

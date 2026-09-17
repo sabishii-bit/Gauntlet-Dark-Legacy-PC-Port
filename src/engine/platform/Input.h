@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <optional>
+#include <string_view>
 
 #include "engine/core/Types.h"
 
@@ -99,6 +101,13 @@ struct PadSnapshot {
     std::array<bool, static_cast<usize>(PadButton::Count)> buttons{};
     std::array<f32, static_cast<usize>(PadAxis::Count)> axes{};
 };
+
+/** The configuration name of a key ("Enter", "A", "F1"), empty for Unknown/Count. */
+std::string_view keyName(Key key);
+/** The key a configuration name denotes, ignoring case. */
+std::optional<Key> keyFromName(std::string_view name);
+std::string_view padButtonName(PadButton button);
+std::optional<PadButton> padButtonFromName(std::string_view name);
 
 /** Frame-coherent keyboard and gamepad state, updated once per Window::pollEvents(). */
 class Input {

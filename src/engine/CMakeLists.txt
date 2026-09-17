@@ -94,6 +94,8 @@ add_library(engine STATIC
     assets/ModelSet.cpp
     assets/AnimationSet.h
     assets/AnimationSet.cpp
+    assets/StringTable.h
+    assets/StringTable.cpp
     ui/Canvas.h
     ui/Canvas.cpp
     ui/TextPainter.h

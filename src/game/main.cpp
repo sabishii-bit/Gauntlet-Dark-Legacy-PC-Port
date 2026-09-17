@@ -1,5 +1,6 @@
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -9,14 +10,18 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
-#include "game/CommandLine.h"
-#include "game/Gauntlet.h"
+#include "game/app/CommandLine.h"
+#include "game/app/Gauntlet.h"
+#include "game/config/GameConfig.h"
 
 #ifndef GDL_DEFAULT_ASSET_DIR
 #define GDL_DEFAULT_ASSET_DIR ""
 #endif
 #ifndef GDL_DEFAULT_UNPACKED_DIR
 #define GDL_DEFAULT_UNPACKED_DIR ""
+#endif
+#ifndef GDL_DEFAULT_DATA_DIR
+#define GDL_DEFAULT_DATA_DIR ""
 #endif
 
 namespace {
@@ -34,6 +39,7 @@ int runGauntlet(std::span<char*> rawArgs) {
 
     gdl::game::GameOptions defaultOptions;
     defaultOptions.unpackedDirectory = GDL_DEFAULT_UNPACKED_DIR;
+    defaultOptions.dataDirectory = GDL_DEFAULT_DATA_DIR;
 
     gdl::game::CommandLineResult parsed =
         gdl::game::parseCommandLine(args, std::move(defaults), std::move(defaultOptions));
@@ -46,7 +52,20 @@ int runGauntlet(std::span<char*> rawArgs) {
     case gdl::game::CommandLineAction::Run: break;
     }
 
-    gdl::game::Gauntlet game(std::move(parsed.desc), std::move(parsed.options));
+    // Settings: the shipped defaults, then the player's own file, then the command line.
+    gdl::game::GameConfig config;
+    config.loadFile(parsed.options.dataDirectory / "config.json");
+    const std::filesystem::path userSettings = gdl::game::GameConfig::userSettingsPath();
+    if (std::filesystem::exists(userSettings)) {
+        config.loadFile(userSettings);
+    }
+    const bool vsyncFromCommandLine = !parsed.desc.vsync;
+    parsed.desc.window.width = config.display.windowWidth;
+    parsed.desc.window.height = config.display.windowHeight;
+    parsed.desc.vsync = config.display.vsync && !vsyncFromCommandLine;
+    parsed.desc.maxFrameRate = config.display.maxFrameRate;
+
+    gdl::game::Gauntlet game(std::move(parsed.desc), std::move(parsed.options), std::move(config));
     return game.run();
 }
 

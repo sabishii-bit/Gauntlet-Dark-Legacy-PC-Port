@@ -27,7 +27,7 @@ std::filesystem::path sampleSet(std::string_view name) {
   ],
   "bitmaps": [
     {"index": 0, "name": "GLOW_", "file": "textures/000_GLOW_.png", "width": 2, "height": 2,
-     "format": 50, "flags": 141, "halfResolution": true, "frames": 2},
+     "format": 50, "flags": 141, "halfResolution": true, "frames": 2, "clampU": true},
     {"index": 1, "name": "GLOW_+1", "file": "textures/001_GLOW_+1.png", "width": 2, "height": 2,
      "format": 50, "flags": 12, "halfResolution": false, "frames": 0}
   ]
@@ -72,6 +72,18 @@ TEST_CASE("GPU textures are created once and released on demand", "[assets][text
     set.releaseTextures();
     set.texture(device, 0);
     REQUIRE(device.texturesCreated == 3);
+}
+
+TEST_CASE("clamped tiles are created with edge clamping", "[assets][textures]") {
+    TextureSet set;
+    REQUIRE(set.load(sampleSet("texture-set-clamp")));
+    REQUIRE(set.entry(0).clamp);
+    REQUIRE_FALSE(set.entry(1).clamp);
+    test::FakeRenderDevice device;
+    set.texture(device, 0);
+    REQUIRE(device.lastTextureDesc.wrap == TextureWrap::ClampToEdge);
+    set.texture(device, 1);
+    REQUIRE(device.lastTextureDesc.wrap == TextureWrap::Repeat);
 }
 
 TEST_CASE("missing images surface as file errors", "[assets][textures]") {

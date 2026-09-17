@@ -107,18 +107,37 @@ Then run `build/<preset>/bin/gauntlet` (or `python scripts/build.py --run --
 <arguments>`):
 
 ```
-gauntlet [--assets <dir>] [--unpacked <dir>] [--movie <name>] [--title] [--no-vsync]
-         [--validation | --no-validation] [--frames <n>]
+gauntlet [--assets <dir>] [--unpacked <dir>] [--data <dir>] [--movie <name>] [--title]
+         [--no-vsync] [--validation | --no-validation] [--frames <n>]
 ```
 
-`--assets` defaults to `assets/GUNE5D/Gauntlet` and `--unpacked` to
-`assets/unpacked` (both baked in at configure time as `GDL_ASSET_DIR` and
-`GDL_UNPACKED_DIR`). `--movie opening` plays one movie from `VQMOVIES` and
-quits; `--title` skips the intro movies. `--frames <n>` quits after `n`
-frames, handy for smoke tests. Escape quits. During a movie, Enter or Start
-jumps to the title screen and Space or A skips to the next attract screen. On
-the title screen, Enter or Start opens the menu; arrows or the d-pad move,
-Enter, Space or A selects, Backspace or B goes back.
+`--assets` defaults to `assets/GUNE5D/Gauntlet`, `--unpacked` to
+`assets/unpacked` and `--data` to `data/` (all baked in at configure time as
+`GDL_ASSET_DIR`, `GDL_UNPACKED_DIR` and `GDL_DATA_DIR`). `--movie opening`
+plays one movie from `VQMOVIES` and quits; `--title` skips the intro movies.
+`--frames <n>` quits after `n` frames, handy for smoke tests. Escape quits.
+
+### Settings and text
+
+`data/config.json` holds the shipped defaults: the window size, vsync and an
+optional frame-rate cap; the virtual screen (512x384) and frame (640x448) the
+2D layer is laid out in; the logic tick rate (60 Hz) and the 30 fps the
+gameplay was tuned for; the camera's field of view; master, music and effects
+volumes; the text language; and the keyboard and pad bindings for the menus.
+Per-user settings merge over those defaults from
+`%APPDATA%\GauntletDarkLegacy\settings.json` on Windows and
+`~/.config/GauntletDarkLegacy/settings.json` elsewhere; the in-game options
+screens will write that file. `--no-vsync` on the command line wins over both.
+
+Every string the player sees comes from `data/text/<language>.json` by
+identifier, with English as the fallback for identifiers a translation lacks.
+Adding a language is adding a file next to `en.json` and naming it in the
+settings.
+
+With the default bindings: during a movie, Enter or Start jumps to the title
+screen and Space or A skips to the next attract screen. On the title screen,
+Enter or Start opens the menu; arrows, W/S or the d-pad move, Enter, Space or
+A selects, Backspace or B goes back.
 
 ### Tools
 
@@ -172,10 +191,11 @@ Catch2 tag filters: `build/<preset>/bin/tests "[math]"`.
 ```
 src/engine/       reusable engine library (namespace gdl): core, math, io, platform, render, codec, audio, assets, ui, app
 src/formats/      readers for the console asset formats (namespace gdl::formats), used by the tools and tests only
-src/game/         the Gauntlet game built on it (namespace gdl::game) and the executable
+src/game/         the Gauntlet game built on it (namespace gdl::game): config, menu, screens, app, and main.cpp
 tools/            command-line tools built on the engine (vqdump, gdlunpack)
 tests/            Catch2 tests, one file per source module, same tree shape as src/
 shaders/          GLSL sources, compiled at build time to bin/shaders/*.spv
+data/             shipped settings defaults (config.json) and text tables (text/<language>.json)
 assets/           game data (ignored by git)
 cmake/            CMake helper modules
 scripts/          Python helpers: devenv, configure, build, lint, clangd-check
@@ -184,7 +204,7 @@ scripts/          Python helpers: devenv, configure, build, lint, clangd-check
 
 Headers live next to their sources: a class `Foo` in engine module `render` is
 `src/engine/render/Foo.h` and `Foo.cpp`, included as `"engine/render/Foo.h"`;
-game code is included as `"game/Foo.h"`. `gdl` is the project namespace
+game code follows the same shape, `"game/menu/Foo.h"`. `gdl` is the project namespace
 (*Gauntlet Dark Legacy*); folders are named by role.
 
 [AGENTS.md](AGENTS.md) has the working rules for contributors and coding agents.

@@ -11,7 +11,7 @@ bool SoundSequence::loops() const {
 
 SoundPlayer::SoundPlayer(AudioMixer& mixer) : m_mixer(mixer) {}
 
-SoundHandle SoundPlayer::play(const SoundSequence& sequence, f32 volume) {
+SoundHandle SoundPlayer::play(const SoundSequence& sequence, f32 volume, SoundCategory category) {
     if (sequence.steps.empty() || sequence.steps[0].clip == nullptr ||
         sequence.steps[0].clip->sampleRate == 0 || sequence.steps[0].clip->channels == 0) {
         return kNoSound;
@@ -21,10 +21,35 @@ SoundHandle SoundPlayer::play(const SoundSequence& sequence, f32 volume) {
     voice.sequence = sequence;
     const SoundClip& first = *sequence.steps[0].clip;
     voice.stream = m_mixer.createStream(AudioStreamDesc{first.sampleRate, first.channels});
-    voice.stream->setVolume(std::clamp(volume * sequence.volume, 0.0f, 1.0f));
+    voice.category = category;
+    voice.volume = volume * sequence.volume;
+    applyVolume(voice);
     feed(voice);
     m_voices.push_back(std::move(voice));
     return m_voices.back().handle;
+}
+
+void SoundPlayer::setMasterVolume(f32 volume) {
+    m_masterVolume = std::clamp(volume, 0.0f, 1.0f);
+    for (Voice& voice : m_voices) {
+        applyVolume(voice);
+    }
+}
+
+void SoundPlayer::setCategoryVolume(SoundCategory category, f32 volume) {
+    m_categoryVolumes[static_cast<usize>(category)] = std::clamp(volume, 0.0f, 1.0f);
+    for (Voice& voice : m_voices) {
+        applyVolume(voice);
+    }
+}
+
+f32 SoundPlayer::categoryVolume(SoundCategory category) const {
+    return m_categoryVolumes[static_cast<usize>(category)];
+}
+
+void SoundPlayer::applyVolume(Voice& voice) const {
+    voice.stream->setVolume(
+        std::clamp(m_masterVolume * categoryVolume(voice.category) * voice.volume, 0.0f, 1.0f));
 }
 
 void SoundPlayer::stop(SoundHandle handle) {

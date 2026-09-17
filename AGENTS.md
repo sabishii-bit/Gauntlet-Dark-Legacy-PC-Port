@@ -23,14 +23,18 @@ JSON manifests under `assets/unpacked/` (also ignored, baked in as
 formats are parsed solely in `src/formats/` and `tools/gdlunpack/`. Movies and
 audio streams stay in the disc's own containers, decoded by `engine/codec`.
 
+`data/` is versioned and ships with the game: `config.json` (the settings
+defaults) and `text/<language>.json` (every user-facing string by identifier).
+
 ## Layout and naming
 
 ```
 src/engine/<module>/   reusable engine library, namespace gdl   (core, math, io, platform, render, codec, audio, assets, ui, app)
 src/formats/           console asset format readers, namespace gdl::formats (archives, textures, fonts, text roms)
-src/game/              the Gauntlet game, namespace gdl::game; main.cpp is the executable
+src/game/<module>/     the Gauntlet game, namespace gdl::game   (config, menu, screens, app); main.cpp is the executable
 tools/<tool>/          command-line tools (vqdump: movie -> PNG + WAV; gdlunpack: console assets -> PNG + JSON)
 tests/                 Catch2 tests, same tree shape as src/ (tests/engine/..., tests/formats/..., tests/game/...)
+data/                  shipped settings defaults (config.json) and text tables (text/<language>.json)
 shaders/  assets/  cmake/  scripts/  .vscode/
 ```
 
@@ -38,24 +42,40 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   by role. Engine code is `gdl::`, game code is `gdl::game::`.
 * Headers sit next to their sources. A class `Foo` in engine module `render`
   is `src/engine/render/Foo.h` + `Foo.cpp`, included as
-  `"engine/render/Foo.h"`. Game files are included as `"game/Foo.h"`.
+  `"engine/render/Foo.h"`; game files follow the same shape, `"game/menu/Foo.h"`.
 * CMake targets: `engine` (static library), `formats` (static library on top
   of the engine; the game never links it), `game` (static library with
   everything but `main.cpp`, so tests can link it), `gauntlet` (executable),
   `tests` (Catch2 executable), `vqdump` and `gdlunpack` (tools).
 * Layering, lowest first: `core`, `math`, `io`, `platform`, `render`, `codec`,
-  `audio`, `assets`, `ui`, `app`, then `game`. A module only includes modules
-  below it. Vulkan appears only under `src/engine/render/vulkan/`, GLFW only
+  `audio`, `assets`, `ui`, `app`, then the game. A module only includes modules
+  below it.
+* Game modules, lowest first: `config` (settings), `menu` (input mapping,
+  menus and their effects), `screens` (whole screens such as the title and
+  movie screens, plus `GameContext`, what a screen receives), `app` (the
+  `Gauntlet` driver, the command line and the attract flow). The same rule
+  applies: a module only includes those below it, and `main.cpp` uses `app`. Vulkan appears only under `src/engine/render/vulkan/`, GLFW only
   under `src/engine/platform/`, miniaudio only in
   `src/engine/audio/AudioDevice.cpp`, stb_image only in `src/engine/assets/`,
   nlohmann-json only in `.cpp` files under `src/engine/assets/`.
-* 2D screens draw through `ui/Canvas` in the original's 512x384 virtual space
-  and `ui/TextPainter` for bitmap text; `ui/ModelSprite` draws an animation
-  tree's meshes as a lit 3D object on that canvas. Screen logic runs on a
-  60 Hz tick count (`step(ticks, input)`) so tests can drive it without a
-  clock.
+* Nothing the player sees or tunes is hard-coded. Sizes, rates, volumes and
+  bindings are fields of `game/config/GameConfig`, defaulted in code and in
+  `data/config.json` (the two must agree; a test checks) and overridden by the
+  user's settings file. Every user-facing string is looked up in
+  `assets/StringTable` by identifier (`data/text/en.json`); code never holds
+  a literal the player reads. A screen receives all of this through
+  `game/screens/GameContext`.
+* 2D screens draw through `ui/Canvas` in the configured virtual space (the
+  original's 512x384) and `ui/TextPainter` for bitmap text; `ui/ModelSprite`
+  draws an animation tree's meshes as a lit 3D object on that canvas, sized
+  from the configured camera. Screen logic runs on the configured tick count
+  (60 Hz; gameplay was tuned for two ticks per frame) through
+  `step(ticks, input)` so tests can drive it without a clock.
+* Textures flagged clamp in their manifest are sampled with edge clamping, so
+  tiles that meet edge to edge show no seam.
 * Sounds are `assets/SoundSet` entries (a bank's `sounds.json`) played through
-  `audio/SoundPlayer`, which feeds sample sequences and loops into mixer
+  `audio/SoundPlayer` in a `SoundCategory` (effects or music, scaled by the
+  audio settings), which feeds sample sequences and loops into mixer
   streams; the game calls `SoundPlayer::update()` once per frame. Movie audio
   and sounds stop through `AudioStream::stop()`, which drops what is queued.
 * Game data is read through `AssetLocator`, which matches names ignoring case,
@@ -98,7 +118,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `test::FakeRenderDevice` (`tests/FakeRenderDevice.h`), which records draw
   calls. Code that needs a window or GPU is covered by `[gpu]` integration
   tests (`tests/engine/app/ApplicationTests.cpp`,
-  `tests/game/MovieSceneTests.cpp`); extend those rather than skipping
+  `tests/game/screens/MovieSceneTests.cpp`); extend those rather than skipping
   coverage. Tests that read game data carry the `[assets]` tag and skip
   through `test::assetOrSkip` when the data is absent; tests that read the
   `gdlunpack` output carry `[unpacked]` and use `test::unpackedOrSkip`;

@@ -15,6 +15,7 @@ enum class CommandLineAction : u8 { Run, ShowHelp, Fail };
 struct GameOptions {
     std::string playMovie; ///< play this VQ movie (name without extension) and quit
     std::filesystem::path unpackedDirectory; ///< output of gdlunpack (PNG images, JSON manifests)
+    std::filesystem::path dataDirectory;     ///< shipped configuration and text (the data/ tree)
     bool startAtTitle = false;               ///< skip the intro movies and open the title screen
 };
 

@@ -4,28 +4,27 @@
 #include <string_view>
 
 #include "engine/app/Application.h"
+#include "engine/assets/StringTable.h"
 #include "engine/audio/AudioDevice.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/render/RenderDevice.h"
 
-#include "game/AttractSequencer.h"
-#include "game/CommandLine.h"
-#include "game/MovieScene.h"
-#include "game/SmokeTestScene.h"
-#include "game/TitleScene.h"
+#include "game/app/AttractSequencer.h"
+#include "game/app/CommandLine.h"
+#include "game/config/GameConfig.h"
+#include "game/screens/GameContext.h"
+#include "game/screens/MovieScene.h"
+#include "game/screens/SmokeTestScene.h"
+#include "game/screens/TitleScene.h"
 
 namespace gdl::game {
 
 /** The game: owns the top-level game flow and drives the engine each frame. */
 class Gauntlet final : public Application {
 public:
-    Gauntlet(ApplicationDesc desc, GameOptions options);
-
-    /** Size of the virtual frame the game draws into; it is letterboxed onto the window. */
-    static constexpr f32 kFrameWidth = 640.0f;
-    static constexpr f32 kFrameHeight = 448.0f;
+    Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config);
 
 protected:
     void onInit() override;
@@ -39,10 +38,11 @@ private:
     void startNextAttractScreen();
     void updateMovie(f64 deltaSeconds);
     void updateTitle(f64 deltaSeconds);
-    bool skipRequested() const;
-    bool startRequested() const;
+    GameContext context() const;
 
     GameOptions m_options;
+    GameConfig m_config;
+    StringTable m_strings;
     std::unique_ptr<AudioDevice> m_audio;
     std::unique_ptr<SoundPlayer> m_sounds;
     std::unique_ptr<AssetLocator> m_assets;

@@ -16,7 +16,8 @@ struct ApplicationDesc {
     std::filesystem::path assetDirectory;
     bool vsync = true;
     bool enableValidation = false;
-    u64 maxFrames = 0; ///< quit after this many frames; 0 runs until closed
+    u64 maxFrames = 0;    ///< quit after this many frames; 0 runs until closed
+    u32 maxFrameRate = 0; ///< sleep to hold this many frames per second; 0 leaves it to vsync
 };
 
 /** Owns the window, the render device and the frame loop. Subclass and override the hooks. */

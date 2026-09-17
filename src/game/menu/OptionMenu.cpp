@@ -1,6 +1,7 @@
-#include "game/OptionMenu.h"
+#include "game/menu/OptionMenu.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace gdl::game {
 
@@ -53,14 +54,26 @@ u8 pulseOpacity(s32 time, s32 radius, s32 hold) {
     return opacityFromFontAlpha(kDisabledAlpha - 1 - ramp / 2);
 }
 
-void OptionMenu::open(const MenuDefinition& definition, const TextPainter& painter, s32 selection) {
+f32 OptionMenu::iconPixelsPerUnit(const MenuScreen& screen) {
+    // The original projects the arrow through its camera: the focal length in pixels times the
+    // model scale, over the arrow's distance.
+    const f32 focal =
+        (static_cast<f32>(screen.width) / 2.0f) / std::tan(screen.horizontalFov / 2.0f);
+    return kIconWorldScale * focal / kIconDepth;
+}
+
+void OptionMenu::open(const MenuDefinition& definition, const TextPainter& painter,
+                      const MenuScreen& screen, s32 selection) {
     m_definition = definition;
+    m_screen = screen;
     m_open = true;
+    m_backdropReleased = false;
     m_time = 0;
     m_finishTimer = 0;
     m_iconY = 0;
     m_iconTimer = kIconGlideTicks;
     m_iconDrawY = 0;
+    m_iconScale = iconPixelsPerUnit(screen);
     const auto count = static_cast<s32>(m_definition.items.size());
     m_selection = count == 0 ? 0 : std::clamp(selection, 0, count - 1);
 
@@ -73,7 +86,7 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     }
 
     if (m_definition.y == -1) {
-        m_columnY = kMenuScreenHeight / 2 - m_columnHeight / 2;
+        m_columnY = screen.height / 2 - m_columnHeight / 2;
     } else if (m_definition.y < 0) {
         m_columnY = -(m_definition.y + m_columnHeight / 2);
     } else {
@@ -86,9 +99,9 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     const s32 height = m_definition.backdropHeight < 0 ? m_columnHeight + kBackdropMargin * 2
                                                        : m_definition.backdropHeight;
     const s32 x =
-        m_definition.backdropX < 0 ? kMenuScreenWidth / 2 - width / 2 : m_definition.backdropX;
+        m_definition.backdropX < 0 ? screen.width / 2 - width / 2 : m_definition.backdropX;
     const s32 y =
-        m_definition.backdropY < 0 ? kMenuScreenHeight / 2 - height / 2 : m_definition.backdropY;
+        m_definition.backdropY < 0 ? screen.height / 2 - height / 2 : m_definition.backdropY;
     m_backdrop = Rect{static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(width),
                       static_cast<f32>(height)};
     glideIcon(0);
@@ -222,7 +235,8 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
                                     ? textures.parchment
                                     : textures.font;
 
-    if (!m_definition.backdrop.empty() && textures.backdrop != nullptr) {
+    const bool hasBackdrop = !m_definition.backdrop.empty() && textures.backdrop != nullptr;
+    if (hasBackdrop && !m_backdropReleased) {
         canvas.draw(*textures.backdrop, m_backdrop, white);
         if (textures.burn[0] != nullptr) {
             const auto frame = static_cast<usize>((m_time >> 3) % kBurnFrames);
@@ -230,16 +244,18 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
                 textures.burn[frame] != nullptr ? textures.burn[frame] : textures.burn[0];
             canvas.draw(*burn, m_definition.burnArea, white);
         }
+    }
+    if (hasBackdrop) {
         if (!m_definition.title.empty()) {
             const s32 x = -static_cast<s32>(m_backdrop.x + m_backdrop.width / 2.0f);
             const s32 y = static_cast<s32>(m_backdrop.y) + kTitleMargin;
             drawLabel(canvas, painter, x, y, m_definition.title, m_definition.titleScale, white,
                       labelSheet);
         }
-        if (m_definition.playerTag) {
+        if (!m_definition.playerLabel.empty()) {
             const s32 y = static_cast<s32>(m_backdrop.y) + kPlayerTagMargin;
-            drawLabel(canvas, painter, -kPlayerTagX, y, "Player 1", kPromptScale, white,
-                      labelSheet);
+            drawLabel(canvas, painter, -kPlayerTagX, y, m_definition.playerLabel, kPromptScale,
+                      white, labelSheet);
         }
     }
 
@@ -269,30 +285,33 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         }
     }
 
-    if (textures.icon != nullptr && textures.icon->bound() && !m_definition.items.empty()) {
-        textures.icon->draw(
-            canvas, Vec2{static_cast<f32>(m_columnX + kIconOffsetX), static_cast<f32>(m_iconDrawY)},
-            kIconPixelsPerUnit, iconAngle());
-    } else if (textures.arrows != nullptr && !m_definition.items.empty()) {
-        const auto width = static_cast<f32>(kArrowGlyphWidth * kArrowDrawScale);
-        const auto height = static_cast<f32>(kArrowGlyphHeight * kArrowDrawScale);
-        const auto centerX = static_cast<f32>(m_columnX + kIconOffsetX);
-        const Rect area{centerX - width / 2.0f, static_cast<f32>(m_iconDrawY) - height / 2.0f,
-                        width, height};
-        const auto sheet = static_cast<f32>(kArrowSheetSize);
-        const Rect uv{static_cast<f32>(kArrowGlyphX) / sheet,
-                      static_cast<f32>(kArrowGlyphY) / sheet,
-                      static_cast<f32>(kArrowGlyphWidth) / sheet,
-                      static_cast<f32>(kArrowGlyphHeight) / sheet};
-        canvas.draw(*textures.arrows, area, uv, white);
+    if (!m_backdropReleased && !m_definition.items.empty()) {
+        if (textures.icon != nullptr && textures.icon->bound()) {
+            textures.icon->draw(
+                canvas,
+                Vec2{static_cast<f32>(m_columnX + kIconOffsetX), static_cast<f32>(m_iconDrawY)},
+                m_iconScale, iconAngle());
+        } else if (textures.arrows != nullptr) {
+            const auto width = static_cast<f32>(kArrowGlyphWidth * kArrowDrawScale);
+            const auto height = static_cast<f32>(kArrowGlyphHeight * kArrowDrawScale);
+            const auto centerX = static_cast<f32>(m_columnX + kIconOffsetX);
+            const Rect area{centerX - width / 2.0f, static_cast<f32>(m_iconDrawY) - height / 2.0f,
+                            width, height};
+            const auto sheet = static_cast<f32>(kArrowSheetSize);
+            const Rect uv{static_cast<f32>(kArrowGlyphX) / sheet,
+                          static_cast<f32>(kArrowGlyphY) / sheet,
+                          static_cast<f32>(kArrowGlyphWidth) / sheet,
+                          static_cast<f32>(kArrowGlyphHeight) / sheet};
+            canvas.draw(*textures.arrows, area, uv, white);
+        }
     }
 
     if (m_definition.prompts && m_finishTimer == 0) {
-        const s32 slot = kMenuScreenWidth / (kPromptSlots + 1);
-        drawLabel(canvas, painter, -slot, m_definition.promptY, "Back", kPromptScale, white,
-                  labelSheet);
-        drawLabel(canvas, painter, -(slot * 2), m_definition.promptY, "Select", kPromptScale, white,
-                  labelSheet);
+        const s32 slot = m_screen.width / (kPromptSlots + 1);
+        drawLabel(canvas, painter, -slot, m_definition.promptY, m_definition.backLabel,
+                  kPromptScale, white, labelSheet);
+        drawLabel(canvas, painter, -(slot * 2), m_definition.promptY, m_definition.selectLabel,
+                  kPromptScale, white, labelSheet);
     }
 }
 
