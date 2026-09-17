@@ -77,4 +77,9 @@ std::vector<u8> FileStream::readExact(usize count) {
     return bytes;
 }
 
+std::string readTextFile(const std::filesystem::path& path) {
+    const std::vector<u8> bytes = readFile(path);
+    return {bytes.begin(), bytes.end()};
+}
+
 } // namespace gdl

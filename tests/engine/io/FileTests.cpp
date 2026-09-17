@@ -53,4 +53,11 @@ TEST_CASE("missing files throw FileError", "[io][file]") {
     REQUIRE_THROWS_AS(FileStream(dir / "nope.bin"), FileError);
 }
 
+TEST_CASE("text files read back as strings", "[io][file]") {
+    const auto dir = test::scratchDirectory("file-text");
+    writeTextFile(dir / "note.txt", "hello\nworld");
+    REQUIRE(readTextFile(dir / "note.txt") == "hello\nworld");
+    REQUIRE_THROWS_AS(readTextFile(dir / "missing.txt"), FileError);
+}
+
 } // namespace

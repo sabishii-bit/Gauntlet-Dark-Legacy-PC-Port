@@ -22,7 +22,11 @@ add_library(formats STATIC
     AnimationTree.h
     AnimationTree.cpp
     ObjWriter.h
-    ObjWriter.cpp)
+    ObjWriter.cpp
+    PlayerDataWad.h
+    PlayerDataWad.cpp
+    WorldFile.h
+    WorldFile.cpp)
 
 add_library(gdl::formats ALIAS formats)
 

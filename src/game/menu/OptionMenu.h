@@ -26,6 +26,7 @@ struct MenuItem {
     std::string text;
     s32 code = 0;
     s32 extraSpacing = 0; ///< pixels added below the item
+    bool enabled = true;  ///< disabled items are greyed and skipped
 };
 
 struct MenuColors {
@@ -146,6 +147,7 @@ public:
 
 private:
     void glideIcon(s32 ticks);
+    s32 nextEnabled(s32 from, s32 step) const;
     const Texture* itemSheet(const MenuTextures& textures, bool selected) const;
 
     MenuDefinition m_definition;

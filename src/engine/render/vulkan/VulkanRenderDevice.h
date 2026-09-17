@@ -41,7 +41,7 @@ public:
 
 private:
     static constexpr u32 kFramesInFlight = 2;
-    static constexpr u32 kMaxVerticesPerFrame = 1U << 16U;
+    static constexpr u32 kMaxVerticesPerFrame = 1U << 18U;
 
     struct FrameResources {
         VkCommandPool commandPool = VK_NULL_HANDLE;

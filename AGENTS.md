@@ -29,9 +29,9 @@ defaults) and `text/<language>.json` (every user-facing string by identifier).
 ## Layout and naming
 
 ```
-src/engine/<module>/   reusable engine library, namespace gdl   (core, math, io, platform, render, codec, audio, assets, ui, app)
+src/engine/<module>/   reusable engine library, namespace gdl   (core, math, io, platform, render, codec, audio, assets, ui, world, app)
 src/formats/           console asset format readers, namespace gdl::formats (archives, textures, fonts, text roms)
-src/game/<module>/     the Gauntlet game, namespace gdl::game   (config, menu, screens, app); main.cpp is the executable
+src/game/<module>/     the Gauntlet game, namespace gdl::game   (config, players, menu, screens, app); main.cpp is the executable
 tools/<tool>/          command-line tools (vqdump: movie -> PNG + WAV; gdlunpack: console assets -> PNG + JSON)
 tests/                 Catch2 tests, same tree shape as src/ (tests/engine/..., tests/formats/..., tests/game/...)
 data/                  shipped settings defaults (config.json) and text tables (text/<language>.json)
@@ -48,13 +48,27 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   everything but `main.cpp`, so tests can link it), `gauntlet` (executable),
   `tests` (Catch2 executable), `vqdump` and `gdlunpack` (tools).
 * Layering, lowest first: `core`, `math`, `io`, `platform`, `render`, `codec`,
-  `audio`, `assets`, `ui`, `app`, then the game. A module only includes modules
-  below it.
-* Game modules, lowest first: `config` (settings), `menu` (input mapping,
-  menus and their effects), `screens` (whole screens such as the title and
-  movie screens, plus `GameContext`, what a screen receives), `app` (the
-  `Gauntlet` driver, the command line and the attract flow). The same rule
-  applies: a module only includes those below it, and `main.cpp` uses `app`. Vulkan appears only under `src/engine/render/vulkan/`, GLFW only
+  `audio`, `assets`, `ui`, `world`, `app`, then the game. A module only includes
+  modules below it.
+* Game modules, lowest first: `config` (settings), `players` (the class
+  table and stats, the experience curve, character saves), `menu` (input
+  mapping, menus, name entry and their effects), `screens` (whole screens such
+  as the title, movie and player select screens, plus `GameContext`, what a
+  screen receives), `app` (the `Gauntlet` driver, the command line and the
+  attract flow). The same rule applies: a module only includes those below
+  it, and `main.cpp` uses `app`.
+* Saved characters are JSON files written by `players/CharacterSave` into the
+  directory the settings name (`GameConfig::saveDirectory()`), one per slot;
+  the format carries a version so it can grow. Only the select screen writes
+  them. Per-class tuning comes from `assets/unpacked/pdata/<CLASS>.json`
+  through `players/ClassData`; class and colour codes (`WAR`, `RED`) are asset
+  names and live in code, everything a player reads comes from the text
+  tables.
+* The player select screen is four `screens/SelectLane` state machines under
+  one `screens/PlayerSelectScene`; each lane reads one player's devices through
+  `MenuInputSource::forPlayer`. It ends when every joined player is locked in
+  and nothing is animating, or when the last player backs out.
+* Vulkan appears only under `src/engine/render/vulkan/`, GLFW only
   under `src/engine/platform/`, miniaudio only in
   `src/engine/audio/AudioDevice.cpp`, stb_image only in `src/engine/assets/`,
   nlohmann-json only in `.cpp` files under `src/engine/assets/`.
@@ -73,6 +87,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `step(ticks, input)` so tests can drive it without a clock.
 * Textures flagged clamp in their manifest are sampled with edge clamping, so
   tiles that meet edge to edge show no seam.
+* Levels: `assets/WorldLayout` reads a level's `world.json` (placed objects,
+  their parent links and marker points); `world/WorldScene` gathers the placed
+  meshes per texture, lit per vertex, and `world/WorldCamera` places a camera
+  with the original's pitch/yaw/roll convention, projecting depth into
+  [0, 0.45] so the 2D layers at 0.5 and 0.75 always draw on top. Levels are
+  unpacked only with `gdlunpack --levels` (or `--only <level>`), about 20 MB
+  each.
 * Sounds are `assets/SoundSet` entries (a bank's `sounds.json`) played through
   `audio/SoundPlayer` in a `SoundCategory` (effects or music, scaled by the
   audio settings), which feeds sample sequences and loops into mixer

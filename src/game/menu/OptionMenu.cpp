@@ -76,6 +76,9 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     m_iconScale = iconPixelsPerUnit(screen);
     const auto count = static_cast<s32>(m_definition.items.size());
     m_selection = count == 0 ? 0 : std::clamp(selection, 0, count - 1);
+    if (count > 0 && !m_definition.items[static_cast<usize>(m_selection)].enabled) {
+        m_selection = nextEnabled(m_selection, 1);
+    }
 
     m_lineHeight = painter.lineHeight(m_definition.scale);
     m_columnHeight = 0;
@@ -146,14 +149,27 @@ MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks) {
         return MenuEvent{MenuAction::Back, 0};
     }
     if (input.down) {
-        m_selection = (m_selection + 1) % count;
+        m_selection = nextEnabled(m_selection, 1);
         return MenuEvent{MenuAction::Moved, 0};
     }
     if (input.up) {
-        m_selection = (m_selection + count - 1) % count;
+        m_selection = nextEnabled(m_selection, -1);
         return MenuEvent{MenuAction::Moved, 0};
     }
     return {};
+}
+
+/** The next enabled item from `from` in direction `step`, wrapping; `from` when none. */
+s32 OptionMenu::nextEnabled(s32 from, s32 step) const {
+    const auto count = static_cast<s32>(m_definition.items.size());
+    s32 index = from;
+    for (s32 tries = 0; tries < count; ++tries) {
+        index = (index + step + count) % count;
+        if (m_definition.items[static_cast<usize>(index)].enabled) {
+            return index;
+        }
+    }
+    return from;
 }
 
 s32 OptionMenu::itemY(usize index) const {
@@ -277,9 +293,12 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
             drawLabel(canvas, painter, m_definition.x, y, item.text, m_definition.scale,
                       m_definition.colors.on.withAlpha(fade), itemSheet(textures, true));
         } else {
-            const Color color = m_definition.parchmentFont && !garamondActive
-                                    ? white
-                                    : m_definition.colors.off.withAlpha(fade);
+            Color color = m_definition.parchmentFont && !garamondActive
+                              ? white
+                              : m_definition.colors.off.withAlpha(fade);
+            if (!item.enabled) {
+                color = color.withAlpha(static_cast<u8>(fade / 2));
+            }
             drawLabel(canvas, painter, m_definition.x, y, item.text, m_definition.scale, color,
                       itemSheet(textures, false));
         }

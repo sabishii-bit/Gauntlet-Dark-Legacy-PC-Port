@@ -39,15 +39,25 @@ struct TextConfig {
     std::string language = "en";
 };
 
+/** Where characters are saved; an empty directory means beside the user's settings. */
+struct SaveConfig {
+    std::string directory;
+    u32 slots = 8;
+};
+
 /** Keys and pad buttons that drive the menus. */
 struct MenuBindings {
     std::vector<Key> up{Key::Up, Key::W};
     std::vector<Key> down{Key::Down, Key::S};
+    std::vector<Key> left{Key::Left, Key::A};
+    std::vector<Key> right{Key::Right, Key::D};
     std::vector<Key> select{Key::Enter, Key::Space};
     std::vector<Key> back{Key::Backspace};
     std::vector<Key> start{Key::Enter};
     std::vector<PadButton> padUp{PadButton::DpadUp};
     std::vector<PadButton> padDown{PadButton::DpadDown};
+    std::vector<PadButton> padLeft{PadButton::DpadLeft};
+    std::vector<PadButton> padRight{PadButton::DpadRight};
     std::vector<PadButton> padSelect{PadButton::A};
     std::vector<PadButton> padBack{PadButton::B};
     std::vector<PadButton> padStart{PadButton::Start};
@@ -63,6 +73,7 @@ struct GameConfig {
     CameraConfig camera;
     AudioConfig audio;
     TextConfig text;
+    SaveConfig save;
     MenuBindings menu;
 
     /** Merges every value the file provides; false (with a warning) when it cannot be read. */
@@ -76,6 +87,9 @@ struct GameConfig {
     std::string toJson() const;
 
     f32 horizontalFovRadians() const;
+
+    /** The save directory, resolved from the settings or the user's configuration folder. */
+    std::filesystem::path saveDirectory() const;
 
     /** Where this user's settings live: under the platform's per-user configuration directory. */
     static std::filesystem::path userSettingsPath();

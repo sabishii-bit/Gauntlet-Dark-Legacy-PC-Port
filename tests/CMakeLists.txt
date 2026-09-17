@@ -39,6 +39,10 @@ add_executable(tests
     engine/assets/ModelSetTests.cpp
     engine/assets/AnimationSetTests.cpp
     engine/ui/ModelSpriteTests.cpp
+    engine/world/WorldCameraTests.cpp
+    engine/world/WorldSceneTests.cpp
+    engine/assets/WorldLayoutTests.cpp
+    formats/WorldFileTests.cpp
     engine/ui/CanvasTests.cpp
     engine/ui/TextPainterTests.cpp
     formats/ModelArchiveTests.cpp
@@ -59,6 +63,13 @@ add_executable(tests
     game/menu/OptionMenuTests.cpp
     game/screens/TitleSceneTests.cpp
     game/config/GameConfigTests.cpp
+    game/players/ClassDataTests.cpp
+    game/players/ProgressionTests.cpp
+    game/players/CharacterSaveTests.cpp
+    game/menu/NameEntryTests.cpp
+    game/screens/SelectLaneTests.cpp
+    game/screens/PlayerSelectSceneTests.cpp
+    formats/PlayerDataWadTests.cpp
     game/menu/FireScrollTests.cpp
     engine/assets/StringTableTests.cpp)
 

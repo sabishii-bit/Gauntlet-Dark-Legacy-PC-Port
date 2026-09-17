@@ -44,6 +44,8 @@ def main() -> int:
     parser.add_argument("--test", action="store_true", help="run the unit tests (ctest -LE gpu)")
     parser.add_argument("--unpack", action="store_true",
                         help="run gdlunpack from the asset directory into the unpacked directory")
+    parser.add_argument("--levels", action="store_true",
+                        help="with --unpack: also unpack the level folders (about 20 MB each)")
     parser.add_argument("--run", action="store_true", help="launch the game afterwards")
     parser.epilog = "Arguments after -- are passed to the game."
     argv = sys.argv[1:]
@@ -71,7 +73,10 @@ def main() -> int:
     if args.unpack:
         assets = cache_path(binary_dir, "GDL_ASSET_DIR", ROOT / "assets" / "GUNE5D" / "Gauntlet")
         unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", ROOT / "assets" / "unpacked")
-        devenv.run([str(bin_dir / f"gdlunpack{EXE}"), str(assets), str(unpacked)])
+        unpack_args = [str(bin_dir / f"gdlunpack{EXE}"), str(assets), str(unpacked)]
+        if args.levels:
+            unpack_args.append("--levels")
+        devenv.run(unpack_args)
 
     if args.run:
         return devenv.run([str(bin_dir / f"gauntlet{EXE}"), *app_args]).returncode

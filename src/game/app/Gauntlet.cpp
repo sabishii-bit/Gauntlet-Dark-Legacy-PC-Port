@@ -66,6 +66,8 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         updateMovie(deltaSeconds);
     } else if (m_title.isOpen()) {
         updateTitle(deltaSeconds);
+    } else if (m_select.isOpen()) {
+        updateSelect(deltaSeconds);
     }
     m_sounds->update();
 
@@ -101,11 +103,50 @@ void Gauntlet::updateTitle(f64 deltaSeconds) {
         return;
     }
     m_title.close();
-    if (outcome == TitleOutcome::StartGame) {
-        log::info("Player select is not built yet; restarting the attract loop");
-        m_attract.reset();
+    if (outcome == TitleOutcome::StartGame && startPlayerSelect(playerPressingStart())) {
+        return;
     }
     startNextAttractScreen();
+}
+
+/** The player whose Start or Select is down this frame; the first when none is. */
+s32 Gauntlet::playerPressingStart() const {
+    for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+        const MenuInput menu =
+            readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
+        if (menu.start || menu.select) {
+            return player;
+        }
+    }
+    return 0;
+}
+
+bool Gauntlet::startPlayerSelect(s32 startingPlayer) {
+    if (m_select.open(renderDevice(), context(), startingPlayer)) {
+        return true;
+    }
+    log::warn("Player select unavailable; unpack the game data into {} with gdlunpack",
+              m_options.unpackedDirectory.string());
+    return false;
+}
+
+void Gauntlet::updateSelect(f64 deltaSeconds) {
+    PlayerSelectScene::Inputs inputs;
+    for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+        inputs[static_cast<usize>(player)] =
+            readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
+    }
+    const SelectOutcome outcome = m_select.update(deltaSeconds, inputs);
+    if (outcome == SelectOutcome::Running) {
+        return;
+    }
+    m_select.close();
+    if (outcome == SelectOutcome::Done) {
+        log::info("Every player is ready; the tower is not built yet, so back to the title");
+    }
+    if (!startTitleScreen()) {
+        startNextAttractScreen();
+    }
 }
 
 void Gauntlet::onRender(RenderDevice& device) {
@@ -123,12 +164,17 @@ void Gauntlet::onRender(RenderDevice& device) {
         m_title.render(device, projection, frameWidth, frameHeight);
         return;
     }
+    if (m_select.isOpen()) {
+        m_select.render(device, projection, frameWidth, frameHeight);
+        return;
+    }
     m_smokeTest.render(device, projection, static_cast<f32>(clock().totalSeconds()));
 }
 
 void Gauntlet::onShutdown() {
     m_movie.close();
     m_title.close();
+    m_select.close();
     m_smokeTest.shutdown();
     m_assets.reset();
     m_sounds.reset();

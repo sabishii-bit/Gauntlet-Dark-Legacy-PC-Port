@@ -9,8 +9,8 @@ included, you need your own copy of the disc.
 the game's intro movies with sound and then shows the title screen: the logo,
 its animated glow, "Press Start", the title music, and the Start / Options
 menus drawn with the game's own fonts, scroll art, menu sounds and the 3D
-arrow cursor. Choosing Start returns to the attract loop (player select is
-next); the Options entries are listed but not yet wired up. The title screen
+arrow cursor. Choosing Start opens the player select screen described below;
+the Options entries are listed but not yet wired up. The title screen
 needs the assets unpacked once with `gdlunpack` (see Run).
 
 ## Requirements
@@ -103,6 +103,11 @@ go under `assets/unpacked`, which git ignores):
 python scripts/build.py --unpack
 ```
 
+The level folders are large (about 20 MB each once unpacked), so they are left
+out unless asked for: `python scripts/build.py --unpack --levels` unpacks all
+seventy, and `gdlunpack <assets> <out> --only levelL1` one of them. The player
+select screen shows the tower hub (`levelL1`) behind its lanes when it is there.
+
 Then run `build/<preset>/bin/gauntlet` (or `python scripts/build.py --run --
 <arguments>`):
 
@@ -139,6 +144,25 @@ screen and Space or A skips to the next attract screen. On the title screen,
 Enter or Start opens the menu; arrows, W/S or the d-pad move, Enter, Space or
 A selects, Backspace or B goes back.
 
+### Player select
+
+Choosing Start on the title screen opens the player select screen: four lanes,
+one per player. The keyboard and the first pad drive lane one; pads two to four
+drive the other lanes, and a lane joins when its Start is pressed. Each lane
+offers New (enter a name with up/down, holding either to race through the
+letters, right or Select to take a letter, left to remove one, then pick a
+class with left/right and a costume colour with up/down) or Load (pick a saved
+character). The status box under each lane shows its class, name, level, gold
+and health in the costume's colour. A locked-in player can press Start while
+others are still choosing to save, load, change class or quit. The screen ends
+once every player is ready; the tower that follows is not built yet, so the
+game returns to the title for now.
+
+Characters are JSON files, one per slot, under
+`%APPDATA%\GauntletDarkLegacy\saves` on Windows and
+`~/.config/GauntletDarkLegacy/saves` elsewhere; `save.directory` and
+`save.slots` in the settings change the place and the count.
+
 ### Tools
 
 `gdlunpack <asset-root> <out-root> [--only <directory>]` converts every
@@ -155,6 +179,8 @@ assets/unpacked/<ARCHIVE>/animations.json                animation trees: node h
 assets/unpacked/audio/<BANK>/samples/<index>.wav         decoded samples (16-bit PCM)
 assets/unpacked/audio/<BANK>/sounds.json                 named sounds: sample sequences, loops, volumes
 assets/unpacked/fonts/<name>.json                        glyph cells of each bitmap font
+assets/unpacked/pdata/<CLASS>.json                       per-class stat ranges and body size
+assets/unpacked/LEVELS/<LEVEL>/world.json                a level's placed objects and marker points (with --levels)
 assets/unpacked/text/<name>.json                         fonts, named messages and message lists
 ```
 
@@ -189,9 +215,9 @@ Catch2 tag filters: `build/<preset>/bin/tests "[math]"`.
 ## Layout
 
 ```
-src/engine/       reusable engine library (namespace gdl): core, math, io, platform, render, codec, audio, assets, ui, app
+src/engine/       reusable engine library (namespace gdl): core, math, io, platform, render, codec, audio, assets, ui, world, app
 src/formats/      readers for the console asset formats (namespace gdl::formats), used by the tools and tests only
-src/game/         the Gauntlet game built on it (namespace gdl::game): config, menu, screens, app, and main.cpp
+src/game/         the Gauntlet game built on it (namespace gdl::game): config, players, menu, screens, app, and main.cpp
 tools/            command-line tools built on the engine (vqdump, gdlunpack)
 tests/            Catch2 tests, one file per source module, same tree shape as src/
 shaders/          GLSL sources, compiled at build time to bin/shaders/*.spv
