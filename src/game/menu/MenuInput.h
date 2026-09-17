@@ -24,6 +24,7 @@ struct MenuInput {
     bool rightHeld = false;
     std::string typed; ///< printable characters typed into a text field this frame
     bool erase = false; ///< Backspace, for a text field
+    bool escape = false; ///< the escape binding: leaves a text field, quits elsewhere
 
     bool any() const { return up || down || left || right || select || back || start; }
 };

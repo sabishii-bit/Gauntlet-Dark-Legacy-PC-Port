@@ -11,13 +11,15 @@ struct MeshVertex {
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 normal{0.0f, 0.0f, 1.0f};
     Vec2 uv{0.0f, 0.0f};
+    Vec2 lightmapUv{0.0f, 0.0f}; ///< into the part's lightmap, in its texels, when it has one
 
     bool operator==(const MeshVertex&) const = default;
 };
 
-/** The triangles of a mesh that share one texture. */
+/** The triangles of a mesh that share one texture (and lightmap). */
 struct MeshPart {
     u32 texture = 0;          ///< index into the archive's texture set
+    u32 lightmap = 0;         ///< index of the lightmap texture, 0 for none
     std::vector<u32> indices; ///< three per triangle, into Mesh::vertices
 };
 

@@ -1,5 +1,6 @@
 #include "formats/ObjWriter.h"
 
+#include <algorithm>
 #include <format>
 
 namespace gdl::formats {
@@ -16,9 +17,18 @@ std::string encodeObj(const Mesh& mesh, std::string_view name) {
     for (const MeshVertex& v : mesh.vertices) {
         out += std::format("vn {:.6g} {:.6g} {:.6g}\n", v.normal.x, v.normal.y, v.normal.z);
     }
+    if (std::ranges::any_of(mesh.parts, [](const MeshPart& part) { return part.lightmap != 0; })) {
+        for (const MeshVertex& v : mesh.vertices) {
+            out += std::format("vl {:.6g} {:.6g}\n", v.lightmapUv.x, v.lightmapUv.y);
+        }
+    }
     for (usize p = 0; p < mesh.parts.size(); ++p) {
         const MeshPart& part = mesh.parts[p];
-        out += std::format("g part{}\nusemtl tex{}\n", p, part.texture);
+        out += std::format("g part{}\nusemtl tex{}", p, part.texture);
+        if (part.lightmap != 0) {
+            out += std::format("_lm{}", part.lightmap);
+        }
+        out += "\n";
         for (usize i = 0; i + 2 < part.indices.size(); i += 3) {
             const u32 a = part.indices[i] + 1;
             const u32 b = part.indices[i + 1] + 1;

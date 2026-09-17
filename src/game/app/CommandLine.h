@@ -17,6 +17,7 @@ struct GameOptions {
     std::filesystem::path unpackedDirectory; ///< output of gdlunpack (PNG images, JSON manifests)
     std::filesystem::path dataDirectory;     ///< shipped configuration and text (the data/ tree)
     bool startAtTitle = false;               ///< skip the intro movies and open the title screen
+    std::filesystem::path scenario;          ///< a described start to open straight into
 };
 
 struct CommandLineResult {

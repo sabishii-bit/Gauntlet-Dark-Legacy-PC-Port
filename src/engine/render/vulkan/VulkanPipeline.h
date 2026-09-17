@@ -3,18 +3,20 @@
 #include <filesystem>
 
 #include "engine/core/Types.h"
+#include "engine/render/RenderDevice.h"
 #include "engine/render/vulkan/VulkanCommon.h"
 
 namespace gdl {
 
 class VulkanContext;
 
-/** Graphics pipeline for ImmediateVertex geometry: alpha blend, reversed-Z depth, one texture. */
+/** Graphics pipeline for ImmediateVertex geometry: one blend mode, reversed-Z depth, one
+ * texture. Additive pipelines leave the depth buffer alone. */
 class VulkanPipeline {
 public:
     VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                    VkFormat colorFormat, VkFormat depthFormat,
-                   VkDescriptorSetLayout textureSetLayout);
+                   VkDescriptorSetLayout textureSetLayout, BlendMode blend);
     ~VulkanPipeline();
 
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanPipeline);
@@ -22,7 +24,12 @@ public:
     VkPipeline handle() const { return m_pipeline; }
     VkPipelineLayout layout() const { return m_layout; }
 
-    static constexpr u32 kPushConstantSize = sizeof(f32) * 16;
+    /** What every draw pushes: its transform, then the coordinate offset and alpha test. */
+    struct PushConstants {
+        Mat4 transform;
+        Vec4 params;
+    };
+    static constexpr u32 kPushConstantSize = sizeof(PushConstants);
 
 private:
     VkShaderModule loadShaderModule(const std::filesystem::path& path) const;

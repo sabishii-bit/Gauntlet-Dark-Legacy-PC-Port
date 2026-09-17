@@ -9,8 +9,9 @@ namespace gdl {
 
 /**
  * Parses a Wavefront OBJ (positions, texture coordinates, normals, faces, `usemtl tex<N>`
- * groups) into a mesh; texture coordinates are converted to a top-left origin. Faces with more
- * than three corners become fans. Throws FormatError on malformed input.
+ * groups, `_lm<M>` naming a part's lightmap and `vl` lines carrying lightmap coordinates
+ * indexed like `vt`) into a mesh; texture coordinates are converted to a top-left origin.
+ * Faces with more than three corners become fans. Throws FormatError on malformed input.
  */
 Mesh parseObj(std::string_view text);
 

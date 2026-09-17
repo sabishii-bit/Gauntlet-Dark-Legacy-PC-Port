@@ -36,7 +36,8 @@ public:
                                            std::span<const u8> rgba8Pixels) override;
     void updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) override;
     const Texture& whiteTexture() const override;
-    void draw(const ImmediateBatch& batch, const Texture& texture, const Mat4& transform) override;
+    void draw(const ImmediateBatch& batch, const Texture& texture, const Mat4& transform,
+              const DrawState& state) override;
     void waitIdle() override;
 
 private:
@@ -79,10 +80,17 @@ private:
     Window& m_window;
     std::unique_ptr<VulkanContext> m_context;
     std::unique_ptr<VulkanSwapchain> m_swapchain;
-    std::unique_ptr<VulkanPipeline> m_pipeline;
+    std::unique_ptr<VulkanPipeline> m_pipeline;         ///< alpha blended
+    std::unique_ptr<VulkanPipeline> m_additivePipeline; ///< the same, adding onto the frame
+    BlendMode m_boundBlend = BlendMode::Alpha;
+
+    static constexpr u32 kTexturesPerPool = 512;
+
+    VkDescriptorPool descriptorPoolForTexture();
 
     VkDescriptorSetLayout m_textureSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool m_descriptorPool = VK_NULL_HANDLE;
+    std::vector<VkDescriptorPool> m_descriptorPools; ///< each texture keeps its own
+    u32 m_poolTexturesLeft = 0;                      ///< sets left in the last pool
     std::array<VkSampler, 4> m_samplers{}; ///< by samplerIndex(filter, wrap)
     std::unique_ptr<VulkanTexture> m_whiteTexture;
 

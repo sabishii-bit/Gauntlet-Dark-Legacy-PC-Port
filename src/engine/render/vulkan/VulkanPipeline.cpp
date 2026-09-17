@@ -15,19 +15,22 @@ namespace gdl {
 
 VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::path& shaderDirectory,
                                VkFormat colorFormat, VkFormat depthFormat,
-                               VkDescriptorSetLayout textureSetLayout)
+                               VkDescriptorSetLayout textureSetLayout, BlendMode blend)
     : m_context(context) {
+    const bool additive = blend == BlendMode::Additive;
     const VkDevice device = m_context.device();
 
     VkPushConstantRange pushRange{};
-    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushRange.offset = 0;
     pushRange.size = kPushConstantSize;
 
+    // Set 0 is the texture, set 1 the lightmap; both are one sampled image.
+    const std::array<VkDescriptorSetLayout, 2> setLayouts{textureSetLayout, textureSetLayout};
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = 1;
-    layoutInfo.pSetLayouts = &textureSetLayout;
+    layoutInfo.setLayoutCount = static_cast<u32>(setLayouts.size());
+    layoutInfo.pSetLayouts = setLayouts.data();
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &pushRange;
     GDL_VK_CHECK(vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_layout));
@@ -50,7 +53,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     binding.stride = sizeof(ImmediateVertex);
     binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 3> attributes{};
+    std::array<VkVertexInputAttributeDescription, 4> attributes{};
     attributes[0].location = 0;
     attributes[0].binding = 0;
     attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -63,6 +66,10 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     attributes[2].binding = 0;
     attributes[2].format = VK_FORMAT_R32G32_SFLOAT;
     attributes[2].offset = static_cast<u32>(offsetof(ImmediateVertex, uv));
+    attributes[3].location = 3;
+    attributes[3].binding = 0;
+    attributes[3].format = VK_FORMAT_R32G32_SFLOAT;
+    attributes[3].offset = static_cast<u32>(offsetof(ImmediateVertex, uv2));
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -84,6 +91,8 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterization.polygonMode = VK_POLYGON_MODE_FILL;
     rasterization.cullMode = VK_CULL_MODE_NONE;
+    // Meshes are wound the way the console keeps them, which is counter-clockwise as seen
+    // on screen; draws that cull say so per call.
     rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterization.lineWidth = 1.0f;
 
@@ -94,16 +103,18 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
     depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = additive ? VK_FALSE : VK_TRUE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
     blendAttachment.blendEnable = VK_TRUE;
     blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    blendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.dstColorBlendFactor =
+        additive ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
     blendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    blendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAttachment.dstAlphaBlendFactor =
+        additive ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     blendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -113,7 +124,10 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     colorBlend.attachmentCount = 1;
     colorBlend.pAttachments = &blendAttachment;
 
-    constexpr std::array<VkDynamicState, 2> kDynamicStates{VK_DYNAMIC_STATE_VIEWPORT,
+    // Culling and depth writes are set per draw.
+    constexpr std::array<VkDynamicState, 4> kDynamicStates{VK_DYNAMIC_STATE_CULL_MODE,
+                                                           VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
+                                                           VK_DYNAMIC_STATE_VIEWPORT,
                                                            VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;

@@ -126,6 +126,42 @@ JsonWriter& JsonWriter::value(f64 number) {
     return *this;
 }
 
+JsonWriter& JsonWriter::value(f32 number) {
+    beforeValue();
+    if (std::isfinite(number)) {
+        m_text += std::format("{}", number);
+    } else {
+        m_text += "null";
+    }
+    return *this;
+}
+
+JsonWriter& JsonWriter::numbers(std::span<const f32> values) {
+    beforeValue();
+    m_text.push_back('[');
+    for (usize i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            m_text += ", ";
+        }
+        m_text += std::isfinite(values[i]) ? std::format("{}", values[i]) : "null";
+    }
+    m_text.push_back(']');
+    return *this;
+}
+
+JsonWriter& JsonWriter::numbers(std::span<const u16> values) {
+    beforeValue();
+    m_text.push_back('[');
+    for (usize i = 0; i < values.size(); ++i) {
+        if (i > 0) {
+            m_text += ", ";
+        }
+        m_text += std::to_string(values[i]);
+    }
+    m_text.push_back(']');
+    return *this;
+}
+
 std::string JsonWriter::take() {
     m_text.push_back('\n');
     return std::exchange(m_text, {});

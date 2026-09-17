@@ -37,7 +37,7 @@ TEST_CASE("starting classes are always unlocked and the rest by their bit", "[ga
 TEST_CASE("class stats load from their files", "[game][players]") {
     const auto dir = test::scratchDirectory("class-data");
     writeTextFile(dir / "WAR.json", R"({"code": "WAR", "fight": [600, 999], "speed": [350, 750],
-        "armor": [300, 700], "magic": [100, 500], "height": 5.0, "width": 1.5})");
+        "armor": [300, 700], "magic": [100, 500], "height": 5.0, "width": 1.5, "collisionY": 2.5})");
     writeTextFile(dir / "WIZ.json", R"({"fight": [250, 650], "speed": [350, 750],
         "armor": [150, 550], "magic": [600, 999]})");
     writeTextFile(dir / "VAL.json", "{broken");
@@ -47,6 +47,7 @@ TEST_CASE("class stats load from their files", "[game][players]") {
     REQUIRE(classes.stats(0) != nullptr);
     REQUIRE(classes.stats(0)->fightMin == 600.0f);
     REQUIRE(classes.stats(0)->height == 5.0f);
+    REQUIRE(classes.stats(0)->collisionY == 2.5f);
     REQUIRE(classes.stats(2)->magicMax == 999.0f);
     REQUIRE(classes.stats(1) == nullptr);
     REQUIRE(classes.stats(kSumnerClass) == nullptr);

@@ -22,7 +22,8 @@ constexpr s32 kSaveFormatVersion = 1;
 Json progressJson(const ClassProgress& progress) {
     return Json{{"experience", progress.experience}, {"health", progress.health},
                 {"fightAdd", progress.fightAdd},     {"armorAdd", progress.armorAdd},
-                {"magicAdd", progress.magicAdd},     {"speedAdd", progress.speedAdd}};
+                {"magicAdd", progress.magicAdd},     {"speedAdd", progress.speedAdd},
+                {"crystals", progress.crystals}};
 }
 
 ClassProgress progressFromJson(const Json& object) {
@@ -33,6 +34,10 @@ ClassProgress progressFromJson(const Json& object) {
     progress.armorAdd = object.value("armorAdd", 0.0f);
     progress.magicAdd = object.value("magicAdd", 0.0f);
     progress.speedAdd = object.value("speedAdd", 0.0f);
+    const auto crystals = object.value("crystals", std::vector<s32>{});
+    for (usize realm = 0; realm < progress.crystals.size() && realm < crystals.size(); ++realm) {
+        progress.crystals[realm] = crystals[realm];
+    }
     return progress;
 }
 

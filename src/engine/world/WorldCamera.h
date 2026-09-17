@@ -39,4 +39,26 @@ struct WorldCamera {
                        const Mat4& frameProjection) const;
 };
 
+/** Where a camera stands and which way its axes point, for what must face it. */
+struct CameraFrame {
+    Vec3 position{0.0f, 0.0f, 0.0f};
+    Vec3 right{1.0f, 0.0f, 0.0f};
+    Vec3 up{0.0f, 1.0f, 0.0f};
+    Vec3 forward{0.0f, 0.0f, 1.0f};
+
+    static CameraFrame of(const WorldCamera& camera);
+    /** A frame standing at `eye` with the world's axes. */
+    static CameraFrame at(const Vec3& eye);
+
+    /** The facing modes an object's flags ask for, in their top nibble. */
+    static constexpr u32 kFacingShift = 24U;
+    static constexpr u32 kFacingMask = 0xFU;
+    static constexpr u32 kFacingFull = 4; ///< the whole rotation follows the camera
+    static u32 facingOf(u32 objectFlags) { return (objectFlags >> kFacingShift) & kFacingMask; }
+
+    /** `placement` with its rotation turned to face this camera: fully for kFacingFull,
+     * else about the vertical so its z axis points at the camera. */
+    Mat4 face(const Mat4& placement, u32 mode) const;
+};
+
 } // namespace gdl

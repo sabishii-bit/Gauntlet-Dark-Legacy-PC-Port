@@ -1,0 +1,7 @@
+{
+  "screen": "tower",
+  "party": [
+    {"player": 0, "class": "WAR", "color": "BLU", "name": "TEST", "level": 1}
+  ],
+  "welcome": false
+}

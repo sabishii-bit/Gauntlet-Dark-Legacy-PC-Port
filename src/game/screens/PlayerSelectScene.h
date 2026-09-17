@@ -1,15 +1,14 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <optional>
 #include <string_view>
 
 #include "engine/assets/BitmapFont.h"
-#include "engine/assets/ModelSet.h"
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
-#include "engine/assets/WorldLayout.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
@@ -17,13 +16,14 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 #include "engine/world/WorldCamera.h"
-#include "engine/world/WorldScene.h"
 
 #include "game/menu/MenuInput.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/SelectLane.h"
+#include "game/screens/StatusBox.h"
+#include "game/world/TowerWorld.h"
 
 namespace gdl::game {
 
@@ -53,6 +53,10 @@ public:
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);
 
     const SelectLane& lane(s32 index) const { return m_lanes[static_cast<usize>(index)]; }
+    /** Whether any lane is taking a name, so the keyboard's escape belongs to it. */
+    bool typing() const {
+        return std::ranges::any_of(m_lanes, [](const SelectLane& lane) { return lane.typing(); });
+    }
 
     /** The devices lane `index` reads this frame: its player's, typing while it takes a
      * name. */
@@ -63,13 +67,14 @@ public:
     /** Whether Sumner is still greeting a locked-in character. */
     bool speaking() const;
     const SaveSlots& saves() const { return m_saves; }
-    bool towerVisible() const { return m_tower.built() && m_camera.has_value(); }
-    const WorldScene& tower() const { return m_tower; }
+    bool towerVisible() const {
+        return m_tower != nullptr && m_tower->built() && m_camera.has_value();
+    }
 
 private:
     bool loadResources(RenderDevice& device, const std::filesystem::path& unpackedRoot);
     void loadSounds(const std::filesystem::path& unpackedRoot);
-    void loadTower(RenderDevice& device, const std::filesystem::path& unpackedRoot);
+    void loadTower(RenderDevice& device);
     void drawStatusBox(const SelectLane& lane);
     std::string_view text(std::string_view id) const;
     const Texture* selectTexture(std::string_view name);
@@ -88,23 +93,17 @@ private:
     BitmapFont m_font32;
     BitmapFont m_font8;
     BitmapFont m_fontInitials;
-    BitmapFont m_fontScore;
-    BitmapFont m_fontSmallCaps;
     TextPainter m_large;
     TextPainter m_small;
     TextPainter m_initials;
-    TextPainter m_score;
-    TextPainter m_smallCaps;
+    StatusBoxPainter m_boxes;
     Canvas m_canvas;
     SoundSet m_commonSounds;
     SoundSet m_selectSounds;
     SoundHandle m_music = kNoSound;
     SoundHandle m_greeting = kNoSound;
     ClassDataSet m_classes;
-    ModelSet m_towerModels;
-    TextureSet m_towerTextures;
-    WorldLayout m_towerLayout;
-    WorldScene m_tower;
+    TowerWorld* m_tower = nullptr;
     std::optional<WorldCamera> m_camera;
     SaveSlots m_saves;
     LaneServices m_services;

@@ -77,6 +77,9 @@ add_library(engine STATIC
     audio/SoundClip.h
     audio/SoundPlayer.h
     audio/SoundPlayer.cpp
+    audio/StreamSource.h
+    audio/AdsStream.h
+    audio/AdsStream.cpp
     assets/PngImage.h
     assets/PngImage.cpp
     assets/StbImageImplementation.cpp
@@ -92,8 +95,17 @@ add_library(engine STATIC
     assets/ObjModel.cpp
     assets/ModelSet.h
     assets/ModelSet.cpp
+    assets/ItemArchive.h
+    assets/ItemArchive.cpp
+    assets/ParticleTemplate.h
+    assets/ParticleTemplateJson.h
+    assets/ParticleTemplate.cpp
     assets/AnimationSet.h
     assets/AnimationSet.cpp
+    assets/WorldData.h
+    assets/WorldData.cpp
+    assets/MessageTable.h
+    assets/MessageTable.cpp
     assets/StringTable.h
     assets/StringTable.cpp
     assets/WorldLayout.h
@@ -104,10 +116,28 @@ add_library(engine STATIC
     ui/TextPainter.cpp
     ui/ModelSprite.h
     ui/ModelSprite.cpp
+    world/WorldLighting.h
+    world/WorldLighting.cpp
     world/WorldCamera.h
     world/WorldCamera.cpp
     world/WorldScene.h
     world/WorldScene.cpp
+    world/TextureAnimator.h
+    world/TextureAnimator.cpp
+    world/WorldAnimator.h
+    world/WorldAnimator.cpp
+    world/ParticleSystem.h
+    world/ParticleSystem.cpp
+    world/ParticleField.h
+    world/ParticleField.cpp
+    world/WorldCollision.h
+    world/WorldCollision.cpp
+    world/TreeModel.h
+    world/TreeModel.cpp
+    world/AnimationPlayer.h
+    world/AnimationPlayer.cpp
+    world/TreePose.h
+    world/TreePose.cpp
     app/Application.h
     app/Application.cpp)
 

@@ -170,7 +170,11 @@ TEST_CASE("a typed name is taken straight from the keyboard", "[game][select]") 
     REQUIRE(f.lane.typing());
     MenuInput erase;
     erase.erase = true;
-    f.step(erase); // nothing to erase: back to the menu
+    f.step(erase); // nothing to erase, and nothing else happens
+    REQUIRE(f.lane.typing());
+    MenuInput escape;
+    escape.escape = true;
+    f.step(escape); // Escape leaves the name for the menu
     REQUIRE(f.lane.state() == SelectLane::State::TopMenu);
     REQUIRE_FALSE(f.lane.typing());
 

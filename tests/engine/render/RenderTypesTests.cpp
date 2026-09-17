@@ -17,10 +17,11 @@ TEST_CASE("Extent2D reports zero when either side is zero", "[render][types]") {
 }
 
 TEST_CASE("ImmediateVertex matches the GPU vertex layout", "[render][types]") {
-    STATIC_REQUIRE(sizeof(ImmediateVertex) == 24);
+    STATIC_REQUIRE(sizeof(ImmediateVertex) == 32);
     STATIC_REQUIRE(offsetof(ImmediateVertex, position) == 0);
     STATIC_REQUIRE(offsetof(ImmediateVertex, color) == 12);
     STATIC_REQUIRE(offsetof(ImmediateVertex, uv) == 16);
+    STATIC_REQUIRE(offsetof(ImmediateVertex, uv2) == 24);
 }
 
 TEST_CASE("TextureDesc defaults to linear repeat sampling", "[render][types]") {

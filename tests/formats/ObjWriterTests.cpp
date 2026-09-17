@@ -40,4 +40,38 @@ TEST_CASE("meshes are written as one OBJ object with a group per texture", "[for
     REQUIRE(encodeObj(mesh, "ARROW") == expected);
 }
 
+TEST_CASE("a lightmapped mesh writes its second coordinates and names the lightmap",
+          "[formats][obj]") {
+    Mesh mesh;
+    mesh.vertices.push_back(MeshVertex{Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 1.0f},
+                                       Vec2{0.0f, 0.0f}, Vec2{0.25f, 0.5f}});
+    mesh.vertices.push_back(MeshVertex{Vec3{1.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 1.0f},
+                                       Vec2{1.0f, 0.0f}, Vec2{0.75f, 0.5f}});
+    mesh.vertices.push_back(MeshVertex{Vec3{0.0f, 1.0f, 0.5f}, Vec3{0.0f, 0.0f, 1.0f},
+                                       Vec2{0.0f, 0.25f}, Vec2{0.25f, 0.25f}});
+    MeshPart part;
+    part.texture = 326;
+    part.lightmap = 507;
+    part.indices = {0, 1, 2};
+    mesh.parts.push_back(part);
+
+    const std::string expected = "o FLOOR\n"
+                                 "v 0 0 0\n"
+                                 "v 1 0 0\n"
+                                 "v 0 1 0.5\n"
+                                 "vt 0 1\n"
+                                 "vt 1 1\n"
+                                 "vt 0 0.75\n"
+                                 "vn 0 0 1\n"
+                                 "vn 0 0 1\n"
+                                 "vn 0 0 1\n"
+                                 "vl 0.25 0.5\n"
+                                 "vl 0.75 0.5\n"
+                                 "vl 0.25 0.25\n"
+                                 "g part0\n"
+                                 "usemtl tex326_lm507\n"
+                                 "f 1/1/1 2/2/2 3/3/3\n";
+    REQUIRE(encodeObj(mesh, "FLOOR") == expected);
+}
+
 } // namespace

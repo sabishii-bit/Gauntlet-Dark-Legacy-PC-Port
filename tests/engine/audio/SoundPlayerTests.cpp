@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <memory>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -135,6 +137,74 @@ TEST_CASE("looping sequences keep feeding and stop on request", "[audio][player]
     player.update();
     REQUIRE_FALSE(player.isPlaying(handle));
     REQUIRE(pull(mixer, 10)[0] == 0.0f);
+}
+
+/** A source of `total` frames of one value, counting how often it starts over. */
+class ToneSource final : public StreamSource {
+public:
+    ToneSource(usize total, f32 value) : m_total(total), m_value(value) {}
+    AudioStreamDesc desc() const override { return AudioStreamDesc{48000, 1}; }
+    bool read(std::vector<f32>& out, usize frames) override {
+        if (m_read >= m_total) {
+            return false;
+        }
+        const usize count = std::min(frames, m_total - m_read);
+        out.insert(out.end(), count, m_value);
+        m_read += count;
+        return true;
+    }
+    void rewind() override {
+        m_read = 0;
+        ++rewinds;
+    }
+    int rewinds = 0;
+
+private:
+    usize m_total;
+    f32 m_value;
+    usize m_read = 0;
+};
+
+TEST_CASE("stream sources play ahead of the mixer, looping or ending", "[audio][player]") {
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    REQUIRE(player.playStream(nullptr, false) == kNoSound);
+
+    // One second of tone, once: it drains after a second and the voice goes.
+    auto once = std::make_shared<ToneSource>(48000, 0.5f);
+    const SoundHandle single = player.playStream(once, false, 1.0f, SoundCategory::Music);
+    REQUIRE(single != kNoSound);
+    REQUIRE(player.voiceCount() == 1);
+    std::vector<f32> out = pull(mixer, 24000);
+    REQUIRE(out[0] == 0.5f);
+    player.update();
+    out = pull(mixer, 24000);
+    REQUIRE(out[usize{2} * 23999] == 0.5f);
+    player.update();
+    out = pull(mixer, 100);
+    REQUIRE(out[0] == 0.0f);
+    player.update();
+    REQUIRE_FALSE(player.isPlaying(single));
+    REQUIRE(once->rewinds == 0);
+
+    // Looping, the same source starts over every second and follows the music volume.
+    auto loop = std::make_shared<ToneSource>(48000, 0.5f);
+    const SoundHandle music = player.playStream(loop, true, 1.0f, SoundCategory::Music);
+    for (int second = 0; second < 4; ++second) {
+        player.update();
+        out = pull(mixer, 48000);
+        REQUIRE(out[0] == 0.5f);
+        REQUIRE(out[usize{2} * 47999] == 0.5f);
+    }
+    REQUIRE(loop->rewinds >= 3);
+    player.setCategoryVolume(SoundCategory::Music, 0.5f);
+    player.update();
+    out = pull(mixer, 100);
+    REQUIRE(out[0] == 0.25f);
+    REQUIRE(player.isPlaying(music));
+    player.stop(music);
+    player.update();
+    REQUIRE_FALSE(player.isPlaying(music));
 }
 
 TEST_CASE("clips at another rate are resampled into the voice", "[audio][player]") {

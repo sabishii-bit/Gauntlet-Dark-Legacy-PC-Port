@@ -43,6 +43,24 @@ TEST_CASE("OBJ faces become triangles with per-texture parts", "[assets][obj]") 
     REQUIRE(mesh.triangleCount() == 3);
 }
 
+TEST_CASE("OBJ lightmap coordinates and materials read back", "[assets][obj]") {
+    const Mesh mesh = parseObj("v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+                               "vt 0 1\nvt 1 1\nvt 0 0\n"
+                               "vl 0.25 0.5\nvl 0.75 0.5\nvl 0.25 0.25\n"
+                               "vn 0 0 1\n"
+                               "usemtl tex3_lm7\nf 1/1/1 2/2/1 3/3/1\n"
+                               "usemtl texX_lm9\nf 1/1/1 3/3/1 2/2/1\n");
+    REQUIRE(mesh.parts.size() == 2);
+    REQUIRE(mesh.parts[0].texture == 3);
+    REQUIRE(mesh.parts[0].lightmap == 7);
+    REQUIRE(mesh.parts[1].texture == 0); // an unreadable index falls back
+    REQUIRE(mesh.parts[1].lightmap == 9);
+    REQUIRE(mesh.vertices.size() == 3);
+    REQUIRE(mesh.vertices[1].uv == Vec2{1.0f, 0.0f});
+    REQUIRE(mesh.vertices[1].lightmapUv == Vec2{0.75f, 0.5f});
+    REQUIRE(mesh.vertices[2].lightmapUv == Vec2{0.25f, 0.25f});
+}
+
 TEST_CASE("malformed OBJ input is rejected", "[assets][obj]") {
     REQUIRE_THROWS_AS(parseObj("v 1 2 x\n"), FormatError);
     REQUIRE_THROWS_AS(parseObj("v 0 0 0\nf 1 2 3\n"), FormatError);

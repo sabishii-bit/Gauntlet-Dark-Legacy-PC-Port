@@ -17,6 +17,7 @@ public:
 
     void begin(PrimitiveTopology topology);
     void vertex(const Vec3& position, Color color, const Vec2& uv);
+    void vertex(const Vec3& position, Color color, const Vec2& uv, const Vec2& uv2);
     void vertex(const ImmediateVertex& v);
     void end();
 

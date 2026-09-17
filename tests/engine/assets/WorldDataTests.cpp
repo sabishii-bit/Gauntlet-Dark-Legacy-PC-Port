@@ -1,0 +1,91 @@
+#include <filesystem>
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "engine/assets/WorldData.h"
+#include "engine/io/File.h"
+
+#include "TestSupport.h"
+
+namespace {
+
+using namespace gdl;
+using Catch::Approx;
+
+std::filesystem::path sampleRealm(std::string_view name) {
+    const auto dir = test::scratchDirectory(name);
+    writeTextFile(dir / "TOWER.json", R"({
+  "realm": 13, "prefix": "levelL",
+  "levels": [
+    {"name": "L1", "title": "Tower", "cameraIndex": 0, "audioIndex": 0, "musicVolume": 0.75,
+     "ambient": 0.8, "lightDirection": [-1, -6, 2], "lightColor": [1, 0.9, 0.8],
+     "lightIntensity": 1},
+    {"name": "L2", "title": "Tower", "cameraIndex": 5, "audioIndex": -1}
+  ],
+  "cameras": [{"minPitch": 0.6981317, "boundsMin": [0, 0, 0], "boundsMax": [10, 0, 0],
+               "attention": 50, "radiusMin": 24, "radiusMax": 32, "smooth": 0.01}],
+  "audio": [{"bank": "WIZTOWER", "stream": "tower", "enterSound": 0, "hitSound": 1}]
+})");
+    return dir / "TOWER.json";
+}
+
+TEST_CASE("world data names a realm's levels and the records they point at",
+          "[assets][world]") {
+    WorldData data;
+    REQUIRE_FALSE(data.loaded());
+    REQUIRE(data.load(sampleRealm("world-data")));
+    REQUIRE(data.loaded());
+    REQUIRE(data.realm() == 13);
+    REQUIRE(data.prefix() == "levelL");
+    REQUIRE(data.levels().size() == 2);
+    const LevelInfo* level = data.level("L1");
+    REQUIRE(level != nullptr);
+    REQUIRE(level->title == "Tower");
+    REQUIRE(level->musicVolume == Approx(0.75f));
+    REQUIRE(level->ambient == Approx(0.8f));
+    REQUIRE(level->lightDirection == Vec3{-1.0f, -6.0f, 2.0f});
+    REQUIRE(level->lightColor.y == Approx(0.9f));
+    REQUIRE(data.level("L9") == nullptr);
+    const LevelCameraInfo* camera = data.camera(level->cameraIndex);
+    REQUIRE(camera != nullptr);
+    REQUIRE(camera->radiusMin == 24.0f);
+    REQUIRE(camera->radiusMax == 32.0f);
+    REQUIRE(camera->minPitch == Approx(0.6981317f));
+    REQUIRE(camera->boundsMax.x == 10.0f);
+    const LevelAudioInfo* audio = data.audio(level->audioIndex);
+    REQUIRE(audio != nullptr);
+    REQUIRE(audio->bank == "WIZTOWER");
+    REQUIRE(audio->stream == "tower");
+    REQUIRE(audio->hitSound == 1);
+    // The second level points past the records it has.
+    const LevelInfo* second = data.level("L2");
+    REQUIRE(second != nullptr);
+    REQUIRE(second->ambient == 1.0f); // the default when unspecified
+    REQUIRE(data.camera(second->cameraIndex) == nullptr);
+    REQUIRE(data.audio(second->audioIndex) == nullptr);
+}
+
+TEST_CASE("missing or malformed world data fails to load", "[assets][world]") {
+    WorldData data;
+    REQUIRE_FALSE(data.load(test::scratchDirectory("world-data-none") / "NONE.json"));
+    const auto dir = test::scratchDirectory("world-data-bad");
+    writeTextFile(dir / "BAD.json", R"({"realm": 1})");
+    REQUIRE_FALSE(data.load(dir / "BAD.json"));
+    REQUIRE_FALSE(data.loaded());
+}
+
+TEST_CASE("the unpacked tower realm carries its light and camera", "[assets][world][unpacked]") {
+    WorldData data;
+    REQUIRE(data.load(test::unpackedOrSkip("wdata/TOWER.json")));
+    const LevelInfo* level = data.level("L1");
+    REQUIRE(level != nullptr);
+    REQUIRE(level->ambient == Approx(0.8f));
+    REQUIRE(level->lightDirection == Vec3{-1.0f, -6.0f, 2.0f});
+    const LevelCameraInfo* camera = data.camera(level->cameraIndex);
+    REQUIRE(camera != nullptr);
+    REQUIRE(camera->radiusMin == 24.0f);
+    REQUIRE(data.audio(level->audioIndex)->stream == "tower");
+}
+
+} // namespace

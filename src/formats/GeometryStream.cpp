@@ -1,5 +1,6 @@
 #include "formats/GeometryStream.h"
 
+#include <bit>
 #include <format>
 #include <vector>
 
@@ -14,7 +15,7 @@ constexpr u32 kPositionShort = 0x69;
 constexpr u32 kPositionByte = 0x6A;
 constexpr u32 kTexcoordQuad = 0x6D;
 constexpr u32 kTexcoordByte = 0x66;
-constexpr u32 kLightmapCode = 3;
+constexpr u32 kColorBlockCode = 3; ///< a packed colour per vertex, for prelit objects
 constexpr f32 kPositionScale = 1.0f / 128.0f;
 constexpr f32 kTexcoordScale = 1.0f / 128.0f;
 constexpr f32 kNormalScale = 1.0f / 15.0f;
@@ -60,7 +61,11 @@ Vec3 unpackNormal(u16 packed) {
     return Vec3{component(0), component(5), component(10)};
 }
 
-void appendStrip(std::span<const StripVertex> strip, u32 base, Mesh& mesh, MeshPart& part) {
+/** Appends a strip as triangles wound the way the console keeps them: the strip's own
+ * alternation undone, and the whole strip turned when `flip` says its first face is wound
+ * the other way. */
+void appendStrip(std::span<const StripVertex> strip, u32 base, bool flip, Mesh& mesh,
+                 MeshPart& part) {
     if (strip.size() < 3) {
         return;
     }
@@ -68,7 +73,7 @@ void appendStrip(std::span<const StripVertex> strip, u32 base, Mesh& mesh, MeshP
         const u32 a = base + static_cast<u32>(k);
         const u32 b = a + 1;
         const u32 c = a + 2;
-        if (k % 2 == 0) {
+        if ((k % 2 == 0) != flip) {
             part.indices.insert(part.indices.end(), {a, b, c});
         } else {
             part.indices.insert(part.indices.end(), {b, a, c});
@@ -79,23 +84,31 @@ void appendStrip(std::span<const StripVertex> strip, u32 base, Mesh& mesh, MeshP
     }
 }
 
-/** Splits a packet's vertices into strips wherever a vertex carries the kick bit. */
-void emitPacket(const std::vector<StripVertex>& vertices, Mesh& mesh, MeshPart& part) {
+/** Splits a packet's vertices into strips wherever a vertex carries the kick bit. The
+ * original culls each strip by the parity of its first vertex, which alternates from the
+ * packet's `flat` flag, so a strip starting on the other parity is wound the other way. */
+void emitPacket(const std::vector<StripVertex>& vertices, bool flatFirst, Mesh& mesh,
+                MeshPart& part) {
+    const auto flipAt = [flatFirst](usize start) { return flatFirst != (start % 2 == 1); };
     usize start = 0;
     for (usize j = 0; j < vertices.size(); ++j) {
         if (vertices[j].kick && j - start > 1) {
             appendStrip(std::span(vertices).subspan(start, j - start),
-                        static_cast<u32>(mesh.vertices.size()), mesh, part);
+                        static_cast<u32>(mesh.vertices.size()), flipAt(start), mesh, part);
             start = j - 1;
         }
     }
-    appendStrip(std::span(vertices).subspan(start), static_cast<u32>(mesh.vertices.size()), mesh,
-                part);
+    appendStrip(std::span(vertices).subspan(start), static_cast<u32>(mesh.vertices.size()),
+                flipAt(start), mesh, part);
 }
 
 } // namespace
 
 void decodeGeometryStream(std::span<const u8> stream, u32 texture, Mesh& mesh) {
+    decodeGeometryStream(stream, texture, 0, mesh);
+}
+
+void decodeGeometryStream(std::span<const u8> stream, u32 texture, u32 lightmap, Mesh& mesh) {
     const WordStream words(stream);
     if (words.wordCount() < 2) {
         throw FormatError("geometry stream is too short for its header");
@@ -106,6 +119,7 @@ void decodeGeometryStream(std::span<const u8> stream, u32 texture, Mesh& mesh) {
     }
     MeshPart part;
     part.texture = texture;
+    part.lightmap = lightmap;
 
     usize idx = 2;
     std::vector<StripVertex> packet;
@@ -114,6 +128,7 @@ void decodeGeometryStream(std::span<const u8> stream, u32 texture, Mesh& mesh) {
             break;
         }
         const usize count = words.word(idx + 1);
+        const bool flatFirst = std::bit_cast<f32>(words.word(idx + 3)) == 1.0f;
         const u32 positionFormat = words.word(idx + 5) >> 24U;
         const usize positionAt = (idx + 6) * kWordBytes;
         idx += 5;
@@ -131,8 +146,8 @@ void decodeGeometryStream(std::span<const u8> stream, u32 texture, Mesh& mesh) {
         const usize step = (((count << 4U) + 0x1F) >> 5U) + 1;
         const usize normalAt = (idx + 1) * kWordBytes;
         usize next = idx + step;
-        if ((words.word(next) & 0xFFFU) == kLightmapCode) {
-            next += step; // second texture coordinate set (lightmaps) is skipped
+        if ((words.word(next) & 0xFFFU) == kColorBlockCode) {
+            next += step; // prelit vertex colours are not used yet
         }
         const u32 texcoordFormat = words.word(next) >> 24U;
         const usize texcoordAt = (next + 1) * kWordBytes;
@@ -184,10 +199,15 @@ void decodeGeometryStream(std::span<const u8> stream, u32 texture, Mesh& mesh) {
             } else {
                 sv.vertex.uv = Vec2{static_cast<f32>(readU16LE(texcoords, t)) * kTexcoordScale,
                                     static_cast<f32>(readU16LE(texcoords, t + 2)) * kTexcoordScale};
+                if (texcoordFormat == kTexcoordQuad) {
+                    sv.vertex.lightmapUv =
+                        Vec2{static_cast<f32>(readU16LE(texcoords, t + 4)) * kTexcoordScale,
+                             static_cast<f32>(readU16LE(texcoords, t + 6)) * kTexcoordScale};
+                }
             }
             packet.push_back(sv);
         }
-        emitPacket(packet, mesh, part);
+        emitPacket(packet, flatFirst, mesh, part);
     }
     if (!part.indices.empty()) {
         mesh.parts.push_back(std::move(part));

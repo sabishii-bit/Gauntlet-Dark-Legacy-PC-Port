@@ -19,14 +19,22 @@ add_library(formats STATIC
     WavWriter.cpp
     GeometryStream.h
     GeometryStream.cpp
+    KeyframeTrack.h
+    KeyframeTrack.cpp
     AnimationTree.h
     AnimationTree.cpp
     ObjWriter.h
     ObjWriter.cpp
     PlayerDataWad.h
     PlayerDataWad.cpp
+    WadDirectory.h
+    WadDirectory.cpp
+    WorldDataWad.h
+    WorldDataWad.cpp
     WorldFile.h
     WorldFile.cpp
+    ParticleTemplate.h
+    ParticleTemplate.cpp
     TplFile.h
     TplFile.cpp
     IcoWriter.h

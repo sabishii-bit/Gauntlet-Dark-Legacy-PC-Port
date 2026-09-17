@@ -1,12 +1,15 @@
 # Everything except main() lives in a library so the tests can link it.
-# Modules, lowest first: config (settings), players (class data, progression and saves),
-# menu (widgets), screens (full screens and what they receive), app (the driver and attract
-# flow). A module only includes those below it.
+# Modules, lowest first: config (settings), players (class data, progression, saves, and the
+# characters as they stand in a level), world (the levels the game plays in and their
+# cameras), menu (widgets), screens (full screens and what they receive), app (the driver and
+# attract flow). A module only includes those below it.
 add_library(game STATIC
     app/Gauntlet.h
     app/Gauntlet.cpp
     app/CommandLine.h
     app/CommandLine.cpp
+    app/Scenario.h
+    app/Scenario.cpp
     app/AttractSequencer.h
     app/AttractSequencer.cpp
     config/GameConfig.h
@@ -17,6 +20,24 @@ add_library(game STATIC
     players/Progression.cpp
     players/CharacterSave.h
     players/CharacterSave.cpp
+    players/PlayerControls.h
+    players/PlayerControls.cpp
+    players/PlayerActor.h
+    players/PlayerActor.cpp
+    players/PlayerAnimator.h
+    players/PlayerAnimator.cpp
+    world/TowerWorld.h
+    world/TowerWorld.cpp
+    world/TowerCamera.h
+    world/TowerCamera.cpp
+    world/SumnerFigure.h
+    world/SumnerFigure.cpp
+    world/PlacedItems.h
+    world/PlacedItems.cpp
+    world/LevelTriggers.h
+    world/LevelTriggers.cpp
+    menu/ScrollBox.h
+    menu/ScrollBox.cpp
     menu/MenuInput.h
     menu/MenuInput.cpp
     menu/OptionMenu.h
@@ -34,8 +55,14 @@ add_library(game STATIC
     screens/SmokeTestScene.cpp
     screens/SelectLane.h
     screens/SelectLane.cpp
+    screens/StatusBox.h
+    screens/StatusBox.cpp
+    screens/PickupHud.h
+    screens/PickupHud.cpp
     screens/PlayerSelectScene.h
-    screens/PlayerSelectScene.cpp)
+    screens/PlayerSelectScene.cpp
+    screens/TowerScene.h
+    screens/TowerScene.cpp)
 
 add_library(gdl::game ALIAS game)
 
