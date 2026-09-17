@@ -1,17 +1,7 @@
 # Gauntlet Dark Legacy
 
-A from-scratch **C++26 / Vulkan** reconstruction of the engine behind
-*Gauntlet Dark Legacy* (GameCube release, `GUNE5D`), written to be readable,
-modular and easy to extend. It reads the original game data; no assets are
+A reconstruction of *Gauntlet Dark Legacy* (GameCube release, `GUNE5D`), written to be readable, modular and easy to extend. It reads the original game data; no assets are
 included, you need your own copy of the disc.
-
-**Status:** the build opens a window, brings up a Vulkan 1.3 device, plays
-the game's intro movies with sound and then shows the title screen: the logo,
-its animated glow, "Press Start", the title music, and the Start / Options
-menus drawn with the game's own fonts, scroll art, menu sounds and the 3D
-arrow cursor. Choosing Start opens the player select screen described below;
-the Options entries are listed but not yet wired up. The title screen
-needs the assets unpacked once with `gdlunpack` (see Run).
 
 ## Requirements
 

@@ -286,7 +286,7 @@ TEST_CASE("name entry letters stay inside the lane", "[game][select]") {
             }
         }
     }
-    REQUIRE(onRow == 6 * 6);
+    REQUIRE(onRow == 6U * NameEntry::kMaxLength); // one quad per letter
     REQUIRE(minX >= 128.0f);
     REQUIRE(maxX <= 256.0f);
 }
