@@ -23,12 +23,14 @@
 #include "formats/FontFile.h"
 #include "formats/GcTexture.h"
 #include "formats/GeometryStream.h"
+#include "formats/IcoWriter.h"
 #include "formats/JsonWriter.h"
 #include "formats/ModelArchive.h"
 #include "formats/ObjWriter.h"
 #include "formats/PlayerDataWad.h"
 #include "formats/SoundBank.h"
 #include "formats/TextRom.h"
+#include "formats/TplFile.h"
 #include "formats/WavWriter.h"
 #include "formats/WorldFile.h"
 
@@ -52,6 +54,7 @@ struct Summary {
     u32 worlds = 0;
     u32 skippedLevels = 0;
     u32 textRoms = 0;
+    u32 cardImages = 0;
     u32 banks = 0;
     u32 samples = 0;
     u32 failures = 0;
@@ -84,13 +87,13 @@ std::vector<std::string> bitmapNames(const ModelArchive& archive) {
     }
     std::string base = "UNNAMED";
     u32 frame = 0;
-    for (usize i = 0; i < names.size(); ++i) {
-        if (!names[i].empty()) {
-            base = names[i];
+    for (std::string& name : names) {
+        if (!name.empty()) {
+            base = name;
             frame = 0;
             continue;
         }
-        names[i] = std::format("{}+{}", base, ++frame);
+        name = std::format("{}+{}", base, ++frame);
     }
     return names;
 }
@@ -517,6 +520,36 @@ void unpackClassData(const std::filesystem::path& file, const std::filesystem::p
     ++summary.classes;
 }
 
+/**
+ * The memory-card art beside the game folder on the disc: every frame of the icon and the
+ * banner as PNG, plus the icon's first frame as a Windows .ico at 32 to 256 pixels for the
+ * executable and window.
+ */
+void unpackCardArt(const std::filesystem::path& directory, const std::filesystem::path& outDir,
+                   Summary& summary) {
+    std::filesystem::create_directories(outDir);
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (toLowerAscii(entry.path().extension().string()) != ".tpl") {
+            continue;
+        }
+        const std::string stem = toLowerAscii(entry.path().stem().string());
+        const std::vector<TplImage> images = parseTplFile(readFile(entry.path()));
+        for (usize i = 0; i < images.size(); ++i) {
+            const std::string name = images.size() == 1 ? std::format("{}.png", stem)
+                                                        : std::format("{}{}.png", stem, i);
+            writePng(outDir / name, images[i].image);
+            ++summary.cardImages;
+        }
+        if (stem == "icon" && !images.empty()) {
+            std::vector<Image> sizes;
+            for (u32 factor = 1; factor <= 8; factor *= 2) {
+                sizes.push_back(enlargeImage(images[0].image, factor));
+            }
+            writeFile(outDir / "icon.ico", encodeIco(sizes));
+        }
+    }
+}
+
 int run(const std::filesystem::path& assetRoot, const std::filesystem::path& outRoot,
         std::string_view only, bool levels) {
     Summary summary;
@@ -585,43 +618,62 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
             print(std::format("{}: {}", name, e.what()));
         }
     }
+    // The memory-card art sits beside the game folder, not inside it.
+    if (only.empty() || normalizeAssetName(only) == "CARDDEMO") {
+        const std::filesystem::path disc = std::filesystem::absolute(assetRoot).parent_path();
+        for (const auto& entry : std::filesystem::directory_iterator(disc)) {
+            if (!entry.is_directory() ||
+                normalizeAssetName(entry.path().filename().string()) != "CARDDEMO") {
+                continue;
+            }
+            try {
+                unpackCardArt(entry.path(), outRoot / "carddemo", summary);
+            } catch (const std::exception& e) {
+                ++summary.failures;
+                print(std::format("carddemo: {}", e.what()));
+            }
+        }
+    }
     print(std::format("{} archives, {} textures, {} models, {} animation trees, {} fonts, "
                       "{} text roms, {} sound banks, {} samples, {} classes, {} worlds, "
-                      "{} failures",
+                      "{} card images, {} failures",
                       summary.archives, summary.textures, summary.models, summary.animations,
                       summary.fonts, summary.textRoms, summary.banks, summary.samples,
-                      summary.classes, summary.worlds, summary.failures));
+                      summary.classes, summary.worlds, summary.cardImages, summary.failures));
     return summary.failures == 0 ? 0 : 3;
 }
 
 } // namespace
 
 int main(int argc, char* argv[]) {
-    std::vector<std::string_view> args;
-    const std::span<char*> rawArgs(argv, static_cast<usize>(argc));
-    for (const char* arg : rawArgs.subspan(rawArgs.empty() ? 0 : 1)) {
-        args.emplace_back(arg);
-    }
-    std::string_view only;
-    bool levels = false;
-    std::vector<std::string_view> positional;
-    for (usize i = 0; i < args.size(); ++i) {
-        if (args[i] == "--only" && i + 1 < args.size()) {
-            only = args[++i];
-        } else if (args[i] == "--levels") {
-            levels = true;
-        } else {
-            positional.push_back(args[i]);
-        }
-    }
-    if (positional.size() != 2) {
-        print("usage: gdlunpack <asset-root> <output-root> [--only <directory|level>] [--levels]");
-        return 2;
-    }
     try {
+        std::vector<std::string_view> args;
+        const std::span<char*> rawArgs(argv, static_cast<usize>(argc));
+        for (const char* arg : rawArgs.subspan(rawArgs.empty() ? 0 : 1)) {
+            args.emplace_back(arg);
+        }
+        std::string_view only;
+        bool levels = false;
+        std::vector<std::string_view> positional;
+        for (usize i = 0; i < args.size(); ++i) {
+            if (args[i] == "--only" && i + 1 < args.size()) {
+                only = args[++i];
+            } else if (args[i] == "--levels") {
+                levels = true;
+            } else {
+                positional.push_back(args[i]);
+            }
+        }
+        if (positional.size() != 2) {
+            print("usage: gdlunpack <asset-root> <output-root> [--only <directory|level>] "
+                  "[--levels]");
+            return 2;
+        }
         return run(positional[0], positional[1], only, levels);
     } catch (const std::exception& e) {
-        print(std::format("error: {}", e.what()));
+        std::fputs("error: ", stdout);
+        std::fputs(e.what(), stdout);
+        std::fputc('\n', stdout);
         return 1;
     }
 }

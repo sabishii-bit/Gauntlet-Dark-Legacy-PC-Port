@@ -153,6 +153,34 @@ TEST_CASE("a new character is named, given a class and locked in", "[game][selec
     REQUIRE(f.lane.state() == SelectLane::State::LockedIn);
 }
 
+TEST_CASE("a typed name is taken straight from the keyboard", "[game][select]") {
+    Fixture f;
+    f.lane.activate();
+    f.step(press(true)); // New
+    REQUIRE(f.lane.typing());
+    MenuInput erase;
+    erase.erase = true;
+    f.step(erase); // nothing to erase: back to the menu
+    REQUIRE(f.lane.state() == SelectLane::State::TopMenu);
+    REQUIRE_FALSE(f.lane.typing());
+
+    f.step(press(true));
+    MenuInput typed;
+    typed.typed = "cj";
+    f.step(typed);
+    REQUIRE(f.lane.nameEntry().name() == "CJ");
+    REQUIRE(f.sounds.back() == SelectSound::LetterAccept);
+    f.step(erase);
+    REQUIRE(f.lane.nameEntry().name() == "C");
+    REQUIRE(f.sounds.back() == SelectSound::CursorHorizontal);
+    typed.typed = "j";
+    f.step(typed);
+    f.step(press(true)); // Enter takes it
+    f.step(MenuInput{}, NameEntry::kFlashTicks + 1);
+    REQUIRE(f.lane.state() == SelectLane::State::ClassPick);
+    REQUIRE(f.lane.save().name == "CJ");
+}
+
 TEST_CASE("backing out of the class picker returns to the first menu", "[game][select]") {
     Fixture f;
     f.lane.activate();

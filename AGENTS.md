@@ -66,8 +66,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   tables.
 * The player select screen is four `screens/SelectLane` state machines under
   one `screens/PlayerSelectScene`; each lane reads one player's devices through
-  `MenuInputSource::forPlayer`. It ends when every joined player is locked in
-  and nothing is animating, or when the last player backs out.
+  `MenuInputSource::forPlayer`, with `text` set while the lane takes a name so
+  the letter, digit, space and Backspace keys type into it instead of
+  steering. It ends when every joined player is locked in and nothing is
+  animating, or when the last player backs out.
 * Vulkan appears only under `src/engine/render/vulkan/`, GLFW only
   under `src/engine/platform/`, miniaudio only in
   `src/engine/audio/AudioDevice.cpp`, stb_image only in `src/engine/assets/`,

@@ -43,6 +43,7 @@ private:
     bool startPlayerSelect(s32 startingPlayer);
     s32 playerPressingStart() const;
     GameContext context() const;
+    void applyWindowIcon();
 
     GameOptions m_options;
     GameConfig m_config;

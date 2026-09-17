@@ -416,7 +416,8 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
         break;
 
     case State::NameEntry: {
-        if (input.back && m_nameEntry.editing()) {
+        const bool eraseNothing = input.erase && m_nameEntry.length() == 0;
+        if ((input.back || eraseNothing) && m_nameEntry.editing()) {
             returnBack();
             break;
         }
@@ -843,6 +844,10 @@ void SelectLane::drawState(Canvas& canvas, s32 time) const {
             icon(kIconBack, rightX, kLegendY + kLegendStep * 3);
             small.draw(canvas, labelX, kLegendY + kLegendStep * 3 + kPromptTextDrop,
                        text("select.cancel"), style);
+            if (m_services->keyboardLane == m_index) {
+                drawLines(canvas, small, kLegendY + kLegendStep * 4 + kPromptTextDrop,
+                          kLineHeight, kSmallScale, text("select.typeName"), Color::white());
+            }
         }
         drawNameEntry(canvas, time);
         break;

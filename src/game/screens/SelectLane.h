@@ -47,6 +47,7 @@ struct LaneServices {
     const TextPainter* largePainter = nullptr; ///< font32
     const Texture* glowSheet = nullptr;
     MenuTextures menuTextures; ///< sheets the lane menus draw with
+    s32 keyboardLane = -1;     ///< the lane whose player can also type a name
 };
 
 /**
@@ -111,6 +112,9 @@ public:
     bool lockedIn() const { return m_state == State::LockedIn; }
     bool animating() const;
     State state() const { return m_state; }
+
+    /** Whether the lane is taking a name, so typing keys belong to it. */
+    bool typing() const { return m_state == State::NameEntry && m_nameEntry.editing(); }
     s32 index() const { return m_index; }
     s32 x() const { return m_index * kWidth; }
     const CharacterSave& save() const { return m_save; }

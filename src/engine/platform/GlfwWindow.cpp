@@ -129,6 +129,7 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
                                 desc.title.c_str(), nullptr, nullptr);
     GDL_VERIFY(m_window != nullptr, "glfwCreateWindow failed");
     glfwSetWindowUserPointer(m_window, this);
+    glfwSetCharCallback(m_window, &GlfwWindow::charCallback);
 
     log::info("Window created: {}x{} \"{}\"", desc.width, desc.height, desc.title);
 }
@@ -149,9 +150,28 @@ void GlfwWindow::pollEvents() {
     pollGamepads();
 }
 
+void GlfwWindow::setIcon(std::span<const Image> images) {
+    // GLFW wants writable pixel pointers, so the icons are copied for the call.
+    std::vector<std::vector<u8>> pixels;
+    pixels.reserve(images.size());
+    std::vector<GLFWimage> handles;
+    for (const Image& image : images) {
+        pixels.emplace_back(image.pixels);
+        handles.push_back(GLFWimage{static_cast<int>(image.width), static_cast<int>(image.height),
+                                    pixels.back().data()});
+    }
+    glfwSetWindowIcon(m_window, static_cast<int>(handles.size()), handles.data());
+}
+
 void GlfwWindow::pollKeyboard() {
     for (const auto& mapping : kKeyMap) {
         m_input.setKey(mapping.key, glfwGetKey(m_window, mapping.glfwKey) == GLFW_PRESS);
+    }
+}
+
+void GlfwWindow::charCallback(GLFWwindow* window, unsigned int codepoint) {
+    if (auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window))) {
+        self->m_input.addTypedChar(codepoint);
     }
 }
 

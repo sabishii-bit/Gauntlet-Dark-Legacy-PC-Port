@@ -1,0 +1,2 @@
+// The executable's icon: the memory-card icon, converted from the disc while building.
+IDI_ICON1 ICON "@GDL_ICON_FILE@"

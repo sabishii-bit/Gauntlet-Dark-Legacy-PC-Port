@@ -112,6 +112,10 @@ gauntlet [--assets <dir>] [--unpacked <dir>] [--data <dir>] [--movie <name>] [--
 plays one movie from `VQMOVIES` and quits; `--title` skips the intro movies.
 `--frames <n>` quits after `n` frames, handy for smoke tests. Escape quits.
 
+The window shows the game's memory-card icon once the card art is unpacked, and
+on Windows the executable carries it too: the build converts
+`assets/GUNE5D/carddemo/icon.tpl` itself when that file is present.
+
 ### Settings and text
 
 `data/config.json` holds the shipped defaults: the window size, vsync and an
@@ -140,8 +144,10 @@ Choosing Start on the title screen opens the player select screen: four lanes,
 one per player. The keyboard and the first pad drive lane one; pads two to four
 drive the other lanes, and a lane joins when its Start is pressed. Each lane
 offers New (enter a name with up/down, holding either to race through the
-letters, right or Select to take a letter, left to remove one, then pick a
-class with left/right and a costume colour with up/down) or Load (pick a saved
+letters, right or Select to take a letter and left to remove one, or just type
+it: letters, digits and space go straight in, Backspace erases, Enter takes it,
+and W/A/S/D spell rather than steer while the name is open; then pick a class
+with left/right and a costume colour with up/down) or Load (pick a saved
 character). The status box under each lane shows its class, name, level, gold
 and health in the costume's colour. A locked-in player can press Start while
 others are still choosing to save, load, change class or quit. The screen ends
@@ -157,8 +163,9 @@ Characters are JSON files, one per slot, under
 
 `gdlunpack <asset-root> <out-root> [--only <directory>]` converts every
 `objects.ngc` / `textures.ngc` archive with its `ANIM.PS2`, the `AUDIO`
-sound banks, `FONTS/*.fnt` fonts and `TEXT/*.rom` string tables into
-standard files (about 130 MB in total):
+sound banks, `FONTS/*.fnt` fonts, `TEXT/*.rom` string tables and the
+memory-card art in `carddemo` beside the asset root into standard files
+(about 130 MB in total):
 
 ```
 assets/unpacked/<ARCHIVE>/textures/<index>_<NAME>.png   decoded textures (RGBA PNG)
@@ -172,6 +179,9 @@ assets/unpacked/fonts/<name>.json                        glyph cells of each bit
 assets/unpacked/pdata/<CLASS>.json                       per-class stat ranges and body size
 assets/unpacked/LEVELS/<LEVEL>/world.json                a level's placed objects and marker points (with --levels)
 assets/unpacked/text/<name>.json                         fonts, named messages and message lists
+assets/unpacked/carddemo/icon<n>.png                     the memory-card icon's animation frames
+assets/unpacked/carddemo/banner.png                      the memory-card banner
+assets/unpacked/carddemo/icon.ico                        the icon at 32 to 256 pixels, for Windows
 ```
 
 Keyframe data of the animation trees is not exported yet; the trees are

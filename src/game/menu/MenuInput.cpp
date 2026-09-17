@@ -23,12 +23,25 @@ PadRange padsOf(int pad) {
     return PadRange{pad, pad};
 }
 
-bool anyKeyPressed(const Input& input, std::span<const Key> keys, bool keyboard) {
-    return keyboard && std::ranges::any_of(keys, [&](Key key) { return input.wasKeyPressed(key); });
+/** Keys a text field claims: they type or erase instead of steering the menu. */
+bool typesText(Key key) {
+    return (key >= Key::A && key <= Key::Z) || (key >= Key::Num0 && key <= Key::Num9) ||
+           key == Key::Space || key == Key::Backspace;
 }
 
-bool anyKeyDown(const Input& input, std::span<const Key> keys, bool keyboard) {
-    return keyboard && std::ranges::any_of(keys, [&](Key key) { return input.isKeyDown(key); });
+/** Whether `key` still steers the menu for `source`. */
+bool steers(Key key, const MenuInputSource& source) {
+    return source.keyboard && !(source.text && typesText(key));
+}
+
+bool anyKeyPressed(const Input& input, std::span<const Key> keys, const MenuInputSource& source) {
+    return std::ranges::any_of(
+        keys, [&](Key key) { return steers(key, source) && input.wasKeyPressed(key); });
+}
+
+bool anyKeyDown(const Input& input, std::span<const Key> keys, const MenuInputSource& source) {
+    return std::ranges::any_of(
+        keys, [&](Key key) { return steers(key, source) && input.isKeyDown(key); });
 }
 
 bool anyButtonPressed(const Input& input, std::span<const PadButton> buttons, int pad) {
@@ -54,15 +67,18 @@ bool anyButtonDown(const Input& input, std::span<const PadButton> buttons, int p
     return false;
 }
 
+constexpr u32 kFirstPrintable = 0x20;
+constexpr u32 kLastPrintable = 0x7E;
+
 } // namespace
 
 MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuInputSource source) {
     const auto pressed = [&](const std::vector<Key>& keys, const std::vector<PadButton>& buttons) {
-        return anyKeyPressed(input, keys, source.keyboard) ||
+        return anyKeyPressed(input, keys, source) ||
                anyButtonPressed(input, buttons, source.pad);
     };
     const auto held = [&](const std::vector<Key>& keys, const std::vector<PadButton>& buttons) {
-        return anyKeyDown(input, keys, source.keyboard) ||
+        return anyKeyDown(input, keys, source) ||
                anyButtonDown(input, buttons, source.pad);
     };
     MenuInput out;
@@ -77,6 +93,14 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
     out.downHeld = held(bindings.down, bindings.padDown);
     out.leftHeld = held(bindings.left, bindings.padLeft);
     out.rightHeld = held(bindings.right, bindings.padRight);
+    if (source.keyboard && source.text) {
+        for (const u32 codepoint : input.typedText()) {
+            if (codepoint >= kFirstPrintable && codepoint <= kLastPrintable) {
+                out.typed.push_back(static_cast<char>(codepoint));
+            }
+        }
+        out.erase = input.wasKeyPressed(Key::Backspace);
+    }
     return out;
 }
 

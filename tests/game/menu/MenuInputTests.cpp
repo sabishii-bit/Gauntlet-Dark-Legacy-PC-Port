@@ -104,4 +104,47 @@ TEST_CASE("held directions are reported alongside presses", "[game][menu]") {
     REQUIRE_FALSE(readMenuInput(input, MenuBindings{}, MenuInputSource::forPlayer(0)).leftHeld);
 }
 
+TEST_CASE("a text field takes the typing keys away from the menu", "[game][menu]") {
+    Input input;
+    input.beginPoll();
+    input.setKey(Key::W, true);
+    input.setKey(Key::Space, true);
+    input.setKey(Key::Backspace, true);
+    input.addTypedChar('w');
+    input.addTypedChar(' ');
+    input.addTypedChar(0x20AC); // outside ASCII: dropped
+    MenuInput menu = readMenuInput(input, MenuBindings{});
+    REQUIRE(menu.up);
+    REQUIRE(menu.select);
+    REQUIRE(menu.back);
+    REQUIRE(menu.typed.empty());
+    REQUIRE_FALSE(menu.erase);
+
+    menu = readMenuInput(input, MenuBindings{}, MenuInputSource{}.typing());
+    REQUIRE_FALSE(menu.up);
+    REQUIRE_FALSE(menu.upHeld);
+    REQUIRE_FALSE(menu.select);
+    REQUIRE_FALSE(menu.back);
+    REQUIRE(menu.typed == "w ");
+    REQUIRE(menu.erase);
+
+    // Arrows and Enter still steer while typing.
+    input.beginPoll();
+    input.setKey(Key::W, false);
+    input.setKey(Key::Space, false);
+    input.setKey(Key::Backspace, false);
+    input.setKey(Key::Up, true);
+    input.setKey(Key::Enter, true);
+    menu = readMenuInput(input, MenuBindings{}, MenuInputSource::forPlayer(0).typing());
+    REQUIRE(menu.up);
+    REQUIRE(menu.select);
+    REQUIRE(menu.typed.empty());
+    REQUIRE_FALSE(menu.erase);
+
+    // Without the keyboard nothing is typed.
+    input.addTypedChar('x');
+    menu = readMenuInput(input, MenuBindings{}, MenuInputSource::forPlayer(1).typing());
+    REQUIRE(menu.typed.empty());
+}
+
 } // namespace

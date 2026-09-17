@@ -27,6 +27,19 @@ TEST_CASE("keys report down, pressed and released edges across polls", "[platfor
     REQUIRE(input.wasKeyReleased(Key::Space));
 }
 
+TEST_CASE("typed characters are kept until the next poll", "[platform][input]") {
+    Input input;
+    REQUIRE(input.typedText().empty());
+    input.beginPoll();
+    input.addTypedChar('a');
+    input.addTypedChar(0x20AC);
+    REQUIRE(input.typedText().size() == 2);
+    REQUIRE(input.typedText()[0] == 'a');
+    REQUIRE(input.typedText()[1] == 0x20AC);
+    input.beginPoll();
+    REQUIRE(input.typedText().empty());
+}
+
 TEST_CASE("keys and pad buttons round-trip through their names", "[platform][input]") {
     REQUIRE(keyName(Key::Enter) == "Enter");
     REQUIRE(keyName(Key::W) == "W");

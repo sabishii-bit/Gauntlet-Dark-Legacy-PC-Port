@@ -26,7 +26,11 @@ add_library(formats STATIC
     PlayerDataWad.h
     PlayerDataWad.cpp
     WorldFile.h
-    WorldFile.cpp)
+    WorldFile.cpp
+    TplFile.h
+    TplFile.cpp
+    IcoWriter.h
+    IcoWriter.cpp)
 
 add_library(gdl::formats ALIAS formats)
 

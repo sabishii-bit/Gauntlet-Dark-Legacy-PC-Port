@@ -91,6 +91,47 @@ TEST_CASE("an empty accepted name is replaced and a full one completes itself",
     REQUIRE(full.flashing());
 }
 
+TEST_CASE("typed letters go straight into the name", "[game][menu][name]") {
+    REQUIRE(NameEntry::typedLetter('a') == 'A');
+    REQUIRE(NameEntry::typedLetter('Z') == 'Z');
+    REQUIRE(NameEntry::typedLetter('7') == '7');
+    REQUIRE(NameEntry::typedLetter(' ') == '_');
+    REQUIRE_FALSE(NameEntry::typedLetter('!').has_value());
+
+    NameEntry entry;
+    entry.begin("");
+    MenuInput typed;
+    typed.typed = "bo!b ";
+    REQUIRE(entry.update(typed, 1) == NameEntry::Event::LetterAdded);
+    REQUIRE(entry.name() == "BOB_");
+    REQUIRE(entry.pendingLetter() == NameEntry::kEndMark);
+
+    MenuInput erase;
+    erase.erase = true;
+    REQUIRE(entry.update(erase, 1) == NameEntry::Event::LetterRemoved);
+    REQUIRE(entry.name() == "BOB");
+    REQUIRE(entry.pendingLetter() == '_');
+
+    // Erasing an empty name is nothing to the picker; the lane backs out instead.
+    NameEntry empty;
+    empty.begin("");
+    REQUIRE(empty.update(erase, 1) == NameEntry::Event::None);
+    REQUIRE(empty.editing());
+
+    // Enter takes a typed name; a sixth letter completes it by itself.
+    typed.typed = "y";
+    REQUIRE(entry.update(typed, 1) == NameEntry::Event::LetterAdded);
+    REQUIRE(entry.update(press(false, false, false, false, true), 1) ==
+            NameEntry::Event::Accepted);
+    REQUIRE(entry.name() == "BOBY");
+    REQUIRE(entry.flashing());
+    NameEntry full;
+    full.begin("GORDO");
+    typed.typed = "n";
+    REQUIRE(full.update(typed, 1) == NameEntry::Event::Accepted);
+    REQUIRE(full.name() == "GORDON");
+}
+
 TEST_CASE("a held direction keeps cycling letters, faster and faster", "[game][menu][name]") {
     NameEntry entry;
     entry.begin("");

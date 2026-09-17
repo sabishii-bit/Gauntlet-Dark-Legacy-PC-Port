@@ -110,6 +110,7 @@ f32 Input::padAxis(int pad, PadAxis axis) const {
 void Input::beginPoll() {
     m_previousKeys = m_keys;
     m_previousPads = m_pads;
+    m_typed.clear();
 }
 
 void Input::setKey(Key key, bool down) {
@@ -122,6 +123,10 @@ void Input::setPad(int pad, const PadSnapshot& snapshot) {
     if (validPad(pad)) {
         m_pads[pad] = snapshot;
     }
+}
+
+void Input::addTypedChar(u32 codepoint) {
+    m_typed.push_back(codepoint);
 }
 
 } // namespace gdl

@@ -19,6 +19,7 @@ public:
     Extent2D framebufferSize() const override;
     void waitWhileMinimized() override;
     const Input& input() const override { return m_input; }
+    void setIcon(std::span<const Image> images) override;
 
     std::vector<const char*> requiredVulkanInstanceExtensions() const override;
     bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* outSurface) const override;
@@ -26,6 +27,7 @@ public:
 private:
     void pollKeyboard();
     void pollGamepads();
+    static void charCallback(GLFWwindow* window, unsigned int codepoint);
 
     GLFWwindow* m_window = nullptr;
     Input m_input;
