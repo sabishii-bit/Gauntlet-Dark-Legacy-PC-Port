@@ -124,12 +124,19 @@ void GameConfig::mergeJson(std::string_view json) {
     if (root.contains("text")) {
         read(root.at("text"), "language", text.language);
     }
+    if (root.contains("save")) {
+        const Json& s = root.at("save");
+        read(s, "directory", save.directory);
+        read(s, "slots", save.slots);
+    }
     if (root.contains("controls")) {
         const Json& c = root.at("controls");
         if (c.contains("keyboard")) {
             const Json& k = c.at("keyboard");
             readKeys(k, "up", menu.up);
             readKeys(k, "down", menu.down);
+            readKeys(k, "left", menu.left);
+            readKeys(k, "right", menu.right);
             readKeys(k, "select", menu.select);
             readKeys(k, "back", menu.back);
             readKeys(k, "start", menu.start);
@@ -138,14 +145,16 @@ void GameConfig::mergeJson(std::string_view json) {
             const Json& p = c.at("pad");
             readButtons(p, "up", menu.padUp);
             readButtons(p, "down", menu.padDown);
+            readButtons(p, "left", menu.padLeft);
+            readButtons(p, "right", menu.padRight);
             readButtons(p, "select", menu.padSelect);
             readButtons(p, "back", menu.padBack);
             readButtons(p, "start", menu.padStart);
         }
     }
-    if (timing.tickRate == 0 || display.virtualWidth == 0 || display.virtualHeight == 0 ||
-        display.frameWidth == 0 || display.frameHeight == 0 || display.windowWidth == 0 ||
-        display.windowHeight == 0) {
+    if (save.slots == 0 || timing.tickRate == 0 || display.virtualWidth == 0 ||
+        display.virtualHeight == 0 || display.frameWidth == 0 || display.frameHeight == 0 ||
+        display.windowWidth == 0 || display.windowHeight == 0) {
         throw FormatError("config sizes and the tick rate must be positive");
     }
 }
@@ -167,15 +176,20 @@ std::string GameConfig::toJson() const {
                      {"musicVolume", audio.musicVolume},
                      {"effectsVolume", audio.effectsVolume}};
     root["text"] = {{"language", text.language}};
+    root["save"] = {{"directory", save.directory}, {"slots", save.slots}};
     root["controls"] = {{"keyboard",
                          {{"up", keyNames(menu.up)},
                           {"down", keyNames(menu.down)},
+                          {"left", keyNames(menu.left)},
+                          {"right", keyNames(menu.right)},
                           {"select", keyNames(menu.select)},
                           {"back", keyNames(menu.back)},
                           {"start", keyNames(menu.start)}}},
                         {"pad",
                          {{"up", buttonNames(menu.padUp)},
                           {"down", buttonNames(menu.padDown)},
+                          {"left", buttonNames(menu.padLeft)},
+                          {"right", buttonNames(menu.padRight)},
                           {"select", buttonNames(menu.padSelect)},
                           {"back", buttonNames(menu.padBack)},
                           {"start", buttonNames(menu.padStart)}}}};
@@ -189,6 +203,13 @@ void GameConfig::saveFile(const std::filesystem::path& file) const {
 
 f32 GameConfig::horizontalFovRadians() const {
     return camera.horizontalFovDegrees * (std::numbers::pi_v<f32> / 180.0f);
+}
+
+std::filesystem::path GameConfig::saveDirectory() const {
+    if (!save.directory.empty()) {
+        return {save.directory};
+    }
+    return userSettingsPath().parent_path() / "saves";
 }
 
 std::filesystem::path GameConfig::userSettingsPath() {

@@ -1,7 +1,7 @@
 # Everything except main() lives in a library so the tests can link it.
-# Modules, lowest first: config (settings), menu (widgets), screens (full screens and
-# what they receive), app (the driver and attract flow). A module only includes those
-# below it.
+# Modules, lowest first: config (settings), players (class data, progression and saves),
+# menu (widgets), screens (full screens and what they receive), app (the driver and attract
+# flow). A module only includes those below it.
 add_library(game STATIC
     app/Gauntlet.h
     app/Gauntlet.cpp
@@ -11,19 +11,31 @@ add_library(game STATIC
     app/AttractSequencer.cpp
     config/GameConfig.h
     config/GameConfig.cpp
+    players/ClassData.h
+    players/ClassData.cpp
+    players/Progression.h
+    players/Progression.cpp
+    players/CharacterSave.h
+    players/CharacterSave.cpp
     menu/MenuInput.h
     menu/MenuInput.cpp
     menu/OptionMenu.h
     menu/OptionMenu.cpp
     menu/FireScroll.h
     menu/FireScroll.cpp
+    menu/NameEntry.h
+    menu/NameEntry.cpp
     screens/GameContext.h
     screens/TitleScene.h
     screens/TitleScene.cpp
     screens/MovieScene.h
     screens/MovieScene.cpp
     screens/SmokeTestScene.h
-    screens/SmokeTestScene.cpp)
+    screens/SmokeTestScene.cpp
+    screens/SelectLane.h
+    screens/SelectLane.cpp
+    screens/PlayerSelectScene.h
+    screens/PlayerSelectScene.cpp)
 
 add_library(gdl::game ALIAS game)
 

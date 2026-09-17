@@ -26,9 +26,11 @@
 #include "formats/JsonWriter.h"
 #include "formats/ModelArchive.h"
 #include "formats/ObjWriter.h"
+#include "formats/PlayerDataWad.h"
 #include "formats/SoundBank.h"
 #include "formats/TextRom.h"
 #include "formats/WavWriter.h"
+#include "formats/WorldFile.h"
 
 namespace {
 
@@ -46,6 +48,9 @@ struct Summary {
     u32 models = 0;
     u32 animations = 0;
     u32 fonts = 0;
+    u32 classes = 0;
+    u32 worlds = 0;
+    u32 skippedLevels = 0;
     u32 textRoms = 0;
     u32 banks = 0;
     u32 samples = 0;
@@ -413,8 +418,107 @@ void unpackTextRom(const std::filesystem::path& file, const std::filesystem::pat
     ++summary.textRoms;
 }
 
+/** Writes a level's placed objects and marker points. */
+void unpackWorld(const AssetLocator& files, const std::filesystem::path& outDir,
+                 Summary& summary) {
+    const auto worldPath = files.find("worlds.ps2");
+    if (!worldPath.has_value()) {
+        return;
+    }
+    try {
+        const WorldFile world = WorldFile::parse(readFile(*worldPath));
+        JsonWriter json;
+        const auto vec3 = [&](const Vec3& v) {
+            json.beginArray();
+            json.value(static_cast<f64>(v.x)).value(static_cast<f64>(v.y));
+            json.value(static_cast<f64>(v.z));
+            json.endArray();
+        };
+        json.beginObject();
+        json.key("bounds").beginObject();
+        json.key("min");
+        vec3(world.minBounds);
+        json.key("max");
+        vec3(world.maxBounds);
+        json.endObject();
+        json.key("collisionTriangles").value(world.collisionTriangleCount);
+        json.key("itemInfos").value(world.itemInfoCount);
+        json.key("itemInstances").value(world.itemInstanceCount);
+        json.key("animations").value(world.animationCount);
+        json.key("particleSystems").value(world.particleSystemCount);
+        json.key("objects").beginArray();
+        for (const WorldObjectRecord& object : world.objects) {
+            json.beginObject();
+            json.key("name").value(object.name);
+            json.key("position");
+            vec3(object.position);
+            json.key("flags").value(object.flags);
+            json.key("objectFlags").value(object.objectFlags);
+            json.key("next").value(static_cast<s64>(object.nextIndex));
+            json.key("child").value(static_cast<s64>(object.childIndex));
+            json.key("radius").value(static_cast<f64>(object.radius));
+            json.endObject();
+        }
+        json.endArray();
+        json.key("locators").beginArray();
+        for (const WorldLocatorRecord& locator : world.locators) {
+            json.beginObject();
+            json.key("type").value(locatorKindName(locator.kind));
+            json.key("delay").value(u32{locator.delay});
+            json.key("next").value(u32{locator.next});
+            json.key("position");
+            vec3(locator.position);
+            json.key("rotation");
+            vec3(locator.rotation);
+            json.endObject();
+        }
+        json.endArray();
+        json.endObject();
+        std::filesystem::create_directories(outDir);
+        writeTextFile(outDir / "world.json", json.take());
+        ++summary.worlds;
+    } catch (const std::exception& e) {
+        ++summary.failures;
+        print(std::format("  world: {}", e.what()));
+    }
+}
+
+/** A level folder: its archive plus the world file. */
+void unpackLevel(const std::filesystem::path& directory, const std::filesystem::path& outDir,
+                 Summary& summary) {
+    unpackArchive(directory, outDir, summary);
+    unpackWorld(AssetLocator(directory), outDir, summary);
+}
+
+void unpackClassData(const std::filesystem::path& file, const std::filesystem::path& outDir,
+                     Summary& summary) {
+    const PlayerClassRecord record = parsePlayerDataWad(readFile(file));
+    JsonWriter json;
+    json.beginObject();
+    json.key("code").value(normalizeAssetName(file.stem().string()));
+    const auto range = [&](const char* name, f32 low, f32 high) {
+        json.key(name).beginArray().value(static_cast<f64>(low)).value(static_cast<f64>(high));
+        json.endArray();
+    };
+    range("fight", record.fightMin, record.fightMax);
+    range("speed", record.speedMin, record.speedMax);
+    range("armor", record.armorMin, record.armorMax);
+    range("magic", record.magicMin, record.magicMax);
+    json.key("height").value(static_cast<f64>(record.height));
+    json.key("width").value(static_cast<f64>(record.width));
+    json.key("attachY").value(static_cast<f64>(record.attachY));
+    json.key("collisionY").value(static_cast<f64>(record.collisionY));
+    json.key("powerupTime").value(static_cast<f64>(record.powerupTime));
+    json.key("effects").value(record.effectCount);
+    json.key("damage").value(record.damageCount);
+    json.endObject();
+    std::filesystem::create_directories(outDir);
+    writeTextFile(outDir / (normalizeAssetName(file.stem().string()) + ".json"), json.take());
+    ++summary.classes;
+}
+
 int run(const std::filesystem::path& assetRoot, const std::filesystem::path& outRoot,
-        std::string_view only) {
+        std::string_view only, bool levels) {
     Summary summary;
     std::vector<std::filesystem::path> directories;
     for (const auto& entry : std::filesystem::directory_iterator(assetRoot)) {
@@ -427,7 +531,7 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
     for (const auto& directory : directories) {
         const std::string name = directory.filename().string();
         const std::string upper = normalizeAssetName(name);
-        if (!only.empty() && upper != normalizeAssetName(only)) {
+        if (!only.empty() && upper != normalizeAssetName(only) && upper != "LEVELS") {
             continue;
         }
         try {
@@ -435,6 +539,34 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
                 for (const auto& entry : std::filesystem::directory_iterator(directory)) {
                     if (toLowerAscii(entry.path().extension().string()) == ".fnt") {
                         unpackFont(entry.path(), outRoot / "fonts", summary);
+                    }
+                }
+            } else if (upper == "LEVELS") {
+                // Every level unpacks to about twenty megabytes, so they are opt-in.
+                if (!levels && only.empty()) {
+                    print("LEVELS: skipped; pass --levels to unpack the level folders");
+                    continue;
+                }
+                std::vector<std::filesystem::path> levelDirectories;
+                for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                    if (entry.is_directory()) {
+                        levelDirectories.push_back(entry.path());
+                    }
+                }
+                std::ranges::sort(levelDirectories);
+                for (const auto& level : levelDirectories) {
+                    const std::string levelName = normalizeAssetName(level.filename().string());
+                    if (!only.empty() && normalizeAssetName(only) != "LEVELS" &&
+                        levelName != normalizeAssetName(only)) {
+                        ++summary.skippedLevels;
+                        continue;
+                    }
+                    unpackLevel(level, outRoot / "LEVELS" / levelName, summary);
+                }
+            } else if (upper == "PDATA") {
+                for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                    if (toLowerAscii(entry.path().extension().string()) == ".wad") {
+                        unpackClassData(entry.path(), outRoot / "pdata", summary);
                     }
                 }
             } else if (upper == "AUDIO") {
@@ -454,10 +586,11 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
         }
     }
     print(std::format("{} archives, {} textures, {} models, {} animation trees, {} fonts, "
-                      "{} text roms, {} sound banks, {} samples, {} failures",
+                      "{} text roms, {} sound banks, {} samples, {} classes, {} worlds, "
+                      "{} failures",
                       summary.archives, summary.textures, summary.models, summary.animations,
                       summary.fonts, summary.textRoms, summary.banks, summary.samples,
-                      summary.failures));
+                      summary.classes, summary.worlds, summary.failures));
     return summary.failures == 0 ? 0 : 3;
 }
 
@@ -470,20 +603,23 @@ int main(int argc, char* argv[]) {
         args.emplace_back(arg);
     }
     std::string_view only;
+    bool levels = false;
     std::vector<std::string_view> positional;
     for (usize i = 0; i < args.size(); ++i) {
         if (args[i] == "--only" && i + 1 < args.size()) {
             only = args[++i];
+        } else if (args[i] == "--levels") {
+            levels = true;
         } else {
             positional.push_back(args[i]);
         }
     }
     if (positional.size() != 2) {
-        print("usage: gdlunpack <asset-root> <output-root> [--only <directory>]");
+        print("usage: gdlunpack <asset-root> <output-root> [--only <directory|level>] [--levels]");
         return 2;
     }
     try {
-        return run(positional[0], positional[1], only);
+        return run(positional[0], positional[1], only, levels);
     } catch (const std::exception& e) {
         print(std::format("error: {}", e.what()));
         return 1;

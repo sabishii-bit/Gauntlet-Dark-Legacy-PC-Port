@@ -24,10 +24,16 @@
   "text": {
     "language": "en"
   },
+  "save": {
+    "directory": "",
+    "slots": 8
+  },
   "controls": {
     "keyboard": {
       "up": ["Up", "W"],
       "down": ["Down", "S"],
+      "left": ["Left", "A"],
+      "right": ["Right", "D"],
       "select": ["Enter", "Space"],
       "back": ["Backspace"],
       "start": ["Enter"]
@@ -35,6 +41,8 @@
     "pad": {
       "up": ["DpadUp"],
       "down": ["DpadDown"],
+      "left": ["DpadLeft"],
+      "right": ["DpadRight"],
       "select": ["A"],
       "back": ["B"],
       "start": ["Start"]

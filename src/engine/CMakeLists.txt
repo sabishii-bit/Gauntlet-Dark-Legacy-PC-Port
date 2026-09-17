@@ -96,12 +96,18 @@ add_library(engine STATIC
     assets/AnimationSet.cpp
     assets/StringTable.h
     assets/StringTable.cpp
+    assets/WorldLayout.h
+    assets/WorldLayout.cpp
     ui/Canvas.h
     ui/Canvas.cpp
     ui/TextPainter.h
     ui/TextPainter.cpp
     ui/ModelSprite.h
     ui/ModelSprite.cpp
+    world/WorldCamera.h
+    world/WorldCamera.cpp
+    world/WorldScene.h
+    world/WorldScene.cpp
     app/Application.h
     app/Application.cpp)
 

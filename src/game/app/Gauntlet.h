@@ -16,6 +16,7 @@
 #include "game/config/GameConfig.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/MovieScene.h"
+#include "game/screens/PlayerSelectScene.h"
 #include "game/screens/SmokeTestScene.h"
 #include "game/screens/TitleScene.h"
 
@@ -38,6 +39,9 @@ private:
     void startNextAttractScreen();
     void updateMovie(f64 deltaSeconds);
     void updateTitle(f64 deltaSeconds);
+    void updateSelect(f64 deltaSeconds);
+    bool startPlayerSelect(s32 startingPlayer);
+    s32 playerPressingStart() const;
     GameContext context() const;
 
     GameOptions m_options;
@@ -49,6 +53,7 @@ private:
     AttractSequencer m_attract;
     MovieScene m_movie;
     TitleScene m_title;
+    PlayerSelectScene m_select;
     SmokeTestScene m_smokeTest;
     bool m_movieActive = false;
     bool m_titleWarned = false;

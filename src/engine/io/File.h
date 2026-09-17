@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <memory>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -13,6 +14,9 @@ namespace gdl {
 
 /** Reads a whole file into memory; throws FileError. */
 std::vector<u8> readFile(const std::filesystem::path& path);
+
+/** Reads a whole file as text; throws FileError. */
+std::string readTextFile(const std::filesystem::path& path);
 
 /** Writes a whole file, replacing any existing one; throws FileError. */
 void writeFile(const std::filesystem::path& path, std::span<const u8> bytes);
