@@ -59,6 +59,9 @@ public:
     MenuInputSource inputSource(s32 index) const;
     s32 time() const { return m_time; }
     bool musicPlaying() const;
+
+    /** Whether Sumner is still greeting a locked-in character. */
+    bool speaking() const;
     const SaveSlots& saves() const { return m_saves; }
     bool towerVisible() const { return m_tower.built() && m_camera.has_value(); }
     const WorldScene& tower() const { return m_tower; }
@@ -71,7 +74,8 @@ private:
     std::string_view text(std::string_view id) const;
     const Texture* selectTexture(std::string_view name);
     const Texture* staticTexture(std::string_view name);
-    void playSound(SelectSound sound);
+    void playSound(SelectSound sound, const SelectLane& lane);
+    void greetCharacter(SoundHandle greeting, const CharacterSave& save);
     void startMusic();
 
     bool m_open = false;
@@ -95,6 +99,7 @@ private:
     SoundSet m_commonSounds;
     SoundSet m_selectSounds;
     SoundHandle m_music = kNoSound;
+    SoundHandle m_greeting = kNoSound;
     ClassDataSet m_classes;
     ModelSet m_towerModels;
     TextureSet m_towerTextures;

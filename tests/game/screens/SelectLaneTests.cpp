@@ -51,6 +51,8 @@ struct Fixture {
     SaveSlots slots;
     LaneServices services;
     std::vector<SelectSound> sounds;
+    s32 greetedClass = -1;
+    s32 greetedColor = -1;
     SelectLane lane;
 
     explicit Fixture(std::string_view scratch = "select-lane", bool withSlots = true) {
@@ -72,7 +74,13 @@ struct Fixture {
         services.selectTexture = [this](std::string_view) { return &sheet; };
         services.staticTexture = [this](std::string_view) { return &sheet; };
         services.menuTextures.font = &sheet;
-        services.playSound = [this](SelectSound sound) { sounds.push_back(sound); };
+        services.playSound = [this](SelectSound sound, const SelectLane& from) {
+            sounds.push_back(sound);
+            if (sound == SelectSound::Welcome || sound == SelectSound::WelcomeBack) {
+                greetedClass = from.save().character;
+                greetedColor = from.save().color;
+            }
+        };
         lane.reset(1, &services);
     }
 
@@ -143,6 +151,8 @@ TEST_CASE("a new character is named, given a class and locked in", "[game][selec
     REQUIRE(f.lane.save().color == 3);
     REQUIRE_FALSE(f.lane.saved());
     REQUIRE(f.sounds.back() == SelectSound::Welcome);
+    REQUIRE(f.greetedClass == 0); // the greeting can name the character
+    REQUIRE(f.greetedColor == 3);
     REQUIRE(f.lane.animating());
     f.step(MenuInput{}, 80);
     REQUIRE_FALSE(f.lane.animating());

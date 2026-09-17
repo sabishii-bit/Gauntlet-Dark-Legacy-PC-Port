@@ -148,8 +148,9 @@ letters, right or Select to take a letter and left to remove one, or just type
 it: letters, digits and space go straight in, Backspace erases, Enter takes it,
 and W/A/S/D spell rather than steer while the name is open; then pick a class
 with left/right and a costume colour with up/down) or Load (pick a saved
-character). The status box under each lane shows its class, name, level, gold
-and health in the costume's colour. A locked-in player can press Start while
+character). Sumner greets each locked-in character by costume and class. The
+status box under each lane shows its class, name, level, gold and health in
+the costume's colour. A locked-in player can press Start while
 others are still choosing to save, load, change class or quit. The screen ends
 once every player is ready; the tower that follows is not built yet, so the
 game returns to the title for now.

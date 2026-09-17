@@ -131,7 +131,7 @@ void SelectLane::activate() {
 
 void SelectLane::play(SelectSound sound) const {
     if (m_services != nullptr && m_services->playSound) {
-        m_services->playSound(sound);
+        m_services->playSound(sound, *this);
     }
 }
 

@@ -47,6 +47,46 @@ TEST_CASE("one-shot sounds play once and are dropped when drained", "[audio][pla
     REQUIRE(player.voiceCount() == 0);
 }
 
+TEST_CASE("a chained sound starts when the one before it ends", "[audio][player]") {
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const SoundClip first = tone(48000, 100, 0.5f);
+    const SoundClip second = tone(48000, 100, 0.25f);
+    SoundSequence a;
+    a.steps.push_back(SoundSequenceStep{&first, false, false});
+    SoundSequence b;
+    b.steps.push_back(SoundSequenceStep{&second, false, false});
+    const SoundHandle one = player.play(a);
+    const SoundHandle two = player.playAfter(one, b);
+    REQUIRE(two != kNoSound);
+    REQUIRE(two != one);
+    REQUIRE(player.isPlaying(two));
+    REQUIRE(player.voiceCount() == 1);
+
+    std::vector<f32> out = pull(mixer, 100);
+    REQUIRE(out[0] == 0.5f);
+    player.update();
+    out = pull(mixer, 10);
+    player.update(); // drops the first voice and starts the second
+    REQUIRE_FALSE(player.isPlaying(one));
+    REQUIRE(player.isPlaying(two));
+    REQUIRE(player.voiceCount() == 1);
+    out = pull(mixer, 100);
+    REQUIRE(out[0] == 0.25f);
+
+    // Chaining after nothing starts at once; a stopped chain never starts.
+    const SoundHandle three = player.playAfter(kNoSound, a);
+    REQUIRE(player.voiceCount() == 2);
+    const SoundHandle four = player.playAfter(three, b);
+    REQUIRE(player.isPlaying(four));
+    player.stop(four);
+    REQUIRE_FALSE(player.isPlaying(four));
+    const SoundHandle five = player.playAfter(three, b);
+    player.stopAll();
+    REQUIRE_FALSE(player.isPlaying(five));
+    REQUIRE(player.playAfter(three, SoundSequence{}) == kNoSound);
+}
+
 TEST_CASE("category and master volumes scale voices, live and on start", "[audio][player]") {
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);

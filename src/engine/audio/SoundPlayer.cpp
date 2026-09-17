@@ -11,13 +11,38 @@ bool SoundSequence::loops() const {
 
 SoundPlayer::SoundPlayer(AudioMixer& mixer) : m_mixer(mixer) {}
 
+namespace {
+
+bool playable(const SoundSequence& sequence) {
+    return !sequence.steps.empty() && sequence.steps[0].clip != nullptr &&
+           sequence.steps[0].clip->sampleRate != 0 && sequence.steps[0].clip->channels != 0;
+}
+
+} // namespace
+
 SoundHandle SoundPlayer::play(const SoundSequence& sequence, f32 volume, SoundCategory category) {
-    if (sequence.steps.empty() || sequence.steps[0].clip == nullptr ||
-        sequence.steps[0].clip->sampleRate == 0 || sequence.steps[0].clip->channels == 0) {
+    if (!playable(sequence)) {
         return kNoSound;
     }
+    return start(sequence, volume, category, m_nextHandle++);
+}
+
+SoundHandle SoundPlayer::playAfter(SoundHandle previous, const SoundSequence& sequence,
+                                   f32 volume, SoundCategory category) {
+    if (!isPlaying(previous)) {
+        return play(sequence, volume, category);
+    }
+    if (!playable(sequence)) {
+        return kNoSound;
+    }
+    m_pending.push_back(Pending{m_nextHandle, previous, sequence, volume, category});
+    return m_nextHandle++;
+}
+
+SoundHandle SoundPlayer::start(const SoundSequence& sequence, f32 volume,
+                               SoundCategory category, SoundHandle handle) {
     Voice voice;
-    voice.handle = m_nextHandle++;
+    voice.handle = handle;
     voice.sequence = sequence;
     const SoundClip& first = *sequence.steps[0].clip;
     voice.stream = m_mixer.createStream(AudioStreamDesc{first.sampleRate, first.channels});
@@ -59,6 +84,7 @@ void SoundPlayer::stop(SoundHandle handle) {
             voice.finished = true;
         }
     }
+    std::erase_if(m_pending, [handle](const Pending& p) { return p.handle == handle; });
 }
 
 void SoundPlayer::stopAll() {
@@ -66,11 +92,15 @@ void SoundPlayer::stopAll() {
         voice.stream->stop();
         voice.finished = true;
     }
+    m_pending.clear();
 }
 
 bool SoundPlayer::isPlaying(SoundHandle handle) const {
-    return std::ranges::any_of(
-        m_voices, [handle](const Voice& v) { return v.handle == handle && !v.stream->drained(); });
+    return std::ranges::any_of(m_voices,
+                               [handle](const Voice& v) {
+                                   return v.handle == handle && !v.stream->drained();
+                               }) ||
+           std::ranges::any_of(m_pending, [handle](const Pending& p) { return p.handle == handle; });
 }
 
 void SoundPlayer::update() {
@@ -80,6 +110,15 @@ void SoundPlayer::update() {
         }
     }
     std::erase_if(m_voices, [](const Voice& v) { return v.stream->drained(); });
+    for (auto it = m_pending.begin(); it != m_pending.end();) {
+        if (isPlaying(it->after)) {
+            ++it;
+            continue;
+        }
+        const Pending pending = std::move(*it);
+        it = m_pending.erase(it);
+        start(pending.sequence, pending.volume, pending.category, pending.handle);
+    }
 }
 
 void SoundPlayer::feed(Voice& voice) {

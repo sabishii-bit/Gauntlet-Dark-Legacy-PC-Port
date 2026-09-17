@@ -1,8 +1,14 @@
+#include <cmath>
 #include <filesystem>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/SoundSet.h"
 #include "engine/assets/StringTable.h"
+#include "engine/audio/AudioMixer.h"
+#include "engine/audio/SoundClip.h"
+#include "engine/audio/SoundPlayer.h"
 #include "engine/math/Math.h"
 
 #include "FakeRenderDevice.h"
@@ -31,10 +37,12 @@ struct Fixture {
         strings.load(test::dataDirectory() / "text", config.text.language);
     }
 
-    GameContext context(std::filesystem::path root = unpackedRoot()) const {
+    GameContext context(std::filesystem::path root = unpackedRoot(),
+                        SoundPlayer* sounds = nullptr) const {
         GameContext out;
         out.config = &config;
         out.strings = &strings;
+        out.sounds = sounds;
         out.unpackedRoot = std::move(root);
         return out;
     }
@@ -117,6 +125,47 @@ TEST_CASE("the screen finishes once every player is locked in", "[game][select][
     }
     REQUIRE(outcome == SelectOutcome::Done);
     REQUIRE(frames > PlayerSelectScene::kIdleFrames);
+}
+
+TEST_CASE("Sumner greets a locked-in character by costume and class",
+          "[game][select][unpacked]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-scene-greeting");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    PlayerSelectScene scene;
+    REQUIRE(scene.open(device, f.context(unpackedRoot(), &sounds), 0));
+    REQUIRE_FALSE(scene.speaking());
+    const usize before = sounds.voiceCount(); // the music, when the bank is there
+    scene.step(1, player(0, true)); // New
+    scene.step(1, player(0, true)); // a random name
+    scene.step(NameEntry::kFlashTicks + 1, nobody());
+    scene.step(1, player(0, true)); // lock in the warrior
+    REQUIRE(scene.lane(0).lockedIn());
+    REQUIRE(scene.speaking());
+    REQUIRE(sounds.voiceCount() > before); // the welcome (and the select click)
+
+    // The name line follows the welcome, so Sumner is still speaking once the welcome alone
+    // would have ended, and quiet some seconds later.
+    SoundSet bank;
+    REQUIRE(bank.load(unpackedRoot() / "audio" / "SELECT"));
+    const SoundSequence welcome = bank.sequence(bank.find("S_WELCOME").value());
+    f64 welcomeSeconds = 0.0;
+    for (const SoundSequenceStep& step : welcome.steps) {
+        welcomeSeconds += step.clip->seconds();
+    }
+    std::vector<f32> out(usize{4800} * 2); // a tenth of a second of stereo
+    const auto drain = [&](f64 seconds) {
+        const auto chunks = static_cast<int>(std::ceil(seconds * 10.0));
+        for (int i = 0; i < chunks; ++i) {
+            mixer.mix(out);
+            sounds.update();
+        }
+    };
+    drain(welcomeSeconds + 0.5);
+    REQUIRE(scene.speaking());
+    drain(10.0);
+    REQUIRE_FALSE(scene.speaking());
 }
 
 } // namespace

@@ -31,6 +31,11 @@ public:
     SoundHandle play(const SoundSequence& sequence, f32 volume = 1.0f,
                      SoundCategory category = SoundCategory::Effects);
 
+    /** Starts `sequence` once `previous` has ended (at once when it is not playing) and
+     * returns the handle it plays under, which reports playing while it waits. */
+    SoundHandle playAfter(SoundHandle previous, const SoundSequence& sequence,
+                          f32 volume = 1.0f, SoundCategory category = SoundCategory::Effects);
+
     /** Volumes in [0, 1]; a voice plays at master x category x its own volume. */
     void setMasterVolume(f32 volume);
     void setCategoryVolume(SoundCategory category, f32 volume);
@@ -56,6 +61,18 @@ private:
         bool finished = false;
     };
 
+    /** A sequence waiting for another voice to end. */
+    struct Pending {
+        SoundHandle handle = kNoSound;
+        SoundHandle after = kNoSound;
+        SoundSequence sequence;
+        f32 volume = 1.0f;
+        SoundCategory category = SoundCategory::Effects;
+    };
+
+    SoundHandle start(const SoundSequence& sequence, f32 volume, SoundCategory category,
+                      SoundHandle handle);
+
     void applyVolume(Voice& voice) const;
 
     static void feed(Voice& voice);
@@ -63,6 +80,7 @@ private:
 
     AudioMixer& m_mixer;
     std::vector<Voice> m_voices;
+    std::vector<Pending> m_pending;
     SoundHandle m_nextHandle = 1;
     f32 m_masterVolume = 1.0f;
     std::array<f32, static_cast<usize>(SoundCategory::Count)> m_categoryVolumes{1.0f, 1.0f};
