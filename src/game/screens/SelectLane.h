@@ -32,6 +32,8 @@ enum class SelectSound : u8 {
     WelcomeBack
 };
 
+class SelectLane;
+
 /** What every lane draws with and reads from; owned by the scene. */
 struct LaneServices {
     SaveSlots* slots = nullptr; ///< null when saving is unavailable
@@ -39,7 +41,7 @@ struct LaneServices {
     const StringTable* strings = nullptr;
     const TextPainter* menuPainter = nullptr; ///< lays the menus out
     MenuScreen screen;
-    std::function<void(SelectSound)> playSound;
+    std::function<void(SelectSound, const SelectLane&)> playSound; ///< the lane, for greetings
     std::function<const Texture*(std::string_view)> selectTexture; ///< SELECT archive lookup
     std::function<const Texture*(std::string_view)> staticTexture; ///< STATIC archive lookup
     const TextPainter* smallPainter = nullptr;                     ///< the 8x8 font

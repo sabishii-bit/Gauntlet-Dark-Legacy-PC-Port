@@ -114,7 +114,9 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_services.initialsPainter = &m_initials;
     m_services.largePainter = &m_large;
     m_services.screen = m_screen;
-    m_services.playSound = [this](SelectSound sound) { playSound(sound); };
+    m_services.playSound = [this](SelectSound sound, const SelectLane& lane) {
+        playSound(sound, lane);
+    };
     m_services.selectTexture = [this](std::string_view name) { return selectTexture(name); };
     m_services.staticTexture = [this](std::string_view name) { return staticTexture(name); };
     m_services.glowSheet = staticTexture("FONT32_GLOW");
@@ -320,15 +322,13 @@ const Texture* PlayerSelectScene::staticTexture(std::string_view name) {
     }
 }
 
-void PlayerSelectScene::playSound(SelectSound sound) {
+void PlayerSelectScene::playSound(SelectSound sound, const SelectLane& lane) {
     if (m_context.sounds == nullptr) {
         return;
     }
     const std::string_view name = soundName(sound);
-    SoundSet* bank = &m_commonSounds;
-    if (sound == SelectSound::Welcome || sound == SelectSound::WelcomeBack) {
-        bank = &m_selectSounds;
-    }
+    const bool greeting = sound == SelectSound::Welcome || sound == SelectSound::WelcomeBack;
+    SoundSet* bank = greeting ? &m_selectSounds : &m_commonSounds;
     if (!bank->loaded()) {
         return;
     }
@@ -337,10 +337,32 @@ void PlayerSelectScene::playSound(SelectSound sound) {
         return;
     }
     try {
-        m_context.sounds->play(bank->sequence(*index), 1.0f, SoundCategory::Effects);
+        const SoundHandle handle =
+            m_context.sounds->play(bank->sequence(*index), 1.0f, SoundCategory::Effects);
+        if (greeting) {
+            greetCharacter(handle, lane.save());
+        }
     } catch (const std::exception& e) {
         log::warn("Player select: cannot play {}: {}", name, e.what());
     }
+}
+
+/** After his welcome Sumner names the costume and class ("red warrior"); he has no such
+ * line for himself. */
+void PlayerSelectScene::greetCharacter(SoundHandle greeting, const CharacterSave& save) {
+    m_greeting = greeting;
+    const std::string line =
+        std::format("S_{}{}1S", colorCode(save.color), classCode(save.character));
+    const auto index = m_selectSounds.find(line);
+    if (!index.has_value()) {
+        return;
+    }
+    m_greeting = m_context.sounds->playAfter(greeting, m_selectSounds.sequence(*index), 1.0f,
+                                             SoundCategory::Effects);
+}
+
+bool PlayerSelectScene::speaking() const {
+    return m_context.sounds != nullptr && m_context.sounds->isPlaying(m_greeting);
 }
 
 void PlayerSelectScene::startMusic() {
