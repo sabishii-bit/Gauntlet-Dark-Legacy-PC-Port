@@ -27,6 +27,34 @@ TEST_CASE("keys report down, pressed and released edges across polls", "[platfor
     REQUIRE(input.wasKeyReleased(Key::Space));
 }
 
+TEST_CASE("a key tapped between polls counts as down for the poll after it", "[platform][input]") {
+    Input input;
+    // The press arrived and the key was up again by the time the state was read.
+    input.beginPoll();
+    input.latchKey(Key::Left);
+    input.setKey(Key::Left, false);
+    REQUIRE(input.isKeyDown(Key::Left));
+    REQUIRE(input.wasKeyPressed(Key::Left));
+    REQUIRE_FALSE(input.wasKeyReleased(Key::Left));
+    // The next poll sees the release edge, and nothing lingers.
+    input.beginPoll();
+    input.setKey(Key::Left, false);
+    REQUIRE_FALSE(input.isKeyDown(Key::Left));
+    REQUIRE(input.wasKeyReleased(Key::Left));
+    input.beginPoll();
+    REQUIRE_FALSE(input.wasKeyReleased(Key::Left));
+    // A latch on a key that stays down is just a press.
+    input.beginPoll();
+    input.latchKey(Key::Left);
+    input.setKey(Key::Left, true);
+    REQUIRE(input.wasKeyPressed(Key::Left));
+    input.beginPoll();
+    input.setKey(Key::Left, true);
+    REQUIRE(input.isKeyDown(Key::Left));
+    REQUIRE_FALSE(input.wasKeyPressed(Key::Left));
+    input.latchKey(Key::Unknown); // ignored
+}
+
 TEST_CASE("typed characters are kept until the next poll", "[platform][input]") {
     Input input;
     REQUIRE(input.typedText().empty());

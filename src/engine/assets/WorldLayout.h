@@ -47,6 +47,7 @@ struct WorldObject {
     bool noCollision = false; ///< its collision triangles are decoration only
 
     /** Level flags. */
+    static constexpr u32 kPrelit = 0x2;       ///< lit by its mesh's vertex colours, not the lights
     static constexpr u32 kParticles = 0x800;  ///< a particle system's marker, never drawn
     static constexpr u32 kAnimated = 0x1000;  ///< keyframed, or under something keyframed
     static constexpr u32 kReverse = 0x100000; ///< its animation plays backwards, once
@@ -60,6 +61,7 @@ struct WorldObject {
     static constexpr u32 kAdditive = 0x800000;   ///< added onto the frame: glows and flames
 
     bool particles() const { return (flags & kParticles) != 0; }
+    bool prelit() const { return (flags & kPrelit) != 0; }
     bool sorted() const { return (objectFlags & kSorted) != 0; }
     bool additive() const { return (objectFlags & kAdditive) != 0; }
 };

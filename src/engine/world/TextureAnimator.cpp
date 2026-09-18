@@ -99,6 +99,20 @@ void TextureAnimator::clear() {
     m_frame = 0;
 }
 
+TextureMotion TextureAnimator::motion(usize index) const {
+    const Entry& entry = m_entries[index];
+    TextureMotion motion;
+    motion.slot = entry.slot;
+    if (entry.frames.empty()) {
+        const f32 along = static_cast<f32>(entry.counter % entry.period) /
+                          static_cast<f32>(entry.period);
+        motion.offset = entry.direction * along;
+    } else {
+        motion.frame = entry.frames[static_cast<usize>(entry.counter)];
+    }
+    return motion;
+}
+
 void TextureAnimator::show(const Entry& entry, WorldScene& scene) {
     if (entry.frames.empty()) {
         const f32 along = static_cast<f32>(entry.counter % entry.period) /
@@ -107,6 +121,18 @@ void TextureAnimator::show(const Entry& entry, WorldScene& scene) {
         return;
     }
     scene.setTextureFrame(entry.slot, entry.frames[static_cast<usize>(entry.counter)]);
+}
+
+void TextureAnimator::step(u32 ticks) {
+    for (u32 t = 0; t < ticks; ++t) {
+        ++m_frame;
+        for (Entry& entry : m_entries) {
+            if (entry.rate > 1 && m_frame % static_cast<u32>(entry.rate) != 0) {
+                continue;
+            }
+            entry.counter = (entry.counter + 1) % entry.period;
+        }
+    }
 }
 
 void TextureAnimator::apply(WorldScene& scene) const {

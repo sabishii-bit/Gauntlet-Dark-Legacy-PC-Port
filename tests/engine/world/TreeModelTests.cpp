@@ -132,6 +132,93 @@ TEST_CASE("a tree model follows a pose's node matrices", "[world][model]") {
     REQUIRE(device.draws[3].vertices[0].position == Vec3{6.0f, 2.0f, -2.0f});
 }
 
+TEST_CASE("an object node shows the mesh of its run that the frame calls for",
+          "[world][model]") {
+    const auto dir = sampleFigure("tree-model-frames");
+    // The node's run starts at the body and goes on to the banner, from frame one.
+    writeTextFile(dir / "animations.json", R"({"trees": [
+  {"name": "FLIP", "prefix": "", "sequences": [
+     {"name": "ACTIVE", "frames": 6, "frameRate": 30, "repeats": false, "fixesPosition": false,
+      "flags": 0, "tracks": []},
+     {"name": "IDLE", "frames": 2, "frameRate": 30, "repeats": true, "fixesPosition": false,
+      "flags": 0, "tracks": []}],
+   "nodes": [
+    {"name": "GLOW", "object": "", "type": 2, "flags": 1, "objectFlags": 0, "parent": -1,
+     "position": [0.0, 0.0, 0.0],
+     "objectFrames": [{"object": "BODY", "start": 1, "frames": 2},
+                      {"object": "", "start": 0, "frames": 0}]}]}]})");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel flame;
+    REQUIRE(flame.bind(trees.tree(0), models, textures, device));
+    REQUIRE(flame.nodeCount() == 1);
+    REQUIRE(flame.maxBounds() == Vec3{1.0f, 1.0f, 0.0f}); // both meshes counted
+    // Nothing shows until a frame is set, nor before the run or after it.
+    flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.empty());
+    flame.setFrame(0, 0);
+    flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.empty());
+    flame.setFrame(0, 1);
+    flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 1);
+    REQUIRE(device.draws[0].state.blend == BlendMode::Alpha);
+    REQUIRE(device.draws[0].state.alphaTest == 0.0f); // the body's texture is solid
+    flame.setFrame(0, 2);
+    flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[1].state.alphaTest > 0.0f); // the banner's is translucent
+    REQUIRE(device.draws[1].texture != device.draws[0].texture);
+    flame.setFrame(0, 3);
+    flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+    // A sequence the node has no run for shows nothing either.
+    flame.setFrame(1, 0);
+    flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+    flame.setFrame(7, 0);
+    flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+}
+
+TEST_CASE("the spawn effect's flame column comes and goes with its frames",
+          "[world][model][unpacked]") {
+    const std::filesystem::path dir = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    const auto index = trees.find("STARTFX");
+    REQUIRE(index.has_value());
+    test::FakeRenderDevice device;
+    TreeModel effect;
+    REQUIRE(effect.bind(trees.tree(*index), models, textures, device));
+    REQUIRE(effect.maxBounds().y >= 16.0f); // the column's spikes reach up
+    // The floor's six sparkle polygons alone until the frame is set; then the column too, for
+    // the run's thirteen frames.
+    effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    const usize floorOnly = device.draws.size();
+    REQUIRE(floorOnly == 6);
+    effect.setFrame(0, 0);
+    effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() > 2 * floorOnly);
+    device.draws.clear();
+    effect.setFrame(0, 12);
+    effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() > floorOnly);
+    device.draws.clear();
+    effect.setFrame(0, 13);
+    effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == floorOnly);
+}
+
 TEST_CASE("a tree model adds glowing nodes onto the frame without writing depth",
           "[world][model]") {
     const auto dir = sampleFigure("tree-model-glow");
@@ -160,6 +247,37 @@ TEST_CASE("a tree model adds glowing nodes onto the frame without writing depth"
     REQUIRE_FALSE(device.draws[1].state.depthWrite);
     REQUIRE(device.draws[1].state.alphaTest == DrawState::kTranslucentAlphaTest);
     REQUIRE(device.draws[1].vertices[0].position == Vec3{0.0f, 2.0f, 0.0f});
+}
+
+TEST_CASE("a tree model shows texture frames and slides coordinates it is given",
+          "[world][model]") {
+    const auto dir = sampleFigure("tree-model-motion");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    const test::FakeTexture frame{2, 2};
+    figure.setTextureOffset(0, Vec2{0.25f, 0.0f});
+    figure.setTextureFrame(1, &frame);
+    REQUIRE(figure.textureOffset(0) == Vec2{0.25f, 0.0f});
+    REQUIRE(figure.textureOffset(7) == Vec2{0.0f, 0.0f});
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[0].state.uvOffset == Vec2{0.25f, 0.0f}); // the body, texture 0
+    REQUIRE(device.draws[1].texture == &frame);                   // the banner, texture 1
+    REQUIRE(device.draws[1].state.uvOffset == Vec2{0.0f, 0.0f});
+    // Forgotten again, the set's own textures and coordinates come back.
+    figure.setTextureFrame(1, nullptr);
+    figure.resetTextures();
+    device.draws.clear();
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws[0].state.uvOffset == Vec2{0.0f, 0.0f});
+    REQUIRE(device.draws[1].texture != &frame);
 }
 
 TEST_CASE("nodes flagged to face the camera turn its way", "[world][model]") {
@@ -218,5 +336,6 @@ TEST_CASE("a tree model refuses a figure with a missing mesh", "[world][model]")
     REQUIRE_FALSE(figure.bind(trees.tree(0), models, textures, device));
     REQUIRE_FALSE(figure.bound());
 }
+
 
 } // namespace

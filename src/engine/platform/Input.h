@@ -111,7 +111,9 @@ std::optional<Key> keyFromName(std::string_view name);
 std::string_view padButtonName(PadButton button);
 std::optional<PadButton> padButtonFromName(std::string_view name);
 
-/** Frame-coherent keyboard and gamepad state, updated once per Window::pollEvents(). */
+/** Frame-coherent keyboard and gamepad state, updated once per Window::pollEvents(). A key
+ * pressed and released again between two polls still counts as down for the poll that
+ * follows, so a tap shorter than a frame is never lost. */
 class Input {
 public:
     static constexpr int kMaxPads = 4;
@@ -132,13 +134,18 @@ public:
     /** Platform-layer entry points. */
     void beginPoll();
     void setKey(Key key, bool down);
+    /** Records a press seen since the last poll; it holds the key down until the next. */
+    void latchKey(Key key);
     void setPad(int pad, const PadSnapshot& snapshot);
     void addTypedChar(u32 codepoint);
 
 private:
     static constexpr usize kKeyCount = static_cast<usize>(Key::Count);
 
+    bool keyDown(usize key) const { return m_keys[key] || m_latchedKeys[key]; }
+
     std::array<bool, kKeyCount> m_keys{};
+    std::array<bool, kKeyCount> m_latchedKeys{};
     std::array<bool, kKeyCount> m_previousKeys{};
     std::array<PadSnapshot, kMaxPads> m_pads{};
     std::array<PadSnapshot, kMaxPads> m_previousPads{};

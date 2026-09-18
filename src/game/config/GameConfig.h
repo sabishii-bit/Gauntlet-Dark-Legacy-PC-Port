@@ -17,7 +17,7 @@ struct DisplayConfig {
     u32 windowWidth = 1280;
     u32 windowHeight = 896;
     bool vsync = true;
-    u32 maxFrameRate = 30; ///< frames per second the game runs at, as the original did; 0 leaves it to vsync
+    u32 maxFrameRate = 60; ///< frames per second outside play (the menus); 0 leaves it to vsync
 };
 
 struct TimingConfig {

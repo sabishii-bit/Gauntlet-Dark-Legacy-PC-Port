@@ -66,6 +66,9 @@ public:
     const PlacedItems& placedItems() const { return m_placedItems; }
     /** Shows the pickups a party of `players` sees; none for the select screen's empty one. */
     void setPlayerCount(s32 players) { m_placedItems.setPlayerCount(players); }
+    /** Fades one of the level's objects (a unit); see WorldScene::setObjectAlpha. */
+    void setObjectAlpha(usize object, f32 alpha) { m_scene.setObjectAlpha(object, alpha); }
+    f32 objectAlpha(usize object) const { return m_scene.objectAlpha(object); }
     /** Hides the crystals until revealCrystals() brings them in. */
     void hideCrystals() { m_placedItems.hideCrystals(); }
     void revealCrystals(f32 seconds) { m_placedItems.reveal(seconds); }
@@ -86,6 +89,9 @@ public:
      * data. */
     const LevelInfo* level() const { return m_level; }
     const LevelAudioInfo* audio() const { return m_audio; }
+    /** What the triggers refused or opened since last asked. */
+    std::vector<TriggerRefusal> takeTriggerRefusals() { return m_triggers.takeRefusals(); }
+    std::vector<TriggerOpening> takeTriggerOpenings() { return m_triggers.takeOpenings(); }
     bool hasLevelData() const { return m_level != nullptr; }
 
     /** The camera the tower is first seen from: the first camera start marker. */

@@ -4,11 +4,13 @@
     python scripts/build.py                          # the platform's Debug Ninja preset
     python scripts/build.py --test                   # build, then run the unit tests
     python scripts/build.py --unpack                 # build, then unpack the console assets
-    python scripts/build.py --run -- --title         # build, then launch the game with arguments
+    python scripts/build.py --run -- --title         # build the release preset, then launch the game
     python scripts/build.py linux-clang-release      # any build preset from CMakePresets.json
 
 Configures first when the preset has never been configured. Arguments after "--"
-go to the game.
+go to the game. Without a preset, --run builds and launches the platform's release
+build (the Debug build runs the tower at well under its frame rate); everything
+else uses the Debug build.
 """
 
 import argparse
@@ -39,8 +41,9 @@ def cache_path(binary_dir: pathlib.Path, variable: str, default: pathlib.Path) -
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("preset", nargs="?", default=devenv.default_preset(),
-                        help="build preset (default: %(default)s)")
+    parser.add_argument("preset", nargs="?", default=None,
+                        help="build preset (default: the platform's Debug Ninja preset, or its "
+                             "release preset with --run)")
     parser.add_argument("--test", action="store_true", help="run the unit tests (ctest -LE gpu)")
     parser.add_argument("--unpack", action="store_true",
                         help="run gdlunpack from the asset directory into the unpacked directory")
@@ -55,6 +58,8 @@ def main() -> int:
         app_args = argv[separator + 1:]
         argv = argv[:separator]
     args = parser.parse_args(argv)
+    if args.preset is None:
+        args.preset = devenv.release_preset() if args.run else devenv.default_preset()
 
     presets = build_presets()
     if args.preset not in presets:

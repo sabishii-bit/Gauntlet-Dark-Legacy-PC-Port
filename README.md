@@ -1,322 +1,137 @@
 # Gauntlet Dark Legacy
 
-A reconstruction of *Gauntlet Dark Legacy* (GameCube release, `GUNE5D`), written to be readable, modular and easy to extend. It reads the original game data; no assets are
-included, you need your own copy of the disc.
+A reconstruction of *Gauntlet Dark Legacy* (GameCube release, `GUNE5D`) in
+C++26 on Vulkan, written to be readable, modular and easy to extend. It reads
+the original game data; no assets are included, you need your own copy of the
+disc.
 
-## Requirements
-
-Common to every platform:
-
-| Requirement | Notes |
-| --- | --- |
-| CMake ≥ 3.30 and Ninja | 3.30 is the first release that knows C++26. See the platform notes for PATH pitfalls. |
-| vcpkg | Set `VCPKG_ROOT` to your checkout; the scripts fall back to `C:\vcpkg` on Windows and `~/vcpkg` on Linux |
-| Vulkan 1.3 capable GPU driver | Any current NVIDIA / AMD / Intel driver (Mesa 22+ on Linux) |
-| LLVM tools (optional) | `clangd`, `clang-format`, `clang-tidy` for the editor integration and the lint script |
-| LunarG Vulkan SDK (optional) | Provides the validation layer (auto-enabled in Debug builds when present) and `glslc` |
-| Game assets | Extract your disc into `assets/GUNE5D`, see [assets/README.md](assets/README.md) |
-
-Dependencies (GLFW, GLM, volk, Vulkan Memory Allocator, glslang, Catch2) are
-fetched and built by vcpkg on the first configure. That takes a few minutes
-once; later configures hit the binary cache.
-
-### Windows
-
-| Requirement | Notes |
-| --- | --- |
-| Visual Studio 2022 (IDE or Build Tools) | "Desktop development with C++" workload: MSVC 14.4x, Windows SDK, and ideally the "C++ CMake tools for Windows" component (bundles CMake 3.31 and Ninja). MSVC has no `/std:c++26` switch yet, so the build uses `/std:c++latest`, its C++26 preview. |
-| A **native Windows** CMake | An MSYS2/Cygwin CMake on `PATH` cannot drive MSVC and breaks vcpkg |
-| A real `ninja.exe` | Wrapper scripts such as pyenv-win's `ninja.bat` shim cannot be launched by CMake. The scripts prefer the Visual Studio copies. |
-
-### Linux
-
-GCC 14+ or Clang 17+ (for `-std=c++26`), CMake 3.30+, and the system
-libraries vcpkg's GLFW build needs. On Debian/Ubuntu:
-
-```bash
-sudo apt install build-essential g++-14 cmake ninja-build pkg-config curl zip unzip tar \
-    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
-    libxkbcommon-dev libwayland-dev libgl-dev libvulkan1 mesa-vulkan-drivers
-# optional: validation layer, glslc, LLVM editor tooling
-sudo apt install vulkan-validationlayers glslang-tools clangd clang-format clang-tidy
-```
-
-If the distribution's CMake is older than 3.30, use Kitware's apt repository
-or `pip install cmake`.
-
-## Build
-
-The helper scripts are Python (3.9 or newer) and behave the same on Windows
-and Linux:
+## Quick start
 
 ```
-python scripts/configure.py                # configure the platform's Debug preset
-python scripts/build.py --test             # build, then run the unit tests
-python scripts/build.py --unpack           # build, then unpack the console assets (see Run)
-python scripts/build.py --run -- --title   # build, then launch the game with arguments
+git clone https://github.com/sabishii-bit/Gauntlet-Dark-Legacy-PC-Port.git
+cd Gauntlet-Dark-Legacy-PC-Port
+python scripts/setup.py              # finds or installs the tools, then builds
 ```
 
-On Windows the scripts enter an x64 MSVC developer environment themselves and
-prefer the CMake and Ninja bundled with Visual Studio; `python
-scripts/devenv.py --shell` opens an interactive shell in that environment for
-running `cmake --preset ...` by hand, and `python scripts/devenv.py` prints
-which tools it found. On Linux they only fill in `VCPKG_ROOT` from `~/vcpkg`
-when it is unset. `python scripts/configure.py --fresh` discards a cache that
-picked up the wrong tool.
+Then extract your disc into `assets/GUNE5D` as [assets/README.md](assets/README.md)
+describes, convert the console files once, and play:
 
-`cmake --preset windows-vs2022` works from any shell and writes
-`build\windows-vs2022\GauntletDarkLegacy.sln`.
+```
+python scripts/build.py --unpack --levels
+python scripts/build.py --run
+```
 
-### Presets
+`--run` builds and launches the release build; the Debug build the tests use
+runs the tower at well under its frame rate.
 
-Presets are filtered by host OS; `cmake --list-presets` shows the applicable ones.
+Python 3.9+ and git are all `setup.py` needs to begin with. It reports what it
+found, asks before installing anything (`--yes` skips the questions, `--check`
+only reports), and ends with a built `build/<preset>/bin/gauntlet`.
 
-| Configure preset | Build / test preset | Toolchain |
+## What it installs
+
+| | Windows | Linux |
 | --- | --- | --- |
-| `windows-ninja-debug` | `windows-ninja-debug` | Ninja + MSVC, Debug |
-| `windows-ninja-release` | `windows-ninja-release` | Ninja + MSVC, RelWithDebInfo |
-| `windows-vs2022` | `windows-vs2022-debug` / `windows-vs2022-release` | Visual Studio 17 2022 solution |
-| `linux-ninja-debug` | `linux-ninja-debug` | Ninja + default compiler, Debug |
-| `linux-ninja-release` | `linux-ninja-release` | Ninja + default compiler, RelWithDebInfo |
-| `linux-clang-debug` | `linux-clang-debug` | Ninja + Clang, Debug |
-| `linux-clang-release` | `linux-clang-release` | Ninja + Clang, RelWithDebInfo |
+| Compiler | Visual Studio 2022 Build Tools, "Desktop development with C++" (winget) | GCC 14+ or Clang 17+ from apt, dnf or pacman |
+| CMake 3.30+ and Ninja | bundled with the C++ workload | the distribution's, or from pip when too old |
+| vcpkg | cloned to `C:\vcpkg` | cloned to `~/vcpkg` |
+| Windowing and Vulkan | nothing to install | X11, Wayland, GL and Vulkan development packages |
+| Editor tooling (`--tooling`) | LLVM (clangd, clang-tidy, clang-format) | the same from the distribution |
 
-Each preset builds into `build/<configure-preset>/`, with the executables,
-the compiled shaders and (on Windows) the dependency DLLs under `bin/`.
+A Vulkan 1.3 capable graphics driver is checked for but comes with your GPU
+vendor's driver (Mesa 22+ on Linux). The libraries themselves (GLFW, GLM, volk,
+Vulkan Memory Allocator, glslang, Catch2, miniaudio, nlohmann-json, stb) are
+built by vcpkg on the first configure, which takes a few minutes once.
 
-## Run
+Set `VCPKG_ROOT` if your vcpkg checkout lives elsewhere. On Windows the
+scripts enter an x64 MSVC developer environment themselves and prefer the
+CMake and Ninja bundled with Visual Studio; an MSYS2 or Cygwin CMake, or a
+`ninja.bat` shim, on `PATH` cannot drive MSVC, so keep a native one first.
 
-Unpack the console-specific asset files once (PNG images plus JSON manifests
-go under `assets/unpacked`, which git ignores):
-
-```
-python scripts/build.py --unpack
-```
-
-The level folders are large (about 20 MB each once unpacked), so they are left
-out unless asked for: `python scripts/build.py --unpack --levels` unpacks all
-seventy, and `gdlunpack <assets> <out> --only levelL1` one of them. The player
-select screen shows the tower hub (`levelL1`) behind its lanes when it is there.
-
-Then run `build/<preset>/bin/gauntlet` (or `python scripts/build.py --run --
-<arguments>`):
+## Building
 
 ```
-gauntlet [--assets <dir>] [--unpacked <dir>] [--data <dir>] [--movie <name>] [--title]
-         [--no-vsync] [--validation | --no-validation] [--frames <n>]
+python scripts/configure.py [preset] [--fresh]     # configure (default: the platform's Debug Ninja preset)
+python scripts/build.py [preset] [--test] [--unpack [--levels]] [--run -- <game arguments>]
+python scripts/devenv.py [--shell]                 # print the tools the scripts found, or open a shell with them
 ```
 
-`--assets` defaults to `assets/GUNE5D/Gauntlet`, `--unpacked` to
-`assets/unpacked` and `--data` to `data/` (all baked in at configure time as
-`GDL_ASSET_DIR`, `GDL_UNPACKED_DIR` and `GDL_DATA_DIR`). `--movie opening`
-plays one movie from `VQMOVIES` and quits; `--title` skips the intro movies.
-`--frames <n>` quits after `n` frames, handy for smoke tests. Escape quits, except
-while a name is being typed, where it leaves the name entry instead (Backspace
-only erases).
+`cmake --list-presets` shows the presets for your platform:
+`windows-ninja-debug` / `windows-ninja-release` (Ninja + MSVC),
+`windows-vs2022` (a Visual Studio solution under `build/windows-vs2022/`),
+`linux-ninja-debug` / `linux-ninja-release` (Ninja, the default compiler) and
+`linux-clang-debug` / `linux-clang-release`. Each builds into
+`build/<configure-preset>/` with the executables, the compiled shaders and (on
+Windows) the dependency DLLs under `bin/`.
 
-`--scenario <file>` skips the title and select screens and opens the tower
-straight onto a described start, for testing one moment without walking there
-every time. The file is JSON: a `party` list of members (`player` 0 to 3,
-`class` and `color` by their asset codes such as `WAR` and `BLU`, `name`,
-`level`, and `crystals` gathered per realm), an optional `position` and `yaw`
-for where the party stands, and `welcome` to force Sumner's welcome on or off.
-`tests/scenarios/` holds a few: the entrance, the crystals, a gargoyle gate, a force
-field.
+## Running
 
-The window shows the game's memory-card icon once the card art is unpacked, and
-on Windows the executable carries it too: the build converts
-`assets/GUNE5D/carddemo/icon.tpl` itself when that file is present.
-
-### Settings and text
-
-`data/config.json` holds the shipped defaults: the window size, vsync and the
-30 frames per second the game runs at; the virtual screen (512x384) and frame (640x448) the
-2D layer is laid out in; the logic tick rate (60 Hz) and the 30 fps the
-gameplay was tuned for; the camera's field of view; master, music and effects
-volumes; the text language; and the keyboard and pad bindings for the menus.
-Per-user settings merge over those defaults from
-`%APPDATA%\GauntletDarkLegacy\settings.json` on Windows and
-`~/.config/GauntletDarkLegacy/settings.json` elsewhere; the in-game options
-screens will write that file. `--no-vsync` on the command line wins over both.
-
-Every string the player sees comes from `data/text/<language>.json` by
-identifier, with English as the fallback for identifiers a translation lacks.
-Adding a language is adding a file next to `en.json` and naming it in the
-settings.
-
-With the default bindings: during a movie, Enter or Start jumps to the title
-screen and Space or A skips to the next attract screen. On the title screen,
-Enter or Start opens the menu; arrows, W/S or the d-pad move, Enter, Space or
-A selects, Backspace or B goes back.
-
-### Player select
-
-Choosing Start on the title screen opens the player select screen: four lanes,
-one per player. The keyboard and the first pad drive lane one; pads two to four
-drive the other lanes, and a lane joins when its Start is pressed. Each lane
-offers New (enter a name with up/down, holding either to race through the
-letters, right or Select to take a letter and left to remove one, or just type
-it: letters, digits and space go straight in, Backspace erases (and does
-nothing more on an empty name), Enter takes it, Escape or B leaves the name for
-the menu, and W/A/S/D spell rather than steer while the name is open; then pick
-a class
-with left/right and a costume colour with up/down) or Load (pick a saved
-character). Sumner greets each locked-in character by costume and class. The
-status box under each lane shows its class, name, level, gold and health in
-the costume's colour. A locked-in player can press Start while
-others are still choosing to save, load, change class or quit. The screen ends
-once every player is ready, and the party enters the tower.
-
-Characters are JSON files, one per slot, under
-`%APPDATA%\GauntletDarkLegacy\saves` on Windows and
-`~/.config/GauntletDarkLegacy/saves` elsewhere; `save.directory` and
-`save.slots` in the settings change the place and the count.
-
-### The tower
-
-Locked-in characters arrive side by side at the tower's entrance and walk under
-their players' control: the arrows, W/A/S/D, a pad's left stick or its d-pad,
-relative to the camera, at the class's speed. The level's collision keeps them
-on the floor, up steps and out of walls, and the camera follows the party from
-the angles the level's own camera markers give, turning to the nearest marker as
-the party moves and pulling back with more players, within the range the realm's
-data sets for it. The level is lit as the original lights it: its record's grey
-ambient plus one directional light where a surface faces it, and the baked
-lightmaps the level's geometry carries as a second texture coordinate scale
-each surface by their intensity. Characters standing in the level take the same
-light. Surfaces face one way, as on the console: each strip is wound the way
-the original culls it, so walls and floors hide what stands behind them, and
-translucent surfaces drop their clear texels rather than blotting out what is
-behind. The level moves as the original moves it: its keyframed objects (the
-tower's magic circle, snakes, eagles and gears) play at thirty frames a second,
-its texture animations flip through their frames and slide their coordinates
-(the lamps, the water, the sunbeams), and its particle systems burn at their
-markers, the braziers' and torches' flames rising and fading from the
-templates the level ships. The pickups the level places stand a tenth of a unit
-above its floor for a party large enough to see them: the crystals Sumner keeps
-for a new party glow in beside the lectern during his welcome's cut, nearest
-first, and turn in place; walking onto one takes it with the original's burst of
-sparks swirling up from where it stood and its chime, a card slides up over the
-taker's status box, and a count above every box shows the realm's crystals
-gathered of those its gate wants. The scroll's words go before it burns. The level's triggers work as the original's
-do: a world object a trigger names waits shut (its opening animation held at
-its first frame, its collision moving with it), a player stepping into the
-trigger's spot opens it and whatever is chained after it, and the realms' force
-fields ask every player for the realm's crystals first, then thin out and stop
-blocking; until then they stand solid across their gates, glowing at full
-strength however they face the light. The gargoyle gates that want the golden icons stay shut, as the icons
-cannot be gathered yet. The follow camera takes its angles from the level's
-game camera markers, and objects the level flags to face the camera (the torch
-flames, the crystals' glow) turn its way. The level's music loops from the stream its realm names (`STREAMS/tower.ads`
-for the tower), decoded as it plays at the level's own volume under the music
-setting, and each half stride of a walk or run sets a foot down with the common
-bank's stone footsteps. Sumner stands at the lookout the level marks for him,
-idling through his stance, his reading and his thinking, and a party whose
-characters have no experience yet gets his welcome as the original gives it:
-his five-page scroll unrolls over the tower (sized to each page, the next page
-on any joined player's button, burning away after the last), then he gestures
-at the crystals while the camera cuts to them for five seconds with the party
-held still; the scroll's text is the parchment's dark ink, and Back does not
-leave the tower while it is up. The scroll, Sumner, the torch flames and the
-crystals need the item sets unpacked with the levels (`ITEMS/levelL`, and the
-`POWERUPS` archive the default unpack writes). The status boxes line the bottom of the screen. Each character's body plays its class's sequences the way
-the original sequences them: the entrance once as the level begins, the stance
-loop, a fidget after a minute standing still and a second one twenty seconds
-later that then loops, and the two halves of the walk and run cycles taking
-turns (a stick past three quarters runs). Sequences step at 900 over their rate
-frames a second on whole frames, one-shots hold their last frame, and coming
-back to the stance blends over two ticks. Backspace or B leaves for the title
-screen for now. The tower needs the level and the player figures unpacked
-(`--levels`; the base costumes and every class's `ANIM` folder come with the
-default unpack, the levelled costumes with `--tiers`).
-
-### Tools
-
-`gdlunpack <asset-root> <out-root> [--only <directory>] [--levels] [--tiers]`
-converts every `objects.ngc` / `textures.ngc` archive with its `ANIM.PS2`
-(folders holding only an `ANIM.PS2`, like a class's `ANIM`, still get their
-trees), the player figures, the `AUDIO` sound banks, `FONTS/*.fnt` fonts,
-`TEXT/*.rom` string tables and the memory-card art in `carddemo` beside the
-asset root into standard files (about 200 MB in total):
+`gdlunpack` converts the console files under `assets/GUNE5D` into PNG, OBJ,
+WAV and JSON under `assets/unpacked` (about 200 MB; the level folders add
+about 20 MB each and come with `--levels`). `python scripts/build.py --unpack`
+runs it for you; `gdlunpack <assets> <out> --only <folder>` converts one
+folder.
 
 ```
-assets/unpacked/<ARCHIVE>/textures/<index>_<NAME>.png   decoded textures (RGBA PNG)
-assets/unpacked/<ARCHIVE>/textures.json                  names, sizes, flags, animation frames
-assets/unpacked/<ARCHIVE>/models/<index>_<NAME>.obj      meshes (Wavefront OBJ, one group per texture and lightmap)
-assets/unpacked/<ARCHIVE>/objects.json                   object names, mesh files and sub-object data
-assets/unpacked/<ARCHIVE>/animations.json                animation trees: node hierarchy, objects, sequences and keys
-assets/unpacked/audio/<BANK>/samples/<index>.wav         decoded samples (16-bit PCM)
-assets/unpacked/audio/<BANK>/sounds.json                 named sounds: sample sequences, loops, volumes
-assets/unpacked/fonts/<name>.json                        glyph cells of each bitmap font
-assets/unpacked/pdata/<CLASS>.json                       per-class stat ranges and body size
-assets/unpacked/wdata/<REALM>.json                       a realm's levels: light, fog, camera range, sound bank and stream
-assets/unpacked/LEVELS/<LEVEL>/world.json                a level's placed objects and marker points (with --levels)
-assets/unpacked/LEVELS/<LEVEL>/collision.json            its collision triangles, in world space, per object
-assets/unpacked/PLAYERS/<CLASS>/<COSTUME>/...            a character's figure: models, textures and its tree
-assets/unpacked/PLAYERS/<CLASS>/ANIM/animations.json     the class's sequences, keyed on the same node names
-assets/unpacked/ITEMS/<LEVEL>/...                        a level's item set, Sumner included (with --levels)
-assets/unpacked/text/<name>.json                         fonts, named messages and message lists
-assets/unpacked/carddemo/icon<n>.png                     the memory-card icon's animation frames
-assets/unpacked/carddemo/banner.png                      the memory-card banner
-assets/unpacked/carddemo/icon.ico                        the icon at 32 to 256 pixels, for Windows
+gauntlet [--assets <dir>] [--unpacked <dir>] [--data <dir>] [--title] [--movie <name>]
+         [--scenario <file>] [--frames <n>] [--no-vsync] [--validation | --no-validation]
 ```
 
-A lightmapped mesh names its lightmap in the material (`usemtl tex185_lm507`)
-and carries one `vl u v` line per vertex after the normals, the lightmap
-coordinates in texels of the lightmap, indexed like `vt`; other OBJ readers
-ignore the extra lines.
-
-Each sequence in `animations.json` lists its `tracks`: per skeletal node the
-channel flags (rotation, position and scale, x y z each, plus `0x8000` for the
-pitch-yaw-roll order), the `frames` holding keys (always from 0) and that many
-`values` per key. Compressed keys, stored in the console files as byte steps
-through shared delta tables, are summed back to plain values on the way out.
-
-The game reads only these unpacked files; the console formats are handled by
-the `formats` library and this tool.
-
-`vqdump <movie.avi> <out-dir> [--every n] [--max-frames n]` decodes a movie to
-PNG frames and a WAV file without running the game, for checking the codec.
+`--title` skips the intro movies, `--movie <name>` plays one movie and quits,
+`--frames <n>` quits after that many frames, and `--scenario <file>` opens the
+tower straight onto a described party and place (see `tests/scenarios/`).
+Settings live in `data/config.json`, with per-user overrides in
+`%APPDATA%\GauntletDarkLegacy\settings.json` or
+`~/.config/GauntletDarkLegacy/settings.json`; every string the player sees
+comes from `data/text/<language>.json`.
 
 ## Tests
 
-Catch2 tests live in `tests/`, mirroring `src/`. `ctest --preset <preset>`
-runs the unit tests; the GPU integration tests (a real window and device for a
-few frames) are registered under the `gpu` label, so `ctest -LE gpu` skips them
-on headless machines and `ctest -L gpu` runs only them. Tests tagged `[assets]`
-read the game data and tests tagged `[unpacked]` read the `gdlunpack` output;
-both skip themselves when that data is absent. The test binary itself accepts
-Catch2 tag filters: `build/<preset>/bin/tests "[math]"`.
+The tests are Catch2, under `tests/` in the same shape as `src/`, and come in
+three tiers:
+
+| Tier | Needs | How it is run |
+| --- | --- | --- |
+| Unit tests | nothing | always; this is what CI runs |
+| `[assets]` and `[unpacked]` tests | the game data, and the unpacked files | run with the rest; they skip themselves when the data is absent |
+| `gpu` label | a Vulkan device and a display | `ctest -L gpu`; excluded from `--test` and CI |
+
+```
+python scripts/build.py --test                    # build, then the whole suite (ctest -LE gpu)
+ctest --preset windows-ninja-debug                # the suite through CTest, GPU tests included
+ctest --preset windows-ninja-debug -R unit.       # only the entries whose name matches
+build/windows-ninja-debug/bin/tests               # the binary itself: everything
+build/windows-ninja-debug/bin/tests "[collision]" # one tag, or several: "[game][world]"
+build/windows-ninja-debug/bin/tests "a cylinder is pushed out of walls*"   # one case by name
+build/windows-ninja-debug/bin/tests --list-tests  # what there is
+```
+
+Anything in the game is verified by a test against the unpacked data or by
+launching a scenario (`gauntlet --scenario tests/scenarios/tower-crystals.json`)
+and looking; CI cannot see the game data, so that tier runs on a machine that
+has it (`.github/workflows/ci.yml` has a `game_data` switch for a self-hosted
+runner).
 
 ## Code quality
 
-* `.clang-format` is applied on save by the editor; run `clang-format -i` on
-  anything edited elsewhere.
-* `.clang-tidy` holds the lint rules. clangd applies them live in the editor;
-  `python scripts/lint.py` runs them over the whole tree.
-* `python scripts/clangd-check.py` prints every diagnostic the editor would
-  show, for every file, and is the definition of "clean".
+`.clang-format` is applied on save; `.clang-tidy` holds the lint rules that
+clangd shows live. `python scripts/lint.py [path]` runs them over a file, a
+folder or the tree, and `python scripts/clangd-check.py [path]` prints every
+diagnostic the editor would show. CI builds and tests on Windows and Linux and
+lints on Linux.
 
 ## Layout
 
 ```
-src/engine/       reusable engine library (namespace gdl): core, math, io, platform, render, codec, audio, assets, ui, world, app
-src/formats/      readers for the console asset formats (namespace gdl::formats), used by the tools and tests only
-src/game/         the Gauntlet game built on it (namespace gdl::game): config, players, menu, screens, app, and main.cpp
-tools/            command-line tools built on the engine (vqdump, gdlunpack)
-tests/            Catch2 tests, one file per source module, same tree shape as src/
-shaders/          GLSL sources, compiled at build time to bin/shaders/*.spv
-data/             shipped settings defaults (config.json) and text tables (text/<language>.json)
-assets/           game data (ignored by git)
-cmake/            CMake helper modules
-scripts/          Python helpers: devenv, configure, build, lint, clangd-check
-.vscode/          shared editor settings (clangd, CMake Tools, debugging)
+src/engine/   the engine library (namespace gdl): core, math, io, platform, render, codec, audio, assets, ui, world, app
+src/formats/  readers for the console asset formats (namespace gdl::formats), used by the tools and tests
+src/game/     the game (namespace gdl::game): config, players, menu, screens, world, app, main.cpp
+tools/        vqdump (movie to PNG and WAV) and gdlunpack (console assets to standard files)
+tests/        Catch2 tests mirroring src/, plus tests/scenarios/ for launching the game onto a moment
+shaders/      GLSL sources, compiled at build time to bin/shaders/*.spv
+data/         shipped settings defaults and text tables
+scripts/      Python helpers: setup, devenv, configure, build, lint, clangd-check
 ```
-
-Headers live next to their sources: a class `Foo` in engine module `render` is
-`src/engine/render/Foo.h` and `Foo.cpp`, included as `"engine/render/Foo.h"`;
-game code follows the same shape, `"game/menu/Foo.h"`. `gdl` is the project namespace
-(*Gauntlet Dark Legacy*); folders are named by role.
 
 [AGENTS.md](AGENTS.md) has the working rules for contributors and coding agents.
 

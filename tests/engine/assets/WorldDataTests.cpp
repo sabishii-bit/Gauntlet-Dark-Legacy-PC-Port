@@ -86,6 +86,10 @@ TEST_CASE("the unpacked tower realm carries its light and camera", "[assets][wor
     REQUIRE(camera != nullptr);
     REQUIRE(camera->radiusMin == 24.0f);
     REQUIRE(data.audio(level->audioIndex)->stream == "tower");
+    // The realm names the sounds its levels enter and hit with.
+    REQUIRE(data.soundName(data.audio(level->audioIndex)->enterSound) == "S_ENTERING1A");
+    REQUIRE(data.soundName(-1).empty());
+    REQUIRE(data.soundName(99).empty());
 }
 
 } // namespace

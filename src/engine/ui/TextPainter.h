@@ -23,6 +23,10 @@ struct TextStyle {
  */
 class TextPainter {
 public:
+    /** How far inside its cell a glyph is sampled, in texels: half a texel keeps the
+     * filtering from pulling in the cell's borders and its neighbours. */
+    static constexpr f32 kCellInset = 0.5f;
+
     void setFont(const BitmapFont* font, const Texture* texture);
 
     const BitmapFont* font() const { return m_font; }

@@ -267,4 +267,50 @@ TEST_CASE("the warrior's class file carries every sequence's keys", "[formats][a
     REQUIRE_FALSE(tree.sequences[4].repeats);
 }
 
+/** One tree "FLAME" of a root and an object node whose one sequence flips through thirteen
+ * objects from FX0F01, starting at frame 2. */
+std::vector<u8> objectFrameFile() {
+    constexpr u32 kTree = kInfosAt + 36;
+    constexpr u32 kNodes = 56 + 48;
+    constexpr u32 kRuns = kNodes + 2 * 60;
+    ByteWriter w;
+    w.putU16(1).putU16(8).putU32(kInfosAt).putU32(0).putU32(0).putU32(0).putU32(0);
+    putName(w, "FLAME", 32).putU32(kTree);
+    w.putU32(56).putU32(0).putU32(kRuns).putU32(kNodes).putU32(2).putU32(1);
+    putName(w, "FX", 30).putU16(0);
+    putName(w, "ACTIVE", 32)
+        .putU16(30)
+        .putU16(60)
+        .putU16(0)
+        .putU16(0)
+        .putU16(0)
+        .putU16(0)
+        .putU32(0);
+    putName(w, "ROOT", 32).putU32(0).putU32(0).putU32(0);
+    w.putU16(1).putU16(1).putU32(0).putU32(0xFFFFFFFF).putU32(0xFFFFFFFF);
+    putName(w, "GLOW", 32).putU32(0).putU32(0x3F800000).putU32(0);
+    w.putU16(2).putU16(1).putU32(0x80).putU32(8).putU32(0);
+    w.putU32(8).putU32(1); // the run table: its runs start eight bytes in, one of them
+    putName(w, "FX0F01", 32).putU32(0xFFFFFFFF).putU16(13).putU16(2);
+    return w.bytes();
+}
+
+TEST_CASE("an object node lists the run of objects each sequence flips through",
+          "[formats][animation]") {
+    const AnimationFile file = AnimationFile::parse(objectFrameFile());
+    REQUIRE(file.trees.size() == 1);
+    const TreeDefinition& tree = file.trees[0];
+    REQUIRE(tree.nodes.size() == 2);
+    REQUIRE(tree.nodes[0].objectFrames.empty());
+    const TreeNode& glow = tree.nodes[1];
+    REQUIRE(glow.type == TreeNodeType::Object);
+    REQUIRE(glow.object.empty()); // it draws nothing of its own
+    REQUIRE(glow.position.y == 1.0f);
+    REQUIRE(glow.objectFlags == 0x80);
+    REQUIRE(glow.objectFrames.size() == 1);
+    REQUIRE(glow.objectFrames[0].object == "FX0F01");
+    REQUIRE(glow.objectFrames[0].start == 2);
+    REQUIRE(glow.objectFrames[0].frames == 13);
+}
+
 } // namespace

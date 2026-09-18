@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <utility>
 
 #include "engine/core/Log.h"
 
@@ -95,7 +96,17 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
 void LevelTriggers::clear() {
     m_triggers.clear();
     m_targets.clear();
+    m_refusals.clear();
+    m_openings.clear();
     m_frameRemainder = 0.0f;
+}
+
+std::vector<TriggerRefusal> LevelTriggers::takeRefusals() {
+    return std::exchange(m_refusals, {});
+}
+
+std::vector<TriggerOpening> LevelTriggers::takeOpenings() {
+    return std::exchange(m_openings, {});
 }
 
 LevelTriggers::Target* LevelTriggers::targetOf(s32 object) {
@@ -145,15 +156,15 @@ bool LevelTriggers::qualifies(const LevelTrigger& trigger,
     });
 }
 
-void LevelTriggers::openTarget(Target& target, bool atOnce, WorldAnimator& animator,
+bool LevelTriggers::openTarget(Target& target, bool atOnce, WorldAnimator& animator,
                                WorldScene& scene, WorldCollision* collision) {
     if (target.open) {
-        return;
+        return false;
     }
     target.open = true;
     if (target.animated) {
         animator.fire(target.object, true, atOnce);
-        return;
+        return true;
     }
     if ((target.kind & LevelTrigger::kFades) != 0) {
         // A field stops blocking as soon as it starts to thin.
@@ -165,6 +176,7 @@ void LevelTriggers::openTarget(Target& target, bool atOnce, WorldAnimator& anima
             scene.setObjectAlpha(static_cast<usize>(target.object), 0.0f);
         }
     }
+    return true;
 }
 
 void LevelTriggers::fire(usize index, bool atOnce, WorldAnimator& animator, WorldScene& scene,
@@ -175,8 +187,11 @@ void LevelTriggers::fire(usize index, bool atOnce, WorldAnimator& animator, Worl
             break;
         }
         trigger.fired = true;
-        if (Target* target = targetOf(trigger.target); target != nullptr) {
-            openTarget(*target, atOnce, animator, scene, collision);
+        if (Target* target = targetOf(trigger.target);
+            target != nullptr && openTarget(*target, atOnce, animator, scene, collision)) {
+            m_openings.push_back(TriggerOpening{target->object, trigger.spot,
+                                                (target->kind & LevelTrigger::kFades) != 0,
+                                                atOnce});
         }
     }
 }
@@ -195,7 +210,10 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
                            WorldAnimator& animator, WorldScene& scene,
                            WorldCollision* collision) {
     for (usize i = 0; i < m_triggers.size(); ++i) {
-        const LevelTrigger& trigger = m_triggers[i];
+        LevelTrigger& trigger = m_triggers[i];
+        if (trigger.refusalCooldown > 0.0f) {
+            trigger.refusalCooldown = std::max(trigger.refusalCooldown - seconds, 0.0f);
+        }
         if (trigger.fired || (trigger.flags & LevelTrigger::kCloses) != 0) {
             continue;
         }
@@ -210,8 +228,17 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
                 break;
             }
         }
-        if (visited && qualifies(trigger, visitors)) {
+        if (!visited) {
+            continue;
+        }
+        if (qualifies(trigger, visitors)) {
             fire(i, false, animator, scene, collision);
+        } else if ((trigger.flags & LevelTrigger::kRequirement) != 0 &&
+                   trigger.refusalCooldown <= 0.0f) {
+            // Told once what the spot wants, then not again for a while.
+            m_refusals.push_back(
+                TriggerRefusal{static_cast<s32>(i), trigger.id, trigger.needsCrystals()});
+            trigger.refusalCooldown = kRefusalCooldown;
         }
     }
     // Fields thin out a step a game frame.

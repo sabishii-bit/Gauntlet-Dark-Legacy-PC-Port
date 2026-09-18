@@ -1,4 +1,5 @@
 #include <array>
+#include <numbers>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -65,6 +66,28 @@ TEST_CASE("volume scales the output and underruns leave silence", "[audio][strea
     CHECK_THAT(out[0], WithinAbs(0.5, kEpsilon));
     CHECK_THAT(out[2], WithinAbs(0.0, kEpsilon));
     CHECK_THAT(out[4], WithinAbs(0.0, kEpsilon));
+}
+
+TEST_CASE("pan moves a sound between the speakers at constant power", "[audio][stream]") {
+    AudioStream stream(AudioStreamDesc{48000, 1}, 48000);
+    REQUIRE(stream.pan() == 0.0f);
+    const std::array<f32, 3> kInput{1.0f, 1.0f, 1.0f};
+    stream.push(kInput);
+    std::vector<f32> out(2, 0.0f);
+    stream.mixInto(out);
+    CHECK_THAT(out[0], WithinAbs(1.0, kEpsilon)); // centred: both speakers as they were
+    CHECK_THAT(out[1], WithinAbs(1.0, kEpsilon));
+    stream.setPan(-1.0f);
+    out.assign(2, 0.0f);
+    stream.mixInto(out);
+    CHECK_THAT(out[0], WithinAbs(std::numbers::sqrt2, 1e-4));
+    CHECK_THAT(out[1], WithinAbs(0.0, 1e-4));
+    stream.setPan(3.0f); // clamped to hard right
+    REQUIRE(stream.pan() == 1.0f);
+    out.assign(2, 0.0f);
+    stream.mixInto(out);
+    CHECK_THAT(out[0], WithinAbs(0.0, 1e-4));
+    CHECK_THAT(out[1], WithinAbs(std::numbers::sqrt2, 1e-4));
 }
 
 TEST_CASE("a finished stream drains once its queue is consumed", "[audio][stream]") {

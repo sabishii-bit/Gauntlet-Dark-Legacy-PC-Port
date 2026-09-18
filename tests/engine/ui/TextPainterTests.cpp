@@ -47,15 +47,17 @@ TEST_CASE("glyphs are drawn as cells of the sheet in one batch", "[ui][text]") {
     REQUIRE(device.draws.size() == 1);
     REQUIRE(device.draws[0].texture == &sheet);
     REQUIRE(device.draws[0].vertices.size() == 12);
+    // Each cell is drawn half a texel inside its borders, so the filtering never pulls in
+    // the sheet's grid or the next glyph.
     const Vec2 first = test::minCorner(device.draws[0]);
-    REQUIRE(first.x == Approx(10.0f));
-    REQUIRE(first.y == Approx(20.0f));
+    REQUIRE(first.x == Approx(10.5f));
+    REQUIRE(first.y == Approx(20.5f));
     const Vec2 last = test::maxCorner(device.draws[0]);
-    REQUIRE(last.x == Approx(28.0f));
-    REQUIRE(last.y == Approx(30.0f));
+    REQUIRE(last.x == Approx(27.5f));
+    REQUIRE(last.y == Approx(29.5f));
     bool sawCellB = false;
     for (const ImmediateVertex& v : device.draws[0].vertices) {
-        sawCellB = sawCellB || (v.uv.x == Approx(14.0f / 32.0f) && v.uv.y == Approx(10.0f / 16.0f));
+        sawCellB = sawCellB || (v.uv.x == Approx(13.5f / 32.0f) && v.uv.y == Approx(9.5f / 16.0f));
     }
     REQUIRE(sawCellB);
 }
@@ -79,10 +81,11 @@ TEST_CASE("styles scale, recolour, expand and swap the sheet", "[ui][text]") {
     REQUIRE(device.draws.size() == 1);
     REQUIRE(device.draws[0].texture == &glow);
     REQUIRE(device.draws[0].vertices[0].color == Color::rgba(1, 2, 3, 4));
-    REQUIRE(test::minCorner(device.draws[0]).x == Approx(42.0f));
-    REQUIRE(test::minCorner(device.draws[0]).y == Approx(-2.0f));
-    REQUIRE(test::maxCorner(device.draws[0]).x == Approx(58.0f));
-    REQUIRE(test::maxCorner(device.draws[0]).y == Approx(22.0f));
+    // Scaled twice and expanded two: the cell's half-texel inset scales with it.
+    REQUIRE(test::minCorner(device.draws[0]).x == Approx(43.0f));
+    REQUIRE(test::minCorner(device.draws[0]).y == Approx(-1.0f));
+    REQUIRE(test::maxCorner(device.draws[0]).x == Approx(57.0f));
+    REQUIRE(test::maxCorner(device.draws[0]).y == Approx(21.0f));
 }
 
 } // namespace

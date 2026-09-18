@@ -149,6 +149,76 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   and the three-second counts (a `SM_CRYSTAL_*` icon and "have/need") that
   `StatusBoxPainter::drawCard` and `drawCount` paint; `TowerScene::collectItems`
   feeds it and `render` draws it over the boxes, under the scroll.
+* Ambience: `game/world/AmbientSounds` runs the level's sound items (type
+  13): a loop named by the instance, found in the level's bank or the
+  tower's `TOWAMB`, full within its radius (the first parameter word, a
+  float), fading to silence at one and a half radii, panned by the camera's
+  right hand (`SoundPlayer::setVolume`/`setPan`, `AudioStream::setPan`), at
+  `kPeak` (224/255) times the level's sound volume. `TowerScene` binds it
+  once the world is loaded and updates it after the camera each frame.
+* Lighting: the level files carry a colour block per vertex (five bits a
+  channel, the lighting the level was built with), which the decoder reads
+  into `MeshVertex::color` and marks the mesh `prelit`; gdlunpack writes it
+  as the OBJ vertex-colour extension and `ObjModel` reads it back. The scene
+  shades an object flagged `WorldObject::kPrelit` (0x2, most of a level) by
+  those colours, additive parts unlit, and everything else by
+  `WorldLighting`. Items and characters are lit by the lights, as the
+  original lights them.
+* Characters: `TowerScene::costumeDirectory` picks the costume tier of ten
+  levels (`PLAYERS/<CLS>/<COL><tier>0`, unpacked with `--tiers`) when it
+  exists, else `<COL>`; the weapon is the costume archive's own `WEAP_HOLD`
+  (a tiered costume) or `WEAP_<COL>_HD<1|2|3>` (levels 1, 10, 50; the
+  untiered costumes) hung from the node whose object ends in the class's
+  wrist name (`R_WRIST`, `RIGHTHAN`, `RHEND`).
+* Sumner's beam (`L1XPLIGHTRAY01`) starts unseen and comes up over 180 ticks
+  once his welcome has begun (and stays), or while a player is within
+  `kBeamRadius` of him (`TowerScene::updateBeam`).
+* Entering the tower: the party materialises in the `STARTFX` tree of the
+  `WEAPONS` archive (its `CHARWARP` texture animation playing, for
+  `kSpawnTicks`) held still under the level's title while the
+  `StartCamera` holds at the `cameraStart` marker (91 ticks, a button
+  cutting it short once under 45 remain) and then rides to the follow
+  camera a unit a tick, its look-at point sliding along; the title sits
+  centred near the top, sliding up over the hold. Then the welcome scroll,
+  when one is due. A party placed by `TowerOptions::position` skips the
+  ride. The realm's entering sound (`WorldData::soundName` of
+  `audio->enterSound`) belongs to the loading screen and is not played here.
+* Gate messages: `LevelTriggers::takeRefusals` reports a player stood in a
+  requirement trigger without what it wants (once per 2.5625 s per trigger)
+  and `takeOpenings` the targets that opened; `TowerScene::handleTriggerEvents`
+  opens the `NEEDCRYSTALS`/`NEEDGARGITEMS` page for the realm or tier from
+  `text/scroll_e.json` and plays `S_WARN` for a gate opening before the
+  party. `collectItems` announces a realm's gate opening once (the
+  `UNLOCKLEVEL` page and the `S_CRYS4*` voice from the level bank), and
+  `ClassProgress::unlocked` (a bit per realm, in the save) keeps it from
+  repeating. Any open scroll pauses play.
+* Object animations: a tree's object node (`TreeNodeInfo::kObjectType`, the
+  original's `XCOANIM`/`OANIM` nodes) carries `objectFrames`, one run per
+  sequence (`objectFrames` in `animations.json`, from the tree's third header
+  field): the run's first object is shown at `start` and each frame after it
+  the next object of the archive, for `frames` frames, then nothing (a
+  one-frame run stays). `TreeModel::setFrame(sequence, frame)` picks the mesh;
+  before it an object node draws nothing. The spawn effect's flame column
+  (`STARTFX0F01..0F25`) is one.
+* Items play their archive's texture animations (`PlacedItems::ArchiveMotion`
+  with a `TextureAnimator` per archive, applied through
+  `TreeModel::setTextureFrame/setTextureOffset`): the sheen scrolling over
+  the crystals.
+* Frame rate: `Application::setMaxFrameRate`; the menus run at
+  `display.maxFrameRate` (60) and play at `timing.gameplayFrameRate` (30),
+  as the original did. Play at speed needs the release build
+  (`build.py --run` uses it); the Debug build runs the tower at about a
+  third of the rate.
+* Back (Backspace, B) does nothing in play; the tower is never left by it.
+* Input: `Input::latchKey` (fed by the GLFW key callback) keeps a press that
+  came and went between two polls down for the next poll, so a tap shorter
+  than a frame still moves the character.
+* Text: `TextPainter` samples each glyph cell half a texel inside its borders
+  (`kCellInset`), so filtering never pulls in the sheet's grid lines.
+* Textures: `gdlunpack` bleeds each opaque colour into the transparent texels
+  beside it (`Image::bleedIntoTransparent`) so cut-out edges filter into the
+  texture's own colour rather than the black the console files hide behind
+  alpha; re-run the unpack after changing the decoder.
 * Triggers: `game/world/LevelTriggers` reads the layout's trigger items (type
   5): the target object from the instance's first parameter word, the trigger
   flags from its second (0x40 = wants the realm the id names, the kind's
@@ -318,7 +388,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * Format decoders get a command-line dumper under `tools/` when one makes the
   output inspectable without the game (see `vqdump`).
 * `ctest --preset <preset>` runs everything; `-LE gpu` skips the GPU test on
-  headless machines. Tests must pass on Windows and Linux.
+  headless machines. Tests must pass on Windows and Linux. Three tiers: the
+  plain unit tests (what CI runs), the `[assets]`/`[unpacked]` tests (need
+  the game data; they skip without it, so they only prove anything on a
+  machine that has it), and the `gpu` label. Behaviour in the game is
+  verified against the unpacked data in a test, or by launching a scenario
+  from `tests/scenarios/` (`gauntlet --scenario <file>`) and looking; keep
+  both where the data exists, CI cannot see it.
 
 ## IDE
 
@@ -339,7 +415,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 ## Building and verifying
 
 * Helper scripts are Python only (3.9+), identical on every platform; never
-  add shell or PowerShell scripts. `scripts/devenv.py` resolves the
+  add shell or PowerShell scripts. `scripts/setup.py` gets a fresh machine
+  ready (finds or installs the compiler, CMake, Ninja, vcpkg and the Linux
+  packages, then builds; `--check` only reports); when a new tool or package
+  becomes a requirement, teach it to `setup.py` and the README's table.
+  `scripts/devenv.py` resolves the
   environment (on Windows: the x64 MSVC developer environment with the
   Visual Studio CMake and Ninja first on PATH; `--shell` opens it
   interactively), `scripts/configure.py [preset] [--fresh]` configures,
@@ -353,6 +433,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `python scripts/clangd-check.py` clean, and `gauntlet --frames 120` runs to
   a clean shutdown (with `--title` too when the change touches the 2D
   screens; `python scripts/build.py --unpack` first).
+* CI (`.github/workflows/ci.yml`) runs `setup.py` then builds and runs the
+  unit tests on Windows and Linux, lints on Linux, and tries the `gpu` tier
+  on a software Vulkan device under Xvfb (best effort). The game-data tier
+  runs only through the workflow's `game_data` switch on a self-hosted runner
+  labelled `game-data` that has the disc extracted and unpacked
+  (`GDL_ASSET_DIR` and `GDL_UNPACKED_DIR` in its environment). Never put the
+  game data anywhere CI could see it.
 * vcpkg pins its baseline in `vcpkg.json`. `VCPKG_ROOT` must be a git
   checkout at or after that commit, bootstrapped so the tool matches its
   scripts; the copy bundled with Visual Studio is too old and the dev-shell

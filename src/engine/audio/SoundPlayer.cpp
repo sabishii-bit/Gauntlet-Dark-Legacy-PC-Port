@@ -95,6 +95,28 @@ void SoundPlayer::applyVolume(Voice& voice) const {
         std::clamp(m_masterVolume * categoryVolume(voice.category) * voice.volume, 0.0f, 1.0f));
 }
 
+void SoundPlayer::setVolume(SoundHandle handle, f32 volume) {
+    for (Voice& voice : m_voices) {
+        if (voice.handle == handle) {
+            voice.volume = std::clamp(volume, 0.0f, 1.0f) * voice.sequence.volume;
+            applyVolume(voice);
+        }
+    }
+    for (Pending& pending : m_pending) {
+        if (pending.handle == handle) {
+            pending.volume = std::clamp(volume, 0.0f, 1.0f);
+        }
+    }
+}
+
+void SoundPlayer::setPan(SoundHandle handle, f32 pan) {
+    for (const Voice& voice : m_voices) {
+        if (voice.handle == handle) {
+            voice.stream->setPan(pan);
+        }
+    }
+}
+
 void SoundPlayer::stop(SoundHandle handle) {
     for (Voice& voice : m_voices) {
         if (voice.handle == handle) {

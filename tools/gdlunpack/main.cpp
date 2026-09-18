@@ -179,6 +179,17 @@ void unpackAnimations(const AssetLocator& locator, const std::filesystem::path& 
                     json.value(static_cast<f64>(node.direction.z));
                     json.endArray();
                 }
+                if (!node.objectFrames.empty()) {
+                    json.key("objectFrames").beginArray();
+                    for (const TreeNode::ObjectFrames& run : node.objectFrames) {
+                        json.beginObject();
+                        json.key("object").value(run.object);
+                        json.key("start").value(static_cast<s64>(run.start));
+                        json.key("frames").value(static_cast<s64>(run.frames));
+                        json.endObject();
+                    }
+                    json.endArray();
+                }
                 json.key("position").beginArray();
                 json.value(static_cast<f64>(node.position.x));
                 json.value(static_cast<f64>(node.position.y));
@@ -261,7 +272,9 @@ void unpackArchive(const std::filesystem::path& directory, const std::filesystem
             if ((bitmap.flags & bitmap_flags::kInvalid) != 0 || texturesFile.empty()) {
                 continue;
             }
-            writePng(outDir / file, decodeGcTexture(bitmap, texturesFile));
+            Image image = decodeGcTexture(bitmap, texturesFile);
+            image.bleedIntoTransparent();
+            writePng(outDir / file, image);
             ++summary.textures;
         } catch (const std::exception& e) {
             ++summary.failures;

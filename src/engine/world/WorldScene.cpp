@@ -132,6 +132,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         }
         const bool chrome = (object.objectFlags & WorldObject::kChrome) != 0;
         const bool additive = object.additive();
+        const bool prelit = object.prelit() && mesh->prelit;
         const bool depthWrite = (object.objectFlags & WorldObject::kNoDepthWrite) == 0;
         const u32 facing = CameraFrame::facingOf(object.objectFlags);
         const bool unit = m_placements[i].moving || object.sorted() || facing != 0;
@@ -142,6 +143,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         placedUnit.sorted = object.sorted();
         placedUnit.depthWrite = depthWrite;
         placedUnit.facing = facing;
+        placedUnit.prelit = prelit;
         if ((object.objectFlags & WorldObject::kSortBehind) != 0) {
             placedUnit.sortBias = kSortBehindBias;
         } else if ((object.objectFlags & WorldObject::kSortBack) != 0) {
@@ -174,7 +176,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
                     for (const u32 index : part.indices) {
                         const MeshVertex& v = mesh->vertices[index];
                         batch.geometry.vertex(v.position + offset,
-                                              additive ? kUnlit : lighting.shade(v.normal),
+                                              shadeOf(additive, prelit, v, v.normal, lighting),
                                               chrome ? chromeUv(v.normal) : v.uv,
                                               v.lightmapUv * batch.lightmapScale);
                     }
@@ -328,6 +330,14 @@ void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4&
     device.draw(batch.geometry, *slot.current(), clip, state);
 }
 
+Color WorldScene::shadeOf(bool additive, bool prelit, const MeshVertex& vertex,
+                          const Vec3& normal, const WorldLighting& lighting) {
+    if (additive) {
+        return kUnlit;
+    }
+    return prelit ? vertex.color : lighting.shade(normal);
+}
+
 /** Places, lights and draws a unit's parts: its opaque ones when `opaque`, its translucent
  * and glowing ones when `translucent`. */
 void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& clip,
@@ -350,7 +360,7 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
             const MeshVertex& v = unit.mesh->vertices[index];
             const Vec3 normal = glm::normalize(normalMatrix * v.normal);
             const Vec4 placed = world * Vec4{v.position, 1.0f};
-            Color color = part.additive ? kUnlit : m_lighting.shade(normal);
+            Color color = shadeOf(part.additive, unit.prelit, v, normal, m_lighting);
             if (unit.alpha < 1.0f) {
                 color.a = static_cast<u8>(static_cast<f32>(color.a) * unit.alpha);
             }

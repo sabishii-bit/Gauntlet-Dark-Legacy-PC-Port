@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <memory>
+#include <numbers>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AudioMixer.h"
@@ -11,6 +13,7 @@
 namespace {
 
 using namespace gdl;
+using Catch::Approx;
 
 SoundClip tone(u32 rate, usize frames, f32 value) {
     SoundClip clip;
@@ -47,6 +50,28 @@ TEST_CASE("one-shot sounds play once and are dropped when drained", "[audio][pla
     player.update();
     REQUIRE_FALSE(player.isPlaying(handle));
     REQUIRE(player.voiceCount() == 0);
+}
+
+TEST_CASE("a voice's own volume and pan can change while it plays", "[audio][player]") {
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const SoundClip clip = tone(48000, 1000, 0.5f);
+    SoundSequence sequence;
+    sequence.steps.push_back(SoundSequenceStep{&clip, false, false});
+    const SoundHandle handle = player.play(sequence, 1.0f);
+    std::vector<f32> out = pull(mixer, 1);
+    REQUIRE(out[0] == 0.5f);
+    player.setVolume(handle, 0.5f);
+    out = pull(mixer, 1);
+    REQUIRE(out[0] == Approx(0.25f));
+    player.setPan(handle, -1.0f);
+    out = pull(mixer, 1);
+    REQUIRE(out[0] == Approx(0.25f * std::numbers::sqrt2_v<f32>).margin(1e-4f));
+    REQUIRE(out[1] == Approx(0.0f).margin(1e-4f));
+    player.setVolume(99, 0.1f); // unknown handles are ignored
+    player.setPan(99, 1.0f);
+    out = pull(mixer, 1);
+    REQUIRE(out[0] == Approx(0.25f * std::numbers::sqrt2_v<f32>).margin(1e-4f));
 }
 
 TEST_CASE("a chained sound starts when the one before it ends", "[audio][player]") {

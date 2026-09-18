@@ -12,6 +12,7 @@ struct MeshVertex {
     Vec3 normal{0.0f, 0.0f, 1.0f};
     Vec2 uv{0.0f, 0.0f};
     Vec2 lightmapUv{0.0f, 0.0f}; ///< into the part's lightmap, in its texels, when it has one
+    Color color = Color::white(); ///< the lighting baked into the vertex, when the mesh is prelit
 
     bool operator==(const MeshVertex&) const = default;
 };
@@ -27,6 +28,7 @@ struct MeshPart {
 struct Mesh {
     std::vector<MeshVertex> vertices;
     std::vector<MeshPart> parts;
+    bool prelit = false; ///< the vertices' colours are the lighting the level was built with
 
     usize triangleCount() const {
         usize count = 0;

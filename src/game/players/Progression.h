@@ -30,6 +30,7 @@ struct ClassProgress {
     f32 magicAdd = 0.0f;
     f32 speedAdd = 0.0f;
     std::array<s32, kRealmCount> crystals{}; ///< gathered towards each realm's gate
+    u32 unlocked = 0; ///< a bit per realm whose gate's opening was announced
 };
 
 /** Stats as the select screen shows them, in its row order. */

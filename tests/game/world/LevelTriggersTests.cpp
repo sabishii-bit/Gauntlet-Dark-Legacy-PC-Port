@@ -113,6 +113,17 @@ TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
     REQUIRE_FALSE(f.triggers.trigger(0).fired);
     REQUIRE(f.collision.solid(6));
     REQUIRE(f.scene.objectAlpha(6) == 1.0f);
+    // Standing there short of crystals is refused, once, then again after the cooldown.
+    std::vector<TriggerRefusal> refusals = f.triggers.takeRefusals();
+    REQUIRE(refusals.size() == 1);
+    REQUIRE(refusals[0].trigger == 0);
+    REQUIRE(refusals[0].id == 1);
+    REQUIRE(refusals[0].crystals);
+    f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
+    REQUIRE(f.triggers.takeRefusals().empty());
+    f.triggers.update(LevelTriggers::kRefusalCooldown, party, f.animator, f.scene, &f.collision);
+    REQUIRE(f.triggers.takeRefusals().size() == 1);
+    REQUIRE(f.triggers.takeOpenings().empty());
     // With every member carrying enough, the field goes.
     party[0].crystals[1] = 15;
     party.push_back(f.visitor(Vec3{50.0f, 0.0f, 50.0f}, 2));
@@ -122,6 +133,15 @@ TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
     f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.trigger(0).fired);
     REQUIRE_FALSE(f.collision.solid(6));
+    // Its opening is reported once: the fading field before the party.
+    std::vector<TriggerOpening> openings = f.triggers.takeOpenings();
+    REQUIRE(openings.size() == 1);
+    REQUIRE(openings[0].target == 6);
+    REQUIRE(openings[0].fades);
+    REQUIRE_FALSE(openings[0].atOnce);
+    REQUIRE(openings[0].spot == f.triggers.trigger(0).spot);
+    REQUIRE(f.triggers.takeOpenings().empty());
+    REQUIRE(f.triggers.takeRefusals().empty());
     REQUIRE(f.scene.objectAlpha(6) == Approx(1.0f - LevelTriggers::kFadeRate));
     for (int i = 0; i < 20; ++i) {
         f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);

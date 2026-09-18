@@ -145,6 +145,55 @@ TEST_CASE("four-value texture coordinates carry the lightmap's pair", "[formats]
     REQUIRE(mesh.vertices[5].lightmapUv.x == Approx(1.0f));
 }
 
+TEST_CASE("a colour block gives every vertex the lighting baked into it", "[formats][geometry]") {
+    // The plain packet again, with a block of five-bit colours between the normals and the
+    // texture coordinates: red, green, blue, grey, and black.
+    StreamBuilder b;
+    b.word(0, 8);
+    b.word(2, 0x6C018000);
+    b.word(3, 5);
+    b.word(5, 0x3F800000);
+    b.word(7, 0x69000000);
+    const std::array<std::array<s16, 3>, 5> kPositions{
+        {{128, 0, 0}, {0, 128, 0}, {0, 0, 128}, {256, 0, 0}, {0, 256, 0}}};
+    for (usize v = 0; v < 5; ++v) {
+        for (usize k = 0; k < 3; ++k) {
+            b.shortAt(8, v * 6 + k * 2, kPositions[v][k]);
+        }
+    }
+    b.word(17, 0x6F058002);
+    for (usize v = 0; v < 5; ++v) {
+        b.shortAt(18, v * 2, static_cast<s16>(packNormal(0, 0, 15, false)));
+    }
+    b.word(21, 3);
+    const std::array<u16, 5> kColors{0x001F, 0x03E0, 0x7C00, 0x4210, 0x0000};
+    for (usize v = 0; v < 5; ++v) {
+        b.shortAt(22, v * 2, static_cast<s16>(kColors[v]));
+    }
+    b.word(25, 0x65000000);
+    for (usize v = 0; v < 5; ++v) {
+        b.shortAt(26, v * 4, static_cast<s16>(64 * v));
+        b.shortAt(26, v * 4 + 2, 128);
+    }
+    b.word(31, 0x17000000);
+    b.word(32, 0);
+    Mesh mesh;
+    decodeGeometryStream(b.finish(36), 4, mesh);
+    REQUIRE(mesh.prelit);
+    REQUIRE(mesh.vertices.size() == 5);
+    REQUIRE(mesh.vertices[0].color == Color::rgba(248, 0, 0, 255));
+    REQUIRE(mesh.vertices[1].color == Color::rgba(0, 248, 0, 255));
+    REQUIRE(mesh.vertices[2].color == Color::rgba(0, 0, 248, 255));
+    REQUIRE(mesh.vertices[3].color == Color::rgba(128, 128, 128, 255));
+    REQUIRE(mesh.vertices[4].color == Color::rgba(0, 0, 0, 255));
+    REQUIRE(mesh.vertices[1].uv.x == Approx(0.5f)); // the coordinates still follow the block
+    // Without the block a mesh is lit by the lights and its vertices stay white.
+    Mesh plain;
+    decodeGeometryStream(samplePacket(), 4, plain);
+    REQUIRE_FALSE(plain.prelit);
+    REQUIRE(plain.vertices[0].color == Color::white());
+}
+
 TEST_CASE("broken streams are rejected", "[formats][geometry]") {
     Mesh mesh;
     REQUIRE_THROWS_AS(decodeGeometryStream(std::vector<u8>(4, 0), 0, mesh), FormatError);

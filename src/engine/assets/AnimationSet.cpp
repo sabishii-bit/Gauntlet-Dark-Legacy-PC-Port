@@ -63,6 +63,13 @@ TreeNodeInfo parseNode(const nlohmann::json& node, usize before) {
         n.direction = Vec3{direction.at(0).get<f32>(), direction.at(1).get<f32>(),
                            direction.at(2).get<f32>()};
     }
+    for (const nlohmann::json& run : node.value("objectFrames", nlohmann::json::array())) {
+        TreeNodeInfo::ObjectFrames frames;
+        frames.object = normalizeAssetName(run.value("object", std::string{}));
+        frames.start = run.value("start", 0);
+        frames.frames = run.value("frames", 0);
+        n.objectFrames.push_back(std::move(frames));
+    }
     if (n.parent >= static_cast<s32>(before)) {
         throw std::runtime_error("node parent must come before the node");
     }

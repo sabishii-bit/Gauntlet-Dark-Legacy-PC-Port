@@ -28,6 +28,7 @@ private:
     void pollKeyboard();
     void pollGamepads();
     static void charCallback(GLFWwindow* window, unsigned int codepoint);
+    static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
 
     GLFWwindow* m_window = nullptr;
     Input m_input;

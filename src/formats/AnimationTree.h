@@ -32,6 +32,16 @@ struct TreeNode {
     s32 parent = -1;
     s32 particle = -1; ///< a particle node's template in the file's list, or -1
     Vec3 direction{0.0f, 0.0f, 0.0f}; ///< the way a particle node emits, when not zero
+
+    /** An object node's run of frames in one sequence: the archive object shown at `start`
+     * and, each frame after, the next object in the archive, for `frames` frames; nothing
+     * outside the run unless it is one frame long, which stays. An empty name shows nothing. */
+    struct ObjectFrames {
+        std::string object;
+        s16 start = 0;
+        s16 frames = 0;
+    };
+    std::vector<ObjectFrames> objectFrames; ///< an object node's, one per sequence
 };
 
 /**

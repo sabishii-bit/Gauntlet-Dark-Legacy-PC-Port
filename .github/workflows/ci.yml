@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      game_data:
+        description: "Also run the [assets]/[unpacked] tier on a self-hosted runner that has the game data"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: 1
+
+jobs:
+  windows:
+    name: Windows (MSVC)
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ runner.os }}-
+      - name: Tools
+        run: python scripts/setup.py --yes --no-build
+      - name: Build and unit tests
+        run: python scripts/build.py --test
+
+  linux:
+    name: Linux (GCC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ runner.os }}-
+      - name: Tools, build and unit tests
+        run: python3 scripts/setup.py --yes --test
+      # The GPU tier on a software Vulkan device under a virtual display: best effort, as
+      # what lavapipe can do differs between Mesa releases.
+      - name: GPU tests (lavapipe under Xvfb)
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y xvfb
+          xvfb-run -a ctest --preset linux-ninja-debug -L gpu
+        env:
+          CXX: g++-14
+
+  lint:
+    name: Lint (clang-tidy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache vcpkg binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ runner.os }}-
+      - name: Tools and build
+        run: python3 scripts/setup.py --yes --tooling
+      - name: clang-tidy
+        run: python3 scripts/lint.py
+
+  # The tier that needs the game data: a self-hosted runner labelled "game-data" with the
+  # disc extracted and unpacked, and GDL_ASSET_DIR / GDL_UNPACKED_DIR set in its environment.
+  game-data:
+    name: Game data tests (self-hosted)
+    if: github.event_name == 'workflow_dispatch' && inputs.game_data
+    runs-on: [self-hosted, game-data]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure against the machine's game data
+        shell: bash
+        run: |
+          preset=$([ "$RUNNER_OS" = "Windows" ] && echo windows-ninja-debug || echo linux-ninja-debug)
+          python scripts/devenv.py -- cmake --preset "$preset" \
+            -DGDL_ASSET_DIR="$GDL_ASSET_DIR" -DGDL_UNPACKED_DIR="$GDL_UNPACKED_DIR"
+      - name: Build and every test
+        run: python scripts/build.py --test

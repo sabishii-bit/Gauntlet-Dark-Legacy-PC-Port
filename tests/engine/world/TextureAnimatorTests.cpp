@@ -87,12 +87,30 @@ TEST_CASE("texture animations cycle frames and slide coordinates once a game fra
     REQUIRE(f.animator.counter(0) == 0);
     REQUIRE(f.scene.textureOf(0) == &f.textures.texture(f.device, 1));
     REQUIRE(f.scene.textureOffset(1) == Vec2{-0.5f, 0.0f});
+    // The same stands can be read as motions, and stepped without a scene.
+    REQUIRE(f.animator.motion(0).slot == 3);
+    REQUIRE(f.animator.motion(0).frame == &f.lender.texture(f.device, 1));
+    REQUIRE(f.animator.motion(0).offset == Vec2{0.0f, 0.0f});
+    bool scrolled = false;
+    for (usize i = 0; i < f.animator.size(); ++i) {
+        const TextureMotion motion = f.animator.motion(i);
+        if (motion.slot == 1) {
+            scrolled = true;
+            REQUIRE(motion.frame == nullptr);
+            REQUIRE(motion.offset == Vec2{-0.5f, 0.0f});
+        }
+    }
+    REQUIRE(scrolled);
 
     f.animator.step(f.scene, 2);
     REQUIRE(f.animator.frame() == 4);
     REQUIRE(f.scene.textureOffset(1) == Vec2{0.0f, 0.0f});
     REQUIRE(f.scene.textureOf(3) == &f.lender.texture(f.device, 2));
 
+    // Without a scene the animations still move on, to be shown elsewhere.
+    f.animator.step(2);
+    REQUIRE(f.animator.frame() == 6);
+    REQUIRE(f.animator.motion(0).frame == &f.lender.texture(f.device, 1));
     f.animator.clear();
     REQUIRE(f.animator.size() == 0);
     REQUIRE(f.animator.frame() == 0);

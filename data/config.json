@@ -7,7 +7,7 @@
     "windowWidth": 1280,
     "windowHeight": 896,
     "vsync": true,
-    "maxFrameRate": 30
+    "maxFrameRate": 60
   },
   "timing": {
     "tickRate": 60,

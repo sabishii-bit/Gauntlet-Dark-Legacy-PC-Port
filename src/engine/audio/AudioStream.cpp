@@ -1,6 +1,8 @@
 #include "engine/audio/AudioStream.h"
 
 #include <algorithm>
+#include <cmath>
+#include <numbers>
 
 #include "engine/core/Assert.h"
 
@@ -55,6 +57,19 @@ f32 AudioStream::volume() const {
     return m_volume;
 }
 
+void AudioStream::setPan(f32 pan) {
+    const std::scoped_lock lock(m_mutex);
+    m_pan = std::clamp(pan, -1.0f, 1.0f);
+    const f32 angle = (m_pan + 1.0f) * 0.25f * std::numbers::pi_v<f32>;
+    m_leftGain = std::cos(angle) * std::numbers::sqrt2_v<f32>;
+    m_rightGain = std::sin(angle) * std::numbers::sqrt2_v<f32>;
+}
+
+f32 AudioStream::pan() const {
+    const std::scoped_lock lock(m_mutex);
+    return m_pan;
+}
+
 void AudioStream::mixInto(std::span<f32> stereoOut) {
     const std::scoped_lock lock(m_mutex);
     const usize channels = m_desc.channels;
@@ -75,8 +90,8 @@ void AudioStream::mixInto(std::span<f32> stereoOut) {
         };
         const f32 left = sample(0);
         const f32 right = channels > 1 ? sample(1) : left;
-        stereoOut[frame * 2] += left;
-        stereoOut[frame * 2 + 1] += right;
+        stereoOut[frame * 2] += left * m_leftGain;
+        stereoOut[frame * 2 + 1] += right * m_rightGain;
 
         m_fraction += m_step;
         while (m_fraction >= 1.0) {

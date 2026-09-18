@@ -176,6 +176,30 @@ TEST_CASE("objects flagged to face the camera are units turned its way", "[world
     REQUIRE(edge.z == Approx(9.0f).margin(1e-5f));
 }
 
+TEST_CASE("a prelit object is shaded by its vertices, not the lights", "[world][scene]") {
+    Fixture f("world-scene-prelit");
+    // Two copies of the same dim wall: one flagged prelit, one left to the lights.
+    const auto dir = test::scratchDirectory("world-scene-prelit-layout");
+    writeTextFile(dir / "world.json", R"({"objects": [
+      {"name": "LIT", "position": [0, 0, 0], "next": 1, "flags": 2},
+      {"name": "LIT", "position": [0, 0, 10], "next": -1, "flags": 0}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    REQUIRE(f.scene.build(layout, f.models, f.textures, f.device));
+    f.scene.draw(f.device, Mat4{1.0f}, Vec3{10.0f, 0.0f, 10.0f});
+    REQUIRE(f.device.draws.size() == 1); // both share one batch
+    const auto& vertices = f.device.draws[0].vertices;
+    REQUIRE(vertices.size() == 6);
+    bool dim = false;
+    bool lit = false;
+    for (const ImmediateVertex& v : vertices) {
+        dim = dim || v.color.r == 51;  // 0.2 of the way, its own colour
+        lit = lit || v.color.r > 200;  // the lit copy, facing the light
+    }
+    REQUIRE(dim);
+    REQUIRE(lit);
+}
+
 TEST_CASE("an external texture nobody lends is drawn white", "[world][scene]") {
     Fixture f("world-scene-unlent");
     REQUIRE(f.scene.build(f.layout, f.models, f.textures, f.device));

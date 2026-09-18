@@ -29,6 +29,11 @@ def default_preset() -> str:
     return "windows-ninja-debug" if WINDOWS else "linux-ninja-debug"
 
 
+def release_preset() -> str:
+    """The optimised Ninja preset for this platform, the one to play on."""
+    return "windows-ninja-release" if WINDOWS else "linux-ninja-release"
+
+
 def _vswhere() -> pathlib.Path:
     program_files = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
     vswhere = pathlib.Path(program_files) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"

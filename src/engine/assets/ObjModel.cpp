@@ -79,6 +79,7 @@ std::optional<u32> materialIndex(std::string_view digits) {
 
 Mesh parseObj(std::string_view text) {
     std::vector<Vec3> positions;
+    std::vector<Color> colors; // one per position when the file carries the extension
     std::vector<Vec2> texcoords;
     std::vector<Vec2> lightmapCoords;
     std::vector<Vec3> normals;
@@ -94,6 +95,9 @@ Mesh parseObj(std::string_view text) {
         }
         MeshVertex v;
         v.position = positions[static_cast<usize>(corner.position)];
+        if (static_cast<usize>(corner.position) < colors.size()) {
+            v.color = colors[static_cast<usize>(corner.position)];
+        }
         if (corner.texcoord >= 0) {
             v.uv = texcoords[static_cast<usize>(corner.texcoord)];
             if (static_cast<usize>(corner.texcoord) < lightmapCoords.size()) {
@@ -133,6 +137,11 @@ Mesh parseObj(std::string_view text) {
             positions.emplace_back(parseFloat(words[1], lineNumber),
                                    parseFloat(words[2], lineNumber),
                                    parseFloat(words[3], lineNumber));
+            if (words.size() >= 7) {
+                colors.push_back(Color::fromFloats(parseFloat(words[4], lineNumber),
+                                                   parseFloat(words[5], lineNumber),
+                                                   parseFloat(words[6], lineNumber)));
+            }
         } else if (key == "vt" && words.size() >= 3) {
             texcoords.emplace_back(parseFloat(words[1], lineNumber),
                                    1.0f - parseFloat(words[2], lineNumber));
@@ -185,6 +194,7 @@ Mesh parseObj(std::string_view text) {
         }
     }
     closePart();
+    mesh.prelit = !colors.empty();
     return mesh;
 }
 

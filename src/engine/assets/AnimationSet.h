@@ -25,7 +25,18 @@ struct TreeNodeInfo {
     s32 particle = -1; ///< the set's particle template a particle node emits, or -1
     Vec3 direction{0.0f, 0.0f, 0.0f}; ///< the way it emits, when not zero
 
+    /** One sequence's run of object frames: the set's object shown at `start` and, each
+     * frame after, the next object in the set, for `frames` frames; nothing outside the run
+     * unless it is one frame long, which stays. An empty name shows nothing. */
+    struct ObjectFrames {
+        std::string object;
+        s32 start = 0;
+        s32 frames = 0;
+    };
+    std::vector<ObjectFrames> objectFrames; ///< an object node's, one per sequence
+
     static constexpr s32 kParticleType = 4;
+    static constexpr s32 kObjectType = 2; ///< a node whose object changes with the frame
     bool chrome() const { return (objectFlags & kChromeFlag) != 0; }
     /** Whether the object adds onto the frame, and whether it leaves depth unwritten. */
     bool additive() const { return (objectFlags & kAdditiveFlag) != 0; }
