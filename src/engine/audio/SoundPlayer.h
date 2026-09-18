@@ -52,6 +52,7 @@ public:
      * ignored. */
     void setVolume(SoundHandle handle, f32 volume);
     void setPan(SoundHandle handle, f32 pan);
+    /** Fades a voice (or every voice) out over a few milliseconds; it no longer plays. */
     void stop(SoundHandle handle);
     void stopAll();
     bool isPlaying(SoundHandle handle) const;
@@ -70,7 +71,8 @@ private:
         SoundCategory category = SoundCategory::Effects;
         f32 volume = 1.0f;
         usize nextStep = 0;
-        bool finished = false;
+        bool finished = false; ///< fed to the end
+        bool stopped = false;  ///< cut short: fading out, no longer playing
     };
 
     /** A sequence waiting for another voice to end. */

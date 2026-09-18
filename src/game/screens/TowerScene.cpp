@@ -29,7 +29,7 @@ constexpr std::string_view kNeedCrystals = "NEEDCRYSTALS";
 constexpr std::string_view kNeedIcons = "NEEDGARGITEMS";
 constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
 constexpr std::string_view kUnlockSection = "UNLOCKSECTION";
-constexpr s32 kIconMessages = 100;      ///< trigger ids from here name gargoyle tiers
+constexpr s32 kIconTierBase = 101;      ///< a gargoyle gate's trigger id less this is its tier
 constexpr s32 kTitleY = 48;              ///< where the level's title starts, on the canvas
 constexpr s32 kTitleLift = 16;           ///< how far up it slides, per unit of slide
 constexpr f32 kTitleSlideStart = 0.025f; ///< the original's slide, growing by this a tick
@@ -60,6 +60,26 @@ constexpr std::string_view kFireRingTexture = "GREENCIRCTRANS";
 constexpr std::string_view kFireMaskTexture = "GREENCIRCTRANSM";
 constexpr std::string_view kScrollTextFile = "text/scroll_e.json";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
+constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
+/** What a target sounds while it opens before the party and once it has, by the sound slot its
+ * trigger names: the force fields and magic crossings, the lifts, the east gates, the west
+ * gates. The tower's ambience bank keeps them under the audio directory's elevator slot
+ * names; its own sample names call them ffield, lwrtwr, eastgat and westgat. */
+struct OpeningSounds {
+    std::string_view moving;
+    std::string_view done;
+};
+constexpr std::array<OpeningSounds, 4> kOpeningSounds{{{"S_ELVMETL", "S_ELVMETSTPL"},
+                                                       {"S_ELVROPEL", "S_ELVROPESTPL"},
+                                                       {"S_ELVCHAINL", "S_ELVCHAINSTPL"},
+                                                       {"S_ELVSTONEL", "S_ELVSTONESTPL"}}};
+
+/** The sounds a trigger's slot names, or null for a slot without any. */
+const OpeningSounds* openingSoundsOf(s32 slot) {
+    return slot >= 0 && static_cast<usize>(slot) < kOpeningSounds.size()
+               ? &kOpeningSounds[static_cast<usize>(slot)]
+               : nullptr;
+}
 constexpr std::string_view kPromptText = "scroll.pressButton";
 constexpr u32 kEntranceWorld = 0;
 constexpr f32 kPi = std::numbers::pi_v<f32>;
@@ -125,6 +145,8 @@ void TowerScene::close() {
         m_context.sounds->stop(m_music);
     }
     m_music = kNoSound;
+    stopVoice();
+    stopOpeningSounds();
     m_scroll.close();
     if (m_world != nullptr) {
         m_world->setPlayerCount(0);
@@ -553,9 +575,17 @@ TowerOutcome TowerScene::update(f64 deltaSeconds, const Inputs& inputs) {
                                   kMinTicks, kMaxTicks);
     const f32 seconds = static_cast<f32>(ticks) / tickRate;
     // A scroll holds everything else still until it has burnt away; the welcome's leads on
-    // to the crystals.
+    // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
+    // Sumner was saying over it.
     if (m_scroll.active()) {
+        const bool wasBurning = m_scroll.burning();
         m_scroll.step(ticks, acceptedPlayers(inputs));
+        if ((m_scroll.burning() && !wasBurning) || !m_scroll.active()) {
+            stopVoice();
+            if (!wasBurning) {
+                playNamed(kScrollBurnSound);
+            }
+        }
         if (!m_scroll.active() && m_intro == Intro::Scroll) {
             startCrystalCut();
         }
@@ -868,22 +898,38 @@ bool TowerScene::openMessage(std::string_view name, usize page) {
 }
 
 /** Plays a sound by name from whichever loaded bank holds it; false when none does. */
-bool TowerScene::playNamed(std::string_view name) {
+SoundHandle TowerScene::playNamed(std::string_view name) {
     if (m_context.sounds == nullptr || name.empty()) {
-        return false;
+        return kNoSound;
     }
     for (SoundSet* bank : {&m_levelBank, &m_commonSounds, &m_ambientBank}) {
         if (const auto found = bank->find(name); found.has_value()) {
             try {
-                m_context.sounds->play(bank->sequence(*found), 1.0f, SoundCategory::Effects);
-                return true;
+                return m_context.sounds->play(bank->sequence(*found), 1.0f,
+                                              SoundCategory::Effects);
             } catch (const std::exception& e) {
                 log::warn("Tower: sound {}: {}", name, e.what());
-                return false;
+                return kNoSound;
             }
         }
     }
-    return false;
+    return kNoSound;
+}
+
+void TowerScene::stopVoice() {
+    if (m_context.sounds != nullptr && m_voice != kNoSound) {
+        m_context.sounds->stop(m_voice);
+    }
+    m_voice = kNoSound;
+}
+
+void TowerScene::stopOpeningSounds() {
+    if (m_context.sounds != nullptr) {
+        for (const OpeningSound& sound : m_openingSounds) {
+            m_context.sounds->stop(sound.handle);
+        }
+    }
+    m_openingSounds.clear();
 }
 
 /** Congratulates the party once its crystals open a realm's gate: the scroll for the realm,
@@ -904,12 +950,13 @@ void TowerScene::announceUnlock(s32 realm) {
     }
     openMessage(kUnlockLevel, static_cast<usize>(realm));
     if (static_cast<usize>(realm) < kUnlockVoices.size()) {
-        playNamed(kUnlockVoices[static_cast<usize>(realm)]);
+        stopVoice();
+        m_voice = playNamed(kUnlockVoices[static_cast<usize>(realm)]);
     }
 }
 
-/** Tells a refused party what a gate wants. (A gate opening before them makes no sound yet:
- * the original's note for it is not known.) */
+/** Tells a refused party what a gate wants; a target opening before them (a gate's field, a
+ * lift, a gate) sounds its slot's note until it is done, then the note of its end. */
 void TowerScene::handleTriggerEvents() {
     // One scroll at a time: the frame's first refusal.
     if (const std::vector<TriggerRefusal> refusals = m_world->takeTriggerRefusals();
@@ -917,11 +964,34 @@ void TowerScene::handleTriggerEvents() {
         const TriggerRefusal& refusal = refusals.front();
         if (refusal.crystals) {
             openMessage(kNeedCrystals, static_cast<usize>(refusal.id));
-        } else if (refusal.id >= kIconMessages) {
-            openMessage(kNeedIcons, static_cast<usize>(refusal.id - kIconMessages));
+        } else if (const s32 tier = refusal.id - kIconTierBase; tier >= 0) {
+            openMessage(kNeedIcons, static_cast<usize>(tier));
         }
     }
-    m_world->takeTriggerOpenings();
+    for (const TriggerOpening& opening : m_world->takeTriggerOpenings()) {
+        const OpeningSounds* sounds = openingSoundsOf(opening.sound);
+        if (opening.atOnce || sounds == nullptr) {
+            continue;
+        }
+        if (const SoundHandle handle = playNamed(sounds->moving); handle != kNoSound) {
+            m_openingSounds.push_back(OpeningSound{opening.target, handle});
+        }
+    }
+    for (const TriggerOpening& settled : m_world->takeTriggerSettled()) {
+        for (usize i = 0; i < m_openingSounds.size();) {
+            if (m_openingSounds[i].target == settled.target) {
+                if (m_context.sounds != nullptr) {
+                    m_context.sounds->stop(m_openingSounds[i].handle);
+                }
+                m_openingSounds.erase(m_openingSounds.begin() + static_cast<std::ptrdiff_t>(i));
+            } else {
+                ++i;
+            }
+        }
+        if (const OpeningSounds* sounds = openingSoundsOf(settled.sound); sounds != nullptr) {
+            playNamed(sounds->done);
+        }
+    }
 }
 
 } // namespace gdl::game

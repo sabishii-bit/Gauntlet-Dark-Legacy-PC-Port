@@ -169,7 +169,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   exists, else `<COL>`; the weapon is the costume archive's own `WEAP_HOLD`
   (a tiered costume) or `WEAP_<COL>_HD<1|2|3>` (levels 1, 10, 50; the
   untiered costumes) hung from the node whose object ends in the class's
-  wrist name (`R_WRIST`, `RIGHTHAN`, `RHEND`).
+  wrist name (`R_WRIST`, `RIGHTHAN`, `RHEND`). A tree's node named `DUMMY`
+  (a costume's marker triangle at the feet) is never drawn (`TreeModel::bind`),
+  as the original hides it.
 * Sumner's beam (`L1XPLIGHTRAY01`) starts unseen and comes up over 180 ticks
   while a player is within `kBeamRadius` of him, going again once they
   leave (`TowerScene::updateBeam`). The stained-glass light through the
@@ -199,15 +201,22 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * Gate messages: `LevelTriggers::takeRefusals` reports a player stood in a
   requirement trigger without what it wants (once per 2.5625 s per trigger)
   and `takeOpenings` the targets that opened; `TowerScene::handleTriggerEvents`
-  opens the `NEEDCRYSTALS`/`NEEDGARGITEMS` page for the realm or tier from
-  `text/scroll_e.json`. A gate opening before the party makes no sound yet:
-  `S_WARN` (the low double warning note) is what the tower's tables
-  default to, and it is wrong; the original's note comes from a runtime
-  table that could not be recovered. `collectItems` announces a realm's
-  gate opening once (the
-  `UNLOCKLEVEL` page and the `S_CRYS4*` voice from the level bank), and
+  opens the `NEEDCRYSTALS` page for the realm or the `NEEDGARGITEMS` page for
+  the gargoyle tier (the trigger id less `kIconTierBase`, 101) from
+  `text/scroll_e.json`. A target opening before the party sounds by the
+  slot its trigger names (`LevelTrigger::sound`, the instance's sixth
+  parameter; 255 is none): 0 the force fields and magic crossings, 1 the
+  lifts, 2 and 3 the east and west gates, each a `kOpeningSounds` pair
+  played while it opens and once `takeSettled` reports it done (faded to
+  nothing or its animation at its end). The tower's ambience bank keeps
+  those samples (`ffield`, `lwrtwr`, `eastgat`, `westgat`) under the audio
+  directory's elevator slot names; a Dolphin recording matched the field's.
+  `collectItems` announces a realm's gate opening once (the
+  `UNLOCKLEVEL` page and the `S_CRYS4*` voice from the level bank, kept in
+  `m_voice` and cut off when the scroll is left), and
   `ClassProgress::unlocked` (a bit per realm, in the save) keeps it from
-  repeating. Any open scroll pauses play.
+  repeating. Any open scroll pauses play, and leaving one burns it to
+  `S_OPTMENUSCROLL`, the options menu's note.
 * Object animations: a tree's object node (`TreeNodeInfo::kObjectType`, the
   original's `XCOANIM`/`OANIM` nodes) carries `objectFrames`, one run per
   sequence (`objectFrames` in `animations.json`, from the tree's third header
@@ -231,6 +240,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   than a frame still moves the character.
 * Text: `TextPainter` samples each glyph cell half a texel inside its borders
   (`kCellInset`), so filtering never pulls in the sheet's grid lines.
+* Sound banks: `gdlunpack` unpacks every `.vbk` in the audio folder; a bank
+  the audio directory (`AUDATPS2.ROM`) does not name (`LEGACY_BARRIER`,
+  `LEGACY_GEN`, `POJO`, `DIAGTUNE`, `SHOP_DON`) gets sounds numbered
+  `<BANK>_<nn>`, each as long as its clips, with ids of -1.
 * Textures: `gdlunpack` bleeds each opaque colour into the transparent texels
   beside it (`Image::bleedIntoTransparent`) so cut-out edges filter into the
   texture's own colour rather than the black the console files hide behind
@@ -239,10 +252,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   5): the target object from the instance's first parameter word, the trigger
   flags from its second (0x40 = wants the realm the id names, the kind's
   low byte drives the target: 0x10 fades), the radius from byte 4 (half units,
-  0xFF a hair), the id and next id from bytes 6 and 7. Targets that the layout
-  animates are held at their first frame by `WorldAnimator::hold` until
-  `fire` plays them once; chains follow next ids among triggers wanting no
-  crystals; `openMet` opens at level start whatever the party qualifies for;
+  0xFF a hair, 0 the item kind's own radius), the id and next id from bytes 6
+  and 7. Targets that the layout animates are held at their first frame by
+  `WorldAnimator::hold` until `fire` plays them once; chains follow next ids
+  among triggers wanting no crystals, and a trigger chained after another
+  (`LevelTrigger::chained`) is never set off by a player standing on it, only
+  through its chain (the lion statue's chain starts on a spot at its feet); a
+  crystal gate's spot reaches twice its radius (`kMetReach`) for a party that
+  qualifies; `openMet` opens at level start whatever the party qualifies for;
   fading targets lose their collision (`WorldCollision::setSolid`) and thin
   out through `WorldScene::setObjectAlpha`. `TowerScene` passes the party as
   `TriggerVisitor`s each frame.
@@ -353,8 +370,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * Sounds are `assets/SoundSet` entries (a bank's `sounds.json`) played through
   `audio/SoundPlayer` in a `SoundCategory` (effects or music, scaled by the
   audio settings), which feeds sample sequences and loops into mixer
-  streams; the game calls `SoundPlayer::update()` once per frame. Movie audio
-  and sounds stop through `AudioStream::stop()`, which drops what is queued.
+  streams; the game calls `SoundPlayer::update()` once per frame. A stream
+  resamples along a Catmull-Rom curve through four frames and slides every
+  gain change (volume, pan) over `AudioStream::kGainRamp` (5 ms); movie audio
+  and sounds stop through `AudioStream::stop()`, which fades over the same
+  ramp and drops what is queued past it (`SoundPlayer` reports a stopped
+  voice silent at once). `AudioMixer::mix` holds the sum under full scale:
+  a peak turns the mix down at once and it comes back over `kRelease`
+  (50 ms), so many sounds at once no longer clip and crackle.
 * Game data is read through `AssetLocator`, which matches names ignoring case,
   so code uses the original lowercase names and Linux keeps working.
 * Texture contents change through `RenderDevice::updateTexture`, called after

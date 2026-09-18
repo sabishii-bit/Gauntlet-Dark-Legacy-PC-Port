@@ -21,7 +21,8 @@ namespace gdl {
  * An animation tree standing in the world: each node's mesh at the node's rest offset or
  * wherever a pose's matrices put it, lit like the level and drawn wherever a model matrix
  * places the whole figure. An object node shows whichever of its run of meshes the frame
- * calls for, once told the frame, and nothing before that.
+ * calls for, once told the frame, and nothing before that. A node named DUMMY is the
+ * figure's marker (a triangle at its feet pointing its way) and is never drawn.
  */
 class TreeModel {
 public:

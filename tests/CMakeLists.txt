@@ -88,6 +88,7 @@ add_executable(tests
     game/players/PlayerActorTests.cpp
     game/players/PlayerAnimatorTests.cpp
     game/world/TowerWorldTests.cpp
+    game/world/LevelTriggersTests.cpp
     game/world/TowerCameraTests.cpp
     game/world/StartCameraTests.cpp
     game/screens/StatusBoxTests.cpp

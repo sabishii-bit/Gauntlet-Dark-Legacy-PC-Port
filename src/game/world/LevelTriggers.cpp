@@ -62,8 +62,14 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         trigger.radius = instance.params[4] == kTinyRadius
                              ? 0.01f
                              : 0.5f * static_cast<f32>(instance.params[4]);
+        if (trigger.radius <= 0.0f) {
+            trigger.radius = info.radius; // the kind's own, when the instance gives none
+        }
         trigger.id = instance.params[6];
         trigger.nextId = instance.params[7];
+        // The slot is a signed byte in the data: 255 (and anything high) means none.
+        const u8 slot = instance.params[5];
+        trigger.sound = slot >= 0x80 ? -1 : static_cast<s32>(slot);
         m_triggers.push_back(trigger);
         if (trigger.target >= 0 && targetOf(trigger.target) == nullptr) {
             Target target;
@@ -87,6 +93,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
             if (&other != &trigger && other.id == trigger.nextId &&
                 (other.flags & LevelTrigger::kRequirement) == 0) {
                 trigger.next = static_cast<s32>(j);
+                m_triggers[j].chained = true;
                 break;
             }
         }
@@ -98,6 +105,7 @@ void LevelTriggers::clear() {
     m_targets.clear();
     m_refusals.clear();
     m_openings.clear();
+    m_settled.clear();
     m_frameRemainder = 0.0f;
 }
 
@@ -107,6 +115,15 @@ std::vector<TriggerRefusal> LevelTriggers::takeRefusals() {
 
 std::vector<TriggerOpening> LevelTriggers::takeOpenings() {
     return std::exchange(m_openings, {});
+}
+
+std::vector<TriggerOpening> LevelTriggers::takeSettled() {
+    return std::exchange(m_settled, {});
+}
+
+TriggerOpening LevelTriggers::openingOf(const Target& target, bool atOnce) {
+    return TriggerOpening{target.object, target.spot, (target.kind & LevelTrigger::kFades) != 0,
+                          atOnce, target.sound};
 }
 
 LevelTriggers::Target* LevelTriggers::targetOf(s32 object) {
@@ -162,6 +179,7 @@ bool LevelTriggers::openTarget(Target& target, bool atOnce, WorldAnimator& anima
         return false;
     }
     target.open = true;
+    target.settled = atOnce; // only an opening before the party is worth reporting done
     if (target.animated) {
         animator.fire(target.object, true, atOnce);
         return true;
@@ -187,11 +205,12 @@ void LevelTriggers::fire(usize index, bool atOnce, WorldAnimator& animator, Worl
             break;
         }
         trigger.fired = true;
-        if (Target* target = targetOf(trigger.target);
-            target != nullptr && openTarget(*target, atOnce, animator, scene, collision)) {
-            m_openings.push_back(TriggerOpening{target->object, trigger.spot,
-                                                (target->kind & LevelTrigger::kFades) != 0,
-                                                atOnce});
+        if (Target* target = targetOf(trigger.target); target != nullptr && !target->open) {
+            target->spot = trigger.spot;
+            target->sound = trigger.sound;
+            if (openTarget(*target, atOnce, animator, scene, collision)) {
+                m_openings.push_back(openingOf(*target, atOnce));
+            }
         }
     }
 }
@@ -214,14 +233,18 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         if (trigger.refusalCooldown > 0.0f) {
             trigger.refusalCooldown = std::max(trigger.refusalCooldown - seconds, 0.0f);
         }
-        if (trigger.fired || (trigger.flags & LevelTrigger::kCloses) != 0) {
+        if (trigger.fired || (trigger.flags & LevelTrigger::kCloses) != 0 || trigger.chained) {
             continue;
         }
-        // Anyone standing in the spot, carrying enough, sets it off.
+        // Anyone standing in the spot, carrying enough, sets it off; a crystal gate's spot
+        // reaches twice as far for a party that qualifies.
+        const bool qualified = qualifies(trigger, visitors);
+        const f32 radius =
+            trigger.needsCrystals() && qualified ? trigger.radius * kMetReach : trigger.radius;
         bool visited = false;
         for (const TriggerVisitor& visitor : visitors) {
             const Vec3 away = visitor.position - trigger.spot;
-            const f32 reach = trigger.radius + visitor.radius;
+            const f32 reach = radius + visitor.radius;
             if (away.x * away.x + away.z * away.z <= reach * reach &&
                 std::abs(away.y) <= kReach) {
                 visited = true;
@@ -231,7 +254,7 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         if (!visited) {
             continue;
         }
-        if (qualifies(trigger, visitors)) {
+        if (qualified) {
             fire(i, false, animator, scene, collision);
         } else if ((trigger.flags & LevelTrigger::kRequirement) != 0 &&
                    trigger.refusalCooldown <= 0.0f) {
@@ -251,6 +274,21 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         }
         target.alpha = std::max(target.alpha - kFadeRate * frames, 0.0f);
         scene.setObjectAlpha(static_cast<usize>(target.object), target.alpha);
+        if (target.alpha <= 0.0f && !target.settled) {
+            target.settled = true;
+            m_settled.push_back(openingOf(target, false));
+        }
+    }
+    // An animated target is done once its animation has run to the end.
+    for (Target& target : m_targets) {
+        if (!target.open || target.settled || !target.animated) {
+            continue;
+        }
+        if (const auto track = animator.trackOf(target.object);
+            track.has_value() && animator.finished(*track)) {
+            target.settled = true;
+            m_settled.push_back(openingOf(target, false));
+        }
     }
 }
 

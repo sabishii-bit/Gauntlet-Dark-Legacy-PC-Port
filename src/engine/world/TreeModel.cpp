@@ -4,10 +4,17 @@
 #include <exception>
 #include <format>
 #include <stdexcept>
+#include <string_view>
 
 #include "engine/core/Log.h"
 
 namespace gdl {
+
+namespace {
+
+constexpr std::string_view kMarkerNode = "DUMMY"; ///< a figure's marker node, kept unseen
+
+} // namespace
 
 TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures,
                                       RenderDevice& device) {
@@ -41,7 +48,7 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
         const TreeNodeInfo& info = tree.nodes[i];
         const bool flips = std::ranges::any_of(
             info.objectFrames, [](const auto& run) { return !run.object.empty(); });
-        if (info.object.empty() && !flips) {
+        if ((info.object.empty() && !flips) || info.name == kMarkerNode) {
             continue;
         }
         try {

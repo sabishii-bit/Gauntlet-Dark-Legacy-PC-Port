@@ -12,7 +12,7 @@
 #include "engine/world/WorldScene.h"
 
 #include "FakeRenderDevice.h"
-#include "SampleLevel.h"
+#include "../../engine/world/SampleLevel.h"
 #include "TestSupport.h"
 #include "game/world/LevelTriggers.h"
 
@@ -50,7 +50,7 @@ struct Fixture {
         triggers.bind(layout, animator, &collision);
     }
 
-    TriggerVisitor visitor(const Vec3& position, s32 crystals) const {
+    static TriggerVisitor visitor(const Vec3& position, s32 crystals) {
         TriggerVisitor out;
         out.position = position;
         out.crystals[1] = crystals;
@@ -74,7 +74,9 @@ TEST_CASE("triggers name their targets, chain, and hold animated ones at their s
     REQUIRE_FALSE(gate.needsCrystals());
     REQUIRE(gate.nextId == 6);
     REQUIRE(gate.next == 2); // chained to the far pane's trigger
+    REQUIRE_FALSE(gate.chained);
     REQUIRE(f.triggers.trigger(2).target == 9);
+    REQUIRE(f.triggers.trigger(2).chained);
     REQUIRE(LevelTriggers::crystalsNeeded(1) == 15);
     REQUIRE(LevelTriggers::crystalsNeeded(0) == 0);
     REQUIRE(LevelTriggers::crystalsNeeded(40) == 0);
@@ -87,9 +89,15 @@ TEST_CASE("triggers name their targets, chain, and hold animated ones at their s
 
 TEST_CASE("a visitor sets off a trigger, opening its chain, once", "[game][world][triggers]") {
     Fixture f("level-triggers-gate");
-    std::vector<TriggerVisitor> party{f.visitor(Vec3{10.0f, 0.0f, 55.0f}, 0)};
+    std::vector<TriggerVisitor> party{Fixture::visitor(Vec3{10.0f, 0.0f, 55.0f}, 0)};
     f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     REQUIRE_FALSE(f.triggers.trigger(1).fired); // still out of reach
+    // Standing on the far pane's own trigger does nothing: chained after the gate's, it is
+    // set off through that alone.
+    party[0].position = Vec3{10.0f, 0.0f, 100.0f};
+    f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
+    REQUIRE_FALSE(f.triggers.trigger(2).fired);
+    REQUIRE_FALSE(f.triggers.opened(9));
     party[0].position = Vec3{10.0f, 0.0f, 52.0f};
     f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.trigger(1).fired);
@@ -102,13 +110,25 @@ TEST_CASE("a visitor sets off a trigger, opening its chain, once", "[game][world
     }
     REQUIRE(f.animator.frame(0) == 3.0f);
     REQUIRE(f.animator.finished(0));
+    // Run to its end, the animated target is reported settled once; the plain one never is.
+    f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
+    const std::vector<TriggerOpening> settled = f.triggers.takeSettled();
+    REQUIRE(settled.size() == 1);
+    REQUIRE(settled[0].target == 8);
+    REQUIRE_FALSE(settled[0].fades);
+    f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
+    REQUIRE(f.triggers.takeSettled().empty());
 }
 
 TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
           "[game][world][triggers]") {
     Fixture f("level-triggers-field");
     REQUIRE(f.collision.solid(6));
-    std::vector<TriggerVisitor> party{f.visitor(Vec3{10.0f, 0.0f, 29.0f}, 3)};
+    // Short of crystals, the spot reaches its own radius only: nothing from 3.5 units off.
+    std::vector<TriggerVisitor> party{Fixture::visitor(Vec3{10.0f, 0.0f, 26.5f}, 3)};
+    f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
+    REQUIRE(f.triggers.takeRefusals().empty());
+    party[0].position = Vec3{10.0f, 0.0f, 29.0f};
     f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     REQUIRE_FALSE(f.triggers.trigger(0).fired);
     REQUIRE(f.collision.solid(6));
@@ -124,9 +144,10 @@ TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
     f.triggers.update(LevelTriggers::kRefusalCooldown, party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.takeRefusals().size() == 1);
     REQUIRE(f.triggers.takeOpenings().empty());
-    // With every member carrying enough, the field goes.
+    // With every member carrying enough, the field goes, and from twice as far.
     party[0].crystals[1] = 15;
-    party.push_back(f.visitor(Vec3{50.0f, 0.0f, 50.0f}, 2));
+    party[0].position = Vec3{10.0f, 0.0f, 26.5f};
+    party.push_back(Fixture::visitor(Vec3{50.0f, 0.0f, 50.0f}, 2));
     f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     REQUIRE_FALSE(f.triggers.trigger(0).fired); // the second member has too few
     party[1].crystals[1] = 15;
@@ -143,11 +164,19 @@ TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
     REQUIRE(f.triggers.takeOpenings().empty());
     REQUIRE(f.triggers.takeRefusals().empty());
     REQUIRE(f.scene.objectAlpha(6) == Approx(1.0f - LevelTriggers::kFadeRate));
+    REQUIRE(f.triggers.takeSettled().empty()); // still thinning
     for (int i = 0; i < 20; ++i) {
         f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     }
     REQUIRE(f.scene.objectAlpha(6) == 0.0f);
     REQUIRE(f.triggers.alphaOf(6) == 0.0f);
+    // Gone, the field is reported settled once, with its trigger's sound slot.
+    const std::vector<TriggerOpening> settled = f.triggers.takeSettled();
+    REQUIRE(settled.size() == 1);
+    REQUIRE(settled[0].target == 6);
+    REQUIRE(settled[0].fades);
+    REQUIRE(settled[0].sound == 0);
+    REQUIRE(f.triggers.takeSettled().empty());
     f.device.draws.clear();
     f.scene.draw(f.device, Mat4{1.0f}, Vec3{10.0f, 0.0f, 0.0f});
     for (const auto& draw : f.device.draws) {
@@ -158,7 +187,7 @@ TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
 TEST_CASE("what the party already qualifies for opens at once when the level starts",
           "[game][world][triggers]") {
     Fixture f("level-triggers-start");
-    const std::vector<TriggerVisitor> party{f.visitor(Vec3{0.0f, 0.0f, 0.0f}, 15)};
+    const std::vector<TriggerVisitor> party{Fixture::visitor(Vec3{0.0f, 0.0f, 0.0f}, 15)};
     f.triggers.openMet(party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.trigger(0).fired);
     REQUIRE(f.triggers.alphaOf(6) == 0.0f);

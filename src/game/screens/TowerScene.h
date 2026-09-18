@@ -118,6 +118,13 @@ public:
     const StartCamera& startCamera() const { return m_startCamera; }
     /** The music's voice, kNoSound while nothing plays. */
     SoundHandle music() const { return m_music; }
+    /** Sumner's voice over the scroll he is reading, kNoSound while he is quiet. */
+    SoundHandle voice() const { return m_voice; }
+    /** The sound of the target that opened before the party most recently and is still
+     * opening (a gate's force field humming as it thins, a lift, a gate), kNoSound otherwise. */
+    SoundHandle fieldSound() const {
+        return m_openingSounds.empty() ? kNoSound : m_openingSounds.back().handle;
+    }
     Intro intro() const { return m_intro; }
     const ScrollBox& scroll() const { return m_scroll; }
     const PickupHud& pickups() const { return m_pickups; }
@@ -182,7 +189,11 @@ private:
     void drawLevelTitle(f32 width);
     bool anyButton(const Inputs& inputs) const;
     bool openMessage(std::string_view name, usize page);
-    bool playNamed(std::string_view name);
+    /** Plays a sound by name from whichever of the level's banks holds it; kNoSound when
+     * none does. */
+    SoundHandle playNamed(std::string_view name);
+    void stopVoice();
+    void stopOpeningSounds();
     void announceUnlock(s32 realm);
     void handleTriggerEvents();
     StatusBoxView statusOf(s32 player) const;
@@ -207,6 +218,13 @@ private:
     std::array<std::optional<u32>, 2> m_stepSounds{};
     std::optional<u32> m_pickupSound; ///< one per foot
     SoundHandle m_music = kNoSound;
+    SoundHandle m_voice = kNoSound; ///< Sumner's line over the scroll, cut when it is left
+    /** A target opening before the party and the sound it makes meanwhile. */
+    struct OpeningSound {
+        s32 target = -1;
+        SoundHandle handle = kNoSound;
+    };
+    std::vector<OpeningSound> m_openingSounds;
     SumnerFigure m_sumner;
     TextureSet m_staticTextures;
     BitmapFont m_font32;
