@@ -23,6 +23,8 @@ SoundClip tone(u32 rate, usize frames, f32 value) {
     return clip;
 }
 
+constexpr usize kRampFrames = 250; ///< more than a gain ramp at 48 kHz
+
 /** Pulls `frames` stereo frames through the mixer and returns them. */
 std::vector<f32> pull(AudioMixer& mixer, usize frames) {
     std::vector<f32> out(frames * 2, 0.0f);
@@ -55,23 +57,24 @@ TEST_CASE("one-shot sounds play once and are dropped when drained", "[audio][pla
 TEST_CASE("a voice's own volume and pan can change while it plays", "[audio][player]") {
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);
-    const SoundClip clip = tone(48000, 1000, 0.5f);
+    const SoundClip clip = tone(48000, 4000, 0.5f);
     SoundSequence sequence;
     sequence.steps.push_back(SoundSequenceStep{&clip, false, false});
     const SoundHandle handle = player.play(sequence, 1.0f);
     std::vector<f32> out = pull(mixer, 1);
     REQUIRE(out[0] == 0.5f);
+    // Each change has slid into place by the end of a ramp.
     player.setVolume(handle, 0.5f);
-    out = pull(mixer, 1);
-    REQUIRE(out[0] == Approx(0.25f));
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.25f));
     player.setPan(handle, -1.0f);
-    out = pull(mixer, 1);
-    REQUIRE(out[0] == Approx(0.25f * std::numbers::sqrt2_v<f32>).margin(1e-4f));
-    REQUIRE(out[1] == Approx(0.0f).margin(1e-4f));
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.25f * std::numbers::sqrt2_v<f32>).margin(1e-4f));
+    REQUIRE(out[out.size() - 1] == Approx(0.0f).margin(1e-4f));
     player.setVolume(99, 0.1f); // unknown handles are ignored
     player.setPan(99, 1.0f);
-    out = pull(mixer, 1);
-    REQUIRE(out[0] == Approx(0.25f * std::numbers::sqrt2_v<f32>).margin(1e-4f));
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.25f * std::numbers::sqrt2_v<f32>).margin(1e-4f));
 }
 
 TEST_CASE("a chained sound starts when the one before it ends", "[audio][player]") {
@@ -117,7 +120,7 @@ TEST_CASE("a chained sound starts when the one before it ends", "[audio][player]
 TEST_CASE("category and master volumes scale voices, live and on start", "[audio][player]") {
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);
-    const SoundClip clip = tone(48000, 400, 1.0f);
+    const SoundClip clip = tone(48000, 4000, 1.0f);
     SoundSequence sequence;
     sequence.steps.push_back(SoundSequenceStep{&clip, false, false});
     player.setCategoryVolume(SoundCategory::Music, 0.5f);
@@ -129,12 +132,12 @@ TEST_CASE("category and master volumes scale voices, live and on start", "[audio
     REQUIRE(out[0] == 0.25f);
 
     player.setMasterVolume(0.5f);
-    out = pull(mixer, 10);
-    REQUIRE(out[0] == 0.125f);
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.125f));
 
     player.setCategoryVolume(SoundCategory::Music, 1.0f);
-    out = pull(mixer, 10);
-    REQUIRE(out[0] == 0.25f);
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.25f));
 }
 
 TEST_CASE("looping sequences keep feeding and stop on request", "[audio][player]") {
@@ -161,7 +164,13 @@ TEST_CASE("looping sequences keep feeding and stop on request", "[audio][player]
     player.stop(handle);
     player.update();
     REQUIRE_FALSE(player.isPlaying(handle));
-    REQUIRE(pull(mixer, 10)[0] == 0.0f);
+    // Stopped, it fades away within a ramp and is then gone.
+    out = pull(mixer, 1000);
+    REQUIRE(out[0] < 0.75f);
+    REQUIRE(out[0] > 0.7f);
+    REQUIRE(out[usize{2} * 999] == 0.0f);
+    player.update();
+    REQUIRE(player.voiceCount() == 0);
 }
 
 /** A source of `total` frames of one value, counting how often it starts over. */
@@ -224,8 +233,8 @@ TEST_CASE("stream sources play ahead of the mixer, looping or ending", "[audio][
     REQUIRE(loop->rewinds >= 3);
     player.setCategoryVolume(SoundCategory::Music, 0.5f);
     player.update();
-    out = pull(mixer, 100);
-    REQUIRE(out[0] == 0.25f);
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.25f));
     REQUIRE(player.isPlaying(music));
     player.stop(music);
     player.update();

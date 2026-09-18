@@ -319,6 +319,31 @@ TEST_CASE("nodes flagged to face the camera turn its way", "[world][model]") {
     REQUIRE(device.draws[1].vertices[2].position == Vec3{0.0f, 3.0f, 0.0f});
 }
 
+TEST_CASE("a node named DUMMY is the figure's marker and is never drawn", "[world][model]") {
+    const auto dir = sampleFigure("tree-model-marker");
+    writeTextFile(dir / "animations.json", R"({"trees": [
+  {"name": "FIGURE", "prefix": "", "sequences": [], "nodes": [
+    {"name": "ROOT", "object": "", "type": 0, "flags": 1, "objectFlags": 0, "parent": -1,
+     "position": [0.0, 0.0, 0.0]},
+    {"name": "BODY", "object": "BODY", "type": 0, "flags": 0, "objectFlags": 0, "parent": 0,
+     "position": [0.0, 0.0, 0.0]},
+    {"name": "DUMMY", "object": "BANNER", "type": 0, "flags": 0, "objectFlags": 0, "parent": 0,
+     "position": [0.0, 0.0, 0.0]}]}]})");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    REQUIRE(figure.nodeCount() == 1);
+    REQUIRE(figure.maxBounds() == Vec3{1.0f, 1.0f, 0.0f}); // the body alone
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 1);
+}
+
 TEST_CASE("a tree model refuses a figure with a missing mesh", "[world][model]") {
     const auto dir = sampleFigure("tree-model-missing");
     writeTextFile(dir / "animations.json", R"({"trees": [

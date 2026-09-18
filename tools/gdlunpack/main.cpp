@@ -362,6 +362,91 @@ void unpackFont(const std::filesystem::path& file, const std::filesystem::path& 
 }
 
 /** Writes every bank's samples as WAV files plus a manifest of the sounds that sequence them. */
+/** A bank's sound as its manifest names it. */
+struct BankSoundEntry {
+    std::string name;
+    s64 id = -1;
+    f32 duration = -1.0f;
+};
+
+/** Writes one bank's clips and manifest; sounds past `entries` (a bank the audio directory
+ * does not name) are numbered after the bank, each as long as its clips. */
+void writeBank(const std::filesystem::path& bankDir, std::string_view bankName,
+               const SoundBank& sounds, std::vector<BankSoundEntry> entries, Summary& summary) {
+    std::filesystem::create_directories(bankDir / "samples");
+    std::vector<std::vector<s16>> pcm;
+    pcm.reserve(sounds.samples.size());
+    for (const BankSample& sample : sounds.samples) {
+        pcm.push_back(decodeBankSample(sample));
+    }
+    for (usize i = entries.size(); i < sounds.calls.size(); ++i) {
+        BankSoundEntry entry;
+        entry.name = std::format("{}_{:02}", bankName, i);
+        f32 seconds = 0.0f;
+        bool loops = false;
+        for (const SoundStep& step : sounds.calls[i].steps) {
+            if (step.sample < pcm.size() && sounds.samples[step.sample].sampleRate > 0) {
+                seconds += static_cast<f32>(pcm[step.sample].size()) /
+                           static_cast<f32>(sounds.samples[step.sample].sampleRate);
+            }
+            loops = loops || step.loopBack;
+        }
+        entry.duration = loops ? -1.0f : seconds;
+        entries.push_back(std::move(entry));
+    }
+
+    JsonWriter json;
+    json.beginObject();
+    json.key("bank").value(bankName);
+    json.key("sounds").beginArray();
+    for (usize i = 0; i < entries.size(); ++i) {
+        const BankSoundEntry& entry = entries[i];
+        json.beginObject();
+        json.key("index").value(static_cast<u64>(i));
+        json.key("name").value(entry.name);
+        json.key("id").value(entry.id);
+        json.key("duration").value(static_cast<f64>(entry.duration));
+        if (i < sounds.calls.size()) {
+            const SoundCall& call = sounds.calls[i];
+            json.key("volume").value(u32{call.volume});
+            json.key("duck").value(u32{call.duck});
+            json.key("priority").value(u32{call.priority});
+            json.key("sequence").beginArray();
+            for (const SoundStep& step : call.steps) {
+                json.beginObject();
+                json.key("sample").value(u32{step.sample});
+                json.key("loopStart").value(step.loopStart);
+                json.key("loopBack").value(step.loopBack);
+                json.endObject();
+            }
+            json.endArray();
+        }
+        json.endObject();
+    }
+    json.endArray();
+    json.key("samples").beginArray();
+    for (usize i = 0; i < sounds.samples.size(); ++i) {
+        const BankSample& sample = sounds.samples[i];
+        const std::string file = std::format("samples/{:03}.wav", i);
+        writeFile(bankDir / file, encodeWav(pcm[i], sample.sampleRate, 1));
+        json.beginObject();
+        json.key("index").value(static_cast<u64>(i));
+        json.key("name").value(sample.name);
+        json.key("file").value(file);
+        json.key("sampleRate").value(sample.sampleRate);
+        json.key("frames").value(static_cast<u64>(pcm[i].size()));
+        json.key("loops").value(sample.loops);
+        json.key("loopStart").value(sample.loopStart);
+        json.key("loopEnd").value(sample.loopEnd);
+        json.endObject();
+        ++summary.samples;
+    }
+    json.endArray();
+    json.endObject();
+    writeTextFile(bankDir / "sounds.json", json.take());
+    ++summary.banks;
+}
+
 void unpackAudio(const std::filesystem::path& directory, const std::filesystem::path& outDir,
                  Summary& summary) {
     const AssetLocator locator(directory);
@@ -371,7 +456,9 @@ void unpackAudio(const std::filesystem::path& directory, const std::filesystem::
         return;
     }
     const AudioRom rom = AudioRom::parse(readFile(*romPath));
+    std::vector<std::string> named; ///< the bank files the directory names
     for (const AudioRomBank& bank : rom.banks) {
+        named.push_back(normalizeAssetName(bank.file));
         const auto bankPath = locator.find(bank.file + ".vbk");
         if (!bankPath.has_value()) {
             print(std::format("audio: bank {} has no .vbk file", bank.name));
@@ -380,63 +467,33 @@ void unpackAudio(const std::filesystem::path& directory, const std::filesystem::
         print(std::format("audio bank {}", bank.name));
         try {
             const SoundBank sounds = SoundBank::parse(readFile(*bankPath));
-            const std::filesystem::path bankDir = outDir / bank.name;
-            std::filesystem::create_directories(bankDir / "samples");
-
-            JsonWriter json;
-            json.beginObject();
-            json.key("bank").value(bank.name);
-            json.key("sounds").beginArray();
+            std::vector<BankSoundEntry> entries;
             for (u32 i = 0; i < bank.soundCount; ++i) {
                 const AudioRomSound& entry = rom.sounds[bank.firstSound + i];
-                json.beginObject();
-                json.key("index").value(i);
-                json.key("name").value(entry.name);
-                json.key("id").value(entry.id);
-                json.key("duration").value(static_cast<f64>(entry.duration));
-                if (i < sounds.calls.size()) {
-                    const SoundCall& call = sounds.calls[i];
-                    json.key("volume").value(u32{call.volume});
-                    json.key("duck").value(u32{call.duck});
-                    json.key("priority").value(u32{call.priority});
-                    json.key("sequence").beginArray();
-                    for (const SoundStep& step : call.steps) {
-                        json.beginObject();
-                        json.key("sample").value(u32{step.sample});
-                        json.key("loopStart").value(step.loopStart);
-                        json.key("loopBack").value(step.loopBack);
-                        json.endObject();
-                    }
-                    json.endArray();
-                }
-                json.endObject();
+                entries.push_back(BankSoundEntry{entry.name, entry.id, entry.duration});
             }
-            json.endArray();
-            json.key("samples").beginArray();
-            for (usize i = 0; i < sounds.samples.size(); ++i) {
-                const BankSample& sample = sounds.samples[i];
-                const std::string file = std::format("samples/{:03}.wav", i);
-                const std::vector<s16> pcm = decodeBankSample(sample);
-                writeFile(bankDir / file, encodeWav(pcm, sample.sampleRate, 1));
-                json.beginObject();
-                json.key("index").value(static_cast<u64>(i));
-                json.key("name").value(sample.name);
-                json.key("file").value(file);
-                json.key("sampleRate").value(sample.sampleRate);
-                json.key("frames").value(static_cast<u64>(pcm.size()));
-                json.key("loops").value(sample.loops);
-                json.key("loopStart").value(sample.loopStart);
-                json.key("loopEnd").value(sample.loopEnd);
-                json.endObject();
-                ++summary.samples;
-            }
-            json.endArray();
-            json.endObject();
-            writeTextFile(bankDir / "sounds.json", json.take());
-            ++summary.banks;
+            writeBank(outDir / bank.name, bank.name, sounds, std::move(entries), summary);
         } catch (const std::exception& e) {
             ++summary.failures;
             print(std::format("  bank {}: {}", bank.name, e.what()));
+        }
+    }
+    // Banks the directory does not name still ship on the disc; their sounds are numbered.
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (toLowerAscii(entry.path().extension().string()) != ".vbk") {
+            continue;
+        }
+        const std::string name = normalizeAssetName(entry.path().stem().string());
+        if (std::ranges::find(named, name) != named.end()) {
+            continue;
+        }
+        print(std::format("audio bank {} (unnamed by the directory)", name));
+        try {
+            const SoundBank sounds = SoundBank::parse(readFile(entry.path()));
+            writeBank(outDir / name, name, sounds, {}, summary);
+        } catch (const std::exception& e) {
+            ++summary.failures;
+            print(std::format("  bank {}: {}", name, e.what()));
         }
     }
 }

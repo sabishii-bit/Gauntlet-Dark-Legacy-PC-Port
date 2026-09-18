@@ -24,13 +24,15 @@ struct TriggerRefusal {
     bool crystals = true; ///< crystals were wanted, else the golden icons
 };
 
-/** A target that opened this update: where its trigger lies, whether it fades away, and
- * whether it opened at once (at the level's start) rather than before the party. */
+/** A target that opened this update (or, from takeSettled, has just finished opening): where
+ * its trigger lies, whether it fades away, whether it opened at once (at the level's start)
+ * rather than before the party, and the sound slot its trigger names (-1 for none). */
 struct TriggerOpening {
     s32 target = -1;
     Vec3 spot{0.0f, 0.0f, 0.0f};
     bool fades = false;
     bool atOnce = false;
+    s32 sound = -1;
 };
 
 struct TriggerVisitor {
@@ -49,9 +51,11 @@ struct LevelTrigger {
     s32 nextId = 0;
     f32 refusalCooldown = 0.0f; ///< seconds before the trigger refuses anyone again
     s32 next = -1; ///< the trigger chained after this one, or -1
+    bool chained = false; ///< another trigger's next: fired through it, never stepped on
     u32 flags = 0; ///< the trigger's own flags
     u32 kind = 0;  ///< how the target moves: the flags the object's trigger type carries
     f32 radius = 0.0f;
+    s32 sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
 
     /** Whether it wants every visitor to carry a realm's crystals first. */
@@ -72,8 +76,9 @@ struct LevelTrigger {
  * A level's triggers as the original runs them: each trigger item names a world object
  * (which then waits at the first frame of its animation) and a spot; a player stepping in,
  * carrying the crystals the trigger asks for, opens the object and everything chained after
- * it. A field flagged to fade thins out over half a second and stops blocking; an animated
- * gate plays its opening once. Gates asking for the golden icons stay shut for now.
+ * it. A trigger chained after another is set off only through it, never by a player. A
+ * field flagged to fade thins out over half a second and stops blocking; an animated gate
+ * plays its opening once. Gates asking for the golden icons stay shut for now.
  */
 class LevelTriggers {
 public:
@@ -82,6 +87,7 @@ public:
     static constexpr f32 kRefusalCooldown = 2.5625f; ///< the original's, between two refusals ///< of full alpha, per game frame
     static constexpr f32 kFrameRate = 30.0f;
     static constexpr f32 kReach = 3.0f; ///< how far above or below a trigger a visitor counts
+    static constexpr f32 kMetReach = 2.0f; ///< how much wider a crystal gate's spot is to a party that qualifies
 
     /** Takes the layout's trigger items, chains them, and holds their animated targets. */
     void bind(const WorldLayout& layout, WorldAnimator& animator, WorldCollision* collision);
@@ -102,9 +108,12 @@ public:
     /** Fires the triggers visitors stand in and carries the fades on by `seconds`. */
     void update(f32 seconds, std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                 WorldScene& scene, WorldCollision* collision);
-    /** The refusals and openings since the last call; each is handed out once. */
+    /** The refusals and openings since the last call, and the targets that have just finished
+     * opening before the party (faded to nothing or run to the end of their animation); each is
+     * handed out once. */
     std::vector<TriggerRefusal> takeRefusals();
     std::vector<TriggerOpening> takeOpenings();
+    std::vector<TriggerOpening> takeSettled();
 
 private:
     struct Target {
@@ -112,11 +121,15 @@ private:
         u32 kind = 0;
         bool animated = false;
         bool open = false;
+        bool settled = false; ///< done opening, or opened at once
         f32 alpha = 1.0f;
+        Vec3 spot{0.0f, 0.0f, 0.0f}; ///< the spot of the trigger that opened it
+        s32 sound = -1;
     };
 
     Target* targetOf(s32 object);
     const Target* targetOf(s32 object) const;
+    static TriggerOpening openingOf(const Target& target, bool atOnce);
     static bool qualifies(const LevelTrigger& trigger, std::span<const TriggerVisitor> visitors);
     void fire(usize index, bool atOnce, WorldAnimator& animator, WorldScene& scene,
               WorldCollision* collision);
@@ -128,6 +141,7 @@ private:
     std::vector<Target> m_targets;
     std::vector<TriggerRefusal> m_refusals;
     std::vector<TriggerOpening> m_openings;
+    std::vector<TriggerOpening> m_settled;
     f32 m_frameRemainder = 0.0f;
 };
 

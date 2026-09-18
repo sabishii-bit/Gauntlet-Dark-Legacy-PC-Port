@@ -92,6 +92,7 @@ public:
     /** What the triggers refused or opened since last asked. */
     std::vector<TriggerRefusal> takeTriggerRefusals() { return m_triggers.takeRefusals(); }
     std::vector<TriggerOpening> takeTriggerOpenings() { return m_triggers.takeOpenings(); }
+    std::vector<TriggerOpening> takeTriggerSettled() { return m_triggers.takeSettled(); }
     bool hasLevelData() const { return m_level != nullptr; }
 
     /** The camera the tower is first seen from: the first camera start marker. */

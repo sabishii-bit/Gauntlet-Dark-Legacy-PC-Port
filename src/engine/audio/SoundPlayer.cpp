@@ -122,6 +122,7 @@ void SoundPlayer::stop(SoundHandle handle) {
         if (voice.handle == handle) {
             voice.stream->stop();
             voice.finished = true;
+            voice.stopped = true;
         }
     }
     std::erase_if(m_pending, [handle](const Pending& p) { return p.handle == handle; });
@@ -131,6 +132,7 @@ void SoundPlayer::stopAll() {
     for (Voice& voice : m_voices) {
         voice.stream->stop();
         voice.finished = true;
+        voice.stopped = true;
     }
     m_pending.clear();
 }
@@ -138,7 +140,8 @@ void SoundPlayer::stopAll() {
 bool SoundPlayer::isPlaying(SoundHandle handle) const {
     return std::ranges::any_of(m_voices,
                                [handle](const Voice& v) {
-                                   return v.handle == handle && !v.stream->drained();
+                                   return v.handle == handle && !v.stopped &&
+                                          !v.stream->drained();
                                }) ||
            std::ranges::any_of(m_pending, [handle](const Pending& p) { return p.handle == handle; });
 }

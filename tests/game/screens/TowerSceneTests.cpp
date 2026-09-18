@@ -386,6 +386,79 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
         }
         REQUIRE(words.find("Congratulations") != std::string::npos);
         REQUIRE((actor->save().progress().unlocked & 2U) != 0);
+        // Sumner speaks over the scroll; leaving it burns it and cuts him off.
+        const SoundHandle voice = scene.voice();
+        REQUIRE(voice != kNoSound);
+        REQUIRE(sounds.isPlaying(voice));
+        TowerScene::Inputs accept{};
+        accept[0].menu.select = true;
+        for (int i = 0; i < 400 && scene.scroll().active() && !scene.scroll().burning(); ++i) {
+            scene.update(1.0 / 60.0, i % 20 == 19 ? accept : still);
+        }
+        REQUIRE(scene.scroll().burning());
+        REQUIRE(scene.voice() == kNoSound);
+        REQUIRE_FALSE(sounds.isPlaying(voice));
+        // With the scroll gone, walking on into the gate: the field hums as it thins before
+        // the party and falls silent once it has gone. The stick is camera-relative, so the
+        // walk first learns which way forward and right take the character.
+        for (int i = 0; i < 200 && scene.scroll().active(); ++i) {
+            scene.update(1.0 / 60.0, still);
+        }
+        REQUIRE_FALSE(scene.scroll().active());
+        REQUIRE(scene.fieldSound() == kNoSound);
+        const Vec3 gate{22.0f, -2.0f, -79.0f};
+        auto step = [&](const Vec2& stick, int ticks) {
+            TowerScene::Inputs walk{};
+            walk[0].move = MoveInput{stick, 1.0f};
+            const Vec3 from = actor->position();
+            for (int i = 0; i < ticks; ++i) {
+                scene.update(1.0 / 60.0, walk);
+            }
+            return actor->position() - from;
+        };
+        const Vec3 forward = glm::normalize(step(Vec2{0.0f, 1.0f}, 6));
+        const Vec3 right = glm::normalize(step(Vec2{1.0f, 0.0f}, 6));
+        for (int i = 0; i < 900 && scene.fieldSound() == kNoSound; ++i) {
+            const Vec3 to = gate - actor->position();
+            step(glm::normalize(Vec2{glm::dot(to, right), glm::dot(to, forward)}), 1);
+        }
+        const SoundHandle hum = scene.fieldSound();
+        REQUIRE(hum != kNoSound);
+        REQUIRE(sounds.isPlaying(hum));
+        for (int i = 0; i < 120 && scene.fieldSound() != kNoSound; ++i) {
+            scene.update(1.0 / 60.0, still);
+        }
+        REQUIRE(scene.fieldSound() == kNoSound);
+        REQUIRE_FALSE(sounds.isPlaying(hum));
+        scene.close();
+    }
+    // At the lion statue's feet without the golden claws: told what the gate wants, while
+    // the statue, whose chain of triggers starts on a spot right there, stays still.
+    options.position = Vec3{3.4f, -11.7f, 10.3f};
+    {
+        const std::vector<PartyMember> party{PartyMember{0, save}};
+        REQUIRE(scene.open(device, context, world, party, options));
+        for (int i = 0; i < TowerScene::kSpawnTicks + 2 && !scene.scroll().active(); ++i) {
+            scene.update(1.0 / 60.0, still);
+        }
+        REQUIRE(scene.scroll().active());
+        std::string words;
+        for (const std::string& line : scene.scroll().lines()) {
+            words += line + " ";
+        }
+        REQUIRE(words.find("28 Golden Lion Claws") != std::string::npos);
+        s32 statue = -1;
+        const std::vector<WorldObject>& objects = world.layout().objects();
+        for (usize i = 0; i < objects.size(); ++i) {
+            if (objects[i].name == "L1GROUP276") {
+                statue = static_cast<s32>(i);
+            }
+        }
+        REQUIRE(statue >= 0);
+        const auto track = world.worldAnimator().trackOf(statue);
+        REQUIRE(track.has_value());
+        REQUIRE(world.worldAnimator().held(*track));
+        REQUIRE(world.worldAnimator().frame(*track) == 0.0f);
         scene.close();
     }
 }
