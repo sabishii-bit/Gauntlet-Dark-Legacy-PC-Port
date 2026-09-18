@@ -27,14 +27,15 @@ bool PlacedItems::Item::shownTo(s32 players) const {
     return players >= minPlayers;
 }
 
-/** Within the two radii sideways and the item's height (plus a little) up or down. */
+/** Within the two radii sideways and the item's height plus the collector's slack up or
+ * down. */
 bool PlacedItems::Item::touchedBy(const Collector& collector) const {
     const Vec3 away = collector.position - position;
     const f32 reach = radius + collector.radius;
     if (away.x * away.x + away.z * away.z > reach * reach) {
         return false;
     }
-    return std::abs(away.y) <= height + kTouchHeight;
+    return std::abs(away.y) <= height + collector.height;
 }
 
 s32 PlacedItems::Item::realm() const {

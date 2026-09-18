@@ -20,7 +20,11 @@ constexpr std::string_view kPlayersDirectory = "PLAYERS";
 constexpr std::string_view kBeamObject = "L1XPLIGHTRAY01"; ///< the light on Sumner's lectern
 constexpr std::string_view kWeaponsArchive = "WEAPONS";
 constexpr std::string_view kSpawnEffect = "STARTFX"; ///< the tree the party materialises in
-constexpr std::string_view kFieldSound = "S_WARN";   ///< the tower's note as a gate opens
+/** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
+ * its shards are all found. */
+constexpr std::array<std::string_view, 2> kTempleLights{"L1XPLOWERLIGHTR", "L1XPUPPERLIGHTR"};
+constexpr f32 kCutBarTop = 48.0f / 384.0f;    ///< the cut's black bars, as the original's trigger
+constexpr f32 kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares of the height
 constexpr std::string_view kNeedCrystals = "NEEDCRYSTALS";
 constexpr std::string_view kNeedIcons = "NEEDGARGITEMS";
 constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
@@ -80,12 +84,16 @@ bool TowerScene::open(RenderDevice& device, const GameContext& context, TowerWor
     loadSounds();
     loadIntroArt(device);
     m_sumner.load(device, world.items(), world.layout());
-    // Sumner's beam waits unseen until the party comes to him.
+    // Sumner's beam waits unseen until the party comes to him; the temple's light waits for
+    // shards the save does not keep yet.
     m_beam = -1;
     m_beamAlpha = 0.0f;
     for (usize i = 0; i < world.layout().objects().size(); ++i) {
-        if (world.layout().objects()[i].name == kBeamObject) {
+        const std::string& name = world.layout().objects()[i].name;
+        if (name == kBeamObject) {
             m_beam = static_cast<s32>(i);
+            world.setObjectAlpha(i, 0.0f);
+        } else if (std::ranges::find(kTempleLights, name) != kTempleLights.end()) {
             world.setObjectAlpha(i, 0.0f);
         }
     }
@@ -101,7 +109,6 @@ bool TowerScene::open(RenderDevice& device, const GameContext& context, TowerWor
     m_camera.reset(m_subjects, world.cameraMarkers(), world.cameraRange(), cameraView());
     startMusic();
     m_intro = Intro::None;
-    m_beamWelcomed = false;
     // The party materialises first; Sumner's welcome, when it is due, follows.
     m_welcomePending = options.welcome.value_or(freshParty(party));
     if (m_welcomePending) {
@@ -269,13 +276,13 @@ bool TowerScene::weaponHeld(s32 player) const {
     return false;
 }
 
-/** Sumner's beam comes up over three seconds while the party is near him (or his welcome's
- * cut shows him) and goes again once they leave. */
+/** Sumner's beam comes up over three seconds while a player is near him and goes again once
+ * they leave. */
 void TowerScene::updateBeam(s32 ticks) {
     if (m_beam < 0) {
         return;
     }
-    bool near = m_beamWelcomed || m_intro == Intro::Crystal;
+    bool near = false;
     for (const PlayerActor& actor : m_actors) {
         near = near || glm::distance(actor.position(), m_sumner.position()) <= kBeamRadius;
     }
@@ -340,7 +347,7 @@ void TowerScene::collectItems() {
     std::vector<Collector> collectors;
     collectors.reserve(m_actors.size());
     for (const PlayerActor& actor : m_actors) {
-        collectors.push_back(Collector{actor.position(), actor.radius(), actor.height()});
+        collectors.push_back(Collector{actor.position(), actor.reach(), actor.height() * 0.5f});
     }
     for (const Pickup& pickup : m_world->collect(*m_device, collectors)) {
         if (pickup.realm > 0 && static_cast<usize>(pickup.realm) < kRealmCount) {
@@ -466,7 +473,6 @@ void TowerScene::beginIntro(RenderDevice& device) {
             m_context.strings != nullptr ? std::string(m_context.strings->get(kPromptText)) : "";
         if (m_scroll.open(device, welcome.pages, welcome.scale, prompt)) {
             m_intro = Intro::Scroll;
-            m_beamWelcomed = true;
             return;
         }
     }
@@ -555,10 +561,16 @@ TowerOutcome TowerScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
         return TowerOutcome::Running;
     }
-    // Materialising, the party stands still while the level runs on around it and the start
-    // camera holds, then rides in; the title slides up until the ride, when it sits.
+    // Materialising, the party stands still, playing its entrance, while the level runs on
+    // around it and the start camera holds, then rides in; the title slides up until the
+    // ride, when it sits.
     if (spawning()) {
         updateSpawn(ticks, seconds);
+        for (const std::unique_ptr<Figure>& figure : m_figures) {
+            if (figure != nullptr) {
+                figure->animate(0.0f, ticks, seconds);
+            }
+        }
         m_world->update(seconds);
         updateAmbience();
         updateBeam(ticks);
@@ -672,12 +684,22 @@ void TowerScene::render(RenderDevice& device, const Mat4& frameProjection, f32 f
     const auto height = static_cast<f32>(config.display.virtualHeight);
     m_canvas.begin(device, makeVirtualScreenTransform(frameProjection, width, height, frameWidth,
                                                       frameHeight));
-    for (s32 player = 0; player < kPlayerCount; ++player) {
-        m_boxes.draw(m_canvas, player, statusOf(player), true);
+    // The welcome's cut is letterboxed the way the original's trigger cameras are: black
+    // bars top and bottom, the status boxes hidden beneath the lower one.
+    const bool cut = m_intro == Intro::Crystal;
+    if (!cut) {
+        for (s32 player = 0; player < kPlayerCount; ++player) {
+            m_boxes.draw(m_canvas, player, statusOf(player), true);
+        }
+        m_pickups.draw(m_canvas, m_boxes);
     }
-    m_pickups.draw(m_canvas, m_boxes);
     if (spawning()) {
         drawLevelTitle(width);
+    }
+    if (cut) {
+        m_canvas.fill(Rect{0.0f, 0.0f, width, height * kCutBarTop}, Color::black());
+        m_canvas.fill(Rect{0.0f, height * (1.0f - kCutBarBottom), width, height * kCutBarBottom},
+                      Color::black());
     }
     m_scroll.draw(m_canvas);
     m_canvas.end();
@@ -886,7 +908,8 @@ void TowerScene::announceUnlock(s32 realm) {
     }
 }
 
-/** Tells a refused party what a gate wants, and sounds a gate that opens before them. */
+/** Tells a refused party what a gate wants. (A gate opening before them makes no sound yet:
+ * the original's note for it is not known.) */
 void TowerScene::handleTriggerEvents() {
     // One scroll at a time: the frame's first refusal.
     if (const std::vector<TriggerRefusal> refusals = m_world->takeTriggerRefusals();
@@ -898,11 +921,7 @@ void TowerScene::handleTriggerEvents() {
             openMessage(kNeedIcons, static_cast<usize>(refusal.id - kIconMessages));
         }
     }
-    for (const TriggerOpening& opening : m_world->takeTriggerOpenings()) {
-        if (!opening.atOnce) {
-            playNamed(kFieldSound);
-        }
-    }
+    m_world->takeTriggerOpenings();
 }
 
 } // namespace gdl::game
