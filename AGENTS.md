@@ -171,24 +171,40 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   untiered costumes) hung from the node whose object ends in the class's
   wrist name (`R_WRIST`, `RIGHTHAN`, `RHEND`).
 * Sumner's beam (`L1XPLIGHTRAY01`) starts unseen and comes up over 180 ticks
-  once his welcome has begun (and stays), or while a player is within
-  `kBeamRadius` of him (`TowerScene::updateBeam`).
+  while a player is within `kBeamRadius` of him, going again once they
+  leave (`TowerScene::updateBeam`). The stained-glass light through the
+  window over the door (`kTempleLights`) starts dark: it is the Desecrated
+  Temple's, lit once its shards are all found, and the save keeps no shards
+  yet.
+* The welcome's cut to the crystals is letterboxed as the original's
+  trigger cameras are (`kCutBarTop`/`kCutBarBottom`: 48 and 80 of the 384
+  canvas rows) with the status boxes hidden.
+* Item reach: a character takes an item within `PlayerActor::reach()` (the
+  class's whole width, twice the footprint walls stop) plus the item's own
+  radius sideways, and within the item's height plus half the character's
+  height up or down (`Collector::height`).
 * Entering the tower: the party materialises in the `STARTFX` tree of the
   `WEAPONS` archive (its `CHARWARP` texture animation playing, for
   `kSpawnTicks`) held still under the level's title while the
   `StartCamera` holds at the `cameraStart` marker (91 ticks, a button
   cutting it short once under 45 remain) and then rides to the follow
-  camera a unit a tick, its look-at point sliding along; the title sits
-  centred near the top, sliding up over the hold. Then the welcome scroll,
-  when one is due. A party placed by `TowerOptions::position` skips the
-  ride. The realm's entering sound (`WorldData::soundName` of
+  camera at `StartCamera::kUnitsPerTick` (a quarter unit a tick; the
+  original's unit a tick snaps over the tower's short ride), its look-at
+  point sliding along; ticks are real time, so the ride is the same at any
+  frame rate. The party plays its `START` entrance through the hold. The
+  title sits centred near the top, sliding up over the hold. Then the
+  welcome scroll, when one is due. A party placed by
+  `TowerOptions::position` skips the ride. The realm's entering sound (`WorldData::soundName` of
   `audio->enterSound`) belongs to the loading screen and is not played here.
 * Gate messages: `LevelTriggers::takeRefusals` reports a player stood in a
   requirement trigger without what it wants (once per 2.5625 s per trigger)
   and `takeOpenings` the targets that opened; `TowerScene::handleTriggerEvents`
   opens the `NEEDCRYSTALS`/`NEEDGARGITEMS` page for the realm or tier from
-  `text/scroll_e.json` and plays `S_WARN` for a gate opening before the
-  party. `collectItems` announces a realm's gate opening once (the
+  `text/scroll_e.json`. A gate opening before the party makes no sound yet:
+  `S_WARN` (the low double warning note) is what the tower's tables
+  default to, and it is wrong; the original's note comes from a runtime
+  table that could not be recovered. `collectItems` announces a realm's
+  gate opening once (the
   `UNLOCKLEVEL` page and the `S_CRYS4*` voice from the level bank), and
   `ClassProgress::unlocked` (a bit per realm, in the save) keeps it from
   repeating. Any open scroll pauses play.

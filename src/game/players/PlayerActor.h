@@ -49,6 +49,9 @@ public:
     f32 speed() const { return m_speed; }
     f32 radius() const { return m_radius; }
     f32 height() const { return m_height; }
+    /** How far the character's touch takes items: the class's whole width, as the original
+     * counts it, twice the footprint that walls stop. */
+    f32 reach() const { return m_radius * 2.0f; }
     bool moving() const { return m_moving; }
 
     /** The point the camera follows: the body's centre above the feet. */

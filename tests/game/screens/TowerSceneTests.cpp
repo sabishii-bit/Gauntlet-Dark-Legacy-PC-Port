@@ -89,6 +89,12 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     REQUIRE(std::abs(std::remainder(actor->yaw() - (start->rotation.y + kPi), 2.0f * kPi)) < 1e-4f);
     REQUIRE(scene.camera().marker() >= 0);
     REQUIRE(scene.sumner().loaded());
+    // The stained-glass light over the door waits for the temple's shards.
+    for (usize i = 0; i < world.layout().objects().size(); ++i) {
+        if (world.layout().objects()[i].name == "L1XPUPPERLIGHTR") {
+            REQUIRE(world.objectAlpha(i) == 0.0f);
+        }
+    }
 
     // A new party is welcomed: Sumner's scroll holds the tower still, page by page on the
     // button after each page's hold.
@@ -113,10 +119,16 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
         if (scene.startCamera().phase() == StartCamera::Phase::Hold) {
             REQUIRE(scene.viewCamera().position == entrance->position);
         }
+        if (spawnTicks == 30) {
+            // Held still, the body still plays its entrance.
+            REQUIRE(scene.animator(0) != nullptr);
+            REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::Start);
+            REQUIRE(scene.animator(0)->player().frame() > 0.0f);
+        }
     }
     REQUIRE_FALSE(scene.spawning());
     REQUIRE(spawnTicks >= StartCamera::kHoldTicks);
-    REQUIRE(spawnTicks < StartCamera::kHoldTicks + 60);
+    REQUIRE(spawnTicks < StartCamera::kHoldTicks + 120);
     REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
     REQUIRE(scene.intro() == TowerScene::Intro::Scroll);
     const ScrollBox& scroll = scene.scroll();
@@ -159,9 +171,10 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     REQUIRE(heldTicks >= TowerScene::kCrystalTicks - 1);
     REQUIRE(heldTicks <= TowerScene::kCrystalTicks);
     REQUIRE(scene.intro() == TowerScene::Intro::Done);
-    // Over the cut every crystal has glowed in, the nearest first, and Sumner's beam is lit.
+    // Over the cut every crystal has glowed in, the nearest first; Sumner's beam stays dark
+    // with the party far from him.
     REQUIRE_FALSE(world.placedItems().revealing());
-    REQUIRE(scene.beamAlpha() > 0.0f);
+    REQUIRE(scene.beamAlpha() == 0.0f);
     REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
 
     // Half a second of walking forward moves the character and the camera follows.

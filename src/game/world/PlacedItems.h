@@ -25,8 +25,8 @@ namespace gdl::game {
 /** A character who can pick things up: where they stand and how big they are. */
 struct Collector {
     Vec3 position{0.0f, 0.0f, 0.0f};
-    f32 radius = 0.75f;
-    f32 height = 5.0f;
+    f32 radius = 0.75f; ///< how far its touch reaches sideways
+    f32 height = 1.0f;  ///< slack over an item's height up or down: half the toucher's height
 };
 
 /** Something a collector took this update. */
@@ -55,7 +55,6 @@ public:
     static constexpr f32 kFloorReachAbove = 0.5f; ///< a floor this far over the instance
     static constexpr f32 kFloorReachBelow = 3.0f; ///< or this far under it
     static constexpr s32 kExactPlayersMark = 10; ///< a minimum past this means exactly
-    static constexpr f32 kTouchHeight = 1.0f;    ///< slack over an item's height when touching
     static constexpr f32 kFrameRate = 30.0f;
     static constexpr f32 kRevealSpread = 15.0f; ///< units a second the reveal moves out
     static constexpr f32 kRevealLead = 1.75f;   ///< seconds' worth it starts out at

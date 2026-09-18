@@ -71,10 +71,11 @@ enum class TowerOutcome : u8 { Running, Leave };
  * player's control, its body playing the class's sequences and its feet sounding on the stone,
  * the camera follows from the level's marker angles, the level's music loops from its stream,
  * Sumner idles at his lookout, and the status boxes line the bottom of the screen. The party
- * materialises held still under the level's title while the start camera holds at the
- * entrance marker and rides in to the follow camera. A party new to the tower is then welcomed
- * the way the original does it: his scroll of pages first, then his gesture as the camera cuts
- * to the crystals for five seconds with the party held still.
+ * materialises held still, playing its entrance, under the level's title while the start
+ * camera holds at the entrance marker and rides in to the follow camera. A party new to the
+ * tower is then welcomed the way the original does it: his scroll of pages first, then his
+ * gesture as the camera cuts to the crystals for five seconds, between black bars, with the
+ * party held still.
  */
 class TowerScene {
 public:
@@ -217,7 +218,6 @@ private:
     s32 m_cutTicks = 0;
     s32 m_beam = -1; ///< the level object that is Sumner's beam of light
     f32 m_beamAlpha = 0.0f;
-    bool m_beamWelcomed = false; ///< lit for good once his welcome has begun
 
     /** A character materialising: the effect tree at their feet. */
     struct Spawn {

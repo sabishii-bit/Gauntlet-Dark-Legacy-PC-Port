@@ -10,14 +10,15 @@ namespace gdl::game {
  * The camera a level starts on, scripted as the original scripts it: it holds at the level's
  * start marker, looking the marker's way as far off as the party stands, for a while that a
  * button may cut short once most of it has passed; then it rides to the follow camera, its
- * position and the point it looks at each moving a unit a tick (from far off, faster) until
- * both have all but arrived, when the follow camera takes over.
+ * position and the point it looks at each moving at the pace a tick (from far off, faster)
+ * until both have all but arrived, when the follow camera takes over. The clock runs in
+ * ticks of real time, so the ride takes as long at any frame rate.
  */
 class StartCamera {
 public:
     static constexpr s32 kHoldTicks = 91;         ///< the original's timer
     static constexpr s32 kSkipBelow = 45;         ///< a button ends the hold from here down
-    static constexpr f32 kUnitsPerTick = 1.0f;    ///< the ride's pace
+    static constexpr f32 kUnitsPerTick = 0.25f;   ///< the ride's pace: a glide, not a snap
     static constexpr f32 kPositionReach = 200.0f; ///< beyond these the pace grows with the gap
     static constexpr f32 kAttentionReach = 20.0f;
     static constexpr f32 kArrival = 0.3f; ///< within this of the follow camera is there

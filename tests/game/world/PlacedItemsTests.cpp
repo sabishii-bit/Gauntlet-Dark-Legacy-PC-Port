@@ -120,12 +120,16 @@ TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world
     REQUIRE(crystal.realm() == 1); // the orange gems count towards the first realm
     REQUIRE(crystal.radius == 0.1f);
     REQUIRE(crystal.height == 2.0f);
-    // Off to the side nothing is taken; on it the crystal goes.
+    // Off to the side nothing is taken; a character's whole width away, the crystal goes to
+    // one whose reach is that width, not to one reaching half of it.
     Collector far;
     far.position = crystal.position + Vec3{3.0f, 0.0f, 0.0f};
     REQUIRE(items.collect(device, std::array{far}).empty());
     Collector on;
-    on.position = crystal.position + Vec3{0.5f, 1.0f, 0.0f};
+    on.position = crystal.position + Vec3{1.4f, 1.0f, 0.0f};
+    on.radius = 0.75f;
+    REQUIRE(items.collect(device, std::array{on}).empty());
+    on.radius = 1.5f;
     const std::vector<Pickup> pickups = items.collect(device, std::array{on});
     REQUIRE(pickups.size() == 1);
     REQUIRE(pickups[0].item == gem);
