@@ -2,6 +2,7 @@
 #include <cmath>
 #include <filesystem>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/ItemArchive.h"
@@ -17,6 +18,7 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+using Catch::Approx;
 
 TEST_CASE("the tower's crystals stand on the floor for a party large enough",
           "[game][world][unpacked]") {
@@ -66,7 +68,16 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
     REQUIRE(items.item(firstGem).player.playing());
     const Mat4 gemAtRest = items.item(firstGem).pose.matrices()[2];
     items.update(0.5f);
-    REQUIRE(items.item(firstGem).pose.matrices()[2] != gemAtRest);
+    const Mat4& turned = items.item(firstGem).pose.matrices()[2];
+    REQUIRE(turned != gemAtRest);
+    // About the vertical axis alone: up stays up, and the gem's foot stays put.
+    REQUIRE(Vec3{turned[1]}.y == Approx(1.0f).margin(1e-4f));
+    REQUIRE(std::abs(Vec3{turned[1]}.x) < 1e-4f);
+    REQUIRE(std::abs(Vec3{turned[1]}.z) < 1e-4f);
+    REQUIRE(Vec3{turned[3]} == Vec3{0.0f, 0.0f, 0.0f});
+    // The sheen slides over the crystal: the archive's scroll on its texture has moved.
+    constexpr u32 kSheenTexture = 181;
+    REQUIRE(items.item(firstGem).model.textureOffset(kSheenTexture) != Vec2{0.0f, 0.0f});
     items.draw(device, Mat4{1.0f}, WorldLighting{});
     REQUIRE(device.draws.size() >= usize{60}); // a shadow, the crystal, its shine and glow
     bool glowing = false;

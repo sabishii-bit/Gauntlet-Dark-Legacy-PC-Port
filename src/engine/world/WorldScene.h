@@ -29,6 +29,10 @@ public:
     /** What additive geometry is shaded: glows, flames and force fields add their whole
      * texture, whichever way they face. */
     static constexpr Color kUnlit{255, 255, 255, 255};
+    /** What a vertex is shaded: additive parts whole, prelit ones by their own colour, the
+     * rest by the lights. */
+    static Color shadeOf(bool additive, bool prelit, const MeshVertex& vertex, const Vec3& normal,
+                         const WorldLighting& lighting);
     /** The sort keys of objects flagged to draw behind the rest, and behind those. */
     static constexpr f32 kSortBackBias = -10000.0f;
     static constexpr f32 kSortBehindBias = -20000.0f;
@@ -107,7 +111,8 @@ private:
         std::vector<UnitPart> parts;
         f32 sortBias = 0.0f;
         f32 alpha = 1.0f;
-        u32 facing = 0; ///< turned to the camera this way
+        u32 facing = 0;
+        bool prelit = false; ///< shaded by its vertices' colours ///< turned to the camera this way
         bool chrome = false;
         bool sorted = false;
         bool depthWrite = true;

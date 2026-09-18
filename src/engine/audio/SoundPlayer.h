@@ -48,6 +48,10 @@ public:
     f32 masterVolume() const { return m_masterVolume; }
     f32 categoryVolume(SoundCategory category) const;
 
+    /** Changes a playing voice's own volume (0..1) or pan (-1..1); unknown handles are
+     * ignored. */
+    void setVolume(SoundHandle handle, f32 volume);
+    void setPan(SoundHandle handle, f32 pan);
     void stop(SoundHandle handle);
     void stopAll();
     bool isPlaying(SoundHandle handle) const;

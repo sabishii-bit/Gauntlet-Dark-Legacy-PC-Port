@@ -67,6 +67,7 @@ bool WorldData::load(const std::filesystem::path& file) {
     m_levels.clear();
     m_cameras.clear();
     m_audio.clear();
+    m_sounds.clear();
     try {
         const std::vector<u8> bytes = readFile(file);
         const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
@@ -77,6 +78,9 @@ bool WorldData::load(const std::filesystem::path& file) {
         }
         for (const nlohmann::json& camera : root.value("cameras", nlohmann::json::array())) {
             m_cameras.push_back(parseCamera(camera));
+        }
+        for (const nlohmann::json& sound : root.value("sounds", nlohmann::json::array())) {
+            m_sounds.push_back(sound.value("name", std::string{}));
         }
         for (const nlohmann::json& audio : root.value("audio", nlohmann::json::array())) {
             m_audio.push_back(parseAudio(audio));
@@ -108,6 +112,13 @@ const LevelAudioInfo* WorldData::audio(s32 index) const {
     return index >= 0 && static_cast<usize>(index) < m_audio.size()
                ? &m_audio[static_cast<usize>(index)]
                : nullptr;
+}
+
+std::string_view WorldData::soundName(s32 index) const {
+    if (index < 0 || static_cast<usize>(index) >= m_sounds.size()) {
+        return {};
+    }
+    return m_sounds[static_cast<usize>(index)];
 }
 
 } // namespace gdl

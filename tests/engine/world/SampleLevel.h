@@ -39,6 +39,10 @@ inline std::filesystem::path sampleLevel(std::string_view name) {
                   "v 1 0 0\nv 2 0 0\nv 1 1 0\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
     writeTextFile(dir / "models/005_PANE.obj",
                   "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 1 0\nusemtl tex1\nf 1//1 2//1 3//1\n");
+    // A prelit wall: its vertices carry their own dim colour.
+    writeTextFile(dir / "models/006_LIT.obj",
+                  "v 0 0 0 0.2 0.2 0.2\nv 1 0 0 0.2 0.2 0.2\nv 0 1 0 0.2 0.2 0.2\nvn 0 1 0\n"
+                  "usemtl tex0\nf 1//1 2//1 3//1\n");
     writeTextFile(dir / "objects.json", R"({
   "source": "/sample/",
   "objects": [
@@ -47,7 +51,8 @@ inline std::filesystem::path sampleLevel(std::string_view name) {
     {"index": 2, "name": "FLOOR", "file": "models/002_FLOOR.obj", "meshTriangles": 1},
     {"index": 3, "name": "FLAME", "file": "models/003_FLAME.obj", "meshTriangles": 1},
     {"index": 4, "name": "BLADE", "file": "models/004_BLADE.obj", "meshTriangles": 1},
-    {"index": 5, "name": "PANE", "file": "models/005_PANE.obj", "meshTriangles": 1}
+    {"index": 5, "name": "PANE", "file": "models/005_PANE.obj", "meshTriangles": 1},
+    {"index": 6, "name": "LIT", "file": "models/006_LIT.obj", "meshTriangles": 1}
   ]
 })");
     writeFile(dir / "textures/000_STONE.png", kTinyPng);

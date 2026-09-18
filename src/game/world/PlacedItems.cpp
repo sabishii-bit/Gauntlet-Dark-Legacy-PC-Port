@@ -1,7 +1,9 @@
 #include "game/world/PlacedItems.h"
 
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <unordered_map>
+
 #include "engine/core/Log.h"
 
 namespace gdl::game {
@@ -47,6 +49,15 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
                        const WorldCollision* collision, std::span<ItemArchive* const> archives) {
     clear();
     m_archives.assign(archives.begin(), archives.end());
+    for (ItemArchive* archive : archives) {
+        if (archive == nullptr || !archive->loaded()) {
+            continue;
+        }
+        ArchiveMotion motion;
+        motion.archive = archive;
+        motion.animator.bind(archive->trees.textureAnimations(), archive->textures, device);
+        m_motions.push_back(std::move(motion));
+    }
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
     for (usize index = 0; index < instances.size(); ++index) {
@@ -79,11 +90,13 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
             const TreeInfo& figure = archive->trees.tree(*tree);
             if (item.model.bind(figure, archive->models, archive->textures, device)) {
                 item.figure = &figure;
+                item.archive = archive;
                 if (figure.sequences.empty()) {
                     item.pose.rest(figure);
                 } else {
                     item.player.start(figure.sequences[0], 0);
                     item.pose.evaluate(figure, 0, 0.0f);
+                    item.model.setFrame(0, 0);
                 }
                 bound = true;
                 break;
@@ -113,6 +126,8 @@ void PlacedItems::clear() {
     m_effects.clear();
     m_bursts.clear();
     m_archives.clear();
+    m_motions.clear();
+    m_frameRemainder = 0.0f;
     m_revealTime = 0.0f;
     m_revealing = false;
 }
@@ -225,12 +240,50 @@ void PlacedItems::startEffect(RenderDevice& device, std::string_view tree, const
     log::warn("Placed items: no archive holds the burst {}", tree);
 }
 
+/** Shows every item the frames its archive's animations have reached and the way their
+ * scrolls have slid, scrolls on one texture adding up. */
+void PlacedItems::applyTextureMotion() {
+    for (Item& item : m_items) {
+        if (!item.visible || item.archive == nullptr) {
+            continue;
+        }
+        for (const ArchiveMotion& motion : m_motions) {
+            if (motion.archive != item.archive) {
+                continue;
+            }
+            std::unordered_map<u32, Vec2> offsets;
+            for (usize i = 0; i < motion.animator.size(); ++i) {
+                const TextureMotion shown = motion.animator.motion(i);
+                if (shown.frame != nullptr) {
+                    item.model.setTextureFrame(shown.slot, shown.frame);
+                } else {
+                    offsets[shown.slot] += shown.offset;
+                }
+            }
+            for (const auto& [slot, offset] : offsets) {
+                item.model.setTextureOffset(slot, offset);
+            }
+        }
+    }
+}
+
 void PlacedItems::update(f32 seconds) {
+    // The archives' texture animations step once a game frame: the sheen on the crystals.
+    m_frameRemainder += seconds * kFrameRate;
+    const f32 whole = std::floor(m_frameRemainder);
+    m_frameRemainder -= whole;
+    if (whole > 0.0f) {
+        for (ArchiveMotion& motion : m_motions) {
+            motion.animator.step(static_cast<u32>(whole));
+        }
+        applyTextureMotion();
+    }
     // The figures on show play their sequence over and over.
     for (Item& item : m_items) {
         if (item.visible && item.figure != nullptr && item.player.playing()) {
             item.player.advance(seconds, true);
             item.pose.evaluate(*item.figure, item.player.sequence(), item.player.frame());
+            item.model.setFrame(item.player.sequence(), static_cast<s32>(item.player.frame()));
         }
     }
     // A burst's emitters ride their nodes through the tree's sequence, then stop emitting.

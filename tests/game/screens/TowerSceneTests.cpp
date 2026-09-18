@@ -12,12 +12,14 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
 #include "engine/io/AssetLocator.h"
+#include "engine/io/File.h"
 #include "engine/math/Math.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/GameConfig.h"
 #include "game/players/CharacterSave.h"
+#include "game/players/Progression.h"
 #include "game/menu/ScrollBox.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/TowerScene.h"
@@ -92,13 +94,36 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     // button after each page's hold.
     TowerScene::Inputs inputs{};
     inputs[0].move = MoveInput{Vec2{0.0f, 1.0f}, 1.0f};
+    // First the party materialises, held still under the level's title with its effect at its
+    // feet, seen from the start camera holding at the entrance marker; the camera then rides
+    // in to the follow camera and the scroll unrolls.
+    const Vec3 spawn = actor->position();
+    REQUIRE(scene.spawning());
+    REQUIRE(scene.spawnEffectCount() == 1);
+    REQUIRE(scene.intro() == TowerScene::Intro::None);
+    REQUIRE(scene.startCamera().phase() == StartCamera::Phase::Hold);
+    const std::optional<WorldCamera> entrance = world.entranceCamera();
+    REQUIRE(entrance.has_value());
+    REQUIRE(scene.viewCamera().position == entrance->position);
+    REQUIRE(scene.viewCamera().position != scene.camera().camera().position);
+    int spawnTicks = 0;
+    for (; spawnTicks < 600 && scene.spawning(); ++spawnTicks) {
+        REQUIRE(scene.update(1.0 / 60.0, inputs) == TowerOutcome::Running);
+        REQUIRE(actor->position() == spawn);
+        if (scene.startCamera().phase() == StartCamera::Phase::Hold) {
+            REQUIRE(scene.viewCamera().position == entrance->position);
+        }
+    }
+    REQUIRE_FALSE(scene.spawning());
+    REQUIRE(spawnTicks >= StartCamera::kHoldTicks);
+    REQUIRE(spawnTicks < StartCamera::kHoldTicks + 60);
+    REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
     REQUIRE(scene.intro() == TowerScene::Intro::Scroll);
     const ScrollBox& scroll = scene.scroll();
     REQUIRE(scroll.active());
     REQUIRE(scroll.pageCount() == 5);
     // The crystals wait unseen for Sumner to reveal them.
     REQUIRE(world.placedItems().revealing());
-    const Vec3 spawn = actor->position();
     const TowerScene::Inputs still{};
     TowerScene::Inputs accept{};
     accept[0].menu.select = true;
@@ -134,8 +159,9 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     REQUIRE(heldTicks >= TowerScene::kCrystalTicks - 1);
     REQUIRE(heldTicks <= TowerScene::kCrystalTicks);
     REQUIRE(scene.intro() == TowerScene::Intro::Done);
-    // Over the cut every crystal has glowed in, the nearest first.
+    // Over the cut every crystal has glowed in, the nearest first, and Sumner's beam is lit.
     REQUIRE_FALSE(world.placedItems().revealing());
+    REQUIRE(scene.beamAlpha() > 0.0f);
     REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
 
     // Half a second of walking forward moves the character and the camera follows.
@@ -176,9 +202,11 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     REQUIRE(again.intro() == TowerScene::Intro::None);
     again.close();
 
+    // Back does nothing in play: the tower is left through its own menus, never by a slip.
     TowerScene::Inputs leave{};
     leave[0].menu.back = true;
-    REQUIRE(scene.update(1.0 / 60.0, leave) == TowerOutcome::Leave);
+    REQUIRE(scene.update(1.0 / 60.0, leave) == TowerOutcome::Running);
+    REQUIRE(scene.isOpen());
     const SoundHandle music = scene.music();
     scene.close();
     REQUIRE_FALSE(scene.isOpen());
@@ -217,16 +245,26 @@ TEST_CASE("a scenario's options place the party and skip the welcome", "[game][s
     TowerScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
     REQUIRE(scene.intro() == TowerScene::Intro::None);
+    // Placed by the options, the party is seen from the follow camera from the first frame.
+    REQUIRE(scene.spawning());
+    REQUIRE_FALSE(scene.startCamera().active());
+    REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
     const PlayerActor* actor = scene.actor(0);
     REQUIRE(actor != nullptr);
     REQUIRE(actor->position().x == Approx(19.3f));
     REQUIRE(actor->position().z == Approx(-62.0f));
     REQUIRE(actor->yaw() == Approx(1.0f));
+    // A first-level character wears the first costume tier and holds the first weapon.
+    REQUIRE(scene.figureDirectory(0).has_value());
+    REQUIRE(scene.figureDirectory(0)->filename() == "YEL00");
+    REQUIRE(scene.weaponHeld(0));
+    // Far from Sumner his beam stays dark.
+    REQUIRE(scene.beamAlpha() == 0.0f);
     // Standing among the crystals, the party picks one up on the first step: it counts for
     // the first realm's gate.
     REQUIRE(actor->save().progress().crystals[1] == 0);
     const TowerScene::Inputs still{};
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < TowerScene::kSpawnTicks + 4; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(actor->save().progress().crystals[1] >= 1);
@@ -245,8 +283,115 @@ TEST_CASE("a scenario's options place the party and skip the welcome", "[game][s
     save.progress().experience = 500;
     const std::vector<PartyMember> veterans{PartyMember{0, save}};
     REQUIRE(scene.open(device, context, world, veterans, options));
+    REQUIRE(scene.spawning());
+    for (int i = 0; i < TowerScene::kSpawnTicks; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
     REQUIRE(scene.intro() == TowerScene::Intro::Scroll);
     scene.close();
+    // The realms' ambience: standing by the Battlefield portal, its drums start to loop.
+    options.welcome = false;
+    options.position = Vec3{82.0f, 10.0f, 161.0f};
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.ambience().size() == 53);
+    REQUIRE(scene.ambience().playingCount() == 0);
+    scene.update(1.0 / 60.0, still);
+    REQUIRE(scene.ambience().playingCount() >= 1);
+    scene.close();
+    REQUIRE(scene.ambience().size() == 0);
+    // Standing at Sumner's lectern, his beam of light comes up over three seconds.
+    REQUIRE(scene.open(device, context, world, party, options));
+    const Vec3 lectern = scene.sumner().position();
+    scene.close();
+    options.position = lectern + Vec3{2.0f, 0.0f, 2.0f};
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.beamAlpha() == 0.0f);
+    for (int i = 0; i < 120; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.beamAlpha() == Approx(120.0f / TowerScene::kBeamFadeTicks).margin(0.02f));
+    REQUIRE(world.placedItems().size() > 0);
+    scene.close();
+}
+
+TEST_CASE("the tower tells a short party what a gate wants and congratulates a ready one",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    StringTable strings;
+    strings.load(test::dataDirectory() / "text", config.text.language);
+    test::FakeRenderDevice device;
+    TowerWorld world;
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const AssetLocator assets(GDL_TEST_ASSET_DIR);
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.sounds = &sounds;
+    context.assets = &assets;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    TowerOptions options;
+    options.welcome = false;
+    const TowerScene::Inputs still{};
+    // In the first realm's force field with no crystals: the scroll says what it wants.
+    options.position = Vec3{22.0f, -1.9f, -76.0f};
+    TowerScene scene;
+    {
+        const std::vector<PartyMember> party{PartyMember{0, save}};
+        REQUIRE(scene.open(device, context, world, party, options));
+        for (int i = 0; i < TowerScene::kSpawnTicks + 2 && !scene.scroll().active(); ++i) {
+            scene.update(1.0 / 60.0, still);
+        }
+        REQUIRE(scene.scroll().active());
+        std::string words;
+        for (const std::string& line : scene.scroll().lines()) {
+            words += line + " ";
+        }
+        REQUIRE(words.find("15 Orange Crystals") != std::string::npos);
+        scene.close();
+    }
+    // With fourteen, taking the fifteenth opens the gate: congratulations, and remembered.
+    save.progress().crystals[1] = 14;
+    options.position = Vec3{19.3f, -2.0f, -62.0f};
+    {
+        const std::vector<PartyMember> party{PartyMember{0, save}};
+        REQUIRE(scene.open(device, context, world, party, options));
+        const PlayerActor* actor = scene.actor(0);
+        REQUIRE(actor != nullptr);
+        for (int i = 0; i < TowerScene::kSpawnTicks + 4 && !scene.scroll().active(); ++i) {
+            scene.update(1.0 / 60.0, still);
+        }
+        REQUIRE(actor->save().progress().crystals[1] == 15);
+        REQUIRE(scene.scroll().active());
+        std::string words;
+        for (const std::string& line : scene.scroll().lines()) {
+            words += line + " ";
+        }
+        REQUIRE(words.find("Congratulations") != std::string::npos);
+        REQUIRE((actor->save().progress().unlocked & 2U) != 0);
+        scene.close();
+    }
+}
+
+TEST_CASE("a figure comes from the costume tier of its level when that is unpacked",
+          "[game][screens]") {
+    const auto root = test::scratchDirectory("tower-costume-tiers");
+    std::filesystem::create_directories(root / "PLAYERS/WAR/BLU00");
+    writeTextFile(root / "PLAYERS/WAR/BLU00/objects.json", "{}");
+    CharacterSave save;
+    save.character = 0;
+    save.color = 1;
+    save.progress().experience = levelExperience(1);
+    REQUIRE(TowerScene::costumeDirectory(root, save).filename() == "BLU00");
+    save.progress().experience = levelExperience(25); // no BLU20 unpacked: the untiered one
+    REQUIRE(TowerScene::costumeDirectory(root, save).filename() == "BLU");
+    std::filesystem::create_directories(root / "PLAYERS/WAR/BLU20");
+    writeTextFile(root / "PLAYERS/WAR/BLU20/objects.json", "{}");
+    REQUIRE(TowerScene::costumeDirectory(root, save).filename() == "BLU20");
 }
 
 TEST_CASE("the tower scene refuses to open without the level", "[game][screens]") {

@@ -40,6 +40,22 @@ TEST_CASE("meshes are written as one OBJ object with a group per texture", "[for
     REQUIRE(encodeObj(mesh, "ARROW") == expected);
 }
 
+TEST_CASE("a prelit mesh writes its vertex colours after the positions", "[formats][obj]") {
+    Mesh mesh;
+    mesh.prelit = true;
+    MeshVertex v;
+    v.position = Vec3{1.0f, 2.0f, 3.0f};
+    v.color = Color::rgba(255, 0, 128, 255);
+    mesh.vertices.push_back(v);
+    MeshPart part;
+    part.indices = {0, 0, 0};
+    mesh.parts.push_back(part);
+    const std::string text = encodeObj(mesh, "LIT");
+    REQUIRE(text.find("v 1 2 3 1 0 0.502\n") != std::string::npos);
+    mesh.prelit = false;
+    REQUIRE(encodeObj(mesh, "LIT").find("v 1 2 3\n") != std::string::npos);
+}
+
 TEST_CASE("a lightmapped mesh writes its second coordinates and names the lightmap",
           "[formats][obj]") {
     Mesh mesh;

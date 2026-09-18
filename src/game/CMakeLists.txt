@@ -30,10 +30,14 @@ add_library(game STATIC
     world/TowerWorld.cpp
     world/TowerCamera.h
     world/TowerCamera.cpp
+    world/StartCamera.h
+    world/StartCamera.cpp
     world/SumnerFigure.h
     world/SumnerFigure.cpp
     world/PlacedItems.h
     world/PlacedItems.cpp
+    world/AmbientSounds.h
+    world/AmbientSounds.cpp
     world/LevelTriggers.h
     world/LevelTriggers.cpp
     menu/ScrollBox.h

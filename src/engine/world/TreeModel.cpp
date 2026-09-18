@@ -2,11 +2,36 @@
 
 #include <algorithm>
 #include <exception>
+#include <format>
 #include <stdexcept>
 
 #include "engine/core/Log.h"
 
 namespace gdl {
+
+TreeModel::Shape TreeModel::makeShape(const Mesh& mesh, TextureSet& textures,
+                                      RenderDevice& device) {
+    Shape shape;
+    shape.mesh = &mesh;
+    for (const MeshPart& part : mesh.parts) {
+        if (part.texture >= textures.size()) {
+            throw std::runtime_error("mesh refers to a texture outside the set");
+        }
+        shape.textures.push_back(&textures.texture(device, part.texture));
+        shape.translucent.push_back(textures.entry(part.texture).translucent());
+        shape.slots.push_back(part.texture);
+    }
+    return shape;
+}
+
+void TreeModel::include(const Shape& shape, const Vec3& offset, bool& first) {
+    for (const MeshVertex& v : shape.mesh->vertices) {
+        const Vec3 position = v.position + offset;
+        m_min = first ? position : glm::min(m_min, position);
+        m_max = first ? position : glm::max(m_max, position);
+        first = false;
+    }
+}
 
 bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& textures,
                      RenderDevice& device) {
@@ -14,36 +39,44 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
     bool first = true;
     for (usize i = 0; i < tree.nodes.size(); ++i) {
         const TreeNodeInfo& info = tree.nodes[i];
-        if (info.object.empty()) {
+        const bool flips = std::ranges::any_of(
+            info.objectFrames, [](const auto& run) { return !run.object.empty(); });
+        if (info.object.empty() && !flips) {
             continue;
-        }
-        const auto model = models.find(info.object);
-        if (!model.has_value()) {
-            log::warn("Tree model {}: object {} is missing", tree.name, info.object);
-            clear();
-            return false;
         }
         try {
             Node node;
-            node.mesh = &models.mesh(*model);
             node.index = i;
             node.offset = tree.worldPosition(i);
             node.chrome = info.chrome();
             node.additive = info.additive();
             node.depthWrite = info.writesDepth();
             node.facing = CameraFrame::facingOf(info.objectFlags);
-            for (const MeshPart& part : node.mesh->parts) {
-                if (part.texture >= textures.size()) {
-                    throw std::runtime_error("mesh refers to a texture outside the set");
+            if (!info.object.empty()) {
+                const auto model = models.find(info.object);
+                if (!model.has_value()) {
+                    throw std::runtime_error(std::format("object {} is missing", info.object));
                 }
-                node.textures.push_back(&textures.texture(device, part.texture));
-                node.translucent.push_back(textures.entry(part.texture).translucent());
+                node.shape = makeShape(models.mesh(*model), textures, device);
+                include(node.shape, node.offset, first);
             }
-            for (const MeshVertex& v : node.mesh->vertices) {
-                const Vec3 position = v.position + node.offset;
-                m_min = first ? position : glm::min(m_min, position);
-                m_max = first ? position : glm::max(m_max, position);
-                first = false;
+            // An object node's runs follow the set's order from the run's first object.
+            for (const TreeNodeInfo::ObjectFrames& run : info.objectFrames) {
+                FrameRun frames;
+                frames.start = run.start;
+                if (!run.object.empty()) {
+                    const auto model = models.find(run.object);
+                    if (!model.has_value()) {
+                        throw std::runtime_error(std::format("object {} is missing", run.object));
+                    }
+                    for (s32 f = 0; f < run.frames && *model + static_cast<u32>(f) < models.size();
+                         ++f) {
+                        frames.shapes.push_back(
+                            makeShape(models.mesh(*model + static_cast<u32>(f)), textures, device));
+                        include(frames.shapes.back(), node.offset, first);
+                    }
+                }
+                node.runs.push_back(std::move(frames));
             }
             m_nodes.push_back(std::move(node));
         } catch (const std::exception& e) {
@@ -53,6 +86,26 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
         }
     }
     return !m_nodes.empty();
+}
+
+void TreeModel::setFrame(u32 sequence, s32 frame) {
+    for (Node& node : m_nodes) {
+        if (node.runs.empty()) {
+            continue;
+        }
+        node.shape = Shape{};
+        if (sequence >= node.runs.size()) {
+            continue;
+        }
+        const FrameRun& run = node.runs[sequence];
+        const auto count = static_cast<s32>(run.shapes.size());
+        const s32 at = frame - run.start;
+        if (at >= 0 && at < count) {
+            node.shape = run.shapes[static_cast<usize>(at)];
+        } else if (count == 1) {
+            node.shape = run.shapes[0];
+        }
+    }
 }
 
 void TreeModel::draw(RenderDevice& device, const Mat4& clip, const Mat4& model,
@@ -70,6 +123,9 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                           const CameraFrame* camera, f32 alpha, bool translucent) const {
     const bool fading = alpha < 1.0f;
     for (const Node& node : m_nodes) {
+        if (node.shape.mesh == nullptr) {
+            continue;
+        }
         Mat4 placement = node.index < nodeTransforms.size()
                              ? model * nodeTransforms[node.index]
                              : glm::translate(model, node.offset);
@@ -77,22 +133,24 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             placement = camera->face(placement, node.facing);
         }
         const Mat3 normalMatrix{placement};
-        for (usize p = 0; p < node.mesh->parts.size(); ++p) {
+        const Shape& shape = node.shape;
+        for (usize p = 0; p < shape.mesh->parts.size(); ++p) {
             // A fading figure blends its solid parts too, so the whole of it thins together.
-            const bool blended = node.translucent[p] || node.additive || fading;
+            const bool blended = shape.translucent[p] || node.additive || fading;
             if (blended != translucent) {
                 continue;
             }
-            const MeshPart& part = node.mesh->parts[p];
+            const MeshPart& part = shape.mesh->parts[p];
             m_batch.clear();
             m_batch.begin(PrimitiveTopology::TriangleList);
             for (const u32 index : part.indices) {
-                const MeshVertex& v = node.mesh->vertices[index];
+                const MeshVertex& v = shape.mesh->vertices[index];
                 const Vec3 normal = glm::normalize(normalMatrix * v.normal);
                 const Vec2 uv =
                     node.chrome ? Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)} : v.uv;
                 const Vec4 placed = placement * Vec4{v.position, 1.0f};
-                Color color = lighting.shade(normal);
+                // Glows add their whole texture; the original never lights them.
+                Color color = node.additive ? Color::white() : lighting.shade(normal);
                 if (fading) {
                     color.a = static_cast<u8>(static_cast<f32>(color.a) * alpha);
                 }
@@ -104,9 +162,47 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             state.blend = node.additive ? BlendMode::Additive : BlendMode::Alpha;
             state.alphaTest = blended ? DrawState::kTranslucentAlphaTest : 0.0f;
             state.depthWrite = node.depthWrite && !fading;
-            device.draw(m_batch, *node.textures[p], clip, state);
+            state.uvOffset = textureOffset(shape.slots[p]);
+            const Texture* texture = shape.textures[p];
+            for (const auto& [slot, frame] : m_frames) {
+                if (slot == shape.slots[p]) {
+                    texture = frame;
+                }
+            }
+            device.draw(m_batch, *texture, clip, state);
         }
     }
+}
+
+void TreeModel::setTextureFrame(u32 slot, const Texture* frame) {
+    std::erase_if(m_frames, [slot](const auto& shown) { return shown.first == slot; });
+    if (frame != nullptr) {
+        m_frames.emplace_back(slot, frame);
+    }
+}
+
+void TreeModel::setTextureOffset(u32 slot, const Vec2& offset) {
+    for (auto& [at, slid] : m_offsets) {
+        if (at == slot) {
+            slid = offset;
+            return;
+        }
+    }
+    m_offsets.emplace_back(slot, offset);
+}
+
+void TreeModel::resetTextures() {
+    m_frames.clear();
+    m_offsets.clear();
+}
+
+Vec2 TreeModel::textureOffset(u32 slot) const {
+    for (const auto& [at, slid] : m_offsets) {
+        if (at == slot) {
+            return slid;
+        }
+    }
+    return Vec2{0.0f, 0.0f};
 }
 
 } // namespace gdl

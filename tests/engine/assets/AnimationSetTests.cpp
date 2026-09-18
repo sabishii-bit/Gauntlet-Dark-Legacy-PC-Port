@@ -133,6 +133,30 @@ TEST_CASE("an animation set lists the archive's particle templates and particle 
     REQUIRE(tree.nodes[1].direction == Vec3{0.0f, 1.0f, 0.0f});
 }
 
+TEST_CASE("an animation set keeps an object node's runs of frames", "[assets][animation]") {
+    const auto dir = test::scratchDirectory("animation-set-object-frames");
+    writeTextFile(dir / "animations.json", R"({"trees": [
+  {"name": "FLAME", "prefix": "FX", "sequences": [
+     {"name": "ACTIVE", "frames": 30, "frameRate": 60, "repeats": false, "fixesPosition": false,
+      "flags": 0, "tracks": []}],
+   "nodes": [
+    {"name": "ROOT", "object": "", "type": 1, "flags": 1, "objectFlags": 0, "parent": -1,
+     "position": [0.0, 0.0, 0.0]},
+    {"name": "GLOW", "object": "", "type": 2, "flags": 1, "objectFlags": 128, "parent": 0,
+     "position": [0.0, 1.0, 0.0],
+     "objectFrames": [{"object": "fx0f01", "start": 2, "frames": 13}]}]}]})");
+    AnimationSet set;
+    REQUIRE(set.load(dir));
+    const TreeInfo& tree = set.tree(0);
+    REQUIRE(tree.nodes[0].objectFrames.empty());
+    REQUIRE(tree.nodes[1].type == TreeNodeInfo::kObjectType);
+    REQUIRE(tree.nodes[1].objectFrames.size() == 1);
+    REQUIRE(tree.nodes[1].objectFrames[0].object == "FX0F01");
+    REQUIRE(tree.nodes[1].objectFrames[0].start == 2);
+    REQUIRE(tree.nodes[1].objectFrames[0].frames == 13);
+    REQUIRE_FALSE(tree.nodes[1].writesDepth());
+}
+
 TEST_CASE("a missing or malformed animation manifest fails to load", "[assets][animation]") {
     AnimationSet set;
     REQUIRE_FALSE(set.load(test::scratchDirectory("animation-set-empty")));

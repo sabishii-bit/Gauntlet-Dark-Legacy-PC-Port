@@ -61,6 +61,19 @@ TEST_CASE("OBJ lightmap coordinates and materials read back", "[assets][obj]") {
     REQUIRE(mesh.vertices[2].lightmapUv == Vec2{0.25f, 0.25f});
 }
 
+TEST_CASE("OBJ vertex colours read back as a prelit mesh", "[assets][obj]") {
+    const Mesh lit = parseObj("v 0 0 0 1 0 0.5\nv 1 0 0 0 1 0\nv 0 1 0 0 0 0\n"
+                              "usemtl tex0\nf 1 2 3\n");
+    REQUIRE(lit.prelit);
+    REQUIRE(lit.vertices.size() == 3);
+    REQUIRE(lit.vertices[0].color == Color::rgba(255, 0, 128, 255));
+    REQUIRE(lit.vertices[1].color == Color::rgba(0, 255, 0, 255));
+    REQUIRE(lit.vertices[2].color == Color::rgba(0, 0, 0, 255));
+    const Mesh plain = parseObj("v 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl tex0\nf 1 2 3\n");
+    REQUIRE_FALSE(plain.prelit);
+    REQUIRE(plain.vertices[0].color == Color::white());
+}
+
 TEST_CASE("malformed OBJ input is rejected", "[assets][obj]") {
     REQUIRE_THROWS_AS(parseObj("v 1 2 x\n"), FormatError);
     REQUIRE_THROWS_AS(parseObj("v 0 0 0\nf 1 2 3\n"), FormatError);

@@ -25,6 +25,8 @@ constexpr u16 kNoObjectFlag = 1;
 constexpr usize kListHeaderWithParticles = 24; ///< the header once it lists particle templates
 constexpr u16 kParticleListVersion = 8;         ///< files older than this hold no such list
 constexpr u16 kParticleNodeType = 4;
+constexpr u16 kObjectNodeType = 2;
+constexpr usize kObjectFramesSize = 40; ///< one sequence's run: name, object, frames, start
 
 std::string readString(std::span<const u8> file, usize at, usize width) {
     if (at > file.size() || width > file.size() - at) {
@@ -147,6 +149,29 @@ s32 particleIndexOf(std::span<const u8> file, usize base, s32 offset, usize coun
 
 } // namespace
 
+/** An object node's frame runs, one per sequence, from the tree's object frame table (the
+ * third header field), where the node's data offset points at its first run. */
+void readObjectFrames(std::span<const u8> file, usize base, s32 dataOffset,
+                      const TreeDefinition& tree, TreeNode& node) {
+    if (dataOffset < 0) {
+        return;
+    }
+    const usize runsAt = base + readU32LE(file, base + 8) + static_cast<usize>(dataOffset);
+    require(file, runsAt, tree.sequences.size() * kObjectFramesSize, "object frame table");
+    for (usize s = 0; s < tree.sequences.size(); ++s) {
+        const usize at = runsAt + s * kObjectFramesSize;
+        TreeNode::ObjectFrames run;
+        std::string object = readString(file, at, kTreeNameSize);
+        if (object.size() > AnimationFile::kObjectNameLength) {
+            object.resize(AnimationFile::kObjectNameLength);
+        }
+        run.object = normalizeAssetName(object);
+        run.frames = static_cast<s16>(readU16LE(file, at + 36));
+        run.start = static_cast<s16>(readU16LE(file, at + 38));
+        node.objectFrames.push_back(std::move(run));
+    }
+}
+
 AnimationFile AnimationFile::parse(std::span<const u8> file) {
     if (file.size() < kFileHeaderSize) {
         throw FormatError("animation file is too small for its header");
@@ -206,6 +231,9 @@ AnimationFile AnimationFile::parse(std::span<const u8> file) {
                                                 out.particles.size());
                 node.direction =
                     Vec3{readF32(file, at + 20), readF32(file, at + 24), readF32(file, at + 28)};
+            }
+            if ((readU16LE(file, at + 44) & 0xFFU) == kObjectNodeType) {
+                readObjectFrames(file, base, readS32LE(file, at + 52), tree, node);
             }
             if (node.parent >= n) {
                 throw FormatError(

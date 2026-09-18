@@ -40,12 +40,15 @@ s32 TextPainter::draw(Canvas& canvas, s32 x, s32 y, std::string_view text,
         const BitmapGlyph* glyph = m_font->glyph(code);
         if (glyph != nullptr && glyph->width > 0) {
             const auto cellWidth = static_cast<f32>(glyph->width);
-            const Rect area{static_cast<f32>(penX) - expand, static_cast<f32>(y) - expand,
-                            cellWidth * style.scale + 2.0f * expand,
-                            cellHeight * style.scale + 2.0f * expand};
-            const Rect uv{static_cast<f32>(glyph->x) / sheetWidth,
-                          static_cast<f32>(glyph->y) / sheetHeight, cellWidth / sheetWidth,
-                          cellHeight / sheetHeight};
+            const f32 inset = kCellInset * style.scale;
+            const Rect area{static_cast<f32>(penX) + inset - expand,
+                            static_cast<f32>(y) + inset - expand,
+                            (cellWidth - 2.0f * kCellInset) * style.scale + 2.0f * expand,
+                            (cellHeight - 2.0f * kCellInset) * style.scale + 2.0f * expand};
+            const Rect uv{(static_cast<f32>(glyph->x) + kCellInset) / sheetWidth,
+                          (static_cast<f32>(glyph->y) + kCellInset) / sheetHeight,
+                          (cellWidth - 2.0f * kCellInset) / sheetWidth,
+                          (cellHeight - 2.0f * kCellInset) / sheetHeight};
             canvas.draw(*texture, area, uv, style.color);
         }
         penX += advance(code, style.scale);

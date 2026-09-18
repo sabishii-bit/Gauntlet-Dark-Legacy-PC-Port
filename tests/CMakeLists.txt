@@ -58,6 +58,7 @@ add_executable(tests
     game/menu/ScrollBoxTests.cpp
     game/world/SumnerFigureTests.cpp
     game/world/PlacedItemsTests.cpp
+    game/world/AmbientSoundsTests.cpp
     engine/world/WorldLightingTests.cpp
     engine/ui/CanvasTests.cpp
     engine/ui/TextPainterTests.cpp
@@ -88,6 +89,7 @@ add_executable(tests
     game/players/PlayerAnimatorTests.cpp
     game/world/TowerWorldTests.cpp
     game/world/TowerCameraTests.cpp
+    game/world/StartCameraTests.cpp
     game/screens/StatusBoxTests.cpp
     game/screens/PickupHudTests.cpp
     game/screens/TowerSceneTests.cpp

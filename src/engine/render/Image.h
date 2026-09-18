@@ -24,6 +24,12 @@ struct Image {
 
     Color pixel(u32 x, u32 y) const;
     void setPixel(u32 x, u32 y, Color color);
+
+    /** Gives every fully transparent texel the average colour of its nearest opaque
+     * neighbours (alpha untouched), spreading outward until none is left beside one, so
+     * that filtering across a cut-out edge blends into the texture's own colour rather than
+     * whatever the file hid behind alpha zero. */
+    void bleedIntoTransparent();
 };
 
 } // namespace gdl

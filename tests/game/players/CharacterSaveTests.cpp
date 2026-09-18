@@ -25,6 +25,7 @@ CharacterSave sampleSave() {
     save.classes[2].fightAdd = 12.5f;
     save.classes[9].health = 320;
     save.classes[2].crystals[1] = 15;
+    save.classes[2].unlocked = 0b10;
     return save;
 }
 
@@ -32,6 +33,7 @@ TEST_CASE("a character round-trips through JSON", "[game][players][save]") {
     const CharacterSave save = sampleSave();
     const CharacterSave loaded = CharacterSave::fromJson(save.toJson());
     REQUIRE(loaded.progress().crystals[1] == 15);
+    REQUIRE(loaded.progress().unlocked == 0b10);
     REQUIRE(loaded.progress().crystals[2] == 0);
     REQUIRE(loaded.name == "PELE");
     REQUIRE(loaded.character == 2);

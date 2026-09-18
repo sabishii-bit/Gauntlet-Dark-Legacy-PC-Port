@@ -44,6 +44,9 @@ protected:
     const std::filesystem::path& assetDirectory() const { return m_desc.assetDirectory; }
 
     void requestQuit() { m_quitRequested = true; }
+    /** Holds this many frames a second from the next frame on; 0 leaves it to vsync. */
+    void setMaxFrameRate(u32 rate) { m_desc.maxFrameRate = rate; }
+    u32 maxFrameRate() const { return m_desc.maxFrameRate; }
 
 private:
     void checkAssetDirectory() const;

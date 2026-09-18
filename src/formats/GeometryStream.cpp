@@ -16,6 +16,8 @@ constexpr u32 kPositionByte = 0x6A;
 constexpr u32 kTexcoordQuad = 0x6D;
 constexpr u32 kTexcoordByte = 0x66;
 constexpr u32 kColorBlockCode = 3; ///< a packed colour per vertex, for prelit objects
+constexpr u32 kColorChannelMask = 0x1F; ///< five bits a channel, red lowest
+constexpr u32 kColorShift = 3;          ///< spread to eight bits the way the console does
 constexpr f32 kPositionScale = 1.0f / 128.0f;
 constexpr f32 kTexcoordScale = 1.0f / 128.0f;
 constexpr f32 kNormalScale = 1.0f / 15.0f;
@@ -146,8 +148,12 @@ void decodeGeometryStream(std::span<const u8> stream, u32 texture, u32 lightmap,
         const usize step = (((count << 4U) + 0x1F) >> 5U) + 1;
         const usize normalAt = (idx + 1) * kWordBytes;
         usize next = idx + step;
+        usize colorAt = 0;
+        bool prelit = false;
         if ((words.word(next) & 0xFFFU) == kColorBlockCode) {
-            next += step; // prelit vertex colours are not used yet
+            colorAt = (next + 1) * kWordBytes;
+            prelit = true;
+            next += step;
         }
         const u32 texcoordFormat = words.word(next) >> 24U;
         const usize texcoordAt = (next + 1) * kWordBytes;
@@ -167,6 +173,8 @@ void decodeGeometryStream(std::span<const u8> stream, u32 texture, u32 lightmap,
         const std::span<const u8> positions = words.bytesAt(positionAt, count * positionStride);
         const std::span<const u8> normals = words.bytesAt(normalAt, count * 2);
         const std::span<const u8> texcoords = words.bytesAt(texcoordAt, count * texcoordStride);
+        const std::span<const u8> colors =
+            prelit ? words.bytesAt(colorAt, count * 2) : std::span<const u8>{};
         packet.clear();
         for (usize v = 0; v < count; ++v) {
             StripVertex sv;
@@ -192,6 +200,14 @@ void decodeGeometryStream(std::span<const u8> stream, u32 texture, u32 lightmap,
             const u16 packedNormal = readU16LE(normals, v * 2);
             sv.vertex.normal = unpackNormal(packedNormal);
             sv.kick = (packedNormal & kKickBit) != 0;
+            if (prelit) {
+                const u16 packed = readU16LE(colors, v * 2);
+                sv.vertex.color = Color::rgba(
+                    static_cast<u8>((packed & kColorChannelMask) << kColorShift),
+                    static_cast<u8>(((packed >> 5U) & kColorChannelMask) << kColorShift),
+                    static_cast<u8>(((packed >> 10U) & kColorChannelMask) << kColorShift), 255);
+                mesh.prelit = true;
+            }
             const usize t = v * texcoordStride;
             if (texcoordFormat == kTexcoordByte) {
                 sv.vertex.uv = Vec2{static_cast<f32>(texcoords[t]) * kTexcoordScale,

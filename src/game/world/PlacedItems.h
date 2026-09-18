@@ -14,6 +14,7 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/world/AnimationPlayer.h"
 #include "engine/world/ParticleField.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/TreePose.h"
 #include "engine/world/WorldCollision.h"
@@ -82,6 +83,7 @@ public:
         TreeModel model;
         TreePose pose;
         const TreeInfo* figure = nullptr; ///< the tree the model and pose come from
+        ItemArchive* archive = nullptr;   ///< where the figure and its textures came from
         AnimationPlayer player;           ///< its first sequence, on a loop
         f32 alpha = 1.0f;                 ///< under one while it fades in
         bool visible = false;
@@ -143,8 +145,18 @@ private:
     std::vector<Item> m_items;
     std::vector<Effect> m_effects;
     ParticleField m_bursts;
+    /** An archive's texture animations, shown on every item that came from it. */
+    struct ArchiveMotion {
+        ItemArchive* archive = nullptr;
+        TextureAnimator animator;
+    };
+
+    void applyTextureMotion();
+
     std::vector<ItemArchive*> m_archives;
+    std::vector<ArchiveMotion> m_motions;
     s32 m_players = 0;
+    f32 m_frameRemainder = 0.0f;
     f32 m_revealTime = 0.0f;
     bool m_revealing = false;
 };

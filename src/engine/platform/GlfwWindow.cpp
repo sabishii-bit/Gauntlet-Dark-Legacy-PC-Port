@@ -130,6 +130,7 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
     GDL_VERIFY(m_window != nullptr, "glfwCreateWindow failed");
     glfwSetWindowUserPointer(m_window, this);
     glfwSetCharCallback(m_window, &GlfwWindow::charCallback);
+    glfwSetKeyCallback(m_window, &GlfwWindow::keyCallback);
 
     log::info("Window created: {}x{} \"{}\"", desc.width, desc.height, desc.title);
 }
@@ -172,6 +173,21 @@ void GlfwWindow::pollKeyboard() {
 void GlfwWindow::charCallback(GLFWwindow* window, unsigned int codepoint) {
     if (auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window))) {
         self->m_input.addTypedChar(codepoint);
+    }
+}
+
+/** A press is latched as it happens, so a tap over between polls still reaches the game. */
+void GlfwWindow::keyCallback(GLFWwindow* window, int key, int /*scancode*/, int action,
+                             int /*mods*/) {
+    auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
+    if (self == nullptr || action != GLFW_PRESS) {
+        return;
+    }
+    for (const auto& mapping : kKeyMap) {
+        if (mapping.glfwKey == key) {
+            self->m_input.latchKey(mapping.key);
+            return;
+        }
     }
 }
 

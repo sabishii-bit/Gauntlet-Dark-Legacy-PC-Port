@@ -17,6 +17,22 @@ namespace gdl::game {
 
 /** Someone who can set off a trigger: where they stand, how wide they are and the crystals
  * they carry towards each realm. */
+/** A player stood in a trigger's spot without what it asks for. */
+struct TriggerRefusal {
+    s32 trigger = -1;
+    s32 id = 0;           ///< the realm, or 100 plus the gargoyle tier
+    bool crystals = true; ///< crystals were wanted, else the golden icons
+};
+
+/** A target that opened this update: where its trigger lies, whether it fades away, and
+ * whether it opened at once (at the level's start) rather than before the party. */
+struct TriggerOpening {
+    s32 target = -1;
+    Vec3 spot{0.0f, 0.0f, 0.0f};
+    bool fades = false;
+    bool atOnce = false;
+};
+
 struct TriggerVisitor {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.75f;
@@ -31,6 +47,7 @@ struct LevelTrigger {
     s32 target = -1;   ///< the world object it drives, or -1
     s32 id = 0;
     s32 nextId = 0;
+    f32 refusalCooldown = 0.0f; ///< seconds before the trigger refuses anyone again
     s32 next = -1; ///< the trigger chained after this one, or -1
     u32 flags = 0; ///< the trigger's own flags
     u32 kind = 0;  ///< how the target moves: the flags the object's trigger type carries
@@ -61,7 +78,8 @@ struct LevelTrigger {
 class LevelTriggers {
 public:
     static constexpr std::array<s32, 9> kCrystalsToOpen{0, 15, 100, 125, 150, 175, 200, 225, 250};
-    static constexpr f32 kFadeRate = 16.0f / 255.0f; ///< of full alpha, per game frame
+    static constexpr f32 kFadeRate = 16.0f / 255.0f;
+    static constexpr f32 kRefusalCooldown = 2.5625f; ///< the original's, between two refusals ///< of full alpha, per game frame
     static constexpr f32 kFrameRate = 30.0f;
     static constexpr f32 kReach = 3.0f; ///< how far above or below a trigger a visitor counts
 
@@ -84,6 +102,9 @@ public:
     /** Fires the triggers visitors stand in and carries the fades on by `seconds`. */
     void update(f32 seconds, std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                 WorldScene& scene, WorldCollision* collision);
+    /** The refusals and openings since the last call; each is handed out once. */
+    std::vector<TriggerRefusal> takeRefusals();
+    std::vector<TriggerOpening> takeOpenings();
 
 private:
     struct Target {
@@ -99,11 +120,14 @@ private:
     static bool qualifies(const LevelTrigger& trigger, std::span<const TriggerVisitor> visitors);
     void fire(usize index, bool atOnce, WorldAnimator& animator, WorldScene& scene,
               WorldCollision* collision);
-    static void openTarget(Target& target, bool atOnce, WorldAnimator& animator,
+    /** True when the target opened now, not earlier. */
+    static bool openTarget(Target& target, bool atOnce, WorldAnimator& animator,
                            WorldScene& scene, WorldCollision* collision);
 
     std::vector<LevelTrigger> m_triggers;
     std::vector<Target> m_targets;
+    std::vector<TriggerRefusal> m_refusals;
+    std::vector<TriggerOpening> m_openings;
     f32 m_frameRemainder = 0.0f;
 };
 

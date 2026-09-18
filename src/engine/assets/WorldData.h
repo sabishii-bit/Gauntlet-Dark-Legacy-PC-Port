@@ -59,6 +59,9 @@ public:
     u32 realm() const { return m_realm; }
     const std::string& prefix() const { return m_prefix; }
     const std::vector<LevelInfo>& levels() const { return m_levels; }
+    /** The name of the realm's sound `index` (what a level's enterSound and hitSound
+     * index); empty when out of range. */
+    std::string_view soundName(s32 index) const;
     /** The level called `name`, or null. */
     const LevelInfo* level(std::string_view name) const;
     /** The camera or audio record at `index`, or null when out of range. */
@@ -71,6 +74,7 @@ private:
     std::vector<LevelInfo> m_levels;
     std::vector<LevelCameraInfo> m_cameras;
     std::vector<LevelAudioInfo> m_audio;
+    std::vector<std::string> m_sounds;
 };
 
 } // namespace gdl

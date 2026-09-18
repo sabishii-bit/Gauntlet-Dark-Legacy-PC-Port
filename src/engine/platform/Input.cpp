@@ -79,15 +79,15 @@ std::optional<PadButton> padButtonFromName(std::string_view name) {
 }
 
 bool Input::isKeyDown(Key key) const {
-    return validKey(key) && m_keys[index(key)];
+    return validKey(key) && keyDown(index(key));
 }
 
 bool Input::wasKeyPressed(Key key) const {
-    return validKey(key) && m_keys[index(key)] && !m_previousKeys[index(key)];
+    return validKey(key) && keyDown(index(key)) && !m_previousKeys[index(key)];
 }
 
 bool Input::wasKeyReleased(Key key) const {
-    return validKey(key) && !m_keys[index(key)] && m_previousKeys[index(key)];
+    return validKey(key) && !keyDown(index(key)) && m_previousKeys[index(key)];
 }
 
 bool Input::isPadConnected(int pad) const {
@@ -108,7 +108,10 @@ f32 Input::padAxis(int pad, PadAxis axis) const {
 }
 
 void Input::beginPoll() {
-    m_previousKeys = m_keys;
+    for (usize key = 0; key < kKeyCount; ++key) {
+        m_previousKeys[key] = keyDown(key);
+    }
+    m_latchedKeys.fill(false);
     m_previousPads = m_pads;
     m_typed.clear();
 }
@@ -116,6 +119,12 @@ void Input::beginPoll() {
 void Input::setKey(Key key, bool down) {
     if (validKey(key)) {
         m_keys[index(key)] = down;
+    }
+}
+
+void Input::latchKey(Key key) {
+    if (validKey(key)) {
+        m_latchedKeys[index(key)] = true;
     }
 }
 

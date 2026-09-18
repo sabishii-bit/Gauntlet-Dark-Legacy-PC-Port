@@ -12,6 +12,14 @@
 
 namespace gdl {
 
+/** What an animation shows now: the frame its cycle has reached, or how far its scroll has
+ * slid a coordinate. */
+struct TextureMotion {
+    u32 slot = 0;
+    const Texture* frame = nullptr; ///< null for a scroll
+    Vec2 offset{0.0f, 0.0f};
+};
+
 /**
  * A level's texture animations as the original steps them once a game frame: a cycle shows
  * the next of its frames every `rate` frames, and a scroll slides the coordinates a step of
@@ -32,6 +40,10 @@ public:
     s32 counter(usize index) const { return m_entries[index].counter; }
     u32 slot(usize index) const { return m_entries[index].slot; }
 
+    /** Where an animation stands. */
+    TextureMotion motion(usize index) const;
+    /** Advances `ticks` game frames. */
+    void step(u32 ticks = 1);
     /** Shows every animation where it stands. */
     void apply(WorldScene& scene) const;
     /** Advances `ticks` game frames, showing each step. */

@@ -37,6 +37,10 @@ public:
     f64 queuedSeconds() const;
     void setVolume(f32 volume);
     f32 volume() const;
+    /** Where the sound sits between the speakers: -1 fully left, 0 centred, 1 fully right,
+     * at constant power. */
+    void setPan(f32 pan);
+    f32 pan() const;
 
     /** Adds this stream's contribution to an interleaved stereo buffer at the output rate. */
     void mixInto(std::span<f32> stereoOut);
@@ -52,6 +56,9 @@ private:
     usize m_readFrame = 0;
     f64 m_fraction = 0.0;
     f32 m_volume = 1.0f;
+    f32 m_leftGain = 1.0f;
+    f32 m_rightGain = 1.0f;
+    f32 m_pan = 0.0f;
     bool m_finished = false;
 };
 

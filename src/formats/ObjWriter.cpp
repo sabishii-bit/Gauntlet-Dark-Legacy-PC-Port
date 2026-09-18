@@ -8,8 +8,16 @@ namespace gdl::formats {
 std::string encodeObj(const Mesh& mesh, std::string_view name) {
     std::string out;
     out += std::format("o {}\n", name);
+    // A prelit mesh keeps its baked lighting as the vertex colour extension, 0 to 1.
     for (const MeshVertex& v : mesh.vertices) {
-        out += std::format("v {:.6g} {:.6g} {:.6g}\n", v.position.x, v.position.y, v.position.z);
+        if (mesh.prelit) {
+            out += std::format("v {:.6g} {:.6g} {:.6g} {:.4g} {:.4g} {:.4g}\n", v.position.x,
+                               v.position.y, v.position.z, v.color.r / 255.0f, v.color.g / 255.0f,
+                               v.color.b / 255.0f);
+        } else {
+            out += std::format("v {:.6g} {:.6g} {:.6g}\n", v.position.x, v.position.y,
+                               v.position.z);
+        }
     }
     for (const MeshVertex& v : mesh.vertices) {
         out += std::format("vt {:.6g} {:.6g}\n", v.uv.x, 1.0f - v.uv.y);

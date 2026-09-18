@@ -209,6 +209,7 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const TowerOptions
     }
     if (m_tower.open(renderDevice(), context(), m_towerWorld, party, options)) {
         log::info("Every player is ready; entering the tower");
+        setMaxFrameRate(m_config.timing.gameplayFrameRate);
         return true;
     }
     log::warn("The tower is unavailable; unpack the levels with gdlunpack --levels");
@@ -284,6 +285,7 @@ bool Gauntlet::startMovie(std::string_view name) {
 }
 
 bool Gauntlet::startTitleScreen() {
+    setMaxFrameRate(m_config.display.maxFrameRate);
     if (m_title.open(renderDevice(), context())) {
         return true;
     }
