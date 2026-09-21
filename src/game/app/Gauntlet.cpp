@@ -270,6 +270,9 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         in.attack = buttons.attack;
         in.usePotion = buttons.usePotion;
         in.throwPotion = buttons.throwPotion;
+        in.turbo = buttons.turbo;
+        in.chargePressed = buttons.chargePressed;
+        in.attackPressed = buttons.attackPressed;
         in.selector = SelectorInput{buttons.selectorUp, buttons.selectorDown,
                                     buttons.selectorLeft, buttons.selectorRight};
         in.menu = readMenuInput(input(), m_config.menu, source);

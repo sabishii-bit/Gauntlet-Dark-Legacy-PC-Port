@@ -522,5 +522,6 @@
   "help.expdestroy.1": "EXPLOSIONS DESTROY ITEMS",
   "help.gaspoison.1": "POISON GAS SPOILS FOOD",
   "help.chestsexpl.1": "SOME CHESTS MAY",
-  "help.chestsexpl.2": "EXPLODE WHEN OPENED"
+  "help.chestsexpl.2": "EXPLODE WHEN OPENED",
+  "help.useturbo.1": "USE YOUR TURBO NOW"
 }

@@ -898,6 +898,95 @@ TEST_CASE("what the level tells the party is in the string table's language",
     scene.close();
 }
 
+TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    PartyMember member{0, save};
+    member.turbo = 99.0f;
+    const std::vector<PartyMember> party{member};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{3.0f, 2.0f, -20.0f};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.turboMeter(0) != nullptr);
+    REQUIRE(scene.turboMeter(3) == nullptr);
+    const PlayScene::Inputs still{};
+    // It fills two points a second, its shown level chasing; full, the box glows.
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    for (int i = 0; i < 120; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.turboMeter(0)->held() == TurboMeter::kFull);
+    REQUIRE(scene.turboMeter(0)->shown() == TurboMeter::kFull);
+    REQUIRE(scene.turboMeter(0)->flash() == TurboMeter::Flash::Glow);
+    const StatusBoxView view = scene.status(0);
+    REQUIRE(view.turbo.has_value());
+    REQUIRE(view.turbo->front == Color::rgba(255, 0, 0));
+    REQUIRE_FALSE(scene.status(2).turbo.has_value());
+
+    // Turbo held as the attack goes down: full, the greater attack, which takes it all.
+    PlayScene::Inputs strike{};
+    strike[0].turbo = true;
+    strike[0].attack = true;
+    strike[0].attackPressed = true;
+    scene.update(1.0 / 60.0, strike);
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboFull);
+    REQUIRE(scene.turboMeter(0)->held() < 1.0f);
+    for (int i = 0; i < 300 && scene.animator(0)->turboing(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(scene.animator(0)->turboing());
+    // With too little for either, the same buttons are an ordinary attack.
+    scene.update(1.0 / 60.0, strike);
+    REQUIRE(scene.animator(0)->throwing());
+    scene.close();
+
+    // Two fifths buys the lesser attack; a twentieth, a shove, which runs it down.
+    member.turbo = 45.0f;
+    const std::vector<PartyMember> again{member};
+    REQUIRE(scene.open(device, context, world, again, options));
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    const f32 before = scene.turboMeter(0)->held();
+    scene.update(1.0 / 60.0, strike);
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboStrong);
+    REQUIRE(scene.turboMeter(0)->held() < before - TurboMeter::kStrongCost + 0.1f);
+    REQUIRE(scene.turboMeter(0)->held() > before - TurboMeter::kStrongCost - 0.1f);
+    for (int i = 0; i < 300 && scene.animator(0)->turboing(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    // Holding turbo by itself asks for nothing; the charge button is the shove's.
+    PlayScene::Inputs holding{};
+    holding[0].turbo = true;
+    scene.update(1.0 / 60.0, holding);
+    REQUIRE_FALSE(scene.animator(0)->turboing());
+    PlayScene::Inputs tap{};
+    tap[0].chargePressed = true;
+    const f32 left = scene.turboMeter(0)->held();
+    REQUIRE(left >= TurboMeter::kShoveFrom);
+    scene.update(1.0 / 60.0, tap);
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::Shove);
+    for (int i = 0; i < 20; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.turboMeter(0)->held() < left - 4.0f);
+    scene.close();
+}
+
 TEST_CASE("potions burst about the character or where they land, and powerups show",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();

@@ -109,6 +109,9 @@ PlayButtons readPlayButtons(const Input& input, const PlayBindings& b, bool keyb
     out.attack = bound(input, b.attack, b.padAttack, keyboard, pad, false);
     out.usePotion = bound(input, b.usePotion, b.padUsePotion, keyboard, pad, false);
     out.throwPotion = bound(input, b.throwPotion, b.padThrowPotion, keyboard, pad, false);
+    out.turbo = bound(input, b.turbo, b.padTurbo, keyboard, pad, false);
+    out.chargePressed = bound(input, b.charge, b.padCharge, keyboard, pad, true);
+    out.attackPressed = bound(input, b.attack, b.padAttack, keyboard, pad, true);
     out.selectorUp = bound(input, b.selectorUp, b.padSelectorUp, keyboard, pad, true);
     out.selectorDown = bound(input, b.selectorDown, b.padSelectorDown, keyboard, pad, true);
     out.selectorLeft = bound(input, b.selectorLeft, b.padSelectorLeft, keyboard, pad, true);

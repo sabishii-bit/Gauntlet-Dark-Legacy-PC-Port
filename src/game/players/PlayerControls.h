@@ -27,6 +27,9 @@ struct PlayButtons {
     bool attack = false;
     bool usePotion = false;
     bool throwPotion = false;
+    bool turbo = false;         ///< held
+    bool chargePressed = false; ///< true only the frame it goes down
+    bool attackPressed = false; ///< likewise
     bool selectorUp = false; ///< these four true only the frame they go down
     bool selectorDown = false;
     bool selectorLeft = false;

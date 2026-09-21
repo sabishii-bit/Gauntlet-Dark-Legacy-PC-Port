@@ -108,6 +108,8 @@ constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
 constexpr std::string_view kChestSound = "S_CHEST";
 constexpr std::string_view kNarratorBank = "VOICE1";
 constexpr std::string_view kHelpTextPrefix = "help";
+constexpr s32 kSpecialPowerup = 9;     ///< the pickup subtype of the specials
+constexpr u32 kTurboFlag = 0x80000;    ///< of them, the one that fills the turbo meter
 constexpr std::string_view kScrollTextPrefix = "scroll";
 constexpr std::string_view kStringsFile = "text/english.json";
 constexpr std::string_view kDeathSound = "S_PLAYERDIES";
@@ -299,6 +301,7 @@ void PlayScene::close() {
     m_entrySaves.clear();
     m_painOwed.clear();
     m_struck.clear();
+    m_turbo.clear();
     m_clouds.clear();
     m_blasts.clear();
     m_cloudGaps.clear();
@@ -356,6 +359,8 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
         m_entrySaves.push_back(member.save);
         m_painOwed.push_back(0.0f);
         m_struck.push_back(PlayerDeed::None);
+        m_turbo.emplace_back();
+        m_turbo.back().add(member.turbo);
         m_cloudGaps.push_back(0.0f);
     }
 }
@@ -786,6 +791,63 @@ SoundHandle PlayScene::playRealmSound(std::string_view stem) {
     return playNamed(std::format("{}{}", stem, letter));
 }
 
+const TurboMeter* PlayScene::turboMeter(s32 player) const {
+    for (usize i = 0; i < m_actors.size() && i < m_turbo.size(); ++i) {
+        if (m_actors[i].player() == player) {
+            return &m_turbo[i];
+        }
+    }
+    return nullptr;
+}
+
+/** What the turbo and charge buttons ask, by the original's rules: turbo held as the attack
+ * button goes down, the greater turbo attack with the meter full, the lesser with two fifths
+ * of it, else nothing (the attack is then an ordinary one); the charge button going down, a
+ * shove, which wants a twentieth. Nothing when the body is in the middle of something. */
+PlayerDeed PlayScene::turboDeed(usize index, const PlayInput& in) const {
+    if (index >= m_turbo.size() || m_figures[index] == nullptr) {
+        return PlayerDeed::None;
+    }
+    const TurboMeter& meter = m_turbo[index];
+    PlayerDeed deed = PlayerDeed::None;
+    if (in.turbo && in.attackPressed) {
+        if (meter.held() >= TurboMeter::kFullCost) {
+            deed = PlayerDeed::TurboFull;
+        } else if (meter.held() >= TurboMeter::kStrongCost) {
+            deed = PlayerDeed::TurboStrong;
+        }
+    } else if (in.chargePressed && meter.held() >= TurboMeter::kShoveFrom) {
+        deed = PlayerDeed::Shove;
+    }
+    return m_figures[index]->animator.canBegin(deed) ? deed : PlayerDeed::None;
+}
+
+/** Runs a character's meter: a turbo attack is paid for as it begins (to the class's cry for
+ * it), a shove runs it down while it lasts, and otherwise it climbs while the character is
+ * free to act, the narrator saying so when it comes full. */
+void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
+    if (index >= m_turbo.size() || m_figures[index] == nullptr) {
+        return;
+    }
+    TurboMeter& meter = m_turbo[index];
+    const PlayerAnimator& body = m_figures[index]->animator;
+    if (body.turboBegan()) {
+        if (body.action() == PlayerAnimator::Action::TurboFull) {
+            meter.spend(TurboMeter::kFullCost);
+            cry(index, "TURBOC");
+        } else if (body.action() == PlayerAnimator::Action::TurboStrong) {
+            meter.spend(TurboMeter::kStrongCost);
+            cry(index, "TURBOB");
+        }
+    }
+    if (body.action() == PlayerAnimator::Action::Shove) {
+        meter.drain(seconds);
+    } else if (!isDown(index) && !body.turboing() && meter.fill(seconds)) {
+        postHelp(HelpMessages::kUseTurbo, index);
+    }
+    meter.step(ticks);
+}
+
 /** One of a character's own cries, `which` being what follows its class in the name. */
 void PlayScene::cry(usize index, std::string_view which) {
     Figure* body = index < m_figures.size() ? m_figures[index].get() : nullptr;
@@ -953,6 +1015,7 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind) {
         // the status box does not show.
         save.progress().health = 1;
         m_down[index] = kDying;
+        m_turbo[index].reset();
         playNamed(kDeathSound);
         cry(index, "DIE2");
         log::info("Player {} has fallen", m_actors[index].player() + 1);
@@ -1156,6 +1219,9 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
             postHelp(HelpMessages::kHealthFull, pickup.collector);
         }
         return std::nullopt;
+    }
+    if (pickup.subtype == kSpecialPowerup && (static_cast<u32>(pickup.flags) & kTurboFlag) != 0) {
+        m_turbo[pickup.collector].add(TurboMeter::kFull);
     }
     if (!taking.card.empty()) {
         m_pickups.addCard(actor.player(), taking.card);
@@ -1622,7 +1688,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             if ((in.usePotion || in.throwPotion) && !carrying) {
                 postHelp(HelpMessages::kNoPotion, i);
             }
-            if (in.usePotion && carrying) {
+            if (const PlayerDeed turbo = turboDeed(i, in); turbo != PlayerDeed::None) {
+                deed = turbo;
+            } else if (in.usePotion && carrying) {
                 deed = PlayerDeed::UsePotion;
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
@@ -1637,6 +1705,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         actor.update(move, cameraYaw, seconds, &m_world->collision(), pace);
         if (m_figures[i] != nullptr) {
             m_figures[i]->animate(move.magnitude, ticks, seconds, deed);
+            updateTurbo(i, ticks, seconds);
             if (m_down[i] == kDying && m_figures[i]->animator.dead()) {
                 m_down[i] = kInTower; // the body goes; its box says where
             }
@@ -1908,6 +1977,9 @@ StatusBoxView PlayScene::statusOf(s32 player) const {
         }
     }
     view.health = save.health();
+    if (const TurboMeter* meter = turboMeter(player); meter != nullptr) {
+        view.turbo = meter->look();
+    }
     view.keys = save.progress().inventory.keys;
     view.potions = static_cast<s32>(save.progress().inventory.potions.size());
     view.potionKind = save.progress().inventory.nextPotion();
