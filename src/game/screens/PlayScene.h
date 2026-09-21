@@ -41,6 +41,7 @@
 #include "game/screens/PowerupSelector.h"
 #include "game/screens/StatusBox.h"
 #include "game/screens/TransitionScreen.h"
+#include "engine/world/AmbientDimmer.h"
 #include "engine/world/AnimationPlayer.h"
 #include "engine/world/TextureAnimator.h"
 #include "engine/world/TreePose.h"
@@ -50,6 +51,7 @@
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
 #include "game/world/LockedGates.h"
+#include "game/world/MoveStrikes.h"
 #include "game/world/Traps.h"
 #include "game/world/EffectTrees.h"
 #include "game/world/ExitPortals.h"
@@ -195,6 +197,11 @@ public:
     const Traps& traps() const { return m_traps; }
     const Breakables& barrels() const { return m_barrels; }
     const HelpMessages& help() const { return m_help; }
+    const MoveStrikes& strikes() const { return m_strikes; }
+    const AmbientDimmer& dimmer() const { return m_dimmer; }
+    /** Gives `player`'s character experience won in play, which also feeds its turbo meter
+     * (unless it is in the middle of a turbo move), as a kill does in the original. */
+    void awardExperience(s32 player, s32 amount);
     /** What `player`'s status box shows. */
     StatusBoxView status(s32 player) const { return statusOf(player); }
     /** The turbo meter of `player`'s character, or null when that player is not in. */
@@ -202,7 +209,7 @@ public:
     /** Whether `player`'s character has fallen (dying or gone to the tower). */
     bool fallen(s32 player) const;
     /** Hurts `player`'s character, as anything in the level does. */
-    void hurtPlayer(s32 player, f32 damage, HurtKind kind);
+    void hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed = false);
     /** A blast at `position`: hurts and breaks what is within `radius`. */
     void blast(const Vec3& position, f32 radius, f32 damage);
     const TransitionScreen& transition() const { return m_transition; }
@@ -290,7 +297,8 @@ private:
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     void playGateSound(s32 subtype);
-    void hurt(usize index, f32 damage, HurtKind kind);
+    void hurt(usize index, f32 damage, HurtKind kind, bool directed = false);
+    f32 guarded(usize index, f32 damage, bool directed) const;
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer);
     void settleBlasts();
     void updateClouds(f32 seconds);
@@ -298,6 +306,14 @@ private:
     SoundHandle playRealmSound(std::string_view stem);
     void cry(usize index, std::string_view which);
     PlayerDeed turboDeed(usize index, const PlayInput& in) const;
+    void beginMove(usize index);
+    MoveInput chargeInput(usize index, const MoveInput& stick, f32 cameraYaw) const;
+    void ramBarrels(usize index);
+    void runMove(usize index);
+    void fireStrike(usize index, s32 strike);
+    void updateStrikes(f32 seconds);
+    ItemArchive* moveEffectsOf(usize index);
+    f32 ownDamageOf(usize index) const;
     void updateTurbo(usize index, s32 ticks, f32 seconds);
     bool isDown(usize index) const { return index < m_down.size() && m_down[index] != kUp; }
     /** Where the level finds a character: nowhere once it has fallen. */
@@ -373,6 +389,24 @@ private:
     std::vector<f32> m_painOwed;             ///< per actor, harm not yet cried out over
     std::vector<PlayerDeed> m_struck;        ///< per actor, the reaction a hit this tick asks
     std::vector<TurboMeter> m_turbo;         ///< per actor
+    std::vector<std::vector<s32>> m_helpHeard; ///< per actor, since the character was loaded
+    /** A turbo move under way: the strikes it has yet to make and what it has yet to pay. */
+    struct MoveProgress {
+        std::vector<s32> pending;
+        std::vector<s32> all; ///< every strike of it, which may keep the level dark
+        f32 owed = 0.0f;
+        bool named = false;   ///< its name has been announced
+    };
+    AmbientDimmer m_dimmer;
+    std::vector<MoveProgress> m_moves;       ///< per actor
+    std::vector<std::vector<usize>> m_rammed; ///< per actor, the barrels this charge has hit
+    MoveStrikes m_strikes;
+    /** The effect that goes along with a strike that flies. */
+    struct StrikeEffect {
+        u32 strike = 0;
+        u32 effect = 0;
+    };
+    std::vector<StrikeEffect> m_strikeEffects;
     /** Gas a poison barrel left hanging. */
     struct GasCloud {
         Vec3 position{0.0f, 0.0f, 0.0f};

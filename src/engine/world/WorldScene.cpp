@@ -327,6 +327,7 @@ void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4&
     state.alphaTest = batch.translucent ? kAlphaTest : 0.0f;
     state.cullBack = true;
     state.depthWrite = batch.depthWrite;
+    state.darken = batch.additive ? 0.0f : m_darken;
     device.draw(batch.geometry, *slot.current(), clip, state);
 }
 
@@ -375,6 +376,7 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
         state.alphaTest = part.translucent ? kAlphaTest : 0.0f;
         state.cullBack = true;
         state.depthWrite = unit.depthWrite && unit.alpha >= 1.0f;
+        state.darken = part.additive ? 0.0f : m_darken;
         device.draw(m_scratch, *slot.current(), clip, state);
     }
 }

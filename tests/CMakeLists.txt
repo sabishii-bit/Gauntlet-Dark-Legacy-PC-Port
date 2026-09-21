@@ -40,6 +40,7 @@ add_executable(tests
     engine/assets/ModelSetTests.cpp
     engine/assets/AnimationSetTests.cpp
     engine/ui/ModelSpriteTests.cpp
+    engine/world/AmbientDimmerTests.cpp
     engine/world/WorldCameraTests.cpp
     engine/world/WorldSceneTests.cpp
     engine/world/TextureAnimatorTests.cpp
@@ -102,6 +103,7 @@ add_executable(tests
     game/world/LevelCatalogTests.cpp
     game/world/ExitPortalsTests.cpp
     game/world/LevelFixturesTests.cpp
+    game/world/MoveStrikesTests.cpp
     game/screens/HelpMessagesTests.cpp
     game/world/LevelTriggersTests.cpp
     game/world/TowerCameraTests.cpp

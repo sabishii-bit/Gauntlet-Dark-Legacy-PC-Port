@@ -24,7 +24,8 @@ enum class PlayerDeed : u8 {
     Reel,   ///< stunned, as by a fire trap
     TurboStrong, ///< the lesser turbo attack
     TurboFull,   ///< the greater
-    Shove
+    Shove,
+    Defend       ///< held: the guard comes up and stays up
 };
 
 /**
@@ -66,16 +67,19 @@ public:
         Stun,               ///< reels, stunned
         TurboStrong,
         TurboFull,
-        Shove
+        Shove,
+        DefendRaise, ///< the guard coming up
+        Defend,      ///< held up, which is when it blocks
+        DefendLower
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 25;
+    static constexpr usize kActionCount = 28;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",  "IDLE1",  "IDLE2",        "IDLE2_LOOP",  "WALK1",  "WALK2",   "RUN1",
         "RUN2",   "START",  "THROW1S",      "THROW2S",     "THROW1", "THROW2",  "THROW1R",
         "THROW2R", "MAGICS", "MAGICR",      "THROWPOTIONS", "THROWPOTIONR", "DEATH",
-        "HITREACT", "STUN1", "ATTPWRB", "ATTPWRC", "SHOVE"};
+        "HITREACT", "STUN1", "ATTPWRB", "ATTPWRC", "SHOVE", "DEFEND1", "DEFEND2", "DEFENDR"};
     static constexpr f32 kReleaseFrame = 2.0f; ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -121,8 +125,21 @@ public:
     f32 attackSeconds() const { return m_attackSeconds; }
     /** How much of its pace the current action leaves the body. */
     f32 moveScale() const {
-        return throwing() || conjuring() || reacting() || turboing() ? 0.0f : 1.0f;
+        if (shoving()) {
+            return kChargePace; // the charge rushes on, faster than a run
+        }
+        return throwing() || conjuring() || reacting() || turboing() || guarding() ? 0.0f : 1.0f;
     }
+    static constexpr f32 kChargePace = 1.5f;
+    /** Whether the guard is coming up, up or going down; the feet stay put throughout. */
+    bool guarding() const {
+        return m_current == Action::DefendRaise || m_current == Action::Defend ||
+               m_current == Action::DefendLower;
+    }
+    /** Whether the guard is up, which is when it takes the force out of a blow. */
+    bool defending() const { return m_current == Action::Defend; }
+    /** Whether the body is shoving, which takes half the force out of a blow. */
+    bool shoving() const { return m_current == Action::Shove; }
     /** Whether the body is in a turbo move, which plays through with nothing else heeded. */
     bool turboing() const {
         return m_current == Action::TurboStrong || m_current == Action::TurboFull ||

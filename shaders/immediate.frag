@@ -22,4 +22,6 @@ void main() {
     }
     // The lightmap's alpha carries its intensity, like the console's second texture stage.
     outColor.rgb *= texture(uLightmap, vUv2).a;
+    // What a draw is darkened by, as when the level's ambient light is pulled down.
+    outColor.rgb *= 1.0 - pc.params.w;
 }

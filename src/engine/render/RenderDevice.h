@@ -40,6 +40,7 @@ struct DrawState {
     f32 alphaTest = 0.0f;      ///< texels with less alpha than this are dropped; 0 keeps all
     bool cullBack = false;     ///< triangles facing away are skipped
     bool depthWrite = true;
+    f32 darken = 0.0f;         ///< how much of its colour is taken away: 0 none, 1 all
 
     bool operator==(const DrawState&) const = default;
 };

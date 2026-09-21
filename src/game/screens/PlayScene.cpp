@@ -108,6 +108,11 @@ constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
 constexpr std::string_view kChestSound = "S_CHEST";
 constexpr std::string_view kNarratorBank = "VOICE1";
 constexpr std::string_view kHelpTextPrefix = "help";
+constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
+constexpr f32 kMoveNamedFrame = 1.0f; ///< of a turbo attack, when its name is announced
+constexpr f32 kChargeStick = 0.25f;  ///< the least push of the stick that steers a charge
+constexpr f32 kRamDamage = 3.0f;     ///< what a charge does to what it runs into
+constexpr f32 kRamReach = 0.3f;      ///< how near counts as run into
 constexpr s32 kSpecialPowerup = 9;     ///< the pickup subtype of the specials
 constexpr u32 kTurboFlag = 0x80000;    ///< of them, the one that fills the turbo meter
 constexpr std::string_view kScrollTextPrefix = "scroll";
@@ -302,6 +307,15 @@ void PlayScene::close() {
     m_painOwed.clear();
     m_struck.clear();
     m_turbo.clear();
+    m_helpHeard.clear();
+    m_moves.clear();
+    m_rammed.clear();
+    m_strikes.clear();
+    m_strikeEffects.clear();
+    m_dimmer.reset();
+    if (m_world != nullptr) {
+        m_world->setAmbientOffset(0.0f);
+    }
     m_clouds.clear();
     m_blasts.clear();
     m_cloudGaps.clear();
@@ -361,6 +375,10 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
         m_struck.push_back(PlayerDeed::None);
         m_turbo.emplace_back();
         m_turbo.back().add(member.turbo);
+        m_helpHeard.push_back(member.helpHeard);
+        std::ranges::sort(m_helpHeard.back());
+        m_moves.emplace_back();
+        m_rammed.emplace_back();
         m_cloudGaps.push_back(0.0f);
     }
 }
@@ -745,7 +763,7 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
             playRealmSound(kFireTrapSound);
         }
         // Every trap stuns: spikes and blades make their victim flinch, the rest reel.
-        if (hit.damage > 1.0f && !isDown(hit.victim)) {
+        if (guarded(hit.victim, hit.damage, false) > 1.0f && !isDown(hit.victim)) {
             m_struck[hit.victim] = hit.pierces ? PlayerDeed::Flinch : PlayerDeed::Reel;
         }
         hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn);
@@ -776,12 +794,26 @@ bool PlayScene::fallen(s32 player) const {
     return false;
 }
 
-void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind) {
+void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed) {
     for (usize i = 0; i < m_actors.size(); ++i) {
         if (m_actors[i].player() == player) {
-            hurt(i, damage, kind);
+            hurt(i, damage, kind, directed);
         }
     }
+}
+
+/** What a guard or a shove leaves of a hurt over a point, by the original's rules as it
+ * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
+ * nowhere in particular (a trap underfoot); a shove halves either. */
+f32 PlayScene::guarded(usize index, f32 damage, bool directed) const {
+    const Figure* figure = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    if (figure == nullptr || damage <= 1.0f) {
+        return damage;
+    }
+    if (figure->animator.defending()) {
+        return directed ? damage * 0.5f : 0.0f;
+    }
+    return figure->animator.shoving() ? damage * 0.5f : damage;
 }
 
 /** A sound of the realm's bank, whose names end in the realm's letter. */
@@ -822,9 +854,247 @@ PlayerDeed PlayScene::turboDeed(usize index, const PlayInput& in) const {
     return m_figures[index]->animator.canBegin(deed) ? deed : PlayerDeed::None;
 }
 
-/** Runs a character's meter: a turbo attack is paid for as it begins (to the class's cry for
- * it), a shove runs it down while it lasts, and otherwise it climbs while the character is
- * free to act, the narrator saying so when it comes full. */
+/** A charge goes flat out the way the stick is pushed, or straight ahead when it is not. */
+MoveInput PlayScene::chargeInput(usize index, const MoveInput& stick, f32 cameraYaw) const {
+    MoveInput rush;
+    rush.magnitude = 1.0f;
+    if (stick.magnitude >= kChargeStick) {
+        rush.direction = stick.direction;
+        return rush;
+    }
+    const Vec3 facing = m_actors[index].facing();
+    const f32 ahead = std::atan2(facing.x, facing.z) - cameraYaw;
+    rush.direction = Vec2{std::sin(ahead), std::cos(ahead)};
+    return rush;
+}
+
+/** What a charge runs into is struck, once each charge. */
+void PlayScene::ramBarrels(usize index) {
+    const PlayerActor& actor = m_actors[index];
+    std::vector<usize>& rammed = m_rammed[index];
+    for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
+        if (!m_barrels.standing(barrel) || std::ranges::find(rammed, barrel) != rammed.end() ||
+            !m_barrels.barrel(barrel).box.touchedBy(actor.position(), actor.radius(), kRamReach)) {
+            continue;
+        }
+        rammed.push_back(barrel);
+        strikeBarrel(barrel, kRamDamage, actor.player());
+    }
+    settleBlasts();
+}
+
+/** A turbo attack begins: the strikes its class's data gives it are lined up, and what it
+ * costs is owed until the first of them that does harm is made. A class whose data has none
+ * pays at once and cries out, so the move is never free. */
+void PlayScene::beginMove(usize index) {
+    MoveProgress& move = m_moves[index];
+    move.pending.clear();
+    move.all.clear();
+    move.owed = 0.0f;
+    move.named = false;
+    const PlayerAnimator::Action action = m_figures[index]->animator.action();
+    const bool full = action == PlayerAnimator::Action::TurboFull;
+    if (!full && action != PlayerAnimator::Action::TurboStrong) {
+        return;
+    }
+    move.owed = full ? TurboMeter::kFullCost : TurboMeter::kStrongCost;
+    if (const ClassStats* stats = m_classes.stats(m_actors[index].save().character)) {
+        if (full) {
+            move.pending = stats->strikesOf(stats->moves.turboC1);
+            const std::vector<s32> second = stats->strikesOf(stats->moves.turboC2);
+            move.pending.insert(move.pending.end(), second.begin(), second.end());
+        } else {
+            move.pending = stats->strikesOf(stats->moves.turboB);
+        }
+    }
+    move.all = move.pending;
+    if (move.pending.empty()) {
+        m_turbo[index].spend(move.owed);
+        move.owed = 0.0f;
+        cry(index, full ? "TURBOC" : "TURBOB");
+    }
+}
+
+/** Makes the strikes of the move under way whose frames have come; a move cut short makes
+ * no more of them, and what it still owed is never paid. */
+void PlayScene::runMove(usize index) {
+    MoveProgress& move = m_moves[index];
+    const PlayerAnimator& body = m_figures[index]->animator;
+    const bool attacking = body.action() == PlayerAnimator::Action::TurboFull ||
+                           body.action() == PlayerAnimator::Action::TurboStrong;
+    if (!attacking) {
+        move.pending.clear();
+        move.all.clear();
+        move.owed = 0.0f;
+        return;
+    }
+    const ClassStats* stats = m_classes.stats(m_actors[index].save().character);
+    if (stats == nullptr) {
+        return;
+    }
+    const f32 frame = body.player().frame();
+    // A frame in, the move is named.
+    if (!move.named && frame >= kMoveNamedFrame) {
+        move.named = true;
+        for (const s32 strike : move.all) {
+            if (const s32 help = stats->moveStrikes[static_cast<usize>(strike)].help; help >= 0) {
+                postHelp(help, index);
+                break;
+            }
+        }
+    }
+    // The level goes dark for as long as a strike that darkens it lasts.
+    for (const s32 strike : move.all) {
+        const MoveStrike& row = stats->moveStrikes[static_cast<usize>(strike)];
+        if (row.dimming() != 0.0f && row.lasting(frame)) {
+            m_dimmer.ask(row.dimming());
+        }
+    }
+    std::vector<s32> due;
+    std::erase_if(move.pending, [&](s32 strike) {
+        const bool now =
+            frame >= static_cast<f32>(stats->moveStrikes[static_cast<usize>(strike)].startFrame);
+        if (now) {
+            due.push_back(strike);
+        }
+        return now;
+    });
+    for (const s32 strike : due) {
+        fireStrike(index, strike);
+    }
+}
+
+/** The costume colour's effects, which hold the trees a class's moves show; loaded when
+ * first wanted. */
+ItemArchive* PlayScene::moveEffectsOf(usize index) {
+    Figure* figure = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    if (figure == nullptr) {
+        return nullptr;
+    }
+    if (!figure->effects.loaded()) {
+        const CharacterSave& save = m_actors[index].save();
+        figure->effects.load(m_context.unpackedRoot / kPlayersDirectory /
+                             classCode(save.character) /
+                             std::format("SFX{}", colorCode(save.color)));
+    }
+    return figure->effects.loaded() ? &figure->effects : nullptr;
+}
+
+/** What a character's own blows do, which a strike with a negative amount multiplies. */
+f32 PlayScene::ownDamageOf(usize index) const {
+    const CharacterSave& save = m_actors[index].save();
+    const ClassStats* stats = m_classes.stats(save.character);
+    if (stats == nullptr) {
+        return PlayerMissiles::kLeastDamage;
+    }
+    const StatBlock block =
+        displayStats(*stats, experienceLevel(save.experience()), save.progress());
+    return PlayerMissiles::damageFor(MissileSpec::byMagic(save.character) ? block.magic()
+                                                                         : block.strength());
+}
+
+/** One strike of a move: its effects show and sound where the character stands, the meter
+ * pays what the move still owes if the strike does harm, and the harm is set going. */
+void PlayScene::fireStrike(usize index, s32 strikeIndex) {
+    const ClassStats* stats = m_classes.stats(m_actors[index].save().character);
+    if (stats == nullptr || strikeIndex < 0 ||
+        static_cast<usize>(strikeIndex) >= stats->moveStrikes.size()) {
+        return;
+    }
+    const MoveStrike& strike = stats->moveStrikes[static_cast<usize>(strikeIndex)];
+    const PlayerActor& actor = m_actors[index];
+    const Vec3 facing = actor.facing();
+    MoveProgress& move = m_moves[index];
+    if (strike.amount != 0.0f && move.owed > 0.0f) {
+        m_turbo[index].spend(move.owed);
+        move.owed = 0.0f;
+    }
+    const u32 id = m_strikes.start(strike, actor.player(), actor.position(), facing,
+                                   ownDamageOf(index));
+    const Vec3 origin = MoveStrikes::originOf(strike, actor.position(), facing);
+    const MoveStrikes::Strike* started = m_strikes.find(id);
+    ItemArchive* archive = moveEffectsOf(index);
+    // An effect may bring another with it.
+    usize followed = 0;
+    for (s32 at = strike.effect; at >= 0 && static_cast<usize>(at) < stats->moveEffects.size() &&
+                                 followed < stats->moveEffects.size();
+         at = stats->moveEffects[static_cast<usize>(at)].next, ++followed) {
+        const MoveEffect& effect = stats->moveEffects[static_cast<usize>(at)];
+        if (!effect.sound.empty()) {
+            if (const auto sound = m_figures[index]->voice.find(effect.sound);
+                sound.has_value() && m_context.sounds != nullptr) {
+                m_context.sounds->play(m_figures[index]->voice.sequence(*sound), 1.0f,
+                                       SoundCategory::Effects);
+            } else {
+                playNamed(effect.sound);
+            }
+        }
+        if (effect.tree.empty() || effect.tree == kNoEffectTree || archive == nullptr ||
+            m_device == nullptr || !archive->trees.find(effect.tree).has_value()) {
+            continue;
+        }
+        EffectTrees::Setting setting;
+        setting.scale = effect.scale;
+        setting.yaw = std::atan2(facing.x, facing.z);
+        if (started != nullptr && started->flies) {
+            setting.velocity = facing * started->speed;
+            setting.seconds = started->secondsLeft;
+            // What flies launches once, then its looping tree carries it on.
+            if (at == strike.effect && strike.loopEffect >= 0 &&
+                static_cast<usize>(strike.loopEffect) < stats->moveEffects.size()) {
+                setting.then = stats->moveEffects[static_cast<usize>(strike.loopEffect)].tree;
+            }
+        }
+        const Vec3 side{facing.z, 0.0f, -facing.x};
+        const Vec3 at3 = origin + side * effect.offset.x + Vec3{0.0f, effect.offset.y, 0.0f} +
+                         facing * effect.offset.z;
+        const u32 shown = m_effects.startSet(*m_device, *archive, effect.tree, at3, setting);
+        if (shown != 0 && started != nullptr && started->flies) {
+            m_strikeEffects.push_back(StrikeEffect{id, shown});
+        }
+    }
+}
+
+/** The strikes under way harm what they reach: the barrels, for now. What flies takes its
+ * effect along, and the effect ends with it. */
+void PlayScene::updateStrikes(f32 seconds) {
+    for (const StrikeHit& hit : m_strikes.update(seconds, &m_world->collision())) {
+        for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
+            if (!m_barrels.standing(barrel)) {
+                continue;
+            }
+            const Breakables::Barrel& cask = m_barrels.barrel(barrel);
+            if (hit.reaches(cask.figure.position(), cask.radius, cask.height)) {
+                strikeBarrel(barrel, hit.damage, hit.owner);
+            }
+        }
+    }
+    settleBlasts();
+    std::erase_if(m_strikeEffects, [this](const StrikeEffect& pair) {
+        if (m_strikes.find(pair.strike) != nullptr) {
+            return false;
+        }
+        m_effects.stop(pair.effect);
+        return true;
+    });
+}
+
+void PlayScene::awardExperience(s32 player, s32 amount) {
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        if (m_actors[i].player() != player || isDown(i) || amount <= 0) {
+            continue;
+        }
+        m_actors[i].save().progress().experience += amount;
+        const bool busy = m_figures[i] != nullptr && m_figures[i]->animator.turboing();
+        if (!busy) {
+            m_turbo[i].add(TurboMeter::kPerExperience * static_cast<f32>(amount));
+        }
+    }
+}
+
+/** Runs a character's meter: a turbo attack is paid for as it first does harm, a shove runs
+ * it down while it lasts, and otherwise it climbs while the character is free to act, the
+ * narrator saying so when it comes full. */
 void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
     if (index >= m_turbo.size() || m_figures[index] == nullptr) {
         return;
@@ -832,14 +1102,9 @@ void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
     TurboMeter& meter = m_turbo[index];
     const PlayerAnimator& body = m_figures[index]->animator;
     if (body.turboBegan()) {
-        if (body.action() == PlayerAnimator::Action::TurboFull) {
-            meter.spend(TurboMeter::kFullCost);
-            cry(index, "TURBOC");
-        } else if (body.action() == PlayerAnimator::Action::TurboStrong) {
-            meter.spend(TurboMeter::kStrongCost);
-            cry(index, "TURBOB");
-        }
+        beginMove(index);
     }
+    runMove(index);
     if (body.action() == PlayerAnimator::Action::Shove) {
         meter.drain(seconds);
     } else if (!isDown(index) && !body.turboing() && meter.fill(seconds)) {
@@ -871,7 +1136,8 @@ bool PlayScene::postHelp(s32 id, usize index) {
     std::vector<HelpReader> readers;
     for (usize i = 0; i < m_actors.size(); ++i) {
         if (!isDown(i)) {
-            readers.push_back(HelpReader{m_actors[i].player(), &m_actors[i].save().helpSeen});
+            readers.push_back(HelpReader{m_actors[i].player(), &m_actors[i].save().helpSeen,
+                                         i < m_helpHeard.size() ? &m_helpHeard[i] : nullptr});
         }
     }
     const HelpMessageSpec* spec = m_help.post(id, m_actors[index].player(), readers);
@@ -879,8 +1145,13 @@ bool PlayScene::postHelp(s32 id, usize index) {
         return false;
     }
     if (m_context.sounds != nullptr) {
-        if (const auto line = m_narrator.find(spec->voice); line.has_value()) {
-            m_context.sounds->play(m_narrator.sequence(*line), 1.0f, SoundCategory::Effects);
+        // A turbo attack's name is called from the character's own class's bank.
+        SoundSet* bank = &m_narrator;
+        if (spec->classVoice && index < m_figures.size() && m_figures[index] != nullptr) {
+            bank = &m_figures[index]->voice;
+        }
+        if (const auto line = bank->find(spec->voice); line.has_value()) {
+            m_context.sounds->play(bank->sequence(*line), 1.0f, SoundCategory::Effects);
         }
     }
     return true;
@@ -952,7 +1223,7 @@ void PlayScene::settleBlasts() {
             const Vec3 offset = actor.followPoint() - felt.position;
             if (std::hypot(offset.x, offset.z) <= felt.radius + actor.radius() &&
                 std::abs(offset.y) <= actor.height() * 0.5f + felt.radius) {
-                hurt(i, felt.damage, HurtKind::Blow);
+                hurt(i, felt.damage, HurtKind::Blow, true);
             }
         }
         for (const usize barrel : m_barrels.within(felt.position, felt.radius)) {
@@ -976,7 +1247,7 @@ void PlayScene::updateClouds(f32 seconds) {
             if (std::hypot(offset.x, offset.z) <= kGasRadius + m_actors[i].radius() &&
                 std::abs(offset.y) <= m_actors[i].height() * 0.5f + kGasRadius) {
                 m_cloudGaps[i] = kGasGapSeconds;
-                hurt(i, cloud.damage, HurtKind::Gas);
+                hurt(i, cloud.damage, HurtKind::Gas, true);
             }
         }
     }
@@ -1000,8 +1271,12 @@ void PlayScene::playGateSound(s32 /*subtype*/) {
  * the level's damage, the cry depends on what did it, and with under a point of health left
  * the character dies, to the dying sound and its own last cry. Nobody is hurt in the tower,
  * nor once they have fallen. */
-void PlayScene::hurt(usize index, f32 damage, HurtKind kind) {
+void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
     if (index >= m_actors.size() || isDown(index) || m_world->isTower() || damage <= 0.0f) {
+        return;
+    }
+    damage = guarded(index, damage, directed);
+    if (damage <= 0.0f) {
         return;
     }
     const LevelInfo* level = m_world->level();
@@ -1072,6 +1347,9 @@ std::vector<PartyMember> PlayScene::party() const {
         PartyMember member{m_actors[i].player(), down ? m_entrySaves[i] : m_actors[i].save(),
                            i < m_slots.size() ? m_slots[i] : std::nullopt, down};
         member.save.helpSeen = m_actors[i].save().helpSeen;
+        if (i < m_helpHeard.size()) {
+            member.helpHeard = m_helpHeard[i];
+        }
         members.push_back(std::move(member));
     }
     return members;
@@ -1694,6 +1972,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 deed = PlayerDeed::UsePotion;
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
+            } else if (in.turbo) {
+                deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
             } else if (in.attack) {
                 deed = PlayerDeed::Attack;
             }
@@ -1702,7 +1982,14 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
         // A body in a throw keeps its feet where they are, turning to the stick.
         const f32 pace = m_figures[i] != nullptr ? m_figures[i]->animator.moveScale() : 1.0f;
-        actor.update(move, cameraYaw, seconds, &m_world->collision(), pace);
+        const bool charging = m_figures[i] != nullptr && m_figures[i]->animator.shoving();
+        actor.update(charging ? chargeInput(i, move, cameraYaw) : move, cameraYaw, seconds,
+                     &m_world->collision(), pace);
+        if (charging) {
+            ramBarrels(i);
+        } else {
+            m_rammed[i].clear();
+        }
         if (m_figures[i] != nullptr) {
             m_figures[i]->animate(move.magnitude, ticks, seconds, deed);
             updateTurbo(i, ticks, seconds);
@@ -1748,6 +2035,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             settleBlasts();
         }
     }
+    updateStrikes(seconds);
+    m_dimmer.update(seconds);
+    m_world->setAmbientOffset(m_dimmer.offset());
     m_effects.update(seconds);
     collectItems();
     updateBeam(ticks);
@@ -1863,7 +2153,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_traps.draw(device, clip, m_world->lighting());
     m_barrels.draw(device, clip, m_world->lighting());
     m_missiles.draw(device, clip, m_world->lighting());
-    m_effects.draw(device, clip, m_world->lighting());
+    m_effects.draw(device, clip, m_world->fullLighting());
     drawSpawn(device, clip);
     const auto width = static_cast<f32>(config.display.virtualWidth);
     const auto height = static_cast<f32>(config.display.virtualHeight);

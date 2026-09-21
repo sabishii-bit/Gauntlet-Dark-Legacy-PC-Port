@@ -8,19 +8,36 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 12> kSpecs{{
-    {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY", false},
-    {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2", false},
-    {HelpMessages::kKeysFull, "FULLOFKEYS", "S_KEYFULL", false},
-    {HelpMessages::kNoPotion, "COLLECTMAGICFIRST", "S_COLLECTPOT", false},
-    {HelpMessages::kTrapsHurt, "AVOIDOBJECTS", "S_AVOID", false},
-    {HelpMessages::kRandomChest, "RANDOMCHEST", "S_SILVER", false},
-    {HelpMessages::kBarrelsHold, "WOODBARREL", "S_SOMEBARRELS", false},
-    {HelpMessages::kUseTurbo, "USETURBO", "S_USETURBO", false},
-    {HelpMessages::kHealthFull, "HEALTHFULL", "S_HEALTHFULL", true},
-    {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS", false},
-    {HelpMessages::kGasSpoils, "GASPOISON", "S_GASFOODBAD", false},
-    {HelpMessages::kChestsExplode, "CHESTSEXPL", "S_CHESTSEXPL", false},
+constexpr std::array<HelpMessageSpec, 28> kSpecs{{
+    {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
+    {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
+    {HelpMessages::kKeysFull, "FULLOFKEYS", "S_KEYFULL"},
+    {HelpMessages::kNoPotion, "COLLECTMAGICFIRST", "S_COLLECTPOT"},
+    {HelpMessages::kTrapsHurt, "AVOIDOBJECTS", "S_AVOID"},
+    {HelpMessages::kRandomChest, "RANDOMCHEST", "S_SILVER"},
+    {HelpMessages::kBarrelsHold, "WOODBARREL", "S_SOMEBARRELS"},
+    // The classes' turbo attacks by name: the lesser, then the greater.
+    {57, "WAR_TURBO", "S_FIREARC", HelpRepeat::OncePerSession, 1, 60, true},
+    {58, "WAR_TURBO", "S_PLASMATRAIL", HelpRepeat::OncePerSession, 2, 70, true},
+    {60, "VAL_TURBO", "S_MULTIBLADE", HelpRepeat::OncePerSession, 1, 60, true},
+    {61, "VAL_TURBO", "S_SKYLANCE", HelpRepeat::OncePerSession, 2, 70, true},
+    {63, "WIZ_TURBO", "S_ROCKSHOWER", HelpRepeat::OncePerSession, 1, 60, true},
+    {64, "WIZ_TURBO", "S_DEMONSKULL", HelpRepeat::OncePerSession, 2, 70, true},
+    {66, "ARC_TURBO", "S_DOUBLEBOW", HelpRepeat::OncePerSession, 1, 60, true},
+    {67, "ARC_TURBO", "S_BFG", HelpRepeat::OncePerSession, 2, 70, true},
+    {69, "DWF_TURBO", "S_TURB_DWF", HelpRepeat::OncePerSession, 1, 60, true},
+    {70, "DWF_TURBO", "S_TURC_DWF", HelpRepeat::OncePerSession, 2, 70, true},
+    {72, "KNI_TURBO", "S_TURB_KNI", HelpRepeat::OncePerSession, 1, 60, true},
+    {73, "KNI_TURBO", "S_TURC_KNI", HelpRepeat::OncePerSession, 2, 70, true},
+    {75, "SOR_TURBO", "S_TURB_SOR", HelpRepeat::OncePerSession, 1, 60, true},
+    {76, "SOR_TURBO", "S_TURC_SOR", HelpRepeat::OncePerSession, 2, 70, true},
+    {78, "JES_TURBO", "S_TURB_JES", HelpRepeat::OncePerSession, 1, 60, true},
+    {79, "JES_TURBO", "S_TURC_JES", HelpRepeat::OncePerSession, 2, 70, true},
+    {HelpMessages::kUseTurbo, "USETURBO", "S_USETURBO"},
+    {HelpMessages::kHealthFull, "HEALTHFULL", "S_HEALTHFULL", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS"},
+    {HelpMessages::kGasSpoils, "GASPOISON", "S_GASFOODBAD"},
+    {HelpMessages::kChestsExplode, "CHESTSEXPL", "S_CHESTSEXPL"},
 }};
 
 /** The original's ink for players one to four: dark yellow, blue, red and green. */
@@ -43,6 +60,7 @@ Color HelpMessages::inkOf(s32 player) {
 void HelpMessages::clear() {
     m_lines.clear();
     m_id = -1;
+    m_priority = 0;
     m_ticksLeft = 0;
     m_pauseLeft = 0;
     m_posted = 0;
@@ -51,40 +69,63 @@ void HelpMessages::clear() {
 const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
                                           std::span<const HelpReader> party) {
     const HelpMessageSpec* spec = specOf(id);
-    if (spec == nullptr || showing() || m_pauseLeft > 0 || m_strings == nullptr) {
+    if (spec == nullptr || m_strings == nullptr) {
         return nullptr;
     }
-    // Told once: a player's own message until that player has seen it, the others until
-    // everyone playing has.
+    // One at a time, unless it outranks what is up; the pause between them is the lessons'.
+    const bool lesson = spec->repeat != HelpRepeat::OncePerSession;
+    if ((showing() && m_priority >= spec->priority) || (lesson && m_pauseLeft > 0)) {
+        return nullptr;
+    }
     const auto sawIt = [id](const HelpReader& reader) {
         return reader.seen != nullptr && std::ranges::binary_search(*reader.seen, id);
     };
-    const auto concerns = [&](const HelpReader& reader) {
-        return !spec->perPlayer || reader.player == player;
+    const auto heardIt = [id](const HelpReader& reader) {
+        return reader.heard != nullptr && std::ranges::binary_search(*reader.heard, id);
     };
-    const bool wanted = std::ranges::any_of(
-        party, [&](const HelpReader& reader) { return concerns(reader) && !sawIt(reader); });
+    const auto concerns = [&](const HelpReader& reader) {
+        return spec->repeat != HelpRepeat::OncePerPlayer || reader.player == player;
+    };
+    // Told once: a player's own message until that player has seen it, a lesson until
+    // everyone playing has, a session's until anyone playing has heard it since loading.
+    const bool wanted =
+        spec->repeat == HelpRepeat::OncePerSession
+            ? std::ranges::none_of(party, heardIt)
+            : std::ranges::any_of(party, [&](const HelpReader& reader) {
+                  return concerns(reader) && !sawIt(reader);
+              });
     const auto message = m_strings->find(spec->text);
     if (!wanted || !message.has_value()) {
         return nullptr;
     }
     const MessageInfo& info = m_strings->message(*message);
     // The strings keep a message's lines as its pages.
-    m_lines.clear();
-    for (const std::string& page : info.pages) {
-        for (std::string& line : ScrollBox::splitLines(page)) {
-            m_lines.push_back(std::move(line));
+    std::vector<std::string> lines;
+    for (usize page = 0; page < info.pages.size(); ++page) {
+        if (spec->line >= 0 && page != static_cast<usize>(spec->line)) {
+            continue;
+        }
+        for (std::string& line : ScrollBox::splitLines(info.pages[page])) {
+            lines.push_back(std::move(line));
         }
     }
-    if (m_lines.empty()) {
+    if (lines.empty()) {
         return nullptr;
     }
+    m_lines = std::move(lines);
+    const auto note = [id](std::vector<s32>* list) {
+        if (list != nullptr && !std::ranges::binary_search(*list, id)) {
+            list->insert(std::ranges::upper_bound(*list, id), id);
+        }
+    };
     for (const HelpReader& reader : party) {
-        if (reader.seen != nullptr && concerns(reader) && !sawIt(reader)) {
-            reader.seen->insert(std::ranges::upper_bound(*reader.seen, id), id);
+        if (concerns(reader)) {
+            note(reader.seen);
+            note(reader.heard);
         }
     }
     m_id = id;
+    m_priority = spec->priority;
     m_player = player;
     m_ticksLeft = static_cast<s32>(m_lines.size()) * kTicksPerLine + kTicksOver;
     return spec;
@@ -98,6 +139,7 @@ void HelpMessages::update(s32 ticks) {
     m_ticksLeft -= ticks;
     if (m_ticksLeft <= 0) {
         m_ticksLeft = 0;
+        m_priority = 0;
         m_pauseLeft = kPauses[std::min(m_posted, kPauses.size() - 1)];
         ++m_posted;
     }

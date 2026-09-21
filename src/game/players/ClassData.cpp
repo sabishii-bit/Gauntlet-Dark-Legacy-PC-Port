@@ -54,10 +54,76 @@ ClassStats parseClassStats(std::string_view text) {
     if (const auto offset = root.value("weaponOffset", std::vector<f32>{}); offset.size() == 3) {
         stats.weaponOffset = Vec3{offset[0], offset[1], offset[2]};
     }
+    const auto vec3 = [](const Json& object, const char* key) {
+        const auto values = object.value(key, std::vector<f32>{});
+        return values.size() == 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f};
+    };
+    if (const auto moves = root.find("moves"); moves != root.end() && moves->is_object()) {
+        stats.moves.turboB = moves->value("turboB", -1);
+        stats.moves.turboC1 = moves->value("turboC1", -1);
+        stats.moves.turboC2 = moves->value("turboC2", -1);
+        stats.moves.combo1 = moves->value("combo1", -1);
+        stats.moves.comboHit = moves->value("comboHit", -1);
+    }
+    for (const Json& entry : root.value("moveEffects", Json::array())) {
+        MoveEffect effect;
+        effect.next = entry.value("next", -1);
+        effect.tree = entry.value("tree", std::string{});
+        effect.sound = entry.value("sound", std::string{});
+        effect.offset = vec3(entry, "offset");
+        effect.scale = entry.value("scale", 1.0f);
+        stats.moveEffects.push_back(std::move(effect));
+    }
+    for (const Json& entry : root.value("moveStrikes", Json::array())) {
+        MoveStrike strike;
+        strike.type = entry.value("type", MoveStrike::kBursts);
+        strike.hitRadius = entry.value("hitRadius", 0.0f);
+        strike.radius = entry.value("radius", 0.0f);
+        strike.delay = entry.value("delay", 0.0f);
+        strike.maxTime = entry.value("maxTime", 0.0f);
+        strike.arc = entry.value("arc", -1.0f);
+        strike.offset = vec3(entry, "offset");
+        strike.amount = entry.value("amount", 0.0f);
+        // The original flies it half way between its least speed and its most.
+        const f32 least = entry.value("speedMin", 0.0f);
+        strike.speed = least + 0.5f * (entry.value("speedMax", least) - least);
+        strike.effect = entry.value("effect", -1);
+        strike.loopEffect = entry.value("loopEffect", -1);
+        strike.endFrame = entry.value("endFrame", -1);
+        strike.flags = entry.value("flags", 0);
+        strike.help = entry.value("help", -1);
+        strike.next = entry.value("next", -1);
+        strike.startFrame = entry.value("startFrame", 0);
+        stats.moveStrikes.push_back(strike);
+    }
     return stats;
 }
 
 } // namespace
+
+f32 MoveStrike::dimming() const {
+    constexpr s32 kCombo = 0x2000;
+    constexpr s32 kGreater = 0x20;
+    constexpr s32 kLesser = 0x10;
+    if ((flags & kCombo) != 0) {
+        return -0.8f;
+    }
+    if ((flags & kGreater) != 0) {
+        return -0.6f;
+    }
+    return (flags & kLesser) != 0 ? -0.4f : 0.0f;
+}
+
+std::vector<s32> ClassStats::strikesOf(s32 first) const {
+    std::vector<s32> chain;
+    // A chain is followed once round at most.
+    for (s32 at = first; at >= 0 && static_cast<usize>(at) < moveStrikes.size() &&
+                         chain.size() < moveStrikes.size();
+         at = moveStrikes[static_cast<usize>(at)].next) {
+        chain.push_back(at);
+    }
+    return chain;
+}
 
 std::string_view classCode(s32 classIndex) {
     if (classIndex < 0 || classIndex >= kClassCount) {

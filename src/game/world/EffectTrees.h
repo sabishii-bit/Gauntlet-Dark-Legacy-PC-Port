@@ -27,11 +27,27 @@ class EffectTrees {
 public:
     static constexpr f32 kStillSeconds = 1.0f; ///< how long a tree without a sequence shows
 
+    /** How an effect is set going, beyond where. */
+    struct Setting {
+        f32 scale = 1.0f;
+        f32 yaw = 0.0f;                   ///< turned about the upright
+        Vec3 velocity{0.0f, 0.0f, 0.0f};  ///< carried along, as what a move sends flying is
+        f32 seconds = 0.0f; ///< over nought, it repeats for this long instead of playing once
+        /** With `seconds`: the tree plays once and this one then repeats in its place. */
+        std::string then;
+    };
+
     /** One effect playing. */
     struct Effect {
         std::string name;
+        u32 id = 0;
         Vec3 position{0.0f, 0.0f, 0.0f};
         f32 scale = 1.0f;
+        f32 yaw = 0.0f;
+        Vec3 velocity{0.0f, 0.0f, 0.0f};
+        bool repeats = false;
+        std::string then;          ///< the tree that takes over once this has played
+        RenderDevice* device = nullptr;
         const TreeInfo* tree = nullptr;
         ItemArchive* archive = nullptr;
         TreeModel model;
@@ -44,6 +60,11 @@ public:
      * a warning, when the archive lacks it. */
     bool start(RenderDevice& device, ItemArchive& archive, std::string_view tree,
                const Vec3& position, f32 scale = 1.0f);
+    /** The same, turned, moving or repeating as `setting` says; its number, or nought. */
+    u32 startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
+                 const Vec3& position, const Setting& setting);
+    /** Ends effect number `id` now. */
+    void stop(u32 id);
     void update(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void clear();
@@ -61,6 +82,7 @@ private:
     std::vector<std::unique_ptr<Effect>> m_effects;
     std::vector<std::unique_ptr<Motion>> m_motions;
     f32 m_frames = 0.0f;
+    u32 m_nextId = 1;
 };
 
 } // namespace gdl::game
