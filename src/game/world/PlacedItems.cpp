@@ -50,6 +50,7 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
                        const WorldCollision* collision, std::span<ItemArchive* const> archives) {
     clear();
     m_archives.assign(archives.begin(), archives.end());
+    m_infos.clear();
     for (ItemArchive* archive : archives) {
         if (archive == nullptr || !archive->loaded()) {
             continue;
@@ -60,6 +61,7 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
         m_motions.push_back(std::move(motion));
     }
     const std::vector<ItemInfo>& infos = layout.itemInfos();
+    m_infos = infos;
     const std::vector<ItemInstance>& instances = layout.itemInstances();
     for (usize index = 0; index < instances.size(); ++index) {
         const ItemInstance& instance = instances[index];
@@ -76,34 +78,12 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
         item.info = instance.info;
         item.subtype = info.subtype;
         item.value = info.value;
+        item.flags = info.properties;
+        item.strength = static_cast<f32>(info.activeOn);
         item.minPlayers = instance.minPlayers;
         item.radius = info.radius;
         item.height = info.height;
-        bool bound = false;
-        for (ItemArchive* archive : archives) {
-            if (archive == nullptr || !archive->loaded()) {
-                continue;
-            }
-            const auto tree = archive->trees.find(item.name);
-            if (!tree.has_value()) {
-                continue;
-            }
-            const TreeInfo& figure = archive->trees.tree(*tree);
-            if (item.model.bind(figure, archive->models, archive->textures, device)) {
-                item.figure = &figure;
-                item.archive = archive;
-                if (figure.sequences.empty()) {
-                    item.pose.rest(figure);
-                } else {
-                    item.player.start(figure.sequences[0], 0);
-                    item.pose.evaluate(figure, 0, 0.0f);
-                    item.model.setFrame(0, 0);
-                }
-                bound = true;
-                break;
-            }
-        }
-        if (!bound) {
+        if (!makeFigure(device, item)) {
             log::warn("Placed items: no archive holds {}", item.name);
             continue;
         }
@@ -123,6 +103,7 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
 }
 
 void PlacedItems::clear() {
+    m_infos.clear();
     m_items.clear();
     m_effects.clear();
     m_bursts.clear();
@@ -148,8 +129,70 @@ void PlacedItems::setPlayerCount(s32 players) {
     }
 }
 
+bool PlacedItems::makeFigure(RenderDevice& device, Item& item) {
+    for (ItemArchive* archive : m_archives) {
+        if (archive == nullptr || !archive->loaded()) {
+            continue;
+        }
+        const auto tree = archive->trees.find(item.name);
+        if (!tree.has_value()) {
+            continue;
+        }
+        const TreeInfo& figure = archive->trees.tree(*tree);
+        if (item.model.bind(figure, archive->models, archive->textures, device)) {
+            item.figure = &figure;
+            item.archive = archive;
+            if (figure.sequences.empty()) {
+                item.pose.rest(figure);
+            } else {
+                item.player.start(figure.sequences[0], 0);
+                item.pose.evaluate(figure, 0, 0.0f);
+                item.model.setFrame(0, 0);
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+bool PlacedItems::place(RenderDevice& device, std::string_view name, const Vec3& position,
+                        const WorldCollision* collision) {
+    const auto info = std::ranges::find_if(m_infos, [&](const ItemInfo& candidate) {
+        return candidate.type == ItemInfo::kPowerup && candidate.name == name;
+    });
+    if (info == m_infos.end()) {
+        log::warn("Placed items: the level has no item record named {}", name);
+        return false;
+    }
+    Item item;
+    item.name = info->name;
+    item.info = static_cast<s32>(info - m_infos.begin());
+    item.subtype = info->subtype;
+    item.value = info->value;
+    item.flags = info->properties;
+    item.strength = static_cast<f32>(info->activeOn);
+    item.radius = info->radius;
+    item.height = info->height;
+    if (!makeFigure(device, item)) {
+        log::warn("Placed items: no archive holds {}", item.name);
+        return false;
+    }
+    item.position = position;
+    if (collision != nullptr) {
+        if (const auto floor = collision->floorAt(position, kFloorReachAbove, kFloorReachBelow);
+            floor.has_value()) {
+            item.position.y = floor->y + kFloorLift;
+        }
+    }
+    item.transform = placement(item.position, Vec3{0.0f, 0.0f, 0.0f});
+    item.visible = true;
+    m_items.push_back(std::move(item));
+    return true;
+}
+
 std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
-                                         std::span<const Collector> collectors) {
+                                         std::span<const Collector> collectors,
+                                         const PickupJudge& judge) {
     std::vector<Pickup> pickups;
     for (usize i = 0; i < m_items.size(); ++i) {
         Item& item = m_items[i];
@@ -165,14 +208,28 @@ std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
         if (taker == collectors.size()) {
             continue;
         }
-        item.taken = true;
-        item.visible = false;
         Pickup pickup;
         pickup.item = i;
         pickup.collector = taker;
         pickup.subtype = item.subtype;
         pickup.realm = item.realm();
+        pickup.amount = item.value;
+        pickup.flags = item.flags;
+        pickup.strength = item.strength;
         pickup.position = item.position;
+        if (judge) {
+            const std::optional<s32> left = judge(pickup);
+            if (!left.has_value()) {
+                continue; // left lying
+            }
+            if (*left > 0) {
+                item.value = *left; // the rest stays for the next to come by
+                pickups.push_back(pickup);
+                continue;
+            }
+        }
+        item.taken = true;
+        item.visible = false;
         if (pickup.realm > 0 && static_cast<usize>(pickup.realm) < kGemEffects.size()) {
             startEffect(device, kGemEffects[static_cast<usize>(pickup.realm)], item.position);
         }

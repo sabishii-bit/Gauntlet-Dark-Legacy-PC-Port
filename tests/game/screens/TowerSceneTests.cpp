@@ -463,6 +463,206 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
     }
 }
 
+TEST_CASE("a character takes what lies in its way by the original's rules",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    TowerWorld world;
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().inventory.keys = 8;
+    TowerOptions options;
+    options.welcome = false;
+    options.position = Vec3{19.3f, -2.0f, -50.0f};
+    // A key ring, a ham, a green potion and some gold, all underfoot.
+    for (const char* name : {"KEYRING", "HAM", "POT_GRE", "TREAS_GOLD"}) {
+        options.items.push_back(DroppedItem{name, *options.position});
+    }
+    TowerScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    const usize placed = world.placedItems().size();
+    const TowerScene::Inputs still{};
+    for (int i = 0; i < TowerScene::kSpawnTicks + 4; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    const CharacterSave& now = scene.actor(0)->save();
+    // One key fitted: the ring lies there still with two. At full health the ham stays too.
+    REQUIRE(now.progress().inventory.keys == 9);
+    REQUIRE(now.progress().inventory.nextPotion() == 4);
+    REQUIRE(now.gold == 200);
+    REQUIRE(now.health() == 500);
+    usize lying = 0;
+    for (usize i = placed - 4; i < placed; ++i) {
+        const PlacedItems::Item& item = world.placedItems().item(i);
+        lying += item.visible ? 1U : 0U;
+        if (item.name == "KEYRING") {
+            REQUIRE(item.visible);
+            REQUIRE(item.value == 2);
+        }
+    }
+    REQUIRE(lying == 2);
+    REQUIRE(scene.pickups().cards().size() == 3); // the key, the potion, the gold
+    scene.close();
+}
+
+TEST_CASE("holding the attack throws the character's weapon again and again",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    TowerWorld world;
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    GameContext context;
+    context.config = &config;
+    context.sounds = &sounds;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    TowerOptions options;
+    options.welcome = false;
+    TowerScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    const TowerScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(scene.spawning());
+    REQUIRE(scene.missiles().count() == 0);
+    REQUIRE(scene.weaponHeld(0));
+    const Vec3 stood = scene.actor(0)->position();
+    // Attacking with the stick pushed: the body throws where it stands, and the axe leaves
+    // from beside it along its facing.
+    TowerScene::Inputs attack{};
+    attack[0].attack = true;
+    attack[0].move = MoveInput{Vec2{0.0f, 1.0f}, 1.0f};
+    const usize voices = sounds.voiceCount();
+    int thrown = 0;
+    for (int i = 0; i < 40 && scene.missiles().count() == 0; ++i) {
+        scene.update(1.0 / 60.0, attack);
+        ++thrown;
+    }
+    REQUIRE(scene.missiles().count() == 1);
+    REQUIRE(thrown > 5);
+    REQUIRE(scene.animator(0)->recovering());
+    REQUIRE(sounds.voiceCount() == voices + 1); // the warrior's throw
+    REQUIRE(glm::distance(scene.actor(0)->position(), stood) < 0.5f);
+    const PlayerMissiles::Missile& axe = scene.missiles().missile(0);
+    REQUIRE(axe.owner == 0);
+    REQUIRE(axe.model != nullptr);
+    REQUIRE(axe.model->bound());
+    const Vec3 facing = scene.actor(0)->facing();
+    REQUIRE(glm::dot(glm::normalize(Vec3{axe.velocity.x, 0.0f, axe.velocity.z}), facing) >
+            0.999f);
+    REQUIRE(glm::distance(axe.position, scene.actor(0)->followPoint()) < 6.0f);
+    // Held, another follows within a second; let go, the throws stop and the body walks on.
+    for (int i = 0; i < 60; ++i) {
+        scene.update(1.0 / 60.0, attack);
+    }
+    TowerScene::Inputs walk{};
+    walk[0].move = attack[0].move;
+    for (int i = 0; i < 300; ++i) {
+        scene.update(1.0 / 60.0, walk);
+    }
+    REQUIRE(scene.missiles().count() == 0); // every one stopped by the tower or its time
+    REQUIRE_FALSE(scene.animator(0)->throwing());
+    REQUIRE(glm::distance(scene.actor(0)->position(), stood) > 2.0f);
+    scene.close();
+}
+
+TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll of hints",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    StringTable strings;
+    strings.load(test::dataDirectory() / "text", config.text.language);
+    test::FakeRenderDevice device;
+    TowerWorld world;
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    TowerOptions options;
+    options.welcome = false;
+    options.position = Vec3{3.3f, 2.1f, -49.0f}; // in the spot before him
+    TowerScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    const TowerScene::Inputs still{};
+    for (int i = 0; i < TowerScene::kSpawnTicks + 2 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    // He greets them at once; the scroll comes two seconds later.
+    scene.update(1.0 / 60.0, still);
+    scene.update(1.0 / 60.0, still);
+    REQUIRE(scene.sumner().playing(SumnerFigure::kWelcomeIndex));
+    REQUIRE_FALSE(scene.hints().active());
+    for (int i = 0; i < 100; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(scene.hints().active());
+    for (int i = 0; i < 40 && !scene.hints().active(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.hints().active());
+    REQUIRE(scene.hints().topics().definition().title == "How Can I Help You?");
+    REQUIRE(scene.hints().topics().definition().items.size() == 4);
+    REQUIRE(scene.hints().topics().definition().playerLabel == "Player 1");
+
+    // The scroll holds play: the stick moves nobody.
+    const Vec3 stood = scene.actor(0)->position();
+    TowerScene::Inputs walk{};
+    walk[0].move = MoveInput{Vec2{1.0f, 0.0f}, 1.0f};
+    scene.update(1.0 / 60.0, walk);
+    REQUIRE(scene.actor(0)->position() == stood);
+
+    // The first topic answers with the first general hint; Back returns to the topics.
+    TowerScene::Inputs select{};
+    select[0].menu.select = true;
+    TowerScene::Inputs back{};
+    back[0].menu.back = true;
+    scene.update(1.0 / 60.0, select);
+    REQUIRE(scene.hints().reading());
+    REQUIRE(scene.hints().page().definition().title == "A Hint for You");
+    REQUIRE(scene.hints().page().definition().body.size() == 1);
+    REQUIRE(scene.hints().page().definition().body[0].starts_with("Your precious food"));
+    scene.update(1.0 / 60.0, back);
+    REQUIRE_FALSE(scene.hints().reading());
+    // The guardians' page is titled after the guardian it speaks of.
+    TowerScene::Inputs down{};
+    down[0].menu.down = true;
+    scene.update(1.0 / 60.0, down);
+    scene.update(1.0 / 60.0, select);
+    REQUIRE(scene.hints().page().definition().title == "The Lich");
+    scene.update(1.0 / 60.0, back);
+
+    // Backing out of the topics burns the scroll; Sumner waves the player off, and the same
+    // visit brings no second scroll.
+    scene.update(1.0 / 60.0, back);
+    REQUIRE(scene.hints().burning());
+    for (int i = 0; i < 120 && scene.hints().active(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(scene.hints().active());
+    REQUIRE(scene.sumner().playing(SumnerFigure::kGoAwayIndex));
+    for (int i = 0; i < 200; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(scene.hints().active());
+    scene.close();
+}
+
 TEST_CASE("a figure comes from the costume tier of its level when that is unpacked",
           "[game][screens]") {
     const auto root = test::scratchDirectory("tower-costume-tiers");

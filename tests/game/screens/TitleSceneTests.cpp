@@ -197,7 +197,7 @@ TEST_CASE("backing out of the options burns the scroll and blanks the controls",
     REQUIRE_FALSE(scene.optionsOpen());
     REQUIRE(scene.burning());
     REQUIRE(scene.menuOpen());
-    scene.step(FireScroll::kFrameCount * FireScroll::kTicksPerFrame,
+    scene.step(BurnDialogueScroll::kFrameCount * BurnDialogueScroll::kTicksPerFrame,
                press(false, false, false, true));
     REQUIRE_FALSE(scene.burning());
     REQUIRE(scene.menuOpen());

@@ -172,6 +172,71 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   wrist name (`R_WRIST`, `RIGHTHAN`, `RHEND`). A tree's node named `DUMMY`
   (a costume's marker triangle at the feet) is never drawn (`TreeModel::bind`),
   as the original hides it.
+* Inventories and items: `players/Inventory` (in each `ClassProgress`, saved
+  under `inventory`) holds keys (9 at most), potions by kind (9; the last
+  taken shows and is thrown next) and eleven `PowerupSlot`s filled the way the
+  original's `PlayerAddPowerup` does (the same kind and flags renews: all its
+  charge, half its strength; else a free slot, else the weakest; strength
+  under none is for good). `players/ItemPickup::takeItem` ports the pickup
+  rules by item subtype (1 gold to 99999, 2 keys, a ring leaving what does
+  not fit, 3 food up to `mostHealth(level)` = 500 + 100 a level, refused at
+  full health, bad food always and never past the last point, 4 potions, kind
+  from the record's properties, 5-9 powerups at the class's `powerupTime`)
+  and names the card (`KEY`/`KEY_RING`, `MEAT`/`FRUIT`/`BADMEAT`/`BADFRUIT`,
+  `MAGIC`, `GOLD`/`JUNK`, `SPECIALS`) and the sound (`S_PICKUPKEY`,
+  `S_PICKUPMAGIC`, `S_PICKUPSPECIAL`/`S_PICKUPSHIELD`, or the class's own
+  `S_<FAM>EATSFX`/`PAIN1`). `PlacedItems::collect` takes a `PickupJudge`
+  (nothing = leave it lying, else what is left of its amount), and
+  `PlacedItems::place`/`TowerWorld::placeItem` drop an item by the name of
+  one of the level's item records (the tower's records cover keys, food,
+  potions, treasure and coins though it places only crystals), which is how
+  chests and fallen enemies will leave theirs. The status box shows
+  `KEY_ICON` and the next potion's `POTION_ICON_<COL>` with their counts over
+  the gold and health. Scenarios take `gold`, `health`, `keys`, `potions` per
+  member and `items` (`name`, `position`); `tests/scenarios/tower-items.json`
+  lays a spread out. Powerup timers do not run in the tower (nor did the
+  original's); using potions, spending keys, the powerup selector over the
+  box and powerup effects are still to come.
+* Attacks (first slice, the throw): `PlayBindings::attack`/`padAttack`
+  (Space, A) held is `PlayInput::attack`. `PlayerAnimator` ports the
+  original's throw actions: the wind-up (`THROW1S`, or `THROW2S` cut in from a
+  first half of walking or running) gives way to the release (`THROW1`/
+  `THROW2`) at its end or at once from frame 2, the release's end is
+  `released()` (the weapon flies), and the recovery (`THROW1R`/`THROW2R`)
+  leads to the next throw or back to the stance; a throwing body's
+  `moveScale()` is 0, so `PlayerActor::update` turns it to the stick without
+  moving it, and the hand is drawn empty while `recovering()` unless the
+  class's `MissileSpec::staysInHand` (staffs, bows). `world/PlayerMissiles`
+  flies them from the original's tables (`MissileSpec`: tree
+  `<AXE|SWD|STF|BOW|HAM|MAC|WND|BOM|MIN|FAL|OGR|UNI>_THROW<tier>`, tier '0' in
+  the costume archive, else by level in `PLAYERS/<CLS>/SFX<COL>`; radius,
+  tumble 18.85 rad/s, weight as gravity): pace 20..60 by strength (magic for
+  the wizard and sorceress families), launched from the body's centre plus the
+  class record's `weaponOffset` (now unpacked into `pdata/<CLS>.json`; re-run
+  `gdlunpack --only PDATA`) and 2 ahead, lobbed to land 0.5 under its start at
+  a reach of 15 (+200 per second held past 0.27 s, at most 0.1 s), stopped by
+  walls and floors (`takeImpacts`, nothing drawn for them yet) or after 3 s.
+  The throw sound is `S_<FAMILY>THROW` from the class family's bank. Melee,
+  damage, targets, aim assist, streaks, spread shots and impact effects are
+  still to come.
+* Sumner's hints: a player inside the trigger before him (id 240,
+  `TowerScene::kSumnerSpot`) is greeted at once (`SumnerFigure::play`, the
+  original's sequence indices: 3 WELCOME, 4 GOAWAY, 6 GESTRIGHT) and handed
+  `menu/HintMenu` two seconds on, once a visit (leaving the spot starts a new
+  one). The scroll holds play like a message scroll; its owner's menu input
+  drives it. `world/SumnerHints` ports the original's four hint pickers over
+  `text/hints_e.json` (`MessageTable` lists: `GENERAL_HINTS`, `BOSS_HINTS`,
+  `LEGEND_HINTS`, `RUNE_HINTS`; titles from `BOSSHINTDESC`,
+  `LEGENDHINTDESCS`, `RUNEHINTDESCS`): general hints carry on across visits,
+  the other three start over each visit. `HintKnowledge::ofParty` knows only
+  which worlds the party's crystals open; runestones, legend items, beaten
+  guardians, gargoyle wings and the tries that earn extra passages are fields
+  waiting for saves to track them. A hint page is an `OptionMenu` without
+  items whose `MenuDefinition::body` passages are written in ink; a lone
+  prompt sits mid-row. Backing out of the topics burns the scroll
+  (`menu/BurnDialogueScroll`, the burn every scroll and the options menu
+  share) and Sumner waves the player off. The labels are `hints.*` in
+  `data/text/en.json`; `tests/scenarios/tower-sumner.json` starts before him.
 * Sumner's beam (`L1XPLIGHTRAY01`) starts unseen and comes up over 180 ticks
   while a player is within `kBeamRadius` of him, going again once they
   leave (`TowerScene::updateBeam`). The stained-glass light through the
@@ -310,7 +375,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (text plus 96, no narrower than the prompt plus 32, at most 512, centred on
   (256, 160)), the text centred 32 below its top with 4 between lines, the
   glowing prompt and button icon 8 below the text, a 15-tick hold before a
-  page takes any joined player's button, and the fire scroll after the last
+  page takes any joined player's button, and the burning scroll after the last
   page; the prompt is a string-table entry. `game/world/SumnerFigure` is the
   GWIZ tree of `ITEMS/LEVELL` at the event marker whose parameter is 0,
   cycling READY, READING and THINKING as the original's index does (advance

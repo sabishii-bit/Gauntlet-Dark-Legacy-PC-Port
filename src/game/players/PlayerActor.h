@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/world/WorldCollision.h"
@@ -34,9 +36,11 @@ public:
                const Vec3& position, f32 yaw);
 
     /** Walks by `input`, whose forward is the camera's `cameraYaw`, for `seconds`; with
-     * `collision` the step is kept on a floor and pushed out of walls. */
+     * `collision` the step is kept on a floor and pushed out of walls. `moveScale` is how
+     * much of its pace the body's action leaves it: at none it turns to the stick and stays
+     * where it is. */
     void update(const MoveInput& input, f32 cameraYaw, f32 seconds,
-                const WorldCollision* collision);
+                const WorldCollision* collision, f32 moveScale = 1.0f);
 
     /** Drops the character onto the floor under it, when there is one. */
     void settle(const WorldCollision& collision);
@@ -53,6 +57,9 @@ public:
      * counts it, twice the footprint that walls stop. */
     f32 reach() const { return m_radius * 2.0f; }
     bool moving() const { return m_moving; }
+
+    /** The way the character faces, along the ground. */
+    Vec3 facing() const { return Vec3{std::sin(m_yaw), 0.0f, std::cos(m_yaw)}; }
 
     /** The point the camera follows: the body's centre above the feet. */
     Vec3 followPoint() const { return m_position + Vec3{0.0f, m_followHeight, 0.0f}; }

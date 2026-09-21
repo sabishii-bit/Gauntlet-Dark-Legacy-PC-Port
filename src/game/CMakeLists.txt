@@ -20,6 +20,10 @@ add_library(game STATIC
     players/Progression.cpp
     players/CharacterSave.h
     players/CharacterSave.cpp
+    players/Inventory.h
+    players/Inventory.cpp
+    players/ItemPickup.h
+    players/ItemPickup.cpp
     players/PlayerControls.h
     players/PlayerControls.cpp
     players/PlayerActor.h
@@ -34,6 +38,10 @@ add_library(game STATIC
     world/StartCamera.cpp
     world/SumnerFigure.h
     world/SumnerFigure.cpp
+    world/SumnerHints.h
+    world/SumnerHints.cpp
+    world/PlayerMissiles.h
+    world/PlayerMissiles.cpp
     world/PlacedItems.h
     world/PlacedItems.cpp
     world/AmbientSounds.h
@@ -46,8 +54,10 @@ add_library(game STATIC
     menu/MenuInput.cpp
     menu/OptionMenu.h
     menu/OptionMenu.cpp
-    menu/FireScroll.h
-    menu/FireScroll.cpp
+    menu/HintMenu.h
+    menu/HintMenu.cpp
+    menu/BurnDialogueScroll.h
+    menu/BurnDialogueScroll.cpp
     menu/NameEntry.h
     menu/NameEntry.cpp
     screens/GameContext.h

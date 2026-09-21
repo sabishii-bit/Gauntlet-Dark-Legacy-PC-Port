@@ -174,6 +174,61 @@ TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world
     REQUIRE(items.burstParticleCount() == 0);
 }
 
+TEST_CASE("items can be dropped by their record's name and left lying or part taken",
+          "[game][world][unpacked]") {
+    const std::filesystem::path root = test::unpackedOrSkip("POWERUPS/animations.json")
+                                           .parent_path()
+                                           .parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELL1/world.json");
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array<ItemArchive*, 1> archives{&powerups};
+    REQUIRE(items.bind(device, layout, nullptr, archives));
+    items.setPlayerCount(1);
+    const usize before = items.size();
+    REQUIRE_FALSE(items.place(device, "NO_SUCH_THING", Vec3{0.0f}, nullptr));
+    REQUIRE(items.place(device, "KEYRING", Vec3{500.0f, 0.0f, 500.0f}, nullptr));
+    REQUIRE(items.place(device, "POT_GRE", Vec3{520.0f, 0.0f, 500.0f}, nullptr));
+    REQUIRE(items.size() == before + 2);
+    const PlacedItems::Item& ring = items.item(before);
+    REQUIRE(ring.visible);
+    REQUIRE(ring.subtype == 2);
+    REQUIRE(ring.value == 3);
+    REQUIRE(items.item(before + 1).flags == 4); // the green potion's kind
+
+    Collector on;
+    on.position = Vec3{500.0f, 0.0f, 500.0f};
+    const std::array<Collector, 1> party{on};
+    // Refused, it stays; part taken, it stays with what is left; taken, it goes.
+    int asked = 0;
+    REQUIRE(items.collect(device, party, [&](const Pickup& pickup) -> std::optional<s32> {
+                     ++asked;
+                     REQUIRE(pickup.amount == 3);
+                     REQUIRE(pickup.subtype == 2);
+                     return std::nullopt;
+                 })
+                .empty());
+    REQUIRE(asked == 1);
+    REQUIRE(items.item(before).visible);
+    std::vector<Pickup> got = items.collect(
+        device, party, [](const Pickup&) -> std::optional<s32> { return 1; });
+    REQUIRE(got.size() == 1);
+    REQUIRE(got[0].amount == 3);
+    REQUIRE(items.item(before).visible);
+    REQUIRE(items.item(before).value == 1);
+    got = items.collect(device, party, [](const Pickup& pickup) -> std::optional<s32> {
+        REQUIRE(pickup.amount == 1);
+        return 0;
+    });
+    REQUIRE(got.size() == 1);
+    REQUIRE(items.item(before).taken);
+    REQUIRE(items.collect(device, party).empty());
+}
+
 TEST_CASE("the crystals can start unseen and be revealed from the origin outward",
           "[game][world][unpacked]") {
     const std::filesystem::path root = test::unpackedOrSkip("POWERUPS/animations.json")

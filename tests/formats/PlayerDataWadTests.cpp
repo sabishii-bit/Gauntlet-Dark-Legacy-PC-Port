@@ -48,6 +48,9 @@ std::vector<u8> sampleWad() {
     putF32(bytes, record + 0x50, 4.4f);
     putF32(bytes, record + 0x54, 2.5f);
     putF32(bytes, record + 0x58, 1.25f);
+    putF32(bytes, record + 0x5C, -0.5f);
+    putF32(bytes, record + 0x60, 0.5f);
+    putF32(bytes, record + 0x64, 1.5f);
     bytes[directory] = 'T';
     bytes[directory + 1] = 'A';
     bytes[directory + 2] = 'D';
@@ -71,6 +74,7 @@ TEST_CASE("a class record parses from its wad", "[formats][pdata]") {
     REQUIRE(record.attachY == 4.4f);
     REQUIRE(record.collisionY == 2.5f);
     REQUIRE(record.powerupTime == 1.25f);
+    REQUIRE(record.weaponOffset == std::array<f32, 3>{-0.5f, 0.5f, 1.5f});
 }
 
 TEST_CASE("damaged class wads are rejected", "[formats][pdata]") {

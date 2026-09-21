@@ -19,6 +19,10 @@ struct ScenarioMember {
     std::string name = "TEST";
     s32 level = 1;
     std::vector<s32> crystals; ///< per realm, as many as given
+    s32 gold = 0;
+    s32 health = 0; ///< none leaves it full
+    s32 keys = 0;
+    std::vector<s32> potions; ///< the kind of each carried
 };
 
 /**

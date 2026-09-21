@@ -18,7 +18,7 @@
 #include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
 
-#include "game/menu/FireScroll.h"
+#include "game/menu/BurnDialogueScroll.h"
 #include "game/menu/MenuInput.h"
 #include "game/menu/OptionMenu.h"
 #include "game/screens/GameContext.h"
@@ -98,7 +98,7 @@ private:
     MenuTextures m_menuTextures;
     OptionMenu m_titleMenu;
     OptionMenu m_optionsMenu;
-    FireScroll m_fire;
+    BurnDialogueScroll m_fire;
     std::vector<const Image*> m_fireMasks;
     std::vector<const Texture*> m_fireRing;
     const Image* m_scrollImage = nullptr;

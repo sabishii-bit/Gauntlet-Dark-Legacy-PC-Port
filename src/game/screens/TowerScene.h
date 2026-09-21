@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "engine/assets/AnimationSet.h"
@@ -18,10 +19,12 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
+#include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/menu/HintMenu.h"
 #include "game/menu/MenuInput.h"
 #include "game/menu/ScrollBox.h"
 #include "game/players/CharacterSave.h"
@@ -37,8 +40,10 @@
 #include "engine/world/TreePose.h"
 
 #include "game/world/AmbientSounds.h"
+#include "game/world/PlayerMissiles.h"
 #include "game/world/StartCamera.h"
 #include "game/world/SumnerFigure.h"
+#include "game/world/SumnerHints.h"
 #include "game/world/TowerCamera.h"
 #include "game/world/TowerWorld.h"
 
@@ -50,18 +55,26 @@ struct PartyMember {
     CharacterSave save;
 };
 
+/** An item dropped into the level by one of its item records' names. */
+struct DroppedItem {
+    std::string name;
+    Vec3 position{0.0f, 0.0f, 0.0f};
+};
+
 /** How the tower may open other than as the game does, for tests and scenarios. */
 struct TowerOptions {
     std::optional<Vec3> position; ///< where the party stands instead of the entrance (the
                                   ///< start camera then does not ride in from its marker)
     std::optional<f32> yaw;       ///< the way it faces, instead of the entrance's
     std::optional<bool> welcome;  ///< whether Sumner welcomes it, else by its experience
+    std::vector<DroppedItem> items; ///< dropped about the level once it opens
 };
 
 /** One player's input for a frame of play. */
 struct PlayInput {
     MoveInput move;
     MenuInput menu;
+    bool attack = false; ///< the attack button is held
 };
 
 enum class TowerOutcome : u8 { Running, Leave };
@@ -75,7 +88,11 @@ enum class TowerOutcome : u8 { Running, Leave };
  * camera holds at the entrance marker and rides in to the follow camera. A party new to the
  * tower is then welcomed the way the original does it: his scroll of pages first, then his
  * gesture as the camera cuts to the crystals for five seconds, between black bars, with the
- * party held still.
+ * party held still. A player who steps up to Sumner is greeted and, two seconds on, handed
+ * his scroll of hints, which holds play until it has burnt away; he waves them off after.
+ * Holding the attack throws the character's weapon, again and again: the body winds up and
+ * lets go where it stands, the weapon flies from the hand's side along its facing, and the
+ * hand is empty until the throw is recovered from.
  */
 class TowerScene {
 public:
@@ -90,6 +107,8 @@ public:
         "S_CRYS4FOR", "S_CRYS4DES", "S_CRYS4ICE", "S_CRYS4DRM"};
     static constexpr s32 kBeamFadeTicks = 180; ///< and how long it takes to come up or go
     static constexpr s32 kCrystalTicks = 300;  ///< fifty frames of six ticks
+    static constexpr s32 kSumnerSpot = 240;    ///< the id of the trigger before him
+    static constexpr f32 kGreetingSeconds = 2.0f; ///< from his greeting to his scroll
     using Inputs = std::array<PlayInput, kPlayerCount>;
 
     /** Where a new party's welcome has got to. */
@@ -127,6 +146,9 @@ public:
     }
     Intro intro() const { return m_intro; }
     const ScrollBox& scroll() const { return m_scroll; }
+    const HintMenu& hints() const { return m_hintMenu; }
+    const PlayerMissiles& missiles() const { return m_missiles; }
+    const SumnerHints& hintTexts() const { return m_hints; }
     const PickupHud& pickups() const { return m_pickups; }
     const AmbientSounds& ambience() const { return m_ambience; }
     /** How far Sumner's beam of light has come up, 0 to 1. */
@@ -162,14 +184,20 @@ private:
         s32 handNode = -1;   ///< the costume node the weapon hangs from
         std::vector<s32> classNodeOfNode; ///< per costume node: the class tree node it follows
         std::vector<Mat4> transforms;     ///< per costume node, from the current pose
+        ItemArchive effects; ///< the costume colour's effects, when the thrown weapon is there
+        TreeModel missile;   ///< the weapon as it flies
+        SoundSet voice;      ///< the class's own sounds
+        std::optional<u32> throwSound;
 
-        void animate(f32 stickMagnitude, s32 ticks, f32 seconds);
+        void animate(f32 stickMagnitude, s32 ticks, f32 seconds, bool attack = false);
     };
 
     void spawnParty(std::span<const PartyMember> party, const TowerOptions& options);
     std::unique_ptr<Figure> loadFigure(RenderDevice& device, const CharacterSave& save);
     void loadActions(Figure& figure, const CharacterSave& save);
     static void loadWeapon(Figure& figure, const CharacterSave& save, RenderDevice& device);
+    void loadMissile(Figure& figure, const CharacterSave& save, RenderDevice& device);
+    void throwWeapon(const PlayerActor& actor, Figure& figure);
     void loadSounds();
     void startMusic();
     void playStep(PlayerAnimator::Foot foot);
@@ -180,6 +208,7 @@ private:
     u32 acceptedPlayers(const Inputs& inputs) const;
     std::vector<TriggerVisitor> visitors() const;
     void collectItems();
+    std::optional<s32> takePickup(const Pickup& pickup);
     void playCommon(std::optional<u32> sound);
     void updateAmbience();
     void updateBeam(s32 ticks);
@@ -196,6 +225,12 @@ private:
     void stopOpeningSounds();
     void announceUnlock(s32 realm);
     void handleTriggerEvents();
+    void loadHintArt(RenderDevice& device);
+    const PlayerActor* visitorOfSumner() const;
+    void updateSumnerVisit(f32 seconds);
+    void openHints(s32 player);
+    void updateHints(const Inputs& inputs, s32 ticks);
+    void answerHint(s32 topic);
     StatusBoxView statusOf(s32 player) const;
     CameraView cameraView() const;
 
@@ -231,6 +266,13 @@ private:
     TextPainter m_text;
     MessageTable m_scrollText;
     ScrollBox m_scroll;
+    PlayerMissiles m_missiles;
+    SumnerHints m_hints;
+    HintMenu m_hintMenu;
+    ModelSprite m_hintArrow;
+    s32 m_hintPlayer = -1;       ///< whose scroll of hints is out
+    f32 m_greetingLeft = -1.0f;  ///< seconds from his greeting to his scroll; negative: none
+    bool m_hintsGiven = false;   ///< this visit has had its scroll; leaving him clears it
     Intro m_intro = Intro::None;
     WorldCamera m_cutCamera;
     s32 m_cutTicks = 0;

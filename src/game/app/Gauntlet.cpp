@@ -222,6 +222,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         const MenuInputSource source = MenuInputSource::forPlayer(player);
         PlayInput& in = inputs[static_cast<usize>(player)];
         in.move = readMoveInput(input(), m_config.play, source.keyboard, source.pad);
+        in.attack = readAttackInput(input(), m_config.play, source.keyboard, source.pad);
         in.menu = readMenuInput(input(), m_config.menu, source);
     }
     if (m_tower.update(deltaSeconds, inputs) == TowerOutcome::Leave) {

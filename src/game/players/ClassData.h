@@ -48,6 +48,8 @@ struct ClassStats {
     f32 height = 0.0f;
     f32 width = 0.0f;
     f32 collisionY = 0.0f; ///< the body's centre above the feet, which the camera follows
+    Vec3 weaponOffset{0.0f, 0.0f, 0.0f}; ///< where a thrown weapon leaves, from the centre
+    f32 powerupTime = 1.0f; ///< how much longer (or shorter) powerups last this class
 };
 
 /** Every class's stats, read from `<directory>/<CODE>.json`. */

@@ -11,7 +11,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
-#include "game/menu/FireScroll.h"
+#include "game/menu/BurnDialogueScroll.h"
 
 namespace gdl::game {
 
@@ -97,7 +97,7 @@ private:
     s32 m_hold = 0;
     s32 m_time = 0;
     bool m_active = false;
-    FireScroll m_fire;
+    BurnDialogueScroll m_fire;
 };
 
 } // namespace gdl::game

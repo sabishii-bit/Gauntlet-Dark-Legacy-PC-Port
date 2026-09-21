@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -29,14 +31,21 @@ struct Collector {
     f32 height = 1.0f;  ///< slack over an item's height up or down: half the toucher's height
 };
 
-/** Something a collector took this update. */
+/** Something a collector touched this update. */
 struct Pickup {
     usize item = 0;
-    usize collector = 0; ///< which of the collectors took it
+    usize collector = 0; ///< which of the collectors touched it
     s32 subtype = 0;
     s32 realm = -1; ///< for a crystal, the realm it counts towards
+    s32 amount = 0; ///< how much of it there is: gold, keys, health and so on
+    u32 flags = 0;  ///< its record's properties: a potion's kind, a powerup's which
+    f32 strength = 0.0f; ///< a powerup's
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
+
+/** What the game makes of a touched item: nothing to leave it lying, else how much of its
+ * amount is left there (none takes it away). */
+using PickupJudge = std::function<std::optional<s32>(const Pickup&)>;
 
 /**
  * The pickups a level places, as far as the tower needs them: each powerup's figure, found
@@ -73,7 +82,9 @@ public:
         s32 instance = -1; ///< which of the layout's instances it is
         s32 info = -1;
         s32 subtype = 0;
-        s32 value = 0;
+        s32 value = 0; ///< its amount; a part taken leaves the rest
+        u32 flags = 0;
+        f32 strength = 0.0f;
         s32 minPlayers = 0;
         f32 radius = 0.0f; ///< how far out it can be touched
         f32 height = 0.0f;
@@ -121,8 +132,15 @@ public:
     /** Shows the items a party of `players` sees. */
     void setPlayerCount(s32 players);
     /** Takes whatever the collectors touch and starts its burst; the pickups are returned
-     * for the game to hand out. */
-    std::vector<Pickup> collect(RenderDevice& device, std::span<const Collector> collectors);
+     * for the game to hand out. With a `judge`, each touched item is its to take, take part
+     * of or leave; only those it took from are returned. */
+    std::vector<Pickup> collect(RenderDevice& device, std::span<const Collector> collectors,
+                                const PickupJudge& judge = {});
+    /** Drops a pickup of the level's item record named `name` at `position` (on the floor
+     * under it, with a collision), as a chest or a fallen enemy leaves one; false when the
+     * level has no such record or no archive its figure. */
+    bool place(RenderDevice& device, std::string_view name, const Vec3& position,
+               const WorldCollision* collision);
     /** Turns the figures and plays the bursts on by `seconds`. */
     void update(f32 seconds);
     usize effectCount() const { return m_effects.size(); }
@@ -153,6 +171,9 @@ private:
     void applyTextureMotion();
 
     std::vector<ItemArchive*> m_archives;
+    std::vector<ItemInfo> m_infos; ///< the level's item records, for dropping more
+    /** Builds the figure of an item named `name`; false when no archive holds it. */
+    bool makeFigure(RenderDevice& device, Item& item);
     std::vector<ArchiveMotion> m_motions;
     s32 m_players = 0;
     f32 m_frameRemainder = 0.0f;

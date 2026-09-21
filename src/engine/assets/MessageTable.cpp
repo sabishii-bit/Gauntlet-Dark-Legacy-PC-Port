@@ -23,6 +23,7 @@ std::string cleanPage(std::string page) {
 bool MessageTable::load(const std::filesystem::path& file) {
     m_fonts.clear();
     m_messages.clear();
+    m_lists.clear();
     m_byName.clear();
     try {
         const std::vector<u8> bytes = readFile(file);
@@ -39,10 +40,17 @@ bool MessageTable::load(const std::filesystem::path& file) {
             }
             m_messages.push_back(std::move(message));
         }
+        for (const nlohmann::json& entry : root.value("lists", nlohmann::json::array())) {
+            MessageList list;
+            list.name = entry.value("name", std::string{});
+            list.messages = entry.value("messages", std::vector<s32>{});
+            m_lists.push_back(std::move(list));
+        }
     } catch (const std::exception& e) {
         log::warn("Message table {}: {}", file.string(), e.what());
         m_fonts.clear();
         m_messages.clear();
+        m_lists.clear();
         return false;
     }
     for (u32 i = 0; i < m_messages.size(); ++i) {
@@ -62,6 +70,26 @@ std::optional<u32> MessageTable::find(std::string_view name) const {
         return std::nullopt;
     }
     return it->second;
+}
+
+const MessageList* MessageTable::findList(std::string_view name) const {
+    for (const MessageList& list : m_lists) {
+        if (list.name == name) {
+            return &list;
+        }
+    }
+    return nullptr;
+}
+
+const MessageInfo* MessageTable::listed(const MessageList& list, usize entry) const {
+    if (entry >= list.messages.size()) {
+        return nullptr;
+    }
+    const s32 index = list.messages[entry];
+    if (index < 0 || static_cast<usize>(index) >= m_messages.size()) {
+        return nullptr;
+    }
+    return &m_messages[static_cast<usize>(index)];
 }
 
 std::string_view MessageTable::fontOf(const MessageInfo& message) const {

@@ -53,13 +53,15 @@
         "up": ["Up", "W"],
         "down": ["Down", "S"],
         "left": ["Left", "A"],
-        "right": ["Right", "D"]
+        "right": ["Right", "D"],
+        "attack": ["Space"]
       },
       "pad": {
         "up": ["DpadUp"],
         "down": ["DpadDown"],
         "left": ["DpadLeft"],
-        "right": ["DpadRight"]
+        "right": ["DpadRight"],
+        "attack": ["A"]
       },
       "stickDeadZone": 0.25
     }

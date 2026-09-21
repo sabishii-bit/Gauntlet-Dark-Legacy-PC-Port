@@ -72,6 +72,16 @@ TEST_CASE("Sumner stands at his lookout, cycles his idles and gestures on reques
     REQUIRE_FALSE(sumner.gesturing());
     REQUIRE(sumner.sequence() == 0);
     REQUIRE(steps > 100); // seventy-five frames at twenty a second
+    // His greeting and his send-off cut in the same way, by the original's indices.
+    sumner.play(SumnerFigure::kWelcomeIndex);
+    sumner.update(kStep);
+    REQUIRE(sumner.playing(SumnerFigure::kWelcomeIndex));
+    REQUIRE(sumner.sequence() == 3);
+    sumner.play(SumnerFigure::kGoAwayIndex);
+    sumner.update(kStep);
+    REQUIRE(sumner.playing(SumnerFigure::kGoAwayIndex));
+    REQUIRE_FALSE(sumner.playing(SumnerFigure::kWelcomeIndex));
+    REQUIRE_FALSE(sumner.playing(42));
 
     sumner.clear();
     REQUIRE_FALSE(sumner.loaded());

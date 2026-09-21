@@ -57,6 +57,9 @@ add_executable(tests
     engine/assets/MessageTableTests.cpp
     game/menu/ScrollBoxTests.cpp
     game/world/SumnerFigureTests.cpp
+    game/world/SumnerHintsTests.cpp
+    game/world/PlayerMissilesTests.cpp
+    game/menu/HintMenuTests.cpp
     game/world/PlacedItemsTests.cpp
     game/world/AmbientSoundsTests.cpp
     engine/world/WorldLightingTests.cpp
@@ -84,6 +87,8 @@ add_executable(tests
     game/players/ClassDataTests.cpp
     game/players/ProgressionTests.cpp
     game/players/CharacterSaveTests.cpp
+    game/players/InventoryTests.cpp
+    game/players/ItemPickupTests.cpp
     game/players/PlayerControlsTests.cpp
     game/players/PlayerActorTests.cpp
     game/players/PlayerAnimatorTests.cpp
@@ -100,7 +105,7 @@ add_executable(tests
     formats/PlayerDataWadTests.cpp
     formats/TplFileTests.cpp
     formats/IcoWriterTests.cpp
-    game/menu/FireScrollTests.cpp
+    game/menu/BurnDialogueScrollTests.cpp
     engine/assets/StringTableTests.cpp)
 
 target_link_libraries(tests PRIVATE gdl::engine gdl::formats gdl::game Catch2::Catch2WithMain)

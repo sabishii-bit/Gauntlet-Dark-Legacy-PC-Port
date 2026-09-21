@@ -32,7 +32,7 @@ TreeInfo classTree() {
         s32 rate;
         bool repeats;
     };
-    const std::array<Entry, 9> entries{{{"READY", 60, 30, true},
+    const std::array<Entry, 15> entries{{{"READY", 60, 30, true},
                                         {"IDLE1", 150, 45, false},
                                         {"IDLE2", 71, 30, false},
                                         {"IDLE2_LOOP", 69, 30, true},
@@ -40,7 +40,13 @@ TreeInfo classTree() {
                                         {"WALK1", 12, 30, false},
                                         {"WALK2", 11, 30, false},
                                         {"RUN1", 10, 30, false},
-                                        {"RUN2", 10, 30, false}}};
+                                        {"RUN2", 10, 30, false},
+                                        {"THROW1S", 10, 24, false},
+                                        {"THROW1", 3, 24, false},
+                                        {"THROW1R", 10, 24, false},
+                                        {"THROW2S", 10, 24, false},
+                                        {"THROW2", 2, 24, false},
+                                        {"THROW2R", 10, 24, false}}};
     u32 index = 0;
     for (const Entry& entry : entries) {
         TreeSequenceInfo sequence;
@@ -72,6 +78,91 @@ int stepsUntil(PlayerAnimator& animator, PlayerMotion motion, Action wanted, int
         ++steps;
     }
     return steps;
+}
+
+int stepsUntilAttack(PlayerAnimator& animator, Action wanted, int limit) {
+    int steps = 0;
+    while (animator.action() != wanted && steps < limit) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, true);
+        ++steps;
+    }
+    return steps;
+}
+
+TEST_CASE("a held attack winds up, lets go and recovers, over and over",
+          "[game][players][animation]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    REQUIRE_FALSE(animator.throwing());
+    REQUIRE(animator.moveScale() == 1.0f);
+    // The attack cuts into the stance at once.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, true);
+    REQUIRE(animator.action() == Action::Throw);
+    REQUIRE(animator.throwing());
+    REQUIRE(animator.moveScale() == 0.0f);
+    REQUIRE_FALSE(animator.released());
+    // From its second frame (at twenty-four a second) the wind-up gives way to the release.
+    int steps = 0;
+    while (animator.action() == Action::Throw && steps < 20) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, true);
+        ++steps;
+    }
+    REQUIRE(animator.action() == Action::ThrowRelease);
+    REQUIRE(steps >= 3);
+    REQUIRE(steps <= 4);
+    // The release runs out its three frames; its end is the moment the weapon flies, once.
+    int releases = 0;
+    steps = 0;
+    while (animator.action() == Action::ThrowRelease && steps < 20) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, true);
+        releases += animator.released() ? 1 : 0;
+        ++steps;
+    }
+    REQUIRE(animator.action() == Action::ThrowRecover);
+    REQUIRE(releases == 1);
+    REQUIRE(animator.recovering());
+    REQUIRE(animator.attackSeconds() > 0.15f);
+    REQUIRE(animator.attackSeconds() < 0.4f);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, true);
+    REQUIRE_FALSE(animator.released());
+    // Still held, the recovery leads into the next throw; the stick moves nothing meanwhile.
+    REQUIRE(stepsUntilAttack(animator, Action::Throw, 40) > 5);
+    REQUIRE_FALSE(animator.recovering());
+    // Let go mid-throw, the throw still plays out, then the body eases back to its stance.
+    while (animator.throwing() && steps < 200) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, false);
+        REQUIRE((animator.action() == Action::Ready || animator.throwing() ||
+                 animator.action() == Action::Run1));
+        ++steps;
+    }
+    REQUIRE_FALSE(animator.throwing());
+    REQUIRE(animator.moveScale() == 1.0f);
+}
+
+TEST_CASE("an attack from the first half of a walk or run takes the moving wind-up",
+          "[game][players][animation]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Run, kTicks, kStep);
+    REQUIRE(animator.action() == Action::Run1);
+    animator.update(PlayerMotion::Run, kTicks, kStep, true);
+    REQUIRE(animator.action() == Action::ThrowMoving);
+    int steps = 0;
+    while (animator.action() != Action::ThrowMovingRecover && steps < 40) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, true);
+        ++steps;
+    }
+    REQUIRE(animator.action() == Action::ThrowMovingRecover);
+    // A class without the throw's sequences does not throw.
+    TreeInfo bare = classTree();
+    std::erase_if(bare.sequences,
+                  [](const TreeSequenceInfo& s) { return s.name.starts_with("THROW"); });
+    PlayerAnimator plain;
+    REQUIRE(plain.bind(bare, false));
+    plain.update(PlayerMotion::Stand, kTicks, kStep, true);
+    REQUIRE(plain.action() == Action::Ready);
 }
 
 TEST_CASE("the stick's magnitude picks standing, walking or running", "[game][players][animation]") {

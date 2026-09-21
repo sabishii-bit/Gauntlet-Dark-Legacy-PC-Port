@@ -49,6 +49,7 @@ struct MenuDefinition {
     std::string selectLabel;
     s32 promptY = 304;
     bool fades = false;         ///< fade in when opened and out when closed
+    bool backdropFades = true;  ///< the backdrop fades with the text, else it stays solid
     bool parchmentFont = false; ///< unselected items use the parchment glyph sheet
     bool garamondIntro = false; ///< items flip through the ornate sheets when opened
     std::string playerLabel;    ///< drawn on the backdrop when set, e.g. "Player 1"
@@ -59,6 +60,13 @@ struct MenuDefinition {
     s32 backdropHeight = -1;
     std::string burn; ///< animated flame overlay texture (first of five frames)
     Rect burnArea;
+    /** Passages written on the backdrop in the unselected colour, each with its own line
+     * breaks, centred across the screen: one after the other from `bodyY` with `bodyGap`
+     * between them, or (bodyY -1) centred on the column's middle. */
+    std::vector<std::string> body;
+    f32 bodyScale = 1.0f;
+    s32 bodyY = -1;
+    s32 bodyGap = 0;
 };
 
 enum class MenuAction : u8 { None, Moved, Choice, Back, Closed };
@@ -136,6 +144,8 @@ public:
     s32 itemY(usize index) const;
     s32 lineHeight() const { return m_lineHeight; }
     s32 iconY() const { return m_iconDrawY; }
+    /** Where the body's first line is drawn. */
+    s32 bodyTop() const { return m_bodyTop; }
     f32 iconScale() const { return m_iconScale; }
     Rect backdropArea() const { return m_backdrop; }
 
@@ -167,6 +177,7 @@ private:
     s32 m_iconY = 0;
     s32 m_iconTimer = kIconGlideTicks;
     s32 m_iconDrawY = 0;
+    s32 m_bodyTop = 0;
 };
 
 } // namespace gdl::game
