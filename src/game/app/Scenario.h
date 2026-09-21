@@ -7,7 +7,7 @@
 
 #include "engine/core/Types.h"
 
-#include "game/screens/TowerScene.h"
+#include "game/screens/PlayScene.h"
 
 namespace gdl::game {
 
@@ -22,7 +22,9 @@ struct ScenarioMember {
     s32 gold = 0;
     s32 health = 0; ///< none leaves it full
     s32 keys = 0;
+    s32 slot = -1; ///< the save slot the character is kept in; none when negative
     std::vector<s32> potions; ///< the kind of each carried
+    std::vector<PowerupSlot> powerups; ///< carried and worn
 };
 
 /**
@@ -32,7 +34,8 @@ struct ScenarioMember {
  */
 struct Scenario {
     std::vector<ScenarioMember> party;
-    TowerOptions tower;
+    PlayOptions tower;
+    std::string level; ///< the level to open onto, such as G1; none is the tower
 
     /** Throws FormatError on malformed text, an unknown class or colour, or an empty party. */
     static Scenario fromJson(std::string_view text);

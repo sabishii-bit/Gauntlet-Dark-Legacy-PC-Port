@@ -42,6 +42,9 @@ public:
     void update(const MoveInput& input, f32 cameraYaw, f32 seconds,
                 const WorldCollision* collision, f32 moveScale = 1.0f);
 
+    /** Moves the character to `position`, as something solid in its way pushes it. */
+    void place(const Vec3& position) { m_position = position; }
+
     /** Drops the character onto the floor under it, when there is one. */
     void settle(const WorldCollision& collision);
 
@@ -50,7 +53,9 @@ public:
     CharacterSave& save() { return m_save; }
     const Vec3& position() const { return m_position; }
     f32 yaw() const { return m_yaw; }
-    f32 speed() const { return m_speed; }
+    f32 speed() const { return m_speed + m_paceBonus; }
+    /** Units a second a speed powerup adds to the class's pace. */
+    void setPaceBonus(f32 bonus) { m_paceBonus = bonus; }
     f32 radius() const { return m_radius; }
     f32 height() const { return m_height; }
     /** How far the character's touch takes items: the class's whole width, as the original
@@ -73,6 +78,7 @@ private:
     Vec3 m_position{0.0f, 0.0f, 0.0f};
     f32 m_yaw = 0.0f;
     f32 m_speed = kMinSpeed;
+    f32 m_paceBonus = 0.0f;
     f32 m_radius = kDefaultWidth * 0.5f;
     f32 m_height = kDefaultHeight;
     f32 m_followHeight = kDefaultFollowHeight;

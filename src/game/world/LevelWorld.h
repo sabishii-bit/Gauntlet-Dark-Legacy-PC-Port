@@ -22,6 +22,7 @@
 #include "engine/world/WorldLighting.h"
 #include "engine/world/WorldScene.h"
 
+#include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
 #include "game/world/PlacedItems.h"
 #include "game/world/TowerCamera.h"
@@ -29,22 +30,23 @@
 namespace gdl::game {
 
 /**
- * Sumner's tower, the hub every adventure starts from: the level's geometry, collision and
- * marker points, its moving objects and flickering textures, the item archive it borrows
- * from, and from the realm's data its light, its camera range and its sounds, loaded once
- * and shared by the screens that show it.
+ * One level of the game, loaded to be played in (Sumner's tower, the hub every adventure
+ * starts from, unless told another): its geometry, collision and marker points, its moving
+ * objects and flickering textures, the realm's item archive it borrows from, and from the
+ * realm's data its light, its camera range and its sounds, shared by the screens that show
+ * it.
  */
-class TowerWorld {
+class LevelWorld {
 public:
-    static constexpr std::string_view kLevel = "LEVELS/LEVELL1";
-    static constexpr std::string_view kItems = "ITEMS/LEVELL";
     static constexpr std::string_view kPowerups = "POWERUPS";
-    static constexpr std::string_view kWorldData = "wdata/TOWER.json";
-    static constexpr std::string_view kLevelName = "L1";
 
     /** Loads the unpacked level; false (with a log line) when it is not there. Without the
      * realm's data the default light and camera range stand in. */
-    bool load(RenderDevice& device, const std::filesystem::path& unpackedRoot);
+    bool load(RenderDevice& device, const std::filesystem::path& unpackedRoot,
+              const LevelRef& level = LevelRef::tower());
+    /** The level loaded. */
+    const LevelRef& ref() const { return m_ref; }
+    bool isTower() const { return m_ref.isTower(); }
     void clear();
     bool built() const { return m_scene.built(); }
 
@@ -82,6 +84,11 @@ public:
         return m_placedItems.place(device, name, position,
                                    m_collision.loaded() ? &m_collision : nullptr);
     }
+    /** Drops the item of one of the level's records (what a chest held) at `position`. */
+    bool placeItemRecord(RenderDevice& device, s32 record, const Vec3& position, s32 amount = 0) {
+        return m_placedItems.placeRecord(device, record, position,
+                                         m_collision.loaded() ? &m_collision : nullptr, amount);
+    }
     /** The level's item archive, lending the torch flames and Sumner; empty when it is not
      * unpacked. */
     ItemArchive& items() { return m_items; }
@@ -105,8 +112,14 @@ public:
     /** The camera the tower is first seen from: the first camera start marker. */
     std::optional<WorldCamera> entranceCamera() const;
 
-    /** Where players arriving from world `world` stand (0 is the tower's own entrance). */
-    const WorldLocator* startPoint(u32 world) const;
+    /** The level's start marker number `index` (0 is its entrance). */
+    const WorldLocator* startPoint(u32 index) const;
+    /** Which of the tower's start markers a party back from realm `realm` stands at: the one
+     * among that realm's portals, by the original's table; the entrance for any other. */
+    static u32 towerMarkerOf(u32 realm);
+    /** Where a party arriving from realm `realm` stands: in the tower among that realm's
+     * portals, anywhere else at the level's entrance. */
+    const WorldLocator* arrivalPoint(u32 realm) const;
 
     /** The game camera markers the follow camera takes its angles from. */
     const std::vector<WorldLocator>& cameraMarkers() const { return m_markers; }
@@ -122,6 +135,7 @@ public:
 
 private:
     void loadLevelData(const std::filesystem::path& unpackedRoot);
+    LevelRef m_ref = LevelRef::tower();
     void syncCollision();
 
     ModelSet m_models;

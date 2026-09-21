@@ -34,6 +34,7 @@ struct StatusBoxView {
     s32 keys = 0;       ///< shown with their icon when any are carried
     s32 potions = 0;
     s32 potionKind = 0; ///< of the potion thrown next, which picks the icon's colour
+    bool inTower = false; ///< fallen: the box says so in place of what is carried
 };
 
 /**
@@ -43,6 +44,8 @@ struct StatusBoxView {
  */
 class StatusBoxPainter {
 public:
+    static constexpr s32 kInTowerY = 340;    ///< where a fallen character's box says so
+    static constexpr f32 kInTowerScale = 1.2f;
     static constexpr s32 kCarriedY = 323;    ///< the key and potion icons' top
     static constexpr s32 kCarriedTextY = 327;
     static constexpr s32 kKeyIconX = 8;
@@ -66,6 +69,8 @@ public:
               const StringTable* strings);
     void release();
     bool loaded() const { return m_device != nullptr; }
+    /** The small capitals the boxes' levels are written in, which the help messages share. */
+    const TextPainter& smallCaps() const { return m_smallCaps; }
 
     /** Draws player `slot`'s box; `bar` adds the strip above it that the game shows in play. */
     void draw(Canvas& canvas, s32 slot, const StatusBoxView& view, bool bar);

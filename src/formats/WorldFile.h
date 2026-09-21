@@ -74,6 +74,12 @@ struct ItemInfoRecord {
     s16 activeType = 0;
     s16 activeOff = 0;
     s16 activeOn = 0;
+    /** A record of type -1 is no item but a list to pick one from at random: `subtype` of
+     * these indices into the item records, stored where an item keeps its collision. */
+    std::vector<s16> choices;
+
+    static constexpr s32 kChoiceList = -1;
+    static constexpr usize kMostChoices = 36; ///< what fits before the record's end
 };
 
 /** One item the level places: which kind, how many players it takes, its own name when it

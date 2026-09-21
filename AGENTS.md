@@ -53,16 +53,24 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * Game modules, lowest first: `config` (settings), `players` (the class
   table and stats, the experience curve, character saves, movement input and
   `PlayerActor`, a character standing in a level), `world` (the levels the
-  game plays in, `TowerWorld`, and their cameras), `menu` (input mapping,
+  game plays in, `LevelWorld`, and their cameras), `menu` (input mapping,
   menus, name entry and their effects), `screens` (whole screens such as the
   title, movie, player select and tower screens, the status boxes, plus
   `GameContext`, what a screen receives), `app` (the `Gauntlet` driver, the
   command line and the attract flow). The same rule applies: a module only
   includes those below it, and `main.cpp` uses `app`.
-* Saved characters are JSON files written by `players/CharacterSave` into the
-  directory the settings name (`GameConfig::saveDirectory()`), one per slot;
-  the format carries a version so it can grow. Only the select screen writes
-  them. Per-class tuning comes from `assets/unpacked/pdata/<CLASS>.json`
+* Saved characters are JSON files written by `players/CharacterSave`, one per
+  slot, into `GameConfig::saveDirectory()`: a `saves` folder beside the
+  executable (not the per-user folder; that is a holding decision until a
+  permanent home is chosen), or `save.directory` from the settings, taken
+  beside the executable when it is relative. The format carries a version so
+  it can grow. The select screen writes a character when the player saves it;
+  after that `players/Party` ties each `PartyMember` to its slot and
+  `Gauntlet::keepParty` writes the party in play back (`saveParty`) whenever
+  it travels between levels, leaves for the title screen or the game shuts
+  down. A character never saved has no slot and is not kept. A scenario
+  member may name a `slot` to be kept the same way; the shipped scenarios do
+  not, so running one never overwrites a real save. Per-class tuning comes from `assets/unpacked/pdata/<CLASS>.json`
   through `players/ClassData`; class and colour codes (`WAR`, `RED`) are asset
   names and live in code, everything a player reads comes from the text
   tables.
@@ -75,8 +83,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   global Escape quit stands down while a lane is typing. It ends when every
   joined player is locked in and nothing is animating, or when the last
   player backs out.
-* The tower (`screens/TowerScene`) takes the locked-in lanes as `PartyMember`s
-  into the shared `world/TowerWorld` that `GameContext::tower` carries (the
+* The tower (`screens/PlayScene`) takes the locked-in lanes as `PartyMember`s
+  into the shared `world/LevelWorld` that `GameContext::tower` carries (the
   select screen looks into the same one). `engine/world/WorldCollision` holds
   a level's `collision.json` triangles, already in world space, on a ground
   grid: `floorAt` probes down for the highest floor, `resolveWalls` pushes a
@@ -133,7 +141,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   nodes (`TreeNodeInfo::particle` names one of the archive's own templates,
   `direction` the way it emits), run in a `ParticleField` for the sequence's
   length. A crystal's value indexes `kCrystalRealms` for the realm it counts
-  towards; `TowerScene::collectItems` gives every party member one, up to what
+  towards; `PlayScene::collectItems` gives every party member one, up to what
   the gate wants, and plays the common bank's pickup chime. Crystal counts live
   in `ClassProgress::crystals` (one per realm, in the save's JSON). Every item
   plays its first sequence on a loop (`Item::player`, `pose`: the crystals
@@ -147,14 +155,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   STATIC card such as `CRYSTAL` under it, rising a pixel a tick from under the
   screen to the bar over the taker's box, holding ninety ticks, falling away)
   and the three-second counts (a `SM_CRYSTAL_*` icon and "have/need") that
-  `StatusBoxPainter::drawCard` and `drawCount` paint; `TowerScene::collectItems`
+  `StatusBoxPainter::drawCard` and `drawCount` paint; `PlayScene::collectItems`
   feeds it and `render` draws it over the boxes, under the scroll.
 * Ambience: `game/world/AmbientSounds` runs the level's sound items (type
   13): a loop named by the instance, found in the level's bank or the
   tower's `TOWAMB`, full within its radius (the first parameter word, a
   float), fading to silence at one and a half radii, panned by the camera's
   right hand (`SoundPlayer::setVolume`/`setPan`, `AudioStream::setPan`), at
-  `kPeak` (224/255) times the level's sound volume. `TowerScene` binds it
+  `kPeak` (224/255) times the level's sound volume. `PlayScene` binds it
   once the world is loaded and updates it after the camera each frame.
 * Lighting: the level files carry a colour block per vertex (five bits a
   channel, the lighting the level was built with), which the decoder reads
@@ -164,7 +172,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   those colours, additive parts unlit, and everything else by
   `WorldLighting`. Items and characters are lit by the lights, as the
   original lights them.
-* Characters: `TowerScene::costumeDirectory` picks the costume tier of ten
+* Characters: `PlayScene::costumeDirectory` picks the costume tier of ten
   levels (`PLAYERS/<CLS>/<COL><tier>0`, unpacked with `--tiers`) when it
   exists, else `<COL>`; the weapon is the costume archive's own `WEAP_HOLD`
   (a tiered costume) or `WEAP_<COL>_HD<1|2|3>` (levels 1, 10, 50; the
@@ -172,6 +180,129 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   wrist name (`R_WRIST`, `RIGHTHAN`, `RHEND`). A tree's node named `DUMMY`
   (a costume's marker triangle at the feet) is never drawn (`TreeModel::bind`),
   as the original hides it.
+* Levels: `world/LevelWorld` (once `TowerWorld`) loads any level from a
+  `LevelRef` (realm data file, level name, `LEVELS/LEVEL<name>`, the realm's
+  `ITEMS/LEVEL<letter>`), the tower by default; `screens/PlayScene` (once
+  `TowerScene`) plays in it, keeping Sumner, his hints, his welcome and the
+  crystal reveal to `LevelWorld::isTower()`. `world/LevelCatalog` reads every
+  `wdata/*.json` and resolves an exit's two characters the way the original's
+  `FindWave` does: the letter is the last of the realm's folder prefix, the
+  digit counts into the realm's own level order (the castle's `a2` is `A6`).
+  `world/ExitPortals` stands the `EXIT_PORTAL` figure at every exit item (type
+  9; the tag is bytes 4 and 5 of its parameters) and ports its state machine:
+  with the whole party on it (radius 3, plus a unit per extra member) it runs
+  IDLE, READY, ACTIVE1, ACTIVE2 (held 45 ticks), ACTIVE3 and the party is
+  through; with only some it waits at ACTIVE2; left alone it plays out to
+  IDLE. `PlayScene::update` then returns `PlayOutcome::Travel` with
+  `destination()` and `party()`; `Gauntlet::startLevel` reloads the one
+  `LevelWorld` and reopens the scene with `PlayOptions::arrivalWorld` (the
+  realm left, which picks the tower's start marker for it). A portal whose
+  level is not unpacked goes nowhere from the tower (a warning names it) and
+  back to the tower from anywhere else, so nobody is stranded: that fallback
+  is ours, not the original's. Only the tower and `G1` (with `ITEMS/LEVELG`)
+  are unpacked here: `gdlunpack <assets> <out> --only levelG1`, then
+  `--only levelG`. Scenarios take `level` (`tests/scenarios/level-g1.json`).
+  Still to come for other levels: which portals a save has opened, and what
+  G1 places that nothing handles yet (generators, enemies, barrels, the rune
+  and scroll pickups).
+* The loading screen is `screens/TransitionScreen`: the `TRANSITION_SCREEN`
+  texture of the static set drawn 512x320 over the view. Leaving by a portal
+  it comes up over two seconds (the original's alpha, 255 * (1 - d / 2)),
+  `Gauntlet` draws it covering for a frame before the blocking load, and the
+  arriving scene clears it away over half a second (that fade out is ours).
+  Without the texture it is plain black.
+* Level fixtures (`world/ItemFigure`, `Chests`, `LockedGates`, `Traps`), bound
+  from the level's item instances and updated by `PlayScene::updateFixtures`.
+  An `ItemFigure` is an item's animated tree placed by `itemPlacement` (yaw
+  outermost, shared with `PlacedItems`: instances turned past a quarter come
+  as (pi, y, pi), a half turn of yaw) with an `Obstacle`, the record's
+  `xSize` by `zSize` box that pushes bodies out and tells who is against it.
+  Containers are type 2 (44 trapped, 46 chest, 47 gold; 43 barrels belong to
+  `Breakables`), bit 0x10 of `activeType` means locked,
+  `params[0]` is the contents record and `params[4]` a count. A record of
+  type -1 is a choice list (`ItemInfo::choices`): the pick is
+  ((seed >> 5) + item index) % n and each pick moves the seed on by 439.
+  Touching a locked chest or gate spends a key (without one the help message
+  asks for it); a chest plays ACTIVE then OPEN to `S_CHEST`, and what it held lies in it,
+  reached by touching the open chest as the original does (the player cannot
+  reach its middle), after which the emptied chest goes. A gold chest pays
+  its opener, a trapped one blows up (`EXPCHEST`, a blast of 50). The
+  chest tree's `NULL1` node is where the original hangs the contents; it is
+  a marker and `TreeModel` never draws it. Gates (type 7) play ACTIV to the
+  realm bank's gate sound and stop blocking 30 ticks in. Traps (type 8) rest
+  on their first sequence for `activeOff` * 2 ticks (negative: at random from
+  half to one and a half of it), play the rest in turn, and while out hurt
+  whoever is in their box by the record's value, who is then left alone for
+  (ticks left in that sequence + 1) / 30 seconds, as the original leaves
+  them. Every trap hit over a point also stuns (`PlayerDeed::Flinch` for
+  spikes and blades, which play `HITREACT`, `Reel` for the rest, `STUN1`):
+  the victim stands where it was struck until the sequence ends and is not
+  set reeling again meanwhile. The class trees' `SPIKEHIT` is named nowhere
+  in the original's code and goes unused. Open question: a victim standing
+  still is hit twice a cycle (once by the zero-frame ONA, once by ON), which
+  the original's timings seem to do too but was not confirmed.
+* Level tuning: each level record of a realm's data wad holds seventeen
+  floats from +0x9C (`LevelTuningRecord`, unpacked as `tuning`): the player
+  level it is meant for, experience and damage multipliers, the difficulty,
+  then enemy, generator and trap scales, where zero means "the difficulty".
+  `WorldData`'s `LevelTuning` keeps what is used so far: `damage` (scales
+  every hurt over a point), `trapRate` (times run at 1 / (rate * gain)) and
+  `trapDamage` (times gain). The gain is the game's difficulty
+  (`game.difficulty` in the settings: easy 0.667, normal 1, hard 1.5, the
+  original's). G1 is 0.75 and 0.5, so its spikes do 10.
+* Harm and death (`PlayScene::hurt`, `blast`, `settleBlasts`): blasts hurt
+  whoever is within their radius and strike the barrels in it (queued, so a
+  barrel that blows up sets off its neighbours without recursion): a trapped
+  chest 50, an exploding barrel 30, both over 12 units, a poison barrel a
+  cloud of 6.5 units that does 10 every half second for four seconds, all
+  times the trap damage scale. Cries follow the original's ids: fire `PAIN1`,
+  spikes `DIE1`, gas `POISON`, blows `PAIN2` for every 30 taken, death
+  `S_PLAYERDIES` and `DIE2`. Under a point of health the character plays
+  `DEATH` and is then "in the tower" (`StatusBoxView::inTower`, the text
+  `hud.inTower`): unseen, untouchable, out of the camera's view and not
+  waited for by portals. `PlayScene::party()` hands the fallen on as they
+  came into the level (`PartyMember::fallen`, the entry snapshot, keeping
+  only the help they saw); they stand again when the party is next in the
+  tower, and stay fallen through any other level. With everyone fallen and
+  the last body gone, three seconds later the scene returns
+  `PlayOutcome::Fallen` and `Gauntlet` takes the party to the tower. Nobody
+  is hurt in the tower. Not yet: knockback, the low-health narrator lines,
+  armour and shields reducing damage, gas spoiling food, blasts destroying
+  pickups, breakable walls (item type 10, subtype 42).
+* Barrels (`world/Breakables`): item type 10 subtypes 43 plain, 44
+  exploding, 45 poison, and the containers of subtype 43 that hold an item.
+  Hit points and armour come from the record (5 and 1): a blow takes its
+  power less the armour, never under one. `PlayerMissiles::update` takes
+  `MissileTarget`s and reports the one an impact stopped against, with the
+  missile's damage (5 to 20 by the thrower's stat). Broken, a barrel plays
+  ACTIVE, stops blocking, and leaves its staves (DONE) or, having blown up
+  or gassed, nothing. Sounds are the realm bank's `S_BARREL_WOOD`/`_EXPLO`/
+  `_GAS` plus the realm's letter, `S_WEAPONHITWOOD` for a blow it survives.
+* Help messages (`screens/HelpMessages`): the original's table of message
+  ids, each a message of the game's strings (`text/english.json`, whose
+  lines are the box's lines) and a narrator line from the `VOICE1` bank,
+  drawn in the strings' own small capitals on the scroll sheet at half
+  alpha, centred 62 pixels over the character's head, for a second a line
+  plus half a second, one at a time, with a growing pause after each (0,
+  120, 240, 420, 600 ticks). A message goes up until every character in play
+  has seen it (`CharacterSave::helpSeen`, saved); `HEALTHFULL` is per player.
+  Wired so far: door and chest wanting a key, keys full, no potion, health
+  full, traps, barrels that hold things, chests that explode.
+* Back from a realm the party stands at the tower's start marker among that
+  realm's portals: `LevelWorld::towerMarkerOf` is the original's realm to
+  marker table (town 7 -> 1, mountain 2 -> 2), not the realm id itself. There
+  it materialises as anywhere (the spawn effect, the START sequence, the
+  level's title) with the follow camera already on it: the start camera's
+  hold and ride in belong only to a party standing at the level's own
+  entrance (`arrivalPoint(...) == startPoint(0)`), so neither a party out of
+  a level nor one that fell is shown Sumner's hall first.
+  Scenarios: `level-g1-chest.json`, `level-g1-gate.json`,
+  `level-g1-trap.json`, `level-g1-nokey.json`, `level-g1-barrel.json`,
+  `level-g1-death.json`. A scenario's `position` is not checked against
+  walls: pick open ground from the level's collision.
+* Texture wrapping is per axis (`TextureDesc::wrap` across, `wrapV` down,
+  `TextureSetEntry::clampU`/`clampV`, eight Vulkan samplers): levels clamp
+  ground and wall textures one way only, which the tower never does.
 * Inventories and items: `players/Inventory` (in each `ClassProgress`, saved
   under `inventory`) holds keys (9 at most), potions by kind (9; the last
   taken shows and is thrown next) and eleven `PowerupSlot`s filled the way the
@@ -187,7 +318,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `S_PICKUPMAGIC`, `S_PICKUPSPECIAL`/`S_PICKUPSHIELD`, or the class's own
   `S_<FAM>EATSFX`/`PAIN1`). `PlacedItems::collect` takes a `PickupJudge`
   (nothing = leave it lying, else what is left of its amount), and
-  `PlacedItems::place`/`TowerWorld::placeItem` drop an item by the name of
+  `PlacedItems::place`/`LevelWorld::placeItem` drop an item by the name of
   one of the level's item records (the tower's records cover keys, food,
   potions, treasure and coins though it places only crystals), which is how
   chests and fallen enemies will leave theirs. The status box shows
@@ -195,8 +326,34 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the gold and health. Scenarios take `gold`, `health`, `keys`, `potions` per
   member and `items` (`name`, `position`); `tests/scenarios/tower-items.json`
   lays a spread out. Powerup timers do not run in the tower (nor did the
-  original's); using potions, spending keys, the powerup selector over the
-  box and powerup effects are still to come.
+  original's).
+* Using what is carried: `PlayBindings` adds `usePotion` (E, pad B),
+  `throwPotion` (Q, pad X) and the selector's four presses (I/K/J/L, the
+  pad's directional buttons, which therefore no longer walk by default: the
+  stick does, as in the original). `PlayerDeed` tells `PlayerAnimator` what
+  the buttons ask; a potion plays `MAGICS` then `MAGICR` (used) or
+  `THROWPOTIONS` then `THROWPOTIONR` (thrown), the release's start being
+  `potionUsed()`/`potionThrown()`, one potion a press. `PlayScene` takes the
+  next potion (`Inventory::takePotion`) and bursts it through
+  `world/EffectTrees` (an archive tree played once at a place and size; the
+  WEAPONS trees `MP_FIRE`/`MP_ELEC`/`MP_LIGHT`/`MP_ACID` for red, blue,
+  yellow, green, sounds `S_POTION2/1/3/4`) sized 0.03125 x magic power
+  (`PowerupEffects::magicPower`, 8 to 32 by the magic stat, at most 1), or
+  throws the bottle (`POT_<COL>_TW`) as a `PlayerMissiles` missile from 4 up
+  and 2 ahead at 5 x 0.707 up and forwards, bursting at 0.75 of that power
+  where it lands (`MissileImpact::potion`). `players/PowerupEffects` gathers
+  the worn slots (`PowerupSlot::on`, toggled by `screens/PowerupSelector`:
+  up opens after a 128-unit slide at 4 a tick, left and right go round, up
+  switches, down closes; its label is `powerupTextId`'s text, glowing while
+  worn) into weapon, armour and special flags plus pace and magic adds; so
+  far the scene applies speed (`PlayerActor::setPaceBonus`), three and five
+  way shots (`PlayerMissiles::spread`, 15 degrees apart), invisibility (body
+  alpha 95/255 wavering) and growth (1.3; an ogre is 1.6, level 99 1.2).
+  `Inventory::spendKey` is the rule for locks; chests and doors come with
+  the realm levels (the tower's archives hold no chest or door). Scenarios
+  take `powerups`; `tests/scenarios/tower-powerups.json` carries a set. The
+  shield potion, the other powerups' effects and the full-screen inventory
+  are still to come.
 * Attacks (first slice, the throw): `PlayBindings::attack`/`padAttack`
   (Space, A) held is `PlayInput::attack`. `PlayerAnimator` ports the
   original's throw actions: the wind-up (`THROW1S`, or `THROW2S` cut in from a
@@ -220,7 +377,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   damage, targets, aim assist, streaks, spread shots and impact effects are
   still to come.
 * Sumner's hints: a player inside the trigger before him (id 240,
-  `TowerScene::kSumnerSpot`) is greeted at once (`SumnerFigure::play`, the
+  `PlayScene::kSumnerSpot`) is greeted at once (`SumnerFigure::play`, the
   original's sequence indices: 3 WELCOME, 4 GOAWAY, 6 GESTRIGHT) and handed
   `menu/HintMenu` two seconds on, once a visit (leaving the spot starts a new
   one). The scroll holds play like a message scroll; its owner's menu input
@@ -239,7 +396,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `data/text/en.json`; `tests/scenarios/tower-sumner.json` starts before him.
 * Sumner's beam (`L1XPLIGHTRAY01`) starts unseen and comes up over 180 ticks
   while a player is within `kBeamRadius` of him, going again once they
-  leave (`TowerScene::updateBeam`). The stained-glass light through the
+  leave (`PlayScene::updateBeam`). The stained-glass light through the
   window over the door (`kTempleLights`) starts dark: it is the Desecrated
   Temple's, lit once its shards are all found, and the save keeps no shards
   yet.
@@ -261,11 +418,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   frame rate. The party plays its `START` entrance through the hold. The
   title sits centred near the top, sliding up over the hold. Then the
   welcome scroll, when one is due. A party placed by
-  `TowerOptions::position` skips the ride. The realm's entering sound (`WorldData::soundName` of
+  `PlayOptions::position` skips the ride. The realm's entering sound (`WorldData::soundName` of
   `audio->enterSound`) belongs to the loading screen and is not played here.
 * Gate messages: `LevelTriggers::takeRefusals` reports a player stood in a
   requirement trigger without what it wants (once per 2.5625 s per trigger)
-  and `takeOpenings` the targets that opened; `TowerScene::handleTriggerEvents`
+  and `takeOpenings` the targets that opened; `PlayScene::handleTriggerEvents`
   opens the `NEEDCRYSTALS` page for the realm or the `NEEDGARGITEMS` page for
   the gargoyle tier (the trigger id less `kIconTierBase`, 101) from
   `text/scroll_e.json`. A target opening before the party sounds by the
@@ -326,14 +483,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   crystal gate's spot reaches twice its radius (`kMetReach`) for a party that
   qualifies; `openMet` opens at level start whatever the party qualifies for;
   fading targets lose their collision (`WorldCollision::setSolid`) and thin
-  out through `WorldScene::setObjectAlpha`. `TowerScene` passes the party as
+  out through `WorldScene::setObjectAlpha`. `PlayScene` passes the party as
   `TriggerVisitor`s each frame.
 * Collision follows animation: level files keep the triangles of any object
   flagged to move (`WorldObject::kAnimated`, set on the animated and on the
   force fields that only fade) in the object's own space, the rest in world
   space. `WorldCollision::setMovingObjects` takes those aside and
   `setObjectTransform` places them from the scene's `worldTransform` after
-  every animator step (`TowerWorld::syncCollision`).
+  every animator step (`LevelWorld::syncCollision`).
 * Camera markers are the `cameraGame` locators (the original's marker table
   keeps only those enabled for the follow camera; trigger cameras serve the
   cuts). A marker's `delay` byte is a fixed camera distance when not zero.
@@ -348,7 +505,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (`CameraFrame::of(camera)`) and apply it per node or unit.
 * Scenarios: `app/Scenario` reads a JSON start (party members by class and
   colour code, level and crystals; position, yaw, welcome) into
-  `PartyMember`s and `TowerOptions`, and `--scenario <file>` opens the tower
+  `PartyMember`s and `PlayOptions`, and `--scenario <file>` opens the tower
   onto it. The scenario files are test data and live in `tests/scenarios/`.
   Use them, with a capture script, to verify a moment in play instead of
   driving through the title and select screens.
@@ -367,7 +524,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   a draw has none. `formats/WorldDataWad` reads `WDATA/*.WAD` (levels, camera
   and audio records) through the shared `formats/WadDirectory`; gdlunpack
   writes `wdata/<REALM>.json`, `assets/WorldData` loads it, and
-  `game/world/TowerWorld` takes its light, camera range and sound names from
+  `game/world/LevelWorld` takes its light, camera range and sound names from
   it instead of constants.
 * Sumner's welcome: `assets/MessageTable` reads an unpacked text rom
   (`text/scroll_e.json`: fonts, messages with pages). `game/menu/ScrollBox`
@@ -380,7 +537,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   GWIZ tree of `ITEMS/LEVELL` at the event marker whose parameter is 0,
   cycling READY, READING and THINKING as the original's index does (advance
   whenever a sequence ends or changes, wrap past 2) and cutting to GESTRIGHT
-  (index 6) on request. `TowerScene` runs the welcome for a party with no
+  (index 6) on request. `PlayScene` runs the welcome for a party with no
   class experience: the scroll holds everything still, then the crystal
   trigger camera (marker 198, its raw yaw and pitch) shows for 300 ticks with
   the controls off; `viewCamera()` is what the scene renders through.

@@ -1,6 +1,7 @@
 #include "engine/world/TreeModel.h"
 
 #include <algorithm>
+#include <array>
 #include <exception>
 #include <format>
 #include <stdexcept>
@@ -12,7 +13,8 @@ namespace gdl {
 
 namespace {
 
-constexpr std::string_view kMarkerNode = "DUMMY"; ///< a figure's marker node, kept unseen
+/** Marker nodes, kept unseen: a figure's, and the place in a chest where its contents lie. */
+constexpr std::array<std::string_view, 2> kMarkerNodes{"DUMMY", "NULL1"};
 
 } // namespace
 
@@ -48,7 +50,7 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
         const TreeNodeInfo& info = tree.nodes[i];
         const bool flips = std::ranges::any_of(
             info.objectFrames, [](const auto& run) { return !run.object.empty(); });
-        if ((info.object.empty() && !flips) || info.name == kMarkerNode) {
+        if ((info.object.empty() && !flips) || std::ranges::find(kMarkerNodes, info.name) != kMarkerNodes.end()) {
             continue;
         }
         try {

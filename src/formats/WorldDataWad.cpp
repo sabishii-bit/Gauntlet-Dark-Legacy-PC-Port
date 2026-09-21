@@ -54,6 +54,9 @@ LevelRecord readLevel(std::span<const u8> bytes, usize at) {
     level.legend = readS16(bytes, at + 0x92);
     level.musicVolume = readWadF32(bytes, at + 0x94, kWhat);
     level.soundVolume = readWadF32(bytes, at + 0x98, kWhat);
+    for (usize i = 0; i < LevelTuningRecord::kCount; ++i) {
+        level.tuning.values[i] = readWadF32(bytes, at + 0x9C + i * 4, kWhat);
+    }
     level.ambient = readWadF32(bytes, at + 0xEC, kWhat);
     level.lightDirection = readVec3(bytes, at + 0xF0);
     level.lightColor = readVec3(bytes, at + 0xFC);

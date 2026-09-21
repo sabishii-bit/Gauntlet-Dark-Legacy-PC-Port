@@ -52,6 +52,10 @@ ItemInfo readItemInfo(const Json& entry) {
     info.name = normalizeAssetName(entry.value("name", std::string{}));
     info.radius = entry.value("radius", 0.0f);
     info.height = entry.value("height", 0.0f);
+    info.xSize = entry.value("xSize", 0.0f);
+    info.zSize = entry.value("zSize", 0.0f);
+    info.collisionType = entry.value("collisionType", 0);
+    info.choices = entry.value("choices", std::vector<s32>{});
     if (entry.contains("collisionOffset")) {
         info.collisionOffset = readVec3(entry.at("collisionOffset"));
     }

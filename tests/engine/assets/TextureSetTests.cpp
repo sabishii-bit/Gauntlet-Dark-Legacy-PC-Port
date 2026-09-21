@@ -77,13 +77,20 @@ TEST_CASE("GPU textures are created once and released on demand", "[assets][text
 TEST_CASE("clamped tiles are created with edge clamping", "[assets][textures]") {
     TextureSet set;
     REQUIRE(set.load(sampleSet("texture-set-clamp")));
-    REQUIRE(set.entry(0).clamp);
-    REQUIRE_FALSE(set.entry(1).clamp);
+    // Each way on its own: the first tile is held at its edge across yet still tiles down.
+    REQUIRE(set.entry(0).clampU);
+    REQUIRE_FALSE(set.entry(0).clampV);
+    REQUIRE_FALSE(set.entry(1).clampU);
     test::FakeRenderDevice device;
     set.texture(device, 0);
     REQUIRE(device.lastTextureDesc.wrap == TextureWrap::ClampToEdge);
+    REQUIRE(device.lastTextureDesc.wrapDown() == TextureWrap::Repeat);
     set.texture(device, 1);
     REQUIRE(device.lastTextureDesc.wrap == TextureWrap::Repeat);
+    REQUIRE(device.lastTextureDesc.wrapDown() == TextureWrap::Repeat);
+    // A description that names one way wraps the same both ways.
+    REQUIRE(TextureDesc{2, 2, TextureFilter::Linear, TextureWrap::ClampToEdge}.wrapDown() ==
+            TextureWrap::ClampToEdge);
 }
 
 TEST_CASE("missing images surface as file errors", "[assets][textures]") {

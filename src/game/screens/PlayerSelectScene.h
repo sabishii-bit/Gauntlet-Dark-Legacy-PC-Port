@@ -23,7 +23,7 @@
 #include "game/screens/GameContext.h"
 #include "game/screens/SelectLane.h"
 #include "game/screens/StatusBox.h"
-#include "game/world/TowerWorld.h"
+#include "game/world/LevelWorld.h"
 
 namespace gdl::game {
 
@@ -103,7 +103,7 @@ private:
     SoundHandle m_music = kNoSound;
     SoundHandle m_greeting = kNoSound;
     ClassDataSet m_classes;
-    TowerWorld* m_tower = nullptr;
+    LevelWorld* m_tower = nullptr;
     std::optional<WorldCamera> m_camera;
     SaveSlots m_saves;
     LaneServices m_services;

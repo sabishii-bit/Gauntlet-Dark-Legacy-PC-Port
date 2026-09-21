@@ -54,14 +54,21 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.gold = entry.value("gold", 0);
         member.health = entry.value("health", 0);
         member.keys = entry.value("keys", 0);
+        member.slot = entry.value("slot", -1);
         member.potions = entry.value("potions", std::vector<s32>{});
+        for (const Json& powerup : entry.value("powerups", Json::array())) {
+            member.powerups.push_back(PowerupSlot{powerup.value("strength", 30.0f),
+                                                  powerup.value("kind", 0),
+                                                  powerup.value("charge", 0.0f),
+                                                  powerup.value("flags", 0U), true});
+        }
         if (!classIndexOf(member.classCode).has_value()) {
             throw FormatError("scenario: unknown class " + member.classCode);
         }
         if (!colorIndexOf(member.colorCode).has_value()) {
             throw FormatError("scenario: unknown colour " + member.colorCode);
         }
-        if (member.player < 0 || member.player >= TowerScene::kPlayerCount ||
+        if (member.player < 0 || member.player >= PlayScene::kPlayerCount ||
             member.name.empty() || member.name.size() > kCharacterNameLength ||
             member.level < 1 || member.crystals.size() > kRealmCount || member.gold < 0 ||
             member.health < 0 || member.keys < 0 || member.keys > Inventory::kMostKeys ||
@@ -79,6 +86,7 @@ Scenario Scenario::fromJson(std::string_view text) {
     if (root.contains("welcome")) {
         scenario.tower.welcome = root.at("welcome").get<bool>();
     }
+    scenario.level = root.value("level", std::string{});
     for (const Json& entry : root.value("items", Json::array())) {
         DroppedItem item;
         item.name = entry.value("name", std::string{});
@@ -111,7 +119,13 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         progress.health = member.health;
         progress.inventory.keys = member.keys;
         progress.inventory.potions = member.potions;
-        members.push_back(PartyMember{member.player, std::move(save)});
+        for (const PowerupSlot& slot : member.powerups) {
+            progress.inventory.addPowerup(slot.kind, slot.flags, slot.charge, slot.strength);
+        }
+        members.push_back(PartyMember{
+            member.player, std::move(save),
+            member.slot >= 0 ? std::optional<usize>{static_cast<usize>(member.slot)}
+                             : std::nullopt});
     }
     return members;
 }

@@ -702,6 +702,13 @@ void unpackWorld(const AssetLocator& files, const std::filesystem::path& outDir,
             json.key("activeType").value(static_cast<s64>(info.activeType));
             json.key("activeOff").value(static_cast<s64>(info.activeOff));
             json.key("activeOn").value(static_cast<s64>(info.activeOn));
+            if (!info.choices.empty()) {
+                json.key("choices").beginArray();
+                for (const s16 choice : info.choices) {
+                    json.value(static_cast<s64>(choice));
+                }
+                json.endArray();
+            }
             json.endObject();
         }
         json.endArray();
@@ -890,6 +897,11 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
         json.key("maxEnemies").value(static_cast<int>(level.maxEnemies));
         json.key("musicVolume").value(level.musicVolume);
         json.key("soundVolume").value(level.soundVolume);
+        json.key("tuning").beginObject();
+        for (usize i = 0; i < LevelTuningRecord::kCount; ++i) {
+            json.key(LevelTuningRecord::kNames[i]).value(level.tuning.values[i]);
+        }
+        json.endObject();
         json.key("ambient").value(level.ambient);
         json.key("lightDirection").numbers(std::array<f32, 3>{
             level.lightDirection.x, level.lightDirection.y, level.lightDirection.z});

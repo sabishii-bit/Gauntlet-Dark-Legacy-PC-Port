@@ -2,6 +2,7 @@
 
 #include "game/app/Scenario.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <format>
 #include <span>
@@ -83,6 +84,17 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
     try {
         const Scenario scenario = Scenario::load(file);
         log::info("Scenario {}: {} in the party", file.string(), scenario.party.size());
+        if (!scenario.level.empty()) {
+            if (!m_levels.loaded()) {
+                m_levels.load(m_options.unpackedDirectory);
+            }
+            const auto level = m_levels.byName(scenario.level);
+            if (!level.has_value()) {
+                log::error("Scenario {}: no level named {}", file.string(), scenario.level);
+                return false;
+            }
+            return startLevel(*level, scenario.partyMembers(), scenario.tower);
+        }
         return startTower(scenario.partyMembers(), scenario.tower);
     } catch (const std::exception& e) {
         log::error("Scenario {}: {}", file.string(), e.what());
@@ -97,6 +109,10 @@ GameContext Gauntlet::context() {
     context.sounds = m_sounds.get();
     context.assets = m_assets.get();
     context.tower = &m_towerWorld;
+    if (!m_levels.loaded()) {
+        m_levels.load(m_options.unpackedDirectory);
+    }
+    context.levels = &m_levels;
     context.unpackedRoot = m_options.unpackedDirectory;
     return context;
 }
@@ -107,7 +123,12 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         requestQuit();
     }
 
-    if (m_movieActive) {
+    if (m_journey.has_value()) {
+        // The next level loads only once the picture has been put on screen.
+        if (m_journey->shown) {
+            finishJourney();
+        }
+    } else if (m_movieActive) {
         updateMovie(deltaSeconds);
     } else if (m_title.isOpen()) {
         updateTitle(deltaSeconds);
@@ -191,7 +212,7 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         const SelectLane& lane = m_select.lane(player);
         if (lane.lockedIn()) {
-            party.push_back(PartyMember{player, lane.save()});
+            party.push_back(PartyMember{player, lane.save(), lane.slotInUse()});
         }
     }
     m_select.close();
@@ -203,9 +224,31 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     }
 }
 
-bool Gauntlet::startTower(std::span<const PartyMember> party, const TowerOptions& options) {
+bool Gauntlet::startLevel(const LevelRef& level, std::span<const PartyMember> party,
+                          const PlayOptions& options) {
     if (party.empty()) {
         return false;
+    }
+    if (!m_towerWorld.built() || !(m_towerWorld.ref() == level)) {
+        if (!m_towerWorld.load(renderDevice(), m_options.unpackedDirectory, level)) {
+            log::warn("Level {} is unavailable; unpack it with gdlunpack --only", level.name);
+            return false;
+        }
+    }
+    if (m_tower.open(renderDevice(), context(), m_towerWorld, party, options)) {
+        log::info("Entering {} ({})", level.name, level.title);
+        setMaxFrameRate(m_config.timing.gameplayFrameRate);
+        return true;
+    }
+    return false;
+}
+
+bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions& options) {
+    if (party.empty()) {
+        return false;
+    }
+    if (m_towerWorld.built() && !m_towerWorld.isTower()) {
+        return startLevel(LevelRef::tower(), party, options);
     }
     if (m_tower.open(renderDevice(), context(), m_towerWorld, party, options)) {
         log::info("Every player is ready; entering the tower");
@@ -217,20 +260,72 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const TowerOptions
 }
 
 void Gauntlet::updateTower(f64 deltaSeconds) {
-    TowerScene::Inputs inputs;
-    for (s32 player = 0; player < TowerScene::kPlayerCount; ++player) {
+    PlayScene::Inputs inputs;
+    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
         const MenuInputSource source = MenuInputSource::forPlayer(player);
         PlayInput& in = inputs[static_cast<usize>(player)];
         in.move = readMoveInput(input(), m_config.play, source.keyboard, source.pad);
-        in.attack = readAttackInput(input(), m_config.play, source.keyboard, source.pad);
+        const PlayButtons buttons =
+            readPlayButtons(input(), m_config.play, source.keyboard, source.pad);
+        in.attack = buttons.attack;
+        in.usePotion = buttons.usePotion;
+        in.throwPotion = buttons.throwPotion;
+        in.selector = SelectorInput{buttons.selectorUp, buttons.selectorDown,
+                                    buttons.selectorLeft, buttons.selectorRight};
         in.menu = readMenuInput(input(), m_config.menu, source);
     }
-    if (m_tower.update(deltaSeconds, inputs) == TowerOutcome::Leave) {
+    const PlayOutcome outcome = m_tower.update(deltaSeconds, inputs);
+    if (outcome == PlayOutcome::Travel) {
+        // The party goes on with all it carries; back in the tower it arrives at the way in
+        // of the realm it left.
+        keepParty();
+        Journey journey;
+        journey.destination = m_tower.destination();
+        journey.party = m_tower.party();
+        journey.options.welcome = false;
+        journey.options.arriving = true;
+        journey.options.arrivalWorld =
+            static_cast<u32>(std::max(m_towerWorld.ref().realmId, 0));
+        m_tower.close();
+        m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
+        m_loadingPicture.cover();
+        m_journey = std::move(journey);
+        return;
+    }
+    if (outcome == PlayOutcome::Fallen) {
+        // Everyone fell: the party is taken back to the tower, as it was before the level.
+        keepParty();
+        Journey journey;
+        journey.destination = LevelRef::tower();
+        journey.party = m_tower.party();
+        journey.options.welcome = false;
+        journey.options.arriving = true;
+        journey.options.arrivalWorld =
+            static_cast<u32>(std::max(m_towerWorld.ref().realmId, 0));
+        m_tower.close();
+        m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
+        m_loadingPicture.cover();
+        m_journey = std::move(journey);
+        return;
+    }
+    if (outcome == PlayOutcome::Leave) {
+        keepParty();
         m_tower.close();
         log::info("Leaving the tower for the title screen");
         if (!startTitleScreen()) {
             startNextAttractScreen();
         }
+    }
+}
+
+void Gauntlet::finishJourney() {
+    const Journey journey = std::move(*m_journey);
+    m_journey.reset();
+    m_loadingPicture.release();
+    if (!startLevel(journey.destination, journey.party, journey.options) &&
+        !startLevel(LevelRef::tower(), journey.party, journey.options) &&
+        !startTitleScreen()) {
+        startNextAttractScreen();
     }
 }
 
@@ -241,6 +336,16 @@ void Gauntlet::onRender(RenderDevice& device) {
     const Mat4 projection =
         makeLetterboxProjection(frameWidth, frameHeight, static_cast<f32>(framebuffer.width),
                                 static_cast<f32>(framebuffer.height));
+    if (m_journey.has_value()) {
+        const auto width = static_cast<f32>(m_config.display.virtualWidth);
+        const auto height = static_cast<f32>(m_config.display.virtualHeight);
+        m_canvas.begin(device, makeVirtualScreenTransform(projection, width, height, frameWidth,
+                                                          frameHeight));
+        m_loadingPicture.draw(m_canvas, width);
+        m_canvas.end();
+        m_journey->shown = true;
+        return;
+    }
     if (m_movieActive) {
         m_movie.render(device, projection, Rect{0.0f, 0.0f, frameWidth, frameHeight});
         return;
@@ -260,11 +365,30 @@ void Gauntlet::onRender(RenderDevice& device) {
     m_smokeTest.render(device, projection, static_cast<f32>(clock().totalSeconds()));
 }
 
+/** The party's characters go back into the slots they came from (or were first saved to),
+ * with all they have gathered; a character never saved has no slot and is not kept. */
+void Gauntlet::keepParty() {
+    if (!m_tower.isOpen()) {
+        return;
+    }
+    const std::vector<PartyMember> party = m_tower.party();
+    const bool anySlot =
+        std::ranges::any_of(party, [](const PartyMember& member) { return member.slot.has_value(); });
+    if (!anySlot || !m_saves.open(m_config.saveDirectory(), m_config.save.slots)) {
+        return;
+    }
+    const usize written = saveParty(m_saves, party);
+    log::info("Saved {} of the party to {}", written, m_config.saveDirectory().string());
+}
+
 void Gauntlet::onShutdown() {
+    keepParty();
     m_movie.close();
     m_title.close();
     m_select.close();
     m_tower.close();
+    m_loadingPicture.release();
+    m_journey.reset();
     m_towerWorld.clear();
     m_smokeTest.shutdown();
     m_assets.reset();

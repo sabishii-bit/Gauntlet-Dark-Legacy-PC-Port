@@ -191,7 +191,9 @@ void PlayerSelectScene::loadTower(RenderDevice& device) {
     if (m_tower == nullptr) {
         return;
     }
-    if (!m_tower->built() && !m_tower->load(device, m_context.unpackedRoot)) {
+    // The select screen looks into the tower, whatever level was last played.
+    if ((!m_tower->built() || !m_tower->isTower()) &&
+        !m_tower->load(device, m_context.unpackedRoot)) {
         return;
     }
     m_camera = m_tower->entranceCamera();

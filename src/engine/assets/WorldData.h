@@ -11,6 +11,21 @@
 namespace gdl {
 
 /** One level of a realm as its unpacked data describes it. */
+/** How hard a level is on the party: what scales its traps and the harm it does. The file
+ * leaves a scale at zero to mean the level's difficulty. */
+struct LevelTuning {
+    f32 difficulty = 1.0f;
+    f32 damage = 1.0f;     ///< scales every hurt over a point
+    f32 trapRate = 1.0f;   ///< how fast its traps cycle
+    f32 trapDamage = 1.0f; ///< scales what its traps and blasts do
+
+    /** How long a trap's times run for a game whose difficulty setting scales by `gain`:
+     * the faster the rate, the shorter. */
+    f32 trapTimeScale(f32 gain) const;
+    /** What a trap's or a blast's damage is multiplied by. */
+    f32 trapDamageScale(f32 gain) const { return trapDamage * gain; }
+};
+
 struct LevelInfo {
     std::string name;  ///< "L1"
     std::string title; ///< "Tower"
@@ -20,6 +35,7 @@ struct LevelInfo {
     s32 audioIndex = -1;
     f32 musicVolume = 1.0f;
     f32 soundVolume = 1.0f;
+    LevelTuning tuning;
     f32 ambient = 1.0f;                      ///< grey ambient light
     Vec3 lightDirection{-0.3f, -1.4f, 1.0f}; ///< the way the light travels
     Vec3 lightColor{1.0f, 1.0f, 1.0f};

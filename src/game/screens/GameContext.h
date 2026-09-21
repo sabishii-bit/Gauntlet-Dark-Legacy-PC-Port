@@ -7,7 +7,8 @@
 #include "engine/io/AssetLocator.h"
 
 #include "game/config/GameConfig.h"
-#include "game/world/TowerWorld.h"
+#include "game/world/LevelCatalog.h"
+#include "game/world/LevelWorld.h"
 
 namespace gdl::game {
 
@@ -18,7 +19,9 @@ struct GameContext {
     const StringTable* strings = nullptr;
     SoundPlayer* sounds = nullptr;       ///< optional; screens run silently without one
     const AssetLocator* assets = nullptr; ///< the game's files as shipped, for its streams
-    TowerWorld* tower = nullptr;   ///< the hub level, loaded once and shared by the screens
+    LevelWorld* tower = nullptr;   ///< the level in play, shared by the screens: the hub
+                                   ///< tower until the party travels
+    const LevelCatalog* levels = nullptr; ///< where exit portals lead; without it they are dead
     std::filesystem::path unpackedRoot;
 };
 

@@ -83,7 +83,9 @@ tower straight onto a described party and place (see `tests/scenarios/`).
 Settings live in `data/config.json`, with per-user overrides in
 `%APPDATA%\GauntletDarkLegacy\settings.json` or
 `~/.config/GauntletDarkLegacy/settings.json`; every string the player sees
-comes from `data/text/<language>.json`.
+comes from `data/text/<language>.json`. Saved characters are kept in a `saves`
+folder beside the executable unless `save.directory` in the settings names
+another place.
 
 ## Tests
 

@@ -106,6 +106,14 @@ ItemInfoRecord readItemInfo(std::span<const u8> record) {
     out.activeType = static_cast<s16>(reader.readU16());
     out.activeOff = static_cast<s16>(reader.readU16());
     out.activeOn = static_cast<s16>(reader.readU16());
+    if (out.type == ItemInfoRecord::kChoiceList) {
+        ByteReader list(record.subspan(8));
+        const auto count = std::min(static_cast<usize>(std::max(out.subtype, 0)),
+                                    ItemInfoRecord::kMostChoices);
+        for (usize i = 0; i < count; ++i) {
+            out.choices.push_back(static_cast<s16>(list.readU16()));
+        }
+    }
     return out;
 }
 

@@ -60,12 +60,14 @@ private:
         VkDeviceSize uploadCursor = 0;
     };
 
-    static constexpr usize samplerIndex(TextureFilter filter, TextureWrap wrap) {
+    static constexpr usize samplerIndex(TextureFilter filter, TextureWrap across,
+                                        TextureWrap down) {
         return (filter == TextureFilter::Nearest ? 1U : 0U) +
-               (wrap == TextureWrap::ClampToEdge ? 2U : 0U);
+               (across == TextureWrap::ClampToEdge ? 2U : 0U) +
+               (down == TextureWrap::ClampToEdge ? 4U : 0U);
     }
     VkSampler samplerFor(const TextureDesc& desc) const {
-        return m_samplers[samplerIndex(desc.filter, desc.wrap)];
+        return m_samplers[samplerIndex(desc.filter, desc.wrap, desc.wrapDown())];
     }
 
     void createDescriptorResources();
@@ -91,7 +93,7 @@ private:
     VkDescriptorSetLayout m_textureSetLayout = VK_NULL_HANDLE;
     std::vector<VkDescriptorPool> m_descriptorPools; ///< each texture keeps its own
     u32 m_poolTexturesLeft = 0;                      ///< sets left in the last pool
-    std::array<VkSampler, 4> m_samplers{}; ///< by samplerIndex(filter, wrap)
+    std::array<VkSampler, 8> m_samplers{}; ///< by samplerIndex(filter, across, down)
     std::unique_ptr<VulkanTexture> m_whiteTexture;
 
     std::array<FrameResources, kFramesInFlight> m_frames{};

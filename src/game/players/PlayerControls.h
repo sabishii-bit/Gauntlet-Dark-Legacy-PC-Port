@@ -22,6 +22,20 @@ struct MoveInput {
  */
 MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad);
 
+/** A player's buttons for a frame of play: what is held, and the selector's presses. */
+struct PlayButtons {
+    bool attack = false;
+    bool usePotion = false;
+    bool throwPotion = false;
+    bool selectorUp = false; ///< these four true only the frame they go down
+    bool selectorDown = false;
+    bool selectorLeft = false;
+    bool selectorRight = false;
+};
+
+PlayButtons readPlayButtons(const Input& input, const PlayBindings& bindings, bool keyboard,
+                            int pad);
+
 /** Whether the player holds their attack: a bound key (when `keyboard`) or pad button. */
 bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad);
 

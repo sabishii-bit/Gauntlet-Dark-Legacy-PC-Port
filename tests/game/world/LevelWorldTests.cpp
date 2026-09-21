@@ -9,7 +9,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "game/world/TowerWorld.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 
@@ -24,7 +24,7 @@ TEST_CASE("the tower loads its geometry, collision, start points and camera mark
                                            .parent_path()
                                            .parent_path();
     test::FakeRenderDevice device;
-    TowerWorld tower;
+    LevelWorld tower;
     REQUIRE_FALSE(tower.built());
     REQUIRE(tower.load(device, root));
     REQUIRE(tower.built());
@@ -38,6 +38,15 @@ TEST_CASE("the tower loads its geometry, collision, start points and camera mark
     REQUIRE(entrance->kind == LocatorKind::Start);
     REQUIRE(tower.collision().floorAt(entrance->position, 3.0f, 3.0f).has_value());
     REQUIRE(tower.startPoint(99) == nullptr);
+    // Back from the town realm (7) the party stands among its portals, which is the tower's
+    // second start marker; from a realm with no ring of its own, at the entrance.
+    REQUIRE(LevelWorld::towerMarkerOf(7) == 1);
+    REQUIRE(LevelWorld::towerMarkerOf(2) == 2);
+    REQUIRE(LevelWorld::towerMarkerOf(13) == 0);
+    REQUIRE(LevelWorld::towerMarkerOf(99) == 0);
+    REQUIRE(tower.arrivalPoint(7) == tower.startPoint(1));
+    REQUIRE(glm::distance(tower.arrivalPoint(7)->position, Vec3{37.8f, -6.3f, -117.5f}) < 0.5f);
+    REQUIRE(tower.arrivalPoint(13) == entrance);
 
     tower.clear();
     REQUIRE_FALSE(tower.built());
@@ -50,7 +59,7 @@ TEST_CASE("the tower takes its light, camera range and sounds from the realm's d
     const std::filesystem::path root =
         test::unpackedOrSkip("wdata/TOWER.json").parent_path().parent_path();
     test::FakeRenderDevice device;
-    TowerWorld tower;
+    LevelWorld tower;
     REQUIRE(tower.load(device, root));
     REQUIRE(tower.hasLevelData());
     REQUIRE(tower.lighting().ambient.x == Approx(0.8f));
@@ -79,7 +88,7 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
                                            .parent_path()
                                            .parent_path();
     test::FakeRenderDevice device;
-    TowerWorld tower;
+    LevelWorld tower;
     REQUIRE(tower.load(device, root));
     REQUIRE(tower.hasItems());
     REQUIRE(tower.items().trees.find("GWIZ").has_value());
@@ -185,7 +194,7 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
 
 TEST_CASE("the tower reports a missing level without building", "[game][world]") {
     test::FakeRenderDevice device;
-    TowerWorld tower;
+    LevelWorld tower;
     REQUIRE_FALSE(tower.load(device, test::scratchDirectory("tower-world-none")));
     REQUIRE_FALSE(tower.built());
     REQUIRE_FALSE(tower.hasLevelData());

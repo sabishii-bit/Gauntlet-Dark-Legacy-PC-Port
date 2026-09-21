@@ -1,6 +1,7 @@
 #include "game/world/PlayerMissiles.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <utility>
@@ -61,6 +62,11 @@ std::string MissileSpec::treeName(s32 classIndex, s32 level, bool* inCostume) {
     return std::format("{}_THROW{}", spec.model, mark);
 }
 
+const MissileSpec& MissileSpec::potion() {
+    static constexpr MissileSpec kPotion{"POT", kCostumeTiers, 0.7f, kTumble, 12.0f, false};
+    return kPotion;
+}
+
 bool MissileSpec::byMagic(s32 classIndex) {
     const usize family = specIndex(classIndex) % kFamilyCount;
     return family == 2 || family == 6;
@@ -89,15 +95,25 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     Missile missile;
     missile.owner = launch.owner;
     missile.position = launch.position;
-    missile.velocity =
-        launchVelocity(launch.direction, launch.speed, launch.reach, launch.spec->weight);
+    missile.velocity = launch.velocity.value_or(
+        launchVelocity(launch.direction, launch.speed, launch.reach, launch.spec->weight));
+    missile.potion = launch.potion;
+    missile.potency = launch.potency;
+    missile.damage = launch.damage;
     missile.spec = launch.spec;
     missile.model = launch.model;
     m_missiles.push_back(missile);
     return true;
 }
 
-void PlayerMissiles::update(f32 seconds, const WorldCollision* collision) {
+f32 PlayerMissiles::damageFor(s32 stat) {
+    return std::clamp(kLeastDamage + kStatScale * static_cast<f32>(stat) *
+                                         (kMostDamage - kLeastDamage),
+                      kLeastDamage, kMostDamage);
+}
+
+void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
+                            std::span<const MissileTarget> targets) {
     for (Missile& missile : m_missiles) {
         // Steps no longer than half its size, so no wall is flown clean through.
         const f32 radius = missile.spec->radius;
@@ -109,6 +125,20 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision) {
             missile.position += missile.velocity * step;
             missile.tumble += missile.spec->spin * step;
             missile.age += step;
+            // What stands in its way stops it before any wall behind does.
+            const auto struck = std::ranges::find_if(targets, [&](const MissileTarget& target) {
+                const f32 reach = target.radius + radius;
+                return std::hypot(missile.position.x - target.base.x,
+                                  missile.position.z - target.base.z) <= reach &&
+                       missile.position.y + radius >= target.base.y &&
+                       missile.position.y - radius <= target.base.y + target.height;
+            });
+            if (struck != targets.end()) {
+                m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
+                                                  missile.potency, missile.damage, struck->id});
+                missile.age = kLifeSeconds;
+                break;
+            }
             if (collision == nullptr) {
                 continue;
             }
@@ -119,7 +149,8 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision) {
             const bool floor =
                 collision->floorAt(missile.position, radius, radius * 0.5f).has_value();
             if (wall || floor) {
-                m_impacts.push_back(missile.position);
+                m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
+                                                  missile.potency, missile.damage, -1});
                 missile.age = kLifeSeconds;
             }
         }
@@ -153,8 +184,22 @@ void PlayerMissiles::clear() {
     m_impacts.clear();
 }
 
-std::vector<Vec3> PlayerMissiles::takeImpacts() {
+std::vector<MissileImpact> PlayerMissiles::takeImpacts() {
     return std::exchange(m_impacts, {});
+}
+
+std::vector<Vec3> PlayerMissiles::spread(const Vec3& direction, s32 shots) {
+    // The original's order: straight on first, then a pair to each side, the nearer first.
+    constexpr std::array<f32, 5> kTurns{0.0f, 1.0f, -1.0f, 2.0f, -2.0f};
+    std::vector<Vec3> out;
+    for (s32 i = 0; i < std::clamp(shots, 1, static_cast<s32>(kTurns.size())); ++i) {
+        const f32 angle = kTurns[static_cast<usize>(i)] * kSpreadStep;
+        const f32 c = std::cos(angle);
+        const f32 s = std::sin(angle);
+        out.emplace_back(direction.x * c + direction.z * s, direction.y,
+                         -direction.x * s + direction.z * c);
+    }
+    return out;
 }
 
 } // namespace gdl::game

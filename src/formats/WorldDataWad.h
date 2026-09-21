@@ -2,6 +2,7 @@
 
 #include <array>
 #include <span>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -23,6 +24,35 @@ struct LevelFog {
 };
 
 /** One level of a realm: its names, which camera and audio records it uses, and its light. */
+/** A level's tuning, as its record holds it: a zero among those after `difficulty` stands
+ * for the difficulty itself (`enemyMissileSpeed` for one). */
+struct LevelTuningRecord {
+    static constexpr usize kCount = 17;
+    /** In the record's order from +0x9C: the player level the level is meant for, the
+     * experience and damage multipliers, the difficulty, then the enemies', generators' and
+     * traps' scales. */
+    std::array<f32, kCount> values{};
+    static constexpr std::array<std::string_view, kCount> kNames{
+        "playerLevel",
+        "experience",
+        "damage",
+        "difficulty",
+        "enemyHealth",
+        "enemySpeed",
+        "enemySight",
+        "enemyAttack",
+        "enemyDamage",
+        "enemyMissileRate",
+        "enemyMissileSpeed",
+        "enemyMissileAim",
+        "generatorHealth",
+        "generatorRate",
+        "generatorMost",
+        "trapRate",
+        "trapDamage",
+    };
+};
+
 struct LevelRecord {
     u32 flags = 0;
     std::string name;      ///< up to four characters, "L1"
@@ -38,6 +68,7 @@ struct LevelRecord {
     s16 maxEnemies = 0;
     f32 musicVolume = 0.0f;
     f32 soundVolume = 0.0f;
+    LevelTuningRecord tuning;
     f32 ambient = 1.0f;                            ///< grey ambient light
     Vec3 lightDirection{-0.3f, -1.4f, 1.0f};       ///< the way the light travels
     Vec3 lightColor{1.0f, 1.0f, 1.0f};

@@ -19,6 +19,7 @@ std::filesystem::path sampleRealm(std::string_view name) {
   "realm": 13, "prefix": "levelL",
   "levels": [
     {"name": "L1", "title": "Tower", "cameraIndex": 0, "audioIndex": 0, "musicVolume": 0.75,
+     "tuning": {"damage": 0, "difficulty": 2, "trapRate": 4, "trapDamage": 0},
      "ambient": 0.8, "lightDirection": [-1, -6, 2], "lightColor": [1, 0.9, 0.8],
      "lightIntensity": 1},
     {"name": "L2", "title": "Tower", "cameraIndex": 5, "audioIndex": -1}
@@ -43,6 +44,14 @@ TEST_CASE("world data names a realm's levels and the records they point at",
     REQUIRE(level != nullptr);
     REQUIRE(level->title == "Tower");
     REQUIRE(level->musicVolume == Approx(0.75f));
+    // A scale left at zero is the level's difficulty; the damage multiplier is then one.
+    REQUIRE(level->tuning.difficulty == 2.0f);
+    REQUIRE(level->tuning.damage == 1.0f);
+    REQUIRE(level->tuning.trapDamage == 2.0f);
+    REQUIRE(level->tuning.trapDamageScale(1.5f) == 3.0f);
+    REQUIRE(level->tuning.trapTimeScale(1.0f) == 0.25f); // four times as fast
+    REQUIRE(level->tuning.trapTimeScale(0.5f) == 0.5f);
+    REQUIRE(LevelTuning{}.trapTimeScale(1.0f) == 1.0f);
     REQUIRE(level->ambient == Approx(0.8f));
     REQUIRE(level->lightDirection == Vec3{-1.0f, -6.0f, 2.0f});
     REQUIRE(level->lightColor.y == Approx(0.9f));

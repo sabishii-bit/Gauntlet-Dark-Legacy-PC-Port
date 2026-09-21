@@ -28,6 +28,9 @@
     "directory": "",
     "slots": 8
   },
+  "game": {
+    "difficulty": "normal"
+  },
   "controls": {
     "keyboard": {
       "up": ["Up", "W"],
@@ -54,14 +57,26 @@
         "down": ["Down", "S"],
         "left": ["Left", "A"],
         "right": ["Right", "D"],
-        "attack": ["Space"]
+        "attack": ["Space"],
+        "usePotion": ["E"],
+        "throwPotion": ["Q"],
+        "selectorUp": ["I"],
+        "selectorDown": ["K"],
+        "selectorLeft": ["J"],
+        "selectorRight": ["L"]
       },
       "pad": {
-        "up": ["DpadUp"],
-        "down": ["DpadDown"],
-        "left": ["DpadLeft"],
-        "right": ["DpadRight"],
-        "attack": ["A"]
+        "up": [],
+        "down": [],
+        "left": [],
+        "right": [],
+        "attack": ["A"],
+        "usePotion": ["B"],
+        "throwPotion": ["X"],
+        "selectorUp": ["DpadUp"],
+        "selectorDown": ["DpadDown"],
+        "selectorLeft": ["DpadLeft"],
+        "selectorRight": ["DpadRight"]
       },
       "stickDeadZone": 0.25
     }

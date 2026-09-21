@@ -87,10 +87,44 @@ TEST_CASE("the shipped defaults file matches the built-in defaults", "[game][con
     REQUIRE(loaded.toJson() == GameConfig{}.toJson());
 }
 
+TEST_CASE("characters are saved beside the game unless the settings say where",
+          "[game][config]") {
+    GameConfig config;
+    const std::filesystem::path game = std::filesystem::path("somewhere") / "bin";
+    REQUIRE(config.saveDirectory(game) == game / "saves");
+    config.save.directory = "my-saves";
+    REQUIRE(config.saveDirectory(game) == game / "my-saves");
+    const std::filesystem::path elsewhere = std::filesystem::absolute("elsewhere");
+    config.save.directory = elsewhere.string();
+    REQUIRE(config.saveDirectory(game) == elsewhere);
+    // With nothing said, that is beside the running program, never the per-user folder.
+    const GameConfig plain;
+    REQUIRE(plain.saveDirectory().filename() == "saves");
+    REQUIRE(plain.saveDirectory().parent_path() ==
+            GameConfig{}.saveDirectory().parent_path());
+    REQUIRE(plain.saveDirectory().parent_path() !=
+            GameConfig::userSettingsPath().parent_path());
+}
+
 TEST_CASE("user settings live in a per-user folder", "[game][config]") {
     const std::filesystem::path path = GameConfig::userSettingsPath();
     REQUIRE(path.filename() == "settings.json");
     REQUIRE(path.parent_path().filename() == "GauntletDarkLegacy");
+}
+
+TEST_CASE("the difficulty names a gain on the levels' own scales", "[game][config]") {
+    GameConfig config;
+    REQUIRE(config.difficulty.level == "normal");
+    REQUIRE(config.difficulty.gain() == 1.0f);
+    config.mergeJson(R"({"game": {"difficulty": "hard"}})");
+    REQUIRE(config.difficulty.gain() == 1.5f);
+    config.difficulty.level = "easy";
+    REQUIRE(config.difficulty.gain() == 0.667f);
+    config.difficulty.level = "nightmare";
+    REQUIRE(config.difficulty.gain() == 1.0f);
+    GameConfig again;
+    again.mergeJson(config.toJson());
+    REQUIRE(again.difficulty.level == "nightmare");
 }
 
 } // namespace

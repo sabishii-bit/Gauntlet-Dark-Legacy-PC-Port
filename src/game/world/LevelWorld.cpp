@@ -1,4 +1,4 @@
-#include "game/world/TowerWorld.h"
+#include "game/world/LevelWorld.h"
 
 #include <array>
 #include <cmath>
@@ -7,11 +7,13 @@
 
 namespace gdl::game {
 
-bool TowerWorld::load(RenderDevice& device, const std::filesystem::path& unpackedRoot) {
+bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpackedRoot,
+                      const LevelRef& level) {
     clear();
-    const std::filesystem::path directory = unpackedRoot / kLevel;
+    m_ref = level;
+    const std::filesystem::path directory = unpackedRoot / m_ref.directory;
     if (!std::filesystem::exists(directory / "world.json")) {
-        log::info("Tower: the level is not unpacked ({}); run gdlunpack with --levels",
+        log::info("Level: not unpacked ({}); run gdlunpack with --levels or --only <level>",
                   directory.string());
         return false;
     }
@@ -21,10 +23,10 @@ bool TowerWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         return false;
     }
     if (!m_animations.load(directory)) {
-        log::warn("Tower: no animations manifest; its textures stand still");
+        log::warn("Level: no animations manifest; its textures stand still");
     }
-    if (!m_items.load(unpackedRoot / kItems)) {
-        log::warn("Tower: without the item archive the torches are unlit and Sumner absent");
+    if (!m_items.load(unpackedRoot / m_ref.items)) {
+        log::warn("Level: without the realm's item archive its borrowed textures and figures are absent");
     }
     // The item archive lends the level its external textures and the torches' frames.
     const std::array<TextureSet*, 1> lenders{&m_items.textures};
@@ -41,7 +43,7 @@ bool TowerWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_particles.bind(m_layout, m_textures, device, lent);
     m_frameRemainder = 0.0f;
     if (!m_collision.load(directory, m_layout)) {
-        log::warn("Tower: no collision; characters will walk through everything");
+        log::warn("Level: no collision; characters will walk through everything");
     }
     // Objects flagged to move keep their collision in their own space, placed by their
     // transform: the animated, and the force fields that only fade.
@@ -56,12 +58,12 @@ bool TowerWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_worldAnimator.apply(m_scene);
     syncCollision();
     if (!m_powerups.load(unpackedRoot / kPowerups)) {
-        log::warn("Tower: without the powerups archive the crystals are absent");
+        log::warn("Level: without the powerups archive the pickups are absent");
     }
     const std::array<ItemArchive*, 2> archives{&m_items, &m_powerups};
     if (!m_placedItems.bind(device, m_layout, m_collision.loaded() ? &m_collision : nullptr,
                             archives)) {
-        log::warn("Tower: none of the level's pickups could be placed");
+        log::warn("Level: none of the level's pickups could be placed");
     }
     // The follow camera takes its angles from the game camera markers alone; the trigger
     // cameras are for the cuts.
@@ -70,7 +72,7 @@ bool TowerWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
             m_markers.push_back(locator);
         }
     }
-    log::info("Tower: placed {} objects in {} batches and {} units ({} triangles), {} moving, "
+    log::info("Level: placed {} objects in {} batches and {} units ({} triangles), {} moving, "
               "{} texture animations, {} particle systems, {} pickups, {} triggers, {} collision "
               "triangles ({} moving objects), {} camera markers",
               m_scene.placedCount(), m_scene.batchCount(), m_scene.unitCount(),
@@ -80,23 +82,23 @@ bool TowerWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     return true;
 }
 
-void TowerWorld::syncCollision() {
+void LevelWorld::syncCollision() {
     for (const s32 object : m_movingObjects) {
         m_collision.setObjectTransform(object, m_scene.worldTransform(static_cast<usize>(object)));
     }
 }
 
-void TowerWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
+void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
     m_triggers.openMet(visitors, m_worldAnimator, m_scene, &m_collision);
     m_worldAnimator.apply(m_scene);
     syncCollision();
 }
 
-void TowerWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors) {
+void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors) {
     m_triggers.update(seconds, visitors, m_worldAnimator, m_scene, &m_collision);
 }
 
-void TowerWorld::update(f32 seconds) {
+void LevelWorld::update(f32 seconds) {
     if (!built()) {
         return;
     }
@@ -112,16 +114,16 @@ void TowerWorld::update(f32 seconds) {
 }
 
 /** Takes the light, the camera range and the sounds from the realm's data. */
-void TowerWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
+void LevelWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
     m_lighting = WorldLighting{};
     m_cameraRange = CameraRange{};
     m_level = nullptr;
     m_audio = nullptr;
-    const std::filesystem::path file = unpackedRoot / kWorldData;
-    const LevelInfo* level = m_worldData.load(file) ? m_worldData.level(kLevelName) : nullptr;
+    const std::filesystem::path file = unpackedRoot / m_ref.worldDataFile();
+    const LevelInfo* level = m_worldData.load(file) ? m_worldData.level(m_ref.name) : nullptr;
     if (level == nullptr) {
-        log::warn("Tower: no level {} in {}; the default light and camera range stand in",
-                  kLevelName, file.string());
+        log::warn("Level: no level {} in {}; the default light and camera range stand in",
+                  m_ref.name, file.string());
         return;
     }
     m_level = level;
@@ -137,7 +139,7 @@ void TowerWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
     m_audio = m_worldData.audio(level->audioIndex);
 }
 
-void TowerWorld::clear() {
+void LevelWorld::clear() {
     m_scene.clear();
     m_worldAnimator.clear();
     m_textureAnimator.clear();
@@ -155,7 +157,7 @@ void TowerWorld::clear() {
     m_audio = nullptr;
 }
 
-std::optional<WorldCamera> TowerWorld::entranceCamera() const {
+std::optional<WorldCamera> LevelWorld::entranceCamera() const {
     const WorldLocator* locator = m_layout.findLocator(LocatorKind::CameraStart);
     if (locator == nullptr) {
         locator = m_layout.findLocator(LocatorKind::CameraGame);
@@ -171,8 +173,18 @@ std::optional<WorldCamera> TowerWorld::entranceCamera() const {
     return camera;
 }
 
-const WorldLocator* TowerWorld::startPoint(u32 world) const {
-    return m_layout.findLocator(LocatorKind::Start, world);
+const WorldLocator* LevelWorld::startPoint(u32 index) const {
+    return m_layout.findLocator(LocatorKind::Start, index);
+}
+
+u32 LevelWorld::towerMarkerOf(u32 realm) {
+    constexpr std::array<u32, 14> kMarkers{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
+    return realm < kMarkers.size() ? kMarkers[realm] : 0;
+}
+
+const WorldLocator* LevelWorld::arrivalPoint(u32 realm) const {
+    const WorldLocator* marker = isTower() ? startPoint(towerMarkerOf(realm)) : nullptr;
+    return marker != nullptr ? marker : startPoint(0);
 }
 
 } // namespace gdl::game

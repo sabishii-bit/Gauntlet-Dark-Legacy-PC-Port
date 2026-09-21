@@ -20,18 +20,36 @@ add_library(game STATIC
     players/Progression.cpp
     players/CharacterSave.h
     players/CharacterSave.cpp
+    players/Party.h
+    players/Party.cpp
     players/Inventory.h
     players/Inventory.cpp
     players/ItemPickup.h
     players/ItemPickup.cpp
+    players/PowerupEffects.h
+    players/PowerupEffects.cpp
     players/PlayerControls.h
     players/PlayerControls.cpp
     players/PlayerActor.h
     players/PlayerActor.cpp
     players/PlayerAnimator.h
     players/PlayerAnimator.cpp
-    world/TowerWorld.h
-    world/TowerWorld.cpp
+    world/LevelCatalog.h
+    world/LevelCatalog.cpp
+    world/ItemFigure.h
+    world/ItemFigure.cpp
+    world/Breakables.h
+    world/Breakables.cpp
+    world/Chests.h
+    world/Chests.cpp
+    world/LockedGates.h
+    world/LockedGates.cpp
+    world/Traps.h
+    world/Traps.cpp
+    world/ExitPortals.h
+    world/ExitPortals.cpp
+    world/LevelWorld.h
+    world/LevelWorld.cpp
     world/TowerCamera.h
     world/TowerCamera.cpp
     world/StartCamera.h
@@ -42,6 +60,8 @@ add_library(game STATIC
     world/SumnerHints.cpp
     world/PlayerMissiles.h
     world/PlayerMissiles.cpp
+    world/EffectTrees.h
+    world/EffectTrees.cpp
     world/PlacedItems.h
     world/PlacedItems.cpp
     world/AmbientSounds.h
@@ -71,12 +91,18 @@ add_library(game STATIC
     screens/SelectLane.cpp
     screens/StatusBox.h
     screens/StatusBox.cpp
+    screens/PowerupSelector.h
+    screens/PowerupSelector.cpp
+    screens/HelpMessages.h
+    screens/HelpMessages.cpp
+    screens/TransitionScreen.h
+    screens/TransitionScreen.cpp
     screens/PickupHud.h
     screens/PickupHud.cpp
     screens/PlayerSelectScene.h
     screens/PlayerSelectScene.cpp
-    screens/TowerScene.h
-    screens/TowerScene.cpp)
+    screens/PlayScene.h
+    screens/PlayScene.cpp)
 
 add_library(gdl::game ALIAS game)
 

@@ -20,15 +20,16 @@ namespace {
 
 constexpr VkDeviceSize kUploadAlignment = 16;
 
-VkSampler createSampler(VkDevice device, VkFilter filter, VkSamplerAddressMode address) {
+VkSampler createSampler(VkDevice device, VkFilter filter, VkSamplerAddressMode across,
+                        VkSamplerAddressMode down) {
     VkSamplerCreateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     info.magFilter = filter;
     info.minFilter = filter;
     info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-    info.addressModeU = address;
-    info.addressModeV = address;
-    info.addressModeW = address;
+    info.addressModeU = across;
+    info.addressModeV = down;
+    info.addressModeW = across;
     info.maxLod = VK_LOD_CLAMP_NONE;
     VkSampler sampler = VK_NULL_HANDLE;
     GDL_VK_CHECK(vkCreateSampler(device, &info, nullptr, &sampler));
@@ -118,14 +119,20 @@ void VulkanRenderDevice::createDescriptorResources() {
 
     m_poolTexturesLeft = 0;
 
-    m_samplers[samplerIndex(TextureFilter::Linear, TextureWrap::Repeat)] =
-        createSampler(device, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    m_samplers[samplerIndex(TextureFilter::Nearest, TextureWrap::Repeat)] =
-        createSampler(device, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_REPEAT);
-    m_samplers[samplerIndex(TextureFilter::Linear, TextureWrap::ClampToEdge)] =
-        createSampler(device, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
-    m_samplers[samplerIndex(TextureFilter::Nearest, TextureWrap::ClampToEdge)] =
-        createSampler(device, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
+    // One sampler for each filter and each way of wrapping across and down.
+    const auto modeOf = [](TextureWrap wrap) {
+        return wrap == TextureWrap::ClampToEdge ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE
+                                                : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    };
+    for (const TextureFilter filter : {TextureFilter::Linear, TextureFilter::Nearest}) {
+        for (const TextureWrap across : {TextureWrap::Repeat, TextureWrap::ClampToEdge}) {
+            for (const TextureWrap down : {TextureWrap::Repeat, TextureWrap::ClampToEdge}) {
+                m_samplers[samplerIndex(filter, across, down)] = createSampler(
+                    device, filter == TextureFilter::Nearest ? VK_FILTER_NEAREST : VK_FILTER_LINEAR,
+                    modeOf(across), modeOf(down));
+            }
+        }
+    }
 }
 
 void VulkanRenderDevice::createFrameResources() {

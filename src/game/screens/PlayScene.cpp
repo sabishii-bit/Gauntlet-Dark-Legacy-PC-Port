@@ -1,4 +1,4 @@
-#include "game/screens/TowerScene.h"
+#include "game/screens/PlayScene.h"
 
 #include <algorithm>
 #include <cmath>
@@ -83,6 +83,58 @@ const OpeningSounds* openingSoundsOf(s32 slot) {
 }
 constexpr std::string_view kPromptText = "scroll.pressButton";
 constexpr std::string_view kHintTextFile = "text/hints_e.json";
+/** A potion by its kind (0 and 1 red, 2 blue, 3 yellow, 4 green): the bottle as it flies, the
+ * magic it bursts into (fire, lightning, light, acid) and the sound of it. */
+struct PotionLook {
+    std::string_view bottle;
+    std::string_view burst;
+    std::string_view sound;
+};
+constexpr std::array<PotionLook, 5> kPotions{{{"POT_RED_TW", "MP_FIRE", "S_POTION2"},
+                                              {"POT_RED_TW", "MP_FIRE", "S_POTION2"},
+                                              {"POT_BLU_TW", "MP_ELEC", "S_POTION1"},
+                                              {"POT_YEL_TW", "MP_LIGHT", "S_POTION3"},
+                                              {"POT_GRE_TW", "MP_ACID", "S_POTION4"}}};
+constexpr f32 kPotionToss = 5.0f;       ///< how hard a potion is thrown
+constexpr f32 kBurstPerPower = 0.03125f; ///< a burst's size for each point of magic power
+constexpr f32 kThrownShare = 0.75f;      ///< of that power a thrown potion keeps
+constexpr f32 kPotionLoft = 0.707f;     ///< as much up as forwards
+constexpr f32 kPotionHandHeight = 4.0f; ///< over the feet, where it leaves
+constexpr f32 kPotionHandReach = 2.0f;  ///< and ahead of them
+constexpr s32 kOgre = 12;
+constexpr f32 kOgreScale = 1.6f;
+constexpr f32 kMasterScale = 1.2f; ///< at level 99
+constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
+constexpr std::string_view kChestSound = "S_CHEST";
+constexpr std::string_view kNarratorBank = "VOICE1";
+constexpr std::string_view kStringsFile = "text/english.json";
+constexpr std::string_view kDeathSound = "S_PLAYERDIES";
+constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
+constexpr std::string_view kBarrelBreakSound = "S_BARREL_WOOD"; ///< with the realm's letter
+constexpr std::string_view kBarrelBlastSound = "S_BARREL_EXPLO";
+constexpr std::string_view kBarrelGasSound = "S_BARREL_GAS";
+constexpr std::string_view kFireTrapSound = "S_FIREHOLE";
+constexpr std::string_view kBarrelBlast = "EXPLOSION";
+constexpr std::string_view kBarrelGas = "POISONEXP1";
+constexpr std::string_view kBarrelSmoke = "DESTSMOKE";
+constexpr f32 kBlastRadius = 12.0f;      ///< of a chest or a barrel blowing up
+constexpr f32 kChestBlastDamage = 50.0f; ///< each times the level's trap damage
+constexpr f32 kBarrelBlastDamage = 30.0f;
+constexpr f32 kGasDamage = 10.0f;
+constexpr f32 kGasRadius = 6.5f;
+constexpr f32 kGasSeconds = 4.0f;
+constexpr f32 kGasGapSeconds = 0.5f;
+constexpr f32 kPainEvery = 30.0f;        ///< harm from blows between cries
+constexpr f32 kFallenSeconds = 3.0f;     ///< from the last death to the tower
+constexpr s32 kFireTrap = 1;
+const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
+constexpr std::string_view kChestBlast = "EXPCHEST"; ///< a trapped chest going up
+
+const PotionLook& potionLook(s32 kind) {
+    return kPotions[kind >= 0 && static_cast<usize>(kind) < kPotions.size()
+                        ? static_cast<usize>(kind)
+                        : 0];
+}
 constexpr std::string_view kArrowTree = "ICON_ARROW";
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
 constexpr std::string_view kMenuSelectSound = "S_OPTMENUSEL";
@@ -97,15 +149,14 @@ constexpr std::array<HintTopicEntry, 4> kHintTopics{{{"hints.general", 39, HintT
                                                      {"hints.guardians", 40, HintTopic::Guardians},
                                                      {"hints.legends", 41, HintTopic::Legends},
                                                      {"hints.runestones", 42, HintTopic::Runestones}}};
-constexpr u32 kEntranceWorld = 0;
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 constexpr s32 kMinTicks = 1; ///< a frame advances the clock by at least one tick
 constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 
 } // namespace
 
-bool TowerScene::open(RenderDevice& device, const GameContext& context, TowerWorld& world,
-                      std::span<const PartyMember> party, const TowerOptions& options) {
+bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorld& world,
+                      std::span<const PartyMember> party, const PlayOptions& options) {
     close();
     m_context = context;
     m_device = &device;
@@ -119,8 +170,35 @@ bool TowerScene::open(RenderDevice& device, const GameContext& context, TowerWor
     m_classes.load(context.unpackedRoot / kClassDataDirectory);
     loadSounds();
     loadIntroArt(device);
-    loadHintArt(device);
-    m_sumner.load(device, world.items(), world.layout());
+    // Sumner, his hints and his welcome belong to the tower alone.
+    if (world.isTower()) {
+        loadHintArt(device);
+        m_sumner.load(device, world.items(), world.layout());
+    }
+    if (context.levels != nullptr) {
+        m_portals.bind(device, world.layout(), world.items(), *context.levels,
+                       &world.collision());
+    }
+    m_chests.bind(device, world.layout(), world.items(), &world.collision());
+    m_gates.bind(device, world.layout(), world.items(), &world.collision());
+    {
+        const LevelInfo* level = world.level();
+        const f32 gain = context.config != nullptr ? context.config->difficulty.gain() : 1.0f;
+        m_traps.bind(device, world.layout(), world.items(), &world.collision(), 1,
+                     level != nullptr ? level->tuning.trapTimeScale(gain) : 1.0f,
+                     trapDamageScale());
+    }
+    m_barrels.bind(device, world.layout(), world.items(), &world.collision());
+    m_strings.load(context.unpackedRoot / kStringsFile);
+    m_help.clear();
+    m_help.setTexts(&m_strings);
+    m_refusedPortal = -1;
+    m_leaving = false;
+    m_transition.load(device, context.unpackedRoot);
+    if (options.arriving) {
+        m_transition.cover();
+        m_transition.clearAway();
+    }
     // Sumner's beam waits unseen until the party comes to him; the temple's light waits for
     // shards the save does not keep yet.
     m_beam = -1;
@@ -139,6 +217,10 @@ bool TowerScene::open(RenderDevice& device, const GameContext& context, TowerWor
         world.placeItem(device, item.name, item.position);
     }
     world.setPlayerCount(static_cast<s32>(m_actors.size()));
+    m_chests.setPlayerCount(static_cast<s32>(m_actors.size()));
+    m_gates.setPlayerCount(static_cast<s32>(m_actors.size()));
+    m_traps.setPlayerCount(static_cast<s32>(m_actors.size()));
+    m_barrels.setPlayerCount(static_cast<s32>(m_actors.size()));
     world.startTriggers(visitors());
     const std::array<SoundSet*, 2> banks{&m_ambientBank, &m_levelBank};
     m_ambience.bind(world.layout(), banks);
@@ -150,17 +232,25 @@ bool TowerScene::open(RenderDevice& device, const GameContext& context, TowerWor
     startMusic();
     m_intro = Intro::None;
     // The party materialises first; Sumner's welcome, when it is due, follows.
-    m_welcomePending = options.welcome.value_or(freshParty(party));
+    m_welcomePending = world.isTower() && options.welcome.value_or(freshParty(party));
     if (m_welcomePending) {
         m_world->hideCrystals(); // Sumner reveals them once the scroll has gone
     }
-    beginSpawn(device, !options.position.has_value());
+    // The start camera holds at the level's entrance and rides in to a party that stands
+    // there; one back among a realm's portals (as when it has fallen, or come out of a level)
+    // materialises with the follow camera already on it.
+    const bool atEntrance =
+        world.arrivalPoint(options.arrivalWorld) == world.startPoint(0);
+    beginSpawn(device, !options.position.has_value() && atEntrance);
+    loadPotionModels(device);
     m_open = true;
     log::info("Tower: {} in the party", m_actors.size());
+    log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
+              m_portals.size());
     return true;
 }
 
-void TowerScene::close() {
+void PlayScene::close() {
     if (m_context.sounds != nullptr && m_music != kNoSound) {
         m_context.sounds->stop(m_music);
     }
@@ -178,11 +268,37 @@ void TowerScene::close() {
         m_world->setPlayerCount(0);
     }
     m_sumner.clear();
+    m_portals.clear();
+    m_chests.clear();
+    m_gates.clear();
+    m_traps.clear();
+    m_transition.release();
+    m_leaving = false;
     m_missiles.clear(); // before the figures whose models they fly
+    m_effects.clear();  // and before the archive whose trees they play
+    for (TreeModel& bottle : m_potionModels) {
+        bottle.clear();
+    }
+    for (PowerupSelector& selector : m_selectors) {
+        selector.close();
+    }
+    m_glowSheet = nullptr;
+    m_playSeconds = 0.0f;
     m_text.setFont(nullptr, nullptr);
     m_staticTextures.releaseTextures();
     m_intro = Intro::None;
     m_actors.clear();
+    m_slots.clear();
+    m_down.clear();
+    m_entrySaves.clear();
+    m_painOwed.clear();
+    m_struck.clear();
+    m_clouds.clear();
+    m_blasts.clear();
+    m_cloudGaps.clear();
+    m_fallenSeconds = 0.0f;
+    m_barrels.clear();
+    m_help.clear();
     m_figures.clear();
     m_subjects.clear();
     if (m_context.sounds != nullptr) {
@@ -205,8 +321,9 @@ void TowerScene::close() {
 
 /** Stands the party side by side at the entrance, facing into the tower: the start marker's
  * heading points back out of the door. */
-void TowerScene::spawnParty(std::span<const PartyMember> party, const TowerOptions& options) {
-    const WorldLocator* start = m_world->startPoint(kEntranceWorld);
+void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions& options) {
+    // Arriving from a realm the party stands where the level marks that realm's way in.
+    const WorldLocator* start = m_world->arrivalPoint(options.arrivalWorld);
     Vec3 origin{0.0f, 0.0f, 0.0f};
     f32 yaw = 0.0f;
     if (start != nullptr) {
@@ -227,10 +344,17 @@ void TowerScene::spawnParty(std::span<const PartyMember> party, const TowerOptio
                     yaw);
         actor.settle(m_world->collision());
         m_actors.push_back(std::move(actor));
+        m_slots.push_back(member.slot);
+        // Someone who fell stands again in the tower; elsewhere they wait there still.
+        m_down.push_back(member.fallen && !m_world->isTower() ? kInTower : kUp);
+        m_entrySaves.push_back(member.save);
+        m_painOwed.push_back(0.0f);
+        m_struck.push_back(PlayerDeed::None);
+        m_cloudGaps.push_back(0.0f);
     }
 }
 
-std::filesystem::path TowerScene::costumeDirectory(const std::filesystem::path& unpackedRoot,
+std::filesystem::path PlayScene::costumeDirectory(const std::filesystem::path& unpackedRoot,
                                                    const CharacterSave& save) {
     const std::string_view cls = classCode(save.character);
     const std::string_view costume = colorCode(save.color);
@@ -242,7 +366,7 @@ std::filesystem::path TowerScene::costumeDirectory(const std::filesystem::path& 
     return std::filesystem::exists(tiered / "objects.json") ? tiered : base;
 }
 
-std::unique_ptr<TowerScene::Figure> TowerScene::loadFigure(RenderDevice& device,
+std::unique_ptr<PlayScene::Figure> PlayScene::loadFigure(RenderDevice& device,
                                                            const CharacterSave& save) {
     const std::string_view cls = classCode(save.character);
     const std::string_view costume = colorCode(save.color);
@@ -269,7 +393,7 @@ std::unique_ptr<TowerScene::Figure> TowerScene::loadFigure(RenderDevice& device,
 
 /** Finds the weapon as it flies (the costume's own throw tree, or the tier of the costume
  * colour's effects archive that the character's level earns) and the class's throw sound. */
-void TowerScene::loadMissile(Figure& figure, const CharacterSave& save, RenderDevice& device) {
+void PlayScene::loadMissile(Figure& figure, const CharacterSave& save, RenderDevice& device) {
     const s32 level = experienceLevel(save.progress().experience);
     bool inCostume = true;
     const std::string name = MissileSpec::treeName(save.character, level, &inCostume);
@@ -299,7 +423,7 @@ void TowerScene::loadMissile(Figure& figure, const CharacterSave& save, RenderDe
 
 /** Lets the weapon go: from the body's centre, out by the class's hand and a little ahead,
  * along the facing, as fast as the character's strength (or magic) throws. */
-void TowerScene::throwWeapon(const PlayerActor& actor, Figure& figure) {
+void PlayScene::throwWeapon(const PlayerActor& actor, Figure& figure) {
     const CharacterSave& save = actor.save();
     const ClassStats* stats = m_classes.stats(save.character);
     s32 stat = 0;
@@ -318,6 +442,7 @@ void TowerScene::throwWeapon(const PlayerActor& actor, Figure& figure) {
     launch.position = actor.followPoint() + side * hand.x + Vec3{0.0f, hand.y, 0.0f} +
                       facing * (hand.z + PlayerMissiles::kMuzzle);
     launch.speed = PlayerMissiles::speedFor(stat);
+    launch.damage = PlayerMissiles::damageFor(stat);
     launch.reach = PlayerMissiles::reachFor(figure.animator.attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
     launch.model = &figure.missile;
@@ -326,8 +451,14 @@ void TowerScene::throwWeapon(const PlayerActor& actor, Figure& figure) {
     const Vec3 clear = m_world->collision().resolveWalls(
         launch.position, radius, launch.position.y - radius * 0.5f,
         launch.position.y + radius * 0.5f);
-    if (glm::distance(clear, launch.position) > 1e-4f || !m_missiles.launch(launch)) {
+    if (glm::distance(clear, launch.position) > 1e-4f) {
         return;
+    }
+    // A three or five way shot worn spreads the throw, fifteen degrees apart.
+    const s32 shots = PowerupEffects::of(save.progress().inventory).shots();
+    for (const Vec3& direction : PlayerMissiles::spread(facing, shots)) {
+        launch.direction = direction;
+        m_missiles.launch(launch);
     }
     if (m_context.sounds != nullptr && figure.throwSound.has_value()) {
         try {
@@ -342,7 +473,7 @@ void TowerScene::throwWeapon(const PlayerActor& actor, Figure& figure) {
 /** Hangs the weapon from the costume's hand: a tiered costume holds its own `WEAP_HOLD`,
  * an untiered one `WEAP_<colour>_HD<tier>` for the character's level, and the hand is the
  * object named after the class's wrist. */
-void TowerScene::loadWeapon(Figure& figure, const CharacterSave& save, RenderDevice& device) {
+void PlayScene::loadWeapon(Figure& figure, const CharacterSave& save, RenderDevice& device) {
     const s32 level = experienceLevel(save.progress().experience);
     s32 tier = 1;
     if (level >= kWeaponTierThreeLevel) {
@@ -380,7 +511,7 @@ void TowerScene::loadWeapon(Figure& figure, const CharacterSave& save, RenderDev
     }
 }
 
-std::optional<std::filesystem::path> TowerScene::figureDirectory(s32 player) const {
+std::optional<std::filesystem::path> PlayScene::figureDirectory(s32 player) const {
     for (usize i = 0; i < m_actors.size(); ++i) {
         if (m_actors[i].player() == player && m_figures[i] != nullptr) {
             return m_figures[i]->directory;
@@ -389,7 +520,7 @@ std::optional<std::filesystem::path> TowerScene::figureDirectory(s32 player) con
     return std::nullopt;
 }
 
-bool TowerScene::weaponHeld(s32 player) const {
+bool PlayScene::weaponHeld(s32 player) const {
     for (usize i = 0; i < m_actors.size(); ++i) {
         if (m_actors[i].player() == player && m_figures[i] != nullptr) {
             return m_figures[i]->handNode >= 0 && m_figures[i]->weapon.bound();
@@ -400,7 +531,7 @@ bool TowerScene::weaponHeld(s32 player) const {
 
 /** Sumner's beam comes up over three seconds while a player is near him and goes again once
  * they leave. */
-void TowerScene::updateBeam(s32 ticks) {
+void PlayScene::updateBeam(s32 ticks) {
     if (m_beam < 0) {
         return;
     }
@@ -418,7 +549,7 @@ void TowerScene::updateBeam(s32 ticks) {
 
 /** Binds the class's sequences to the figure: the class tree carries the keys and its nodes
  * share their names with the costume's, so each costume node follows its namesake. */
-void TowerScene::loadActions(Figure& figure, const CharacterSave& save) {
+void PlayScene::loadActions(Figure& figure, const CharacterSave& save) {
     const std::string_view cls = classCode(save.character);
     const std::filesystem::path directory =
         m_context.unpackedRoot / kPlayersDirectory / std::string(cls) / std::string(kClassAnimations);
@@ -438,12 +569,13 @@ void TowerScene::loadActions(Figure& figure, const CharacterSave& save) {
 }
 
 /** Finds the footstep sounds in the common bank. */
-void TowerScene::loadSounds() {
+void PlayScene::loadSounds() {
     m_stepSounds.fill(std::nullopt);
     if (const LevelAudioInfo* audio = m_world->audio(); audio != nullptr) {
         m_levelBank.load(m_context.unpackedRoot / kSoundDirectory / audio->bank);
     }
     m_ambientBank.load(m_context.unpackedRoot / kSoundDirectory / kAmbientBank);
+    m_narrator.load(m_context.unpackedRoot / kSoundDirectory / kNarratorBank);
     if (!m_commonSounds.load(m_context.unpackedRoot / kSoundDirectory / kCommonBank)) {
         return;
     }
@@ -453,7 +585,7 @@ void TowerScene::loadSounds() {
     m_pickupSound = m_commonSounds.find(kPickupSound);
 }
 
-void TowerScene::playCommon(std::optional<u32> sound) {
+void PlayScene::playCommon(std::optional<u32> sound) {
     if (m_context.sounds == nullptr || !sound.has_value()) {
         return;
     }
@@ -462,17 +594,28 @@ void TowerScene::playCommon(std::optional<u32> sound) {
 
 /** Takes what the party stands on: a crystal counts for everyone, towards its realm's gate,
  * up to what the gate wants; the taker's box gets the card, every box the count. */
-void TowerScene::collectItems() {
+void PlayScene::collectItems() {
     if (m_device == nullptr) {
         return;
     }
     std::vector<Collector> collectors;
     collectors.reserve(m_actors.size());
     for (const PlayerActor& actor : m_actors) {
-        collectors.push_back(Collector{actor.position(), actor.reach(), actor.height() * 0.5f});
+        // Against an open chest, a character reaches what lies in it.
+        const Vec3 here = presenceOf(collectors.size());
+        const s32 chest = m_chests.holdingTouchedBy(ChestVisitor{here, actor.radius()});
+        const Vec3 from =
+            chest >= 0 ? m_chests.chest(static_cast<usize>(chest)).figure.position() : here;
+        collectors.push_back(Collector{from, actor.reach(), actor.height() * 0.5f});
     }
     const std::vector<Pickup> pickups = m_world->collect(
         *m_device, collectors, [this](const Pickup& pickup) { return takePickup(pickup); });
+    for (usize chest = 0; chest < m_chests.size(); ++chest) {
+        const s32 held = m_chests.chest(chest).held;
+        if (held >= 0 && m_world->placedItems().item(static_cast<usize>(held)).taken) {
+            m_chests.remove(chest);
+        }
+    }
     for (const Pickup& pickup : pickups) {
         if (pickup.realm <= 0) {
             continue; // handed over as it was judged
@@ -500,10 +643,494 @@ void TowerScene::collectItems() {
     }
 }
 
+/** The level's chests, gates and traps under the party: nobody walks through a chest or a
+ * gate that is shut; against one, a key carried is spent and it opens (a chest's sound is
+ * the common one, a gate's its realm's); an opened chest drops what it held, pays its gold
+ * to its opener or blows up; a trap that is out hurts whoever is in it. */
+void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
+    std::vector<Obstacle> boxes = m_chests.obstacles();
+    const std::vector<Obstacle> barred = m_gates.obstacles();
+    boxes.insert(boxes.end(), barred.begin(), barred.end());
+    const std::vector<Obstacle> casks = m_barrels.obstacles();
+    boxes.insert(boxes.end(), casks.begin(), casks.end());
+    m_barrels.update(seconds);
+    std::vector<ChestVisitor> visitors;
+    std::vector<TrapVictim> victims;
+    visitors.reserve(m_actors.size());
+    victims.reserve(m_actors.size());
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        PlayerActor& actor = m_actors[i];
+        if (isDown(i)) {
+            visitors.push_back(ChestVisitor{kNowhere, actor.radius(), 0});
+            victims.push_back(TrapVictim{kNowhere, actor.radius()});
+            continue;
+        }
+        Vec3 position = actor.position();
+        for (const Obstacle& box : boxes) {
+            position = box.pushOut(position, actor.radius());
+        }
+        actor.place(position);
+        visitors.push_back(ChestVisitor{position, actor.radius(),
+                                        actor.save().progress().inventory.keys});
+        victims.push_back(TrapVictim{position, actor.radius()});
+    }
+    for (const ChestEvent& event : m_chests.update(seconds, visitors)) {
+        if (event.visitor >= m_actors.size()) {
+            continue;
+        }
+        PlayerActor& actor = m_actors[event.visitor];
+        switch (event.kind) {
+        case ChestEvent::Kind::Unlocked:
+            if (m_chests.chest(event.chest).locked) {
+                actor.save().progress().inventory.spendKey();
+            }
+            playNamed(kChestSound);
+            break;
+        case ChestEvent::Kind::Opened:
+            if (event.explodes) {
+                if (m_device != nullptr && m_weapons.loaded()) {
+                    m_effects.start(*m_device, m_weapons, kChestBlast, event.position);
+                }
+                playRealmSound(kBarrelBlastSound);
+                m_chests.remove(event.chest);
+                postHelp(HelpMessages::kChestsExplode, event.visitor);
+                blast(event.position, kBlastRadius, kChestBlastDamage * trapDamageScale());
+            } else if (event.gold > 0) {
+                takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
+                m_pickups.addCard(actor.player(), "GOLD");
+                playNamed(kPickupSound);
+            } else if (event.contents >= 0 && m_device != nullptr) {
+                // It lies in the open chest, for whoever touches the chest next.
+                const s32 count = m_chests.chest(event.chest).count;
+                if (m_world->placeItemRecord(*m_device, event.contents, event.position, count)) {
+                    m_chests.hold(event.chest,
+                                  static_cast<s32>(m_world->placedItems().size()) - 1);
+                }
+            } else {
+                m_chests.remove(event.chest);
+            }
+            break;
+        case ChestEvent::Kind::Refused:
+            postHelp(HelpMessages::kChestNeedsKey, event.visitor);
+            break;
+        }
+    }
+    for (const GateEvent& event : m_gates.update(ticks, seconds, visitors)) {
+        if (event.visitor >= m_actors.size()) {
+            continue;
+        }
+        if (event.kind == GateEvent::Kind::Unlocked) {
+            m_actors[event.visitor].save().progress().inventory.spendKey();
+            playGateSound(0);
+        } else if (event.kind == GateEvent::Kind::Refused) {
+            postHelp(HelpMessages::kDoorNeedsKey, event.visitor);
+        }
+    }
+    for (const TrapHit& hit : m_traps.update(ticks, seconds, victims)) {
+        if (hit.victim >= m_actors.size()) {
+            continue;
+        }
+        if (hit.subtype == kFireTrap) {
+            playRealmSound(kFireTrapSound);
+        }
+        // Every trap stuns: spikes and blades make their victim flinch, the rest reel.
+        if (hit.damage > 1.0f && !isDown(hit.victim)) {
+            m_struck[hit.victim] = hit.pierces ? PlayerDeed::Flinch : PlayerDeed::Reel;
+        }
+        hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn);
+        postHelp(HelpMessages::kTrapsHurt, hit.victim);
+    }
+    updateClouds(seconds);
+}
+
+/** What the level's traps and blasts are scaled by: its own trap damage and the
+ * difficulty's gain. */
+f32 PlayScene::trapDamageScale() const {
+    const LevelInfo* level = m_world != nullptr ? m_world->level() : nullptr;
+    const f32 gain =
+        m_context.config != nullptr ? m_context.config->difficulty.gain() : 1.0f;
+    return level != nullptr ? level->tuning.trapDamageScale(gain) : gain;
+}
+
+Vec3 PlayScene::presenceOf(usize index) const {
+    return index < m_actors.size() && !isDown(index) ? m_actors[index].position() : kNowhere;
+}
+
+bool PlayScene::fallen(s32 player) const {
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        if (m_actors[i].player() == player) {
+            return isDown(i);
+        }
+    }
+    return false;
+}
+
+void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind) {
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        if (m_actors[i].player() == player) {
+            hurt(i, damage, kind);
+        }
+    }
+}
+
+/** A sound of the realm's bank, whose names end in the realm's letter. */
+SoundHandle PlayScene::playRealmSound(std::string_view stem) {
+    const std::string& level = m_world->ref().name;
+    const char letter = level.empty() ? 'G' : level.front();
+    return playNamed(std::format("{}{}", stem, letter));
+}
+
+/** One of a character's own cries, `which` being what follows its class in the name. */
+void PlayScene::cry(usize index, std::string_view which) {
+    Figure* body = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    if (body == nullptr || m_context.sounds == nullptr) {
+        return;
+    }
+    const std::string_view voice =
+        classCode(m_actors[index].save().character % kStartingClassCount);
+    if (const auto sound = body->voice.find(std::format("S_{}{}", voice, which));
+        sound.has_value()) {
+        m_context.sounds->play(body->voice.sequence(*sound), 1.0f, SoundCategory::Effects);
+    }
+}
+
+/** Puts a help message up over a character, the narrator saying it, unless the party has
+ * seen it. */
+bool PlayScene::postHelp(s32 id, usize index) {
+    if (index >= m_actors.size()) {
+        return false;
+    }
+    std::vector<HelpReader> readers;
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        if (!isDown(i)) {
+            readers.push_back(HelpReader{m_actors[i].player(), &m_actors[i].save().helpSeen});
+        }
+    }
+    const HelpMessageSpec* spec = m_help.post(id, m_actors[index].player(), readers);
+    if (spec == nullptr) {
+        return false;
+    }
+    if (m_context.sounds != nullptr) {
+        if (const auto line = m_narrator.find(spec->voice); line.has_value()) {
+            m_context.sounds->play(m_narrator.sequence(*line), 1.0f, SoundCategory::Effects);
+        }
+    }
+    return true;
+}
+
+/** A blow on a barrel: wood sounds under it until it breaks, when what it held is left
+ * lying, or it blows up, or its gas hangs where it stood. */
+void PlayScene::strikeBarrel(usize barrel, f32 power, s32 byPlayer) {
+    const auto struck = m_barrels.strike(barrel, power);
+    if (!struck.has_value()) {
+        return;
+    }
+    if (!struck->broken) {
+        playNamed(kWoodHitSound);
+        return;
+    }
+    const auto effect = [&](std::string_view tree) {
+        if (m_device != nullptr && m_weapons.loaded()) {
+            m_effects.start(*m_device, m_weapons, tree, struck->position);
+        }
+    };
+    switch (struck->kind) {
+    case BreakableStrike::Kind::Plain:
+    case BreakableStrike::Kind::Holding:
+        playRealmSound(kBarrelBreakSound);
+        effect(kBarrelSmoke);
+        if (struck->contents >= 0 && m_device != nullptr &&
+            m_world->placeItemRecord(*m_device, struck->contents, struck->position,
+                                     struck->count)) {
+            for (usize i = 0; i < m_actors.size(); ++i) {
+                if (m_actors[i].player() == byPlayer) {
+                    postHelp(HelpMessages::kBarrelsHold, i);
+                }
+            }
+        }
+        break;
+    case BreakableStrike::Kind::Exploding:
+        playRealmSound(kBarrelBlastSound);
+        effect(kBarrelBlast);
+        m_blasts.push_back(
+            Blast{struck->position, kBlastRadius, kBarrelBlastDamage * trapDamageScale()});
+        break;
+    case BreakableStrike::Kind::Poison:
+        playRealmSound(kBarrelGasSound);
+        effect(kBarrelGas);
+        m_clouds.push_back(GasCloud{struck->position, kGasDamage * trapDamageScale(),
+                                    kGasSeconds});
+        break;
+    }
+}
+
+/** Whoever is within a blast is hurt by it, and the barrels within it are struck by it (so
+ * one that blows up sets off its neighbours). */
+void PlayScene::blast(const Vec3& position, f32 radius, f32 damage) {
+    m_blasts.push_back(Blast{position, radius, damage});
+    settleBlasts();
+}
+
+/** Feels out every blast waiting, and those they set off in turn. */
+void PlayScene::settleBlasts() {
+    while (!m_blasts.empty()) {
+        const Blast felt = m_blasts.back();
+        m_blasts.pop_back();
+        for (usize i = 0; i < m_actors.size(); ++i) {
+            if (isDown(i)) {
+                continue;
+            }
+            const PlayerActor& actor = m_actors[i];
+            const Vec3 offset = actor.followPoint() - felt.position;
+            if (std::hypot(offset.x, offset.z) <= felt.radius + actor.radius() &&
+                std::abs(offset.y) <= actor.height() * 0.5f + felt.radius) {
+                hurt(i, felt.damage, HurtKind::Blow);
+            }
+        }
+        for (const usize barrel : m_barrels.within(felt.position, felt.radius)) {
+            strikeBarrel(barrel, felt.damage, -1);
+        }
+    }
+}
+
+/** Gas hangs for a while and hurts whoever stands in it, every half second. */
+void PlayScene::updateClouds(f32 seconds) {
+    for (f32& gap : m_cloudGaps) {
+        gap = std::max(gap - seconds, 0.0f);
+    }
+    for (GasCloud& cloud : m_clouds) {
+        cloud.secondsLeft -= seconds;
+        for (usize i = 0; i < m_actors.size() && i < m_cloudGaps.size(); ++i) {
+            if (isDown(i) || m_cloudGaps[i] > 0.0f) {
+                continue;
+            }
+            const Vec3 offset = m_actors[i].followPoint() - cloud.position;
+            if (std::hypot(offset.x, offset.z) <= kGasRadius + m_actors[i].radius() &&
+                std::abs(offset.y) <= m_actors[i].height() * 0.5f + kGasRadius) {
+                m_cloudGaps[i] = kGasGapSeconds;
+                hurt(i, cloud.damage, HurtKind::Gas);
+            }
+        }
+    }
+    std::erase_if(m_clouds, [](const GasCloud& cloud) { return cloud.secondsLeft <= 0.0f; });
+}
+
+/** A gate's opening sounds from the realm's own bank, named after the level's letter. */
+void PlayScene::playGateSound(s32 /*subtype*/) {
+    const std::string& level = m_world->ref().name;
+    const char letter = level.empty() ? 'G' : level.front();
+    for (const std::string_view stem : {"S_GATEMET", "S_GATEWOOD", "S_GATE"}) {
+        for (const std::string_view tail : {"", "1"}) {
+            if (playNamed(std::format("{}{}{}", stem, letter, tail)) != kNoSound) {
+                return;
+            }
+        }
+    }
+}
+
+/** Takes health from a character the way the original does: harm over a point is scaled by
+ * the level's damage, the cry depends on what did it, and with under a point of health left
+ * the character dies, to the dying sound and its own last cry. Nobody is hurt in the tower,
+ * nor once they have fallen. */
+void PlayScene::hurt(usize index, f32 damage, HurtKind kind) {
+    if (index >= m_actors.size() || isDown(index) || m_world->isTower() || damage <= 0.0f) {
+        return;
+    }
+    const LevelInfo* level = m_world->level();
+    if (damage > 1.0f && level != nullptr) {
+        damage *= level->tuning.damage;
+    }
+    CharacterSave& save = m_actors[index].save();
+    const s32 left = save.health() - static_cast<s32>(std::lround(damage));
+    if (left < 1) {
+        // Health of nought would read as a class never played: the fallen keep a point that
+        // the status box does not show.
+        save.progress().health = 1;
+        m_down[index] = kDying;
+        playNamed(kDeathSound);
+        cry(index, "DIE2");
+        log::info("Player {} has fallen", m_actors[index].player() + 1);
+        return;
+    }
+    save.progress().health = left;
+    switch (kind) {
+    case HurtKind::Burn: cry(index, "PAIN1"); break;
+    case HurtKind::Pierce: cry(index, "DIE1"); break;
+    case HurtKind::Gas: cry(index, "POISON"); break;
+    case HurtKind::Blow:
+        m_painOwed[index] += damage;
+        if (m_painOwed[index] >= kPainEvery) {
+            m_painOwed[index] = std::fmod(m_painOwed[index], kPainEvery);
+            cry(index, "PAIN2");
+        }
+        break;
+    }
+}
+
+/** The whole party has gone through a portal: where to? Its own level when that is unpacked;
+ * from a realm's level whose next is not, back to the tower, so that no one is stranded;
+ * from the tower, nowhere, with a word in the log. */
+bool PlayScene::leaveBy(usize portal) {
+    const ExitPortals::Portal& exit = m_portals.portal(portal);
+    const bool reachable = exit.destination.has_value() &&
+                           LevelCatalog::unpacked(m_context.unpackedRoot, *exit.destination);
+    if (reachable) {
+        m_destination = *exit.destination;
+        log::info("Portal {}: on to {} ({})", exit.tag, m_destination.name, m_destination.title);
+        return true;
+    }
+    if (!m_world->isTower()) {
+        m_destination = LevelRef::tower();
+        log::info("Portal {}: its level is not unpacked; back to the tower", exit.tag);
+        return true;
+    }
+    if (m_refusedPortal != static_cast<s32>(portal)) {
+        m_refusedPortal = static_cast<s32>(portal);
+        log::warn("Portal {}: its level is not unpacked; unpack it with gdlunpack --only "
+                  "<level> (and its realm's items)",
+                  exit.tag);
+    }
+    return false;
+}
+
+std::vector<PartyMember> PlayScene::party() const {
+    std::vector<PartyMember> members;
+    members.reserve(m_actors.size());
+    // The fallen go on as they came into the level, less what it gave them (but what they
+    // were taught stays taught).
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        const bool down = isDown(i) && i < m_entrySaves.size();
+        PartyMember member{m_actors[i].player(), down ? m_entrySaves[i] : m_actors[i].save(),
+                           i < m_slots.size() ? m_slots[i] : std::nullopt, down};
+        member.save.helpSeen = m_actors[i].save().helpSeen;
+        members.push_back(std::move(member));
+    }
+    return members;
+}
+
+/** The bottles potions fly as, from the weapons archive the spawn effect came from. */
+void PlayScene::loadPotionModels(RenderDevice& device) {
+    if (!m_weapons.loaded()) {
+        return;
+    }
+    for (usize kind = 0; kind < m_potionModels.size(); ++kind) {
+        if (const auto tree = m_weapons.trees.find(kPotions[kind].bottle); tree.has_value()) {
+            m_potionModels[kind].bind(m_weapons.trees.tree(*tree), m_weapons.models,
+                                      m_weapons.textures, device);
+        }
+    }
+}
+
+/** A potion's magic going off at `position`: its burst, as large as the magic power behind
+ * it makes it (full size at thirty-two), and its sound. */
+void PlayScene::burstPotion(s32 kind, const Vec3& position, f32 power) {
+    const PotionLook& look = potionLook(kind);
+    if (m_device != nullptr && m_weapons.loaded()) {
+        m_effects.start(*m_device, m_weapons, look.burst, position,
+                        std::min(kBurstPerPower * power, 1.0f));
+    }
+    playNamed(look.sound);
+}
+
+f32 PlayScene::magicPowerOf(const PlayerActor& actor) const {
+    const CharacterSave& save = actor.save();
+    const ClassStats* stats = m_classes.stats(save.character);
+    const s32 magic =
+        stats != nullptr
+            ? displayStats(*stats, experienceLevel(save.experience()), save.progress()).magic()
+            : 0;
+    return PowerupEffects::of(save.progress().inventory).magicPower(magic);
+}
+
+/** The next potion carried goes off about the character. */
+void PlayScene::usePotion(PlayerActor& actor) {
+    if (const s32 kind = actor.save().progress().inventory.takePotion(); kind != 0) {
+        burstPotion(kind, actor.position(), magicPowerOf(actor));
+    }
+}
+
+/** The next potion carried is tossed ahead, as much up as forwards, to burst where it
+ * lands. */
+void PlayScene::throwPotion(PlayerActor& actor) {
+    const s32 kind = actor.save().progress().inventory.takePotion();
+    if (kind == 0) {
+        return;
+    }
+    const Vec3 facing = actor.facing();
+    MissileLaunch launch;
+    launch.owner = actor.player();
+    launch.direction = facing;
+    launch.position =
+        actor.position() + facing * kPotionHandReach + Vec3{0.0f, kPotionHandHeight, 0.0f};
+    launch.velocity = Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} *
+                      kPotionToss;
+    launch.potion = kind;
+    launch.potency = kThrownShare * magicPowerOf(actor);
+    launch.spec = &MissileSpec::potion();
+    launch.model = &m_potionModels[static_cast<usize>(
+        std::clamp(kind, 0, static_cast<s32>(m_potionModels.size()) - 1))];
+    m_missiles.launch(launch);
+}
+
+f32 PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
+    if (save.character == kOgre) {
+        return kOgreScale;
+    }
+    if (effects.grown()) {
+        return PowerupEffects::kGrowthScale;
+    }
+    return experienceLevel(save.experience()) >= kMaxLevel ? kMasterScale : 1.0f;
+}
+
+/** Works a player's powerup selector with this frame's presses, sounding as the original's
+ * does: the menu's up-and-down note for opening and closing, its sideways note for going
+ * round, its select for taking one off or putting it on. */
+void PlayScene::stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks) {
+    const auto slot = static_cast<usize>(std::clamp(actor.player(), 0, kPlayerCount - 1));
+    switch (m_selectors[slot].step(input, actor.save().progress().inventory, ticks)) {
+    case SelectorCue::Opened:
+    case SelectorCue::Closed: playNamed(kMenuMoveSound); break;
+    case SelectorCue::Moved: playNamed(kSelectorMoveSound); break;
+    case SelectorCue::Switched: playNamed(kMenuSelectSound); break;
+    case SelectorCue::None: break;
+    }
+}
+
+/** The name of the powerup each open selector has come to, over its player's box: glowing
+ * while the powerup is worn, plain once taken off. */
+void PlayScene::drawSelectors() {
+    if (!m_text.ready() || m_context.strings == nullptr) {
+        return;
+    }
+    for (const PlayerActor& actor : m_actors) {
+        const PowerupSelector& selector = this->selector(actor.player());
+        const s32 chosen = selector.selection();
+        if (!selector.showing() || chosen < 0) {
+            continue;
+        }
+        const PowerupSlot& slot =
+            actor.save().progress().inventory.powerups[static_cast<usize>(chosen)];
+        const std::string_view label =
+            m_context.strings->get(powerupTextId(slot.kind, slot.flags));
+        const s32 x = actor.player() * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
+        const s32 y = selector.labelY(StatusBoxPainter::kY);
+        TextStyle style;
+        style.scale = PowerupSelector::kLabelScale;
+        if (slot.on && m_glowSheet != nullptr) {
+            TextStyle glow = style;
+            glow.texture = m_glowSheet;
+            glow.color = ScrollBox::kGlowColor;
+            glow.expand = OptionMenu::kGlowExpand;
+            m_text.draw(m_canvas, x, y, label, glow);
+        }
+        m_text.draw(m_canvas, x, y, label, style);
+    }
+}
+
 /** Hands a touched item to whoever touched it, by the original's rules: their card slides
  * up, the item's sound (or their own eating) plays, and what they cannot carry stays lying
  * where it is. Crystals are the party's and are dealt with once taken. */
-std::optional<s32> TowerScene::takePickup(const Pickup& pickup) {
+std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     if (pickup.realm > 0) {
         return 0;
     }
@@ -517,6 +1144,11 @@ std::optional<s32> TowerScene::takePickup(const Pickup& pickup) {
                                          pickup.strength},
                  stats != nullptr ? stats->powerupTime : 1.0f);
     if (!taking.took()) {
+        if (taking.outcome == ItemTaking::Outcome::KeysFull) {
+            postHelp(HelpMessages::kKeysFull, pickup.collector);
+        } else if (taking.outcome == ItemTaking::Outcome::HealthFull) {
+            postHelp(HelpMessages::kHealthFull, pickup.collector);
+        }
         return std::nullopt;
     }
     if (!taking.card.empty()) {
@@ -537,7 +1169,7 @@ std::optional<s32> TowerScene::takePickup(const Pickup& pickup) {
 }
 
 /** Loops the level's music stream from the game's files at the level's volume. */
-void TowerScene::startMusic() {
+void PlayScene::startMusic() {
     const LevelAudioInfo* audio = m_world->audio();
     if (m_context.sounds == nullptr || m_context.assets == nullptr || audio == nullptr ||
         audio->stream.empty()) {
@@ -559,13 +1191,13 @@ void TowerScene::startMusic() {
                                           SoundCategory::Music);
 }
 
-void TowerScene::playStep(PlayerAnimator::Foot foot) {
+void PlayScene::playStep(PlayerAnimator::Foot foot) {
     playCommon(m_stepSounds[foot == PlayerAnimator::Foot::Second ? 1 : 0]);
 }
 
 /** Gathers the scroll's art: the sheet, the prompt's font and glow, the button icon and the
  * burn frames, and the scroll texts. Missing pieces only lose the welcome's scroll. */
-void TowerScene::loadIntroArt(RenderDevice& device) {
+void PlayScene::loadIntroArt(RenderDevice& device) {
     ScrollBoxArt art;
     m_text.setFont(nullptr, nullptr);
     if (!m_staticTextures.load(m_context.unpackedRoot / kStaticDirectory) ||
@@ -620,7 +1252,7 @@ void TowerScene::loadIntroArt(RenderDevice& device) {
 
 /** What Sumner's scroll of hints draws with: the menu sheets and the scroll from the static
  * archive, the selection arrow from the powerups, and his hints' texts. */
-void TowerScene::loadHintArt(RenderDevice& device) {
+void PlayScene::loadHintArt(RenderDevice& device) {
     HintMenuArt art;
     if (!m_staticTextures.loaded() ||
         !m_hints.load(m_context.unpackedRoot / kHintTextFile)) {
@@ -639,6 +1271,7 @@ void TowerScene::loadHintArt(RenderDevice& device) {
     };
     art.textures.font = texture(kFontTexture);
     art.textures.glow = texture("FONT32_GLOW");
+    m_glowSheet = art.textures.glow;
     art.textures.parchment = texture("FONT32_PARCH");
     art.textures.arrows = texture("ARROWS");
     for (usize i = 0; i < art.textures.garamond.size(); ++i) {
@@ -674,7 +1307,7 @@ void TowerScene::loadHintArt(RenderDevice& device) {
 }
 
 /** The first of the party standing in the spot before Sumner, or null. */
-const PlayerActor* TowerScene::visitorOfSumner() const {
+const PlayerActor* PlayScene::visitorOfSumner() const {
     const LevelTriggers& triggers = m_world->triggers();
     for (usize i = 0; i < triggers.size(); ++i) {
         const LevelTrigger& spot = triggers.trigger(i);
@@ -695,7 +1328,7 @@ const PlayerActor* TowerScene::visitorOfSumner() const {
 
 /** A player stepping up to Sumner is greeted at once and handed his scroll of hints two
  * seconds on, once a visit; stepping away and back is a new visit. */
-void TowerScene::updateSumnerVisit(f32 seconds) {
+void PlayScene::updateSumnerVisit(f32 seconds) {
     if (m_greetingLeft > 0.0f) {
         m_greetingLeft = std::max(m_greetingLeft - seconds, 0.0f);
     }
@@ -717,7 +1350,7 @@ void TowerScene::updateSumnerVisit(f32 seconds) {
     }
 }
 
-void TowerScene::openHints(s32 player) {
+void PlayScene::openHints(s32 player) {
     if (m_context.strings == nullptr || m_context.config == nullptr) {
         return;
     }
@@ -745,7 +1378,7 @@ void TowerScene::openHints(s32 player) {
 
 /** Steps the scroll of hints with its player's input; backing out of it burns it and has
  * Sumner wave the player off. */
-void TowerScene::updateHints(const Inputs& inputs, s32 ticks) {
+void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
     const auto player = static_cast<usize>(std::max(m_hintPlayer, 0));
     const MenuInput input = player < inputs.size() ? inputs[player].menu : MenuInput{};
     const HintMenuEvent event = m_hintMenu.update(*m_device, input, ticks);
@@ -772,7 +1405,7 @@ void TowerScene::updateHints(const Inputs& inputs, s32 ticks) {
     }
 }
 
-void TowerScene::answerHint(s32 topic) {
+void PlayScene::answerHint(s32 topic) {
     const auto entry = std::ranges::find(kHintTopics, topic, &HintTopicEntry::code);
     if (entry == kHintTopics.end() || m_context.strings == nullptr) {
         return;
@@ -789,7 +1422,7 @@ void TowerScene::answerHint(s32 topic) {
 }
 
 /** A party is new to the tower while no class of any of its characters has experience. */
-bool TowerScene::freshParty(std::span<const PartyMember> party) {
+bool PlayScene::freshParty(std::span<const PartyMember> party) {
     return !party.empty() && std::ranges::all_of(party, [](const PartyMember& member) {
         return std::ranges::none_of(member.save.classes, [](const ClassProgress& progress) {
             return progress.experience > 0;
@@ -798,7 +1431,7 @@ bool TowerScene::freshParty(std::span<const PartyMember> party) {
 }
 
 /** Opens Sumner's welcome scroll; without it the welcome goes straight to the crystals. */
-void TowerScene::beginIntro(RenderDevice& device) {
+void PlayScene::beginIntro(RenderDevice& device) {
     const auto message = m_scrollText.loaded() ? m_scrollText.find(kWelcomeMessage) : std::nullopt;
     if (message.has_value()) {
         const MessageInfo& welcome = m_scrollText.message(*message);
@@ -814,7 +1447,7 @@ void TowerScene::beginIntro(RenderDevice& device) {
 }
 
 /** Sumner gestures at the crystals while the camera cuts to them from the level's marker. */
-void TowerScene::startCrystalCut() {
+void PlayScene::startCrystalCut() {
     m_sumner.gesture();
     const WorldLocator* marker =
         m_world->layout().findLocator(LocatorKind::TriggerCamera, kCrystalCamera);
@@ -832,7 +1465,7 @@ void TowerScene::startCrystalCut() {
 }
 
 /** A bit per party member whose player pressed their button this frame. */
-u32 TowerScene::acceptedPlayers(const Inputs& inputs) const {
+u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
     u32 accepted = 0;
     for (const PlayerActor& actor : m_actors) {
         const auto player = static_cast<usize>(actor.player());
@@ -843,7 +1476,7 @@ u32 TowerScene::acceptedPlayers(const Inputs& inputs) const {
     return accepted;
 }
 
-const WorldCamera& TowerScene::viewCamera() const {
+const WorldCamera& PlayScene::viewCamera() const {
     if (m_startCamera.active()) {
         return m_startCamera.camera();
     }
@@ -851,7 +1484,7 @@ const WorldCamera& TowerScene::viewCamera() const {
 }
 
 /** Whether any party member's player pressed a button this frame. */
-bool TowerScene::anyButton(const Inputs& inputs) const {
+bool PlayScene::anyButton(const Inputs& inputs) const {
     return std::ranges::any_of(m_actors, [&inputs](const PlayerActor& actor) {
         const auto player = static_cast<usize>(actor.player());
         return player < inputs.size() && (inputs[player].menu.select ||
@@ -859,11 +1492,11 @@ bool TowerScene::anyButton(const Inputs& inputs) const {
     });
 }
 
-void TowerScene::Figure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, bool attack) {
+void PlayScene::Figure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed) {
     if (!animator.bound()) {
         return;
     }
-    animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, attack);
+    animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed);
     const std::span<const Mat4> matrices = animator.pose().matrices();
     transforms.resize(costume->nodes.size());
     for (usize n = 0; n < transforms.size(); ++n) {
@@ -874,9 +1507,9 @@ void TowerScene::Figure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, boo
     }
 }
 
-TowerOutcome TowerScene::update(f64 deltaSeconds, const Inputs& inputs) {
+PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     if (!m_open) {
-        return TowerOutcome::Running;
+        return PlayOutcome::Running;
     }
     // The clock advances in whole ticks, two per frame at the 30 frames per second the game
     // runs at, so a late frame moves everything further rather than smoother.
@@ -900,13 +1533,22 @@ TowerOutcome TowerScene::update(f64 deltaSeconds, const Inputs& inputs) {
         if (!m_scroll.active() && m_intro == Intro::Scroll) {
             startCrystalCut();
         }
-        return TowerOutcome::Running;
+        return PlayOutcome::Running;
+    }
+    // Gone through a portal, the party is out of play while the transition picture comes
+    // up over the level, which goes on around it; once it covers the view they travel.
+    m_transition.update(seconds);
+    if (m_leaving) {
+        m_world->update(seconds);
+        m_effects.update(seconds);
+        updateAmbience();
+        return m_transition.covering() ? PlayOutcome::Travel : PlayOutcome::Running;
     }
     // Sumner's scroll of hints holds play the same way, while he goes on moving behind it.
     if (m_hintMenu.active()) {
         updateHints(inputs, ticks);
         m_sumner.update(seconds);
-        return TowerOutcome::Running;
+        return PlayOutcome::Running;
     }
     // Materialising, the party stands still, playing its entrance, while the level runs on
     // around it and the start camera holds, then rides in; the title slides up until the
@@ -932,7 +1574,7 @@ TowerOutcome TowerScene::update(f64 deltaSeconds, const Inputs& inputs) {
             m_welcomePending = false;
             beginIntro(*m_device);
         }
-        return TowerOutcome::Running;
+        return PlayOutcome::Running;
     }
     const bool held = m_intro == Intro::Crystal;
     if (held) {
@@ -949,41 +1591,128 @@ TowerOutcome TowerScene::update(f64 deltaSeconds, const Inputs& inputs) {
     for (usize i = 0; i < m_actors.size(); ++i) {
         PlayerActor& actor = m_actors[i];
         const auto player = static_cast<usize>(actor.player());
-        const MoveInput& move =
-            !held && player < inputs.size() ? inputs[player].move : MoveInput{};
-        const bool attack = !held && player < inputs.size() && inputs[player].attack;
+        const bool down = isDown(i);
+        // Reeling from a hit, a character neither moves nor does anything.
+        const bool reeling = m_struck[i] != PlayerDeed::None ||
+                             (m_figures[i] != nullptr && m_figures[i]->animator.reacting());
+        const MoveInput& move = !held && !down && !reeling && player < inputs.size()
+                                    ? inputs[player].move
+                                    : MoveInput{};
+        // What the buttons ask: a potion first, when one is carried, then the attack.
+        PlayerDeed deed = down ? PlayerDeed::Die : PlayerDeed::None;
+        if (!down && m_struck[i] != PlayerDeed::None) {
+            deed = m_struck[i];
+        }
+        m_struck[i] = PlayerDeed::None;
+        if (!held && !down && !reeling && player < inputs.size()) {
+            const PlayInput& in = inputs[player];
+            const bool carrying = !actor.save().progress().inventory.potions.empty();
+            if ((in.usePotion || in.throwPotion) && !carrying) {
+                postHelp(HelpMessages::kNoPotion, i);
+            }
+            if (in.usePotion && carrying) {
+                deed = PlayerDeed::UsePotion;
+            } else if (in.throwPotion && carrying) {
+                deed = PlayerDeed::ThrowPotion;
+            } else if (in.attack) {
+                deed = PlayerDeed::Attack;
+            }
+            stepSelector(actor, in.selector, ticks);
+        }
+        actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
         // A body in a throw keeps its feet where they are, turning to the stick.
         const f32 pace = m_figures[i] != nullptr ? m_figures[i]->animator.moveScale() : 1.0f;
         actor.update(move, cameraYaw, seconds, &m_world->collision(), pace);
         if (m_figures[i] != nullptr) {
-            m_figures[i]->animate(move.magnitude, ticks, seconds, attack);
+            m_figures[i]->animate(move.magnitude, ticks, seconds, deed);
+            if (m_down[i] == kDying && m_figures[i]->animator.dead()) {
+                m_down[i] = kInTower; // the body goes; its box says where
+            }
             if (m_figures[i]->animator.released()) {
                 throwWeapon(actor, *m_figures[i]);
+            }
+            if (m_figures[i]->animator.potionUsed()) {
+                usePotion(actor);
+            } else if (m_figures[i]->animator.potionThrown()) {
+                throwPotion(actor);
             }
             if (const PlayerAnimator::Foot foot = m_figures[i]->animator.footfall();
                 foot != PlayerAnimator::Foot::None) {
                 playStep(foot);
             }
         }
+        if (m_figures[i] == nullptr && m_down[i] == kDying) {
+            m_down[i] = kInTower; // nothing to play: gone at once
+        }
         m_subjects[i] = CameraSubject{actor.position(), actor.followPoint()};
     }
-    m_missiles.update(seconds, &m_world->collision());
-    m_missiles.takeImpacts(); // nothing marks where they stop yet
+    m_playSeconds += seconds;
+    m_help.update(ticks);
+    updateFixtures(ticks, seconds);
+    std::vector<MissileTarget> targets;
+    for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
+        if (m_barrels.standing(barrel)) {
+            const Breakables::Barrel& cask = m_barrels.barrel(barrel);
+            targets.push_back(MissileTarget{static_cast<s32>(barrel), cask.figure.position(),
+                                            cask.radius, cask.height});
+        }
+    }
+    m_missiles.update(seconds, &m_world->collision(), targets);
+    for (const MissileImpact& impact : m_missiles.takeImpacts()) {
+        if (impact.potion != 0) {
+            burstPotion(impact.potion, impact.position, impact.potency); // weapons leave no mark yet
+        }
+        if (impact.target >= 0) {
+            strikeBarrel(static_cast<usize>(impact.target), impact.damage, impact.owner);
+            settleBlasts();
+        }
+    }
+    m_effects.update(seconds);
     collectItems();
     updateBeam(ticks);
     m_world->updateTriggers(seconds, visitors());
     handleTriggerEvents();
-    if (!held && !m_scroll.active()) {
+    if (!held && !m_scroll.active() && m_world->isTower()) {
         updateSumnerVisit(seconds);
     }
-    m_camera.update(m_subjects, m_world->cameraMarkers(), m_world->cameraRange(), cameraView(),
-                    seconds);
+    if (!held) {
+        // A portal waits for everyone still on their feet.
+        std::vector<PortalVisitor> standing;
+        standing.reserve(m_actors.size());
+        for (usize i = 0; i < m_actors.size(); ++i) {
+            if (!isDown(i)) {
+                standing.push_back(PortalVisitor{m_actors[i].position(), m_actors[i].radius()});
+            }
+        }
+        // With nobody left, and the last of them done falling, the party is taken back.
+        const bool falling = std::ranges::find(m_down, kDying) != m_down.end();
+        if (standing.empty() && !m_actors.empty() && !falling) {
+            m_fallenSeconds += seconds;
+            if (m_fallenSeconds >= kFallenSeconds) {
+                return PlayOutcome::Fallen;
+            }
+        }
+        if (const auto portal = m_portals.update(ticks, seconds, standing);
+            portal.has_value() && leaveBy(*portal)) {
+            m_leaving = true;
+            m_transition.comeUp();
+        }
+    }
+    // The camera keeps to those still standing, while anyone is.
+    std::vector<CameraSubject> followed;
+    for (usize i = 0; i < m_subjects.size(); ++i) {
+        if (!isDown(i)) {
+            followed.push_back(m_subjects[i]);
+        }
+    }
+    m_camera.update(followed.empty() ? m_subjects : followed, m_world->cameraMarkers(),
+                    m_world->cameraRange(), cameraView(), seconds);
     updateAmbience();
-    return TowerOutcome::Running;
+    return PlayOutcome::Running;
 }
 
 /** Places the level's loops for the party, heard from the camera. */
-void TowerScene::updateAmbience() {
+void PlayScene::updateAmbience() {
     if (m_context.sounds == nullptr) {
         return;
     }
@@ -999,11 +1728,12 @@ void TowerScene::updateAmbience() {
 }
 
 /** The party as the level's triggers see it. */
-std::vector<TriggerVisitor> TowerScene::visitors() const {
+std::vector<TriggerVisitor> PlayScene::visitors() const {
     std::vector<TriggerVisitor> out;
-    for (const PlayerActor& actor : m_actors) {
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        const PlayerActor& actor = m_actors[i];
         TriggerVisitor visitor;
-        visitor.position = actor.position();
+        visitor.position = presenceOf(i);
         visitor.radius = actor.radius();
         visitor.crystals = actor.save().progress().crystals;
         out.push_back(visitor);
@@ -1011,7 +1741,7 @@ std::vector<TriggerVisitor> TowerScene::visitors() const {
     return out;
 }
 
-void TowerScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
+void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
                         f32 frameHeight) {
     if (!m_open || m_context.config == nullptr) {
         return;
@@ -1024,10 +1754,14 @@ void TowerScene::render(RenderDevice& device, const Mat4& frameProjection, f32 f
     m_world->draw(device, clip, viewCamera());
     m_sumner.draw(device, clip, m_world->lighting());
     for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_figures[i] != nullptr) {
+        if (m_figures[i] != nullptr && (i >= m_down.size() || m_down[i] != kInTower)) {
             const Figure& figure = *m_figures[i];
-            figure.model.draw(device, clip, m_actors[i].transform(), m_world->lighting(),
-                              figure.transforms);
+            const PowerupEffects worn =
+                PowerupEffects::of(m_actors[i].save().progress().inventory);
+            const f32 size = bodyScale(m_actors[i].save(), worn);
+            const Mat4 body = glm::scale(m_actors[i].transform(), Vec3{size, size, size});
+            figure.model.draw(device, clip, body, m_world->lighting(), figure.transforms, nullptr,
+                              worn.bodyAlpha(m_playSeconds));
             // The hand is empty while a throw is recovered from, unless what flies is not
             // what it holds.
             const bool inHand = !figure.animator.recovering() ||
@@ -1037,12 +1771,18 @@ void TowerScene::render(RenderDevice& device, const Mat4& frameProjection, f32 f
                 const Mat4 wrist = hand < figure.transforms.size()
                                        ? figure.transforms[hand]
                                        : glm::translate(Mat4{1.0f}, figure.costume->worldPosition(hand));
-                figure.weapon.draw(device, clip, m_actors[i].transform() * wrist,
-                                   m_world->lighting());
+                figure.weapon.draw(device, clip, body * wrist, m_world->lighting(), {}, nullptr,
+                                   worn.bodyAlpha(m_playSeconds));
             }
         }
     }
+    m_portals.draw(device, clip, m_world->lighting());
+    m_chests.draw(device, clip, m_world->lighting());
+    m_gates.draw(device, clip, m_world->lighting());
+    m_traps.draw(device, clip, m_world->lighting());
+    m_barrels.draw(device, clip, m_world->lighting());
     m_missiles.draw(device, clip, m_world->lighting());
+    m_effects.draw(device, clip, m_world->lighting());
     drawSpawn(device, clip);
     const auto width = static_cast<f32>(config.display.virtualWidth);
     const auto height = static_cast<f32>(config.display.virtualHeight);
@@ -1051,6 +1791,7 @@ void TowerScene::render(RenderDevice& device, const Mat4& frameProjection, f32 f
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
     // bars top and bottom, the status boxes hidden beneath the lower one.
     const bool cut = m_intro == Intro::Crystal;
+    m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
         for (s32 player = 0; player < kPlayerCount; ++player) {
             m_boxes.draw(m_canvas, player, statusOf(player), true);
@@ -1065,12 +1806,45 @@ void TowerScene::render(RenderDevice& device, const Mat4& frameProjection, f32 f
         m_canvas.fill(Rect{0.0f, height * (1.0f - kCutBarBottom), width, height * kCutBarBottom},
                       Color::black());
     }
+    if (!cut) {
+        drawSelectors();
+        drawHelp(clip, width, height);
+    }
     m_scroll.draw(m_canvas);
     m_hintMenu.draw(m_canvas, m_text);
     m_canvas.end();
 }
 
-CameraView TowerScene::cameraView() const {
+/** The help message, over the head of the character it is for. */
+void PlayScene::drawHelp(const Mat4& clip, f32 width, f32 height) {
+    if (!m_help.showing()) {
+        return;
+    }
+    Vec2 head{width * 0.5f, height * 0.5f};
+    for (const PlayerActor& actor : m_actors) {
+        if (actor.player() != m_help.player()) {
+            continue;
+        }
+        const Vec4 point = clip * Vec4{actor.followPoint(), 1.0f};
+        if (point.w > 1e-4f) {
+            head = Vec2{(point.x / point.w * 0.5f + 0.5f) * width,
+                        (0.5f - point.y / point.w * 0.5f) * height};
+        }
+    }
+    const auto sheet = m_staticTextures.loaded() ? m_staticTextures.find(kScrollTexture)
+                                                 : std::nullopt;
+    const Texture* scroll = nullptr;
+    if (sheet.has_value() && m_device != nullptr) {
+        try {
+            scroll = &m_staticTextures.texture(*m_device, *sheet);
+        } catch (const std::exception&) {
+            scroll = nullptr;
+        }
+    }
+    m_help.draw(m_canvas, m_boxes.smallCaps(), scroll, head); // the strings' own font
+}
+
+CameraView PlayScene::cameraView() const {
     CameraView view;
     if (m_context.config != nullptr) {
         view.horizontalFov = m_context.config->horizontalFovRadians();
@@ -1080,7 +1854,7 @@ CameraView TowerScene::cameraView() const {
     return view;
 }
 
-const PlayerActor* TowerScene::actor(s32 player) const {
+const PlayerActor* PlayScene::actor(s32 player) const {
     for (const PlayerActor& actor : m_actors) {
         if (actor.player() == player) {
             return &actor;
@@ -1089,7 +1863,7 @@ const PlayerActor* TowerScene::actor(s32 player) const {
     return nullptr;
 }
 
-const PlayerAnimator* TowerScene::animator(s32 player) const {
+const PlayerAnimator* PlayScene::animator(s32 player) const {
     for (usize i = 0; i < m_actors.size(); ++i) {
         if (m_actors[i].player() == player) {
             return m_figures[i] != nullptr && m_figures[i]->animator.bound()
@@ -1100,7 +1874,7 @@ const PlayerAnimator* TowerScene::animator(s32 player) const {
     return nullptr;
 }
 
-StatusBoxView TowerScene::statusOf(s32 player) const {
+StatusBoxView PlayScene::statusOf(s32 player) const {
     StatusBoxView view;
     const PlayerActor* actor = this->actor(player);
     if (actor == nullptr) {
@@ -1114,6 +1888,13 @@ StatusBoxView TowerScene::statusOf(s32 player) const {
     view.name = save.name;
     view.level = experienceLevel(save.experience());
     view.gold = save.gold;
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        if (m_actors[i].player() == player && isDown(i)) {
+            view.inTower = m_down[i] == kInTower;
+            view.health = 0;
+            return view;
+        }
+    }
     view.health = save.health();
     view.keys = save.progress().inventory.keys;
     view.potions = static_cast<s32>(save.progress().inventory.potions.size());
@@ -1124,7 +1905,7 @@ StatusBoxView TowerScene::statusOf(s32 player) const {
 /** Stands the materialising effect at every character's feet and, with `ride`, the start
  * camera at the entrance marker to hold and ride in; the party holds still for it. (The
  * realm's entering sound belongs to the loading screen, not to this.) */
-void TowerScene::beginSpawn(RenderDevice& device, bool ride) {
+void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
     m_spawns.clear();
     m_spawnTexmods.clear();
     m_spawnFrames = 0.0f;
@@ -1172,7 +1953,7 @@ void TowerScene::beginSpawn(RenderDevice& device, bool ride) {
     }
 }
 
-void TowerScene::updateSpawn(s32 /*ticks*/, f32 seconds) {
+void PlayScene::updateSpawn(s32 /*ticks*/, f32 seconds) {
     m_spawnFrames += seconds * AnimationPlayer::kDefaultRate;
     const f32 whole = std::floor(m_spawnFrames);
     m_spawnFrames -= whole;
@@ -1197,7 +1978,7 @@ void TowerScene::updateSpawn(s32 /*ticks*/, f32 seconds) {
     }
 }
 
-void TowerScene::drawSpawn(RenderDevice& device, const Mat4& clip) const {
+void PlayScene::drawSpawn(RenderDevice& device, const Mat4& clip) const {
     if (m_spawnTicks <= 0) {
         return;
     }
@@ -1209,7 +1990,7 @@ void TowerScene::drawSpawn(RenderDevice& device, const Mat4& clip) const {
 
 /** The level's title across the top of the screen while the party materialises, sliding up
  * as the start camera holds, the way the original places it. */
-void TowerScene::drawLevelTitle(f32 width) {
+void PlayScene::drawLevelTitle(f32 width) {
     const LevelInfo* level = m_world->level();
     if (level == nullptr || level->title.empty() || !m_text.ready()) {
         return;
@@ -1220,7 +2001,7 @@ void TowerScene::drawLevelTitle(f32 width) {
 }
 
 /** Opens one page of a scroll message over the tower: the party reads it and presses on. */
-bool TowerScene::openMessage(std::string_view name, usize page) {
+bool PlayScene::openMessage(std::string_view name, usize page) {
     if (m_device == nullptr || !m_scrollText.loaded()) {
         return false;
     }
@@ -1236,7 +2017,7 @@ bool TowerScene::openMessage(std::string_view name, usize page) {
 }
 
 /** Plays a sound by name from whichever loaded bank holds it; false when none does. */
-SoundHandle TowerScene::playNamed(std::string_view name) {
+SoundHandle PlayScene::playNamed(std::string_view name) {
     if (m_context.sounds == nullptr || name.empty()) {
         return kNoSound;
     }
@@ -1254,14 +2035,14 @@ SoundHandle TowerScene::playNamed(std::string_view name) {
     return kNoSound;
 }
 
-void TowerScene::stopVoice() {
+void PlayScene::stopVoice() {
     if (m_context.sounds != nullptr && m_voice != kNoSound) {
         m_context.sounds->stop(m_voice);
     }
     m_voice = kNoSound;
 }
 
-void TowerScene::stopOpeningSounds() {
+void PlayScene::stopOpeningSounds() {
     if (m_context.sounds != nullptr) {
         for (const OpeningSound& sound : m_openingSounds) {
             m_context.sounds->stop(sound.handle);
@@ -1272,7 +2053,7 @@ void TowerScene::stopOpeningSounds() {
 
 /** Congratulates the party once its crystals open a realm's gate: the scroll for the realm,
  * its announcing voice, and the save remembers so it is not said twice. */
-void TowerScene::announceUnlock(s32 realm) {
+void PlayScene::announceUnlock(s32 realm) {
     if (realm <= 0 || static_cast<usize>(realm) >= kRealmCount) {
         return;
     }
@@ -1295,7 +2076,7 @@ void TowerScene::announceUnlock(s32 realm) {
 
 /** Tells a refused party what a gate wants; a target opening before them (a gate's field, a
  * lift, a gate) sounds its slot's note until it is done, then the note of its end. */
-void TowerScene::handleTriggerEvents() {
+void PlayScene::handleTriggerEvents() {
     // One scroll at a time: the frame's first refusal.
     if (const std::vector<TriggerRefusal> refusals = m_world->takeTriggerRefusals();
         !refusals.empty()) {

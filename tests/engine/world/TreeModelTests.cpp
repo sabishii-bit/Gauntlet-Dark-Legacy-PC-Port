@@ -319,7 +319,7 @@ TEST_CASE("nodes flagged to face the camera turn its way", "[world][model]") {
     REQUIRE(device.draws[1].vertices[2].position == Vec3{0.0f, 3.0f, 0.0f});
 }
 
-TEST_CASE("a node named DUMMY is the figure's marker and is never drawn", "[world][model]") {
+TEST_CASE("marker nodes (a figure's DUMMY, a chest's NULL1) are never drawn", "[world][model]") {
     const auto dir = sampleFigure("tree-model-marker");
     writeTextFile(dir / "animations.json", R"({"trees": [
   {"name": "FIGURE", "prefix": "", "sequences": [], "nodes": [
@@ -328,6 +328,8 @@ TEST_CASE("a node named DUMMY is the figure's marker and is never drawn", "[worl
     {"name": "BODY", "object": "BODY", "type": 0, "flags": 0, "objectFlags": 0, "parent": 0,
      "position": [0.0, 0.0, 0.0]},
     {"name": "DUMMY", "object": "BANNER", "type": 0, "flags": 0, "objectFlags": 0, "parent": 0,
+     "position": [0.0, 0.0, 0.0]},
+    {"name": "NULL1", "object": "BANNER", "type": 0, "flags": 0, "objectFlags": 0, "parent": 0,
      "position": [0.0, 0.0, 0.0]}]}]})");
     ModelSet models;
     TextureSet textures;

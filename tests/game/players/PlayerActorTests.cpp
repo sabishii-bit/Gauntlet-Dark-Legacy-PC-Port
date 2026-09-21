@@ -104,6 +104,11 @@ TEST_CASE("an action that holds the feet still lets the body turn", "[game][play
     REQUIRE_FALSE(actor.moving());
     REQUIRE(actor.facing().x == Approx(1.0f));
     REQUIRE(actor.facing().z == Approx(0.0f).margin(1e-5f));
+    // A speed powerup's bonus adds straight onto the pace.
+    const f32 plain = actor.speed();
+    actor.setPaceBonus(2.0f);
+    REQUIRE(actor.speed() == Approx(plain + 2.0f));
+    actor.setPaceBonus(0.0f);
     // Half its pace is half the ground.
     actor.update(MoveInput{Vec2{1.0f, 0.0f}, 1.0f}, 0.0f, 1.0f, nullptr, 0.5f);
     REQUIRE(actor.position().x == Approx(actor.speed() * 0.5f));
