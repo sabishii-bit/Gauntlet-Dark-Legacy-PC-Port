@@ -34,6 +34,34 @@ TEST_CASE("keys walk along the axes and combine on the diagonal", "[game][player
     REQUIRE_FALSE(readMoveInput(input, PlayBindings{}, false, kNoPad).any());
 }
 
+TEST_CASE("the potion buttons are held and the selector's are presses",
+          "[game][players][controls]") {
+    Input input;
+    input.beginPoll();
+    input.setKey(Key::E, true);
+    input.setKey(Key::I, true);
+    PlayButtons buttons = readPlayButtons(input, PlayBindings{}, true, kNoPad);
+    REQUIRE(buttons.usePotion);
+    REQUIRE_FALSE(buttons.throwPotion);
+    REQUIRE_FALSE(buttons.attack);
+    REQUIRE(buttons.selectorUp);
+    // Held into the next frame, the potion is still held; the selector's press is over.
+    input.beginPoll();
+    buttons = readPlayButtons(input, PlayBindings{}, true, kNoPad);
+    REQUIRE(buttons.usePotion);
+    REQUIRE_FALSE(buttons.selectorUp);
+    // On a pad the directional buttons are the selector's and no longer walk.
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.buttons[static_cast<usize>(PadButton::DpadLeft)] = true;
+    pad.buttons[static_cast<usize>(PadButton::X)] = true;
+    input.setPad(0, pad);
+    buttons = readPlayButtons(input, PlayBindings{}, false, 0);
+    REQUIRE(buttons.selectorLeft);
+    REQUIRE(buttons.throwPotion);
+    REQUIRE_FALSE(readMoveInput(input, PlayBindings{}, false, 0).any());
+}
+
 TEST_CASE("the attack is held by its key or its pad button", "[game][players][controls]") {
     Input input;
     input.beginPoll();
@@ -77,10 +105,16 @@ TEST_CASE("the stick moves past its dead zone and the pad buttons add to it",
     REQUIRE(move.magnitude == Approx(0.5f)); // half way through the live range
 
     pad.axes[static_cast<usize>(PadAxis::LeftY)] = 0.0f;
+    // A pad's directional buttons walk only when bound to; by default they are the selector's.
     pad.buttons[static_cast<usize>(PadButton::DpadRight)] = true;
     input.setPad(1, pad);
-    move = readMoveInput(input, PlayBindings{}, false, 1);
+    REQUIRE_FALSE(readMoveInput(input, PlayBindings{}, false, 1).any());
+    PlayBindings walking;
+    walking.padRight = {PadButton::DpadRight};
+    move = readMoveInput(input, walking, false, 1);
     REQUIRE(move.direction == Vec2{1.0f, 0.0f});
+    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 1.0f;
+    input.setPad(1, pad);
 
     // Another pad, or none, does not see it; every pad does.
     REQUIRE_FALSE(readMoveInput(input, PlayBindings{}, false, 0).any());

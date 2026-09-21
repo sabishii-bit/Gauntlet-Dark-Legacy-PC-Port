@@ -18,14 +18,17 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
   "screen": "tower",
   "party": [
     {"player": 2, "class": "val", "color": "red", "name": "Kim", "level": 3, "crystals": [0, 5],
-     "gold": 120, "health": 250, "keys": 2, "potions": [1, 4]},
+     "gold": 120, "health": 250, "keys": 2, "slot": 5, "potions": [1, 4],
+     "powerups": [{"kind": 5, "flags": 524288}, {"kind": 7, "charge": 2.5, "strength": 60}]},
     {"class": "WAR"}
   ],
   "position": [19.3, -2, -60],
   "yaw": 1.5,
   "welcome": false,
+  "level": "G1",
   "items": [{"name": "KEY", "position": [1, 2, 3]}, {"name": "HAM", "position": [4, 5, 6]}]
 })");
+    REQUIRE(scenario.level == "G1");
     REQUIRE(scenario.tower.items.size() == 2);
     REQUIRE(scenario.tower.items[0].name == "KEY");
     REQUIRE(scenario.tower.items[1].position == Vec3{4.0f, 5.0f, 6.0f});
@@ -45,11 +48,16 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE(members[0].save.gold == 120);
     REQUIRE(members[0].save.health() == 250);
     REQUIRE(members[0].save.progress().inventory.keys == 2);
+    REQUIRE(members[0].slot == std::optional<usize>{5}); // kept in a slot when it names one
     REQUIRE(members[0].save.progress().inventory.nextPotion() == 4);
+    REQUIRE(members[0].save.progress().inventory.powerupCount() == 2);
+    REQUIRE(members[0].save.progress().inventory.powerup(5, 0x80000)->strength == 30.0f);
+    REQUIRE(members[0].save.progress().inventory.powerups[1].charge == 2.5f);
     REQUIRE(members[1].save.progress().inventory == Inventory{});
     REQUIRE(members[1].save.health() == 500);
     // The second takes the defaults: the next player, yellow, level one, named TEST.
     REQUIRE(members[1].player == 1);
+    REQUIRE_FALSE(members[1].slot.has_value());
     REQUIRE(members[1].save.name == "TEST");
     REQUIRE(members[1].save.color == 0);
     REQUIRE(members[1].save.experience() == 0);
@@ -60,6 +68,7 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE_FALSE(bare.tower.yaw.has_value());
     REQUIRE_FALSE(bare.tower.welcome.has_value());
     REQUIRE(bare.tower.items.empty());
+    REQUIRE(bare.level.empty()); // the tower
     REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{"keys": 12}]})"), FormatError);
     REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{}], "items": [{"name": "KEY"}]})"),
                       FormatError);

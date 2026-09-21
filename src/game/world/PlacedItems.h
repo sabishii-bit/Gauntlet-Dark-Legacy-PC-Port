@@ -141,6 +141,10 @@ public:
      * level has no such record or no archive its figure. */
     bool place(RenderDevice& device, std::string_view name, const Vec3& position,
                const WorldCollision* collision);
+    /** Drops the item of record number `record`, holding `amount` when that is over none
+     * (a chest's keys) rather than the record's own. */
+    bool placeRecord(RenderDevice& device, s32 record, const Vec3& position,
+                     const WorldCollision* collision, s32 amount = 0);
     /** Turns the figures and plays the bursts on by `seconds`. */
     void update(f32 seconds);
     usize effectCount() const { return m_effects.size(); }

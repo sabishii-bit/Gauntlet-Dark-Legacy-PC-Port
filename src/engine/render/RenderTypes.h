@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
@@ -39,7 +40,10 @@ struct TextureDesc {
     u32 width = 0;
     u32 height = 0;
     TextureFilter filter = TextureFilter::Linear;
-    TextureWrap wrap = TextureWrap::Repeat;
+    TextureWrap wrap = TextureWrap::Repeat; ///< across (u), and down too unless wrapV says
+    std::optional<TextureWrap> wrapV;       ///< down (v), when it differs from across
+
+    TextureWrap wrapDown() const { return wrapV.value_or(wrap); }
 };
 
 /** GPU texture created by RenderDevice::createTexture. */

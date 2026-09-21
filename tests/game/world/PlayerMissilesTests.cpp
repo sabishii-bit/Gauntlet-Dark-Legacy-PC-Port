@@ -1,4 +1,8 @@
+#include <cmath>
 #include <numbers>
+#include <vector>
+
+#include <array>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -51,6 +55,24 @@ TEST_CASE("each class throws its own weapon, the tier its level earns",
     REQUIRE(MissileSpec::byMagic(2));
     REQUIRE(MissileSpec::byMagic(14));
     REQUIRE_FALSE(MissileSpec::byMagic(0));
+}
+
+TEST_CASE("a spread throw fans out fifteen degrees apart, straight on first",
+          "[game][world][missiles]") {
+    const Vec3 ahead{0.0f, 0.0f, 1.0f};
+    REQUIRE(PlayerMissiles::spread(ahead, 1) == std::vector<Vec3>{ahead});
+    REQUIRE(PlayerMissiles::spread(ahead, 0).size() == 1);
+    const std::vector<Vec3> three = PlayerMissiles::spread(ahead, 3);
+    REQUIRE(three.size() == 3);
+    REQUIRE(three[0] == ahead);
+    REQUIRE(three[1].x == Approx(std::sin(PlayerMissiles::kSpreadStep)));
+    REQUIRE(three[2].x == Approx(-std::sin(PlayerMissiles::kSpreadStep)));
+    REQUIRE(three[1].z == Approx(std::cos(PlayerMissiles::kSpreadStep)));
+    const std::vector<Vec3> five = PlayerMissiles::spread(ahead, 5);
+    REQUIRE(five.size() == 5);
+    REQUIRE(five[3].x == Approx(0.5f)); // thirty degrees
+    REQUIRE(glm::length(five[4]) == Approx(1.0f));
+    REQUIRE(PlayerMissiles::spread(ahead, 9).size() == 5);
 }
 
 TEST_CASE("strength sets a missile's pace and holding the attack its reach",
@@ -111,10 +133,12 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
         missiles.update(kStep, &collision);
     }
     REQUIRE(missiles.count() == 0);
-    const std::vector<Vec3> impacts = missiles.takeImpacts();
+    const std::vector<MissileImpact> impacts = missiles.takeImpacts();
     REQUIRE(impacts.size() == 1);
-    REQUIRE(impacts[0].z > 8.0f);
-    REQUIRE(impacts[0].z < 10.5f);
+    REQUIRE(impacts[0].position.z > 8.0f);
+    REQUIRE(impacts[0].position.z < 10.5f);
+    REQUIRE(impacts[0].owner == 1);
+    REQUIRE(impacts[0].potion == 0);
     REQUIRE(missiles.takeImpacts().empty());
 
     // Over a floor, the lob comes down onto it.
@@ -129,13 +153,64 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
         missiles.update(kStep, &ground);
     }
     REQUIRE(missiles.count() == 0);
-    const std::vector<Vec3> landed = missiles.takeImpacts();
+    const std::vector<MissileImpact> landed = missiles.takeImpacts();
     REQUIRE(landed.size() == 1);
-    REQUIRE(landed[0].z > 15.0f); // past its reach, where the floor is lower than its drop
-    REQUIRE(landed[0].y < 1.5f);
+    REQUIRE(landed[0].position.z > 15.0f); // past its reach, the floor lower than its drop
+    REQUIRE(landed[0].position.y < 1.5f);
+    // A potion flies off at the velocity it is given and says what it was where it lands.
+    MissileLaunch toss = axeFrom(Vec3{0.0f, 4.0f, 0.0f});
+    toss.spec = &MissileSpec::potion();
+    toss.velocity = Vec3{0.0f, 3.5f, 3.5f};
+    toss.potion = 4;
+    REQUIRE(missiles.launch(toss));
+    REQUIRE(missiles.missile(0).velocity == Vec3{0.0f, 3.5f, 3.5f});
+    for (int i = 0; i < 180 && missiles.count() > 0; ++i) {
+        missiles.update(kStep, &ground);
+    }
+    const std::vector<MissileImpact> burst = missiles.takeImpacts();
+    REQUIRE(burst.size() == 1);
+    REQUIRE(burst[0].potion == 4);
+    REQUIRE(burst[0].position.z > 2.0f);
+    REQUIRE(burst[0].position.z < 8.0f);
     missiles.launch(axeFrom(Vec3{0.0f, 3.0f, 0.0f}));
     missiles.clear();
     REQUIRE(missiles.count() == 0);
+}
+
+TEST_CASE("what stands in a missile's way stops it and learns what hit it",
+          "[game][world][missiles]") {
+    REQUIRE(PlayerMissiles::damageFor(0) == PlayerMissiles::kLeastDamage);
+    REQUIRE(PlayerMissiles::damageFor(1000) == PlayerMissiles::kMostDamage);
+    REQUIRE(PlayerMissiles::damageFor(400) == 11.0f);
+    REQUIRE(PlayerMissiles::damageFor(5000) == PlayerMissiles::kMostDamage);
+    PlayerMissiles missiles;
+    MissileLaunch launch = axeFrom(Vec3{0.0f, 2.0f, 0.0f});
+    launch.damage = 11.0f;
+    REQUIRE(missiles.launch(launch));
+    // A barrel ahead and one off to the side, which it passes.
+    const std::array<MissileTarget, 2> targets{
+        MissileTarget{4, Vec3{6.0f, 0.0f, 5.0f}, 1.0f, 3.0f},
+        MissileTarget{9, Vec3{0.0f, 0.0f, 8.0f}, 1.0f, 3.0f}};
+    std::vector<MissileImpact> impacts;
+    for (int i = 0; i < 120 && impacts.empty(); ++i) {
+        missiles.update(kStep, nullptr, targets);
+        impacts = missiles.takeImpacts();
+    }
+    REQUIRE(impacts.size() == 1);
+    REQUIRE(impacts[0].target == 9);
+    REQUIRE(impacts[0].damage == 11.0f);
+    REQUIRE(impacts[0].owner == 1);
+    REQUIRE(impacts[0].position.z < 8.0f);
+    REQUIRE(impacts[0].position.z > 5.5f);
+    REQUIRE(missiles.count() == 0);
+    // Thrown over a target, it flies on.
+    launch.position = Vec3{0.0f, 9.0f, 0.0f};
+    REQUIRE(missiles.launch(launch));
+    for (int i = 0; i < 20; ++i) {
+        missiles.update(kStep, nullptr, targets);
+    }
+    REQUIRE(missiles.takeImpacts().empty());
+    REQUIRE(missiles.count() == 1);
 }
 
 } // namespace

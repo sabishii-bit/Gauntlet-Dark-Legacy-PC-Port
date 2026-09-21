@@ -81,6 +81,9 @@ struct ItemInfo {
     static constexpr s32 kContainer = 2; ///< a chest or barrel
     static constexpr s32 kGenerator = 3;
     static constexpr s32 kTrigger = 5;   ///< a spot that drives a world object
+    static constexpr s32 kGate = 7;      ///< a door a key opens
+    static constexpr s32 kTrap = 8;
+    static constexpr s32 kChoiceList = -1; ///< not an item: a list to pick one from
     static constexpr s32 kCrystal = 15;  ///< the powerup subtype of a realm's crystal
 
     s32 type = 0;
@@ -88,6 +91,9 @@ struct ItemInfo {
     std::string name;
     f32 radius = 0.0f;
     f32 height = 0.0f;
+    f32 xSize = 0.0f; ///< half its box across, for the box-shaped
+    f32 zSize = 0.0f; ///< and along
+    s32 collisionType = 0;
     Vec3 collisionOffset{0.0f, 0.0f, 0.0f};
     u32 objectFlags = 0;
     u32 properties = 0;
@@ -97,6 +103,7 @@ struct ItemInfo {
     s32 activeType = 0;
     s32 activeOff = 0;
     s32 activeOn = 0;
+    std::vector<s32> choices; ///< a choice list's item records
 };
 
 /** One item the level places: which kind, the party it takes to show it, its own name when

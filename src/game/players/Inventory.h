@@ -13,8 +13,11 @@ struct PowerupSlot {
     s32 kind = 0;        ///< the item subtype it came from
     f32 charge = 0.0f;   ///< its stat boost, or the uses a charged one has left
     u32 flags = 0;       ///< which of its kind it is
+    bool on = true;      ///< worn; the selector over the status box takes it off and on
 
     bool held() const { return strength != 0.0f; }
+    /** Whether it is doing anything: held and switched on. */
+    bool working() const { return held() && on; }
     bool operator==(const PowerupSlot&) const = default;
 };
 
@@ -35,6 +38,10 @@ struct Inventory {
 
     /** Takes what keys there is room for; returns how many. */
     s32 addKeys(s32 count);
+    /** Spends a key on a lock; false with none to spend. */
+    bool spendKey();
+    /** Takes the next potion out to be used; its kind, or 0 with none. */
+    s32 takePotion();
     /** Takes what potions of `kind` there is room for; returns how many. */
     s32 addPotions(s32 kind, s32 count);
     /** The kind of the potion that shows and is thrown next, or 0 with none. */
@@ -43,9 +50,12 @@ struct Inventory {
     /** Takes a powerup: one already held of the same kind and flags gains its charge and
      * half its strength (or becomes for good); else it fills a free slot, or the weakest. */
     void addPowerup(s32 kind, u32 flags, f32 charge, f32 strength);
-    /** The held powerup of `kind` with any of `mask`, or null. */
+    /** The powerup of `kind` with any of `mask` that is held and switched on, or null. */
     const PowerupSlot* powerup(s32 kind, u32 mask) const;
     usize powerupCount() const;
+    /** The next held slot after `from` going by `step` (1 or -1), wrapping; -1 with none
+     * held. From -1 the search starts at either end. */
+    s32 nextHeld(s32 from, s32 step) const;
 
     bool operator==(const Inventory&) const = default;
 };

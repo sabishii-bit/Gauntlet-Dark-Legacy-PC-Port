@@ -23,6 +23,7 @@ struct CharacterSave {
     u16 classUnlock = 0; ///< one bit per unlockable class, from the ninth
     s32 gold = 0;
     s32 levelTotal = 0;
+    std::vector<s32> helpSeen; ///< the help messages already shown to it, in order
     std::array<ClassProgress, kClassCount> classes{};
 
     const ClassProgress& progress() const { return classes[static_cast<usize>(character)]; }

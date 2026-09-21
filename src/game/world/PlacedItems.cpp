@@ -6,19 +6,10 @@
 
 #include "engine/core/Log.h"
 
+#include "game/world/ItemFigure.h"
+
 namespace gdl::game {
 
-namespace {
-
-/** The instance's pitch, yaw and roll as the original stacks them onto its matrix. */
-Mat4 placement(const Vec3& position, const Vec3& rotation) {
-    Mat4 transform = glm::translate(Mat4{1.0f}, position);
-    transform = glm::rotate(transform, rotation.y, Vec3{0.0f, 1.0f, 0.0f});
-    transform = glm::rotate(transform, -rotation.x, Vec3{1.0f, 0.0f, 0.0f});
-    return glm::rotate(transform, rotation.z, Vec3{0.0f, 0.0f, 1.0f});
-}
-
-} // namespace
 
 bool PlacedItems::Item::shownTo(s32 players) const {
     if (minPlayers > kExactPlayersMark) {
@@ -95,7 +86,7 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
                 item.position.y = floor->y + kFloorLift;
             }
         }
-        item.transform = placement(item.position, instance.rotation);
+        item.transform = itemPlacement(item.position, instance.rotation);
         item.visible = item.shownTo(m_players);
         m_items.push_back(std::move(item));
     }
@@ -164,11 +155,21 @@ bool PlacedItems::place(RenderDevice& device, std::string_view name, const Vec3&
         log::warn("Placed items: the level has no item record named {}", name);
         return false;
     }
+    return placeRecord(device, static_cast<s32>(info - m_infos.begin()), position, collision);
+}
+
+bool PlacedItems::placeRecord(RenderDevice& device, s32 record, const Vec3& position,
+                              const WorldCollision* collision, s32 amount) {
+    if (record < 0 || static_cast<usize>(record) >= m_infos.size() ||
+        m_infos[static_cast<usize>(record)].type != ItemInfo::kPowerup) {
+        return false;
+    }
+    const ItemInfo* info = &m_infos[static_cast<usize>(record)];
     Item item;
     item.name = info->name;
-    item.info = static_cast<s32>(info - m_infos.begin());
+    item.info = record;
     item.subtype = info->subtype;
-    item.value = info->value;
+    item.value = amount > 0 ? amount : info->value;
     item.flags = info->properties;
     item.strength = static_cast<f32>(info->activeOn);
     item.radius = info->radius;
@@ -184,7 +185,7 @@ bool PlacedItems::place(RenderDevice& device, std::string_view name, const Vec3&
             item.position.y = floor->y + kFloorLift;
         }
     }
-    item.transform = placement(item.position, Vec3{0.0f, 0.0f, 0.0f});
+    item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
     item.visible = true;
     m_items.push_back(std::move(item));
     return true;

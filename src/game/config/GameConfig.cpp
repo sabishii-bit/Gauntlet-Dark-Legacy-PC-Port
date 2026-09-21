@@ -1,5 +1,6 @@
 #include "game/config/GameConfig.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <numbers>
@@ -9,6 +10,7 @@
 #include "engine/core/Error.h"
 #include "engine/core/Log.h"
 #include "engine/io/File.h"
+#include "engine/platform/Paths.h"
 
 namespace gdl::game {
 
@@ -16,6 +18,7 @@ namespace {
 
 constexpr std::string_view kSettingsFolder = "GauntletDarkLegacy";
 constexpr std::string_view kSettingsFile = "settings.json";
+constexpr std::string_view kSavesFolder = "saves";
 
 using Json = nlohmann::json;
 
@@ -129,6 +132,9 @@ void GameConfig::mergeJson(std::string_view json) {
         read(s, "directory", save.directory);
         read(s, "slots", save.slots);
     }
+    if (root.contains("game")) {
+        read(root.at("game"), "difficulty", difficulty.level);
+    }
     if (root.contains("controls")) {
         const Json& c = root.at("controls");
         if (c.contains("keyboard")) {
@@ -161,6 +167,12 @@ void GameConfig::mergeJson(std::string_view json) {
                 readKeys(k, "left", play.left);
                 readKeys(k, "right", play.right);
                 readKeys(k, "attack", play.attack);
+                readKeys(k, "usePotion", play.usePotion);
+                readKeys(k, "throwPotion", play.throwPotion);
+                readKeys(k, "selectorUp", play.selectorUp);
+                readKeys(k, "selectorDown", play.selectorDown);
+                readKeys(k, "selectorLeft", play.selectorLeft);
+                readKeys(k, "selectorRight", play.selectorRight);
             }
             if (moves.contains("pad")) {
                 const Json& p = moves.at("pad");
@@ -169,6 +181,12 @@ void GameConfig::mergeJson(std::string_view json) {
                 readButtons(p, "left", play.padLeft);
                 readButtons(p, "right", play.padRight);
                 readButtons(p, "attack", play.padAttack);
+                readButtons(p, "usePotion", play.padUsePotion);
+                readButtons(p, "throwPotion", play.padThrowPotion);
+                readButtons(p, "selectorUp", play.padSelectorUp);
+                readButtons(p, "selectorDown", play.padSelectorDown);
+                readButtons(p, "selectorLeft", play.padSelectorLeft);
+                readButtons(p, "selectorRight", play.padSelectorRight);
             }
             read(moves, "stickDeadZone", play.stickDeadZone);
         }
@@ -198,6 +216,7 @@ std::string GameConfig::toJson() const {
                      {"effectsVolume", audio.effectsVolume}};
     root["text"] = {{"language", text.language}};
     root["save"] = {{"directory", save.directory}, {"slots", save.slots}};
+    root["game"] = {{"difficulty", difficulty.level}};
     root["controls"] = {{"keyboard",
                          {{"up", keyNames(menu.up)},
                           {"down", keyNames(menu.down)},
@@ -221,13 +240,25 @@ std::string GameConfig::toJson() const {
                             {"down", keyNames(play.down)},
                             {"left", keyNames(play.left)},
                             {"right", keyNames(play.right)},
-                            {"attack", keyNames(play.attack)}}},
+                            {"attack", keyNames(play.attack)},
+                            {"usePotion", keyNames(play.usePotion)},
+                            {"throwPotion", keyNames(play.throwPotion)},
+                            {"selectorUp", keyNames(play.selectorUp)},
+                            {"selectorDown", keyNames(play.selectorDown)},
+                            {"selectorLeft", keyNames(play.selectorLeft)},
+                            {"selectorRight", keyNames(play.selectorRight)}}},
                           {"pad",
                            {{"up", buttonNames(play.padUp)},
                             {"down", buttonNames(play.padDown)},
                             {"left", buttonNames(play.padLeft)},
                             {"right", buttonNames(play.padRight)},
-                            {"attack", buttonNames(play.padAttack)}}},
+                            {"attack", buttonNames(play.padAttack)},
+                            {"usePotion", buttonNames(play.padUsePotion)},
+                            {"throwPotion", buttonNames(play.padThrowPotion)},
+                            {"selectorUp", buttonNames(play.padSelectorUp)},
+                            {"selectorDown", buttonNames(play.padSelectorDown)},
+                            {"selectorLeft", buttonNames(play.padSelectorLeft)},
+                            {"selectorRight", buttonNames(play.padSelectorRight)}}},
                           {"stickDeadZone", play.stickDeadZone}}}};
     return root.dump(2) + "\n";
 }
@@ -237,15 +268,26 @@ void GameConfig::saveFile(const std::filesystem::path& file) const {
     writeTextFile(file, toJson());
 }
 
+f32 DifficultyConfig::gain() const {
+    const auto named = std::ranges::find(kNames, level);
+    return named != kNames.end() ? kGains[static_cast<usize>(named - kNames.begin())] : 1.0f;
+}
+
 f32 GameConfig::horizontalFovRadians() const {
     return camera.horizontalFovDegrees * (std::numbers::pi_v<f32> / 180.0f);
 }
 
 std::filesystem::path GameConfig::saveDirectory() const {
-    if (!save.directory.empty()) {
-        return {save.directory};
+    return saveDirectory(paths::executableDirectory());
+}
+
+std::filesystem::path GameConfig::saveDirectory(
+    const std::filesystem::path& gameDirectory) const {
+    if (save.directory.empty()) {
+        return gameDirectory / kSavesFolder;
     }
-    return userSettingsPath().parent_path() / "saves";
+    const std::filesystem::path named{save.directory};
+    return named.is_absolute() ? named : gameDirectory / named;
 }
 
 std::filesystem::path GameConfig::userSettingsPath() {

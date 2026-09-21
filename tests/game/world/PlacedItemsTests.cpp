@@ -194,11 +194,18 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
     REQUIRE(items.place(device, "KEYRING", Vec3{500.0f, 0.0f, 500.0f}, nullptr));
     REQUIRE(items.place(device, "POT_GRE", Vec3{520.0f, 0.0f, 500.0f}, nullptr));
     REQUIRE(items.size() == before + 2);
-    const PlacedItems::Item& ring = items.item(before);
+    const PlacedItems::Item ring = items.item(before);
     REQUIRE(ring.visible);
     REQUIRE(ring.subtype == 2);
     REQUIRE(ring.value == 3);
     REQUIRE(items.item(before + 1).flags == 4); // the green potion's kind
+    // By its record's number too, as a chest drops what it held, holding as many as said.
+    const s32 keyRecord = items.item(before).info;
+    REQUIRE_FALSE(items.placeRecord(device, -1, Vec3{0.0f}, nullptr));
+    REQUIRE_FALSE(items.placeRecord(device, 9999, Vec3{0.0f}, nullptr));
+    REQUIRE(items.placeRecord(device, keyRecord, Vec3{540.0f, 0.0f, 500.0f}, nullptr, 5));
+    REQUIRE(items.item(before + 2).value == 5);
+    REQUIRE(items.item(before + 2).name == "KEYRING");
 
     Collector on;
     on.position = Vec3{500.0f, 0.0f, 500.0f};

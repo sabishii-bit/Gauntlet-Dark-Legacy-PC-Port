@@ -28,6 +28,19 @@ LevelInfo parseLevel(const nlohmann::json& json) {
     level.audioIndex = json.value("audioIndex", -1);
     level.musicVolume = json.value("musicVolume", 1.0f);
     level.soundVolume = json.value("soundVolume", 1.0f);
+    if (const auto tuning = json.find("tuning"); tuning != json.end() && tuning->is_object()) {
+        // A zero stands for the difficulty, itself one when it is zero.
+        const f32 difficulty = tuning->value("difficulty", 0.0f);
+        level.tuning.difficulty = difficulty != 0.0f ? difficulty : 1.0f;
+        const auto scaled = [&](const char* key) {
+            const f32 value = tuning->value(key, 0.0f);
+            return value != 0.0f ? value : level.tuning.difficulty;
+        };
+        const f32 damage = tuning->value("damage", 0.0f);
+        level.tuning.damage = damage != 0.0f ? damage : 1.0f;
+        level.tuning.trapRate = scaled("trapRate");
+        level.tuning.trapDamage = scaled("trapDamage");
+    }
     level.ambient = json.value("ambient", 1.0f);
     level.lightDirection = readVec3(json.value("lightDirection", nlohmann::json{}),
                                     level.lightDirection);
@@ -119,6 +132,11 @@ std::string_view WorldData::soundName(s32 index) const {
         return {};
     }
     return m_sounds[static_cast<usize>(index)];
+}
+
+f32 LevelTuning::trapTimeScale(f32 gain) const {
+    const f32 rate = trapRate * gain;
+    return rate > 0.0f ? 1.0f / rate : 1.0f;
 }
 
 } // namespace gdl

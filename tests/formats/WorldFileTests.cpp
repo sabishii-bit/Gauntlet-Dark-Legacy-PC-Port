@@ -325,6 +325,27 @@ TEST_CASE("the tower's collision triangles unfold into their planes", "[formats]
     }
 }
 
+TEST_CASE("an item record of no type lists the records a container picks among",
+          "[formats][world]") {
+    std::vector<u8> bytes = sampleWorld(false);
+    const usize record = bytes.size() - kItemInstance - kItemInfo;
+    put32(bytes, record, static_cast<u32>(ItemInfoRecord::kChoiceList));
+    put32(bytes, record + 4, 3); // how many it lists
+    put16(bytes, record + 8, 94);
+    put16(bytes, record + 10, 98);
+    put16(bytes, record + 12, 97);
+    put16(bytes, record + 14, 95); // past its count
+    const WorldFile world = WorldFile::parse(bytes);
+    REQUIRE(world.itemInfos.size() == 1);
+    REQUIRE(world.itemInfos[0].type == ItemInfoRecord::kChoiceList);
+    REQUIRE(world.itemInfos[0].choices == std::vector<s16>{94, 98, 97});
+    // An ordinary record lists nothing, and keeps its sizes.
+    REQUIRE(WorldFile::parse(sampleWorld(false)).itemInfos[0].choices.empty());
+    // A count beyond what a record can hold is cut to that.
+    put32(bytes, record + 4, 4000);
+    REQUIRE(WorldFile::parse(bytes).itemInfos[0].choices.size() == ItemInfoRecord::kMostChoices);
+}
+
 TEST_CASE("a world file without the extended header still parses", "[formats][world]") {
     const WorldFile world = WorldFile::parse(sampleWorld(false));
     REQUIRE(world.objects.size() == 2);

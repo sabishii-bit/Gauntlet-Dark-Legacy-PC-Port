@@ -1,0 +1,109 @@
+#include <array>
+#include <filesystem>
+#include <vector>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include "engine/assets/MessageTable.h"
+#include "engine/io/File.h"
+
+#include "TestSupport.h"
+#include "game/screens/HelpMessages.h"
+
+namespace {
+
+using namespace gdl;
+using namespace gdl::game;
+
+void loadStrings(std::string_view name, MessageTable& strings) {
+    const auto dir = test::scratchDirectory(name);
+    writeTextFile(dir / "english.json", R"({
+  "fonts": ["font32"],
+  "messages": [
+    {"name": "USEKEYOPENDOOR", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["USE KEY", "TO OPEN DOORS"]},
+    {"name": "USEKEYOPENCHEST", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["USE KEY TO OPEN", "TREASURE CHESTS"]},
+    {"name": "HEALTHFULL", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["YOUR HEALTH IS FULL"]}],
+  "lists": []
+})");
+    REQUIRE(strings.load(dir / "english.json"));
+}
+
+TEST_CASE("the help messages are the original's, with the narrator's lines", "[game][help]") {
+    const HelpMessageSpec* door = HelpMessages::specOf(HelpMessages::kDoorNeedsKey);
+    REQUIRE(door != nullptr);
+    REQUIRE(door->text == "USEKEYOPENDOOR");
+    REQUIRE(door->voice == "S_USEKEY");
+    REQUIRE_FALSE(door->perPlayer);
+    REQUIRE(HelpMessages::specOf(HelpMessages::kChestNeedsKey)->voice == "S_USEKEY2");
+    REQUIRE(HelpMessages::specOf(HelpMessages::kHealthFull)->perPlayer);
+    REQUIRE(HelpMessages::specOf(999) == nullptr);
+    REQUIRE(HelpMessages::inkOf(1) == Color::rgba(0, 0, 0x1F));
+    REQUIRE(HelpMessages::inkOf(7) == HelpMessages::inkOf(-1));
+}
+
+TEST_CASE("a help message goes up once for the party, a second a line and a half more",
+          "[game][help]") {
+    MessageTable strings;
+    loadStrings("help-once", strings);
+    HelpMessages help;
+    std::vector<s32> first;
+    std::vector<s32> second;
+    const std::array<HelpReader, 2> party{HelpReader{0, &first}, HelpReader{2, &second}};
+    // Without its strings it has nothing to say.
+    REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 0, party) == nullptr);
+    help.setTexts(&strings);
+    REQUIRE(help.post(999, 0, party) == nullptr);
+    const HelpMessageSpec* spec = help.post(HelpMessages::kDoorNeedsKey, 2, party);
+    REQUIRE(spec != nullptr);
+    REQUIRE(spec->voice == "S_USEKEY");
+    REQUIRE(help.showing());
+    REQUIRE(help.player() == 2);
+    REQUIRE(help.lines() == std::vector<std::string>{"USE KEY", "TO OPEN DOORS"});
+    REQUIRE(first == std::vector<s32>{HelpMessages::kDoorNeedsKey}); // everyone has seen it
+    REQUIRE(second == first);
+    // One at a time.
+    REQUIRE(help.post(HelpMessages::kChestNeedsKey, 0, party) == nullptr);
+    help.update(2 * HelpMessages::kTicksPerLine + HelpMessages::kTicksOver - 1);
+    REQUIRE(help.showing());
+    help.update(1);
+    REQUIRE_FALSE(help.showing());
+    // Seen, it does not come again; another may at once, the first pause being none.
+    REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 0, party) == nullptr);
+    REQUIRE(help.post(HelpMessages::kChestNeedsKey, 0, party) != nullptr);
+    REQUIRE(first == std::vector<s32>{HelpMessages::kDoorNeedsKey, HelpMessages::kChestNeedsKey});
+    help.update(1000);
+    // After the second, a pause before the next.
+    std::vector<s32> fresh;
+    const std::array<HelpReader, 1> newcomer{HelpReader{1, &fresh}};
+    REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 1, newcomer) == nullptr);
+    help.update(HelpMessages::kPauses[1]);
+    REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 1, newcomer) != nullptr);
+    help.clear();
+    REQUIRE_FALSE(help.showing());
+}
+
+TEST_CASE("someone new to the party is told what the others already know", "[game][help]") {
+    MessageTable strings;
+    loadStrings("help-newcomer", strings);
+    HelpMessages help;
+    help.setTexts(&strings);
+    std::vector<s32> old{HelpMessages::kDoorNeedsKey};
+    std::vector<s32> fresh;
+    const std::array<HelpReader, 2> party{HelpReader{0, &old}, HelpReader{1, &fresh}};
+    REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 0, party) != nullptr);
+    REQUIRE(fresh == std::vector<s32>{HelpMessages::kDoorNeedsKey});
+    REQUIRE(old.size() == 1);
+    help.clear();
+    // A player's own message looks only at that player.
+    std::vector<s32> mine{HelpMessages::kHealthFull};
+    std::vector<s32> theirs;
+    const std::array<HelpReader, 2> pair{HelpReader{0, &mine}, HelpReader{1, &theirs}};
+    REQUIRE(help.post(HelpMessages::kHealthFull, 0, pair) == nullptr);
+    REQUIRE(help.post(HelpMessages::kHealthFull, 1, pair) != nullptr);
+    REQUIRE(theirs == std::vector<s32>{HelpMessages::kHealthFull});
+}
+
+} // namespace

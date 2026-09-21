@@ -64,6 +64,9 @@ std::vector<u8> sampleWad() {
     level.f32At(0x88, 2000.0f);
     level.u16At(0x8E, 25);
     level.f32At(0x94, 0.75f);
+    level.f32At(0xA4, 1.25f); // the damage multiplier
+    level.f32At(0xA8, 2.0f);  // the difficulty
+    level.f32At(0xD8, 1.5f);  // how fast its traps cycle
     level.f32At(0x98, 1.0f);
     level.f32At(0xEC, 0.8f);
     level.f32At(0xF0, -1.0f);
@@ -165,6 +168,12 @@ TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds"
     REQUIRE(level.mapIndex == -1);
     REQUIRE(level.maxEnemies == 25);
     REQUIRE(level.musicVolume == Approx(0.75f));
+    REQUIRE(LevelTuningRecord::kNames[2] == "damage");
+    REQUIRE(level.tuning.values[2] == Approx(1.25f));
+    REQUIRE(level.tuning.values[3] == Approx(2.0f));
+    REQUIRE(LevelTuningRecord::kNames[15] == "trapRate");
+    REQUIRE(level.tuning.values[15] == Approx(1.5f));
+    REQUIRE(level.tuning.values[16] == 0.0f); // left to the difficulty
     REQUIRE(level.ambient == Approx(0.8f));
     REQUIRE(level.lightDirection == Vec3{-1.0f, -6.0f, 2.0f});
     REQUIRE(level.lightColor.y == Approx(0.9f));

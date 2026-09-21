@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+#include <optional>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -19,8 +21,9 @@
 #include "game/screens/MovieScene.h"
 #include "game/screens/PlayerSelectScene.h"
 #include "game/screens/SmokeTestScene.h"
-#include "game/screens/TowerScene.h"
-#include "game/world/TowerWorld.h"
+#include "engine/ui/Canvas.h"
+#include "game/screens/PlayScene.h"
+#include "game/world/LevelWorld.h"
 #include "game/screens/TitleScene.h"
 
 namespace gdl::game {
@@ -44,7 +47,13 @@ private:
     void updateTitle(f64 deltaSeconds);
     void updateSelect(f64 deltaSeconds);
     void updateTower(f64 deltaSeconds);
-    bool startTower(std::span<const PartyMember> party, const TowerOptions& options = {});
+    void finishJourney();
+    /** Writes the party in play back into its save slots. */
+    void keepParty();
+    bool startTower(std::span<const PartyMember> party, const PlayOptions& options = {});
+    /** Loads `level` and brings the party into it. */
+    bool startLevel(const LevelRef& level, std::span<const PartyMember> party,
+                    const PlayOptions& options = {});
     bool startScenario(const std::filesystem::path& file);
     bool startPlayerSelect(s32 startingPlayer);
     s32 playerPressingStart() const;
@@ -61,8 +70,21 @@ private:
     MovieScene m_movie;
     TitleScene m_title;
     PlayerSelectScene m_select;
-    TowerWorld m_towerWorld;
-    TowerScene m_tower;
+    LevelCatalog m_levels;
+    LevelWorld m_towerWorld; ///< the level in play: the tower until the party travels
+    PlayScene m_tower;
+    /** A journey between levels: the picture is drawn over an empty view for a frame, so
+     * that it is on screen while the next level loads, which holds everything up. */
+    struct Journey {
+        LevelRef destination;
+        std::vector<PartyMember> party;
+        PlayOptions options;
+        bool shown = false; ///< the covering frame has been drawn
+    };
+    std::optional<Journey> m_journey;
+    SaveSlots m_saves; ///< where the party in play is kept
+    TransitionScreen m_loadingPicture;
+    Canvas m_canvas;
     SmokeTestScene m_smokeTest;
     bool m_movieActive = false;
     bool m_titleWarned = false;

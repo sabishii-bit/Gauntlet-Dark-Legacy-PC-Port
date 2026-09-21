@@ -45,7 +45,8 @@ bool TextureSet::load(const std::filesystem::path& directory) {
             entry.flags = bitmap.value("flags", 0U);
             entry.frames = bitmap.value("frames", 0U);
             entry.halfResolution = bitmap.value("halfResolution", false);
-            entry.clamp = bitmap.value("clampU", false) || bitmap.value("clampV", false);
+            entry.clampU = bitmap.value("clampU", false);
+            entry.clampV = bitmap.value("clampV", false);
             entry.file = directory / bitmap.at("file").get<std::string>();
             m_entries.push_back(std::move(entry));
         }
@@ -99,10 +100,14 @@ const Texture& TextureSet::texture(RenderDevice& device, u32 index) {
     std::unique_ptr<Texture>& texture = m_textures[index];
     if (!texture) {
         const Image& pixels = image(index);
-        const TextureWrap wrap =
-            m_entries[index].clamp ? TextureWrap::ClampToEdge : TextureWrap::Repeat;
+        // Each way wraps or clamps on its own: ground may tile across and not down.
+        const auto wrapOf = [](bool clamp) {
+            return clamp ? TextureWrap::ClampToEdge : TextureWrap::Repeat;
+        };
         texture = device.createTexture(
-            TextureDesc{pixels.width, pixels.height, TextureFilter::Linear, wrap}, pixels.pixels);
+            TextureDesc{pixels.width, pixels.height, TextureFilter::Linear,
+                        wrapOf(m_entries[index].clampU), wrapOf(m_entries[index].clampV)},
+            pixels.pixels);
     }
     return *texture;
 }

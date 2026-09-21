@@ -13,13 +13,26 @@ namespace gdl::game {
 /** What a player's stick asks of the body. */
 enum class PlayerMotion : u8 { Stand, Walk, Run };
 
+/** What a player's buttons ask of it, the first that is held winning. */
+enum class PlayerDeed : u8 {
+    None,
+    Attack,
+    UsePotion,
+    ThrowPotion,
+    Die,
+    Flinch, ///< struck by spikes or a blade
+    Reel    ///< stunned, as by a fire trap
+};
+
 /**
  * The actions a character's body plays, sequenced the way the original game does: the
  * entrance once as the level begins, the stance loop, a fidget after a minute standing still
  * and a second one twenty seconds later that then loops, the two halves of the walk and run
  * cycles taking turns, and the throw of its weapon while the attack is held (a wind-up cut
  * short at its second frame, the release, whose end lets the weapon go, and the recovery,
- * after which the next throw starts or the body eases back to its stance). Each tick the
+ * after which the next throw starts or the body eases back to its stance), and a potion
+ * used where it stands or thrown (a raising of the hand, then a release whose start is the
+ * moment the magic goes off or the bottle flies). Each tick the
  * request becomes a decision (which action, when it may cut in, whether it loops, how long
  * it blends), the sequence steps, and the pose is evaluated for drawing.
  */
@@ -40,14 +53,23 @@ public:
         ThrowRelease,
         ThrowMovingRelease,
         ThrowRecover,
-        ThrowMovingRecover
+        ThrowMovingRecover,
+        UsePotion,          ///< the hand raised
+        UsePotionRelease,
+        ThrowPotion,
+        ThrowPotionRelease,
+        Death,              ///< falls and stays down
+        HitReact,           ///< flinches from spikes or a blade
+        Stun                ///< reels, stunned
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 15;
+    static constexpr usize kActionCount = 22;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
-        "READY", "IDLE1",   "IDLE2",   "IDLE2_LOOP", "WALK1",  "WALK2",   "RUN1",   "RUN2",
-        "START", "THROW1S", "THROW2S", "THROW1",     "THROW2", "THROW1R", "THROW2R"};
+        "READY",  "IDLE1",  "IDLE2",        "IDLE2_LOOP",  "WALK1",  "WALK2",   "RUN1",
+        "RUN2",   "START",  "THROW1S",      "THROW2S",     "THROW1", "THROW2",  "THROW1R",
+        "THROW2R", "MAGICS", "MAGICR",      "THROWPOTIONS", "THROWPOTIONR", "DEATH",
+        "HITREACT", "STUN1"};
     static constexpr f32 kReleaseFrame = 2.0f; ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -62,13 +84,27 @@ public:
 
     /** Steps `ticks` of the game clock (`seconds` long) under `motion`, throwing while
      * `attack` is held. */
-    void update(PlayerMotion motion, s32 ticks, f32 seconds, bool attack = false);
+    void update(PlayerMotion motion, s32 ticks, f32 seconds, bool attack = false) {
+        update(motion, ticks, seconds, attack ? PlayerDeed::Attack : PlayerDeed::None);
+    }
+    void update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed);
 
     static PlayerMotion motionFor(f32 stickMagnitude);
 
     Action action() const { return m_current; }
     /** Whether the body is anywhere in a throw; its feet stay where they are meanwhile. */
     bool throwing() const { return isThrow(m_current); }
+    /** Whether the body is busy with a potion. */
+    bool conjuring() const {
+        return m_current >= Action::UsePotion && m_current <= Action::ThrowPotionRelease;
+    }
+    /** Whether the body is falling dead or lies dead; nothing else is asked of it then. */
+    bool dying() const { return m_current == Action::Death; }
+    /** Whether it has finished falling (at once for a class with no such sequence). */
+    bool dead() const { return m_dead; }
+    /** Whether this tick's step began a potion's release: its magic goes off, or it flies. */
+    bool potionUsed() const { return m_potionUsed; }
+    bool potionThrown() const { return m_potionThrown; }
     /** Whether the weapon has left the hand and the body is recovering from the throw. */
     bool recovering() const {
         return m_current == Action::ThrowRecover || m_current == Action::ThrowMovingRecover;
@@ -78,7 +114,10 @@ public:
     /** How long the attack had been going when the weapon was let go. */
     f32 attackSeconds() const { return m_attackSeconds; }
     /** How much of its pace the current action leaves the body. */
-    f32 moveScale() const { return throwing() ? 0.0f : 1.0f; }
+    f32 moveScale() const { return throwing() || conjuring() || reacting() ? 0.0f : 1.0f; }
+    /** Whether the body is flinching or reeling from a hit: it stands where it was struck,
+     * does nothing else, and is not set reeling again until it is over. */
+    bool reacting() const { return m_current == Action::HitReact || m_current == Action::Stun; }
     /** The footfall this tick, if a half cycle of walking or running just ended. */
     Foot footfall() const { return m_footfall; }
     const TreePose& pose() const { return m_pose; }
@@ -100,7 +139,9 @@ private:
         f32 transition = 0.0f;
     };
 
-    static bool isThrow(Action action) { return action >= Action::Throw; }
+    static bool isThrow(Action action) {
+        return action >= Action::Throw && action <= Action::ThrowMovingRecover;
+    }
     Decision decide(Action requested) const;
     void play(const Decision& decision, f32 seconds);
 
@@ -110,6 +151,10 @@ private:
     Foot m_footfall = Foot::None;
     bool m_entered = true; ///< the entrance has played (or was not asked for)
     bool m_released = false;
+    bool m_potionUsed = false;
+    bool m_potionThrown = false;
+    bool m_dead = false;
+    bool m_potionLatch = false; ///< a potion has gone for this press of its button
     f32 m_attackSeconds = 0.0f; ///< since the attack began, while it goes on
     s32 m_stillTicks = 0;  ///< ticks standing still
     s32 m_fidgetTicks = 0; ///< ticks since the first fidget, 0 before it

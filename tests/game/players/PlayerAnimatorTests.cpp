@@ -32,7 +32,7 @@ TreeInfo classTree() {
         s32 rate;
         bool repeats;
     };
-    const std::array<Entry, 15> entries{{{"READY", 60, 30, true},
+    const std::array<Entry, 22> entries{{{"READY", 60, 30, true},
                                         {"IDLE1", 150, 45, false},
                                         {"IDLE2", 71, 30, false},
                                         {"IDLE2_LOOP", 69, 30, true},
@@ -46,7 +46,14 @@ TreeInfo classTree() {
                                         {"THROW1R", 10, 24, false},
                                         {"THROW2S", 10, 24, false},
                                         {"THROW2", 2, 24, false},
-                                        {"THROW2R", 10, 24, false}}};
+                                        {"THROW2R", 10, 24, false},
+                                        {"MAGICS", 11, 30, false},
+                                        {"MAGICR", 15, 30, false},
+                                        {"THROWPOTIONS", 11, 30, false},
+                                        {"THROWPOTIONR", 9, 30, false},
+                                        {"DEATH", 20, 30, false},
+                                        {"HITREACT", 11, 30, false},
+                                        {"STUN1", 15, 30, false}}};
     u32 index = 0;
     for (const Entry& entry : entries) {
         TreeSequenceInfo sequence;
@@ -138,6 +145,41 @@ TEST_CASE("a held attack winds up, lets go and recovers, over and over",
     }
     REQUIRE_FALSE(animator.throwing());
     REQUIRE(animator.moveScale() == 1.0f);
+}
+
+TEST_CASE("a potion is raised, then released once, however long its button is held",
+          "[game][players][animation]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::UsePotion);
+    REQUIRE(animator.action() == Action::UsePotion);
+    REQUIRE(animator.conjuring());
+    REQUIRE(animator.moveScale() == 0.0f);
+    int used = 0;
+    int steps = 0;
+    while (animator.conjuring() && steps < 120) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::UsePotion);
+        used += animator.potionUsed() ? 1 : 0;
+        REQUIRE_FALSE(animator.potionThrown());
+        ++steps;
+    }
+    REQUIRE(used == 1);
+    REQUIRE(steps > 20); // eleven frames up and fifteen down
+    REQUIRE(animator.action() == Action::Ready);
+    // Thrown, it is the other pair of sequences and the other moment.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::None);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ThrowPotion);
+    REQUIRE(animator.action() == Action::ThrowPotion);
+    int thrown = 0;
+    steps = 0;
+    while (animator.conjuring() && steps < 120) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::None);
+        thrown += animator.potionThrown() ? 1 : 0;
+        ++steps;
+    }
+    REQUIRE(thrown == 1);
+    REQUIRE_FALSE(animator.throwing());
 }
 
 TEST_CASE("an attack from the first half of a walk or run takes the moving wind-up",
@@ -264,6 +306,65 @@ TEST_CASE("standing still long enough brings the fidgets and moving ends them",
     noHalf.sequences[6].name = "OTHER";
     REQUIRE(animator.bind(noHalf));
     REQUIRE(animator.sequenceOf(Action::Walk2) == 0);
+}
+
+TEST_CASE("a character that dies falls once and stays down, whatever is asked of it",
+          "[game][players][animation]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    // Even out of a throw about to leave the hand, which then never flies.
+    REQUIRE(stepsUntilAttack(animator, Action::ThrowRelease, 200) < 200);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Die);
+    REQUIRE(animator.action() == Action::Death);
+    REQUIRE(animator.dying());
+    REQUIRE_FALSE(animator.dead());
+    REQUIRE_FALSE(animator.released());
+    int steps = 0;
+    while (!animator.dead() && steps < 400) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+        REQUIRE(animator.action() == Action::Death);
+        REQUIRE_FALSE(animator.released());
+        ++steps;
+    }
+    REQUIRE(animator.dead());
+    REQUIRE(steps >= 15); // twenty frames at the sequence's pace, not at once
+    animator.update(PlayerMotion::Run, kTicks, kStep);
+    REQUIRE(animator.action() == Action::Death);
+    // Bound again, it stands.
+    REQUIRE(animator.bind(tree, false));
+    REQUIRE_FALSE(animator.dead());
+    REQUIRE(animator.action() == Action::Ready);
+}
+
+TEST_CASE("struck, a character flinches or reels where it stands and then carries on",
+          "[game][players][animation]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 10) < 10);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Flinch);
+    REQUIRE(animator.action() == Action::HitReact);
+    REQUIRE(animator.reacting());
+    REQUIRE(animator.moveScale() == 0.0f);
+    // Struck again meanwhile it is not set reeling anew, and nothing else is heeded.
+    const f32 frame = animator.player().frame();
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Reel);
+    REQUIRE(animator.action() == Action::HitReact);
+    REQUIRE(animator.player().frame() > frame);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+    REQUIRE(animator.action() == Action::HitReact);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 60) < 60);
+    REQUIRE_FALSE(animator.reacting());
+    REQUIRE(animator.moveScale() == 1.0f);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Reel);
+    REQUIRE(animator.action() == Action::Stun);
+    // A throw it cuts into never leaves the hand.
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
+    REQUIRE(stepsUntilAttack(animator, Action::ThrowRelease, 200) < 200);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Flinch);
+    REQUIRE(animator.action() == Action::HitReact);
+    REQUIRE_FALSE(animator.released());
 }
 
 } // namespace

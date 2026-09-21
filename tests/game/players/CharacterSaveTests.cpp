@@ -29,6 +29,8 @@ CharacterSave sampleSave() {
     save.classes[2].inventory.keys = 4;
     save.classes[2].inventory.potions = {1, 3, 3};
     save.classes[2].inventory.addPowerup(9, 0x8000, 2.0f, 45.0f);
+    save.classes[2].inventory.addPowerup(5, 0x80000, 0.0f, 30.0f);
+    save.classes[2].inventory.powerups[1].on = false; // taken off in the selector
     return save;
 }
 
@@ -52,6 +54,8 @@ TEST_CASE("a character round-trips through JSON", "[game][players][save]") {
     REQUIRE(loaded.progress().inventory.keys == 4);
     REQUIRE(loaded.progress().inventory.nextPotion() == 3);
     REQUIRE(loaded.progress().inventory.powerup(9, 0x8000)->charge == 2.0f);
+    REQUIRE_FALSE(loaded.progress().inventory.powerups[1].on);
+    REQUIRE(loaded.progress().inventory.powerups[1].held());
     REQUIRE(loaded.classes[0].inventory == Inventory{});
     REQUIRE(loaded.toJson() == save.toJson());
     // A save from before inventories, or one overfull, loads within the limits.
@@ -104,6 +108,14 @@ TEST_CASE("save slots list, write and read the directory", "[game][players][save
     again.refresh();
     REQUIRE_FALSE(again.slot(2).exists);
     REQUIRE(again.slot(1).exists);
+}
+
+TEST_CASE("a character keeps the help it has been shown, in order", "[game][players][save]") {
+    CharacterSave save = sampleSave();
+    save.helpSeen = {21, 2, 133};
+    const CharacterSave loaded = CharacterSave::fromJson(save.toJson());
+    REQUIRE(loaded.helpSeen == std::vector<s32>{2, 21, 133});
+    REQUIRE(CharacterSave::fromJson(sampleSave().toJson()).helpSeen.empty());
 }
 
 } // namespace

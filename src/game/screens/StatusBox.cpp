@@ -115,6 +115,16 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         return;
     }
     const Color tint = playerColor(color);
+    if (view.inTower) {
+        // The original hides all but the words.
+        if (m_smallCaps.ready()) {
+            TextStyle style;
+            style.scale = kInTowerScale;
+            style.color = tint;
+            m_smallCaps.draw(canvas, -(left + kWidth / 2), kInTowerY, text("hud.inTower"), style);
+        }
+        return;
+    }
     const auto icon = [&](std::string_view name, s32 x) {
         if (const Texture* texture = staticTexture(name)) {
             canvas.draw(*texture, Rect{static_cast<f32>(left + x), static_cast<f32>(kIconY),

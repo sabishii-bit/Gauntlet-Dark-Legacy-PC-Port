@@ -87,18 +87,27 @@ add_executable(tests
     game/players/ClassDataTests.cpp
     game/players/ProgressionTests.cpp
     game/players/CharacterSaveTests.cpp
+    game/players/PartyTests.cpp
     game/players/InventoryTests.cpp
     game/players/ItemPickupTests.cpp
+    game/players/PowerupEffectsTests.cpp
+    game/screens/PowerupSelectorTests.cpp
+    game/screens/TransitionScreenTests.cpp
+    game/world/EffectTreesTests.cpp
     game/players/PlayerControlsTests.cpp
     game/players/PlayerActorTests.cpp
     game/players/PlayerAnimatorTests.cpp
-    game/world/TowerWorldTests.cpp
+    game/world/LevelWorldTests.cpp
+    game/world/LevelCatalogTests.cpp
+    game/world/ExitPortalsTests.cpp
+    game/world/LevelFixturesTests.cpp
+    game/screens/HelpMessagesTests.cpp
     game/world/LevelTriggersTests.cpp
     game/world/TowerCameraTests.cpp
     game/world/StartCameraTests.cpp
     game/screens/StatusBoxTests.cpp
     game/screens/PickupHudTests.cpp
-    game/screens/TowerSceneTests.cpp
+    game/screens/PlaySceneTests.cpp
     game/menu/NameEntryTests.cpp
     game/screens/SelectLaneTests.cpp
     game/screens/PlayerSelectSceneTests.cpp

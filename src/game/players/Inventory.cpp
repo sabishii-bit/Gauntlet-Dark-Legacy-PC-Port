@@ -10,6 +10,23 @@ s32 Inventory::addKeys(s32 count) {
     return taken;
 }
 
+bool Inventory::spendKey() {
+    if (keys <= 0) {
+        return false;
+    }
+    --keys;
+    return true;
+}
+
+s32 Inventory::takePotion() {
+    if (potions.empty()) {
+        return 0;
+    }
+    const s32 kind = potions.back();
+    potions.pop_back();
+    return kind;
+}
+
 s32 Inventory::addPotions(s32 kind, s32 count) {
     s32 taken = 0;
     while (taken < count && static_cast<s32>(potions.size()) < kMostPotions) {
@@ -53,16 +70,33 @@ void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength) {
             break;
         }
     }
-    powerups[pick] = PowerupSlot{strength, kind, charge, flags};
+    powerups[pick] = PowerupSlot{strength, kind, charge, flags, true};
 }
 
 const PowerupSlot* Inventory::powerup(s32 kind, u32 mask) const {
     for (const PowerupSlot& slot : powerups) {
-        if (slot.held() && slot.kind == kind && (slot.flags & mask) != 0) {
+        if (slot.working() && slot.kind == kind && (slot.flags & mask) != 0) {
             return &slot;
         }
     }
     return nullptr;
+}
+
+s32 Inventory::nextHeld(s32 from, s32 step) const {
+    const auto count = static_cast<s32>(powerups.size());
+    s32 at = from;
+    for (s32 tries = 0; tries < count; ++tries) {
+        at += step;
+        if (at < 0) {
+            at = count - 1;
+        } else if (at >= count) {
+            at = 0;
+        }
+        if (powerups[static_cast<usize>(at)].held()) {
+            return at;
+        }
+    }
+    return -1;
 }
 
 usize Inventory::powerupCount() const {

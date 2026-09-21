@@ -41,8 +41,9 @@ void PlayerActor::update(const MoveInput& input, f32 cameraYaw, f32 seconds,
         return;
     }
     const f32 heading = std::atan2(input.direction.x, input.direction.y) + cameraYaw;
+    const f32 pace = speed();
     const f32 distance =
-        std::min(m_speed * input.magnitude * seconds, kMoveLimit * m_speed * seconds) * moveScale;
+        std::min(pace * input.magnitude * seconds, kMoveLimit * pace * seconds) * moveScale;
     m_yaw = heading;
     if (distance <= 0.0f) {
         m_moving = false;

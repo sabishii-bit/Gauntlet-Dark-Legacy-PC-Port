@@ -22,7 +22,8 @@ struct TextureSetEntry {
     u32 flags = 0;
     u32 frames = 0; ///< frames of the animation starting here (consecutive entries), 0 = none
     bool halfResolution = false; ///< drawn at twice its pixel size
-    bool clamp = false;          ///< sampled without wrapping, so edges do not bleed
+    bool clampU = false;         ///< sampled without wrapping across, so edges do not bleed
+    bool clampV = false;         ///< and down; a texture may tile one way only
     std::filesystem::path file;
 
     static constexpr u32 kExternal = 0x20; ///< the flag of textures another archive holds

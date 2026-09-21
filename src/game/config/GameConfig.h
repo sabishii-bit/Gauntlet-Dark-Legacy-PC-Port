@@ -1,6 +1,8 @@
 #pragma once
 
 #include <filesystem>
+#include <array>
+#include <string_view>
 #include <string>
 #include <vector>
 
@@ -39,7 +41,19 @@ struct TextConfig {
     std::string language = "en";
 };
 
-/** Where characters are saved; an empty directory means beside the user's settings. */
+/** How hard the game is: easy, normal or hard, which scales the levels' own tuning. */
+struct DifficultyConfig {
+    static constexpr std::array<std::string_view, 3> kNames{"easy", "normal", "hard"};
+    static constexpr std::array<f32, 3> kGains{0.667f, 1.0f, 1.5f};
+
+    std::string level = "normal";
+
+    /** What the level's scales are multiplied by; normal's for a name it does not know. */
+    f32 gain() const;
+};
+
+/** Where characters are saved: a `saves` folder beside the game when the directory is
+ * empty, the directory itself when it is absolute, else that directory beside the game. */
 struct SaveConfig {
     std::string directory;
     u32 slots = 8;
@@ -70,12 +84,26 @@ struct PlayBindings {
     std::vector<Key> down{Key::Down, Key::S};
     std::vector<Key> left{Key::Left, Key::A};
     std::vector<Key> right{Key::Right, Key::D};
-    std::vector<PadButton> padUp{PadButton::DpadUp};
-    std::vector<PadButton> padDown{PadButton::DpadDown};
-    std::vector<PadButton> padLeft{PadButton::DpadLeft};
-    std::vector<PadButton> padRight{PadButton::DpadRight};
+    /** On a pad the stick walks; the directional buttons work the powerup selector, as the
+     * original's do, and walk only when bound to. */
+    std::vector<PadButton> padUp;
+    std::vector<PadButton> padDown;
+    std::vector<PadButton> padLeft;
+    std::vector<PadButton> padRight;
     std::vector<Key> attack{Key::Space};
     std::vector<PadButton> padAttack{PadButton::A};
+    std::vector<Key> usePotion{Key::E};
+    std::vector<PadButton> padUsePotion{PadButton::B};
+    std::vector<Key> throwPotion{Key::Q};
+    std::vector<PadButton> padThrowPotion{PadButton::X};
+    std::vector<Key> selectorUp{Key::I};
+    std::vector<Key> selectorDown{Key::K};
+    std::vector<Key> selectorLeft{Key::J};
+    std::vector<Key> selectorRight{Key::L};
+    std::vector<PadButton> padSelectorUp{PadButton::DpadUp};
+    std::vector<PadButton> padSelectorDown{PadButton::DpadDown};
+    std::vector<PadButton> padSelectorLeft{PadButton::DpadLeft};
+    std::vector<PadButton> padSelectorRight{PadButton::DpadRight};
     f32 stickDeadZone = 0.25f; ///< stick deflection ignored as rest
 };
 
@@ -90,6 +118,7 @@ struct GameConfig {
     AudioConfig audio;
     TextConfig text;
     SaveConfig save;
+    DifficultyConfig difficulty;
     MenuBindings menu;
     PlayBindings play;
 
@@ -107,6 +136,8 @@ struct GameConfig {
 
     /** The save directory, resolved from the settings or the user's configuration folder. */
     std::filesystem::path saveDirectory() const;
+    /** The same, for a game standing in `gameDirectory`. */
+    std::filesystem::path saveDirectory(const std::filesystem::path& gameDirectory) const;
 
     /** Where this user's settings live: under the platform's per-user configuration directory. */
     static std::filesystem::path userSettingsPath();

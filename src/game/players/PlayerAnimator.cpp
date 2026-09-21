@@ -36,6 +36,10 @@ void PlayerAnimator::unbind() {
     m_stillTicks = 0;
     m_fidgetTicks = 0;
     m_released = false;
+    m_potionUsed = false;
+    m_potionThrown = false;
+    m_potionLatch = false;
+    m_dead = false;
     m_attackSeconds = 0.0f;
     m_player.stop();
 }
@@ -53,18 +57,70 @@ u32 PlayerAnimator::sequenceOf(Action action) const {
                          : static_cast<u32>(m_sequences[index(Action::Ready)]);
 }
 
-void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, bool attack) {
+void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed) {
     if (!bound()) {
         return;
     }
     m_footfall = Foot::None;
     m_released = false;
+    m_potionUsed = false;
+    m_potionThrown = false;
+    if (deed == PlayerDeed::Die || dying()) {
+        // Nothing else is asked of a body that falls: it plays through once and stays down.
+        if (m_sequences[index(Action::Death)] < 0) {
+            m_dead = true;
+            return;
+        }
+        Decision fall;
+        fall.action = Action::Death;
+        fall.cut = dying() ? Cut::WhenDoneIfDifferent : Cut::Now;
+        if (!m_dead) {
+            play(fall, seconds);
+            m_released = false; // what the hand held falls with it
+            m_potionUsed = false;
+            m_potionThrown = false;
+            m_dead = dying() && m_player.finished();
+            m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+        }
+        return;
+    }
+    // A hit cuts into anything at once, unless one is already being reeled from; while it
+    // plays nothing else is asked of the body.
+    const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel;
+    if (struck && !reacting()) {
+        const Action reaction = deed == PlayerDeed::Flinch ? Action::HitReact : Action::Stun;
+        if (m_sequences[index(reaction)] >= 0) {
+            Decision reel;
+            reel.action = reaction;
+            reel.cut = Cut::Now;
+            play(reel, seconds);
+            m_released = false; // a throw it cut into never leaves the hand
+            m_potionUsed = false;
+            m_potionThrown = false;
+            m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+            return;
+        }
+    }
+    if (reacting() || struck) {
+        deed = PlayerDeed::None;
+        motion = PlayerMotion::Stand;
+    }
+    bool attack = deed == PlayerDeed::Attack;
+    // A class without a deed's sequences does not do it.
+    // One potion a press: the button must come up before it asks for another.
+    if (deed != PlayerDeed::UsePotion && deed != PlayerDeed::ThrowPotion) {
+        m_potionLatch = false;
+    }
+    const bool use = deed == PlayerDeed::UsePotion && !m_potionLatch &&
+                     m_sequences[index(Action::UsePotion)] >= 0;
+    const bool toss = deed == PlayerDeed::ThrowPotion && !m_potionLatch &&
+                      m_sequences[index(Action::ThrowPotion)] >= 0;
     if (throwing()) {
         m_attackSeconds += seconds;
     }
     // A class without the throw's sequences does not throw.
     attack = attack && m_sequences[index(Action::Throw)] >= 0;
-    if (attack || throwing()) {
+    if (attack || throwing() || use || toss || conjuring()) {
         motion = PlayerMotion::Stand;
         m_stillTicks = 0;
         m_fidgetTicks = 0;
@@ -83,6 +139,10 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, bool at
     Action requested = Action::Ready;
     if (!m_entered) {
         requested = Action::Start;
+    } else if (use) {
+        requested = Action::UsePotion;
+    } else if (toss) {
+        requested = Action::ThrowPotion;
     } else if (attack) {
         requested = Action::Throw;
     } else if (motion == PlayerMotion::Run) {
@@ -173,6 +233,24 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::ThrowRecover:
     case Action::ThrowMovingRecover:
         break; // whatever is asked next, once recovered
+    case Action::UsePotion:
+        d.action = Action::UsePotionRelease;
+        break;
+    case Action::ThrowPotion:
+        d.action = Action::ThrowPotionRelease;
+        break;
+    case Action::UsePotionRelease:
+    case Action::ThrowPotionRelease:
+    case Action::Death:
+    case Action::HitReact:
+    case Action::Stun:
+        break; // whatever is asked next, once let go
+    }
+    // A potion cuts into standing, walking and running at once, as an attack does.
+    if ((requested == Action::UsePotion || requested == Action::ThrowPotion) &&
+        d.action == requested && !isThrow(m_current) && !conjuring() &&
+        m_current != Action::Start) {
+        d.cut = Cut::IfDifferent;
     }
     // An attack cuts into walking and running at once, and from their first halves takes the
     // moving wind-up.
@@ -222,6 +300,11 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     if (m_current == Action::ThrowRelease || m_current == Action::ThrowMovingRelease) {
         m_released = true;
     }
+    if (decision.action == Action::UsePotion || decision.action == Action::ThrowPotion) {
+        m_potionLatch = true;
+    }
+    m_potionUsed = decision.action == Action::UsePotionRelease;
+    m_potionThrown = decision.action == Action::ThrowPotionRelease;
     if ((decision.action == Action::Throw || decision.action == Action::ThrowMoving) &&
         !isThrow(m_current)) {
         m_attackSeconds = 0.0f;

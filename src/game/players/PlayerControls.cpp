@@ -67,8 +67,15 @@ MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool k
     return out;
 }
 
-bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad) {
-    if (keyboard && anyKeyDown(input, bindings.attack)) {
+namespace {
+
+/** Whether any of the keys (with the keyboard) or of the buttons on the player's pads is
+ * down, or with `edge` went down this frame. */
+bool bound(const Input& input, std::span<const Key> keys, std::span<const PadButton> buttons,
+           bool keyboard, int pad, bool edge) {
+    if (keyboard && std::ranges::any_of(keys, [&](Key key) {
+            return edge ? input.wasKeyPressed(key) : input.isKeyDown(key);
+        })) {
         return true;
     }
     int first = pad;
@@ -80,11 +87,33 @@ bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyb
         last = first - 1;
     }
     for (int index = first; index <= last; ++index) {
-        if (input.isPadConnected(index) && anyButtonDown(input, index, bindings.padAttack)) {
+        if (input.isPadConnected(index) &&
+            std::ranges::any_of(buttons, [&](PadButton button) {
+                return edge ? input.wasPadButtonPressed(index, button)
+                            : input.isPadButtonDown(index, button);
+            })) {
             return true;
         }
     }
     return false;
+}
+
+} // namespace
+
+bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad) {
+    return bound(input, bindings.attack, bindings.padAttack, keyboard, pad, false);
+}
+
+PlayButtons readPlayButtons(const Input& input, const PlayBindings& b, bool keyboard, int pad) {
+    PlayButtons out;
+    out.attack = bound(input, b.attack, b.padAttack, keyboard, pad, false);
+    out.usePotion = bound(input, b.usePotion, b.padUsePotion, keyboard, pad, false);
+    out.throwPotion = bound(input, b.throwPotion, b.padThrowPotion, keyboard, pad, false);
+    out.selectorUp = bound(input, b.selectorUp, b.padSelectorUp, keyboard, pad, true);
+    out.selectorDown = bound(input, b.selectorDown, b.padSelectorDown, keyboard, pad, true);
+    out.selectorLeft = bound(input, b.selectorLeft, b.padSelectorLeft, keyboard, pad, true);
+    out.selectorRight = bound(input, b.selectorRight, b.padSelectorRight, keyboard, pad, true);
+    return out;
 }
 
 } // namespace gdl::game

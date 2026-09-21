@@ -1,0 +1,16 @@
+{
+  "screen": "tower",
+  "party": [
+    {"player": 0, "class": "WAR", "color": "BLU", "name": "TEST", "level": 1,
+     "keys": 1, "potions": [1, 2, 3, 4],
+     "powerups": [
+       {"kind": 5, "flags": 524288},
+       {"kind": 7, "charge": 3.0},
+       {"kind": 9, "flags": 256},
+       {"kind": 9, "flags": 4}
+     ]}
+  ],
+  "position": [3.0, 2.0, -20.0],
+  "yaw": 3.14,
+  "welcome": false
+}

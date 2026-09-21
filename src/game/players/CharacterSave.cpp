@@ -27,7 +27,8 @@ Json inventoryJson(const Inventory& inventory) {
             powerups.push_back(Json{{"kind", slot.kind},
                                     {"flags", slot.flags},
                                     {"strength", slot.strength},
-                                    {"charge", slot.charge}});
+                                    {"charge", slot.charge},
+                                    {"on", slot.on}});
         }
     }
     return Json{{"keys", inventory.keys}, {"potions", inventory.potions}, {"powerups", powerups}};
@@ -46,7 +47,8 @@ Inventory inventoryFromJson(const Json& object) {
         }
         inventory.powerups[slot++] =
             PowerupSlot{entry.value("strength", 0.0f), entry.value("kind", 0),
-                        entry.value("charge", 0.0f), entry.value("flags", 0U)};
+                        entry.value("charge", 0.0f), entry.value("flags", 0U),
+                        entry.value("on", true)};
     }
     return inventory;
 }
@@ -88,6 +90,7 @@ std::string CharacterSave::toJson() const {
     root["color"] = color;
     root["classUnlock"] = classUnlock;
     root["gold"] = gold;
+    root["helpSeen"] = helpSeen;
     root["levelTotal"] = levelTotal;
     Json progress = Json::object();
     for (s32 i = 0; i < kClassCount; ++i) {
@@ -113,6 +116,8 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     save.color = root.value("color", 0);
     save.classUnlock = static_cast<u16>(root.value("classUnlock", 0));
     save.gold = root.value("gold", 0);
+    save.helpSeen = root.value("helpSeen", std::vector<s32>{});
+    std::ranges::sort(save.helpSeen);
     save.levelTotal = root.value("levelTotal", 0);
     if (save.character < 0 || save.character >= kClassCount || save.color < 0 ||
         save.color >= kColorCount || save.name.size() > kCharacterNameLength) {
