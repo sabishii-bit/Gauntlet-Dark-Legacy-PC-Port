@@ -1,5 +1,6 @@
 #include "engine/assets/MessageTable.h"
 
+#include <cctype>
 #include <exception>
 
 #include <nlohmann/json.hpp>
@@ -97,6 +98,32 @@ std::string_view MessageTable::fontOf(const MessageInfo& message) const {
         return {};
     }
     return m_fonts[static_cast<usize>(message.font)];
+}
+
+std::string MessageTable::textId(std::string_view prefix, std::string_view name, usize page) {
+    std::string id{prefix};
+    id += '.';
+    for (const char c : name) {
+        id += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    id += '.';
+    id += std::to_string(page);
+    return id;
+}
+
+usize MessageTable::translate(const StringTable& strings, std::string_view prefix) {
+    usize taken = 0;
+    for (MessageInfo& message : m_messages) {
+        if (message.name.empty() || !strings.has(textId(prefix, message.name, 1))) {
+            continue;
+        }
+        message.pages.clear();
+        for (usize page = 1; strings.has(textId(prefix, message.name, page)); ++page) {
+            message.pages.emplace_back(strings.get(textId(prefix, message.name, page)));
+        }
+        ++taken;
+    }
+    return taken;
 }
 
 } // namespace gdl

@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
 
 namespace gdl {
@@ -32,6 +33,13 @@ public:
     /** Reads the file; false (with a warning) when missing or malformed. */
     bool load(const std::filesystem::path& file);
     bool loaded() const { return !m_messages.empty(); }
+
+    /** The string ids a message's pages go by: `<prefix>.<name in lower case>.<page from 1>`. */
+    static std::string textId(std::string_view prefix, std::string_view name, usize page);
+    /** Takes each message's pages from `strings` when it has them (as many as it numbers from
+     * one without a gap), so that the game's language is the string table's; the rom's own
+     * text stays for a message it lacks. How many messages were taken from it. */
+    usize translate(const StringTable& strings, std::string_view prefix);
     usize size() const { return m_messages.size(); }
 
     const std::vector<std::string>& fonts() const { return m_fonts; }

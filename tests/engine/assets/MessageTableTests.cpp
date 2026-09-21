@@ -1,4 +1,6 @@
 #include <filesystem>
+#include <string>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -78,6 +80,61 @@ TEST_CASE("the unpacked scroll texts hold Sumner's welcome", "[assets][text][unp
     REQUIRE(welcome.pages[0].starts_with("Welcome, mighty heroes!"));
     REQUIRE(welcome.scale == Approx(0.6f));
     REQUIRE(table.fontOf(welcome) == "font32");
+}
+
+TEST_CASE("a message's pages come from the string table when it has them",
+          "[assets][text]") {
+    REQUIRE(MessageTable::textId("scroll", "HELLO", 2) == "scroll.hello.2");
+    MessageTable table;
+    REQUIRE(table.load(sampleTable("message-table-translate")));
+    const auto dir = test::scratchDirectory("message-table-strings");
+    writeTextFile(dir / "xx.json", R"({
+  "scroll.hello.1": "Bienvenue,\nheros !",
+  "scroll.hello.2": "Allez.",
+  "scroll.hello.3": "Vite !",
+  "scroll.hello.5": "never reached: four is missing",
+  "scroll.odd.2": "no first page, so not taken",
+  "other.hello.1": "another table's"
+})");
+    StringTable strings;
+    REQUIRE(strings.load(dir, "xx", "xx"));
+    REQUIRE(table.translate(strings, "scroll") == 1);
+    const MessageInfo& hello = table.message(*table.find("HELLO"));
+    REQUIRE(hello.pages == std::vector<std::string>{"Bienvenue,\nheros !", "Allez.", "Vite !"});
+    REQUIRE(hello.scale == Approx(0.6f)); // how it is set stays the rom's
+    REQUIRE(table.message(*table.find("ODD")).pages.empty());
+    // A table the strings know nothing of keeps its own words.
+    MessageTable untouched;
+    REQUIRE(untouched.load(sampleTable("message-table-untouched")));
+    REQUIRE(untouched.translate(strings, "hint") == 0);
+    REQUIRE(untouched.message(0).pages.size() == 2);
+}
+
+TEST_CASE("the shipped English has every scroll, hint and help message, word for word",
+          "[assets][text][unpacked]") {
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en", "en"));
+    struct Rom {
+        const char* file;
+        const char* prefix;
+        bool whole; ///< every message of it, or only those the strings name
+    };
+    for (const Rom& rom : {Rom{"text/scroll_e.json", "scroll", true},
+                           Rom{"text/hints_e.json", "hint", true},
+                           Rom{"text/english.json", "help", false}}) {
+        MessageTable original;
+        REQUIRE(original.load(test::unpackedOrSkip(rom.file)));
+        MessageTable translated;
+        REQUIRE(translated.load(test::unpackedOrSkip(rom.file)));
+        const usize taken = translated.translate(strings, rom.prefix);
+        REQUIRE(taken > 0);
+        if (rom.whole) {
+            REQUIRE(taken == original.size());
+        }
+        for (u32 i = 0; i < original.size(); ++i) {
+            REQUIRE(translated.message(i).pages == original.message(i).pages);
+        }
+    }
 }
 
 } // namespace

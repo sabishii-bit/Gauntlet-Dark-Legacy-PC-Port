@@ -860,6 +860,44 @@ TEST_CASE("a party back from a realm materialises among its portals, the camera 
     scene.close();
 }
 
+TEST_CASE("what the level tells the party is in the string table's language",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::unpackedOrSkip("text/english.json");
+    const auto dir = test::scratchDirectory("play-scene-language");
+    writeTextFile(dir / "fr.json", R"({"help.usekeyopenchest.1": "IL FAUT UNE CLEF"})");
+    StringTable strings;
+    REQUIRE(strings.load(dir, "fr", "fr"));
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{13.2f, 10.2f, -59.0f}; // against the locked chest, with no key
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 300 && !scene.help().showing(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.help().id() == HelpMessages::kChestNeedsKey);
+    REQUIRE(scene.help().lines() == std::vector<std::string>{"IL FAUT UNE CLEF"});
+    scene.close();
+}
+
 TEST_CASE("potions burst about the character or where they land, and powerups show",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
