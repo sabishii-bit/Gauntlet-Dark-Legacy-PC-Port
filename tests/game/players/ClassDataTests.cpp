@@ -82,12 +82,13 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
     const auto dir = test::scratchDirectory("class-moves");
     writeTextFile(dir / "WAR.json", R"({"fight": [600, 999], "speed": [350, 750],
   "armor": [300, 700], "magic": [100, 500], "height": 5, "width": 1.5,
-  "moves": {"turboB": 0, "turboC1": 1, "turboC2": 2, "combo1": -1},
+  "moves": {"turboAThrow": 2, "turboB": 0, "turboC1": 1, "turboC2": 2, "combo1": -1},
   "moveEffects": [
     {"next": 1, "tree": "WAR_POWERB", "sound": "S_WARTURBOB", "offset": [0, 5, 0], "scale": 2},
     {"next": -1, "tree": "NULLFX", "sound": ""}],
   "moveStrikes": [
-    {"type": 4, "radius": 12, "delay": 0.5, "arc": -1, "amount": 50, "effect": 0, "next": -1},
+    {"type": 4, "radius": 12, "delay": 0.5, "arc": -1, "amount": 50, "effect": 0, "next": -1,
+     "hitEffect": 1, "damageType": 257, "flags": 16, "help": 57},
     {"type": 4, "radius": 8, "delay": 0.5, "arc": 0.5, "amount": -2, "effect": 1, "next": 2},
     {"type": 2, "hitRadius": 10, "maxTime": 6, "offset": [0, 1, 5], "amount": 70,
      "speedMin": 30, "speedMax": 40, "effect": -1, "next": 1, "startFrame": 9}]})");
@@ -96,6 +97,21 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
     const ClassStats* war = classes.stats(0);
     REQUIRE(war != nullptr);
     REQUIRE(war->moves.turboB == 0);
+    REQUIRE(war->moves.turboAThrow == 2);
+    REQUIRE(war->moveStrikes[0].hitEffect == 1);
+    REQUIRE(war->moveStrikes[0].damageType == 257U);
+    REQUIRE(war->moveStrikes[0].help == 57);
+    REQUIRE(war->moveStrikes[0].dimming() == -0.4f);
+    REQUIRE(war->moveStrikes[0].harms());
+    MoveStrike span;
+    span.type = MoveStrike::kWindow;
+    span.flags = MoveStrike::kHidesWeapon;
+    span.startFrame = 5;
+    span.endFrame = 40;
+    REQUIRE_FALSE(span.harms());
+    REQUIRE_FALSE(span.lasting(4.9f));
+    REQUIRE(span.lasting(5.0f));
+    REQUIRE_FALSE(span.lasting(40.0f));
     REQUIRE(war->moves.turboC2 == 2);
     REQUIRE(war->moves.combo1 == -1);
     REQUIRE(war->moveEffects.size() == 2);

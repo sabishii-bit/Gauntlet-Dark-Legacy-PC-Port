@@ -25,8 +25,15 @@ enum class PlayerDeed : u8 {
     TurboStrong, ///< the lesser turbo attack
     TurboFull,   ///< the greater
     Shove,
-    Defend       ///< held: the guard comes up and stays up
+    Defend,      ///< held: the guard comes up and stays up
+    StrongAttack, ///< the slow attack: a strong throw, with nothing in reach
+    ShieldPotion, ///< a potion spent on a ring of its magic about the character
+    FallBack,     ///< knocked off its feet from in front
+    FallForward   ///< or from behind
 };
+
+/** Which way a strafing character steps, against the way it faces. */
+enum class StrafeWay : u8 { None, Forward, Back, Left, Right };
 
 /**
  * The actions a character's body plays, sequenced the way the original game does: the
@@ -70,16 +77,44 @@ public:
         Shove,
         DefendRaise, ///< the guard coming up
         Defend,      ///< held up, which is when it blocks
-        DefendLower
+        DefendLower,
+        StrongThrow, ///< the strong throw's wind-up, at whose end the weapon leaves
+        StrongThrowRecover,
+        // Strafing, two half cycles a way, in the order of StrafeWay; then the same attacking.
+        StrafeForward1,
+        StrafeForward2,
+        StrafeBack1,
+        StrafeBack2,
+        StrafeLeft1,
+        StrafeLeft2,
+        StrafeRight1,
+        StrafeRight2,
+        StrafeShootForward1,
+        StrafeShootForward2,
+        StrafeShootBack1,
+        StrafeShootBack2,
+        StrafeShootLeft1,
+        StrafeShootLeft2,
+        StrafeShootRight1,
+        StrafeShootRight2,
+        FallBack,    ///< onto its back
+        GetUpBack,
+        FallForward, ///< onto its face
+        GetUpForward
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 28;
+    static constexpr usize kActionCount = 50;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",  "IDLE1",  "IDLE2",        "IDLE2_LOOP",  "WALK1",  "WALK2",   "RUN1",
         "RUN2",   "START",  "THROW1S",      "THROW2S",     "THROW1", "THROW2",  "THROW1R",
         "THROW2R", "MAGICS", "MAGICR",      "THROWPOTIONS", "THROWPOTIONR", "DEATH",
-        "HITREACT", "STUN1", "ATTPWRB", "ATTPWRC", "SHOVE", "DEFEND1", "DEFEND2", "DEFENDR"};
+        "HITREACT", "STUN1", "ATTPWRB", "ATTPWRC", "SHOVE", "DEFEND1", "DEFEND2", "DEFENDR",
+        "ATTPWRATHROW", "ATTPWRATHROWR",
+        "STRAFE_WLKF1", "STRAFE_WLKF2", "STRAFE_WLKB1", "STRAFE_WLKB2", "STRAFE_WLKL1",
+        "STRAFE_WLKL2", "STRAFE_WLKR1", "STRAFE_WLKR2", "STRAFE_ATKF1", "STRAFE_ATKF2",
+        "STRAFE_ATKB1", "STRAFE_ATKB2", "STRAFE_ATKL1", "STRAFE_ATKL2", "STRAFE_ATKR1",
+        "STRAFE_ATKR2", "FALLDOWN", "GETUP", "FALLFRNT", "GETUP2"};
     static constexpr f32 kReleaseFrame = 2.0f; ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -98,6 +133,20 @@ public:
         update(motion, ticks, seconds, attack ? PlayerDeed::Attack : PlayerDeed::None);
     }
     void update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed);
+    /** Which way the character strafes from now on (none: it walks and runs as ever). Set
+     * before each update: moving, it steps that way with its facing held, and an attack asked
+     * of it is made as it goes. */
+    void setStrafe(StrafeWay way) { m_strafe = way; }
+    /** Whether the body is in a strafing step, shooting or not. */
+    bool strafing() const {
+        return m_current >= Action::StrafeForward1 && m_current <= Action::StrafeShootRight2;
+    }
+    /** Whether the body is off its feet or getting back onto them. */
+    bool floored() const {
+        return m_current >= Action::FallBack && m_current <= Action::GetUpForward;
+    }
+    /** Whether this tick's step began a shield potion's release. */
+    bool potionShielded() const { return m_potionShielded; }
 
     static PlayerMotion motionFor(f32 stickMagnitude);
 
@@ -128,6 +177,9 @@ public:
         if (shoving()) {
             return kChargePace; // the charge rushes on, faster than a run
         }
+        if (strongThrowing()) {
+            return kStrongThrowPace;
+        }
         return throwing() || conjuring() || reacting() || turboing() || guarding() ? 0.0f : 1.0f;
     }
     static constexpr f32 kChargePace = 1.5f;
@@ -143,18 +195,32 @@ public:
     /** Whether the body is in a turbo move, which plays through with nothing else heeded. */
     bool turboing() const {
         return m_current == Action::TurboStrong || m_current == Action::TurboFull ||
-               m_current == Action::Shove;
+               m_current == Action::Shove || strongThrowing();
     }
+    /** Whether the body is in the strong throw or recovering from it. */
+    bool strongThrowing() const {
+        return m_current == Action::StrongThrow || m_current == Action::StrongThrowRecover;
+    }
+    /** Whether this tick's step ended the strong throw's wind-up: the weapon flies. */
+    bool strongReleased() const { return m_strongReleased; }
+    /** How much of its pace the body keeps in the strong throw. */
+    static constexpr f32 kStrongThrowPace = 0.25f;
     /** Whether the body can begin the turbo move `deed` now: it has the sequence and is not
      * in the middle of anything. */
     bool canBegin(PlayerDeed deed) const;
     /** The action a turbo deed plays; the stance for any other deed. */
     static Action turboActionOf(PlayerDeed deed);
+    /** The first half of the strafing step `way`, shooting or not. */
+    static Action strafeStep(StrafeWay way, bool shooting);
+    static Action firstHalfOf(Action step);
+    static Action otherHalfOf(Action step);
     /** Whether this tick's step began a turbo move: the meter pays for it then. */
     bool turboBegan() const { return m_turboBegan; }
     /** Whether the body is flinching or reeling from a hit: it stands where it was struck,
      * does nothing else, and is not set reeling again until it is over. */
-    bool reacting() const { return m_current == Action::HitReact || m_current == Action::Stun; }
+    bool reacting() const {
+        return m_current == Action::HitReact || m_current == Action::Stun || floored();
+    }
     /** The footfall this tick, if a half cycle of walking or running just ended. */
     Foot footfall() const { return m_footfall; }
     const TreePose& pose() const { return m_pose; }
@@ -192,6 +258,10 @@ private:
     bool m_potionThrown = false;
     bool m_dead = false;
     bool m_turboBegan = false;
+    bool m_strongReleased = false;
+    bool m_potionShielded = false;
+    bool m_shieldAsked = false; ///< the potion being used is for a shield
+    StrafeWay m_strafe = StrafeWay::None;
     bool m_potionLatch = false; ///< a potion has gone for this press of its button
     f32 m_attackSeconds = 0.0f; ///< since the attack began, while it goes on
     s32 m_stillTicks = 0;  ///< ticks standing still

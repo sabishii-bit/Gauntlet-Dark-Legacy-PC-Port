@@ -1,0 +1,23 @@
+{
+  "screen": "tower",
+  "party": [
+    {
+      "player": 0,
+      "class": "WAR",
+      "color": "BLU",
+      "name": "TEST",
+      "level": 1,
+      "potions": [
+        2,
+        1
+      ]
+    }
+  ],
+  "position": [
+    3.0,
+    2.0,
+    -20.0
+  ],
+  "yaw": 0.0,
+  "welcome": false
+}

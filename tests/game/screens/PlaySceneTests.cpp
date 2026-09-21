@@ -1123,6 +1123,270 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     scene.close();
 }
 
+TEST_CASE("every class has its turbo attacks: they show, strike and are paid for",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("PLAYERS/WAR/SFXBLU/animations.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{3.0f, 2.0f, -20.0f};
+    const PlayScene::Inputs still{};
+    PlayScene::Inputs strike{};
+    strike[0].turbo = true;
+    strike[0].attack = true;
+    strike[0].attackPressed = true;
+    for (s32 character = 0; character < 16; ++character) {
+        for (const bool full : {false, true}) {
+            CAPTURE(classCode(character), full);
+            CharacterSave save;
+            save.name = "AB";
+            save.character = character;
+            PartyMember member{0, save};
+            member.turbo = full ? 100.0f : 60.0f;
+            const std::vector<PartyMember> party{member};
+            PlayScene scene;
+            REQUIRE(scene.open(device, context, world, party, options));
+            for (int i = 0; i < 400 && scene.spawning(); ++i) {
+                scene.update(1.0 / 60.0, still);
+            }
+            REQUIRE(scene.animator(0) != nullptr); // the class's figure was built
+            const f32 before = scene.turboMeter(0)->held();
+            scene.update(1.0 / 60.0, strike);
+            REQUIRE(scene.animator(0)->action() == (full ? PlayerAnimator::Action::TurboFull
+                                                         : PlayerAnimator::Action::TurboStrong));
+            usize strikes = 0;
+            usize effects = 0;
+            for (int i = 0; i < 600 && scene.animator(0)->turboing(); ++i) {
+                scene.update(1.0 / 60.0, still);
+                strikes = std::max(strikes, scene.strikes().count());
+                effects = std::max(effects, scene.effects().count());
+            }
+            REQUIRE_FALSE(scene.animator(0)->turboing());
+            REQUIRE(strikes >= 1);
+            REQUIRE(effects >= 1); // its own trees, or those of the class it shadows
+            const f32 cost = full ? TurboMeter::kFullCost : TurboMeter::kStrongCost;
+            REQUIRE(scene.turboMeter(0)->held() < before - cost + 8.0f);
+            scene.close();
+        }
+    }
+}
+
+TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("PLAYERS/ARC/SFXBLU/animations.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.character = 3;
+    PartyMember member{0, save};
+    member.turbo = 60.0f;
+    const std::vector<PartyMember> party{member};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{3.0f, 2.0f, -20.0f};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    PlayScene::Inputs strike{};
+    strike[0].turbo = true;
+    strike[0].attack = true;
+    strike[0].attackPressed = true;
+    scene.update(1.0 / 60.0, strike);
+    usize most = 0;
+    bool emptyHanded = false;
+    for (int i = 0; i < 600 && scene.animator(0)->turboing(); ++i) {
+        scene.update(1.0 / 60.0, still);
+        most = std::max(most, scene.missiles().count());
+        emptyHanded = emptyHanded || !scene.weaponHeld(0);
+    }
+    REQUIRE(most >= 6); // two streams, a shot every two and a quarter frames for ten
+    REQUIRE(emptyHanded); // the move hides what she holds for most of its length
+    REQUIRE(scene.weaponHeld(0));
+    scene.close();
+}
+
+TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill feeds the meter",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{15.8f, 0.2f, 0.7f}; // open ground by the level's start
+    options.yaw = 0.5f;                         // looking away from the barrel beside it
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    PlayScene::Inputs strong{};
+    strong[0].strongAttack = true;
+    scene.update(1.0 / 60.0, strong);
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::StrongThrow);
+    f32 largest = 0.0f;
+    f32 hardest = 0.0f;
+    for (int i = 0; i < 400 && scene.animator(0)->strongThrowing(); ++i) {
+        scene.update(1.0 / 60.0, still);
+        for (usize m = 0; m < scene.missiles().count(); ++m) {
+            largest = std::max(largest, scene.missiles().missile(m).scale);
+            hardest = std::max(hardest, scene.missiles().missile(m).damage);
+        }
+    }
+    REQUIRE(largest == 2.0f);
+    REQUIRE(hardest >= 2.0f * PlayerMissiles::kLeastDamage);
+    REQUIRE(scene.turboMeter(0)->held() > 0.0f); // it costs the meter nothing
+
+    // G1 gives 2.85 times what is won; a kill's share of that goes to the meter.
+    REQUIRE(world.level()->tuning.experience == Catch::Approx(2.85f));
+    const f32 meter = scene.turboMeter(0)->held();
+    scene.awardExperience(0, 100);
+    REQUIRE(scene.actor(0)->save().experience() == 285);
+    REQUIRE(scene.turboMeter(0)->held() == Catch::Approx(meter + 0.025f * 285.0f));
+    const f32 fed = scene.turboMeter(0)->held();
+    scene.awardExperience(0, 100, false); // won otherwise, it feeds nothing
+    REQUIRE(scene.actor(0)->save().experience() == 570);
+    REQUIRE(scene.turboMeter(0)->held() == Catch::Approx(fed));
+    scene.close();
+}
+
+TEST_CASE("a character strafes with its facing held, rings itself with a potion, and is floored",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().health = 400;
+    save.progress().inventory.potions = {1};
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{15.8f, 0.2f, 0.7f};
+    options.yaw = 0.5f;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    for (int i = 0; i < 400 && scene.animator(0)->action() != PlayerAnimator::Action::Ready; ++i) {
+        scene.update(1.0 / 60.0, still); // its entrance plays out
+    }
+    // Strafing: it moves, in a strafing step, and faces where it did.
+    const f32 facing = scene.actor(0)->yaw();
+    const Vec3 from = scene.actor(0)->position();
+    PlayScene::Inputs sidestep{};
+    sidestep[0].strafe = true;
+    sidestep[0].move.direction = Vec2{1.0f, 0.0f};
+    sidestep[0].move.magnitude = 1.0f;
+    bool stepped = false;
+    for (int i = 0; i < 45; ++i) {
+        scene.update(1.0 / 60.0, sidestep);
+        stepped = stepped || scene.animator(0)->strafing();
+    }
+    REQUIRE(stepped);
+    REQUIRE(scene.actor(0)->yaw() == facing);
+    REQUIRE(glm::distance(scene.actor(0)->position(), from) > 1.0f);
+    // With the attack held as well, weapons fly as it goes.
+    sidestep[0].attack = true;
+    usize flying = 0;
+    for (int i = 0; i < 90; ++i) {
+        scene.update(1.0 / 60.0, sidestep);
+        flying = std::max(flying, scene.missiles().count());
+    }
+    REQUIRE(flying >= 2);
+    REQUIRE(scene.actor(0)->yaw() == facing);
+    for (int i = 0; i < 120; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+
+    // The shield potion: the potion goes and its ring goes about with the character.
+    PlayScene::Inputs ring{};
+    ring[0].shieldPotion = true;
+    usize rings = 0;
+    for (int i = 0; i < 120; ++i) {
+        scene.update(1.0 / 60.0, ring);
+        rings = std::max(rings, scene.effects().count());
+    }
+    REQUIRE(scene.actor(0)->save().progress().inventory.potions.empty());
+    REQUIRE(rings >= 1);
+    PlayScene::Inputs walking{};
+    walking[0].move.direction = Vec2{0.0f, 1.0f};
+    walking[0].move.magnitude = 1.0f;
+    for (int i = 0; i < 30; ++i) {
+        scene.update(1.0 / 60.0, walking);
+    }
+    REQUIRE(scene.effects().count() >= 1);
+    REQUIRE(glm::distance(scene.effects().effect(0).position, scene.actor(0)->position()) < 0.5f);
+    for (int i = 0; i < 300; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.effects().count() == 0); // spent
+
+    // A blast from in front of it throws it onto its back; it gets up again.
+    const Vec3 at = scene.actor(0)->position();
+    const Vec3 ahead = scene.actor(0)->facing();
+    scene.blast(at + ahead * 3.0f, 8.0f, 30.0f);
+    scene.update(1.0 / 60.0, walking);
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::FallBack);
+    const Vec3 floored = scene.actor(0)->position();
+    for (int i = 0; i < 20; ++i) {
+        scene.update(1.0 / 60.0, walking);
+    }
+    REQUIRE(glm::distance(scene.actor(0)->position(), floored) < 0.05f); // it cannot walk off
+    for (int i = 0; i < 600 && scene.animator(0)->floored(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(scene.animator(0)->floored());
+    scene.blast(scene.actor(0)->position() - ahead * 3.0f, 8.0f, 30.0f);
+    scene.update(1.0 / 60.0, still);
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::FallForward);
+    scene.close();
+}
+
 TEST_CASE("potions burst about the character or where they land, and powerups show",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();

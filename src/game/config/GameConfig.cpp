@@ -169,6 +169,9 @@ void GameConfig::mergeJson(std::string_view json) {
                 readKeys(k, "attack", play.attack);
                 readKeys(k, "usePotion", play.usePotion);
                 readKeys(k, "throwPotion", play.throwPotion);
+                readKeys(k, "shieldPotion", play.shieldPotion);
+                readKeys(k, "strafe", play.strafe);
+                readKeys(k, "strongAttack", play.strongAttack);
                 readKeys(k, "turbo", play.turbo);
                 readKeys(k, "charge", play.charge);
                 readKeys(k, "selectorUp", play.selectorUp);
@@ -185,6 +188,9 @@ void GameConfig::mergeJson(std::string_view json) {
                 readButtons(p, "attack", play.padAttack);
                 readButtons(p, "usePotion", play.padUsePotion);
                 readButtons(p, "throwPotion", play.padThrowPotion);
+                readButtons(p, "shieldPotion", play.padShieldPotion);
+                readButtons(p, "strafe", play.padStrafe);
+                readButtons(p, "strongAttack", play.padStrongAttack);
                 readButtons(p, "turbo", play.padTurbo);
                 readButtons(p, "charge", play.padCharge);
                 readButtons(p, "selectorUp", play.padSelectorUp);
@@ -247,6 +253,9 @@ std::string GameConfig::toJson() const {
                             {"attack", keyNames(play.attack)},
                             {"usePotion", keyNames(play.usePotion)},
                             {"throwPotion", keyNames(play.throwPotion)},
+                            {"shieldPotion", keyNames(play.shieldPotion)},
+                            {"strafe", keyNames(play.strafe)},
+                            {"strongAttack", keyNames(play.strongAttack)},
                             {"turbo", keyNames(play.turbo)},
                             {"charge", keyNames(play.charge)},
                             {"selectorUp", keyNames(play.selectorUp)},
@@ -261,6 +270,9 @@ std::string GameConfig::toJson() const {
                             {"attack", buttonNames(play.padAttack)},
                             {"usePotion", buttonNames(play.padUsePotion)},
                             {"throwPotion", buttonNames(play.padThrowPotion)},
+                            {"shieldPotion", buttonNames(play.padShieldPotion)},
+                            {"strafe", buttonNames(play.padStrafe)},
+                            {"strongAttack", buttonNames(play.padStrongAttack)},
                             {"turbo", buttonNames(play.padTurbo)},
                             {"charge", buttonNames(play.padCharge)},
                             {"selectorUp", buttonNames(play.padSelectorUp)},

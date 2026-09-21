@@ -15,6 +15,9 @@ namespace gdl {
 
 namespace {
 
+/** The archive's mark on a bitmap that has no picture of its own. */
+constexpr u32 kNoPictureFlag = 0x100;
+
 constexpr std::string_view kManifestName = "textures.json";
 
 } // namespace
@@ -44,6 +47,7 @@ bool TextureSet::load(const std::filesystem::path& directory) {
             entry.height = bitmap.at("height").get<u32>();
             entry.flags = bitmap.value("flags", 0U);
             entry.frames = bitmap.value("frames", 0U);
+            entry.noPicture = (bitmap.value("flags", 0U) & kNoPictureFlag) != 0;
             entry.halfResolution = bitmap.value("halfResolution", false);
             entry.clampU = bitmap.value("clampU", false);
             entry.clampV = bitmap.value("clampV", false);
@@ -90,7 +94,16 @@ const Image& TextureSet::image(u32 index) {
     GDL_VERIFY(index < m_entries.size(), "texture index out of range");
     Image& image = m_images[index];
     if (image.pixels.empty()) {
-        image = loadImageFile(m_entries[index].file);
+        // An archive marks some slots as having no picture of their own (an animated
+        // texture's, filled from frames kept elsewhere): those are clear, so that what wears
+        // them is unseen rather than the whole model failing.
+        if (!m_entries[index].noPicture) {
+            image = loadImageFile(m_entries[index].file);
+        } else {
+            image.width = 1;
+            image.height = 1;
+            image.pixels.assign(4, 0);
+        }
     }
     return image;
 }

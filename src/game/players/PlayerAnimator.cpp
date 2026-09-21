@@ -41,8 +41,29 @@ void PlayerAnimator::unbind() {
     m_potionLatch = false;
     m_dead = false;
     m_turboBegan = false;
+    m_strongReleased = false;
+    m_potionShielded = false;
+    m_shieldAsked = false;
+    m_strafe = StrafeWay::None;
     m_attackSeconds = 0.0f;
     m_player.stop();
+}
+
+PlayerAnimator::Action PlayerAnimator::strafeStep(StrafeWay way, bool shooting) {
+    const usize base = index(shooting ? Action::StrafeShootForward1 : Action::StrafeForward1);
+    const usize steps = way == StrafeWay::None ? 0 : static_cast<usize>(way) - 1;
+    return static_cast<Action>(base + steps * 2);
+}
+
+PlayerAnimator::Action PlayerAnimator::firstHalfOf(Action step) {
+    const usize base = index(Action::StrafeForward1);
+    return static_cast<Action>(base + (index(step) - base) / 2 * 2);
+}
+
+PlayerAnimator::Action PlayerAnimator::otherHalfOf(Action step) {
+    const usize base = index(Action::StrafeForward1);
+    const usize offset = index(step) - base;
+    return static_cast<Action>(base + (offset % 2 == 0 ? offset + 1 : offset - 1));
 }
 
 PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
@@ -50,6 +71,7 @@ PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
     case PlayerDeed::TurboStrong: return Action::TurboStrong;
     case PlayerDeed::TurboFull: return Action::TurboFull;
     case PlayerDeed::Shove: return Action::Shove;
+    case PlayerDeed::StrongAttack: return Action::StrongThrow;
     default: return Action::Ready;
     }
 }
@@ -85,6 +107,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     m_potionUsed = false;
     m_potionThrown = false;
     m_turboBegan = false;
+    m_strongReleased = false;
+    m_potionShielded = false;
     if (deed == PlayerDeed::Die || dying()) {
         // Nothing else is asked of a body that falls: it plays through once and stays down.
         if (m_sequences[index(Action::Death)] < 0) {
@@ -106,9 +130,13 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // A hit cuts into anything at once, unless one is already being reeled from; while it
     // plays nothing else is asked of the body.
-    const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel;
-    if (struck && !reacting()) {
-        const Action reaction = deed == PlayerDeed::Flinch ? Action::HitReact : Action::Stun;
+    const bool felled = deed == PlayerDeed::FallBack || deed == PlayerDeed::FallForward;
+    const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel || felled;
+    if (struck && !floored() && (felled || !reacting())) {
+        Action reaction = deed == PlayerDeed::Flinch ? Action::HitReact : Action::Stun;
+        if (felled) {
+            reaction = deed == PlayerDeed::FallBack ? Action::FallBack : Action::FallForward;
+        }
         if (m_sequences[index(reaction)] >= 0) {
             Decision reel;
             reel.action = reaction;
@@ -163,7 +191,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         return;
     }
     const bool turboAsked = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
-                            deed == PlayerDeed::Shove;
+                            deed == PlayerDeed::Shove || deed == PlayerDeed::StrongAttack;
     if (reacting() || struck || turboing() || turboAsked) {
         deed = PlayerDeed::None;
         motion = PlayerMotion::Stand;
@@ -171,11 +199,16 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     bool attack = deed == PlayerDeed::Attack;
     // A class without a deed's sequences does not do it.
     // One potion a press: the button must come up before it asks for another.
-    if (deed != PlayerDeed::UsePotion && deed != PlayerDeed::ThrowPotion) {
+    const bool forShield = deed == PlayerDeed::ShieldPotion;
+    if (deed != PlayerDeed::UsePotion && deed != PlayerDeed::ThrowPotion && !forShield) {
         m_potionLatch = false;
     }
-    const bool use = deed == PlayerDeed::UsePotion && !m_potionLatch &&
+    // A shield is raised with the same gesture as a potion is used.
+    const bool use = (deed == PlayerDeed::UsePotion || forShield) && !m_potionLatch &&
                      m_sequences[index(Action::UsePotion)] >= 0;
+    if (use) {
+        m_shieldAsked = forShield;
+    }
     const bool toss = deed == PlayerDeed::ThrowPotion && !m_potionLatch &&
                       m_sequences[index(Action::ThrowPotion)] >= 0;
     if (throwing()) {
@@ -183,7 +216,17 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // A class without the throw's sequences does not throw.
     attack = attack && m_sequences[index(Action::Throw)] >= 0;
-    if (attack || throwing() || use || toss || conjuring()) {
+    const bool stepping = m_strafe != StrafeWay::None && motion != PlayerMotion::Stand &&
+                          !throwing() && !conjuring();
+    if (stepping && attack && m_sequences[index(strafeStep(m_strafe, true))] >= 0) {
+        play(decide(strafeStep(m_strafe, true)), seconds);
+        m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+        if (m_player.transitioning()) {
+            m_pose.blend(m_previous, m_player.transition());
+        }
+        return;
+    }
+    if ((attack && !stepping) || throwing() || use || toss || conjuring()) {
         motion = PlayerMotion::Stand;
         m_stillTicks = 0;
         m_fidgetTicks = 0;
@@ -206,6 +249,9 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         requested = Action::UsePotion;
     } else if (toss) {
         requested = Action::ThrowPotion;
+    } else if (m_strafe != StrafeWay::None && motion != PlayerMotion::Stand &&
+               m_sequences[index(strafeStep(m_strafe, false))] >= 0) {
+        requested = strafeStep(m_strafe, false);
     } else if (attack) {
         requested = Action::Throw;
     } else if (motion == PlayerMotion::Run) {
@@ -313,7 +359,26 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::DefendRaise:
     case Action::Defend:
     case Action::DefendLower:
+    case Action::StrongThrowRecover:
         break; // whatever is asked next, once let go
+    case Action::StrongThrow:
+        d.action = Action::StrongThrowRecover; // the weapon leaves as the wind-up ends
+        break;
+    case Action::FallBack:
+        d.action = Action::GetUpBack;
+        break;
+    case Action::FallForward:
+        d.action = Action::GetUpForward;
+        break;
+    case Action::GetUpBack:
+    case Action::GetUpForward:
+        break;
+    default:
+        // A strafing step gives way to its other half while the same way is kept.
+        if (strafing() && requested == firstHalfOf(m_current)) {
+            d.action = otherHalfOf(m_current);
+        }
+        break;
     }
     // A potion cuts into standing, walking and running at once, as an attack does.
     if ((requested == Action::UsePotion || requested == Action::ThrowPotion) &&
@@ -369,10 +434,23 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     if (m_current == Action::ThrowRelease || m_current == Action::ThrowMovingRelease) {
         m_released = true;
     }
+    if (m_current == Action::StrongThrow && decision.action == Action::StrongThrowRecover) {
+        m_strongReleased = true;
+    }
+    // A strafing attack lets fly as each of its halves begins; its steps sound like a walk's.
+    if (decision.action >= Action::StrafeShootForward1 &&
+        decision.action <= Action::StrafeShootRight2) {
+        m_released = true;
+    }
+    if (strafing()) {
+        const bool first = (index(m_current) - index(Action::StrafeForward1)) % 2 == 0;
+        m_footfall = first ? Foot::First : Foot::Second;
+    }
     if (decision.action == Action::UsePotion || decision.action == Action::ThrowPotion) {
         m_potionLatch = true;
     }
-    m_potionUsed = decision.action == Action::UsePotionRelease;
+    m_potionUsed = decision.action == Action::UsePotionRelease && !m_shieldAsked;
+    m_potionShielded = decision.action == Action::UsePotionRelease && m_shieldAsked;
     m_potionThrown = decision.action == Action::ThrowPotionRelease;
     if ((decision.action == Action::Throw || decision.action == Action::ThrowMoving) &&
         !isThrow(m_current)) {

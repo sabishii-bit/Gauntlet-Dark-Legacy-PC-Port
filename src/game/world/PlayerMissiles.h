@@ -48,6 +48,7 @@ struct MissileLaunch {
     s32 potion = 0;                   ///< the kind of potion it is, which bursts where it lands
     f32 potency = 0.0f;               ///< the magic power its burst goes off with
     f32 damage = 0.0f;                ///< what it does to what it hits
+    f32 scale = 1.0f;                 ///< how large it is drawn: a strong throw's is doubled
 };
 
 /** Something standing that a missile stops against: an upright cylinder from its base. */
@@ -99,6 +100,7 @@ public:
         s32 potion = 0;
         f32 potency = 0.0f;
         f32 damage = 0.0f;
+        f32 scale = 1.0f;
         const MissileSpec* spec = nullptr;
         const TreeModel* model = nullptr;
     };

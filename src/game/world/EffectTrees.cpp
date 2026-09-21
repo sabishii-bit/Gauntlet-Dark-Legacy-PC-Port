@@ -19,6 +19,19 @@ void EffectTrees::stop(u32 id) {
                   [id](const std::unique_ptr<Effect>& effect) { return effect->id == id; });
 }
 
+void EffectTrees::moveTo(u32 id, const Vec3& position) {
+    for (const std::unique_ptr<Effect>& effect : m_effects) {
+        if (effect->id == id) {
+            effect->position = position;
+        }
+    }
+}
+
+bool EffectTrees::playing(u32 id) const {
+    return std::ranges::any_of(
+        m_effects, [id](const std::unique_ptr<Effect>& effect) { return effect->id == id; });
+}
+
 u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
                           const Vec3& position, const Setting& setting) {
     const auto index = archive.loaded() ? archive.trees.find(tree) : std::nullopt;

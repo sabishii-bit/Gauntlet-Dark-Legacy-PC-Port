@@ -38,6 +38,9 @@ LevelInfo parseLevel(const nlohmann::json& json) {
         };
         const f32 damage = tuning->value("damage", 0.0f);
         level.tuning.damage = damage != 0.0f ? damage : 1.0f;
+        level.tuning.playerLevel = tuning->value("playerLevel", 0.0f);
+        const f32 experience = tuning->value("experience", 0.0f);
+        level.tuning.experience = experience != 0.0f ? experience : 1.0f;
         level.tuning.trapRate = scaled("trapRate");
         level.tuning.trapDamage = scaled("trapDamage");
     }
@@ -132,6 +135,14 @@ std::string_view WorldData::soundName(s32 index) const {
         return {};
     }
     return m_sounds[static_cast<usize>(index)];
+}
+
+f32 LevelTuning::experienceScale(s32 level) const {
+    const auto reached = static_cast<f32>(level);
+    if (playerLevel > 0.0f && reached > playerLevel) {
+        return experience / (0.1f * (reached - playerLevel) + 1.0f);
+    }
+    return experience;
 }
 
 f32 LevelTuning::trapTimeScale(f32 gain) const {

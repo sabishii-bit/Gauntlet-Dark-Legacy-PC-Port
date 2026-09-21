@@ -1,0 +1,20 @@
+{
+  "screen": "tower",
+  "party": [
+    {
+      "player": 0,
+      "class": "WIZ",
+      "color": "BLU",
+      "name": "TEST",
+      "level": 1,
+      "turbo": 60
+    }
+  ],
+  "position": [
+    3.0,
+    2.0,
+    -20.0
+  ],
+  "yaw": 0.0,
+  "welcome": false
+}

@@ -15,6 +15,8 @@ namespace gdl {
  * leaves a scale at zero to mean the level's difficulty. */
 struct LevelTuning {
     f32 difficulty = 1.0f;
+    f32 playerLevel = 0.0f; ///< the level the place is meant for; none when nought
+    f32 experience = 1.0f;  ///< scales what is won there
     f32 damage = 1.0f;     ///< scales every hurt over a point
     f32 trapRate = 1.0f;   ///< how fast its traps cycle
     f32 trapDamage = 1.0f; ///< scales what its traps and blasts do
@@ -24,6 +26,9 @@ struct LevelTuning {
     f32 trapTimeScale(f32 gain) const;
     /** What a trap's or a blast's damage is multiplied by. */
     f32 trapDamageScale(f32 gain) const { return trapDamage * gain; }
+    /** What experience won here by a character of `level` is multiplied by: the place's own
+     * scale, less the further the character is past the level it is meant for. */
+    f32 experienceScale(s32 level) const;
 };
 
 struct LevelInfo {

@@ -468,4 +468,125 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
     REQUIRE_FALSE(other.guarding());
 }
 
+TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recovers",
+          "[game][players][animation]") {
+    TreeInfo tree = classTree();
+    const auto add = [&tree](const char* name, s32 frames) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = frames;
+        tree.sequences.push_back(sequence);
+    };
+    add("ATTPWRATHROW", 10);
+    add("ATTPWRATHROWR", 8);
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    REQUIRE(animator.canBegin(PlayerDeed::StrongAttack));
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
+    REQUIRE(animator.action() == Action::StrongThrow);
+    REQUIRE(animator.turboBegan());
+    REQUIRE(animator.strongThrowing());
+    REQUIRE(animator.moveScale() == PlayerAnimator::kStrongThrowPace);
+    int releases = 0;
+    int steps = 0;
+    while (animator.strongThrowing() && steps < 200) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
+        if (animator.strongReleased()) {
+            REQUIRE(animator.action() == Action::StrongThrowRecover);
+            ++releases;
+        }
+        ++steps;
+    }
+    REQUIRE(releases == 1);
+    REQUIRE_FALSE(animator.strongThrowing());
+    REQUIRE_FALSE(animator.released()); // not an ordinary throw
+    // A class without the sequence has no strong throw.
+    const TreeInfo plain = classTree();
+    PlayerAnimator other;
+    REQUIRE(other.bind(plain, false));
+    REQUIRE_FALSE(other.canBegin(PlayerDeed::StrongAttack));
+}
+
+TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and falls can floor it",
+          "[game][players][animation]") {
+    TreeInfo tree = classTree();
+    const auto add = [&tree](const char* name, s32 frames) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = frames;
+        tree.sequences.push_back(sequence);
+    };
+    for (const char* name : {"STRAFE_WLKF1", "STRAFE_WLKF2", "STRAFE_WLKB1", "STRAFE_WLKB2",
+                             "STRAFE_WLKL1", "STRAFE_WLKL2", "STRAFE_WLKR1", "STRAFE_WLKR2",
+                             "STRAFE_ATKF1", "STRAFE_ATKF2", "STRAFE_ATKB1", "STRAFE_ATKB2",
+                             "STRAFE_ATKL1", "STRAFE_ATKL2", "STRAFE_ATKR1", "STRAFE_ATKR2"}) {
+        add(name, 6);
+    }
+    add("FALLDOWN", 8);
+    add("GETUP", 8);
+    add("FALLFRNT", 8);
+    add("GETUP2", 8);
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.setStrafe(StrafeWay::Left);
+    animator.update(PlayerMotion::Walk, kTicks, kStep);
+    REQUIRE(animator.action() == Action::StrafeLeft1);
+    REQUIRE(animator.strafing());
+    REQUIRE(animator.moveScale() == 1.0f);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::StrafeLeft2, 60) < 60);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::StrafeLeft1, 60) < 60);
+    // Another way is taken up at the end of the step; standing still, it stands.
+    animator.setStrafe(StrafeWay::Back);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::StrafeBack1, 60) < 60);
+    // An attack asked of it is made as it goes, one let fly as each half begins.
+    int shots = 0;
+    for (int i = 0; i < 120; ++i) {
+        animator.update(PlayerMotion::Walk, kTicks, kStep, true);
+        shots += animator.released() ? 1 : 0;
+        REQUIRE_FALSE(animator.throwing()); // its feet are never planted for it
+    }
+    REQUIRE(animator.action() >= Action::StrafeShootBack1);
+    REQUIRE(animator.action() <= Action::StrafeShootBack2);
+    REQUIRE(shots >= 4);
+    animator.setStrafe(StrafeWay::None);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
+
+    // Floored, it falls, gets up the way it fell, and heeds nothing meanwhile.
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::FallForward);
+    REQUIRE(animator.action() == Action::FallForward);
+    REQUIRE(animator.floored());
+    REQUIRE(animator.reacting());
+    REQUIRE(animator.moveScale() == 0.0f);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::FallBack); // not felled again
+    REQUIRE(animator.action() == Action::FallForward);
+    REQUIRE(stepsUntilAttack(animator, Action::GetUpForward, 120) < 120);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 120) < 120);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::FallBack);
+    REQUIRE(animator.action() == Action::FallBack);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::GetUpBack, 120) < 120);
+}
+
+TEST_CASE("a shield potion is raised with the gesture of a potion used, and told apart",
+          "[game][players][animation]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    bool shielded = false;
+    bool used = false;
+    for (int i = 0; i < 200; ++i) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ShieldPotion);
+        shielded = shielded || animator.potionShielded();
+        used = used || animator.potionUsed();
+    }
+    REQUIRE(shielded);
+    REQUIRE_FALSE(used);
+    // One a press, as with any potion.
+    int again = 0;
+    for (int i = 0; i < 200; ++i) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ShieldPotion);
+        again += animator.potionShielded() ? 1 : 0;
+    }
+    REQUIRE(again == 0);
+}
+
 } // namespace

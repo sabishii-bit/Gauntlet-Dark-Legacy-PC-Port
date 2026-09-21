@@ -862,11 +862,13 @@ void unpackClassData(const std::filesystem::path& file, const std::filesystem::p
         json.key("delay").value(static_cast<f64>(strike.delay));
         json.key("minTime").value(static_cast<f64>(strike.minTime));
         json.key("maxTime").value(static_cast<f64>(strike.maxTime));
+        json.key("angle").value(static_cast<f64>(strike.angle));
         json.key("arc").value(static_cast<f64>(strike.arc));
         json.key("offset").numbers(strike.offset);
         json.key("amount").value(static_cast<f64>(strike.amount));
         json.key("speedMin").value(static_cast<f64>(strike.speedMin));
         json.key("speedMax").value(static_cast<f64>(strike.speedMax));
+        json.key("weight").value(static_cast<f64>(strike.weight));
         json.key("effect").value(static_cast<int>(strike.effect));
         json.key("hitEffect").value(static_cast<int>(strike.hitEffect));
         json.key("loopEffect").value(static_cast<int>(strike.loopEffect));

@@ -65,6 +65,9 @@ public:
                  const Vec3& position, const Setting& setting);
     /** Ends effect number `id` now. */
     void stop(u32 id);
+    /** Puts effect number `id` at `position`, as one that goes about with a character. */
+    void moveTo(u32 id, const Vec3& position);
+    bool playing(u32 id) const;
     void update(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void clear();

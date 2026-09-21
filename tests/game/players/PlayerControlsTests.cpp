@@ -128,7 +128,13 @@ TEST_CASE("turbo is held; the charge and the attack are known the frame they go 
     input.beginPoll();
     input.setKey(Key::LeftShift, true);
     input.setKey(Key::F, true);
+    input.setKey(Key::R, true);
+    input.setKey(Key::C, true);
+    input.setKey(Key::LeftControl, true);
     PlayButtons buttons = readPlayButtons(input, PlayBindings{}, true, kNoPad);
+    REQUIRE(buttons.strongAttack);
+    REQUIRE(buttons.shieldPotion);
+    REQUIRE(buttons.strafe);
     REQUIRE(buttons.turbo);
     REQUIRE(buttons.chargePressed);
     REQUIRE_FALSE(buttons.attackPressed);

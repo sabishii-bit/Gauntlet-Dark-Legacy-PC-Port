@@ -338,10 +338,72 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   flip-books of meshes (type 2 "OANIM" nodes with `objectFrames`); the
   player archives must be unpacked with a gdlunpack that writes them, or
   the projectile and half of each burst are simply not there.
-  Not yet: the strong ("turbo A") attack and its rows, hit effects, damage
-  types (knock-over, fire), the block's clank, the directional guards, and
-  the two player combo (a grab, carry and throw system of its own, help
-  111 with it).
+  Every class's moves run from its own rows, the unlockable ones' too: they
+  have no `ANIM` or `SFX<COL>` folders of their own, and
+  `PlayScene::classFolder` gives them those of the class they shadow
+  (`character % kStartingClassCount`), which hold their sequences, their
+  thrown weapons (`MIN_THROW1` is in `WAR/SFX<COL>`) and the trees their
+  rows name. Besides bursts and what flies, a row may be a span that only
+  lasts (type 0: with flag 0x400 the hand is empty while it does,
+  `MoveProgress::weaponHidden`) or a volley (type 10): while it lasts the
+  character's own missile is let fly every `delay` frames, off the facing by
+  the row's `angle`, which closes from full to none across the span with
+  flag 0x200 (the archer's Double Bow is two such, from a quarter turn to
+  either side) or opens with 0x100 (`runVolley`, `launchWeapon`). A strike
+  that harms something shows its `hitEffect` there. The strong attack
+  (`strongAttack`: R, left bumper; the original's SLOW ATTACK) is, with
+  nothing in reach, the strong throw: `ATTPWRATHROW` at a quarter pace, the
+  weapon leaving as it ends at twice the size and the harm
+  (`MissileLaunch::scale`), then `ATTPWRATHROWR` with the hand empty; its
+  rows (`turboAThrow`) give its sound, and it costs the meter nothing. Its
+  melee variants (close, low, step, 360: `turboAClose` and the rest, at
+  half to one and a half times the character's own harm) need something in
+  reach, so they wait for enemies. `PlayScene::awardExperience` is the
+  original's award: scaled by the level (`LevelTuning::experienceScale`:
+  the place's own scale, G1's 2.85, less the further the character is past
+  the level it is meant for), a kill's feeding the meter 0.025 of what was
+  won unless a turbo move is under way; only enemies, critters and
+  generators ever award any, so nothing calls it yet. A guard that takes
+  more than 2 off a hurt shows `BLOCKFX` for 0.01 s a point that got
+  through (a third of a second to one), and not again until it is over
+  (untinted: the original colours it by class at a quarter alpha).
+  Not yet: the strong attack's melee variants, damage types (the element,
+  knock-over) doing anything, the directional guards (what selects them was
+  not found; they look like answers to where a blow comes from), and the
+  two player combo (a grab, carry and throw system of its own, help 111
+  with it).
+* More of what a player can do. Strafing (`strafe`: Left Control, left thumb;
+  the original's STRAFE): while it is held and the stick pushed, the
+  character steps that way with its facing held (`PlayerActor::update`'s
+  `keepFacing`), in the `STRAFE_WLK<F|B|L|R><1|2>` half cycles picked by the
+  step's heading against the facing (within an eighth of a turn of ahead or
+  behind, else the side, a positive turn being the original's right:
+  `PlayScene::strafeWayOf`, `PlayerAnimator::setStrafe`); with the attack
+  held too it goes on stepping in `STRAFE_ATK..` and lets its weapon fly as
+  each half begins, its feet never planted. The shield potion
+  (`shieldPotion`: C, right thumb) is raised with the gesture of a potion
+  used (`PlayerDeed::ShieldPotion`, `potionShielded()`): the potion's
+  `MS_FIRE|ELEC|LIGHT|ACID` tree rings the character for three seconds,
+  going about with it (`EffectTrees::moveTo`), sized like a burst, to
+  `S_SHIELD1..4`, and harms what it touches for a quarter of the magic power
+  every half second (ours: the original's is an effect with a damage radius;
+  it takes nothing off what the character is dealt). A blast that gets more
+  than a point through and finds no guard floors its victim: onto its face
+  (`FALLFRNT`, then `GETUP2`) when it came from behind the way it faces,
+  onto its back (`FALLDOWN`, `GETUP`) otherwise, heeding nothing until it is
+  up (`PlayerAnimator::floored`, part of `reacting`). Not yet, because they
+  need something to be aimed at or to come from: melee (the quick and slow
+  attacks against what is in reach, their combos and directions, which the
+  original resolves through its enemy targeting), the knock-back slide,
+  falling from ledges (`FALLING`, `LAND`: the actor still refuses a step
+  with nothing under it), pushing, webs, grabs and Death's, the victory
+  pose, the super shot and the familiars' attacks.
+* A bitmap an archive flags 0x100 has no picture of its own (an animated
+  texture's slot, such as the magic users' `<COL>_HANDGLOW`, filled in the
+  original from frames kept elsewhere): `TextureSet` draws it clear
+  (`TextureSetEntry::noPicture`) instead of failing, which used to keep
+  every wizard, archer and the like from being built at all. A file that is
+  simply missing is still an error.
 * Barrels (`world/Breakables`): item type 10 subtypes 43 plain, 44
   exploding, 45 poison, and the containers of subtype 43 that hold an item.
   Hit points and armour come from the record (5 and 1): a blow takes its
@@ -381,7 +443,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   a level nor one that fell is shown Sumner's hall first.
   Scenarios: `level-g1-chest.json`, `level-g1-gate.json`,
   `level-g1-trap.json`, `level-g1-nokey.json`, `level-g1-barrel.json`,
-  `level-g1-death.json`, `level-g1-turbo.json`. A scenario's `position` is not checked against
+  `level-g1-death.json`, `level-g1-turbo.json`; in the tower
+  `tower-turbo-archer.json`, `tower-turbo-wizard.json` and `tower-strafe.json`. A scenario's `position` is not checked against
   walls: pick open ground from the level's collision.
 * Texture wrapping is per axis (`TextureDesc::wrap` across, `wrapV` down,
   `TextureSetEntry::clampU`/`clampV`, eight Vulkan samplers): levels clamp

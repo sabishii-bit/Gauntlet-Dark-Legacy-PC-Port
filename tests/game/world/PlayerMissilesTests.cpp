@@ -3,7 +3,6 @@
 #include <vector>
 
 #include <array>
-#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -211,6 +210,20 @@ TEST_CASE("what stands in a missile's way stops it and learns what hit it",
     }
     REQUIRE(missiles.takeImpacts().empty());
     REQUIRE(missiles.count() == 1);
+}
+
+TEST_CASE("a strong throw's weapon flies twice the size", "[game][world][missiles]") {
+    PlayerMissiles missiles;
+    MissileLaunch launch = axeFrom(Vec3{0.0f, 2.0f, 0.0f});
+    launch.scale = 2.0f;
+    REQUIRE(missiles.launch(launch));
+    REQUIRE(missiles.missile(0).scale == 2.0f);
+    const Mat4 placed = PlayerMissiles::transformOf(missiles.missile(0));
+    REQUIRE(glm::length(Vec3{placed[0]}) == Catch::Approx(2.0f));
+    launch.scale = 1.0f;
+    REQUIRE(missiles.launch(launch));
+    REQUIRE(glm::length(Vec3{PlayerMissiles::transformOf(missiles.missile(1))[0]}) ==
+            Catch::Approx(1.0f));
 }
 
 } // namespace

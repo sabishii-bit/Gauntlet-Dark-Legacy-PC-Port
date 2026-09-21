@@ -82,6 +82,7 @@ PlayerClassRecord parsePlayerDataWad(std::span<const u8> bytes) {
             strike.delay = readWadF32(bytes, at + 0x14, kWhat);
             strike.minTime = readWadF32(bytes, at + 0x18, kWhat);
             strike.maxTime = readWadF32(bytes, at + 0x1C, kWhat);
+            strike.angle = readWadF32(bytes, at + 0x20, kWhat);
             strike.arc = readWadF32(bytes, at + 0x24, kWhat);
             for (usize axis = 0; axis < 3; ++axis) {
                 strike.offset[axis] = readWadF32(bytes, at + 0x2C + axis * 4, kWhat);
@@ -89,6 +90,7 @@ PlayerClassRecord parsePlayerDataWad(std::span<const u8> bytes) {
             strike.amount = readWadF32(bytes, at + 0x38, kWhat);
             strike.speedMin = readWadF32(bytes, at + 0x3C, kWhat);
             strike.speedMax = readWadF32(bytes, at + 0x40, kWhat);
+            strike.weight = readWadF32(bytes, at + 0x44, kWhat);
             strike.effect = s16At(at + 0x48);
             strike.hitEffect = s16At(at + 0x4A);
             strike.loopEffect = s16At(at + 0x4C);

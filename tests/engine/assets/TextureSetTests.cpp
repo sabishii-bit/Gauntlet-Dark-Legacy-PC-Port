@@ -101,6 +101,22 @@ TEST_CASE("missing images surface as file errors", "[assets][textures]") {
     REQUIRE_THROWS_AS(set.image(1), FileError);
 }
 
+TEST_CASE("a slot the archive keeps no picture for is clear", "[assets][textures]") {
+    const auto dir = test::scratchDirectory("texture-set-no-picture");
+    writeTextFile(dir / "textures.json", R"({"bitmaps": [
+  {"index": 0, "name": "HANDGLOW", "file": "textures/000_HANDGLOW.png", "width": 32,
+   "height": 32, "flags": 429, "frames": 5}]})");
+    TextureSet set;
+    REQUIRE(set.load(dir));
+    REQUIRE(set.entry(0).noPicture);
+    const Image& clear = set.image(0); // no such file, and none is looked for
+    REQUIRE(clear.width == 1);
+    REQUIRE(clear.height == 1);
+    REQUIRE(clear.pixels == std::vector<u8>{0, 0, 0, 0});
+    test::FakeRenderDevice device;
+    REQUIRE(set.texture(device, 0).width() == 1);
+}
+
 TEST_CASE("a missing or malformed manifest fails to load", "[assets][textures]") {
     TextureSet set;
     REQUIRE_FALSE(set.load(test::scratchDirectory("texture-set-empty")));

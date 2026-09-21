@@ -270,6 +270,9 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         in.attack = buttons.attack;
         in.usePotion = buttons.usePotion;
         in.throwPotion = buttons.throwPotion;
+        in.shieldPotion = buttons.shieldPotion;
+        in.strafe = buttons.strafe;
+        in.strongAttack = buttons.strongAttack;
         in.turbo = buttons.turbo;
         in.chargePressed = buttons.chargePressed;
         in.attackPressed = buttons.attackPressed;

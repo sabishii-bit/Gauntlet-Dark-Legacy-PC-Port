@@ -77,4 +77,29 @@ TEST_CASE("an effect can be turned, carried along and kept repeating until it is
     REQUIRE(effects.count() == 0);
 }
 
+TEST_CASE("the classes' turbo effects play through, flip-books that start late and all",
+          "[game][world][effects][unpacked]") {
+    const std::filesystem::path root =
+        test::unpackedOrSkip("PLAYERS/WIZ/SFXBLU/animations.json").parent_path().parent_path()
+            .parent_path().parent_path();
+    test::FakeRenderDevice device;
+    for (const char* cls : {"WAR", "VAL", "WIZ", "ARC", "DWF", "KNI", "SOR", "JES"}) {
+        ItemArchive archive;
+        REQUIRE(archive.load(root / "PLAYERS" / cls / "SFXBLU"));
+        for (usize t = 0; t < archive.trees.size(); ++t) {
+            const std::string name = archive.trees.tree(t).name;
+            CAPTURE(cls, name);
+            EffectTrees effects;
+            if (!effects.start(device, archive, name, Vec3{0.0f})) {
+                continue; // a tree with nothing to bind
+            }
+            for (int i = 0; i < 400 && effects.count() > 0; ++i) {
+                effects.update(1.0f / 60.0f);
+                effects.draw(device, Mat4{1.0f}, WorldLighting{});
+            }
+            REQUIRE(effects.count() == 0);
+        }
+    }
+}
+
 } // namespace
