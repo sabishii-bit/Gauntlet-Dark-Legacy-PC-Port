@@ -574,6 +574,17 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `assets/StringTable` by identifier (`data/text/en.json`); code never holds
   a literal the player reads. A screen receives all of this through
   `game/screens/GameContext`.
+* The original's longer texts are in the string table too, so that they can
+  be translated: every message of the scroll texts (`scroll.<name>.<page>`:
+  Sumner's speeches, the unlock and rune scrolls, the level scrolls), of his
+  hints (`hint.<name>.<page>`) and the help messages in use
+  (`help.<name>.<line>`), names in lower case and pages from 1.
+  `MessageTable::translate(strings, prefix)` swaps a message's pages for the
+  table's after loading (as many as are numbered without a gap, so a
+  language may use more or fewer); fonts, scales and lists stay the rom's,
+  and a message the table lacks keeps the rom's words. A test holds
+  `en.json` word for word to the unpacked roms; a help message added to
+  `HelpMessages` needs its lines added to `en.json` as well.
 * 2D screens draw through `ui/Canvas` in the configured virtual space (the
   original's 512x384) and `ui/TextPainter` for bitmap text; `ui/ModelSprite`
   draws an animation tree's meshes as a lit 3D object on that canvas, sized

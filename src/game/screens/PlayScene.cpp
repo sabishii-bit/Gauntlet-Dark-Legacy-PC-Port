@@ -107,6 +107,8 @@ constexpr f32 kMasterScale = 1.2f; ///< at level 99
 constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
 constexpr std::string_view kChestSound = "S_CHEST";
 constexpr std::string_view kNarratorBank = "VOICE1";
+constexpr std::string_view kHelpTextPrefix = "help";
+constexpr std::string_view kScrollTextPrefix = "scroll";
 constexpr std::string_view kStringsFile = "text/english.json";
 constexpr std::string_view kDeathSound = "S_PLAYERDIES";
 constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
@@ -190,6 +192,10 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     m_barrels.bind(device, world.layout(), world.items(), &world.collision());
     m_strings.load(context.unpackedRoot / kStringsFile);
+    // What the player reads is the string table's, so that it can be in any language.
+    if (context.strings != nullptr) {
+        m_strings.translate(*context.strings, kHelpTextPrefix);
+    }
     m_help.clear();
     m_help.setTexts(&m_strings);
     m_refusedPortal = -1;
@@ -1207,6 +1213,9 @@ void PlayScene::loadIntroArt(RenderDevice& device) {
         m_scroll.setArt(art);
         return;
     }
+    if (m_context.strings != nullptr) {
+        m_scrollText.translate(*m_context.strings, kScrollTextPrefix);
+    }
     const auto texture = [&](std::string_view name, u32 frame = 0) -> const Texture* {
         const auto index = m_staticTextures.find(name);
         if (!index.has_value() || *index + frame >= m_staticTextures.size()) {
@@ -1259,6 +1268,9 @@ void PlayScene::loadHintArt(RenderDevice& device) {
         log::warn("Tower: Sumner's hints are not unpacked; he has nothing to say");
         m_hintMenu.setArt(std::move(art));
         return;
+    }
+    if (m_context.strings != nullptr) {
+        m_hints.translate(*m_context.strings);
     }
     const auto texture = [&](std::string_view name) -> const Texture* {
         const auto index = m_staticTextures.find(name);

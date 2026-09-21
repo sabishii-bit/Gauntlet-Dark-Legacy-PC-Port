@@ -60,6 +60,9 @@ public:
 
     /** Reads the unpacked hint texts; false (with a warning) when they are missing. */
     bool load(const std::filesystem::path& file);
+    /** Takes the hints' words from the game's strings, under `hint.`. */
+    void translate(const StringTable& strings) { m_text.translate(strings, kTextPrefix); }
+    static constexpr std::string_view kTextPrefix = "hint";
     bool loaded() const { return m_text.loaded(); }
 
     /** Starts the guardian, legend and runestone hints over, as each visit to him does; the
