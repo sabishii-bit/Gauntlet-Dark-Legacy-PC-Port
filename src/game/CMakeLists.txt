@@ -20,6 +20,8 @@ add_library(game STATIC
     players/Progression.cpp
     players/CharacterSave.h
     players/CharacterSave.cpp
+    players/TurboMeter.h
+    players/TurboMeter.cpp
     players/Party.h
     players/Party.cpp
     players/Inventory.h

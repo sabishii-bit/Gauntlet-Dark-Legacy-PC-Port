@@ -2,6 +2,7 @@
 
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -12,6 +13,8 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
+
+#include "game/players/TurboMeter.h"
 
 namespace gdl::game {
 
@@ -35,6 +38,7 @@ struct StatusBoxView {
     s32 potions = 0;
     s32 potionKind = 0; ///< of the potion thrown next, which picks the icon's colour
     bool inTower = false; ///< fallen: the box says so in place of what is carried
+    std::optional<TurboMeterLook> turbo; ///< the turbo meter over the box, when it has one
 };
 
 /**
@@ -44,6 +48,9 @@ struct StatusBoxView {
  */
 class StatusBoxPainter {
 public:
+    static constexpr s32 kTurboY = 304;      ///< the turbo meter's sheets, the box's width
+    static constexpr s32 kGleamX = 80;       ///< its gleam, within the box
+    static constexpr s32 kGleamY = 310;
     static constexpr s32 kInTowerY = 340;    ///< where a fallen character's box says so
     static constexpr f32 kInTowerScale = 1.2f;
     static constexpr s32 kCarriedY = 323;    ///< the key and potion icons' top
@@ -76,6 +83,9 @@ public:
     void draw(Canvas& canvas, s32 slot, const StatusBoxView& view, bool bar);
     /** Draws a pickup's strip at `y` over slot `slot`, the STATIC `card` hanging under it. */
     void drawCard(Canvas& canvas, s32 slot, std::string_view card, s32 y);
+    /** The turbo meter over a box: the bar behind, the front colour grown from its middle,
+     * the glint, the glow of a full one and the gleam of a change. */
+    void drawTurbo(Canvas& canvas, s32 slot, const TurboMeterLook& look);
     /** Draws a pickup count above slot `slot`: the STATIC `icon`, then "count/total". */
     void drawCount(Canvas& canvas, s32 slot, std::string_view icon, s32 count, s32 total);
 

@@ -8,7 +8,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 11> kSpecs{{
+constexpr std::array<HelpMessageSpec, 12> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY", false},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2", false},
     {HelpMessages::kKeysFull, "FULLOFKEYS", "S_KEYFULL", false},
@@ -16,6 +16,7 @@ constexpr std::array<HelpMessageSpec, 11> kSpecs{{
     {HelpMessages::kTrapsHurt, "AVOIDOBJECTS", "S_AVOID", false},
     {HelpMessages::kRandomChest, "RANDOMCHEST", "S_SILVER", false},
     {HelpMessages::kBarrelsHold, "WOODBARREL", "S_SOMEBARRELS", false},
+    {HelpMessages::kUseTurbo, "USETURBO", "S_USETURBO", false},
     {HelpMessages::kHealthFull, "HEALTHFULL", "S_HEALTHFULL", true},
     {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS", false},
     {HelpMessages::kGasSpoils, "GASPOISON", "S_GASFOODBAD", false},

@@ -122,4 +122,34 @@ TEST_CASE("the stick moves past its dead zone and the pad buttons add to it",
     REQUIRE(readMoveInput(input, PlayBindings{}, false, kAllPads).any());
 }
 
+TEST_CASE("turbo is held; the charge and the attack are known the frame they go down",
+          "[game][players][controls]") {
+    Input input;
+    input.beginPoll();
+    input.setKey(Key::LeftShift, true);
+    input.setKey(Key::F, true);
+    PlayButtons buttons = readPlayButtons(input, PlayBindings{}, true, kNoPad);
+    REQUIRE(buttons.turbo);
+    REQUIRE(buttons.chargePressed);
+    REQUIRE_FALSE(buttons.attackPressed);
+    input.beginPoll();
+    input.setKey(Key::Space, true);
+    buttons = readPlayButtons(input, PlayBindings{}, true, kNoPad);
+    REQUIRE(buttons.turbo);
+    REQUIRE_FALSE(buttons.chargePressed); // still held, no longer new
+    REQUIRE(buttons.attack);
+    REQUIRE(buttons.attackPressed);
+    input.beginPoll();
+    buttons = readPlayButtons(input, PlayBindings{}, true, kNoPad);
+    REQUIRE(buttons.attack);
+    REQUIRE_FALSE(buttons.attackPressed);
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.buttons[static_cast<usize>(PadButton::RightBumper)] = true;
+    pad.buttons[static_cast<usize>(PadButton::Y)] = true;
+    input.setPad(0, pad);
+    REQUIRE(readPlayButtons(input, PlayBindings{}, false, 0).turbo);
+    REQUIRE(readPlayButtons(input, PlayBindings{}, false, 0).chargePressed);
+}
+
 } // namespace

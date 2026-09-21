@@ -55,6 +55,7 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.health = entry.value("health", 0);
         member.keys = entry.value("keys", 0);
         member.slot = entry.value("slot", -1);
+        member.turbo = entry.value("turbo", 0.0f);
         member.potions = entry.value("potions", std::vector<s32>{});
         for (const Json& powerup : entry.value("powerups", Json::array())) {
             member.powerups.push_back(PowerupSlot{powerup.value("strength", 30.0f),
@@ -125,7 +126,8 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         members.push_back(PartyMember{
             member.player, std::move(save),
             member.slot >= 0 ? std::optional<usize>{static_cast<usize>(member.slot)}
-                             : std::nullopt});
+                             : std::nullopt,
+            false, member.turbo});
     }
     return members;
 }

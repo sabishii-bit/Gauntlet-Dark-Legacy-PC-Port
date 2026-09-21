@@ -23,6 +23,7 @@ struct ScenarioMember {
     s32 health = 0; ///< none leaves it full
     s32 keys = 0;
     s32 slot = -1; ///< the save slot the character is kept in; none when negative
+    f32 turbo = 0.0f; ///< what its turbo meter starts with
     std::vector<s32> potions; ///< the kind of each carried
     std::vector<PowerupSlot> powerups; ///< carried and worn
 };

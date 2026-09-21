@@ -367,4 +367,49 @@ TEST_CASE("struck, a character flinches or reels where it stands and then carrie
     REQUIRE_FALSE(animator.released());
 }
 
+TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it begins",
+          "[game][players][animation]") {
+    TreeInfo tree = classTree();
+    const auto add = [&tree](const char* name, s32 frames) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = frames;
+        tree.sequences.push_back(sequence);
+    };
+    add("ATTPWRB", 12);
+    add("ATTPWRC", 12);
+    add("SHOVE", 8);
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    REQUIRE_FALSE(animator.canBegin(PlayerDeed::Attack));
+    REQUIRE(animator.canBegin(PlayerDeed::TurboFull));
+    REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 10) < 10);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::TurboStrong);
+    REQUIRE(animator.action() == Action::TurboStrong);
+    REQUIRE(animator.turboBegan());
+    REQUIRE(animator.turboing());
+    REQUIRE(animator.moveScale() == 0.0f);
+    REQUIRE_FALSE(animator.canBegin(PlayerDeed::Shove)); // one at a time
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::TurboFull);
+    REQUIRE(animator.action() == Action::TurboStrong);
+    REQUIRE_FALSE(animator.turboBegan()); // only the tick it began
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+    REQUIRE(animator.action() == Action::TurboStrong);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 60) < 60);
+    REQUIRE_FALSE(animator.turboing());
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Shove);
+    REQUIRE(animator.action() == Action::Shove);
+    // A hit cuts even into that.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Flinch);
+    REQUIRE(animator.action() == Action::HitReact);
+    // A class without the sequence does not do the move.
+    const TreeInfo plain = classTree();
+    PlayerAnimator other;
+    REQUIRE(other.bind(plain, false));
+    REQUIRE_FALSE(other.canBegin(PlayerDeed::TurboFull));
+    other.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::TurboFull);
+    REQUIRE(other.action() != Action::TurboFull);
+    REQUIRE_FALSE(other.turboBegan());
+}
+
 } // namespace

@@ -18,7 +18,7 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
   "screen": "tower",
   "party": [
     {"player": 2, "class": "val", "color": "red", "name": "Kim", "level": 3, "crystals": [0, 5],
-     "gold": 120, "health": 250, "keys": 2, "slot": 5, "potions": [1, 4],
+     "gold": 120, "health": 250, "keys": 2, "slot": 5, "turbo": 45, "potions": [1, 4],
      "powerups": [{"kind": 5, "flags": 524288}, {"kind": 7, "charge": 2.5, "strength": 60}]},
     {"class": "WAR"}
   ],
@@ -49,6 +49,8 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE(members[0].save.health() == 250);
     REQUIRE(members[0].save.progress().inventory.keys == 2);
     REQUIRE(members[0].slot == std::optional<usize>{5}); // kept in a slot when it names one
+    REQUIRE(members[0].turbo == 45.0f);
+    REQUIRE(members[1].turbo == 0.0f);
     REQUIRE(members[0].save.progress().inventory.nextPotion() == 4);
     REQUIRE(members[0].save.progress().inventory.powerupCount() == 2);
     REQUIRE(members[0].save.progress().inventory.powerup(5, 0x80000)->strength == 30.0f);

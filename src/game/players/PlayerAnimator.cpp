@@ -40,8 +40,27 @@ void PlayerAnimator::unbind() {
     m_potionThrown = false;
     m_potionLatch = false;
     m_dead = false;
+    m_turboBegan = false;
     m_attackSeconds = 0.0f;
     m_player.stop();
+}
+
+PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
+    switch (deed) {
+    case PlayerDeed::TurboStrong: return Action::TurboStrong;
+    case PlayerDeed::TurboFull: return Action::TurboFull;
+    case PlayerDeed::Shove: return Action::Shove;
+    default: return Action::Ready;
+    }
+}
+
+bool PlayerAnimator::canBegin(PlayerDeed deed) const {
+    const Action action = turboActionOf(deed);
+    if (action == Action::Ready) {
+        return false;
+    }
+    return bound() && m_sequences[index(action)] >= 0 && m_entered && !throwing() &&
+           !conjuring() && !reacting() && !turboing() && !dying();
 }
 
 PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
@@ -65,6 +84,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     m_released = false;
     m_potionUsed = false;
     m_potionThrown = false;
+    m_turboBegan = false;
     if (deed == PlayerDeed::Die || dying()) {
         // Nothing else is asked of a body that falls: it plays through once and stays down.
         if (m_sequences[index(Action::Death)] < 0) {
@@ -101,7 +121,19 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
             return;
         }
     }
-    if (reacting() || struck) {
+    // A turbo move cuts into standing, walking and running at once and plays through.
+    if (canBegin(deed)) {
+        Decision move;
+        move.action = turboActionOf(deed);
+        move.cut = Cut::Now;
+        play(move, seconds);
+        m_turboBegan = true;
+        m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+        return;
+    }
+    const bool turboAsked = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
+                            deed == PlayerDeed::Shove;
+    if (reacting() || struck || turboing() || turboAsked) {
         deed = PlayerDeed::None;
         motion = PlayerMotion::Stand;
     }
@@ -244,6 +276,9 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::Death:
     case Action::HitReact:
     case Action::Stun:
+    case Action::TurboStrong:
+    case Action::TurboFull:
+    case Action::Shove:
         break; // whatever is asked next, once let go
     }
     // A potion cuts into standing, walking and running at once, as an attack does.

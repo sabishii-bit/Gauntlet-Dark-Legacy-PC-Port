@@ -21,7 +21,10 @@ enum class PlayerDeed : u8 {
     ThrowPotion,
     Die,
     Flinch, ///< struck by spikes or a blade
-    Reel    ///< stunned, as by a fire trap
+    Reel,   ///< stunned, as by a fire trap
+    TurboStrong, ///< the lesser turbo attack
+    TurboFull,   ///< the greater
+    Shove
 };
 
 /**
@@ -60,16 +63,19 @@ public:
         ThrowPotionRelease,
         Death,              ///< falls and stays down
         HitReact,           ///< flinches from spikes or a blade
-        Stun                ///< reels, stunned
+        Stun,               ///< reels, stunned
+        TurboStrong,
+        TurboFull,
+        Shove
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 22;
+    static constexpr usize kActionCount = 25;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",  "IDLE1",  "IDLE2",        "IDLE2_LOOP",  "WALK1",  "WALK2",   "RUN1",
         "RUN2",   "START",  "THROW1S",      "THROW2S",     "THROW1", "THROW2",  "THROW1R",
         "THROW2R", "MAGICS", "MAGICR",      "THROWPOTIONS", "THROWPOTIONR", "DEATH",
-        "HITREACT", "STUN1"};
+        "HITREACT", "STUN1", "ATTPWRB", "ATTPWRC", "SHOVE"};
     static constexpr f32 kReleaseFrame = 2.0f; ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -114,7 +120,21 @@ public:
     /** How long the attack had been going when the weapon was let go. */
     f32 attackSeconds() const { return m_attackSeconds; }
     /** How much of its pace the current action leaves the body. */
-    f32 moveScale() const { return throwing() || conjuring() || reacting() ? 0.0f : 1.0f; }
+    f32 moveScale() const {
+        return throwing() || conjuring() || reacting() || turboing() ? 0.0f : 1.0f;
+    }
+    /** Whether the body is in a turbo move, which plays through with nothing else heeded. */
+    bool turboing() const {
+        return m_current == Action::TurboStrong || m_current == Action::TurboFull ||
+               m_current == Action::Shove;
+    }
+    /** Whether the body can begin the turbo move `deed` now: it has the sequence and is not
+     * in the middle of anything. */
+    bool canBegin(PlayerDeed deed) const;
+    /** The action a turbo deed plays; the stance for any other deed. */
+    static Action turboActionOf(PlayerDeed deed);
+    /** Whether this tick's step began a turbo move: the meter pays for it then. */
+    bool turboBegan() const { return m_turboBegan; }
     /** Whether the body is flinching or reeling from a hit: it stands where it was struck,
      * does nothing else, and is not set reeling again until it is over. */
     bool reacting() const { return m_current == Action::HitReact || m_current == Action::Stun; }
@@ -154,6 +174,7 @@ private:
     bool m_potionUsed = false;
     bool m_potionThrown = false;
     bool m_dead = false;
+    bool m_turboBegan = false;
     bool m_potionLatch = false; ///< a potion has gone for this press of its button
     f32 m_attackSeconds = 0.0f; ///< since the attack began, while it goes on
     s32 m_stillTicks = 0;  ///< ticks standing still

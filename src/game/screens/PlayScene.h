@@ -30,6 +30,7 @@
 #include "game/menu/ScrollBox.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/Party.h"
+#include "game/players/TurboMeter.h"
 #include "game/players/ClassData.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerAnimator.h"
@@ -87,6 +88,9 @@ struct PlayInput {
     bool attack = false; ///< the attack button is held
     bool usePotion = false;
     bool throwPotion = false;
+    bool turbo = false;         ///< the turbo button is held
+    bool chargePressed = false; ///< the charge button went down this frame
+    bool attackPressed = false; ///< the attack button went down this frame
     SelectorInput selector; ///< this frame's presses for the powerup selector
 };
 
@@ -191,6 +195,10 @@ public:
     const Traps& traps() const { return m_traps; }
     const Breakables& barrels() const { return m_barrels; }
     const HelpMessages& help() const { return m_help; }
+    /** What `player`'s status box shows. */
+    StatusBoxView status(s32 player) const { return statusOf(player); }
+    /** The turbo meter of `player`'s character, or null when that player is not in. */
+    const TurboMeter* turboMeter(s32 player) const;
     /** Whether `player`'s character has fallen (dying or gone to the tower). */
     bool fallen(s32 player) const;
     /** Hurts `player`'s character, as anything in the level does. */
@@ -289,6 +297,8 @@ private:
     bool postHelp(s32 id, usize index);
     SoundHandle playRealmSound(std::string_view stem);
     void cry(usize index, std::string_view which);
+    PlayerDeed turboDeed(usize index, const PlayInput& in) const;
+    void updateTurbo(usize index, s32 ticks, f32 seconds);
     bool isDown(usize index) const { return index < m_down.size() && m_down[index] != kUp; }
     /** Where the level finds a character: nowhere once it has fallen. */
     Vec3 presenceOf(usize index) const;
@@ -362,6 +372,7 @@ private:
     std::vector<CharacterSave> m_entrySaves; ///< per actor, as it came into the level
     std::vector<f32> m_painOwed;             ///< per actor, harm not yet cried out over
     std::vector<PlayerDeed> m_struck;        ///< per actor, the reaction a hit this tick asks
+    std::vector<TurboMeter> m_turbo;         ///< per actor
     /** Gas a poison barrel left hanging. */
     struct GasCloud {
         Vec3 position{0.0f, 0.0f, 0.0f};

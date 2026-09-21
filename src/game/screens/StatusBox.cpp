@@ -114,6 +114,9 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
     if (view.mode == StatusBoxView::Mode::Plain) {
         return;
     }
+    if (view.turbo.has_value() && !view.inTower) {
+        drawTurbo(canvas, slot, *view.turbo);
+    }
     const Color tint = playerColor(color);
     if (view.inTower) {
         // The original hides all but the words.
@@ -176,6 +179,38 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
     nameStyle.scale = kNameScale;
     nameStyle.color = tint;
     m_initials.draw(canvas, centerX, kNameY, view.name, nameStyle);
+}
+
+void StatusBoxPainter::drawTurbo(Canvas& canvas, s32 slot, const TurboMeterLook& look) {
+    const auto left = static_cast<f32>(slot * kWidth);
+    const auto top = static_cast<f32>(kTurboY);
+    if (const Texture* bar = staticTexture("TRBO_FULL_NEW")) {
+        const auto width = static_cast<f32>(bar->width());
+        const auto height = static_cast<f32>(bar->height());
+        canvas.draw(*bar, Rect{left, top, width, height}, look.back);
+        // The front colour is the same sheet squeezed about the bar's middle.
+        const f32 across = std::max(width * look.fill, 2.0f);
+        canvas.draw(*bar, Rect{left + (width - across) * 0.5f, top, across, height}, look.front);
+    }
+    if (const Texture* glint = staticTexture("TRBO_GLINT")) {
+        canvas.draw(*glint, Rect{left, top, static_cast<f32>(glint->width()),
+                                 static_cast<f32>(glint->height())});
+    }
+    if (look.glow > 0) {
+        if (const Texture* glow = staticTexture("TURBO_GLOW_NEW")) {
+            canvas.draw(*glow,
+                        Rect{left, top, static_cast<f32>(glow->width()),
+                             static_cast<f32>(glow->height())},
+                        Color::white().withAlpha(look.glow));
+        }
+    }
+    if (look.gleam >= 0) {
+        if (const Texture* gleam = staticTexture(std::format("TRBO_GLEEM{}", look.gleam + 1))) {
+            canvas.draw(*gleam, Rect{left + static_cast<f32>(kGleamX), static_cast<f32>(kGleamY),
+                                     static_cast<f32>(gleam->width()),
+                                     static_cast<f32>(gleam->height())});
+        }
+    }
 }
 
 const Texture* StatusBoxPainter::selectTexture(std::string_view name) {

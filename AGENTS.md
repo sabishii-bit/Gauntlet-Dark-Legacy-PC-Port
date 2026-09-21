@@ -269,6 +269,30 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   is hurt in the tower. Not yet: knockback, the low-health narrator lines,
   armour and shields reducing damage, gas spoiling food, blasts destroying
   pickups, breakable walls (item type 10, subtype 42).
+* The turbo meter (`players/TurboMeter`, one per actor in `PlayScene`): what
+  it holds climbs 2 a second to 100 while the character is free to act (not
+  fallen, not in a turbo move), what is shown chases that a point a tick up
+  and two down, and `look()` gives the original's picture of it: under 40%
+  the front colour yellow (brightening through the zone) on black, then red
+  on yellow, and at 99% red with `TURBO_GLOW_NEW` pulsing over 120 ticks; a
+  change of zone plays `TRBO_GLEEM1..5` up and back, four ticks a frame.
+  `StatusBoxPainter::drawTurbo` draws `TRBO_FULL_NEW` whole in the back
+  colour and again squeezed about its middle in the front one, at y 304 over
+  the box, with `TRBO_GLINT` on top and the gleam at (80, 310). The original
+  has two buttons, and so do the settings: `turbo` (its TURBO/DEFEND: Left
+  Shift, right bumper) held as the attack goes down is a turbo attack, the
+  greater (`ATTPWRC`, costing 100) with a full meter, the lesser (`ATTPWRB`,
+  40) with two fifths, an ordinary attack with less; `charge` (F, pad Y)
+  going down is the shove (`SHOVE`, wanting 5, running the meter down 20 a
+  second while it plays). `PlayerAnimator::canBegin` and `turboBegan()` gate
+  and report them; the class cries `TURBOB`/`TURBOC`. A special pickup with
+  flag 0x80000 fills the meter, reaching full posts help 110 ("USE YOUR
+  TURBO NOW"), dying empties it, and it starts every level empty (a scenario
+  member may give a `turbo` to start with). Not yet: what the moves do to
+  anything (the classes' damage rows, with the rest of melee), the meter
+  paying at the move's effect rather than its start, kills feeding the meter
+  (0.025 of the experience won), defending, the shove's push, the two player
+  combo (50) and its help message 111.
 * Barrels (`world/Breakables`): item type 10 subtypes 43 plain, 44
   exploding, 45 poison, and the containers of subtype 43 that hold an item.
   Hit points and armour come from the record (5 and 1): a blow takes its

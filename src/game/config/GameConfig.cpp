@@ -169,6 +169,8 @@ void GameConfig::mergeJson(std::string_view json) {
                 readKeys(k, "attack", play.attack);
                 readKeys(k, "usePotion", play.usePotion);
                 readKeys(k, "throwPotion", play.throwPotion);
+                readKeys(k, "turbo", play.turbo);
+                readKeys(k, "charge", play.charge);
                 readKeys(k, "selectorUp", play.selectorUp);
                 readKeys(k, "selectorDown", play.selectorDown);
                 readKeys(k, "selectorLeft", play.selectorLeft);
@@ -183,6 +185,8 @@ void GameConfig::mergeJson(std::string_view json) {
                 readButtons(p, "attack", play.padAttack);
                 readButtons(p, "usePotion", play.padUsePotion);
                 readButtons(p, "throwPotion", play.padThrowPotion);
+                readButtons(p, "turbo", play.padTurbo);
+                readButtons(p, "charge", play.padCharge);
                 readButtons(p, "selectorUp", play.padSelectorUp);
                 readButtons(p, "selectorDown", play.padSelectorDown);
                 readButtons(p, "selectorLeft", play.padSelectorLeft);
@@ -243,6 +247,8 @@ std::string GameConfig::toJson() const {
                             {"attack", keyNames(play.attack)},
                             {"usePotion", keyNames(play.usePotion)},
                             {"throwPotion", keyNames(play.throwPotion)},
+                            {"turbo", keyNames(play.turbo)},
+                            {"charge", keyNames(play.charge)},
                             {"selectorUp", keyNames(play.selectorUp)},
                             {"selectorDown", keyNames(play.selectorDown)},
                             {"selectorLeft", keyNames(play.selectorLeft)},
@@ -255,6 +261,8 @@ std::string GameConfig::toJson() const {
                             {"attack", buttonNames(play.padAttack)},
                             {"usePotion", buttonNames(play.padUsePotion)},
                             {"throwPotion", buttonNames(play.padThrowPotion)},
+                            {"turbo", buttonNames(play.padTurbo)},
+                            {"charge", buttonNames(play.padCharge)},
                             {"selectorUp", buttonNames(play.padSelectorUp)},
                             {"selectorDown", buttonNames(play.padSelectorDown)},
                             {"selectorLeft", buttonNames(play.padSelectorLeft)},

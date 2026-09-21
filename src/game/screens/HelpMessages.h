@@ -45,6 +45,7 @@ public:
     static constexpr s32 kTrapsHurt = 21;
     static constexpr s32 kRandomChest = 23;
     static constexpr s32 kBarrelsHold = 27;
+    static constexpr s32 kUseTurbo = 110;
     static constexpr s32 kHealthFull = 133;
     static constexpr s32 kBlastsDestroy = 135;
     static constexpr s32 kGasSpoils = 136;
