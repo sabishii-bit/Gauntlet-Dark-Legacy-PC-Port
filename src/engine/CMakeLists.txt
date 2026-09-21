@@ -116,6 +116,8 @@ add_library(engine STATIC
     ui/TextPainter.cpp
     ui/ModelSprite.h
     ui/ModelSprite.cpp
+    world/AmbientDimmer.h
+    world/AmbientDimmer.cpp
     world/WorldLighting.h
     world/WorldLighting.cpp
     world/WorldCamera.h

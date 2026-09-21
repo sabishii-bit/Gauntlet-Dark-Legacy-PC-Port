@@ -40,6 +40,8 @@ add_library(game STATIC
     world/LevelCatalog.cpp
     world/ItemFigure.h
     world/ItemFigure.cpp
+    world/MoveStrikes.h
+    world/MoveStrikes.cpp
     world/Breakables.h
     world/Breakables.cpp
     world/Chests.h

@@ -15,26 +15,39 @@
 
 namespace gdl::game {
 
-/** One of the original's help messages: its text in the game's strings, the narrator's line
- * for it, and whether each player is told for themselves or the party once together. */
+/** How often a help message comes up. */
+enum class HelpRepeat : u8 {
+    OnceForAll,     ///< until every character playing has ever seen it
+    OncePerPlayer,  ///< until the character it is for has ever seen it
+    OncePerSession  ///< until any character playing has seen it since it was loaded
+};
+
+/** One of the original's help messages: its text in the game's strings, the line spoken for
+ * it, how often it comes, and how it stands against one already up. */
 struct HelpMessageSpec {
     s32 id = 0;
     std::string_view text;  ///< a message of the game's strings
-    std::string_view voice; ///< from the narrator's bank
-    bool perPlayer = false;
+    std::string_view voice; ///< from the narrator's bank, or the character's own class's
+    HelpRepeat repeat = HelpRepeat::OnceForAll;
+    s32 line = -1;          ///< the one line of the text that is shown; all of them when -1
+    s32 priority = 50;      ///< one higher than what is up takes its place
+    bool classVoice = false;
 };
 
 /** Someone a message can be for: the player, and the messages their character has seen. */
 struct HelpReader {
     s32 player = 0;
-    std::vector<s32>* seen = nullptr; ///< kept sorted; saved with the character
+    std::vector<s32>* seen = nullptr;  ///< ever; kept sorted; saved with the character
+    std::vector<s32>* heard = nullptr; ///< since the character was loaded; kept sorted
 };
 
 /**
  * The help messages the original teaches the game with: a small scroll over a character's
  * head with a line or two and the narrator saying it, each shown until every character in
  * play has seen it (or, for a few, until that character has), one at a time, for a second a
- * line and half a second more, and after each a growing pause before the next.
+ * line and half a second more, and after each a growing pause before the next. The names of
+ * the classes' turbo attacks are among them, announced in the class's own bank once each
+ * session as the move comes out, over whatever lesser message is up.
  */
 class HelpMessages {
 public:
@@ -45,6 +58,8 @@ public:
     static constexpr s32 kTrapsHurt = 21;
     static constexpr s32 kRandomChest = 23;
     static constexpr s32 kBarrelsHold = 27;
+    static constexpr s32 kFirstTurboName = 57; ///< three to a class: none, the lesser, the greater
+    static constexpr s32 kLastTurboName = 79;
     static constexpr s32 kUseTurbo = 110;
     static constexpr s32 kHealthFull = 133;
     static constexpr s32 kBlastsDestroy = 135;
@@ -88,6 +103,7 @@ private:
     const MessageTable* m_strings = nullptr;
     std::vector<std::string> m_lines;
     s32 m_id = -1;
+    s32 m_priority = 0;
     s32 m_player = 0;
     s32 m_ticksLeft = 0;
     s32 m_pauseLeft = 0;

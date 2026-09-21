@@ -116,6 +116,8 @@ void LevelWorld::update(f32 seconds) {
 /** Takes the light, the camera range and the sounds from the realm's data. */
 void LevelWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
     m_lighting = WorldLighting{};
+    m_litNow = m_lighting;
+    m_ambientOffset = 0.0f;
     m_cameraRange = CameraRange{};
     m_level = nullptr;
     m_audio = nullptr;
@@ -128,6 +130,8 @@ void LevelWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
     }
     m_level = level;
     m_lighting = WorldLighting::forLevel(*level);
+    m_litNow = m_lighting;
+    m_ambientOffset = 0.0f;
     if (const LevelCameraInfo* camera = m_worldData.camera(level->cameraIndex);
         camera != nullptr) {
         m_cameraRange.radiusMin = camera->radiusMin;
@@ -171,6 +175,22 @@ std::optional<WorldCamera> LevelWorld::entranceCamera() const {
     camera.yaw = locator->rotation.y;
     camera.roll = locator->rotation.z;
     return camera;
+}
+
+void LevelWorld::setAmbientOffset(f32 offset) {
+    if (offset == m_ambientOffset) {
+        return;
+    }
+    m_ambientOffset = offset;
+    // A level's light saturates what faces it, so taking the offset off the ambient term
+    // alone would leave most of it as bright as ever; the original darkens the whole picture
+    // with it, and so is everything lit here: the level's baked geometry through the scene,
+    // what is lit as it is drawn through the light it is given. What glows is left alone.
+    const f32 kept = std::clamp(1.0f + offset, 0.0f, 1.0f);
+    m_litNow = m_lighting;
+    m_litNow.ambient = m_lighting.ambient * kept;
+    m_litNow.lightColor = m_lighting.lightColor * kept;
+    m_scene.setDarken(1.0f - kept);
 }
 
 const WorldLocator* LevelWorld::startPoint(u32 index) const {

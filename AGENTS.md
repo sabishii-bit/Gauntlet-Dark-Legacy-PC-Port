@@ -283,16 +283,65 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Shift, right bumper) held as the attack goes down is a turbo attack, the
   greater (`ATTPWRC`, costing 100) with a full meter, the lesser (`ATTPWRB`,
   40) with two fifths, an ordinary attack with less; `charge` (F, pad Y)
-  going down is the shove (`SHOVE`, wanting 5, running the meter down 20 a
-  second while it plays). `PlayerAnimator::canBegin` and `turboBegan()` gate
-  and report them; the class cries `TURBOB`/`TURBOC`. A special pickup with
-  flag 0x80000 fills the meter, reaching full posts help 110 ("USE YOUR
-  TURBO NOW"), dying empties it, and it starts every level empty (a scenario
-  member may give a `turbo` to start with). Not yet: what the moves do to
-  anything (the classes' damage rows, with the rest of melee), the meter
-  paying at the move's effect rather than its start, kills feeding the meter
-  (0.025 of the experience won), defending, the shove's push, the two player
-  combo (50) and its help message 111.
+  going down is the charge (`SHOVE`, wanting 5, running the meter down 20 a
+  second while it plays): the character rushes flat out at 1.5 times its
+  pace the way the stick is pushed (past a quarter), else straight ahead,
+  and what it runs into is struck for 3, once a charge
+  (`PlayScene::chargeInput`, `ramBarrels`). Held by itself `turbo` is the
+  guard: `DEFEND1` up, `DEFEND2` for as long as it is held, `DEFENDR` down;
+  with too little in the meter for a turbo attack, turbo and attack together
+  are still only the guard, as in the original. `PlayScene::guarded` is the
+  original's rule as it shipped: a raised guard halves a hurt that comes
+  from somewhere (a blast, gas) and takes all of one that comes from nowhere
+  in particular (a trap underfoot, which then does not stun either); a
+  charge halves either. A special pickup with flag 0x80000 fills the meter,
+  `awardExperience` adds 0.025 of what is won (nothing awards any until
+  there are enemies), reaching full posts help 110, dying empties it, and it
+  starts every level empty (a scenario member may give a `turbo`).
+* What a turbo attack does is the class's own data (`formats/PlayerDataWad`:
+  the wad's SFXX and DAMG sections and the twelve move indices of its
+  record; unpacked into `pdata/<CLASS>.json` as `moves`, `moveEffects`,
+  `moveStrikes`; loaded into `ClassStats`; re-unpack with `--only PDATA`).
+  A move names its first strike and strikes chain by `next`
+  (`ClassStats::strikesOf`); the lesser attack runs `turboB`, the greater
+  `turboC1` and `turboC2`. `PlayScene::beginMove` lines them up and
+  `runMove` makes each as the move's sequence reaches its `startFrame`: its
+  effects (trees of the costume colour's `PLAYERS/<CLS>/SFX<COL>` archive,
+  chained by their own `next`, `NULLFX` showing nothing) start turned to the
+  facing with their sounds, the meter pays what the move owes at the first
+  strike that does harm (a move cut short before that is never paid for),
+  and `world/MoveStrikes` carries the harm: a burst (type 4) reaches what
+  is within its radius, and its arc when it has one, its delay after it
+  starts; what flies (type 2) goes off along the facing at the mean of its
+  speeds, harming what is within its hit radius as it passes, until its
+  time is up or a wall ends it, its effect (`EffectTrees::startSet`, which
+  can turn, carry and repeat an effect) going with it. A negative amount is
+  that many times the character's own missile damage. Strikes reach only
+  barrels so far. The warrior's: B a burst of 50 over 12 units half a second
+  in, C a burst of 25 over 8 and at frame 9 a wave of 70, ten wide, at 30 a
+  second for six seconds. What flies plays its effect's tree once and then
+  its `loopEffect`'s tree repeats in its place (`EffectTrees::Setting::then`)
+  until it ends. While a strike flagged 0x10, 0x20 or 0x2000 lasts (from its
+  start frame to its end frame, or the move's end) the level goes dark by
+  0.4, 0.6 or 0.8: `engine/world/AmbientDimmer` is the original's ambient
+  special (asked for every tick, the light falls a quarter a 30 Hz frame,
+  and once unasked what was wanted fades to three fifths a frame while the
+  light climbs back a twentieth), and `LevelWorld::setAmbientOffset` applies
+  it to everything lit: the level's geometry, whose light is baked into its
+  vertices, through `WorldScene::setDarken` and `DrawState::darken` (a
+  multiply in the fragment shader, additive parts left alone), everything
+  lit as it is drawn through `lighting()`; effects are drawn by
+  `fullLighting()` so that they stand out. (Taking it off the ambient term
+  alone shows nothing: a level's light saturates whatever faces it. The
+  original also feeds the value to its screen windows, which is what makes
+  the whole picture darken there.) The effect trees' main parts are
+  flip-books of meshes (type 2 "OANIM" nodes with `objectFrames`); the
+  player archives must be unpacked with a gdlunpack that writes them, or
+  the projectile and half of each burst are simply not there.
+  Not yet: the strong ("turbo A") attack and its rows, hit effects, damage
+  types (knock-over, fire), the block's clank, the directional guards, and
+  the two player combo (a grab, carry and throw system of its own, help
+  111 with it).
 * Barrels (`world/Breakables`): item type 10 subtypes 43 plain, 44
   exploding, 45 poison, and the containers of subtype 43 that hold an item.
   Hit points and armour come from the record (5 and 1): a blow takes its
@@ -311,7 +360,17 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   120, 240, 420, 600 ticks). A message goes up until every character in play
   has seen it (`CharacterSave::helpSeen`, saved); `HEALTHFULL` is per player.
   Wired so far: door and chest wanting a key, keys full, no potion, health
-  full, traps, barrels that hold things, chests that explode.
+  full, traps, barrels that hold things, chests that explode, the meter
+  coming full. The shown flags have two halves in the original, "ever" (the
+  save's `helpSeen`) and "since this character was loaded" (cleared on
+  loading; here `PartyMember::helpHeard`, carried from level to level and
+  never saved), and `HelpRepeat` says which a message goes by. The names of
+  the classes' turbo attacks (ids 57 to 79, three to a class: the strong
+  attack has none, then the lesser and the greater, e.g. the warrior's FIRE
+  ARC and PLASMA TRAIL) come once a session, a frame into the move (the
+  move's strike row names the id), as one line of the class's
+  `<CLS>_TURBO` text with the announcer's line from the class's own bank,
+  at a priority (60, 70) that takes the place of a lesson (50) already up.
 * Back from a realm the party stands at the tower's start marker among that
   realm's portals: `LevelWorld::towerMarkerOf` is the original's realm to
   marker table (town 7 -> 1, mountain 2 -> 2), not the realm id itself. There
@@ -322,7 +381,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   a level nor one that fell is shown Sumner's hall first.
   Scenarios: `level-g1-chest.json`, `level-g1-gate.json`,
   `level-g1-trap.json`, `level-g1-nokey.json`, `level-g1-barrel.json`,
-  `level-g1-death.json`. A scenario's `position` is not checked against
+  `level-g1-death.json`, `level-g1-turbo.json`. A scenario's `position` is not checked against
   walls: pick open ground from the level's collision.
 * Texture wrapping is per axis (`TextureDesc::wrap` across, `wrapV` down,
   `TextureSetEntry::clampU`/`clampV`, eight Vulkan samplers): levels clamp

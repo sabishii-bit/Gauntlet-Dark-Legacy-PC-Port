@@ -78,4 +78,38 @@ TEST_CASE("status boxes are tinted by costume, dimmer when nobody joined", "[gam
     REQUIRE(boxTint(7, true) == Color::white());
 }
 
+TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game][players]") {
+    const auto dir = test::scratchDirectory("class-moves");
+    writeTextFile(dir / "WAR.json", R"({"fight": [600, 999], "speed": [350, 750],
+  "armor": [300, 700], "magic": [100, 500], "height": 5, "width": 1.5,
+  "moves": {"turboB": 0, "turboC1": 1, "turboC2": 2, "combo1": -1},
+  "moveEffects": [
+    {"next": 1, "tree": "WAR_POWERB", "sound": "S_WARTURBOB", "offset": [0, 5, 0], "scale": 2},
+    {"next": -1, "tree": "NULLFX", "sound": ""}],
+  "moveStrikes": [
+    {"type": 4, "radius": 12, "delay": 0.5, "arc": -1, "amount": 50, "effect": 0, "next": -1},
+    {"type": 4, "radius": 8, "delay": 0.5, "arc": 0.5, "amount": -2, "effect": 1, "next": 2},
+    {"type": 2, "hitRadius": 10, "maxTime": 6, "offset": [0, 1, 5], "amount": 70,
+     "speedMin": 30, "speedMax": 40, "effect": -1, "next": 1, "startFrame": 9}]})");
+    ClassDataSet classes;
+    REQUIRE(classes.load(dir));
+    const ClassStats* war = classes.stats(0);
+    REQUIRE(war != nullptr);
+    REQUIRE(war->moves.turboB == 0);
+    REQUIRE(war->moves.turboC2 == 2);
+    REQUIRE(war->moves.combo1 == -1);
+    REQUIRE(war->moveEffects.size() == 2);
+    REQUIRE(war->moveEffects[0].tree == "WAR_POWERB");
+    REQUIRE(war->moveEffects[0].next == 1);
+    REQUIRE(war->moveEffects[0].offset == Vec3{0.0f, 5.0f, 0.0f});
+    REQUIRE(war->moveStrikes.size() == 3);
+    REQUIRE(war->moveStrikes[2].type == MoveStrike::kFlies);
+    REQUIRE(war->moveStrikes[2].speed == 35.0f); // half way between its least and its most
+    REQUIRE(war->moveStrikes[2].startFrame == 9);
+    REQUIRE(war->strikesOf(0) == std::vector<s32>{0});
+    REQUIRE(war->strikesOf(1) == std::vector<s32>{1, 2, 1}); // a ring is followed once round
+    REQUIRE(war->strikesOf(-1).empty());
+    REQUIRE(war->strikesOf(9).empty());
+}
+
 } // namespace

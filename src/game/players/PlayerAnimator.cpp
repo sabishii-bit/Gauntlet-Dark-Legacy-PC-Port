@@ -131,6 +131,37 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
         return;
     }
+    // The guard: up at once when asked for, held for as long as it is, then let down. A
+    // class without the sequences does not guard.
+    const bool free = m_entered && !throwing() && !conjuring() && !reacting() && !turboing();
+    const bool asked = deed == PlayerDeed::Defend && free &&
+                       m_sequences[index(Action::Defend)] >= 0;
+    if (asked || guarding()) {
+        Decision guard;
+        if (asked && (!guarding() || m_current == Action::DefendLower)) {
+            guard.action = m_sequences[index(Action::DefendRaise)] >= 0 ? Action::DefendRaise
+                                                                        : Action::Defend;
+            guard.cut = Cut::Now;
+        } else if (asked) {
+            guard.action = Action::Defend;
+            guard.repeat = m_current == Action::Defend;
+            guard.cut = Cut::WhenDoneIfDifferent;
+        } else if (m_current != Action::DefendLower &&
+                   m_sequences[index(Action::DefendLower)] >= 0) {
+            guard.action = Action::DefendLower;
+            guard.cut = Cut::Now;
+        } else {
+            guard.action = Action::Ready;
+            guard.cut = m_current == Action::DefendLower ? Cut::WhenDone : Cut::Now;
+            guard.transition = kStanceBlend;
+        }
+        play(guard, seconds);
+        m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+        if (m_player.transitioning()) {
+            m_pose.blend(m_previous, m_player.transition());
+        }
+        return;
+    }
     const bool turboAsked = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
                             deed == PlayerDeed::Shove;
     if (reacting() || struck || turboing() || turboAsked) {
@@ -279,6 +310,9 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::TurboStrong:
     case Action::TurboFull:
     case Action::Shove:
+    case Action::DefendRaise:
+    case Action::Defend:
+    case Action::DefendLower:
         break; // whatever is asked next, once let go
     }
     // A potion cuts into standing, walking and running at once, as an attack does.

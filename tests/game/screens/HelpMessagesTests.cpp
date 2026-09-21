@@ -25,7 +25,9 @@ void loadStrings(std::string_view name, MessageTable& strings) {
     {"name": "USEKEYOPENCHEST", "font": 0, "scale": 1, "shadowScale": 1,
      "lines": ["USE KEY TO OPEN", "TREASURE CHESTS"]},
     {"name": "HEALTHFULL", "font": 0, "scale": 1, "shadowScale": 1,
-     "lines": ["YOUR HEALTH IS FULL"]}],
+     "lines": ["YOUR HEALTH IS FULL"]},
+    {"name": "WAR_TURBO", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["TURBO ATTACK", "FIRE ARC", "PLASMA TRAIL"]}],
   "lists": []
 })");
     REQUIRE(strings.load(dir / "english.json"));
@@ -36,9 +38,21 @@ TEST_CASE("the help messages are the original's, with the narrator's lines", "[g
     REQUIRE(door != nullptr);
     REQUIRE(door->text == "USEKEYOPENDOOR");
     REQUIRE(door->voice == "S_USEKEY");
-    REQUIRE_FALSE(door->perPlayer);
+    REQUIRE(door->repeat == HelpRepeat::OnceForAll);
+    REQUIRE(door->priority == 50);
     REQUIRE(HelpMessages::specOf(HelpMessages::kChestNeedsKey)->voice == "S_USEKEY2");
-    REQUIRE(HelpMessages::specOf(HelpMessages::kHealthFull)->perPlayer);
+    REQUIRE(HelpMessages::specOf(HelpMessages::kHealthFull)->repeat == HelpRepeat::OncePerPlayer);
+    // A class's turbo attacks are named from its own bank, the greater over the lesser.
+    const HelpMessageSpec* fireArc = HelpMessages::specOf(57);
+    REQUIRE(fireArc != nullptr);
+    REQUIRE(fireArc->text == "WAR_TURBO");
+    REQUIRE(fireArc->voice == "S_FIREARC");
+    REQUIRE(fireArc->line == 1);
+    REQUIRE(fireArc->classVoice);
+    REQUIRE(fireArc->repeat == HelpRepeat::OncePerSession);
+    REQUIRE(HelpMessages::specOf(58)->priority > fireArc->priority);
+    REQUIRE(HelpMessages::specOf(79)->voice == "S_TURC_JES");
+    REQUIRE(HelpMessages::specOf(56) == nullptr); // the strong attack has no name
     REQUIRE(HelpMessages::specOf(999) == nullptr);
     REQUIRE(HelpMessages::inkOf(1) == Color::rgba(0, 0, 0x1F));
     REQUIRE(HelpMessages::inkOf(7) == HelpMessages::inkOf(-1));
@@ -104,6 +118,42 @@ TEST_CASE("someone new to the party is told what the others already know", "[gam
     REQUIRE(help.post(HelpMessages::kHealthFull, 0, pair) == nullptr);
     REQUIRE(help.post(HelpMessages::kHealthFull, 1, pair) != nullptr);
     REQUIRE(theirs == std::vector<s32>{HelpMessages::kHealthFull});
+}
+
+TEST_CASE("a turbo attack is named once a session, over whatever lesson is up",
+          "[game][help]") {
+    MessageTable strings;
+    loadStrings("help-turbo-names", strings);
+    HelpMessages help;
+    help.setTexts(&strings);
+    std::vector<s32> seen;
+    std::vector<s32> heard;
+    const std::array<HelpReader, 1> party{HelpReader{0, &seen, &heard}};
+    REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 0, party) != nullptr);
+    // The lesser attack's name takes the lesson's place, and shows its own line alone.
+    const HelpMessageSpec* named = help.post(57, 0, party);
+    REQUIRE(named != nullptr);
+    REQUIRE(help.id() == 57);
+    REQUIRE(help.lines() == std::vector<std::string>{"FIRE ARC"});
+    REQUIRE(heard == std::vector<s32>{HelpMessages::kDoorNeedsKey, 57});
+    // A lesson does not take a name's place, the greater attack's name does.
+    REQUIRE(help.post(HelpMessages::kChestNeedsKey, 0, party) == nullptr);
+    REQUIRE(help.post(58, 0, party) != nullptr);
+    REQUIRE(help.lines() == std::vector<std::string>{"PLASMA TRAIL"});
+    help.update(1000);
+    // Heard this session, it is not said again, whatever pause the lessons are in.
+    REQUIRE(help.post(57, 0, party) == nullptr);
+    // Loaded afresh (nothing heard, all of it seen before), it is said once more.
+    std::vector<s32> fresh;
+    const std::array<HelpReader, 1> again{HelpReader{0, &seen, &fresh}};
+    REQUIRE(help.post(57, 0, again) != nullptr);
+    help.update(1000);
+    // With someone in the party who has heard it, it is not said for anyone.
+    std::vector<s32> none;
+    std::vector<s32> newcomerHeard;
+    const std::array<HelpReader, 2> pair{HelpReader{0, &seen, &fresh},
+                                         HelpReader{1, &none, &newcomerHeard}};
+    REQUIRE(help.post(57, 1, pair) == nullptr);
 }
 
 } // namespace

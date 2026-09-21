@@ -96,7 +96,15 @@ public:
     bool hasItems() const { return m_items.loaded(); }
     const WorldCollision& collision() const { return m_collision; }
     /** The level's light, for everything standing in it. */
-    const WorldLighting& lighting() const { return m_lighting; }
+    /** The level's light as it is now, with whatever has been taken off its ambient. */
+    const WorldLighting& lighting() const { return m_litNow; }
+    /** The level's own light, whatever has been taken off it: what effects are drawn by, so
+     * that they stand out when the level goes dark. */
+    const WorldLighting& fullLighting() const { return m_lighting; }
+    /** Darkens everything lit by `offset` (-0.6 leaves two fifths of the light), the way the
+     * original's ambient special darkens the picture. */
+    void setAmbientOffset(f32 offset);
+    f32 ambientOffset() const { return m_ambientOffset; }
     /** What the follow camera takes from the level. */
     const CameraRange& cameraRange() const { return m_cameraRange; }
     /** The level's record, and its sound bank and music stream; null without the realm's
@@ -129,7 +137,7 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
         const CameraFrame frame = CameraFrame::of(camera);
         m_scene.draw(device, clip, frame);
-        m_placedItems.draw(device, clip, m_lighting, &frame);
+        m_placedItems.draw(device, clip, m_litNow, &frame);
         m_particles.draw(device, clip, frame.right, frame.up);
     }
 
@@ -155,6 +163,8 @@ private:
     WorldCollision m_collision;
     WorldData m_worldData;
     WorldLighting m_lighting;
+    WorldLighting m_litNow; ///< m_lighting with the ambient offset
+    f32 m_ambientOffset = 0.0f;
     CameraRange m_cameraRange;
     const LevelInfo* m_level = nullptr;
     const LevelAudioInfo* m_audio = nullptr;

@@ -412,4 +412,60 @@ TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it beg
     REQUIRE_FALSE(other.turboBegan());
 }
 
+TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and is let down",
+          "[game][players][animation]") {
+    TreeInfo tree = classTree();
+    const auto add = [&tree](const char* name, s32 frames) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = frames;
+        tree.sequences.push_back(sequence);
+    };
+    add("DEFEND1", 6);
+    add("DEFEND2", 20);
+    add("DEFENDR", 6);
+    add("ATTPWRB", 12);
+    add("SHOVE", 8);
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Defend);
+    REQUIRE(animator.action() == Action::DefendRaise);
+    REQUIRE(animator.guarding());
+    REQUIRE_FALSE(animator.defending()); // not yet
+    REQUIRE(animator.moveScale() == 0.0f);
+    int steps = 0;
+    while (animator.action() != Action::Defend && steps < 60) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Defend);
+        ++steps;
+    }
+    REQUIRE(animator.defending());
+    for (int i = 0; i < 200; ++i) { // held, it stays up
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
+        REQUIRE(animator.defending());
+    }
+    // A turbo attack cuts into it; afterwards the guard can come up again.
+    REQUIRE(animator.canBegin(PlayerDeed::TurboStrong));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::TurboStrong);
+    REQUIRE(animator.action() == Action::TurboStrong);
+    REQUIRE_FALSE(animator.guarding());
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
+    REQUIRE(animator.action() == Action::DefendRaise);
+    // Let go, it is lowered and the stance comes back.
+    animator.update(PlayerMotion::Stand, kTicks, kStep);
+    REQUIRE(animator.action() == Action::DefendLower);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
+    REQUIRE_FALSE(animator.guarding());
+    // A charge rushes on rather than standing.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Shove);
+    REQUIRE(animator.shoving());
+    REQUIRE(animator.moveScale() == PlayerAnimator::kChargePace);
+    // A class without the sequences does not guard.
+    const TreeInfo plain = classTree();
+    PlayerAnimator other;
+    REQUIRE(other.bind(plain, false));
+    other.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
+    REQUIRE_FALSE(other.guarding());
+}
+
 } // namespace

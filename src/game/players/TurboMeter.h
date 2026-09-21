@@ -28,6 +28,7 @@ public:
     static constexpr f32 kFullCost = 100.0f;   ///< the greater, which needs it full
     static constexpr f32 kShoveFrom = 5.0f;    ///< what a shove needs
     static constexpr f32 kFillPerSecond = 2.0f;
+    static constexpr f32 kPerExperience = 0.025f; ///< what a point of experience won adds
     static constexpr f32 kShoveDrainPerSecond = 20.0f;
     static constexpr f32 kRisePerTick = 1.0f;
     static constexpr f32 kFallPerTick = 2.0f;

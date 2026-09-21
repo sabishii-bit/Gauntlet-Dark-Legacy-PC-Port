@@ -72,6 +72,10 @@ public:
      * then the sorted objects farthest from the camera first (those flagged to face it
      * turned its way), and the glows last; `clip` maps world to clip space. */
     void draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const;
+    /** Takes this much of the colour out of everything but what glows (the level's light is
+     * baked into its vertices, so a change of ambient light is made this way). */
+    void setDarken(f32 darken) { m_darken = darken; }
+    f32 darken() const { return m_darken; }
     void draw(RenderDevice& device, const Mat4& clip, const Vec3& eye = Vec3{0.0f}) const {
         draw(device, clip, CameraFrame::at(eye));
     }
@@ -137,6 +141,7 @@ private:
     std::vector<Unit> m_units;
     std::vector<Placement> m_placements;
     WorldLighting m_lighting;
+    f32 m_darken = 0.0f;
     usize m_placed = 0;
     usize m_triangles = 0;
     mutable std::vector<Mat4> m_world; ///< per object, composed for the frame being drawn

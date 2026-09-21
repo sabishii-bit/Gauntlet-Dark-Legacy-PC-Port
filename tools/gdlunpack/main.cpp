@@ -834,8 +834,49 @@ void unpackClassData(const std::filesystem::path& file, const std::filesystem::p
         json.value(static_cast<f64>(axis));
     }
     json.endArray();
-    json.key("effects").value(record.effectCount);
-    json.key("damage").value(record.damageCount);
+    json.key("moves").beginObject();
+    for (usize move = 0; move < record.moves.size(); ++move) {
+        json.key(PlayerClassRecord::kMoveNames[move]).value(static_cast<int>(record.moves[move]));
+    }
+    json.endObject();
+    json.key("moveEffects").beginArray();
+    for (const MoveEffectRecord& effect : record.effects) {
+        json.beginObject();
+        json.key("flags").value(effect.flags);
+        json.key("next").value(static_cast<int>(effect.next));
+        json.key("tree").value(effect.tree);
+        json.key("sound").value(effect.sound);
+        json.key("offset").numbers(effect.offset);
+        json.key("scale").value(static_cast<f64>(effect.scale));
+        json.endObject();
+    }
+    json.endArray();
+    json.key("moveStrikes").beginArray();
+    for (const MoveStrikeRecord& strike : record.strikes) {
+        json.beginObject();
+        json.key("type").value(static_cast<int>(strike.type));
+        json.key("flags").value(static_cast<int>(strike.flags));
+        json.key("damageType").value(strike.damageType);
+        json.key("hitRadius").value(static_cast<f64>(strike.hitRadius));
+        json.key("radius").value(static_cast<f64>(strike.radius));
+        json.key("delay").value(static_cast<f64>(strike.delay));
+        json.key("minTime").value(static_cast<f64>(strike.minTime));
+        json.key("maxTime").value(static_cast<f64>(strike.maxTime));
+        json.key("arc").value(static_cast<f64>(strike.arc));
+        json.key("offset").numbers(strike.offset);
+        json.key("amount").value(static_cast<f64>(strike.amount));
+        json.key("speedMin").value(static_cast<f64>(strike.speedMin));
+        json.key("speedMax").value(static_cast<f64>(strike.speedMax));
+        json.key("effect").value(static_cast<int>(strike.effect));
+        json.key("hitEffect").value(static_cast<int>(strike.hitEffect));
+        json.key("loopEffect").value(static_cast<int>(strike.loopEffect));
+        json.key("next").value(static_cast<int>(strike.next));
+        json.key("startFrame").value(static_cast<int>(strike.startFrame));
+        json.key("endFrame").value(static_cast<int>(strike.endFrame));
+        json.key("help").value(static_cast<int>(strike.help));
+        json.endObject();
+    }
+    json.endArray();
     json.endObject();
     std::filesystem::create_directories(outDir);
     writeTextFile(outDir / (normalizeAssetName(file.stem().string()) + ".json"), json.take());

@@ -944,14 +944,16 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     strike[0].attackPressed = true;
     scene.update(1.0 / 60.0, strike);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboFull);
-    REQUIRE(scene.turboMeter(0)->held() < 1.0f);
+    // It is paid for as its first strike is made, which sets its harm going.
     for (int i = 0; i < 300 && scene.animator(0)->turboing(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.animator(0)->turboing());
-    // With too little for either, the same buttons are an ordinary attack.
+    REQUIRE(scene.turboMeter(0)->held() < 5.0f);
+    // With too little for either, turbo held is only the guard: no attack comes of it.
     scene.update(1.0 / 60.0, strike);
-    REQUIRE(scene.animator(0)->throwing());
+    REQUIRE(scene.animator(0)->guarding());
+    REQUIRE_FALSE(scene.animator(0)->throwing());
     scene.close();
 
     // Two fifths buys the lesser attack; a twentieth, a shove, which runs it down.
@@ -964,16 +966,25 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     const f32 before = scene.turboMeter(0)->held();
     scene.update(1.0 / 60.0, strike);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboStrong);
-    REQUIRE(scene.turboMeter(0)->held() < before - TurboMeter::kStrongCost + 0.1f);
-    REQUIRE(scene.turboMeter(0)->held() > before - TurboMeter::kStrongCost - 0.1f);
     for (int i = 0; i < 300 && scene.animator(0)->turboing(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    // Holding turbo by itself asks for nothing; the charge button is the shove's.
+    REQUIRE(scene.turboMeter(0)->held() < before - TurboMeter::kStrongCost + 0.1f);
+    REQUIRE(scene.turboMeter(0)->held() > before - TurboMeter::kStrongCost - 0.1f);
+    // Holding turbo by itself is the guard; the charge button is the charge's.
     PlayScene::Inputs holding{};
     holding[0].turbo = true;
     scene.update(1.0 / 60.0, holding);
     REQUIRE_FALSE(scene.animator(0)->turboing());
+    REQUIRE(scene.animator(0)->guarding());
+    for (int i = 0; i < 60 && scene.animator(0)->guarding(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    // Experience won feeds the meter.
+    const f32 fed = scene.turboMeter(0)->held();
+    scene.awardExperience(0, 400);
+    REQUIRE(scene.turboMeter(0)->held() > fed + 9.9f);
+    REQUIRE(scene.actor(0)->save().experience() == 400);
     PlayScene::Inputs tap{};
     tap[0].chargePressed = true;
     const f32 left = scene.turboMeter(0)->held();
@@ -984,6 +995,131 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.turboMeter(0)->held() < left - 4.0f);
+    scene.close();
+}
+
+TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, a guard blocks",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::unpackedOrSkip("text/english.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().health = 400;
+    PartyMember member{0, save};
+    member.turbo = 60.0f;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{13.8f, 0.2f, 1.2f}; // four units from the barrel by the start
+    options.yaw = kPi;                           // and facing it
+    PlayScene scene;
+    const std::vector<PartyMember> party{member};
+    REQUIRE(scene.open(device, context, world, party, options));
+    usize barrel = scene.barrels().size();
+    for (usize i = 0; i < scene.barrels().size(); ++i) {
+        const Vec3 at = scene.barrels().barrel(i).figure.position();
+        if (scene.barrels().standing(i) && std::abs(at.x - 13.8f) < 0.5f &&
+            std::abs(at.z + 2.8f) < 0.5f) {
+            barrel = i;
+        }
+    }
+    REQUIRE(barrel < scene.barrels().size());
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    // The lesser turbo attack: owed until its strike is made, then its burst, half a second
+    // on, breaks the barrel four units off.
+    PlayScene::Inputs strike{};
+    strike[0].turbo = true;
+    strike[0].attack = true;
+    strike[0].attackPressed = true;
+    const f32 before = scene.turboMeter(0)->held();
+    scene.update(1.0 / 60.0, strike);
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboStrong);
+    bool struck = false;
+    f32 darkest = 0.0f;
+    for (int i = 0; i < 300 && scene.barrels().standing(barrel); ++i) {
+        scene.update(1.0 / 60.0, still);
+        struck = struck || scene.strikes().count() > 0;
+        darkest = std::min(darkest, world.ambientOffset());
+    }
+    REQUIRE(struck);
+    // Its name was announced as it came out, and the party carries that on with it, so that
+    // it is not said again next level.
+    REQUIRE(scene.help().id() == 57);
+    REQUIRE(scene.help().lines() == std::vector<std::string>{"FIRE ARC"});
+    REQUIRE(scene.party()[0].helpHeard == std::vector<s32>{57});
+    REQUIRE(darkest < -0.39f); // the level goes dark while the move comes out
+    REQUIRE(darkest > -0.41f);
+    REQUIRE(world.lighting().ambient.x < world.level()->ambient);
+    REQUIRE_FALSE(scene.barrels().standing(barrel));
+    REQUIRE(scene.turboMeter(0)->held() < before - TurboMeter::kStrongCost + 3.0f);
+    REQUIRE(scene.actor(0)->save().health() == 400); // its own burst does it no harm
+    for (int i = 0; i < 240; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(world.ambientOffset() == 0.0f); // and light again once it is over
+    scene.close();
+
+    // A charge rushes on with no hand on the stick, faster than a run could, and what it runs
+    // into is struck.
+    member.turbo = 50.0f;
+    const std::vector<PartyMember> again{member};
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    REQUIRE(scene.open(device, context, world, again, options));
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    const Vec3 from = scene.actor(0)->position();
+    const s32 whole = scene.barrels().barrel(barrel).health;
+    PlayScene::Inputs tap{};
+    tap[0].chargePressed = true;
+    scene.update(1.0 / 60.0, tap);
+    REQUIRE(scene.animator(0)->shoving());
+    for (int i = 0; i < 120 && scene.animator(0)->shoving(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    const Vec3 to = scene.actor(0)->position();
+    REQUIRE(from.z - to.z > 1.5f); // it went at the barrel, which stopped it
+    REQUIRE(scene.barrels().barrel(barrel).health < whole);
+    scene.close();
+
+    // On a bed of spikes with the guard up, nothing gets through; let down, it does.
+    member.turbo = 0.0f;
+    const std::vector<PartyMember> third{member};
+    options.position = Vec3{-36.2f, 26.5f, -125.3f};
+    REQUIRE(scene.open(device, context, world, third, options));
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    PlayScene::Inputs guard{};
+    guard[0].turbo = true;
+    for (int i = 0; i < 600 && !scene.animator(0)->defending(); ++i) {
+        scene.update(1.0 / 60.0, guard);
+    }
+    REQUIRE(scene.animator(0)->defending());
+    const s32 guardedFrom = scene.actor(0)->save().health();
+    for (int i = 0; i < 600; ++i) {
+        scene.update(1.0 / 60.0, guard);
+    }
+    REQUIRE(scene.animator(0)->defending());
+    REQUIRE(scene.actor(0)->save().health() == guardedFrom);
+    for (int i = 0; i < 600 && scene.actor(0)->save().health() == guardedFrom; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.actor(0)->save().health() < guardedFrom);
     scene.close();
 }
 

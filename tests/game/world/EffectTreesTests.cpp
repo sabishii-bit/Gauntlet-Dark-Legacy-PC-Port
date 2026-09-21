@@ -45,4 +45,36 @@ TEST_CASE("an effect tree plays its sequence once where it was started, then goe
     REQUIRE(effects.count() == 0);
 }
 
+TEST_CASE("an effect can be turned, carried along and kept repeating until it is stopped",
+          "[game][world][effects][unpacked]") {
+    const std::filesystem::path root =
+        test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.yaw = 1.0f;
+    setting.velocity = Vec3{10.0f, 0.0f, 0.0f};
+    setting.seconds = 30.0f; // far longer than the tree's one playing
+    REQUIRE(effects.startSet(device, weapons, "NO_SUCH_TREE", Vec3{0.0f}, setting) == 0);
+    const u32 id = effects.startSet(device, weapons, "MP_FIRE", Vec3{0.0f, 1.0f, 0.0f}, setting);
+    REQUIRE(id != 0);
+    for (int i = 0; i < 600; ++i) {
+        effects.update(1.0f / 60.0f);
+    }
+    REQUIRE(effects.count() == 1); // still going, ten seconds on
+    REQUIRE(effects.effect(0).position.x > 99.0f);
+    REQUIRE(effects.effect(0).yaw == 1.0f);
+    effects.stop(id);
+    REQUIRE(effects.count() == 0);
+    // Left to itself it goes when its time is up.
+    setting.seconds = 0.5f;
+    REQUIRE(effects.startSet(device, weapons, "MP_FIRE", Vec3{0.0f}, setting) != 0);
+    for (int i = 0; i < 40; ++i) {
+        effects.update(1.0f / 60.0f);
+    }
+    REQUIRE(effects.count() == 0);
+}
+
 } // namespace
