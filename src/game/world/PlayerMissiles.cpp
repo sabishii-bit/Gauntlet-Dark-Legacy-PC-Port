@@ -100,6 +100,7 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     missile.potion = launch.potion;
     missile.potency = launch.potency;
     missile.damage = launch.damage;
+    missile.scale = launch.scale;
     missile.spec = launch.spec;
     missile.model = launch.model;
     m_missiles.push_back(missile);
@@ -166,8 +167,9 @@ Mat4 PlayerMissiles::transformOf(const Missile& missile) {
     const f32 pitch = -std::atan2(missile.velocity.y, level);
     Mat4 out = glm::translate(Mat4{1.0f}, missile.position);
     out = glm::rotate(out, yaw, Vec3{0.0f, 1.0f, 0.0f});
-    return glm::rotate(out, missile.spec->spin != 0.0f ? missile.tumble : pitch,
-                       Vec3{1.0f, 0.0f, 0.0f});
+    out = glm::rotate(out, missile.spec->spin != 0.0f ? missile.tumble : pitch,
+                      Vec3{1.0f, 0.0f, 0.0f});
+    return glm::scale(out, Vec3{missile.scale, missile.scale, missile.scale});
 }
 
 void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip,

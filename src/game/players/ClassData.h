@@ -48,8 +48,14 @@ struct MoveEffect {
 
 /** One thing a move does at one of its frames. */
 struct MoveStrike {
+    static constexpr s32 kWindow = 0;  ///< harms nothing: it only lasts, as to hide the weapon
     static constexpr s32 kFlies = 2;
+    static constexpr s32 kSpreads = 3; ///< a burst of another kind
     static constexpr s32 kBursts = 4;
+    static constexpr s32 kVolley = 10; ///< the class's own missiles, let fly as it lasts
+    static constexpr s32 kHidesWeapon = 0x400; ///< flags: the hand is empty while it lasts
+    static constexpr s32 kSweepsIn = 0x200;    ///< a volley's angle closes from full to none
+    static constexpr s32 kSweepsOut = 0x100;   ///< or opens from none to full
 
     s32 type = kBursts;
     f32 hitRadius = 0.0f;
@@ -60,7 +66,10 @@ struct MoveStrike {
     Vec3 offset{0.0f, 0.0f, 0.0f};
     f32 amount = 0.0f;  ///< harm; negative, that many times the character's own
     f32 speed = 0.0f;
+    f32 angle = 0.0f;   ///< radians off the facing
+    u32 damageType = 0; ///< the element and what it does to who it hits; kept for enemies
     s32 effect = -1;
+    s32 hitEffect = -1; ///< shown where it harms something
     s32 loopEffect = -1; ///< what its effect gives way to, repeating, for as long as it flies
     s32 next = -1;
     s32 startFrame = 0;
@@ -71,6 +80,7 @@ struct MoveStrike {
     /** What a strike takes off the level's ambient light while it lasts: the greater the
      * move, the deeper the dark. */
     f32 dimming() const;
+    bool harms() const { return type == kFlies || type == kSpreads || type == kBursts; }
     bool lasting(f32 frame) const {
         return frame >= static_cast<f32>(startFrame) &&
                (endFrame < 0 || frame < static_cast<f32>(endFrame));
@@ -79,6 +89,7 @@ struct MoveStrike {
 
 /** The moves a class's data names, each by its first strike (-1 when the class lacks it). */
 struct ClassMoves {
+    s32 turboAThrow = -1; ///< the strong attack with nothing in reach
     s32 turboB = -1;
     s32 turboC1 = -1;
     s32 turboC2 = -1;

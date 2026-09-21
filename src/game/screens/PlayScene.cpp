@@ -110,6 +110,22 @@ constexpr std::string_view kNarratorBank = "VOICE1";
 constexpr std::string_view kHelpTextPrefix = "help";
 constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
 constexpr f32 kMoveNamedFrame = 1.0f; ///< of a turbo attack, when its name is announced
+constexpr std::array<std::string_view, 5> kShieldTrees{"MS_FIRE", "MS_FIRE", "MS_ELEC", "MS_LIGHT",
+                                                       "MS_ACID"};
+constexpr std::array<std::string_view, 5> kShieldSounds{"S_SHIELD2", "S_SHIELD2", "S_SHIELD1",
+                                                        "S_SHIELD3", "S_SHIELD4"};
+constexpr f32 kShieldSeconds = 3.0f;      ///< how long a potion's ring lasts
+constexpr f32 kShieldRadius = 25.0f;      ///< at full size; it is sized by the magic, as a burst is
+constexpr f32 kShieldPotency = 0.25f;     ///< of the character's magic power, its harm
+constexpr f32 kShieldHarmEvery = 0.5f;    ///< seconds between its harming what it touches
+constexpr f32 kKnockdownFrom = 1.0f;      ///< a blast must do more than this to floor anyone
+constexpr f32 kBehind = 1.5707964f;       ///< a blow from further round than this is from behind
+constexpr f32 kStrongThrowScale = 2.0f;  ///< a strong throw's weapon: twice the size and the harm
+constexpr std::string_view kBlockEffect = "BLOCKFX";
+constexpr f32 kBlockWorth = 2.0f;        ///< what a guard must take off a hurt for it to show
+constexpr f32 kBlockPerDamage = 0.01f;   ///< seconds it shows for each point left
+constexpr f32 kBlockLeast = 0.333f;
+constexpr f32 kBlockMost = 1.0f;
 constexpr f32 kChargeStick = 0.25f;  ///< the least push of the stick that steers a charge
 constexpr f32 kRamDamage = 3.0f;     ///< what a charge does to what it runs into
 constexpr f32 kRamReach = 0.3f;      ///< how near counts as run into
@@ -312,6 +328,9 @@ void PlayScene::close() {
     m_rammed.clear();
     m_strikes.clear();
     m_strikeEffects.clear();
+    m_strikeSources.clear();
+    m_blockLeft.clear();
+    m_shields.clear();
     m_dimmer.reset();
     if (m_world != nullptr) {
         m_world->setAmbientOffset(0.0f);
@@ -379,6 +398,7 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
         std::ranges::sort(m_helpHeard.back());
         m_moves.emplace_back();
         m_rammed.emplace_back();
+        m_blockLeft.push_back(0.0f);
         m_cloudGaps.push_back(0.0f);
     }
 }
@@ -432,9 +452,8 @@ void PlayScene::loadMissile(Figure& figure, const CharacterSave& save, RenderDev
             bound = figure.missile.bind(figure.trees.tree(*tree), figure.models, figure.textures,
                                         device);
         }
-    } else if (figure.effects.load(m_context.unpackedRoot / kPlayersDirectory /
-                                   classCode(save.character) /
-                                   std::format("SFX{}", colorCode(save.color)))) {
+    } else if (figure.effects.load(
+                   classFolder(save.character, std::format("SFX{}", colorCode(save.color))))) {
         if (const auto tree = figure.effects.trees.find(name); tree.has_value()) {
             bound = figure.missile.bind(figure.effects.trees.tree(*tree), figure.effects.models,
                                         figure.effects.textures, device);
@@ -452,7 +471,23 @@ void PlayScene::loadMissile(Figure& figure, const CharacterSave& save, RenderDev
 
 /** Lets the weapon go: from the body's centre, out by the class's hand and a little ahead,
  * along the facing, as fast as the character's strength (or magic) throws. */
-void PlayScene::throwWeapon(const PlayerActor& actor, Figure& figure) {
+void PlayScene::throwWeapon(const PlayerActor& actor, Figure& /*figure*/) {
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        if (&m_actors[i] == &actor) {
+            launchWeapon(i, actor.facing(), 1.0f, true);
+        }
+    }
+}
+
+/** Sends the character's weapon off along `direction`, `scale` times its size and its harm;
+ * with `spreads`, as many of them as a three or five way shot worn makes it. */
+void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads) {
+    if (index >= m_actors.size() || m_figures[index] == nullptr) {
+        return;
+    }
+    const PlayerActor& actor = m_actors[index];
+    Figure& figure = *m_figures[index];
+    const Vec3 facing = direction;
     const CharacterSave& save = actor.save();
     const ClassStats* stats = m_classes.stats(save.character);
     s32 stat = 0;
@@ -463,15 +498,15 @@ void PlayScene::throwWeapon(const PlayerActor& actor, Figure& figure) {
         stat = MissileSpec::byMagic(save.character) ? block.magic() : block.strength();
         hand = stats->weaponOffset;
     }
-    const Vec3 facing = actor.facing();
     const Vec3 side{facing.z, 0.0f, -facing.x};
     MissileLaunch launch;
     launch.owner = actor.player();
+    launch.scale = scale;
     launch.direction = facing;
     launch.position = actor.followPoint() + side * hand.x + Vec3{0.0f, hand.y, 0.0f} +
                       facing * (hand.z + PlayerMissiles::kMuzzle);
     launch.speed = PlayerMissiles::speedFor(stat);
-    launch.damage = PlayerMissiles::damageFor(stat);
+    launch.damage = PlayerMissiles::damageFor(stat) * scale;
     launch.reach = PlayerMissiles::reachFor(figure.animator.attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
     launch.model = &figure.missile;
@@ -484,9 +519,9 @@ void PlayScene::throwWeapon(const PlayerActor& actor, Figure& figure) {
         return;
     }
     // A three or five way shot worn spreads the throw, fifteen degrees apart.
-    const s32 shots = PowerupEffects::of(save.progress().inventory).shots();
-    for (const Vec3& direction : PlayerMissiles::spread(facing, shots)) {
-        launch.direction = direction;
+    const s32 shots = spreads ? PowerupEffects::of(save.progress().inventory).shots() : 1;
+    for (const Vec3& way : PlayerMissiles::spread(facing, shots)) {
+        launch.direction = way;
         m_missiles.launch(launch);
     }
     if (m_context.sounds != nullptr && figure.throwSound.has_value()) {
@@ -552,7 +587,9 @@ std::optional<std::filesystem::path> PlayScene::figureDirectory(s32 player) cons
 bool PlayScene::weaponHeld(s32 player) const {
     for (usize i = 0; i < m_actors.size(); ++i) {
         if (m_actors[i].player() == player && m_figures[i] != nullptr) {
-            return m_figures[i]->handNode >= 0 && m_figures[i]->weapon.bound();
+            // A move may empty the hand for a while.
+            const bool hidden = i < m_moves.size() && m_moves[i].weaponHidden;
+            return m_figures[i]->handNode >= 0 && m_figures[i]->weapon.bound() && !hidden;
         }
     }
     return false;
@@ -578,10 +615,25 @@ void PlayScene::updateBeam(s32 ticks) {
 
 /** Binds the class's sequences to the figure: the class tree carries the keys and its nodes
  * share their names with the costume's, so each costume node follows its namesake. */
+std::filesystem::path PlayScene::classFolder(s32 character, std::string_view sub) const {
+    const std::filesystem::path players = m_context.unpackedRoot / kPlayersDirectory;
+    std::filesystem::path own = players / classCode(character) / sub;
+    if (std::filesystem::exists(own)) {
+        return own;
+    }
+    return players / classCode(character % kStartingClassCount) / sub;
+}
+
+std::string_view PlayScene::actionsClassOf(s32 character) const {
+    const std::filesystem::path own =
+        m_context.unpackedRoot / kPlayersDirectory / classCode(character) / kClassAnimations;
+    return classCode(std::filesystem::exists(own) ? character
+                                                  : character % kStartingClassCount);
+}
+
 void PlayScene::loadActions(Figure& figure, const CharacterSave& save) {
-    const std::string_view cls = classCode(save.character);
-    const std::filesystem::path directory =
-        m_context.unpackedRoot / kPlayersDirectory / std::string(cls) / std::string(kClassAnimations);
+    const std::string_view cls = actionsClassOf(save.character);
+    const std::filesystem::path directory = classFolder(save.character, kClassAnimations);
     const auto tree = figure.actions.load(directory) ? figure.actions.find(cls) : std::nullopt;
     if (!tree.has_value() || !figure.animator.bind(figure.actions.tree(*tree))) {
         log::warn("Tower: no sequences for the {} under {}; the figure stands still", cls,
@@ -894,11 +946,23 @@ void PlayScene::beginMove(usize index) {
     move.named = false;
     const PlayerAnimator::Action action = m_figures[index]->animator.action();
     const bool full = action == PlayerAnimator::Action::TurboFull;
+    move.weaponHidden = false;
+    move.volleysShot.clear();
+    const ClassStats* known = m_classes.stats(m_actors[index].save().character);
+    if (action == PlayerAnimator::Action::StrongThrow) {
+        // The strong throw costs nothing; its strikes are only what it shows and sounds.
+        if (known != nullptr) {
+            move.pending = known->strikesOf(known->moves.turboAThrow);
+            move.all = move.pending;
+            move.volleysShot.assign(move.all.size(), 0);
+        }
+        return;
+    }
     if (!full && action != PlayerAnimator::Action::TurboStrong) {
         return;
     }
     move.owed = full ? TurboMeter::kFullCost : TurboMeter::kStrongCost;
-    if (const ClassStats* stats = m_classes.stats(m_actors[index].save().character)) {
+    if (const ClassStats* stats = known) {
         if (full) {
             move.pending = stats->strikesOf(stats->moves.turboC1);
             const std::vector<s32> second = stats->strikesOf(stats->moves.turboC2);
@@ -908,6 +972,7 @@ void PlayScene::beginMove(usize index) {
         }
     }
     move.all = move.pending;
+    move.volleysShot.assign(move.all.size(), 0);
     if (move.pending.empty()) {
         m_turbo[index].spend(move.owed);
         move.owed = 0.0f;
@@ -921,11 +986,13 @@ void PlayScene::runMove(usize index) {
     MoveProgress& move = m_moves[index];
     const PlayerAnimator& body = m_figures[index]->animator;
     const bool attacking = body.action() == PlayerAnimator::Action::TurboFull ||
-                           body.action() == PlayerAnimator::Action::TurboStrong;
+                           body.action() == PlayerAnimator::Action::TurboStrong ||
+                           body.action() == PlayerAnimator::Action::StrongThrow;
     if (!attacking) {
         move.pending.clear();
         move.all.clear();
         move.owed = 0.0f;
+        move.weaponHidden = false;
         return;
     }
     const ClassStats* stats = m_classes.stats(m_actors[index].save().character);
@@ -943,11 +1010,22 @@ void PlayScene::runMove(usize index) {
             }
         }
     }
-    // The level goes dark for as long as a strike that darkens it lasts.
-    for (const s32 strike : move.all) {
-        const MoveStrike& row = stats->moveStrikes[static_cast<usize>(strike)];
-        if (row.dimming() != 0.0f && row.lasting(frame)) {
+    // The level goes dark for as long as a strike that darkens it lasts; the hand is empty
+    // for as long as one that hides the weapon does; a volley lets fly as it lasts.
+    move.weaponHidden = false;
+    for (usize slot = 0; slot < move.all.size(); ++slot) {
+        const MoveStrike& row = stats->moveStrikes[static_cast<usize>(move.all[slot])];
+        if (!row.lasting(frame)) {
+            continue;
+        }
+        if (row.dimming() != 0.0f) {
             m_dimmer.ask(row.dimming());
+        }
+        if ((row.flags & MoveStrike::kHidesWeapon) != 0) {
+            move.weaponHidden = true;
+        }
+        if (row.type == MoveStrike::kVolley) {
+            runVolley(index, slot, row, frame);
         }
     }
     std::vector<s32> due;
@@ -972,10 +1050,11 @@ ItemArchive* PlayScene::moveEffectsOf(usize index) {
         return nullptr;
     }
     if (!figure->effects.loaded()) {
+        // An unlockable class has none of its own: its moves show the trees of the class it
+        // shadows.
         const CharacterSave& save = m_actors[index].save();
-        figure->effects.load(m_context.unpackedRoot / kPlayersDirectory /
-                             classCode(save.character) /
-                             std::format("SFX{}", colorCode(save.color)));
+        figure->effects.load(
+            classFolder(save.character, std::format("SFX{}", colorCode(save.color))));
     }
     return figure->effects.loaded() ? &figure->effects : nullptr;
 }
@@ -1009,8 +1088,13 @@ void PlayScene::fireStrike(usize index, s32 strikeIndex) {
         m_turbo[index].spend(move.owed);
         move.owed = 0.0f;
     }
-    const u32 id = m_strikes.start(strike, actor.player(), actor.position(), facing,
-                                   ownDamageOf(index));
+    // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
+    u32 id = 0;
+    if (strike.harms()) {
+        id = m_strikes.start(strike, actor.player(), actor.position(), facing,
+                             ownDamageOf(index));
+        m_strikeSources.push_back(StrikeSource{id, index, strikeIndex});
+    }
     const Vec3 origin = MoveStrikes::originOf(strike, actor.position(), facing);
     const MoveStrikes::Strike* started = m_strikes.find(id);
     ItemArchive* archive = moveEffectsOf(index);
@@ -1059,17 +1143,42 @@ void PlayScene::fireStrike(usize index, s32 strikeIndex) {
  * effect along, and the effect ends with it. */
 void PlayScene::updateStrikes(f32 seconds) {
     for (const StrikeHit& hit : m_strikes.update(seconds, &m_world->collision())) {
+        const auto source = std::ranges::find(m_strikeSources, hit.strike, &StrikeSource::strike);
         for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
             if (!m_barrels.standing(barrel)) {
                 continue;
             }
             const Breakables::Barrel& cask = m_barrels.barrel(barrel);
-            if (hit.reaches(cask.figure.position(), cask.radius, cask.height)) {
-                strikeBarrel(barrel, hit.damage, hit.owner);
+            if (!hit.reaches(cask.figure.position(), cask.radius, cask.height)) {
+                continue;
+            }
+            strikeBarrel(barrel, hit.damage, hit.owner);
+            // What it harms shows the strike's own mark, when its class gives it one.
+            if (source == m_strikeSources.end() || source->actor >= m_actors.size()) {
+                continue;
+            }
+            const ClassStats* stats = m_classes.stats(m_actors[source->actor].save().character);
+            ItemArchive* archive = moveEffectsOf(source->actor);
+            if (stats == nullptr || archive == nullptr || m_device == nullptr) {
+                continue;
+            }
+            const s32 mark = stats->moveStrikes[static_cast<usize>(source->row)].hitEffect;
+            if (mark >= 0 && static_cast<usize>(mark) < stats->moveEffects.size()) {
+                const MoveEffect& effect = stats->moveEffects[static_cast<usize>(mark)];
+                if (!effect.tree.empty() && archive->trees.find(effect.tree).has_value()) {
+                    m_effects.start(*m_device, *archive, effect.tree, cask.figure.position(),
+                                    effect.scale);
+                }
+                if (!effect.sound.empty()) {
+                    playNamed(effect.sound);
+                }
             }
         }
     }
     settleBlasts();
+    std::erase_if(m_strikeSources, [this](const StrikeSource& source) {
+        return m_strikes.find(source.strike) == nullptr;
+    });
     std::erase_if(m_strikeEffects, [this](const StrikeEffect& pair) {
         if (m_strikes.find(pair.strike) != nullptr) {
             return false;
@@ -1079,16 +1188,142 @@ void PlayScene::updateStrikes(f32 seconds) {
     });
 }
 
-void PlayScene::awardExperience(s32 player, s32 amount) {
+/** Experience won, as the original awards it: scaled by the level (its own scale, less the
+ * further the character is past the level the place is meant for); what a kill wins also
+ * feeds the turbo meter, unless the character is in the middle of a turbo move. */
+void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
     for (usize i = 0; i < m_actors.size(); ++i) {
         if (m_actors[i].player() != player || isDown(i) || amount <= 0) {
             continue;
         }
-        m_actors[i].save().progress().experience += amount;
+        CharacterSave& save = m_actors[i].save();
+        const LevelInfo* level = m_world->level();
+        const f32 scale = level != nullptr
+                              ? level->tuning.experienceScale(experienceLevel(save.experience()))
+                              : 1.0f;
+        const auto won = static_cast<s32>(static_cast<f32>(amount) * scale);
+        save.progress().experience += won;
         const bool busy = m_figures[i] != nullptr && m_figures[i]->animator.turboing();
-        if (!busy) {
-            m_turbo[i].add(TurboMeter::kPerExperience * static_cast<f32>(amount));
+        if (kill && !busy) {
+            m_turbo[i].add(TurboMeter::kPerExperience * static_cast<f32>(won));
         }
+    }
+}
+
+/** A volley lets one of the character's own missiles fly every so many frames while it
+ * lasts, off the facing by its angle, which closes to nothing (or opens from it) across the
+ * span when it sweeps. */
+void PlayScene::runVolley(usize index, usize slot, const MoveStrike& strike, f32 frame) {
+    MoveProgress& move = m_moves[index];
+    if (slot >= move.volleysShot.size()) {
+        return;
+    }
+    const f32 since = frame - static_cast<f32>(strike.startFrame);
+    const f32 every = strike.delay > 0.0f ? strike.delay : 1.0e6f; // none: one shot only
+    const auto due = static_cast<s32>(std::floor(since / every)) + 1;
+    const f32 span = static_cast<f32>(strike.endFrame - strike.startFrame);
+    while (move.volleysShot[slot] < due) {
+        const f32 shotAt = static_cast<f32>(move.volleysShot[slot]) * every;
+        f32 angle = strike.angle;
+        if ((strike.flags & (MoveStrike::kSweepsIn | MoveStrike::kSweepsOut)) != 0) {
+            f32 through = span > 0.0f ? std::clamp(shotAt / span, 0.0f, 1.0f) : 1.0f;
+            if ((strike.flags & MoveStrike::kSweepsIn) != 0) {
+                through = 1.0f - through;
+            }
+            angle *= through;
+        }
+        const Vec3 facing = m_actors[index].facing();
+        const f32 heading = std::atan2(facing.x, facing.z) + angle;
+        launchWeapon(index, Vec3{std::sin(heading), 0.0f, std::cos(heading)}, 1.0f, false);
+        ++move.volleysShot[slot];
+    }
+}
+
+/** Which way a step along `heading` is for a character facing `facing`: within an eighth of a
+ * turn of ahead or behind it is that, else to the side it lies on. */
+StrafeWay PlayScene::strafeWayOf(f32 heading, f32 facing) {
+    constexpr f32 kEighth = 0.7853982f;
+    const f32 off = std::remainder(heading - facing, 8.0f * kEighth);
+    if (std::abs(off) > 3.0f * kEighth) {
+        return StrafeWay::Back;
+    }
+    if (off > kEighth) {
+        return StrafeWay::Right; // the original's sense of a positive turn
+    }
+    return off < -kEighth ? StrafeWay::Left : StrafeWay::Forward;
+}
+
+/** A potion spent on a shield: its magic rings the character for a few seconds, going about
+ * with them, to the potion's shield sound. */
+void PlayScene::shieldPotion(usize index) {
+    PlayerActor& actor = m_actors[index];
+    const s32 kind = actor.save().progress().inventory.takePotion();
+    if (kind == 0) {
+        return;
+    }
+    const auto look = static_cast<usize>(std::clamp(kind, 0, 4));
+    const f32 power = magicPowerOf(actor);
+    const f32 size = std::min(kBurstPerPower * power, 1.0f);
+    PotionShield shield;
+    shield.actor = index;
+    shield.radius = kShieldRadius * size;
+    shield.damage = kShieldPotency * power;
+    shield.secondsLeft = kShieldSeconds;
+    if (m_device != nullptr && m_weapons.loaded() &&
+        m_weapons.trees.find(kShieldTrees[look]).has_value()) {
+        EffectTrees::Setting setting;
+        setting.scale = size;
+        setting.seconds = kShieldSeconds;
+        shield.effect = m_effects.startSet(*m_device, m_weapons, kShieldTrees[look],
+                                           actor.position(), setting);
+    }
+    playNamed(kShieldSounds[look]);
+    m_shields.push_back(shield);
+}
+
+/** The rings go about with their characters and harm the barrels they touch. */
+void PlayScene::updateShields(f32 seconds) {
+    for (PotionShield& shield : m_shields) {
+        shield.secondsLeft -= seconds;
+        if (shield.actor >= m_actors.size() || isDown(shield.actor)) {
+            shield.secondsLeft = 0.0f;
+            continue;
+        }
+        const Vec3 at = m_actors[shield.actor].position();
+        m_effects.moveTo(shield.effect, at);
+        shield.harmIn -= seconds;
+        if (shield.harmIn > 0.0f) {
+            continue;
+        }
+        shield.harmIn = kShieldHarmEvery;
+        for (const usize barrel : m_barrels.within(at, shield.radius)) {
+            strikeBarrel(barrel, shield.damage, m_actors[shield.actor].player());
+        }
+    }
+    settleBlasts();
+    std::erase_if(m_shields, [this](const PotionShield& shield) {
+        if (shield.secondsLeft > 0.0f) {
+            return false;
+        }
+        m_effects.stop(shield.effect);
+        return true;
+    });
+}
+
+/** A guard that took enough off a hurt shows it: the block effect about the character, for
+ * longer the more got through, and not again until that is over. */
+void PlayScene::showBlock(usize index, f32 taken, f32 left) {
+    if (index >= m_blockLeft.size() || m_blockLeft[index] > 0.0f || taken <= kBlockWorth) {
+        return;
+    }
+    const f32 shown = std::clamp(kBlockPerDamage * left, kBlockLeast, kBlockMost);
+    m_blockLeft[index] = shown;
+    if (m_device != nullptr && m_weapons.loaded() &&
+        m_weapons.trees.find(kBlockEffect).has_value()) {
+        EffectTrees::Setting setting;
+        setting.seconds = shown;
+        m_effects.startSet(*m_device, m_weapons, kBlockEffect, m_actors[index].followPoint(),
+                           setting);
     }
 }
 
@@ -1223,6 +1458,17 @@ void PlayScene::settleBlasts() {
             const Vec3 offset = actor.followPoint() - felt.position;
             if (std::hypot(offset.x, offset.z) <= felt.radius + actor.radius() &&
                 std::abs(offset.y) <= actor.height() * 0.5f + felt.radius) {
+                // A blast that gets through knocks its victim off their feet: onto their face
+                // when it came from behind them, onto their back otherwise.
+                const bool guarding = m_figures[i] != nullptr && m_figures[i]->animator.guarding();
+                if (guarded(i, felt.damage, true) > kKnockdownFrom && !guarding &&
+                    !m_world->isTower()) {
+                    const Vec3 push = actor.position() - felt.position;
+                    f32 round = std::atan2(push.x, push.z) - actor.yaw();
+                    round = std::remainder(round, 2.0f * kBehind * 2.0f);
+                    m_struck[i] = std::abs(round) > kBehind ? PlayerDeed::FallBack
+                                                            : PlayerDeed::FallForward;
+                }
                 hurt(i, felt.damage, HurtKind::Blow, true);
             }
         }
@@ -1275,7 +1521,11 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
     if (index >= m_actors.size() || isDown(index) || m_world->isTower() || damage <= 0.0f) {
         return;
     }
+    const f32 unguarded = damage;
     damage = guarded(index, damage, directed);
+    if (m_figures[index] != nullptr && m_figures[index]->animator.defending()) {
+        showBlock(index, unguarded - damage, damage);
+    }
     if (damage <= 0.0f) {
         return;
     }
@@ -1966,12 +2216,20 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             if ((in.usePotion || in.throwPotion) && !carrying) {
                 postHelp(HelpMessages::kNoPotion, i);
             }
+            if ((in.shieldPotion) && !carrying) {
+                postHelp(HelpMessages::kNoPotion, i);
+            }
             if (const PlayerDeed turbo = turboDeed(i, in); turbo != PlayerDeed::None) {
                 deed = turbo;
+            } else if (in.shieldPotion && carrying) {
+                deed = PlayerDeed::ShieldPotion;
             } else if (in.usePotion && carrying) {
                 deed = PlayerDeed::UsePotion;
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
+            } else if (in.strongAttack &&
+                       m_figures[i]->animator.canBegin(PlayerDeed::StrongAttack)) {
+                deed = PlayerDeed::StrongAttack; // nothing is ever in reach yet: the strong throw
             } else if (in.turbo) {
                 deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
             } else if (in.attack) {
@@ -1983,8 +2241,16 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         // A body in a throw keeps its feet where they are, turning to the stick.
         const f32 pace = m_figures[i] != nullptr ? m_figures[i]->animator.moveScale() : 1.0f;
         const bool charging = m_figures[i] != nullptr && m_figures[i]->animator.shoving();
+        // Strafing, the character steps the way the stick is pushed without turning to it.
+        const bool strafes = !held && !down && !charging && player < inputs.size() &&
+                             inputs[player].strafe && move.any();
+        if (m_figures[i] != nullptr) {
+            m_figures[i]->animator.setStrafe(
+                strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
+                        : StrafeWay::None);
+        }
         actor.update(charging ? chargeInput(i, move, cameraYaw) : move, cameraYaw, seconds,
-                     &m_world->collision(), pace);
+                     &m_world->collision(), pace, strafes);
         if (charging) {
             ramBarrels(i);
         } else {
@@ -1998,6 +2264,13 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             }
             if (m_figures[i]->animator.released()) {
                 throwWeapon(actor, *m_figures[i]);
+            }
+            if (m_figures[i]->animator.strongReleased()) {
+                launchWeapon(i, actor.facing(), kStrongThrowScale, true);
+            }
+            m_blockLeft[i] = std::max(m_blockLeft[i] - seconds, 0.0f);
+            if (m_figures[i]->animator.potionShielded()) {
+                shieldPotion(i);
             }
             if (m_figures[i]->animator.potionUsed()) {
                 usePotion(actor);
@@ -2036,6 +2309,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
     }
     updateStrikes(seconds);
+    updateShields(seconds);
     m_dimmer.update(seconds);
     m_world->setAmbientOffset(m_dimmer.offset());
     m_effects.update(seconds);
@@ -2135,8 +2409,12 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                               worn.bodyAlpha(m_playSeconds));
             // The hand is empty while a throw is recovered from, unless what flies is not
             // what it holds.
-            const bool inHand = !figure.animator.recovering() ||
-                                MissileSpec::of(m_actors[i].save().character).staysInHand;
+            const bool thrown = figure.animator.recovering() ||
+                                figure.animator.action() ==
+                                    PlayerAnimator::Action::StrongThrowRecover;
+            const bool hidden = i < m_moves.size() && m_moves[i].weaponHidden;
+            const bool inHand =
+                !hidden && (!thrown || MissileSpec::of(m_actors[i].save().character).staysInHand);
             if (figure.handNode >= 0 && figure.weapon.bound() && inHand) {
                 const auto hand = static_cast<usize>(figure.handNode);
                 const Mat4 wrist = hand < figure.transforms.size()

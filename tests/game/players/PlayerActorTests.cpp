@@ -138,4 +138,20 @@ TEST_CASE("walls stop an actor and missing floors keep it where it stands",
     REQUIRE(actor.position().x == Approx(edge - 5.0f));
 }
 
+TEST_CASE("a strafing character steps where it is sent without turning to it",
+          "[game][players][actor]") {
+    PlayerActor actor;
+    const CharacterSave save;
+    actor.spawn(0, save, nullptr, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    MoveInput sideways;
+    sideways.direction = Vec2{1.0f, 0.0f};
+    sideways.magnitude = 1.0f;
+    REQUIRE(PlayerActor::headingOf(sideways, 0.0f) == Catch::Approx(1.5707964f));
+    actor.update(sideways, 0.0f, 0.5f, nullptr, 1.0f, true);
+    REQUIRE(actor.position().x > 1.0f);
+    REQUIRE(actor.yaw() == 0.0f); // still facing the way it was
+    actor.update(sideways, 0.0f, 0.5f, nullptr);
+    REQUIRE(actor.yaw() == Catch::Approx(1.5707964f));
+}
+
 } // namespace

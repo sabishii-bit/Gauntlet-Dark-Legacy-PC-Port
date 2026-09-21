@@ -96,6 +96,12 @@ struct PlayBindings {
     std::vector<PadButton> padUsePotion{PadButton::B};
     std::vector<Key> throwPotion{Key::Q};
     std::vector<PadButton> padThrowPotion{PadButton::X};
+    std::vector<Key> shieldPotion{Key::C};  ///< a potion spent on a ring of its magic
+    std::vector<PadButton> padShieldPotion{PadButton::RightThumb};
+    std::vector<Key> strafe{Key::LeftControl}; ///< held: steps keep the facing
+    std::vector<PadButton> padStrafe{PadButton::LeftThumb};
+    std::vector<Key> strongAttack{Key::R};  ///< the slow attack: with nothing in reach, a strong throw
+    std::vector<PadButton> padStrongAttack{PadButton::LeftBumper};
     std::vector<Key> turbo{Key::LeftShift}; ///< held with the attack for a turbo attack
     std::vector<PadButton> padTurbo{PadButton::RightBumper};
     std::vector<Key> charge{Key::F};        ///< the shove that runs the turbo meter down

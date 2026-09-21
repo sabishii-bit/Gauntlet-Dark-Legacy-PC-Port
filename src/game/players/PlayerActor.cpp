@@ -34,17 +34,23 @@ void PlayerActor::spawn(s32 player, const CharacterSave& save, const ClassStats*
     m_speed = kMinSpeed + std::clamp(speedStat * kStatScale, 0.0f, 1.0f) * (kMaxSpeed - kMinSpeed);
 }
 
+f32 PlayerActor::headingOf(const MoveInput& input, f32 cameraYaw) {
+    return std::atan2(input.direction.x, input.direction.y) + cameraYaw;
+}
+
 void PlayerActor::update(const MoveInput& input, f32 cameraYaw, f32 seconds,
-                         const WorldCollision* collision, f32 moveScale) {
+                         const WorldCollision* collision, f32 moveScale, bool keepFacing) {
     m_moving = input.any() && seconds > 0.0f;
     if (!m_moving) {
         return;
     }
-    const f32 heading = std::atan2(input.direction.x, input.direction.y) + cameraYaw;
+    const f32 heading = headingOf(input, cameraYaw);
     const f32 pace = speed();
     const f32 distance =
         std::min(pace * input.magnitude * seconds, kMoveLimit * pace * seconds) * moveScale;
-    m_yaw = heading;
+    if (!keepFacing) {
+        m_yaw = heading;
+    }
     if (distance <= 0.0f) {
         m_moving = false;
         return;

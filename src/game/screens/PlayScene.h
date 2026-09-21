@@ -90,6 +90,9 @@ struct PlayInput {
     bool attack = false; ///< the attack button is held
     bool usePotion = false;
     bool throwPotion = false;
+    bool shieldPotion = false;  ///< the shield potion button is held
+    bool strafe = false;        ///< the strafe button is held
+    bool strongAttack = false;  ///< the slow attack button is held
     bool turbo = false;         ///< the turbo button is held
     bool chargePressed = false; ///< the charge button went down this frame
     bool attackPressed = false; ///< the attack button went down this frame
@@ -201,7 +204,7 @@ public:
     const AmbientDimmer& dimmer() const { return m_dimmer; }
     /** Gives `player`'s character experience won in play, which also feeds its turbo meter
      * (unless it is in the middle of a turbo move), as a kill does in the original. */
-    void awardExperience(s32 player, s32 amount);
+    void awardExperience(s32 player, s32 amount, bool kill = true);
     /** What `player`'s status box shows. */
     StatusBoxView status(s32 player) const { return statusOf(player); }
     /** The turbo meter of `player`'s character, or null when that player is not in. */
@@ -311,8 +314,20 @@ private:
     void ramBarrels(usize index);
     void runMove(usize index);
     void fireStrike(usize index, s32 strike);
+    void runVolley(usize index, usize slot, const MoveStrike& strike, f32 frame);
+    void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
+    void showBlock(usize index, f32 taken, f32 left);
+    void shieldPotion(usize index);
+    void updateShields(f32 seconds);
+    static StrafeWay strafeWayOf(f32 heading, f32 facing);
     void updateStrikes(f32 seconds);
     ItemArchive* moveEffectsOf(usize index);
+    /** A class's folder `sub` under the players' directory: its own, or, for an unlockable
+     * class that has none, that of the class it shadows (whose sequences, thrown weapons and
+     * effects it shares). */
+    std::filesystem::path classFolder(s32 character, std::string_view sub) const;
+    /** The name the class's sequences go by: the shadowed class's when the folder is its. */
+    std::string_view actionsClassOf(s32 character) const;
     f32 ownDamageOf(usize index) const;
     void updateTurbo(usize index, s32 ticks, f32 seconds);
     bool isDown(usize index) const { return index < m_down.size() && m_down[index] != kUp; }
@@ -396,6 +411,8 @@ private:
         std::vector<s32> all; ///< every strike of it, which may keep the level dark
         f32 owed = 0.0f;
         bool named = false;   ///< its name has been announced
+        bool weaponHidden = false; ///< one of its strikes empties the hand for now
+        std::vector<s32> volleysShot; ///< per strike of `all`, how many shots it has let fly
     };
     AmbientDimmer m_dimmer;
     std::vector<MoveProgress> m_moves;       ///< per actor
@@ -407,6 +424,25 @@ private:
         u32 effect = 0;
     };
     std::vector<StrikeEffect> m_strikeEffects;
+    /** Whose strike a number is, and which of their class's, for what it shows on a hit. */
+    struct StrikeSource {
+        u32 strike = 0;
+        usize actor = 0;
+        s32 row = -1;
+    };
+    std::vector<StrikeSource> m_strikeSources;
+    std::vector<f32> m_blockLeft; ///< per actor, seconds before another block shows
+    /** A potion's magic ringing a character: it goes about with them and harms what it
+     * touches, every so often, until it is spent. */
+    struct PotionShield {
+        usize actor = 0;
+        u32 effect = 0;
+        f32 radius = 0.0f;
+        f32 damage = 0.0f;
+        f32 secondsLeft = 0.0f;
+        f32 harmIn = 0.0f;
+    };
+    std::vector<PotionShield> m_shields;
     /** Gas a poison barrel left hanging. */
     struct GasCloud {
         Vec3 position{0.0f, 0.0f, 0.0f};

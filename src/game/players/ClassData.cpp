@@ -59,6 +59,7 @@ ClassStats parseClassStats(std::string_view text) {
         return values.size() == 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f};
     };
     if (const auto moves = root.find("moves"); moves != root.end() && moves->is_object()) {
+        stats.moves.turboAThrow = moves->value("turboAThrow", -1);
         stats.moves.turboB = moves->value("turboB", -1);
         stats.moves.turboC1 = moves->value("turboC1", -1);
         stats.moves.turboC2 = moves->value("turboC2", -1);
@@ -87,6 +88,9 @@ ClassStats parseClassStats(std::string_view text) {
         // The original flies it half way between its least speed and its most.
         const f32 least = entry.value("speedMin", 0.0f);
         strike.speed = least + 0.5f * (entry.value("speedMax", least) - least);
+        strike.angle = entry.value("angle", 0.0f);
+        strike.damageType = entry.value("damageType", 0U);
+        strike.hitEffect = entry.value("hitEffect", -1);
         strike.effect = entry.value("effect", -1);
         strike.loopEffect = entry.value("loopEffect", -1);
         strike.endFrame = entry.value("endFrame", -1);

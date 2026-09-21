@@ -40,7 +40,9 @@ public:
      * much of its pace the body's action leaves it: at none it turns to the stick and stays
      * where it is. */
     void update(const MoveInput& input, f32 cameraYaw, f32 seconds,
-                const WorldCollision* collision, f32 moveScale = 1.0f);
+                const WorldCollision* collision, f32 moveScale = 1.0f, bool keepFacing = false);
+    /** The way `input` would send the character, as a heading about the upright. */
+    static f32 headingOf(const MoveInput& input, f32 cameraYaw);
 
     /** Moves the character to `position`, as something solid in its way pushes it. */
     void place(const Vec3& position) { m_position = position; }

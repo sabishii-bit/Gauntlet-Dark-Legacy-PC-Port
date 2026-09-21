@@ -31,11 +31,13 @@ struct MoveStrikeRecord {
     f32 delay = 0.0f;     ///< seconds from its start to its harm
     f32 minTime = 0.0f;
     f32 maxTime = 0.0f;   ///< how long what flies lasts
+    f32 angle = 0.0f;     ///< radians off the facing; a volley's sweep
     f32 arc = -1.0f;      ///< the least cosine from the facing that is hit; -1 is all round
     std::array<f32, 3> offset{}; ///< from the body, in its space
     f32 amount = 0.0f;    ///< harm; negative, that many times the character's own
     f32 speedMin = 0.0f;
     f32 speedMax = 0.0f;
+    f32 weight = 0.0f;    ///< scales how a volley's missiles fall
     s16 effect = -1;
     s16 hitEffect = -1;
     s16 loopEffect = -1;
