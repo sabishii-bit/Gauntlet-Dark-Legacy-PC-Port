@@ -17,13 +17,18 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     const Scenario scenario = Scenario::fromJson(R"({
   "screen": "tower",
   "party": [
-    {"player": 2, "class": "val", "color": "red", "name": "Kim", "level": 3, "crystals": [0, 5]},
+    {"player": 2, "class": "val", "color": "red", "name": "Kim", "level": 3, "crystals": [0, 5],
+     "gold": 120, "health": 250, "keys": 2, "potions": [1, 4]},
     {"class": "WAR"}
   ],
   "position": [19.3, -2, -60],
   "yaw": 1.5,
-  "welcome": false
+  "welcome": false,
+  "items": [{"name": "KEY", "position": [1, 2, 3]}, {"name": "HAM", "position": [4, 5, 6]}]
 })");
+    REQUIRE(scenario.tower.items.size() == 2);
+    REQUIRE(scenario.tower.items[0].name == "KEY");
+    REQUIRE(scenario.tower.items[1].position == Vec3{4.0f, 5.0f, 6.0f});
     REQUIRE(scenario.party.size() == 2);
     REQUIRE(scenario.tower.position == Vec3{19.3f, -2.0f, -60.0f});
     REQUIRE(scenario.tower.yaw == 1.5f);
@@ -37,6 +42,12 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE(members[0].save.experience() == levelExperience(3));
     REQUIRE(members[0].save.progress().crystals[1] == 5);
     REQUIRE(members[0].save.progress().crystals[0] == 0);
+    REQUIRE(members[0].save.gold == 120);
+    REQUIRE(members[0].save.health() == 250);
+    REQUIRE(members[0].save.progress().inventory.keys == 2);
+    REQUIRE(members[0].save.progress().inventory.nextPotion() == 4);
+    REQUIRE(members[1].save.progress().inventory == Inventory{});
+    REQUIRE(members[1].save.health() == 500);
     // The second takes the defaults: the next player, yellow, level one, named TEST.
     REQUIRE(members[1].player == 1);
     REQUIRE(members[1].save.name == "TEST");
@@ -48,6 +59,10 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE_FALSE(bare.tower.position.has_value());
     REQUIRE_FALSE(bare.tower.yaw.has_value());
     REQUIRE_FALSE(bare.tower.welcome.has_value());
+    REQUIRE(bare.tower.items.empty());
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{"keys": 12}]})"), FormatError);
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{}], "items": [{"name": "KEY"}]})"),
+                      FormatError);
     REQUIRE(bare.partyMembers()[0].save.character == 0);
 }
 

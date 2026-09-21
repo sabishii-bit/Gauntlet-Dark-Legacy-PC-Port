@@ -67,4 +67,24 @@ MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool k
     return out;
 }
 
+bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad) {
+    if (keyboard && anyKeyDown(input, bindings.attack)) {
+        return true;
+    }
+    int first = pad;
+    int last = pad;
+    if (pad == kAllPads) {
+        first = 0;
+        last = Input::kMaxPads - 1;
+    } else if (pad == kNoPad) {
+        last = first - 1;
+    }
+    for (int index = first; index <= last; ++index) {
+        if (input.isPadConnected(index) && anyButtonDown(input, index, bindings.padAttack)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace gdl::game

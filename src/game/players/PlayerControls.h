@@ -22,6 +22,9 @@ struct MoveInput {
  */
 MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad);
 
+/** Whether the player holds their attack: a bound key (when `keyboard`) or pad button. */
+bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad);
+
 inline constexpr int kAllPads = -1;
 inline constexpr int kNoPad = -2;
 

@@ -77,6 +77,12 @@ void StatusBoxPainter::release() {
     m_strings = nullptr;
 }
 
+std::string_view StatusBoxPainter::potionIcon(s32 kind) {
+    return kind >= 0 && static_cast<usize>(kind) < kPotionIcons.size()
+               ? kPotionIcons[static_cast<usize>(kind)]
+               : kPotionIcons[0];
+}
+
 void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view, bool bar) {
     if (!loaded()) {
         return;
@@ -125,6 +131,30 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         m_score.draw(canvas, left + kGoldRight - m_score.measure(gold), kValueY, gold, style);
         m_score.draw(canvas, left + kHealthRight - m_score.measure(health), kValueY, health,
                      style);
+    }
+    // What is carried shows over the gold and the health: keys to the left, potions (the
+    // colour of the next to be thrown) to the right, each with its count in the costume's
+    // colour.
+    const auto carried = [&](std::string_view name, s32 iconX, s32 count, s32 countX) {
+        if (count <= 0) {
+            return;
+        }
+        if (const Texture* texture = staticTexture(name)) {
+            canvas.draw(*texture, Rect{static_cast<f32>(left + iconX),
+                                       static_cast<f32>(kCarriedY),
+                                       static_cast<f32>(texture->width()),
+                                       static_cast<f32>(texture->height())});
+        }
+        if (m_score.ready()) {
+            TextStyle style;
+            style.color = tint;
+            style.scale = kCarriedScale;
+            m_score.draw(canvas, left + countX, kCarriedTextY, std::format("{}", count), style);
+        }
+    };
+    if (view.mode == StatusBoxView::Mode::Status) {
+        carried("KEY_ICON", kKeyIconX, view.keys, kKeyCountX);
+        carried(potionIcon(view.potionKind), kPotionIconX, view.potions, kPotionCountX);
     }
     const s32 centerX = -(left + kWidth / 2);
     if (view.mode == StatusBoxView::Mode::Status && m_smallCaps.ready()) {

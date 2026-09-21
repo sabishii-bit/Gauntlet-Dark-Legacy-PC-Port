@@ -214,7 +214,7 @@ void TitleScene::loadFireFrames(RenderDevice& device) {
         log::warn("Title screen: burn effect textures are missing");
         return;
     }
-    const auto frames = static_cast<u32>(FireScroll::kFrameCount);
+    const auto frames = static_cast<u32>(BurnDialogueScroll::kFrameCount);
     try {
         for (u32 i = 1; i <= frames && *ring + i < m_staticTextures.size(); ++i) {
             m_fireRing.push_back(&m_staticTextures.texture(device, *ring + i));

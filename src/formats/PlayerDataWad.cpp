@@ -45,6 +45,9 @@ PlayerClassRecord parsePlayerDataWad(std::span<const u8> bytes) {
     record.attachY = readWadF32(bytes, body + 8, kWhat);
     record.collisionY = readWadF32(bytes, body + 12, kWhat);
     record.powerupTime = readWadF32(bytes, body + 16, kWhat);
+    for (usize axis = 0; axis < record.weaponOffset.size(); ++axis) {
+        record.weaponOffset[axis] = readWadF32(bytes, body + 20 + axis * 4, kWhat);
+    }
     return record;
 }
 

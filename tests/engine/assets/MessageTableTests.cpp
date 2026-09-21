@@ -21,7 +21,8 @@ std::filesystem::path sampleTable(std::string_view name) {
     {"name": "HELLO", "font": 0, "scale": 0.6, "shadowScale": 1,
      "lines": ["Welcome,\r\nheroes!\n", "Go now."]},
     {"name": "ODD", "font": 3, "lines": []}
-  ]
+  ],
+  "lists": [{"name": "GREETINGS", "messages": [1, 0, 9]}]
 })");
     return dir / "scroll.json";
 }
@@ -43,6 +44,19 @@ TEST_CASE("a message table names its messages, their pages and fonts", "[assets]
     REQUIRE(table.fontOf(hello) == "font32");
     REQUIRE(table.fontOf(table.message(1)).empty());
     REQUIRE(table.message(1).pages.empty());
+}
+
+TEST_CASE("a message table's lists name messages in their own order", "[assets][text]") {
+    MessageTable table;
+    REQUIRE(table.load(sampleTable("message-table-lists")));
+    REQUIRE(table.lists().size() == 1);
+    REQUIRE(table.findList("NOPE") == nullptr);
+    const MessageList* greetings = table.findList("GREETINGS");
+    REQUIRE(greetings != nullptr);
+    REQUIRE(greetings->messages == std::vector<s32>{1, 0, 9});
+    REQUIRE(table.listed(*greetings, 1) == &table.message(0));
+    REQUIRE(table.listed(*greetings, 2) == nullptr); // names no message of the table
+    REQUIRE(table.listed(*greetings, 3) == nullptr); // past the list's end
 }
 
 TEST_CASE("a missing or malformed message table fails to load", "[assets][text]") {

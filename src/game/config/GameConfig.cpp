@@ -160,6 +160,7 @@ void GameConfig::mergeJson(std::string_view json) {
                 readKeys(k, "down", play.down);
                 readKeys(k, "left", play.left);
                 readKeys(k, "right", play.right);
+                readKeys(k, "attack", play.attack);
             }
             if (moves.contains("pad")) {
                 const Json& p = moves.at("pad");
@@ -167,6 +168,7 @@ void GameConfig::mergeJson(std::string_view json) {
                 readButtons(p, "down", play.padDown);
                 readButtons(p, "left", play.padLeft);
                 readButtons(p, "right", play.padRight);
+                readButtons(p, "attack", play.padAttack);
             }
             read(moves, "stickDeadZone", play.stickDeadZone);
         }
@@ -218,12 +220,14 @@ std::string GameConfig::toJson() const {
                            {{"up", keyNames(play.up)},
                             {"down", keyNames(play.down)},
                             {"left", keyNames(play.left)},
-                            {"right", keyNames(play.right)}}},
+                            {"right", keyNames(play.right)},
+                            {"attack", keyNames(play.attack)}}},
                           {"pad",
                            {{"up", buttonNames(play.padUp)},
                             {"down", buttonNames(play.padDown)},
                             {"left", buttonNames(play.padLeft)},
-                            {"right", buttonNames(play.padRight)}}},
+                            {"right", buttonNames(play.padRight)},
+                            {"attack", buttonNames(play.padAttack)}}},
                           {"stickDeadZone", play.stickDeadZone}}}};
     return root.dump(2) + "\n";
 }

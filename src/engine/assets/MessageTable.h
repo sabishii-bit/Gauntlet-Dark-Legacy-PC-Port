@@ -20,6 +20,12 @@ struct MessageInfo {
     std::vector<std::string> pages; ///< each with its own line breaks
 };
 
+/** A named list of a rom's messages, such as the hints about each guardian in turn. */
+struct MessageList {
+    std::string name;
+    std::vector<s32> messages; ///< indices into the table's messages
+};
+
 /** The messages of one unpacked text rom (`text/<name>.json`), such as the scroll texts. */
 class MessageTable {
 public:
@@ -31,12 +37,18 @@ public:
     const std::vector<std::string>& fonts() const { return m_fonts; }
     const MessageInfo& message(u32 index) const;
     std::optional<u32> find(std::string_view name) const;
+    const std::vector<MessageList>& lists() const { return m_lists; }
+    /** The list of that name, or null. */
+    const MessageList* findList(std::string_view name) const;
+    /** The message a list names at `entry`, or null past its end. */
+    const MessageInfo* listed(const MessageList& list, usize entry) const;
     /** The font a message draws with, empty when the table lacks it. */
     std::string_view fontOf(const MessageInfo& message) const;
 
 private:
     std::vector<std::string> m_fonts;
     std::vector<MessageInfo> m_messages;
+    std::vector<MessageList> m_lists;
     std::unordered_map<std::string, u32> m_byName;
 };
 

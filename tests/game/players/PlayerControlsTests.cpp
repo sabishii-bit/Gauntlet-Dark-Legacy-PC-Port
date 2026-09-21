@@ -34,6 +34,26 @@ TEST_CASE("keys walk along the axes and combine on the diagonal", "[game][player
     REQUIRE_FALSE(readMoveInput(input, PlayBindings{}, false, kNoPad).any());
 }
 
+TEST_CASE("the attack is held by its key or its pad button", "[game][players][controls]") {
+    Input input;
+    input.beginPoll();
+    REQUIRE_FALSE(readAttackInput(input, PlayBindings{}, true, kNoPad));
+    input.setKey(Key::Space, true);
+    REQUIRE(readAttackInput(input, PlayBindings{}, true, kNoPad));
+    REQUIRE_FALSE(readAttackInput(input, PlayBindings{}, false, kNoPad)); // not the keyboard's
+    input.setKey(Key::Space, false);
+    PadSnapshot pad;
+    pad.connected = true;
+    pad.buttons[static_cast<usize>(PadButton::A)] = true;
+    input.setPad(1, pad);
+    REQUIRE(readAttackInput(input, PlayBindings{}, false, 1));
+    REQUIRE(readAttackInput(input, PlayBindings{}, false, kAllPads));
+    REQUIRE_FALSE(readAttackInput(input, PlayBindings{}, false, 0));
+    PlayBindings rebound;
+    rebound.padAttack = {PadButton::B};
+    REQUIRE_FALSE(readAttackInput(input, rebound, false, 1));
+}
+
 TEST_CASE("the stick moves past its dead zone and the pad buttons add to it",
           "[game][players][controls]") {
     Input input;

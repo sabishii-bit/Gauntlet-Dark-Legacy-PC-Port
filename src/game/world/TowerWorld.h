@@ -73,12 +73,19 @@ public:
     void hideCrystals() { m_placedItems.hideCrystals(); }
     void revealCrystals(f32 seconds) { m_placedItems.reveal(seconds); }
     /** Takes what the collectors touch, starting the bursts. */
-    std::vector<Pickup> collect(RenderDevice& device, std::span<const Collector> collectors) {
-        return m_placedItems.collect(device, collectors);
+    std::vector<Pickup> collect(RenderDevice& device, std::span<const Collector> collectors,
+                                const PickupJudge& judge = {}) {
+        return m_placedItems.collect(device, collectors, judge);
+    }
+    /** Drops one of the level's items by its record's name at `position`. */
+    bool placeItem(RenderDevice& device, std::string_view name, const Vec3& position) {
+        return m_placedItems.place(device, name, position,
+                                   m_collision.loaded() ? &m_collision : nullptr);
     }
     /** The level's item archive, lending the torch flames and Sumner; empty when it is not
      * unpacked. */
     ItemArchive& items() { return m_items; }
+    ItemArchive& powerups() { return m_powerups; }
     bool hasItems() const { return m_items.loaded(); }
     const WorldCollision& collision() const { return m_collision; }
     /** The level's light, for everything standing in it. */

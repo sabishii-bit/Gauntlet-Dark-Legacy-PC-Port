@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -49,6 +50,10 @@ ClassStats parseClassStats(std::string_view text) {
     stats.height = root.value("height", 0.0f);
     stats.width = root.value("width", 0.0f);
     stats.collisionY = root.value("collisionY", 0.0f);
+    stats.powerupTime = root.value("powerupTime", 1.0f);
+    if (const auto offset = root.value("weaponOffset", std::vector<f32>{}); offset.size() == 3) {
+        stats.weaponOffset = Vec3{offset[0], offset[1], offset[2]};
+    }
     return stats;
 }
 

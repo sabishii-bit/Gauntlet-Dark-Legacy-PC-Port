@@ -74,6 +74,8 @@ struct PlayBindings {
     std::vector<PadButton> padDown{PadButton::DpadDown};
     std::vector<PadButton> padLeft{PadButton::DpadLeft};
     std::vector<PadButton> padRight{PadButton::DpadRight};
+    std::vector<Key> attack{Key::Space};
+    std::vector<PadButton> padAttack{PadButton::A};
     f32 stickDeadZone = 0.25f; ///< stick deflection ignored as rest
 };
 

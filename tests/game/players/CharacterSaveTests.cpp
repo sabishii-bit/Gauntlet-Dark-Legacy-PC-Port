@@ -26,6 +26,9 @@ CharacterSave sampleSave() {
     save.classes[9].health = 320;
     save.classes[2].crystals[1] = 15;
     save.classes[2].unlocked = 0b10;
+    save.classes[2].inventory.keys = 4;
+    save.classes[2].inventory.potions = {1, 3, 3};
+    save.classes[2].inventory.addPowerup(9, 0x8000, 2.0f, 45.0f);
     return save;
 }
 
@@ -45,7 +48,20 @@ TEST_CASE("a character round-trips through JSON", "[game][players][save]") {
     REQUIRE(loaded.classes[2].fightAdd == 12.5f);
     REQUIRE(loaded.classes[9].health == 320);
     REQUIRE(loaded.classes[0].experience == 0);
+    REQUIRE(loaded.progress().inventory == save.progress().inventory);
+    REQUIRE(loaded.progress().inventory.keys == 4);
+    REQUIRE(loaded.progress().inventory.nextPotion() == 3);
+    REQUIRE(loaded.progress().inventory.powerup(9, 0x8000)->charge == 2.0f);
+    REQUIRE(loaded.classes[0].inventory == Inventory{});
     REQUIRE(loaded.toJson() == save.toJson());
+    // A save from before inventories, or one overfull, loads within the limits.
+    const CharacterSave old = CharacterSave::fromJson(
+        R"({"version": 1, "name": "OLD", "character": 0, "classes": {"WAR": {"experience": 5,
+            "inventory": {"keys": 40, "potions": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]}},
+            "VAL": {"experience": 1}}})");
+    REQUIRE(old.classes[0].inventory.keys == Inventory::kMostKeys);
+    REQUIRE(old.classes[0].inventory.potions.size() == 9);
+    REQUIRE(old.classes[1].inventory == Inventory{});
 }
 
 TEST_CASE("broken characters are rejected", "[game][players][save]") {

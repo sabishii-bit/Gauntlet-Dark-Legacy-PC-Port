@@ -10,7 +10,6 @@ namespace {
 constexpr s32 kGaramondFrames = 6;
 constexpr s32 kGaramondDelay = 10;
 constexpr s32 kBurnFrames = 5;
-constexpr s32 kPromptSlots = 2;
 constexpr s32 kPlayerTagX = 106;
 constexpr s32 kArrowGlyphX = 2;
 constexpr s32 kArrowGlyphY = 12;
@@ -28,6 +27,18 @@ u8 clampByte(s32 value) {
 /** Opacity after the original's font-alpha convention, where 0 is opaque and 255 invisible. */
 u8 opacityFromFontAlpha(s32 fontAlpha) {
     return clampByte(kFullAlpha - fontAlpha);
+}
+
+/** How many lines a passage runs to. */
+s32 lineCount(std::string_view passage) {
+    if (passage.empty()) {
+        return 0;
+    }
+    auto lines = static_cast<s32>(std::ranges::count(passage, '\n'));
+    if (passage.back() != '\n') {
+        ++lines;
+    }
+    return lines;
 }
 
 /** One line of menu text in a fixed colour and glyph sheet. */
@@ -107,6 +118,16 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
         m_definition.backdropY < 0 ? screen.height / 2 - height / 2 : m_definition.backdropY;
     m_backdrop = Rect{static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(width),
                       static_cast<f32>(height)};
+    // A lone passage sits about the column's middle; several run down from where they start.
+    m_bodyTop = m_definition.bodyY;
+    if (m_definition.bodyY < 0) {
+        s32 lines = 0;
+        for (const std::string& passage : m_definition.body) {
+            lines += lineCount(passage);
+        }
+        const s32 bodyHeight = lines * painter.lineHeight(m_definition.bodyScale);
+        m_bodyTop = m_columnY + m_columnHeight / 2 - bodyHeight / 2;
+    }
     glideIcon(0);
 }
 
@@ -253,7 +274,8 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
 
     const bool hasBackdrop = !m_definition.backdrop.empty() && textures.backdrop != nullptr;
     if (hasBackdrop && !m_backdropReleased) {
-        canvas.draw(*textures.backdrop, m_backdrop, white);
+        canvas.draw(*textures.backdrop, m_backdrop,
+                    m_definition.backdropFades ? white : Color::white());
         if (textures.burn[0] != nullptr) {
             const auto frame = static_cast<usize>((m_time >> 3) % kBurnFrames);
             const Texture* burn =
@@ -325,12 +347,37 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         }
     }
 
+    if (!m_definition.body.empty() && hasBackdrop) {
+        const s32 lineHeight = painter.lineHeight(m_definition.bodyScale);
+        const Color ink = m_definition.colors.off.withAlpha(fade);
+        s32 y = m_bodyTop;
+        for (const std::string& passage : m_definition.body) {
+            usize from = 0;
+            while (from < passage.size()) {
+                const usize end = std::min(passage.find('\n', from), passage.size());
+                drawLabel(canvas, painter, -(m_screen.width / 2), y,
+                          std::string_view(passage).substr(from, end - from),
+                          m_definition.bodyScale, ink, textures.font);
+                y += lineHeight;
+                from = end + 1;
+            }
+            y += m_definition.bodyGap;
+        }
+    }
+
     if (m_definition.prompts && m_finishTimer == 0) {
-        const s32 slot = m_screen.width / (kPromptSlots + 1);
-        drawLabel(canvas, painter, -slot, m_definition.promptY, m_definition.backLabel,
-                  kPromptScale, white, labelSheet);
-        drawLabel(canvas, painter, -(slot * 2), m_definition.promptY, m_definition.selectLabel,
-                  kPromptScale, white, labelSheet);
+        // The prompts share the row evenly: one alone sits in the middle.
+        const s32 count = (m_definition.backLabel.empty() ? 0 : 1) +
+                          (m_definition.selectLabel.empty() ? 0 : 1);
+        const s32 slot = m_screen.width / (count + 1);
+        s32 x = 0;
+        for (const std::string* label : {&m_definition.backLabel, &m_definition.selectLabel}) {
+            if (!label->empty()) {
+                x += slot;
+                drawLabel(canvas, painter, -x, m_definition.promptY, *label, kPromptScale, white,
+                          labelSheet);
+            }
+        }
     }
 }
 

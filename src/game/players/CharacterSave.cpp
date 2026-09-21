@@ -19,11 +19,44 @@ using Json = nlohmann::json;
 
 constexpr s32 kSaveFormatVersion = 1;
 
+/** What is carried; only the powerup slots that hold something are written. */
+Json inventoryJson(const Inventory& inventory) {
+    Json powerups = Json::array();
+    for (const PowerupSlot& slot : inventory.powerups) {
+        if (slot.held()) {
+            powerups.push_back(Json{{"kind", slot.kind},
+                                    {"flags", slot.flags},
+                                    {"strength", slot.strength},
+                                    {"charge", slot.charge}});
+        }
+    }
+    return Json{{"keys", inventory.keys}, {"potions", inventory.potions}, {"powerups", powerups}};
+}
+
+Inventory inventoryFromJson(const Json& object) {
+    Inventory inventory;
+    inventory.keys = std::clamp(object.value("keys", 0), 0, Inventory::kMostKeys);
+    inventory.potions = object.value("potions", std::vector<s32>{});
+    inventory.potions.resize(
+        std::min(inventory.potions.size(), static_cast<usize>(Inventory::kMostPotions)));
+    usize slot = 0;
+    for (const Json& entry : object.value("powerups", Json::array())) {
+        if (slot >= inventory.powerups.size()) {
+            break;
+        }
+        inventory.powerups[slot++] =
+            PowerupSlot{entry.value("strength", 0.0f), entry.value("kind", 0),
+                        entry.value("charge", 0.0f), entry.value("flags", 0U)};
+    }
+    return inventory;
+}
+
 Json progressJson(const ClassProgress& progress) {
     return Json{{"experience", progress.experience}, {"health", progress.health},
                 {"fightAdd", progress.fightAdd},     {"armorAdd", progress.armorAdd},
                 {"magicAdd", progress.magicAdd},     {"speedAdd", progress.speedAdd},
-                {"crystals", progress.crystals},     {"unlocked", progress.unlocked}};
+                {"crystals", progress.crystals},     {"unlocked", progress.unlocked},
+                {"inventory", inventoryJson(progress.inventory)}};
 }
 
 ClassProgress progressFromJson(const Json& object) {
@@ -35,6 +68,9 @@ ClassProgress progressFromJson(const Json& object) {
     progress.magicAdd = object.value("magicAdd", 0.0f);
     progress.speedAdd = object.value("speedAdd", 0.0f);
     progress.unlocked = object.value("unlocked", 0U);
+    if (object.contains("inventory")) {
+        progress.inventory = inventoryFromJson(object.at("inventory"));
+    }
     const auto crystals = object.value("crystals", std::vector<s32>{});
     for (usize realm = 0; realm < progress.crystals.size() && realm < crystals.size(); ++realm) {
         progress.crystals[realm] = crystals[realm];

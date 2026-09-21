@@ -93,6 +93,22 @@ TEST_CASE("an actor walks at its class speed, facing its heading, relative to th
     REQUIRE(nose.z == Approx(actor.position().z + 1.0f));
 }
 
+TEST_CASE("an action that holds the feet still lets the body turn", "[game][players][actor]") {
+    PlayerActor actor;
+    const CharacterSave save;
+    const ClassStats stats = warrior();
+    actor.spawn(0, save, &stats, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    REQUIRE(actor.facing().z == Approx(1.0f));
+    actor.update(MoveInput{Vec2{1.0f, 0.0f}, 1.0f}, 0.0f, 0.5f, nullptr, 0.0f);
+    REQUIRE(actor.position() == Vec3{0.0f, 0.0f, 0.0f});
+    REQUIRE_FALSE(actor.moving());
+    REQUIRE(actor.facing().x == Approx(1.0f));
+    REQUIRE(actor.facing().z == Approx(0.0f).margin(1e-5f));
+    // Half its pace is half the ground.
+    actor.update(MoveInput{Vec2{1.0f, 0.0f}, 1.0f}, 0.0f, 1.0f, nullptr, 0.5f);
+    REQUIRE(actor.position().x == Approx(actor.speed() * 0.5f));
+}
+
 TEST_CASE("walls stop an actor and missing floors keep it where it stands",
           "[game][players][actor]") {
     PlayerActor actor;

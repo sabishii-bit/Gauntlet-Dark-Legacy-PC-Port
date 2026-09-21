@@ -35,15 +35,19 @@ void PlayerActor::spawn(s32 player, const CharacterSave& save, const ClassStats*
 }
 
 void PlayerActor::update(const MoveInput& input, f32 cameraYaw, f32 seconds,
-                         const WorldCollision* collision) {
+                         const WorldCollision* collision, f32 moveScale) {
     m_moving = input.any() && seconds > 0.0f;
     if (!m_moving) {
         return;
     }
     const f32 heading = std::atan2(input.direction.x, input.direction.y) + cameraYaw;
     const f32 distance =
-        std::min(m_speed * input.magnitude * seconds, kMoveLimit * m_speed * seconds);
+        std::min(m_speed * input.magnitude * seconds, kMoveLimit * m_speed * seconds) * moveScale;
     m_yaw = heading;
+    if (distance <= 0.0f) {
+        m_moving = false;
+        return;
+    }
     const Vec3 direction{std::sin(heading), 0.0f, std::cos(heading)};
     if (collision == nullptr) {
         m_position += direction * distance;

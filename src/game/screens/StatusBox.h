@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -30,6 +31,9 @@ struct StatusBoxView {
     s32 level = 1;
     s32 gold = 0;
     s32 health = 0;
+    s32 keys = 0;       ///< shown with their icon when any are carried
+    s32 potions = 0;
+    s32 potionKind = 0; ///< of the potion thrown next, which picks the icon's colour
 };
 
 /**
@@ -39,6 +43,18 @@ struct StatusBoxView {
  */
 class StatusBoxPainter {
 public:
+    static constexpr s32 kCarriedY = 323;    ///< the key and potion icons' top
+    static constexpr s32 kCarriedTextY = 327;
+    static constexpr s32 kKeyIconX = 8;
+    static constexpr s32 kKeyCountX = 26;
+    static constexpr s32 kPotionIconX = 102;
+    static constexpr s32 kPotionCountX = 92;
+    static constexpr f32 kCarriedScale = 0.8f;
+    /** The potion icon for each kind; an unknown kind shows as red. */
+    static constexpr std::array<std::string_view, 5> kPotionIcons{
+        "POTION_ICON_RED", "POTION_ICON_RED", "POTION_ICON_BLU", "POTION_ICON_YEL",
+        "POTION_ICON_GRE"};
+    static std::string_view potionIcon(s32 kind);
     static constexpr s32 kWidth = 128;
     static constexpr s32 kY = 320;
     static constexpr s32 kHeight = 64;

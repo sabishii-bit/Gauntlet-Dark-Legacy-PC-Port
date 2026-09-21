@@ -6,7 +6,7 @@
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
-#include "game/menu/FireScroll.h"
+#include "game/menu/BurnDialogueScroll.h"
 
 namespace {
 
@@ -33,7 +33,7 @@ struct Fixture {
     Image frame2 = maskWithHoles({{1, 0}, {0, 1}, {1, 1}});
     test::FakeTexture ring0{2, 2};
     test::FakeTexture ring1{2, 2};
-    FireScroll fire;
+    BurnDialogueScroll fire;
 
     bool start() {
         return fire.start(device, Rect{10.0f, 20.0f, 40.0f, 40.0f}, scroll,
@@ -53,14 +53,14 @@ TEST_CASE("the scroll is cut out wherever the mask has burnt through", "[game][f
     REQUIRE(f.fire.compositeAlpha(2, 2) == 255);
     REQUIRE(f.fire.compositeAlpha(0, 0) == 255);
 
-    f.fire.step(FireScroll::kTicksPerFrame);
+    f.fire.step(BurnDialogueScroll::kTicksPerFrame);
     REQUIRE(f.fire.frame() == 1);
     REQUIRE(f.fire.compositeAlpha(3, 0) == 0);
     REQUIRE(f.fire.compositeAlpha(3, 3) == 0);
     REQUIRE(f.fire.compositeAlpha(2, 0) == 255);
     REQUIRE(f.fire.compositeAlpha(0, 3) == 255);
 
-    f.fire.step(FireScroll::kTicksPerFrame);
+    f.fire.step(BurnDialogueScroll::kTicksPerFrame);
     REQUIRE(f.fire.compositeAlpha(0, 3) == 0);
     REQUIRE(f.fire.compositeAlpha(3, 0) == 0);
     REQUIRE(f.fire.compositeAlpha(0, 0) == 255);
@@ -82,7 +82,7 @@ TEST_CASE("the effect uploads once per frame and ends after the last one", "[gam
     f.fire.prepare(f.device);
     REQUIRE(f.device.textureUpdates == 2);
 
-    f.fire.step(FireScroll::kTicksPerFrame * (FireScroll::kFrameCount - 1));
+    f.fire.step(BurnDialogueScroll::kTicksPerFrame * (BurnDialogueScroll::kFrameCount - 1));
     REQUIRE_FALSE(f.fire.active());
     f.fire.step(1);
     REQUIRE_FALSE(f.fire.active());
@@ -100,7 +100,7 @@ TEST_CASE("drawing covers the area with the scroll and the ring frame", "[game][
     REQUIRE(test::maxCorner(f.device.draws[0]).x == 50.0f);
     REQUIRE(test::maxCorner(f.device.draws[0]).y == 60.0f);
 
-    f.fire.step(FireScroll::kTicksPerFrame * 5);
+    f.fire.step(BurnDialogueScroll::kTicksPerFrame * 5);
     f.device.draws.clear();
     canvas.begin(f.device, Mat4{1.0f});
     f.fire.draw(canvas);

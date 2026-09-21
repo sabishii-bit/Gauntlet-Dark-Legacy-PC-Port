@@ -5,6 +5,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/ClassData.h"
+#include "game/players/Inventory.h"
 
 namespace gdl::game {
 
@@ -31,6 +32,7 @@ struct ClassProgress {
     f32 speedAdd = 0.0f;
     std::array<s32, kRealmCount> crystals{}; ///< gathered towards each realm's gate
     u32 unlocked = 0; ///< a bit per realm whose gate's opening was announced
+    Inventory inventory; ///< the keys, potions and powerups carried as this class
 };
 
 /** Stats as the select screen shows them, in its row order. */

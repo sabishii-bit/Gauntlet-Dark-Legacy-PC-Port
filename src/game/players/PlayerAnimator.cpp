@@ -35,6 +35,8 @@ void PlayerAnimator::unbind() {
     m_entered = true;
     m_stillTicks = 0;
     m_fidgetTicks = 0;
+    m_released = false;
+    m_attackSeconds = 0.0f;
     m_player.stop();
 }
 
@@ -51,11 +53,22 @@ u32 PlayerAnimator::sequenceOf(Action action) const {
                          : static_cast<u32>(m_sequences[index(Action::Ready)]);
 }
 
-void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds) {
+void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, bool attack) {
     if (!bound()) {
         return;
     }
     m_footfall = Foot::None;
+    m_released = false;
+    if (throwing()) {
+        m_attackSeconds += seconds;
+    }
+    // A class without the throw's sequences does not throw.
+    attack = attack && m_sequences[index(Action::Throw)] >= 0;
+    if (attack || throwing()) {
+        motion = PlayerMotion::Stand;
+        m_stillTicks = 0;
+        m_fidgetTicks = 0;
+    }
     // Standing still counts up to the first fidget; after it the second timer takes over.
     if (motion == PlayerMotion::Stand) {
         if (m_fidgetTicks == 0) {
@@ -70,6 +83,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds) {
     Action requested = Action::Ready;
     if (!m_entered) {
         requested = Action::Start;
+    } else if (attack) {
+        requested = Action::Throw;
     } else if (motion == PlayerMotion::Run) {
         requested = Action::Run1;
     } else if (motion == PlayerMotion::Walk) {
@@ -143,6 +158,31 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         break;
     case Action::Start:
         break;
+    case Action::Throw:
+    case Action::ThrowMoving:
+        // The wind-up gives way to the release at its end, or at once from its second frame.
+        d.action = m_current == Action::Throw ? Action::ThrowRelease : Action::ThrowMovingRelease;
+        d.cut = m_player.frame() >= kReleaseFrame ? Cut::IfDifferent : Cut::WhenDoneIfDifferent;
+        break;
+    case Action::ThrowRelease:
+        d.action = Action::ThrowRecover;
+        break;
+    case Action::ThrowMovingRelease:
+        d.action = Action::ThrowMovingRecover;
+        break;
+    case Action::ThrowRecover:
+    case Action::ThrowMovingRecover:
+        break; // whatever is asked next, once recovered
+    }
+    // An attack cuts into walking and running at once, and from their first halves takes the
+    // moving wind-up.
+    if (requested == Action::Throw && d.action == Action::Throw && !isThrow(m_current)) {
+        if (m_current != Action::Start) {
+            d.cut = Cut::IfDifferent;
+        }
+        if (m_current == Action::Walk1 || m_current == Action::Run1) {
+            d.action = Action::ThrowMoving;
+        }
     }
     if (d.action == Action::Ready && m_current != Action::Ready) {
         d.transition = kStanceBlend;
@@ -178,6 +218,13 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         m_footfall = Foot::First;
     } else if (m_current == Action::Walk2 || m_current == Action::Run2) {
         m_footfall = Foot::Second;
+    }
+    if (m_current == Action::ThrowRelease || m_current == Action::ThrowMovingRelease) {
+        m_released = true;
+    }
+    if ((decision.action == Action::Throw || decision.action == Action::ThrowMoving) &&
+        !isThrow(m_current)) {
+        m_attackSeconds = 0.0f;
     }
     m_previous = m_pose;
     m_player.start(m_tree->sequences[target], target, decision.transition);

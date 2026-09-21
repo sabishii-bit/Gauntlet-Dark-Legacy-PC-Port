@@ -51,6 +51,10 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.name = entry.value("name", member.name);
         member.level = entry.value("level", 1);
         member.crystals = entry.value("crystals", std::vector<s32>{});
+        member.gold = entry.value("gold", 0);
+        member.health = entry.value("health", 0);
+        member.keys = entry.value("keys", 0);
+        member.potions = entry.value("potions", std::vector<s32>{});
         if (!classIndexOf(member.classCode).has_value()) {
             throw FormatError("scenario: unknown class " + member.classCode);
         }
@@ -59,7 +63,9 @@ Scenario Scenario::fromJson(std::string_view text) {
         }
         if (member.player < 0 || member.player >= TowerScene::kPlayerCount ||
             member.name.empty() || member.name.size() > kCharacterNameLength ||
-            member.level < 1 || member.crystals.size() > kRealmCount) {
+            member.level < 1 || member.crystals.size() > kRealmCount || member.gold < 0 ||
+            member.health < 0 || member.keys < 0 || member.keys > Inventory::kMostKeys ||
+            member.potions.size() > static_cast<usize>(Inventory::kMostPotions)) {
             throw FormatError("scenario: a party member is out of range");
         }
         scenario.party.push_back(std::move(member));
@@ -72,6 +78,15 @@ Scenario Scenario::fromJson(std::string_view text) {
     }
     if (root.contains("welcome")) {
         scenario.tower.welcome = root.at("welcome").get<bool>();
+    }
+    for (const Json& entry : root.value("items", Json::array())) {
+        DroppedItem item;
+        item.name = entry.value("name", std::string{});
+        if (item.name.empty() || !entry.contains("position")) {
+            throw FormatError("scenario: a dropped item needs a name and a position");
+        }
+        item.position = readVec3(entry.at("position"));
+        scenario.tower.items.push_back(std::move(item));
     }
     return scenario;
 }
@@ -92,6 +107,10 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         for (usize realm = 0; realm < member.crystals.size(); ++realm) {
             progress.crystals[realm] = member.crystals[realm];
         }
+        save.gold = member.gold;
+        progress.health = member.health;
+        progress.inventory.keys = member.keys;
+        progress.inventory.potions = member.potions;
         members.push_back(PartyMember{member.player, std::move(save)});
     }
     return members;

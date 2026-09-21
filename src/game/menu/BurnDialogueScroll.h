@@ -17,7 +17,7 @@ namespace gdl::game {
  * texels are burnt out, the hole grows frame by frame, and a ring of flame (the colour frames)
  * is drawn over the front. Runs on the original's tick clock: one frame every two ticks.
  */
-class FireScroll {
+class BurnDialogueScroll {
 public:
     static constexpr s32 kFrameCount = 21;
     static constexpr s32 kTicksPerFrame = 2;

@@ -32,12 +32,10 @@ bool SumnerFigure::load(RenderDevice& device, ItemArchive& items, const WorldLay
         return false;
     }
     m_tree = &items.trees.tree(*tree);
-    for (usize i = 0; i < kIdleSequences.size(); ++i) {
-        const auto sequence = m_tree->findSequence(kIdleSequences[i]);
-        m_idles[i] = sequence.has_value() ? static_cast<s32>(*sequence) : -1;
+    for (usize i = 0; i < kSequences.size(); ++i) {
+        const auto sequence = m_tree->findSequence(kSequences[i]);
+        m_sequences[i] = sequence.has_value() ? static_cast<s32>(*sequence) : -1;
     }
-    const auto gesture = m_tree->findSequence(kGesture);
-    m_gestureSequence = gesture.has_value() ? static_cast<s32>(*gesture) : -1;
     // Like the start markers, the lookout's heading points the way he came: a half turn
     // round faces him at the party.
     m_position = lookout->position;
@@ -55,33 +53,29 @@ bool SumnerFigure::load(RenderDevice& device, ItemArchive& items, const WorldLay
 void SumnerFigure::clear() {
     m_model.clear();
     m_tree = nullptr;
-    m_idles.fill(-1);
-    m_gestureSequence = -1;
+    m_sequences.fill(-1);
     m_index = 0;
     m_cutIn = false;
     m_player.stop();
 }
 
-/** The sequence an index asks for: the gesture, or an idle, the stance standing in for any
- * the tree lacks. */
+/** The sequence an index asks for, the stance standing in for any the tree lacks. */
 u32 SumnerFigure::sequenceFor(s32 index) const {
     s32 sequence = -1;
-    if (index == kGestureIndex) {
-        sequence = m_gestureSequence;
-    } else if (index >= 0 && static_cast<usize>(index) < m_idles.size()) {
-        sequence = m_idles[static_cast<usize>(index)];
+    if (index >= 0 && static_cast<usize>(index) < m_sequences.size()) {
+        sequence = m_sequences[static_cast<usize>(index)];
     }
     if (sequence < 0) {
-        sequence = std::max(m_idles[0], 0);
+        sequence = std::max(m_sequences[0], 0);
     }
     return static_cast<u32>(sequence);
 }
 
-void SumnerFigure::gesture() {
+void SumnerFigure::play(s32 index) {
     if (!loaded()) {
         return;
     }
-    m_index = kGestureIndex;
+    m_index = index;
     m_cutIn = true;
 }
 

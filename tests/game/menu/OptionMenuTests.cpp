@@ -197,6 +197,60 @@ TEST_CASE("drawing emits the glow, the labels, the icon and the prompts", "[game
     REQUIRE(device.draws.front().texture == &backdrop);
 }
 
+TEST_CASE("a menu writes its body in ink and centres a lone prompt", "[game][menu]") {
+    Fixture f;
+    test::FakeRenderDevice device;
+    const test::FakeTexture backdrop{16, 16};
+    MenuTextures textures;
+    textures.font = &f.sheet;
+    textures.backdrop = &backdrop;
+    MenuDefinition page;
+    page.backdrop = "SCROLL";
+    page.body = {"AB\nC", "D"};
+    page.bodyY = 100;
+    page.bodyGap = 6;
+    page.colors.off = Color::rgba(92, 26, 3);
+    page.prompts = true;
+    page.backLabel = "BACK";
+    page.promptY = 300;
+    f.menu.open(page, f.painter, MenuScreen{});
+    REQUIRE(f.menu.bodyTop() == 100);
+    Canvas canvas;
+    canvas.begin(device, Mat4{1.0f});
+    f.menu.draw(canvas, f.painter, textures);
+    canvas.end();
+    // Body glyphs in ink: "AB" centred on the screen at the top, "D" two lines and a gap on.
+    std::vector<Vec3> ink;
+    f32 promptLeft = 1000.0f;
+    f32 promptRight = 0.0f;
+    for (const test::RecordedDraw& draw : device.draws) {
+        for (const ImmediateVertex& vertex : draw.vertices) {
+            if (vertex.color.r == 92 && vertex.color.g == 26) {
+                ink.push_back(vertex.position);
+            } else if (vertex.position.y >= 300.0f && draw.texture == &f.sheet) {
+                promptLeft = std::min(promptLeft, vertex.position.x);
+                promptRight = std::max(promptRight, vertex.position.x);
+            }
+        }
+    }
+    REQUIRE_FALSE(ink.empty());
+    f32 top = 1000.0f;
+    f32 bottom = 0.0f;
+    for (const Vec3& position : ink) {
+        top = std::min(top, position.y);
+        bottom = std::max(bottom, position.y);
+    }
+    REQUIRE(std::abs(top - 100.0f) <= 1.0f);
+    REQUIRE(std::abs(bottom - (100.0f + 20.0f + 6.0f + 10.0f)) <= 1.0f); // the last line's foot
+    REQUIRE(std::abs((promptLeft + promptRight) / 2.0f - 256.0f) <= 1.0f); // alone, mid-row
+
+    // A lone centred passage sits about the column's middle.
+    page.bodyY = -1;
+    page.body = {"AB\nC"};
+    f.menu.open(page, f.painter, MenuScreen{});
+    REQUIRE(f.menu.bodyTop() == 192 - 10);
+}
+
 TEST_CASE("a bound arrow model replaces the flat arrow glyph", "[game][menu]") {
     const auto dir = test::scratchDirectory("menu-arrow");
     std::filesystem::create_directories(dir / "models");
