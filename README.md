@@ -36,6 +36,7 @@ only reports), and ends with a built `build/<preset>/bin/gauntlet`.
 | CMake 3.30+ and Ninja | bundled with the C++ workload | the distribution's, or from pip when too old |
 | vcpkg | cloned to `C:\vcpkg` | cloned to `~/vcpkg` |
 | Windowing and Vulkan | nothing to install | X11, Wayland, GL and Vulkan development packages |
+| Dependency build tools | supplied by vcpkg | Autoconf, autoconf-archive, Automake and libtool |
 | Editor tooling (`--tooling`) | LLVM (clangd, clang-tidy, clang-format) | the same from the distribution |
 
 A Vulkan 1.3 capable graphics driver is checked for but comes with your GPU

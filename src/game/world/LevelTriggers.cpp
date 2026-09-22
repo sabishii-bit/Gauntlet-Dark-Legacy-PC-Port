@@ -5,7 +5,6 @@
 #include <cstring>
 #include <utility>
 
-#include "engine/core/Log.h"
 
 namespace gdl::game {
 

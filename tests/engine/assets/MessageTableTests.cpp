@@ -72,7 +72,8 @@ TEST_CASE("a missing or malformed message table fails to load", "[assets][text]"
 
 TEST_CASE("the unpacked scroll texts hold Sumner's welcome", "[assets][text][unpacked]") {
     MessageTable table;
-    REQUIRE(table.load(test::unpackedOrSkip("text/scroll_e.json")));
+    const auto path = test::unpackedOrSkip("text/scroll_e.json");
+    REQUIRE(table.load(path));
     const auto index = table.find("WELCOMEMESSAGE");
     REQUIRE(index.has_value());
     const MessageInfo& welcome = table.message(*index);
@@ -82,8 +83,7 @@ TEST_CASE("the unpacked scroll texts hold Sumner's welcome", "[assets][text][unp
     REQUIRE(table.fontOf(welcome) == "font32");
 }
 
-TEST_CASE("a message's pages come from the string table when it has them",
-          "[assets][text]") {
+TEST_CASE("a message's pages come from the string table when it has them", "[assets][text]") {
     REQUIRE(MessageTable::textId("scroll", "HELLO", 2) == "scroll.hello.2");
     MessageTable table;
     REQUIRE(table.load(sampleTable("message-table-translate")));
@@ -119,13 +119,14 @@ TEST_CASE("the shipped English has every scroll, hint and help message, word for
         const char* prefix;
         bool whole; ///< every message of it, or only those the strings name
     };
-    for (const Rom& rom : {Rom{"text/scroll_e.json", "scroll", true},
-                           Rom{"text/hints_e.json", "hint", true},
-                           Rom{"text/english.json", "help", false}}) {
+    for (const Rom& rom :
+         {Rom{"text/scroll_e.json", "scroll", true}, Rom{"text/hints_e.json", "hint", true},
+          Rom{"text/english.json", "help", false}}) {
+        const auto path = test::unpackedOrSkip(rom.file);
         MessageTable original;
-        REQUIRE(original.load(test::unpackedOrSkip(rom.file)));
+        REQUIRE(original.load(path));
         MessageTable translated;
-        REQUIRE(translated.load(test::unpackedOrSkip(rom.file)));
+        REQUIRE(translated.load(path));
         const usize taken = translated.translate(strings, rom.prefix);
         REQUIRE(taken > 0);
         if (rom.whole) {

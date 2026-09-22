@@ -34,8 +34,7 @@ std::filesystem::path sampleRealm(std::string_view name) {
     return dir / "TOWER.json";
 }
 
-TEST_CASE("world data names a realm's levels and the records they point at",
-          "[assets][world]") {
+TEST_CASE("world data names a realm's levels and the records they point at", "[assets][world]") {
     WorldData data;
     REQUIRE_FALSE(data.loaded());
     REQUIRE(data.load(sampleRealm("world-data")));
@@ -104,7 +103,8 @@ TEST_CASE("missing or malformed world data fails to load", "[assets][world]") {
 
 TEST_CASE("the unpacked tower realm carries its light and camera", "[assets][world][unpacked]") {
     WorldData data;
-    REQUIRE(data.load(test::unpackedOrSkip("wdata/TOWER.json")));
+    const auto path = test::unpackedOrSkip("wdata/TOWER.json");
+    REQUIRE(data.load(path));
     const LevelInfo* level = data.level("L1");
     REQUIRE(level != nullptr);
     REQUIRE(level->ambient == Approx(0.8f));

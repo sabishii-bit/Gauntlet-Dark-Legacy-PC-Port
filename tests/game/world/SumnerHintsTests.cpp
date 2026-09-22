@@ -20,8 +20,7 @@ using Catch::Approx;
 std::filesystem::path sampleHints(std::string_view name) {
     const auto dir = test::scratchDirectory(name);
     std::string messages;
-    const auto add = [&](const std::string& id, const std::vector<std::string>& lines,
-                         f32 scale) {
+    const auto add = [&](const std::string& id, const std::vector<std::string>& lines, f32 scale) {
         if (!messages.empty()) {
             messages += ",\n";
         }
@@ -171,7 +170,8 @@ TEST_CASE("a party's crystals say which worlds are open", "[game][world][hints]"
 TEST_CASE("the unpacked hints name the Lich first and tell of the green gas",
           "[game][world][hints][unpacked]") {
     SumnerHints hints;
-    REQUIRE(hints.load(test::unpackedOrSkip("text/hints_e.json")));
+    const auto path = test::unpackedOrSkip("text/hints_e.json");
+    REQUIRE(hints.load(path));
     const HintPage general = hints.next(HintTopic::General, {}, "A Hint for You");
     REQUIRE(general.passages.size() == 1);
     REQUIRE(general.passages[0].starts_with("Your precious food"));

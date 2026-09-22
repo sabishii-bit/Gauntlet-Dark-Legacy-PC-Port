@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-#include "engine/assets/WorldLayout.h"
+#include "engine/assets/ParticleTemplate.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"

@@ -74,7 +74,8 @@ TEST_CASE("the starting player joins and others join on Start", "[game][select][
     test::FakeRenderDevice device;
     const Fixture f("select-scene-join");
     PlayerSelectScene scene;
-    REQUIRE(scene.open(device, f.context(), 2));
+    const auto context = f.context();
+    REQUIRE(scene.open(device, context, 2));
     REQUIRE(scene.lane(2).active());
     REQUIRE_FALSE(scene.lane(0).active());
     REQUIRE(scene.step(1, nobody()) == SelectOutcome::Running);
@@ -99,7 +100,8 @@ TEST_CASE("backing out of the last lane cancels the screen", "[game][select][unp
     test::FakeRenderDevice device;
     const Fixture f("select-scene-cancel");
     PlayerSelectScene scene;
-    REQUIRE(scene.open(device, f.context(), 0));
+    const auto context = f.context();
+    REQUIRE(scene.open(device, context, 0));
     REQUIRE(scene.step(1, player(0, false, true)) == SelectOutcome::Cancelled);
 }
 
@@ -107,7 +109,8 @@ TEST_CASE("the screen finishes once every player is locked in", "[game][select][
     test::FakeRenderDevice device;
     const Fixture f("select-scene-done");
     PlayerSelectScene scene;
-    REQUIRE(scene.open(device, f.context(), 0));
+    const auto context = f.context();
+    REQUIRE(scene.open(device, context, 0));
     scene.step(1, player(0, true)); // New
     REQUIRE(scene.lane(0).state() == SelectLane::State::NameEntry);
     scene.step(1, player(0, true)); // accept the end mark: a random name
@@ -127,18 +130,18 @@ TEST_CASE("the screen finishes once every player is locked in", "[game][select][
     REQUIRE(frames > PlayerSelectScene::kIdleFrames);
 }
 
-TEST_CASE("Sumner greets a locked-in character by costume and class",
-          "[game][select][unpacked]") {
+TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][select][unpacked]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-greeting");
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     PlayerSelectScene scene;
-    REQUIRE(scene.open(device, f.context(unpackedRoot(), &sounds), 0));
+    const auto context = f.context(unpackedRoot(), &sounds);
+    REQUIRE(scene.open(device, context, 0));
     REQUIRE_FALSE(scene.speaking());
     const usize before = sounds.voiceCount(); // the music, when the bank is there
-    scene.step(1, player(0, true)); // New
-    scene.step(1, player(0, true)); // a random name
+    scene.step(1, player(0, true));           // New
+    scene.step(1, player(0, true));           // a random name
     scene.step(NameEntry::kFlashTicks + 1, nobody());
     scene.step(1, player(0, true)); // lock in the warrior
     REQUIRE(scene.lane(0).lockedIn());

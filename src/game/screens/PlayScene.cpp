@@ -31,7 +31,6 @@ constexpr f32 kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares of 
 constexpr std::string_view kNeedCrystals = "NEEDCRYSTALS";
 constexpr std::string_view kNeedIcons = "NEEDGARGITEMS";
 constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
-constexpr std::string_view kUnlockSection = "UNLOCKSECTION";
 constexpr s32 kIconTierBase = 101;      ///< a gargoyle gate's trigger id less this is its tier
 constexpr s32 kTitleY = 48;              ///< where the level's title starts, on the canvas
 constexpr s32 kTitleLift = 16;           ///< how far up it slides, per unit of slide

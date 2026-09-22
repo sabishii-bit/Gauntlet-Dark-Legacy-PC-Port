@@ -36,6 +36,8 @@ jobs:
           restore-keys: vcpkg-${{ runner.os }}-
       - name: Tools
         run: python scripts/setup.py --yes --no-build
+      - name: Setup script tests
+        run: python -m unittest discover -s tests/scripts -v
       - name: Build and unit tests
         run: python scripts/build.py --test
 
@@ -43,6 +45,8 @@ jobs:
     name: Linux (GCC)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      CXX: g++-14
     steps:
       - uses: actions/checkout@v4
       - name: Cache vcpkg binaries
@@ -51,6 +55,8 @@ jobs:
           path: ~/.cache/vcpkg/archives
           key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-${{ runner.os }}-
+      - name: Setup script tests
+        run: python3 -m unittest discover -s tests/scripts -v
       - name: Tools, build and unit tests
         run: python3 scripts/setup.py --yes --test
       # The GPU tier on a software Vulkan device under a virtual display: best effort, as
@@ -67,6 +73,8 @@ jobs:
     name: Lint (clang-tidy)
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    env:
+      CXX: g++-14
     steps:
       - uses: actions/checkout@v4
       - name: Cache vcpkg binaries

@@ -10,8 +10,8 @@
 namespace gdl {
 
 /**
- * One of the game's ADS audio streams (`STREAMS/*.ads`, the level music) read from a file:
- * decoded a piece at a time as the mixer needs it, and rewound to play again.
+ * One of the game's ADS audio streams (the .ads files in STREAMS, the level music) read from a
+ * file: decoded a piece at a time as the mixer needs it, and rewound to play again.
  */
 class AdsStream final : public StreamSource {
 public:

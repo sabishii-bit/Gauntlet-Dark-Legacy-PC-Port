@@ -20,7 +20,6 @@ constexpr usize kTriangleSize = 40;
 constexpr usize kAnimationSize = 16;
 constexpr usize kNameSize = 16;
 constexpr u32 kExtendedHeaderLimit = 120; ///< a section starting below this leaves no room
-constexpr usize kParticleNameSize = 32;
 constexpr usize kItemNameSize = 16;
 constexpr f32 kOffsetUnit = 1.0f / 64.0f;  ///< the triangle's 16-bit offsets are in 1/64 units
 

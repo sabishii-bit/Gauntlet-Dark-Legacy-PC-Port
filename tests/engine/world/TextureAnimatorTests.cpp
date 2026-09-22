@@ -13,7 +13,6 @@
 
 #include "FakeRenderDevice.h"
 #include "SampleLevel.h"
-#include "TestSupport.h"
 
 namespace {
 
