@@ -33,6 +33,14 @@ bool Relics::spendLegend(s32 realm) {
     return true;
 }
 
+bool Relics::addShard(s32 order) {
+    if (!inRange(order, kRealmCount) || hasShard(order)) {
+        return false;
+    }
+    shards |= bit(order);
+    return true;
+}
+
 s32 Relics::addGargoylePiece(s32 kind) {
     if (!inRange(kind, static_cast<s32>(kGargoyleKinds))) {
         return -1;

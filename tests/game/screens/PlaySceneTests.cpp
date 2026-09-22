@@ -1692,6 +1692,38 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     }
     REQUIRE(scene.bossMeter().shown() <= scene.bossView()->health);
     REQUIRE(scene.bossMeter().fillWidths()[1] < BossMeter::kPieceWidth - 53);
+    // Slain, the lich leaves the town's shard to everyone and its key where it fell; the
+    // wizard comes five seconds on, names it beaten, counts the realm's runestones (none
+    // found), and sees the party off to the tower.
+    EnemyHit slay;
+    slay.damage = 100000.0f;
+    slay.player = 0;
+    scene.bosses().hurt(slay);
+    scene.update(1.0 / 60.0, still);
+    REQUIRE_FALSE(scene.bossView()->alive);
+    REQUIRE(scene.victory().running());
+    REQUIRE(scene.victory().stage() == BossVictory::Stage::Waiting);
+    REQUIRE(LevelRef::orderOf(7) == 1);
+    REQUIRE(scene.actor(0)->save().progress().relics.hasShard(1));
+    bool key = false;
+    for (usize e = 0; e < scene.effects().count(); ++e) {
+        key = key || scene.effects().effect(e).name == "BOSSKEY";
+    }
+    REQUIRE(key);
+    REQUIRE_FALSE(scene.bossMeter().showing());
+    for (int i = 0; i < 400 && scene.victory().stage() != BossVictory::Stage::Defeat; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.victory().stage() == BossVictory::Stage::Defeat);
+    REQUIRE(scene.victory().caption()->message == "LICH_SPEECH");
+    REQUIRE(scene.bossCameraOn()); // the camera stays the fight's, on the wizard
+    PlayOutcome outcome = PlayOutcome::Running;
+    for (int i = 0; i < 6000 && outcome == PlayOutcome::Running; ++i) {
+        outcome = scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.victory().runeQuality() == 0);
+    REQUIRE(outcome == PlayOutcome::Travel);
+    REQUIRE(scene.destination().isTower());
     scene.close();
     REQUIRE_FALSE(scene.bossMeter().bound());
 }

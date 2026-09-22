@@ -120,6 +120,8 @@ add_library(game STATIC
     screens/PickupHud.cpp
     screens/BossMeter.h
     screens/BossMeter.cpp
+    screens/BossVictory.h
+    screens/BossVictory.cpp
     screens/PlayerSelectScene.h
     screens/PlayerSelectScene.cpp
     screens/PlayScene.h
