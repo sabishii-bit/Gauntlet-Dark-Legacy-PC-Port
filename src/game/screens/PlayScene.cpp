@@ -156,6 +156,15 @@ constexpr f32 kGasRadius = 6.5f;
 constexpr f32 kGasSeconds = 4.0f;
 constexpr f32 kGasGapSeconds = 0.5f;
 constexpr f32 kPainEvery = 30.0f;        ///< harm from blows between cries
+constexpr s32 kHeavyBlow = 60;           ///< a blow taking more than this is cried over at once
+constexpr u32 kPainCries = 4;            ///< S_<CLS>PAIN1 to 4
+constexpr std::string_view kHitSound = "S_PLYRDMG"; ///< a blow landing, now and then
+constexpr s32 kHitSoundGapTicks = 30;
+constexpr s32 kHealthLowMark = 150;      ///< down to here: "needs food, badly"
+constexpr s32 kHealthLastMark = 50;      ///< and here: the life force, or about to die
+constexpr std::string_view kBadlyLine = "S_BADLY";
+constexpr std::string_view kLifeForceLine = "S_LIFEFORCE";
+constexpr std::string_view kAboutToDieLine = "S_ABOUT";
 constexpr f32 kFallenSeconds = 3.0f;     ///< from the last death to the tower
 constexpr s32 kFireTrap = 1;
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
@@ -342,6 +351,7 @@ void PlayScene::close() {
     m_down.clear();
     m_entrySaves.clear();
     m_painOwed.clear();
+    m_hitSoundGaps.clear();
     m_struck.clear();
     m_turbo.clear();
     m_helpHeard.clear();
@@ -412,6 +422,7 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
         m_down.push_back(member.fallen && !m_world->isTower() ? kInTower : kUp);
         m_entrySaves.push_back(member.save);
         m_painOwed.push_back(0.0f);
+        m_hitSoundGaps.push_back(0);
         m_struck.push_back(PlayerDeed::None);
         m_turbo.emplace_back();
         m_turbo.back().add(member.turbo);
@@ -844,6 +855,9 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
         postHelp(HelpMessages::kTrapsHurt, hit.victim);
     }
     updateClouds(seconds);
+    for (s32& gap : m_hitSoundGaps) {
+        gap = std::max(gap - ticks, 0);
+    }
 }
 
 /** What the level's traps and blasts are scaled by: its own trap damage and the
@@ -1243,6 +1257,14 @@ void PlayScene::updateStrikes(f32 seconds) {
 /** Experience won, as the original awards it: scaled by the level (its own scale, less the
  * further the character is past the level the place is meant for); what a kill wins also
  * feeds the turbo meter, unless the character is in the middle of a turbo move. */
+void PlayScene::harm(s32 player, f32 damage, HurtKind kind) {
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        if (m_actors[i].player() == player) {
+            hurt(i, damage, kind);
+        }
+    }
+}
+
 void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
     for (usize i = 0; i < m_actors.size(); ++i) {
         if (m_actors[i].player() != player || isDown(i) || amount <= 0) {
@@ -1966,18 +1988,68 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
         log::info("Player {} has fallen", m_actors[index].player() + 1);
         return;
     }
+    const s32 before = save.health();
     save.progress().health = left;
+    // Crossing into low health is remarked on by name rather than cried over.
+    if (before > kHealthLowMark && left <= kHealthLowMark) {
+        sayWithName(index, kBadlyLine);
+        return;
+    }
+    if (before > kHealthLastMark && left <= kHealthLastMark) {
+        sayWithName(index, (m_lowHealthTurn++ % 2 == 0) ? kLifeForceLine : kAboutToDieLine);
+        return;
+    }
     switch (kind) {
-    case HurtKind::Burn: cry(index, "PAIN1"); break;
+    case HurtKind::Burn:
+        cryPain(index);
+        m_painOwed[index] = 0.0f;
+        break;
     case HurtKind::Pierce: cry(index, "DIE1"); break;
     case HurtKind::Gas: cry(index, "POISON"); break;
     case HurtKind::Blow:
+        // A heavy blow gets a cry at once; lesser ones add up to one, and land with the
+        // sound of the hit itself now and then.
         m_painOwed[index] += damage;
-        if (m_painOwed[index] >= kPainEvery) {
-            m_painOwed[index] = std::fmod(m_painOwed[index], kPainEvery);
-            cry(index, "PAIN2");
+        if (before - left > kHeavyBlow) {
+            m_painOwed[index] = 0.0f;
+            cryPain(index);
+        } else if (m_painOwed[index] >= kPainEvery) {
+            m_painOwed[index] -= kPainEvery;
+            cryPain(index);
+        } else if (m_hitSoundGaps[index] <= 0) {
+            playNamed(kHitSound);
+            m_hitSoundGaps[index] = kHitSoundGapTicks;
         }
         break;
+    }
+}
+
+/** One of the character's four cries of pain, whichever comes. */
+void PlayScene::cryPain(usize index) {
+    const s32 which = 1 + static_cast<s32>(m_painRandom() % kPainCries);
+    cry(index, std::format("PAIN{}", which));
+}
+
+/** The narrator names the character ("Red Warrior", from the class's own bank) and says
+ * `line` after: what the original's announcements by name do. */
+void PlayScene::sayWithName(usize index, std::string_view line) {
+    Figure* body = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    if (body == nullptr || m_context.sounds == nullptr) {
+        return;
+    }
+    const CharacterSave& save = m_actors[index].save();
+    const std::string name =
+        std::format("S_{}{}2", colorCode(save.color), classCode(save.character % kStartingClassCount));
+    SoundHandle spoken = kNoSound;
+    if (const auto sound = body->voice.find(name); sound.has_value()) {
+        spoken = m_context.sounds->play(body->voice.sequence(*sound), 1.0f, SoundCategory::Effects);
+    }
+    for (SoundSet* bank : {&m_narrator, &m_narratorSecond}) {
+        if (const auto sound = bank->find(line); sound.has_value()) {
+            m_context.sounds->playAfter(spoken, bank->sequence(*sound), 1.0f,
+                                        SoundCategory::Effects);
+            return;
+        }
     }
 }
 

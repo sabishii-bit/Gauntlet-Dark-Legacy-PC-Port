@@ -58,7 +58,7 @@ struct LevelTrigger {
     s32 sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
     bool occupied = false; ///< the party stood in it as the level opened: it waits for them
-                           ///< to leave and come back
+                           ///< to leave and come back before it goes off (it still refuses)
 
     /** Whether it wants every visitor to carry a realm's crystals first. */
     bool needsCrystals() const { return (flags & kRequirement) != 0 && id < kGargoyleIds; }

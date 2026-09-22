@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <random>
 #include <span>
 #include <string>
 #include <vector>
@@ -237,6 +238,8 @@ public:
     /** Gives `player`'s character experience won in play, which also feeds its turbo meter
      * (unless it is in the middle of a turbo move), as a kill does in the original. */
     void awardExperience(s32 player, s32 amount, bool kill = true);
+    /** Harms `player`'s character as a blow, a burn, a piercing or gas would, for tests. */
+    void harm(s32 player, f32 damage, HurtKind kind);
     /** What `player`'s status box shows. */
     StatusBoxView status(s32 player) const { return statusOf(player); }
     /** The turbo meter of `player`'s character, or null when that player is not in. */
@@ -357,6 +360,8 @@ private:
     static constexpr f32 kLevelUpHealth = 100.0f;
     SoundHandle playRealmSound(std::string_view stem);
     void cry(usize index, std::string_view which);
+    void cryPain(usize index);
+    void sayWithName(usize index, std::string_view line);
     PlayerDeed turboDeed(usize index, const PlayInput& in) const;
     void beginMove(usize index);
     MoveInput chargeInput(usize index, const MoveInput& stick, f32 cameraYaw) const;
@@ -453,6 +458,9 @@ private:
     std::vector<u8> m_down;                  ///< per actor
     std::vector<CharacterSave> m_entrySaves; ///< per actor, as it came into the level
     std::vector<f32> m_painOwed;             ///< per actor, harm not yet cried out over
+    std::vector<s32> m_hitSoundGaps;         ///< per actor, ticks before a blow sounds again
+    std::mt19937 m_painRandom{0x5A17u};      ///< which cry of pain comes
+    u32 m_lowHealthTurn = 0;                 ///< the last-health lines take turns
     std::vector<PlayerDeed> m_struck;        ///< per actor, the reaction a hit this tick asks
     std::vector<TurboMeter> m_turbo;         ///< per actor
     std::vector<std::vector<s32>> m_helpHeard; ///< per actor, since the character was loaded

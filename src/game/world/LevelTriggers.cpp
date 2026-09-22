@@ -256,10 +256,10 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
             trigger.occupied = false;
             continue;
         }
-        if (trigger.occupied) {
-            continue; // stood in from the start: not until they come back to it
-        }
         if (qualified) {
+            if (trigger.occupied) {
+                continue; // stood in from the start: not until they come back to it
+            }
             fire(i, false, animator, scene, collision);
         } else if ((trigger.flags & LevelTrigger::kRequirement) != 0 &&
                    trigger.refusalCooldown <= 0.0f) {
