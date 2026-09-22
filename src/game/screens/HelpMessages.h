@@ -19,7 +19,8 @@ namespace gdl::game {
 enum class HelpRepeat : u8 {
     OnceForAll,     ///< until every character playing has ever seen it
     OncePerPlayer,  ///< until the character it is for has ever seen it
-    OncePerSession  ///< until any character playing has seen it since it was loaded
+    OncePerSession, ///< until any character playing has seen it since it was loaded
+    Always          ///< every time: news, not a lesson
 };
 
 /** One of the original's help messages: its text in the game's strings, the line spoken for
@@ -65,6 +66,7 @@ public:
     static constexpr s32 kBlastsDestroy = 135;
     static constexpr s32 kGasSpoils = 136;
     static constexpr s32 kChestsExplode = 137;
+    static constexpr s32 kLevelUp = 34; ///< "LEVEL %d", the number filled in
 
     static constexpr s32 kTicksPerLine = 60;
     static constexpr s32 kTicksOver = 30;
@@ -85,7 +87,8 @@ public:
 
     /** Posts message `id` for `player` unless it has been seen, another is up, or the pause
      * since the last is not over; marks it seen. The spec when it went up, for its voice. */
-    const HelpMessageSpec* post(s32 id, s32 player, std::span<const HelpReader> party);
+    const HelpMessageSpec* post(s32 id, s32 player, std::span<const HelpReader> party,
+                                s32 number = -1);
     void update(s32 ticks);
 
     bool showing() const { return m_ticksLeft > 0; }

@@ -27,7 +27,9 @@ void loadStrings(std::string_view name, MessageTable& strings) {
     {"name": "HEALTHFULL", "font": 0, "scale": 1, "shadowScale": 1,
      "lines": ["YOUR HEALTH IS FULL"]},
     {"name": "WAR_TURBO", "font": 0, "scale": 1, "shadowScale": 1,
-     "lines": ["TURBO ATTACK", "FIRE ARC", "PLASMA TRAIL"]}],
+     "lines": ["TURBO ATTACK", "FIRE ARC", "PLASMA TRAIL"]},
+    {"name": "LEVELUP", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["LEVEL %d", "EXPERIENCE"]}],
   "lists": []
 })");
     REQUIRE(strings.load(dir / "english.json"));
@@ -97,6 +99,32 @@ TEST_CASE("a help message goes up once for the party, a second a line and a half
     REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 1, newcomer) != nullptr);
     help.clear();
     REQUIRE_FALSE(help.showing());
+}
+
+TEST_CASE("news is told every time, with its number filled in", "[game][help]") {
+    MessageTable strings;
+    loadStrings("help-news", strings);
+    HelpMessages help;
+    help.setTexts(&strings);
+    std::vector<s32> seen;
+    const std::array<HelpReader, 1> party{HelpReader{0, &seen}};
+    const HelpMessageSpec* spec = help.post(HelpMessages::kLevelUp, 0, party, 12);
+    REQUIRE(spec != nullptr);
+    REQUIRE(spec->repeat == HelpRepeat::Always);
+    REQUIRE(spec->voice == "S_GAINEDLEVEL");
+    REQUIRE(help.lines().size() == 2);
+    REQUIRE(help.lines()[0] == "LEVEL 12");
+    REQUIRE(help.lines()[1] == "EXPERIENCE");
+    // Told again for the next, though the same character has seen it.
+    help.clear();
+    help.setTexts(&strings);
+    REQUIRE(help.post(HelpMessages::kLevelUp, 0, party, 13) != nullptr);
+    REQUIRE(help.lines()[0] == "LEVEL 13");
+    // Without a number the mark is left as it is.
+    help.clear();
+    help.setTexts(&strings);
+    REQUIRE(help.post(HelpMessages::kLevelUp, 0, party) != nullptr);
+    REQUIRE(help.lines()[0] == "LEVEL %d");
 }
 
 TEST_CASE("someone new to the party is told what the others already know", "[game][help]") {

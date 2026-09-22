@@ -48,6 +48,7 @@
 
 #include "game/players/PowerupEffects.h"
 #include "game/enemies/Critters.h"
+#include "game/players/LevelWatch.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
@@ -210,6 +211,12 @@ public:
     const Critters& critters() const { return m_critters; }
     Critters& critters() { return m_critters; }
     const EnemyMissiles& enemyMissiles() const { return m_enemyMissiles; }
+    /** The archive folder a character's figure was loaded from, for tests. */
+    std::optional<std::filesystem::path> figureDirectory(usize index) const {
+        return index < m_figures.size() && m_figures[index] != nullptr
+                   ? std::optional<std::filesystem::path>(m_figures[index]->directory)
+                   : std::nullopt;
+    }
     const HelpMessages& help() const { return m_help; }
     const MoveStrikes& strikes() const { return m_strikes; }
     const AmbientDimmer& dimmer() const { return m_dimmer; }
@@ -327,7 +334,11 @@ private:
     static constexpr s32 kCritterTargetBase = 3000;
     void settleBlasts();
     void updateClouds(f32 seconds);
-    bool postHelp(s32 id, usize index);
+    bool postHelp(s32 id, usize index, s32 number = -1);
+    /** Answers the party's levels gained since last looked: the fanfare, a hundred health,
+     * the message, the costume of a new tier, and the class's word at a milestone. */
+    void updateLevels();
+    static constexpr f32 kLevelUpHealth = 100.0f;
     SoundHandle playRealmSound(std::string_view stem);
     void cry(usize index, std::string_view which);
     PlayerDeed turboDeed(usize index, const PlayInput& in) const;
@@ -485,6 +496,7 @@ private:
     Generators m_generators;
     Critters m_critters;
     EnemyMissiles m_enemyMissiles;
+    LevelWatch m_levels;
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid
     HelpMessages m_help;
     MessageTable m_strings;  ///< the game's own strings, which hold the help messages

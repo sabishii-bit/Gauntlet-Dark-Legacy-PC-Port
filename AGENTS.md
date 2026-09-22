@@ -552,6 +552,18 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   per-part damage and breaking, the bosses (type 4, their patterns and
   cameras), the critters' sounds, and the statue's waking.
   Scenarios: `level-g1-general.json`.
+* Levels gained (`players/LevelWatch`, `PlayScene::updateLevels`). The watch
+  is told each player's level every tick and reports the changes since it
+  last looked (`LevelChange`: from, to, `milestone()` when a tenth is
+  crossed), so what grants experience knows nothing of levels and what
+  answers one knows nothing of experience. A level gained does what the
+  original's `AddExp` does: help 34, "LEVEL %d" (the number filled in by
+  `HelpMessages::post`'s `number`; `HelpRepeat::Always`, news not a lesson),
+  to `S_GAINEDLEVEL`; the `LEVELUP_<COL>` tree of the weapons archive about
+  the character for three seconds; a hundred health. A tenth level besides
+  says the class's piece (`S_EXP10WAR` ... `S_EXP90WAR`, `S_EXP99ALL`
+  failing one) and reloads the figure in the tier's costume (`BLU10`) where
+  it stands. The watch is primed at open with the party's levels.
 * A bitmap an archive flags 0x100 has no picture of its own (an animated
   texture's slot, such as the magic users' `<COL>_HANDGLOW`, filled in the
   original from frames kept elsewhere): `TextureSet` draws it clear
