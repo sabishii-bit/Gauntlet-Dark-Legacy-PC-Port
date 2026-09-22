@@ -25,6 +25,7 @@ constexpr u16 kNoObjectFlag = 1;
 constexpr usize kListHeaderWithParticles = 24; ///< the header once it lists particle templates
 constexpr u16 kParticleListVersion = 8;         ///< files older than this hold no such list
 constexpr u16 kParticleNodeType = 4;
+constexpr u16 kTextureNodeType = 3;
 constexpr u16 kObjectNodeType = 2;
 constexpr usize kObjectFramesSize = 40; ///< one sequence's run: name, object, frames, start
 
@@ -147,6 +148,24 @@ s32 particleIndexOf(std::span<const u8> file, usize base, s32 offset, usize coun
     return index < static_cast<s64>(count) ? static_cast<s32>(index) : -1;
 }
 
+/** Which of the file's texture animations lies `offset` bytes past `from`, or -1: the way a
+ * texture node's data offset (from the tree's sequence table) and a sequence's own list name
+ * them. */
+s32 textureAnimationIndexOf(std::span<const u8> file, s64 from, s64 offset) {
+    if (file.size() < kListHeaderSize) {
+        return -1;
+    }
+    const s64 count = readU32LE(file, 8);
+    const s64 listAt = readU32LE(file, 12);
+    const s64 at = from + offset - listAt;
+    if (count == 0 || listAt == 0 || at < 0 ||
+        at % static_cast<s64>(kTextureAnimationSize) != 0) {
+        return -1;
+    }
+    const s64 index = at / static_cast<s64>(kTextureAnimationSize);
+    return index < count ? static_cast<s32>(index) : -1;
+}
+
 } // namespace
 
 /** An object node's frame runs, one per sequence, from the tree's object frame table (the
@@ -210,6 +229,14 @@ AnimationFile AnimationFile::parse(std::span<const u8> file) {
             sequence.repeats = readU16LE(file, at + 36) != 0;
             sequence.fixesPosition = (readU16LE(file, at + 38) & 1U) != 0;
             sequence.flags = readU16LE(file, at + 42);
+            // Its own texture animations: a count and the index of the first in the list.
+            const auto texmods = static_cast<s16>(readU16LE(file, at + 40));
+            const s32 first = readS32LE(file, at + 44);
+            const s32 listed = static_cast<s32>(out.textureAnimations.size());
+            if (texmods > 0 && first >= 0 && first + texmods <= listed) {
+                sequence.textureAnimationStart = first;
+                sequence.textureAnimationCount = texmods;
+            }
             tree.sequences.push_back(std::move(sequence));
         }
 
@@ -234,6 +261,12 @@ AnimationFile AnimationFile::parse(std::span<const u8> file) {
             }
             if ((readU16LE(file, at + 44) & 0xFFU) == kObjectNodeType) {
                 readObjectFrames(file, base, readS32LE(file, at + 52), tree, node);
+            }
+            if ((readU16LE(file, at + 44) & 0xFFU) == kTextureNodeType) {
+                // A texture node's data lies in the file's animation list, reached from the
+                // tree's sequence table.
+                node.textureAnimation = textureAnimationIndexOf(
+                    file, static_cast<s64>(base) + sequencesAt, readS32LE(file, at + 52));
             }
             if (node.parent >= n) {
                 throw FormatError(

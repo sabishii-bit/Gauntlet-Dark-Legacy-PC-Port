@@ -1,5 +1,6 @@
 #include "engine/world/TextureAnimator.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <optional>
@@ -38,7 +39,9 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations,
                            TextureSet& textures, RenderDevice& device,
                            std::span<TextureSet* const> lenders) {
     clear();
-    for (const TextureAnimationInfo& animation : animations) {
+    m_entryOfInfo.assign(animations.size(), -1);
+    for (usize i = 0; i < animations.size(); ++i) {
+        const TextureAnimationInfo& animation = animations[i];
         if (animation.texture < 0 || animation.frames == 0 ||
             !(animation.cycles() || animation.scrolls())) {
             continue;
@@ -48,11 +51,14 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations,
         entry.period = std::abs(animation.frames);
         entry.rate = animation.rate;
         entry.counter = animation.start;
+        entry.keyed = !animation.freeRunning();
+        entry.offset = animation.offset;
         if (animation.scrolls()) {
             const f32 sign = animation.frames < 0 ? -1.0f : 1.0f;
             entry.direction = animation.source == TextureAnimationInfo::kScrollU
                                   ? Vec2{sign, 0.0f}
                                   : Vec2{0.0f, sign};
+            m_entryOfInfo[i] = static_cast<s32>(m_entries.size());
             m_entries.push_back(std::move(entry));
             continue;
         }
@@ -90,13 +96,67 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations,
         }
         entry.period = static_cast<s32>(entry.frames.size());
         entry.counter %= entry.period;
+        m_entryOfInfo[i] = static_cast<s32>(m_entries.size());
         m_entries.push_back(std::move(entry));
     }
 }
 
 void TextureAnimator::clear() {
     m_entries.clear();
+    m_entryOfInfo.clear();
     m_frame = 0;
+}
+
+f32 TextureAnimator::scrollAt(s32 sinceStart, s32 rate, s32 frames) {
+    const auto t = static_cast<f32>(sinceStart);
+    const auto lo = static_cast<f32>(std::min(rate, frames));
+    const auto hi = static_cast<f32>(frames);
+    if (frames <= 0) {
+        return 0.0f;
+    }
+    if (lo <= 0.0f) {
+        return static_cast<f32>(sinceStart % frames) / hi;
+    }
+    if (t <= 0.0f) {
+        return 0.0f;
+    }
+    if (t < lo) {
+        // Eases in: the scroll runs from -2 * (hi / lo) up toward one over the first frames.
+        const f32 scaled = hi / lo;
+        return (t / lo) * ((1.0f - scaled) + 2.0f * scaled) - 2.0f * scaled;
+    }
+    if (rate > frames) {
+        return 0.0f;
+    }
+    if (t < hi) {
+        const f32 scaled = hi / lo;
+        return (t - lo) / (hi - lo) * -(1.0f - scaled) + (1.0f - scaled);
+    }
+    if (t < hi + lo) {
+        return (t - hi) / lo;
+    }
+    return 1.0f;
+}
+
+std::optional<TextureMotion> TextureAnimator::motionAt(s32 info, s32 frame) const {
+    if (info < 0 || static_cast<usize>(info) >= m_entryOfInfo.size() || m_entryOfInfo[static_cast<usize>(info)] < 0) {
+        return std::nullopt;
+    }
+    const Entry& entry = m_entries[static_cast<usize>(m_entryOfInfo[static_cast<usize>(info)])];
+    TextureMotion motion;
+    motion.slot = entry.slot;
+    const s32 since = frame - entry.offset;
+    if (entry.frames.empty()) {
+        motion.offset = entry.direction * scrollAt(since, entry.rate, entry.period);
+        return motion;
+    }
+    s32 f = std::max(since, 0);
+    if (entry.rate > 0) {
+        f /= entry.rate;
+    }
+    f = std::min(f, entry.period - 1);
+    motion.frame = entry.frames[static_cast<usize>(f)];
+    return motion;
 }
 
 TextureMotion TextureAnimator::motion(usize index) const {
@@ -127,7 +187,7 @@ void TextureAnimator::step(u32 ticks) {
     for (u32 t = 0; t < ticks; ++t) {
         ++m_frame;
         for (Entry& entry : m_entries) {
-            if (entry.rate > 1 && m_frame % static_cast<u32>(entry.rate) != 0) {
+            if (entry.keyed || (entry.rate > 1 && m_frame % static_cast<u32>(entry.rate) != 0)) {
                 continue;
             }
             entry.counter = (entry.counter + 1) % entry.period;
@@ -137,7 +197,9 @@ void TextureAnimator::step(u32 ticks) {
 
 void TextureAnimator::apply(WorldScene& scene) const {
     for (const Entry& entry : m_entries) {
-        show(entry, scene);
+        if (!entry.keyed) {
+            show(entry, scene);
+        }
     }
 }
 
@@ -145,7 +207,7 @@ void TextureAnimator::step(WorldScene& scene, u32 ticks) {
     for (u32 t = 0; t < ticks; ++t) {
         ++m_frame;
         for (Entry& entry : m_entries) {
-            if (entry.rate > 1 && m_frame % static_cast<u32>(entry.rate) != 0) {
+            if (entry.keyed || (entry.rate > 1 && m_frame % static_cast<u32>(entry.rate) != 0)) {
                 continue;
             }
             entry.counter = (entry.counter + 1) % entry.period;

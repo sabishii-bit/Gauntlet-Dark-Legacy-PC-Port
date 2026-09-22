@@ -32,6 +32,8 @@ struct TreeNode {
     s32 parent = -1;
     s32 particle = -1; ///< a particle node's template in the file's list, or -1
     Vec3 direction{0.0f, 0.0f, 0.0f}; ///< the way a particle node emits, when not zero
+    s32 textureAnimation = -1; ///< a texture node's animation in the file's list, keyed to
+                               ///< the sequence's frame, or -1
 
     /** An object node's run of frames in one sequence: the archive object shown at `start`
      * and, each frame after, the next object in the archive, for `frames` frames; nothing
@@ -79,6 +81,9 @@ struct TreeSequence {
     bool repeats = false;
     bool fixesPosition = false; ///< the root's motion folds into the model when it ends
     u16 flags = 0;
+    s32 textureAnimationStart = -1; ///< the first of its own texture animations in the
+                                    ///< file's list, keyed to its frame; -1 for none
+    s32 textureAnimationCount = 0;
     std::vector<NodeTrack> tracks; ///< one per skeletal node that keys anything
 };
 

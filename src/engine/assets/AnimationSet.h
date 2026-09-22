@@ -24,6 +24,8 @@ struct TreeNodeInfo {
     Vec3 position{0.0f, 0.0f, 0.0f}; ///< relative to the parent
     s32 particle = -1; ///< the set's particle template a particle node emits, or -1
     Vec3 direction{0.0f, 0.0f, 0.0f}; ///< the way it emits, when not zero
+    s32 textureAnimation = -1; ///< the set's texture animation a texture node plays, keyed
+                               ///< to the sequence's frame, or -1
 
     /** One sequence's run of object frames: the set's object shown at `start` and, each
      * frame after, the next object in the set, for `frames` frames; nothing outside the run
@@ -78,6 +80,9 @@ struct TreeSequenceInfo {
     bool repeats = false;
     bool fixesPosition = false;
     u32 flags = 0;
+    s32 textureAnimationStart = -1; ///< the first of the set's texture animations that
+                                    ///< this sequence keys to its frame; -1 for none
+    s32 textureAnimationCount = 0;
     std::vector<TrackInfo> tracks;
     std::vector<s32> trackOfNode; ///< per tree node: its track's index, -1 for none
 
@@ -98,6 +103,7 @@ struct TextureAnimationInfo {
     static constexpr s32 kByName = -1;
     static constexpr s32 kScrollU = -2;
     static constexpr s32 kScrollV = -3;
+    static constexpr s32 kFreeRunning = -1; ///< the flag of one stepped on the game clock
 
     std::string name;
     std::string frameName;
@@ -106,10 +112,13 @@ struct TextureAnimationInfo {
     s32 frames = 0; ///< frames in the cycle; negative scrolls the other way
     s32 start = 0;  ///< where in the cycle it begins
     s32 rate = 0;   ///< game frames per step; 0 or 1 steps every frame
-    s32 offset = 0; ///< the frame the cycle counts from
+    s32 offset = 0; ///< the frame the cycle counts from: a keyed one's first sequence frame
+    s32 flag = kFreeRunning; ///< anything else is keyed to a sequence's frame by a tree
 
     bool scrolls() const { return source == kScrollU || source == kScrollV; }
     bool cycles() const { return source >= 0 || source == kByName; }
+    /** Stepped on the game clock, rather than keyed to a sequence's frame. */
+    bool freeRunning() const { return flag == kFreeRunning; }
 };
 
 /** A node hierarchy from an unpacked animation file, with the objects each node draws. */

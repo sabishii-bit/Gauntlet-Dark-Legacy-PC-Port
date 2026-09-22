@@ -942,6 +942,20 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   node's keys (angles interpolate only across steps under a right angle) and
   composes the node matrices in the original's rotation orders, blending
   between poses for transitions; `TreeModel::draw` takes those matrices.
+  Texture animations come in two kinds (the record's `flag`): free-running
+  ones (`-1`) step on the game clock, as `TextureAnimator::step` does;
+  the rest are keyed to a sequence's frame and never step: a texture node
+  (type 3; `TreeNodeInfo::textureAnimation`, its data offset from the
+  tree's sequence table into the archive's animation list) or a
+  sequence's own run (`TreeSequenceInfo::textureAnimationStart/Count`, an
+  index and count into that list) is read off with
+  `TextureAnimator::motionAt(info, frame)`: a cycle counts from the
+  record's `offset` frame, a frame every `rate`, and holds its last; a
+  scroll runs `scrollAt` (the original's `CalcTexScroll`: easing over
+  `rate` frames, steady to `frames`, then held; the UV scale it also sets
+  is not done). `EffectTrees` applies them at the effect's frame, which is
+  how the lich's axe glow scrolls only from its 29th frame and the stomp's
+  ring cycles from its 32nd. Players and critters do not read theirs yet.
   `game/players/PlayerAnimator` is the player's action logic: which sequence
   the stick asks for, the four cut-in rules, the entrance, the stance loop,
   the two fidgets and their tick timers, and the alternating walk and run

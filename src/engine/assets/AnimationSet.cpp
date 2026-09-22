@@ -40,6 +40,8 @@ TreeSequenceInfo parseSequence(const nlohmann::json& sequence) {
     s.repeats = sequence.value("repeats", false);
     s.fixesPosition = sequence.value("fixesPosition", false);
     s.flags = sequence.value("flags", 0U);
+    s.textureAnimationStart = sequence.value("textureAnimationStart", -1);
+    s.textureAnimationCount = sequence.value("textureAnimationCount", 0);
     for (const nlohmann::json& track : sequence.value("tracks", nlohmann::json::array())) {
         s.tracks.push_back(parseTrack(track));
     }
@@ -58,6 +60,7 @@ TreeNodeInfo parseNode(const nlohmann::json& node, usize before) {
     n.position =
         Vec3{position.at(0).get<f32>(), position.at(1).get<f32>(), position.at(2).get<f32>()};
     n.particle = node.value("particle", -1);
+    n.textureAnimation = node.value("textureAnimation", -1);
     if (node.contains("direction")) {
         const nlohmann::json& direction = node.at("direction");
         n.direction = Vec3{direction.at(0).get<f32>(), direction.at(1).get<f32>(),
@@ -141,6 +144,7 @@ bool AnimationSet::load(const std::filesystem::path& directory) {
             animation.start = entry.value("start", 0);
             animation.rate = entry.value("rate", 0);
             animation.offset = entry.value("offset", 0);
+            animation.flag = entry.value("flag", TextureAnimationInfo::kFreeRunning);
             m_textureAnimations.push_back(std::move(animation));
         }
         for (const nlohmann::json& entry : root.value("particles", nlohmann::json::array())) {
