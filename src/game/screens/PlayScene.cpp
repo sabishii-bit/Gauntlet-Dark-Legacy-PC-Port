@@ -3353,6 +3353,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     }
     updateStrikes(seconds);
     updateShields(seconds);
+    // The level goes dark for the legend item's rite, as for a great move.
+    if (m_bosses.legend().darkens()) {
+        m_dimmer.ask(LegendRite::kDarkening);
+    }
     m_dimmer.update(seconds);
     m_world->setAmbientOffset(m_dimmer.offset());
     m_effects.update(seconds);
