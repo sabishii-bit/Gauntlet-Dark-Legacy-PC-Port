@@ -1132,6 +1132,7 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
         json.key("cameraIndex").value(static_cast<int>(level.cameraIndex));
         json.key("audioIndex").value(static_cast<int>(level.audioIndex));
         json.key("mapIndex").value(static_cast<int>(level.mapIndex));
+        json.key("bossCameraIndex").value(static_cast<int>(level.bossCameraIndex));
         json.key("rune").value(static_cast<int>(level.rune));
         json.key("legend").value(static_cast<int>(level.legend));
         json.key("maxEnemies").value(static_cast<int>(level.maxEnemies));
@@ -1194,6 +1195,28 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
         json.key("maxYaw").value(camera.maxYaw);
         json.key("bossRadiusMin").value(camera.bossRadiusMin);
         json.key("bossRadiusMax").value(camera.bossRadiusMax);
+        json.endObject();
+    }
+    json.endArray();
+    json.key("bossCameras").beginArray();
+    for (const BossCameraRecord& camera : data.bossCameras) {
+        const auto vec = [&](const char* key, const Vec3& v) {
+            json.key(key).numbers(std::array<f32, 3>{v.x, v.y, v.z});
+        };
+        json.beginObject();
+        json.key("flags").value(camera.flags);
+        json.key("maxYaw").value(camera.maxYaw);
+        json.key("cosMaxYaw").value(camera.cosMaxYaw);
+        json.key("minDistance").value(camera.minDistance);
+        json.key("minPlayerDistance").value(camera.minPlayerDistance);
+        json.key("maxDistance").value(camera.maxDistance);
+        json.key("maxPlayerDistance").value(camera.maxPlayerDistance);
+        json.key("minPitch").value(camera.minPitch);
+        json.key("maxPitch").value(camera.maxPitch);
+        vec("minAttention", camera.minAttention);
+        vec("maxAttention", camera.maxAttention);
+        vec("keyAttention", camera.keyAttention);
+        vec("wizardAttention", camera.wizardAttention);
         json.endObject();
     }
     json.endArray();

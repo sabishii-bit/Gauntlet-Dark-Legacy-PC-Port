@@ -1,6 +1,8 @@
 #pragma once
 
 #include <filesystem>
+#include <numbers>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -53,6 +55,24 @@ struct LevelEnemy {
     s32 subtype = 0;
 };
 
+/** How the camera frames a boss fight: how far about the party's line to the boss it may
+ * swing, how far it stands and how steep it looks, and where about the boss it looks. */
+struct BossCameraInfo {
+    u32 flags = 0;
+    f32 maxYaw = std::numbers::pi_v<f32>;
+    f32 cosMaxYaw = -1.0f;
+    f32 minDistance = 25.0f;
+    f32 minPlayerDistance = 25.0f;
+    f32 maxDistance = 75.0f;
+    f32 maxPlayerDistance = 30.0f;
+    f32 minPitch = 0.3f;
+    f32 maxPitch = 0.45f;
+    Vec3 minAttention{0.0f, 0.0f, 0.0f}; ///< the look point's offset from the boss, close up
+    Vec3 maxAttention{0.0f, 0.0f, 0.0f}; ///< and at its furthest
+    Vec3 keyAttention{0.0f, 0.0f, 0.0f}; ///< from the key it drops
+    Vec3 wizardAttention{0.0f, 0.0f, 0.0f};
+};
+
 struct LevelInfo {
     std::string name;  ///< "L1"
     std::string title; ///< "Tower"
@@ -64,6 +84,7 @@ struct LevelInfo {
     s32 bossType = -1;   ///< the kind of its boss, none under nought
     s32 rune = 0;        ///< the runestone it holds, from one; none at nought
     s32 legend = 0;      ///< the realm whose legend item it holds; none at nought
+    std::optional<BossCameraInfo> bossCamera; ///< how its boss fight is framed, when it has one
     std::vector<LevelEnemy> enemies; ///< its roster, from the realm's
     f32 musicVolume = 1.0f;
     f32 soundVolume = 1.0f;

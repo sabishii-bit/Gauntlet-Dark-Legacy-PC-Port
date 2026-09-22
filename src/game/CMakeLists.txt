@@ -69,6 +69,8 @@ add_library(game STATIC
     world/LevelWorld.cpp
     world/TowerCamera.h
     world/TowerCamera.cpp
+    world/BossCamera.h
+    world/BossCamera.cpp
     world/StartCamera.h
     world/StartCamera.cpp
     world/SumnerFigure.h
