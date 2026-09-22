@@ -53,6 +53,15 @@ struct CritterCue {
     bool shakes = false;
 };
 
+/** A dying critter's death throwing something out (the coins a boss spews): from where,
+ * which way and how fast, and how far round each side of that way. */
+struct CritterSpew {
+    s32 critter = -1;
+    Vec3 origin{0.0f, 0.0f, 0.0f};
+    Vec3 velocity{0.0f, 0.0f, 0.0f};
+    f32 halfAngle = 0.0f; ///< radians
+};
+
 /** Experience a critter is worth: a share of its value for each hit, to the hitter, and
  * a fifth of it to everyone (`player` -1) when it falls. */
 struct CritterLoss {
@@ -105,6 +114,8 @@ public:
     std::vector<CritterLoss> takeLosses();
     /** The effects and sounds set off since the last call. */
     std::vector<CritterCue> takeCues();
+    /** What the deaths since the last call threw out. */
+    std::vector<CritterSpew> takeSpews();
 
     void hurt(s32 id, const EnemyHit& hit);
     /** Stops it where it stands, its animation with it, for `ticks`. */
@@ -207,6 +218,7 @@ private:
              CueParts parts = CueParts::Both);
 
     std::vector<CritterCue> m_cues;
+    std::vector<CritterSpew> m_spews;
     char m_levelLetter = 'G';
     void strikeWith(Critter& critter, s32 id, const CritterMove& move, s32 damageIndex,
                     std::span<const EnemyView> players);

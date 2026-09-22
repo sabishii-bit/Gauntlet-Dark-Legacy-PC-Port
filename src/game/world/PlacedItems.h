@@ -101,11 +101,16 @@ public:
         f32 alpha = 1.0f;                 ///< under one while it fades in
         bool visible = false;
         bool taken = false;
+        Vec3 velocity{0.0f, 0.0f, 0.0f}; ///< while thrown
+        bool thrown = false;             ///< in the air or rolling, not yet at rest
+        f32 noGrabSeconds = 0.0f;        ///< over nought, no one can take it yet
 
         /** Whether a party of `players` sees it. */
         bool shownTo(s32 players) const;
         /** Whether a collector is on it. */
         bool touchedBy(const Collector& collector) const;
+        /** Whether it may be taken now. */
+        bool takeable() const { return visible && !taken && noGrabSeconds <= 0.0f; }
         /** The realm a crystal counts towards, or -1 for anything else. */
         s32 realm() const;
     };
@@ -148,8 +153,23 @@ public:
      * (a chest's keys) rather than the record's own. */
     bool placeRecord(RenderDevice& device, s32 record, const Vec3& position,
                      const WorldCollision* collision, s32 amount = 0);
-    /** Turns the figures and plays the bursts on by `seconds`. */
+    /** Throws a pickup of the record named `name` from `position` at `velocity`: it sails
+     * out, falls, bounces and rolls to a stop on the floor the collision finds (or is lost,
+     * falling where there is none), and cannot be taken for `noGrabSeconds`. False as for
+     * `place`. */
+    bool throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
+                   const Vec3& velocity, const WorldCollision* collision, f32 noGrabSeconds);
+    /** Whether any gold lies untaken. */
+    bool goldLeft() const;
+    /** Turns the figures, flies what was thrown and plays the bursts on by `seconds`. */
     void update(f32 seconds);
+    // How a thrown item flies, as the original's coins do.
+    static constexpr f32 kGravity = 32.0f;     ///< units a second each second
+    static constexpr f32 kBounce = 0.4f;       ///< of the fall's speed, back up
+    static constexpr f32 kRestHeight = 0.1f;   ///< this near the floor it touches down; a bounce that would not clear it is the last
+    static constexpr f32 kAirDrag = 0.5f;      ///< of its speed sideways lost a second aloft
+    static constexpr f32 kGroundDrag = 4.0f;   ///< and touching down
+    static constexpr f32 kThrownFloorReach = 100.0f; ///< how far under a flying item the floor is looked for
     usize effectCount() const { return m_effects.size(); }
     const Effect& effect(usize index) const { return m_effects[index]; }
     const ParticleField& bursts() const { return m_bursts; }
@@ -181,7 +201,10 @@ private:
     std::vector<ItemInfo> m_infos; ///< the level's item records, for dropping more
     /** Builds the figure of an item named `name`; false when no archive holds it. */
     bool makeFigure(RenderDevice& device, Item& item);
+    /** Flies a thrown item `seconds` on. */
+    void fly(Item& item, f32 seconds);
     std::vector<ArchiveMotion> m_motions;
+    const WorldCollision* m_collision = nullptr; ///< the floor thrown items land on
     s32 m_players = 0;
     f32 m_frameRemainder = 0.0f;
     f32 m_revealTime = 0.0f;

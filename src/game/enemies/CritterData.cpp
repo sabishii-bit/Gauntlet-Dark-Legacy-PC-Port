@@ -1,5 +1,6 @@
 #include "game/enemies/CritterData.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <exception>
@@ -53,6 +54,18 @@ bool CritterTarget::allows(f32 distance, f32 bearing, f32 vertical) const {
         return false;
     }
     return maxVertical <= 0.0f || std::abs(vertical) <= maxVertical;
+}
+
+/** The body's way turned by the record's yaw, then tipped by its pitch (under nought, up),
+ * at its speed. */
+Vec3 CritterDamage::spewVelocity(f32 bodyYaw) const {
+    const f32 heading = bodyYaw + yaw;
+    const f32 level = std::cos(-pitch);
+    return Vec3{std::sin(heading) * level, std::sin(-pitch), std::cos(heading) * level} * speed;
+}
+
+f32 CritterDamage::spewHalfAngle() const {
+    return std::acos(std::clamp(minDot, -1.0f, 1.0f));
 }
 
 bool CritterData::load(const std::filesystem::path& file) {
@@ -134,9 +147,12 @@ bool CritterData::load(const std::filesystem::path& file) {
             damage.flags = d.value("flags", 0U);
             damage.radius = d.value("radius", 0.0f);
             damage.maxDistance = d.value("maxDistance", 0.0f);
+            damage.yaw = d.value("yaw", 0.0f);
             damage.minDot = d.value("minDot", 0.0f);
+            damage.pitch = d.value("pitch", 0.0f);
             damage.offset = vecOf(d, "offset");
             damage.damage = d.value("damage", 0.0f);
+            damage.speed = d.value("minSpeed", 0.0f);
             damage.sound = d.value("sfxIndex", -1);
             m_damages.push_back(damage);
         }

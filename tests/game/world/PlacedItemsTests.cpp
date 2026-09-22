@@ -291,6 +291,73 @@ TEST_CASE("the crystals can start unseen and be revealed from the origin outward
     REQUIRE_FALSE(items.revealing());
 }
 
+TEST_CASE("a thrown item sails out, bounces to rest on the floor and can be taken only after "
+          "a while",
+          "[game][world][unpacked]") {
+    const std::filesystem::path root =
+        test::unpackedOrSkip("ITEMS/LEVELG5/animations.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELG5/collision.json");
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELG5"));
+    WorldCollision collision;
+    REQUIRE(collision.load(root / "LEVELS/LEVELG5", layout));
+    ItemArchive crypt;
+    REQUIRE(crypt.load(root / "ITEMS/LEVELG5"));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array<ItemArchive*, 1> archives{&crypt};
+    items.bind(device, layout, &collision, archives);
+    items.setPlayerCount(1);
+    REQUIRE_FALSE(items.goldLeft());
+    const usize index = items.size();
+    // From three up over the boss's mark, thrown up and toward where the party comes in.
+    REQUIRE(items.throwItem(device, "COIN_GOLD", Vec3{0.0f, 3.0f, 0.0f}, Vec3{0.0f, 20.0f, 10.0f},
+                            &collision, 2.0f));
+    REQUIRE(items.goldLeft());
+    const PlacedItems::Item& coin = items.item(index);
+    REQUIRE(coin.thrown);
+    REQUIRE(coin.value == 5000);
+    REQUIRE(coin.position == Vec3{0.0f, 3.0f, 0.0f}); // not on the floor yet
+    REQUIRE_FALSE(coin.takeable());
+    // It rises first, then falls and bounces.
+    f32 highest = 0.0f;
+    int bounces = 0;
+    f32 lastVy = coin.velocity.y;
+    for (int i = 0; i < 300; ++i) {
+        items.update(1.0f / 60.0f);
+        highest = std::max(highest, coin.position.y);
+        if (lastVy < 0.0f && coin.velocity.y > 0.0f) {
+            ++bounces;
+        }
+        lastVy = coin.velocity.y;
+    }
+    REQUIRE(highest > 5.0f);
+    REQUIRE(bounces >= 1);
+    CAPTURE(coin.position.x, coin.position.y, coin.position.z, coin.velocity.y, coin.velocity.z);
+    REQUIRE_FALSE(coin.thrown);
+    REQUIRE(coin.velocity == Vec3{0.0f, 0.0f, 0.0f});
+    REQUIRE(coin.position.z > 2.0f);
+    const auto floor = collision.floorAt(coin.position, PlacedItems::kFloorReachAbove,
+                                         PlacedItems::kFloorReachBelow);
+    REQUIRE(floor.has_value());
+    REQUIRE(coin.position.y == Approx(floor->y + PlacedItems::kFloorLift));
+    REQUIRE(Vec3{coin.transform[3]} == coin.position);
+    // Five seconds on it can be taken, and once it is no gold is left.
+    REQUIRE(coin.takeable());
+    Collector on;
+    on.position = coin.position;
+    const std::array<Collector, 1> party{on};
+    const std::vector<Pickup> got = items.collect(device, party);
+    REQUIRE(got.size() == 1);
+    REQUIRE(got[0].amount == 5000);
+    REQUIRE_FALSE(items.goldLeft());
+    // With no floor to land on it stays where it is thrown.
+    REQUIRE(items.throwItem(device, "COIN_BRONZE", Vec3{5.0f, 3.0f, 5.0f}, Vec3{10.0f, 20.0f, 0.0f},
+                            nullptr, 0.0f));
+    REQUIRE_FALSE(items.item(index + 1).thrown);
+    REQUIRE(items.item(index + 1).takeable());
+}
+
 TEST_CASE("an instance's minimum can mean exactly that many players", "[game][world]") {
     PlacedItems::Item item;
     item.minPlayers = 2;

@@ -104,6 +104,7 @@ void PlacedItems::clear() {
     m_bursts.clear();
     m_archives.clear();
     m_motions.clear();
+    m_collision = nullptr;
     m_frameRemainder = 0.0f;
     m_revealTime = 0.0f;
     m_revealing = false;
@@ -195,13 +196,39 @@ bool PlacedItems::placeRecord(RenderDevice& device, s32 record, const Vec3& posi
     return true;
 }
 
+/** Placed where it starts (not on the floor) and set flying; with no floor to land on it
+ * stays where it is thrown. */
+bool PlacedItems::throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
+                            const Vec3& velocity, const WorldCollision* collision,
+                            f32 noGrabSeconds) {
+    if (!place(device, name, position, collision)) {
+        return false;
+    }
+    Item& item = m_items.back();
+    item.noGrabSeconds = noGrabSeconds;
+    if (collision != nullptr) {
+        item.position = position;
+        item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
+        item.velocity = velocity;
+        item.thrown = true;
+        m_collision = collision;
+    }
+    return true;
+}
+
+bool PlacedItems::goldLeft() const {
+    return std::ranges::any_of(m_items, [](const Item& item) {
+        return item.visible && !item.taken && item.subtype == ItemInfo::kGold;
+    });
+}
+
 std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
                                          std::span<const Collector> collectors,
                                          const PickupJudge& judge) {
     std::vector<Pickup> pickups;
     for (usize i = 0; i < m_items.size(); ++i) {
         Item& item = m_items[i];
-        if (!item.visible || item.taken) {
+        if (!item.takeable()) {
             continue;
         }
         usize taker = collectors.size();
@@ -334,6 +361,49 @@ void PlacedItems::applyTextureMotion() {
     }
 }
 
+/** A thrown item's flight, as the original's coins fly: it falls under gravity, and on
+ * touching the floor (where a placed item rests) bounces back at a share of its speed
+ * until a bounce would not clear the touching-down height, when it stays down; sideways it
+ * slows a little in the air and much more on touching down, and stops once it has all but
+ * stopped. */
+void PlacedItems::fly(Item& item, f32 seconds) {
+    item.position += item.velocity * seconds;
+    f32 over = kThrownFloorReach;
+    f32 drag = kAirDrag * seconds;
+    if (item.velocity.y <= 0.0f && m_collision != nullptr) {
+        const auto floor = m_collision->floorAt(item.position, kFloorReachAbove, kThrownFloorReach);
+        if (!floor.has_value()) {
+            // Falling with no floor under it, it has left the level and is lost.
+            item.visible = false;
+            item.taken = true;
+            item.thrown = false;
+            return;
+        }
+        const f32 rest = floor->y + kFloorLift;
+        over = item.position.y - rest;
+        if (over < kRestHeight) {
+            item.velocity.y = -kBounce * item.velocity.y;
+            if (item.velocity.y * item.velocity.y < 2.0f * kGravity * kRestHeight) {
+                item.velocity.y = 0.0f;
+            }
+            item.position.y = rest;
+            drag = kGroundDrag * seconds;
+        }
+    }
+    if (over >= kRestHeight) {
+        item.velocity.y -= kGravity * seconds;
+    }
+    const auto slow = [drag](f32& v) {
+        v = std::abs(v) > drag ? v - drag * v : 0.0f;
+    };
+    slow(item.velocity.x);
+    slow(item.velocity.z);
+    item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
+    if (item.velocity == Vec3{0.0f, 0.0f, 0.0f}) {
+        item.thrown = false;
+    }
+}
+
 void PlacedItems::update(f32 seconds) {
     // The archives' texture animations step once a game frame: the sheen on the crystals.
     m_frameRemainder += seconds * kFrameRate;
@@ -351,6 +421,10 @@ void PlacedItems::update(f32 seconds) {
             item.player.advance(seconds, true);
             item.pose.evaluate(*item.figure, item.player.sequence(), item.player.frame());
             item.model.setFrame(item.player.sequence(), static_cast<s32>(item.player.frame()));
+        }
+        item.noGrabSeconds = std::max(item.noGrabSeconds - seconds, 0.0f);
+        if (item.thrown) {
+            fly(item, seconds);
         }
     }
     // A burst's emitters ride their nodes through the tree's sequence, then stop emitting.

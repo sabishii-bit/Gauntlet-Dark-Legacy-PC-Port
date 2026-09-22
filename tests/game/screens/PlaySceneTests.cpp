@@ -1747,16 +1747,62 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     }
     REQUIRE(key);
     REQUIRE_FALSE(scene.bossMeter().showing());
+    // At its death's 95th frame the lich throws the town's coins for the party (four
+    // bronze and a silver for one) all round it, up steeply, which sail out and come down.
+    REQUIRE_FALSE(world.goldLeft());
+    const usize itemsBefore = world.placedItems().size();
+    for (int i = 0; i < 400 && !world.goldLeft(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(world.goldLeft());
+    REQUIRE(world.placedItems().size() == itemsBefore + 5);
+    usize bronze = 0;
+    usize aloft = 0;
+    for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
+        const PlacedItems::Item& coin = world.placedItems().item(i);
+        bronze += coin.name == "COIN_BRONZE" ? 1 : 0;
+        aloft += coin.thrown ? 1 : 0;
+        REQUIRE_FALSE(coin.takeable());
+    }
+    REQUIRE(bronze == 4);
+    REQUIRE(aloft == 5);
     for (int i = 0; i < 400 && scene.victory().stage() != BossVictory::Stage::Defeat; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.victory().stage() == BossVictory::Stage::Defeat);
     REQUIRE(scene.victory().caption()->message == "LICH_SPEECH");
     REQUIRE(scene.bossCameraOn()); // the camera stays the fight's, on the wizard
+    // The coins come down within a few seconds and can be taken (those that flew off the
+    // level's edge are lost); left lying, they keep the wizard waiting ten seconds after
+    // his lines.
+    const auto stillFlying = [&world, itemsBefore] {
+        for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
+            if (world.placedItems().item(i).thrown) {
+                return true;
+            }
+        }
+        return false;
+    };
+    int leaving = 0;
     PlayOutcome outcome = PlayOutcome::Running;
+    for (int i = 0; i < 600 && stillFlying() && outcome == PlayOutcome::Running; ++i) {
+        outcome = scene.update(1.0 / 60.0, still);
+        leaving += scene.victory().stage() == BossVictory::Stage::Leaving ? 1 : 0;
+    }
+    REQUIRE_FALSE(stillFlying());
+    usize down = 0;
+    for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
+        const PlacedItems::Item& coin = world.placedItems().item(i);
+        REQUIRE(coin.takeable() == coin.visible);
+        down += coin.visible ? 1 : 0;
+    }
+    REQUIRE(down >= 1);
+    REQUIRE(world.goldLeft());
     for (int i = 0; i < 6000 && outcome == PlayOutcome::Running; ++i) {
         outcome = scene.update(1.0 / 60.0, still);
+        leaving += scene.victory().stage() == BossVictory::Stage::Leaving ? 1 : 0;
     }
+    REQUIRE(leaving > BossVictory::kExitLongTicks - BossVictory::kExitSparkleTicks - 2);
     REQUIRE(scene.victory().runeQuality() == 0);
     REQUIRE(outcome == PlayOutcome::Travel);
     REQUIRE(scene.destination().isTower());

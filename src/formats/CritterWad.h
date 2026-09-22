@@ -63,6 +63,9 @@ struct CritterDamageRecord {
     f32 pitch = 0.0f;
     std::array<f32, 3> offset{};
     f32 damage = 0.0f;
+    f32 minSpeed = 0.0f; ///< what it throws (type 9's coins) leaves at least this fast
+    f32 maxSpeed = 0.0f;
+    f32 gravity = 0.0f;
     s16 sfxIndex = -1;
     s16 sfx = -1;
 };

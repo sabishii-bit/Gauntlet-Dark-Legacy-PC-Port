@@ -960,6 +960,9 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.key("pitch").value(static_cast<f64>(d.pitch));
         vec("offset", d.offset);
         json.key("damage").value(static_cast<f64>(d.damage));
+        json.key("minSpeed").value(static_cast<f64>(d.minSpeed));
+        json.key("maxSpeed").value(static_cast<f64>(d.maxSpeed));
+        json.key("gravity").value(static_cast<f64>(d.gravity));
         json.key("sfxIndex").value(static_cast<int>(d.sfxIndex));
         json.key("sfx").value(static_cast<int>(d.sfx));
         json.endObject();

@@ -97,6 +97,9 @@ CritterFile parseCritterWad(std::span<const u8> bytes) {
         damage.pitch = readWadF32(bytes, at + 0x1C, kWhat);
         damage.offset = readVec(bytes, at + 0x20);
         damage.damage = readWadF32(bytes, at + 0x2C, kWhat);
+        damage.minSpeed = readWadF32(bytes, at + 0x30, kWhat);
+        damage.maxSpeed = readWadF32(bytes, at + 0x34, kWhat);
+        damage.gravity = readWadF32(bytes, at + 0x38, kWhat);
         damage.sfxIndex = readS16(bytes, at + 0x40);
         damage.sfx = readS16(bytes, at + 0x42);
         return damage;

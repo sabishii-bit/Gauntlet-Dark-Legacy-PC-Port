@@ -32,16 +32,25 @@ struct CritterDamage {
     static constexpr s16 kRing = 3;    ///< a stomp's, over its reach
     static constexpr s16 kBreath = 4;
     static constexpr s16 kGrab = 7;
+    static constexpr s16 kSpew = 9;    ///< a boss's death throwing its coins out
     static constexpr u32 kCurbed = 0x4000; ///< a legend item's weakness takes this from it
 
     s16 type = 0;
     u32 flags = 0;
     f32 radius = 0.0f;
     f32 maxDistance = 0.0f;
-    f32 minDot = 0.0f;
+    f32 yaw = 0.0f;   ///< a spew's way, turned from the body's facing
+    f32 minDot = 0.0f; ///< also the cosine of half a spew's arc
+    f32 pitch = 0.0f;  ///< a spew's way, tipped (under nought: up)
     Vec3 offset{0.0f, 0.0f, 0.0f};
     f32 damage = 0.0f;
+    f32 speed = 0.0f;  ///< a spew's, in units a second
     s32 sound = -1; ///< the sound record started where it strikes, or -1
+
+    /** The way a spew goes from a body facing `yaw` (radians about the upright), and how
+     * fast; half its arc each side of that is `acos(minDot)`. */
+    Vec3 spewVelocity(f32 bodyYaw) const;
+    f32 spewHalfAngle() const;
 };
 
 /** An effect and a sound a critter's move, strike or hurt starts: the tree of its own

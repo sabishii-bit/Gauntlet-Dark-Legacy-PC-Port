@@ -155,6 +155,13 @@ void BossVictory::leave() {
     m_ticksLeft = m_goldLeft ? kExitLongTicks : kExitTicks;
 }
 
+void BossVictory::setGoldLeft(bool left) {
+    m_goldLeft = left;
+    if (!left && m_stage == Stage::Leaving) {
+        m_ticksLeft = std::min(m_ticksLeft, kExitTicks);
+    }
+}
+
 std::vector<VictoryVoice> BossVictory::update(s32 ticks, std::span<const usize> pageLengths) {
     std::vector<VictoryVoice> voices;
     if (!running() || ticks <= 0) {
