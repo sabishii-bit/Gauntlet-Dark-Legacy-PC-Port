@@ -20,7 +20,9 @@ std::filesystem::path sampleRealm(std::string_view name) {
   "levels": [
     {"name": "L1", "title": "Tower", "cameraIndex": 0, "audioIndex": 0, "musicVolume": 0.75,
      "tuning": {"playerLevel": 10, "experience": 2.5, "damage": 0, "difficulty": 2,
-                "trapRate": 4, "trapDamage": 0},
+                "trapRate": 4, "trapDamage": 0, "enemyHealth": 0.75, "enemySpeed": 0,
+                "generatorMost": 0.5},
+     "maxEnemies": 13,
      "ambient": 0.8, "lightDirection": [-1, -6, 2], "lightColor": [1, 0.9, 0.8],
      "lightIntensity": 1},
     {"name": "L2", "title": "Tower", "cameraIndex": 5, "audioIndex": -1}
@@ -58,6 +60,15 @@ TEST_CASE("world data names a realm's levels and the records they point at",
     REQUIRE(level->tuning.experienceScale(10) == 2.5f);
     REQUIRE(level->tuning.experienceScale(20) == Approx(1.25f)); // ten levels past: halved
     REQUIRE(LevelTuning{}.experienceScale(50) == 1.0f);
+    // The enemies' and generators' scales: what they take and deal is the level's own, the
+    // rest grows with the difficulty setting.
+    REQUIRE(level->tuning.enemyHealth == 0.75f);
+    REQUIRE(level->tuning.enemySpeed == 2.0f);
+    REQUIRE(level->tuning.enemySpeedScale(1.5f) == 3.0f);
+    REQUIRE(level->tuning.enemySightScale(0.5f) == 1.0f);
+    REQUIRE(level->tuning.generatorMostScale(2.0f) == 1.0f);
+    REQUIRE(level->tuning.generatorRateScale(1.0f) == 2.0f);
+    REQUIRE(level->maxEnemies == 13);
     REQUIRE(level->ambient == Approx(0.8f));
     REQUIRE(level->lightDirection == Vec3{-1.0f, -6.0f, 2.0f});
     REQUIRE(level->lightColor.y == Approx(0.9f));

@@ -20,6 +20,14 @@ struct LevelTuning {
     f32 damage = 1.0f;     ///< scales every hurt over a point
     f32 trapRate = 1.0f;   ///< how fast its traps cycle
     f32 trapDamage = 1.0f; ///< scales what its traps and blasts do
+    f32 enemyHealth = 1.0f;    ///< scales what its enemies can take
+    f32 enemySpeed = 1.0f;     ///< and how fast they go
+    f32 enemySight = 1.0f;     ///< and how far they see
+    f32 enemyDamage = 1.0f;    ///< and what they deal
+    f32 generatorHealth = 1.0f; ///< scales what a generator can take
+    f32 generatorRate = 1.0f;   ///< and how quickly it breeds
+    f32 generatorMost = 1.0f;   ///< and how many it keeps out at once
+    f32 enemyMissileSpeed = 1.0f; ///< scales how fast what they throw flies
 
     /** How long a trap's times run for a game whose difficulty setting scales by `gain`:
      * the faster the rate, the shorter. */
@@ -29,6 +37,20 @@ struct LevelTuning {
     /** What experience won here by a character of `level` is multiplied by: the place's own
      * scale, less the further the character is past the level it is meant for. */
     f32 experienceScale(s32 level) const;
+    /** How far the enemies see, how fast they go, and how many a generator breeds and how
+     * quickly, all grow with the difficulty setting's `gain`; what they and the generators can
+     * take and deal does not. */
+    f32 enemySpeedScale(f32 gain) const { return enemySpeed * gain; }
+    f32 enemySightScale(f32 gain) const { return enemySight * gain; }
+    f32 generatorRateScale(f32 gain) const { return generatorRate * gain; }
+    f32 generatorMostScale(f32 gain) const { return generatorMost * gain; }
+};
+
+/** One of the kinds a level holds: which, and of what class (1 small, 2 medium, 3 large,
+ * 4 the medium's second row, 5 a critter, 9 the boss). */
+struct LevelEnemy {
+    s32 kind = -1;
+    s32 subtype = 0;
 };
 
 struct LevelInfo {
@@ -38,6 +60,8 @@ struct LevelInfo {
     std::string movie;
     s32 cameraIndex = -1;
     s32 audioIndex = -1;
+    s32 maxEnemies = 25; ///< how many enemies the place keeps about at once
+    std::vector<LevelEnemy> enemies; ///< its roster, from the realm's
     f32 musicVolume = 1.0f;
     f32 soundVolume = 1.0f;
     LevelTuning tuning;

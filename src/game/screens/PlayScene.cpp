@@ -250,6 +250,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_gates.setPlayerCount(static_cast<s32>(m_actors.size()));
     m_traps.setPlayerCount(static_cast<s32>(m_actors.size()));
     m_barrels.setPlayerCount(static_cast<s32>(m_actors.size()));
+    bindEnemies(device, world, context);
     world.startTriggers(visitors());
     const std::array<SoundSet*, 2> banks{&m_ambientBank, &m_levelBank};
     m_ambience.bind(world.layout(), banks);
@@ -305,6 +306,10 @@ void PlayScene::close() {
     m_leaving = false;
     m_missiles.clear(); // before the figures whose models they fly
     m_effects.clear();  // and before the archive whose trees they play
+    m_generators.clear();
+    m_enemyMissiles.clear(); // before the archives whose trees they fly
+    m_critters.close();
+    m_enemies.close();
     for (TreeModel& bottle : m_potionModels) {
         bottle.clear();
     }
@@ -1144,6 +1149,26 @@ void PlayScene::fireStrike(usize index, s32 strikeIndex) {
 void PlayScene::updateStrikes(f32 seconds) {
     for (const StrikeHit& hit : m_strikes.update(seconds, &m_world->collision())) {
         const auto source = std::ranges::find(m_strikeSources, hit.strike, &StrikeSource::strike);
+        // The swarm and the generators in its reach take it, with the row's damage type.
+        u32 flags = 0;
+        if (source != m_strikeSources.end() && source->actor < m_actors.size()) {
+            const ClassStats* stats = m_classes.stats(m_actors[source->actor].save().character);
+            if (stats != nullptr && source->row >= 0 &&
+                static_cast<usize>(source->row) < stats->moveStrikes.size()) {
+                flags = static_cast<u32>(stats->moveStrikes[static_cast<usize>(source->row)].damageType);
+            }
+        }
+        for (const s32 enemy : m_enemies.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
+            const Vec3 direction = m_enemies.positionOf(enemy) - hit.centre;
+            strikeEnemy(enemy, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner);
+        }
+        for (const s32 generator : m_generators.within(hit.centre, hit.radius)) {
+            strikeGenerator(generator, hit.damage, hit.owner);
+        }
+        for (const s32 critter : m_critters.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
+            const Vec3 direction = m_critters.positionOf(critter) - hit.centre;
+            strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner);
+        }
         for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
             if (!m_barrels.standing(barrel)) {
                 continue;
@@ -1475,6 +1500,259 @@ void PlayScene::settleBlasts() {
         for (const usize barrel : m_barrels.within(felt.position, felt.radius)) {
             strikeBarrel(barrel, felt.damage, -1);
         }
+        for (const s32 enemy : m_enemies.within(felt.position, felt.radius)) {
+            const Vec3 away = m_enemies.positionOf(enemy) - felt.position;
+            strikeEnemy(enemy, felt.damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
+        }
+        for (const s32 generator : m_generators.within(felt.position, felt.radius)) {
+            strikeGenerator(generator, felt.damage, -1);
+        }
+        for (const s32 critter : m_critters.within(felt.position, felt.radius)) {
+            const Vec3 away = m_critters.positionOf(critter) - felt.position;
+            strikeCritter(critter, felt.damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
+        }
+    }
+}
+
+/** A hit on one of the great ones. */
+void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
+    EnemyHit hit;
+    hit.damage = power;
+    hit.flags = flags;
+    hit.direction = direction;
+    hit.player = byPlayer;
+    for (const PlayerActor& actor : m_actors) {
+        if (actor.player() == byPlayer) {
+            hit.level = experienceLevel(actor.save().experience());
+        }
+    }
+    m_critters.hurt(id, hit);
+}
+
+/** What the great ones are worth: a share to whoever hurt one, whole points as they add
+ * up, and a kill's share to everyone. */
+void PlayScene::awardCritterLosses() {
+    for (const CritterLoss& loss : m_critters.takeLosses()) {
+        // A gargoyle slain leaves the key its form is named by where it fell.
+        if (loss.killed && loss.kind == kGargoyleCritter && !loss.form.empty() && m_device != nullptr) {
+            m_world->placeItem(*m_device, "GARG" + loss.form, loss.position);
+        }
+        for (const PlayerActor& actor : m_actors) {
+            const s32 player = actor.player();
+            if (loss.player >= 0 && loss.player != player) {
+                continue;
+            }
+            if (player < 0 || static_cast<usize>(player) >= m_critterExperienceOwed.size()) {
+                continue;
+            }
+            f32& owed = m_critterExperienceOwed[static_cast<usize>(player)];
+            owed += loss.experience;
+            const auto whole = static_cast<s32>(std::floor(owed));
+            if (whole > 0) {
+                owed -= static_cast<f32>(whole);
+                awardExperience(player, whole, loss.killed);
+            }
+        }
+    }
+}
+
+/** The level's swarm and the generators that breed it, at the level's scales: what they can
+ * take and deal is the level's own, how fast they go and see and how a generator breeds grow
+ * with the difficulty setting. Placements of ordinary strength stand where the level puts
+ * them, asleep when of no strength; the archer, bomber and suicide variants wait for their
+ * missiles. */
+void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameContext& context) {
+    const LevelInfo* level = world.level();
+    const f32 gain = context.config != nullptr ? context.config->difficulty.gain() : 1.0f;
+    EnemyScales scales;
+    GeneratorScales breeding;
+    s32 most = Enemies::kMost;
+    if (level != nullptr) {
+        scales.health = level->tuning.enemyHealth;
+        scales.speed = level->tuning.enemySpeedScale(gain);
+        scales.sight = level->tuning.enemySightScale(gain);
+        scales.damage = level->tuning.enemyDamage;
+        scales.playerLevel = level->tuning.playerLevel;
+        breeding.health = level->tuning.generatorHealth;
+        breeding.rate = level->tuning.generatorRateScale(gain);
+        breeding.most = level->tuning.generatorMostScale(gain);
+        most = level->maxEnemies;
+    }
+    const auto seed = static_cast<u32>(std::hash<std::string>{}(world.ref().name));
+    m_enemies.open(device, context.unpackedRoot, &world.collision(), most, scales, seed);
+    const std::string& levelName = world.ref().name;
+    m_critters.open(device, context.unpackedRoot, &world.collision(), scales,
+                    levelName.empty() ? 'G' : levelName.front());
+    m_critterExperienceOwed.fill(0.0f);
+    const auto players = static_cast<s32>(m_actors.size());
+    const std::span<const LevelEnemy> roster =
+        level != nullptr ? std::span<const LevelEnemy>(level->enemies) : std::span<const LevelEnemy>{};
+    m_generators.bind(device, world.layout(), m_enemies, &world.collision(), breeding, players,
+                      roster);
+    const std::vector<ItemInfo>& infos = world.layout().itemInfos();
+    for (const ItemInstance& instance : world.layout().itemInstances()) {
+        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
+            continue;
+        }
+        const ItemInfo& info = infos[static_cast<usize>(instance.info)];
+        if (info.type != ItemInfo::kPlacedEnemy || !shownToParty(instance.minPlayers, players)) {
+            continue;
+        }
+        const auto named = enemyKindOf(info.name);
+        const s32 strength = Generators::paramOf(instance, 0);
+        if (!named.has_value()) {
+            continue;
+        }
+        const std::optional<s32> kind = levelKindOf(roster, *named, strength);
+        // The great ones stand where they are put, facing as placed.
+        const Mat4 stood = itemPlacement(instance.position, instance.rotation);
+        const f32 facing = std::atan2(stood[2][0], stood[2][2]);
+        if (*kind == kGolemEnemyKind) {
+            m_critters.spawn(kGolemCritter, instance.position, facing);
+            continue;
+        }
+        if (*kind == kGeneralEnemyKind) {
+            m_critters.spawn(kGeneralCritter, instance.position, facing);
+            continue;
+        }
+        if (*kind == kGargoyleEnemyKind) {
+            m_critters.spawn(kGargoyleCritter, instance.position, facing);
+            continue;
+        }
+        if (*kind >= kSwarmKindCount || !m_enemies.loadKind(*kind)) {
+            continue;
+        }
+        EnemySpawn spawn;
+        spawn.kind = *kind;
+        spawn.tier = std::max(strength, 1);
+        spawn.algorithm = Generators::paramOf(instance, 1);
+        if (const s32 interval = Generators::paramOf(instance, 3); interval > 0) {
+            spawn.idleTicks = interval;
+        }
+        spawn.position = instance.position;
+        const Mat4 placement = itemPlacement(instance.position, instance.rotation);
+        spawn.direction = Vec3{placement[2][0], 0.0f, placement[2][2]};
+        spawn.placed = true;
+        spawn.asleep = strength == 0;
+        m_enemies.spawn(spawn, {}, m_generators.obstacles());
+    }
+}
+
+/** The party as the swarm sees it: where each stands, how big, how seasoned; the fallen and
+ * those in the tower are not seen. */
+std::vector<EnemyView> PlayScene::enemyViews() const {
+    std::vector<EnemyView> views;
+    views.reserve(m_actors.size());
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        const PlayerActor& actor = m_actors[i];
+        EnemyView view;
+        view.player = actor.player();
+        view.position = actor.position();
+        view.radius = actor.radius();
+        view.height = actor.height();
+        view.level = experienceLevel(actor.save().experience());
+        view.hidden = isDown(i);
+        views.push_back(view);
+    }
+    return views;
+}
+
+/** The generators breed, the swarm goes about its business, and what it lands on the party
+ * is taken: a power blow from a tall one is a knock that makes its victim flinch. What the
+ * party has done to it is paid in experience. */
+void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
+    const std::vector<EnemyView> views = enemyViews();
+    std::vector<Obstacle> boxes = m_generators.obstacles();
+    const std::vector<Obstacle> chests = m_chests.obstacles();
+    boxes.insert(boxes.end(), chests.begin(), chests.end());
+    const std::vector<Obstacle> barred = m_gates.obstacles();
+    boxes.insert(boxes.end(), barred.begin(), barred.end());
+    const std::vector<Obstacle> casks = m_barrels.obstacles();
+    boxes.insert(boxes.end(), casks.begin(), casks.end());
+    const LevelInfo* level = m_world->level();
+    const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
+    m_generators.update(ticks, m_enemies, views, boxes);
+    m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed);
+    m_enemyMissiles.update(seconds, &m_world->collision(), views);
+    // What the throwers let fly lands on the party, or bursts where it fell; what blows
+    // itself up blasts everything about it.
+    for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
+        for (usize i = 0; i < m_actors.size(); ++i) {
+            if (hit.player >= 0 && m_actors[i].player() == hit.player && !isDown(i)) {
+                const bool guarding = m_figures[i] != nullptr && m_figures[i]->animator.guarding();
+                if ((hit.flags & EnemyMissileKind::kKnockBack) != 0 && !guarding &&
+                    m_struck[i] == PlayerDeed::None) {
+                    m_struck[i] = PlayerDeed::Flinch;
+                }
+                hurt(i, hit.damage, HurtKind::Pierce, true);
+            }
+        }
+        if (hit.burstRadius > 0.0f) {
+            blast(hit.position, hit.burstRadius, hit.damage);
+        }
+    }
+    for (const EnemyBurst& burst : m_enemies.takeBursts()) {
+        blast(burst.position, kBlastRadius, burst.damage);
+    }
+    settleBlasts();
+    m_critters.update(ticks, seconds, views);
+    for (const CritterBlow& blow : m_critters.takeBlows()) {
+        for (usize i = 0; i < m_actors.size(); ++i) {
+            if (m_actors[i].player() == blow.player && !isDown(i)) {
+                hurt(i, blow.damage, HurtKind::Blow, true);
+            }
+        }
+    }
+    awardCritterLosses();
+    for (const EnemyBlow& blow : m_enemies.takeBlows()) {
+        for (usize i = 0; i < m_actors.size(); ++i) {
+            if (m_actors[i].player() != blow.player || isDown(i)) {
+                continue;
+            }
+            const bool guarding = m_figures[i] != nullptr && m_figures[i]->animator.guarding();
+            if (blow.knocksDown && !guarding && m_struck[i] == PlayerDeed::None) {
+                m_struck[i] = PlayerDeed::Flinch;
+            }
+            hurt(i, blow.damage, HurtKind::Blow, true);
+        }
+    }
+    for (const EnemyLoss& loss : m_enemies.takeLosses()) {
+        awardExperience(loss.player, loss.experience, loss.killed);
+    }
+}
+
+/** A hit on one of the swarm, from a player or the world. */
+void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
+    EnemyHit hit;
+    hit.damage = power;
+    hit.flags = flags;
+    hit.direction = direction;
+    hit.player = byPlayer;
+    for (const PlayerActor& actor : m_actors) {
+        if (actor.player() == byPlayer) {
+            hit.level = experienceLevel(actor.save().experience());
+        }
+    }
+    m_enemies.hurt(id, hit);
+}
+
+/** A hit on a generator: as it crumbles a state its kind's hit or death effect plays over
+ * it to the realm's own sound (`S_GENDAMG`, `S_GENKILLG`), and, gone, its brood is freed of
+ * it. */
+void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
+    const auto event = m_generators.strike(id, power, byPlayer);
+    if (!event.has_value()) {
+        return;
+    }
+    if (ItemArchive* archive = m_enemies.archive(event->kind); archive != nullptr && m_device != nullptr) {
+        const std::string_view tree = event->destroyed ? "GENDIE" : "GENHIT";
+        if (archive->trees.find(tree).has_value()) {
+            m_effects.start(*m_device, *archive, tree, event->position);
+        }
+    }
+    playRealmSound(event->destroyed ? "S_GENKILL" : "S_GENDAM");
+    if (event->destroyed) {
+        m_enemies.generatorGone(id);
     }
 }
 
@@ -2290,6 +2568,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_playSeconds += seconds;
     m_help.update(ticks);
     updateFixtures(ticks, seconds);
+    updateEnemies(ticks, seconds);
     std::vector<MissileTarget> targets;
     for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
         if (m_barrels.standing(barrel)) {
@@ -2298,12 +2577,49 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                                             cask.radius, cask.height});
         }
     }
+    for (MissileTarget target : m_enemies.targets()) {
+        target.id += kEnemyTargetBase;
+        targets.push_back(target);
+    }
+    for (MissileTarget target : m_critters.targets()) {
+        target.id += kCritterTargetBase;
+        targets.push_back(target);
+    }
+    for (usize g = 0; g < m_generators.count(); ++g) {
+        if (m_generators.standing(static_cast<s32>(g))) {
+            const Obstacle& box = m_generators.boxOf(static_cast<s32>(g));
+            targets.push_back(MissileTarget{static_cast<s32>(g) + kGeneratorTargetBase,
+                                            m_generators.positionOf(static_cast<s32>(g)),
+                                            std::max(box.halfAcross, box.halfAlong), box.height});
+        }
+    }
     m_missiles.update(seconds, &m_world->collision(), targets);
     for (const MissileImpact& impact : m_missiles.takeImpacts()) {
         if (impact.potion != 0) {
             burstPotion(impact.potion, impact.position, impact.potency); // weapons leave no mark yet
         }
-        if (impact.target >= 0) {
+        if (impact.target >= kCritterTargetBase) {
+            Vec3 direction{0.0f, 0.0f, 1.0f};
+            for (const PlayerActor& actor : m_actors) {
+                if (actor.player() == impact.owner) {
+                    direction = impact.position - actor.position();
+                    direction.y = 0.0f;
+                }
+            }
+            strikeCritter(impact.target - kCritterTargetBase, impact.damage, 0, direction, impact.owner);
+        } else if (impact.target >= kGeneratorTargetBase) {
+            strikeGenerator(impact.target - kGeneratorTargetBase, impact.damage, impact.owner);
+        } else if (impact.target >= kEnemyTargetBase) {
+            // The hit travels the way the weapon flew: out from whoever threw it.
+            Vec3 direction{0.0f, 0.0f, 1.0f};
+            for (const PlayerActor& actor : m_actors) {
+                if (actor.player() == impact.owner) {
+                    direction = impact.position - actor.position();
+                    direction.y = 0.0f;
+                }
+            }
+            strikeEnemy(impact.target - kEnemyTargetBase, impact.damage, 0, direction, impact.owner);
+        } else if (impact.target >= 0) {
             strikeBarrel(static_cast<usize>(impact.target), impact.damage, impact.owner);
             settleBlasts();
         }
@@ -2430,6 +2746,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_gates.draw(device, clip, m_world->lighting());
     m_traps.draw(device, clip, m_world->lighting());
     m_barrels.draw(device, clip, m_world->lighting());
+    m_generators.draw(device, clip, m_world->lighting());
+    m_enemies.draw(device, clip, m_world->lighting());
+    m_critters.draw(device, clip, m_world->lighting());
+    m_enemyMissiles.draw(device, clip, m_world->lighting());
     m_missiles.draw(device, clip, m_world->lighting());
     m_effects.draw(device, clip, m_world->fullLighting());
     drawSpawn(device, clip);

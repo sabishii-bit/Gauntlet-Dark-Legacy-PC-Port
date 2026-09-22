@@ -69,7 +69,8 @@ Windows) the dependency DLLs under `bin/`.
 `gdlunpack` converts the console files under `assets/GUNE5D` into PNG, OBJ,
 WAV and JSON under `assets/unpacked` (about 200 MB; the level folders add
 about 20 MB each and come with `--levels`). `python scripts/build.py --unpack`
-runs it for you; `gdlunpack <assets> <out> --only <folder>` converts one
+runs it for you (the level folders and `MONSTERS` are opt-in);
+`gdlunpack <assets> <out> --only <folder>` converts one
 folder.
 
 ```

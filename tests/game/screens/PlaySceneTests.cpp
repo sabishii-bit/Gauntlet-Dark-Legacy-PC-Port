@@ -22,6 +22,7 @@
 #include "game/players/Progression.h"
 #include "game/menu/ScrollBox.h"
 #include "game/screens/GameContext.h"
+#include "game/enemies/Enemies.h"
 #include "game/screens/PlayScene.h"
 #include "game/world/LevelWorld.h"
 
@@ -1384,6 +1385,93 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
     scene.blast(scene.actor(0)->position() - ahead * 3.0f, 8.0f, 30.0f);
     scene.update(1.0 / 60.0, still);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::FallForward);
+    scene.close();
+}
+
+TEST_CASE("the fields' zombies are bred from their generators, chase the party, strike it and are shot down",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().health = 400;
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    // Open ground west of a grunt generator of strength two that faces away, east.
+    options.position = Vec3{100.0f, 10.2f, -72.5f};
+    options.yaw = kPi / 2.0f;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    // The fields' generators stand for a party of one, at the level's scales, breeding the
+    // fields' own kind: zombies, for the grunts the records name.
+    REQUIRE(scene.generators().count() == 47);
+    REQUIRE(scene.enemies().kindLoaded(13));
+    REQUIRE_FALSE(scene.enemies().kindLoaded(kGruntKind));
+    s32 nearest = -1;
+    for (usize g = 0; g < scene.generators().count(); ++g) {
+        const auto id = static_cast<s32>(g);
+        if (glm::distance(scene.generators().positionOf(id), Vec3{111.25f, 10.13f, -72.5f}) < 1.0f) {
+            nearest = id;
+        }
+    }
+    REQUIRE(nearest >= 0);
+    REQUIRE(scene.generators().tierOf(nearest) == 2);
+    REQUIRE(scene.generators().mostOf(nearest) == 3); // five, at the level's three quarters
+    REQUIRE(scene.generators().healthOf(nearest) == Approx(15.0f));
+    // Grunts are bred for the party near them, come round to it and strike it.
+    const s32 health = scene.actor(0)->save().health();
+    usize most = 0;
+    int bitten = -1;
+    for (int i = 0; i < 900; ++i) {
+        scene.update(1.0 / 60.0, still);
+        most = std::max(most, scene.enemies().count());
+        if (bitten < 0 && scene.actor(0)->save().health() < health) {
+            bitten = i;
+        }
+    }
+    REQUIRE(scene.generators().bredOf(nearest) >= 1);
+    REQUIRE(most >= 3);
+    REQUIRE(most <= 13);
+    REQUIRE(bitten > 0);
+    REQUIRE(scene.actor(0)->save().health() < health);
+    // Weapons thrown into them hurt and kill them, worth experience to the thrower; what
+    // one takes it takes from what it deals.
+    PlayScene::Inputs throwing{};
+    throwing[0].attack = true;
+    const s32 experience = scene.actor(0)->save().experience();
+    usize fewest = most;
+    for (int i = 0; i < 900; ++i) {
+        scene.update(1.0 / 60.0, throwing);
+        fewest = std::min(fewest, scene.enemies().count());
+    }
+    REQUIRE(scene.actor(0)->save().experience() > experience);
+    REQUIRE(fewest < most);
+    // A generator is struck through its brood: shot enough it crumbles, then is gone.
+    const usize before = scene.effects().count();
+    scene.generators().strike(nearest, 40.0f, 0);
+    REQUIRE(scene.generators().stateOf(nearest) < 3);
+    for (int i = 0; i < 3000 && scene.generators().standing(nearest); ++i) {
+        scene.update(1.0 / 60.0, throwing);
+    }
+    REQUIRE_FALSE(scene.generators().standing(nearest));
+    (void)before;
     scene.close();
 }
 

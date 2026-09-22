@@ -1,5 +1,7 @@
 #include "engine/assets/WorldData.h"
 
+#include <span>
+
 #include <exception>
 
 #include <nlohmann/json.hpp>
@@ -18,7 +20,7 @@ Vec3 readVec3(const nlohmann::json& array, const Vec3& fallback) {
     return Vec3{array.at(0).get<f32>(), array.at(1).get<f32>(), array.at(2).get<f32>()};
 }
 
-LevelInfo parseLevel(const nlohmann::json& json) {
+LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> roster) {
     LevelInfo level;
     level.name = json.value("name", std::string{});
     level.title = json.value("title", std::string{});
@@ -26,6 +28,12 @@ LevelInfo parseLevel(const nlohmann::json& json) {
     level.movie = json.value("movie", std::string{});
     level.cameraIndex = json.value("cameraIndex", -1);
     level.audioIndex = json.value("audioIndex", -1);
+    level.maxEnemies = json.value("maxEnemies", 25);
+    for (const auto row : json.value("enemyTypes", std::vector<s32>{})) {
+        if (row >= 0 && static_cast<usize>(row) < roster.size()) {
+            level.enemies.push_back(roster[static_cast<usize>(row)]);
+        }
+    }
     level.musicVolume = json.value("musicVolume", 1.0f);
     level.soundVolume = json.value("soundVolume", 1.0f);
     if (const auto tuning = json.find("tuning"); tuning != json.end() && tuning->is_object()) {
@@ -43,6 +51,15 @@ LevelInfo parseLevel(const nlohmann::json& json) {
         level.tuning.experience = experience != 0.0f ? experience : 1.0f;
         level.tuning.trapRate = scaled("trapRate");
         level.tuning.trapDamage = scaled("trapDamage");
+        level.tuning.enemyHealth = scaled("enemyHealth");
+        level.tuning.enemySpeed = scaled("enemySpeed");
+        level.tuning.enemySight = scaled("enemySight");
+        level.tuning.enemyDamage = scaled("enemyDamage");
+        level.tuning.generatorHealth = scaled("generatorHealth");
+        level.tuning.generatorRate = scaled("generatorRate");
+        level.tuning.generatorMost = scaled("generatorMost");
+        const f32 missileSpeed = tuning->value("enemyMissileSpeed", 0.0f);
+        level.tuning.enemyMissileSpeed = missileSpeed != 0.0f ? missileSpeed : 1.0f;
     }
     level.ambient = json.value("ambient", 1.0f);
     level.lightDirection = readVec3(json.value("lightDirection", nlohmann::json{}),
@@ -89,8 +106,12 @@ bool WorldData::load(const std::filesystem::path& file) {
         const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
         m_realm = root.value("realm", 0U);
         m_prefix = root.value("prefix", std::string{});
+        std::vector<LevelEnemy> roster;
+        for (const nlohmann::json& enemy : root.value("enemies", nlohmann::json::array())) {
+            roster.push_back(LevelEnemy{enemy.value("kind", -1), enemy.value("subtype", 0)});
+        }
         for (const nlohmann::json& level : root.at("levels")) {
-            m_levels.push_back(parseLevel(level));
+            m_levels.push_back(parseLevel(level, roster));
         }
         for (const nlohmann::json& camera : root.value("cameras", nlohmann::json::array())) {
             m_cameras.push_back(parseCamera(camera));

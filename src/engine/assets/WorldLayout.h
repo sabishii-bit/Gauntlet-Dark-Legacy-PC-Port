@@ -80,6 +80,7 @@ struct ItemInfo {
     static constexpr s32 kPowerup = 1;   ///< something to pick up
     static constexpr s32 kContainer = 2; ///< a chest or barrel
     static constexpr s32 kGenerator = 3;
+    static constexpr s32 kPlacedEnemy = 4; ///< one enemy where the level puts it
     static constexpr s32 kTrigger = 5;   ///< a spot that drives a world object
     static constexpr s32 kGate = 7;      ///< a door a key opens
     static constexpr s32 kTrap = 8;
