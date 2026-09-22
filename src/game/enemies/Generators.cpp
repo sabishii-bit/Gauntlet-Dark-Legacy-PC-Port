@@ -62,25 +62,22 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind) {
     // original does. Whole is three; nought is the ruin.
     for (s32 state = 0; state <= kStates; ++state) {
         const std::string base = std::format("GEN_{}{}", info.prefix, state);
-        std::optional<u32> object;
         for (const char* suffix : {"L1", "", "ROOT"}) {
-            object = archive->models.find(base + suffix);
-            if (object.has_value()) {
-                break;
+            const auto object = archive->models.find(base + suffix);
+            if (!object.has_value()) {
+                continue;
             }
+            const u32 objectIndex = *object;
+            TreeInfo& tree = bodies->trees[static_cast<usize>(state)];
+            tree.name = base;
+            TreeNodeInfo node;
+            node.name = base;
+            node.object = archive->models.entry(objectIndex).name;
+            tree.nodes.push_back(node);
+            bodies->models[static_cast<usize>(state)].bind(tree, archive->models, archive->textures,
+                                                           device);
+            break;
         }
-        if (!object.has_value()) {
-            continue;
-        }
-        const u32 objectIndex = *object;
-        TreeInfo& tree = bodies->trees[static_cast<usize>(state)];
-        tree.name = base;
-        TreeNodeInfo node;
-        node.name = base;
-        node.object = archive->models.entry(objectIndex).name;
-        tree.nodes.push_back(node);
-        bodies->models[static_cast<usize>(state)].bind(tree, archive->models, archive->textures,
-                                                       device);
     }
     m_bodies.push_back(std::move(bodies));
     return true;
