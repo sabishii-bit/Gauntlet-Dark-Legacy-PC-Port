@@ -41,6 +41,28 @@ struct CritterDamage {
     f32 minDot = 0.0f;
     Vec3 offset{0.0f, 0.0f, 0.0f};
     f32 damage = 0.0f;
+    s32 sound = -1; ///< the sound record started where it strikes, or -1
+};
+
+/** An effect and a sound a critter's move, strike or hurt starts: the tree of its own
+ * archive, the sound named with the level's letter, and how it is placed. */
+struct CritterSound {
+    static constexpr u32 kFollows = 0x801;    ///< rides on the body rather than staying put
+    static constexpr u32 kShakes = 0x2;       ///< shakes the camera
+    static constexpr u32 kDeathMark = 0x40000; ///< the one that marks the death
+
+    std::string tree;         ///< "ATK01FX"; "NULLFX" or empty shows nothing
+    std::string soundFormat;  ///< "S_GOL%cSWING"
+    u32 flags = 0;
+    s32 link = -1;            ///< another started with it
+    Vec3 offset{0.0f, 0.0f, 0.0f};
+    f32 life = 0.0f;
+    f32 scale = 1.0f;
+
+    bool shows() const { return !tree.empty() && tree != "NULLFX"; }
+    bool follows() const { return (flags & kFollows) != 0; }
+    /** The sound's name for a level whose name starts with `letter`. */
+    std::string soundFor(char letter) const;
 };
 
 /** One thing a critter does, and when it does it. */
@@ -73,6 +95,10 @@ struct CritterMove {
     s32 damage1 = -1;
     s32 link = -1;
     s32 interrupt = 0;
+    s32 sound = -1;       ///< the sound record started as the move passes `soundFrame`
+    s32 soundFrame = 0;
+    s32 sound2 = -1;      ///< and a second, at `sound2Frame`
+    s32 sound2Frame = 0;
     CritterTarget target;
     f32 cooldown = 0.0f;
     f32 speed = 0.0f;    ///< units a second while it plays
@@ -132,7 +158,12 @@ public:
     std::span<const CritterMove> moves() const { return m_moves; }
     std::span<const CritterDamage> damages() const { return m_damages; }
     std::span<const CritterPart> parts() const { return m_parts; }
+    std::span<const CritterSound> sounds() const { return m_sounds; }
     const CritterDamage* damage(s32 index) const;
+    const CritterSound* sound(s32 index) const;
+    /** The sound records started where it is struck: by a missile, by a blow. */
+    s32 hitSoundFar() const { return m_hitSoundFar; }
+    s32 hitSoundClose() const { return m_hitSoundClose; }
     /** The first move of a type, if any. */
     std::optional<usize> moveOfType(s32 type) const;
     std::optional<usize> moveNamed(std::string_view name) const;
@@ -156,6 +187,9 @@ private:
     std::vector<CritterMove> m_moves;
     std::vector<CritterDamage> m_damages;
     std::vector<CritterPart> m_parts;
+    std::vector<CritterSound> m_sounds;
+    s32 m_hitSoundFar = -1;
+    s32 m_hitSoundClose = -1;
 };
 
 } // namespace gdl::game

@@ -1671,12 +1671,17 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     // quarter of the lich, which the meter follows down.
     const f32 whole = scene.bossView()->maxHealth;
     int waited = 0;
+    bool entrance = false; // rising, it plays its entrance's effect from its own archive
     while (!scene.bosses().legend().thrown() && waited < 3000) {
         scene.update(1.0 / 60.0, still);
+        for (usize e = 0; e < scene.effects().count(); ++e) {
+            entrance = entrance || scene.effects().effect(e).name == "GENFX";
+        }
         ++waited;
     }
     REQUIRE(scene.bosses().view().awake);
     REQUIRE(scene.bosses().legend().thrown());
+    REQUIRE(entrance);
     REQUIRE_FALSE(scene.actor(0)->save().progress().relics.hasLegend(7));
     REQUIRE(scene.bossView()->health == Approx(whole - (0.25f * whole - 1.0f)));
     const f32 struck = scene.bossView()->health;

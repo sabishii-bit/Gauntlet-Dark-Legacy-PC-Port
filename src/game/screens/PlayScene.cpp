@@ -328,6 +328,7 @@ void PlayScene::close() {
     m_transition.release();
     m_leaving = false;
     m_missiles.clear(); // before the figures whose models they fly
+    m_critterEffects.clear();
     m_effects.clear();  // and before the archive whose trees they play
     m_generators.clear();
     m_enemyMissiles.clear(); // before the archives whose trees they fly
@@ -1201,14 +1202,17 @@ void PlayScene::updateStrikes(f32 seconds) {
             struck.damage = hit.damage;
             struck.flags = flags;
             struck.player = hit.owner;
+            struck.close = true;
             if (const Vec3* at = m_bosses.position(); at != nullptr) {
                 struck.direction = Vec3{at->x - hit.centre.x, 0.0f, at->z - hit.centre.z};
+                struck.where = hit.centre + glm::normalize(struck.direction) * hit.radius;
             }
             m_bosses.hurt(struck);
         }
         for (const s32 critter : m_critters.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
             const Vec3 direction = m_critters.positionOf(critter) - hit.centre;
-            strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner);
+            strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner,
+                          std::nullopt, true);
         }
         for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
             if (!m_barrels.standing(barrel)) {
@@ -1612,18 +1616,63 @@ void PlayScene::updateLevels() {
 }
 
 /** A hit on one of the great ones. */
-void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
+void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+                              std::optional<Vec3> where, bool close) {
     EnemyHit hit;
     hit.damage = power;
     hit.flags = flags;
     hit.direction = direction;
     hit.player = byPlayer;
+    hit.where = where;
+    hit.close = close;
     for (const PlayerActor& actor : m_actors) {
         if (actor.player() == byPlayer) {
             hit.level = experienceLevel(actor.save().experience());
         }
     }
     m_critters.hurt(id, hit);
+}
+
+/** Plays what one of the great ones (the boss with `ofBoss`) has set off: its tree from its
+ * own archive (or the weapons', which holds the common marks of a hit) where it happened,
+ * riding along with it when it follows, and its sound. */
+void PlayScene::showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss) {
+    if (archive == nullptr || !archive->trees.find(cue.tree).has_value()) {
+        archive = m_weapons.loaded() && m_weapons.trees.find(cue.tree).has_value() ? &m_weapons : nullptr;
+    }
+    if (!cue.tree.empty() && archive != nullptr && m_device != nullptr) {
+        EffectTrees::Setting setting;
+        setting.scale = cue.scale;
+        setting.yaw = cue.yaw;
+        setting.seconds = cue.life;
+        if (const u32 effect = m_effects.startSet(*m_device, *archive, cue.tree, cue.position, setting);
+            effect != 0 && cue.follows) {
+            const Vec3* at = ofBoss ? m_bosses.position() : &m_critters.positionOf(cue.critter);
+            m_critterEffects.push_back(
+                CritterEffect{effect, cue.critter, ofBoss, at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}});
+        }
+    }
+    if (!cue.sound.empty()) {
+        playNamed(cue.sound);
+    }
+}
+
+/** Effects riding on the great ones go where they go, and are let go of when they end. */
+void PlayScene::followCritterEffects() {
+    for (usize i = 0; i < m_critterEffects.size();) {
+        const CritterEffect& riding = m_critterEffects[i];
+        const bool alive = riding.ofBoss ? m_bosses.present() : m_critters.alive(riding.critter) ||
+                                                                   m_critters.dying(riding.critter);
+        if (!m_effects.playing(riding.effect) || !alive) {
+            m_critterEffects.erase(m_critterEffects.begin() + static_cast<std::ptrdiff_t>(i));
+            continue;
+        }
+        const Vec3* at = riding.ofBoss ? m_bosses.position() : &m_critters.positionOf(riding.critter);
+        if (at != nullptr) {
+            m_effects.moveTo(riding.effect, *at + riding.offset);
+        }
+        ++i;
+    }
 }
 
 /** The boss's worth goes the great ones' way: shares to the hitter, a kill's to everyone. */
@@ -1859,6 +1908,14 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
         }
     }
     awardBossLosses();
+    // The great ones' effects and sounds: a move's, a strike's, a hit's.
+    for (const CritterCue& cue : m_bosses.takeCues()) {
+        showCritterCue(cue, m_bosses.archive(), true);
+    }
+    for (const CritterCue& cue : m_critters.takeCues()) {
+        showCritterCue(cue, m_critters.archiveOf(cue.critter), false);
+    }
+    followCritterEffects();
     for (const CritterBlow& blow : m_critters.takeBlows()) {
         for (usize i = 0; i < m_actors.size(); ++i) {
             if (m_actors[i].player() == blow.player && !isDown(i)) {
@@ -2878,6 +2935,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             EnemyHit hit;
             hit.damage = impact.damage;
             hit.player = impact.owner;
+            hit.where = impact.position;
             for (const PlayerActor& actor : m_actors) {
                 if (actor.player() == impact.owner) {
                     hit.direction = impact.position - actor.position();
@@ -2894,7 +2952,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     direction.y = 0.0f;
                 }
             }
-            strikeCritter(impact.target - kCritterTargetBase, impact.damage, 0, direction, impact.owner);
+            strikeCritter(impact.target - kCritterTargetBase, impact.damage, 0, direction, impact.owner,
+                          impact.position);
         } else if (impact.target >= kGeneratorTargetBase) {
             strikeGenerator(impact.target - kGeneratorTargetBase, impact.damage, impact.owner);
         } else if (impact.target >= kEnemyTargetBase) {

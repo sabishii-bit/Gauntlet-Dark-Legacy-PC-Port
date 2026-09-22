@@ -192,6 +192,7 @@ bool Critters::startMove(Critter& critter, usize index) {
     critter.move = static_cast<s32>(index);
     critter.moveDone = false;
     critter.struckThisMove.clear();
+    critter.soundsGiven = 0;
     critter.player.start(critter.stock->tree->sequences[*sequence], *sequence);
     critter.pose.evaluate(*critter.stock->tree, *sequence, 0.0f);
     return true;
@@ -490,11 +491,38 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
                 const s32 last = end < start ? start : end;
                 return start >= 0 && frame >= start && frame <= last;
             };
+            // The move's effects and sounds go off as it passes their frames, once each. An
+            // attack's sound comes at its frame, but its effect (a swing's glow, a stomp's
+            // ring) waits for the frame the blow lands on.
+            const auto giveOnce = [&](u32 bit, s32 sound, const Vec3& where, CueParts parts) {
+                if (sound >= 0 && (critter.soundsGiven & bit) == 0) {
+                    critter.soundsGiven |= bit;
+                    cue(critter, i, sound, where, parts);
+                }
+            };
+            const bool lands = move->attack() && move->frameStart > move->soundFrame;
+            if (frame >= move->soundFrame) {
+                giveOnce(1U, move->sound, critter.position, lands ? CueParts::Sound : CueParts::Both);
+            }
+            if (lands && frame >= move->frameStart) {
+                giveOnce(16U, move->sound, critter.position, CueParts::Effect);
+            }
+            if (frame >= move->sound2Frame) {
+                giveOnce(2U, move->sound2, critter.position, CueParts::Both);
+            }
             if (critter.state == State::Active) {
                 if (active(move->frameStart, move->frameEnd) && move->damage0 >= 0) {
+                    if (const CritterDamage* harm = data.damage(move->damage0); harm != nullptr) {
+                        giveOnce(4U, harm->sound, partPosition(critter, move->colnode) + harm->offset,
+                                 CueParts::Both);
+                    }
                     strikeWith(critter, i, *move, move->damage0, players);
                 }
                 if (active(move->frameStart2, move->frameEnd2) && move->damage1 >= 0) {
+                    if (const CritterDamage* harm = data.damage(move->damage1); harm != nullptr) {
+                        giveOnce(8U, harm->sound, partPosition(critter, move->colnode) + harm->offset,
+                                 CueParts::Both);
+                    }
                     strikeWith(critter, i, *move, move->damage1, players);
                 }
             }
@@ -545,6 +573,9 @@ void Critters::hurt(s32 id, const EnemyHit& hit) {
     if (const f32 length = glm::length(hit.direction); length > 0.001f) {
         critter.hurtDirection = hit.direction / length;
     }
+    // Where it was struck, its own mark of a hit: a blow's or a missile's.
+    const s32 mark = hit.close && data.hitSoundClose() >= 0 ? data.hitSoundClose() : data.hitSoundFar();
+    cue(critter, id, mark, hit.where.value_or(critter.position + data.originOffset()));
     // Every hit is worth its share of the creature's value to the one who dealt it, less a
     // fiftieth a level under the level the place is meant for.
     if (hit.player >= 0) {
@@ -573,6 +604,46 @@ void Critters::hurt(s32 id, const EnemyHit& hit) {
         fall.position = critter.position;
         m_losses.push_back(fall);
     }
+}
+
+/** A sound record and what it links to become cues: the tree at `position` (offset the
+ * record's way, turned with the body), riding the body when the record says so, and the
+ * sound named for the level. */
+void Critters::cue(const Critter& critter, s32 id, s32 index, const Vec3& position,
+                   CueParts parts) {
+    const CritterData& data = critter.stock->data;
+    for (s32 at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
+        const CritterSound* record = data.sound(at);
+        if (record == nullptr) {
+            break;
+        }
+        CritterCue out;
+        out.critter = id;
+        if (parts != CueParts::Sound) {
+            out.tree = record->shows() ? record->tree : std::string{};
+        }
+        if (parts != CueParts::Effect) {
+            out.sound = record->soundFor(m_realm);
+        }
+        const f32 sy = std::sin(critter.yaw);
+        const f32 cy = std::cos(critter.yaw);
+        const Vec3 turned{record->offset.x * cy + record->offset.z * sy, record->offset.y,
+                          record->offset.z * cy - record->offset.x * sy};
+        out.position = position + turned;
+        out.yaw = critter.yaw;
+        out.scale = record->scale * critter.scale;
+        out.life = record->life;
+        out.follows = record->follows();
+        out.shakes = (record->flags & CritterSound::kShakes) != 0;
+        if (!out.tree.empty() || !out.sound.empty()) {
+            m_cues.push_back(std::move(out));
+        }
+        at = record->link;
+    }
+}
+
+std::vector<CritterCue> Critters::takeCues() {
+    return std::exchange(m_cues, {});
 }
 
 std::vector<CritterBlow> Critters::takeBlows() {

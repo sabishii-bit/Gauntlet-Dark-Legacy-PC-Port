@@ -71,8 +71,17 @@ CritterFile parseCritterWad(std::span<const u8> bytes) {
     CritterFile file;
     file.sounds = readRecords<CritterSoundRecord>(bytes, sections, "SFXX", kSoundSize, [&](usize at) {
         CritterSoundRecord sound;
+        sound.flags = readWadU32(bytes, at, kWhat);
+        sound.link = readS32(bytes, at + 0x04);
         sound.name = readWadText(bytes, at + 0x10, kNameWidth, kWhat);
         sound.levelFormat = readWadText(bytes, at + 0x20, kNameWidth, kWhat);
+        sound.offset = readVec(bytes, at + 0x30);
+        sound.life = readWadF32(bytes, at + 0x3C, kWhat);
+        sound.rate = readWadF32(bytes, at + 0x40, kWhat);
+        sound.custom0 = readS16(bytes, at + 0x44);
+        sound.custom1 = readS16(bytes, at + 0x46);
+        sound.tint = readWadU32(bytes, at + 0x48, kWhat);
+        sound.scale = readWadF32(bytes, at + 0x4C, kWhat);
         return sound;
     });
     file.damages = readRecords<CritterDamageRecord>(bytes, sections, "DAMG", kDamageSize, [&](usize at) {
@@ -164,6 +173,8 @@ CritterFile parseCritterWad(std::span<const u8> bytes) {
         type.expValue = readWadF32(bytes, at + 0xE8, kWhat);
         type.wakeThreshold = readWadF32(bytes, at + 0xEC, kWhat);
         type.healthBarOffset = readVec(bytes, at + 0xD0);
+        type.hitSoundClose = readS16(bytes, at + 0xF4);
+        type.hitSoundFar = readS16(bytes, at + 0xF6);
         type.meterPieces = readS16(bytes, at + 0xF8);
         type.meterAdvance = readS16(bytes, at + 0xFA);
         type.meterLeftInset = readS16(bytes, at + 0xFC);

@@ -39,6 +39,20 @@ struct CritterBlow {
     Vec3 direction{0.0f, 0.0f, 1.0f};
 };
 
+/** An effect and a sound a critter has set off: a move's, a strike's or a hit's, where it
+ * happened; `follows` for one that rides on the body. */
+struct CritterCue {
+    s32 critter = -1;
+    std::string tree;    ///< of the critter's own archive; empty for a sound alone
+    std::string sound;   ///< empty for an effect alone
+    Vec3 position{0.0f, 0.0f, 0.0f};
+    f32 yaw = 0.0f;
+    f32 scale = 1.0f;
+    f32 life = 0.0f;     ///< seconds, when it does not play out
+    bool follows = false;
+    bool shakes = false;
+};
+
 /** Experience a critter is worth: a share of its value for each hit, to the hitter, and
  * a fifth of it to everyone (`player` -1) when it falls. */
 struct CritterLoss {
@@ -89,6 +103,8 @@ public:
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
     std::vector<CritterBlow> takeBlows();
     std::vector<CritterLoss> takeLosses();
+    /** The effects and sounds set off since the last call. */
+    std::vector<CritterCue> takeCues();
 
     void hurt(s32 id, const EnemyHit& hit);
     /** Stops it where it stands, its animation with it, for `ticks`. */
@@ -172,6 +188,7 @@ private:
         f32 curbSeconds = 0.0f;        ///< over nought, its curbed attacks are refused
         bool held = false;             ///< keeps to its stance between moves
         bool roarWanted = false;       ///< roars as soon as it may
+        u32 soundsGiven = 0;           ///< bits: the move's sound, its second, each strike's
         AnimationPlayer player;
         TreePose pose;
     };
@@ -183,6 +200,14 @@ private:
     static std::optional<usize> bestMove(const Critter& critter, std::span<const EnemyView> players);
     /** Whether a legend item's curb keeps the move from it. */
     static bool curbedMove(const Critter& critter, const CritterMove& move);
+    /** What of a sound record is set off. */
+    enum class CueParts : u8 { Both, Sound, Effect };
+    /** Sets off sound record `index` (and what it links to) at `position`. */
+    void cue(const Critter& critter, s32 id, s32 index, const Vec3& position,
+             CueParts parts = CueParts::Both);
+
+    std::vector<CritterCue> m_cues;
+    char m_levelLetter = 'G';
     void strikeWith(Critter& critter, s32 id, const CritterMove& move, s32 damageIndex,
                     std::span<const EnemyView> players);
     static Vec3 partPosition(const Critter& critter, std::string_view node);

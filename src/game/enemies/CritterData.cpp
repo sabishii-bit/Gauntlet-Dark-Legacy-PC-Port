@@ -113,6 +113,10 @@ bool CritterData::load(const std::filesystem::path& file) {
             move.damage1 = m.value("damage1", -1);
             move.link = m.value("link", -1);
             move.interrupt = m.value("interrupt", 0);
+            move.sound = m.value("sfx", -1);
+            move.soundFrame = m.value("sfxFrame", 0);
+            move.sound2 = m.value("sfx2", -1);
+            move.sound2Frame = m.value("sfx2Frame", 0);
             move.target = targetOf(m);
             move.cooldown = m.value("cooldown", 0.0f);
             move.speed = m.value("speed", 0.0f);
@@ -133,8 +137,25 @@ bool CritterData::load(const std::filesystem::path& file) {
             damage.minDot = d.value("minDot", 0.0f);
             damage.offset = vecOf(d, "offset");
             damage.damage = d.value("damage", 0.0f);
+            damage.sound = d.value("sfxIndex", -1);
             m_damages.push_back(damage);
         }
+        for (const Json& s : root.value("sounds", Json::array())) {
+            CritterSound sound;
+            sound.tree = s.value("name", "");
+            sound.soundFormat = s.value("levelFormat", "");
+            sound.flags = s.value("flags", 0U);
+            sound.link = s.value("link", -1);
+            sound.offset = vecOf(s, "offset");
+            sound.life = s.value("life", 0.0f);
+            sound.scale = s.value("scale", 1.0f);
+            if (sound.scale <= 0.0f) {
+                sound.scale = 1.0f;
+            }
+            m_sounds.push_back(sound);
+        }
+        m_hitSoundFar = type.value("hitSoundFar", -1);
+        m_hitSoundClose = type.value("hitSoundClose", -1);
         const s32 colBase = type.value("colBase", 0);
         const s32 colCount = type.value("colCount", 0);
         const auto nodes = root.value("nodes", Json::array());
@@ -156,6 +177,20 @@ bool CritterData::load(const std::filesystem::path& file) {
         log::warn("critter data {}: {}", file.string(), e.what());
         return false;
     }
+}
+
+std::string CritterSound::soundFor(char letter) const {
+    std::string name = soundFormat;
+    if (const auto at = name.find("%c"); at != std::string::npos) {
+        name.replace(at, 2, 1, letter);
+    }
+    return name;
+}
+
+const CritterSound* CritterData::sound(s32 index) const {
+    return index >= 0 && static_cast<usize>(index) < m_sounds.size()
+               ? &m_sounds[static_cast<usize>(index)]
+               : nullptr;
 }
 
 const CritterDamage* CritterData::damage(s32 index) const {

@@ -98,6 +98,25 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE_FALSE(blows.empty());
     REQUIRE(blows[0].player == 0);
     REQUIRE(bosses.position()->z > 5.0f);
+    // Its entrance played its own effect with its sound; an attack's sound came at the
+    // attack's start but its glow only as the blow landed, riding along with it.
+    const std::vector<CritterCue> cues = bosses.takeCues();
+    bool entrance = false;
+    bool swingSound = false;
+    bool swingGlow = false;
+    for (const CritterCue& cue : cues) {
+        entrance = entrance || (cue.tree == "GENFX" && cue.sound == "S_LICHENT");
+        if (cue.tree.empty() && cue.sound.starts_with("S_LICHATK")) {
+            swingSound = true;
+        }
+        if (cue.tree.starts_with("ATK") && cue.sound.empty()) {
+            swingGlow = true;
+            REQUIRE(cue.follows);
+        }
+    }
+    REQUIRE(entrance);
+    REQUIRE(swingSound);
+    REQUIRE(swingGlow);
     // Struck, the meter falls; the blow pays its share; killed, a fifth of its value goes to
     // everyone, and once its death has played it is gone.
     EnemyHit hit;

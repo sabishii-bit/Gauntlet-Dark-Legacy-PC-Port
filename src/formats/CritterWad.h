@@ -81,9 +81,20 @@ struct CritterNodeRecord {
     f32 healthScale = 1.0f;
 };
 
+/** An effect a move, a strike or a hit starts: the tree of the creature's archive it plays,
+ * the sound with it (its `%c` the level's letter), and how it is placed. */
 struct CritterSoundRecord {
+    u32 flags = 0;
+    s32 link = -1;        ///< another record started with it
     std::string name;
     std::string levelFormat;
+    std::array<f32, 3> offset{}; ///< from the body (or the part struck with)
+    f32 life = 0.0f;      ///< seconds it lasts, when it does not play out
+    f32 rate = 0.0f;
+    s16 custom0 = 0;
+    s16 custom1 = 0;
+    u32 tint = 0xFFFFFFFFU; ///< none when all ones
+    f32 scale = 1.0f;
 };
 
 /** The critter itself: its size, pace, strength and worth, and which records are its. */
@@ -109,6 +120,8 @@ struct CritterTypeRecord {
     f32 expValue = 0.0f;
     f32 wakeThreshold = 0.0f;
     std::array<f32, 3> healthBarOffset{}; ///< where its in-world bar hangs
+    s16 hitSoundClose = -1;   ///< the sound record started where a blow strikes it (0xF4)
+    s16 hitSoundFar = -1;     ///< and where a missile does (0xF6)
     s16 meterPieces = 0;      ///< the HUD meter's: how many strips of 256
     s16 meterAdvance = 0;     ///< how far the next boss's meter is put along
     s16 meterLeftInset = 0;   ///< the first strip's cap, where the fill starts
