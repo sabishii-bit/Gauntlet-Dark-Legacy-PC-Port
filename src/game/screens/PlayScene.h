@@ -47,6 +47,7 @@
 #include "engine/world/TreePose.h"
 
 #include "game/players/PowerupEffects.h"
+#include "game/enemies/Bosses.h"
 #include "game/enemies/Critters.h"
 #include "game/players/LevelWatch.h"
 #include "game/enemies/Enemies.h"
@@ -211,6 +212,12 @@ public:
     const Critters& critters() const { return m_critters; }
     Critters& critters() { return m_critters; }
     const EnemyMissiles& enemyMissiles() const { return m_enemyMissiles; }
+    const Bosses& bosses() const { return m_bosses; }
+    Bosses& bosses() { return m_bosses; }
+    /** The boss's meter, when the level has one: its name and health for the HUD. */
+    std::optional<BossView> bossView() const {
+        return m_bosses.present() ? std::optional<BossView>(m_bosses.view()) : std::nullopt;
+    }
     /** The archive folder a character's figure was loaded from, for tests. */
     std::optional<std::filesystem::path> figureDirectory(usize index) const {
         return index < m_figures.size() && m_figures[index] != nullptr
@@ -332,6 +339,8 @@ private:
     static constexpr s32 kEnemyTargetBase = 1000;
     static constexpr s32 kGeneratorTargetBase = 2000;
     static constexpr s32 kCritterTargetBase = 3000;
+    static constexpr s32 kBossTargetBase = 4000;
+    void awardBossLosses();
     void settleBlasts();
     void updateClouds(f32 seconds);
     bool postHelp(s32 id, usize index, s32 number = -1);
@@ -495,6 +504,7 @@ private:
     Enemies m_enemies;
     Generators m_generators;
     Critters m_critters;
+    Bosses m_bosses;
     EnemyMissiles m_enemyMissiles;
     LevelWatch m_levels;
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid

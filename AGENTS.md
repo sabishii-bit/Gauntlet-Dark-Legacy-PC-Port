@@ -548,17 +548,25 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (KB otherwise) and throws it (twenty, a golem five less); dead it plays
   DEATH, fades a second and is gone, a fifth of its value going to everyone.
   A gargoyle slain leaves the key its form is named by (`GARGEAGL`) where
-  it fell. The bosses are critters of type 4 (`kBossCritter`, by name:
-  `bossNameOf(bossType)`, the dragon 34 to the garm 44; archive
-  `MONSTERS/<NAME>`, tree prefix plus suffix, `LICH`): the level's
-  `bossType` stands one at its `boss` mark, and it fights by the same
-  table: the step family (types 48 to 63: turns, walks, back-steps) is
-  chosen like the walk, and a named attack of speed (the lich's `CHARGE`)
-  carries it. Not yet: the bosses' patterns (PTRN), phases, wake threshold,
-  health meter and cameras, their children (the chimera's heads) and
-  projectile moves, the general's waypoint patrol, the gargoyle's fireball,
-  per-part damage and breaking, the critters' sounds, and the statue's
-  waking.
+  it fell. The bosses (`game/enemies/Bosses`) are their own thing, though
+  the original keeps them in the critter pool as type 4: one to a level,
+  named by kind (`bossNameOf(bossType)`, the dragon 34 to the garm 44;
+  archive `MONSTERS/<NAME>`, tree prefix plus suffix, `LICH`), stood at the
+  level's `boss` mark by `bossType`, asleep until the party comes within
+  its table's `wakeThreshold` (or struck), fighting by the same move table
+  through a `Critters` fighter of its own (composition, not the shared
+  pool: the step family, types 48 to 63, is chosen like the walk, and a
+  named attack of speed, the lich's `CHARGE`, carries it), with a `BossView`
+  (name, health, `fraction()`) for the meter through `PlayScene::bossView`,
+  targets from 4000, and its worth paid the great ones' way. The level's
+  `legend` is the item a boss level wins, stamped on the save as a mask
+  (tower.c 524), not something used on the boss; its resistances are its
+  table's `shieldFlags`. Not yet: the meter's drawing (the original's
+  HUD meter when `typeFlags & 4`, the in-world bar when `0x800`), the
+  patterns (PTRN), phases, cameras, children (the chimera's heads),
+  projectile moves, the general's waypoint patrol, the gargoyle's
+  fireball, per-part damage and breaking, the critters' sounds, the
+  statue's waking, and a boss level unpacked (`--only levelG5`).
   Scenarios: `level-g1-general.json`.
 * Levels gained (`players/LevelWatch`, `PlayScene::updateLevels`). The watch
   is told each player's level every tick and reports the changes since it

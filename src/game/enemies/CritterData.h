@@ -107,6 +107,7 @@ public:
     f32 armor() const { return m_armor; }
     f32 maxHealth() const { return m_maxHealth; }
     f32 experience() const { return m_experience; }
+    f32 wakeThreshold() const { return m_wake; } ///< how near the party comes before a boss stirs
     f32 vertDrift() const { return m_vertDrift; }
     const Vec3& originOffset() const { return m_originOffset; }
     const CritterTarget& sight() const { return m_sight; }
@@ -129,6 +130,7 @@ private:
     f32 m_armor = 0.0f;
     f32 m_maxHealth = 1.0f;
     f32 m_experience = 0.0f;
+    f32 m_wake = 0.0f;
     f32 m_vertDrift = 0.0f;
     Vec3 m_originOffset{0.0f, 0.0f, 0.0f};
     CritterTarget m_sight;
