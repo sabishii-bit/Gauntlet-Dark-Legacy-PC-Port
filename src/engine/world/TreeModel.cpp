@@ -172,6 +172,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             state.alphaTest = blended ? DrawState::kTranslucentAlphaTest : 0.0f;
             state.depthWrite = node.depthWrite && !fading;
             state.uvOffset = textureOffset(shape.slots[p]);
+            state.uvScale = textureScale(shape.slots[p]);
             const Texture* texture = shape.textures[p];
             for (const auto& [slot, frame] : m_frames) {
                 if (slot == shape.slots[p]) {
@@ -190,14 +191,15 @@ void TreeModel::setTextureFrame(u32 slot, const Texture* frame) {
     }
 }
 
-void TreeModel::setTextureOffset(u32 slot, const Vec2& offset) {
-    for (auto& [at, slid] : m_offsets) {
-        if (at == slot) {
-            slid = offset;
+void TreeModel::setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale) {
+    for (Slide& slide : m_offsets) {
+        if (slide.slot == slot) {
+            slide.offset = offset;
+            slide.scale = scale;
             return;
         }
     }
-    m_offsets.emplace_back(slot, offset);
+    m_offsets.push_back(Slide{slot, offset, scale});
 }
 
 void TreeModel::resetTextures() {
@@ -206,12 +208,21 @@ void TreeModel::resetTextures() {
 }
 
 Vec2 TreeModel::textureOffset(u32 slot) const {
-    for (const auto& [at, slid] : m_offsets) {
-        if (at == slot) {
-            return slid;
+    for (const Slide& slide : m_offsets) {
+        if (slide.slot == slot) {
+            return slide.offset;
         }
     }
     return Vec2{0.0f, 0.0f};
+}
+
+Vec2 TreeModel::textureScale(u32 slot) const {
+    for (const Slide& slide : m_offsets) {
+        if (slide.slot == slot) {
+            return slide.scale;
+        }
+    }
+    return Vec2{1.0f, 1.0f};
 }
 
 } // namespace gdl

@@ -131,7 +131,7 @@ void EffectTrees::update(f32 seconds) {
                 if (moved.frame != nullptr) {
                     effect->model.setTextureFrame(moved.slot, moved.frame);
                 } else {
-                    effect->model.setTextureOffset(moved.slot, moved.offset);
+                    effect->model.setTextureOffset(moved.slot, moved.offset, moved.scale);
                 }
             };
             // The archive's own animations run on the clock; the tree's texture nodes and

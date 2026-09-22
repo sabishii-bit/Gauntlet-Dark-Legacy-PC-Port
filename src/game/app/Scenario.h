@@ -26,6 +26,7 @@ struct ScenarioMember {
     f32 turbo = 0.0f; ///< what its turbo meter starts with
     std::vector<s32> potions; ///< the kind of each carried
     std::vector<PowerupSlot> powerups; ///< carried and worn
+    std::vector<s32> legends; ///< the legend items carried, by the realm of their boss
 };
 
 /**

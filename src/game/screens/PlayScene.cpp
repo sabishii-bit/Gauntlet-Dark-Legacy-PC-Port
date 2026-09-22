@@ -2138,6 +2138,8 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
             for (const PlayerActor& actor : m_actors) {
                 if (actor.save().progress().relics.hasLegend(m_bosses.legendRealm()) &&
                     m_bosses.bringLegend(actor.player())) {
+                    log::info("Level {}: player {} brings the {} its legend item", levelName,
+                              actor.player() + 1, bossNameOf(level->bossType));
                     break;
                 }
             }

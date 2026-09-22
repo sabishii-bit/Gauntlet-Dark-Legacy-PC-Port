@@ -262,21 +262,29 @@ TEST_CASE("a tree model shows texture frames and slides coordinates it is given"
     TreeModel figure;
     REQUIRE(figure.bind(trees.tree(0), models, textures, device));
     const test::FakeTexture frame{2, 2};
-    figure.setTextureOffset(0, Vec2{0.25f, 0.0f});
+    figure.setTextureOffset(0, Vec2{0.25f, 0.0f}, Vec2{2.0f, 1.0f});
     figure.setTextureFrame(1, &frame);
     REQUIRE(figure.textureOffset(0) == Vec2{0.25f, 0.0f});
+    REQUIRE(figure.textureScale(0) == Vec2{2.0f, 1.0f});
     REQUIRE(figure.textureOffset(7) == Vec2{0.0f, 0.0f});
+    REQUIRE(figure.textureScale(7) == Vec2{1.0f, 1.0f});
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
     REQUIRE(device.draws.size() == 2);
     REQUIRE(device.draws[0].state.uvOffset == Vec2{0.25f, 0.0f}); // the body, texture 0
+    REQUIRE(device.draws[0].state.uvScale == Vec2{2.0f, 1.0f});
     REQUIRE(device.draws[1].texture == &frame);                   // the banner, texture 1
     REQUIRE(device.draws[1].state.uvOffset == Vec2{0.0f, 0.0f});
+    REQUIRE(device.draws[1].state.uvScale == Vec2{1.0f, 1.0f});
+    // Slid again without a stretch, the stretch is gone.
+    figure.setTextureOffset(0, Vec2{0.5f, 0.0f});
+    REQUIRE(figure.textureScale(0) == Vec2{1.0f, 1.0f});
     // Forgotten again, the set's own textures and coordinates come back.
     figure.setTextureFrame(1, nullptr);
     figure.resetTextures();
     device.draws.clear();
     figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
     REQUIRE(device.draws[0].state.uvOffset == Vec2{0.0f, 0.0f});
+    REQUIRE(device.draws[0].state.uvScale == Vec2{1.0f, 1.0f});
     REQUIRE(device.draws[1].texture != &frame);
 }
 

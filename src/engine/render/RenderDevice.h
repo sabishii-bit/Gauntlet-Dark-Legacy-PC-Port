@@ -36,7 +36,8 @@ struct DrawState {
     /** Sampled with the vertices' second coordinates, its alpha scales the colour; null
      * leaves the colour alone. */
     const Texture* lightmap = nullptr;
-    Vec2 uvOffset{0.0f, 0.0f}; ///< added to every texture coordinate
+    Vec2 uvScale{1.0f, 1.0f};  ///< every texture coordinate is scaled by this...
+    Vec2 uvOffset{0.0f, 0.0f}; ///< ...then has this added
     f32 alphaTest = 0.0f;      ///< texels with less alpha than this are dropped; 0 keeps all
     bool cullBack = false;     ///< triangles facing away are skipped
     bool depthWrite = true;

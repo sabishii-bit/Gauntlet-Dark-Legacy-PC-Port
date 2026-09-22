@@ -8,7 +8,8 @@
                       "color":  "BLU",
                       "name":  "TEST",
                       "level":  20,
-                      "health":  900
+                      "health":  900,
+                      "legends":  [7]
                   }
               ],
     "position":  [

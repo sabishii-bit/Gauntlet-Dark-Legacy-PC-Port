@@ -14,11 +14,19 @@
 namespace gdl {
 
 /** What an animation shows now: the frame its cycle has reached, or how far its scroll has
- * slid a coordinate. */
+ * slid a coordinate and how much it has stretched it. */
 struct TextureMotion {
     u32 slot = 0;
     const Texture* frame = nullptr; ///< null for a scroll
     Vec2 offset{0.0f, 0.0f};
+    Vec2 scale{1.0f, 1.0f};
+};
+
+/** Where a keyed scroll stands: how far along it has slid, and the stretch of the
+ * coordinate it slides (nought before it starts, which hides what it is on). */
+struct ScrollState {
+    f32 along = 0.0f;
+    f32 scale = 1.0f;
 };
 
 /**
@@ -54,6 +62,9 @@ public:
     /** How far a keyed scroll has run at `sinceStart` frames past its first: the original's
      * easing over `rate` frames, then steady to its `frames`, then held. */
     static f32 scrollAt(s32 sinceStart, s32 rate, s32 frames);
+    /** The same with the stretch it puts on the coordinate: none (the picture collapsed)
+     * before it starts, then growing from one to `frames / rate` as it runs. */
+    static ScrollState scrollStateAt(s32 sinceStart, s32 rate, s32 frames);
     /** Advances `ticks` game frames. */
     void step(u32 ticks = 1);
     /** Shows every animation where it stands. */
