@@ -83,6 +83,10 @@ public:
     bool thrown() const { return m_thrown; }
     /** Whether its weakness is on the boss. */
     bool weakening() const { return m_thrown && m_stage != Stage::Over; }
+    /** Whether the level goes dark for it, as the original has it: from the boss rising
+     * until its roar is over. */
+    bool darkens() const { return running() && m_stage != Stage::Carried && !m_roared; }
+    static constexpr f32 kDarkening = -0.8f; ///< what it takes off the ambient light
 
 private:
     Stage m_stage = Stage::None;

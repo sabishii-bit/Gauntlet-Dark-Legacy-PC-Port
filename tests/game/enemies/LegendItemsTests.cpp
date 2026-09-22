@@ -56,11 +56,14 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
         REQUIRE(rite.update(2, false, false).empty());
     }
     REQUIRE(rite.stage() == LegendRite::Stage::Carried);
-    // Risen: the item goes up at once, and is thrown a second on.
+    REQUIRE_FALSE(rite.darkens());
+    // Risen: the item goes up at once, and is thrown a second on; the level goes dark
+    // from here until the roar is over.
     auto cues = rite.update(2, true, false);
     REQUIRE(cues.size() == 1);
     REQUIRE(cues[0] == LegendCue::Brandished);
     REQUIRE(rite.stage() == LegendRite::Stage::Woken);
+    REQUIRE(rite.darkens());
     REQUIRE_FALSE(rite.thrown());
     int ticks = 2;
     while (!rite.thrown() && ticks < 600) {
@@ -79,11 +82,13 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
         ticks += 2;
     }
     REQUIRE(ticks == LegendRite::kLongRoarWait);
-    // Its roar done, the curb runs twenty-nine seconds and wears off.
+    REQUIRE(rite.darkens());
+    // Its roar done, the curb runs twenty-nine seconds and wears off, in the light again.
     cues = rite.update(2, true, true);
     REQUIRE(cues.size() == 1);
     REQUIRE(cues[0] == LegendCue::Roared);
     REQUIRE_FALSE(rite.wantsRoar());
+    REQUIRE_FALSE(rite.darkens());
     REQUIRE(rite.running());
     int worn = 0;
     bool wornOff = false;

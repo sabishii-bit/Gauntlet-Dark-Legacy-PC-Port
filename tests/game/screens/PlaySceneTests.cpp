@@ -1696,6 +1696,9 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.bosses().legend().thrown());
     REQUIRE(entrance);
     REQUIRE(held);
+    // The level has gone dark for the rite, as for a great move.
+    REQUIRE(scene.bosses().legend().darkens());
+    REQUIRE(scene.dimmer().offset() <= LegendRite::kDarkening + 0.1f);
     REQUIRE_FALSE(scene.actor(0)->save().progress().relics.hasLegend(7));
     REQUIRE(scene.bossView()->health == Approx(whole - (0.25f * whole - 1.0f)));
     const f32 struck = scene.bossView()->health;
@@ -1728,6 +1731,15 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     }
     REQUIRE(scene.bossMeter().shown() <= scene.bossView()->health);
     REQUIRE(scene.bossMeter().fillWidths()[1] < BossMeter::kPieceWidth - 53);
+    // Roared, the lich fights on in the light again.
+    for (int i = 0; i < 600 && scene.bosses().legend().darkens(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(scene.bosses().legend().darkens());
+    for (int i = 0; i < 600 && scene.dimmer().offset() < -0.05f; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.dimmer().offset() >= -0.05f);
     // Slain, the lich leaves the town's shard to everyone and its key where it fell; the
     // wizard comes five seconds on, names it beaten, counts the realm's runestones (none
     // found), and sees the party off to the tower.

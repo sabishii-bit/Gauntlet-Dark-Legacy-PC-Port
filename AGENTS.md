@@ -581,7 +581,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `LegendCue::Brandished`) and throws a second on (`Thrown`: the toll and
   the weakness go on the fighter through `Critters::freeze/blind/curb/
   resize`), the boss roars a second (chimera, lich, temple) or three after
-  rising (`Roared`) and the curb wears off (`WornOff`). `LegendShow` is
+  rising (`Roared`) and the curb wears off (`WornOff`); from the rise to
+  the end of the roar the level goes dark by 0.8 through the ambient
+  dimmer (`LegendRite::darkens`, gauntworld.c 1281's ambient special of
+  -0.8 asked every tick in states 2 and 3). `LegendShow` is
   how it looks (pmotion.c 2092-2447, sounds_evt.c `fn_8009C9DC`): the
   `LEGENDHLD` of the boss level's own item archive glows in the hand for
   bosses 34-39 (`SfxSetParent` on `hand_node`) and 8 over the head for
