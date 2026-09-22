@@ -584,7 +584,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   rising (`Roared`) and the curb wears off (`WornOff`); from the rise to
   the end of the roar the level goes dark by 0.8 through the ambient
   dimmer (`LegendRite::darkens`, gauntworld.c 1281's ambient special of
-  -0.8 asked every tick in states 2 and 3). `LegendShow` is
+  -0.8 asked every tick in states 2 and 3), the boss alone drawn in the
+  level's own light meanwhile. The rules are keyed by boss kind and realm,
+  and the mountain's dragon fight (`LEVELB6`, scenario
+  `level-b6-dragon.json`) runs the rite, the freeze and the coin spew in
+  its scene test; in the game, though, the dragon is still drawn wrong
+  (its body half under the floor and unseen, the lair's stone barriers
+  not appearing), to be taken up with the other bosses. `LegendShow` is
   how it looks (pmotion.c 2092-2447, sounds_evt.c `fn_8009C9DC`): the
   `LEGENDHLD` of the boss level's own item archive glows in the hand for
   bosses 34-39 (`SfxSetParent` on `hand_node`) and 8 over the head for
