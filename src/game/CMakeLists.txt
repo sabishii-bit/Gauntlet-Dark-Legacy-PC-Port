@@ -55,6 +55,7 @@ add_library(game STATIC
     enemies/Generators.cpp
     enemies/CritterData.cpp
     enemies/Critters.cpp
+    enemies/BossCoins.cpp
     enemies/Bosses.cpp
     enemies/LegendItems.cpp
     world/Chests.h

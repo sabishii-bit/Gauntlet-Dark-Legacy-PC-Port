@@ -356,6 +356,10 @@ private:
     static constexpr s32 kCritterTargetBase = 3000;
     static constexpr s32 kBossTargetBase = 4000;
     void awardBossLosses();
+    /** The blast a boss's death lets off, which nothing of the swarm survives. */
+    static constexpr f32 kBossDeathBlast = 1000.0f;
+    static constexpr f32 kBossDeathBlastRadius = 1000.0f;
+    void spewBossCoins(const CritterSpew& spew);
     void showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss);
     void followCritterEffects();
     void showLegendEvent(const LegendEvent& event);
@@ -481,6 +485,7 @@ private:
     std::vector<f32> m_painOwed;             ///< per actor, harm not yet cried out over
     std::vector<s32> m_hitSoundGaps;         ///< per actor, ticks before a blow sounds again
     std::mt19937 m_painRandom{0x5A17u};      ///< which cry of pain comes
+    std::mt19937 m_coinRandom{0xC01Eu};      ///< how fast each coin a boss spews flies
     u32 m_lowHealthTurn = 0;                 ///< the last-health lines take turns
     std::vector<PlayerDeed> m_struck;        ///< per actor, the reaction a hit this tick asks
     std::vector<TurboMeter> m_turbo;         ///< per actor

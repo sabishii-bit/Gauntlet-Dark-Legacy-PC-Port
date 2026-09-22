@@ -89,6 +89,16 @@ public:
         return m_placedItems.placeRecord(device, record, position,
                                          m_collision.loaded() ? &m_collision : nullptr, amount);
     }
+    /** Throws one of the level's items by its record's name from `position`, as a boss
+     * spews its coins; it lands on the floor and cannot be taken for `noGrabSeconds`. */
+    bool throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
+                   const Vec3& velocity, f32 noGrabSeconds) {
+        return m_placedItems.throwItem(device, name, position, velocity,
+                                       m_collision.loaded() ? &m_collision : nullptr,
+                                       noGrabSeconds);
+    }
+    /** Whether any gold lies untaken. */
+    bool goldLeft() const { return m_placedItems.goldLeft(); }
     /** The level's item archive, lending the torch flames and Sumner; empty when it is not
      * unpacked. */
     ItemArchive& items() { return m_items; }

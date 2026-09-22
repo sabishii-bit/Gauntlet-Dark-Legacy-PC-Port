@@ -164,6 +164,37 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE_FALSE(missing.loaded());
 }
 
+TEST_CASE("a boss's death record throws its coins all round it, up at seventy degrees",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    const std::filesystem::path wad = test::assetOrSkip("CRITTER/LICH.WAD");
+    const formats::CritterFile file = formats::parseCritterWad(readFile(wad));
+    REQUIRE(file.damages.size() > 1);
+    REQUIRE(file.damages[1].type == 9);
+    REQUIRE(file.damages[1].minSpeed == 30.0f);
+    REQUIRE(file.damages[1].maxSpeed == 30.0f);
+    CritterData lich;
+    REQUIRE(lich.load(root / "critter/LICH.json"));
+    const auto death = lich.moveOfType(CritterMove::kDeath);
+    REQUIRE(death.has_value());
+    REQUIRE(lich.moves()[*death].frameStart == 95);
+    const CritterDamage* spew = lich.damage(lich.moves()[*death].damage0);
+    REQUIRE(spew != nullptr);
+    REQUIRE(spew->type == CritterDamage::kSpew);
+    if (spew->speed == 0.0f) {
+        SKIP("the critter data was unpacked before the spew's speed was read");
+    }
+    REQUIRE(spew->speed == 30.0f);
+    REQUIRE(spew->spewHalfAngle() == Approx(kPi)); // all round
+    const Vec3 way = spew->spewVelocity(0.0f);
+    REQUIRE(glm::length(way) == Approx(30.0f));
+    REQUIRE(way.x == Approx(0.0f).margin(0.001f));
+    REQUIRE(way.z == Approx(30.0f * std::cos(1.2217305f)));
+    REQUIRE(way.y == Approx(30.0f * std::sin(1.2217305f)));
+    // Facing the other way, it throws the other way.
+    REQUIRE(spew->spewVelocity(kPi).z == Approx(-way.z));
+}
+
 TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is worth its "
           "value in experience as it is worn down and killed",
           "[game][enemies][unpacked]") {

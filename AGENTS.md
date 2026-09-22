@@ -659,10 +659,27 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   under the view, the boss's `<NAME>_SPEECH` with `S_DEFEATVOX<letter>`,
   then `RUNE_PHRASE0/1/1B/2` with `S_RUNEVOX0/1/2<letter>` by how many of
   the realm's runestones (the levels' `rune` records) the party holds; two
-  seconds later (ten with gold left, not judged yet) the party sparkles
-  (the spawn effect) and, 35 ticks on, travels to the tower. Not yet: the
-  demon's rune-yes/no speech, the coins the boss spews, the caption's
-  original font placement. Scenario: `level-g5-lich.json`.
+  seconds later (ten while gold lies untaken, `BossVictory::setGoldLeft`
+  from `LevelWorld::goldLeft`, cut to two once it is all gathered) the
+  party sparkles (the spawn effect) and, 35 ticks on, travels to the tower.
+  The coins (`enemies/BossCoins`, the original's `BossSpewCoins`, boss.c
+  262): the death move's first damage record is of type 9 (`CritterDamage::
+  kSpew`: its `yaw`/`pitch` turn and tip the body's facing, `minSpeed`
+  @0x30 is the throw's speed, `acos(minDot)` half its arc), and when the
+  death reaches its frame (the lich's 95th) the fighter reports a
+  `CritterSpew`; the scene then throws, for each player in the game, the
+  realm's counts of bronze (500), silver (1000) and gold (5000) coins
+  (`kCounts`, the original's table at 0x801189E0: the town's 4/1/0, the
+  castle's 2/1/1...) fanned evenly over the arc at 0.85-0.95, 0.8-0.9 and
+  0.75-0.85 of the throw, as the level's `COIN_BRONZE/SILVER/GOLD` items
+  (`PlacedItems::throwItem`: gravity 32, bounce 0.4 until a bounce would
+  not clear the touching-down height, sideways drag 0.5/s aloft and 4/s
+  on the floor, lost when falling with no floor under them, untakeable for
+  two seconds), and its blast (1000 over 1000 units) takes the swarm and
+  generators with it. Not yet: the demon's four relics (`BGNTR_IC` and
+  so on), the demon's rune-yes/no speech, the caption's original font
+  placement. Scenario: `level-g5-lich.json`. Critter data unpacked before
+  the spew's speed was read (`--only CRITTER`) throws nothing.
 * Levels gained (`players/LevelWatch`, `PlayScene::updateLevels`). The watch
   is told each player's level every tick and reports the changes since it
   last looked (`LevelChange`: from, to, `milestone()` when a tenth is

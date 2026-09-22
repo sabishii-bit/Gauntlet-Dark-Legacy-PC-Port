@@ -11,6 +11,7 @@
 #include "engine/core/Log.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/enemies/BossCoins.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/Progression.h"
 
@@ -1949,6 +1950,8 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
     if (!m_victory.running()) {
         return;
     }
+    // The wizard gives the party time to gather the coins, and no more than that.
+    m_victory.setGoldLeft(m_world->goldLeft());
     std::vector<usize> pageLengths;
     if (const auto& caption = m_victory.caption(); caption.has_value()) {
         if (const auto found = m_strings.find(caption->message); found.has_value()) {
@@ -2012,8 +2015,32 @@ void PlayScene::drawCaption(f32 width, f32 height) {
     }
 }
 
+/** As the death throws them out, the boss's coins for the party fly from where it stands
+ * and its blast takes the rest of the level's enemies with it. */
+void PlayScene::spewBossCoins(const CritterSpew& spew) {
+    for (const s32 enemy : m_enemies.within(spew.origin, kBossDeathBlastRadius)) {
+        const Vec3 away = m_enemies.positionOf(enemy) - spew.origin;
+        strikeEnemy(enemy, kBossDeathBlast, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
+    }
+    for (const s32 generator : m_generators.within(spew.origin, kBossDeathBlastRadius)) {
+        strikeGenerator(generator, kBossDeathBlast, -1);
+    }
+    if (m_device == nullptr) {
+        return;
+    }
+    const auto players = static_cast<s32>(m_actors.size());
+    for (const SpewedCoin& coin : BossCoins::spray(m_world->ref().realmId, players, spew.velocity,
+                                                  spew.halfAngle, m_coinRandom)) {
+        m_world->throwItem(*m_device, coin.name, spew.origin, coin.velocity,
+                           BossCoins::kNoGrabSeconds);
+    }
+}
+
 /** The boss's worth goes the great ones' way: shares to the hitter, a kill's to everyone. */
 void PlayScene::awardBossLosses() {
+    for (const CritterSpew& spew : m_bosses.takeSpews()) {
+        spewBossCoins(spew);
+    }
     for (const CritterLoss& loss : m_bosses.takeLosses()) {
         if (loss.killed) {
             bossFallen(loss.position);

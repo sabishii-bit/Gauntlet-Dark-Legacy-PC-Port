@@ -49,6 +49,9 @@ public:
      * having found `runesFound` of the realm's `runesInRealm` (bit masks of the runestones,
      * the way the level records number them), with `goldLeft` lying about. */
     void begin(s32 kind, char realm, u16 runesInRealm, u16 runesFound, bool goldLeft);
+    /** Tells it whether gold still lies about: the wizard waits the long wait for it to be
+     * gathered, and no longer than the short one once it is. */
+    void setGoldLeft(bool left);
     void clear();
 
     /** Moves it `ticks` on, told how long each page of the caption up is (none without

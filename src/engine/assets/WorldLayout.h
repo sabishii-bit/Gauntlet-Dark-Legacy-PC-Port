@@ -85,6 +85,7 @@ struct ItemInfo {
     static constexpr s32 kGate = 7;      ///< a door a key opens
     static constexpr s32 kTrap = 8;
     static constexpr s32 kChoiceList = -1; ///< not an item: a list to pick one from
+    static constexpr s32 kGold = 1;        ///< the powerup subtype of gold
     static constexpr s32 kRunestone = 10;  ///< the powerup subtype of a runestone
     static constexpr s32 kScroll = 14;     ///< of a scroll: its instance's first parameter is its page
     static constexpr s32 kCrystal = 15;    ///< of a realm's crystal

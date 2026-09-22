@@ -525,6 +525,17 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
                     }
                     strikeWith(critter, i, *move, move->damage1, players);
                 }
+            } else if (critter.state == State::Dying && active(move->frameStart, move->frameEnd) &&
+                       (critter.soundsGiven & 32U) == 0) {
+                // The death's harm is not a strike but a throw: what it spews goes out
+                // once, the moment its frame comes.
+                if (const CritterDamage* harm = data.damage(move->damage0);
+                    harm != nullptr && harm->type == CritterDamage::kSpew) {
+                    critter.soundsGiven |= 32U;
+                    m_spews.push_back(CritterSpew{i, critter.position,
+                                                  harm->spewVelocity(critter.yaw),
+                                                  harm->spewHalfAngle()});
+                }
             }
             (void)before;
         } else {
@@ -652,6 +663,10 @@ std::vector<CritterBlow> Critters::takeBlows() {
 
 std::vector<CritterLoss> Critters::takeLosses() {
     return std::exchange(m_losses, {});
+}
+
+std::vector<CritterSpew> Critters::takeSpews() {
+    return std::exchange(m_spews, {});
 }
 
 std::vector<MissileTarget> Critters::targets() const {
