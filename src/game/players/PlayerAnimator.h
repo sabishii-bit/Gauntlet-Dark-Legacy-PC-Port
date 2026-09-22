@@ -29,7 +29,12 @@ enum class PlayerDeed : u8 {
     StrongAttack, ///< the slow attack: a strong throw, with nothing in reach
     ShieldPotion, ///< a potion spent on a ring of its magic about the character
     FallBack,     ///< knocked off its feet from in front
-    FallForward   ///< or from behind
+    FallForward,  ///< or from behind
+    // A legend item let fly at a boss, with the gesture its kind asks for: nothing else
+    // leaves the hand meanwhile.
+    HurlLegend,   ///< as a potion is used
+    ThrowLegend,  ///< as the strong throw
+    ShootLegend   ///< the special shot
 };
 
 /** Which way a strafing character steps, against the way it faces. */
@@ -43,7 +48,8 @@ enum class StrafeWay : u8 { None, Forward, Back, Left, Right };
  * short at its second frame, the release, whose end lets the weapon go, and the recovery,
  * after which the next throw starts or the body eases back to its stance), and a potion
  * used where it stands or thrown (a raising of the hand, then a release whose start is the
- * moment the magic goes off or the bottle flies). Each tick the
+ * moment the magic goes off or the bottle flies), and a legend item let fly with one of
+ * those gestures or the special shot, nothing else leaving the hand. Each tick the
  * request becomes a decision (which action, when it may cut in, whether it loops, how long
  * it blends), the sequence steps, and the pose is evaluated for drawing.
  */
@@ -100,11 +106,13 @@ public:
         FallBack,    ///< onto its back
         GetUpBack,
         FallForward, ///< onto its face
-        GetUpForward
+        GetUpForward,
+        SpecialShot, ///< the special shot's wind-up, at whose end the legend item leaves
+        SpecialShotRecover
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 50;
+    static constexpr usize kActionCount = 52;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",  "IDLE1",  "IDLE2",        "IDLE2_LOOP",  "WALK1",  "WALK2",   "RUN1",
         "RUN2",   "START",  "THROW1S",      "THROW2S",     "THROW1", "THROW2",  "THROW1R",
@@ -114,7 +122,7 @@ public:
         "STRAFE_WLKF1", "STRAFE_WLKF2", "STRAFE_WLKB1", "STRAFE_WLKB2", "STRAFE_WLKL1",
         "STRAFE_WLKL2", "STRAFE_WLKR1", "STRAFE_WLKR2", "STRAFE_ATKF1", "STRAFE_ATKF2",
         "STRAFE_ATKB1", "STRAFE_ATKB2", "STRAFE_ATKL1", "STRAFE_ATKL2", "STRAFE_ATKR1",
-        "STRAFE_ATKR2", "FALLDOWN", "GETUP", "FALLFRNT", "GETUP2"};
+        "STRAFE_ATKR2", "FALLDOWN", "GETUP", "FALLFRNT", "GETUP2", "SSHOT1", "SSHOTR"};
     static constexpr f32 kReleaseFrame = 2.0f; ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -195,8 +203,16 @@ public:
     /** Whether the body is in a turbo move, which plays through with nothing else heeded. */
     bool turboing() const {
         return m_current == Action::TurboStrong || m_current == Action::TurboFull ||
-               m_current == Action::Shove || strongThrowing();
+               m_current == Action::Shove || strongThrowing() || specialShooting();
     }
+    /** Whether the body is in the special shot or recovering from it. */
+    bool specialShooting() const {
+        return m_current == Action::SpecialShot || m_current == Action::SpecialShotRecover;
+    }
+    /** Whether the body is making a legend item's gesture: the moment its wind-up ends is
+     * `legendReleased`, and no potion or weapon goes with it. */
+    bool castingLegend() const { return m_legendAsked; }
+    bool legendReleased() const { return m_legendReleased; }
     /** Whether the body is in the strong throw or recovering from it. */
     bool strongThrowing() const {
         return m_current == Action::StrongThrow || m_current == Action::StrongThrowRecover;
@@ -261,6 +277,8 @@ private:
     bool m_strongReleased = false;
     bool m_potionShielded = false;
     bool m_shieldAsked = false; ///< the potion being used is for a shield
+    bool m_legendAsked = false; ///< the gesture under way is a legend item's
+    bool m_legendReleased = false;
     StrafeWay m_strafe = StrafeWay::None;
     bool m_potionLatch = false; ///< a potion has gone for this press of its button
     f32 m_attackSeconds = 0.0f; ///< since the attack began, while it goes on

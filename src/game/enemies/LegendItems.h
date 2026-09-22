@@ -1,8 +1,12 @@
 #pragma once
 
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
+#include "game/players/PlayerAnimator.h"
 
 namespace gdl::game {
 
@@ -90,6 +94,53 @@ private:
     bool m_brandished = false;
     bool m_thrown = false;
     f32 m_wearLeft = 0.0f; ///< seconds of the curb left, once the roar is over
+};
+
+/**
+ * How the rite looks and sounds, as the original stages it: the item held (`LEGENDHLD`)
+ * glows in the bearer's hand, or over their head for the bosses with no hand to hold it
+ * at; the bearer's gesture is the strong throw, the special shot or a potion's use by the
+ * boss's kind; and the item (`LEGENDPRJ`) flies at the boss, is set on it, or rides ahead
+ * of the bearer, giving way to its burst (`LEGENDFX`, or `LEGENDFX2` after it) for a while.
+ * Its sounds are the realm's: picked up, thrown, flying, landed, and worn off.
+ */
+struct LegendShow {
+    /** What the item does once let go of. */
+    enum class Flight : u8 {
+        Flies,     ///< to the boss, at `kSpeed`
+        AtBoss,    ///< set where the boss stands, offset by `bossOffsetOf`
+        WithBearer ///< ahead of the bearer, riding with them
+    };
+    /** A moment of the rite with a sound of its own. */
+    enum class Sound : u8 { PickedUp, Thrown, Flying, Landed, WornOff };
+
+    static constexpr std::string_view kHeldTree = "LEGENDHLD";
+    static constexpr std::string_view kProjectileTree = "LEGENDPRJ";
+    static constexpr std::string_view kBurstTree = "LEGENDFX";
+    static constexpr std::string_view kSecondBurstTree = "LEGENDFX2";
+    static constexpr f32 kHeldLift = 8.0f;     ///< over the bearer, held with no hand
+    static constexpr f32 kHeldSeconds = 999999.0f; ///< held until let go of, as the original
+    static constexpr f32 kSpeed = 20.0f;       ///< units a second, flying
+    static constexpr f32 kLift = 2.0f;         ///< the flight starts this high
+    static constexpr f32 kFlightSeconds = 6.0f; ///< at most
+    static constexpr f32 kAhead = 5.0f;        ///< the bearer's, ahead of them
+    static constexpr f32 kBurstSeconds = 30.0f;
+    static constexpr f32 kLichBurstSeconds = 5.0f;
+    static constexpr f32 kSpiderBurstSeconds = 3.0f;
+
+    /** Whether the held item is in the bearer's hand, not over their head. */
+    static bool heldInHand(s32 kind);
+    static PlayerDeed gestureOf(s32 kind);
+    static Flight flightOf(s32 kind);
+    /** The tree the item is set on the boss as, or rides ahead of the bearer as. */
+    static std::string_view restingTreeOf(s32 kind);
+    /** The tree that takes over once the item has played, and how long it lasts. */
+    static std::string_view burstTreeOf(s32 kind);
+    static f32 burstSecondsOf(s32 kind);
+    /** Where on the boss the item is set. */
+    static Vec3 bossOffsetOf(s32 kind);
+    /** The names the realm's sound for the moment may go by, first the likeliest. */
+    static std::vector<std::string> soundNamesOf(Sound sound, char realm);
 };
 
 } // namespace gdl::game

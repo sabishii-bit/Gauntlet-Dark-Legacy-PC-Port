@@ -8,6 +8,12 @@ constexpr usize index(PlayerAnimator::Action action) {
     return static_cast<usize>(action);
 }
 
+/** Whether the deed is a legend item's gesture. */
+constexpr bool isLegend(PlayerDeed deed) {
+    return deed == PlayerDeed::HurlLegend || deed == PlayerDeed::ThrowLegend ||
+           deed == PlayerDeed::ShootLegend;
+}
+
 } // namespace
 
 bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
@@ -44,6 +50,8 @@ void PlayerAnimator::unbind() {
     m_strongReleased = false;
     m_potionShielded = false;
     m_shieldAsked = false;
+    m_legendAsked = false;
+    m_legendReleased = false;
     m_strafe = StrafeWay::None;
     m_attackSeconds = 0.0f;
     m_player.stop();
@@ -72,6 +80,9 @@ PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
     case PlayerDeed::TurboFull: return Action::TurboFull;
     case PlayerDeed::Shove: return Action::Shove;
     case PlayerDeed::StrongAttack: return Action::StrongThrow;
+    case PlayerDeed::HurlLegend: return Action::UsePotion;
+    case PlayerDeed::ThrowLegend: return Action::StrongThrow;
+    case PlayerDeed::ShootLegend: return Action::SpecialShot;
     default: return Action::Ready;
     }
 }
@@ -109,6 +120,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     m_turboBegan = false;
     m_strongReleased = false;
     m_potionShielded = false;
+    m_legendReleased = false;
     if (deed == PlayerDeed::Die || dying()) {
         // Nothing else is asked of a body that falls: it plays through once and stays down.
         if (m_sequences[index(Action::Death)] < 0) {
@@ -149,13 +161,16 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
             return;
         }
     }
-    // A turbo move cuts into standing, walking and running at once and plays through.
+    // A turbo move cuts into standing, walking and running at once and plays through; a
+    // legend item's gesture is made the same way, but pays and lets go of nothing.
     if (canBegin(deed)) {
         Decision move;
         move.action = turboActionOf(deed);
         move.cut = Cut::Now;
+        m_legendAsked = isLegend(deed);
+        m_shieldAsked = false;
         play(move, seconds);
-        m_turboBegan = true;
+        m_turboBegan = !m_legendAsked;
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
         return;
     }
@@ -191,7 +206,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         return;
     }
     const bool turboAsked = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
-                            deed == PlayerDeed::Shove || deed == PlayerDeed::StrongAttack;
+                            deed == PlayerDeed::Shove || deed == PlayerDeed::StrongAttack ||
+                            isLegend(deed);
     if (reacting() || struck || turboing() || turboAsked) {
         deed = PlayerDeed::None;
         motion = PlayerMotion::Stand;
@@ -364,6 +380,11 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::StrongThrow:
         d.action = Action::StrongThrowRecover; // the weapon leaves as the wind-up ends
         break;
+    case Action::SpecialShot:
+        d.action = Action::SpecialShotRecover;
+        break;
+    case Action::SpecialShotRecover:
+        break;
     case Action::FallBack:
         d.action = Action::GetUpBack;
         break;
@@ -434,8 +455,24 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     if (m_current == Action::ThrowRelease || m_current == Action::ThrowMovingRelease) {
         m_released = true;
     }
-    if (m_current == Action::StrongThrow && decision.action == Action::StrongThrowRecover) {
+    // A legend item leaves the hand where a potion's magic would go off, the strong throw's
+    // weapon would fly or the special shot's wind-up ends.
+    const bool windUpOver =
+        (m_current == Action::StrongThrow && decision.action == Action::StrongThrowRecover) ||
+        (m_current == Action::SpecialShot && decision.action == Action::SpecialShotRecover) ||
+        decision.action == Action::UsePotionRelease;
+    if (m_legendAsked && windUpOver) {
+        m_legendReleased = true;
+    }
+    if (m_current == Action::StrongThrow && decision.action == Action::StrongThrowRecover &&
+        !m_legendAsked) {
         m_strongReleased = true;
+    }
+    if (m_legendAsked && decision.action != Action::UsePotion &&
+        decision.action != Action::UsePotionRelease && decision.action != Action::StrongThrow &&
+        decision.action != Action::StrongThrowRecover && decision.action != Action::SpecialShot &&
+        decision.action != Action::SpecialShotRecover) {
+        m_legendAsked = false; // the gesture is over
     }
     // A strafing attack lets fly as each of its halves begins; its steps sound like a walk's.
     if (decision.action >= Action::StrafeShootForward1 &&
@@ -449,7 +486,7 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     if (decision.action == Action::UsePotion || decision.action == Action::ThrowPotion) {
         m_potionLatch = true;
     }
-    m_potionUsed = decision.action == Action::UsePotionRelease && !m_shieldAsked;
+    m_potionUsed = decision.action == Action::UsePotionRelease && !m_shieldAsked && !m_legendAsked;
     m_potionShielded = decision.action == Action::UsePotionRelease && m_shieldAsked;
     m_potionThrown = decision.action == Action::ThrowPotionRelease;
     if ((decision.action == Action::Throw || decision.action == Action::ThrowMoving) &&

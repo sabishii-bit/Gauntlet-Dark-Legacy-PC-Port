@@ -338,6 +338,7 @@ void PlayScene::close() {
     m_leaving = false;
     m_missiles.clear(); // before the figures whose models they fly
     m_critterEffects.clear();
+    m_legend = LegendSight{};
     m_effects.clear();  // and before the archive whose trees they play
     m_generators.clear();
     m_enemyMissiles.clear(); // before the archives whose trees they fly
@@ -1688,6 +1689,192 @@ void PlayScene::followCritterEffects() {
     }
 }
 
+/** The item held glows in the hand (or over the head, for a boss with no hand to hold it
+ * at) and the realm's pickup sounds; thrown, the realm's throw sounds and the bearer owes
+ * the gesture; worn off, the flight's sound stops and the realm says so. */
+void PlayScene::showLegendEvent(const LegendEvent& event) {
+    const BossView boss = m_bosses.view();
+    switch (event.cue) {
+    case LegendCue::Brandished: {
+        m_legend = LegendSight{};
+        m_legend.kind = boss.kind;
+        m_legend.realm = static_cast<char>('A' + std::clamp(event.realm - 1, 0, 25));
+        for (usize i = 0; i < m_actors.size(); ++i) {
+            if (m_actors[i].player() == event.player) {
+                m_legend.actor = static_cast<s32>(i);
+            }
+        }
+        if (m_legend.actor >= 0 && m_device != nullptr && m_world->items().loaded() &&
+            m_world->items().trees.find(LegendShow::kHeldTree).has_value()) {
+            EffectTrees::Setting setting;
+            setting.seconds = LegendShow::kHeldSeconds;
+            m_legend.held = m_effects.startSet(*m_device, m_world->items(), LegendShow::kHeldTree,
+                                               legendHoldPoint(static_cast<usize>(m_legend.actor)),
+                                               setting);
+        }
+        playLegendSound(LegendShow::Sound::PickedUp);
+        break;
+    }
+    case LegendCue::Thrown:
+        if (m_legend.actor >= 0) {
+            m_legend.gestureOwed = true;
+            playLegendSound(LegendShow::Sound::Thrown);
+        }
+        break;
+    case LegendCue::WornOff:
+        if (m_legend.loop != kNoSound && m_context.sounds != nullptr) {
+            m_context.sounds->stop(m_legend.loop);
+            m_legend.loop = kNoSound;
+        }
+        if (LegendShow::flightOf(m_legend.kind) == LegendShow::Flight::AtBoss) {
+            playLegendSound(LegendShow::Sound::Landed);
+        }
+        playLegendSound(LegendShow::Sound::WornOff);
+        break;
+    case LegendCue::Roared:
+        break;
+    }
+}
+
+/** The gesture owed is asked of the bearer until their body takes it up; the item held
+ * goes with the hand until the gesture lets it go; what flies lands when its time is up;
+ * what rides ahead of the bearer keeps up with them. */
+void PlayScene::updateLegend(f32 seconds) {
+    if (m_legend.actor < 0) {
+        return;
+    }
+    const auto bearer = static_cast<usize>(m_legend.actor);
+    Figure* figure = bearer < m_figures.size() ? m_figures[bearer].get() : nullptr;
+    if (m_legend.gestureOwed) {
+        if (figure == nullptr || isDown(bearer)) {
+            m_legend.gestureOwed = false;
+            releaseLegend(); // no body to make it: the item goes at once
+        } else if (figure->animator.castingLegend()) {
+            m_legend.gestureOwed = false;
+        } else {
+            m_struck[bearer] = LegendShow::gestureOf(m_legend.kind);
+        }
+    }
+    if (figure != nullptr && figure->animator.legendReleased()) {
+        releaseLegend();
+    }
+    if (m_legend.held != 0) {
+        if (m_effects.playing(m_legend.held)) {
+            m_effects.moveTo(m_legend.held, legendHoldPoint(bearer));
+        } else {
+            m_legend.held = 0;
+        }
+    }
+    if (m_legend.flying != 0 && !m_effects.playing(m_legend.flying)) {
+        m_legend.flying = 0;
+    }
+    if (m_legend.flying != 0 && LegendShow::flightOf(m_legend.kind) == LegendShow::Flight::Flies) {
+        m_legend.flightLeft -= seconds;
+        if (m_legend.flightLeft <= 0.0f) {
+            landLegend();
+        }
+    } else if (m_legend.flying != 0 &&
+               LegendShow::flightOf(m_legend.kind) == LegendShow::Flight::WithBearer) {
+        const PlayerActor& actor = m_actors[bearer];
+        m_effects.moveTo(m_legend.flying, actor.position() + actor.facing() * LegendShow::kAhead);
+    }
+}
+
+/** The item leaves the hand: it flies at the boss, is set on it to burst for a while, or
+ * rides ahead of the bearer; the realm's flight sound goes with it. */
+void PlayScene::releaseLegend() {
+    if (m_legend.actor < 0) {
+        return;
+    }
+    if (m_legend.held != 0) {
+        m_effects.stop(m_legend.held);
+        m_legend.held = 0;
+    }
+    const auto bearer = static_cast<usize>(m_legend.actor);
+    const PlayerActor& actor = m_actors[bearer];
+    const Vec3* at = m_bosses.position();
+    if (m_device == nullptr || !m_world->items().loaded() || at == nullptr) {
+        return;
+    }
+    ItemArchive& items = m_world->items();
+    const s32 kind = m_legend.kind;
+    EffectTrees::Setting setting;
+    switch (LegendShow::flightOf(kind)) {
+    case LegendShow::Flight::Flies: {
+        const Vec3 from = actor.position() + actor.facing() + Vec3{0.0f, LegendShow::kLift, 0.0f};
+        const Vec3 to = *at + Vec3{0.0f, m_bosses.height() * 0.5f, 0.0f};
+        const f32 distance = glm::length(to - from);
+        m_legend.flightLeft = std::min(distance / LegendShow::kSpeed, LegendShow::kFlightSeconds);
+        if (distance > 0.0f) {
+            setting.velocity = (to - from) * (LegendShow::kSpeed / distance);
+        }
+        setting.seconds = LegendShow::kFlightSeconds;
+        m_legend.flying = m_effects.startSet(*m_device, items, LegendShow::kProjectileTree, from, setting);
+        break;
+    }
+    case LegendShow::Flight::AtBoss:
+        setting.seconds = LegendShow::burstSecondsOf(kind);
+        setting.then = std::string(LegendShow::burstTreeOf(kind));
+        m_legend.flying = m_effects.startSet(*m_device, items, LegendShow::restingTreeOf(kind),
+                                             *at + LegendShow::bossOffsetOf(kind), setting);
+        break;
+    case LegendShow::Flight::WithBearer:
+        setting.seconds = LegendShow::burstSecondsOf(kind);
+        setting.then = std::string(LegendShow::burstTreeOf(kind));
+        m_legend.flying = m_effects.startSet(*m_device, items, LegendShow::kProjectileTree,
+                                             actor.position() + actor.facing() * LegendShow::kAhead,
+                                             setting);
+        break;
+    }
+    playLegendSound(LegendShow::Sound::Flying, true);
+}
+
+/** What flew has reached the boss: it bursts there and the realm's landing sounds. */
+void PlayScene::landLegend() {
+    if (m_legend.flying != 0) {
+        m_effects.stop(m_legend.flying);
+        m_legend.flying = 0;
+    }
+    if (m_legend.loop != kNoSound && m_context.sounds != nullptr) {
+        m_context.sounds->stop(m_legend.loop);
+        m_legend.loop = kNoSound;
+    }
+    if (const Vec3* at = m_bosses.position();
+        at != nullptr && m_device != nullptr && m_world->items().loaded() &&
+        m_world->items().trees.find(LegendShow::kBurstTree).has_value()) {
+        m_effects.start(*m_device, m_world->items(), LegendShow::kBurstTree,
+                        *at + Vec3{0.0f, m_bosses.height() * 0.5f, 0.0f});
+    }
+    playLegendSound(LegendShow::Sound::Landed);
+}
+
+/** The first of the names the realm's sound goes by that a bank has; `looping`, it is
+ * kept to be stopped when the flight ends. */
+void PlayScene::playLegendSound(LegendShow::Sound sound, bool looping) {
+    for (const std::string& name : LegendShow::soundNamesOf(sound, m_legend.realm)) {
+        if (const SoundHandle handle = playNamed(name); handle != kNoSound) {
+            if (looping) {
+                m_legend.loop = handle;
+            }
+            return;
+        }
+    }
+}
+
+Vec3 PlayScene::legendHoldPoint(usize index) const {
+    const PlayerActor& actor = m_actors[index];
+    const Figure* figure = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    if (LegendShow::heldInHand(m_legend.kind) && figure != nullptr && figure->handNode >= 0 &&
+        static_cast<usize>(figure->handNode) < figure->transforms.size()) {
+        const f32 size = bodyScale(actor.save(), PowerupEffects::of(actor.save().progress().inventory));
+        const Mat4 body = glm::scale(actor.transform(), Vec3{size, size, size});
+        const Vec4 hand = body * figure->transforms[static_cast<usize>(figure->handNode)] *
+                          Vec4{0.0f, 0.0f, 0.0f, 1.0f};
+        return Vec3{hand.x, hand.y, hand.z};
+    }
+    return actor.position() + Vec3{0.0f, LegendShow::kHeldLift, 0.0f};
+}
+
 /** The boss has fallen: everyone in play gets its shard, its key rises where it fell, the
  * meter goes, and the wizard's visit is set going. */
 void PlayScene::bossFallen(const Vec3& where) {
@@ -2042,17 +2229,18 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
         m_bossMeter.update(ticks, boss.health, boss.maxHealth, m_bosses.present() && boss.alive,
                            m_bosses.frozen());
     }
-    // The legend item held up is the bearer's no more.
+    // The legend item held up is the bearer's no more; the rite is shown as it goes.
     for (const LegendEvent& event : m_bosses.takeLegendEvents()) {
-        if (event.cue != LegendCue::Brandished) {
-            continue;
-        }
-        for (PlayerActor& actor : m_actors) {
-            if (actor.player() == event.player) {
-                actor.save().progress().relics.spendLegend(event.realm);
+        if (event.cue == LegendCue::Brandished) {
+            for (PlayerActor& actor : m_actors) {
+                if (actor.player() == event.player) {
+                    actor.save().progress().relics.spendLegend(event.realm);
+                }
             }
         }
+        showLegendEvent(event);
     }
+    updateLegend(seconds);
     for (const CritterBlow& blow : m_bosses.takeBlows()) {
         for (usize i = 0; i < m_actors.size(); ++i) {
             if (m_actors[i].player() == blow.player && !isDown(i)) {

@@ -111,4 +111,49 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
     REQUIRE(forGood.stage() == LegendRite::Stage::None);
 }
 
+TEST_CASE("the rite is shown by the boss's kind: the hold, the gesture, the flight and the "
+          "burst",
+          "[game][enemies]") {
+    // The scimitar, the axe, the lamp, the bellows, the javelin and the parchment are held
+    // in the hand and the rest over the head.
+    REQUIRE(LegendShow::heldInHand(34));
+    REQUIRE(LegendShow::heldInHand(39));
+    REQUIRE_FALSE(LegendShow::heldInHand(40));
+    REQUIRE_FALSE(LegendShow::heldInHand(41));
+    // The genie's and the spider's items go with the special shot, the dragon's, chimera's,
+    // plague fiend's and yeti's with the strong throw, the rest as a potion is used.
+    REQUIRE(LegendShow::gestureOf(36) == PlayerDeed::ShootLegend);
+    REQUIRE(LegendShow::gestureOf(37) == PlayerDeed::ShootLegend);
+    REQUIRE(LegendShow::gestureOf(34) == PlayerDeed::ThrowLegend);
+    REQUIRE(LegendShow::gestureOf(39) == PlayerDeed::ThrowLegend);
+    REQUIRE(LegendShow::gestureOf(41) == PlayerDeed::HurlLegend);
+    REQUIRE(LegendShow::gestureOf(42) == PlayerDeed::HurlLegend);
+    // Four fly at the boss; the bellows ride ahead of the bearer; the rest are set on it.
+    REQUIRE(LegendShow::flightOf(35) == LegendShow::Flight::Flies);
+    REQUIRE(LegendShow::flightOf(37) == LegendShow::Flight::WithBearer);
+    REQUIRE(LegendShow::flightOf(41) == LegendShow::Flight::AtBoss);
+    REQUIRE(LegendShow::flightOf(40) == LegendShow::Flight::AtBoss);
+    // The book burns the lich for five seconds, the bellows the spider for three, the rest
+    // for half a minute; the parchment's fire is its burst and then the second.
+    REQUIRE(LegendShow::burstSecondsOf(41) == Approx(5.0f));
+    REQUIRE(LegendShow::burstSecondsOf(37) == Approx(3.0f));
+    REQUIRE(LegendShow::burstSecondsOf(40) == Approx(30.0f));
+    REQUIRE(LegendShow::restingTreeOf(41) == "LEGENDPRJ");
+    REQUIRE(LegendShow::burstTreeOf(41) == "LEGENDFX");
+    REQUIRE(LegendShow::restingTreeOf(39) == "LEGENDFX");
+    REQUIRE(LegendShow::burstTreeOf(39) == "LEGENDFX2");
+    REQUIRE(LegendShow::bossOffsetOf(41) == Vec3{0.0f, 0.0f, 0.0f});
+    REQUIRE(LegendShow::bossOffsetOf(40).z == Approx(2.5625f));
+    // The sounds are the realm's, by letter, with the dream's throw as the bank misspells it.
+    REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::PickedUp, 'G').front() == "S_LEGWPUP");
+    REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::Thrown, 'G').front() == "S_GLEGWTHROW");
+    REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::Thrown, 'J').back() == "S_JEGWTHROW");
+    REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::Flying, 'A') ==
+            std::vector<std::string>{"S_ALEGWFLY", "S_ALEGWALL"});
+    REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::Landed, 'G') ==
+            std::vector<std::string>{"S_GLEGWHIT", "S_GLEGWALSTP"});
+    REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::WornOff, 'K') ==
+            std::vector<std::string>{"S_KLEGWPDN"});
+}
+
 } // namespace
