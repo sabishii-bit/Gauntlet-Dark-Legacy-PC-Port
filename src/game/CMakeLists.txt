@@ -44,6 +44,7 @@ add_library(game STATIC
     world/MoveStrikes.cpp
     world/Breakables.h
     world/Breakables.cpp
+    players/LevelWatch.cpp
     enemies/EnemyKinds.cpp
     enemies/EnemyAnimator.cpp
     enemies/EnemyMind.cpp

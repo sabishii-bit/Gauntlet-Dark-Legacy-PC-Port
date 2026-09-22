@@ -118,6 +118,7 @@ constexpr f32 kShieldSeconds = 3.0f;      ///< how long a potion's ring lasts
 constexpr f32 kShieldRadius = 25.0f;      ///< at full size; it is sized by the magic, as a burst is
 constexpr f32 kShieldPotency = 0.25f;     ///< of the character's magic power, its harm
 constexpr f32 kShieldHarmEvery = 0.5f;    ///< seconds between its harming what it touches
+constexpr f32 kLevelUpEffectSeconds = 3.0f;   ///< the fanfare's ring about the character
 constexpr f32 kKnockdownFrom = 1.0f;      ///< a blast must do more than this to floor anyone
 constexpr f32 kBehind = 1.5707964f;       ///< a blow from further round than this is from behind
 constexpr f32 kStrongThrowScale = 2.0f;  ///< a strong throw's weapon: twice the size and the harm
@@ -251,6 +252,11 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_traps.setPlayerCount(static_cast<s32>(m_actors.size()));
     m_barrels.setPlayerCount(static_cast<s32>(m_actors.size()));
     bindEnemies(device, world, context);
+    // The levels the party comes in at: what is gained from here is news.
+    m_levels.clear();
+    for (const PlayerActor& actor : m_actors) {
+        m_levels.observe(actor.player(), experienceLevel(actor.save().experience()));
+    }
     world.startTriggers(visitors());
     const std::array<SoundSet*, 2> banks{&m_ambientBank, &m_levelBank};
     m_ambience.bind(world.layout(), banks);
@@ -1389,7 +1395,7 @@ void PlayScene::cry(usize index, std::string_view which) {
 
 /** Puts a help message up over a character, the narrator saying it, unless the party has
  * seen it. */
-bool PlayScene::postHelp(s32 id, usize index) {
+bool PlayScene::postHelp(s32 id, usize index, s32 number) {
     if (index >= m_actors.size()) {
         return false;
     }
@@ -1400,7 +1406,7 @@ bool PlayScene::postHelp(s32 id, usize index) {
                                          i < m_helpHeard.size() ? &m_helpHeard[i] : nullptr});
         }
     }
-    const HelpMessageSpec* spec = m_help.post(id, m_actors[index].player(), readers);
+    const HelpMessageSpec* spec = m_help.post(id, m_actors[index].player(), readers, number);
     if (spec == nullptr) {
         return false;
     }
@@ -1510,6 +1516,41 @@ void PlayScene::settleBlasts() {
         for (const s32 critter : m_critters.within(felt.position, felt.radius)) {
             const Vec3 away = m_critters.positionOf(critter) - felt.position;
             strikeCritter(critter, felt.damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
+        }
+    }
+}
+
+/** As the original's AddExp has it: a level gained posts "LEVEL n", plays the class's
+ * fanfare about the character and heals a hundred; a tenth level besides changes the costume
+ * and has the class say its piece (`S_EXP10WAR`, up to `S_EXP99`). */
+void PlayScene::updateLevels() {
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        CharacterSave& save = m_actors[i].save();
+        const auto change = m_levels.observe(m_actors[i].player(), experienceLevel(save.experience()));
+        if (!change.has_value() || !change->gained()) {
+            continue;
+        }
+        postHelp(HelpMessages::kLevelUp, i, change->to);
+        save.progress().health += static_cast<s32>(kLevelUpHealth);
+        if (m_device != nullptr && m_weapons.loaded()) {
+            const std::string tree = std::format("LEVELUP_{}", colorCode(save.color));
+            if (m_weapons.trees.find(tree).has_value()) {
+                EffectTrees::Setting setting;
+                setting.seconds = kLevelUpEffectSeconds;
+                const u32 effect = m_effects.startSet(*m_device, m_weapons, tree, m_actors[i].position(), setting);
+                m_effects.moveTo(effect, m_actors[i].position());
+            }
+        }
+        if (change->milestone() && m_device != nullptr) {
+            const s32 tier = std::min(change->to / LevelChange::kLevelsPerTier, 9);
+            const std::string_view cls = classCode(save.character);
+            if (playNamed(std::format("S_EXP{}0{}", tier, cls.substr(0, 3))) == kNoSound) {
+                playNamed("S_EXP99ALL");
+            }
+            // The costume of the new tier, weapon and all, where the character stands.
+            if (auto figure = loadFigure(*m_device, save); figure != nullptr) {
+                m_figures[i] = std::move(figure);
+            }
         }
     }
 }
@@ -1704,6 +1745,7 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
         }
     }
     awardCritterLosses();
+    updateLevels();
     for (const EnemyBlow& blow : m_enemies.takeBlows()) {
         for (usize i = 0; i < m_actors.size(); ++i) {
             if (m_actors[i].player() != blow.player || isDown(i)) {

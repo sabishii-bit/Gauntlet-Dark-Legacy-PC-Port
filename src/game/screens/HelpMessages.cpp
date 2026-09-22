@@ -8,7 +8,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 28> kSpecs{{
+constexpr std::array<HelpMessageSpec, 29> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kKeysFull, "FULLOFKEYS", "S_KEYFULL"},
@@ -35,6 +35,7 @@ constexpr std::array<HelpMessageSpec, 28> kSpecs{{
     {79, "JES_TURBO", "S_TURC_JES", HelpRepeat::OncePerSession, 2, 70, true},
     {HelpMessages::kUseTurbo, "USETURBO", "S_USETURBO"},
     {HelpMessages::kHealthFull, "HEALTHFULL", "S_HEALTHFULL", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kLevelUp, "LEVELUP", "S_GAINEDLEVEL", HelpRepeat::Always},
     {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS"},
     {HelpMessages::kGasSpoils, "GASPOISON", "S_GASFOODBAD"},
     {HelpMessages::kChestsExplode, "CHESTSEXPL", "S_CHESTSEXPL"},
@@ -67,13 +68,13 @@ void HelpMessages::clear() {
 }
 
 const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
-                                          std::span<const HelpReader> party) {
+                                          std::span<const HelpReader> party, s32 number) {
     const HelpMessageSpec* spec = specOf(id);
     if (spec == nullptr || m_strings == nullptr) {
         return nullptr;
     }
     // One at a time, unless it outranks what is up; the pause between them is the lessons'.
-    const bool lesson = spec->repeat != HelpRepeat::OncePerSession;
+    const bool lesson = spec->repeat != HelpRepeat::OncePerSession && spec->repeat != HelpRepeat::Always;
     if ((showing() && m_priority >= spec->priority) || (lesson && m_pauseLeft > 0)) {
         return nullptr;
     }
@@ -88,12 +89,14 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
     };
     // Told once: a player's own message until that player has seen it, a lesson until
     // everyone playing has, a session's until anyone playing has heard it since loading.
-    const bool wanted =
-        spec->repeat == HelpRepeat::OncePerSession
-            ? std::ranges::none_of(party, heardIt)
-            : std::ranges::any_of(party, [&](const HelpReader& reader) {
+    bool wanted = spec->repeat == HelpRepeat::Always;
+    if (spec->repeat == HelpRepeat::OncePerSession) {
+        wanted = std::ranges::none_of(party, heardIt);
+    } else if (!wanted) {
+        wanted = std::ranges::any_of(party, [&](const HelpReader& reader) {
                   return concerns(reader) && !sawIt(reader);
               });
+    }
     const auto message = m_strings->find(spec->text);
     if (!wanted || !message.has_value()) {
         return nullptr;
@@ -106,6 +109,10 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
             continue;
         }
         for (std::string& line : ScrollBox::splitLines(info.pages[page])) {
+            // A number the message asks for ("LEVEL %d") is filled in.
+            if (const auto at = line.find("%d"); at != std::string::npos && number >= 0) {
+                line.replace(at, 2, std::to_string(number));
+            }
             lines.push_back(std::move(line));
         }
     }

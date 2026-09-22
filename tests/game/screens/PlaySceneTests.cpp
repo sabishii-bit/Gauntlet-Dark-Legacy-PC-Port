@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <numbers>
 #include <vector>
 
@@ -1280,6 +1281,75 @@ TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill 
     scene.awardExperience(0, 100, false); // won otherwise, it feeds nothing
     REQUIRE(scene.actor(0)->save().experience() == 570);
     REQUIRE(scene.turboMeter(0)->held() == Catch::Approx(fed));
+    scene.close();
+}
+
+TEST_CASE("a level gained is announced with its number and a hundred health, and a tenth "
+          "level changes the costume",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("text/english.json");
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    const GameConfig config;
+    StringTable strings;
+    strings.load(test::dataDirectory() / "text", config.text.language);
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().health = 400;
+    save.progress().experience = levelExperience(9);
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{15.8f, 0.2f, 0.7f};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(experienceLevel(scene.actor(0)->save().experience()) == 9);
+    // Enough for the tenth: the message says so, the health rises by a hundred, and the
+    // figure is the tier's.
+    const s32 health = scene.actor(0)->save().health();
+    const auto before = scene.figureDirectory(0);
+    // (The fields pay experience at their own scale, so the gain may be more than one.)
+    scene.awardExperience(0, levelExperience(10) - levelExperience(9) + 1, false);
+    scene.update(1.0 / 60.0, still);
+    const s32 gained = experienceLevel(scene.actor(0)->save().experience());
+    REQUIRE(gained >= 10);
+    REQUIRE(scene.actor(0)->save().health() == health + 100);
+    REQUIRE(scene.help().showing());
+    REQUIRE(scene.help().lines().front() == std::format("LEVEL {}", gained));
+    if (before.has_value()) {
+        const auto after = scene.figureDirectory(0);
+        REQUIRE(after.has_value());
+        REQUIRE(after->filename().string() != before->filename().string());
+        REQUIRE(after->filename().string().ends_with("10"));
+    }
+    // Another level, no tier: the message again, the costume kept.
+    for (int i = 0; i < 700; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    const auto tiered = scene.figureDirectory(0);
+    scene.awardExperience(0, levelExperience(gained + 1) - levelExperience(gained) + 1, false);
+    scene.update(1.0 / 60.0, still);
+    const s32 next = experienceLevel(scene.actor(0)->save().experience());
+    REQUIRE(next > gained);
+    REQUIRE(scene.help().lines().front() == std::format("LEVEL {}", next));
+    if (next / 10 == gained / 10) {
+        REQUIRE(scene.figureDirectory(0) == tiered);
+    }
     scene.close();
 }
 
