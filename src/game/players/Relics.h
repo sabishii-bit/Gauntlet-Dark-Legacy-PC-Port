@@ -9,8 +9,9 @@ namespace gdl::game {
 /**
  * What a character gathers for the tower and its bosses, beyond the crystals: the
  * runestones (one bit each, thirteen in all), the legend items (a bit per realm, each found
- * in another realm and spent on the boss of its own), and the gargoyle pieces (the serpent's,
- * the eagle's and the lion's, counted up to what the tower's statues want).
+ * in another realm and spent on the boss of its own), the bosses' shards (one from each
+ * beaten, by the realm's place in the tower's order), and the gargoyle pieces (the
+ * serpent's, the eagle's and the lion's, counted up to what the tower's statues want).
  */
 struct Relics {
     static constexpr s32 kRuneCount = 13;
@@ -21,7 +22,12 @@ struct Relics {
 
     u16 runes = 0;
     u16 legends = 0;
+    u16 shards = 0; ///< the bosses' shards, a bit per realm in the tower's order
     std::array<s32, kGargoyleKinds> gargoylePieces{};
+
+    bool hasShard(s32 order) const { return inRange(order, kRealmCount) && (shards & bit(order)) != 0; }
+    /** Takes a boss's shard; false when it was already held (or is no realm). */
+    bool addShard(s32 order);
 
     bool hasRune(s32 rune) const { return inRange(rune, kRuneCount) && (runes & bit(rune)) != 0; }
     /** Takes the rune; false when it was already held (or is no rune). */

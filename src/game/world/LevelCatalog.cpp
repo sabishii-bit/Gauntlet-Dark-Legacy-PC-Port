@@ -1,6 +1,7 @@
 #include "game/world/LevelCatalog.h"
 
 #include <algorithm>
+#include <array>
 #include <exception>
 
 #include <nlohmann/json.hpp>
@@ -28,7 +29,14 @@ std::string upper(std::string_view text) {
 } // namespace
 
 LevelRef LevelRef::tower() {
-    return LevelRef{"TOWER", kTowerRealm, "L1", "Tower", "LEVELS/LEVELL1", "ITEMS/LEVELL"};
+    return LevelRef{"TOWER", kTowerRealm,  "L1", "Tower", "LEVELS/LEVELL1", "ITEMS/LEVELL",
+                    "ITEMS/LEVELL1"};
+}
+
+s32 LevelRef::orderOf(s32 realmId) {
+    constexpr std::array<s32, 12> kOrder{kTowerRealm, 7, 2, 1, 11, 4, 3, 9, 10, 5, 6, 8};
+    const auto found = std::ranges::find(kOrder, realmId);
+    return found != kOrder.end() ? static_cast<s32>(found - kOrder.begin()) : 0;
 }
 
 bool LevelCatalog::load(const std::filesystem::path& unpackedRoot) {
@@ -53,6 +61,7 @@ bool LevelCatalog::load(const std::filesystem::path& unpackedRoot) {
             for (const nlohmann::json& level : root.value("levels", nlohmann::json::array())) {
                 realm.levels.push_back(upper(level.value("name", std::string{})));
                 realm.titles.push_back(level.value("title", std::string{}));
+                realm.runes.push_back(level.value("rune", 0));
             }
             if (!realm.prefix.empty() && !realm.levels.empty()) {
                 m_realms.push_back(std::move(realm));
@@ -76,7 +85,20 @@ LevelRef LevelCatalog::refOf(const Realm& realm, usize index) {
     level.directory = std::string(kLevelsDirectory) + "/" + prefix.substr(0, prefix.size() - 1) +
                       level.name;
     level.items = std::string(kItemsDirectory) + "/" + prefix;
+    // A boss level has an item archive of its own, named like its folder.
+    level.ownItems = std::string(kItemsDirectory) + "/" + prefix.substr(0, prefix.size() - 1) +
+                     level.name;
     return level;
+}
+
+std::vector<s32> LevelCatalog::runesOf(std::string_view realmFile) const {
+    const std::string wanted = upper(realmFile);
+    for (const Realm& realm : m_realms) {
+        if (realm.file == wanted) {
+            return realm.runes;
+        }
+    }
+    return {};
 }
 
 std::optional<LevelRef> LevelCatalog::byTag(std::string_view tag) const {

@@ -123,6 +123,7 @@ add_executable(tests
     game/screens/StatusBoxTests.cpp
     game/screens/PickupHudTests.cpp
     game/screens/BossMeterTests.cpp
+    game/screens/BossVictoryTests.cpp
     game/screens/PlaySceneTests.cpp
     game/menu/NameEntryTests.cpp
     game/screens/SelectLaneTests.cpp

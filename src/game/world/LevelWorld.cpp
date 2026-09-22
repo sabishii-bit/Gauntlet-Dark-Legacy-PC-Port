@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <filesystem>
 
 #include "engine/core/Log.h"
 
@@ -25,7 +26,12 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     if (!m_animations.load(directory)) {
         log::warn("Level: no animations manifest; its textures stand still");
     }
-    if (!m_items.load(unpackedRoot / m_ref.items)) {
+    // A boss level's own item archive (which holds the wizard who comes at the end) over
+    // the realm's.
+    const bool own = !m_ref.ownItems.empty() &&
+                     std::filesystem::exists(unpackedRoot / m_ref.ownItems / "animations.json") &&
+                     m_items.load(unpackedRoot / m_ref.ownItems);
+    if (!own && !m_items.load(unpackedRoot / m_ref.items)) {
         log::warn("Level: without the realm's item archive its borrowed textures and figures are absent");
     }
     // The item archive lends the level its external textures and the torches' frames.

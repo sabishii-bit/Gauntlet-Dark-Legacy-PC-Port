@@ -56,6 +56,7 @@ Inventory inventoryFromJson(const Json& object) {
 Json relicsJson(const Relics& relics) {
     return Json{{"runes", relics.runes},
                 {"legends", relics.legends},
+                {"shards", relics.shards},
                 {"gargoylePieces", relics.gargoylePieces}};
 }
 
@@ -63,6 +64,7 @@ Relics relicsFromJson(const Json& object) {
     Relics relics;
     relics.runes = static_cast<u16>(object.value("runes", 0U));
     relics.legends = static_cast<u16>(object.value("legends", 0U));
+    relics.shards = static_cast<u16>(object.value("shards", 0U));
     const auto pieces = object.value("gargoylePieces", std::vector<s32>{});
     for (usize kind = 0; kind < relics.gargoylePieces.size() && kind < pieces.size(); ++kind) {
         relics.gargoylePieces[kind] = pieces[kind];

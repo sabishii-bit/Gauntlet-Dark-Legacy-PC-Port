@@ -604,6 +604,45 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   are tinted `0x8080FF` while the boss is frozen; it goes with the boss's
   death. The type fields (`CritterWad` 0xD0 `healthBarOffset`, 0xF8..0xFE
   the meter's pieces/advance/insets) need `gdlunpack --only CRITTER` again.
+* A boss fight's camera is `world/BossCamera`, from the realm data's BCAM
+  records (`BossCameraInfo` on the boss level's `LevelInfo`, index
+  `bossCameraIndex` @0x8C of the level record; G5: distances 25..75, player
+  distances 25..30, pitch 0.31..0.44, attention offsets (0, 2.3, -2) near to
+  (0, -9.3, -2) far, maxYaw pi): while the boss (or, after it, the wizard)
+  stands it looks from behind the party along their line to the boss, swung
+  no further about the boss's facing than `maxYaw` when the party is round
+  it (`cosMaxYaw`), at the record's pitch (steeper nearer), backing off by
+  the original's steps (10 out when something is cut off, 2 x (2.5 -
+  margin) when within 2 of the edge, in by (margin - 2.5) past 4) to keep
+  the boss's base and body centre and every player in view. The original's
+  `BossCamBossCalc` is only partly reconstructed (bosscam.c); this is its
+  described behaviour, not its arithmetic.
+* The great ones' sounds and effects: each critter's SFXX records are read
+  whole (`CritterSound`: tree, `%c` sound format, offset, life, scale,
+  flags, link) and set off as `CritterCue`s: a move's at its `sfxFrame`
+  (an attack's effect waiting for the frame its blow lands on, riding on
+  the body), a strike's (`CritterDamage::sound`) at the part it strikes
+  with, a hit's mark (`hitSoundClose` @0xF4 for a blow, `hitSoundFar` @0xF6
+  for a missile) where it landed (`EnemyHit::where/close`). The scene plays
+  the trees from the creature's archive or the weapons' (`HITDIE`), the
+  sounds from the level's bank (a boss level's is the boss's own).
+* The end of a boss fight (`screens/BossVictory`, the original's
+  `DoGoodWizard`, auxscreen.c 236): the fall gives everyone the realm's
+  shard (`Relics::shards`, bit `LevelRef::orderOf(realm)`: the tower's order
+  13, 7, 2, 1, 11, 4, 3, 9, 10, 5, 6, 8), the `BOSSKEY` tree of the level's
+  own item archive (`LevelRef::ownItems`, `ITEMS/LEVELG5`, loaded over the
+  realm's when present; it also holds `WIZARD` and the `LEGEND*` effects)
+  rises where it fell (30 s, then `BOSSKEY2`) with `S_BOSSKEY<letter>`;
+  five seconds on (ten for the demon and the garm) the wizard fades in
+  (4/255 a tick) three units over the middle of the boss mark and the party,
+  and says, typed a character every two ticks with a second between pages
+  under the view, the boss's `<NAME>_SPEECH` with `S_DEFEATVOX<letter>`,
+  then `RUNE_PHRASE0/1/1B/2` with `S_RUNEVOX0/1/2<letter>` by how many of
+  the realm's runestones (the levels' `rune` records) the party holds; two
+  seconds later (ten with gold left, not judged yet) the party sparkles
+  (the spawn effect) and, 35 ticks on, travels to the tower. Not yet: the
+  demon's rune-yes/no speech, the coins the boss spews, the caption's
+  original font placement. Scenario: `level-g5-lich.json`.
 * Levels gained (`players/LevelWatch`, `PlayScene::updateLevels`). The watch
   is told each player's level every tick and reports the changes since it
   last looked (`LevelChange`: from, to, `milestone()` when a tenth is

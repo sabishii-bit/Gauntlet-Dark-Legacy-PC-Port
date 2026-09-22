@@ -112,6 +112,15 @@ constexpr std::string_view kNarratorSecondBank = "VOICE2"; ///< the legend items
 constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
 constexpr std::string_view kRuneVoicePrefix = "S_RUNE"; ///< then S_RUNE2 to S_RUNE12
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
+constexpr std::string_view kWizardTree = "WIZARD";      ///< the good wizard, in a boss level's items
+constexpr std::string_view kBossKeyTree = "BOSSKEY";    ///< the key that rises where the boss fell
+constexpr std::string_view kBossKeyLaterTree = "BOSSKEY2";
+constexpr f32 kBossKeySeconds = 30.0f;
+constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY"; ///< then the level's letter
+constexpr f32 kWizardLift = 3.0f;   ///< how high over the party's middle the wizard hangs
+constexpr f32 kCaptionScale = 0.75f;
+constexpr s32 kCaptionBottom = 96;  ///< the captions sit this far up from the screen's foot
+constexpr s32 kCaptionLineHeight = 18;
 constexpr std::string_view kHelpTextPrefix = "help";
 constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
 constexpr f32 kMoveNamedFrame = 1.0f; ///< of a turbo attack, when its name is announced
@@ -334,6 +343,10 @@ void PlayScene::close() {
     m_enemyMissiles.clear(); // before the archives whose trees they fly
     m_critters.close();
     m_bossMeter.clear(); // before the archive whose textures it draws
+    m_victory.clear();
+    m_wizardModel.clear();
+    m_wizardTree = nullptr;
+    m_sparkled = false;
     m_bosses.close();
     m_enemies.close();
     for (TreeModel& bottle : m_potionModels) {
@@ -1675,9 +1688,149 @@ void PlayScene::followCritterEffects() {
     }
 }
 
+/** The boss has fallen: everyone in play gets its shard, its key rises where it fell, the
+ * meter goes, and the wizard's visit is set going. */
+void PlayScene::bossFallen(const Vec3& where) {
+    const LevelInfo* level = m_world->level();
+    if (level == nullptr || m_victory.running() || m_victory.finished()) {
+        return;
+    }
+    const s32 order = LevelRef::orderOf(m_world->ref().realmId);
+    u16 found = 0;
+    for (PlayerActor& actor : m_actors) {
+        actor.save().progress().relics.addShard(order);
+        found |= actor.save().progress().relics.runes;
+    }
+    // The realm's runestones are those its levels' records number, from one.
+    u16 inRealm = 0;
+    if (m_context.levels != nullptr) {
+        for (const s32 rune : m_context.levels->runesOf(m_world->ref().realm)) {
+            if (rune > 0 && rune <= Relics::kRuneCount) {
+                inRealm |= static_cast<u16>(1U << static_cast<u32>(rune - 1));
+            }
+        }
+    }
+    const char letter = m_world->ref().name.empty() ? 'G' : m_world->ref().name.front();
+    m_victory.begin(level->bossType, letter, inRealm, found, false);
+    if (m_device != nullptr && m_world->items().loaded()) {
+        EffectTrees::Setting setting;
+        setting.seconds = kBossKeySeconds;
+        setting.then = kBossKeyLaterTree;
+        m_effects.startSet(*m_device, m_world->items(), kBossKeyTree, where, setting);
+        loadWizard(*m_device);
+    }
+    playNamed(std::format("{}{}", kBossKeySoundPrefix, letter));
+}
+
+/** The good wizard's figure from the level's own archive, stood over the party. */
+void PlayScene::loadWizard(RenderDevice& device) {
+    m_wizardTree = nullptr;
+    ItemArchive& items = m_world->items();
+    const auto tree = items.trees.find(kWizardTree);
+    if (!tree.has_value()) {
+        log::warn("Tower: no {} in the level's items; the wizard is not seen", kWizardTree);
+        return;
+    }
+    const TreeInfo& figure = items.trees.tree(*tree);
+    if (!m_wizardModel.bind(figure, items.models, items.textures, device)) {
+        return;
+    }
+    m_wizardTree = &figure;
+    if (!figure.sequences.empty()) {
+        m_wizardPlayer.start(figure.sequences[0], 0);
+    }
+    m_wizardPose.rest(figure);
+    // Over the middle of the boss's mark and the party, three units up, facing them.
+    Vec3 centre = m_bosses.position() != nullptr ? *m_bosses.position() : Vec3{0.0f, 0.0f, 0.0f};
+    f32 count = 1.0f;
+    Vec3 party{0.0f, 0.0f, 0.0f};
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        if (!isDown(i)) {
+            centre += m_actors[i].position();
+            party += m_actors[i].position();
+            count += 1.0f;
+        }
+    }
+    m_wizardPosition = centre / count + Vec3{0.0f, kWizardLift, 0.0f};
+    const Vec3 toParty = party / std::max(count - 1.0f, 1.0f) - m_wizardPosition;
+    m_wizardYaw = std::atan2(toParty.x, toParty.z);
+}
+
+/** The wizard's visit runs on: he fades in, says his piece (typed out under the view, his
+ * lines from the level's bank), then the party sparkles and is taken to the tower. */
+void PlayScene::updateVictory(s32 ticks, f32 seconds) {
+    if (!m_victory.running()) {
+        return;
+    }
+    std::vector<usize> pageLengths;
+    if (const auto& caption = m_victory.caption(); caption.has_value()) {
+        if (const auto found = m_strings.find(caption->message); found.has_value()) {
+            for (const std::string& page : m_strings.message(*found).pages) {
+                pageLengths.push_back(page.size());
+            }
+        }
+    }
+    for (const VictoryVoice& voice : m_victory.update(ticks, pageLengths)) {
+        playNamed(voice.sound);
+    }
+    if (m_wizardTree != nullptr && m_victory.wizardShown()) {
+        m_wizardPlayer.advance(seconds, true);
+        m_wizardPose.evaluate(*m_wizardTree, m_wizardPlayer.sequence(), m_wizardPlayer.frame());
+    }
+    if (m_victory.sparkling() && !m_sparkled) {
+        m_sparkled = true;
+        if (m_device != nullptr && m_weapons.loaded()) {
+            for (usize i = 0; i < m_actors.size(); ++i) {
+                if (!isDown(i)) {
+                    m_effects.start(*m_device, m_weapons, kSpawnEffect, m_actors[i].position());
+                }
+            }
+        }
+    }
+    if (m_victory.finished() && !m_leaving) {
+        m_destination = LevelRef::tower();
+        m_leaving = true;
+        m_transition.comeUp();
+    }
+}
+
+void PlayScene::drawWizard(RenderDevice& device, const Mat4& clip) const {
+    if (m_wizardTree == nullptr || !m_victory.wizardShown() || m_victory.wizardAlpha() <= 0.0f) {
+        return;
+    }
+    const Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, m_wizardPosition), m_wizardYaw,
+                                   Vec3{0.0f, 1.0f, 0.0f});
+    m_wizardModel.draw(device, clip, model, m_world->lighting(), m_wizardPose.matrices(), nullptr,
+                       m_victory.wizardAlpha());
+}
+
+/** The wizard's words, typed out under the view. */
+void PlayScene::drawCaption(f32 width, f32 height) {
+    const auto& caption = m_victory.caption();
+    if (!caption.has_value() || !m_text.ready()) {
+        return;
+    }
+    const auto found = m_strings.find(caption->message);
+    if (!found.has_value() || caption->page >= m_strings.message(*found).pages.size()) {
+        return;
+    }
+    const std::string shown = m_strings.message(*found).pages[caption->page].substr(0, caption->shown);
+    const std::vector<std::string> lines = ScrollBox::splitLines(shown);
+    TextStyle style;
+    style.scale = kCaptionScale;
+    s32 y = static_cast<s32>(height) - kCaptionBottom - static_cast<s32>(lines.size()) * kCaptionLineHeight;
+    for (const std::string& line : lines) {
+        m_text.draw(m_canvas, -static_cast<s32>(width / 2.0f), y, line, style);
+        y += kCaptionLineHeight;
+    }
+}
+
 /** The boss's worth goes the great ones' way: shares to the hitter, a kill's to everyone. */
 void PlayScene::awardBossLosses() {
     for (const CritterLoss& loss : m_bosses.takeLosses()) {
+        if (loss.killed) {
+            bossFallen(loss.position);
+        }
         for (const PlayerActor& actor : m_actors) {
             const s32 player = actor.player();
             if ((loss.player >= 0 && loss.player != player) || player < 0 ||
@@ -1908,6 +2061,7 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
         }
     }
     awardBossLosses();
+    updateVictory(ticks, seconds);
     // The great ones' effects and sounds: a move's, a strike's, a hit's.
     for (const CritterCue& cue : m_bosses.takeCues()) {
         showCritterCue(cue, m_bosses.archive(), true);
@@ -2681,11 +2835,20 @@ const WorldCamera& PlayScene::viewCamera() const {
 /** A boss level with a boss camera record frames the fight with it while the boss stands. */
 bool PlayScene::bossCameraOn() const {
     const LevelInfo* level = m_world != nullptr ? m_world->level() : nullptr;
-    return level != nullptr && level->bossCamera.has_value() && m_bosses.present();
+    return level != nullptr && level->bossCamera.has_value() &&
+           (m_bosses.present() || m_victory.running());
 }
 
+/** The boss as the camera sees it; once it has fallen, the wizard in its place. */
 BossCameraSubject PlayScene::bossSubject() const {
     BossCameraSubject subject;
+    if (m_victory.running() && !m_bosses.present()) {
+        subject.position = m_wizardPosition;
+        subject.facing = m_wizardYaw;
+        subject.height = kWizardLift;
+        subject.awake = true;
+        return subject;
+    }
     if (const Vec3* at = m_bosses.position(); at != nullptr) {
         subject.position = *at;
     }
@@ -3102,6 +3265,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_enemies.draw(device, clip, m_world->lighting());
     m_critters.draw(device, clip, m_world->lighting());
     m_bosses.draw(device, clip, m_world->lighting());
+    drawWizard(device, clip);
     m_enemyMissiles.draw(device, clip, m_world->lighting());
     m_missiles.draw(device, clip, m_world->lighting());
     m_effects.draw(device, clip, m_world->fullLighting());
@@ -3120,6 +3284,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         }
         m_pickups.draw(m_canvas, m_boxes);
         m_bossMeter.draw(m_canvas, device);
+        drawCaption(width, height);
     }
     if (spawning()) {
         drawLevelTitle(width);
