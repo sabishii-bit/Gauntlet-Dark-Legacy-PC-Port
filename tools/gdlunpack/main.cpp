@@ -892,6 +892,8 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.key("expValue").value(static_cast<f64>(t.expValue));
         json.key("wakeThreshold").value(static_cast<f64>(t.wakeThreshold));
         vec("healthBarOffset", t.healthBarOffset);
+        json.key("hitSoundFar").value(static_cast<int>(t.hitSoundFar));
+        json.key("hitSoundClose").value(static_cast<int>(t.hitSoundClose));
         json.key("meterPieces").value(static_cast<int>(t.meterPieces));
         json.key("meterAdvance").value(static_cast<int>(t.meterAdvance));
         json.key("meterLeftInset").value(static_cast<int>(t.meterLeftInset));
@@ -977,6 +979,15 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.beginObject();
         json.key("name").value(s.name);
         json.key("levelFormat").value(s.levelFormat);
+        json.key("flags").value(s.flags);
+        json.key("link").value(s.link);
+        vec("offset", s.offset);
+        json.key("life").value(static_cast<f64>(s.life));
+        json.key("rate").value(static_cast<f64>(s.rate));
+        json.key("custom0").value(static_cast<int>(s.custom0));
+        json.key("custom1").value(static_cast<int>(s.custom1));
+        json.key("tint").value(s.tint);
+        json.key("scale").value(static_cast<f64>(s.scale));
         json.endObject();
     }
     json.endArray();

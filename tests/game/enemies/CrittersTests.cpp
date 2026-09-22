@@ -130,6 +130,30 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE(golem.moveOfType(CritterMove::kDeath).has_value());
     REQUIRE(golem.moveOfType(CritterMove::kRoar).has_value());
     REQUIRE_FALSE(golem.damage(99));
+    // Its sounds and effects: the walk's two steps, the swing's swish at its sixth frame,
+    // the stomp's ring where the heel lands, and the marks of a blow and a missile on it.
+    REQUIRE(golem.sounds().size() == 11);
+    REQUIRE(golem.moves()[*walk].sound == 6);
+    REQUIRE(golem.moves()[*walk].soundFrame == 10);
+    REQUIRE(golem.moves()[*walk].sound2 == 7);
+    REQUIRE(golem.sound(6)->soundFor('G') == "S_GENGSTEP1");
+    REQUIRE_FALSE(golem.sound(6)->shows());
+    REQUIRE(golem.moves()[*swing].sound == 9);
+    REQUIRE(golem.moves()[*swing].soundFrame == 6);
+    REQUIRE(golem.sound(9)->soundFor('A') == "S_GOLASWING");
+    const CritterSound* stomp = golem.sound(10);
+    REQUIRE(stomp != nullptr);
+    REQUIRE(stomp->tree == "EXPRING");
+    REQUIRE(stomp->shows());
+    REQUIRE(stomp->offset == Vec3{0.0f, 1.0f, 0.0f});
+    REQUIRE((stomp->flags & CritterSound::kShakes) != 0);
+    REQUIRE(golem.damage(3)->sound == 10);
+    REQUIRE_FALSE(golem.sound(8)->shows()); // NULLFX
+    REQUIRE(golem.hitSoundClose() == 0);
+    REQUIRE(golem.hitSoundFar() == 1);
+    REQUIRE(golem.sound(golem.hitSoundClose())->tree == "HITDIE");
+    REQUIRE(golem.sound(golem.hitSoundFar())->soundFor('G') == "S_GOLGHITFAR");
+    REQUIRE(golem.sound(99) == nullptr);
     CritterData general;
     REQUIRE(general.load(root / "critter/GENERAL.json"));
     REQUIRE(general.kind() == kGeneralCritter);
@@ -201,22 +225,55 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(blows[0].damage >= 10.0f);
     REQUIRE(blows[0].direction.z < 0.0f);
     REQUIRE(critters.positionOf(*id).z > -25.0f + 4.0f); // never onto the player
+    // Its walk sounded its steps as it came (the fields' own, by the realm's letter), and
+    // its attack its swish, or its stomp's ring where the heel came down; each once a move.
+    const std::vector<CritterCue> cues = critters.takeCues();
+    usize steps = 0;
+    usize swishes = 0;
+    usize rings = 0;
+    for (const CritterCue& cue : cues) {
+        REQUIRE(cue.critter == *id);
+        steps += cue.sound == "S_GENGSTEP1" || cue.sound == "S_GENGSTEP2" ? 1U : 0U;
+        swishes += cue.sound == "S_GOLGSWING" ? 1U : 0U;
+        if (cue.sound == "S_GOLGSTOMP") {
+            ++rings;
+            REQUIRE(cue.tree == "EXPRING");
+            REQUIRE(cue.shakes);
+        }
+    }
+    REQUIRE(steps >= 2);
+    REQUIRE(swishes + rings >= 1);
     // A hit takes its armour off and is worth its share of the value to the hitter; enough of
-    // them make it roar.
+    // them make it roar. Where it lands, its own mark of a hit: a blow's close, a missile's
+    // far.
     EnemyHit hit;
     hit.damage = 20.0f;
     hit.player = 0;
     hit.direction = Vec3{0.0f, 0.0f, 1.0f};
+    hit.where = critters.positionOf(*id) + Vec3{1.0f, 5.0f, -2.0f};
     critters.hurt(*id, hit);
     REQUIRE(critters.healthOf(*id) == Approx(300.0f - 17.0f));
+    auto marks = critters.takeCues();
+    REQUIRE(marks.size() == 1);
+    REQUIRE(marks[0].tree == "HITDIE");
+    REQUIRE(marks[0].sound == "S_GOLGHITFAR");
+    REQUIRE(marks[0].position == *hit.where);
+    REQUIRE_FALSE(marks[0].follows);
     auto losses = critters.takeLosses();
     REQUIRE(losses.size() == 1);
     REQUIRE(losses[0].player == 0);
     REQUIRE_FALSE(losses[0].killed);
     REQUIRE(losses[0].experience == Approx(17.0f / 301.0f * 250.0f));
+    hit.close = true;
+    hit.where.reset();
     for (int i = 0; i < 3; ++i) {
         critters.hurt(*id, hit);
     }
+    marks = critters.takeCues();
+    REQUIRE(marks.size() == 3);
+    REQUIRE(marks[0].sound == "S_GOLGHITCLOSE");
+    REQUIRE(marks[0].position == critters.positionOf(*id) + critters.dataOf(*id)->originOffset());
+    hit.close = false;
     bool roared = false;
     for (int i = 0; i < 60; ++i) {
         critters.update(kTicks, kStep, party);

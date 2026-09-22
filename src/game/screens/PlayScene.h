@@ -343,7 +343,8 @@ private:
     void updateEnemies(s32 ticks, f32 seconds);
     void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer);
     void strikeGenerator(s32 id, f32 power, s32 byPlayer);
-    void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer);
+    void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+                       std::optional<Vec3> where = std::nullopt, bool close = false);
     void awardCritterLosses();
     /** Missile targets: the barrels by their own ids, the enemies and generators past these. */
     static constexpr s32 kEnemyTargetBase = 1000;
@@ -351,6 +352,8 @@ private:
     static constexpr s32 kCritterTargetBase = 3000;
     static constexpr s32 kBossTargetBase = 4000;
     void awardBossLosses();
+    void showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss);
+    void followCritterEffects();
     void settleBlasts();
     void updateClouds(f32 seconds);
     bool postHelp(s32 id, usize index, s32 number = -1);
@@ -523,6 +526,14 @@ private:
     Critters m_critters;
     Bosses m_bosses;
     BossMeter m_bossMeter;
+    /** An effect riding on one of the great ones. */
+    struct CritterEffect {
+        u32 effect = 0;
+        s32 critter = -1;
+        bool ofBoss = false;
+        Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
+    };
+    std::vector<CritterEffect> m_critterEffects;
     EnemyMissiles m_enemyMissiles;
     LevelWatch m_levels;
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid

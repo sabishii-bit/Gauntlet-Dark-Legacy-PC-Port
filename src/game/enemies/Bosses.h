@@ -71,6 +71,7 @@ public:
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
     std::vector<CritterBlow> takeBlows();
     std::vector<CritterLoss> takeLosses();
+    std::vector<CritterCue> takeCues() { return m_fighter.takeCues(); }
     std::vector<LegendEvent> takeLegendEvents();
     void hurt(const EnemyHit& hit);
     bool frozen() const;

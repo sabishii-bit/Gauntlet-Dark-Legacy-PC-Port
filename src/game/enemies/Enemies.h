@@ -76,6 +76,8 @@ struct EnemyHit {
     Vec3 direction{0.0f, 0.0f, 1.0f}; ///< the way the hit travels
     s32 player = -1;                  ///< who dealt it; -1 for the world
     s32 level = 1;                    ///< the character's level, against the place's
+    std::optional<Vec3> where;        ///< where it landed, when that is known
+    bool close = false;               ///< a blow struck in the hand, not a missile
 };
 
 /** Where an enemy is asked to appear: about `position`, facing `direction`. */
