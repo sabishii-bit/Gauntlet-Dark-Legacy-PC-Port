@@ -52,6 +52,7 @@ LevelRecord readLevel(std::span<const u8> bytes, usize at) {
     level.fog.max = readWadF32(bytes, fog + 16, kWhat);
     level.fog.near = readWadF32(bytes, fog + 20, kWhat);
     level.fog.far = readWadF32(bytes, fog + 24, kWhat);
+    level.bossCameraIndex = readS16(bytes, at + 0x8C);
     level.maxEnemies = readS16(bytes, at + 0x8E);
     level.rune = readS16(bytes, at + 0x90);
     level.legend = readS16(bytes, at + 0x92);
@@ -96,6 +97,24 @@ CameraRecord readCamera(std::span<const u8> bytes, usize at) {
     camera.maxYaw = readWadF32(bytes, at + 0x60, kWhat);
     camera.bossRadiusMin = readWadF32(bytes, at + 0x64, kWhat);
     camera.bossRadiusMax = readWadF32(bytes, at + 0x68, kWhat);
+    return camera;
+}
+
+BossCameraRecord readBossCamera(std::span<const u8> bytes, usize at) {
+    BossCameraRecord camera;
+    camera.flags = readWadU32(bytes, at, kWhat);
+    camera.maxYaw = readWadF32(bytes, at + 0x04, kWhat);
+    camera.cosMaxYaw = readWadF32(bytes, at + 0x08, kWhat);
+    camera.minDistance = readWadF32(bytes, at + 0x0C, kWhat);
+    camera.minPlayerDistance = readWadF32(bytes, at + 0x10, kWhat);
+    camera.maxDistance = readWadF32(bytes, at + 0x14, kWhat);
+    camera.maxPlayerDistance = readWadF32(bytes, at + 0x18, kWhat);
+    camera.minPitch = readWadF32(bytes, at + 0x1C, kWhat);
+    camera.maxPitch = readWadF32(bytes, at + 0x20, kWhat);
+    camera.minAttention = readVec3(bytes, at + 0x24);
+    camera.maxAttention = readVec3(bytes, at + 0x30);
+    camera.keyAttention = readVec3(bytes, at + 0x3C);
+    camera.wizardAttention = readVec3(bytes, at + 0x48);
     return camera;
 }
 
@@ -154,6 +173,13 @@ WorldDataFile WorldDataFile::parse(std::span<const u8> bytes) {
         requireRecords(bytes, *cameras, kCameraSize);
         for (u32 i = 0; i < cameras->count; ++i) {
             out.cameras.push_back(readCamera(bytes, cameras->offset + usize{i} * kCameraSize));
+        }
+    }
+    if (const WadSection* bossCameras = findWadSection(sections, "BCAM"); bossCameras != nullptr) {
+        requireRecords(bytes, *bossCameras, kBossCameraSize);
+        for (u32 i = 0; i < bossCameras->count; ++i) {
+            out.bossCameras.push_back(
+                readBossCamera(bytes, bossCameras->offset + usize{i} * kBossCameraSize));
         }
     }
     if (const WadSection* audio = findWadSection(sections, "AUDS"); audio != nullptr) {

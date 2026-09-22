@@ -90,6 +90,11 @@ public:
     /** Its archive, whose textures the meter is drawn from; null without a boss. */
     ItemArchive* archive();
     const Vec3* position() const;
+    /** The way it faces, and how big it stands; nought without a boss. */
+    f32 facing() const;
+    f32 radius() const;
+    /** How high its body's centre stands, which the fight's camera keeps in view. */
+    f32 height() const;
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */
     static constexpr s32 kTargetId = 0;

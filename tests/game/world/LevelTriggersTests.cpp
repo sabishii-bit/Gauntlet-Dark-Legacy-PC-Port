@@ -120,6 +120,27 @@ TEST_CASE("a visitor sets off a trigger, opening its chain, once", "[game][world
     REQUIRE(f.triggers.takeSettled().empty());
 }
 
+TEST_CASE("a trigger the party starts inside waits for them to leave it and come back",
+          "[game][world][triggers]") {
+    Fixture f("level-triggers-gate");
+    std::vector<TriggerVisitor> party{Fixture::visitor(Vec3{10.0f, 0.0f, 52.0f}, 0)};
+    f.triggers.openMet(party, f.animator, f.scene, &f.collision);
+    REQUIRE(f.triggers.trigger(1).occupied);
+    for (int i = 0; i < 10; ++i) {
+        f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
+    }
+    REQUIRE_FALSE(f.triggers.trigger(1).fired);
+    REQUIRE(f.triggers.takeOpenings().empty());
+    // Out of it and back in, it goes off as ever.
+    party[0].position = Vec3{10.0f, 0.0f, 70.0f};
+    f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
+    REQUIRE_FALSE(f.triggers.trigger(1).occupied);
+    party[0].position = Vec3{10.0f, 0.0f, 52.0f};
+    f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
+    REQUIRE(f.triggers.trigger(1).fired);
+    REQUIRE(f.triggers.takeOpenings().size() == 2);
+}
+
 TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
           "[game][world][triggers]") {
     Fixture f("level-triggers-field");

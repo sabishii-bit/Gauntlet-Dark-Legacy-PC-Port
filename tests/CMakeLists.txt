@@ -118,6 +118,7 @@ add_executable(tests
     game/screens/HelpMessagesTests.cpp
     game/world/LevelTriggersTests.cpp
     game/world/TowerCameraTests.cpp
+    game/world/BossCameraTests.cpp
     game/world/StartCameraTests.cpp
     game/screens/StatusBoxTests.cpp
     game/screens/PickupHudTests.cpp

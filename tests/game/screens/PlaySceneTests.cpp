@@ -1614,6 +1614,83 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     scene.close();
 }
 
+TEST_CASE("in the town's crypt the lich rises for the party, its meter over the screen, and "
+          "the book of protection brought to it is thrown and takes its quarter",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG5/world.json");
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    test::unpackedOrSkip("critter/LICH.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto crypt = levels.byName("G5");
+    REQUIRE(crypt.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *crypt));
+    REQUIRE(world.level() != nullptr);
+    REQUIRE(world.level()->bossType == 41);
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().relics.addLegend(7); // the book of protection, the town's
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    // Open ground thirty off the boss mark, within the lich's threshold of thirty-nine.
+    options.position = Vec3{0.0f, 0.2f, 30.0f};
+    options.yaw = kPi;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.bosses().present());
+    REQUIRE(scene.bossView().has_value());
+    REQUIRE(scene.bossView()->name == "LICH");
+    REQUIRE(scene.bosses().legend().stage() == LegendRite::Stage::Carried);
+    REQUIRE(scene.bossMeter().bound());
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    // The boss stands at its mark; the meter shows it whole; the fight's own camera looks
+    // from behind the party toward the boss, at the record's shallow pitch.
+    REQUIRE(glm::distance(*scene.bosses().position(), Vec3{0.0f, 0.0f, -0.5f}) < 2.0f);
+    REQUIRE(world.level()->bossCamera.has_value());
+    REQUIRE(scene.bossCameraOn());
+    REQUIRE(scene.viewCamera().position.z > scene.actor(0)->position().z);
+    REQUIRE(scene.viewCamera().pitch <= world.level()->bossCamera->maxPitch + 0.01f);
+    REQUIRE(scene.bossCamera().margin() >= 0.0f);
+    REQUIRE(scene.bossMeter().showing());
+    REQUIRE(scene.bossMeter().shown() == scene.bossView()->maxHealth);
+    REQUIRE(scene.bossMeter().fillWidths()[0] == BossMeter::kPieceWidth);
+    // It wakes for the party; the book is spent as it is held up, and thrown it takes a
+    // quarter of the lich, which the meter follows down.
+    const f32 whole = scene.bossView()->maxHealth;
+    int waited = 0;
+    while (!scene.bosses().legend().thrown() && waited < 3000) {
+        scene.update(1.0 / 60.0, still);
+        ++waited;
+    }
+    REQUIRE(scene.bosses().view().awake);
+    REQUIRE(scene.bosses().legend().thrown());
+    REQUIRE_FALSE(scene.actor(0)->save().progress().relics.hasLegend(7));
+    REQUIRE(scene.bossView()->health == Approx(whole - (0.25f * whole - 1.0f)));
+    const f32 struck = scene.bossView()->health;
+    scene.update(1.0 / 60.0, still);
+    REQUIRE(scene.bossMeter().shown() > struck); // three a tick, not at once
+    for (int i = 0; i < 600 && scene.bossMeter().shown() > struck; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.bossMeter().shown() <= scene.bossView()->health);
+    REQUIRE(scene.bossMeter().fillWidths()[1] < BossMeter::kPieceWidth - 53);
+    scene.close();
+    REQUIRE_FALSE(scene.bossMeter().bound());
+}
+
 TEST_CASE("potions burst about the character or where they land, and powerups show",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();

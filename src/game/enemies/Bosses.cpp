@@ -200,6 +200,22 @@ const Vec3* Bosses::position() const {
     return m_id.has_value() ? &m_fighter.positionOf(*m_id) : nullptr;
 }
 
+f32 Bosses::facing() const {
+    return m_id.has_value() ? m_fighter.yawOf(*m_id) : 0.0f;
+}
+
+f32 Bosses::radius() const {
+    return m_id.has_value() ? m_fighter.radiusOf(*m_id) : 0.0f;
+}
+
+f32 Bosses::height() const {
+    const CritterData* data = m_id.has_value() ? m_fighter.dataOf(*m_id) : nullptr;
+    if (data == nullptr) {
+        return 0.0f;
+    }
+    return data->originOffset().y > 0.0f ? data->originOffset().y : data->radius();
+}
+
 std::string_view Bosses::moveName() const {
     return m_id.has_value() ? m_fighter.moveOf(*m_id) : std::string_view{};
 }

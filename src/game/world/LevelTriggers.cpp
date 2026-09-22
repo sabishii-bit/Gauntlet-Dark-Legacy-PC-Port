@@ -215,12 +215,23 @@ void LevelTriggers::fire(usize index, bool atOnce, WorldAnimator& animator, Worl
     }
 }
 
+bool LevelTriggers::visited(const LevelTrigger& trigger, f32 radius,
+                            std::span<const TriggerVisitor> visitors) {
+    return std::ranges::any_of(visitors, [&](const TriggerVisitor& visitor) {
+        const Vec3 away = visitor.position - trigger.spot;
+        const f32 reach = radius + visitor.radius;
+        return away.x * away.x + away.z * away.z <= reach * reach && std::abs(away.y) <= kReach;
+    });
+}
+
 void LevelTriggers::openMet(std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                             WorldScene& scene, WorldCollision* collision) {
     for (usize i = 0; i < m_triggers.size(); ++i) {
-        const LevelTrigger& trigger = m_triggers[i];
+        LevelTrigger& trigger = m_triggers[i];
         if (trigger.needsCrystals() && qualifies(trigger, visitors)) {
             fire(i, true, animator, scene, collision);
+        } else if (!trigger.fired) {
+            trigger.occupied = visited(trigger, trigger.radius, visitors);
         }
     }
 }
@@ -241,18 +252,12 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         const bool qualified = qualifies(trigger, visitors);
         const f32 radius =
             trigger.needsCrystals() && qualified ? trigger.radius * kMetReach : trigger.radius;
-        bool visited = false;
-        for (const TriggerVisitor& visitor : visitors) {
-            const Vec3 away = visitor.position - trigger.spot;
-            const f32 reach = radius + visitor.radius;
-            if (away.x * away.x + away.z * away.z <= reach * reach &&
-                std::abs(away.y) <= kReach) {
-                visited = true;
-                break;
-            }
-        }
-        if (!visited) {
+        if (!visited(trigger, radius, visitors)) {
+            trigger.occupied = false;
             continue;
+        }
+        if (trigger.occupied) {
+            continue; // stood in from the start: not until they come back to it
         }
         if (qualified) {
             fire(i, false, animator, scene, collision);

@@ -66,6 +66,7 @@
 #include "game/world/StartCamera.h"
 #include "game/world/SumnerFigure.h"
 #include "game/world/SumnerHints.h"
+#include "game/world/BossCamera.h"
 #include "game/world/TowerCamera.h"
 #include "game/world/LevelWorld.h"
 
@@ -187,6 +188,10 @@ public:
     /** The camera the scene is seen through: the start camera while it holds and rides in,
      * the crystals during the welcome's cut, else the follow camera. */
     const WorldCamera& viewCamera() const;
+    /** The boss fight's camera, used while a boss level's boss stands. */
+    const BossCamera& bossCamera() const { return m_bossCamera; }
+    bool bossCameraOn() const;
+    BossCameraSubject bossSubject() const;
     const StartCamera& startCamera() const { return m_startCamera; }
     /** The music's voice, kNoSound while nothing plays. */
     SoundHandle music() const { return m_music; }
@@ -415,6 +420,7 @@ private:
     PickupHud m_pickups;
     Canvas m_canvas;
     TowerCamera m_camera;
+    BossCamera m_bossCamera;
     std::vector<PlayerActor> m_actors;
     std::vector<std::unique_ptr<Figure>> m_figures; ///< one per actor, null when unavailable
     std::vector<CameraSubject> m_subjects; ///< one per actor, refreshed every frame

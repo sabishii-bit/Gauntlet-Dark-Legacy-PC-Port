@@ -87,6 +87,25 @@ LevelCameraInfo parseCamera(const nlohmann::json& json) {
     return camera;
 }
 
+BossCameraInfo parseBossCamera(const nlohmann::json& json) {
+    BossCameraInfo camera;
+    camera.flags = json.value("flags", 0U);
+    camera.maxYaw = json.value("maxYaw", camera.maxYaw);
+    camera.cosMaxYaw = json.value("cosMaxYaw", camera.cosMaxYaw);
+    camera.minDistance = json.value("minDistance", camera.minDistance);
+    camera.minPlayerDistance = json.value("minPlayerDistance", camera.minPlayerDistance);
+    camera.maxDistance = json.value("maxDistance", camera.maxDistance);
+    camera.maxPlayerDistance = json.value("maxPlayerDistance", camera.maxPlayerDistance);
+    camera.minPitch = json.value("minPitch", camera.minPitch);
+    camera.maxPitch = json.value("maxPitch", camera.maxPitch);
+    camera.minAttention = readVec3(json.value("minAttention", nlohmann::json{}), camera.minAttention);
+    camera.maxAttention = readVec3(json.value("maxAttention", nlohmann::json{}), camera.maxAttention);
+    camera.keyAttention = readVec3(json.value("keyAttention", nlohmann::json{}), camera.keyAttention);
+    camera.wizardAttention =
+        readVec3(json.value("wizardAttention", nlohmann::json{}), camera.wizardAttention);
+    return camera;
+}
+
 LevelAudioInfo parseAudio(const nlohmann::json& json) {
     LevelAudioInfo audio;
     audio.bank = json.value("bank", std::string{});
@@ -113,8 +132,16 @@ bool WorldData::load(const std::filesystem::path& file) {
         for (const nlohmann::json& enemy : root.value("enemies", nlohmann::json::array())) {
             roster.push_back(LevelEnemy{enemy.value("kind", -1), enemy.value("subtype", 0)});
         }
+        std::vector<BossCameraInfo> bossCameras;
+        for (const nlohmann::json& camera : root.value("bossCameras", nlohmann::json::array())) {
+            bossCameras.push_back(parseBossCamera(camera));
+        }
         for (const nlohmann::json& level : root.at("levels")) {
             m_levels.push_back(parseLevel(level, roster));
+            const s32 bossCamera = level.value("bossCameraIndex", -1);
+            if (bossCamera >= 0 && static_cast<usize>(bossCamera) < bossCameras.size()) {
+                m_levels.back().bossCamera = bossCameras[static_cast<usize>(bossCamera)];
+            }
         }
         for (const nlohmann::json& camera : root.value("cameras", nlohmann::json::array())) {
             m_cameras.push_back(parseCamera(camera));

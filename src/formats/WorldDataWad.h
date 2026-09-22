@@ -64,6 +64,7 @@ struct LevelRecord {
     s16 cameraIndex = -1;
     s16 audioIndex = -1;
     s16 mapIndex = -1;
+    s16 bossCameraIndex = -1; ///< which of the realm's boss cameras the fight uses
     s16 rune = 0;
     s16 legend = 0;
     s16 maxEnemies = 0;
@@ -108,6 +109,25 @@ struct CameraRecord {
     f32 bossRadiusMax = 0.0f;
 };
 
+/** How the camera frames a boss fight: how far it may swing about the party's line to the
+ * boss, how far it stands from what it watches, how steep it looks, and where about the
+ * boss (or the key it drops, or the wizard) it looks. */
+struct BossCameraRecord {
+    u32 flags = 0;
+    f32 maxYaw = 0.0f;
+    f32 cosMaxYaw = 0.0f;
+    f32 minDistance = 0.0f;
+    f32 minPlayerDistance = 0.0f;
+    f32 maxDistance = 0.0f;
+    f32 maxPlayerDistance = 0.0f;
+    f32 minPitch = 0.0f;
+    f32 maxPitch = 0.0f;
+    Vec3 minAttention{0.0f, 0.0f, 0.0f}; ///< the look point's offset from the boss, near
+    Vec3 maxAttention{0.0f, 0.0f, 0.0f}; ///< and far
+    Vec3 keyAttention{0.0f, 0.0f, 0.0f}; ///< from the key it drops
+    Vec3 wizardAttention{0.0f, 0.0f, 0.0f};
+};
+
 /** A level's sound bank, music stream and the sounds it plays on entry and on hits. */
 struct AudioRecord {
     std::string bank;
@@ -143,12 +163,14 @@ struct WorldDataFile {
     static constexpr usize kCameraSize = 0x6C;
     static constexpr usize kAudioSize = 0x3C;
     static constexpr usize kSoundSize = 0x18;
+    static constexpr usize kBossCameraSize = 0x54;
 
     u32 realm = 0;
     std::string prefix; ///< the level folders' name without their number, "levelL"
     std::vector<WorldEnemyRecord> enemies;
     std::vector<LevelRecord> levels;
     std::vector<CameraRecord> cameras;
+    std::vector<BossCameraRecord> bossCameras;
     std::vector<AudioRecord> audio;
     std::vector<SoundRecord> sounds;
 

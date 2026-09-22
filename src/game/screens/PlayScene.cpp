@@ -270,6 +270,9 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
     }
     m_camera.reset(m_subjects, world.cameraMarkers(), world.cameraRange(), cameraView());
+    if (bossCameraOn()) {
+        m_bossCamera.reset(bossSubject(), m_subjects, *world.level()->bossCamera, cameraView());
+    }
     startMusic();
     m_intro = Intro::None;
     // The party materialises first; Sumner's welcome, when it is due, follows.
@@ -1690,6 +1693,8 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
             if (const CritterMeter* meter = m_bosses.meter(); meter != nullptr) {
                 ItemArchive* archive = m_bosses.archive();
                 m_bossMeter.bind(*meter, archive != nullptr ? &archive->textures : nullptr);
+                const BossView boss = m_bosses.view();
+                m_bossMeter.update(0, boss.health, boss.maxHealth, boss.alive, false);
             }
             // The first of the party carrying its legend item brings it to the fight.
             for (const PlayerActor& actor : m_actors) {
@@ -2538,7 +2543,28 @@ const WorldCamera& PlayScene::viewCamera() const {
     if (m_startCamera.active()) {
         return m_startCamera.camera();
     }
-    return m_intro == Intro::Crystal ? m_cutCamera : m_camera.camera();
+    if (m_intro == Intro::Crystal) {
+        return m_cutCamera;
+    }
+    return bossCameraOn() ? m_bossCamera.camera() : m_camera.camera();
+}
+
+/** A boss level with a boss camera record frames the fight with it while the boss stands. */
+bool PlayScene::bossCameraOn() const {
+    const LevelInfo* level = m_world != nullptr ? m_world->level() : nullptr;
+    return level != nullptr && level->bossCamera.has_value() && m_bosses.present();
+}
+
+BossCameraSubject PlayScene::bossSubject() const {
+    BossCameraSubject subject;
+    if (const Vec3* at = m_bosses.position(); at != nullptr) {
+        subject.position = *at;
+    }
+    subject.facing = m_bosses.facing();
+    subject.radius = m_bosses.radius();
+    subject.height = m_bosses.height();
+    subject.awake = m_bosses.view().awake;
+    return subject;
 }
 
 /** Whether any party member's player pressed a button this frame. */
@@ -2856,8 +2882,13 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             followed.push_back(m_subjects[i]);
         }
     }
-    m_camera.update(followed.empty() ? m_subjects : followed, m_world->cameraMarkers(),
-                    m_world->cameraRange(), cameraView(), seconds);
+    if (bossCameraOn()) {
+        m_bossCamera.update(bossSubject(), followed.empty() ? m_subjects : followed,
+                            *m_world->level()->bossCamera, cameraView(), seconds);
+    } else {
+        m_camera.update(followed.empty() ? m_subjects : followed, m_world->cameraMarkers(),
+                        m_world->cameraRange(), cameraView(), seconds);
+    }
     updateAmbience();
     return PlayOutcome::Running;
 }

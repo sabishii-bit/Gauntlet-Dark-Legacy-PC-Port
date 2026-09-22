@@ -57,6 +57,8 @@ struct LevelTrigger {
     f32 radius = 0.0f;
     s32 sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
+    bool occupied = false; ///< the party stood in it as the level opened: it waits for them
+                           ///< to leave and come back
 
     /** Whether it wants every visitor to carry a realm's crystals first. */
     bool needsCrystals() const { return (flags & kRequirement) != 0 && id < kGargoyleIds; }
@@ -102,7 +104,8 @@ public:
     f32 alphaOf(s32 object) const;
 
     /** Opens at once whatever the party already qualifies for, as a level does when it
-     * starts. */
+     * starts; a spot the party is already standing in (a scenario's doing: nobody starts
+     * on one) waits for them to leave it and come back. */
     void openMet(std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                  WorldScene& scene, WorldCollision* collision);
     /** Fires the triggers visitors stand in and carries the fades on by `seconds`. */
@@ -131,6 +134,9 @@ private:
     const Target* targetOf(s32 object) const;
     static TriggerOpening openingOf(const Target& target, bool atOnce);
     static bool qualifies(const LevelTrigger& trigger, std::span<const TriggerVisitor> visitors);
+    /** Whether anyone stands in the trigger's spot, `radius` wide. */
+    static bool visited(const LevelTrigger& trigger, f32 radius,
+                        std::span<const TriggerVisitor> visitors);
     void fire(usize index, bool atOnce, WorldAnimator& animator, WorldScene& scene,
               WorldCollision* collision);
     /** True when the target opened now, not earlier. */
