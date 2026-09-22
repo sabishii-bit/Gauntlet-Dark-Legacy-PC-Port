@@ -77,6 +77,7 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_armor = type.value("armor", 0.0f);
         m_maxHealth = type.value("maxHealth", 1.0f);
         m_experience = type.value("expValue", 0.0f);
+        m_wake = type.value("wakeThreshold", 0.0f);
         m_vertDrift = type.value("vertDrift", 0.0f);
         m_originOffset = vecOf(type, "originOffset");
         m_sight = targetOf(type);

@@ -111,6 +111,7 @@ add_executable(tests
     game/enemies/EnemiesTests.cpp
     game/enemies/GeneratorsTests.cpp
     game/enemies/CrittersTests.cpp
+    game/enemies/BossesTests.cpp
     game/world/MoveStrikesTests.cpp
     game/screens/HelpMessagesTests.cpp
     game/world/LevelTriggersTests.cpp

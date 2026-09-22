@@ -315,6 +315,7 @@ void PlayScene::close() {
     m_generators.clear();
     m_enemyMissiles.clear(); // before the archives whose trees they fly
     m_critters.close();
+    m_bosses.close();
     m_enemies.close();
     for (TreeModel& bottle : m_potionModels) {
         bottle.clear();
@@ -1171,6 +1172,16 @@ void PlayScene::updateStrikes(f32 seconds) {
         for (const s32 generator : m_generators.within(hit.centre, hit.radius)) {
             strikeGenerator(generator, hit.damage, hit.owner);
         }
+        if (m_bosses.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
+            EnemyHit struck;
+            struck.damage = hit.damage;
+            struck.flags = flags;
+            struck.player = hit.owner;
+            if (const Vec3* at = m_bosses.position(); at != nullptr) {
+                struck.direction = Vec3{at->x - hit.centre.x, 0.0f, at->z - hit.centre.z};
+            }
+            m_bosses.hurt(struck);
+        }
         for (const s32 critter : m_critters.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
             const Vec3 direction = m_critters.positionOf(critter) - hit.centre;
             strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner);
@@ -1513,6 +1524,15 @@ void PlayScene::settleBlasts() {
         for (const s32 generator : m_generators.within(felt.position, felt.radius)) {
             strikeGenerator(generator, felt.damage, -1);
         }
+        if (m_bosses.within(felt.position, felt.radius)) {
+            EnemyHit struck;
+            struck.damage = felt.damage;
+            struck.flags = EnemyHit::kKnockDown;
+            if (const Vec3* at = m_bosses.position(); at != nullptr) {
+                struck.direction = Vec3{at->x - felt.position.x, 0.0f, at->z - felt.position.z};
+            }
+            m_bosses.hurt(struck);
+        }
         for (const s32 critter : m_critters.within(felt.position, felt.radius)) {
             const Vec3 away = m_critters.positionOf(critter) - felt.position;
             strikeCritter(critter, felt.damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
@@ -1570,6 +1590,26 @@ void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& directio
     m_critters.hurt(id, hit);
 }
 
+/** The boss's worth goes the great ones' way: shares to the hitter, a kill's to everyone. */
+void PlayScene::awardBossLosses() {
+    for (const CritterLoss& loss : m_bosses.takeLosses()) {
+        for (const PlayerActor& actor : m_actors) {
+            const s32 player = actor.player();
+            if ((loss.player >= 0 && loss.player != player) || player < 0 ||
+                static_cast<usize>(player) >= m_critterExperienceOwed.size()) {
+                continue;
+            }
+            f32& owed = m_critterExperienceOwed[static_cast<usize>(player)];
+            owed += loss.experience;
+            const auto whole = static_cast<s32>(std::floor(owed));
+            if (whole > 0) {
+                owed -= static_cast<f32>(whole);
+                awardExperience(player, whole, loss.killed);
+            }
+        }
+    }
+}
+
 /** What the great ones are worth: a share to whoever hurt one, whole points as they add
  * up, and a kill's share to everyone. */
 void PlayScene::awardCritterLosses() {
@@ -1624,6 +1664,8 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
     const std::string& levelName = world.ref().name;
     m_critters.open(device, context.unpackedRoot, &world.collision(), scales,
                     levelName.empty() ? 'G' : levelName.front());
+    m_bosses.open(device, context.unpackedRoot, &world.collision(), scales,
+                  levelName.empty() ? 'G' : levelName.front());
     m_critterExperienceOwed.fill(0.0f);
     const auto players = static_cast<s32>(m_actors.size());
     const std::span<const LevelEnemy> roster =
@@ -1633,7 +1675,7 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
     // The level's boss, at its boss mark.
     if (level != nullptr && !bossNameOf(level->bossType).empty()) {
         if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss); mark != nullptr) {
-            m_critters.spawn(kBossCritter, mark->position, mark->rotation.y, bossNameOf(level->bossType));
+            m_bosses.spawn(level->bossType, mark->position, mark->rotation.y);
         }
     }
     const std::vector<ItemInfo>& infos = world.layout().itemInfos();
@@ -1743,6 +1785,15 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     }
     settleBlasts();
     m_critters.update(ticks, seconds, views);
+    m_bosses.update(ticks, seconds, views);
+    for (const CritterBlow& blow : m_bosses.takeBlows()) {
+        for (usize i = 0; i < m_actors.size(); ++i) {
+            if (m_actors[i].player() == blow.player && !isDown(i)) {
+                hurt(i, blow.damage, HurtKind::Blow, true);
+            }
+        }
+    }
+    awardBossLosses();
     for (const CritterBlow& blow : m_critters.takeBlows()) {
         for (usize i = 0; i < m_actors.size(); ++i) {
             if (m_actors[i].player() == blow.player && !isDown(i)) {
@@ -2633,6 +2684,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         target.id += kCritterTargetBase;
         targets.push_back(target);
     }
+    for (MissileTarget target : m_bosses.targets()) {
+        target.id += kBossTargetBase;
+        targets.push_back(target);
+    }
     for (usize g = 0; g < m_generators.count(); ++g) {
         if (m_generators.standing(static_cast<s32>(g))) {
             const Obstacle& box = m_generators.boxOf(static_cast<s32>(g));
@@ -2646,7 +2701,19 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         if (impact.potion != 0) {
             burstPotion(impact.potion, impact.position, impact.potency); // weapons leave no mark yet
         }
-        if (impact.target >= kCritterTargetBase) {
+        if (impact.target >= kBossTargetBase) {
+            EnemyHit hit;
+            hit.damage = impact.damage;
+            hit.player = impact.owner;
+            for (const PlayerActor& actor : m_actors) {
+                if (actor.player() == impact.owner) {
+                    hit.direction = impact.position - actor.position();
+                    hit.direction.y = 0.0f;
+                    hit.level = experienceLevel(actor.save().experience());
+                }
+            }
+            m_bosses.hurt(hit);
+        } else if (impact.target >= kCritterTargetBase) {
             Vec3 direction{0.0f, 0.0f, 1.0f};
             for (const PlayerActor& actor : m_actors) {
                 if (actor.player() == impact.owner) {
@@ -2797,6 +2864,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_generators.draw(device, clip, m_world->lighting());
     m_enemies.draw(device, clip, m_world->lighting());
     m_critters.draw(device, clip, m_world->lighting());
+    m_bosses.draw(device, clip, m_world->lighting());
     m_enemyMissiles.draw(device, clip, m_world->lighting());
     m_missiles.draw(device, clip, m_world->lighting());
     m_effects.draw(device, clip, m_world->fullLighting());

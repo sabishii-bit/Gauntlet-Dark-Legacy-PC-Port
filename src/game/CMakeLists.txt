@@ -53,6 +53,7 @@ add_library(game STATIC
     enemies/Generators.cpp
     enemies/CritterData.cpp
     enemies/Critters.cpp
+    enemies/Bosses.cpp
     world/Chests.h
     world/Chests.cpp
     world/LockedGates.h
