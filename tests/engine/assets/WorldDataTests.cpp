@@ -69,6 +69,7 @@ TEST_CASE("world data names a realm's levels and the records they point at",
     REQUIRE(level->tuning.generatorMostScale(2.0f) == 1.0f);
     REQUIRE(level->tuning.generatorRateScale(1.0f) == 2.0f);
     REQUIRE(level->maxEnemies == 13);
+    REQUIRE(level->bossType == -1);
     REQUIRE(level->ambient == Approx(0.8f));
     REQUIRE(level->lightDirection == Vec3{-1.0f, -6.0f, 2.0f});
     REQUIRE(level->lightColor.y == Approx(0.9f));

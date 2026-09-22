@@ -37,6 +37,23 @@ f32 yawBetween(const Vec3& from, const Vec3& to) {
 
 } // namespace
 
+std::string_view bossNameOf(s32 kind) {
+    switch (kind) {
+    case 34: return "DRAGON";
+    case 35: return "CHIMERA";
+    case 36: return "DJINN";
+    case 37: return "DRIDER";
+    case 38: return "PBOSS";
+    case 39: return "YETI";
+    case 40: return "WRAITH";
+    case 41: return "LICH";
+    case 42: return "SKORNE1";
+    case 43: return "SKORNE2";
+    case 44: return "GARM";
+    default: return "";
+    }
+}
+
 Critters::~Critters() {
     close();
 }
@@ -83,6 +100,12 @@ Critters::Stock* Critters::stockFor(s32 kind, std::string_view form) {
     case kGolemCritter: name = "GOLEM"; break;
     case kGeneralCritter: name = "GENERAL"; break;
     case kGargoyleCritter: name = form.empty() ? "GAR_EAGL" : normalizeAssetName(form); break;
+    case kBossCritter:
+        if (form.empty()) {
+            return nullptr;
+        }
+        name = normalizeAssetName(form);
+        break;
     default: return nullptr;
     }
     for (auto& stock : m_stocks) {
@@ -99,7 +122,7 @@ Critters::Stock* Critters::stockFor(s32 kind, std::string_view form) {
         return nullptr;
     }
     const std::filesystem::path archive =
-        kind == kGargoyleCritter ? m_root / "MONSTERS" / name
+        kind == kGargoyleCritter || kind == kBossCritter ? m_root / "MONSTERS" / name
                                  : m_root / "MONSTERS" / normalizeAssetName(stock->data.folder()) /
                                        std::format("LEVEL{}", m_realm);
     if (!stock->archive.load(archive)) {
@@ -207,13 +230,16 @@ std::optional<usize> Critters::bestMove(const Critter& critter, std::span<const 
     s32 bestPriority = -1;
     for (usize i = 0; i < data.moves().size(); ++i) {
         const CritterMove& move = data.moves()[i];
-        const bool considered = move.attack() || move.type == CritterMove::kWalk ||
-                                move.type == CritterMove::kReady || move.type == CritterMove::kTaunt;
+        // Attacks, the steps (walks, turns and back-steps, types 48 to 63), the stance and
+        // the taunt.
+        const bool step = move.type >= CritterMove::kStepFrom && move.type < CritterMove::kStepTo;
+        const bool considered = move.attack() || step || move.type == CritterMove::kReady ||
+                                move.type == CritterMove::kTaunt;
         if (!considered || critter.cooldowns[i] > 0.0f) {
             continue;
         }
         // Attacks and walks want a player; the stance and the taunt want none in particular.
-        if ((move.attack() || move.type == CritterMove::kWalk) && view == nullptr) {
+        if ((move.attack() || step) && view == nullptr) {
             continue;
         }
         if (!move.target.allows(distance, bearing, vertical)) {

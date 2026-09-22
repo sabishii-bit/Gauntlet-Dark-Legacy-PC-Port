@@ -299,6 +299,37 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     REQUIRE(losses[1].killed);
     REQUIRE(losses[1].form == "EAGL");
     REQUIRE(losses[1].experience == 100.0f);
+    // A boss comes by its name, and fights by the same table: the lich walks up and swings.
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    REQUIRE(bossNameOf(41) == "LICH");
+    REQUIRE(bossNameOf(34) == "DRAGON");
+    REQUIRE(bossNameOf(-1).empty());
+    REQUIRE(bossNameOf(33).empty());
+    REQUIRE_FALSE(critters.spawn(kBossCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f).has_value());
+    Critters lair;
+    lair.open(device, root, nullptr, EnemyScales{}, 'G');
+    const auto lich = lair.spawn(kBossCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, "LICH");
+    REQUIRE(lich.has_value());
+    REQUIRE(lair.kindOf(*lich) == kBossCritter);
+    REQUIRE(lair.maxHealthOf(*lich) == 3000.0f);
+    REQUIRE(lair.dataOf(*lich)->tree() == "LICH");
+    REQUIRE(lair.dataOf(*lich)->experience() == 3860.0f);
+    const std::vector<EnemyView> prey{playerAt(Vec3{0.0f, 0.0f, 30.0f})};
+    // A long entrance, then it comes at the player: a charge (its fast step, an attack of
+    // the table) or a step, and a blow when it arrives.
+    bool came = false;
+    std::vector<CritterBlow> blows;
+    for (int i = 0; i < 1500 && blows.empty(); ++i) {
+        lair.update(kTicks, kStep, prey);
+        const std::string_view move = lair.moveOf(*lich);
+        came = came || move.find("STEP") != std::string_view::npos || move == "CHARGE";
+        auto taken = lair.takeBlows();
+        blows.insert(blows.end(), taken.begin(), taken.end());
+    }
+    REQUIRE(came);
+    REQUIRE_FALSE(blows.empty());
+    REQUIRE(blows[0].player == 0);
+    REQUIRE(lair.positionOf(*lich).z > 10.0f);
     // A kind without data, or a form without an archive, is refused.
     REQUIRE_FALSE(critters.spawn(99, Vec3{0.0f, 0.0f, 0.0f}, 0.0f).has_value());
     REQUIRE_FALSE(critters.spawn(kGargoyleCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, "GAR_NONE").has_value());

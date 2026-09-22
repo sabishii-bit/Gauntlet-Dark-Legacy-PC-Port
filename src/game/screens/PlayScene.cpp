@@ -1630,6 +1630,12 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
         level != nullptr ? std::span<const LevelEnemy>(level->enemies) : std::span<const LevelEnemy>{};
     m_generators.bind(device, world.layout(), m_enemies, &world.collision(), breeding, players,
                       roster);
+    // The level's boss, at its boss mark.
+    if (level != nullptr && !bossNameOf(level->bossType).empty()) {
+        if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss); mark != nullptr) {
+            m_critters.spawn(kBossCritter, mark->position, mark->rotation.y, bossNameOf(level->bossType));
+        }
+    }
     const std::vector<ItemInfo>& infos = world.layout().itemInfos();
     for (const ItemInstance& instance : world.layout().itemInstances()) {
         if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {

@@ -61,6 +61,7 @@ struct LevelInfo {
     s32 cameraIndex = -1;
     s32 audioIndex = -1;
     s32 maxEnemies = 25; ///< how many enemies the place keeps about at once
+    s32 bossType = -1;   ///< the kind of its boss, none under nought
     std::vector<LevelEnemy> enemies; ///< its roster, from the realm's
     f32 musicVolume = 1.0f;
     f32 soundVolume = 1.0f;

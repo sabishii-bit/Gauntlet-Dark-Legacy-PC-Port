@@ -51,7 +51,9 @@ struct CritterMove {
     static constexpr s32 kTaunt = 33;
     static constexpr s32 kRoar = 34;
     static constexpr s32 kBlock = 35;
+    static constexpr s32 kStepFrom = 48; ///< the steps: turns, walks, back-steps
     static constexpr s32 kWalk = 52;
+    static constexpr s32 kStepTo = 64;
     static constexpr s32 kKnockBack = 65;
     static constexpr s32 kKnockDown = 66;
     static constexpr s32 kAttackFrom = 128; ///< attacks are this and over
