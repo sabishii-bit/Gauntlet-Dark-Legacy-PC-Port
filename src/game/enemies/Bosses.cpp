@@ -1,6 +1,5 @@
 #include "game/enemies/Bosses.h"
 
-#include <cmath>
 #include <utility>
 
 namespace gdl::game {

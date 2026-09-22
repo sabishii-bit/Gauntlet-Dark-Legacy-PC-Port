@@ -42,8 +42,7 @@ TEST_CASE("finished streams are dropped after they drain", "[audio][mixer]") {
     REQUIRE(stream->drained());
 }
 
-TEST_CASE("the mix is held under full scale and let back up over the release",
-          "[audio][mixer]") {
+TEST_CASE("the mix is held under full scale and let back up over the release", "[audio][mixer]") {
     AudioMixer mixer(48000);
     auto a = mixer.createStream(AudioStreamDesc{48000, 1});
     auto b = mixer.createStream(AudioStreamDesc{48000, 1});
@@ -57,7 +56,7 @@ TEST_CASE("the mix is held under full scale and let back up over the release",
         CHECK(sample > 0.99f); // turned down to the ceiling, not cut off below it
     }
     // Quiet for longer than the release, the mix passes sound through as it is again.
-    out.assign(2 * 4800, 0.0f);
+    out.assign(usize{2} * 4800, 0.0f);
     mixer.mix(out);
     const std::vector<f32> kQuiet(4, 0.25f);
     a->push(kQuiet);

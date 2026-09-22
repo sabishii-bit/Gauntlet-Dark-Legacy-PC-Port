@@ -226,10 +226,8 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(critters.positionOf(*id) == Vec3{0.0f, 0.0f, 0.0f});
     // A player twenty-five off, behind it: it turns and walks at them at five a second.
     const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, -25.0f})};
-    int walking = 0;
     for (int i = 0; i < 600 && critters.moveOf(*id) != "WALK"; ++i) {
         critters.update(kTicks, kStep, party);
-        ++walking;
     }
     REQUIRE(critters.moveOf(*id) == "WALK");
     REQUIRE(critters.targetOf(*id) == 0);

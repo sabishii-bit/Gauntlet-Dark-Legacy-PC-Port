@@ -224,7 +224,8 @@ PACKAGES = {
         "build": ["build-essential", "g++-14", "cmake", "ninja-build", "pkg-config", "curl", "zip",
                   "unzip", "tar", "libx11-dev", "libxrandr-dev", "libxinerama-dev", "libxcursor-dev",
                   "libxi-dev", "libxkbcommon-dev", "libwayland-dev", "libgl-dev", "libvulkan-dev",
-                  "libvulkan1", "mesa-vulkan-drivers"],
+                  "libvulkan1", "mesa-vulkan-drivers", "autoconf", "autoconf-archive",
+                  "automake", "libtool"],
         "tooling": ["clangd", "clang-format", "clang-tidy"],
         "install": ["sudo", "apt-get", "install", "-y"],
         "refresh": ["sudo", "apt-get", "update"],
@@ -233,7 +234,8 @@ PACKAGES = {
         "build": ["gcc-c++", "cmake", "ninja-build", "pkgconf-pkg-config", "curl", "zip", "unzip",
                   "tar", "libX11-devel", "libXrandr-devel", "libXinerama-devel", "libXcursor-devel",
                   "libXi-devel", "libxkbcommon-devel", "wayland-devel", "mesa-libGL-devel",
-                  "vulkan-loader", "vulkan-loader-devel", "mesa-vulkan-drivers"],
+                  "vulkan-loader", "vulkan-loader-devel", "mesa-vulkan-drivers", "autoconf",
+                  "autoconf-archive", "automake", "libtool"],
         "tooling": ["clang", "clang-tools-extra"],
         "install": ["sudo", "dnf", "install", "-y"],
         "refresh": [],
@@ -241,7 +243,8 @@ PACKAGES = {
     "pacman": {
         "build": ["base-devel", "gcc", "cmake", "ninja", "pkgconf", "curl", "zip", "unzip", "tar",
                   "libx11", "libxrandr", "libxinerama", "libxcursor", "libxi", "libxkbcommon",
-                  "wayland", "mesa", "vulkan-icd-loader", "vulkan-headers"],
+                  "wayland", "mesa", "vulkan-icd-loader", "vulkan-headers", "autoconf",
+                  "autoconf-archive", "automake", "libtool"],
         "tooling": ["clang"],
         "install": ["sudo", "pacman", "-S", "--needed", "--noconfirm"],
         "refresh": ["sudo", "pacman", "-Sy"],
@@ -265,6 +268,21 @@ def package_install(names: list) -> Callable[[], None]:
             run(PACKAGES[manager]["refresh"])
         run([*PACKAGES[manager]["install"], *names])
     return install
+
+
+def missing_packages(manager: str, names: list) -> list:
+    """Check development packages even when the compiler and runtime are installed."""
+    missing = []
+    for name in names:
+        if manager == "apt-get":
+            installed = output(["dpkg-query", "-W", "-f=${Status}", name]).strip() \
+                == "install ok installed"
+        else:
+            query = ["rpm", "-q", name] if manager == "dnf" else ["pacman", "-Q", name]
+            installed = subprocess.run(query, capture_output=True, check=False).returncode == 0
+        if not installed:
+            missing.append(name)
+    return missing
 
 
 def pip_install(package: str) -> Callable[[], None]:
@@ -295,6 +313,13 @@ def newest_compiler() -> Optional[str]:
 def check_linux(report: Report, tooling: bool) -> None:
     manager = package_manager()
     build_packages = PACKAGES[manager]["build"] if manager else []
+    if manager:
+        # A pre-provisioned runner can have Vulkan and a compiler but still lack
+        # the headers or Autotools that vcpkg's window-system ports build with.
+        missing = missing_packages(manager, build_packages)
+        report.add(Requirement("Linux build packages", None if missing else "installed",
+                               package_install(build_packages),
+                               advice="missing packages: " + ", ".join(missing)))
     compiler = newest_compiler()
     report.add(Requirement(f"C++ compiler (GCC {MIN_GCC}+ or Clang {MIN_CLANG}+)", compiler,
                            package_install(build_packages) if manager else None,

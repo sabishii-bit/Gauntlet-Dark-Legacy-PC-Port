@@ -32,7 +32,8 @@ inline std::filesystem::path scratchDirectory(std::string_view name) {
     return dir;
 }
 
-/** Locates a shipped asset, or skips the current test when the game data is absent. */
+/** Locates a shipped asset, or skips the current test when the game data is absent.
+ * Call before assertions: Catch2 treats a SKIP nested in REQUIRE as a failure. */
 inline std::filesystem::path assetOrSkip(std::string_view relative) {
     const AssetLocator locator(GDL_TEST_ASSET_DIR);
     const auto found = locator.find(relative);
@@ -42,7 +43,8 @@ inline std::filesystem::path assetOrSkip(std::string_view relative) {
     return found.value_or(std::filesystem::path{});
 }
 
-/** The gdlunpack output directory, or skips the current test when it has not been produced. */
+/** The gdlunpack output directory, or skips the current test when it has not been produced.
+ * Call before assertions, including when reached through another fixture helper. */
 inline std::filesystem::path unpackedOrSkip(std::string_view relative) {
     const std::filesystem::path path = std::filesystem::path(GDL_TEST_UNPACKED_DIR) / relative;
     if (!std::filesystem::exists(path)) {

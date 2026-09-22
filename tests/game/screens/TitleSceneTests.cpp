@@ -61,7 +61,8 @@ TEST_CASE("the glow fades in and the screen times out when idle", "[game][title]
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, f.context(nullptr)));
+    const auto context = f.context(nullptr);
+    REQUIRE(scene.open(device, context));
     REQUIRE(scene.isOpen());
     REQUIRE(scene.arrowBound());
     REQUIRE(scene.step(1, MenuInput{}) == TitleOutcome::Running);
@@ -83,7 +84,8 @@ TEST_CASE("start opens the menu and choosing start leads into the game",
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, f.context(nullptr)));
+    const auto context = f.context(nullptr);
+    REQUIRE(scene.open(device, context));
     scene.step(100, MenuInput{});
     REQUIRE_FALSE(scene.menuOpen());
     REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
@@ -111,7 +113,8 @@ TEST_CASE("the options menu opens over the title menu and fades away", "[game][t
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, f.context(nullptr)));
+    const auto context = f.context(nullptr);
+    REQUIRE(scene.open(device, context));
     scene.step(1, press(true));
     scene.step(1, press(false, false, true));
     scene.step(1, press(false, true));
@@ -128,7 +131,8 @@ TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][unpacked
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, f.context(nullptr)));
+    const auto context = f.context(nullptr);
+    REQUIRE(scene.open(device, context));
     scene.step(30, MenuInput{});
     const Mat4 projection = makeScreenProjection(640.0f, 448.0f);
     scene.render(device, projection, 640.0f, 448.0f);
@@ -152,7 +156,8 @@ TEST_CASE("the title screen plays its music and menu sounds", "[game][title][unp
     SoundPlayer player(mixer);
     const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, f.context(&player)));
+    const auto context = f.context(&player);
+    REQUIRE(scene.open(device, context));
     REQUIRE(scene.musicPlaying());
     REQUIRE(player.voiceCount() == 1);
     scene.step(1, press(true));
@@ -175,7 +180,8 @@ TEST_CASE("backing out of the options burns the scroll and blanks the controls",
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
-    REQUIRE(scene.open(device, f.context(nullptr)));
+    const auto context = f.context(nullptr);
+    REQUIRE(scene.open(device, context));
     scene.step(1, press(true));
     scene.step(1, press(false, false, true));
     scene.step(1, press(false, true));
@@ -211,7 +217,8 @@ TEST_CASE("the clock and screen come from the configuration", "[game][title][unp
     f.config.timing.tickRate = 120;
     f.config.display.virtualWidth = 1024;
     TitleScene scene;
-    REQUIRE(scene.open(device, f.context(nullptr)));
+    const auto context = f.context(nullptr);
+    REQUIRE(scene.open(device, context));
     REQUIRE(scene.tickRate() == 120);
     REQUIRE(scene.screen().width == 1024);
     REQUIRE(scene.update(0.5, MenuInput{}) == TitleOutcome::Running);

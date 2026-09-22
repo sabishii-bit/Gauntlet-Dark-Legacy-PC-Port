@@ -63,10 +63,6 @@ bool smallKind(s32 kind) {
     }
 }
 
-f32 yawBetween(const Vec3& from, const Vec3& to) {
-    return std::atan2(to.x - from.x, to.z - from.z);
-}
-
 // Which way to turn round something at `to`: along the axis of the wider gap.
 s32 turnDirection(const Vec3& from, const Vec3& to) {
     if (std::abs(from.x - to.x) >= std::abs(from.z - to.z)) {

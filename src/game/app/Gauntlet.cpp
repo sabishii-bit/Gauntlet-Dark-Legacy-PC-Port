@@ -12,7 +12,6 @@
 #include "engine/assets/PngImage.h"
 #include "engine/core/Log.h"
 #include "engine/math/Math.h"
-#include "engine/platform/Input.h"
 #include "engine/render/RenderTypes.h"
 
 #include "game/menu/MenuInput.h"

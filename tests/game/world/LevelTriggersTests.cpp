@@ -13,7 +13,6 @@
 
 #include "FakeRenderDevice.h"
 #include "../../engine/world/SampleLevel.h"
-#include "TestSupport.h"
 #include "game/world/LevelTriggers.h"
 
 namespace {

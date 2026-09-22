@@ -12,11 +12,12 @@ std::string encodeObj(const Mesh& mesh, std::string_view name) {
     for (const MeshVertex& v : mesh.vertices) {
         if (mesh.prelit) {
             out += std::format("v {:.6g} {:.6g} {:.6g} {:.4g} {:.4g} {:.4g}\n", v.position.x,
-                               v.position.y, v.position.z, v.color.r / 255.0f, v.color.g / 255.0f,
-                               v.color.b / 255.0f);
+                               v.position.y, v.position.z, static_cast<f32>(v.color.r) / 255.0f,
+                               static_cast<f32>(v.color.g) / 255.0f,
+                               static_cast<f32>(v.color.b) / 255.0f);
         } else {
-            out += std::format("v {:.6g} {:.6g} {:.6g}\n", v.position.x, v.position.y,
-                               v.position.z);
+            out +=
+                std::format("v {:.6g} {:.6g} {:.6g}\n", v.position.x, v.position.y, v.position.z);
         }
     }
     for (const MeshVertex& v : mesh.vertices) {

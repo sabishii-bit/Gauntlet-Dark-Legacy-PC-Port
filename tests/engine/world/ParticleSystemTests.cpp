@@ -3,7 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/assets/WorldLayout.h"
+#include "engine/assets/ParticleTemplate.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/world/ParticleSystem.h"
 
