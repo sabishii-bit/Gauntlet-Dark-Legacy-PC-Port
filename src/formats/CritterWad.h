@@ -108,6 +108,11 @@ struct CritterTypeRecord {
     f32 maxHealth = 0.0f;
     f32 expValue = 0.0f;
     f32 wakeThreshold = 0.0f;
+    std::array<f32, 3> healthBarOffset{}; ///< where its in-world bar hangs
+    s16 meterPieces = 0;      ///< the HUD meter's: how many strips of 256
+    s16 meterAdvance = 0;     ///< how far the next boss's meter is put along
+    s16 meterLeftInset = 0;   ///< the first strip's cap, where the fill starts
+    s16 meterRightInset = 0;  ///< the last strip's, where it ends
     s16 moveCount = 0;
     s16 moveIndex = 0;
     s16 patternCount = 0;

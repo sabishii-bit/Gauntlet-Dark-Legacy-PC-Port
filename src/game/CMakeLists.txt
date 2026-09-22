@@ -116,6 +116,8 @@ add_library(game STATIC
     screens/TransitionScreen.cpp
     screens/PickupHud.h
     screens/PickupHud.cpp
+    screens/BossMeter.h
+    screens/BossMeter.cpp
     screens/PlayerSelectScene.h
     screens/PlayerSelectScene.cpp
     screens/PlayScene.h

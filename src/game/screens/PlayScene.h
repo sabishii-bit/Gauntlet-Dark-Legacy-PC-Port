@@ -35,6 +35,7 @@
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PlayerControls.h"
+#include "game/screens/BossMeter.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PickupHud.h"
@@ -218,6 +219,7 @@ public:
     std::optional<BossView> bossView() const {
         return m_bosses.present() ? std::optional<BossView>(m_bosses.view()) : std::nullopt;
     }
+    const BossMeter& bossMeter() const { return m_bossMeter; }
     /** The archive folder a character's figure was loaded from, for tests. */
     std::optional<std::filesystem::path> figureDirectory(usize index) const {
         return index < m_figures.size() && m_figures[index] != nullptr
@@ -506,6 +508,7 @@ private:
     Generators m_generators;
     Critters m_critters;
     Bosses m_bosses;
+    BossMeter m_bossMeter;
     EnemyMissiles m_enemyMissiles;
     LevelWatch m_levels;
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid

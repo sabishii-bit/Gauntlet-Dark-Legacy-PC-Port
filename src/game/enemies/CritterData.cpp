@@ -81,6 +81,14 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_vertDrift = type.value("vertDrift", 0.0f);
         m_originOffset = vecOf(type, "originOffset");
         m_sight = targetOf(type);
+        const u32 typeFlags = type.value("typeFlags", 0U);
+        m_meter.pieces = type.value("meterPieces", 0);
+        m_meter.advance = type.value("meterAdvance", 0);
+        m_meter.leftInset = type.value("meterLeftInset", 0);
+        m_meter.rightInset = type.value("meterRightInset", 0);
+        m_meter.shown = (typeFlags & CritterMeter::kShown) != 0 && m_meter.pieces > 0;
+        m_meter.backed = (typeFlags & CritterMeter::kBacked) != 0;
+        m_meter.barOffset = vecOf(type, "healthBarOffset");
         const s32 moveIndex = type.value("moveIndex", 0);
         const s32 moveCount = type.value("moveCount", 0);
         const auto moves = root.value("moves", Json::array());

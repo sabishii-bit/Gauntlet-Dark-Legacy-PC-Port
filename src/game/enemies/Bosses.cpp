@@ -187,6 +187,15 @@ BossView Bosses::view() const {
     return view;
 }
 
+const CritterMeter* Bosses::meter() const {
+    const CritterData* data = m_id.has_value() ? m_fighter.dataOf(*m_id) : nullptr;
+    return data != nullptr ? &data->meter() : nullptr;
+}
+
+ItemArchive* Bosses::archive() {
+    return m_id.has_value() ? m_fighter.archiveOf(*m_id) : nullptr;
+}
+
 const Vec3* Bosses::position() const {
     return m_id.has_value() ? &m_fighter.positionOf(*m_id) : nullptr;
 }

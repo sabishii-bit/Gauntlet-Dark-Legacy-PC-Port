@@ -121,6 +121,7 @@ add_executable(tests
     game/world/StartCameraTests.cpp
     game/screens/StatusBoxTests.cpp
     game/screens/PickupHudTests.cpp
+    game/screens/BossMeterTests.cpp
     game/screens/PlaySceneTests.cpp
     game/menu/NameEntryTests.cpp
     game/screens/SelectLaneTests.cpp

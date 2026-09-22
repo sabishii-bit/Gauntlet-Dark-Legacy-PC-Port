@@ -584,13 +584,26 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   rising (`Roared`) and the curb wears off (`WornOff`). Not yet: the
   bearer's glow and throw animation (99/107/115 by boss), the `LEGENDHLD`/
   `LEGENDPRJ` effects and the realm's legend sounds (`legend_snd1/2`), the
-  dragon's ice texture, the spider's tint, the meter's drawing (the
-  original's HUD meter when `typeFlags & 4`, the in-world bar when `0x800`),
+  dragon's ice texture, the spider's tint, the in-world bar (`typeFlags &
+  0x800`, the `GMETER` tree hung at the type's `healthBarOffset`),
   the patterns (PTRN), phases, cameras, children (the chimera's heads),
   projectile moves, the general's waypoint patrol, the gargoyle's
   fireball, per-part damage and breaking, the critters' sounds, the
   statue's waking, and a boss level unpacked (`--only levelG5`).
   Scenarios: `level-g1-general.json`.
+* The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
+  `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
+  is the original's HUD meter (`HealthMeterStart/Update`, boss.c 471-585):
+  the type record's `meterPieces` strips of 256 (two: the whole virtual
+  width) at y 8, each `METER_BG<n>` (when `typeFlags & 8`) under
+  `METER_FG<n>`, at the original's blit alpha 112 (opacity 143 here); the
+  fill is cropped, not squeezed: the first strip's runs from its
+  `meterLeftInset` cap to its end over the first half of the health, the
+  second's from its start to `256 - meterRightInset` over the rest (one strip
+  runs cap to tail); the health shown eases at three a tick; the backgrounds
+  are tinted `0x8080FF` while the boss is frozen; it goes with the boss's
+  death. The type fields (`CritterWad` 0xD0 `healthBarOffset`, 0xF8..0xFE
+  the meter's pieces/advance/insets) need `gdlunpack --only CRITTER` again.
 * Levels gained (`players/LevelWatch`, `PlayScene::updateLevels`). The watch
   is told each player's level every tick and reports the changes since it
   last looked (`LevelChange`: from, to, `milestone()` when a tenth is
