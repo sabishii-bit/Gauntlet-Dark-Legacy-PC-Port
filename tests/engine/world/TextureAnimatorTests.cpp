@@ -1,6 +1,7 @@
 #include <array>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
@@ -17,6 +18,7 @@
 namespace {
 
 using namespace gdl;
+using Catch::Approx;
 
 TextureAnimationInfo cycle(std::string_view name, s32 texture, s32 source, s32 frames, s32 start,
                            s32 rate, std::string_view frameName = "") {
@@ -114,6 +116,55 @@ TEST_CASE("texture animations cycle frames and slide coordinates once a game fra
     f.animator.clear();
     REQUIRE(f.animator.size() == 0);
     REQUIRE(f.animator.frame() == 0);
+}
+
+TEST_CASE("an animation keyed to a sequence is never stepped, but read off at a frame",
+          "[world][animation]") {
+    Fixture f("texture-animator");
+    // A stone cycle of two frames from the sequence's fourth frame, a frame each two; and a
+    // glass scroll that eases in over four frames from the sixth and runs eight.
+    TextureAnimationInfo keyedCycle = cycle("STONE", 0, 1, 2, 0, 2);
+    keyedCycle.flag = 2;
+    keyedCycle.offset = 4;
+    TextureAnimationInfo keyedScroll = cycle("GLASS", 1, TextureAnimationInfo::kScrollU, 8, 0, 4);
+    keyedScroll.flag = 7;
+    keyedScroll.offset = 6;
+    const std::vector<TextureAnimationInfo> animations{
+        cycle("TORCHB", 3, TextureAnimationInfo::kByName, 2, 1, 2, "TORCH00"), keyedCycle,
+        keyedScroll};
+    f.animator.bind(animations, f.textures, f.device, f.lenders);
+    REQUIRE(f.animator.size() == 3);
+    REQUIRE_FALSE(f.animator.keyed(0));
+    REQUIRE(f.animator.keyed(1));
+    REQUIRE(f.animator.keyed(2));
+    // Stepping and applying leave the keyed ones alone.
+    const Texture* own = f.scene.textureOf(0);
+    f.animator.step(f.scene, 4);
+    f.animator.apply(f.scene);
+    REQUIRE(f.animator.counter(1) == 0);
+    REQUIRE(f.scene.textureOf(0) == own);
+    REQUIRE(f.scene.textureOffset(1) == Vec2{0.0f, 0.0f});
+    // Before its first frame the cycle shows its first, then a frame each two, and holds
+    // its last.
+    REQUIRE(f.animator.motionAt(1, 0)->frame == &f.textures.texture(f.device, 1));
+    REQUIRE(f.animator.motionAt(1, 4)->frame == &f.textures.texture(f.device, 1));
+    REQUIRE(f.animator.motionAt(1, 6)->frame == &f.textures.texture(f.device, 2));
+    REQUIRE(f.animator.motionAt(1, 40)->frame == &f.textures.texture(f.device, 2));
+    REQUIRE(f.animator.motionAt(1, 6)->slot == 0);
+    // The scroll: still before its frame, easing over its rate, steady to its end, then held.
+    REQUIRE(f.animator.motionAt(2, 6)->offset == Vec2{0.0f, 0.0f});
+    REQUIRE(f.animator.motionAt(2, 6)->frame == nullptr);
+    REQUIRE(f.animator.motionAt(2, 8)->offset.x < 0.0f);
+    REQUIRE(f.animator.motionAt(2, 8)->offset.y == 0.0f);
+    REQUIRE(f.animator.motionAt(2, 6 + 10)->offset.x == Approx(0.5f));
+    REQUIRE(f.animator.motionAt(2, 6 + 10)->offset.x == TextureAnimator::scrollAt(10, 4, 8));
+    REQUIRE(f.animator.motionAt(2, 100)->offset.x == 1.0f);
+    // Nothing for what was not bound.
+    REQUIRE_FALSE(f.animator.motionAt(-1, 3).has_value());
+    REQUIRE_FALSE(f.animator.motionAt(9, 3).has_value());
+    // Without a rate the scroll runs a step a frame round its cycle.
+    REQUIRE(TextureAnimator::scrollAt(3, 0, 8) == Approx(3.0f / 8.0f));
+    REQUIRE(TextureAnimator::scrollAt(11, 0, 8) == Approx(3.0f / 8.0f));
 }
 
 TEST_CASE("a cycle ends where its frames cannot be read", "[world][animation]") {

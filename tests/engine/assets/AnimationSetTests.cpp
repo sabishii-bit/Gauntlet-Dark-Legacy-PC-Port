@@ -186,4 +186,43 @@ TEST_CASE("the unpacked powerups define the menu arrow tree", "[assets][animatio
     REQUIRE(set.tree(*index).nodes.size() == 9);
 }
 
+TEST_CASE("the unpacked lich's effects key their texture nodes to their sequences' frames",
+          "[assets][animation][unpacked]") {
+    const auto dir = test::unpackedOrSkip("MONSTERS/LICH/animations.json").parent_path();
+    AnimationSet set;
+    REQUIRE(set.load(dir));
+    // The axe's glow: one texture node scrolling the caustic texture from the sequence's
+    // twenty-ninth frame, easing over eleven, sixteen long; none of the archive's clocked
+    // animations, which are flagged free-running.
+    const auto glow = set.find("ATK01FX");
+    REQUIRE(glow.has_value());
+    const TreeInfo& tree = set.tree(*glow);
+    REQUIRE(tree.nodes.size() == 2);
+    REQUIRE(tree.nodes[0].type == 3);
+    REQUIRE(tree.nodes[0].textureAnimation >= 0);
+    const TextureAnimationInfo& scroll =
+        set.textureAnimations()[static_cast<usize>(tree.nodes[0].textureAnimation)];
+    REQUIRE(scroll.name == "EXECAUSTICSM");
+    REQUIRE(scroll.source == TextureAnimationInfo::kScrollU);
+    REQUIRE(scroll.offset == 29);
+    REQUIRE(scroll.rate == 11);
+    REQUIRE(scroll.frames == 16);
+    REQUIRE_FALSE(scroll.freeRunning());
+    REQUIRE(tree.nodes[1].textureAnimation == -1);
+    REQUIRE(set.textureAnimations()[0].freeRunning());
+    REQUIRE(tree.sequences[0].textureAnimationCount == 0);
+    // The stomp's ring: planes cycling the stomp's texture from the thirty-second frame.
+    const auto ring = set.find("ATK09FX");
+    REQUIRE(ring.has_value());
+    usize keyed = 0;
+    for (const TreeNodeInfo& node : set.tree(*ring).nodes) {
+        if (node.textureAnimation >= 0) {
+            const TextureAnimationInfo& cycle =
+                set.textureAnimations()[static_cast<usize>(node.textureAnimation)];
+            keyed += cycle.name == "EXEATCK09TEX" && cycle.offset == 32 ? 1U : 0U;
+        }
+    }
+    REQUIRE(keyed >= 10);
+}
+
 } // namespace

@@ -125,12 +125,33 @@ void EffectTrees::update(f32 seconds) {
             if (motion->archive != effect->archive) {
                 continue;
             }
-            for (usize i = 0; i < motion->animator.size(); ++i) {
-                const TextureMotion moved = motion->animator.motion(i);
+            const auto show = [&](const TextureMotion& moved) {
                 if (moved.frame != nullptr) {
                     effect->model.setTextureFrame(moved.slot, moved.frame);
                 } else {
                     effect->model.setTextureOffset(moved.slot, moved.offset);
+                }
+            };
+            // The archive's own animations run on the clock; the tree's texture nodes and
+            // the sequence's own animations are read off at the frame the tree has reached.
+            for (usize i = 0; i < motion->animator.size(); ++i) {
+                if (!motion->animator.keyed(i)) {
+                    show(motion->animator.motion(i));
+                }
+            }
+            if (!effect->tree->sequences.empty()) {
+                const auto frame = static_cast<s32>(effect->player.frame());
+                const TreeSequenceInfo& sequence =
+                    effect->tree->sequences[effect->player.sequence()];
+                for (s32 i = 0; i < sequence.textureAnimationCount; ++i) {
+                    if (const auto moved = motion->animator.motionAt(sequence.textureAnimationStart + i, frame)) {
+                        show(*moved);
+                    }
+                }
+                for (const TreeNodeInfo& node : effect->tree->nodes) {
+                    if (const auto moved = motion->animator.motionAt(node.textureAnimation, frame)) {
+                        show(*moved);
+                    }
                 }
             }
         }

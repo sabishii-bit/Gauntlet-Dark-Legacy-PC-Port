@@ -151,6 +151,10 @@ void unpackAnimations(const AssetLocator& locator, const std::filesystem::path& 
                 json.key("repeats").value(sequence.repeats);
                 json.key("fixesPosition").value(sequence.fixesPosition);
                 json.key("flags").value(u32{sequence.flags});
+                if (sequence.textureAnimationCount > 0) {
+                    json.key("textureAnimationStart").value(sequence.textureAnimationStart);
+                    json.key("textureAnimationCount").value(sequence.textureAnimationCount);
+                }
                 json.key("tracks").beginArray();
                 for (const NodeTrack& track : sequence.tracks) {
                     json.beginObject();
@@ -173,6 +177,9 @@ void unpackAnimations(const AssetLocator& locator, const std::filesystem::path& 
                 json.key("flags").value(u32{node.flags});
                 json.key("objectFlags").value(node.objectFlags);
                 json.key("parent").value(static_cast<s64>(node.parent));
+                if (node.textureAnimation >= 0) {
+                    json.key("textureAnimation").value(node.textureAnimation);
+                }
                 if (node.particle >= 0) {
                     json.key("particle").value(node.particle);
                     json.key("direction").beginArray();
