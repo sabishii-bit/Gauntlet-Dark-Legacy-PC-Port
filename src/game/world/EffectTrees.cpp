@@ -99,6 +99,7 @@ void EffectTrees::update(f32 seconds) {
         if (!effect->then.empty() &&
             (effect->tree->sequences.empty() || effect->player.finished())) {
             const auto next = effect->archive->trees.find(effect->then);
+            const std::string name = std::move(effect->then);
             effect->then.clear();
             effect->repeats = true;
             if (next.has_value() && effect->device != nullptr) {
@@ -106,6 +107,7 @@ void EffectTrees::update(f32 seconds) {
                 if (effect->model.bind(tree, effect->archive->models, effect->archive->textures,
                                        *effect->device)) {
                     effect->tree = &tree;
+                    effect->name = name;
                     if (tree.sequences.empty()) {
                         effect->pose.rest(tree);
                     } else {

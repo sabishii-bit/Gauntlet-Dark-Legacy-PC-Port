@@ -56,6 +56,7 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
+#include "game/enemies/LegendItems.h"
 #include "game/world/AmbientSounds.h"
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
@@ -357,6 +358,15 @@ private:
     void awardBossLosses();
     void showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss);
     void followCritterEffects();
+    void showLegendEvent(const LegendEvent& event);
+    void updateLegend(f32 seconds);
+    void releaseLegend();
+    void landLegend();
+    void playLegendSound(LegendShow::Sound sound, bool looping = false);
+    /** Where the bearer holds the legend item: in the weapon hand, or over the head. */
+    Vec3 legendHoldPoint(usize index) const;
+    /** Whether the legend item is shown at all: held, flying or set on the boss. */
+    bool legendShown() const { return m_legend.held != 0 || m_legend.flying != 0; }
     void bossFallen(const Vec3& where);
     void loadWizard(RenderDevice& device);
     void updateVictory(s32 ticks, f32 seconds);
@@ -542,6 +552,18 @@ private:
         Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
     };
     std::vector<CritterEffect> m_critterEffects;
+    /** The legend item's rite as shown: what the bearer holds, what flies, and its sounds. */
+    struct LegendSight {
+        s32 actor = -1;   ///< the bearer, by index
+        s32 kind = -1;    ///< the boss
+        char realm = 'A';
+        u32 held = 0;     ///< the item glowing in the hand
+        u32 flying = 0;   ///< the item let go of
+        bool gestureOwed = false; ///< the bearer has yet to make the gesture
+        f32 flightLeft = 0.0f;    ///< seconds until what flies lands
+        SoundHandle loop = kNoSound; ///< the sound of its flight
+    };
+    LegendSight m_legend;
     BossVictory m_victory;
     const TreeInfo* m_wizardTree = nullptr;
     TreeModel m_wizardModel;

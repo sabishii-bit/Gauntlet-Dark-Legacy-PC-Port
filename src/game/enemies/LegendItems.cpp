@@ -109,4 +109,71 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
     return cues;
 }
 
+bool LegendShow::heldInHand(s32 kind) {
+    return kind >= 34 && kind <= 39;
+}
+
+PlayerDeed LegendShow::gestureOf(s32 kind) {
+    switch (kind) {
+    case 36:
+    case 37: return PlayerDeed::ShootLegend;
+    case 34:
+    case 35:
+    case 38:
+    case 39: return PlayerDeed::ThrowLegend;
+    default: return PlayerDeed::HurlLegend;
+    }
+}
+
+LegendShow::Flight LegendShow::flightOf(s32 kind) {
+    switch (kind) {
+    case 34:
+    case 35:
+    case 36:
+    case 38: return Flight::Flies;
+    case 37: return Flight::WithBearer;
+    default: return Flight::AtBoss;
+    }
+}
+
+std::string_view LegendShow::restingTreeOf(s32 kind) {
+    return kind == 39 ? kBurstTree : kProjectileTree;
+}
+
+std::string_view LegendShow::burstTreeOf(s32 kind) {
+    return kind == 39 ? kSecondBurstTree : kBurstTree;
+}
+
+f32 LegendShow::burstSecondsOf(s32 kind) {
+    switch (kind) {
+    case 41: return kLichBurstSeconds;
+    case 37: return kSpiderBurstSeconds;
+    default: return kBurstSeconds;
+    }
+}
+
+Vec3 LegendShow::bossOffsetOf(s32 kind) {
+    switch (kind) {
+    case 39: return Vec3{-2.4375f, -2.3125f, 3.33203125f};
+    case 40: return Vec3{0.0f, -2.3125f, 2.5625f};
+    case 42: return Vec3{0.0f, 2.765625f, 2.125f};
+    default: return Vec3{0.0f, 0.0f, 0.0f};
+    }
+}
+
+/** The common bank's pickup, then the realm's own: thrown, flying (`FLY`, or the `ALL`
+ * loop of the items set on the boss), landed (`HIT`, or `ALSTP` for those), and worn off.
+ * The dream's throw is misspelt in the bank. */
+std::vector<std::string> LegendShow::soundNamesOf(Sound sound, char realm) {
+    const std::string stem = std::string("S_") + realm + "LEGW";
+    switch (sound) {
+    case Sound::PickedUp: return {"S_LEGWPUP"};
+    case Sound::Thrown: return {stem + "THROW", std::string("S_") + realm + "EGWTHROW"};
+    case Sound::Flying: return {stem + "FLY", stem + "ALL"};
+    case Sound::Landed: return {stem + "HIT", stem + "ALSTP"};
+    case Sound::WornOff: return {stem + "PDN"};
+    }
+    return {};
+}
+
 } // namespace gdl::game

@@ -589,4 +589,68 @@ TEST_CASE("a shield potion is raised with the gesture of a potion used, and told
     REQUIRE(again == 0);
 }
 
+TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the special "
+          "shot's gesture, and nothing else leaves the hand",
+          "[game][players][animation]") {
+    TreeInfo tree = classTree();
+    const auto add = [&tree](const char* name, s32 frames) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = frames;
+        sequence.repeats = false;
+        tree.sequences.push_back(sequence);
+    };
+    add("ATTPWRATHROW", 10);
+    add("ATTPWRATHROWR", 8);
+    add("SSHOT1", 11);
+    add("SSHOTR", 29);
+    struct Gesture {
+        PlayerDeed deed;
+        Action windUp;
+        Action recover;
+    };
+    const std::array<Gesture, 3> gestures{{
+        {PlayerDeed::HurlLegend, Action::UsePotion, Action::UsePotionRelease},
+        {PlayerDeed::ThrowLegend, Action::StrongThrow, Action::StrongThrowRecover},
+        {PlayerDeed::ShootLegend, Action::SpecialShot, Action::SpecialShotRecover},
+    }};
+    for (const Gesture& gesture : gestures) {
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.canBegin(gesture.deed));
+        animator.update(PlayerMotion::Run, kTicks, kStep, gesture.deed);
+        REQUIRE(animator.action() == gesture.windUp);
+        REQUIRE(animator.castingLegend());
+        REQUIRE_FALSE(animator.turboBegan()); // the meter pays nothing
+        int releases = 0;
+        int steps = 0;
+        while (animator.castingLegend() && steps < 200) {
+            animator.update(PlayerMotion::Run, kTicks, kStep);
+            REQUIRE_FALSE(animator.potionUsed());
+            REQUIRE_FALSE(animator.potionShielded());
+            REQUIRE_FALSE(animator.strongReleased());
+            REQUIRE_FALSE(animator.released());
+            if (animator.legendReleased()) {
+                REQUIRE(animator.action() == gesture.recover);
+                ++releases;
+            }
+            ++steps;
+        }
+        REQUIRE(releases == 1);
+        REQUIRE(steps < 200);
+        REQUIRE_FALSE(animator.conjuring());
+        REQUIRE_FALSE(animator.turboing());
+    }
+    // A class without the special shot has no gesture for it, and a body in the middle of
+    // something waits.
+    const TreeInfo plain = classTree();
+    PlayerAnimator other;
+    REQUIRE(other.bind(plain, false));
+    REQUIRE_FALSE(other.canBegin(PlayerDeed::ShootLegend));
+    REQUIRE(other.canBegin(PlayerDeed::HurlLegend));
+    other.update(PlayerMotion::Stand, kTicks, kStep, true);
+    REQUIRE(other.throwing());
+    REQUIRE_FALSE(other.canBegin(PlayerDeed::HurlLegend));
+}
+
 } // namespace

@@ -581,11 +581,31 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `LegendCue::Brandished`) and throws a second on (`Thrown`: the toll and
   the weakness go on the fighter through `Critters::freeze/blind/curb/
   resize`), the boss roars a second (chimera, lich, temple) or three after
-  rising (`Roared`) and the curb wears off (`WornOff`). Not yet: the
-  bearer's glow and throw animation (99/107/115 by boss), the `LEGENDHLD`/
-  `LEGENDPRJ` effects and the realm's legend sounds (`legend_snd1/2`), the
-  dragon's ice texture, the spider's tint, the in-world bar (`typeFlags &
-  0x800`, the `GMETER` tree hung at the type's `healthBarOffset`),
+  rising (`Roared`) and the curb wears off (`WornOff`). `LegendShow` is
+  how it looks (pmotion.c 2092-2447, sounds_evt.c `fn_8009C9DC`): the
+  `LEGENDHLD` of the boss level's own item archive glows in the hand for
+  bosses 34-39 (`SfxSetParent` on `hand_node`) and 8 over the head for
+  the rest until let go of (999999 s); the bearer's gesture is
+  `ATTPWRATHROW` (anim 99: 34/35/38/39, `PlayerDeed::ThrowLegend`),
+  `SSHOT1` (107: 36/37, `ShootLegend`) or `MAGICS` (115: the rest,
+  `HurlLegend`), the release at its action bit (`legendReleased`, no
+  potion or weapon going with it); `LEGENDPRJ` then flies at the boss at
+  20 a second for at most 6 s from 2 up (34/35/36/38, `Flight::Flies`,
+  homing on `hitnode` in the original; landed, `LEGENDFX` bursts there),
+  rides 5 ahead of the bearer (37, `WithBearer`, 3 s), or is set on the
+  boss (`AtBoss`: 41 for 5 s, 40/42 for 30 with their offsets, the yeti's
+  as `LEGENDFX` then `LEGENDFX2`), the tree named by `then` taking over
+  as its sequence ends (`SfxSetMorph`). Sounds: `S_LEGWPUP` (common 100)
+  brandished, the realm's `S_<L>LEGWTHROW` thrown (J's is `S_JEGWTHROW`),
+  `LEGWFLY`/`LEGWALL` let go of (stopped on landing or wearing off),
+  `LEGWHIT`/`LEGWALSTP` landed, `LEGWPDN` worn off; `soundNamesOf` gives
+  the spellings to try and `PlayScene::playLegendSound` the first a bank
+  has. Not yet: the bearer's glow (`MBTreeSetAmbientAdd 0x1FF`), the
+  particle trail (`MBNewPsysDefault` for 34/35/38), the fade of the set
+  effect's last seconds (gauntworld.c 1333), the spider's `0xFF40FF40`
+  tint, the genie's `LEGEND1` for 28 s, the dragon's ice texture, the
+  in-world bar (`typeFlags & 0x800`, the `GMETER` tree hung at the type's
+  `healthBarOffset`),
   the patterns (PTRN), phases, cameras, children (the chimera's heads),
   projectile moves, the general's waypoint patrol, the gargoyle's
   fireball, per-part damage and breaking, the critters' sounds, the
@@ -756,7 +776,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   stick does, as in the original). `PlayerDeed` tells `PlayerAnimator` what
   the buttons ask; a potion plays `MAGICS` then `MAGICR` (used) or
   `THROWPOTIONS` then `THROWPOTIONR` (thrown), the release's start being
-  `potionUsed()`/`potionThrown()`, one potion a press. `PlayScene` takes the
+  `potionUsed()`/`potionThrown()`, one potion a press; the legend deeds
+  (`HurlLegend`/`ThrowLegend`/`ShootLegend`) play the same `MAGICS`, the
+  strong throw's `ATTPWRATHROW` or `SSHOT1`/`SSHOTR` with `castingLegend()`
+  on and `legendReleased()` at the moment of release, and set none of the
+  potion or weapon flags. `PlayScene` takes the
   next potion (`Inventory::takePotion`) and bursts it through
   `world/EffectTrees` (an archive tree played once at a place and size; the
   WEAPONS trees `MP_FIRE`/`MP_ELEC`/`MP_LIGHT`/`MP_ACID` for red, blue,

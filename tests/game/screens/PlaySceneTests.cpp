@@ -1672,21 +1672,57 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     const f32 whole = scene.bossView()->maxHealth;
     int waited = 0;
     bool entrance = false; // rising, it plays its entrance's effect from its own archive
+    bool held = false;     // the book glows over the bearer's head while it is held up
+    const auto find = [&scene](std::string_view tree) -> const EffectTrees::Effect* {
+        for (usize e = 0; e < scene.effects().count(); ++e) {
+            if (scene.effects().effect(e).name == tree) {
+                return &scene.effects().effect(e);
+            }
+        }
+        return nullptr;
+    };
+    const auto showing = [&find](std::string_view tree) { return find(tree) != nullptr; };
     while (!scene.bosses().legend().thrown() && waited < 3000) {
         scene.update(1.0 / 60.0, still);
-        for (usize e = 0; e < scene.effects().count(); ++e) {
-            entrance = entrance || scene.effects().effect(e).name == "GENFX";
+        entrance = entrance || showing("GENFX");
+        if (const EffectTrees::Effect* book = find(LegendShow::kHeldTree); book != nullptr) {
+            held = true;
+            REQUIRE(book->position.y ==
+                    Approx(scene.actor(0)->position().y + LegendShow::kHeldLift).margin(0.5f));
         }
         ++waited;
     }
     REQUIRE(scene.bosses().view().awake);
     REQUIRE(scene.bosses().legend().thrown());
     REQUIRE(entrance);
+    REQUIRE(held);
     REQUIRE_FALSE(scene.actor(0)->save().progress().relics.hasLegend(7));
     REQUIRE(scene.bossView()->health == Approx(whole - (0.25f * whole - 1.0f)));
     const f32 struck = scene.bossView()->health;
     scene.update(1.0 / 60.0, still);
     REQUIRE(scene.bossMeter().shown() > struck); // three a tick, not at once
+    // The bearer makes the gesture of a potion used, at whose release the book leaves the
+    // hand and is set burning on the lich.
+    bool gestured = false;
+    bool landed = false;
+    for (int i = 0; i < 600 && !landed; ++i) {
+        scene.update(1.0 / 60.0, still);
+        const PlayerAnimator* body = scene.animator(0);
+        REQUIRE(body != nullptr);
+        gestured = gestured || body->action() == PlayerAnimator::Action::UsePotion;
+        landed = showing(LegendShow::kProjectileTree);
+    }
+    REQUIRE(gestured);
+    REQUIRE(landed);
+    REQUIRE_FALSE(showing(LegendShow::kHeldTree));
+    REQUIRE(glm::distance(find(LegendShow::kProjectileTree)->position,
+                          *scene.bosses().position()) < 1.0f);
+    REQUIRE(scene.actor(0)->save().progress().inventory.potions.empty()); // none spent
+    // Burnt through, the book gives way to its fire for the lich's five seconds.
+    for (int i = 0; i < 60 && !showing(LegendShow::kBurstTree); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(showing(LegendShow::kBurstTree));
     for (int i = 0; i < 600 && scene.bossMeter().shown() > struck; ++i) {
         scene.update(1.0 / 60.0, still);
     }

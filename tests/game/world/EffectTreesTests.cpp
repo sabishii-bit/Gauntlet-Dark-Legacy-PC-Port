@@ -77,6 +77,53 @@ TEST_CASE("an effect can be turned, carried along and kept repeating until it is
     REQUIRE(effects.count() == 0);
 }
 
+TEST_CASE("an effect played through gives way to the tree named to take over, by name",
+          "[game][world][effects][unpacked]") {
+    const std::filesystem::path root =
+        test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.seconds = 5.0f;
+    setting.then = "MP_ACID";
+    REQUIRE(effects.startSet(device, weapons, "MP_FIRE", Vec3{0.0f}, setting) != 0);
+    REQUIRE(effects.effect(0).name == "MP_FIRE");
+    for (int i = 0; i < 180; ++i) {
+        effects.update(1.0f / 60.0f); // the fire's two and a half seconds
+    }
+    REQUIRE(effects.count() == 1);
+    REQUIRE(effects.effect(0).name == "MP_ACID");
+    REQUIRE(effects.effect(0).repeats);
+    for (int i = 0; i < 150; ++i) {
+        effects.update(1.0f / 60.0f);
+    }
+    REQUIRE(effects.count() == 0); // the five seconds are up
+    // The crypt's book of protection burns on the lich as a tree with a sequence of no
+    // frames, which stays its whole time.
+    const std::filesystem::path crypt = root / "ITEMS" / "LEVELG5";
+    if (std::filesystem::exists(crypt / "animations.json")) {
+        ItemArchive items;
+        REQUIRE(items.load(crypt));
+        setting.then = "LEGENDFX";
+        REQUIRE(effects.startSet(device, items, "LEGENDPRJ", Vec3{0.0f}, setting) != 0);
+        for (int i = 0; i < 60; ++i) {
+            effects.update(1.0f / 60.0f);
+        }
+        REQUIRE(effects.count() == 1);
+        REQUIRE(effects.effect(0).name == "LEGENDFX");
+        for (int i = 0; i < 180; ++i) {
+            effects.update(1.0f / 60.0f);
+        }
+        REQUIRE(effects.count() == 1);
+        for (int i = 0; i < 90; ++i) {
+            effects.update(1.0f / 60.0f);
+        }
+        REQUIRE(effects.count() == 0);
+    }
+}
+
 TEST_CASE("the classes' turbo effects play through, flip-books that start late and all",
           "[game][world][effects][unpacked]") {
     const std::filesystem::path root =
