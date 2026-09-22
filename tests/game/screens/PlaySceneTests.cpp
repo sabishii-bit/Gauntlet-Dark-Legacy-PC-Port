@@ -1691,6 +1691,89 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE_FALSE(scene.bossMeter().bound());
 }
 
+TEST_CASE("a character hurt cries out by the original's rules: at once for a burn or a heavy "
+          "blow, once lesser blows add up, and is named as its health runs low",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::unpackedOrSkip("audio/WAR/sounds.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    GameContext context;
+    context.config = &config;
+    context.sounds = &sounds;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().health = 900;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{10.7f, 10.2f, -60.5f};
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    for (int i = 0; i < 120; ++i) {
+        scene.update(1.0 / 60.0, still); // the level's own sounds settle
+    }
+    std::vector<f32> stereo(static_cast<usize>(2 * 4800), 0.0f);
+    const auto live = [&] {
+        mixer.mix(stereo); // stopped voices drain and are let go of
+        sounds.update();
+        return sounds.voiceCount();
+    };
+    sounds.stopAll();
+    // A light blow is felt (the hit sounds) but not cried over; enough of them are: once
+    // thirty of health has gone (the level scales what a blow takes).
+    const s32 whole = scene.actor(0)->save().health();
+    scene.harm(0, 5.0f, HurtKind::Blow);
+    REQUIRE(live() == 1);
+    sounds.stopAll();
+    REQUIRE(live() == 0);
+    int cries = 0;
+    int blows = 0;
+    while (whole - scene.actor(0)->save().health() < 30 && blows < 20) {
+        scene.harm(0, 5.0f, HurtKind::Blow);
+        ++blows;
+        if (whole - scene.actor(0)->save().health() < 30) {
+            REQUIRE(live() == 0); // the hit's sound waits its half second
+        } else {
+            cries = static_cast<int>(live());
+        }
+    }
+    REQUIRE(cries == 1);
+    sounds.stopAll();
+    // A heavy blow, or a burn, is cried over at once.
+    scene.harm(0, 61.0f, HurtKind::Blow);
+    REQUIRE(live() == 1);
+    sounds.stopAll();
+    scene.harm(0, 1.5f, HurtKind::Burn);
+    REQUIRE(live() == 1);
+    sounds.stopAll();
+    // Down past a hundred and fifty the narrator names the character instead.
+    const s32 health = scene.actor(0)->save().health();
+    REQUIRE(health > 150);
+    scene.harm(0, static_cast<f32>(health - 140), HurtKind::Burn);
+    REQUIRE(scene.actor(0)->save().health() == 140);
+    REQUIRE(live() >= 1); // the name, the line queued after it
+    sounds.stopAll();
+    scene.harm(0, 100.0f, HurtKind::Burn);
+    REQUIRE(scene.actor(0)->save().health() == 40);
+    REQUIRE(live() >= 1);
+    scene.close();
+}
+
 TEST_CASE("potions burst about the character or where they land, and powerups show",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
