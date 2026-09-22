@@ -26,6 +26,10 @@ namespace gdl::game {
 inline constexpr s32 kGolemCritter = 3;
 inline constexpr s32 kGargoyleCritter = 7;
 inline constexpr s32 kGeneralCritter = 8;
+inline constexpr s32 kBossCritter = 4; ///< a realm's boss, by its name ("LICH")
+
+/** The boss a level's `bossType` names (34 the dragon to 44 the garm), or nothing. */
+std::string_view bossNameOf(s32 kind);
 
 /** A blow a critter has landed. */
 struct CritterBlow {
@@ -77,9 +81,9 @@ public:
               const WorldCollision* collision, const EnemyScales& scales, char realm);
     void close();
 
-    /** Stands one of `kind` (a golem, a general, or a gargoyle by its form: "GAR_EAGL") at
-     * `position` facing `yaw`. Nullopt when its data or archive is missing or there is no
-     * room. */
+    /** Stands one of `kind` (a golem, a general, a gargoyle by its form: "GAR_EAGL", or a
+     * boss by its name: "LICH") at `position` facing `yaw`. Nullopt when its data or
+     * archive is missing or there is no room. */
     std::optional<s32> spawn(s32 kind, const Vec3& position, f32 yaw, std::string_view form = "");
 
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);

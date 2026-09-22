@@ -548,9 +548,17 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (KB otherwise) and throws it (twenty, a golem five less); dead it plays
   DEATH, fades a second and is gone, a fifth of its value going to everyone.
   A gargoyle slain leaves the key its form is named by (`GARGEAGL`) where
-  it fell. Not yet: the general's waypoint patrol, the gargoyle's fireball,
-  per-part damage and breaking, the bosses (type 4, their patterns and
-  cameras), the critters' sounds, and the statue's waking.
+  it fell. The bosses are critters of type 4 (`kBossCritter`, by name:
+  `bossNameOf(bossType)`, the dragon 34 to the garm 44; archive
+  `MONSTERS/<NAME>`, tree prefix plus suffix, `LICH`): the level's
+  `bossType` stands one at its `boss` mark, and it fights by the same
+  table: the step family (types 48 to 63: turns, walks, back-steps) is
+  chosen like the walk, and a named attack of speed (the lich's `CHARGE`)
+  carries it. Not yet: the bosses' patterns (PTRN), phases, wake threshold,
+  health meter and cameras, their children (the chimera's heads) and
+  projectile moves, the general's waypoint patrol, the gargoyle's fireball,
+  per-part damage and breaking, the critters' sounds, and the statue's
+  waking.
   Scenarios: `level-g1-general.json`.
 * Levels gained (`players/LevelWatch`, `PlayScene::updateLevels`). The watch
   is told each player's level every tick and reports the changes since it
