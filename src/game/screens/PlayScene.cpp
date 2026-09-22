@@ -3485,7 +3485,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_generators.draw(device, clip, m_world->lighting());
     m_enemies.draw(device, clip, m_world->lighting());
     m_critters.draw(device, clip, m_world->lighting());
-    m_bosses.draw(device, clip, m_world->lighting());
+    // The boss stands out in the level's own light while the rite darkens the rest.
+    m_bosses.draw(device, clip,
+                  m_bosses.legend().darkens() ? m_world->fullLighting() : m_world->lighting());
     drawWizard(device, clip);
     m_enemyMissiles.draw(device, clip, m_world->lighting());
     m_missiles.draw(device, clip, m_world->lighting());

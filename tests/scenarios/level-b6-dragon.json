@@ -1,0 +1,22 @@
+{
+    "screen":  "tower",
+    "level":  "B6",
+    "party":  [
+                  {
+                      "player":  0,
+                      "class":  "WAR",
+                      "color":  "BLU",
+                      "name":  "TEST",
+                      "level":  20,
+                      "health":  900,
+                      "legends":  [2]
+                  }
+              ],
+    "position":  [
+                     -5,
+                     30,
+                     8
+                 ],
+    "yaw":  3.14,
+    "welcome":  false
+}

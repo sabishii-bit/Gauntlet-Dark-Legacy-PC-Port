@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <format>
 #include <numbers>
+#include <set>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -1696,9 +1697,38 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.bosses().legend().thrown());
     REQUIRE(entrance);
     REQUIRE(held);
-    // The level has gone dark for the rite, as for a great move.
+    // The level has gone dark for the rite, as for a great move, but the lich stands in
+    // the level's own light: its figure is drawn brighter than the dimmed light would.
     REQUIRE(scene.bosses().legend().darkens());
     REQUIRE(scene.dimmer().offset() <= LegendRite::kDarkening + 0.1f);
+    {
+        const auto brightness = [](const std::vector<test::RecordedDraw>& draws,
+                                   const std::set<const Texture*>& of) {
+            f32 sum = 0.0f;
+            usize count = 0;
+            for (const test::RecordedDraw& draw : draws) {
+                if (!of.contains(draw.texture)) {
+                    continue;
+                }
+                for (const ImmediateVertex& v : draw.vertices) {
+                    sum += static_cast<f32>(v.color.r + v.color.g + v.color.b);
+                    ++count;
+                }
+            }
+            return count > 0 ? sum / static_cast<f32>(count) : -1.0f;
+        };
+        test::FakeRenderDevice dimmed;
+        scene.bosses().draw(dimmed, Mat4{1.0f}, world.lighting());
+        std::set<const Texture*> bossTextures;
+        for (const test::RecordedDraw& draw : dimmed.draws) {
+            bossTextures.insert(draw.texture);
+        }
+        REQUIRE_FALSE(bossTextures.empty());
+        device.draws.clear();
+        scene.render(device, makeScreenProjection(640.0f, 448.0f), 640.0f, 448.0f);
+        REQUIRE(brightness(device.draws, bossTextures) >
+                brightness(dimmed.draws, bossTextures) * 1.5f);
+    }
     REQUIRE_FALSE(scene.actor(0)->save().progress().relics.hasLegend(7));
     REQUIRE(scene.bossView()->health == Approx(whole - (0.25f * whole - 1.0f)));
     const f32 struck = scene.bossView()->health;
@@ -1820,6 +1850,117 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.destination().isTower());
     scene.close();
     REQUIRE_FALSE(scene.bossMeter().bound());
+}
+
+TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with the strong "
+          "throw, flies at the dragon and freezes it, and its death spews silver",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELB6/world.json");
+    test::unpackedOrSkip("ITEMS/LEVELB6/animations.json");
+    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    test::unpackedOrSkip("critter/DRAGON.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto lair = levels.byName("B6");
+    REQUIRE(lair.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *lair));
+    REQUIRE(world.level() != nullptr);
+    REQUIRE(world.level()->bossType == 34);
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    save.progress().relics.addLegend(2); // the ice axe, the mountain's
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    // Open ground before the dragon's mark at (-3, 30, -18).
+    options.position = Vec3{-5.0f, 30.0f, 8.0f};
+    options.yaw = kPi;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.bosses().present());
+    REQUIRE(scene.bossView()->name == "DRAGON");
+    REQUIRE(scene.bosses().legend().stage() == LegendRite::Stage::Carried);
+    const PlayScene::Inputs still{};
+    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    const auto find = [&scene](std::string_view tree) -> const EffectTrees::Effect* {
+        for (usize e = 0; e < scene.effects().count(); ++e) {
+            if (scene.effects().effect(e).name == tree) {
+                return &scene.effects().effect(e);
+            }
+        }
+        return nullptr;
+    };
+    // The axe glows in the bearer's hand, by the body rather than high over the head.
+    bool held = false;
+    int waited = 0;
+    while (!scene.bosses().legend().thrown() && waited < 3000) {
+        scene.update(1.0 / 60.0, still);
+        if (const EffectTrees::Effect* axe = find(LegendShow::kHeldTree); axe != nullptr) {
+            held = true;
+            const f32 over = axe->position.y - scene.actor(0)->position().y;
+            REQUIRE(over < LegendShow::kHeldLift - 1.0f);
+            REQUIRE(glm::distance(axe->position, scene.actor(0)->position()) < 8.0f);
+        }
+        ++waited;
+    }
+    REQUIRE(scene.bosses().legend().thrown());
+    REQUIRE(held);
+    REQUIRE(scene.bosses().legend().darkens());
+    const f32 whole = scene.bossView()->maxHealth;
+    REQUIRE(scene.bossView()->health == Approx(whole - (0.1f * whole - 1.0f)));
+    REQUIRE(scene.bosses().frozen());
+    // The strong throw's gesture lets it fly toward the dragon without the weapon going,
+    // and it lands within its flight's time.
+    bool gestured = false;
+    bool flying = false;
+    f32 nearest = 1000.0f;
+    for (int i = 0; i < 900 && (!flying || find(LegendShow::kProjectileTree) != nullptr); ++i) {
+        scene.update(1.0 / 60.0, still);
+        gestured = gestured || scene.animator(0)->action() == PlayerAnimator::Action::StrongThrow;
+        if (const EffectTrees::Effect* axe = find(LegendShow::kProjectileTree); axe != nullptr) {
+            flying = true;
+            REQUIRE(glm::length(axe->velocity) == Approx(LegendShow::kSpeed));
+            nearest = std::min(nearest, glm::distance(axe->position, *scene.bosses().position()));
+        }
+    }
+    REQUIRE(gestured);
+    REQUIRE(flying);
+    REQUIRE(find(LegendShow::kProjectileTree) == nullptr);
+    REQUIRE(nearest < 12.0f);
+    REQUIRE(scene.missiles().count() == 0);
+    REQUIRE_FALSE(find(LegendShow::kHeldTree));
+    // Thawed, the dragon fights on; slain, it throws the mountain's five silver coins.
+    for (int i = 0; i < 1500 && scene.bosses().frozen(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(scene.bosses().frozen());
+    EnemyHit slay;
+    slay.damage = 100000.0f;
+    slay.player = 0;
+    scene.bosses().hurt(slay);
+    const usize itemsBefore = world.placedItems().size();
+    for (int i = 0; i < 600 && !world.goldLeft(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(world.goldLeft());
+    REQUIRE(world.placedItems().size() == itemsBefore + 5);
+    for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
+        REQUIRE(world.placedItems().item(i).name == "COIN_SILVER");
+        REQUIRE(world.placedItems().item(i).value == 1000);
+    }
+    REQUIRE(scene.victory().running());
+    scene.close();
 }
 
 TEST_CASE("a character hurt cries out by the original's rules: at once for a burn or a heavy "
