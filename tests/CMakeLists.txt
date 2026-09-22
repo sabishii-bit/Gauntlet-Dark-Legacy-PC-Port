@@ -103,6 +103,13 @@ add_executable(tests
     game/world/LevelCatalogTests.cpp
     game/world/ExitPortalsTests.cpp
     game/world/LevelFixturesTests.cpp
+    game/enemies/EnemyKindsTests.cpp
+    game/enemies/EnemyAnimatorTests.cpp
+    game/enemies/EnemyMindTests.cpp
+    game/enemies/EnemyMissilesTests.cpp
+    game/enemies/EnemiesTests.cpp
+    game/enemies/GeneratorsTests.cpp
+    game/enemies/CrittersTests.cpp
     game/world/MoveStrikesTests.cpp
     game/screens/HelpMessagesTests.cpp
     game/world/LevelTriggersTests.cpp

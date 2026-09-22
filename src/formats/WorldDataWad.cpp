@@ -37,6 +37,9 @@ LevelRecord readLevel(std::span<const u8> bytes, usize at) {
     level.audioBank = readWadText(bytes, at + 0x24, kTextSize, kWhat);
     level.movie = readWadText(bytes, at + 0x34, kTextSize, kWhat);
     level.bossType = static_cast<s32>(readWadU32(bytes, at + 0x44, kWhat));
+    for (usize i = 0; i < level.enemyTypes.size(); ++i) {
+        level.enemyTypes[i] = readS16(bytes, at + 0x4C + i * 2);
+    }
     level.cameraIndex = readS16(bytes, at + 0x58);
     level.audioIndex = readS16(bytes, at + 0x5A);
     level.mapIndex = readS16(bytes, at + 0x5C);
@@ -130,6 +133,17 @@ WorldDataFile WorldDataFile::parse(std::span<const u8> bytes) {
     }
     out.realm = readWadU32(bytes, world->offset, kWhat);
     out.prefix = readWadText(bytes, world->offset + 4, kTextSize, kWhat);
+    if (const WadSection* enemies = findWadSection(sections, "ENMY"); enemies != nullptr) {
+        requireRecords(bytes, *enemies, kEnemySize);
+        for (u32 i = 0; i < enemies->count; ++i) {
+            const usize at = enemies->offset + usize{i} * kEnemySize;
+            WorldEnemyRecord enemy;
+            enemy.kind = static_cast<s32>(readWadU32(bytes, at, kWhat));
+            enemy.subtype = static_cast<s32>(readWadU32(bytes, at + 4, kWhat));
+            enemy.stream = readWadText(bytes, at + 8, kTextSize, kWhat);
+            out.enemies.push_back(enemy);
+        }
+    }
     if (const WadSection* levels = findWadSection(sections, "LEVL"); levels != nullptr) {
         requireRecords(bytes, *levels, kLevelSize);
         for (u32 i = 0; i < levels->count; ++i) {

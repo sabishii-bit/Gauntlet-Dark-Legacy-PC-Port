@@ -20,6 +20,7 @@
 
 #include "formats/AnimationTree.h"
 #include "formats/AudioRom.h"
+#include "formats/CritterWad.h"
 #include "formats/FontFile.h"
 #include "formats/GcTexture.h"
 #include "formats/GeometryStream.h"
@@ -54,6 +55,7 @@ struct Summary {
     u32 animations = 0;
     u32 fonts = 0;
     u32 classes = 0;
+    u32 critters = 0;
     u32 worlds = 0;
     u32 realms = 0;
     u32 skippedLevels = 0;
@@ -803,6 +805,182 @@ void unpackPlayers(const std::filesystem::path& directory, const std::filesystem
     }
 }
 
+/**
+ * The monster folder: one archive per kind (`GRU`, `RAT`), some with a second or an auxiliary
+ * archive beside it (`GRU2`, `GRUAUX`), and the `GENERAL` figure in one folder per realm.
+ */
+void unpackMonsters(const std::filesystem::path& directory, const std::filesystem::path& outDir,
+                    Summary& summary) {
+    std::vector<std::filesystem::path> kinds;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.is_directory()) {
+            kinds.push_back(entry.path());
+        }
+    }
+    std::ranges::sort(kinds);
+    for (const auto& kind : kinds) {
+        const std::string name = normalizeAssetName(kind.filename().string());
+        if (AssetLocator(kind).find("objects.ngc")) {
+            unpackArchive(kind, outDir / name, summary);
+            continue;
+        }
+        for (const auto& entry : std::filesystem::directory_iterator(kind)) {
+            if (entry.is_directory()) {
+                const std::string realm = normalizeAssetName(entry.path().filename().string());
+                unpackArchive(entry.path(), outDir / name / realm, summary);
+            }
+        }
+    }
+}
+
+/** A critter wad: the great creature's type, moves, damages, parts and sounds, as one file. */
+void unpackCritter(const std::filesystem::path& file, const std::filesystem::path& outDir,
+                   Summary& summary) {
+    const CritterFile critter = parseCritterWad(readFile(file));
+    JsonWriter json;
+    const auto vec = [&](const char* name, const std::array<f32, 3>& v) {
+        json.key(name).beginArray();
+        for (const f32 axis : v) {
+            json.value(static_cast<f64>(axis));
+        }
+        json.endArray();
+    };
+    const auto target = [&](const CritterTargetRecord& t) {
+        json.key("target").beginObject();
+        json.key("minDistance").value(static_cast<f64>(t.minDistance));
+        json.key("maxDistance").value(static_cast<f64>(t.maxDistance));
+        json.key("yaw").value(static_cast<f64>(t.yaw));
+        json.key("minDot").value(static_cast<f64>(t.minDot));
+        json.key("minRateScale").value(static_cast<f64>(t.minRateScale));
+        json.key("maxRateScale").value(static_cast<f64>(t.maxRateScale));
+        json.key("idleGate").value(static_cast<f64>(t.idleGate));
+        json.key("maxVertical").value(static_cast<f64>(t.maxVertical));
+        json.endObject();
+    };
+    json.beginObject();
+    json.key("name").value(normalizeAssetName(file.stem().string()));
+    json.key("descriptors").beginArray();
+    for (const CritterDescriptorRecord& d : critter.descriptors) {
+        json.beginObject();
+        json.key("name").value(d.name);
+        json.key("prefix").value(d.prefix);
+        json.key("type").value(static_cast<int>(d.type));
+        json.endObject();
+    }
+    json.endArray();
+    json.key("types").beginArray();
+    for (const CritterTypeRecord& t : critter.types) {
+        json.beginObject();
+        json.key("suffix").value(t.suffix);
+        json.key("rootNode").value(t.rootNode);
+        json.key("descriptor").value(static_cast<int>(t.descriptorIndex));
+        json.key("subtype").value(static_cast<int>(t.subtype));
+        json.key("typeFlags").value(t.typeFlags);
+        json.key("radius").value(static_cast<f64>(t.radius));
+        json.key("wallRadius").value(static_cast<f64>(t.wallRadius));
+        target(t.target);
+        vec("defaultPos", t.defaultPos);
+        json.key("speed").value(static_cast<f64>(t.speed));
+        json.key("floorOffset").value(static_cast<f64>(t.floorOffset));
+        json.key("vertDrift").value(static_cast<f64>(t.vertDrift));
+        json.key("damageScale").value(static_cast<f64>(t.damageScale));
+        json.key("armor").value(static_cast<f64>(t.armor));
+        vec("originOffset", t.originOffset);
+        json.key("turnLimit").value(static_cast<f64>(t.turnLimit));
+        json.key("shieldFlags").value(t.shieldFlags);
+        json.key("maxHealth").value(static_cast<f64>(t.maxHealth));
+        json.key("expValue").value(static_cast<f64>(t.expValue));
+        json.key("wakeThreshold").value(static_cast<f64>(t.wakeThreshold));
+        json.key("moveCount").value(static_cast<int>(t.moveCount));
+        json.key("moveIndex").value(static_cast<int>(t.moveIndex));
+        json.key("patternCount").value(static_cast<int>(t.patternCount));
+        json.key("patternIndex").value(static_cast<int>(t.patternIndex));
+        json.key("colCount").value(static_cast<int>(t.colCount));
+        json.key("colBase").value(static_cast<int>(t.colBase));
+        json.key("childIndex").value(static_cast<int>(t.childIndex));
+        json.key("parentIndex").value(static_cast<int>(t.parentIndex));
+        json.endObject();
+    }
+    json.endArray();
+    json.key("moves").beginArray();
+    for (const CritterMoveRecord& m : critter.moves) {
+        json.beginObject();
+        json.key("type").value(m.type);
+        json.key("flags").value(m.flags);
+        json.key("priority").value(m.priority);
+        json.key("name").value(m.name);
+        json.key("anim").value(m.anim);
+        json.key("colnode").value(m.colnode);
+        json.key("frameStart").value(m.frameStart);
+        json.key("frameStart2").value(m.frameStart2);
+        json.key("damage0").value(static_cast<int>(m.damage0));
+        json.key("damage1").value(static_cast<int>(m.damage1));
+        json.key("framePeriod").value(static_cast<f64>(m.framePeriod));
+        json.key("frameEnd").value(static_cast<int>(m.frameEnd));
+        json.key("frameEnd2").value(static_cast<int>(m.frameEnd2));
+        json.key("link").value(static_cast<int>(m.link));
+        json.key("interrupt").value(static_cast<int>(m.interrupt));
+        json.key("sfx").value(static_cast<int>(m.sfx));
+        json.key("sfxFrame").value(static_cast<int>(m.sfxFrame));
+        json.key("sfx2").value(static_cast<int>(m.sfx2));
+        json.key("sfx2Frame").value(static_cast<int>(m.sfx2Frame));
+        target(m.target);
+        json.key("cooldown").value(static_cast<f64>(m.cooldown));
+        json.key("speed").value(static_cast<f64>(m.speed));
+        json.key("turnRate").value(static_cast<f64>(m.turnRate));
+        json.key("hold").value(static_cast<f64>(m.hold));
+        json.endObject();
+    }
+    json.endArray();
+    json.key("damages").beginArray();
+    for (const CritterDamageRecord& d : critter.damages) {
+        json.beginObject();
+        json.key("type").value(static_cast<int>(d.type));
+        json.key("behaviorFlags").value(static_cast<int>(d.behaviorFlags));
+        json.key("flags").value(d.flags);
+        json.key("radius").value(static_cast<f64>(d.radius));
+        json.key("maxDistance").value(static_cast<f64>(d.maxDistance));
+        json.key("minDistance").value(static_cast<f64>(d.minDistance));
+        json.key("yaw").value(static_cast<f64>(d.yaw));
+        json.key("minDot").value(static_cast<f64>(d.minDot));
+        json.key("pitch").value(static_cast<f64>(d.pitch));
+        vec("offset", d.offset);
+        json.key("damage").value(static_cast<f64>(d.damage));
+        json.key("sfxIndex").value(static_cast<int>(d.sfxIndex));
+        json.key("sfx").value(static_cast<int>(d.sfx));
+        json.endObject();
+    }
+    json.endArray();
+    json.key("nodes").beginArray();
+    for (const CritterNodeRecord& n : critter.nodes) {
+        json.beginObject();
+        json.key("nodeName").value(n.nodeName);
+        json.key("flags").value(static_cast<int>(n.flags));
+        json.key("sfxIndex").value(static_cast<int>(n.sfxIndex));
+        json.key("maxTargetDistance").value(static_cast<f64>(n.maxTargetDistance));
+        json.key("targetScoreScale").value(static_cast<f64>(n.targetScoreScale));
+        vec("position", n.position);
+        json.key("radius").value(static_cast<f64>(n.radius));
+        json.key("attach").value(n.attach);
+        json.key("damageScale").value(static_cast<f64>(n.damageScale));
+        json.key("healthScale").value(static_cast<f64>(n.healthScale));
+        json.endObject();
+    }
+    json.endArray();
+    json.key("sounds").beginArray();
+    for (const CritterSoundRecord& s : critter.sounds) {
+        json.beginObject();
+        json.key("name").value(s.name);
+        json.key("levelFormat").value(s.levelFormat);
+        json.endObject();
+    }
+    json.endArray();
+    json.endObject();
+    std::filesystem::create_directories(outDir);
+    writeTextFile(outDir / (normalizeAssetName(file.stem().string()) + ".json"), json.take());
+    ++summary.critters;
+}
+
 /** A level folder: its archive plus the world file. */
 void unpackLevel(const std::filesystem::path& directory, const std::filesystem::path& outDir,
                  Summary& summary) {
@@ -923,6 +1101,15 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
     json.beginObject();
     json.key("realm").value(data.realm);
     json.key("prefix").value(data.prefix);
+    json.key("enemies").beginArray();
+    for (const WorldEnemyRecord& enemy : data.enemies) {
+        json.beginObject();
+        json.key("kind").value(enemy.kind);
+        json.key("subtype").value(enemy.subtype);
+        json.key("stream").value(enemy.stream);
+        json.endObject();
+    }
+    json.endArray();
     json.key("levels").beginArray();
     for (const LevelRecord& level : data.levels) {
         json.beginObject();
@@ -932,6 +1119,11 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
         json.key("audioBank").value(level.audioBank);
         json.key("movie").value(level.movie);
         json.key("bossType").value(level.bossType);
+        json.key("enemyTypes").beginArray();
+        for (const s16 row : level.enemyTypes) {
+            json.value(static_cast<int>(row));
+        }
+        json.endArray();
         json.key("cameraIndex").value(static_cast<int>(level.cameraIndex));
         json.key("audioIndex").value(static_cast<int>(level.audioIndex));
         json.key("mapIndex").value(static_cast<int>(level.mapIndex));
@@ -1099,10 +1291,18 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
                 }
             } else if (upper == "PLAYERS") {
                 unpackPlayers(directory, outRoot / "PLAYERS", tiers, summary);
+            } else if (upper == "MONSTERS") {
+                unpackMonsters(directory, outRoot / "MONSTERS", summary);
             } else if (upper == "WDATA") {
                 for (const auto& entry : std::filesystem::directory_iterator(directory)) {
                     if (toLowerAscii(entry.path().extension().string()) == ".wad") {
                         unpackWorldData(entry.path(), outRoot / "wdata", summary);
+                    }
+                }
+            } else if (upper == "CRITTER") {
+                for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                    if (toLowerAscii(entry.path().extension().string()) == ".wad") {
+                        unpackCritter(entry.path(), outRoot / "critter", summary);
                     }
                 }
             } else if (upper == "PDATA") {
@@ -1144,11 +1344,11 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
         }
     }
     print(std::format("{} archives, {} textures, {} models, {} animation trees, {} fonts, "
-                      "{} text roms, {} sound banks, {} samples, {} classes, {} worlds, "
+                      "{} text roms, {} sound banks, {} samples, {} classes, {} critters, {} worlds, "
                       "{} realms, {} card images, {} failures",
                       summary.archives, summary.textures, summary.models, summary.animations,
                       summary.fonts, summary.textRoms, summary.banks, summary.samples,
-                      summary.classes, summary.worlds, summary.realms, summary.cardImages,
+                      summary.classes, summary.critters, summary.worlds, summary.realms, summary.cardImages,
                       summary.failures));
     return summary.failures == 0 ? 0 : 3;
 }

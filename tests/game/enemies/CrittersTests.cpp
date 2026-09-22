@@ -1,0 +1,307 @@
+#include <filesystem>
+#include <numbers>
+#include <string>
+#include <vector>
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "FakeRenderDevice.h"
+#include "TestSupport.h"
+#include "engine/io/File.h"
+#include "engine/world/WorldCollision.h"
+#include "formats/CritterWad.h"
+#include "game/enemies/CritterData.h"
+#include "game/enemies/Critters.h"
+
+namespace {
+
+using namespace gdl;
+using namespace gdl::game;
+using Catch::Approx;
+
+constexpr s32 kTicks = 2;
+constexpr f32 kStep = 1.0f / 30.0f;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
+
+std::filesystem::path unpackedRoot() {
+    return test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();
+}
+
+EnemyView playerAt(const Vec3& position, s32 player = 0) {
+    EnemyView view;
+    view.player = player;
+    view.position = position;
+    view.radius = 1.0f;
+    view.height = 6.0f;
+    return view;
+}
+
+CollisionTriangle triangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal) {
+    CollisionTriangle out;
+    out.vertices = {a, b, c};
+    out.normal = normal;
+    out.object = 0;
+    return out;
+}
+
+/** A flat floor sixty across at y 0. */
+std::vector<CollisionTriangle> floor() {
+    const Vec3 up{0.0f, 1.0f, 0.0f};
+    return {
+        triangle({-60, 0, -60}, {60, 0, -60}, {60, 0, 60}, up),
+        triangle({-60, 0, -60}, {60, 0, 60}, {-60, 0, 60}, up),
+    };
+}
+
+TEST_CASE("a critter wad holds the creature's type, moves, damages, parts and sounds",
+          "[formats][assets]") {
+    const std::filesystem::path wad = test::assetOrSkip("CRITTER/GOLEM.WAD");
+    const formats::CritterFile file = formats::parseCritterWad(readFile(wad));
+    REQUIRE(file.descriptors.size() == 1);
+    REQUIRE(file.descriptors[0].name == "golem");
+    REQUIRE(file.descriptors[0].prefix == "GOLEM");
+    REQUIRE(file.descriptors[0].type == 3);
+    REQUIRE(file.types.size() == 1);
+    const formats::CritterTypeRecord& type = file.types[0];
+    REQUIRE(type.suffix == "1");
+    REQUIRE(type.radius == 4.0f);
+    REQUIRE(type.wallRadius == 2.5f);
+    REQUIRE(type.maxHealth == 400.0f);
+    REQUIRE(type.expValue == 250.0f);
+    REQUIRE(type.armor == 3.0f);
+    REQUIRE(type.moveCount == 17);
+    REQUIRE(type.colCount == 6);
+    REQUIRE(type.originOffset[1] == 4.0f);
+    REQUIRE(file.moves.size() == 17);
+    REQUIRE(file.moves[10].name == "WALK");
+    REQUIRE(file.moves[10].speed == 5.0f);
+    REQUIRE(file.moves[10].target.minDistance == 7.0f);
+    REQUIRE(file.moves[12].name == "ATTACK1L");
+    REQUIRE(file.moves[12].frameStart == 6);
+    REQUIRE(file.moves[12].frameEnd == 7);
+    REQUIRE(file.moves[12].damage0 == 1);
+    REQUIRE(file.moves[12].link == 13);
+    REQUIRE(file.moves[12].colnode == "BALL");
+    REQUIRE(file.damages.size() == 4);
+    REQUIRE(file.damages[1].damage == 10.0f);
+    REQUIRE(file.damages[3].maxDistance == 10.0f);
+    REQUIRE(file.nodes.size() == 6);
+    REQUIRE(file.nodes[5].nodeName == "HEAD");
+    REQUIRE(file.nodes[5].radius == 3.0f);
+    REQUIRE(file.sounds.size() == 11);
+    REQUIRE(file.sounds[0].name == "HITDIE");
+}
+
+TEST_CASE("critter data reads a creature's table, clearing the packing tool's leftovers",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    CritterData golem;
+    REQUIRE(golem.load(root / "critter/GOLEM.json"));
+    REQUIRE(golem.loaded());
+    REQUIRE(golem.kind() == kGolemCritter);
+    REQUIRE(golem.folder() == "golem");
+    REQUIRE(golem.tree() == "GOLEM1");
+    REQUIRE(golem.maxHealth() == 400.0f);
+    REQUIRE(golem.experience() == 250.0f);
+    REQUIRE(golem.armor() == 3.0f);
+    REQUIRE(golem.radius() == 4.0f);
+    REQUIRE(golem.moves().size() == 17);
+    REQUIRE(golem.parts().size() == 6);
+    const auto walk = golem.moveNamed("WALK");
+    REQUIRE(walk.has_value());
+    REQUIRE(golem.moves()[*walk].type == CritterMove::kWalk);
+    REQUIRE(golem.moves()[*walk].speed == 5.0f);
+    REQUIRE(golem.moves()[*walk].colnode.empty()); // a tab in the file
+    REQUIRE(golem.moves()[*walk].target.allows(8.0f, 0.0f, 0.0f));
+    REQUIRE_FALSE(golem.moves()[*walk].target.allows(6.0f, 0.0f, 0.0f));
+    REQUIRE_FALSE(golem.moves()[*walk].target.allows(8.0f, kPi, 0.0f)); // behind it
+    // The turn's cone points behind: a player behind it is turned to.
+    const auto turn = golem.moveNamed("TURN");
+    REQUIRE(turn.has_value());
+    REQUIRE(golem.moves()[*turn].target.allows(8.0f, kPi, 0.0f));
+    REQUIRE_FALSE(golem.moves()[*turn].target.allows(8.0f, 0.0f, 0.0f));
+    const auto swing = golem.moveNamed("ATTACK1L");
+    REQUIRE(swing.has_value());
+    REQUIRE(golem.moves()[*swing].attack());
+    REQUIRE(golem.moves()[*swing].harms());
+    REQUIRE(golem.moves()[*swing].colnode == "BALL");
+    REQUIRE(golem.damage(golem.moves()[*swing].damage0)->damage == 10.0f);
+    REQUIRE(golem.moveOfType(CritterMove::kDeath).has_value());
+    REQUIRE(golem.moveOfType(CritterMove::kRoar).has_value());
+    REQUIRE_FALSE(golem.damage(99));
+    CritterData general;
+    REQUIRE(general.load(root / "critter/GENERAL.json"));
+    REQUIRE(general.kind() == kGeneralCritter);
+    REQUIRE(general.tree() == "GENERAL1");
+    REQUIRE(general.sight().maxDistance == 30.0f);
+    CritterData missing;
+    REQUIRE_FALSE(missing.load(root / "critter/NOBODY.json"));
+    REQUIRE_FALSE(missing.loaded());
+}
+
+TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is worth its "
+          "value in experience as it is worn down and killed",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELG/animations.json");
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(floor());
+    Critters critters;
+    EnemyScales scales;
+    scales.health = 0.75f;
+    critters.open(device, root, &collision, scales, 'G');
+    const auto id = critters.spawn(kGolemCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    REQUIRE(id.has_value());
+    REQUIRE(critters.count() == 1);
+    REQUIRE(critters.alive(*id));
+    REQUIRE(critters.kindOf(*id) == kGolemCritter);
+    REQUIRE(critters.maxHealthOf(*id) == 300.0f);
+    REQUIRE(critters.healthOf(*id) == 300.0f);
+    REQUIRE(critters.radiusOf(*id) == 4.0f);
+    REQUIRE(critters.moveOf(*id) == "START");
+    REQUIRE(critters.dataOf(*id) != nullptr);
+    // Nobody about: the entrance plays out into the stance.
+    const std::vector<EnemyView> nobody;
+    for (int i = 0; i < 300; ++i) {
+        critters.update(kTicks, kStep, nobody);
+    }
+    REQUIRE(critters.moveOf(*id) == "READY");
+    REQUIRE(critters.positionOf(*id) == Vec3{0.0f, 0.0f, 0.0f});
+    // A player twenty-five off, behind it: it turns and walks at them at five a second.
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, -25.0f})};
+    int walking = 0;
+    for (int i = 0; i < 600 && critters.moveOf(*id) != "WALK"; ++i) {
+        critters.update(kTicks, kStep, party);
+        ++walking;
+    }
+    REQUIRE(critters.moveOf(*id) == "WALK");
+    REQUIRE(critters.targetOf(*id) == 0);
+    const Vec3 from = critters.positionOf(*id);
+    for (int i = 0; i < 30; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    REQUIRE(critters.positionOf(*id).z < from.z - 3.0f);
+    REQUIRE(critters.positionOf(*id).z > from.z - 6.0f);
+    REQUIRE(std::abs(critters.yawOf(*id)) > 3.0f); // facing -z
+    // Within seven it attacks, and the blows land on the player.
+    std::vector<CritterBlow> blows;
+    bool attacked = false;
+    for (int i = 0; i < 1200 && blows.empty(); ++i) {
+        critters.update(kTicks, kStep, party);
+        attacked = attacked || critters.moveOf(*id).starts_with("ATTACK");
+        auto taken = critters.takeBlows();
+        blows.insert(blows.end(), taken.begin(), taken.end());
+    }
+    REQUIRE(attacked);
+    REQUIRE_FALSE(blows.empty());
+    REQUIRE(blows[0].player == 0);
+    REQUIRE(blows[0].critter == *id);
+    REQUIRE(blows[0].damage >= 10.0f);
+    REQUIRE(blows[0].direction.z < 0.0f);
+    REQUIRE(critters.positionOf(*id).z > -25.0f + 4.0f); // never onto the player
+    // A hit takes its armour off and is worth its share of the value to the hitter; enough of
+    // them make it roar.
+    EnemyHit hit;
+    hit.damage = 20.0f;
+    hit.player = 0;
+    hit.direction = Vec3{0.0f, 0.0f, 1.0f};
+    critters.hurt(*id, hit);
+    REQUIRE(critters.healthOf(*id) == Approx(300.0f - 17.0f));
+    auto losses = critters.takeLosses();
+    REQUIRE(losses.size() == 1);
+    REQUIRE(losses[0].player == 0);
+    REQUIRE_FALSE(losses[0].killed);
+    REQUIRE(losses[0].experience == Approx(17.0f / 301.0f * 250.0f));
+    for (int i = 0; i < 3; ++i) {
+        critters.hurt(*id, hit);
+    }
+    bool roared = false;
+    for (int i = 0; i < 60; ++i) {
+        critters.update(kTicks, kStep, party);
+        roared = roared || critters.moveOf(*id) == "ROAR";
+    }
+    REQUIRE(roared);
+    // Thrown down, it gets up; a character under the place's level is paid less.
+    EnemyHit knock = hit;
+    knock.flags = EnemyHit::kKnockDown;
+    critters.hurt(*id, knock);
+    critters.update(kTicks, kStep, party);
+    REQUIRE(critters.moveOf(*id) == "KD");
+    Critters seasoned;
+    EnemyScales place;
+    place.playerLevel = 20.0f;
+    seasoned.open(device, root, &collision, place, 'G');
+    const auto other = seasoned.spawn(kGolemCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    REQUIRE(other.has_value());
+    EnemyHit weak = hit;
+    weak.level = 10;
+    seasoned.hurt(*other, weak);
+    REQUIRE(seasoned.takeLosses()[0].experience == Approx(17.0f / 401.0f * 250.0f * 0.8f));
+    // The killing blow: a fifth of its value to everyone, its death played out, then gone.
+    EnemyHit slay;
+    slay.damage = 1000.0f;
+    slay.player = 0;
+    critters.takeLosses();
+    critters.hurt(*id, slay);
+    losses = critters.takeLosses();
+    REQUIRE(losses.size() == 2);
+    REQUIRE(losses[1].killed);
+    REQUIRE(losses[1].player == -1);
+    REQUIRE(losses[1].experience == 50.0f);
+    REQUIRE(critters.dying(*id));
+    REQUIRE_FALSE(critters.alive(*id));
+    REQUIRE(critters.targets().empty());
+    critters.update(kTicks, kStep, party);
+    REQUIRE(critters.moveOf(*id) == "DEATH");
+    int gone = 0;
+    while (critters.count() > 0 && gone < 600) {
+        critters.update(kTicks, kStep, party);
+        ++gone;
+    }
+    REQUIRE(critters.count() == 0);
+    REQUIRE(gone > 30);
+}
+
+TEST_CASE("a general comes with the realm's costume and is found by missiles and sweeps",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("MONSTERS/GENERAL/LEVELG/animations.json");
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, root, nullptr, EnemyScales{}, 'G');
+    const auto general = critters.spawn(kGeneralCritter, Vec3{10.0f, 0.0f, 0.0f}, kPi / 2.0f);
+    REQUIRE(general.has_value());
+    REQUIRE(critters.kindOf(*general) == kGeneralCritter);
+    REQUIRE(critters.maxHealthOf(*general) == 200.0f);
+    REQUIRE(critters.radiusOf(*general) == 3.5f);
+    REQUIRE(critters.targets().size() == 1);
+    REQUIRE(critters.targets()[0].radius == 3.5f);
+    REQUIRE((critters.struckBy(Vec3{-5.0f, 4.0f, 0.0f}, Vec3{30.0f, 4.0f, 0.0f}, 0.5f) == general));
+    REQUIRE_FALSE(critters.struckBy(Vec3{-5.0f, 4.0f, 10.0f}, Vec3{30.0f, 4.0f, 10.0f}, 0.5f).has_value());
+    REQUIRE(critters.within(Vec3{10.0f, 4.0f, 0.0f}, 1.0f).size() == 1);
+    REQUIRE(critters.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{1.0f, 0.0f, 0.0f}).size() == 1);
+    REQUIRE(critters.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{-1.0f, 0.0f, 0.0f}).empty());
+    // A gargoyle comes by its form, and falling is worth the key named by it.
+    test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
+    const auto gargoyle = critters.spawn(kGargoyleCritter, Vec3{-20.0f, 0.0f, 0.0f}, 0.0f, "GAR_EAGL");
+    REQUIRE(gargoyle.has_value());
+    REQUIRE(critters.formOf(*gargoyle) == "EAGL");
+    REQUIRE(critters.formOf(*general).empty());
+    REQUIRE(critters.maxHealthOf(*gargoyle) == 600.0f);
+    EnemyHit slay;
+    slay.damage = 2000.0f;
+    slay.player = 0;
+    critters.hurt(*gargoyle, slay);
+    const auto losses = critters.takeLosses();
+    REQUIRE(losses.size() == 2);
+    REQUIRE(losses[1].killed);
+    REQUIRE(losses[1].form == "EAGL");
+    REQUIRE(losses[1].experience == 100.0f);
+    // A kind without data, or a form without an archive, is refused.
+    REQUIRE_FALSE(critters.spawn(99, Vec3{0.0f, 0.0f, 0.0f}, 0.0f).has_value());
+    REQUIRE_FALSE(critters.spawn(kGargoyleCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, "GAR_NONE").has_value());
+}
+
+} // namespace

@@ -44,6 +44,14 @@ add_library(game STATIC
     world/MoveStrikes.cpp
     world/Breakables.h
     world/Breakables.cpp
+    enemies/EnemyKinds.cpp
+    enemies/EnemyAnimator.cpp
+    enemies/EnemyMind.cpp
+    enemies/EnemyMissiles.cpp
+    enemies/Enemies.cpp
+    enemies/Generators.cpp
+    enemies/CritterData.cpp
+    enemies/Critters.cpp
     world/Chests.h
     world/Chests.cpp
     world/LockedGates.h

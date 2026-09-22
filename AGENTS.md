@@ -203,8 +203,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   are unpacked here: `gdlunpack <assets> <out> --only levelG1`, then
   `--only levelG`. Scenarios take `level` (`tests/scenarios/level-g1.json`).
   Still to come for other levels: which portals a save has opened, and what
-  G1 places that nothing handles yet (generators, enemies, barrels, the rune
-  and scroll pickups).
+  G1 places that nothing handles yet (the rune and scroll pickups).
 * The loading screen is `screens/TransitionScreen`: the `TRANSITION_SCREEN`
   texture of the static set drawn 512x320 over the view. Leaving by a portal
   it comes up over two seconds (the original's alpha, 255 * (1 - d / 2)),
@@ -398,6 +397,161 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   falling from ledges (`FALLING`, `LAND`: the actor still refuses a step
   with nothing under it), pushing, webs, grabs and Death's, the victory
   pose, the super shot and the familiars' attacks.
+* The swarm (`game/enemies`). `EnemyKinds` is the original's per-kind table
+  (thirty-four rows: size, pace, damage, health, armour, the experience a hit
+  and a kill are worth, the way each goes about, all of it its own, none of
+  it player-facing); a kind is looked up by the name a level's generator
+  gives it ("GRU", "RAT"), but that name is a stand-in for a class, as the
+  original's `GetEnemyType` has it: a rat for the small, a grunt or a knight
+  for the medium (the medium's second row at strength four and over), else
+  the large, and the level's roster (`LevelInfo::enemies`, the realm's
+  `ENMY` table of WDATA, kind and class, indexed by the level record's six
+  rows at +0x4C) says which kind fills each (`levelKindOf`). So the fields'
+  "GRU" generators breed zombies out of graves (`GEN_ZOM3`), its "RAT" ones
+  maggots, and a name of no class (the great ones) stands for itself; the
+  grunts are the castle's. `EnemyAnimator` is the original's action
+  dispatcher: thirty-three actions asked for through a tick by priority
+  (Ready 100, the walks 200, attacks 300, hits 400-460, dying 999), the
+  loudest winning and the tick's request forgotten after; a swing chains into
+  its recovery and its blow lands at that moment (`struck()`,
+  `powerStruck()`), a hit cuts into anything, a death the tree lacks plays as
+  the knock-down (the grunts have no DEATH). `Enemies` is the pool of
+  twenty-five (a level's `maxEnemies` of them: G1 thirteen), the body: it
+  chooses a target every eighth frame from the players within sight (thirty
+  at a sight scale of one, each mind choosing adding two to that player's
+  distance for the next, so a party is shared out), gathers a `MindSense`
+  (where it is, what it sees, what it bumped, two probes: `clear`, whether a
+  step crosses anything, and `open`, whether a step keeps the body off the
+  walls) and carries out the `MindIntent` its mind returns (a heading, a
+  pace, whether to turn, the action to ask the animator for, perhaps a change
+  of mind or that it is done with). The minds are `EnemyMind` strategies in
+  `EnemyMind.cpp`, one class per way of the original's `do_ai` switch,
+  looked up by way number through `enemyMindOf` (strangers wander): seek
+  (0) straight at the player or the nearest clear sixteenth either side;
+  prowl (2, the rats' and the other small kinds', whatever a generator asks)
+  wandering until a player is within eight, then seeking for good; wander
+  (5, 6) straight on, an eighth of a turn round at a bump, held thirty
+  ticks; chase (7) straight while the way is open, else skirting on the side
+  the nearer probe gives (a sixth of a turn either side of the facing), a
+  sixteenth of a turn further from straight until a step is open, until the
+  straight way is open again (the original tries the same offsets but only
+  after each dead stop and slides back under the player between them: it
+  jitters behind a wall, which we do not copy); a dead stop holds the
+  heading ten ticks (fifteen for another enemy) and counts a bump, seven
+  bumps and the route doubles back, ten refused headings and it goes
+  straight anyway; loiter (11) turning on the spot, done with when its
+  generator is gone; flee (24) away at a run; lurk (27) still until a player
+  is within sight, then seeking for good; stand (31) facing whoever comes
+  against it; throw (17, 23) standing, facing its player and throwing
+  whenever they are within sight and ten above or below and its wait since
+  the last throw (the placement's fourth param in ticks, `idleTicks`) is
+  over; skirmish (16, the archer's) the same, but backing off, weapon up
+  (`RUNATTACK`, which runs on), when the player is within six tenths of its
+  sight until beyond eight tenths; suicide (18) still until someone is in
+  sight, sixty ticks of fuse, `READYTOWALK` to light it, then a run at them
+  half as fast again, blowing up against them or after two hundred and
+  forty ticks: a blast of fifty at the level's enemy damage over the chest
+  radius, and dead of it. A mind keeps what it needs between ticks in the
+  enemy's `MindMemory`; a slide along a wall that still gets somewhere is
+  no bump, only a dead stop is, and the touch is remembered while the hold
+  runs. A placement of strength four, five or six is the archer, bomber or
+  suicide variant (`EnemySpawn::tier` past the tiers): the kind's `<PREFIX>A`,
+  `B` or `S` tree, the archer's and bomber's health the second tier's, the
+  suicide's the first's, each with its own way unless the placement gives
+  one. What they throw is `EnemyMissiles`: the original's table (0x80119128,
+  0x30 a row, three slots a kind) gives every medium kind the same shot
+  (ten damage, twenty-five a second, half a unit wide) and lob (ten, twenty,
+  knock-back, a burst of three, spinning about y); a shot flies straight at
+  the player's middle from the kind's attention height at the level's
+  `enemyMissileSpeed`, a lob leaves so as to fall there under a gravity of
+  forty (ours: the original leads and weights it); either strikes the first
+  player its body meets, or the world, and a lob bursts either way. The
+  models are the kind's `<PREFIX>_ARROW` and `_BOMB` trees (the zombies'
+  arrow is a pitchfork). `enemyMissileOf(kind, slot)` is the whole table
+  (the demons', ghosts', plague's, sorcerers', warlocks' and garm's bolts of
+  their own in the third slot, the worm's three) and `missileSlotOfWay` the
+  original's slot by way (16/23 the first, 17/26 the second, the rest the
+  third); a kind with nothing in its slot throws the arrow. Against a player the body stops and asks for the attack
+  (every eighth the power one), the blow landing as the swing ends whether or
+  not the player is still there: the kind's damage, tiered down to two thirds
+  and a third as its health falls under those shares of its kind's full
+  (so a second-tier grunt, its health a third short of full, always hits for
+  ten), the power blow half as much again and, from a body reaching over two,
+  a knock that makes the player flinch. A hit on it (`EnemyHit`: the
+  original's damage-type bits, 0x10 knock-back, 0x10160 or a magic hit over
+  ten throwing it down) takes armour off, a character always getting a point
+  in, scaled a hundredth softer a level under the place's `playerLevel` and a
+  tenth harder a level over; it flinches or is thrown back (forty a small
+  body, twenty a tall one, capped at forty, decaying by 0.8 a tick) and gets
+  up, and dead plays out its fall and is gone. Experience is the kind's hit
+  or kill share through `awardExperience`. A slot is found first empty, else
+  the least worth keeping (the furthest from its player, a dying or sleeping
+  one a hundredth of that, an unseen one ten thousand dearer), never a
+  stronger one for a weaker. `Generators` are the level's type-3 items:
+  params little-endian s16s strength (the tier bred and how many records of
+  health), way, count and interval (defaults 10/5/2 and 5/10/15 by tier), the
+  count and interval scaled by the level's `generatorMost` and
+  `generatorRate` (with the difficulty gain) and truncated whole, the health
+  by `generatorHealth`; the countdown is six ticks a unit of interval,
+  stretched by a share that grows 1/(2 x count) a birth and wraps at one; one
+  breeds only with a player within forty-eight (ours, for the original's
+  on-screen test); a birth goes in one of the eight octants about it, the
+  humanoids only ahead, at its height plus the body's radius out, where the
+  floor is within six, no wall, player, enemy or box is in the way; a state
+  crumbles at each record of health (three whole, `GEN_<PREFIX><state>L1`
+  objects of the kind's archive, the kind's GENHIT/GENDIE trees over it) and
+  gone it frees its brood. Level placements (type 4) of ordinary strength
+  stand where put, asleep at nought. Level tuning's enemy and generator
+  columns are in `LevelTuning` (`enemyHealth`, `enemySpeedScale(gain)` and so
+  on: what they take and deal is the level's own, speed, sight, rate and
+  count grow with the gain). Missile targets are the barrels by their ids,
+  enemies from 1000 and generators from 2000; strikes and blasts reach them
+  too, with the strike row's damage type. gdlunpack's `--only MONSTERS`
+  unpacks the seventy-two monster archives (`GENERAL` one folder a realm).
+  Not yet: the other minds (guards 8, milestone routes 10, the ghosts' 19,
+  the kiting of 26/28/29 and the rest), the original's missile lead and
+  weight, the arrow's and bomb's hit effects and sounds, Death, IT, gibs
+  and the enemies' sounds (a generator struck or destroyed sounds the
+  realm's `S_GENDAM<letter>` / `S_GENKILL<letter>`), melee for the player
+  (now that there is something to hit), and the original's on-screen gate
+  on breeding.
+* The great ones (`game/enemies/Critters`, `CritterData`,
+  `formats/CritterWad`): golems, generals and gargoyles, the original's
+  critters, whose minds are data. `gdlunpack --only CRITTER` writes
+  `critter/<NAME>.json` from `CRITTER/<NAME>.WAD` (a data wad like PDATA:
+  TYPE 0x140, MOVE 0x90, DAMG/NODE/SFXX 0x50, DESC 0x30; the fixed text
+  fields keep the packing tool's leftovers past their first nought, so a
+  colnode of a tab names no node). `CritterData` is the first type's table:
+  size, wall radius, armour, health, its value in experience, its sight, its
+  moves, damages and parts. A `Critters` pool of sixteen stands one at a
+  placement (kinds 29/33/32 of the level's type-4 items) with the realm's
+  costume (`MONSTERS/GOLEM/LEVELG`, `MONSTERS/GENERAL/LEVELG`; a gargoyle
+  its form's, `MONSTERS/GAR_EAGL`) and the tree of prefix plus suffix
+  (`GOLEM1`), and health `maxHealth` at the level's enemy health. Each tick
+  the move it is doing plays; done (or something louder come), what it links
+  to plays, else the loudest move whose target rule (`CritterTarget`:
+  distance window, a cone `minDot` wide pointing `yaw` from ahead, so TURN's
+  points behind and the gargoyle's LEFT/RIGHT to the sides) and cooldown
+  allow it: attacks (types from 128) over walks (52) over the stance (32);
+  a move carries the body at its own `speed` a second (the type's speed is
+  a cap, not a pace) and turns it at its `turnRate`, never onto a player or
+  another; over its harmful frames (`frameStart..frameEnd`, a second window
+  too) its damage record strikes: a blow (0) whoever is within the part's
+  radius plus its reach of the named node's posed position, a ring (3, the
+  stomp) or a breath (4, in its cone) whoever is within its reach of the
+  feet, each player once a move, for `damage` at the level's enemy damage.
+  A hit takes the armour off (a point always through for a character), a
+  block lets a quarter through and shrugs off the throw, and is worth
+  amount / (1 + health) of the value to the hitter (a fiftieth less a level
+  under the place's `playerLevel`, never under a tenth), paid in whole
+  points as they add up; fifty taken and it roars; a floored hit plays KD
+  (KB otherwise) and throws it (twenty, a golem five less); dead it plays
+  DEATH, fades a second and is gone, a fifth of its value going to everyone.
+  A gargoyle slain leaves the key its form is named by (`GARGEAGL`) where
+  it fell. Not yet: the general's waypoint patrol, the gargoyle's fireball,
+  per-part damage and breaking, the bosses (type 4, their patterns and
+  cameras), the critters' sounds, and the statue's waking.
+  Scenarios: `level-g1-general.json`.
 * A bitmap an archive flags 0x100 has no picture of its own (an animated
   texture's slot, such as the magic users' `<COL>_HANDGLOW`, filled in the
   original from frames kept elsewhere): `TextureSet` draws it clear
@@ -444,7 +598,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Scenarios: `level-g1-chest.json`, `level-g1-gate.json`,
   `level-g1-trap.json`, `level-g1-nokey.json`, `level-g1-barrel.json`,
   `level-g1-death.json`, `level-g1-turbo.json`; in the tower
-  `tower-turbo-archer.json`, `tower-turbo-wizard.json` and `tower-strafe.json`. A scenario's `position` is not checked against
+  `tower-turbo-archer.json`, `tower-turbo-wizard.json`, `tower-strafe.json` and
+  `level-g1-generators.json`. A scenario's `position` is not checked against
   walls: pick open ground from the level's collision.
 * Texture wrapping is per axis (`TextureDesc::wrap` across, `wrapV` down,
   `TextureSetEntry::clampU`/`clampV`, eight Vulkan samplers): levels clamp

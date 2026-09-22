@@ -27,6 +27,8 @@ add_library(formats STATIC
     ObjWriter.cpp
     PlayerDataWad.h
     PlayerDataWad.cpp
+    CritterWad.h
+    CritterWad.cpp
     WadDirectory.h
     WadDirectory.cpp
     WorldDataWad.h

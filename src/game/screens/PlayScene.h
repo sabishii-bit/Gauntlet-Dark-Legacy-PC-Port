@@ -47,6 +47,10 @@
 #include "engine/world/TreePose.h"
 
 #include "game/players/PowerupEffects.h"
+#include "game/enemies/Critters.h"
+#include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyMissiles.h"
+#include "game/enemies/Generators.h"
 #include "game/world/AmbientSounds.h"
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
@@ -199,6 +203,13 @@ public:
     const LockedGates& gates() const { return m_gates; }
     const Traps& traps() const { return m_traps; }
     const Breakables& barrels() const { return m_barrels; }
+    const Enemies& enemies() const { return m_enemies; }
+    Enemies& enemies() { return m_enemies; }
+    const Generators& generators() const { return m_generators; }
+    Generators& generators() { return m_generators; }
+    const Critters& critters() const { return m_critters; }
+    Critters& critters() { return m_critters; }
+    const EnemyMissiles& enemyMissiles() const { return m_enemyMissiles; }
     const HelpMessages& help() const { return m_help; }
     const MoveStrikes& strikes() const { return m_strikes; }
     const AmbientDimmer& dimmer() const { return m_dimmer; }
@@ -303,6 +314,17 @@ private:
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false);
     f32 guarded(usize index, f32 damage, bool directed) const;
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer);
+    void bindEnemies(RenderDevice& device, LevelWorld& world, const GameContext& context);
+    std::vector<EnemyView> enemyViews() const;
+    void updateEnemies(s32 ticks, f32 seconds);
+    void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer);
+    void strikeGenerator(s32 id, f32 power, s32 byPlayer);
+    void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer);
+    void awardCritterLosses();
+    /** Missile targets: the barrels by their own ids, the enemies and generators past these. */
+    static constexpr s32 kEnemyTargetBase = 1000;
+    static constexpr s32 kGeneratorTargetBase = 2000;
+    static constexpr s32 kCritterTargetBase = 3000;
     void settleBlasts();
     void updateClouds(f32 seconds);
     bool postHelp(s32 id, usize index);
@@ -459,6 +481,11 @@ private:
     std::vector<Blast> m_blasts;
     std::vector<f32> m_cloudGaps; ///< per actor, seconds before gas hurts them again
     Breakables m_barrels;
+    Enemies m_enemies;
+    Generators m_generators;
+    Critters m_critters;
+    EnemyMissiles m_enemyMissiles;
+    std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid
     HelpMessages m_help;
     MessageTable m_strings;  ///< the game's own strings, which hold the help messages
     SoundSet m_narrator;     ///< who says them

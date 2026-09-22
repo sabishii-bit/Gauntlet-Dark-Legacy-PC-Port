@@ -60,6 +60,7 @@ struct LevelRecord {
     std::string audioBank; ///< usually empty; the audio record names the bank
     std::string movie;
     s32 bossType = 0;
+    std::array<s16, 6> enemyTypes{}; ///< rows of the realm's enemies the level uses; -1 none
     s16 cameraIndex = -1;
     s16 audioIndex = -1;
     s16 mapIndex = -1;
@@ -127,14 +128,25 @@ struct SoundRecord {
 };
 
 /** A realm's data wad: the levels of one world and the records they share. */
+/** One kind of enemy a realm keeps: which, of what class (1 small, 2 medium, 3 large, 4 the
+ * medium's second row, 5 a critter, 9 the boss), and its sound stream. */
+struct WorldEnemyRecord {
+    s32 kind = -1;
+    s32 subtype = 0;
+    std::string stream;
+};
+
 struct WorldDataFile {
     static constexpr usize kLevelSize = 0x10C;
+    static constexpr usize kEnemySize = 0x18;
+    static constexpr usize kLevelEnemyCount = 6;
     static constexpr usize kCameraSize = 0x6C;
     static constexpr usize kAudioSize = 0x3C;
     static constexpr usize kSoundSize = 0x18;
 
     u32 realm = 0;
     std::string prefix; ///< the level folders' name without their number, "levelL"
+    std::vector<WorldEnemyRecord> enemies;
     std::vector<LevelRecord> levels;
     std::vector<CameraRecord> cameras;
     std::vector<AudioRecord> audio;
