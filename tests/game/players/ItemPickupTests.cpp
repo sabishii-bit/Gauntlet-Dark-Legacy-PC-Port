@@ -107,4 +107,53 @@ TEST_CASE("powerups go into their slots at the class's share of their strength",
     REQUIRE(takeItem(save, ItemOffer{44, 0, 0, 0.0f}).outcome == Outcome::NotCarried);
 }
 
+TEST_CASE("a runestone is kept once, a legend item by its realm, and gargoyle pieces are "
+          "counted up to what the statues want",
+          "[game][players][items]") {
+    CharacterSave save;
+    Relics& relics = save.progress().relics;
+    ItemTaking taking = takeItem(save, offer(ItemKind::Runestone, 7));
+    REQUIRE(taking.outcome == Outcome::Taken);
+    REQUIRE(taking.card == "RUNESTONE");
+    REQUIRE(taking.sound == "S_PICKUPRUNE");
+    REQUIRE(taking.count == 7);
+    REQUIRE(relics.hasRune(7));
+    // The same rune again is refused, and lies there still.
+    taking = takeItem(save, offer(ItemKind::Runestone, 7));
+    REQUIRE(taking.outcome == Outcome::AlreadyHeld);
+    REQUIRE_FALSE(taking.took());
+    REQUIRE(relics.runeCount() == 1);
+    // A legend item: the ice axe is the mountain's, realm two.
+    taking = takeItem(save, offer(ItemKind::Legend, 2));
+    REQUIRE(taking.outcome == Outcome::Taken);
+    REQUIRE(taking.card == "LEGEND");
+    REQUIRE(taking.sound == "S_PICKUPMAGIC");
+    REQUIRE(taking.count == 2);
+    REQUIRE(relics.hasLegend(2));
+    REQUIRE_FALSE(relics.hasLegend(1));
+    // Gargoyle pieces: the count so far shows, and it stops at what is wanted.
+    taking = takeItem(save, offer(ItemKind::GargoyleKey, 1));
+    REQUIRE(taking.outcome == Outcome::Taken);
+    REQUIRE(taking.card == "GOLDNICON");
+    REQUIRE(taking.count == 1);
+    for (int i = 0; i < 30; ++i) {
+        takeItem(save, offer(ItemKind::GargoyleKey, 1));
+    }
+    REQUIRE(relics.gargoylePieces[1] == Relics::kGargoyleNeeded[1]);
+    REQUIRE(relics.gargoyleComplete(1));
+    REQUIRE_FALSE(relics.gargoyleComplete(0));
+    REQUIRE(takeItem(save, offer(ItemKind::GargoyleKey, 9)).outcome == Outcome::NotCarried);
+}
+
+TEST_CASE("a scroll is read where it lies and goes, nothing kept", "[game][players][items]") {
+    CharacterSave save;
+    const ItemTaking taking = takeItem(save, offer(ItemKind::Scroll, 3));
+    REQUIRE(taking.outcome == Outcome::Shown);
+    REQUIRE(taking.took());
+    REQUIRE(taking.count == 2); // the page, from nought
+    REQUIRE(taking.card.empty());
+    REQUIRE(save.progress().relics == Relics{});
+    REQUIRE(save.progress().inventory == Inventory{});
+}
+
 } // namespace

@@ -61,7 +61,11 @@ public:
     static constexpr s32 kBarrelsHold = 27;
     static constexpr s32 kFirstTurboName = 57; ///< three to a class: none, the lesser, the greater
     static constexpr s32 kLastTurboName = 79;
+    static constexpr s32 kAlreadyHaveRune = 90;
     static constexpr s32 kUseTurbo = 110;
+    /** A legend item's name is this plus the realm it is for, one to eleven. */
+    static constexpr s32 kFirstLegendName = 113;
+    static constexpr s32 kLastLegendName = 124;
     static constexpr s32 kHealthFull = 133;
     static constexpr s32 kBlastsDestroy = 135;
     static constexpr s32 kGasSpoils = 136;

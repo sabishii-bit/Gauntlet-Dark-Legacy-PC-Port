@@ -1,6 +1,7 @@
 #include "game/screens/PlayScene.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <exception>
 #include <format>
@@ -107,6 +108,10 @@ constexpr f32 kMasterScale = 1.2f; ///< at level 99
 constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
 constexpr std::string_view kChestSound = "S_CHEST";
 constexpr std::string_view kNarratorBank = "VOICE1";
+constexpr std::string_view kNarratorSecondBank = "VOICE2"; ///< the legend items' names
+constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
+constexpr std::string_view kRuneVoicePrefix = "S_RUNE"; ///< then S_RUNE2 to S_RUNE12
+constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
 constexpr std::string_view kHelpTextPrefix = "help";
 constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
 constexpr f32 kMoveNamedFrame = 1.0f; ///< of a turbo attack, when its name is announced
@@ -669,6 +674,7 @@ void PlayScene::loadSounds() {
     }
     m_ambientBank.load(m_context.unpackedRoot / kSoundDirectory / kAmbientBank);
     m_narrator.load(m_context.unpackedRoot / kSoundDirectory / kNarratorBank);
+    m_narratorSecond.load(m_context.unpackedRoot / kSoundDirectory / kNarratorSecondBank);
     if (!m_commonSounds.load(m_context.unpackedRoot / kSoundDirectory / kCommonBank)) {
         return;
     }
@@ -1422,13 +1428,17 @@ bool PlayScene::postHelp(s32 id, usize index, s32 number) {
         return false;
     }
     if (m_context.sounds != nullptr) {
-        // A turbo attack's name is called from the character's own class's bank.
-        SoundSet* bank = &m_narrator;
+        // A turbo attack's name is called from the character's own class's bank; the
+        // narrator's lines are in either of its banks.
+        std::vector<SoundSet*> banks{&m_narrator, &m_narratorSecond};
         if (spec->classVoice && index < m_figures.size() && m_figures[index] != nullptr) {
-            bank = &m_figures[index]->voice;
+            banks = {&m_figures[index]->voice};
         }
-        if (const auto line = bank->find(spec->voice); line.has_value()) {
-            m_context.sounds->play(bank->sequence(*line), 1.0f, SoundCategory::Effects);
+        for (SoundSet* bank : banks) {
+            if (const auto line = bank->find(spec->voice); line.has_value()) {
+                m_context.sounds->play(bank->sequence(*line), 1.0f, SoundCategory::Effects);
+                break;
+            }
         }
     }
     return true;
@@ -1676,6 +1686,13 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
     if (level != nullptr && !bossNameOf(level->bossType).empty()) {
         if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss); mark != nullptr) {
             m_bosses.spawn(level->bossType, mark->position, mark->rotation.y);
+            // The first of the party carrying its legend item brings it to the fight.
+            for (const PlayerActor& actor : m_actors) {
+                if (actor.save().progress().relics.hasLegend(m_bosses.legendRealm()) &&
+                    m_bosses.bringLegend(actor.player())) {
+                    break;
+                }
+            }
         }
     }
     const std::vector<ItemInfo>& infos = world.layout().itemInfos();
@@ -1786,6 +1803,17 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     settleBlasts();
     m_critters.update(ticks, seconds, views);
     m_bosses.update(ticks, seconds, views);
+    // The legend item held up is the bearer's no more.
+    for (const LegendEvent& event : m_bosses.takeLegendEvents()) {
+        if (event.cue != LegendCue::Brandished) {
+            continue;
+        }
+        for (PlayerActor& actor : m_actors) {
+            if (actor.player() == event.player) {
+                actor.save().progress().relics.spendLegend(event.realm);
+            }
+        }
+    }
     for (const CritterBlow& blow : m_bosses.takeBlows()) {
         for (usize i = 0; i < m_actors.size(); ++i) {
             if (m_actors[i].player() == blow.player && !isDown(i)) {
@@ -2122,11 +2150,26 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
             postHelp(HelpMessages::kKeysFull, pickup.collector);
         } else if (taking.outcome == ItemTaking::Outcome::HealthFull) {
             postHelp(HelpMessages::kHealthFull, pickup.collector);
+        } else if (taking.outcome == ItemTaking::Outcome::AlreadyHeld) {
+            postHelp(HelpMessages::kAlreadyHaveRune, pickup.collector);
         }
         return std::nullopt;
     }
     if (pickup.subtype == kSpecialPowerup && (static_cast<u32>(pickup.flags) & kTurboFlag) != 0) {
         m_turbo[pickup.collector].add(TurboMeter::kFull);
+    }
+    switch (static_cast<ItemKind>(pickup.subtype)) {
+    case ItemKind::Runestone: shareRune(pickup.amount); break;
+    case ItemKind::Legend:
+        postHelp(HelpMessages::kFirstLegendName + taking.count, pickup.collector);
+        break;
+    case ItemKind::Scroll:
+        if (const LevelInfo* level = m_world->level(); level != nullptr && taking.count >= 0) {
+            openMessage(std::format("{}{}", kLevelScrollPrefix, level->name),
+                        static_cast<usize>(taking.count));
+        }
+        break;
+    default: break;
     }
     if (!taking.card.empty()) {
         m_pickups.addCard(actor.player(), taking.card);
@@ -2143,6 +2186,28 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
         }
     }
     return taking.left;
+}
+
+/** A runestone found is everyone's: each character in play gets it, and the narrator counts
+ * what the party holds. */
+void PlayScene::shareRune(s32 rune) {
+    u16 held = 0;
+    for (PlayerActor& actor : m_actors) {
+        Relics& relics = actor.save().progress().relics;
+        relics.addRune(rune);
+        held |= relics.runes;
+    }
+    const s32 count = std::popcount(held);
+    if (count <= 0) {
+        return;
+    }
+    const std::string voice =
+        count == 1 ? std::string(kFirstRuneVoice) : std::format("{}{}", kRuneVoicePrefix, count);
+    if (m_context.sounds != nullptr) {
+        if (const auto line = m_narrator.find(voice); line.has_value()) {
+            m_context.sounds->play(m_narrator.sequence(*line), 1.0f, SoundCategory::Effects);
+        }
+    }
 }
 
 /** Loops the level's music stream from the game's files at the level's volume. */

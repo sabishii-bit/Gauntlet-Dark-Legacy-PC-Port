@@ -91,6 +91,18 @@ public:
     std::vector<CritterLoss> takeLosses();
 
     void hurt(s32 id, const EnemyHit& hit);
+    /** Stops it where it stands, its animation with it, for `ticks`. */
+    void freeze(s32 id, s32 ticks);
+    /** Takes its targets from it for `ticks`, over which it turns at a tenth of its rate. */
+    void blind(s32 id, s32 ticks);
+    /** Refuses its curbed attacks (those whose harm is flagged so) while `seconds` is over
+     * nought; nought lifts the curb. */
+    void curb(s32 id, f32 seconds);
+    void resize(s32 id, f32 scale);
+    /** Keeps it to its stance between moves while `held`. */
+    void hold(s32 id, bool held);
+    /** Has it roar as soon as its move is over. */
+    void roar(s32 id);
     std::vector<MissileTarget> targets() const;
     std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
     std::vector<s32> within(const Vec3& centre, f32 radius) const;
@@ -110,6 +122,14 @@ public:
     s32 targetOf(s32 id) const;
     /** The name of the move it is doing ("WALK", "ATTACK1L"). */
     std::string_view moveOf(s32 id) const;
+    /** The type of the move it is doing, -1 with none. */
+    s32 moveTypeOf(s32 id) const;
+    /** Whether the move it is doing has played out. */
+    bool moveDoneOf(s32 id) const;
+    bool frozen(s32 id) const;
+    bool blinded(s32 id) const;
+    bool curbed(s32 id) const;
+    f32 scaleOf(s32 id) const;
     const CritterData* dataOf(s32 id) const;
     /** A gargoyle's form ("EAGL"), empty for the rest. */
     std::string formOf(s32 id) const;
@@ -144,14 +164,23 @@ private:
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
         f32 roarOwed = 0.0f;           ///< damage taken toward the next roar
         f32 alpha = 1.0f;
+        f32 scale = 1.0f;
+        s32 frozenTicks = 0;           ///< a legend item's: it stands still this long
+        s32 blindTicks = 0;            ///< and finds no one this long
+        f32 curbSeconds = 0.0f;        ///< over nought, its curbed attacks are refused
+        bool held = false;             ///< keeps to its stance between moves
+        bool roarWanted = false;       ///< roars as soon as it may
         AnimationPlayer player;
         TreePose pose;
     };
 
     Stock* stockFor(s32 kind, std::string_view form);
+    Critter* critterAt(s32 id);
     static bool startMove(Critter& critter, usize index);
     static void chooseMove(Critter& critter, std::span<const EnemyView> players);
     static std::optional<usize> bestMove(const Critter& critter, std::span<const EnemyView> players);
+    /** Whether a legend item's curb keeps the move from it. */
+    static bool curbedMove(const Critter& critter, const CritterMove& move);
     void strikeWith(Critter& critter, s32 id, const CritterMove& move, s32 damageIndex,
                     std::span<const EnemyView> players);
     static Vec3 partPosition(const Critter& critter, std::string_view node);

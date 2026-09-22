@@ -378,6 +378,7 @@ private:
     f32 trapDamageScale() const;
     void drawHelp(const Mat4& clip, f32 width, f32 height);
     std::optional<s32> takePickup(const Pickup& pickup);
+    void shareRune(s32 rune);
     void playCommon(std::optional<u32> sound);
     void updateAmbience();
     void updateBeam(s32 ticks);
@@ -511,6 +512,7 @@ private:
     HelpMessages m_help;
     MessageTable m_strings;  ///< the game's own strings, which hold the help messages
     SoundSet m_narrator;     ///< who says them
+    SoundSet m_narratorSecond; ///< the narrator's other bank: the legend items' names
     Chests m_chests;
     LockedGates m_gates;
     Traps m_traps;

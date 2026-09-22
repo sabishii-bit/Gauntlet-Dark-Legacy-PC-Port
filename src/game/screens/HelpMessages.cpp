@@ -8,7 +8,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 29> kSpecs{{
+constexpr std::array<HelpMessageSpec, 41> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kKeysFull, "FULLOFKEYS", "S_KEYFULL"},
@@ -33,7 +33,22 @@ constexpr std::array<HelpMessageSpec, 29> kSpecs{{
     {76, "SOR_TURBO", "S_TURC_SOR", HelpRepeat::OncePerSession, 2, 70, true},
     {78, "JES_TURBO", "S_TURB_JES", HelpRepeat::OncePerSession, 1, 60, true},
     {79, "JES_TURBO", "S_TURC_JES", HelpRepeat::OncePerSession, 2, 70, true},
+    {HelpMessages::kAlreadyHaveRune, "ALREADYHAVERUNE", "S_ALREADYRUNE", HelpRepeat::Always},
     {HelpMessages::kUseTurbo, "USETURBO", "S_USETURBO"},
+    // The legend items by name as they are found, one to a realm: the castle's scimitar to
+    // the sky's javelin. The underworld's and the battlefield's have no item; their rows keep
+    // the realm numbering.
+    {HelpMessages::kFirstLegendName + 1, "LEGEND_ITEMS000", "S_SCIMITARVOX"},
+    {HelpMessages::kFirstLegendName + 2, "LEGEND_ITEMS001", "S_ICEAXEVOX"},
+    {HelpMessages::kFirstLegendName + 3, "LEGEND_ITEMS002", "S_LAMPVOX"},
+    {HelpMessages::kFirstLegendName + 4, "LEGEND_ITEMS003", "S_BELLOWSVOX"},
+    {HelpMessages::kFirstLegendName + 5, "LEGEND_ITEMS004", "S_SAVIORVOX"},
+    {HelpMessages::kFirstLegendName + 6, "LEGEND_ITEMS005", "S_SAVIORVOX"},
+    {HelpMessages::kFirstLegendName + 7, "LEGEND_ITEMS006", "S_BOOKVOX"},
+    {HelpMessages::kFirstLegendName + 8, "LEGEND_ITEMS007", "S_SAVIORVOX"},
+    {HelpMessages::kFirstLegendName + 9, "LEGEND_ITEMS008", "S_PARCHVOX"},
+    {HelpMessages::kFirstLegendName + 10, "LEGEND_ITEMS009", "S_LANTERNVOX"},
+    {HelpMessages::kFirstLegendName + 11, "LEGEND_ITEMS010", "S_JAVELINVOX"},
     {HelpMessages::kHealthFull, "HEALTHFULL", "S_HEALTHFULL", HelpRepeat::OncePerPlayer},
     {HelpMessages::kLevelUp, "LEVELUP", "S_GAINEDLEVEL", HelpRepeat::Always},
     {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS"},

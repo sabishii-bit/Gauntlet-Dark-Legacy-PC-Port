@@ -202,8 +202,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   is ours, not the original's. Only the tower and `G1` (with `ITEMS/LEVELG`)
   are unpacked here: `gdlunpack <assets> <out> --only levelG1`, then
   `--only levelG`. Scenarios take `level` (`tests/scenarios/level-g1.json`).
-  Still to come for other levels: which portals a save has opened, and what
-  G1 places that nothing handles yet (the rune and scroll pickups).
+  Still to come for other levels: which portals a save has opened.
 * The loading screen is `screens/TransitionScreen`: the `TRANSITION_SCREEN`
   texture of the static set drawn 512x320 over the view. Leaving by a portal
   it comes up over two seconds (the original's alpha, 255 * (1 - d / 2)),
@@ -559,20 +558,35 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   named attack of speed, the lich's `CHARGE`, carries it), with a `BossView`
   (name, health, `fraction()`) for the meter through `PlayScene::bossView`,
   targets from 4000, and its worth paid the great ones' way. The legend
-  items (the Ice Axe and the rest, used on a boss to weaken it) are found
-  by finishing the level whose record carries a `legend` (D4 1, A2 2, I4 3,
-  C3 4, E1 5, K4 7, G3 9, J2 10, B5 11, in the WDATA level records): the
-  original stamps `1 << legend` on the character's `level_masks[2]` then
-  (a second time) `[3]` (tower.c 524; options.c 2690 reads them for the
-  legend hints). Which item weakens which boss, and how (the Ice Axe
-  freezing the dragon), is the next thing to find: it is not in ModifyDamage
-  (combat.c 405: that is the elemental colour against `shieldFlags`, x0.75
-  weak for a boss), nor in boss.c by that name; look at the boss fight's
-  start for the party's masks, then give `Bosses` a `BossWeakness` table
-  (item, boss kind, effect) and `CharacterSave` the legend masks. Its
-  resistances are its table's `shieldFlags`. Not yet: the meter's drawing (the original's
-  HUD meter when `typeFlags & 4`, the in-world bar when `0x800`), the
-  patterns (PTRN), phases, cameras, children (the chimera's heads),
+  items (`enemies/LegendItems`): each boss's is the item of its own realm
+  (`legendRealmOf`: the chimera's scimitar 1, the dragon's ice axe 2, the
+  genie's lamp 3, the spider's bellows 4, the temple's savior 5, the lich's
+  book 7, the yeti's parchment 9, the wraith's lantern 10, the plague
+  fiend's javelin 11; the underworld's and the garm have none), found as a
+  subtype-13 pickup on the level whose record carries that `legend`
+  (`level_masks[2]`/`[3]` are only the hints' record of the level beaten).
+  `LegendWeakness` is the original's table (pmotion.c 2092, sfx.c 3225,
+  gauntworld.c 1262): thrown, it takes a tenth of the boss's health now
+  (a quarter of the lich's, 500 flat off the wraith, a head off the chimera:
+  a third here until its heads are children), and freezes the dragon 1200
+  ticks (`pausecnt` with the `SEETHROUGH` texture, not drawn yet), blinds
+  the genie 1800 and the plague fiend 18000 (`unkAC6`: no targets, turning
+  at a tenth), or curbs the attacks whose damage entry has flag 0x4000
+  (`unkAC8`: the spider's for good at 0.8 scale, tinted green in the
+  original, the yeti's, wraith's and temple's for 29 s from its roar).
+  `LegendRite` stages it as the original does (`lbl_8034489C` and the
+  bearer's `quest_state`): `Bosses::bringLegend(player)` at the level's
+  start for the first of the party with the item; the boss holds `READY`
+  while it rises; risen, the bearer brandishes (the item is spent:
+  `LegendCue::Brandished`) and throws a second on (`Thrown`: the toll and
+  the weakness go on the fighter through `Critters::freeze/blind/curb/
+  resize`), the boss roars a second (chimera, lich, temple) or three after
+  rising (`Roared`) and the curb wears off (`WornOff`). Not yet: the
+  bearer's glow and throw animation (99/107/115 by boss), the `LEGENDHLD`/
+  `LEGENDPRJ` effects and the realm's legend sounds (`legend_snd1/2`), the
+  dragon's ice texture, the spider's tint, the meter's drawing (the
+  original's HUD meter when `typeFlags & 4`, the in-world bar when `0x800`),
+  the patterns (PTRN), phases, cameras, children (the chimera's heads),
   projectile moves, the general's waypoint patrol, the gargoyle's
   fireball, per-part damage and breaking, the critters' sounds, the
   statue's waking, and a boss level unpacked (`--only levelG5`).
@@ -665,6 +679,25 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   member and `items` (`name`, `position`); `tests/scenarios/tower-items.json`
   lays a spread out. Powerup timers do not run in the tower (nor did the
   original's).
+* The rest of the pickups (`players/Relics`, in each `ClassProgress`, saved
+  under `relics`): subtype 10 is a runestone (its record's `value` the rune,
+  0 to 12; `RUNESTONE` card, `S_PICKUPRUNE`; refused with `ALREADYHAVERUNE`,
+  help 90, when held; the scene's `shareRune` gives it to everyone in play and
+  the narrator counts the party's, `S_RUNEFOUND1` then `S_RUNE2`..`12`; the
+  `GETRUNE` burst of the powerups archive plays), 13 a legend item (its value
+  the realm whose boss it is for; `LEGEND` card; named by help 113 + realm,
+  `LEGEND_ITEMS000`..`010` in the strings, voiced from `VOICE2`, the
+  narrator's second bank; `Relics::legends` is the original's per-class
+  `rune_near` mask, set by the pickup), 14 a scroll (its instance's first
+  parameter is the page, from one, of the level's `SCROLLS<level>` message
+  in `scroll_e.json`: read on the spot through `openMessage`, nothing kept;
+  `ItemTaking::Outcome::Shown`), 15 a crystal (the scene's own path), 16 a
+  gargoyle piece (value 0 the serpent's, 1 the eagle's, 2 the lion's,
+  counted up to 12/20/28, the original's `completion1` records; `GOLDNICON`
+  card, `GETGARG` burst). Not pickups: `BOSSKEY` (subtype 11, the boss's
+  death effect) and `TIMEBOMB` (44, a hazard like the barrels). The legend
+  levels (`LevelInfo::legend`: D4 1, A2 2, I4 3, C3 4, E1 5, K4 7, G3 9, J2
+  10, B5 11) are not unpacked yet, so no legend item is placed.
 * Using what is carried: `PlayBindings` adds `usePotion` (E, pad B),
   `throwPotion` (Q, pad X) and the selector's four presses (I/K/J/L, the
   pad's directional buttons, which therefore no longer walk by default: the

@@ -101,6 +101,21 @@ TEST_CASE("a help message goes up once for the party, a second a line and a half
     REQUIRE_FALSE(help.showing());
 }
 
+TEST_CASE("the legend items are named by the realm they are for, and a rune held is news",
+          "[game][help]") {
+    const HelpMessageSpec* axe = HelpMessages::specOf(HelpMessages::kFirstLegendName + 2);
+    REQUIRE(axe != nullptr);
+    REQUIRE(axe->text == "LEGEND_ITEMS001");
+    REQUIRE(axe->voice == "S_ICEAXEVOX");
+    REQUIRE(HelpMessages::specOf(HelpMessages::kFirstLegendName + 1)->voice == "S_SCIMITARVOX");
+    REQUIRE(HelpMessages::specOf(HelpMessages::kLastLegendName)->voice == "S_JAVELINVOX");
+    REQUIRE(HelpMessages::specOf(HelpMessages::kFirstLegendName) == nullptr);
+    const HelpMessageSpec* rune = HelpMessages::specOf(HelpMessages::kAlreadyHaveRune);
+    REQUIRE(rune != nullptr);
+    REQUIRE(rune->text == "ALREADYHAVERUNE");
+    REQUIRE(rune->repeat == HelpRepeat::Always);
+}
+
 TEST_CASE("news is told every time, with its number filled in", "[game][help]") {
     MessageTable strings;
     loadStrings("help-news", strings);

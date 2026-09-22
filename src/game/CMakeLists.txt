@@ -26,6 +26,8 @@ add_library(game STATIC
     players/Party.cpp
     players/Inventory.h
     players/Inventory.cpp
+    players/Relics.h
+    players/Relics.cpp
     players/ItemPickup.h
     players/ItemPickup.cpp
     players/PowerupEffects.h
@@ -54,6 +56,7 @@ add_library(game STATIC
     enemies/CritterData.cpp
     enemies/Critters.cpp
     enemies/Bosses.cpp
+    enemies/LegendItems.cpp
     world/Chests.h
     world/Chests.cpp
     world/LockedGates.h

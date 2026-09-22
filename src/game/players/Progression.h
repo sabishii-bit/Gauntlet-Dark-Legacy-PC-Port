@@ -6,6 +6,7 @@
 
 #include "game/players/ClassData.h"
 #include "game/players/Inventory.h"
+#include "game/players/Relics.h"
 
 namespace gdl::game {
 
@@ -33,6 +34,7 @@ struct ClassProgress {
     std::array<s32, kRealmCount> crystals{}; ///< gathered towards each realm's gate
     u32 unlocked = 0; ///< a bit per realm whose gate's opening was announced
     Inventory inventory; ///< the keys, potions and powerups carried as this class
+    Relics relics;       ///< the runestones, legend items and gargoyle pieces gathered
 };
 
 /** Stats as the select screen shows them, in its row order. */
