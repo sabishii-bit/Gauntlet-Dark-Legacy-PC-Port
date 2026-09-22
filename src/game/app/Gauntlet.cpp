@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "engine/assets/PngImage.h"
+#include "engine/core/Assert.h"
 #include "engine/core/Log.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
@@ -324,6 +325,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
 }
 
 void Gauntlet::finishJourney() {
+    GDL_VERIFY(m_journey.has_value(), "Finishing a journey requires a pending journey");
     const Journey journey = std::move(*m_journey);
     m_journey.reset();
     m_loadingPicture.release();

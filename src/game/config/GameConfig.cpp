@@ -289,6 +289,8 @@ void GameConfig::saveFile(const std::filesystem::path& file) const {
 }
 
 f32 DifficultyConfig::gain() const {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto named = std::ranges::find(kNames, level);
     return named != kNames.end() ? kGains[static_cast<usize>(named - kNames.begin())] : 1.0f;
 }

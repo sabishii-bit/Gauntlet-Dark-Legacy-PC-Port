@@ -33,6 +33,8 @@ bool quickToRoar(s32 boss) {
 } // namespace
 
 const LegendWeakness* legendWeaknessOf(s32 kind) {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kWeaknesses, kind, &LegendWeakness::boss);
     return found != kWeaknesses.end() ? &*found : nullptr;
 }
