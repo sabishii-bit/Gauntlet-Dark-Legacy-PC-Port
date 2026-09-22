@@ -1,5 +1,6 @@
 #include "game/app/Scenario.h"
 
+#include <algorithm>
 #include <exception>
 
 #include <nlohmann/json.hpp>
@@ -57,6 +58,7 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.slot = entry.value("slot", -1);
         member.turbo = entry.value("turbo", 0.0f);
         member.potions = entry.value("potions", std::vector<s32>{});
+        member.legends = entry.value("legends", std::vector<s32>{});
         for (const Json& powerup : entry.value("powerups", Json::array())) {
             member.powerups.push_back(PowerupSlot{powerup.value("strength", 30.0f),
                                                   powerup.value("kind", 0),
@@ -73,7 +75,10 @@ Scenario Scenario::fromJson(std::string_view text) {
             member.name.empty() || member.name.size() > kCharacterNameLength ||
             member.level < 1 || member.crystals.size() > kRealmCount || member.gold < 0 ||
             member.health < 0 || member.keys < 0 || member.keys > Inventory::kMostKeys ||
-            member.potions.size() > static_cast<usize>(Inventory::kMostPotions)) {
+            member.potions.size() > static_cast<usize>(Inventory::kMostPotions) ||
+            std::ranges::any_of(member.legends, [](s32 realm) {
+                return realm < 1 || realm >= Relics::kRealmCount;
+            })) {
             throw FormatError("scenario: a party member is out of range");
         }
         scenario.party.push_back(std::move(member));
@@ -120,6 +125,9 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         progress.health = member.health;
         progress.inventory.keys = member.keys;
         progress.inventory.potions = member.potions;
+        for (const s32 realm : member.legends) {
+            progress.relics.addLegend(realm);
+        }
         for (const PowerupSlot& slot : member.powerups) {
             progress.inventory.addPowerup(slot.kind, slot.flags, slot.charge, slot.strength);
         }

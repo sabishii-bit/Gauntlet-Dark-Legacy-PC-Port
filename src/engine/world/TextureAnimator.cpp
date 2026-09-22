@@ -108,34 +108,48 @@ void TextureAnimator::clear() {
 }
 
 f32 TextureAnimator::scrollAt(s32 sinceStart, s32 rate, s32 frames) {
+    return scrollStateAt(sinceStart, rate, frames).along;
+}
+
+/** The original's CalcTexScroll: the slide, and the stretch that is what it reaches less
+ * the slide. */
+ScrollState TextureAnimator::scrollStateAt(s32 sinceStart, s32 rate, s32 frames) {
     const auto t = static_cast<f32>(sinceStart);
     const auto lo = static_cast<f32>(std::min(rate, frames));
     const auto hi = static_cast<f32>(frames);
+    ScrollState state;
     if (frames <= 0) {
-        return 0.0f;
+        return state;
     }
     if (lo <= 0.0f) {
-        return static_cast<f32>(sinceStart % frames) / hi;
+        state.along = static_cast<f32>(sinceStart % frames) / hi;
+        state.scale = 0.0f;
+        return state;
     }
+    const f32 scaled = hi / lo;
+    f32 reach = 0.0f;
     if (t <= 0.0f) {
-        return 0.0f;
-    }
-    if (t < lo) {
+        state.along = 0.0f;
+    } else if (t < lo) {
         // Eases in: the scroll runs from -2 * (hi / lo) up toward one over the first frames.
-        const f32 scaled = hi / lo;
-        return (t / lo) * ((1.0f - scaled) + 2.0f * scaled) - 2.0f * scaled;
+        state.along = (t / lo) * ((1.0f - scaled) + 2.0f * scaled) - 2.0f * scaled;
+        reach = 1.0f;
+    } else if (rate > frames) {
+        state.along = 0.0f;
+        reach = 1.0f;
+    } else if (t < hi) {
+        const f32 part = (t - lo) / (hi - lo);
+        state.along = part * -(1.0f - scaled) + (1.0f - scaled);
+        reach = part * (scaled - 1.0f) + 1.0f;
+    } else if (t < hi + lo) {
+        state.along = (t - hi) / lo;
+        reach = scaled;
+    } else {
+        state.along = 1.0f;
+        reach = scaled;
     }
-    if (rate > frames) {
-        return 0.0f;
-    }
-    if (t < hi) {
-        const f32 scaled = hi / lo;
-        return (t - lo) / (hi - lo) * -(1.0f - scaled) + (1.0f - scaled);
-    }
-    if (t < hi + lo) {
-        return (t - hi) / lo;
-    }
-    return 1.0f;
+    state.scale = reach - state.along;
+    return state;
 }
 
 std::optional<TextureMotion> TextureAnimator::motionAt(s32 info, s32 frame) const {
@@ -147,7 +161,11 @@ std::optional<TextureMotion> TextureAnimator::motionAt(s32 info, s32 frame) cons
     motion.slot = entry.slot;
     const s32 since = frame - entry.offset;
     if (entry.frames.empty()) {
-        motion.offset = entry.direction * scrollAt(since, entry.rate, entry.period);
+        const ScrollState scroll = scrollStateAt(since, entry.rate, entry.period);
+        motion.offset = entry.direction * scroll.along;
+        // The coordinate it slides is the one it stretches.
+        motion.scale = Vec2{entry.direction.x != 0.0f ? scroll.scale : 1.0f,
+                            entry.direction.y != 0.0f ? scroll.scale : 1.0f};
         return motion;
     }
     s32 f = std::max(since, 0);

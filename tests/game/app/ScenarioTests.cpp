@@ -19,7 +19,8 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
   "party": [
     {"player": 2, "class": "val", "color": "red", "name": "Kim", "level": 3, "crystals": [0, 5],
      "gold": 120, "health": 250, "keys": 2, "slot": 5, "turbo": 45, "potions": [1, 4],
-     "powerups": [{"kind": 5, "flags": 524288}, {"kind": 7, "charge": 2.5, "strength": 60}]},
+     "powerups": [{"kind": 5, "flags": 524288}, {"kind": 7, "charge": 2.5, "strength": 60}],
+     "legends": [7, 2]},
     {"class": "WAR"}
   ],
   "position": [19.3, -2, -60],
@@ -55,6 +56,10 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE(members[0].save.progress().inventory.powerupCount() == 2);
     REQUIRE(members[0].save.progress().inventory.powerup(5, 0x80000)->strength == 30.0f);
     REQUIRE(members[0].save.progress().inventory.powerups[1].charge == 2.5f);
+    REQUIRE(members[0].save.progress().relics.hasLegend(7)); // the town's book, the mountain's axe
+    REQUIRE(members[0].save.progress().relics.hasLegend(2));
+    REQUIRE_FALSE(members[0].save.progress().relics.hasLegend(1));
+    REQUIRE_FALSE(members[1].save.progress().relics.hasLegend(7));
     REQUIRE(members[1].save.progress().inventory == Inventory{});
     REQUIRE(members[1].save.health() == 500);
     // The second takes the defaults: the next player, yellow, level one, named TEST.
@@ -72,6 +77,8 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE(bare.tower.items.empty());
     REQUIRE(bare.level.empty()); // the tower
     REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{"keys": 12}]})"), FormatError);
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{"legends": [0]}]})"), FormatError);
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{"legends": [16]}]})"), FormatError);
     REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{}], "items": [{"name": "KEY"}]})"),
                       FormatError);
     REQUIRE(bare.partyMembers()[0].save.character == 0);

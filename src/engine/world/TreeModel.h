@@ -43,9 +43,11 @@ public:
     /** Shows `frame` wherever the parts use texture `slot` of the set (null: the set's own),
      * or slides their coordinates by `offset`, the way texture animations move. */
     void setTextureFrame(u32 slot, const Texture* frame);
-    void setTextureOffset(u32 slot, const Vec2& offset);
+    void setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale = Vec2{1.0f, 1.0f});
     void resetTextures();
     Vec2 textureOffset(u32 slot) const;
+    /** How a slot's coordinates are stretched, one and one when they are not. */
+    Vec2 textureScale(u32 slot) const;
 
     /** Shows the object nodes' meshes for `frame` of `sequence`: the run's mesh for the
      * frame, the only mesh of a one-frame run, else none. */
@@ -94,7 +96,13 @@ private:
 
     std::vector<Node> m_nodes;
     std::vector<std::pair<u32, const Texture*>> m_frames; ///< slot, frame shown
-    std::vector<std::pair<u32, Vec2>> m_offsets;          ///< slot, coordinates slid
+    /** A slot's coordinates slid and stretched. */
+    struct Slide {
+        u32 slot = 0;
+        Vec2 offset{0.0f, 0.0f};
+        Vec2 scale{1.0f, 1.0f};
+    };
+    std::vector<Slide> m_offsets;
     Vec3 m_min{0.0f, 0.0f, 0.0f};
     Vec3 m_max{0.0f, 0.0f, 0.0f};
     mutable ImmediateBatch m_batch;

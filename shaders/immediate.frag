@@ -6,6 +6,7 @@ layout(set = 1, binding = 0) uniform sampler2D uLightmap; // white when a draw h
 layout(push_constant) uniform PushConstants {
     mat4 transform;
     vec4 params;
+    vec4 scale;
 } pc;
 
 layout(location = 0) in vec4 vColor;

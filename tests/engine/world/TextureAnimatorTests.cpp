@@ -165,6 +165,24 @@ TEST_CASE("an animation keyed to a sequence is never stepped, but read off at a 
     // Without a rate the scroll runs a step a frame round its cycle.
     REQUIRE(TextureAnimator::scrollAt(3, 0, 8) == Approx(3.0f / 8.0f));
     REQUIRE(TextureAnimator::scrollAt(11, 0, 8) == Approx(3.0f / 8.0f));
+    // The stretch it puts on the coordinate it slides: nothing of the picture before it
+    // starts, growing as it eases in, twice (its frames over its rate) from its end, and
+    // always what it reaches less the slide; the other coordinate is left alone.
+    REQUIRE(TextureAnimator::scrollStateAt(0, 4, 8).scale == 0.0f);
+    REQUIRE(f.animator.motionAt(2, 6)->scale == Vec2{0.0f, 1.0f});
+    REQUIRE(f.animator.motionAt(2, 0)->scale == Vec2{0.0f, 1.0f});
+    const ScrollState easing = TextureAnimator::scrollStateAt(2, 4, 8);
+    REQUIRE(easing.scale == Approx(1.0f - easing.along));
+    REQUIRE(easing.scale > 1.0f);
+    const ScrollState steady = TextureAnimator::scrollStateAt(6, 4, 8);
+    REQUIRE(steady.scale == Approx(1.5f - steady.along));
+    REQUIRE(TextureAnimator::scrollStateAt(9, 4, 8).scale == Approx(2.0f - 0.25f));
+    REQUIRE(TextureAnimator::scrollStateAt(100, 4, 8).scale == Approx(1.0f));
+    REQUIRE(f.animator.motionAt(2, 100)->scale == Vec2{1.0f, 1.0f});
+    REQUIRE(TextureAnimator::scrollStateAt(3, 0, 8).scale == 0.0f);
+    // A rate past the frames holds still, stretched by one.
+    REQUIRE(TextureAnimator::scrollStateAt(10, 9, 8).along == 0.0f);
+    REQUIRE(TextureAnimator::scrollStateAt(10, 9, 8).scale == 1.0f);
 }
 
 TEST_CASE("a cycle ends where its frames cannot be read", "[world][animation]") {

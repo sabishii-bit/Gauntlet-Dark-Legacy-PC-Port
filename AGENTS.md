@@ -764,8 +764,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   potions, treasure and coins though it places only crystals), which is how
   chests and fallen enemies will leave theirs. The status box shows
   `KEY_ICON` and the next potion's `POTION_ICON_<COL>` with their counts over
-  the gold and health. Scenarios take `gold`, `health`, `keys`, `potions` per
-  member and `items` (`name`, `position`); `tests/scenarios/tower-items.json`
+  the gold and health. Scenarios take `gold`, `health`, `keys`, `potions` and
+  `legends` (the realms whose bosses' items are carried) per member and
+  `items` (`name`, `position`); `tests/scenarios/tower-items.json`
   lays a spread out. Powerup timers do not run in the tower (nor did the
   original's).
 * The rest of the pickups (`players/Relics`, in each `ClassProgress`, saved
@@ -1031,11 +1032,17 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   index and count into that list) is read off with
   `TextureAnimator::motionAt(info, frame)`: a cycle counts from the
   record's `offset` frame, a frame every `rate`, and holds its last; a
-  scroll runs `scrollAt` (the original's `CalcTexScroll`: easing over
-  `rate` frames, steady to `frames`, then held; the UV scale it also sets
-  is not done). `EffectTrees` applies them at the effect's frame, which is
-  how the lich's axe glow scrolls only from its 29th frame and the stomp's
-  ring cycles from its 32nd. Players and critters do not read theirs yet.
+  scroll runs `scrollStateAt` (the original's `CalcTexScroll`: the slide
+  eases over `rate` frames, runs steady to `frames`, then holds; the
+  stretch it puts on the coordinate it slides is what it reaches less the
+  slide: nought before it starts, which collapses the picture and hides
+  the glow until its frame, up to `frames / rate` at the end).
+  `TextureMotion::scale` reaches the draw as `DrawState::uvScale`
+  (`TreeModel::setTextureOffset(slot, offset, scale)`; the shaders' push
+  constants carry it after `params`). `EffectTrees` applies them at the
+  effect's frame, which is how the lich's axe glow scrolls only from its
+  29th frame and the stomp's ring cycles from its 32nd. Players and
+  critters do not read theirs yet.
   `game/players/PlayerAnimator` is the player's action logic: which sequence
   the stick asks for, the four cut-in rules, the entrance, the stance loop,
   the two fidgets and their tick timers, and the alternating walk and run
