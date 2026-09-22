@@ -513,6 +513,75 @@ TEST_CASE("a character takes what lies in its way by the original's rules",
     scene.close();
 }
 
+TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder's, and a "
+          "scroll is read where it lies",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    test::unpackedOrSkip("text/scroll_e.json");
+    const GameConfig config;
+    StringTable strings;
+    strings.load(test::dataDirectory() / "text", config.text.language);
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave first;
+    first.name = "AB";
+    CharacterSave second;
+    second.name = "CD";
+    second.character = 1;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{10.7f, 10.2f, -60.5f}; // open ground
+    options.items.push_back(DroppedItem{"RUNEC2", *options.position});
+    options.items.push_back(DroppedItem{"GARGEAGL", *options.position});
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, first}, PartyMember{1, second}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    const Relics& mine = scene.actor(0)->save().progress().relics;
+    const Relics& theirs = scene.actor(1)->save().progress().relics;
+    for (int i = 0; i < 400 && mine.runeCount() + theirs.runeCount() == 0; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    // The fields' rune (the eighth, from one) is held by both; the eagle's piece by whoever
+    // stood on it.
+    REQUIRE(mine.hasRune(7));
+    REQUIRE(theirs.hasRune(7));
+    REQUIRE(mine.gargoylePieces[1] + theirs.gargoylePieces[1] == 1);
+    REQUIRE_FALSE(scene.scroll().active());
+    // Its scroll's third page, dropped underfoot, opens over the party and is gone.
+    s32 record = -1;
+    const std::vector<ItemInfo>& infos = world.layout().itemInfos();
+    for (usize i = 0; i < infos.size(); ++i) {
+        if (infos[i].name == "SCROLL") {
+            record = static_cast<s32>(i);
+        }
+    }
+    REQUIRE(record >= 0);
+    const Relics before = mine;
+    REQUIRE(world.placeItemRecord(device, record, scene.actor(0)->position(), 3));
+    const usize placed = world.placedItems().size();
+    for (int i = 0; i < 60 && !scene.scroll().active(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.scroll().active());
+    REQUIRE(scene.scroll().pageCount() == 1);
+    REQUIRE_FALSE(scene.scroll().lines().empty());
+    REQUIRE(scene.scroll().lines().front().starts_with("Death awaits"));
+    REQUIRE(world.placedItems().item(placed - 1).taken);
+    REQUIRE(mine == before); // nothing kept of it
+    scene.close();
+}
+
 TEST_CASE("the whole party on one of the tower's portals travels to the level it names",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();

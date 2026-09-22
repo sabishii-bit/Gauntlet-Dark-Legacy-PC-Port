@@ -75,6 +75,9 @@ public:
     static constexpr std::array<std::string_view, 9> kGemEffects{
         "", "GETGEMORANGE", "GETGEMRED", "GETGEMPURPLE", "GETGEMBLUE",
         "GETGEMGREEN", "GETGEMYELLOW", "GETGEMWHITE", "GETGEMBLACK"};
+    /** The bursts played for a runestone and a gargoyle piece taken. */
+    static constexpr std::string_view kRuneEffect = "GETRUNE";
+    static constexpr std::string_view kGargoyleEffect = "GETGARG";
 
     /** One placed pickup and its figure. */
     struct Item {

@@ -53,12 +53,30 @@ Inventory inventoryFromJson(const Json& object) {
     return inventory;
 }
 
+Json relicsJson(const Relics& relics) {
+    return Json{{"runes", relics.runes},
+                {"legends", relics.legends},
+                {"gargoylePieces", relics.gargoylePieces}};
+}
+
+Relics relicsFromJson(const Json& object) {
+    Relics relics;
+    relics.runes = static_cast<u16>(object.value("runes", 0U));
+    relics.legends = static_cast<u16>(object.value("legends", 0U));
+    const auto pieces = object.value("gargoylePieces", std::vector<s32>{});
+    for (usize kind = 0; kind < relics.gargoylePieces.size() && kind < pieces.size(); ++kind) {
+        relics.gargoylePieces[kind] = pieces[kind];
+    }
+    return relics;
+}
+
 Json progressJson(const ClassProgress& progress) {
     return Json{{"experience", progress.experience}, {"health", progress.health},
                 {"fightAdd", progress.fightAdd},     {"armorAdd", progress.armorAdd},
                 {"magicAdd", progress.magicAdd},     {"speedAdd", progress.speedAdd},
                 {"crystals", progress.crystals},     {"unlocked", progress.unlocked},
-                {"inventory", inventoryJson(progress.inventory)}};
+                {"inventory", inventoryJson(progress.inventory)},
+                {"relics", relicsJson(progress.relics)}};
 }
 
 ClassProgress progressFromJson(const Json& object) {
@@ -72,6 +90,9 @@ ClassProgress progressFromJson(const Json& object) {
     progress.unlocked = object.value("unlocked", 0U);
     if (object.contains("inventory")) {
         progress.inventory = inventoryFromJson(object.at("inventory"));
+    }
+    if (object.contains("relics")) {
+        progress.relics = relicsFromJson(object.at("relics"));
     }
     const auto crystals = object.value("crystals", std::vector<s32>{});
     for (usize realm = 0; realm < progress.crystals.size() && realm < crystals.size(); ++realm) {

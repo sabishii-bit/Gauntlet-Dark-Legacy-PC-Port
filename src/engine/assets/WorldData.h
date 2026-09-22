@@ -62,6 +62,8 @@ struct LevelInfo {
     s32 audioIndex = -1;
     s32 maxEnemies = 25; ///< how many enemies the place keeps about at once
     s32 bossType = -1;   ///< the kind of its boss, none under nought
+    s32 rune = 0;        ///< the runestone it holds, from one; none at nought
+    s32 legend = 0;      ///< the realm whose legend item it holds; none at nought
     std::vector<LevelEnemy> enemies; ///< its roster, from the realm's
     f32 musicVolume = 1.0f;
     f32 soundVolume = 1.0f;

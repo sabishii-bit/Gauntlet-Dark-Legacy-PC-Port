@@ -1,6 +1,7 @@
 #include "game/enemies/Critters.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
 #include <numbers>
@@ -24,6 +25,7 @@ constexpr f32 kGravity = 100.0f;
 constexpr f32 kKnockScale = 20.0f;
 constexpr f32 kGolemKnockLoss = 5.0f; ///< a golem is that much harder to throw
 constexpr f32 kDeathFade = 1.0f;      ///< seconds the fallen fades over after its death
+constexpr f32 kBlindTurnShare = 0.1f; ///< of its turn rate while blinded
 
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
@@ -242,7 +244,7 @@ std::optional<usize> Critters::bestMove(const Critter& critter, std::span<const 
         if ((move.attack() || step) && view == nullptr) {
             continue;
         }
-        if (!move.target.allows(distance, bearing, vertical)) {
+        if (!move.target.allows(distance, bearing, vertical) || curbedMove(critter, move)) {
             continue;
         }
         if (move.priority > bestPriority) {
@@ -251,6 +253,18 @@ std::optional<usize> Critters::bestMove(const Critter& critter, std::span<const 
         }
     }
     return best;
+}
+
+/** A curbed attack is one whose harm (either part) carries the flag and is no burst. */
+bool Critters::curbedMove(const Critter& critter, const CritterMove& move) {
+    if (critter.curbSeconds <= 0.0f || !move.attack()) {
+        return false;
+    }
+    return std::ranges::any_of(std::array{move.damage0, move.damage1}, [&](s32 index) {
+        const CritterDamage* damage = critter.stock->data.damage(index);
+        return damage != nullptr && (damage->flags & CritterDamage::kCurbed) != 0 &&
+               damage->type != CritterDamage::kBurst;
+    });
 }
 
 void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) {
@@ -300,6 +314,20 @@ void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) 
         return;
     }
     if (current != nullptr && current->link >= 0 && startMove(critter, static_cast<usize>(current->link))) {
+        return;
+    }
+    // Asked to roar, it does so before anything else; held, it keeps to its stance.
+    if (critter.roarWanted) {
+        critter.roarWanted = false;
+        if (const auto bellow = data.moveOfType(CritterMove::kRoar);
+            bellow.has_value() && startMove(critter, *bellow)) {
+            return;
+        }
+    }
+    if (critter.held) {
+        if (const auto ready = data.moveOfType(CritterMove::kReady); ready.has_value()) {
+            startMove(critter, *ready);
+        }
         return;
     }
     if (const auto next = bestMove(critter, players); next.has_value()) {
@@ -384,7 +412,8 @@ void Critters::carry(Critter& critter, f32 seconds, const CritterMove* move, std
     if (move != nullptr && move->turnRate > 0.0f && view != nullptr) {
         const f32 wanted = yawBetween(critter.position, view->position);
         const f32 d = wrapAngle(wanted - critter.yaw);
-        const f32 step = move->turnRate * seconds;
+        // Blinded, it turns at a tenth of its rate.
+        const f32 step = move->turnRate * seconds * (critter.blindTicks > 0 ? kBlindTurnShare : 1.0f);
         critter.yaw = wrapAngle(std::abs(d) <= step ? wanted : critter.yaw + (d > 0.0f ? step : -step));
     }
     Vec3 translation = critter.push * seconds;
@@ -436,8 +465,17 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
         for (f32& cooldown : critter.cooldowns) {
             cooldown = std::max(cooldown - seconds, 0.0f);
         }
+        // Frozen, it stands as it is: no move, no step, no one in its sights.
+        if (critter.frozenTicks > 0) {
+            critter.frozenTicks = std::max(critter.frozenTicks - ticks, 0);
+            continue;
+        }
         if (critter.state == State::Active) {
             chooseTarget(critter, players);
+            if (critter.blindTicks > 0) {
+                critter.blindTicks = std::max(critter.blindTicks - ticks, 0);
+                critter.target = -1;
+            }
         }
         chooseMove(critter, players);
         const CritterMove* move = critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
@@ -621,12 +659,72 @@ void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting&
         if (critter.state == State::Inactive || critter.stock == nullptr) {
             continue;
         }
-        const Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, critter.position), critter.yaw,
-                                       Vec3{0.0f, 1.0f, 0.0f});
+        Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, critter.position), critter.yaw,
+                                 Vec3{0.0f, 1.0f, 0.0f});
+        if (critter.scale != 1.0f) {
+            model = glm::scale(model, Vec3{critter.scale});
+        }
         critter.stock->body.draw(device, clip, model, lighting, critter.pose.matrices(), nullptr,
                                  critter.alpha);
     }
 }
+
+Critters::Critter* Critters::critterAt(s32 id) {
+    if (id < 0 || id >= kMost || m_critters[static_cast<usize>(id)].state == State::Inactive) {
+        return nullptr;
+    }
+    return &m_critters[static_cast<usize>(id)];
+}
+
+void Critters::freeze(s32 id, s32 ticks) {
+    if (Critter* critter = critterAt(id); critter != nullptr) {
+        critter->frozenTicks = std::max(ticks, 0);
+    }
+}
+
+void Critters::blind(s32 id, s32 ticks) {
+    if (Critter* critter = critterAt(id); critter != nullptr) {
+        critter->blindTicks = std::max(ticks, 0);
+        critter->target = -1;
+    }
+}
+
+void Critters::curb(s32 id, f32 seconds) {
+    if (Critter* critter = critterAt(id); critter != nullptr) {
+        critter->curbSeconds = std::max(seconds, 0.0f);
+    }
+}
+
+void Critters::resize(s32 id, f32 scale) {
+    if (Critter* critter = critterAt(id); critter != nullptr && scale > 0.0f) {
+        critter->scale = scale;
+    }
+}
+
+void Critters::hold(s32 id, bool held) {
+    if (Critter* critter = critterAt(id); critter != nullptr) {
+        critter->held = held;
+    }
+}
+
+void Critters::roar(s32 id) {
+    if (Critter* critter = critterAt(id); critter != nullptr) {
+        critter->roarWanted = true;
+    }
+}
+
+s32 Critters::moveTypeOf(s32 id) const {
+    const Critter& critter = m_critters[static_cast<usize>(id)];
+    return critter.move >= 0 && critter.stock != nullptr
+               ? critter.stock->data.moves()[static_cast<usize>(critter.move)].type
+               : -1;
+}
+
+bool Critters::moveDoneOf(s32 id) const { return m_critters[static_cast<usize>(id)].moveDone; }
+bool Critters::frozen(s32 id) const { return m_critters[static_cast<usize>(id)].frozenTicks > 0; }
+bool Critters::blinded(s32 id) const { return m_critters[static_cast<usize>(id)].blindTicks > 0; }
+bool Critters::curbed(s32 id) const { return m_critters[static_cast<usize>(id)].curbSeconds > 0.0f; }
+f32 Critters::scaleOf(s32 id) const { return m_critters[static_cast<usize>(id)].scale; }
 
 usize Critters::count() const {
     usize n = 0;

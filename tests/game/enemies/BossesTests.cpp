@@ -118,4 +118,74 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE(gone > 10);
 }
 
+TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its toll",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root =
+        test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    EnemyScales scales;
+    scales.health = 0.5f;
+    bosses.open(device, root, nullptr, scales, 'G');
+    REQUIRE_FALSE(bosses.bringLegend(0)); // no boss yet
+    REQUIRE(bosses.spawn(41, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, 20.0f));
+    // The lich's item is the town's, the book of protection.
+    REQUIRE(bosses.legendRealm() == 7);
+    REQUIRE(bosses.bringLegend(0));
+    REQUIRE_FALSE(bosses.bringLegend(1)); // one rite
+    REQUIRE(bosses.legend().stage() == LegendRite::Stage::Carried);
+    // Asleep, nothing happens.
+    const std::vector<EnemyView> far{playerAt(Vec3{0.0f, 0.0f, 40.0f})};
+    for (int i = 0; i < 60; ++i) {
+        bosses.update(kTicks, kStep, far);
+    }
+    REQUIRE(bosses.takeLegendEvents().empty());
+    REQUIRE(bosses.legend().stage() == LegendRite::Stage::Carried);
+    // Awake, it rises, and once risen the item goes up and is thrown: a quarter of its
+    // health goes at once, less its armour of one, paid as a hit to the bearer.
+    const std::vector<EnemyView> near{playerAt(Vec3{0.0f, 0.0f, 18.0f})};
+    std::vector<LegendEvent> events;
+    int waited = 0;
+    while (!bosses.legend().thrown() && waited < 3000) {
+        bosses.update(kTicks, kStep, near);
+        auto taken = bosses.takeLegendEvents();
+        events.insert(events.end(), taken.begin(), taken.end());
+        ++waited;
+    }
+    REQUIRE(bosses.legend().thrown());
+    REQUIRE(events.size() == 2);
+    REQUIRE(events[0].cue == LegendCue::Brandished);
+    REQUIRE(events[0].player == 0);
+    REQUIRE(events[0].realm == 7);
+    REQUIRE(events[1].cue == LegendCue::Thrown);
+    REQUIRE(bosses.view().health == Approx(1500.0f - (0.25f * 1500.0f - 1.0f)));
+    auto losses = bosses.takeLosses();
+    REQUIRE(losses.size() == 1);
+    REQUIRE(losses[0].player == 0);
+    REQUIRE_FALSE(bosses.frozen());
+    REQUIRE_FALSE(bosses.curbed());
+    // It roars at that, and the rite is over: the book's toll is paid once.
+    bool roared = false;
+    for (int i = 0; i < 600 && !roared; ++i) {
+        bosses.update(kTicks, kStep, near);
+        for (const LegendEvent& event : bosses.takeLegendEvents()) {
+            roared = roared || event.cue == LegendCue::Roared;
+        }
+    }
+    REQUIRE(roared);
+    REQUIRE(bosses.legend().stage() == LegendRite::Stage::Over);
+    REQUIRE_FALSE(bosses.legend().running());
+    // Then it fights.
+    std::vector<CritterBlow> blows;
+    for (int i = 0; i < 1500 && blows.empty(); ++i) {
+        bosses.update(kTicks, kStep, near);
+        auto taken = bosses.takeBlows();
+        blows.insert(blows.end(), taken.begin(), taken.end());
+    }
+    REQUIRE_FALSE(blows.empty());
+    bosses.close();
+    REQUIRE(bosses.legend().stage() == LegendRite::Stage::None);
+}
+
 } // namespace

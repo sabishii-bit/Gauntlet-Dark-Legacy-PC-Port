@@ -91,6 +91,7 @@ add_executable(tests
     game/players/PartyTests.cpp
     game/players/TurboMeterTests.cpp
     game/players/InventoryTests.cpp
+    game/players/RelicsTests.cpp
     game/players/ItemPickupTests.cpp
     game/players/PowerupEffectsTests.cpp
     game/screens/PowerupSelectorTests.cpp
@@ -112,6 +113,7 @@ add_executable(tests
     game/enemies/GeneratorsTests.cpp
     game/enemies/CrittersTests.cpp
     game/enemies/BossesTests.cpp
+    game/enemies/LegendItemsTests.cpp
     game/world/MoveStrikesTests.cpp
     game/screens/HelpMessagesTests.cpp
     game/world/LevelTriggersTests.cpp

@@ -30,6 +30,8 @@ LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> ros
     level.audioIndex = json.value("audioIndex", -1);
     level.maxEnemies = json.value("maxEnemies", 25);
     level.bossType = json.value("bossType", -1);
+    level.rune = json.value("rune", 0);
+    level.legend = json.value("legend", 0);
     for (const auto row : json.value("enemyTypes", std::vector<s32>{})) {
         if (row >= 0 && static_cast<usize>(row) < roster.size()) {
             level.enemies.push_back(roster[static_cast<usize>(row)]);

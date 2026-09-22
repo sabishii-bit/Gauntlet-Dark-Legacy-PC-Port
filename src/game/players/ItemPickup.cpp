@@ -19,6 +19,7 @@ constexpr std::string_view kKeySound = "S_PICKUPKEY";
 constexpr std::string_view kMagicSound = "S_PICKUPMAGIC";
 constexpr std::string_view kSpecialSound = "S_PICKUPSPECIAL";
 constexpr std::string_view kShieldSound = "S_PICKUPSHIELD";
+constexpr std::string_view kRuneSound = "S_PICKUPRUNE";
 
 ItemTaking taken(s32 count, std::string_view card, std::string_view sound) {
     ItemTaking taking;
@@ -54,7 +55,8 @@ s32 mostHealth(s32 level) {
 
 ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime) {
     Inventory& inventory = save.progress().inventory;
-    if (offer.kind < 0 || offer.kind > static_cast<s32>(ItemKind::Crystal)) {
+    Relics& relics = save.progress().relics;
+    if (offer.kind < 0 || offer.kind > static_cast<s32>(ItemKind::GargoyleKey)) {
         return {};
     }
     switch (static_cast<ItemKind>(offer.kind)) {
@@ -105,6 +107,30 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime
                              (offer.flags & kShieldFlag) != 0
                          ? kShieldSound
                          : kSpecialSound);
+    case ItemKind::Runestone:
+        if (!relics.addRune(offer.amount)) {
+            return refused(ItemTaking::Outcome::AlreadyHeld, offer.amount);
+        }
+        return taken(offer.amount, "RUNESTONE", kRuneSound);
+    case ItemKind::Legend:
+        if (!relics.addLegend(offer.amount)) {
+            return {};
+        }
+        return taken(offer.amount, "LEGEND", kMagicSound);
+    case ItemKind::GargoyleKey: {
+        const s32 pieces = relics.addGargoylePiece(offer.amount);
+        if (pieces < 0) {
+            return {};
+        }
+        return taken(pieces, "GOLDNICON", kMagicSound);
+    }
+    case ItemKind::Scroll: {
+        // Read where it lies: the page it names goes up, the scroll goes, nothing is kept.
+        ItemTaking taking;
+        taking.outcome = ItemTaking::Outcome::Shown;
+        taking.count = offer.amount - 1;
+        return taking;
+    }
     default:
         return {};
     }

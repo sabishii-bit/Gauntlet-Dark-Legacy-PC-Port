@@ -32,6 +32,7 @@ struct CritterDamage {
     static constexpr s16 kRing = 3;    ///< a stomp's, over its reach
     static constexpr s16 kBreath = 4;
     static constexpr s16 kGrab = 7;
+    static constexpr u32 kCurbed = 0x4000; ///< a legend item's weakness takes this from it
 
     s16 type = 0;
     u32 flags = 0;

@@ -69,6 +69,10 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
         item.info = instance.info;
         item.subtype = info.subtype;
         item.value = info.value;
+        if (info.subtype == ItemInfo::kScroll) {
+            // A scroll's page is the instance's, from one.
+            item.value = static_cast<s16>(instance.params[0] | (instance.params[1] << 8));
+        }
         item.flags = info.properties;
         item.strength = static_cast<f32>(info.activeOn);
         item.minPlayers = instance.minPlayers;
@@ -233,6 +237,10 @@ std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
         item.visible = false;
         if (pickup.realm > 0 && static_cast<usize>(pickup.realm) < kGemEffects.size()) {
             startEffect(device, kGemEffects[static_cast<usize>(pickup.realm)], item.position);
+        } else if (item.subtype == ItemInfo::kRunestone) {
+            startEffect(device, kRuneEffect, item.position);
+        } else if (item.subtype == ItemInfo::kGargoyleKey) {
+            startEffect(device, kGargoyleEffect, item.position);
         }
         pickups.push_back(pickup);
     }

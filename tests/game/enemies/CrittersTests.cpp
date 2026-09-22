@@ -304,4 +304,89 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     REQUIRE_FALSE(critters.spawn(kGargoyleCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, "GAR_NONE").has_value());
 }
 
+TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, loses its "
+          "targets blinded, and is curbed of its flagged attacks",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELG/animations.json");
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(floor());
+    Critters critters;
+    critters.open(device, root, &collision, EnemyScales{}, 'G');
+    const auto id = critters.spawn(kGolemCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    REQUIRE(id.has_value());
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, -25.0f})};
+    // Held, it never leaves its stance for the player it sees.
+    critters.hold(*id, true);
+    for (int i = 0; i < 600; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    REQUIRE(critters.moveOf(*id) == "READY");
+    REQUIRE(critters.moveTypeOf(*id) == CritterMove::kReady);
+    REQUIRE(critters.targetOf(*id) == 0);
+    REQUIRE(critters.positionOf(*id) == Vec3{0.0f, 0.0f, 0.0f});
+    // Asked to roar, it does as soon as its stance is over, and then holds again.
+    critters.roar(*id);
+    bool roared = false;
+    for (int i = 0; i < 600 && !roared; ++i) {
+        critters.update(kTicks, kStep, party);
+        roared = critters.moveTypeOf(*id) == CritterMove::kRoar;
+    }
+    REQUIRE(roared);
+    for (int i = 0; i < 600; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    REQUIRE(critters.moveOf(*id) == "READY");
+    // Let go, it comes; frozen, it stops as it is, animation and all, and is not gone
+    // after the freeze.
+    critters.hold(*id, false);
+    for (int i = 0; i < 600 && critters.moveOf(*id) != "WALK"; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    REQUIRE(critters.moveOf(*id) == "WALK");
+    const Vec3 stopped = critters.positionOf(*id);
+    critters.freeze(*id, 120);
+    REQUIRE(critters.frozen(*id));
+    for (int i = 0; i < 30; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    REQUIRE(critters.frozen(*id));
+    REQUIRE(critters.positionOf(*id) == stopped);
+    for (int i = 0; i < 40; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    REQUIRE_FALSE(critters.frozen(*id));
+    for (int i = 0; i < 30; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    REQUIRE(critters.positionOf(*id) != stopped);
+    // Blinded, it finds no one and turns at a tenth; then it sees again.
+    critters.blind(*id, 60);
+    REQUIRE(critters.blinded(*id));
+    critters.update(kTicks, kStep, party);
+    REQUIRE(critters.targetOf(*id) == -1);
+    for (int i = 0; i < 40; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    REQUIRE_FALSE(critters.blinded(*id));
+    critters.update(kTicks, kStep, party);
+    REQUIRE(critters.targetOf(*id) == 0);
+    // A curb refuses the attacks whose harm is flagged for it, until lifted; and the
+    // figure can be stood at another size.
+    critters.curb(*id, 0.5f);
+    REQUIRE(critters.curbed(*id));
+    critters.curb(*id, 0.0f);
+    REQUIRE_FALSE(critters.curbed(*id));
+    REQUIRE(critters.scaleOf(*id) == 1.0f);
+    critters.resize(*id, 0.8f);
+    REQUIRE(critters.scaleOf(*id) == 0.8f);
+    critters.resize(*id, 0.0f);
+    REQUIRE(critters.scaleOf(*id) == 0.8f);
+    // None of it touches a slot that holds nothing.
+    critters.freeze(5, 10);
+    critters.hold(5, true);
+    REQUIRE_FALSE(critters.frozen(5));
+}
+
 } // namespace
