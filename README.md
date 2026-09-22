@@ -122,7 +122,15 @@ runner).
 clangd shows live. `python scripts/lint.py [path]` runs them over a file, a
 folder or the tree, and `python scripts/clangd-check.py [path]` prints every
 diagnostic the editor would show. CI builds and tests on Windows and Linux and
-lints on Linux.
+lints on Linux. The full lint roster is split into four disjoint concurrent
+jobs; every job must pass the aggregate `Lint (clang-tidy)` check. Lint jobs
+configure dependencies and build only the `compile_commands` target, not the
+game. That configuration disables CMake module scanning (no C++ modules are
+used) so lint does not need build-generated module mapper files; normal build
+settings are unchanged. To reproduce one partition after a local build, use
+`python scripts/lint.py --shard-index 0 --shard-count 4` (indices 0 through 3);
+omit those options for the full scan. `--jobs N` limits concurrent processes,
+and completed-file counts show progress without changing the checks performed.
 
 ## Layout
 

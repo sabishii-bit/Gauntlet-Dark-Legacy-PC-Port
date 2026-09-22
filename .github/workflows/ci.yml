@@ -36,7 +36,7 @@ jobs:
           restore-keys: vcpkg-${{ runner.os }}-
       - name: Tools
         run: python scripts/setup.py --yes --no-build
-      - name: Setup script tests
+      - name: Script tests
         run: python -m unittest discover -s tests/scripts -v
       - name: Build and unit tests
         run: python scripts/build.py --test
@@ -55,7 +55,7 @@ jobs:
           path: ~/.cache/vcpkg/archives
           key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-${{ runner.os }}-
-      - name: Setup script tests
+      - name: Script tests
         run: python3 -m unittest discover -s tests/scripts -v
       - name: Tools, build and unit tests
         run: python3 scripts/setup.py --yes --test
@@ -69,10 +69,14 @@ jobs:
         env:
           CXX: g++-14
 
-  lint:
-    name: Lint (clang-tidy)
+  lint-shards:
+    name: Lint shard ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     env:
       CXX: g++-14
     steps:
@@ -83,10 +87,30 @@ jobs:
           path: ~/.cache/vcpkg/archives
           key: vcpkg-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-${{ runner.os }}-
-      - name: Tools and build
-        run: python3 scripts/setup.py --yes --tooling
+      - name: Tools
+        run: python3 scripts/setup.py --yes --tooling --no-build
+      # clang-tidy parses source; only vcpkg's headers and the compilation database
+      # are needed. No C++ modules are used: disable scanning here to avoid references
+      # to build-only module maps. Shaders are loaded at runtime, not included in C++.
+      - name: Configure lint inputs
+        run: |
+          python3 scripts/devenv.py -- cmake --preset linux-ninja-debug -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+          python3 scripts/devenv.py -- cmake --build --preset linux-ninja-debug --target compile_commands
       - name: clang-tidy
-        run: python3 scripts/lint.py
+        run: python3 scripts/lint.py --shard-index ${{ matrix.shard }} --shard-count ${{ strategy.job-total }}
+
+  # Preserve the single required-check name, and never accept a failed/skipped shard.
+  lint:
+    name: Lint (clang-tidy)
+    needs: lint-shards
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every lint shard to pass
+        run: test "$LINT_RESULT" = success
+        env:
+          LINT_RESULT: ${{ needs.lint-shards.result }}
 
   # The tier that needs the game data: a self-hosted runner labelled "game-data" with the
   # disc extracted and unpacked, and GDL_ASSET_DIR / GDL_UNPACKED_DIR set in its environment.
