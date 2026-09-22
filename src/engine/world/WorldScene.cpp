@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <ranges>
 
 #include "engine/core/Log.h"
 
@@ -308,12 +309,12 @@ const Mat4& WorldScene::worldOf(usize object) const {
          at = m_placements[static_cast<usize>(at)].parent) {
         m_chain.push_back(static_cast<usize>(at));
     }
-    for (auto it = m_chain.rbegin(); it != m_chain.rend(); ++it) {
-        const Placement& placement = m_placements[*it];
-        m_world[*it] = placement.parent >= 0
-                           ? m_world[static_cast<usize>(placement.parent)] * placement.local
-                           : placement.local;
-        m_worldValid[*it] = 1;
+    for (const usize index : m_chain | std::views::reverse) {
+        const Placement& placement = m_placements[index];
+        m_world[index] = placement.parent >= 0
+                             ? m_world[static_cast<usize>(placement.parent)] * placement.local
+                             : placement.local;
+        m_worldValid[index] = 1;
     }
     return m_world[object];
 }

@@ -5,6 +5,7 @@
 #include <exception>
 #include <format>
 
+#include "engine/core/Assert.h"
 #include "engine/core/Log.h"
 
 #include "game/players/Progression.h"
@@ -382,6 +383,7 @@ void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection
     const auto width = static_cast<f32>(m_screen.width);
     const auto height = static_cast<f32>(m_screen.height);
     if (towerVisible()) {
+        GDL_VERIFY(m_camera.has_value(), "A visible tower requires its camera");
         const WorldCamera& camera = *m_camera;
         m_tower->draw(device,
                       camera.clipTransform(m_screen.horizontalFov, frameWidth, frameHeight,

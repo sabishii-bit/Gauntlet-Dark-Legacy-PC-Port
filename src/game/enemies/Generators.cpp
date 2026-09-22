@@ -72,11 +72,12 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind) {
         if (!object.has_value()) {
             continue;
         }
+        const u32 objectIndex = *object;
         TreeInfo& tree = bodies->trees[static_cast<usize>(state)];
         tree.name = base;
         TreeNodeInfo node;
         node.name = base;
-        node.object = archive->models.entry(*object).name;
+        node.object = archive->models.entry(objectIndex).name;
         tree.nodes.push_back(node);
         bodies->models[static_cast<usize>(state)].bind(tree, archive->models, archive->textures,
                                                        device);

@@ -63,6 +63,8 @@ constexpr std::array<Color, 4> kInks{Color::rgba(0x1F, 0x1F, 0x00), Color::rgba(
 } // namespace
 
 const HelpMessageSpec* HelpMessages::specOf(s32 id) {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kSpecs, id, &HelpMessageSpec::id);
     return found != kSpecs.end() ? &*found : nullptr;
 }

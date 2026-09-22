@@ -34,6 +34,8 @@ LevelRef LevelRef::tower() {
 
 s32 LevelRef::orderOf(s32 realmId) {
     constexpr std::array<s32, 12> kOrder{kTowerRealm, 7, 2, 1, 11, 4, 3, 9, 10, 5, 6, 8};
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kOrder, realmId);
     return found != kOrder.end() ? static_cast<s32>(found - kOrder.begin()) : 0;
 }

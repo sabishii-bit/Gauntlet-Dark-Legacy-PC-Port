@@ -78,10 +78,11 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                     if (!model.has_value()) {
                         throw std::runtime_error(std::format("object {} is missing", run.object));
                     }
-                    for (s32 f = 0; f < run.frames && *model + static_cast<u32>(f) < models.size();
-                         ++f) {
-                        frames.shapes.push_back(
-                            makeShape(models.mesh(*model + static_cast<u32>(f)), textures, device));
+                    const u32 firstModel = *model;
+                    for (s32 f = 0;
+                         f < run.frames && firstModel + static_cast<u32>(f) < models.size(); ++f) {
+                        frames.shapes.push_back(makeShape(
+                            models.mesh(firstModel + static_cast<u32>(f)), textures, device));
                         include(frames.shapes.back(), node.offset, first);
                     }
                 }

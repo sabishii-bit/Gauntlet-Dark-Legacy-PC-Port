@@ -2789,14 +2789,16 @@ void PlayScene::loadIntroArt(RenderDevice& device) {
     const auto ring = m_staticTextures.find(kFireRingTexture);
     const auto mask = m_staticTextures.find(kFireMaskTexture);
     if (scroll.has_value() && ring.has_value() && mask.has_value()) {
+        const u32 firstRing = *ring;
+        const u32 firstMask = *mask;
         try {
             art.backdropImage = &m_staticTextures.image(*scroll);
             const auto frames = static_cast<u32>(BurnDialogueScroll::kFrameCount);
-            for (u32 i = 1; i <= frames && *ring + i < m_staticTextures.size(); ++i) {
-                art.burnRing.push_back(&m_staticTextures.texture(device, *ring + i));
+            for (u32 i = 1; i <= frames && firstRing + i < m_staticTextures.size(); ++i) {
+                art.burnRing.push_back(&m_staticTextures.texture(device, firstRing + i));
             }
-            for (u32 i = 1; i <= frames && *mask + i < m_staticTextures.size(); ++i) {
-                art.burnMasks.push_back(&m_staticTextures.image(*mask + i));
+            for (u32 i = 1; i <= frames && firstMask + i < m_staticTextures.size(); ++i) {
+                art.burnMasks.push_back(&m_staticTextures.image(firstMask + i));
             }
         } catch (const std::exception& e) {
             log::warn("Tower: burn frames: {}", e.what());
@@ -2851,14 +2853,16 @@ void PlayScene::loadHintArt(RenderDevice& device) {
     const auto ring = m_staticTextures.find(kFireRingTexture);
     const auto mask = m_staticTextures.find(kFireMaskTexture);
     if (scroll.has_value() && ring.has_value() && mask.has_value()) {
+        const u32 firstRing = *ring;
+        const u32 firstMask = *mask;
         try {
             art.scroll = &m_staticTextures.image(*scroll);
             const auto frames = static_cast<u32>(BurnDialogueScroll::kFrameCount);
-            for (u32 i = 1; i <= frames && *ring + i < m_staticTextures.size(); ++i) {
-                art.burnRing.push_back(&m_staticTextures.texture(device, *ring + i));
+            for (u32 i = 1; i <= frames && firstRing + i < m_staticTextures.size(); ++i) {
+                art.burnRing.push_back(&m_staticTextures.texture(device, firstRing + i));
             }
-            for (u32 i = 1; i <= frames && *mask + i < m_staticTextures.size(); ++i) {
-                art.burnMasks.push_back(&m_staticTextures.image(*mask + i));
+            for (u32 i = 1; i <= frames && firstMask + i < m_staticTextures.size(); ++i) {
+                art.burnMasks.push_back(&m_staticTextures.image(firstMask + i));
             }
         } catch (const std::exception& e) {
             log::warn("Tower: burn frames: {}", e.what());
@@ -2968,6 +2972,8 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
 }
 
 void PlayScene::answerHint(s32 topic) {
+    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+    // NOLINTNEXTLINE(readability-qualified-auto)
     const auto entry = std::ranges::find(kHintTopics, topic, &HintTopicEntry::code);
     if (entry == kHintTopics.end() || m_context.strings == nullptr) {
         return;
