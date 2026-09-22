@@ -134,7 +134,7 @@ TEST_CASE("the classes' turbo effects play through, flip-books that start late a
         ItemArchive archive;
         REQUIRE(archive.load(root / "PLAYERS" / cls / "SFXBLU"));
         for (usize t = 0; t < archive.trees.size(); ++t) {
-            const std::string name = archive.trees.tree(t).name;
+            const std::string name = archive.trees.tree(static_cast<u32>(t)).name;
             CAPTURE(cls, name);
             EffectTrees effects;
             if (!effects.start(device, archive, name, Vec3{0.0f})) {
