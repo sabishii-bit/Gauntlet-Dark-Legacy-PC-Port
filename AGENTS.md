@@ -558,10 +558,19 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   pool: the step family, types 48 to 63, is chosen like the walk, and a
   named attack of speed, the lich's `CHARGE`, carries it), with a `BossView`
   (name, health, `fraction()`) for the meter through `PlayScene::bossView`,
-  targets from 4000, and its worth paid the great ones' way. The level's
-  `legend` is the item a boss level wins, stamped on the save as a mask
-  (tower.c 524), not something used on the boss; its resistances are its
-  table's `shieldFlags`. Not yet: the meter's drawing (the original's
+  targets from 4000, and its worth paid the great ones' way. The legend
+  items (the Ice Axe and the rest, used on a boss to weaken it) are found
+  by finishing the level whose record carries a `legend` (D4 1, A2 2, I4 3,
+  C3 4, E1 5, K4 7, G3 9, J2 10, B5 11, in the WDATA level records): the
+  original stamps `1 << legend` on the character's `level_masks[2]` then
+  (a second time) `[3]` (tower.c 524; options.c 2690 reads them for the
+  legend hints). Which item weakens which boss, and how (the Ice Axe
+  freezing the dragon), is the next thing to find: it is not in ModifyDamage
+  (combat.c 405: that is the elemental colour against `shieldFlags`, x0.75
+  weak for a boss), nor in boss.c by that name; look at the boss fight's
+  start for the party's masks, then give `Bosses` a `BossWeakness` table
+  (item, boss kind, effect) and `CharacterSave` the legend masks. Its
+  resistances are its table's `shieldFlags`. Not yet: the meter's drawing (the original's
   HUD meter when `typeFlags & 4`, the in-world bar when `0x800`), the
   patterns (PTRN), phases, cameras, children (the chimera's heads),
   projectile moves, the general's waypoint patrol, the gargoyle's
