@@ -131,6 +131,8 @@ public:
     bool curbed(s32 id) const;
     f32 scaleOf(s32 id) const;
     const CritterData* dataOf(s32 id) const;
+    /** The archive its body and textures came from, or null. */
+    ItemArchive* archiveOf(s32 id);
     /** A gargoyle's form ("EAGL"), empty for the rest. */
     std::string formOf(s32 id) const;
 

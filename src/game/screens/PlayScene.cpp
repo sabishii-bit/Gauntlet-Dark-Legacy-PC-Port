@@ -320,6 +320,7 @@ void PlayScene::close() {
     m_generators.clear();
     m_enemyMissiles.clear(); // before the archives whose trees they fly
     m_critters.close();
+    m_bossMeter.clear(); // before the archive whose textures it draws
     m_bosses.close();
     m_enemies.close();
     for (TreeModel& bottle : m_potionModels) {
@@ -1686,6 +1687,10 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
     if (level != nullptr && !bossNameOf(level->bossType).empty()) {
         if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss); mark != nullptr) {
             m_bosses.spawn(level->bossType, mark->position, mark->rotation.y);
+            if (const CritterMeter* meter = m_bosses.meter(); meter != nullptr) {
+                ItemArchive* archive = m_bosses.archive();
+                m_bossMeter.bind(*meter, archive != nullptr ? &archive->textures : nullptr);
+            }
             // The first of the party carrying its legend item brings it to the fight.
             for (const PlayerActor& actor : m_actors) {
                 if (actor.save().progress().relics.hasLegend(m_bosses.legendRealm()) &&
@@ -1803,6 +1808,11 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     settleBlasts();
     m_critters.update(ticks, seconds, views);
     m_bosses.update(ticks, seconds, views);
+    if (m_bossMeter.bound()) {
+        const BossView boss = m_bosses.view();
+        m_bossMeter.update(ticks, boss.health, boss.maxHealth, m_bosses.present() && boss.alive,
+                           m_bosses.frozen());
+    }
     // The legend item held up is the bearer's no more.
     for (const LegendEvent& event : m_bosses.takeLegendEvents()) {
         if (event.cue != LegendCue::Brandished) {
@@ -2947,6 +2957,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             m_boxes.draw(m_canvas, player, statusOf(player), true);
         }
         m_pickups.draw(m_canvas, m_boxes);
+        m_bossMeter.draw(m_canvas, device);
     }
     if (spawning()) {
         drawLevelTitle(width);

@@ -891,6 +891,11 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.key("maxHealth").value(static_cast<f64>(t.maxHealth));
         json.key("expValue").value(static_cast<f64>(t.expValue));
         json.key("wakeThreshold").value(static_cast<f64>(t.wakeThreshold));
+        vec("healthBarOffset", t.healthBarOffset);
+        json.key("meterPieces").value(static_cast<int>(t.meterPieces));
+        json.key("meterAdvance").value(static_cast<int>(t.meterAdvance));
+        json.key("meterLeftInset").value(static_cast<int>(t.meterLeftInset));
+        json.key("meterRightInset").value(static_cast<int>(t.meterRightInset));
         json.key("moveCount").value(static_cast<int>(t.moveCount));
         json.key("moveIndex").value(static_cast<int>(t.moveIndex));
         json.key("patternCount").value(static_cast<int>(t.patternCount));

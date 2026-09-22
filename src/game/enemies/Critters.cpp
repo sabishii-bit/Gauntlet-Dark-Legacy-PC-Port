@@ -773,4 +773,9 @@ const CritterData* Critters::dataOf(s32 id) const {
     return critter.stock != nullptr ? &critter.stock->data : nullptr;
 }
 
+ItemArchive* Critters::archiveOf(s32 id) {
+    Critter* critter = critterAt(id);
+    return critter != nullptr ? &critter->stock->archive : nullptr;
+}
+
 } // namespace gdl::game

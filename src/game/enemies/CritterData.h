@@ -91,6 +91,22 @@ struct CritterPart {
     f32 damageScale = 1.0f;
 };
 
+/** How a boss's health meter is laid out across the top of the screen: strips of 256, the
+ * first's cap and the last's taken off the fill. */
+struct CritterMeter {
+    static constexpr u32 kShown = 4;      ///< the type flag for a HUD meter
+    static constexpr u32 kBacked = 8;     ///< and for its backgrounds
+    static constexpr u32 kInWorld = 0x800; ///< the bar that hangs off the body
+
+    s32 pieces = 0;
+    s32 advance = 0;
+    s32 leftInset = 0;
+    s32 rightInset = 0;
+    bool shown = false;
+    bool backed = false;
+    Vec3 barOffset{0.0f, 0.0f, 0.0f}; ///< where the in-world bar hangs
+};
+
 /** What the original keeps of a great creature in its `CRITTER/<NAME>.WAD`. */
 class CritterData {
 public:
@@ -112,6 +128,7 @@ public:
     f32 vertDrift() const { return m_vertDrift; }
     const Vec3& originOffset() const { return m_originOffset; }
     const CritterTarget& sight() const { return m_sight; }
+    const CritterMeter& meter() const { return m_meter; }
     std::span<const CritterMove> moves() const { return m_moves; }
     std::span<const CritterDamage> damages() const { return m_damages; }
     std::span<const CritterPart> parts() const { return m_parts; }
@@ -135,6 +152,7 @@ private:
     f32 m_vertDrift = 0.0f;
     Vec3 m_originOffset{0.0f, 0.0f, 0.0f};
     CritterTarget m_sight;
+    CritterMeter m_meter;
     std::vector<CritterMove> m_moves;
     std::vector<CritterDamage> m_damages;
     std::vector<CritterPart> m_parts;

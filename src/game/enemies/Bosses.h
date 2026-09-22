@@ -85,6 +85,10 @@ public:
 
     bool present() const { return m_id.has_value(); }
     BossView view() const;
+    /** How its meter is laid out, or null without a boss. */
+    const CritterMeter* meter() const;
+    /** Its archive, whose textures the meter is drawn from; null without a boss. */
+    ItemArchive* archive();
     const Vec3* position() const;
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */
