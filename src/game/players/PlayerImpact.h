@@ -15,6 +15,7 @@ struct PlayerImpact {
     static constexpr u32 kKnockOver = 0x100;
     static constexpr u32 kSpike = 0x2000;
     static constexpr u32 kWhirlwind = 0x10000;
+    static constexpr u32 kSticky = 0x4000000;
     static constexpr u32 kHeavy = kKnockDown | kBlownAway | kKnockOver | kWhirlwind;
 
     u32 flags = 0;

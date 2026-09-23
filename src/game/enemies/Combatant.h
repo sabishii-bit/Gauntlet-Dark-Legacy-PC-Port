@@ -132,6 +132,7 @@ private:
         bool held = false;       ///< keeps to its stance between moves
         bool roarWanted = false; ///< roars as soon as it may
         u32 soundsGiven = 0;     ///< bits: the move's sound, its second, each strike's
+        bool moveEffect = false; ///< an emitted effect needs cancellation on the next move
         s32 shotFrame = -1;
         std::optional<Vec3> attackTarget; ///< captured by a targeted-area move, not a homing point
         std::optional<Vec3> stepTarget;   ///< latest ready-step target, retained if sight is lost
@@ -143,10 +144,10 @@ private:
         TreePose pose;
     };
 
-    static bool startMove(Actor& critter, usize index, bool recordUse = true);
-    static void chooseMove(Actor& critter, std::span<const EnemyView> players);
+    bool startMove(Actor& critter, usize index, bool recordUse = true);
+    void chooseMove(Actor& critter, std::span<const EnemyView> players);
     static std::optional<usize> bestMove(const Actor& critter, std::span<const EnemyView> players);
-    static bool choosePatternAttack(Actor& critter, std::span<const EnemyView> players);
+    bool choosePatternAttack(Actor& critter, std::span<const EnemyView> players);
     static s32 attackTarget(const Actor& critter, const TargetCriteria& criteria,
                             std::span<const EnemyView> players);
     static f32 attackRate(const Actor& critter);
@@ -160,7 +161,7 @@ private:
     /** Whether a legend item's curb keeps the move from it. */
     static bool curbedMove(const Actor& critter, const MoveDefinition& move);
     /** Sets off sound record `index` (and what it links to) at `position`. */
-    void cue(const Actor& critter, s32 id, s32 index, const Vec3& position,
+    void cue(Actor& critter, s32 id, s32 index, const Vec3& position,
              std::optional<std::string_view> node = std::nullopt);
 
     std::vector<CombatCue> m_cues;

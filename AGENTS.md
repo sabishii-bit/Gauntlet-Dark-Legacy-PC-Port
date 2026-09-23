@@ -917,6 +917,26 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   first, then realm textures, to world geometry, texture animations and particles.
   LEVELD5's torch particles reference LEVELD's P_TORCH, absent from its own item
   archive; `[boss-arena]` verifies the borrowed texture rather than a white fallback.
+* Wraith attack coverage (`[wraith]`) exercises all eleven attack families across
+  health/range windows and all four projectile damage records. Blank attack-node
+  names use the model root, not TYPE.originOffset: J5 snakes launch at root+13,
+  not ten units above that. SFXX flag 0x40000 owns a move-lifetime effect;
+  CritterCopyAnim (0x8003c11c) cancels it on the next successful move change.
+  Wraith START's long-lived INITFX must end before START2's GENFX/GENFX2.
+  Projectile DMG_SUPER passes through players, with the shared player effect-gap
+  gating repeat damage. DMG_SUPER+DMG_REFLECT spends its pass-through on contact
+  and leaves an impact; ordinary snakes retain it through SNAKEFX -> SNAKELOOP.
+  The lantern caps the birth effect at 0.25 seconds, not the snake's 15-second
+  morph lifetime. THROW's sticky ATK07LP impact becomes ATK07WEB for twenty
+  seconds, floor-aligned by SFXX 0x10, with stationary radius-two contacts.
+  Sticky contacts run at the authored 30 Hz and request WEBREACT rather than an
+  invented stun or knockdown. Tests cover 30/60/120 Hz, expiry, archive cleanup,
+  entrance routing and actual WRAITH artwork. `python scripts/scenario.py wraith`
+  starts at the level entrance, outside wake range; `wraith-attacks` starts close
+  enough to wake it. Need LEVELJ5, LEVELJ and MONSTERS/WRAITH unpacked.
+  This is not a claim of completed visual/AI parity: the common scheduler's
+  mid-animation interruption policies, sleeping INIT staging, camera arithmetic,
+  and every shield/reflection interaction still need retail comparison.
 * Chimera SUPER's type-3 NULLFX now uses the expanding `CritterArea` path rather
   than an immediate omnidirectional full-radius hit. In ProcessEffects (0x80094be0),
   phase is remaining/lifetime: radius is maxDistance*(1.33-phase), damage is

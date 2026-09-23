@@ -47,6 +47,11 @@ TEST_CASE("heavy blows fall with their direction and guards downgrade them to kn
 }
 
 TEST_CASE("a lesser contact cannot erase a queued knockdown", "[game][players][player-impact]") {
+    const PlayerImpact web{PlayerImpact::kSticky, Vec3{0}};
+    REQUIRE(web.reaction(1, 0, false) == PlayerDeed::Webbed);
+    REQUIRE(web.reaction(1, 0, true) == PlayerDeed::Webbed);
+    REQUIRE(PlayerImpact::combine(PlayerDeed::FallBack, PlayerDeed::Webbed) ==
+            PlayerDeed::FallBack);
     REQUIRE(PlayerImpact::combine(PlayerDeed::None, PlayerDeed::Reel) == PlayerDeed::Reel);
     REQUIRE(PlayerImpact::combine(PlayerDeed::Reel, PlayerDeed::Spike) == PlayerDeed::Spike);
     REQUIRE(PlayerImpact::combine(PlayerDeed::Reel, PlayerDeed::Flinch) == PlayerDeed::Flinch);

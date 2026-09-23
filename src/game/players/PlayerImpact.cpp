@@ -28,7 +28,10 @@ PlayerDeed PlayerImpact::reaction(f32 damage, f32 facing, bool braced) const {
     if (damage > 1.0f && (effective & kSpike) != 0) {
         return PlayerDeed::Spike;
     }
-    return (effective & kStun) != 0 ? PlayerDeed::Reel : PlayerDeed::None;
+    if ((effective & kStun) != 0) {
+        return PlayerDeed::Reel;
+    }
+    return (effective & kSticky) != 0 ? PlayerDeed::Webbed : PlayerDeed::None;
 }
 
 PlayerDeed PlayerImpact::combine(PlayerDeed pending, PlayerDeed incoming) {
@@ -38,7 +41,8 @@ PlayerDeed PlayerImpact::combine(PlayerDeed pending, PlayerDeed incoming) {
         case PlayerDeed::FallForward: return 4;
         case PlayerDeed::Flinch: return 3;
         case PlayerDeed::Spike: return 2;
-        case PlayerDeed::Reel: return 1;
+        case PlayerDeed::Reel:
+        case PlayerDeed::Webbed: return 1;
         default: return 0;
         }
     };

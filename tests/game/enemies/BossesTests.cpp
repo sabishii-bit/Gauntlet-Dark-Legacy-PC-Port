@@ -1,4 +1,6 @@
 #include <filesystem>
+#include <set>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -9,6 +11,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/enemies/Bosses.h"
+#include "game/enemies/CombatantFixture.h"
 
 namespace {
 
@@ -26,6 +29,54 @@ EnemyView playerAt(const Vec3& position, s32 player = 0) {
     view.radius = 1.0f;
     view.height = 6.0f;
     return view;
+}
+
+TEST_CASE("Wraith health and range windows expose every authored attack family",
+          "[game][enemies][wraith][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/WRAITH/animations.json");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'J');
+    REQUIRE(fixture.spawn("WRAITH", {0, -15.9375f, -35}, 0));
+    std::set<std::string> attacks;
+    std::set<s32> projectiles;
+    bool rootLaunch = false;
+    for (const f32 health : {1.0f, 0.7f, 0.4f, 0.15f}) {
+        for (const Vec3 offset :
+             {Vec3{0, 0, 15}, Vec3{0, 0, 45}, Vec3{0, 0, 70}, Vec3{35, 0, 35}, Vec3{-35, 0, 35}}) {
+            REQUIRE(
+                fixture.actor.spawn(fixture.assets, 0, {0, -15.9375f, -35}, 0, nullptr, {}, 'J'));
+            if (health < 1) {
+                EnemyHit hit;
+                hit.damage = fixture.actor.maxHealth() * (1 - health);
+                fixture.actor.hurt(hit);
+            }
+            const std::vector<EnemyView> players{playerAt(Vec3{0, 0, -35} + offset)};
+            for (s32 frame = 0; frame < 7200; ++frame) {
+                fixture.update(2, kStep, players);
+                if (fixture.actor.moveType() >= 128) {
+                    attacks.emplace(fixture.actor.moveName());
+                }
+                for (const auto& shot : fixture.actor.takeShots()) {
+                    projectiles.insert(shot.damageIndex);
+                    if (shot.damageIndex == 10) {
+                        REQUIRE(shot.origin.y == Approx(1.0625f));
+                        rootLaunch = true;
+                    }
+                }
+                fixture.actor.takeCues();
+                fixture.actor.takeBlows();
+            }
+            REQUIRE(glm::length(Vec2{fixture.actor.position().x,
+                                     fixture.actor.position().z + 35}) <= 3.001f);
+        }
+    }
+    REQUIRE(attacks == std::set<std::string>{"SWIPEL", "SWIPER", "BLENDER", "SPINBLADE", "RSTRETCH",
+                                             "LSTRETCH", "THROW", "PECKERSHOT", "SNAKES", "GBALL",
+                                             "BOLT"});
+    REQUIRE(projectiles == std::set<s32>{8, 10, 11, 12});
+    REQUIRE(rootLaunch);
 }
 
 TEST_CASE("the bosses are named by kind, from the dragon to the garm", "[game][enemies]") {

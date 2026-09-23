@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -48,9 +49,13 @@ struct Fixture {
             "damages":[{"type":1,"flags":32,"behaviorFlags":9,"radius":0.5,"damage":12,"minSpeed":30,"maxSpeed":30,
                 "sfxIndex":0,"sfx":2,"morph":1,"morphEnd":2,"morphLife":0.5},
                 {"type":1,"flags":2097184,"behaviorFlags":9,"radius":0.5,"damage":12,
+                 "minSpeed":30,"maxSpeed":30,"sfxIndex":3,"sfx":2},
+                {"type":1,"flags":1048576,"behaviorFlags":9,"radius":0.5,"damage":60,
+                 "minSpeed":30,"maxSpeed":30,"sfxIndex":0,"morph":1,"morphLife":15},
+                {"type":1,"flags":67108864,"behaviorFlags":9,"radius":0.5,"maxDistance":2,"damage":1,
                  "minSpeed":30,"maxSpeed":30,"sfxIndex":3,"sfx":2}],
             "sounds":[{"name":"SHOT","levelFormat":"S_%cSHOT"},{"name":"LOOP"},
-                      {"name":"HIT","levelFormat":"S_%cHIT"},{"name":"LOOP","life":100}]})");
+                      {"name":"HIT","flags":16,"levelFormat":"S_%cHIT"},{"name":"LOOP","life":100}]})");
         REQUIRE(archive.load(root));
         REQUIRE(data.load(root / "critter.json"));
     }
@@ -70,6 +75,76 @@ struct Fixture {
         projectiles.update(seconds, collision, players, device, effects, sound);
     }
 };
+
+TEST_CASE("pass-through snakes survive player contact but still collide with the world",
+          "[game][boss-projectiles][wraith]") {
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 2;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array<EnemyView, 2> players{{{7, {0, 0, 2}, 1, 6}, {3, {0, 0, 4}, 1, 6}}};
+    f.step(0.2f, players);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.effect(0).name == "LOOP");
+    REQUIRE(f.effects.effect(0).position.z == Approx(6));
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 2);
+    REQUIRE(hits[0].player == 7);
+    REQUIRE(hits[1].player == 3);
+    REQUIRE(hits[0].repeatGap == Approx(0.25f));
+    WorldCollision world;
+    CollisionTriangle wall;
+    wall.normal = {0, 0, -1};
+    wall.vertices = {Vec3{-10, 0, 8}, Vec3{0, 20, 8}, Vec3{10, 0, 8}};
+    world.build({wall});
+    f.step(0.2f, {}, &world);
+    REQUIRE(f.projectiles.count() == 0);
+    REQUIRE(f.effects.count() == 0);
+}
+
+TEST_CASE("sticky impacts remain floor-aligned traps for twenty seconds",
+          "[game][boss-projectiles][wraith]") {
+    const s32 framesPerSecond = GENERATE(30, 60, 120);
+    Fixture f;
+    WorldCollision world;
+    CollisionTriangle floor;
+    floor.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{100, 0, 100}};
+    CollisionTriangle other = floor;
+    other.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, 100}, Vec3{-100, 0, 100}};
+    world.build({floor, other});
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 3;
+    shot.origin = {0, 2, 0};
+    shot.target = Vec3{0, 0, 10};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    for (s32 i = 0; i < 120 && f.effects.effect(0).name != "HIT"; ++i) {
+        f.step(1.0f / 120, {}, &world);
+        REQUIRE(f.projectiles.count() == 1);
+    }
+    REQUIRE(f.effects.effect(0).name == "HIT");
+    REQUIRE(f.effects.effect(0).secondsLeft == 20);
+    REQUIRE(f.effects.effect(0).position.y == Approx(0.1f));
+    const Vec3 at = f.effects.effect(0).position;
+    const std::array<EnemyView, 2> players{{{3, {at.x, 0, at.z}, 1, 6}, {8, {50, 0, 50}, 1, 6}}};
+    for (s32 i = 0; i < framesPerSecond; ++i) {
+        f.step(1.0f / static_cast<f32>(framesPerSecond), players, &world);
+    }
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 30);
+    for (const auto& hit : hits) {
+        REQUIRE(hit.player == 3);
+        REQUIRE(hit.damage == 1);
+        REQUIRE(hit.flags == 0x4000000);
+    }
+    REQUIRE(f.effects.effect(0).position == at);
+    f.step(19.1f, {}, &world);
+    REQUIRE(f.projectiles.count() == 0);
+    REQUIRE(f.effects.count() == 0);
+}
 
 TEST_CASE("critter projectiles move birth effects morph expire and clear their borrowed effects",
           "[game][boss-projectiles]") {
@@ -265,6 +340,53 @@ TEST_CASE("Yeti mouth-conjured throw survives its launch in the I5 arena",
     REQUIRE(hits.size() == 1);
     REQUIRE(hits.front().player == 0);
     REQUIRE(hits.front().damage == 100);
+}
+
+TEST_CASE("Wraith snakes morph and the lantern shortens only their birth effect",
+          "[game][boss-projectiles][wraith][unpacked]") {
+    Fixture f;
+    const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/WRAITH/animations.json");
+    REQUIRE(f.data.load(root / "critter/WRAITH.json"));
+    REQUIRE(f.archive.load(root / "MONSTERS/WRAITH"));
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 10;
+    shot.origin = {0, 2, 0};
+    shot.birthLife = 0.25f;
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    REQUIRE(f.effects.effect(0).name == "SNAKEFX");
+    REQUIRE(f.effects.effect(0).secondsLeft == Approx(0.25f));
+    f.step(0.2f);
+    REQUIRE(f.effects.effect(0).name == "SNAKEFX");
+    REQUIRE(glm::length(f.effects.effect(0).position - shot.origin) == Approx(10));
+    f.step(0.06f);
+    REQUIRE(f.effects.effect(0).name == "SNAKELOOP");
+    REQUIRE(f.effects.effect(0).secondsLeft == Approx(15));
+    const Vec3 at = f.effects.effect(0).position;
+    const std::array<EnemyView, 1> players{{{3, {at.x, 0, at.z}, 1, 6}}};
+    f.step(1.0f / 30, players);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.projectiles.takeHits().size() == 1);
+    f.projectiles.clear(f.effects);
+    REQUIRE(f.effects.count() == 0);
+
+    shot.damageIndex = 8;
+    shot.birthLife = 0;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    REQUIRE(f.effects.effect(0).name == "ATK07LP");
+    const std::array<EnemyView, 1> victim{{{8, {0, 0, 1}, 1, 6}}};
+    f.step(1.0f / 30, victim);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.effect(0).name == "ATK07WEB");
+    REQUIRE(f.effects.effect(0).secondsLeft == Approx(20));
+    const auto hit = f.projectiles.takeHits();
+    REQUIRE(hit.size() == 1);
+    REQUIRE(hit[0].flags == 0x4000000);
+    f.projectiles.clear(f.effects);
+    REQUIRE(f.effects.count() == 0);
 }
 
 TEST_CASE("retail boss projectile records retain physics and effect transitions",

@@ -56,6 +56,8 @@ struct CombatCue {
     bool follows = false;
     bool shakes = false;
     bool arena = false;              ///< stage callback, even when both tree and sound are empty
+    bool untilNextMove = false;      ///< persistent cue cancelled by the next move transition
+    bool stopMoveEffect = false;     ///< cancel the owner's previous untilNextMove cue
     bool rootAttachment = false;     ///< root transform, not a fixed world-space body offset
     std::optional<std::string> node; ///< animated attachment, distinct from a body translation
     Vec3 nodeOffset{0.0f};

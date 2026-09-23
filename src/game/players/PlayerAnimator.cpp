@@ -168,11 +168,14 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     // plays nothing else is asked of the body.
     const bool felled = deed == PlayerDeed::FallBack || deed == PlayerDeed::FallForward;
     const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel ||
-                        deed == PlayerDeed::Spike || felled;
+                        deed == PlayerDeed::Spike || deed == PlayerDeed::Webbed || felled;
     if (struck && !floored() && (felled || !reacting())) {
         Action reaction = deed == PlayerDeed::Flinch ? Action::HitReact : Action::Stun;
         if (deed == PlayerDeed::Spike) {
             reaction = Action::SpikeHit;
+        }
+        if (deed == PlayerDeed::Webbed) {
+            reaction = Action::WebReact;
         }
         if (felled) {
             reaction = deed == PlayerDeed::FallBack ? Action::FallBack : Action::FallForward;
@@ -388,6 +391,7 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::HitReact:
     case Action::SpikeHit:
     case Action::Stun:
+    case Action::WebReact:
     case Action::TurboStrong:
     case Action::TurboFull:
     case Action::Shove:

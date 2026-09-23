@@ -23,6 +23,7 @@ void LevelOpponents::close() {
         }
     }
     m_critterEffects.clear();
+    m_moveEffects.clear();
     m_cueEffects.clear();
     m_generators.clear();
     m_enemyMissiles.clear();
@@ -295,8 +296,9 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     for (const CombatantProjectileHit& hit : m_combatantProjectiles.takeHits()) {
         for (usize player = 0; player < players.size(); ++player) {
             if (players[player].actor.player() == hit.player &&
-                players[player].life == PlayerLife::Standing) {
+                players[player].life == PlayerLife::Standing && players[player].effectGap <= 0) {
                 events.hurt(player, hit.damage, HurtKind::Pierce, true, {hit.flags, hit.direction});
+                players[player].effectGap = hit.repeatGap;
             }
         }
     }
@@ -432,6 +434,16 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     if (!m_resources.has_value()) {
         return;
     }
+    if (cue.stopMoveEffect) {
+        std::erase_if(m_moveEffects, [&](const MoveEffect& previous) {
+            if (previous.critter != cue.critter || previous.ofBoss != ofBoss) {
+                return false;
+            }
+            m_resources->effects.stop(previous.effect);
+            return true;
+        });
+        return;
+    }
     if (cue.arena && m_bosses.present()) {
         const std::string_view object = bossArenaObject(m_bosses.view().kind);
         if (!object.empty()) {
@@ -454,6 +466,9 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
                                                          cue.position, setting);
         if (effect != 0) {
             m_cueEffects.push_back(effect);
+            if (cue.untilNextMove) {
+                m_moveEffects.push_back({effect, cue.critter, ofBoss});
+            }
         }
         if (effect != 0 && cue.placement.has_value()) {
             m_resources->effects.placeAt(effect, *cue.placement);
@@ -478,6 +493,9 @@ void LevelOpponents::followCritterEffects() {
     }
     std::erase_if(m_cueEffects,
                   [this](u32 effect) { return !m_resources->effects.playing(effect); });
+    std::erase_if(m_moveEffects, [this](const MoveEffect& effect) {
+        return !m_resources->effects.playing(effect.effect);
+    });
     for (usize i = 0; i < m_critterEffects.size();) {
         const CritterEffect& riding = m_critterEffects[i];
         const bool alive =
