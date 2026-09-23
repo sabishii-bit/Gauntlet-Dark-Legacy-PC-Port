@@ -745,8 +745,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `world/SafeRocks` draws the lair's six type-10/subtype-41 barriers from
   `SAFEROCK0L1` through `SAFEROCK3L1`; their tier and health fall under player
   attacks, rubble remains visible, and only standing tiers block movement.
-  Boss-driven barrier reactivation and their protection against breath are
-  not wired yet. Boss-level item archives do not replace all realm assets:
+  Selective breath obstruction is wired; type-6 arena attacks also reactivate
+  cover after their eruption's wind-up. Boss-level item archives do not replace all realm assets:
   `LevelWorld::realmItems()` keeps the common archive when an own-level archive
   is selected. Traps prefer the boss-specific figure, then the realm's. The
   Dragon arena's ten `FLAMEV` figures come from `ITEMS/LEVELB`, not `LEVELB6`;
@@ -960,8 +960,33 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   need further investigation. K5's BLOB_BOSS texture animation also references
   BLOB_BOSS00 in MONSTERS/PBOSS, outside the current world texture lenders;
   the missing-frame warning is still open, not evidence the texture is absent
-  from the retail assets. Moving stage anchors and type-6 reactivation are not
-  implemented by this static type-5 path.
+  from the retail assets. Moving stage anchors are not implemented by this static
+  type-5 path; type-6 reactivation uses the separate targeted eruption path below.
+* Yeti POUND/POUND2 uses DAMG type 6. `CritterDoDamage` (0x8003ca98) selects an
+  inactive stage rock nearest its target in the horizontal plane, starts
+  ATTACK12_S0 there and activates the obstacle after (effect frames - 1)/30
+  seconds. `SafeRockNearestTarget` (0x80035bc8) uses the piecewise `fqdist`
+  metric (0x800bcb44), not Euclidean distance; close ties can select differently.
+  Its eight slope constants are retained in the targeted arena selector.
+  `Combatant` receives available anchor snapshots and emits activation requests;
+  `SafeRocks` owns dormant/solid state and delayed activation through
+  `LevelFixtures`. No scene/item dependency is introduced into combat execution.
+  Encounter setup detects referenced type-6 damage and initially hides its rocks,
+  following `CollectSafeRocks` (0x80063f10). I5 has thirteen authored rocks, eight
+  enabled for one player. They begin invisible/non-solid, not as visible rubble.
+  POUND's 36-frame effect deals expanding area damage at its fixed stage anchor;
+  the selected rock becomes visible/full-health (90) after 35/30 seconds. Destroyed
+  rocks become candidates again. Pending eruptions do not mark a rock active and
+  a later eruption may reset its timer. Contacts do not migrate with the player.
+  `[yeti]` covers synthetic selection/coarse frames/lifetime, actual YETI moves,
+  I5 artwork/collision, party gating and scene event routing. Detached move cues
+  and projectile impact/end effects (including ATTACK8FXC) are retained for
+  cleanup before their borrowed archives are released, just like attached cues.
+  `python scripts/scenario.py yeti` runs I5; unpack LEVELI5, LEVELI and
+  MONSTERS/YETI first. This is not full Yeti fidelity: grab/carry/throw, type-56
+  destination steps, camera-shake cues and thrown-rock impact areas still need
+  reconstruction. The no-player cycling selector is not implemented; targeted
+  eruptions without a current player are skipped rather than guessed.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
   is the original's HUD meter (`HealthMeterStart/Update`, boss.c 471-585):

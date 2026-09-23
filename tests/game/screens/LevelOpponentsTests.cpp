@@ -15,6 +15,83 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstacle",
+          "[game][screens][level-opponents][yeti][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELI5/world.json");
+    test::unpackedOrSkip("ITEMS/LEVELI5/objects.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("I5");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    SafeRocks rocks;
+    REQUIRE(rocks.bind(device, world.layout(), world.items()));
+    rocks.setPlayerCount(1);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, rocks.rock(3).position, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.bosses().view().kind == 39);
+    REQUIRE(opponents.bosses().raisesArenaRocks());
+    rocks.hideForEruptions();
+    LevelOpponents::Events events;
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.blast = [](const Vec3&, f32, f32) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.arenaTargets = [&rocks] { return rocks.eruptionTargets(); };
+    usize eruptions = 0;
+    events.activateArena = [&](const CombatArenaActivation& activation) {
+        REQUIRE(activation.index == 3);
+        rocks.scheduleActivation(activation.index, activation.delay);
+        ++eruptions;
+    };
+    for (s32 frame = 0; frame < 3600 && eruptions == 0; ++frame) {
+        rocks.update(1.0f / 30.0f);
+        opponents.update(2, 1.0f / 30.0f, players, rocks.obstacles(), events);
+        if (eruptions == 0) {
+            effects.update(1.0f / 30.0f);
+        }
+    }
+    INFO("Last move: " << opponents.bosses().moveName());
+    REQUIRE(eruptions == 1);
+    usize visuals = 0;
+    for (usize i = 0; i < effects.count(); ++i) {
+        const auto& effect = effects.effect(i);
+        if (effect.name == "ATTACK12_S0") {
+            REQUIRE(effect.attachment.has_value());
+            REQUIRE(glm::length(effect.position - rocks.rock(3).position) < 0.001f);
+            ++visuals;
+        }
+    }
+    REQUIRE(visuals == 1);
+    REQUIRE(rocks.obstacles().empty());
+    rocks.update(34.0f / 30.0f);
+    REQUIRE_FALSE(rocks.standing(3));
+    rocks.update(1.01f / 30.0f);
+    REQUIRE(rocks.standing(3));
+    REQUIRE(rocks.obstacles().size() == 1);
+    REQUIRE(rocks.rock(3).health == 90);
+    opponents.close();
+    for (usize i = 0; i < effects.count(); ++i) {
+        INFO("Surviving effect: " << effects.effect(i).name);
+        REQUIRE(effects.count() == 0); // effects cannot retain a freed boss archive
+    }
+}
+
 TEST_CASE("Plague Fiend eruptions are rendered at all three K5 arena anchors",
           "[game][screens][level-opponents][plague][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/PBOSS.json").parent_path().parent_path();
@@ -123,7 +200,9 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
         .award = [](s32, s32, bool) { FAIL("No kills"); },
         .blocksBreath = {},
         .blocksArea = {},
-        .arenaAnchors = {}};
+        .arenaAnchors = {},
+        .arenaTargets = {},
+        .activateArena = {}};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});

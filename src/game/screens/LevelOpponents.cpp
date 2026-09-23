@@ -18,12 +18,12 @@ void LevelOpponents::close() {
         for (const CritterEffect& cue : m_critterEffects) {
             m_resources->effects.stop(cue.effect);
         }
-        for (const u32 effect : m_arenaEffects) {
+        for (const u32 effect : m_cueEffects) {
             m_resources->effects.stop(effect);
         }
     }
     m_critterEffects.clear();
-    m_arenaEffects.clear();
+    m_cueEffects.clear();
     m_generators.clear();
     m_enemyMissiles.clear();
     m_critters.close();
@@ -233,7 +233,14 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     events.settleBlasts();
     m_critters.update(ticks, seconds, views);
     m_bosses.setArenaAnchors(events.arenaAnchors ? events.arenaAnchors() : std::vector<Mat4>{});
+    m_bosses.setArenaTargets(events.arenaTargets ? events.arenaTargets()
+                                                 : std::vector<CombatArenaTarget>{});
     m_bosses.update(ticks, seconds, views);
+    for (const auto& activation : m_bosses.takeArenaActivations()) {
+        if (events.activateArena) {
+            events.activateArena(activation);
+        }
+    }
     const auto shotSound = [&](std::string_view name) { m_resources->audio.playNamed(name); };
     for (const CombatShot& shot : m_bosses.takeShots()) {
         if (ItemArchive* archive = m_bosses.archive(); archive != nullptr) {
@@ -403,9 +410,11 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
         setting.loop = cue.loop;
         const u32 effect = m_resources->effects.startSet(m_resources->device, *archive, cue.tree,
                                                          cue.position, setting);
+        if (effect != 0) {
+            m_cueEffects.push_back(effect);
+        }
         if (effect != 0 && cue.placement.has_value()) {
             m_resources->effects.placeAt(effect, *cue.placement);
-            m_arenaEffects.push_back(effect);
         }
         if (effect != 0 && cue.follows) {
             const Vec3* at = ofBoss ? m_bosses.position() : &m_critters.positionOf(cue.critter);
@@ -425,7 +434,7 @@ void LevelOpponents::followCritterEffects() {
     if (!m_resources.has_value()) {
         return;
     }
-    std::erase_if(m_arenaEffects,
+    std::erase_if(m_cueEffects,
                   [this](u32 effect) { return !m_resources->effects.playing(effect); });
     for (usize i = 0; i < m_critterEffects.size();) {
         const CritterEffect& riding = m_critterEffects[i];

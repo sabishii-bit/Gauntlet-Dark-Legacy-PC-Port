@@ -7,6 +7,18 @@
 
 #include "game/enemies/CombatantKind.h"
 namespace gdl::game {
+/** An available stage attachment, identified by its encounter-owned obstacle index. */
+struct CombatArenaTarget {
+    usize index = 0;
+    Mat4 placement{1};
+};
+
+/** A successful eruption makes its obstacle solid after the visual wind-up. */
+struct CombatArenaActivation {
+    usize index = 0;
+    f32 delay = 0;
+};
+
 /** A contact a critter has made. Breath contacts repeat while touching; the
  * recipient's shared breath timer decides when they may damage it again. */
 struct CombatBlow {

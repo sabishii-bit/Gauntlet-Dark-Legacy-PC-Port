@@ -84,8 +84,65 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.obstacles().size() == 2);
     REQUIRE(rocks.attackAnchors().size() == 2);
     REQUIRE(rocks.rock(1).health == 80);
+    rocks.hideForEruptions();
+    REQUIRE(rocks.obstacles().empty());
+    REQUIRE(rocks.eruptionTargets().size() == 2);
+    REQUIRE(rocks.rock(0).dormant);
+    REQUIRE_FALSE(rocks.strike(0, 100));
+    rocks.scheduleActivation(0, 1.0f);
+    rocks.update(0.9f);
+    REQUIRE(rocks.rock(0).dormant);
+    // A second eruption may reset the timer before the same rock becomes active.
+    rocks.scheduleActivation(0, 0.5f);
+    rocks.update(0.4f);
+    REQUIRE_FALSE(rocks.standing(0));
+    rocks.update(0.11f);
+    REQUIRE(rocks.standing(0));
+    REQUIRE_FALSE(rocks.rock(0).dormant);
+    REQUIRE(rocks.eruptionTargets().size() == 1);
+    REQUIRE(rocks.eruptionTargets()[0].index == 1);
+    REQUIRE(rocks.rock(0).health == 120);
+    REQUIRE(rocks.strike(0, 1000));
+    REQUIRE(rocks.eruptionTargets().size() == 2);
+    rocks.update(10);
+    REQUIRE_FALSE(rocks.standing(0)); // an expired timer cannot reactivate it twice
     rocks.clear();
     REQUIRE(rocks.size() == 0);
+}
+
+TEST_CASE("Yeti ice rocks stay invisible until their eruption completes",
+          "[game][world][safe-rocks][yeti][unpacked]") {
+    const auto root = test::unpackedOrSkip("LEVELS/LEVELI5/world.json").parent_path();
+    const auto itemRoot = test::unpackedOrSkip("ITEMS/LEVELI5/objects.json").parent_path();
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    ItemArchive items;
+    REQUIRE(items.load(itemRoot));
+    SafeRocks rocks;
+    REQUIRE(rocks.bind(device, layout, items));
+    rocks.setPlayerCount(1);
+    REQUIRE(rocks.size() == 13);
+    rocks.hideForEruptions();
+    REQUIRE(rocks.eruptionTargets().size() == 8); // five placements require larger parties
+    REQUIRE(rocks.obstacles().empty());
+    rocks.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.empty());
+    rocks.scheduleActivation(3, 35.0f / 30.0f);
+    rocks.update(34.0f / 30.0f);
+    REQUIRE_FALSE(rocks.standing(3));
+    rocks.update(1.01f / 30.0f);
+    REQUIRE(rocks.standing(3));
+    REQUIRE(rocks.rock(3).health == 90);
+    REQUIRE(rocks.obstacles().size() == 1);
+    REQUIRE(rocks.eruptionTargets().size() == 7);
+    rocks.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    REQUIRE(rocks.strike(3, 1000));
+    REQUIRE(rocks.eruptionTargets().size() == 8);
+    rocks.clear();
+    rocks.update(10); // no timer or borrowed model survives close
+    REQUIRE(rocks.eruptionTargets().empty());
 }
 
 TEST_CASE("breath cover segments respect shape height radius rotation and endpoints",

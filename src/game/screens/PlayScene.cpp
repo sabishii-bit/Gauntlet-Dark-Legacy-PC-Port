@@ -106,6 +106,9 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_opponents.open({device, world, m_weapons, m_effects, m_audio, context.unpackedRoot,
                       context.config != nullptr ? context.config->difficulty.gain() : 1.0f},
                      m_players);
+    if (m_opponents.bosses().raisesArenaRocks()) {
+        m_fixtures.safeRocks().hideForEruptions();
+    }
     // The levels the party comes in at: what is gained from here is news.
     m_levels.clear();
     for (const PlayerRuntime& runtime : m_players) {
@@ -541,7 +544,12 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
                  constexpr f32 kAreaProbeRadius = 0.1f;
                  return m_fixtures.safeRocks().blocksSegment(from, to, kAreaProbeRadius);
              },
-         .arenaAnchors = [this] { return m_fixtures.safeRocks().attackAnchors(); }});
+         .arenaAnchors = [this] { return m_fixtures.safeRocks().attackAnchors(); },
+         .arenaTargets = [this] { return m_fixtures.safeRocks().eruptionTargets(); },
+         .activateArena =
+             [this](const CombatArenaActivation& activation) {
+                 m_fixtures.safeRocks().scheduleActivation(activation.index, activation.delay);
+             }});
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);

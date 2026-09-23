@@ -55,6 +55,7 @@ public:
     const Traps& traps() const { return m_traps; }
     const Breakables& barrels() const { return m_barrels; }
     const SafeRocks& safeRocks() const { return m_safeRocks; }
+    SafeRocks& safeRocks() { return m_safeRocks; }
 
 private:
     void updateClouds(f32 seconds, std::span<PlayerRuntime> players, const Events& events);

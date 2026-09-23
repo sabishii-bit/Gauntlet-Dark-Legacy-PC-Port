@@ -37,7 +37,8 @@ struct AttackDefinition {
     static constexpr s16 kAttachedArea = 2;
     static constexpr s16 kRing = 3; ///< an expanding effect with fading damage
     static constexpr s16 kBreath = 4;
-    static constexpr s16 kArenaAreas = 5; ///< one effect at each authored arena anchor
+    static constexpr s16 kArenaAreas = 5;    ///< one effect at each authored arena anchor
+    static constexpr s16 kArenaEruption = 6; ///< raise an inactive arena obstacle near the target
     static constexpr s16 kGrab = 7;
     static constexpr s16 kTargetArea = 8;  ///< effect at the move's saved player position
     static constexpr s16 kSpew = 9;        ///< a boss's death throwing its coins out

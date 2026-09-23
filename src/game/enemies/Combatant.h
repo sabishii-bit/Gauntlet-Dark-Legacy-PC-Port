@@ -40,6 +40,8 @@ public:
     void clear();
     /** Static stage attachment points supplied by the encounter, not player targets. */
     void setArenaAnchors(std::span<const Mat4> anchors);
+    void setArenaTargets(std::span<const CombatArenaTarget> targets);
+    bool raisesArenaRocks() const;
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Combatant> peers = {});
     void hurt(const EnemyHit& hit);
@@ -84,6 +86,7 @@ public:
     std::vector<CombatCue> takeCues();
     std::vector<CombatSpew> takeSpews();
     std::vector<CombatShot> takeShots();
+    std::vector<CombatArenaActivation> takeArenaActivations();
 
 private:
     enum class State : u8 { Inactive, Active, Dying };
@@ -112,6 +115,7 @@ private:
         std::vector<s32> struckThisMove; ///< players already hurt by the move playing
         std::vector<CritterArea> areas;
         std::vector<Mat4> arenaAnchors;
+        std::vector<CombatArenaTarget> arenaTargets;
         f32 hurtPending = 0.0f;
         u32 hurtFlags = 0;
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
@@ -138,8 +142,11 @@ private:
                             std::span<const EnemyView> players);
     static f32 attackRate(const Actor& critter);
     static bool supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound);
-    void startArea(Actor& critter, s32 id, const AttackDefinition& damage, std::string_view node,
-                   std::optional<Mat4> worldParent = std::nullopt);
+    std::optional<f32> startArea(Actor& critter, s32 id, const AttackDefinition& damage,
+                                 std::string_view node,
+                                 std::optional<Mat4> worldParent = std::nullopt);
+    void eruptArena(Actor& critter, s32 id, const AttackDefinition& damage,
+                    std::span<const EnemyView> players);
     void updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players);
     /** Whether a legend item's curb keeps the move from it. */
     static bool curbedMove(const Actor& critter, const MoveDefinition& move);
@@ -150,6 +157,7 @@ private:
     std::vector<CombatCue> m_cues;
     std::vector<CombatSpew> m_spews;
     std::vector<CombatShot> m_shots;
+    std::vector<CombatArenaActivation> m_arenaActivations;
     void shoot(const Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
                std::span<const EnemyView> players);
     void strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,

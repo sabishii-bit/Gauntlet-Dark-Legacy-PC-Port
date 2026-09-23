@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
 #include <limits>
 #include <utility>
 
@@ -22,9 +23,25 @@ void Combatant::clear() {
     m_cues.clear();
     m_spews.clear();
     m_shots.clear();
+    m_arenaActivations.clear();
 }
 void Combatant::setArenaAnchors(std::span<const Mat4> anchors) {
     m_actor.arenaAnchors.assign(anchors.begin(), anchors.end());
+}
+void Combatant::setArenaTargets(std::span<const CombatArenaTarget> targets) {
+    m_actor.arenaTargets.assign(targets.begin(), targets.end());
+}
+bool Combatant::raisesArenaRocks() const {
+    if (const CritterData* definition = data()) {
+        return std::ranges::any_of(definition->moves(), [&](const MoveDefinition& move) {
+            return std::ranges::any_of(
+                std::initializer_list<s32>{move.damage0, move.damage1}, [&](s32 index) {
+                    const AttackDefinition* damage = definition->damage(index);
+                    return damage != nullptr && damage->type == AttackDefinition::kArenaEruption;
+                });
+        });
+    }
+    return false;
 }
 bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 yaw,
                       const WorldCollision* collision, const EnemyScales& scales, char realm) {
@@ -175,6 +192,13 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                     (targeted && !critter.attackTarget.has_value())) {
                     return;
                 }
+                if (harm->type == AttackDefinition::kArenaEruption) {
+                    if ((critter.soundsGiven & bit) == 0) {
+                        critter.soundsGiven |= bit;
+                        eruptArena(critter, i, *harm, players);
+                    }
+                    return;
+                }
                 if (harm->type == AttackDefinition::kArenaAreas) {
                     if ((critter.soundsGiven & bit) == 0) {
                         critter.soundsGiven |= bit;
@@ -323,6 +347,9 @@ std::vector<CombatSpew> Combatant::takeSpews() {
 
 std::vector<CombatShot> Combatant::takeShots() {
     return std::exchange(m_shots, {});
+}
+std::vector<CombatArenaActivation> Combatant::takeArenaActivations() {
+    return std::exchange(m_arenaActivations, {});
 }
 
 void Combatant::freeze(s32 ticks) {

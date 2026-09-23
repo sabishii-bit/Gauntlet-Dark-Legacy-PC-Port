@@ -1,3 +1,7 @@
+#include <algorithm>
+#include <array>
+#include <cmath>
+
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 #include "engine/world/AnimationPlayer.h"
@@ -5,6 +9,25 @@
 #include "game/enemies/Combatant.h"
 
 namespace gdl::game {
+namespace {
+/** The arena selector's piecewise distance; replacing it with sqrt can change near ties. */
+f32 arenaDistance(const Vec3& delta) {
+    const f64 high = std::max(std::abs(delta.x), std::abs(delta.z));
+    const f64 low = std::min(std::abs(delta.x), std::abs(delta.z));
+    if (low < 0.0001) {
+        return static_cast<f32>(high);
+    }
+    constexpr std::array<f64, 8> kSlopes{0.064, 0.124, 0.181, 0.236, 0.287, 0.333, 0.376, 0.414};
+    constexpr f64 kBandWidth = 0.125;
+    for (usize i = 0; i < kSlopes.size(); ++i) {
+        if (low <= high * kBandWidth * static_cast<f64>(i + 1)) {
+            return static_cast<f32>(high + kSlopes[i] * low);
+        }
+    }
+    return static_cast<f32>(high + kSlopes.back() * low);
+}
+} // namespace
+
 bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound) {
     constexpr u32 kAttachedAppearanceFlags = 1U | 2U | 4U | 0x800U;
     return sound != nullptr && (sound->flags & ~kAttachedAppearanceFlags) == 0 &&
@@ -12,17 +35,17 @@ bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectD
            damage.morphEnd < 0 && sound->link < 0;
 }
 
-void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage,
-                          std::string_view node, std::optional<Mat4> worldParent) {
+std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage,
+                                        std::string_view node, std::optional<Mat4> worldParent) {
     const CombatEffectDefinition* sound = critter.stock->data.sound(damage.sound);
     if (sound == nullptr) {
-        return;
+        return std::nullopt;
     }
     // Other policies need a world-space/moving effect owner, not a guessed root.
     if (!supportsArea(damage, sound) || (worldParent.has_value() && sound->flags != 0)) {
         log::warn("critter {}: unsupported attached area policy for {}", critter.stock->data.name(),
                   sound->tree);
-        return;
+        return std::nullopt;
     }
     f32 life = sound->life;
     if (life <= 0) {
@@ -34,7 +57,7 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
             if (!tree.has_value()) {
                 log::warn("critter {}: no area effect tree {}", critter.stock->data.name(),
                           sound->tree);
-                return;
+                return std::nullopt;
             }
             const auto& sequences = critter.stock->archive.trees.tree(*tree).sequences;
             if (!sequences.empty()) {
@@ -91,6 +114,33 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
     }
     if (!cue.tree.empty() || !cue.sound.empty() || cue.shakes) {
         m_cues.push_back(cue);
+    }
+    return life;
+}
+
+void Combatant::eruptArena(Actor& critter, s32 id, const AttackDefinition& damage,
+                           std::span<const EnemyView> players) {
+    const EnemyView* player = viewOf(players, critter.target);
+    if (player == nullptr) {
+        return;
+    }
+    const CombatArenaTarget* nearest = nullptr;
+    f32 best = 1.0e21f;
+    for (const auto& target : critter.arenaTargets) {
+        const Vec3 delta = Vec3{target.placement[3]} - player->position;
+        const f32 distance = arenaDistance(delta);
+        if (distance < best) {
+            nearest = &target;
+            best = distance;
+        }
+    }
+    if (nearest == nullptr) {
+        return;
+    }
+    if (const auto life = startArea(critter, id, damage, {}, nearest->placement)) {
+        // The stage becomes solid one 30 Hz effect tick before its carrier expires.
+        constexpr f32 kEffectTick = 1.0f / 30.0f;
+        m_arenaActivations.push_back({nearest->index, *life - kEffectTick});
     }
 }
 
