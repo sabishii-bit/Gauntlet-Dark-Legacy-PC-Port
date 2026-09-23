@@ -42,6 +42,7 @@ public:
     bool active() const { return m_current < m_entries.size(); }
     const Entry* current() const { return active() ? &m_entries[m_current] : nullptr; }
     const std::optional<WorldCamera>& camera() const { return m_camera; }
+    const Mat4& wizardTransform() const { return m_transform; }
     usize shown() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, f32 width, f32 height) const;
