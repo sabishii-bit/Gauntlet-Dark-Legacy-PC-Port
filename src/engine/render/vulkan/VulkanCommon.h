@@ -3,6 +3,8 @@
 // IWYU pragma: begin_exports
 #include <volk.h>
 #include <vulkan/vulkan_core.h>
+
+#include "engine/core/Types.h"
 // IWYU pragma: end_exports
 
 #if defined(_MSC_VER)
@@ -37,7 +39,7 @@ namespace gdl::vk {
 const char* resultToString(VkResult result);
 
 /** Aborts with a readable message when a Vulkan call fails. */
-void check(VkResult result, const char* expression, const char* file, int line);
+void check(VkResult result, const char* expression, const char* file, s32 line);
 
 /** Records an image layout transition. */
 void imageBarrier(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect,

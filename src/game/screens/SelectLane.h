@@ -1,14 +1,13 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 
 #include "engine/assets/StringTable.h"
+#include "engine/core/Types.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
@@ -22,7 +21,7 @@
 namespace gdl::game {
 
 /** The sounds a lane asks for; the scene maps them to the banks. */
-enum class SelectSound : std::uint8_t {
+enum class SelectSound : u8 {
     Select,
     ClassChange,
     CursorVertical,
@@ -50,7 +49,7 @@ struct LaneServices {
     const TextPainter* largePainter = nullptr; ///< font32
     const Texture* glowSheet = nullptr;
     MenuTextures menuTextures; ///< sheets the lane menus draw with
-    int keyboardLane = -1;     ///< the lane whose player can also type a name
+    s32 keyboardLane = -1;     ///< the lane whose player can also type a name
 };
 
 /**
@@ -60,12 +59,12 @@ struct LaneServices {
  */
 class SelectLane {
 public:
-    static constexpr int kWidth = 128;
-    static constexpr int kPanelHeight = 320;
-    static constexpr int kNoticeTicks = 120;
-    static constexpr int kOperationStepTicks = 8;
+    static constexpr s32 kWidth = 128;
+    static constexpr s32 kPanelHeight = 320;
+    static constexpr s32 kNoticeTicks = 120;
+    static constexpr s32 kOperationStepTicks = 8;
 
-    enum class State : std::uint8_t {
+    enum class State : u8 {
         Inactive,
         TopMenu,
         SaveMenu,
@@ -82,10 +81,10 @@ public:
         LockedIn
     };
 
-    enum class Result : std::uint8_t { None, Cleared, Leave };
+    enum class Result : u8 { None, Cleared, Leave };
 
     /** What the status box under the lane shows. */
-    enum class BoxMode : std::uint8_t {
+    enum class BoxMode : u8 {
         Plain,     ///< the tinted stone panel
         Character, ///< the class icon and the name
         Status     ///< the class icon, name and level
@@ -94,21 +93,21 @@ public:
     struct Frame {
         bool othersActive = false; ///< another lane holds a player
         bool othersSelecting = false;
-        unsigned int slotsInUse = 0; ///< save slots other lanes loaded
+        u32 slotsInUse = 0; ///< save slots other lanes loaded
     };
 
-    void reset(int index, LaneServices* services);
+    void reset(s32 index, LaneServices* services);
 
     /** A player joins the lane. */
     void activate();
 
-    Result update(const MenuInput& input, int ticks, const Frame& frame);
+    Result update(const MenuInput& input, s32 ticks, const Frame& frame);
 
     /** The lane's pictures: weapon relief, portrait, marks and name plate. */
     void drawImages(Canvas& canvas) const;
 
     /** The lane's menus, prompts and messages, over the frame. */
-    void drawText(Canvas& canvas, int time) const;
+    void drawText(Canvas& canvas, s32 time) const;
 
     bool active() const { return m_state != State::Inactive; }
     bool selecting() const { return active() && m_state != State::LockedIn; }
@@ -118,30 +117,30 @@ public:
 
     /** Whether the lane is taking a name, so typing keys belong to it. */
     bool typing() const { return m_state == State::NameEntry && m_nameEntry.editing(); }
-    int index() const { return m_index; }
-    int x() const { return m_index * kWidth; }
+    s32 index() const { return m_index; }
+    s32 x() const { return m_index * kWidth; }
     const CharacterSave& save() const { return m_save; }
     bool saved() const { return m_saved; }
-    int pickedClass() const { return m_pickClass; }
-    int pickedColor() const { return m_pickColor; }
-    std::optional<std::size_t> slotInUse() const { return m_slotInUse; }
+    s32 pickedClass() const { return m_pickClass; }
+    s32 pickedColor() const { return m_pickColor; }
+    std::optional<usize> slotInUse() const { return m_slotInUse; }
     const NameEntry& nameEntry() const { return m_nameEntry; }
     BoxMode boxMode() const;
 
     /** The class the status box pictures: the one being picked, else the character's. */
-    int boxClass() const { return m_state == State::ClassPick ? m_pickClass : m_save.character; }
-    int boxColor() const { return m_state == State::ClassPick ? m_pickColor : m_save.color; }
+    s32 boxClass() const { return m_state == State::ClassPick ? m_pickClass : m_save.character; }
+    s32 boxColor() const { return m_state == State::ClassPick ? m_pickColor : m_save.color; }
 
 private:
-    enum class Sheet : std::uint8_t { Weapon, Portrait, FlyOut, QuestMark, Name };
-    enum class Anim : std::uint8_t { None, FadeIn, FadeOut, DelayedFadeOut, FlyOut, Pulse };
+    enum class Sheet : u8 { Weapon, Portrait, FlyOut, QuestMark, Name };
+    enum class Anim : u8 { None, FadeIn, FadeOut, DelayedFadeOut, FlyOut, Pulse };
 
     struct Blit {
         std::string texture;
         Anim anim = Anim::None;
-        int timer = 0;
+        s32 timer = 0;
         bool visible = false;
-        std::uint8_t opacity = 255;
+        u8 opacity = 255;
     };
 
     void enter(State state);
@@ -152,40 +151,40 @@ private:
     void lockIn(bool fromLoad);
     void clearPlayer();
     void showClassPick();
-    void changeClass(int step, int colorStep);
+    void changeClass(s32 step, s32 colorStep);
     void setPortrait();
     void play(SelectSound sound) const;
     std::string_view text(std::string_view id) const;
-    int wrapClass(int classIndex, int step) const;
-    bool classKnown(int classIndex) const;
-    int pickLevel() const;
-    void stepAnimations(int ticks);
-    Blit& blit(Sheet sheet) { return m_blits[static_cast<std::size_t>(sheet)]; }
-    const Blit& blit(Sheet sheet) const { return m_blits[static_cast<std::size_t>(sheet)]; }
+    s32 wrapClass(s32 classIndex, s32 step) const;
+    bool classKnown(s32 classIndex) const;
+    s32 pickLevel() const;
+    void stepAnimations(s32 ticks);
+    Blit& blit(Sheet sheet) { return m_blits[static_cast<usize>(sheet)]; }
+    const Blit& blit(Sheet sheet) const { return m_blits[static_cast<usize>(sheet)]; }
 
     void drawBlit(Canvas& canvas, const Blit& blit, Rect area) const;
-    void drawLines(Canvas& canvas, const TextPainter& painter, int y, int lineHeight, float scale,
+    void drawLines(Canvas& canvas, const TextPainter& painter, s32 y, s32 lineHeight, f32 scale,
                    std::string_view lines, Color color) const;
-    void drawPrompt(Canvas& canvas, std::string_view icon, int y, std::string_view label) const;
-    void drawStats(Canvas& canvas, int time) const;
-    void drawNameEntry(Canvas& canvas, int time) const;
-    void drawState(Canvas& canvas, int time) const;
+    void drawPrompt(Canvas& canvas, std::string_view icon, s32 y, std::string_view label) const;
+    void drawStats(Canvas& canvas, s32 time) const;
+    void drawNameEntry(Canvas& canvas, s32 time) const;
+    void drawState(Canvas& canvas, s32 time) const;
 
     LaneServices* m_services = nullptr;
-    int m_index = 0;
+    s32 m_index = 0;
     State m_state = State::Inactive;
     State m_returnState = State::TopMenu;
-    int m_step = 0;
-    int m_timer = 0;
+    s32 m_step = 0;
+    s32 m_timer = 0;
     bool m_saved = false;
     bool m_hasCharacter = false; ///< a character was locked in at least once
     bool m_operationFailed = false;
     bool m_promptStart = false; ///< others still choosing: show the Start prompt
     CharacterSave m_save;
-    int m_pickClass = 0;
-    int m_pickColor = 0;
-    std::optional<std::size_t> m_slotInUse;
-    std::optional<std::size_t> m_slotTarget;
+    s32 m_pickClass = 0;
+    s32 m_pickColor = 0;
+    std::optional<usize> m_slotInUse;
+    std::optional<usize> m_slotTarget;
     OptionMenu m_menu;
     NameEntry m_nameEntry;
     std::array<Blit, 5> m_blits{};

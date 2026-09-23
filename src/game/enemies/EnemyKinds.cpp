@@ -3,15 +3,16 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <cstddef>
 #include <numbers>
+
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
 // A sixty-fourth of a half turn a tick, the one turning pace every kind shares.
-constexpr float kTurn = std::numbers::pi_v<float> / 64.0f;
+constexpr f32 kTurn = std::numbers::pi_v<f32> / 64.0f;
 
 // name, prefix, height, radius, attention, collision, pace, damage, armor, health, generator
 // armor, experience for a hit and for a kill, algorithm, turn rate. The twenty-ninth row is
@@ -63,16 +64,16 @@ bool sameName(std::string_view a, std::string_view b) {
 
 } // namespace
 
-float EnemyKind::healthAtTier(int tier) const {
-    return health * 0.333f * static_cast<float>(std::clamp(tier, 1, 3));
+f32 EnemyKind::healthAtTier(s32 tier) const {
+    return health * 0.333f * static_cast<f32>(std::clamp(tier, 1, 3));
 }
 
-const EnemyKind& enemyKind(int kind) {
-    return kKinds[static_cast<std::size_t>(std::clamp(kind, 0, kEnemyKindCount - 1))];
+const EnemyKind& enemyKind(s32 kind) {
+    return kKinds[static_cast<usize>(std::clamp(kind, 0, kEnemyKindCount - 1))];
 }
 
-int levelKindOf(std::span<const LevelEnemy> roster, int named, int strength) {
-    const auto ofClass = [&roster](int subtype) -> std::optional<int> {
+s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength) {
+    const auto ofClass = [&roster](s32 subtype) -> std::optional<s32> {
         for (const LevelEnemy& enemy : roster) {
             if (enemy.subtype == subtype && enemy.kind >= 0) {
                 return enemy.kind;
@@ -94,9 +95,9 @@ int levelKindOf(std::span<const LevelEnemy> roster, int named, int strength) {
     return named;
 }
 
-std::optional<int> enemyKindOf(std::string_view name) {
-    for (int i = 0; i < kEnemyKindCount; ++i) {
-        const EnemyKind& kind = kKinds[static_cast<std::size_t>(i)];
+std::optional<s32> enemyKindOf(std::string_view name) {
+    for (s32 i = 0; i < kEnemyKindCount; ++i) {
+        const EnemyKind& kind = kKinds[static_cast<usize>(i)];
         if (kind.height > 0.0f && (sameName(kind.name, name) || sameName(kind.prefix, name))) {
             return i;
         }

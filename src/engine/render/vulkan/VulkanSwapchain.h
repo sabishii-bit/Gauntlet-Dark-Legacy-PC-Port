@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstdint>
 #include <vector>
 
 #include "engine/core/SpecialMembers.h"
+#include "engine/core/Types.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/render/vulkan/VulkanCommon.h"
 
@@ -22,15 +22,15 @@ public:
     /** Waits for the device to idle and rebuilds at the new size. */
     void recreate(Extent2D windowExtent);
 
-    VkResult acquireNextImage(VkSemaphore signalSemaphore, std::uint32_t* imageIndex);
-    VkResult present(VkSemaphore waitSemaphore, std::uint32_t imageIndex);
+    VkResult acquireNextImage(VkSemaphore signalSemaphore, u32* imageIndex);
+    VkResult present(VkSemaphore waitSemaphore, u32 imageIndex);
 
     VkFormat colorFormat() const { return m_colorFormat; }
     VkFormat depthFormat() const { return m_depthFormat; }
     VkExtent2D extent() const { return m_extent; }
-    std::uint32_t imageCount() const { return static_cast<std::uint32_t>(m_images.size()); }
-    VkImage image(std::uint32_t index) const { return m_images[index]; }
-    VkImageView imageView(std::uint32_t index) const { return m_imageViews[index]; }
+    u32 imageCount() const { return static_cast<u32>(m_images.size()); }
+    VkImage image(u32 index) const { return m_images[index]; }
+    VkImageView imageView(u32 index) const { return m_imageViews[index]; }
     VkImage depthImage() const { return m_depthImage; }
     VkImageView depthImageView() const { return m_depthImageView; }
 

@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <filesystem>
 #include <format>
 #include <numbers>
@@ -15,6 +14,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 #include "engine/math/Math.h"
@@ -36,7 +36,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 std::filesystem::path unpackedRoot() {
     return test::unpackedOrSkip("LEVELS/LEVELL1/collision.json")
@@ -47,7 +47,7 @@ std::filesystem::path unpackedRoot() {
 
 TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
     PlayScene scene;
-    for (const int player : {-1, 0, 1, 2, 3, 4}) {
+    for (const s32 player : {-1, 0, 1, 2, 3, 4}) {
         REQUIRE(scene.actor(player) == nullptr);
         REQUIRE(scene.animator(player) == nullptr);
         REQUIRE(scene.turboMeter(player) == nullptr);
@@ -55,7 +55,7 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
         REQUIRE_FALSE(scene.weaponHeld(player));
         REQUIRE_FALSE(scene.figureDirectory(player).has_value());
     }
-    REQUIRE_FALSE(scene.figureDirectory(std::size_t{0}).has_value());
+    REQUIRE_FALSE(scene.figureDirectory(usize{0}).has_value());
     REQUIRE(scene.party().empty());
     scene.close();
     scene.close();
@@ -105,15 +105,15 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     REQUIRE(scene.actor(1)->save().name == "ONE");
     REQUIRE(scene.turboMeter(3)->held() == Approx(80.0f));
     REQUIRE(scene.turboMeter(1)->held() == Approx(20.0f));
-    REQUIRE(scene.figureDirectory(std::size_t{0}) == scene.figureDirectory(int{3}));
-    REQUIRE(scene.figureDirectory(std::size_t{1}) == scene.figureDirectory(int{1}));
+    REQUIRE(scene.figureDirectory(usize{0}) == scene.figureDirectory(s32{3}));
+    REQUIRE(scene.figureDirectory(usize{1}) == scene.figureDirectory(s32{1}));
 
     scene.hurtPlayer(3, 100.0f, HurtKind::Blow);
     REQUIRE(scene.actor(3)->save().health() == 200);
     REQUIRE(scene.actor(1)->save().health() == 700);
     REQUIRE_FALSE(scene.fallen(1));
     const auto expectedExperience =
-        second.experience() + static_cast<int>(250.0f * world.level()->tuning.experienceScale(
+        second.experience() + static_cast<s32>(250.0f * world.level()->tuning.experienceScale(
                                                             experienceLevel(second.experience())));
     scene.awardExperience(1, 250);
     REQUIRE(scene.actor(1)->save().experience() == expectedExperience);
@@ -126,16 +126,16 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     const auto carried = scene.party();
     REQUIRE(carried.size() == 2);
     REQUIRE(carried[0].player == 3);
-    REQUIRE(carried[0].slot == std::optional<std::size_t>{7});
+    REQUIRE(carried[0].slot == std::optional<usize>{7});
     REQUIRE(carried[0].fallen);
     REQUIRE(carried[0].save.health() == 300); // death carries the entry save, not the wounded one
     REQUIRE(carried[0].save.gold == 40);
-    REQUIRE(carried[0].helpHeard == std::vector<int>{4, 9});
+    REQUIRE(carried[0].helpHeard == std::vector<s32>{4, 9});
     REQUIRE(carried[1].player == 1);
-    REQUIRE(carried[1].slot == std::optional<std::size_t>{2});
+    REQUIRE(carried[1].slot == std::optional<usize>{2});
     REQUIRE_FALSE(carried[1].fallen);
     REQUIRE(carried[1].save.experience() == expectedExperience);
-    REQUIRE(carried[1].helpHeard == std::vector<int>{6});
+    REQUIRE(carried[1].helpHeard == std::vector<s32>{6});
 
     // Reopening implicitly closes the old scene. No death, reaction, slot or turbo leaks.
     CharacterSave replacement = first;
@@ -209,7 +209,7 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     REQUIRE(scene.camera().marker() >= 0);
     REQUIRE(scene.sumner().loaded());
     // The stained-glass light over the door waits for the temple's shards.
-    for (std::size_t i = 0; i < world.layout().objects().size(); ++i) {
+    for (usize i = 0; i < world.layout().objects().size(); ++i) {
         if (world.layout().objects()[i].name == "L1XPUPPERLIGHTR") {
             REQUIRE(world.objectAlpha(i) == 0.0f);
         }
@@ -231,7 +231,7 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     REQUIRE(entrance.has_value());
     REQUIRE(scene.viewCamera().position == entrance->position);
     REQUIRE(scene.viewCamera().position != scene.camera().camera().position);
-    int spawnTicks = 0;
+    s32 spawnTicks = 0;
     for (; spawnTicks < 600 && scene.spawning(); ++spawnTicks) {
         REQUIRE(scene.update(1.0 / 60.0, inputs) == PlayOutcome::Running);
         REQUIRE(actor->position() == spawn);
@@ -263,9 +263,9 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     back[0].menu.back = true;
     REQUIRE(scene.update(1.0 / 60.0, back) == PlayOutcome::Running);
     REQUIRE(scroll.active());
-    for (std::size_t page = 0; page < scroll.pageCount(); ++page) {
+    for (usize page = 0; page < scroll.pageCount(); ++page) {
         REQUIRE(scroll.page() == page);
-        for (int i = 0; i < 16; ++i) {
+        for (s32 i = 0; i < 16; ++i) {
             REQUIRE(scene.update(1.0 / 60.0, inputs) == PlayOutcome::Running);
         }
         scene.update(1.0 / 60.0, accept);
@@ -274,14 +274,14 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     // The scroll burns away, then the camera cuts to the crystals as Sumner gestures, and the
     // party stays put for the cut's three hundred ticks.
     REQUIRE(scroll.burning());
-    for (int i = 0; i < 60 && scene.intro() == PlayScene::Intro::Scroll; ++i) {
+    for (s32 i = 0; i < 60 && scene.intro() == PlayScene::Intro::Scroll; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.intro() == PlayScene::Intro::Crystal);
     scene.update(1.0 / 60.0, still); // the gesture cuts in on the next tick
     REQUIRE(scene.sumner().gesturing());
     REQUIRE(scene.viewCamera().position != scene.camera().camera().position);
-    int heldTicks = 0;
+    s32 heldTicks = 0;
     while (scene.intro() == PlayScene::Intro::Crystal && heldTicks < 400) {
         scene.update(1.0 / 60.0, inputs);
         ++heldTicks;
@@ -299,7 +299,7 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     // Half a second of walking forward moves the character and the camera follows.
     const Vec3 before = actor->position();
     const Vec3 cameraBefore = scene.camera().camera().position;
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         REQUIRE(scene.update(1.0 / 60.0, inputs) == PlayOutcome::Running);
     }
     REQUIRE(glm::distance(actor->position(), before) > 1.0f);
@@ -309,8 +309,8 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     const PlayerAnimator* animator = scene.animator(0);
     REQUIRE(animator != nullptr);
     REQUIRE(animator->pose().size() == 26);
-    std::size_t mostVoices = sounds.voiceCount();
-    for (int i = 0; i < 150; ++i) {
+    usize mostVoices = sounds.voiceCount();
+    for (s32 i = 0; i < 150; ++i) {
         scene.update(1.0 / 60.0, inputs);
         sounds.update();
         mostVoices = std::max(mostVoices, sounds.voiceCount());
@@ -397,7 +397,7 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     // the first realm's gate.
     REQUIRE(actor->save().progress().crystals[1] == 0);
     const PlayScene::Inputs still{};
-    for (int i = 0; i < PlayScene::kSpawnTicks + 4; ++i) {
+    for (s32 i = 0; i < PlayScene::kSpawnTicks + 4; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(actor->save().progress().crystals[1] >= 1);
@@ -417,7 +417,7 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     const std::vector<PartyMember> veterans{PartyMember{0, save}};
     REQUIRE(scene.open(device, context, world, veterans, options));
     REQUIRE(scene.spawning());
-    for (int i = 0; i < PlayScene::kSpawnTicks; ++i) {
+    for (s32 i = 0; i < PlayScene::kSpawnTicks; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.intro() == PlayScene::Intro::Scroll);
@@ -439,7 +439,7 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     options.position = lectern + Vec3{2.0f, 0.0f, 2.0f};
     REQUIRE(scene.open(device, context, world, party, options));
     REQUIRE(scene.beamAlpha() == 0.0f);
-    for (int i = 0; i < 120; ++i) {
+    for (s32 i = 0; i < 120; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.beamAlpha() == Approx(120.0f / PlayScene::kBeamFadeTicks).margin(0.02f));
@@ -476,7 +476,7 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
     {
         const std::vector<PartyMember> party{PartyMember{0, save}};
         REQUIRE(scene.open(device, context, world, party, options));
-        for (int i = 0; i < PlayScene::kSpawnTicks + 2 && !scene.scroll().active(); ++i) {
+        for (s32 i = 0; i < PlayScene::kSpawnTicks + 2 && !scene.scroll().active(); ++i) {
             scene.update(1.0 / 60.0, still);
         }
         REQUIRE(scene.scroll().active());
@@ -495,7 +495,7 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
         REQUIRE(scene.open(device, context, world, party, options));
         const PlayerActor* actor = scene.actor(0);
         REQUIRE(actor != nullptr);
-        for (int i = 0; i < PlayScene::kSpawnTicks + 4 && !scene.scroll().active(); ++i) {
+        for (s32 i = 0; i < PlayScene::kSpawnTicks + 4 && !scene.scroll().active(); ++i) {
             scene.update(1.0 / 60.0, still);
         }
         REQUIRE(actor->save().progress().crystals[1] == 15);
@@ -512,7 +512,7 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
         REQUIRE(sounds.isPlaying(voice));
         PlayScene::Inputs accept{};
         accept[0].menu.select = true;
-        for (int i = 0; i < 400 && scene.scroll().active() && !scene.scroll().burning(); ++i) {
+        for (s32 i = 0; i < 400 && scene.scroll().active() && !scene.scroll().burning(); ++i) {
             scene.update(1.0 / 60.0, i % 20 == 19 ? accept : still);
         }
         REQUIRE(scene.scroll().burning());
@@ -521,31 +521,31 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
         // With the scroll gone, walking on into the gate: the field hums as it thins before
         // the party and falls silent once it has gone. The stick is camera-relative, so the
         // walk first learns which way forward and right take the character.
-        for (int i = 0; i < 200 && scene.scroll().active(); ++i) {
+        for (s32 i = 0; i < 200 && scene.scroll().active(); ++i) {
             scene.update(1.0 / 60.0, still);
         }
         REQUIRE_FALSE(scene.scroll().active());
         REQUIRE(scene.fieldSound() == kNoSound);
         const Vec3 gate{22.0f, -2.0f, -79.0f};
-        auto step = [&](const Vec2& stick, int ticks) {
+        auto step = [&](const Vec2& stick, s32 ticks) {
             PlayScene::Inputs walk{};
             walk[0].move = MoveInput{stick, 1.0f};
             const Vec3 from = actor->position();
-            for (int i = 0; i < ticks; ++i) {
+            for (s32 i = 0; i < ticks; ++i) {
                 scene.update(1.0 / 60.0, walk);
             }
             return actor->position() - from;
         };
         const Vec3 forward = glm::normalize(step(Vec2{0.0f, 1.0f}, 6));
         const Vec3 right = glm::normalize(step(Vec2{1.0f, 0.0f}, 6));
-        for (int i = 0; i < 900 && scene.fieldSound() == kNoSound; ++i) {
+        for (s32 i = 0; i < 900 && scene.fieldSound() == kNoSound; ++i) {
             const Vec3 to = gate - actor->position();
             step(glm::normalize(Vec2{glm::dot(to, right), glm::dot(to, forward)}), 1);
         }
         const SoundHandle hum = scene.fieldSound();
         REQUIRE(hum != kNoSound);
         REQUIRE(sounds.isPlaying(hum));
-        for (int i = 0; i < 120 && scene.fieldSound() != kNoSound; ++i) {
+        for (s32 i = 0; i < 120 && scene.fieldSound() != kNoSound; ++i) {
             scene.update(1.0 / 60.0, still);
         }
         REQUIRE(scene.fieldSound() == kNoSound);
@@ -558,7 +558,7 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
     {
         const std::vector<PartyMember> party{PartyMember{0, save}};
         REQUIRE(scene.open(device, context, world, party, options));
-        for (int i = 0; i < PlayScene::kSpawnTicks + 2 && !scene.scroll().active(); ++i) {
+        for (s32 i = 0; i < PlayScene::kSpawnTicks + 2 && !scene.scroll().active(); ++i) {
             scene.update(1.0 / 60.0, still);
         }
         REQUIRE(scene.scroll().active());
@@ -567,11 +567,11 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
             words += line + " ";
         }
         REQUIRE(words.find("28 Golden Lion Claws") != std::string::npos);
-        int statue = -1;
+        s32 statue = -1;
         const std::vector<WorldObject>& objects = world.layout().objects();
-        for (std::size_t i = 0; i < objects.size(); ++i) {
+        for (usize i = 0; i < objects.size(); ++i) {
             if (objects[i].name == "L1GROUP276") {
-                statue = static_cast<int>(i);
+                statue = static_cast<s32>(i);
             }
         }
         REQUIRE(statue >= 0);
@@ -606,9 +606,9 @@ TEST_CASE("a character takes what lies in its way by the original's rules",
     PlayScene scene;
     const std::vector<PartyMember> party{PartyMember{0, save}};
     REQUIRE(scene.open(device, context, world, party, options));
-    const std::size_t placed = world.placedItems().size();
+    const usize placed = world.placedItems().size();
     const PlayScene::Inputs still{};
-    for (int i = 0; i < PlayScene::kSpawnTicks + 4; ++i) {
+    for (s32 i = 0; i < PlayScene::kSpawnTicks + 4; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     const CharacterSave& now = scene.actor(0)->save();
@@ -617,8 +617,8 @@ TEST_CASE("a character takes what lies in its way by the original's rules",
     REQUIRE(now.progress().inventory.nextPotion() == 4);
     REQUIRE(now.gold == 200);
     REQUIRE(now.health() == 500);
-    std::size_t lying = 0;
-    for (std::size_t i = placed - 4; i < placed; ++i) {
+    usize lying = 0;
+    for (usize i = placed - 4; i < placed; ++i) {
         const PlacedItems::Item& item = world.placedItems().item(i);
         lying += item.visible ? 1U : 0U;
         if (item.name == "KEYRING") {
@@ -667,7 +667,7 @@ TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder'
     const PlayScene::Inputs still{};
     const Relics& mine = scene.actor(0)->save().progress().relics;
     const Relics& theirs = scene.actor(1)->save().progress().relics;
-    for (int i = 0; i < 400 && mine.runeCount() + theirs.runeCount() == 0; ++i) {
+    for (s32 i = 0; i < 400 && mine.runeCount() + theirs.runeCount() == 0; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     // The fields' rune (the eighth, from one) is held by both; the eagle's piece by whoever
@@ -677,18 +677,18 @@ TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder'
     REQUIRE(mine.gargoylePieces[1] + theirs.gargoylePieces[1] == 1);
     REQUIRE_FALSE(scene.scroll().active());
     // Its scroll's third page, dropped underfoot, opens over the party and is gone.
-    int record = -1;
+    s32 record = -1;
     const std::vector<ItemInfo>& infos = world.layout().itemInfos();
-    for (std::size_t i = 0; i < infos.size(); ++i) {
+    for (usize i = 0; i < infos.size(); ++i) {
         if (infos[i].name == "SCROLL") {
-            record = static_cast<int>(i);
+            record = static_cast<s32>(i);
         }
     }
     REQUIRE(record >= 0);
     const Relics before = mine;
     REQUIRE(world.placeItemRecord(device, record, scene.actor(0)->position(), 3));
-    const std::size_t placed = world.placedItems().size();
-    for (int i = 0; i < 60 && !scene.scroll().active(); ++i) {
+    const usize placed = world.placedItems().size();
+    for (s32 i = 0; i < 60 && !scene.scroll().active(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.scroll().active());
@@ -728,8 +728,8 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
         REQUIRE(scene.portals().size() == 49);
         const PlayScene::Inputs still{};
         PlayOutcome outcome = PlayOutcome::Running;
-        int leavingFrames = 0;
-        for (int i = 0; i < 900 && outcome == PlayOutcome::Running; ++i) {
+        s32 leavingFrames = 0;
+        for (s32 i = 0; i < 900 && outcome == PlayOutcome::Running; ++i) {
             outcome = scene.update(1.0 / 60.0, still);
             leavingFrames += scene.leaving() ? 1 : 0;
         }
@@ -760,7 +760,7 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
     REQUIRE(scene.open(device, context, world, party, arrive));
     // The picture is up as the level opens and clears within the second.
     REQUIRE(scene.transition().showing());
-    for (int i = 0; i < 60; ++i) {
+    for (s32 i = 0; i < 60; ++i) {
         scene.update(1.0 / 60.0, PlayScene::Inputs{});
     }
     REQUIRE_FALSE(scene.transition().showing());
@@ -777,7 +777,7 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
     REQUIRE(scene.open(device, context, world, party, atExit));
     const PlayScene::Inputs still{};
     PlayOutcome outcome = PlayOutcome::Running;
-    for (int i = 0; i < 900 && outcome == PlayOutcome::Running; ++i) {
+    for (s32 i = 0; i < 900 && outcome == PlayOutcome::Running; ++i) {
         outcome = scene.update(1.0 / 60.0, still);
     }
     REQUIRE(outcome == PlayOutcome::Travel);
@@ -818,14 +818,14 @@ TEST_CASE("in the fields a key opens a chest, which gives up what it held",
     REQUIRE(scene.traps().size() == 25);
     const PlayScene::Inputs still{};
     const Inventory& carried = scene.actor(0)->save().progress().inventory;
-    for (int i = 0; i < 400 && carried.potions.empty(); ++i) {
+    for (s32 i = 0; i < 400 && carried.potions.empty(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(carried.keys == 0);           // spent on the lock
     REQUIRE(carried.potions.size() == 1); // what the chest held, reached by touching it
     // Emptied, that chest has gone; the others stand in the way, nobody inside their boxes.
     bool opened = false;
-    for (std::size_t i = 0; i < scene.chests().size(); ++i) {
+    for (usize i = 0; i < scene.chests().size(); ++i) {
         const Chests::Chest& chest = scene.chests().chest(i);
         opened = opened || (chest.state == Chests::kOpen && chest.gone);
         if (chest.shown && !chest.gone) {
@@ -837,13 +837,13 @@ TEST_CASE("in the fields a key opens a chest, which gives up what it held",
     // The party comes back out with what it gathered, each member still tied to its slot.
     const std::vector<PartyMember> after = scene.party();
     REQUIRE(after.size() == 1);
-    REQUIRE(after[0].slot == std::optional<std::size_t>{3});
+    REQUIRE(after[0].slot == std::optional<usize>{3});
     REQUIRE(after[0].save.progress().inventory.potions.size() == 1);
     scene.close();
 
     // Walking into it opens it just the same, and nobody walking about ends up inside it.
-    int openedWalking = 0;
-    for (int heading = 0; heading < 8; ++heading) {
+    s32 openedWalking = 0;
+    for (s32 heading = 0; heading < 8; ++heading) {
         CharacterSave walker;
         walker.name = "AB";
         walker.progress().inventory.keys = 1;
@@ -851,10 +851,10 @@ TEST_CASE("in the fields a key opens a chest, which gives up what it held",
         const std::vector<PartyMember> alone{PartyMember{0, walker}};
         REQUIRE(scene.open(device, context, world, alone, options));
         PlayScene::Inputs walking{};
-        const float angle = static_cast<float>(heading) * 0.7853982f;
+        const f32 angle = static_cast<f32>(heading) * 0.7853982f;
         walking[0].move.direction = Vec2{std::cos(angle), std::sin(angle)};
         walking[0].move.magnitude = 1.0f;
-        for (int i = 0; i < 240; ++i) {
+        for (s32 i = 0; i < 240; ++i) {
             scene.update(1.0 / 60.0, walking);
             const PlayerActor& walkerNow = *scene.actor(0);
             for (const Obstacle& box : scene.chests().obstacles()) {
@@ -898,24 +898,24 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     REQUIRE(scene.open(device, context, world, party, options));
     // Its spikes do half what their record says, as the level scales them.
     bool spikes = false;
-    for (std::size_t i = 0; i < scene.traps().size(); ++i) {
+    for (usize i = 0; i < scene.traps().size(); ++i) {
         spikes = spikes || scene.traps().trap(i).damage == 10.0f;
     }
     REQUIRE(spikes);
     REQUIRE(scene.barrels().size() > 40);
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 300 && !scene.help().showing(); ++i) {
+    for (s32 i = 0; i < 300 && !scene.help().showing(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     // Refused, the chest has the party told what it wants, once.
     REQUIRE(scene.help().showing());
     REQUIRE(scene.help().id() == HelpMessages::kChestNeedsKey);
     REQUIRE(scene.help().lines().size() == 2);
-    REQUIRE(scene.actor(0)->save().helpSeen == std::vector<int>{HelpMessages::kChestNeedsKey});
+    REQUIRE(scene.actor(0)->save().helpSeen == std::vector<s32>{HelpMessages::kChestNeedsKey});
 
     // A blast breaks the barrels about it; the one by the first field gives up its key.
-    std::size_t holder = scene.barrels().size();
-    for (std::size_t i = 0; i < scene.barrels().size(); ++i) {
+    usize holder = scene.barrels().size();
+    for (usize i = 0; i < scene.barrels().size(); ++i) {
         const Breakables::Barrel& barrel = scene.barrels().barrel(i);
         if (barrel.kind == BreakableStrike::Kind::Holding && barrel.shown &&
             std::abs(barrel.figure.position().x + 42.8f) < 0.5f) {
@@ -923,7 +923,7 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
         }
     }
     REQUIRE(holder < scene.barrels().size());
-    const std::size_t lying = world.placedItems().size();
+    const usize lying = world.placedItems().size();
     const Vec3 at = scene.barrels().barrel(holder).figure.position();
     scene.blast(at, 3.0f, 30.0f);
     REQUIRE_FALSE(scene.barrels().standing(holder));
@@ -940,16 +940,16 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     REQUIRE(scene.fallen(0));
     scene.hurtPlayer(0, 500.0f, HurtKind::Burn); // the fallen are past hurting
     PlayOutcome outcome = PlayOutcome::Running;
-    for (int i = 0; i < 1200 && outcome == PlayOutcome::Running; ++i) {
+    for (s32 i = 0; i < 1200 && outcome == PlayOutcome::Running; ++i) {
         outcome = scene.update(1.0 / 60.0, still);
     }
     REQUIRE(outcome == PlayOutcome::Fallen);
     const std::vector<PartyMember> after = scene.party();
     REQUIRE(after.size() == 1);
     REQUIRE(after[0].fallen);
-    REQUIRE(after[0].slot == std::optional<std::size_t>{3});
+    REQUIRE(after[0].slot == std::optional<usize>{3});
     REQUIRE(after[0].save.health() == 300); // as it came in
-    REQUIRE(after[0].save.helpSeen == std::vector<int>{HelpMessages::kChestNeedsKey});
+    REQUIRE(after[0].save.helpSeen == std::vector<s32>{HelpMessages::kChestNeedsKey});
     scene.close();
 }
 
@@ -977,7 +977,7 @@ TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][scre
     const std::vector<PartyMember> party{PartyMember{0, save}};
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 600 && scene.actor(0)->save().health() == 400; ++i) {
+    for (s32 i = 0; i < 600 && scene.actor(0)->save().health() == 400; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.actor(0)->save().health() == 390); // twenty, halved by the level
@@ -990,7 +990,7 @@ TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][scre
     REQUIRE(scene.animator(0) != nullptr);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::HitReact);
     const Vec3 struckAt = scene.actor(0)->position();
-    int held = 0;
+    s32 held = 0;
     while (scene.animator(0)->reacting() && held < 200) {
         REQUIRE(glm::distance(scene.actor(0)->position(), struckAt) < 0.05f);
         scene.update(1.0 / 60.0, walking);
@@ -998,7 +998,7 @@ TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][scre
     }
     REQUIRE(held > 10);
     REQUIRE(held < 200);
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         scene.update(1.0 / 60.0, walking);
     }
     REQUIRE(glm::distance(scene.actor(0)->position(), struckAt) > 1.0f);
@@ -1078,7 +1078,7 @@ TEST_CASE("what the level tells the party is in the string table's language",
     const std::vector<PartyMember> party{PartyMember{0, save}};
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 300 && !scene.help().showing(); ++i) {
+    for (s32 i = 0; i < 300 && !scene.help().showing(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.help().id() == HelpMessages::kChestNeedsKey);
@@ -1111,10 +1111,10 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     REQUIRE(scene.turboMeter(3) == nullptr);
     const PlayScene::Inputs still{};
     // It fills two points a second, its shown level chasing; full, the box glows.
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    for (int i = 0; i < 120; ++i) {
+    for (s32 i = 0; i < 120; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.turboMeter(0)->held() == TurboMeter::kFull);
@@ -1133,7 +1133,7 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     scene.update(1.0 / 60.0, strike);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboFull);
     // It is paid for as its first strike is made, which sets its harm going.
-    for (int i = 0; i < 300 && scene.animator(0)->turboing(); ++i) {
+    for (s32 i = 0; i < 300 && scene.animator(0)->turboing(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.animator(0)->turboing());
@@ -1148,13 +1148,13 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     member.turbo = 45.0f;
     const std::vector<PartyMember> again{member};
     REQUIRE(scene.open(device, context, world, again, options));
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    const float before = scene.turboMeter(0)->held();
+    const f32 before = scene.turboMeter(0)->held();
     scene.update(1.0 / 60.0, strike);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboStrong);
-    for (int i = 0; i < 300 && scene.animator(0)->turboing(); ++i) {
+    for (s32 i = 0; i < 300 && scene.animator(0)->turboing(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.turboMeter(0)->held() < before - TurboMeter::kStrongCost + 0.1f);
@@ -1165,21 +1165,21 @@ TEST_CASE("the turbo meter climbs in play and its moves are paid for out of it",
     scene.update(1.0 / 60.0, holding);
     REQUIRE_FALSE(scene.animator(0)->turboing());
     REQUIRE(scene.animator(0)->guarding());
-    for (int i = 0; i < 60 && scene.animator(0)->guarding(); ++i) {
+    for (s32 i = 0; i < 60 && scene.animator(0)->guarding(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     // Experience won feeds the meter.
-    const float fed = scene.turboMeter(0)->held();
+    const f32 fed = scene.turboMeter(0)->held();
     scene.awardExperience(0, 400);
     REQUIRE(scene.turboMeter(0)->held() > fed + 9.9f);
     REQUIRE(scene.actor(0)->save().experience() == 400);
     PlayScene::Inputs tap{};
     tap[0].chargePressed = true;
-    const float left = scene.turboMeter(0)->held();
+    const f32 left = scene.turboMeter(0)->held();
     REQUIRE(left >= TurboMeter::kShoveFrom);
     scene.update(1.0 / 60.0, tap);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::Shove);
-    for (int i = 0; i < 20; ++i) {
+    for (s32 i = 0; i < 20; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.turboMeter(0)->held() < left - 4.0f);
@@ -1214,8 +1214,8 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     PlayScene scene;
     const std::vector<PartyMember> party{member};
     REQUIRE(scene.open(device, context, world, party, options));
-    std::size_t barrel = scene.barrels().size();
-    for (std::size_t i = 0; i < scene.barrels().size(); ++i) {
+    usize barrel = scene.barrels().size();
+    for (usize i = 0; i < scene.barrels().size(); ++i) {
         const Vec3 at = scene.barrels().barrel(i).figure.position();
         if (scene.barrels().standing(i) && std::abs(at.x - 13.8f) < 0.5f &&
             std::abs(at.z + 2.8f) < 0.5f) {
@@ -1224,7 +1224,7 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     }
     REQUIRE(barrel < scene.barrels().size());
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     // The lesser turbo attack: owed until its strike is made, then its burst, half a second
@@ -1233,12 +1233,12 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     strike[0].turbo = true;
     strike[0].attack = true;
     strike[0].attackPressed = true;
-    const float before = scene.turboMeter(0)->held();
+    const f32 before = scene.turboMeter(0)->held();
     scene.update(1.0 / 60.0, strike);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboStrong);
     bool struck = false;
-    float darkest = 0.0f;
-    for (int i = 0; i < 300 && scene.barrels().standing(barrel); ++i) {
+    f32 darkest = 0.0f;
+    for (s32 i = 0; i < 300 && scene.barrels().standing(barrel); ++i) {
         scene.update(1.0 / 60.0, still);
         struck = struck || scene.strikes().count() > 0;
         darkest = std::min(darkest, world.ambientOffset());
@@ -1248,14 +1248,14 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     // it is not said again next level.
     REQUIRE(scene.help().id() == 57);
     REQUIRE(scene.help().lines() == std::vector<std::string>{"FIRE ARC"});
-    REQUIRE(scene.party()[0].helpHeard == std::vector<int>{57});
+    REQUIRE(scene.party()[0].helpHeard == std::vector<s32>{57});
     REQUIRE(darkest < -0.39f); // the level goes dark while the move comes out
     REQUIRE(darkest > -0.41f);
     REQUIRE(world.lighting().ambient.x < world.level()->ambient);
     REQUIRE_FALSE(scene.barrels().standing(barrel));
     REQUIRE(scene.turboMeter(0)->held() < before - TurboMeter::kStrongCost + 3.0f);
     REQUIRE(scene.actor(0)->save().health() == 400); // its own burst does it no harm
-    for (int i = 0; i < 240; ++i) {
+    for (s32 i = 0; i < 240; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(world.ambientOffset() == 0.0f); // and light again once it is over
@@ -1267,16 +1267,16 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     const std::vector<PartyMember> again{member};
     REQUIRE(world.load(device, root, *levels.byName("G1")));
     REQUIRE(scene.open(device, context, world, again, options));
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     const Vec3 from = scene.actor(0)->position();
-    const int whole = scene.barrels().barrel(barrel).health;
+    const s32 whole = scene.barrels().barrel(barrel).health;
     PlayScene::Inputs tap{};
     tap[0].chargePressed = true;
     scene.update(1.0 / 60.0, tap);
     REQUIRE(scene.animator(0)->shoving());
-    for (int i = 0; i < 120 && scene.animator(0)->shoving(); ++i) {
+    for (s32 i = 0; i < 120 && scene.animator(0)->shoving(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     const Vec3 to = scene.actor(0)->position();
@@ -1289,22 +1289,22 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     const std::vector<PartyMember> third{member};
     options.position = Vec3{-36.2f, 26.5f, -125.3f};
     REQUIRE(scene.open(device, context, world, third, options));
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     PlayScene::Inputs guard{};
     guard[0].turbo = true;
-    for (int i = 0; i < 600 && !scene.animator(0)->defending(); ++i) {
+    for (s32 i = 0; i < 600 && !scene.animator(0)->defending(); ++i) {
         scene.update(1.0 / 60.0, guard);
     }
     REQUIRE(scene.animator(0)->defending());
-    const int guardedFrom = scene.actor(0)->save().health();
-    for (int i = 0; i < 600; ++i) {
+    const s32 guardedFrom = scene.actor(0)->save().health();
+    for (s32 i = 0; i < 600; ++i) {
         scene.update(1.0 / 60.0, guard);
     }
     REQUIRE(scene.animator(0)->defending());
     REQUIRE(scene.actor(0)->save().health() == guardedFrom);
-    for (int i = 0; i < 600 && scene.actor(0)->save().health() == guardedFrom; ++i) {
+    for (s32 i = 0; i < 600 && scene.actor(0)->save().health() == guardedFrom; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.actor(0)->save().health() < guardedFrom);
@@ -1331,7 +1331,7 @@ TEST_CASE("every class has its turbo attacks: they show, strike and are paid for
     strike[0].turbo = true;
     strike[0].attack = true;
     strike[0].attackPressed = true;
-    for (int character = 0; character < 16; ++character) {
+    for (s32 character = 0; character < 16; ++character) {
         for (const bool full : {false, true}) {
             CAPTURE(classCode(character), full);
             CharacterSave save;
@@ -1342,17 +1342,17 @@ TEST_CASE("every class has its turbo attacks: they show, strike and are paid for
             const std::vector<PartyMember> party{member};
             PlayScene scene;
             REQUIRE(scene.open(device, context, world, party, options));
-            for (int i = 0; i < 400 && scene.spawning(); ++i) {
+            for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
                 scene.update(1.0 / 60.0, still);
             }
             REQUIRE(scene.animator(0) != nullptr); // the class's figure was built
-            const float before = scene.turboMeter(0)->held();
+            const f32 before = scene.turboMeter(0)->held();
             scene.update(1.0 / 60.0, strike);
             REQUIRE(scene.animator(0)->action() == (full ? PlayerAnimator::Action::TurboFull
                                                          : PlayerAnimator::Action::TurboStrong));
-            std::size_t strikes = 0;
-            std::size_t effects = 0;
-            for (int i = 0; i < 600 && scene.animator(0)->turboing(); ++i) {
+            usize strikes = 0;
+            usize effects = 0;
+            for (s32 i = 0; i < 600 && scene.animator(0)->turboing(); ++i) {
                 scene.update(1.0 / 60.0, still);
                 strikes = std::max(strikes, scene.strikes().count());
                 effects = std::max(effects, scene.effects().count());
@@ -1360,7 +1360,7 @@ TEST_CASE("every class has its turbo attacks: they show, strike and are paid for
             REQUIRE_FALSE(scene.animator(0)->turboing());
             REQUIRE(strikes >= 1);
             REQUIRE(effects >= 1); // its own trees, or those of the class it shadows
-            const float cost = full ? TurboMeter::kFullCost : TurboMeter::kStrongCost;
+            const f32 cost = full ? TurboMeter::kFullCost : TurboMeter::kStrongCost;
             REQUIRE(scene.turboMeter(0)->held() < before - cost + 8.0f);
             scene.close();
         }
@@ -1391,7 +1391,7 @@ TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     PlayScene::Inputs strike{};
@@ -1399,9 +1399,9 @@ TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
     strike[0].attack = true;
     strike[0].attackPressed = true;
     scene.update(1.0 / 60.0, strike);
-    std::size_t most = 0;
+    usize most = 0;
     bool emptyHanded = false;
-    for (int i = 0; i < 600 && scene.animator(0)->turboing(); ++i) {
+    for (s32 i = 0; i < 600 && scene.animator(0)->turboing(); ++i) {
         scene.update(1.0 / 60.0, still);
         most = std::max(most, scene.missiles().count());
         emptyHanded = emptyHanded || !scene.weaponHeld(0);
@@ -1437,18 +1437,18 @@ TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill 
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     PlayScene::Inputs strong{};
     strong[0].strongAttack = true;
     scene.update(1.0 / 60.0, strong);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::StrongThrow);
-    float largest = 0.0f;
-    float hardest = 0.0f;
-    for (int i = 0; i < 400 && scene.animator(0)->strongThrowing(); ++i) {
+    f32 largest = 0.0f;
+    f32 hardest = 0.0f;
+    for (s32 i = 0; i < 400 && scene.animator(0)->strongThrowing(); ++i) {
         scene.update(1.0 / 60.0, still);
-        for (std::size_t m = 0; m < scene.missiles().count(); ++m) {
+        for (usize m = 0; m < scene.missiles().count(); ++m) {
             largest = std::max(largest, scene.missiles().missile(m).scale);
             hardest = std::max(hardest, scene.missiles().missile(m).damage);
         }
@@ -1459,11 +1459,11 @@ TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill 
 
     // G1 gives 2.85 times what is won; a kill's share of that goes to the meter.
     REQUIRE(world.level()->tuning.experience == Catch::Approx(2.85f));
-    const float meter = scene.turboMeter(0)->held();
+    const f32 meter = scene.turboMeter(0)->held();
     scene.awardExperience(0, 100);
     REQUIRE(scene.actor(0)->save().experience() == 285);
     REQUIRE(scene.turboMeter(0)->held() == Catch::Approx(meter + 0.025f * 285.0f));
-    const float fed = scene.turboMeter(0)->held();
+    const f32 fed = scene.turboMeter(0)->held();
     scene.awardExperience(0, 100, false); // won otherwise, it feeds nothing
     REQUIRE(scene.actor(0)->save().experience() == 570);
     REQUIRE(scene.turboMeter(0)->held() == Catch::Approx(fed));
@@ -1501,18 +1501,18 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(experienceLevel(scene.actor(0)->save().experience()) == 9);
     // Enough for the tenth: the message says so, the health rises by a hundred, and the
     // figure is the tier's.
-    const int health = scene.actor(0)->save().health();
+    const s32 health = scene.actor(0)->save().health();
     const auto before = scene.figureDirectory(0);
     // (The fields pay experience at their own scale, so the gain may be more than one.)
     scene.awardExperience(0, levelExperience(10) - levelExperience(9) + 1, false);
     scene.update(1.0 / 60.0, still);
-    const int gained = experienceLevel(scene.actor(0)->save().experience());
+    const s32 gained = experienceLevel(scene.actor(0)->save().experience());
     REQUIRE(gained >= 10);
     REQUIRE(scene.actor(0)->save().health() == health + 100);
     REQUIRE(scene.help().showing());
@@ -1524,13 +1524,13 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
         REQUIRE(after->filename().string().ends_with("10"));
     }
     // Another level, no tier: the message again, the costume kept.
-    for (int i = 0; i < 700; ++i) {
+    for (s32 i = 0; i < 700; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     const auto tiered = scene.figureDirectory(0);
     scene.awardExperience(0, levelExperience(gained + 1) - levelExperience(gained) + 1, false);
     scene.update(1.0 / 60.0, still);
-    const int next = experienceLevel(scene.actor(0)->save().experience());
+    const s32 next = experienceLevel(scene.actor(0)->save().experience());
     REQUIRE(next > gained);
     REQUIRE(scene.help().lines().front() == std::format("LEVEL {}", next));
     if (next / 10 == gained / 10) {
@@ -1566,21 +1566,21 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    for (int i = 0; i < 400 && scene.animator(0)->action() != PlayerAnimator::Action::Ready; ++i) {
+    for (s32 i = 0; i < 400 && scene.animator(0)->action() != PlayerAnimator::Action::Ready; ++i) {
         scene.update(1.0 / 60.0, still); // its entrance plays out
     }
     // Strafing: it moves, in a strafing step, and faces where it did.
-    const float facing = scene.actor(0)->yaw();
+    const f32 facing = scene.actor(0)->yaw();
     const Vec3 from = scene.actor(0)->position();
     PlayScene::Inputs sidestep{};
     sidestep[0].strafe = true;
     sidestep[0].move.direction = Vec2{1.0f, 0.0f};
     sidestep[0].move.magnitude = 1.0f;
     bool stepped = false;
-    for (int i = 0; i < 45; ++i) {
+    for (s32 i = 0; i < 45; ++i) {
         scene.update(1.0 / 60.0, sidestep);
         stepped = stepped || scene.animator(0)->strafing();
     }
@@ -1589,22 +1589,22 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
     REQUIRE(glm::distance(scene.actor(0)->position(), from) > 1.0f);
     // With the attack held as well, weapons fly as it goes.
     sidestep[0].attack = true;
-    std::size_t flying = 0;
-    for (int i = 0; i < 90; ++i) {
+    usize flying = 0;
+    for (s32 i = 0; i < 90; ++i) {
         scene.update(1.0 / 60.0, sidestep);
         flying = std::max(flying, scene.missiles().count());
     }
     REQUIRE(flying >= 2);
     REQUIRE(scene.actor(0)->yaw() == facing);
-    for (int i = 0; i < 120; ++i) {
+    for (s32 i = 0; i < 120; ++i) {
         scene.update(1.0 / 60.0, still);
     }
 
     // The shield potion: the potion goes and its ring goes about with the character.
     PlayScene::Inputs ring{};
     ring[0].shieldPotion = true;
-    std::size_t rings = 0;
-    for (int i = 0; i < 120; ++i) {
+    usize rings = 0;
+    for (s32 i = 0; i < 120; ++i) {
         scene.update(1.0 / 60.0, ring);
         rings = std::max(rings, scene.effects().count());
     }
@@ -1613,12 +1613,12 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
     PlayScene::Inputs walking{};
     walking[0].move.direction = Vec2{0.0f, 1.0f};
     walking[0].move.magnitude = 1.0f;
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         scene.update(1.0 / 60.0, walking);
     }
     REQUIRE(scene.effects().count() >= 1);
     REQUIRE(glm::distance(scene.effects().effect(0).position, scene.actor(0)->position()) < 0.5f);
-    for (int i = 0; i < 300; ++i) {
+    for (s32 i = 0; i < 300; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.effects().count() == 0); // spent
@@ -1630,11 +1630,11 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
     scene.update(1.0 / 60.0, walking);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::FallBack);
     const Vec3 floored = scene.actor(0)->position();
-    for (int i = 0; i < 20; ++i) {
+    for (s32 i = 0; i < 20; ++i) {
         scene.update(1.0 / 60.0, walking);
     }
     REQUIRE(glm::distance(scene.actor(0)->position(), floored) < 0.05f); // it cannot walk off
-    for (int i = 0; i < 600 && scene.animator(0)->floored(); ++i) {
+    for (s32 i = 0; i < 600 && scene.animator(0)->floored(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.animator(0)->floored());
@@ -1673,7 +1673,7 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     // The fields' generators stand for a party of one, at the level's scales, breeding the
@@ -1681,9 +1681,9 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     REQUIRE(scene.generators().count() == 47);
     REQUIRE(scene.enemies().kindLoaded(13));
     REQUIRE_FALSE(scene.enemies().kindLoaded(kGruntKind));
-    int nearest = -1;
-    for (std::size_t g = 0; g < scene.generators().count(); ++g) {
-        const auto id = static_cast<int>(g);
+    s32 nearest = -1;
+    for (usize g = 0; g < scene.generators().count(); ++g) {
+        const auto id = static_cast<s32>(g);
         if (glm::distance(scene.generators().positionOf(id), Vec3{111.25f, 10.13f, -72.5f}) <
             1.0f) {
             nearest = id;
@@ -1694,10 +1694,10 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     REQUIRE(scene.generators().mostOf(nearest) == 3); // five, at the level's three quarters
     REQUIRE(scene.generators().healthOf(nearest) == Approx(15.0f));
     // Grunts are bred for the party near them, come round to it and strike it.
-    const int health = scene.actor(0)->save().health();
-    std::size_t most = 0;
-    int bitten = -1;
-    for (int i = 0; i < 900; ++i) {
+    const s32 health = scene.actor(0)->save().health();
+    usize most = 0;
+    s32 bitten = -1;
+    for (s32 i = 0; i < 900; ++i) {
         scene.update(1.0 / 60.0, still);
         most = std::max(most, scene.enemies().count());
         if (bitten < 0 && scene.actor(0)->save().health() < health) {
@@ -1713,19 +1713,19 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     // one takes it takes from what it deals.
     PlayScene::Inputs throwing{};
     throwing[0].attack = true;
-    const int experience = scene.actor(0)->save().experience();
-    std::size_t fewest = most;
-    for (int i = 0; i < 900; ++i) {
+    const s32 experience = scene.actor(0)->save().experience();
+    usize fewest = most;
+    for (s32 i = 0; i < 900; ++i) {
         scene.update(1.0 / 60.0, throwing);
         fewest = std::min(fewest, scene.enemies().count());
     }
     REQUIRE(scene.actor(0)->save().experience() > experience);
     REQUIRE(fewest < most);
     // A generator is struck through its brood: shot enough it crumbles, then is gone.
-    const std::size_t before = scene.effects().count();
+    const usize before = scene.effects().count();
     scene.generators().strike(nearest, 40.0f, 0);
     REQUIRE(scene.generators().stateOf(nearest) < 3);
-    for (int i = 0; i < 3000 && scene.generators().standing(nearest); ++i) {
+    for (s32 i = 0; i < 3000 && scene.generators().standing(nearest); ++i) {
         scene.update(1.0 / 60.0, throwing);
     }
     REQUIRE_FALSE(scene.generators().standing(nearest));
@@ -1772,7 +1772,7 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.bosses().legend().stage() == LegendRite::Stage::Carried);
     REQUIRE(scene.bossMeter().bound());
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     // The boss stands at its mark; the meter shows it whole; the fight's own camera looks
@@ -1788,12 +1788,12 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.bossMeter().fillWidths()[0] == BossMeter::kPieceWidth);
     // It wakes for the party; the book is spent as it is held up, and thrown it takes a
     // quarter of the lich, which the meter follows down.
-    const float whole = scene.bossView()->maxHealth;
-    int waited = 0;
+    const f32 whole = scene.bossView()->maxHealth;
+    s32 waited = 0;
     bool entrance = false; // rising, it plays its entrance's effect from its own archive
     bool held = false;     // the book glows over the bearer's head while it is held up
     const auto find = [&scene](std::string_view tree) -> const EffectTrees::Effect* {
-        for (std::size_t e = 0; e < scene.effects().count(); ++e) {
+        for (usize e = 0; e < scene.effects().count(); ++e) {
             if (scene.effects().effect(e).name == tree) {
                 return &scene.effects().effect(e);
             }
@@ -1822,18 +1822,18 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     {
         const auto brightness = [](const std::vector<test::RecordedDraw>& draws,
                                    const std::set<const Texture*>& of) {
-            float sum = 0.0f;
-            std::size_t count = 0;
+            f32 sum = 0.0f;
+            usize count = 0;
             for (const test::RecordedDraw& draw : draws) {
                 if (!of.contains(draw.texture)) {
                     continue;
                 }
                 for (const ImmediateVertex& v : draw.vertices) {
-                    sum += static_cast<float>(v.color.r + v.color.g + v.color.b);
+                    sum += static_cast<f32>(v.color.r + v.color.g + v.color.b);
                     ++count;
                 }
             }
-            return count > 0 ? sum / static_cast<float>(count) : -1.0f;
+            return count > 0 ? sum / static_cast<f32>(count) : -1.0f;
         };
         test::FakeRenderDevice dimmed;
         scene.bosses().draw(dimmed, Mat4{1.0f}, world.lighting());
@@ -1849,14 +1849,14 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     }
     REQUIRE_FALSE(scene.actor(0)->save().progress().relics.hasLegend(7));
     REQUIRE(scene.bossView()->health == Approx(whole - (0.25f * whole - 1.0f)));
-    const float struck = scene.bossView()->health;
+    const f32 struck = scene.bossView()->health;
     scene.update(1.0 / 60.0, still);
     REQUIRE(scene.bossMeter().shown() > struck); // three a tick, not at once
     // The bearer makes the gesture of a potion used, at whose release the book leaves the
     // hand and is set burning on the lich.
     bool gestured = false;
     bool landed = false;
-    for (int i = 0; i < 600 && !landed; ++i) {
+    for (s32 i = 0; i < 600 && !landed; ++i) {
         scene.update(1.0 / 60.0, still);
         const PlayerAnimator* body = scene.animator(0);
         REQUIRE(body != nullptr);
@@ -1870,21 +1870,21 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
             1.0f);
     REQUIRE(scene.actor(0)->save().progress().inventory.potions.empty()); // none spent
     // Burnt through, the book gives way to its fire for the lich's five seconds.
-    for (int i = 0; i < 60 && !showing(LegendShow::kBurstTree); ++i) {
+    for (s32 i = 0; i < 60 && !showing(LegendShow::kBurstTree); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(showing(LegendShow::kBurstTree));
-    for (int i = 0; i < 600 && scene.bossMeter().shown() > struck; ++i) {
+    for (s32 i = 0; i < 600 && scene.bossMeter().shown() > struck; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.bossMeter().shown() <= scene.bossView()->health);
     REQUIRE(scene.bossMeter().fillWidths()[1] < BossMeter::kPieceWidth - 53);
     // Roared, the lich fights on in the light again.
-    for (int i = 0; i < 600 && scene.bosses().legend().darkens(); ++i) {
+    for (s32 i = 0; i < 600 && scene.bosses().legend().darkens(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.bosses().legend().darkens());
-    for (int i = 0; i < 600 && scene.dimmer().offset() < -0.05f; ++i) {
+    for (s32 i = 0; i < 600 && scene.dimmer().offset() < -0.05f; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.dimmer().offset() >= -0.05f);
@@ -1902,7 +1902,7 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(LevelRef::orderOf(7) == 1);
     REQUIRE(scene.actor(0)->save().progress().relics.hasShard(1));
     bool key = false;
-    for (std::size_t e = 0; e < scene.effects().count(); ++e) {
+    for (usize e = 0; e < scene.effects().count(); ++e) {
         key = key || scene.effects().effect(e).name == "BOSSKEY";
     }
     REQUIRE(key);
@@ -1910,15 +1910,15 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     // At its death's 95th frame the lich throws the town's coins for the party (four
     // bronze and a silver for one) all round it, up steeply, which sail out and come down.
     REQUIRE_FALSE(world.goldLeft());
-    const std::size_t itemsBefore = world.placedItems().size();
-    for (int i = 0; i < 400 && !world.goldLeft(); ++i) {
+    const usize itemsBefore = world.placedItems().size();
+    for (s32 i = 0; i < 400 && !world.goldLeft(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(world.goldLeft());
     REQUIRE(world.placedItems().size() == itemsBefore + 5);
-    std::size_t bronze = 0;
-    std::size_t aloft = 0;
-    for (std::size_t i = itemsBefore; i < world.placedItems().size(); ++i) {
+    usize bronze = 0;
+    usize aloft = 0;
+    for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
         const PlacedItems::Item& coin = world.placedItems().item(i);
         bronze += coin.name == "COIN_BRONZE" ? 1 : 0;
         aloft += coin.thrown ? 1 : 0;
@@ -1926,7 +1926,7 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     }
     REQUIRE(bronze == 4);
     REQUIRE(aloft == 5);
-    for (int i = 0; i < 400 && scene.victory().stage() != BossVictory::Stage::Defeat; ++i) {
+    for (s32 i = 0; i < 400 && scene.victory().stage() != BossVictory::Stage::Defeat; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.victory().stage() == BossVictory::Stage::Defeat);
@@ -1936,29 +1936,29 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     // level's edge are lost); left lying, they keep the wizard waiting ten seconds after
     // his lines.
     const auto stillFlying = [&world, itemsBefore] {
-        for (std::size_t i = itemsBefore; i < world.placedItems().size(); ++i) {
+        for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
             if (world.placedItems().item(i).thrown) {
                 return true;
             }
         }
         return false;
     };
-    int leaving = 0;
+    s32 leaving = 0;
     PlayOutcome outcome = PlayOutcome::Running;
-    for (int i = 0; i < 600 && stillFlying() && outcome == PlayOutcome::Running; ++i) {
+    for (s32 i = 0; i < 600 && stillFlying() && outcome == PlayOutcome::Running; ++i) {
         outcome = scene.update(1.0 / 60.0, still);
         leaving += scene.victory().stage() == BossVictory::Stage::Leaving ? 1 : 0;
     }
     REQUIRE_FALSE(stillFlying());
-    std::size_t down = 0;
-    for (std::size_t i = itemsBefore; i < world.placedItems().size(); ++i) {
+    usize down = 0;
+    for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
         const PlacedItems::Item& coin = world.placedItems().item(i);
         REQUIRE(coin.takeable() == coin.visible);
         down += coin.visible ? 1 : 0;
     }
     REQUIRE(down >= 1);
     REQUIRE(world.goldLeft());
-    for (int i = 0; i < 6000 && outcome == PlayOutcome::Running; ++i) {
+    for (s32 i = 0; i < 6000 && outcome == PlayOutcome::Running; ++i) {
         outcome = scene.update(1.0 / 60.0, still);
         leaving += scene.victory().stage() == BossVictory::Stage::Leaving ? 1 : 0;
     }
@@ -2011,11 +2011,11 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     REQUIRE(scene.bosses().height() == Approx(4.5f)); // root 18.5, body origin -14
     REQUIRE(scene.bosses().legend().stage() == LegendRite::Stage::Carried);
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     const auto find = [&scene](std::string_view tree) -> const EffectTrees::Effect* {
-        for (std::size_t e = 0; e < scene.effects().count(); ++e) {
+        for (usize e = 0; e < scene.effects().count(); ++e) {
             if (scene.effects().effect(e).name == tree) {
                 return &scene.effects().effect(e);
             }
@@ -2025,7 +2025,7 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     // The axe glows in the bearer's hand, by the body rather than high over the head.
     bool held = false;
     bool charged = false;
-    int waited = 0;
+    s32 waited = 0;
     while (!scene.bosses().legend().thrown() && waited < 3000) {
         scene.update(1.0 / 60.0, still);
         charged =
@@ -2034,7 +2034,7 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
         if (const EffectTrees::Effect* axe = find(LegendShow::kHeldTree); axe != nullptr) {
             held = true;
             REQUIRE(axe->unlit);
-            const float over = axe->position.y - scene.actor(0)->position().y;
+            const f32 over = axe->position.y - scene.actor(0)->position().y;
             REQUIRE(over < LegendShow::kHeldLift - 1.0f);
             REQUIRE(glm::distance(axe->position, scene.actor(0)->position()) < 8.0f);
         }
@@ -2044,7 +2044,7 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     REQUIRE(held);
     REQUIRE(charged);
     REQUIRE(scene.bosses().legend().darkens());
-    const float whole = scene.bossView()->maxHealth;
+    const f32 whole = scene.bossView()->maxHealth;
     REQUIRE(scene.bossView()->health == Approx(whole));
     REQUIRE_FALSE(scene.bosses().frozen());
     // The strong throw's gesture lets it fly toward the dragon without the weapon going,
@@ -2052,8 +2052,8 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     bool gestured = false;
     bool flying = false;
     bool trailVisible = false;
-    float nearest = 1000.0f;
-    for (int i = 0; i < 900 && (!flying || find(LegendShow::kProjectileTree) != nullptr); ++i) {
+    f32 nearest = 1000.0f;
+    for (s32 i = 0; i < 900 && (!flying || find(LegendShow::kProjectileTree) != nullptr); ++i) {
         scene.update(1.0 / 60.0, still);
         gestured = gestured || scene.animator(0)->action() == PlayerAnimator::Action::StrongThrow;
         if (const EffectTrees::Effect* axe = find(LegendShow::kProjectileTree); axe != nullptr) {
@@ -2092,18 +2092,18 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
             REQUIRE(draw.state.blend == BlendMode::Opaque);
         }
     }
-    const float afterImpact = scene.bossView()->health;
+    const f32 afterImpact = scene.bossView()->health;
     scene.bosses().landLegend();
     REQUIRE(scene.bossView()->health == afterImpact); // duplicate presentation callback is harmless
     // Lighting recovers while the freeze is still active, not after its twenty seconds.
-    for (int i = 0; i < 120; ++i) {
+    for (s32 i = 0; i < 120; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.bosses().frozen());
     REQUIRE_FALSE(scene.bosses().legend().darkens());
     REQUIRE(world.ambientOffset() == Approx(0.0f).margin(0.001f));
     // Thawed, the dragon fights on; slain, it throws the mountain's five silver coins.
-    for (int i = 0; i < 1500 && scene.bosses().frozen(); ++i) {
+    for (s32 i = 0; i < 1500 && scene.bosses().frozen(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.bosses().frozen());
@@ -2111,13 +2111,13 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     slay.damage = 100000.0f;
     slay.player = 0;
     scene.bosses().hurt(slay);
-    const std::size_t itemsBefore = world.placedItems().size();
-    for (int i = 0; i < 600 && !world.goldLeft(); ++i) {
+    const usize itemsBefore = world.placedItems().size();
+    for (s32 i = 0; i < 600 && !world.goldLeft(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(world.goldLeft());
     REQUIRE(world.placedItems().size() == itemsBefore + 5);
-    for (std::size_t i = itemsBefore; i < world.placedItems().size(); ++i) {
+    for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
         REQUIRE(world.placedItems().item(i).name == "COIN_SILVER");
         REQUIRE(world.placedItems().item(i).value == 1000);
     }
@@ -2155,13 +2155,13 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     const std::vector<PartyMember> party{PartyMember{0, save}};
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    for (int i = 0; i < 120; ++i) {
+    for (s32 i = 0; i < 120; ++i) {
         scene.update(1.0 / 60.0, still); // the level's own sounds settle
     }
-    std::vector<float> stereo(static_cast<std::size_t>(2 * 4800), 0.0f);
+    std::vector<f32> stereo(static_cast<usize>(2 * 4800), 0.0f);
     const auto live = [&] {
         mixer.mix(stereo); // stopped voices drain and are let go of
         sounds.update();
@@ -2170,20 +2170,20 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     sounds.stopAll();
     // A light blow is felt (the hit sounds) but not cried over; enough of them are: once
     // thirty of health has gone (the level scales what a blow takes).
-    const int whole = scene.actor(0)->save().health();
+    const s32 whole = scene.actor(0)->save().health();
     scene.harm(0, 5.0f, HurtKind::Blow);
     REQUIRE(live() == 1);
     sounds.stopAll();
     REQUIRE(live() == 0);
-    int cries = 0;
-    int blows = 0;
+    s32 cries = 0;
+    s32 blows = 0;
     while (whole - scene.actor(0)->save().health() < 30 && blows < 20) {
         scene.harm(0, 5.0f, HurtKind::Blow);
         ++blows;
         if (whole - scene.actor(0)->save().health() < 30) {
             REQUIRE(live() == 0); // the hit's sound waits its half second
         } else {
-            cries = static_cast<int>(live());
+            cries = static_cast<s32>(live());
         }
     }
     REQUIRE(cries == 1);
@@ -2196,9 +2196,9 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     REQUIRE(live() == 1);
     sounds.stopAll();
     // Down past a hundred and fifty the narrator names the character instead.
-    const int health = scene.actor(0)->save().health();
+    const s32 health = scene.actor(0)->save().health();
     REQUIRE(health > 150);
-    scene.harm(0, static_cast<float>(health - 140), HurtKind::Burn);
+    scene.harm(0, static_cast<f32>(health - 140), HurtKind::Burn);
     REQUIRE(scene.actor(0)->save().health() == 140);
     REQUIRE(live() >= 1); // the name, the line queued after it
     sounds.stopAll();
@@ -2234,7 +2234,7 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     const std::vector<PartyMember> party{PartyMember{0, save}};
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     const Inventory& now = scene.actor(0)->save().progress().inventory;
@@ -2251,7 +2251,7 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     // The green potion, taken last, is used first: its acid bursts about the character.
     PlayScene::Inputs use{};
     use[0].usePotion = true;
-    for (int i = 0; i < 60 && scene.effects().count() == 0; ++i) {
+    for (s32 i = 0; i < 60 && scene.effects().count() == 0; ++i) {
         scene.update(1.0 / 60.0, use);
     }
     REQUIRE(scene.effects().count() == 1);
@@ -2259,9 +2259,9 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     // A warrior's little magic makes it a small one.
     REQUIRE(scene.effects().effect(0).scale > 0.25f);
     REQUIRE(scene.effects().effect(0).scale < 0.5f);
-    REQUIRE(now.potions == std::vector<int>{1});
+    REQUIRE(now.potions == std::vector<s32>{1});
     // Held on, no second potion goes; released and thrown, the red one flies and bursts.
-    for (int i = 0; i < 200; ++i) {
+    for (s32 i = 0; i < 200; ++i) {
         scene.update(1.0 / 60.0, use);
     }
     REQUIRE(now.potions.size() == 1);
@@ -2269,20 +2269,20 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     PlayScene::Inputs toss{};
     toss[0].throwPotion = true;
     scene.update(1.0 / 60.0, still);
-    for (int i = 0; i < 60 && scene.missiles().count() == 0; ++i) {
+    for (s32 i = 0; i < 60 && scene.missiles().count() == 0; ++i) {
         scene.update(1.0 / 60.0, toss);
     }
     REQUIRE(scene.missiles().count() == 1);
     REQUIRE(scene.missiles().missile(0).potion == 1);
     REQUIRE(now.potions.empty());
-    for (int i = 0; i < 240 && scene.effects().count() == 0; ++i) {
+    for (s32 i = 0; i < 240 && scene.effects().count() == 0; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.missiles().count() == 0);
     REQUIRE(scene.effects().count() == 1);
     REQUIRE(scene.effects().effect(0).name == "MP_FIRE");
     // With no potion left the buttons do nothing.
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         scene.update(1.0 / 60.0, use);
     }
     REQUIRE_FALSE(scene.animator(0)->conjuring());
@@ -2290,31 +2290,30 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     // The three way shot throws three axes at once; taken off in the selector, one.
     PlayScene::Inputs attack{};
     attack[0].attack = true;
-    for (int i = 0; i < 60 && scene.missiles().count() == 0; ++i) {
+    for (s32 i = 0; i < 60 && scene.missiles().count() == 0; ++i) {
         scene.update(1.0 / 60.0, attack);
     }
     REQUIRE(scene.missiles().count() == 3);
-    for (int i = 0; i < 300; ++i) {
+    for (s32 i = 0; i < 300; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     PlayScene::Inputs open{};
     open[0].selector.up = true;
     scene.update(1.0 / 60.0, open);
-    for (int i = 0; i < 40 && !scene.selector(0).showing(); ++i) {
+    for (s32 i = 0; i < 40 && !scene.selector(0).showing(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.selector(0).showing());
     PlayScene::Inputs left{};
     left[0].selector.left = true;
-    for (int i = 0;
-         i < 4 && now.powerups[static_cast<std::size_t>(scene.selector(0).selection())].kind !=
-                      powerup::kWeapon;
+    for (s32 i = 0; i < 4 && now.powerups[static_cast<usize>(scene.selector(0).selection())].kind !=
+                                 powerup::kWeapon;
          ++i) {
         scene.update(1.0 / 60.0, left);
     }
     scene.update(1.0 / 60.0, open); // up again: off it comes
     REQUIRE(PowerupEffects::of(now).shots() == 1);
-    for (int i = 0; i < 60 && scene.missiles().count() == 0; ++i) {
+    for (s32 i = 0; i < 60 && scene.missiles().count() == 0; ++i) {
         scene.update(1.0 / 60.0, attack);
     }
     REQUIRE(scene.missiles().count() == 1);
@@ -2342,7 +2341,7 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
     const std::vector<PartyMember> party{PartyMember{0, save}};
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < 400 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < 400 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.spawning());
@@ -2354,9 +2353,9 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
     PlayScene::Inputs attack{};
     attack[0].attack = true;
     attack[0].move = MoveInput{Vec2{0.0f, 1.0f}, 1.0f};
-    const std::size_t voices = sounds.voiceCount();
-    int thrown = 0;
-    for (int i = 0; i < 40 && scene.missiles().count() == 0; ++i) {
+    const usize voices = sounds.voiceCount();
+    s32 thrown = 0;
+    for (s32 i = 0; i < 40 && scene.missiles().count() == 0; ++i) {
         scene.update(1.0 / 60.0, attack);
         ++thrown;
     }
@@ -2373,12 +2372,12 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
     REQUIRE(glm::dot(glm::normalize(Vec3{axe.velocity.x, 0.0f, axe.velocity.z}), facing) > 0.999f);
     REQUIRE(glm::distance(axe.position, scene.actor(0)->followPoint()) < 6.0f);
     // Held, another follows within a second; let go, the throws stop and the body walks on.
-    for (int i = 0; i < 60; ++i) {
+    for (s32 i = 0; i < 60; ++i) {
         scene.update(1.0 / 60.0, attack);
     }
     PlayScene::Inputs walk{};
     walk[0].move = attack[0].move;
-    for (int i = 0; i < 300; ++i) {
+    for (s32 i = 0; i < 300; ++i) {
         scene.update(1.0 / 60.0, walk);
     }
     REQUIRE(scene.missiles().count() == 0); // every one stopped by the tower or its time
@@ -2389,8 +2388,8 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
 
 TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll of hints",
           "[game][screens][unpacked]") {
-    const int player = GENERATE(0, 2);
-    const auto slot = static_cast<std::size_t>(player);
+    const s32 player = GENERATE(0, 2);
+    const auto slot = static_cast<usize>(player);
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -2411,7 +2410,7 @@ TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll 
     const std::vector<PartyMember> party{PartyMember{player, save}};
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
-    for (int i = 0; i < PlayScene::kSpawnTicks + 2 && scene.spawning(); ++i) {
+    for (s32 i = 0; i < PlayScene::kSpawnTicks + 2 && scene.spawning(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     // He greets them at once; the scroll comes two seconds later.
@@ -2419,11 +2418,11 @@ TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll 
     scene.update(1.0 / 60.0, still);
     REQUIRE(scene.sumner().playing(SumnerFigure::kWelcomeIndex));
     REQUIRE_FALSE(scene.hints().active());
-    for (int i = 0; i < 100; ++i) {
+    for (s32 i = 0; i < 100; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.hints().active());
-    for (int i = 0; i < 40 && !scene.hints().active(); ++i) {
+    for (s32 i = 0; i < 40 && !scene.hints().active(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.hints().active());
@@ -2473,12 +2472,12 @@ TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll 
     // visit brings no second scroll.
     scene.update(1.0 / 60.0, back);
     REQUIRE(scene.hints().burning());
-    for (int i = 0; i < 120 && scene.hints().active(); ++i) {
+    for (s32 i = 0; i < 120 && scene.hints().active(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.hints().active());
     REQUIRE(scene.sumner().playing(SumnerFigure::kGoAwayIndex));
-    for (int i = 0; i < 200; ++i) {
+    for (s32 i = 0; i < 200; ++i) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(scene.hints().active());

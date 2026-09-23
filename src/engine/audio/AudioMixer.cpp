@@ -2,13 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
+
+#include "engine/core/Types.h"
 
 namespace gdl {
 
-AudioMixer::AudioMixer(std::uint32_t outputRate)
-    : m_outputRate(outputRate), m_releaseStep(1.0f / (kRelease * static_cast<float>(outputRate))) {}
+AudioMixer::AudioMixer(u32 outputRate)
+    : m_outputRate(outputRate), m_releaseStep(1.0f / (kRelease * static_cast<f32>(outputRate))) {}
 
 std::shared_ptr<AudioStream> AudioMixer::createStream(const AudioStreamDesc& desc) {
     auto stream = std::make_shared<AudioStream>(desc, m_outputRate);
@@ -17,7 +17,7 @@ std::shared_ptr<AudioStream> AudioMixer::createStream(const AudioStreamDesc& des
     return stream;
 }
 
-void AudioMixer::mix(std::span<float> stereoOut) {
+void AudioMixer::mix(std::span<f32> stereoOut) {
     std::ranges::fill(stereoOut, 0.0f);
     const std::scoped_lock lock(m_mutex);
     for (const auto& stream : m_streams) {
@@ -30,10 +30,10 @@ void AudioMixer::mix(std::span<float> stereoOut) {
     limit(stereoOut);
 }
 
-void AudioMixer::limit(std::span<float> stereoOut) {
-    for (std::size_t frame = 0; frame + 1 < stereoOut.size(); frame += 2) {
-        const float peak = std::max(std::abs(stereoOut[frame]), std::abs(stereoOut[frame + 1]));
-        const float needed = peak > kCeiling ? kCeiling / peak : 1.0f;
+void AudioMixer::limit(std::span<f32> stereoOut) {
+    for (usize frame = 0; frame + 1 < stereoOut.size(); frame += 2) {
+        const f32 peak = std::max(std::abs(stereoOut[frame]), std::abs(stereoOut[frame + 1]));
+        const f32 needed = peak > kCeiling ? kCeiling / peak : 1.0f;
         m_limiterGain =
             needed < m_limiterGain ? needed : std::min(m_limiterGain + m_releaseStep, 1.0f);
         stereoOut[frame] = std::clamp(stereoOut[frame] * m_limiterGain, -kCeiling, kCeiling);
@@ -42,7 +42,7 @@ void AudioMixer::limit(std::span<float> stereoOut) {
     }
 }
 
-std::size_t AudioMixer::streamCount() const {
+usize AudioMixer::streamCount() const {
     const std::scoped_lock lock(m_mutex);
     return m_streams.size();
 }

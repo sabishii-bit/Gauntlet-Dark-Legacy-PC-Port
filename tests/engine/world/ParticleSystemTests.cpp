@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/ParticleTemplate.h"
+#include "engine/core/Types.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/world/ParticleSystem.h"
 
@@ -82,8 +83,8 @@ TEST_CASE("a template resolves over its preset into frames and units", "[world][
 
     // A template on its own: the angle's edges, endless phases and the default gravity.
     ParticleTemplate bare;
-    bare.enables = ParticleTemplate::kAngle | ParticleTemplate::kEmitterLife |
-                   ParticleTemplate::kMaxParticles;
+    bare.enables =
+        ParticleTemplate::kAngle | ParticleTemplate::kEmitterLife | ParticleTemplate::kMaxParticles;
     bare.angle = 360.0f;
     bare.emitterLife = {-1.0f, 2.0f};
     bare.maxParticles = 40;
@@ -126,7 +127,7 @@ TEST_CASE("an emitter lets particles out at its rate, lifts them and lets them d
     REQUIRE(emitter.widthOf(first) == 2.8f);
 
     // Six frames on: ten particles at most, the first bright, wide and lifted.
-    for (int i = 0; i < 5; ++i) {
+    for (s32 i = 0; i < 5; ++i) {
         emitter.step(1);
     }
     REQUIRE(emitter.particles().size() == 5);

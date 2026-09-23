@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AudioDevice.h"
+#include "engine/core/Types.h"
 
 namespace {
 
@@ -15,7 +16,7 @@ TEST_CASE("the audio device opens or degrades to silence", "[audio][device]") {
     REQUIRE(device.mixer().outputRate() == AudioDevice::kSampleRate);
 
     auto stream = device.mixer().createStream(AudioStreamDesc{8000, 1});
-    const std::array<float, 800> kSilence{};
+    const std::array<f32, 800> kSilence{};
     stream->push(kSilence);
     stream->finish();
     if (device.available()) {
@@ -25,7 +26,7 @@ TEST_CASE("the audio device opens or degrades to silence", "[audio][device]") {
 }
 
 TEST_CASE("audio devices can be created repeatedly", "[audio][device]") {
-    for (int i = 0; i < 2; ++i) {
+    for (s32 i = 0; i < 2; ++i) {
         const AudioDevice device;
         REQUIRE(device.available() == device.available());
     }

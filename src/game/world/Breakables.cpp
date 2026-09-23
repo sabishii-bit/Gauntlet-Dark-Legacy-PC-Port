@@ -2,11 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <cstring>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 #include "game/world/Chests.h"
 
@@ -14,19 +13,19 @@ namespace gdl::game {
 
 namespace {
 
-std::int16_t paramS16(const ItemInstance& instance, std::size_t at) {
-    std::int16_t value = 0;
+s16 paramS16(const ItemInstance& instance, usize at) {
+    s16 value = 0;
     std::memcpy(&value, &instance.params[at], sizeof(value));
     return value;
 }
 
 /** How near the segment from `from` to `to` comes to `point`, across the ground, and how
  * far along it (nought to one) that is. */
-float nearestOnGround(const Vec3& from, const Vec3& to, const Vec3& point, float& along) {
+f32 nearestOnGround(const Vec3& from, const Vec3& to, const Vec3& point, f32& along) {
     const Vec2 a{from.x, from.z};
     const Vec2 ab{to.x - from.x, to.z - from.z};
     const Vec2 ap{point.x - from.x, point.z - from.z};
-    const float length = glm::dot(ab, ab);
+    const f32 length = glm::dot(ab, ab);
     along = length > 1e-8f ? std::clamp(glm::dot(ap, ab) / length, 0.0f, 1.0f) : 0.0f;
     return glm::length(Vec2{point.x, point.z} - (a + ab * along));
 }
@@ -38,12 +37,12 @@ bool Breakables::bind(RenderDevice& device, const WorldLayout& layout, ItemArchi
     clear();
     m_infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
-    for (std::size_t index = 0; index < instances.size(); ++index) {
+    for (usize index = 0; index < instances.size(); ++index) {
         const ItemInstance& instance = instances[index];
-        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= m_infos.size()) {
+        if (instance.info < 0 || static_cast<usize>(instance.info) >= m_infos.size()) {
             continue;
         }
-        const ItemInfo& info = m_infos[static_cast<std::size_t>(instance.info)];
+        const ItemInfo& info = m_infos[static_cast<usize>(instance.info)];
         const bool holds = info.type == ItemInfo::kContainer && info.subtype == kBarrel;
         const bool breaks =
             info.type == kBreakable && info.subtype >= kBarrel && info.subtype <= kPoison;
@@ -51,9 +50,9 @@ bool Breakables::bind(RenderDevice& device, const WorldLayout& layout, ItemArchi
             continue;
         }
         auto barrel = std::make_unique<Barrel>();
-        barrel->instance = static_cast<int>(index);
+        barrel->instance = static_cast<s32>(index);
         barrel->minPlayers = instance.minPlayers;
-        barrel->health = std::max<int>(info.hitPoints, 1);
+        barrel->health = std::max<s32>(info.hitPoints, 1);
         barrel->armor = info.armor;
         barrel->radius = info.radius > 0.0f ? info.radius : 1.0f;
         barrel->height = info.height > 0.0f ? info.height : 3.0f;
@@ -82,13 +81,13 @@ void Breakables::clear() {
     m_seed = kSeedStart;
 }
 
-void Breakables::setPlayerCount(int players) {
+void Breakables::setPlayerCount(s32 players) {
     for (const std::unique_ptr<Barrel>& barrel : m_barrels) {
         barrel->shown = shownToParty(barrel->minPlayers, players);
     }
 }
 
-bool Breakables::standing(std::size_t index) const {
+bool Breakables::standing(usize index) const {
     if (index >= m_barrels.size()) {
         return false;
     }
@@ -96,21 +95,20 @@ bool Breakables::standing(std::size_t index) const {
     return barrel.shown && !barrel.gone && barrel.state == kWhole;
 }
 
-std::optional<std::size_t> Breakables::struckBy(const Vec3& from, const Vec3& to,
-                                                float radius) const {
-    std::optional<std::size_t> first;
-    float firstAlong = 2.0f;
-    for (std::size_t index = 0; index < m_barrels.size(); ++index) {
+std::optional<usize> Breakables::struckBy(const Vec3& from, const Vec3& to, f32 radius) const {
+    std::optional<usize> first;
+    f32 firstAlong = 2.0f;
+    for (usize index = 0; index < m_barrels.size(); ++index) {
         if (!standing(index)) {
             continue;
         }
         const Barrel& barrel = *m_barrels[index];
         const Vec3& base = barrel.figure.position();
-        float along = 0.0f;
+        f32 along = 0.0f;
         if (nearestOnGround(from, to, base, along) > barrel.radius + radius) {
             continue;
         }
-        const float y = from.y + (to.y - from.y) * along;
+        const f32 y = from.y + (to.y - from.y) * along;
         if (y + radius < base.y || y - radius > base.y + barrel.height) {
             continue;
         }
@@ -122,9 +120,9 @@ std::optional<std::size_t> Breakables::struckBy(const Vec3& from, const Vec3& to
     return first;
 }
 
-std::vector<std::size_t> Breakables::within(const Vec3& centre, float radius) const {
-    std::vector<std::size_t> found;
-    for (std::size_t index = 0; index < m_barrels.size(); ++index) {
+std::vector<usize> Breakables::within(const Vec3& centre, f32 radius) const {
+    std::vector<usize> found;
+    for (usize index = 0; index < m_barrels.size(); ++index) {
         if (!standing(index)) {
             continue;
         }
@@ -138,18 +136,18 @@ std::vector<std::size_t> Breakables::within(const Vec3& centre, float radius) co
     return found;
 }
 
-std::optional<BreakableStrike> Breakables::strike(std::size_t index, float power) {
+std::optional<BreakableStrike> Breakables::strike(usize index, f32 power) {
     if (!standing(index)) {
         return std::nullopt;
     }
     Barrel& barrel = *m_barrels[index];
     // Armour comes off the blow, which still counts for one.
     if (barrel.armor >= 0) {
-        float felt = power - static_cast<float>(barrel.armor);
+        f32 felt = power - static_cast<f32>(barrel.armor);
         if (felt <= 0.0f) {
             felt = 1.0f;
         }
-        barrel.health = std::max(barrel.health - static_cast<int>(std::lround(felt)), 0);
+        barrel.health = std::max(barrel.health - static_cast<s32>(std::lround(felt)), 0);
     }
     BreakableStrike result;
     result.index = index;
@@ -163,14 +161,14 @@ std::optional<BreakableStrike> Breakables::strike(std::size_t index, float power
     barrel.box.solid = false;
     barrel.figure.play(kBreaking, false);
     if (barrel.kind == BreakableStrike::Kind::Holding) {
-        result.contents = Chests::resolveContents(
-            m_infos, barrel.contents, static_cast<std::size_t>(barrel.instance), m_seed);
+        result.contents = Chests::resolveContents(m_infos, barrel.contents,
+                                                  static_cast<usize>(barrel.instance), m_seed);
         result.count = barrel.count;
     }
     return result;
 }
 
-void Breakables::update(float seconds) {
+void Breakables::update(f32 seconds) {
     for (const std::unique_ptr<Barrel>& held : m_barrels) {
         Barrel& barrel = *held;
         if (!barrel.shown || barrel.gone) {

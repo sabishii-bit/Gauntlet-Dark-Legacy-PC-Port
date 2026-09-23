@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstdint>
 #include <span>
 
 #include "engine/core/SpecialMembers.h"
+#include "engine/core/Types.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/render/vulkan/VulkanCommon.h"
 
@@ -16,13 +16,13 @@ class VulkanTexture final : public Texture {
 public:
     VulkanTexture(VulkanContext& context, VkDescriptorPool descriptorPool,
                   VkDescriptorSetLayout setLayout, VkSampler sampler, const TextureDesc& desc,
-                  std::span<const std::uint8_t> rgba8Pixels);
+                  std::span<const u8> rgba8Pixels);
     ~VulkanTexture() override;
 
     GDL_NON_COPYABLE_NON_MOVABLE(VulkanTexture);
 
-    std::uint32_t width() const override { return m_width; }
-    std::uint32_t height() const override { return m_height; }
+    u32 width() const override { return m_width; }
+    u32 height() const override { return m_height; }
 
     VkImage image() const { return m_image; }
     VkDescriptorSet descriptorSet() const { return m_descriptorSet; }
@@ -30,8 +30,8 @@ public:
 private:
     VulkanContext& m_context;
     VkDescriptorPool m_descriptorPool;
-    std::uint32_t m_width;
-    std::uint32_t m_height;
+    u32 m_width;
+    u32 m_height;
 
     VkImage m_image = VK_NULL_HANDLE;
     VmaAllocation m_allocation = VK_NULL_HANDLE;

@@ -1,7 +1,8 @@
 #include "game/players/TurboMeter.h"
 
 #include <algorithm>
-#include <cstdint>
+
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
@@ -12,7 +13,7 @@ void TurboMeter::reset() {
     m_flashTicks = 0;
 }
 
-bool TurboMeter::fill(float seconds) {
+bool TurboMeter::fill(f32 seconds) {
     if (m_held >= kFull) {
         return false;
     }
@@ -20,15 +21,15 @@ bool TurboMeter::fill(float seconds) {
     return m_held >= kFull;
 }
 
-void TurboMeter::drain(float seconds) {
+void TurboMeter::drain(f32 seconds) {
     m_held = std::max(m_held - kShoveDrainPerSecond * seconds, 0.0f);
 }
 
-void TurboMeter::add(float amount) {
+void TurboMeter::add(f32 amount) {
     m_held = std::clamp(m_held + amount, 0.0f, kFull);
 }
 
-bool TurboMeter::spend(float cost) {
+bool TurboMeter::spend(f32 cost) {
     if (m_held < cost) {
         return false;
     }
@@ -36,16 +37,16 @@ bool TurboMeter::spend(float cost) {
     return true;
 }
 
-TurboMeter::Zone TurboMeter::zoneOf(float amount) {
-    const float part = amount / kFull;
+TurboMeter::Zone TurboMeter::zoneOf(f32 amount) {
+    const f32 part = amount / kFull;
     if (part < kHighFrom) {
         return Zone::Low;
     }
     return part < kFullFrom ? Zone::High : Zone::Full;
 }
 
-float TurboMeter::zoneFraction(float amount) {
-    const float part = amount / kFull;
+f32 TurboMeter::zoneFraction(f32 amount) {
+    const f32 part = amount / kFull;
     switch (zoneOf(amount)) {
     case Zone::Low: return part / kHighFrom;
     case Zone::High: return (part - kHighFrom) / (1.0f - kHighFrom);
@@ -54,9 +55,9 @@ float TurboMeter::zoneFraction(float amount) {
     return 1.0f;
 }
 
-void TurboMeter::step(int ticks) {
+void TurboMeter::step(s32 ticks) {
     const Zone before = zoneOf(m_shown);
-    const auto moved = static_cast<float>(ticks);
+    const auto moved = static_cast<f32>(ticks);
     if (m_shown < m_held) {
         m_shown = std::min(m_shown + kRisePerTick * moved, m_held);
     } else {
@@ -81,10 +82,10 @@ void TurboMeter::step(int ticks) {
 TurboMeterLook TurboMeter::look() const {
     TurboMeterLook look;
     const Zone zone = zoneOf(m_shown);
-    const float fraction = zoneFraction(m_shown);
+    const f32 fraction = zoneFraction(m_shown);
     look.fill = fraction;
     // The front colour brightens through its zone.
-    const auto bright = static_cast<std::uint8_t>(127.0f * fraction + 128.0f);
+    const auto bright = static_cast<u8>(127.0f * fraction + 128.0f);
     if (zone == Zone::Low) {
         look.front = Color::rgba(bright, bright, 0);
         look.back = Color::black();
@@ -96,11 +97,11 @@ TurboMeterLook TurboMeter::look() const {
         look.front = Color::rgba(255, 0, 0);
         look.back = look.front;
         // Bright, out, and bright again over one pulse.
-        const int phase = m_flashTicks * 512 / kGlowTicks;
-        const int faded = phase <= 255 ? phase : std::max(511 - phase, 0);
-        look.glow = static_cast<std::uint8_t>(255 - std::min(faded, 255));
+        const s32 phase = m_flashTicks * 512 / kGlowTicks;
+        const s32 faded = phase <= 255 ? phase : std::max(511 - phase, 0);
+        look.glow = static_cast<u8>(255 - std::min(faded, 255));
     } else if (m_flash == Flash::Gleam) {
-        const int step = m_flashTicks / kGleamTicksPerFrame;
+        const s32 step = m_flashTicks / kGleamTicksPerFrame;
         look.gleam = step < kGleamFrames ? step : std::max(2 * kGleamFrames - 1 - step, 0);
     }
     return look;

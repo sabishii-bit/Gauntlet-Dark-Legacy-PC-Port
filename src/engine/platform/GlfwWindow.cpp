@@ -1,7 +1,6 @@
 #include "engine/platform/GlfwWindow.h"
 
-#include <cstddef>
-#include <cstdint>
+#include "engine/core/Types.h"
 
 // clang-format off
 // volk must precede glfw3.h so GLFW declares its Vulkan helpers.
@@ -20,17 +19,17 @@ namespace gdl {
 
 namespace {
 
-int& glfwReferenceCount() {
-    static int count = 0;
+s32& glfwReferenceCount() {
+    static s32 count = 0;
     return count;
 }
 
-void glfwErrorCallback(int code, const char* description) {
+void glfwErrorCallback(s32 code, const char* description) {
     log::error("[glfw] error {}: {}", code, description);
 }
 
 struct KeyMapping {
-    int glfwKey = 0;
+    s32 glfwKey = 0;
     Key key = Key::Unknown;
 };
 
@@ -97,7 +96,7 @@ constexpr auto kKeyMap = std::to_array<KeyMapping>({
     {GLFW_KEY_F12, Key::F12},
 });
 
-constexpr std::array<int, static_cast<std::size_t>(PadButton::Count)> kPadButtonMap{
+constexpr std::array<s32, static_cast<usize>(PadButton::Count)> kPadButtonMap{
     GLFW_GAMEPAD_BUTTON_A,           GLFW_GAMEPAD_BUTTON_B,
     GLFW_GAMEPAD_BUTTON_X,           GLFW_GAMEPAD_BUTTON_Y,
     GLFW_GAMEPAD_BUTTON_LEFT_BUMPER, GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER,
@@ -108,7 +107,7 @@ constexpr std::array<int, static_cast<std::size_t>(PadButton::Count)> kPadButton
     GLFW_GAMEPAD_BUTTON_DPAD_LEFT,
 };
 
-constexpr std::array<int, static_cast<std::size_t>(PadAxis::Count)> kPadAxisMap{
+constexpr std::array<s32, static_cast<usize>(PadAxis::Count)> kPadAxisMap{
     GLFW_GAMEPAD_AXIS_LEFT_X,  GLFW_GAMEPAD_AXIS_LEFT_Y,       GLFW_GAMEPAD_AXIS_RIGHT_X,
     GLFW_GAMEPAD_AXIS_RIGHT_Y, GLFW_GAMEPAD_AXIS_LEFT_TRIGGER, GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER,
 };
@@ -128,7 +127,7 @@ GlfwWindow::GlfwWindow(const WindowDesc& desc) {
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, desc.resizable ? GLFW_TRUE : GLFW_FALSE);
 
-    m_window = glfwCreateWindow(static_cast<int>(desc.width), static_cast<int>(desc.height),
+    m_window = glfwCreateWindow(static_cast<s32>(desc.width), static_cast<s32>(desc.height),
                                 desc.title.c_str(), nullptr, nullptr);
     GDL_VERIFY(m_window != nullptr, "glfwCreateWindow failed");
     glfwSetWindowUserPointer(m_window, this);
@@ -156,15 +155,15 @@ void GlfwWindow::pollEvents() {
 
 void GlfwWindow::setIcon(std::span<const Image> images) {
     // GLFW wants writable pixel pointers, so the icons are copied for the call.
-    std::vector<std::vector<std::uint8_t>> pixels;
+    std::vector<std::vector<u8>> pixels;
     pixels.reserve(images.size());
     std::vector<GLFWimage> handles;
     for (const Image& image : images) {
         pixels.emplace_back(image.pixels);
-        handles.push_back(GLFWimage{static_cast<int>(image.width), static_cast<int>(image.height),
+        handles.push_back(GLFWimage{static_cast<s32>(image.width), static_cast<s32>(image.height),
                                     pixels.back().data()});
     }
-    glfwSetWindowIcon(m_window, static_cast<int>(handles.size()), handles.data());
+    glfwSetWindowIcon(m_window, static_cast<s32>(handles.size()), handles.data());
 }
 
 void GlfwWindow::pollKeyboard() {
@@ -173,15 +172,15 @@ void GlfwWindow::pollKeyboard() {
     }
 }
 
-void GlfwWindow::charCallback(GLFWwindow* window, unsigned int codepoint) {
+void GlfwWindow::charCallback(GLFWwindow* window, u32 codepoint) {
     if (auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window))) {
         self->m_input.addTypedChar(codepoint);
     }
 }
 
 /** A press is latched as it happens, so a tap over between polls still reaches the game. */
-void GlfwWindow::keyCallback(GLFWwindow* window, int key, int /*scancode*/, int action,
-                             int /*mods*/) {
+void GlfwWindow::keyCallback(GLFWwindow* window, s32 key, s32 /*scancode*/, s32 action,
+                             s32 /*mods*/) {
     auto* self = static_cast<GlfwWindow*>(glfwGetWindowUserPointer(window));
     if (self == nullptr || action != GLFW_PRESS) {
         return;
@@ -195,19 +194,19 @@ void GlfwWindow::keyCallback(GLFWwindow* window, int key, int /*scancode*/, int 
 }
 
 void GlfwWindow::pollGamepads() {
-    for (int pad = 0; pad < Input::kMaxPads; ++pad) {
+    for (s32 pad = 0; pad < Input::kMaxPads; ++pad) {
         PadSnapshot snapshot;
-        const int joystick = GLFW_JOYSTICK_1 + pad;
+        const s32 joystick = GLFW_JOYSTICK_1 + pad;
         GLFWgamepadstate state{};
         if (glfwJoystickIsGamepad(joystick) == GLFW_TRUE &&
             glfwGetGamepadState(joystick, &state) == GLFW_TRUE) {
             snapshot.connected = true;
-            for (std::size_t i = 0; i < snapshot.buttons.size(); ++i) {
+            for (usize i = 0; i < snapshot.buttons.size(); ++i) {
                 snapshot.buttons[i] = state.buttons[kPadButtonMap[i]] == GLFW_PRESS;
             }
-            for (std::size_t i = 0; i < snapshot.axes.size(); ++i) {
-                float value = state.axes[kPadAxisMap[i]];
-                if (i >= static_cast<std::size_t>(PadAxis::LeftTrigger)) {
+            for (usize i = 0; i < snapshot.axes.size(); ++i) {
+                f32 value = state.axes[kPadAxisMap[i]];
+                if (i >= static_cast<usize>(PadAxis::LeftTrigger)) {
                     value = (value + 1.0f) * 0.5f;
                 }
                 snapshot.axes[i] = value;
@@ -226,11 +225,10 @@ void GlfwWindow::requestClose() {
 }
 
 Extent2D GlfwWindow::framebufferSize() const {
-    int width = 0;
-    int height = 0;
+    s32 width = 0;
+    s32 height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
-    return Extent2D{static_cast<unsigned int>(std::max(width, 0)),
-                    static_cast<unsigned int>(std::max(height, 0))};
+    return Extent2D{static_cast<u32>(std::max(width, 0)), static_cast<u32>(std::max(height, 0))};
 }
 
 void GlfwWindow::waitWhileMinimized() {
@@ -240,7 +238,7 @@ void GlfwWindow::waitWhileMinimized() {
 }
 
 std::vector<const char*> GlfwWindow::requiredVulkanInstanceExtensions() const {
-    unsigned int count = 0;
+    u32 count = 0;
     const char** names = glfwGetRequiredInstanceExtensions(&count);
     GDL_VERIFY(names != nullptr, "glfwGetRequiredInstanceExtensions failed");
     const std::span<const char* const> extensions(names, count);

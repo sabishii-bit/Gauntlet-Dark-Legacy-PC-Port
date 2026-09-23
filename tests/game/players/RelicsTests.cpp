@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/players/CharacterSave.h"
 #include "game/players/Relics.h"
 
@@ -14,8 +16,8 @@ TEST_CASE("relics keep the runes, legend items and gargoyle pieces within their 
     REQUIRE(relics.runeCount() == 0);
     REQUIRE(relics.addRune(0));
     REQUIRE(relics.addRune(12));
-    REQUIRE_FALSE(relics.addRune(12));   // held already
-    REQUIRE_FALSE(relics.addRune(13));   // no such rune
+    REQUIRE_FALSE(relics.addRune(12)); // held already
+    REQUIRE_FALSE(relics.addRune(13)); // no such rune
     REQUIRE_FALSE(relics.addRune(-1));
     REQUIRE(relics.runeCount() == 2);
     REQUIRE(relics.hasRune(0));
@@ -30,7 +32,7 @@ TEST_CASE("relics keep the runes, legend items and gargoyle pieces within their 
     REQUIRE_FALSE(relics.addLegend(16));
     // Gargoyle pieces count up to the statues' want and no further.
     REQUIRE(relics.addGargoylePiece(2) == 1);
-    for (int i = 0; i < 40; ++i) {
+    for (s32 i = 0; i < 40; ++i) {
         relics.addGargoylePiece(2);
     }
     REQUIRE(relics.gargoylePieces[2] == 28);

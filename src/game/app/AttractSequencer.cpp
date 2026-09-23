@@ -1,5 +1,7 @@
 #include "game/app/AttractSequencer.h"
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 AttractStep AttractSequencer::next() {
@@ -22,7 +24,7 @@ void AttractSequencer::reset() {
     m_wave = 0;
 }
 
-std::string_view AttractSequencer::movieName(int variant, unsigned int wave) {
+std::string_view AttractSequencer::movieName(s32 variant, u32 wave) {
     constexpr std::array<std::string_view, kWaveCount> kCharacterMovies{"war_dwa", "val_kni",
                                                                         "wiz_sor", "jes_arc"};
     switch (variant) {

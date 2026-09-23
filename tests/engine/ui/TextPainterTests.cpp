@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/BitmapFont.h"
+#include "engine/core/Types.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 
@@ -42,7 +43,7 @@ TEST_CASE("glyphs are drawn as cells of the sheet in one batch", "[ui][text]") {
     painter.setFont(&font, &sheet);
     Canvas canvas;
     canvas.begin(device, Mat4{1.0f});
-    const int end = painter.draw(canvas, 10, 20, "A B", TextStyle{});
+    const s32 end = painter.draw(canvas, 10, 20, "A B", TextStyle{});
     canvas.end();
     REQUIRE(end == 28);
     REQUIRE(device.draws.size() == 1);

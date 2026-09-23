@@ -1,16 +1,16 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
 
+#include "engine/core/Types.h"
+
 namespace gdl {
 
-enum class Key : std::uint8_t {
+enum class Key : u8 {
     Unknown = 0,
     Escape,
     Enter,
@@ -76,7 +76,7 @@ enum class Key : std::uint8_t {
 };
 
 /** Gamepad buttons in the standard Xbox-style layout. */
-enum class PadButton : std::uint8_t {
+enum class PadButton : u8 {
     A,
     B,
     X,
@@ -95,21 +95,13 @@ enum class PadButton : std::uint8_t {
     Count
 };
 
-enum class PadAxis : std::uint8_t {
-    LeftX,
-    LeftY,
-    RightX,
-    RightY,
-    LeftTrigger,
-    RightTrigger,
-    Count
-};
+enum class PadAxis : u8 { LeftX, LeftY, RightX, RightY, LeftTrigger, RightTrigger, Count };
 
 /** State of one gamepad for one frame. */
 struct PadSnapshot {
     bool connected = false;
-    std::array<bool, static_cast<std::size_t>(PadButton::Count)> buttons{};
-    std::array<float, static_cast<std::size_t>(PadAxis::Count)> axes{};
+    std::array<bool, static_cast<usize>(PadButton::Count)> buttons{};
+    std::array<f32, static_cast<usize>(PadAxis::Count)> axes{};
 };
 
 /** The configuration name of a key ("Enter", "A", "F1"), empty for Unknown/Count. */
@@ -124,40 +116,40 @@ std::optional<PadButton> padButtonFromName(std::string_view name);
  * follows, so a tap shorter than a frame is never lost. */
 class Input {
 public:
-    static constexpr int kMaxPads = 4;
+    static constexpr s32 kMaxPads = 4;
 
     bool isKeyDown(Key key) const;
     bool wasKeyPressed(Key key) const;
     bool wasKeyReleased(Key key) const;
 
-    bool isPadConnected(int pad) const;
-    bool isPadButtonDown(int pad, PadButton button) const;
-    bool wasPadButtonPressed(int pad, PadButton button) const;
+    bool isPadConnected(s32 pad) const;
+    bool isPadButtonDown(s32 pad, PadButton button) const;
+    bool wasPadButtonPressed(s32 pad, PadButton button) const;
     /** Sticks report -1..1, triggers 0..1. */
-    float padAxis(int pad, PadAxis axis) const;
+    f32 padAxis(s32 pad, PadAxis axis) const;
 
     /** Characters typed since the last poll, as Unicode code points in order. */
-    std::span<const unsigned int> typedText() const { return m_typed; }
+    std::span<const u32> typedText() const { return m_typed; }
 
     /** Platform-layer entry points. */
     void beginPoll();
     void setKey(Key key, bool down);
     /** Records a press seen since the last poll; it holds the key down until the next. */
     void latchKey(Key key);
-    void setPad(int pad, const PadSnapshot& snapshot);
-    void addTypedChar(unsigned int codepoint);
+    void setPad(s32 pad, const PadSnapshot& snapshot);
+    void addTypedChar(u32 codepoint);
 
 private:
-    static constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::Count);
+    static constexpr usize kKeyCount = static_cast<usize>(Key::Count);
 
-    bool keyDown(std::size_t key) const { return m_keys[key] || m_latchedKeys[key]; }
+    bool keyDown(usize key) const { return m_keys[key] || m_latchedKeys[key]; }
 
     std::array<bool, kKeyCount> m_keys{};
     std::array<bool, kKeyCount> m_latchedKeys{};
     std::array<bool, kKeyCount> m_previousKeys{};
     std::array<PadSnapshot, kMaxPads> m_pads{};
     std::array<PadSnapshot, kMaxPads> m_previousPads{};
-    std::vector<unsigned int> m_typed;
+    std::vector<u32> m_typed;
 };
 
 } // namespace gdl

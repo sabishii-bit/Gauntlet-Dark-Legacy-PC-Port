@@ -1,8 +1,9 @@
 #include <array>
-#include <cstddef>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
 #include "game/screens/PlayerAttacks.h"
@@ -83,7 +84,7 @@ TEST_CASE("player attacks clear transient state and safely ignore closed or miss
     f.players[0].actor.save().progress().inventory.addPotions(1, 2);
     f.attacks.shieldPotion(0, f.players);
     f.attacks.updateTurbo(0, 2, 0.1f, f.players,
-                          [](int, std::size_t) { FAIL("No figure, no turbo announcement"); });
+                          [](s32, usize) { FAIL("No figure, no turbo announcement"); });
     REQUIRE(f.attacks.strikes().count() == 0);
     f.attacks.clear();
     f.attacks.clear();

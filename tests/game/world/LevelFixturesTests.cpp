@@ -1,5 +1,4 @@
 #include <array>
-#include <cstddef>
 #include <filesystem>
 #include <numbers>
 #include <vector>
@@ -9,6 +8,7 @@
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -25,7 +25,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 /** A level with a locked chest of potions-or-keys at the origin, a chest of gold at x 20, a
  * trapped one at x 40, a barrel at x 60, a gate across x 80 and spikes at x 100. */
@@ -118,8 +118,8 @@ TEST_CASE("a box pushes a body out by its nearest side and knows what is against
     // A half turn of pitch and of roll together is a half turn of yaw.
     const Mat4 flipped = itemPlacement(Vec3{1.0f, 2.0f, 3.0f}, Vec3{kPi, 0.5f, -kPi});
     const Mat4 turned = itemPlacement(Vec3{1.0f, 2.0f, 3.0f}, Vec3{0.0f, 0.5f + kPi, 0.0f});
-    for (int column = 0; column < 4; ++column) {
-        for (int row = 0; row < 4; ++row) {
+    for (s32 column = 0; column < 4; ++column) {
+        for (s32 row = 0; row < 4; ++row) {
             REQUIRE(flipped[column][row] == Approx(turned[column][row]).margin(1e-5));
         }
     }
@@ -132,11 +132,11 @@ TEST_CASE("a box pushes a body out by its nearest side and knows what is against
 TEST_CASE("a chest's contents are its record, or the pick from a list by the item's place",
           "[game][world][fixtures]") {
     const Fixture f("fixtures-contents");
-    unsigned int seed = 0;
+    u32 seed = 0;
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 5, 0, seed) == 5);
     REQUIRE(seed == 0U);
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 0, seed) == 1); // (0 + 0) % 2
-    REQUIRE(seed == static_cast<unsigned int>(Chests::kSeedStep));
+    REQUIRE(seed == static_cast<u32>(Chests::kSeedStep));
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 1, seed) == 1); // (13 + 1) % 2
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 0, seed) == 2); // (27 + 0) % 2
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), -1, 0, seed) == -1);
@@ -218,7 +218,7 @@ TEST_CASE("a gate bars the way until a key is spent on it", "[game][world][fixtu
     REQUIRE(events.size() == 1);
     REQUIRE(events[0].kind == GateEvent::Kind::Unlocked);
     REQUIRE(gates.gate(0).state != LockedGates::kShut);
-    for (int i = 0; i < 40; ++i) {
+    for (s32 i = 0; i < 40; ++i) {
         REQUIRE(gates.update(2, 1.0f / 30.0f, party).empty());
     }
     REQUIRE(gates.gate(0).state == LockedGates::kOpen);
@@ -239,10 +239,10 @@ TEST_CASE("a trap rests, comes out to hurt whoever is in it, and rests again",
     REQUIRE(traps.trap(0).ticksLeft < 120);
     const std::array<TrapVictim, 2> party{TrapVictim{Vec3{100.0f, 0.0f, 0.0f}, 0.75f},
                                           TrapVictim{Vec3{120.0f, 0.0f, 0.0f}, 0.75f}};
-    int hits = 0;
-    int armedFrames = 0;
+    s32 hits = 0;
+    s32 armedFrames = 0;
     bool restedAgain = false;
-    for (int i = 0; i < 400; ++i) {
+    for (s32 i = 0; i < 400; ++i) {
         const std::vector<TrapHit> caught = traps.update(2, 1.0f / 30.0f, party);
         for (const TrapHit& hit : caught) {
             REQUIRE(hit.victim == 0); // the one standing in it
@@ -307,7 +307,7 @@ TEST_CASE("a level scales how fast its traps cycle and how much they hurt",
     // Caught, a victim is left alone until the sequence it was caught in has run out twice.
     const std::array<TrapVictim, 1> party{TrapVictim{Vec3{100.0f, 0.0f, 0.0f}, 0.75f}};
     std::vector<TrapHit> caught;
-    for (int i = 0; i < 400 && caught.empty(); ++i) {
+    for (s32 i = 0; i < 400 && caught.empty(); ++i) {
         caught = traps.update(2, 1.0f / 30.0f, party);
     }
     REQUIRE(caught.size() == 1);
@@ -330,14 +330,14 @@ TEST_CASE("barrels stand in the way until blows break them, each after its kind"
     REQUIRE(barrels.barrel(3).kind == BreakableStrike::Kind::Plain);
     REQUIRE_FALSE(barrels.standing(3)); // for three players
     REQUIRE(barrels.obstacles().size() == 3);
-    REQUIRE(barrels.within(Vec3{201.0f, 0.0f, 0.0f}, 3.0f) == std::vector<std::size_t>{1, 2});
+    REQUIRE(barrels.within(Vec3{201.0f, 0.0f, 0.0f}, 3.0f) == std::vector<usize>{1, 2});
     REQUIRE(barrels.within(Vec3{201.0f, 40.0f, 0.0f}, 3.0f).empty());
 
     // A missile's path meets the nearer barrel first, and none when it flies over.
     REQUIRE(barrels.struckBy(Vec3{210.0f, 1.0f, 0.0f}, Vec3{190.0f, 1.0f, 0.0f}, 0.5f) ==
-            std::optional<std::size_t>{2});
+            std::optional<usize>{2});
     REQUIRE(barrels.struckBy(Vec3{190.0f, 1.0f, 0.0f}, Vec3{210.0f, 1.0f, 0.0f}, 0.5f) ==
-            std::optional<std::size_t>{1});
+            std::optional<usize>{1});
     REQUIRE_FALSE(
         barrels.struckBy(Vec3{210.0f, 9.0f, 0.0f}, Vec3{190.0f, 9.0f, 0.0f}, 0.5f).has_value());
 

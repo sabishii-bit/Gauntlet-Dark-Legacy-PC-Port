@@ -1,9 +1,10 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
 #include <memory>
 #include <vector>
+
+#include "engine/core/Types.h"
 
 #include "game/world/ItemFigure.h"
 
@@ -13,17 +14,17 @@ namespace gdl::game {
  * trees: name + health tier, with the original L1 / L1ROOT lookup fallbacks. */
 class SafeRocks {
 public:
-    static constexpr int kItemType = 10;
-    static constexpr int kSubtype = 41;
-    static constexpr int kWhole = 3;
+    static constexpr s32 kItemType = 10;
+    static constexpr s32 kSubtype = 41;
+    static constexpr s32 kWhole = 3;
 
     struct Rock {
-        int instance = -1;
-        int health = 0;
-        int baseHealth = 0;
-        int armor = 0;
-        int tier = 0;
-        int minPlayers = 0;
+        s32 instance = -1;
+        s32 health = 0;
+        s32 baseHealth = 0;
+        s32 armor = 0;
+        s32 tier = 0;
+        s32 minPlayers = 0;
         bool shown = true;
         Vec3 position{0.0f};
         Obstacle obstacle;
@@ -33,14 +34,14 @@ public:
 
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items);
     void clear();
-    void setPlayerCount(int players);
-    std::size_t size() const { return m_rocks.size(); }
-    const Rock& rock(std::size_t index) const { return *m_rocks[index]; }
-    bool standing(std::size_t index) const;
+    void setPlayerCount(s32 players);
+    usize size() const { return m_rocks.size(); }
+    const Rock& rock(usize index) const { return *m_rocks[index]; }
+    bool standing(usize index) const;
     /** Armour reduces damage, with a minimum of one. True only on the destroying blow. */
-    bool strike(std::size_t index, float power);
+    bool strike(usize index, f32 power);
     /** Restore all three health tiers, as the boss's reactivation does. */
-    void activate(std::size_t index);
+    void activate(usize index);
     std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 

@@ -2,20 +2,20 @@
 
 #include <array>
 #include <cmath>
-#include <cstddef>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/render/DebugTextures.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr float kBackdropDepth = 0.05f;
-constexpr float kHiddenDepth = 0.30f;
-constexpr float kCheckerDepth = 0.50f;
-constexpr float kTriangleDepth = 0.60f;
-constexpr float kPanelDepth = 0.70f;
+constexpr f32 kBackdropDepth = 0.05f;
+constexpr f32 kHiddenDepth = 0.30f;
+constexpr f32 kCheckerDepth = 0.50f;
+constexpr f32 kTriangleDepth = 0.60f;
+constexpr f32 kPanelDepth = 0.70f;
 
 } // namespace
 
@@ -29,7 +29,7 @@ void SmokeTestScene::init(RenderDevice& device) {
               "on top, and a red quad hidden wherever the checkerboard covers it");
 }
 
-void SmokeTestScene::render(RenderDevice& device, const Mat4& projection, float timeSeconds) {
+void SmokeTestScene::render(RenderDevice& device, const Mat4& projection, f32 timeSeconds) {
     m_batch.clear();
     m_batch.rect(Rect{0.0f, 0.0f, 640.0f, 448.0f}, kBackdropDepth, Color::rgba(28, 32, 56));
     device.draw(m_batch, device.whiteTexture(), projection);
@@ -42,12 +42,12 @@ void SmokeTestScene::render(RenderDevice& device, const Mat4& projection, float 
     m_batch.rect(Rect{200.0f, 200.0f, 300.0f, 200.0f}, kHiddenDepth, Color::rgba(200, 40, 40));
 
     const Vec2 centre{448.0f, 224.0f};
-    constexpr float kRadius = 120.0f;
+    constexpr f32 kRadius = 120.0f;
     constexpr std::array<Color, 3> kCorners{Color::rgba(255, 64, 64), Color::rgba(64, 255, 64),
                                             Color::rgba(64, 64, 255)};
     m_batch.begin(PrimitiveTopology::TriangleList);
-    for (std::size_t i = 0; i < kCorners.size(); ++i) {
-        const float angle = timeSeconds + static_cast<float>(i) * (kTwoPi / 3.0f);
+    for (usize i = 0; i < kCorners.size(); ++i) {
+        const f32 angle = timeSeconds + static_cast<f32>(i) * (kTwoPi / 3.0f);
         m_batch.vertex(Vec3{centre.x + kRadius * std::cos(angle),
                             centre.y + kRadius * std::sin(angle), kTriangleDepth},
                        kCorners[i], Vec2{0.0f, 0.0f});

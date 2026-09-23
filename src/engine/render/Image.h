@@ -1,32 +1,29 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <span>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 namespace gdl {
 
 /** CPU-side RGBA8 image, rows stored top to bottom. */
 struct Image {
-    std::uint32_t width = 0;
-    std::uint32_t height = 0;
-    std::vector<std::uint8_t> pixels;
+    u32 width = 0;
+    u32 height = 0;
+    std::vector<u8> pixels;
 
-    static Image filled(std::uint32_t width, std::uint32_t height, Color color);
+    static Image filled(u32 width, u32 height, Color color);
 
-    std::size_t rowBytes() const { return std::size_t{width} * 4; }
-    std::span<std::uint8_t> row(std::uint32_t y) {
+    usize rowBytes() const { return usize{width} * 4; }
+    std::span<u8> row(u32 y) { return std::span(pixels).subspan(y * rowBytes(), rowBytes()); }
+    std::span<const u8> row(u32 y) const {
         return std::span(pixels).subspan(y * rowBytes(), rowBytes());
     }
-    std::span<const std::uint8_t> row(std::uint32_t y) const {
-        return std::span(pixels).subspan(y * rowBytes(), rowBytes());
-    }
 
-    Color pixel(std::uint32_t x, std::uint32_t y) const;
-    void setPixel(std::uint32_t x, std::uint32_t y, Color color);
+    Color pixel(u32 x, u32 y) const;
+    void setPixel(u32 x, u32 y, Color color);
 
     /** Gives every fully transparent texel the average colour of its nearest opaque
      * neighbours (alpha untouched), spreading outward until none is left beside one, so

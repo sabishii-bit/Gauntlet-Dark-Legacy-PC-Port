@@ -1,9 +1,9 @@
-#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -16,13 +16,13 @@ using namespace gdl::formats;
 using test::ByteWriter;
 
 /** A v13 archive with one object (two sub-objects), two bitmaps and names for both. */
-std::vector<std::uint8_t> sampleArchive() {
-    constexpr std::uint32_t kObjectsAt = 160;
-    constexpr std::uint32_t kBitmapsAt = kObjectsAt + 64;
-    constexpr std::uint32_t kObjectDefsAt = kBitmapsAt + 128;
-    constexpr std::uint32_t kBitmapDefsAt = kObjectDefsAt + 24;
-    constexpr std::uint32_t kSubObjectsAt = kBitmapDefsAt + 72;
-    constexpr std::uint32_t kModelsAt = kSubObjectsAt + 16;
+std::vector<u8> sampleArchive() {
+    constexpr u32 kObjectsAt = 160;
+    constexpr u32 kBitmapsAt = kObjectsAt + 64;
+    constexpr u32 kObjectDefsAt = kBitmapsAt + 128;
+    constexpr u32 kBitmapDefsAt = kObjectDefsAt + 24;
+    constexpr u32 kSubObjectsAt = kBitmapDefsAt + 72;
+    constexpr u32 kModelsAt = kSubObjectsAt + 16;
 
     ByteWriter w;
     w.putText("/disk/sample/").putZeros(32 - 13);
@@ -37,12 +37,12 @@ std::vector<std::uint8_t> sampleArchive() {
     // object: inv_rad, bnd_rad, flags, sub count, sub0 (qwc tex lm lodk), subs ptr, models ptr,
     // verts, tris, id, obj_def, pad
     w.putU32(0).putU32(0x40000000).putU32(0x0A).putU32(2);
-    w.putU16(2).putU16(1).putU16(0).putU16(static_cast<std::uint16_t>(-5));
+    w.putU16(2).putU16(1).putU16(0).putU16(static_cast<u16>(-5));
     w.putU32(kSubObjectsAt).putU32(kModelsAt).putU32(6).putU32(4).putU32(7).putU32(0).putZeros(16);
     REQUIRE(w.size() == kBitmapsAt);
 
-    for (int i = 0; i < 2; ++i) {
-        w.putU8(i == 0 ? 50 : 0).putU8(static_cast<std::uint8_t>(-64)).putU8(0).putU8(1);
+    for (s32 i = 0; i < 2; ++i) {
+        w.putU8(i == 0 ? 50 : 0).putU8(static_cast<u8>(-64)).putU8(0).putU8(1);
         w.putU16(3).putU16(3).putU16(i == 0 ? 0x008D : 0x000C).putU16(0);
         w.putU32(i == 0 ? 0 : 0x1200).putU16(0).putU16(0).putU16(i == 0 ? 4 : 0);
         w.putU16(8).putU16(8).putU16(64).putU32(0).putZeros(32);
@@ -59,8 +59,8 @@ std::vector<std::uint8_t> sampleArchive() {
     REQUIRE(w.size() == kModelsAt);
     // two models: 1 and 2 quadwords of payload each, header quadword first
     w.putU16(1).putZeros(14);
-    for (std::uint8_t b = 0; b < 16; ++b) {
-        w.putU8(static_cast<std::uint8_t>(0xA0 + b));
+    for (u8 b = 0; b < 16; ++b) {
+        w.putU8(static_cast<u8>(0xA0 + b));
     }
     w.putU16(2).putZeros(14).putZeros(32);
     return w.bytes();
@@ -104,11 +104,11 @@ TEST_CASE("a synthetic archive parses into records and names", "[formats][archiv
 }
 
 TEST_CASE("damaged archives are rejected", "[formats][archive]") {
-    REQUIRE_THROWS_AS(ModelArchive::parse(std::vector<std::uint8_t>(100, 0)), FormatError);
-    std::vector<std::uint8_t> bad = sampleArchive();
+    REQUIRE_THROWS_AS(ModelArchive::parse(std::vector<u8>(100, 0)), FormatError);
+    std::vector<u8> bad = sampleArchive();
     bad[64] = 0x01; // wrong version
     REQUIRE_THROWS_AS(ModelArchive::parse(bad), FormatError);
-    std::vector<std::uint8_t> truncated = sampleArchive();
+    std::vector<u8> truncated = sampleArchive();
     truncated.resize(200);
     REQUIRE_THROWS_AS(ModelArchive::parse(truncated), FormatError);
 }

@@ -3,6 +3,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/enemies/CritterProjectile.h"
 
 namespace {
@@ -32,7 +34,7 @@ TEST_CASE("critter ballistic projectiles reach the target at fixed horizontal sp
     shot.origin = {10, 7, 10};
     shot.target = Vec3{40, 3, 50};
     const Vec3 velocity = CritterProjectile::velocity(damage, shot);
-    const float flight = 2.5f;
+    const f32 flight = 2.5f;
     const Vec3 end =
         shot.origin + velocity * flight - Vec3{0, 0.5f * damage.gravity * flight * flight, 0};
     REQUIRE(glm::length(end - *shot.target) < 0.001f);
@@ -53,11 +55,11 @@ TEST_CASE("critter straight shots honor facing precedence yaw pitch and spread",
     REQUIRE(CritterProjectile::velocity(damage, shot) == Vec3{10, 0, 0});
     damage.behaviorFlags |= CritterProjectile::kBodyForward;
     REQUIRE(CritterProjectile::velocity(damage, shot) == Vec3{0, 0, 10});
-    damage.yawSpread = std::numbers::pi_v<float>;
+    damage.yawSpread = std::numbers::pi_v<f32>;
     REQUIRE(CritterProjectile::velocity(damage, shot, 1).x == Approx(-10));
     REQUIRE(CritterProjectile::velocity(damage, shot, -1).x == Approx(10));
     damage.yawSpread = 0;
-    damage.pitch = -std::numbers::pi_v<float> / 2;
+    damage.pitch = -std::numbers::pi_v<f32> / 2;
     REQUIRE(CritterProjectile::velocity(damage, shot).y == Approx(10));
     shot.forward = Vec3{0};
     REQUIRE(glm::length(CritterProjectile::velocity(damage, shot)) == 0);

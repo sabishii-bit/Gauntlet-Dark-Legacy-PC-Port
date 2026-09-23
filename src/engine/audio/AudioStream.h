@@ -1,16 +1,16 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <mutex>
 #include <span>
 #include <vector>
 
+#include "engine/core/Types.h"
+
 namespace gdl {
 
 struct AudioStreamDesc {
-    std::uint32_t sampleRate = 48000;
-    std::uint32_t channels = 1;
+    u32 sampleRate = 48000;
+    u32 channels = 1;
 };
 
 /**
@@ -22,14 +22,14 @@ struct AudioStreamDesc {
 class AudioStream {
 public:
     /** How long a gain change takes to complete, and a stopped stream to fade away. */
-    static constexpr float kGainRamp = 0.005f;
+    static constexpr f32 kGainRamp = 0.005f;
 
-    AudioStream(AudioStreamDesc desc, std::uint32_t outputRate);
+    AudioStream(AudioStreamDesc desc, u32 outputRate);
 
     const AudioStreamDesc& desc() const { return m_desc; }
 
     /** Queues interleaved frames of desc().channels samples each. */
-    void push(std::span<const float> interleaved);
+    void push(std::span<const f32> interleaved);
 
     /** Marks the end of the data; the stream is drained once the queue empties. */
     void finish();
@@ -40,39 +40,35 @@ public:
     bool finished() const;
     bool drained() const;
 
-    double queuedSeconds() const;
-    void setVolume(float volume);
-    float volume() const;
+    f64 queuedSeconds() const;
+    void setVolume(f32 volume);
+    f32 volume() const;
     /** Where the sound sits between the speakers: -1 fully left, 0 centred, 1 fully right,
      * at constant power. */
-    void setPan(float pan);
-    float pan() const;
+    void setPan(f32 pan);
+    f32 pan() const;
 
     /** Adds this stream's contribution to an interleaved stereo buffer at the output rate. */
-    void mixInto(std::span<float> stereoOut);
+    void mixInto(std::span<f32> stereoOut);
 
 private:
-    std::size_t queuedFramesLocked() const {
-        return m_queue.size() / m_desc.channels - m_readFrame;
-    }
-    float at(std::size_t frame, std::size_t channel) const {
-        return m_queue[frame * m_desc.channels + channel];
-    }
+    usize queuedFramesLocked() const { return m_queue.size() / m_desc.channels - m_readFrame; }
+    f32 at(usize frame, usize channel) const { return m_queue[frame * m_desc.channels + channel]; }
     void compactLocked();
 
     mutable std::mutex m_mutex;
     AudioStreamDesc m_desc;
-    double m_step;
-    float m_gainStep; ///< how far a gain slides per output frame
-    std::vector<float> m_queue;
-    std::size_t m_readFrame = 0; ///< the frame being read; the one before it is kept for the curve
-    double m_fraction = 0.0;
-    float m_volume = 1.0f;
-    float m_leftGain = 1.0f;
-    float m_rightGain = 1.0f;
-    float m_pan = 0.0f;
-    float m_leftLevel = -1.0f; ///< the gains as they stand; negative before the first frame
-    float m_rightLevel = -1.0f;
+    f64 m_step;
+    f32 m_gainStep; ///< how far a gain slides per output frame
+    std::vector<f32> m_queue;
+    usize m_readFrame = 0; ///< the frame being read; the one before it is kept for the curve
+    f64 m_fraction = 0.0;
+    f32 m_volume = 1.0f;
+    f32 m_leftGain = 1.0f;
+    f32 m_rightGain = 1.0f;
+    f32 m_pan = 0.0f;
+    f32 m_leftLevel = -1.0f; ///< the gains as they stand; negative before the first frame
+    f32 m_rightLevel = -1.0f;
     bool m_finished = false;
     bool m_stopping = false;
 };

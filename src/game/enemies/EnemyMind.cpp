@@ -2,44 +2,45 @@
 
 #include <array>
 #include <cmath>
-#include <cstddef>
 #include <numbers>
+
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr float kPi = std::numbers::pi_v<float>;
-constexpr float kHeadingSlack = 0.0349f; ///< two degrees: a heading this close is the same
-constexpr int kStuckTurns = 10;          ///< probes refused before going straight anyway
-constexpr int kCornerTurns = 7;          ///< bumps before the route doubles the other way
-constexpr int kShortWait = 10;           ///< ticks a heading is held after a bump
-constexpr int kLongWait = 60;
-constexpr int kShortWaitOther = 15; ///< when the bump was another enemy
-constexpr int kLongWaitOther = 50;
-constexpr float kWanderTurn = kPi / 4.0f; ///< a wanderer turns this much at a dead end
-constexpr int kWanderWait = 30;
-constexpr float kProwlPounce = 8.0f; ///< a prowler goes for a player this close
-constexpr float kLoiterTurn = kPi / 64.0f;
-constexpr float kThrowReach = 10.0f; ///< a thrower's player must be within this above or below
-constexpr float kKeepOffFrom = 0.6f; ///< of its sight, a skirmisher backs off from
-constexpr float kKeepOffTo = 0.8f;   ///< of its sight, and stops at
-constexpr float kKeepOffPace = 0.8f;
-constexpr int kFuseTicks = 60;
-constexpr int kBurnTicks = 240; ///< a suicide's run before it blows up anyway
-constexpr float kSuicidePace = 1.5f;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
+constexpr f32 kHeadingSlack = 0.0349f; ///< two degrees: a heading this close is the same
+constexpr s32 kStuckTurns = 10;        ///< probes refused before going straight anyway
+constexpr s32 kCornerTurns = 7;        ///< bumps before the route doubles the other way
+constexpr s32 kShortWait = 10;         ///< ticks a heading is held after a bump
+constexpr s32 kLongWait = 60;
+constexpr s32 kShortWaitOther = 15; ///< when the bump was another enemy
+constexpr s32 kLongWaitOther = 50;
+constexpr f32 kWanderTurn = kPi / 4.0f; ///< a wanderer turns this much at a dead end
+constexpr s32 kWanderWait = 30;
+constexpr f32 kProwlPounce = 8.0f; ///< a prowler goes for a player this close
+constexpr f32 kLoiterTurn = kPi / 64.0f;
+constexpr f32 kThrowReach = 10.0f; ///< a thrower's player must be within this above or below
+constexpr f32 kKeepOffFrom = 0.6f; ///< of its sight, a skirmisher backs off from
+constexpr f32 kKeepOffTo = 0.8f;   ///< of its sight, and stops at
+constexpr f32 kKeepOffPace = 0.8f;
+constexpr s32 kFuseTicks = 60;
+constexpr s32 kBurnTicks = 240; ///< a suicide's run before it blows up anyway
+constexpr f32 kSuicidePace = 1.5f;
 
 // The corner-hugging offsets, one more sixteenth of a turn for every bump.
-constexpr std::array<float, 8> kCornerOffsets{
+constexpr std::array<f32, 8> kCornerOffsets{
     0.0f,       kPi / 8.0f,        kPi / 4.0f,        3.0f * kPi / 8.0f,
     kPi / 2.0f, 5.0f * kPi / 8.0f, 3.0f * kPi / 4.0f, 7.0f * kPi / 8.0f};
 
-float yawBetween(const Vec3& from, const Vec3& to) {
+f32 yawBetween(const Vec3& from, const Vec3& to) {
     return std::atan2(to.x - from.x, to.z - from.z);
 }
 
 /** A hold on the heading, unless one is already running. */
-void hold(MindMemory& memory, int ticks) {
+void hold(MindMemory& memory, s32 ticks) {
     if (memory.deadEnd <= 0) {
         memory.deadEnd = ticks;
     }
@@ -47,7 +48,7 @@ void hold(MindMemory& memory, int ticks) {
 
 /** The bookkeeping a bump does for the corner-huggers: a short hold and one more bump on
  * the route, or, on a route already doubled, a long hold and a fresh start. */
-void bumped(MindMemory& memory, int shortWait, int longWait) {
+void bumped(MindMemory& memory, s32 shortWait, s32 longWait) {
     if (std::abs(memory.route) <= 2) {
         ++memory.collided;
         hold(memory, shortWait);
@@ -62,7 +63,7 @@ void bumped(MindMemory& memory, int shortWait, int longWait) {
     }
 }
 
-void countDown(MindMemory& memory, int ticks) {
+void countDown(MindMemory& memory, s32 ticks) {
     if (memory.deadEnd > 0) {
         memory.deadEnd -= ticks;
     }
@@ -80,13 +81,12 @@ public:
             intent.heading = memory.heading;
             return intent;
         }
-        const float face = sense.faceAngle(memory.heading);
-        float heading = face;
-        for (int k = 0; k <= 8; ++k) {
-            const int turns = (k + 1) / 2; // out from straight, a sixteenth either side
-            const float offset =
-                static_cast<float>(turns) * (kPi / 8.0f) * (k % 2 == 0 ? 1.0f : -1.0f);
-            const float candidate = wrapAngle(face + offset);
+        const f32 face = sense.faceAngle(memory.heading);
+        f32 heading = face;
+        for (s32 k = 0; k <= 8; ++k) {
+            const s32 turns = (k + 1) / 2; // out from straight, a sixteenth either side
+            const f32 offset = static_cast<f32>(turns) * (kPi / 8.0f) * (k % 2 == 0 ? 1.0f : -1.0f);
+            const f32 candidate = wrapAngle(face + offset);
             if (sense.clearAlong(candidate)) {
                 heading = candidate;
                 break;
@@ -162,13 +162,13 @@ public:
             }
         }
         countDown(memory, sense.ticks);
-        const float face = sense.faceAngle(memory.heading);
+        const f32 face = sense.faceAngle(memory.heading);
         MindIntent intent;
         if (memory.deadEnd > 0) {
             intent.heading = memory.heading;
             return intent;
         }
-        float candidate = face;
+        f32 candidate = face;
         bool refused = false;
         if (sense.contact >= 0 || sense.openAlong(face)) {
             memory.skirting = false;
@@ -178,11 +178,11 @@ public:
             if (memory.route == 0) {
                 memory.route = sense.nearerSide();
             }
-            const int side = memory.route > 0 ? 1 : -1;
+            const s32 side = memory.route > 0 ? 1 : -1;
             bool found = false;
-            for (const int s : {side, -side}) {
-                for (std::size_t k = 1; k < kCornerOffsets.size() && !found; ++k) {
-                    const float tried = wrapAngle(face + static_cast<float>(s) * kCornerOffsets[k]);
+            for (const s32 s : {side, -side}) {
+                for (usize k = 1; k < kCornerOffsets.size() && !found; ++k) {
+                    const f32 tried = wrapAngle(face + static_cast<f32>(s) * kCornerOffsets[k]);
                     if (sense.openAlong(tried)) {
                         candidate = tried;
                         found = true;
@@ -257,7 +257,7 @@ public:
             memory.fuse -= sense.ticks;
         }
         MindIntent intent;
-        const float face = sense.faceAngle(memory.heading);
+        const f32 face = sense.faceAngle(memory.heading);
         memory.heading = face;
         intent.heading = face;
         intent.pace = 0.0f;
@@ -334,7 +334,7 @@ class LoiterMind : public EnemyMind {
 public:
     std::string_view name() const override { return "loiter"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        memory.heading = wrapAngle(memory.heading + kLoiterTurn * static_cast<float>(sense.ticks));
+        memory.heading = wrapAngle(memory.heading + kLoiterTurn * static_cast<f32>(sense.ticks));
         MindIntent intent;
         intent.heading = memory.heading;
         intent.pace = 0.0f;
@@ -353,11 +353,11 @@ public:
             return enemyMindOf(kWanderWay).think(memory, sense);
         }
         countDown(memory, sense.ticks);
-        float away = wrapAngle(sense.faceAngle(memory.heading) + kPi);
+        f32 away = wrapAngle(sense.faceAngle(memory.heading) + kPi);
         if (!sense.clearAlong(away)) {
-            for (int k = 1; k <= 4 && !sense.clearAlong(away); ++k) {
-                away = wrapAngle(away + static_cast<float>(k) * (kPi / 4.0f) *
-                                            (k % 2 == 0 ? 1.0f : -1.0f));
+            for (s32 k = 1; k <= 4 && !sense.clearAlong(away); ++k) {
+                away = wrapAngle(away +
+                                 static_cast<f32>(k) * (kPi / 4.0f) * (k % 2 == 0 ? 1.0f : -1.0f));
             }
         }
         memory.heading = away;
@@ -421,7 +421,7 @@ const SuicideMind kSuicide;
 
 } // namespace
 
-float wrapAngle(float angle) {
+f32 wrapAngle(f32 angle) {
     while (angle > kPi) {
         angle -= 2.0f * kPi;
     }
@@ -431,26 +431,26 @@ float wrapAngle(float angle) {
     return angle;
 }
 
-float MindSense::faceAngle(float fallback) const {
+f32 MindSense::faceAngle(f32 fallback) const {
     return target >= 0 ? yawBetween(position, targetPosition) : fallback;
 }
 
-int MindSense::nearerSide() const {
+s32 MindSense::nearerSide() const {
     if (target < 0) {
         return 1;
     }
-    const float dx = position.x - targetPosition.x;
-    const float dz = position.z - targetPosition.z;
-    const float left = wrapAngle(yaw + kPi / 6.0f);
-    const float right = wrapAngle(yaw - kPi / 6.0f);
-    const float x1 = dx + std::sin(left);
-    const float z1 = dz + std::cos(left);
-    const float x2 = dx + std::sin(right);
-    const float z2 = dz + std::cos(right);
+    const f32 dx = position.x - targetPosition.x;
+    const f32 dz = position.z - targetPosition.z;
+    const f32 left = wrapAngle(yaw + kPi / 6.0f);
+    const f32 right = wrapAngle(yaw - kPi / 6.0f);
+    const f32 x1 = dx + std::sin(left);
+    const f32 z1 = dz + std::cos(left);
+    const f32 x2 = dx + std::sin(right);
+    const f32 z2 = dz + std::cos(right);
     return x2 * x2 + z2 * z2 <= x1 * x1 + z1 * z1 ? -1 : 1;
 }
 
-const EnemyMind& enemyMindOf(int algorithm) {
+const EnemyMind& enemyMindOf(s32 algorithm) {
     switch (algorithm) {
     case kSeekWay: return kSeek;
     case kProwlWay: return kProwl;

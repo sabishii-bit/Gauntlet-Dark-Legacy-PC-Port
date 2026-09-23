@@ -1,9 +1,9 @@
-#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -15,7 +15,7 @@ using namespace gdl;
 using namespace gdl::formats;
 using test::ByteWriter;
 
-std::vector<std::uint8_t> sampleRom() {
+std::vector<u8> sampleRom() {
     ByteWriter w;
     w.putU32(1).putU32(2).putU32(3).putU32(24).putU32(24).putU32(24 + 2 * 44);
     w.putText("common").putZeros(10).putText("COMMON").putZeros(10);
@@ -48,8 +48,8 @@ TEST_CASE("the audio directory lists banks and their sounds", "[formats][audio]"
 }
 
 TEST_CASE("damaged audio directories are rejected", "[formats][audio]") {
-    REQUIRE_THROWS_AS(AudioRom::parse(std::vector<std::uint8_t>(8, 0)), FormatError);
-    std::vector<std::uint8_t> bad = sampleRom();
+    REQUIRE_THROWS_AS(AudioRom::parse(std::vector<u8>(8, 0)), FormatError);
+    std::vector<u8> bad = sampleRom();
     bad[24 + 44 + 38] = 9; // second bank's first sound past the table
     REQUIRE_THROWS_AS(AudioRom::parse(bad), FormatError);
 }

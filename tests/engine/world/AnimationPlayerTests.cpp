@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/core/Types.h"
 #include "engine/world/AnimationPlayer.h"
 
 namespace {
@@ -10,9 +11,9 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
-constexpr float kStep = 1.0f / 30.0f;
+constexpr f32 kStep = 1.0f / 30.0f;
 
-TreeSequenceInfo sequence(int frames, int rate) {
+TreeSequenceInfo sequence(s32 frames, s32 rate) {
     TreeSequenceInfo info;
     info.name = "TEST";
     info.frames = frames;
@@ -30,9 +31,9 @@ TEST_CASE("a sequence steps a frame per tick, wraps when it repeats and holds wh
     REQUIRE(player.sequence() == 3);
     REQUIRE(player.frame() == 0.0f);
     REQUIRE(player.secondsPerFrame() == Approx(kStep));
-    for (int i = 1; i <= 11; ++i) {
+    for (s32 i = 1; i <= 11; ++i) {
         REQUIRE_FALSE(player.advance(kStep, true));
-        REQUIRE(player.frame() == Approx(static_cast<float>(i)));
+        REQUIRE(player.frame() == Approx(static_cast<f32>(i)));
         REQUIRE_FALSE(player.finished());
     }
     // The step past the last frame wraps to the first and reports the loop.
@@ -45,7 +46,7 @@ TEST_CASE("a sequence steps a frame per tick, wraps when it repeats and holds wh
 
     // Not repeating, the same step lands on the last frame and stays there.
     player.start(cycle, 3);
-    for (int i = 0; i < 11; ++i) {
+    for (s32 i = 0; i < 11; ++i) {
         player.advance(kStep, false);
     }
     REQUIRE(player.advance(kStep, false));

@@ -1,7 +1,6 @@
 #pragma once
 
-#include <cstdint>
-
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/world/WorldCamera.h"
 
@@ -17,37 +16,37 @@ namespace gdl::game {
  */
 class StartCamera {
 public:
-    static constexpr int kHoldTicks = 91;           ///< the original's timer
-    static constexpr int kSkipBelow = 45;           ///< a button ends the hold from here down
-    static constexpr float kUnitsPerTick = 0.25f;   ///< the ride's pace: a glide, not a snap
-    static constexpr float kPositionReach = 200.0f; ///< beyond these the pace grows with the gap
-    static constexpr float kAttentionReach = 20.0f;
-    static constexpr float kArrival = 0.3f; ///< within this of the follow camera is there
+    static constexpr s32 kHoldTicks = 91;         ///< the original's timer
+    static constexpr s32 kSkipBelow = 45;         ///< a button ends the hold from here down
+    static constexpr f32 kUnitsPerTick = 0.25f;   ///< the ride's pace: a glide, not a snap
+    static constexpr f32 kPositionReach = 200.0f; ///< beyond these the pace grows with the gap
+    static constexpr f32 kAttentionReach = 20.0f;
+    static constexpr f32 kArrival = 0.3f; ///< within this of the follow camera is there
 
-    enum class Phase : std::uint8_t { Off, Hold, Ride };
+    enum class Phase : u8 { Off, Hold, Ride };
 
     /** Starts the hold at `marker`, looking as far along its facing as `party` lies from it. */
     void start(const WorldCamera& marker, const Vec3& party);
     void stop() { m_phase = Phase::Off; }
     /** Advances `ticks`, `skip` ending a hold that has run long enough, riding toward the
      * follow camera's `position` and `attention`; false once it has arrived. */
-    bool update(int ticks, bool skip, const Vec3& position, const Vec3& attention);
+    bool update(s32 ticks, bool skip, const Vec3& position, const Vec3& attention);
 
     bool active() const { return m_phase != Phase::Off; }
     Phase phase() const { return m_phase; }
-    int ticksLeft() const { return m_ticks; }
+    s32 ticksLeft() const { return m_ticks; }
     const WorldCamera& camera() const { return m_camera; }
     const Vec3& attention() const { return m_attention; }
 
 private:
     /** Moves `point` at the pace toward `target`, or by the gap's share of `reach` when it is
      * farther than that; true when it was already within kArrival. */
-    static bool approach(Vec3& point, const Vec3& target, float reach, int ticks);
+    static bool approach(Vec3& point, const Vec3& target, f32 reach, s32 ticks);
     /** Turns the camera to look at its attention. */
     void look();
 
     Phase m_phase = Phase::Off;
-    int m_ticks = 0;
+    s32 m_ticks = 0;
     WorldCamera m_camera;
     Vec3 m_attention{0.0f, 0.0f, 0.0f};
 };

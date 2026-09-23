@@ -1,9 +1,9 @@
 #include "game/world/SumnerFigure.h"
 
 #include <algorithm>
-#include <cstddef>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
@@ -33,9 +33,9 @@ bool SumnerFigure::load(RenderDevice& device, ItemArchive& items, const WorldLay
         return false;
     }
     m_tree = &items.trees.tree(*tree);
-    for (std::size_t i = 0; i < kSequences.size(); ++i) {
+    for (usize i = 0; i < kSequences.size(); ++i) {
         const auto sequence = m_tree->findSequence(kSequences[i]);
-        m_sequences[i] = sequence.has_value() ? static_cast<int>(*sequence) : -1;
+        m_sequences[i] = sequence.has_value() ? static_cast<s32>(*sequence) : -1;
     }
     // Like the start markers, the lookout's heading points the way he came: a half turn
     // round faces him at the party.
@@ -45,7 +45,7 @@ bool SumnerFigure::load(RenderDevice& device, ItemArchive& items, const WorldLay
         glm::rotate(glm::translate(Mat4{1.0f}, m_position), m_yaw, Vec3{0.0f, 1.0f, 0.0f});
     m_index = 0;
     m_cutIn = false;
-    const unsigned int first = sequenceFor(0);
+    const u32 first = sequenceFor(0);
     m_player.start(m_tree->sequences[first], first);
     m_pose.evaluate(*m_tree, first, 0.0f);
     return true;
@@ -61,18 +61,18 @@ void SumnerFigure::clear() {
 }
 
 /** The sequence an index asks for, the stance standing in for any the tree lacks. */
-unsigned int SumnerFigure::sequenceFor(int index) const {
-    int sequence = -1;
-    if (index >= 0 && static_cast<std::size_t>(index) < m_sequences.size()) {
-        sequence = m_sequences[static_cast<std::size_t>(index)];
+u32 SumnerFigure::sequenceFor(s32 index) const {
+    s32 sequence = -1;
+    if (index >= 0 && static_cast<usize>(index) < m_sequences.size()) {
+        sequence = m_sequences[static_cast<usize>(index)];
     }
     if (sequence < 0) {
         sequence = std::max(m_sequences[0], 0);
     }
-    return static_cast<unsigned int>(sequence);
+    return static_cast<u32>(sequence);
 }
 
-void SumnerFigure::play(int index) {
+void SumnerFigure::play(s32 index) {
     if (!loaded()) {
         return;
     }
@@ -80,7 +80,7 @@ void SumnerFigure::play(int index) {
     m_cutIn = true;
 }
 
-void SumnerFigure::update(float seconds) {
+void SumnerFigure::update(f32 seconds) {
     if (!loaded()) {
         return;
     }
@@ -88,7 +88,7 @@ void SumnerFigure::update(float seconds) {
     // the gesture) and, whenever one ends or changes, asks for the next of the cycle.
     m_player.advance(seconds, m_tree->sequences[m_player.sequence()].repeats);
     const bool done = m_player.finished();
-    const unsigned int wanted = sequenceFor(m_index);
+    const u32 wanted = sequenceFor(m_index);
     const bool different = wanted != m_player.sequence();
     bool restarted = false;
     if (m_cutIn ? (done || different) : (done && different)) {

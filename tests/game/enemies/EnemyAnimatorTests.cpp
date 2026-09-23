@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/core/Types.h"
 
 #include "game/enemies/EnemyAnimator.h"
 
@@ -13,8 +14,8 @@ using namespace gdl;
 using namespace gdl::game;
 using Action = EnemyAction;
 
-constexpr int kTicks = 2;
-constexpr float kStep = 1.0f / 30.0f;
+constexpr s32 kTicks = 2;
+constexpr f32 kStep = 1.0f / 30.0f;
 
 /** A grunt's sequences: no DEATH, no ATTACK2, a ready-to-walk in and out. */
 TreeInfo gruntTree() {
@@ -26,7 +27,7 @@ TreeInfo gruntTree() {
     tree.nodes.push_back(root);
     struct Entry {
         const char* name;
-        int frames;
+        s32 frames;
         bool repeats;
     };
     const std::array<Entry, 12> entries{{{"READY", 20, true},
@@ -53,8 +54,8 @@ TreeInfo gruntTree() {
     return tree;
 }
 
-int stepsUntil(EnemyAnimator& animator, Action ask, Action wanted, int limit) {
-    int steps = 0;
+s32 stepsUntil(EnemyAnimator& animator, Action ask, Action wanted, s32 limit) {
+    s32 steps = 0;
     while (animator.action() != wanted && steps < limit) {
         animator.request(ask);
         animator.update(kTicks, kStep);
@@ -96,8 +97,8 @@ TEST_CASE("an enemy walks in, is asked by priority, and lands its blow as the sw
     REQUIRE(stepsUntil(animator, Action::Attack, Action::Attack, 60) < 60);
     REQUIRE(animator.swinging());
     REQUIRE(animator.attacking());
-    int struck = 0;
-    for (int i = 0; i < 40; ++i) {
+    s32 struck = 0;
+    for (s32 i = 0; i < 40; ++i) {
         animator.request(Action::Ready);
         animator.update(kTicks, kStep);
         struck += animator.struck() ? 1 : 0;
@@ -109,8 +110,8 @@ TEST_CASE("an enemy walks in, is asked by priority, and lands its blow as the sw
     REQUIRE(animator.action() == Action::Ready);
     // The power blow is told apart.
     REQUIRE(stepsUntil(animator, Action::PowerAttack, Action::PowerAttack, 60) < 60);
-    int power = 0;
-    for (int i = 0; i < 40; ++i) {
+    s32 power = 0;
+    for (s32 i = 0; i < 40; ++i) {
         animator.update(kTicks, kStep);
         power += animator.powerStruck() ? 1 : 0;
         REQUIRE_FALSE(animator.struck());
@@ -129,7 +130,7 @@ TEST_CASE("an enemy walks in, is asked by priority, and lands its blow as the sw
     REQUIRE(animator.dying());
     REQUIRE_FALSE(animator.dead());
     REQUIRE(animator.player().sequence() == animator.sequenceOf(Action::HitReact2));
-    int until = 0;
+    s32 until = 0;
     while (!animator.dead() && until < 60) {
         animator.request(Action::Dying);
         animator.update(kTicks, kStep);
@@ -149,7 +150,7 @@ TEST_CASE("a body idling after a throw refuses to attack, and a tree without a s
     REQUIRE(animator.requested() == Action::Ready);
     animator.request(Action::Walk);
     REQUIRE(animator.requested() == Action::Walk);
-    for (int i = 0; i < 40; ++i) {
+    for (s32 i = 0; i < 40; ++i) {
         animator.update(kTicks, kStep);
     }
     REQUIRE(animator.idleSeconds() == 0.0f);

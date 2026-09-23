@@ -1,6 +1,7 @@
 #pragma once
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
@@ -13,45 +14,45 @@ namespace gdl {
  */
 class AnimationPlayer {
 public:
-    static constexpr float kRateUnit = 1.0f / 900.0f; ///< seconds per frame per unit of rate
-    static constexpr float kDefaultRate = 30.0f;
-    static constexpr float kSnapWindow = 0.125f; ///< nearer a whole frame than this snaps to it
-    static constexpr float kTick = 1.0f / 30.0f; ///< frames shorter than a tick always snap
+    static constexpr f32 kRateUnit = 1.0f / 900.0f; ///< seconds per frame per unit of rate
+    static constexpr f32 kDefaultRate = 30.0f;
+    static constexpr f32 kSnapWindow = 0.125f; ///< nearer a whole frame than this snaps to it
+    static constexpr f32 kTick = 1.0f / 30.0f; ///< frames shorter than a tick always snap
 
     /** Starts `sequence` at `frame`, holding it for `transitionSeconds` first. */
-    void start(const TreeSequenceInfo& sequence, unsigned int index, float transitionSeconds = 0.0f,
-               float frame = 0.0f);
+    void start(const TreeSequenceInfo& sequence, u32 index, f32 transitionSeconds = 0.0f,
+               f32 frame = 0.0f);
     void stop();
 
     /** Steps by `seconds`; true the step the sequence wraps or reaches its end. A finished
      * one-shot stays put until started again. */
-    bool advance(float seconds, bool repeat);
+    bool advance(f32 seconds, bool repeat);
 
     bool playing() const { return m_sequence != nullptr; }
-    unsigned int sequence() const { return m_index; }
-    float frame() const { return m_frame; }
-    int frameCount() const { return m_sequence != nullptr ? m_sequence->frames : 0; }
+    u32 sequence() const { return m_index; }
+    f32 frame() const { return m_frame; }
+    s32 frameCount() const { return m_sequence != nullptr ? m_sequence->frames : 0; }
     /** True from the step the sequence wrapped or ended until the next step moves on. */
     bool finished() const { return m_finished; }
     bool transitioning() const { return m_transitionTime < m_transitionLength; }
     /** How far the transition into this sequence has come, 1 once it is over. */
-    float transition() const;
+    f32 transition() const;
 
     /** Lets frames fall between whole numbers when a sequence is slower than the clock. */
     void setSmooth(bool smooth) { m_smooth = smooth; }
     /** Scales playback: 2 plays twice as fast. */
-    void setSpeed(float speed) { m_speed = speed; }
-    float secondsPerFrame() const { return m_secondsPerFrame; }
+    void setSpeed(f32 speed) { m_speed = speed; }
+    f32 secondsPerFrame() const { return m_secondsPerFrame; }
 
 private:
     const TreeSequenceInfo* m_sequence = nullptr;
-    unsigned int m_index = 0;
-    float m_secondsPerFrame = kDefaultRate * kRateUnit;
-    float m_time = 0.0f; ///< seconds into the sequence
-    float m_frame = 0.0f;
-    float m_speed = 1.0f;
-    float m_transitionLength = 0.0f;
-    float m_transitionTime = 0.0f;
+    u32 m_index = 0;
+    f32 m_secondsPerFrame = kDefaultRate * kRateUnit;
+    f32 m_time = 0.0f; ///< seconds into the sequence
+    f32 m_frame = 0.0f;
+    f32 m_speed = 1.0f;
+    f32 m_transitionLength = 0.0f;
+    f32 m_transitionTime = 0.0f;
     bool m_finished = false;
     bool m_held = false; ///< a one-shot that has ended
     bool m_smooth = false;

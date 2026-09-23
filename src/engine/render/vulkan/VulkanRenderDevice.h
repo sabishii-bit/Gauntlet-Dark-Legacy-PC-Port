@@ -1,13 +1,12 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
 
 #include "engine/core/SpecialMembers.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
@@ -35,16 +34,16 @@ public:
     void setClearColor(const Vec4& rgba) override { m_clearColor = rgba; }
     Extent2D framebufferExtent() const override;
     std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
-                                           std::span<const std::uint8_t> rgba8Pixels) override;
-    void updateTexture(Texture& texture, std::span<const std::uint8_t> rgba8Pixels) override;
+                                           std::span<const u8> rgba8Pixels) override;
+    void updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) override;
     const Texture& whiteTexture() const override;
     void draw(const ImmediateBatch& batch, const Texture& texture, const Mat4& transform,
               const DrawState& state) override;
     void waitIdle() override;
 
 private:
-    static constexpr std::uint32_t kFramesInFlight = 2;
-    static constexpr std::uint32_t kMaxVerticesPerFrame = 1U << 18U;
+    static constexpr u32 kFramesInFlight = 2;
+    static constexpr u32 kMaxVerticesPerFrame = 1U << 18U;
 
     struct FrameResources {
         VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -54,7 +53,7 @@ private:
         VkBuffer vertexBuffer = VK_NULL_HANDLE;
         VmaAllocation vertexAllocation = VK_NULL_HANDLE;
         void* vertexMapped = nullptr;
-        std::uint32_t vertexCursor = 0;
+        u32 vertexCursor = 0;
         VkBuffer uploadBuffer = VK_NULL_HANDLE;
         VmaAllocation uploadAllocation = VK_NULL_HANDLE;
         void* uploadMapped = nullptr;
@@ -62,8 +61,8 @@ private:
         VkDeviceSize uploadCursor = 0;
     };
 
-    static constexpr std::size_t samplerIndex(TextureFilter filter, TextureWrap across,
-                                              TextureWrap down) {
+    static constexpr usize samplerIndex(TextureFilter filter, TextureWrap across,
+                                        TextureWrap down) {
         return (filter == TextureFilter::Nearest ? 1U : 0U) +
                (across == TextureWrap::ClampToEdge ? 2U : 0U) +
                (down == TextureWrap::ClampToEdge ? 4U : 0U);
@@ -89,20 +88,20 @@ private:
     std::unique_ptr<VulkanPipeline> m_opaquePipeline;   ///< no framebuffer blending
     BlendMode m_boundBlend = BlendMode::Alpha;
 
-    static constexpr std::uint32_t kTexturesPerPool = 512;
+    static constexpr u32 kTexturesPerPool = 512;
 
     VkDescriptorPool descriptorPoolForTexture();
 
     VkDescriptorSetLayout m_textureSetLayout = VK_NULL_HANDLE;
     std::vector<VkDescriptorPool> m_descriptorPools; ///< each texture keeps its own
-    std::uint32_t m_poolTexturesLeft = 0;            ///< sets left in the last pool
+    u32 m_poolTexturesLeft = 0;                      ///< sets left in the last pool
     std::array<VkSampler, 8> m_samplers{};           ///< by samplerIndex(filter, across, down)
     std::unique_ptr<VulkanTexture> m_whiteTexture;
 
     std::array<FrameResources, kFramesInFlight> m_frames{};
     std::vector<VkSemaphore> m_renderFinished;
-    std::uint32_t m_frameIndex = 0;
-    std::uint32_t m_imageIndex = 0;
+    u32 m_frameIndex = 0;
+    u32 m_imageIndex = 0;
     bool m_frameOpen = false;
     bool m_renderingStarted = false;
     bool m_vertexOverflowReported = false;

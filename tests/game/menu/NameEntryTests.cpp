@@ -1,6 +1,7 @@
-#include <cstddef>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "engine/core/Types.h"
 
 #include "game/menu/MenuInput.h"
 #include "game/menu/NameEntry.h"
@@ -149,7 +150,7 @@ TEST_CASE("a held direction keeps cycling letters, faster and faster", "[game][m
     REQUIRE(entry.update(hold, 1) == NameEntry::Event::LetterChanged);
     REQUIRE(entry.pendingLetter() == 'C');
     // Down the ladder the repeats come every tick.
-    for (std::size_t step = 2; step < NameEntry::kRepeatLadder.size(); ++step) {
+    for (usize step = 2; step < NameEntry::kRepeatLadder.size(); ++step) {
         entry.update(hold, NameEntry::kRepeatLadder[step]);
     }
     const char before = entry.pendingLetter();

@@ -2,23 +2,24 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
+
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr float kFloorReachAbove = 0.5f;
-constexpr float kFloorReachBelow = 3.0f;
-constexpr float kTicksPerSecond = 60.0f;
-constexpr int kExactPlayersMark = 10;
+constexpr f32 kFloorReachAbove = 0.5f;
+constexpr f32 kFloorReachBelow = 3.0f;
+constexpr f32 kTicksPerSecond = 60.0f;
+constexpr s32 kExactPlayersMark = 10;
 
 /** `position` in the box's own space, about its centre. */
 Vec2 localOf(const Obstacle& box, const Vec3& position) {
-    const float dx = position.x - box.centre.x;
-    const float dz = position.z - box.centre.z;
-    const float c = std::cos(box.yaw);
-    const float s = std::sin(box.yaw);
+    const f32 dx = position.x - box.centre.x;
+    const f32 dz = position.z - box.centre.z;
+    const f32 c = std::cos(box.yaw);
+    const f32 s = std::sin(box.yaw);
     return Vec2{dx * c - dz * s, dx * s + dz * c};
 }
 
@@ -28,14 +29,14 @@ bool levelWith(const Obstacle& box, const Vec3& position) {
 
 } // namespace
 
-Vec3 Obstacle::pushOut(const Vec3& position, float radius) const {
+Vec3 Obstacle::pushOut(const Vec3& position, f32 radius) const {
     if (!solid || !levelWith(*this, position)) {
         return position;
     }
     if (cylinderRadius > 0.0f) {
         Vec2 away{position.x - centre.x, position.z - centre.z};
-        const float distance = glm::length(away);
-        const float reach = cylinderRadius + radius;
+        const f32 distance = glm::length(away);
+        const f32 reach = cylinderRadius + radius;
         if (distance >= reach) {
             return position;
         }
@@ -46,14 +47,14 @@ Vec3 Obstacle::pushOut(const Vec3& position, float radius) const {
     const Vec2 nearest{std::clamp(local.x, -halfAcross, halfAcross),
                        std::clamp(local.y, -halfAlong, halfAlong)};
     Vec2 away = local - nearest;
-    float distance = glm::length(away);
+    f32 distance = glm::length(away);
     if (distance >= radius) {
         return position;
     }
     if (distance <= 1e-5f) {
         // Inside the box: out by the nearest side.
-        const float toAcross = halfAcross - std::abs(local.x);
-        const float toAlong = halfAlong - std::abs(local.y);
+        const f32 toAcross = halfAcross - std::abs(local.x);
+        const f32 toAlong = halfAlong - std::abs(local.y);
         away = toAcross < toAlong ? Vec2{local.x < 0.0f ? -1.0f : 1.0f, 0.0f}
                                   : Vec2{0.0f, local.y < 0.0f ? -1.0f : 1.0f};
         distance = -std::min(toAcross, toAlong);
@@ -61,13 +62,13 @@ Vec3 Obstacle::pushOut(const Vec3& position, float radius) const {
         away /= distance;
     }
     const Vec2 moved = local + away * (radius - distance);
-    const float c = std::cos(yaw);
-    const float s = std::sin(yaw);
+    const f32 c = std::cos(yaw);
+    const f32 s = std::sin(yaw);
     return Vec3{centre.x + moved.x * c + moved.y * s, position.y,
                 centre.z - moved.x * s + moved.y * c};
 }
 
-bool Obstacle::touchedBy(const Vec3& position, float radius, float margin) const {
+bool Obstacle::touchedBy(const Vec3& position, f32 radius, f32 margin) const {
     if (!levelWith(*this, position)) {
         return false;
     }
@@ -106,41 +107,38 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     return true;
 }
 
-void ItemFigure::play(int index, bool loop) {
+void ItemFigure::play(s32 index, bool loop) {
     m_index = index;
     m_loop = loop;
-    if (m_tree == nullptr || index < 0 ||
-        static_cast<std::size_t>(index) >= m_tree->sequences.size()) {
+    if (m_tree == nullptr || index < 0 || static_cast<usize>(index) >= m_tree->sequences.size()) {
         return;
     }
-    m_player.start(m_tree->sequences[static_cast<std::size_t>(index)],
-                   static_cast<unsigned int>(index));
-    m_pose.evaluate(*m_tree, static_cast<unsigned int>(index), 0.0f);
-    m_model.setFrame(static_cast<unsigned int>(index), 0);
+    m_player.start(m_tree->sequences[static_cast<usize>(index)], static_cast<u32>(index));
+    m_pose.evaluate(*m_tree, static_cast<u32>(index), 0.0f);
+    m_model.setFrame(static_cast<u32>(index), 0);
 }
 
-void ItemFigure::update(float seconds) {
+void ItemFigure::update(f32 seconds) {
     if (m_tree == nullptr || !m_player.playing()) {
         return;
     }
     m_player.advance(seconds, m_loop);
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
-    m_model.setFrame(m_player.sequence(), static_cast<int>(m_player.frame()));
+    m_model.setFrame(m_player.sequence(), static_cast<s32>(m_player.frame()));
 }
 
 bool ItemFigure::finished() const {
     return m_tree == nullptr || !m_player.playing() || m_player.finished();
 }
 
-int ItemFigure::ticksOf(int index) const {
-    if (m_tree == nullptr || index < 0 ||
-        static_cast<std::size_t>(index) >= m_tree->sequences.size()) {
+s32 ItemFigure::ticksOf(s32 index) const {
+    if (m_tree == nullptr || index < 0 || static_cast<usize>(index) >= m_tree->sequences.size()) {
         return 0;
     }
-    const TreeSequenceInfo& info = m_tree->sequences[static_cast<std::size_t>(index)];
-    const float rate =
-        info.frameRate > 0 ? static_cast<float>(info.frameRate) : AnimationPlayer::kDefaultRate;
-    return static_cast<int>(std::ceil(static_cast<float>(info.frames) * rate *
+    const TreeSequenceInfo& info = m_tree->sequences[static_cast<usize>(index)];
+    const f32 rate =
+        info.frameRate > 0 ? static_cast<f32>(info.frameRate) : AnimationPlayer::kDefaultRate;
+    return static_cast<s32>(std::ceil(static_cast<f32>(info.frames) * rate *
                                       AnimationPlayer::kRateUnit * kTicksPerSecond));
 }
 
@@ -168,7 +166,7 @@ Obstacle ItemFigure::obstacle(const ItemInfo& info) const {
     return box;
 }
 
-bool shownToParty(int minPlayers, int players) {
+bool shownToParty(s32 minPlayers, s32 players) {
     if (minPlayers > kExactPlayersMark) {
         return players == minPlayers - kExactPlayersMark;
     }

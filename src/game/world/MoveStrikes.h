@@ -1,8 +1,8 @@
 #pragma once
 
-#include <cstddef>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/world/WorldCollision.h"
 
@@ -13,16 +13,16 @@ namespace gdl::game {
 /** Harm a strike does this update: to whatever is within `radius` of `centre` and, when the
  * arc is not all round, no further from `facing` than it allows. */
 struct StrikeHit {
-    unsigned int strike = 0; ///< which strike it is, the same for every hit of one that flies
-    int owner = 0;
+    u32 strike = 0; ///< which strike it is, the same for every hit of one that flies
+    s32 owner = 0;
     Vec3 centre{0.0f, 0.0f, 0.0f};
-    float radius = 0.0f;
-    float arc = -1.0f;
+    f32 radius = 0.0f;
+    f32 arc = -1.0f;
     Vec3 facing{0.0f, 0.0f, 1.0f};
-    float damage = 0.0f;
+    f32 damage = 0.0f;
 
     /** Whether something standing at `position` is caught by it. */
-    bool reaches(const Vec3& position, float targetRadius, float targetHeight) const;
+    bool reaches(const Vec3& position, f32 targetRadius, f32 targetHeight) const;
 };
 
 /**
@@ -35,39 +35,39 @@ class MoveStrikes {
 public:
     /** One strike under way. */
     struct Strike {
-        unsigned int id = 0;
-        int owner = 0;
+        u32 id = 0;
+        s32 owner = 0;
         bool flies = false;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Vec3 facing{0.0f, 0.0f, 1.0f};
-        float speed = 0.0f;
-        float radius = 0.0f;
-        float arc = -1.0f;
-        float damage = 0.0f;
-        float delayLeft = 0.0f;
-        float secondsLeft = 0.0f; ///< of what flies
+        f32 speed = 0.0f;
+        f32 radius = 0.0f;
+        f32 arc = -1.0f;
+        f32 damage = 0.0f;
+        f32 delayLeft = 0.0f;
+        f32 secondsLeft = 0.0f; ///< of what flies
     };
 
     /** What a character's own harm is multiplied by when a strike's amount is negative. */
-    static float damageOf(const MoveStrike& strike, float ownDamage);
+    static f32 damageOf(const MoveStrike& strike, f32 ownDamage);
     /** Where a strike starts: its offset from `position`, turned to `facing`. */
     static Vec3 originOf(const MoveStrike& strike, const Vec3& position, const Vec3& facing);
 
     /** Starts `strike` for `owner` standing at `position` and facing `facing` (level, unit
      * length); its number, which its hits carry. */
-    unsigned int start(const MoveStrike& strike, int owner, const Vec3& position,
-                       const Vec3& facing, float ownDamage);
-    std::vector<StrikeHit> update(float seconds, const WorldCollision* collision);
+    u32 start(const MoveStrike& strike, s32 owner, const Vec3& position, const Vec3& facing,
+              f32 ownDamage);
+    std::vector<StrikeHit> update(f32 seconds, const WorldCollision* collision);
     void clear();
 
-    std::size_t count() const { return m_strikes.size(); }
-    const Strike& strike(std::size_t index) const { return m_strikes[index]; }
+    usize count() const { return m_strikes.size(); }
+    const Strike& strike(usize index) const { return m_strikes[index]; }
     /** The strike numbered `id`, or null once it is over. */
-    const Strike* find(unsigned int id) const;
+    const Strike* find(u32 id) const;
 
 private:
     std::vector<Strike> m_strikes;
-    unsigned int m_next = 1;
+    u32 m_next = 1;
 };
 
 } // namespace gdl::game

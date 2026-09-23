@@ -2,10 +2,12 @@
 
 #include <string_view>
 
+#include "engine/core/Types.h"
+
 namespace gdl::detail {
 
 /** Logs the failure and terminates the process. */
-[[noreturn]] void fatal(std::string_view expression, std::string_view file, int line,
+[[noreturn]] void fatal(std::string_view expression, std::string_view file, s32 line,
                         std::string_view message);
 
 } // namespace gdl::detail

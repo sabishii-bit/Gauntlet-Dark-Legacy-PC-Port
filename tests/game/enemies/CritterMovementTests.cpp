@@ -3,6 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -13,7 +14,7 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 TEST_CASE("boss territories constrain displacement not move speed", "[game][boss-movement]") {
     CritterMovement movement;

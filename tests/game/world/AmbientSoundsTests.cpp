@@ -1,6 +1,4 @@
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 
 #include <catch2/catch_approx.hpp>
@@ -10,6 +8,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -30,7 +29,7 @@ struct Fixture {
     explicit Fixture(std::string_view name) {
         bank = test::scratchDirectory(std::string(name) + "-bank");
         std::filesystem::create_directories(bank / "samples");
-        const std::array<std::int16_t, 4> kCrackle{8192, -8192, 8192, -8192};
+        const std::array<s16, 4> kCrackle{8192, -8192, 8192, -8192};
         writeFile(bank / "samples/000.wav", formats::encodeWav(kCrackle, 48000, 1));
         writeTextFile(bank / "sounds.json", R"({
   "bank": "TEST",
@@ -157,9 +156,9 @@ TEST_CASE("the tower's ambience stands at the realms' portals and its braziers",
     const std::array<SoundSet*, 1> banks{&ambient};
     REQUIRE(ambience.bind(layout, banks));
     REQUIRE(ambience.size() == 53);
-    std::size_t drums = 0;
-    std::size_t fires = 0;
-    for (std::size_t i = 0; i < ambience.size(); ++i) {
+    usize drums = 0;
+    usize fires = 0;
+    for (usize i = 0; i < ambience.size(); ++i) {
         const AmbientEmitter& emitter = ambience.emitter(i);
         const std::string& name = ambient.entry(emitter.sound).name;
         drums += name == "S_SDRUMSL" ? 1 : 0;

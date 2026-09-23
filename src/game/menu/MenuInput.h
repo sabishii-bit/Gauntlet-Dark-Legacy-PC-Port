@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "engine/core/Types.h"
 #include "engine/platform/Input.h"
 
 #include "game/config/GameConfig.h"
@@ -22,8 +23,8 @@ struct MenuInput {
     bool downHeld = false;
     bool leftHeld = false;
     bool rightHeld = false;
-    std::string typed; ///< printable characters typed into a text field this frame
-    bool erase = false; ///< Backspace, for a text field
+    std::string typed;   ///< printable characters typed into a text field this frame
+    bool erase = false;  ///< Backspace, for a text field
     bool escape = false; ///< the escape binding: leaves a text field, quits elsewhere
 
     bool any() const { return up || down || left || right || select || back || start; }
@@ -31,17 +32,17 @@ struct MenuInput {
 
 /** Which devices one read merges: the keyboard and one pad, or every pad. */
 struct MenuInputSource {
-    static constexpr int kAllPads = -1;
-    static constexpr int kNoPad = -2;
-    static constexpr int kKeyboardPlayer = 0;
+    static constexpr s32 kAllPads = -1;
+    static constexpr s32 kNoPad = -2;
+    static constexpr s32 kKeyboardPlayer = 0;
 
     bool keyboard = true;
-    int pad = kAllPads;
+    s32 pad = kAllPads;
     bool text = false; ///< a text field has the keyboard: letter, digit, space and Backspace
                        ///< keys type or erase instead of steering
 
     /** The devices that speak for a player: the keyboard belongs to the first. */
-    static MenuInputSource forPlayer(int player) {
+    static MenuInputSource forPlayer(s32 player) {
         return MenuInputSource{player == kKeyboardPlayer, player};
     }
 

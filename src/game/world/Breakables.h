@@ -1,13 +1,12 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -18,14 +17,14 @@ namespace gdl::game {
 
 /** What striking a barrel came to. */
 struct BreakableStrike {
-    enum class Kind : std::uint8_t { Plain, Holding, Exploding, Poison };
+    enum class Kind : u8 { Plain, Holding, Exploding, Poison };
 
-    std::size_t index = 0;
+    usize index = 0;
     Kind kind = Kind::Plain;
     bool broken = false; ///< its last hit point went; else it only took the blow
     Vec3 position{0.0f, 0.0f, 0.0f};
-    int contents = -1; ///< the item record a holding barrel gives up, broken
-    int count = 0;
+    s32 contents = -1; ///< the item record a holding barrel gives up, broken
+    s32 count = 0;
 };
 
 /**
@@ -38,29 +37,29 @@ struct BreakableStrike {
  */
 class Breakables {
 public:
-    static constexpr int kBreakable = 10; ///< the item type of barrels and breakable walls
-    static constexpr int kBarrel = 43;    ///< of either type
-    static constexpr int kExploding = 44;
-    static constexpr int kPoison = 45;
-    static constexpr int kWhole = 0; ///< its sequences, in order
-    static constexpr int kBreaking = 1;
-    static constexpr int kBroken = 2;
-    static constexpr unsigned int kSeedStart = 7919; ///< its random picks' own seed
+    static constexpr s32 kBreakable = 10; ///< the item type of barrels and breakable walls
+    static constexpr s32 kBarrel = 43;    ///< of either type
+    static constexpr s32 kExploding = 44;
+    static constexpr s32 kPoison = 45;
+    static constexpr s32 kWhole = 0; ///< its sequences, in order
+    static constexpr s32 kBreaking = 1;
+    static constexpr s32 kBroken = 2;
+    static constexpr u32 kSeedStart = 7919; ///< its random picks' own seed
 
     /** One barrel. */
     struct Barrel {
-        int instance = -1;
+        s32 instance = -1;
         BreakableStrike::Kind kind = BreakableStrike::Kind::Plain;
-        int health = 0;
-        int armor = 0;
-        int contents = -1;
-        int count = 0;
-        int minPlayers = 0;
-        int state = kWhole;
+        s32 health = 0;
+        s32 armor = 0;
+        s32 contents = -1;
+        s32 count = 0;
+        s32 minPlayers = 0;
+        s32 state = kWhole;
         bool shown = true;
         bool gone = false;
-        float radius = 1.0f;
-        float height = 3.0f;
+        f32 radius = 1.0f;
+        f32 height = 3.0f;
         ItemFigure figure;
         Obstacle box;
     };
@@ -68,20 +67,20 @@ public:
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
               const WorldCollision* collision);
     void clear();
-    std::size_t size() const { return m_barrels.size(); }
-    const Barrel& barrel(std::size_t index) const { return *m_barrels[index]; }
-    void setPlayerCount(int players);
+    usize size() const { return m_barrels.size(); }
+    const Barrel& barrel(usize index) const { return *m_barrels[index]; }
+    void setPlayerCount(s32 players);
 
     /** Whether a barrel still stands to be hit. */
-    bool standing(std::size_t index) const;
+    bool standing(usize index) const;
     /** The standing barrel a body of `radius` moving from `from` to `to` runs into. */
-    std::optional<std::size_t> struckBy(const Vec3& from, const Vec3& to, float radius) const;
+    std::optional<usize> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
     /** The standing barrels within `radius` of `centre`. */
-    std::vector<std::size_t> within(const Vec3& centre, float radius) const;
+    std::vector<usize> within(const Vec3& centre, f32 radius) const;
     /** A blow of `power` on a standing barrel; nothing for one that no longer stands. */
-    std::optional<BreakableStrike> strike(std::size_t index, float power);
+    std::optional<BreakableStrike> strike(usize index, f32 power);
 
-    void update(float seconds);
+    void update(f32 seconds);
     /** The boxes of those still in the way. */
     std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
@@ -89,7 +88,7 @@ public:
 private:
     std::vector<std::unique_ptr<Barrel>> m_barrels;
     std::vector<ItemInfo> m_infos;
-    unsigned int m_seed = kSeedStart;
+    u32 m_seed = kSeedStart;
 };
 
 } // namespace gdl::game

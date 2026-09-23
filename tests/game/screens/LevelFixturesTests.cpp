@@ -1,9 +1,10 @@
 #include <array>
-#include <cstddef>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -23,16 +24,16 @@ struct Fixture {
     std::vector<std::string> calls;
     LevelFixtures::Events events{
         .hurt =
-            [this](std::size_t i, float damage, HurtKind kind, bool directed) {
+            [this](usize i, f32 damage, HurtKind kind, bool directed) {
                 REQUIRE(damage == 5);
                 REQUIRE(kind == HurtKind::Blow);
                 REQUIRE(directed);
                 calls.push_back("player" + std::to_string(i));
             },
-        .help = [](int, std::size_t) { FAIL("Empty scenery has no help event"); },
-        .card = [](int, std::string_view) { FAIL("Empty scenery has no pickup card"); },
+        .help = [](s32, usize) { FAIL("Empty scenery has no help event"); },
+        .card = [](s32, std::string_view) { FAIL("Empty scenery has no pickup card"); },
         .opponents =
-            [this](const Vec3&, float radius, float damage) {
+            [this](const Vec3&, f32 radius, f32 damage) {
                 REQUIRE(radius == 2);
                 REQUIRE(damage == 5);
                 calls.emplace_back("opponents");
@@ -81,7 +82,7 @@ TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific
         {fixture.device, fixture.world, fixture.weapons, fixture.effects, fixture.audio, 1});
     const Traps& traps = fixture.fixtures.traps();
     REQUIRE(traps.size() == 10);
-    for (std::size_t i = 0; i < traps.size(); ++i) {
+    for (usize i = 0; i < traps.size(); ++i) {
         const ItemFigure& vent = traps.trap(i).figure;
         REQUIRE(vent.hasFigure());
         REQUIRE(vent.sequenceCount() == 4); // OFF, ONA, ON, ONB, not an invented one-tick cycle

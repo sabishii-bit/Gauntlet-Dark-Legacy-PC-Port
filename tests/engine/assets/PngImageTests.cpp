@@ -1,10 +1,10 @@
-#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/PngImage.h"
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -25,9 +25,9 @@ TEST_CASE("a PNG decodes to RGBA8 rows top to bottom", "[assets][png]") {
 }
 
 TEST_CASE("bytes that are not an image are rejected", "[assets][png]") {
-    const std::vector<std::uint8_t> junk(64, 0x42);
+    const std::vector<u8> junk(64, 0x42);
     REQUIRE_THROWS_AS(decodeImageFile(junk), FormatError);
-    REQUIRE_THROWS_AS(decodeImageFile(std::vector<std::uint8_t>{}), FormatError);
+    REQUIRE_THROWS_AS(decodeImageFile(std::vector<u8>{}), FormatError);
 }
 
 TEST_CASE("image files load from disk", "[assets][png]") {

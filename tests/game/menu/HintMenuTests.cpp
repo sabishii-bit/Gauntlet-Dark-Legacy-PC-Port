@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/BitmapFont.h"
+#include "engine/core/Types.h"
 #include "engine/render/Image.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
@@ -17,7 +18,7 @@ using namespace gdl::game;
 
 BitmapFont wideFont() {
     std::vector<BitmapGlyph> glyphs;
-    for (int c = 'A'; c <= 'Z'; ++c) {
+    for (s32 c = 'A'; c <= 'Z'; ++c) {
         glyphs.push_back({c, 8, 0, 0});
     }
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
@@ -103,7 +104,7 @@ TEST_CASE("the hint scroll lists its topics, answers one with a page and returns
 
     // A lone centred passage sits about the middle of the screen.
     f.menu.read(f.painter, "A HINT", {"ONE\nTWO"}, 1.0f, true, 0);
-    const int lineHeight = f.painter.lineHeight(HintMenu::kPageScale);
+    const s32 lineHeight = f.painter.lineHeight(HintMenu::kPageScale);
     REQUIRE(f.menu.page().bodyTop() == 192 - lineHeight);
 }
 
@@ -117,7 +118,7 @@ TEST_CASE("backing out of the topics burns the scroll away", "[game][menu][hints
     // While it burns nothing answers, and once burnt and faded the scroll is gone.
     REQUIRE(f.menu.update(f.device, press(false, true, false), 2).kind ==
             HintMenuEvent::Kind::None);
-    for (int i = 0; i < 40 && f.menu.active(); ++i) {
+    for (s32 i = 0; i < 40 && f.menu.active(); ++i) {
         f.menu.update(f.device, MenuInput{}, 2);
     }
     REQUIRE_FALSE(f.menu.active());

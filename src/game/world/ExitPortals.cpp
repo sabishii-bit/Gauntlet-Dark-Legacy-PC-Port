@@ -2,24 +2,24 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr float kTicksPerSecond = 60.0f;
-constexpr float kFloorReachAbove = 0.5f;
-constexpr float kFloorReachBelow = 3.0f;
-constexpr std::size_t kTagAt = 4; ///< where an exit's parameters keep its two characters
+constexpr f32 kTicksPerSecond = 60.0f;
+constexpr f32 kFloorReachAbove = 0.5f;
+constexpr f32 kFloorReachBelow = 3.0f;
+constexpr usize kTagAt = 4; ///< where an exit's parameters keep its two characters
 
 } // namespace
 
 std::string ExitPortals::tagOf(const ItemInstance& instance) {
     std::string tag;
-    for (std::size_t i = kTagAt; i < kTagAt + 2 && i < instance.params.size(); ++i) {
+    for (usize i = kTagAt; i < kTagAt + 2 && i < instance.params.size(); ++i) {
         if (instance.params[i] != 0) {
             tag.push_back(static_cast<char>(instance.params[i]));
         }
@@ -33,22 +33,22 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
     const auto tree = items.loaded() ? items.trees.find(kFigure) : std::nullopt;
     if (tree.has_value()) {
         m_tree = &items.trees.tree(*tree);
-        for (std::size_t i = 0; i < kSequences.size(); ++i) {
+        for (usize i = 0; i < kSequences.size(); ++i) {
             const auto sequence = m_tree->findSequence(kSequences[i]);
-            m_sequences[i] = sequence.has_value() ? static_cast<int>(*sequence) : -1;
+            m_sequences[i] = sequence.has_value() ? static_cast<s32>(*sequence) : -1;
         }
     }
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
-    for (std::size_t index = 0; index < instances.size(); ++index) {
+    for (usize index = 0; index < instances.size(); ++index) {
         const ItemInstance& instance = instances[index];
-        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= infos.size() ||
-            infos[static_cast<std::size_t>(instance.info)].type != kExitItem) {
+        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size() ||
+            infos[static_cast<usize>(instance.info)].type != kExitItem) {
             continue;
         }
-        const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
+        const ItemInfo& info = infos[static_cast<usize>(instance.info)];
         Portal portal;
-        portal.instance = static_cast<int>(index);
+        portal.instance = static_cast<s32>(index);
         portal.radius = info.radius;
         portal.tag = tagOf(instance);
         portal.destination = catalog.byTag(portal.tag);
@@ -86,39 +86,39 @@ void ExitPortals::clear() {
 
 /** Starts a portal's sequence; it may not move on until the sequence has played (the waiting
  * one holds its own time). */
-void ExitPortals::advance(Portal& portal, int action) {
+void ExitPortals::advance(Portal& portal, s32 action) {
     portal.action = std::clamp(action, 0, kLast);
     portal.ticksLeft = 0;
-    const int sequence = m_sequences[static_cast<std::size_t>(portal.action)];
+    const s32 sequence = m_sequences[static_cast<usize>(portal.action)];
     if (m_tree == nullptr || sequence < 0) {
         return;
     }
-    const TreeSequenceInfo& info = m_tree->sequences[static_cast<std::size_t>(sequence)];
-    portal.player.start(info, static_cast<unsigned int>(sequence));
-    portal.pose.evaluate(*m_tree, static_cast<unsigned int>(sequence), 0.0f);
-    portal.model.setFrame(static_cast<unsigned int>(sequence), 0);
-    const float rate =
-        info.frameRate > 0 ? static_cast<float>(info.frameRate) : AnimationPlayer::kDefaultRate;
-    const float seconds = static_cast<float>(info.frames) * rate * AnimationPlayer::kRateUnit;
+    const TreeSequenceInfo& info = m_tree->sequences[static_cast<usize>(sequence)];
+    portal.player.start(info, static_cast<u32>(sequence));
+    portal.pose.evaluate(*m_tree, static_cast<u32>(sequence), 0.0f);
+    portal.model.setFrame(static_cast<u32>(sequence), 0);
+    const f32 rate =
+        info.frameRate > 0 ? static_cast<f32>(info.frameRate) : AnimationPlayer::kDefaultRate;
+    const f32 seconds = static_cast<f32>(info.frames) * rate * AnimationPlayer::kRateUnit;
     portal.ticksLeft = portal.action == kWaiting
                            ? kWaitingTicks
-                           : static_cast<int>(std::ceil(seconds * kTicksPerSecond));
+                           : static_cast<s32>(std::ceil(seconds * kTicksPerSecond));
 }
 
-bool ExitPortals::standsOn(const Portal& portal, const PortalVisitor& visitor, float extra) {
+bool ExitPortals::standsOn(const Portal& portal, const PortalVisitor& visitor, f32 extra) {
     const Vec3 away = visitor.position - portal.position;
-    const float reach = portal.radius + extra + visitor.radius;
+    const f32 reach = portal.radius + extra + visitor.radius;
     return away.x * away.x + away.z * away.z <= reach * reach && std::abs(away.y) <= kReach;
 }
 
-std::optional<std::size_t> ExitPortals::update(int ticks, float seconds,
-                                               std::span<const PortalVisitor> party) {
-    std::optional<std::size_t> left;
+std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
+                                         std::span<const PortalVisitor> party) {
+    std::optional<usize> left;
     // A larger party is given a wider portal: a unit more for each member past the first.
-    const float extra = party.empty() ? 0.0f : static_cast<float>(party.size() - 1);
-    for (std::size_t index = 0; index < m_portals.size(); ++index) {
+    const f32 extra = party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
+    for (usize index = 0; index < m_portals.size(); ++index) {
         Portal& portal = m_portals[index];
-        const auto on = static_cast<std::size_t>(std::ranges::count_if(
+        const auto on = static_cast<usize>(std::ranges::count_if(
             party, [&](const PortalVisitor& visitor) { return standsOn(portal, visitor, extra); }));
         const bool everyone = !party.empty() && on == party.size();
         const bool ready = portal.ticksLeft <= 0;
@@ -148,7 +148,7 @@ std::optional<std::size_t> ExitPortals::update(int ticks, float seconds,
             portal.player.advance(seconds, loops);
             portal.pose.evaluate(*m_tree, portal.player.sequence(), portal.player.frame());
             portal.model.setFrame(portal.player.sequence(),
-                                  static_cast<int>(portal.player.frame()));
+                                  static_cast<s32>(portal.player.frame()));
         }
     }
     return left;

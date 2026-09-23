@@ -1,18 +1,17 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <string_view>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/core/Types.h"
 #include "engine/world/AnimationPlayer.h"
 #include "engine/world/TreePose.h"
 
 namespace gdl::game {
 
 /** What an enemy's body can be doing, in the original's order. */
-enum class EnemyAction : std::uint8_t {
+enum class EnemyAction : u8 {
     Ready,
     Start,
     Taunt,
@@ -48,7 +47,7 @@ enum class EnemyAction : std::uint8_t {
     Dying
 };
 
-inline constexpr std::size_t kEnemyActionCount = 33;
+inline constexpr usize kEnemyActionCount = 33;
 
 /**
  * Drives an enemy's body: which sequence plays, when one gives way to another, and when a
@@ -69,7 +68,7 @@ public:
         "HIT3",    "GETUP",    "DEATH"};
 
     /** How loudly each action asks: a request is refused by a pending one at least as loud. */
-    static constexpr std::array<int, kEnemyActionCount> kPriorities{
+    static constexpr std::array<s32, kEnemyActionCount> kPriorities{
         100, 900, 900, 200, 200, 200, 200, 200, 200, 200, 200, 200, 300, 300, 300, 300, 300,
         300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 150, 400, 450, 460, 900, 999};
 
@@ -85,7 +84,7 @@ public:
     /** Steps `ticks` of the game clock (`seconds` long), answering the tick's requests, which
      * are then forgotten. `contact` says a player is against the body, which some attacks
      * chain on. */
-    void update(int ticks, float seconds, bool contact = false);
+    void update(s32 ticks, f32 seconds, bool contact = false);
 
     Action action() const { return m_current; }
     Action requested() const { return m_requested; }
@@ -106,17 +105,17 @@ public:
     bool powerStruck() const { return m_powerStruck; }
     bool threw() const { return m_threw; }
     /** Seconds the body idles after a throw before the next attack or throw. */
-    void setIdle(float seconds) { m_idleSeconds = seconds; }
-    float idleSeconds() const { return m_idleSeconds; }
-    bool has(Action action) const { return m_sequences[static_cast<std::size_t>(action)] >= 0; }
+    void setIdle(f32 seconds) { m_idleSeconds = seconds; }
+    f32 idleSeconds() const { return m_idleSeconds; }
+    bool has(Action action) const { return m_sequences[static_cast<usize>(action)] >= 0; }
     /** The sequence an action plays, falling back to the stance when the tree lacks it. */
-    unsigned int sequenceOf(Action action) const;
+    u32 sequenceOf(Action action) const;
     const TreePose& pose() const { return m_pose; }
     const AnimationPlayer& player() const { return m_player; }
 
 private:
     /** When a decided action may start: the original's cut-in rules. */
-    enum class Cut : std::uint8_t { WhenDoneIfDifferent, IfDifferent };
+    enum class Cut : u8 { WhenDoneIfDifferent, IfDifferent };
 
     struct Decision {
         Action action = Action::Ready;
@@ -125,10 +124,10 @@ private:
     };
 
     Decision decide(Action next, bool contact) const;
-    void play(Decision decision, float seconds);
+    void play(Decision decision, f32 seconds);
 
     const TreeInfo* m_tree = nullptr;
-    std::array<int, kEnemyActionCount> m_sequences{};
+    std::array<s32, kEnemyActionCount> m_sequences{};
     Action m_current = Action::Ready;
     Action m_requested = Action::Ready;
     bool m_walksIn = false;
@@ -136,7 +135,7 @@ private:
     bool m_powerStruck = false;
     bool m_threw = false;
     bool m_dead = false;
-    float m_idleSeconds = 0.0f;
+    f32 m_idleSeconds = 0.0f;
     AnimationPlayer m_player;
     TreePose m_pose;
     TreePose m_previous;

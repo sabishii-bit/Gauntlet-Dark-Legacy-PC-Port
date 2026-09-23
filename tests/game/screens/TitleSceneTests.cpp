@@ -5,6 +5,7 @@
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 #include "FakeRenderDevice.h"
@@ -72,7 +73,7 @@ TEST_CASE("the glow fades in and the screen times out when idle", "[game][title]
     REQUIRE(scene.idleTicks() == TitleScene::kIdleTicks - 60);
 
     TitleOutcome outcome = TitleOutcome::Running;
-    for (int i = 0; i < TitleScene::kIdleTicks && outcome == TitleOutcome::Running; ++i) {
+    for (s32 i = 0; i < TitleScene::kIdleTicks && outcome == TitleOutcome::Running; ++i) {
         outcome = scene.step(1, MenuInput{});
     }
     REQUIRE(outcome == TitleOutcome::TimedOut);
@@ -100,7 +101,7 @@ TEST_CASE("start opens the menu and choosing start leads into the game",
     REQUIRE(scene.loading());
     REQUIRE_FALSE(scene.menuOpen());
     TitleOutcome outcome = TitleOutcome::Running;
-    int ticks = 0;
+    s32 ticks = 0;
     while (outcome == TitleOutcome::Running && ticks < 100) {
         outcome = scene.step(1, MenuInput{});
         ++ticks;

@@ -1,18 +1,19 @@
 #include "engine/ui/Canvas.h"
 
 #include "engine/core/Assert.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
 namespace {
 
 /** Every sprite shares one depth; the depth test keeps later draws in front. */
-constexpr float kSpriteDepth = 0.5f;
+constexpr f32 kSpriteDepth = 0.5f;
 
 } // namespace
 
-Mat4 makeVirtualScreenTransform(const Mat4& frameProjection, float virtualWidth,
-                                float virtualHeight, float frameWidth, float frameHeight) {
+Mat4 makeVirtualScreenTransform(const Mat4& frameProjection, f32 virtualWidth, f32 virtualHeight,
+                                f32 frameWidth, f32 frameHeight) {
     return glm::scale(frameProjection,
                       Vec3{frameWidth / virtualWidth, frameHeight / virtualHeight, 1.0f});
 }

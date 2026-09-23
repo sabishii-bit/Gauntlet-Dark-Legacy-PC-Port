@@ -1,7 +1,5 @@
 #include "engine/assets/PngImage.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <format>
 #include <limits>
@@ -10,6 +8,7 @@
 #include <stb_image.h>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -20,25 +19,25 @@ struct StbFree {
     void operator()(stbi_uc* pixels) const { stbi_image_free(pixels); }
 };
 
-constexpr int kRgbaChannels = 4;
+constexpr s32 kRgbaChannels = 4;
 
 } // namespace
 
-Image decodeImageFile(std::span<const std::uint8_t> bytes) {
-    if (bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+Image decodeImageFile(std::span<const u8> bytes) {
+    if (bytes.size() > static_cast<usize>(std::numeric_limits<s32>::max())) {
         throw FormatError("image file is too large to decode");
     }
-    int width = 0;
-    int height = 0;
-    int channels = 0;
+    s32 width = 0;
+    s32 height = 0;
+    s32 channels = 0;
     const std::unique_ptr<stbi_uc, StbFree> pixels(stbi_load_from_memory(
-        bytes.data(), static_cast<int>(bytes.size()), &width, &height, &channels, kRgbaChannels));
+        bytes.data(), static_cast<s32>(bytes.size()), &width, &height, &channels, kRgbaChannels));
     if (!pixels || width <= 0 || height <= 0) {
         throw FormatError(std::format("cannot decode image: {}", stbi_failure_reason()));
     }
     Image image;
-    image.width = static_cast<std::uint32_t>(width);
-    image.height = static_cast<std::uint32_t>(height);
+    image.width = static_cast<u32>(width);
+    image.height = static_cast<u32>(height);
     image.pixels.resize(image.rowBytes() * image.height);
     std::memcpy(image.pixels.data(), pixels.get(), image.pixels.size());
     return image;

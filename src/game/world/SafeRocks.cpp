@@ -2,20 +2,20 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <format>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
-int parameter(const ItemInstance& instance, std::size_t offset) {
+s32 parameter(const ItemInstance& instance, usize offset) {
     // The unpacked manifest keeps the original little-endian parameter bytes.
-    const unsigned int value = static_cast<unsigned int>(instance.params[offset]) |
-                               (static_cast<unsigned int>(instance.params[offset + 1]) << 8);
-    return value < 0x8000U ? static_cast<int>(value) : static_cast<int>(value) - 0x10000;
+    const u32 value = static_cast<u32>(instance.params[offset]) |
+                      (static_cast<u32>(instance.params[offset + 1]) << 8);
+    return value < 0x8000U ? static_cast<s32>(value) : static_cast<s32>(value) - 0x10000;
 }
 
 } // namespace
@@ -24,18 +24,18 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
     clear();
     const auto& infos = layout.itemInfos();
     const auto& instances = layout.itemInstances();
-    for (std::size_t i = 0; i < instances.size(); ++i) {
+    for (usize i = 0; i < instances.size(); ++i) {
         const ItemInstance& instance = instances[i];
-        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= infos.size()) {
+        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
             continue;
         }
-        const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
-        const int override = parameter(instance, 0);
+        const ItemInfo& info = infos[static_cast<usize>(instance.info)];
+        const s32 override = parameter(instance, 0);
         if (info.type != kItemType || (override > 0 ? override : info.subtype) != kSubtype) {
             continue;
         }
         auto rock = std::make_unique<Rock>();
-        rock->instance = static_cast<int>(i);
+        rock->instance = static_cast<s32>(i);
         rock->baseHealth = std::max(info.hitPoints, 0);
         rock->tier = std::clamp(parameter(instance, 2), 0, kWhole);
         rock->health = rock->tier * rock->baseHealth;
@@ -51,7 +51,7 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
         if (info.collisionType == 1) {
             rock->obstacle.cylinderRadius = info.radius;
         }
-        for (int tier = 0; tier <= kWhole; ++tier) {
+        for (s32 tier = 0; tier <= kWhole; ++tier) {
             const std::string base = std::format("{}{}", info.name, tier);
             bool found = false;
             for (const char* suffix : {"", "L1", "L1ROOT"}) {
@@ -66,8 +66,8 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
                 node.object = items.models.entry(*index).name;
                 node.objectFlags = info.objectFlags;
                 tree.nodes.push_back(node);
-                found = rock->models[static_cast<std::size_t>(tier)].bind(tree, items.models,
-                                                                          items.textures, device);
+                found = rock->models[static_cast<usize>(tier)].bind(tree, items.models,
+                                                                    items.textures, device);
                 break;
             }
             if (!found) {
@@ -83,25 +83,25 @@ void SafeRocks::clear() {
     m_rocks.clear();
 }
 
-void SafeRocks::setPlayerCount(int players) {
+void SafeRocks::setPlayerCount(s32 players) {
     for (const auto& rock : m_rocks) {
         rock->shown = shownToParty(rock->minPlayers, players);
     }
 }
 
-bool SafeRocks::standing(std::size_t index) const {
+bool SafeRocks::standing(usize index) const {
     return index < m_rocks.size() && m_rocks[index]->shown && m_rocks[index]->health > 0 &&
            m_rocks[index]->tier > 0;
 }
 
-bool SafeRocks::strike(std::size_t index, float power) {
+bool SafeRocks::strike(usize index, f32 power) {
     if (!standing(index) || m_rocks[index]->armor < 0 || !std::isfinite(power) || power <= 0.0f) {
         return false;
     }
     Rock& rock = *m_rocks[index];
-    const float damage =
-        std::clamp(power - static_cast<float>(rock.armor), 1.0f, static_cast<float>(rock.health));
-    rock.health -= static_cast<int>(std::lround(damage));
+    const f32 damage =
+        std::clamp(power - static_cast<f32>(rock.armor), 1.0f, static_cast<f32>(rock.health));
+    rock.health -= static_cast<s32>(std::lround(damage));
     if (rock.health == 0) {
         rock.tier = 0;
     } else if (rock.health <= rock.baseHealth) {
@@ -114,7 +114,7 @@ bool SafeRocks::strike(std::size_t index, float power) {
     return rock.health == 0;
 }
 
-void SafeRocks::activate(std::size_t index) {
+void SafeRocks::activate(usize index) {
     if (index < m_rocks.size()) {
         Rock& rock = *m_rocks[index];
         rock.health = kWhole * rock.baseHealth;
@@ -124,7 +124,7 @@ void SafeRocks::activate(std::size_t index) {
 
 std::vector<Obstacle> SafeRocks::obstacles() const {
     std::vector<Obstacle> out;
-    for (std::size_t i = 0; i < size(); ++i) {
+    for (usize i = 0; i < size(); ++i) {
         if (standing(i)) {
             out.push_back(m_rocks[i]->obstacle);
         }
@@ -135,8 +135,8 @@ std::vector<Obstacle> SafeRocks::obstacles() const {
 void SafeRocks::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
     for (const auto& rock : m_rocks) {
         if (rock->shown) {
-            rock->models[static_cast<std::size_t>(rock->tier)].draw(device, clip, rock->placement,
-                                                                    lighting);
+            rock->models[static_cast<usize>(rock->tier)].draw(device, clip, rock->placement,
+                                                              lighting);
         }
     }
 }

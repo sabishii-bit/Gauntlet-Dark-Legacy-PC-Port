@@ -2,13 +2,12 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 
 #include <nlohmann/json.hpp>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl::game {
@@ -34,12 +33,12 @@ LevelRef LevelRef::tower() {
                     "LEVELS/LEVELL1", "ITEMS/LEVELL", "ITEMS/LEVELL1"};
 }
 
-int LevelRef::orderOf(int realmId) {
-    constexpr std::array<int, 12> kOrder{kTowerRealm, 7, 2, 1, 11, 4, 3, 9, 10, 5, 6, 8};
+s32 LevelRef::orderOf(s32 realmId) {
+    constexpr std::array<s32, 12> kOrder{kTowerRealm, 7, 2, 1, 11, 4, 3, 9, 10, 5, 6, 8};
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kOrder, realmId);
-    return found != kOrder.end() ? static_cast<int>(found - kOrder.begin()) : 0;
+    return found != kOrder.end() ? static_cast<s32>(found - kOrder.begin()) : 0;
 }
 
 bool LevelCatalog::load(const std::filesystem::path& unpackedRoot) {
@@ -55,7 +54,7 @@ bool LevelCatalog::load(const std::filesystem::path& unpackedRoot) {
             continue;
         }
         try {
-            const std::vector<std::uint8_t> bytes = readFile(entry.path());
+            const std::vector<u8> bytes = readFile(entry.path());
             const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
             Realm realm;
             realm.file = upper(entry.path().stem().string());
@@ -77,7 +76,7 @@ bool LevelCatalog::load(const std::filesystem::path& unpackedRoot) {
     return !m_realms.empty();
 }
 
-LevelRef LevelCatalog::refOf(const Realm& realm, std::size_t index) {
+LevelRef LevelCatalog::refOf(const Realm& realm, usize index) {
     LevelRef level;
     level.realm = realm.file;
     level.realmId = realm.id;
@@ -94,7 +93,7 @@ LevelRef LevelCatalog::refOf(const Realm& realm, std::size_t index) {
     return level;
 }
 
-std::vector<int> LevelCatalog::runesOf(std::string_view realmFile) const {
+std::vector<s32> LevelCatalog::runesOf(std::string_view realmFile) const {
     const std::string wanted = upper(realmFile);
     for (const Realm& realm : m_realms) {
         if (realm.file == wanted) {
@@ -109,7 +108,7 @@ std::optional<LevelRef> LevelCatalog::byTag(std::string_view tag) const {
         return std::nullopt;
     }
     const char letter = upper(tag.substr(0, 1))[0];
-    const auto index = static_cast<std::size_t>(tag[1] - '1');
+    const auto index = static_cast<usize>(tag[1] - '1');
     for (const Realm& realm : m_realms) {
         if (upper(realm.prefix).back() == letter && index < realm.levels.size()) {
             return refOf(realm, index);
@@ -121,7 +120,7 @@ std::optional<LevelRef> LevelCatalog::byTag(std::string_view tag) const {
 std::optional<LevelRef> LevelCatalog::byName(std::string_view name) const {
     const std::string wanted = upper(name);
     for (const Realm& realm : m_realms) {
-        for (std::size_t i = 0; i < realm.levels.size(); ++i) {
+        for (usize i = 0; i < realm.levels.size(); ++i) {
             if (realm.levels[i] == wanted) {
                 return refOf(realm, i);
             }

@@ -3,6 +3,7 @@
 #include <exception>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevice& device,
@@ -10,12 +11,12 @@ void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevic
     m_field.clear();
     m_nodes.clear();
     const auto& templates = archive.trees.particleTemplates();
-    for (std::size_t i = 0; i < tree.nodes.size(); ++i) {
+    for (usize i = 0; i < tree.nodes.size(); ++i) {
         const auto& node = tree.nodes[i];
-        if (node.particle < 0 || static_cast<std::size_t>(node.particle) >= templates.size()) {
+        if (node.particle < 0 || static_cast<usize>(node.particle) >= templates.size()) {
             continue;
         }
-        const auto& source = templates[static_cast<std::size_t>(node.particle)];
+        const auto& source = templates[static_cast<usize>(node.particle)];
         auto descriptor = ParticleDescriptor::fromTemplate(source);
         if (!source.sets(ParticleTemplate::kDirection) && node.direction != Vec3{0}) {
             descriptor.direction = node.direction;
@@ -33,13 +34,13 @@ void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevic
         }
         const Mat4 at =
             i < pose.size() ? root * pose[i] : glm::translate(root, tree.worldPosition(i));
-        m_field.start(descriptor, at, texture, static_cast<unsigned int>(i + 1));
+        m_field.start(descriptor, at, texture, static_cast<u32>(i + 1));
         m_nodes.push_back({i, index});
     }
 }
 
-void TreeParticles::step(float seconds, const Mat4& root, std::span<const Mat4> pose) {
-    for (std::size_t i = 0; i < m_nodes.size(); ++i) {
+void TreeParticles::step(f32 seconds, const Mat4& root, std::span<const Mat4> pose) {
+    for (usize i = 0; i < m_nodes.size(); ++i) {
         if (m_nodes[i].node < pose.size()) {
             m_field.setNode(i, root * pose[m_nodes[i].node]);
         }
@@ -47,8 +48,8 @@ void TreeParticles::step(float seconds, const Mat4& root, std::span<const Mat4> 
     m_field.step(seconds);
 }
 
-void TreeParticles::setTextureFrame(unsigned int slot, const Texture& texture) {
-    for (std::size_t i = 0; i < m_nodes.size(); ++i) {
+void TreeParticles::setTextureFrame(u32 slot, const Texture& texture) {
+    for (usize i = 0; i < m_nodes.size(); ++i) {
         if (m_nodes[i].texture == slot) {
             m_field.setTexture(i, texture);
         }

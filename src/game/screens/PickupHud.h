@@ -1,12 +1,11 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/ui/Canvas.h"
 
 #include "game/screens/StatusBox.h"
@@ -15,22 +14,22 @@ namespace gdl::game {
 
 /** A card sliding up over a player's status box to say what they picked up. */
 struct PickupCard {
-    enum class State : std::uint8_t { Rising, Holding, Falling, Done };
+    enum class State : u8 { Rising, Holding, Falling, Done };
 
-    int player = 0;
+    s32 player = 0;
     std::string texture; ///< the STATIC card, such as CRYSTAL
-    int y = 0;           ///< the strip's top; the card hangs under it
+    s32 y = 0;           ///< the strip's top; the card hangs under it
     State state = State::Rising;
-    int holdTicks = 0;
+    s32 holdTicks = 0;
 };
 
 /** The count shown above a player's box after a collection: what they have of what they
  * need, beside an icon, for a while. */
 struct PickupCount {
     std::string icon; ///< the STATIC icon
-    int count = 0;
-    int total = 0;
-    float secondsLeft = 0.0f;
+    s32 count = 0;
+    s32 total = 0;
+    f32 secondsLeft = 0.0f;
 
     bool showing() const { return secondsLeft > 0.0f; }
 };
@@ -43,13 +42,13 @@ struct PickupCount {
  */
 class PickupHud {
 public:
-    static constexpr std::size_t kSlots = 4;
-    static constexpr std::size_t kMostCards = 24;
-    static constexpr int kCardStartY = 384; ///< the strip starts just under the screen
-    static constexpr int kCardRestY = 304;  ///< and stops on the bar over the box
-    static constexpr int kCardEndY = 400;   ///< fallen past this it is gone
-    static constexpr int kCardHoldTicks = 90;
-    static constexpr float kCountSeconds = 3.0f;
+    static constexpr usize kSlots = 4;
+    static constexpr usize kMostCards = 24;
+    static constexpr s32 kCardStartY = 384; ///< the strip starts just under the screen
+    static constexpr s32 kCardRestY = 304;  ///< and stops on the bar over the box
+    static constexpr s32 kCardEndY = 400;   ///< fallen past this it is gone
+    static constexpr s32 kCardHoldTicks = 90;
+    static constexpr f32 kCountSeconds = 3.0f;
     static constexpr std::string_view kCrystalCard = "CRYSTAL";
     /** The ticker's icon for each realm's crystal, by realm. */
     static constexpr std::array<std::string_view, 9> kCrystalIcons{"",
@@ -63,20 +62,20 @@ public:
                                                                    "SM_CRYSTAL_BLA"};
 
     /** The icon for a realm's crystal; empty for no realm. */
-    static std::string_view crystalIcon(int realm);
+    static std::string_view crystalIcon(s32 realm);
 
     /** Starts a card for `player`; ignored when every card is in use. */
-    void addCard(int player, std::string_view texture);
+    void addCard(s32 player, std::string_view texture);
     /** Shows `player` `count` of `total` beside `icon` for the ticker's time. */
-    void showCount(int player, std::string_view icon, int count, int total);
+    void showCount(s32 player, std::string_view icon, s32 count, s32 total);
     /** Moves the cards `ticks` on and the tickers `seconds`. */
-    void step(int ticks, float seconds);
+    void step(s32 ticks, f32 seconds);
     void clear();
     /** Drops whatever `player` has up. */
-    void clearPlayer(int player);
+    void clearPlayer(s32 player);
 
     const std::vector<PickupCard>& cards() const { return m_cards; }
-    const PickupCount& count(int player) const;
+    const PickupCount& count(s32 player) const;
 
     /** Draws the cards over the boxes and the tickers above them. */
     void draw(Canvas& canvas, StatusBoxPainter& boxes) const;

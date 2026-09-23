@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 void Bosses::open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
@@ -23,7 +25,7 @@ void Bosses::close() {
     m_legendEvents.clear();
 }
 
-bool Bosses::bringLegend(int player) {
+bool Bosses::bringLegend(s32 player) {
     const LegendWeakness* weakness = legendWeaknessOf(m_kind);
     if (!m_id.has_value() || weakness == nullptr || m_rite.stage() != LegendRite::Stage::None) {
         return false;
@@ -36,11 +38,11 @@ bool Bosses::bringLegend(int player) {
 
 /** The rite goes by what the boss is doing: risen once its start is over, roared once its
  * roar is; each cue is acted on and kept for the game. */
-void Bosses::stageLegend(int ticks) {
+void Bosses::stageLegend(s32 ticks) {
     if (!m_rite.running() || !m_id.has_value()) {
         return;
     }
-    const int moveType = m_fighter.moveTypeOf(*m_id);
+    const s32 moveType = m_fighter.moveTypeOf(*m_id);
     const bool risen = m_awake && moveType >= 0 && moveType != CritterMove::kStart;
     const CritterData* data = m_fighter.dataOf(*m_id);
     const bool canRoar = data != nullptr && data->moveOfType(CritterMove::kRoar).has_value();
@@ -109,7 +111,7 @@ bool Bosses::curbed() const {
     return m_id.has_value() && m_fighter.curbed(*m_id);
 }
 
-bool Bosses::spawn(int kind, const Vec3& position, float yaw, float wakeDistance) {
+bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
     const std::string_view name = bossNameOf(kind);
     if (name.empty() || m_id.has_value()) {
         return false;
@@ -131,7 +133,7 @@ bool Bosses::spawn(int kind, const Vec3& position, float yaw, float wakeDistance
     return true;
 }
 
-void Bosses::update(int ticks, float seconds, std::span<const EnemyView> players) {
+void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) {
     if (!m_id.has_value()) {
         return;
     }
@@ -183,15 +185,15 @@ std::vector<MissileTarget> Bosses::targets() const {
     return m_fighter.targets();
 }
 
-std::optional<int> Bosses::struckBy(const Vec3& from, const Vec3& to, float radius) const {
+std::optional<s32> Bosses::struckBy(const Vec3& from, const Vec3& to, f32 radius) const {
     return m_fighter.struckBy(from, to, radius);
 }
 
-bool Bosses::within(const Vec3& centre, float radius) const {
+bool Bosses::within(const Vec3& centre, f32 radius) const {
     return !m_fighter.within(centre, radius).empty();
 }
 
-bool Bosses::reachedBy(const Vec3& centre, float radius, float arc, const Vec3& facing) const {
+bool Bosses::reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const {
     return !m_fighter.reachedBy(centre, radius, arc, facing).empty();
 }
 
@@ -226,15 +228,15 @@ const Vec3* Bosses::position() const {
     return m_id.has_value() ? &m_fighter.positionOf(*m_id) : nullptr;
 }
 
-float Bosses::facing() const {
+f32 Bosses::facing() const {
     return m_id.has_value() ? m_fighter.yawOf(*m_id) : 0.0f;
 }
 
-float Bosses::radius() const {
+f32 Bosses::radius() const {
     return m_id.has_value() ? m_fighter.radiusOf(*m_id) : 0.0f;
 }
 
-float Bosses::height() const {
+f32 Bosses::height() const {
     if (!m_id.has_value()) {
         return 0.0f;
     }
@@ -242,7 +244,7 @@ float Bosses::height() const {
     if (data == nullptr) {
         return 0.0f;
     }
-    const float centre = data->floorOffset() + data->originOffset().y * m_fighter.scaleOf(*m_id);
+    const f32 centre = data->floorOffset() + data->originOffset().y * m_fighter.scaleOf(*m_id);
     return centre > 0.0f ? centre : data->radius();
 }
 

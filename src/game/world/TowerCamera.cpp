@@ -2,16 +2,17 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <numbers>
+
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
-float wrapAngle(float angle) {
+f32 wrapAngle(f32 angle) {
     while (angle > kPi) {
         angle -= 2.0f * kPi;
     }
@@ -32,7 +33,7 @@ Vec3 TowerCamera::middleOf(std::span<const CameraSubject> subjects, const Camera
         high = glm::max(high, subject.follow);
     }
     Vec3 middle = subjects.empty() ? Vec3{0.0f, 0.0f, 0.0f} : (low + high) * 0.5f;
-    for (int k = 0; k < 3; ++k) {
+    for (s32 k = 0; k < 3; ++k) {
         if (range.boundsMin[k] < range.boundsMax[k]) {
             middle[k] = std::clamp(middle[k], range.boundsMin[k], range.boundsMax[k]);
         }
@@ -56,45 +57,45 @@ void TowerCamera::reset(std::span<const CameraSubject> subjects,
     m_distance = range.radiusMin;
     place();
     // A fresh start settles before anyone sees it: run until nothing moves for a whole ring.
-    int still = 0;
-    for (int i = 0; i < kSettleLimit && still < kRing; ++i) {
+    s32 still = 0;
+    for (s32 i = 0; i < kSettleLimit && still < kRing; ++i) {
         still = update(subjects, markers, range, view, 1.0f / kStepRate) ? 0 : still + 1;
     }
 }
 
 bool TowerCamera::update(std::span<const CameraSubject> subjects,
                          std::span<const WorldLocator> markers, const CameraRange& range,
-                         const CameraView& view, float seconds) {
+                         const CameraView& view, f32 seconds) {
     if (subjects.empty()) {
         return true;
     }
     const Vec3 middle = middleOf(subjects, range);
     m_ringIndex = (m_ringIndex + 1) % kRing;
-    m_ringPositions[static_cast<std::size_t>(m_ringIndex)] = middle;
+    m_ringPositions[static_cast<usize>(m_ringIndex)] = middle;
 
     chooseMarker(markers, middle);
     aim(markers, subjects.size(), range, false);
     const bool turned = turn(seconds * kStepRate);
     const bool followed = follow();
 
-    float current = range.radiusMin;
+    f32 current = range.radiusMin;
     if (range.radiusMin < range.radiusMax) {
         if (subjects.size() == 1) {
             current = range.radiusMin * kAloneDistance;
-        } else if (m_marker >= 0 && static_cast<std::size_t>(m_marker) < markers.size() &&
-                   markers[static_cast<std::size_t>(m_marker)].delay != 0) {
-            current = static_cast<float>(markers[static_cast<std::size_t>(m_marker)].delay);
+        } else if (m_marker >= 0 && static_cast<usize>(m_marker) < markers.size() &&
+                   markers[static_cast<usize>(m_marker)].delay != 0) {
+            current = static_cast<f32>(markers[static_cast<usize>(m_marker)].delay);
         } else {
             current = range.radiusMax * kPartyDistance;
         }
     }
-    m_ringDistances[static_cast<std::size_t>(m_ringIndex)] = fitDistance(
-        m_ringPositions[static_cast<std::size_t>(m_ringIndex)], subjects, view, range, current);
-    float slack = 0.0f;
-    for (const float wanted : m_ringDistances) {
+    m_ringDistances[static_cast<usize>(m_ringIndex)] = fitDistance(
+        m_ringPositions[static_cast<usize>(m_ringIndex)], subjects, view, range, current);
+    f32 slack = 0.0f;
+    for (const f32 wanted : m_ringDistances) {
         slack += wanted - m_distance;
     }
-    slack /= static_cast<float>(kRing);
+    slack /= static_cast<f32>(kRing);
     m_distance += slack;
 
     place();
@@ -107,24 +108,24 @@ void TowerCamera::chooseMarker(std::span<const WorldLocator> markers, const Vec3
         m_marker = -1;
         return;
     }
-    int best = -1;
-    float bestDistance = 0.0f;
-    for (std::size_t i = 0; i < markers.size(); ++i) {
-        if (static_cast<int>(i) == m_marker) {
+    s32 best = -1;
+    f32 bestDistance = 0.0f;
+    for (usize i = 0; i < markers.size(); ++i) {
+        if (static_cast<s32>(i) == m_marker) {
             continue;
         }
         const Vec3 away = near - markers[i].position;
-        const float distance = glm::dot(away, away);
+        const f32 distance = glm::dot(away, away);
         if (best < 0 || distance < bestDistance) {
-            best = static_cast<int>(i);
+            best = static_cast<s32>(i);
             bestDistance = distance;
         }
     }
-    if (m_marker < 0 || static_cast<std::size_t>(m_marker) >= markers.size()) {
+    if (m_marker < 0 || static_cast<usize>(m_marker) >= markers.size()) {
         m_marker = best;
         return;
     }
-    const Vec3 away = near - markers[static_cast<std::size_t>(m_marker)].position;
+    const Vec3 away = near - markers[static_cast<usize>(m_marker)].position;
     if (best >= 0 && bestDistance <= kSwitchRatio * glm::dot(away, away)) {
         m_marker = best;
     }
@@ -132,13 +133,13 @@ void TowerCamera::chooseMarker(std::span<const WorldLocator> markers, const Vec3
 
 /** Points the camera at the marker's angles: at once with `jump`, else by starting a turn
  * whenever the marker has changed. */
-void TowerCamera::aim(std::span<const WorldLocator> markers, std::size_t count,
-                      const CameraRange& range, bool jump) {
-    float yawTarget = 0.0f;
-    float pitchTarget = 0.0f;
-    if (m_marker >= 0 && static_cast<std::size_t>(m_marker) < markers.size()) {
-        yawTarget = markerYaw(markers[static_cast<std::size_t>(m_marker)]);
-        pitchTarget = markerPitch(markers[static_cast<std::size_t>(m_marker)]);
+void TowerCamera::aim(std::span<const WorldLocator> markers, usize count, const CameraRange& range,
+                      bool jump) {
+    f32 yawTarget = 0.0f;
+    f32 pitchTarget = 0.0f;
+    if (m_marker >= 0 && static_cast<usize>(m_marker) < markers.size()) {
+        yawTarget = markerYaw(markers[static_cast<usize>(m_marker)]);
+        pitchTarget = markerPitch(markers[static_cast<usize>(m_marker)]);
     }
     if (count > 1) {
         pitchTarget = std::max(pitchTarget, range.minPitch);
@@ -147,23 +148,23 @@ void TowerCamera::aim(std::span<const WorldLocator> markers, std::size_t count,
         m_camera.yaw = yawTarget;
         m_camera.pitch = pitchTarget;
         m_aimedMarker = m_marker;
-        m_turnStep = static_cast<float>(kTurnSteps);
+        m_turnStep = static_cast<f32>(kTurnSteps);
         return;
     }
     if (m_marker == m_aimedMarker) {
         return;
     }
     m_aimedMarker = m_marker;
-    m_yawRate = wrapAngle(yawTarget - m_camera.yaw) / static_cast<float>(kTurnSteps);
-    m_pitchRate = wrapAngle(pitchTarget - m_camera.pitch) / static_cast<float>(kTurnSteps);
+    m_yawRate = wrapAngle(yawTarget - m_camera.yaw) / static_cast<f32>(kTurnSteps);
+    m_pitchRate = wrapAngle(pitchTarget - m_camera.pitch) / static_cast<f32>(kTurnSteps);
     m_turnStep = 0.0f;
 }
 
-bool TowerCamera::turn(float steps) {
+bool TowerCamera::turn(f32 steps) {
     if (!turning()) {
         return false;
     }
-    const float taken = std::min(steps, static_cast<float>(kTurnSteps) - m_turnStep);
+    const f32 taken = std::min(steps, static_cast<f32>(kTurnSteps) - m_turnStep);
     m_camera.yaw = wrapAngle(m_camera.yaw + m_yawRate * taken);
     m_camera.pitch = wrapAngle(m_camera.pitch + m_pitchRate * taken);
     m_turnStep += taken;
@@ -176,7 +177,7 @@ bool TowerCamera::follow() {
     for (const Vec3& wanted : m_ringPositions) {
         pull += wanted - m_attention;
     }
-    pull /= static_cast<float>(kRing);
+    pull /= static_cast<f32>(kRing);
     m_attention += pull;
     return pull != Vec3{0.0f, 0.0f, 0.0f};
 }
@@ -185,24 +186,23 @@ bool TowerCamera::follow() {
  * How far behind `point` the camera must sit so that every player, standing and at the
  * followed point, fits inside the view; with some slack so the distance does not chatter.
  */
-float TowerCamera::fitDistance(const Vec3& point, std::span<const CameraSubject> subjects,
-                               const CameraView& view, const CameraRange& range,
-                               float current) const {
+f32 TowerCamera::fitDistance(const Vec3& point, std::span<const CameraSubject> subjects,
+                             const CameraView& view, const CameraRange& range, f32 current) const {
     if (range.radiusMin >= range.radiusMax || subjects.size() <= 1) {
         return range.radiusMin;
     }
     const Vec3 forward = m_camera.forward();
     const Vec3 right = m_camera.right();
     const Vec3 up = m_camera.up();
-    const float tanX = std::tan(view.horizontalFov * 0.5f);
-    const float tanY = tanX / view.aspect;
-    float required = 0.0f;
+    const f32 tanX = std::tan(view.horizontalFov * 0.5f);
+    const f32 tanY = tanX / view.aspect;
+    f32 required = 0.0f;
     for (const CameraSubject& subject : subjects) {
         for (const Vec3& spot : {subject.follow, subject.feet}) {
             const Vec3 relative = spot - point;
-            const float x = glm::dot(relative, right);
-            const float y = glm::dot(relative, up);
-            const float z = glm::dot(relative, forward);
+            const f32 x = glm::dot(relative, right);
+            const f32 y = glm::dot(relative, up);
+            const f32 z = glm::dot(relative, forward);
             required = std::max(required, std::max(std::abs(x) / tanX, std::abs(y) / tanY) - z);
         }
     }

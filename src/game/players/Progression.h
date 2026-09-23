@@ -1,7 +1,8 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
+
+#include "engine/core/Types.h"
 
 #include "game/players/ClassData.h"
 #include "game/players/Inventory.h"
@@ -9,49 +10,49 @@
 
 namespace gdl::game {
 
-inline constexpr int kMaxLevel = 99;
-inline constexpr int kStartingHealth = 500;
-inline constexpr int kMaxStat = 999;
+inline constexpr s32 kMaxLevel = 99;
+inline constexpr s32 kStartingHealth = 500;
+inline constexpr s32 kMaxStat = 999;
 
 /** Experience needed to reach `level`. */
-int levelExperience(int level);
+s32 levelExperience(s32 level);
 
 /** The level `experience` has reached, from 1. */
-int experienceLevel(int experience);
+s32 experienceLevel(s32 experience);
 
 /** A character's progress with one class; the bonuses are added to the displayed stats. */
 /** The realms the tower keeps records for, the tower itself first. */
-inline constexpr std::size_t kRealmCount = 14;
+inline constexpr usize kRealmCount = 14;
 
 struct ClassProgress {
-    int experience = 0;
-    int health = 0;
-    float fightAdd = 0.0f;
-    float armorAdd = 0.0f;
-    float magicAdd = 0.0f;
-    float speedAdd = 0.0f;
-    std::array<int, kRealmCount> crystals{}; ///< gathered towards each realm's gate
-    unsigned int unlocked = 0;               ///< a bit per realm whose gate's opening was announced
+    s32 experience = 0;
+    s32 health = 0;
+    f32 fightAdd = 0.0f;
+    f32 armorAdd = 0.0f;
+    f32 magicAdd = 0.0f;
+    f32 speedAdd = 0.0f;
+    std::array<s32, kRealmCount> crystals{}; ///< gathered towards each realm's gate
+    u32 unlocked = 0;                        ///< a bit per realm whose gate's opening was announced
     Inventory inventory; ///< the keys, potions and powerups carried as this class
     Relics relics;       ///< the runestones, legend items and gargoyle pieces gathered
 };
 
 /** Stats as the select screen shows them, in its row order. */
 struct StatBlock {
-    static constexpr std::size_t kCount = 4;
-    std::array<int, kCount> values{}; ///< strength, speed, armor, magic
+    static constexpr usize kCount = 4;
+    std::array<s32, kCount> values{}; ///< strength, speed, armor, magic
 
-    int strength() const { return values[0]; }
-    int speed() const { return values[1]; }
-    int armor() const { return values[2]; }
-    int magic() const { return values[3]; }
+    s32 strength() const { return values[0]; }
+    s32 speed() const { return values[1]; }
+    s32 armor() const { return values[2]; }
+    s32 magic() const { return values[3]; }
 
     /** The row with the highest value; the first when tied. */
-    std::size_t best() const;
+    usize best() const;
 };
 
 /** The stats a class shows at `level` with the bonuses in `progress`, each capped at 999. */
-StatBlock displayStats(const ClassStats& stats, int level, const ClassProgress& progress);
+StatBlock displayStats(const ClassStats& stats, s32 level, const ClassProgress& progress);
 
 /** What every stat reads for the hidden master class. */
 StatBlock masteryStats();

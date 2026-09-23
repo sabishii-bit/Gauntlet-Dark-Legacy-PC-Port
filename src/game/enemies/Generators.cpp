@@ -2,33 +2,33 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <format>
+
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
-float flatDistance(const Vec3& a, const Vec3& b) {
-    const float dx = a.x - b.x;
-    const float dz = a.z - b.z;
+f32 flatDistance(const Vec3& a, const Vec3& b) {
+    const f32 dx = a.x - b.x;
+    const f32 dz = a.z - b.z;
     return std::sqrt(dx * dx + dz * dz);
 }
 
 } // namespace
 
-int Generators::paramOf(const ItemInstance& instance, std::size_t index) {
+s32 Generators::paramOf(const ItemInstance& instance, usize index) {
     if (index * 2 + 1 >= instance.params.size()) {
         return 0;
     }
-    std::int16_t value = 0;
+    s16 value = 0;
     std::memcpy(&value, &instance.params[index * 2], sizeof(value));
     return value;
 }
 
-Generators::Bodies* Generators::bodiesOf(int kind) {
+Generators::Bodies* Generators::bodiesOf(s32 kind) {
     for (auto& bodies : m_bodies) {
         if (bodies->kind == kind) {
             return bodies.get();
@@ -37,7 +37,7 @@ Generators::Bodies* Generators::bodiesOf(int kind) {
     return nullptr;
 }
 
-const Generators::Bodies* Generators::bodiesOf(int kind) const {
+const Generators::Bodies* Generators::bodiesOf(s32 kind) const {
     for (const auto& bodies : m_bodies) {
         if (bodies->kind == kind) {
             return bodies.get();
@@ -46,7 +46,7 @@ const Generators::Bodies* Generators::bodiesOf(int kind) const {
     return nullptr;
 }
 
-bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, int kind) {
+bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind) {
     if (bodiesOf(kind) != nullptr) {
         return true;
     }
@@ -62,22 +62,22 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, int kind) {
     const EnemyKind& info = enemyKind(kind);
     // The state's object: "GEN_GRU3", tried with the level-one and root suffixes as the
     // original does. Whole is three; nought is the ruin.
-    for (int state = 0; state <= kStates; ++state) {
+    for (s32 state = 0; state <= kStates; ++state) {
         const std::string base = std::format("GEN_{}{}", info.prefix, state);
         for (const char* suffix : {"L1", "", "ROOT"}) {
             const auto object = archive->models.find(base + suffix);
             if (!object.has_value()) {
                 continue;
             }
-            const unsigned int objectIndex = *object;
-            TreeInfo& tree = bodies->trees[static_cast<std::size_t>(state)];
+            const u32 objectIndex = *object;
+            TreeInfo& tree = bodies->trees[static_cast<usize>(state)];
             tree.name = base;
             TreeNodeInfo node;
             node.name = base;
             node.object = archive->models.entry(objectIndex).name;
             tree.nodes.push_back(node);
-            bodies->models[static_cast<std::size_t>(state)].bind(tree, archive->models,
-                                                                 archive->textures, device);
+            bodies->models[static_cast<usize>(state)].bind(tree, archive->models, archive->textures,
+                                                           device);
             break;
         }
     }
@@ -86,15 +86,15 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, int kind) {
 }
 
 bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& enemies,
-                      const WorldCollision* collision, const GeneratorScales& scales, int players,
+                      const WorldCollision* collision, const GeneratorScales& scales, s32 players,
                       std::span<const LevelEnemy> roster) {
     clear();
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     for (const ItemInstance& instance : layout.itemInstances()) {
-        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= infos.size()) {
+        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
             continue;
         }
-        const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
+        const ItemInfo& info = infos[static_cast<usize>(instance.info)];
         if (info.type != ItemInfo::kGenerator || !shownToParty(instance.minPlayers, players)) {
             continue;
         }
@@ -102,8 +102,8 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         if (!named.has_value()) {
             continue;
         }
-        const int strength = std::max(paramOf(instance, 0), 1);
-        const int kind = levelKindOf(roster, *named, strength);
+        const s32 strength = std::max(paramOf(instance, 0), 1);
+        const s32 kind = levelKindOf(roster, *named, strength);
         if (!loadBodies(device, enemies, kind)) {
             continue;
         }
@@ -114,9 +114,9 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         if (generator.algorithm < 0) {
             generator.algorithm = enemyKind(kind).algorithm;
         }
-        const auto tierIndex = static_cast<std::size_t>(generator.tier - 1);
-        int most = paramOf(instance, 2);
-        int interval = paramOf(instance, 3);
+        const auto tierIndex = static_cast<usize>(generator.tier - 1);
+        s32 most = paramOf(instance, 2);
+        s32 interval = paramOf(instance, 3);
         if (most == 0) {
             most = kDefaultMost[tierIndex];
         }
@@ -124,12 +124,12 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
             interval = kDefaultInterval[tierIndex];
         }
         // Scaled the way the original truncates them: to a whole count and interval.
-        generator.most = static_cast<int>(static_cast<float>(most) * scales.most);
-        generator.interval = static_cast<int>(static_cast<float>(interval) * scales.rate);
-        generator.threshold = static_cast<float>(info.hitPoints) * scales.health;
-        generator.health = static_cast<float>(info.hitPoints * generator.tier) * scales.health;
+        generator.most = static_cast<s32>(static_cast<f32>(most) * scales.most);
+        generator.interval = static_cast<s32>(static_cast<f32>(interval) * scales.rate);
+        generator.threshold = static_cast<f32>(info.hitPoints) * scales.health;
+        generator.health = static_cast<f32>(info.hitPoints * generator.tier) * scales.health;
         generator.armor =
-            info.armor > 0 ? static_cast<float>(info.armor) : enemyKind(kind).generatorArmor;
+            info.armor > 0 ? static_cast<f32>(info.armor) : enemyKind(kind).generatorArmor;
         const Mat4 placement = itemPlacement(instance.position, instance.rotation);
         generator.position = instance.position;
         if (collision != nullptr) {
@@ -166,23 +166,23 @@ void Generators::clear() {
     m_bodies.clear();
 }
 
-void Generators::update(int ticks, Enemies& enemies, std::span<const EnemyView> players,
+void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                         std::span<const Obstacle> obstacles) {
     if (ticks <= 0) {
         return;
     }
     // How many of each generator's are still about.
-    std::vector<int> out(m_generators.size(), 0);
-    for (int id = 0; id < Enemies::kMost; ++id) {
+    std::vector<s32> out(m_generators.size(), 0);
+    for (s32 id = 0; id < Enemies::kMost; ++id) {
         if (!enemies.alive(id) && !enemies.dying(id)) {
             continue;
         }
-        const int generator = enemies.generatorOf(id);
-        if (generator >= 0 && static_cast<std::size_t>(generator) < out.size()) {
-            ++out[static_cast<std::size_t>(generator)];
+        const s32 generator = enemies.generatorOf(id);
+        if (generator >= 0 && static_cast<usize>(generator) < out.size()) {
+            ++out[static_cast<usize>(generator)];
         }
     }
-    for (std::size_t g = 0; g < m_generators.size(); ++g) {
+    for (usize g = 0; g < m_generators.size(); ++g) {
         Generator& generator = m_generators[g];
         if (generator.state <= 0 || generator.tier <= 0 || generator.most <= 0) {
             continue;
@@ -209,7 +209,7 @@ void Generators::update(int ticks, Enemies& enemies, std::span<const EnemyView> 
         spawn.position = generator.position;
         spawn.direction = generator.direction;
         spawn.clearance = generator.clearance;
-        spawn.generator = static_cast<int>(g);
+        spawn.generator = static_cast<s32>(g);
         if (!enemies.spawn(spawn, players, obstacles).has_value()) {
             continue;
         }
@@ -217,16 +217,16 @@ void Generators::update(int ticks, Enemies& enemies, std::span<const EnemyView> 
         ++out[g];
         // The next takes longer, the countdown stretched by a share that grows a birth at a
         // time and wraps.
-        generator.countdown = static_cast<int>(
-            kCountdownScale * static_cast<float>(generator.interval) * (1.0f + generator.ratio));
-        generator.ratio += 1.0f / (2.0f * static_cast<float>(generator.most));
+        generator.countdown = static_cast<s32>(
+            kCountdownScale * static_cast<f32>(generator.interval) * (1.0f + generator.ratio));
+        generator.ratio += 1.0f / (2.0f * static_cast<f32>(generator.most));
         if (generator.ratio > 1.0f) {
             generator.ratio = 0.0f;
         }
     }
 }
 
-int Generators::stateFor(const Generator& generator, bool destroyed) {
+s32 Generators::stateFor(const Generator& generator, bool destroyed) {
     if (destroyed || generator.health <= 0.0f) {
         return 0;
     }
@@ -239,20 +239,20 @@ int Generators::stateFor(const Generator& generator, bool destroyed) {
     return 3;
 }
 
-std::optional<GeneratorEvent> Generators::strike(int id, float power, int byPlayer) {
-    if (id < 0 || static_cast<std::size_t>(id) >= m_generators.size()) {
+std::optional<GeneratorEvent> Generators::strike(s32 id, f32 power, s32 byPlayer) {
+    if (id < 0 || static_cast<usize>(id) >= m_generators.size()) {
         return std::nullopt;
     }
-    Generator& generator = m_generators[static_cast<std::size_t>(id)];
+    Generator& generator = m_generators[static_cast<usize>(id)];
     if (generator.state <= 0) {
         return std::nullopt;
     }
-    const float amount = std::max(power - generator.armor, byPlayer >= 0 ? 1.0f : 0.0f);
+    const f32 amount = std::max(power - generator.armor, byPlayer >= 0 ? 1.0f : 0.0f);
     if (amount <= 0.0f) {
         return std::nullopt;
     }
     generator.health -= amount;
-    const int state = stateFor(generator, false);
+    const s32 state = stateFor(generator, false);
     if (state == generator.state) {
         return std::nullopt;
     }
@@ -269,28 +269,28 @@ std::optional<GeneratorEvent> Generators::strike(int id, float power, int byPlay
     return event;
 }
 
-std::optional<int> Generators::struckBy(const Vec3& from, const Vec3& to, float radius) const {
-    std::optional<int> best;
-    float bestDistance = 0.0f;
+std::optional<s32> Generators::struckBy(const Vec3& from, const Vec3& to, f32 radius) const {
+    std::optional<s32> best;
+    f32 bestDistance = 0.0f;
     const Vec3 sweep = to - from;
-    const float length = glm::length(sweep);
-    for (std::size_t g = 0; g < m_generators.size(); ++g) {
+    const f32 length = glm::length(sweep);
+    for (usize g = 0; g < m_generators.size(); ++g) {
         const Generator& generator = m_generators[g];
         if (generator.state <= 0) {
             continue;
         }
-        const float reach = std::max(generator.box.halfAcross, generator.box.halfAlong);
+        const f32 reach = std::max(generator.box.halfAcross, generator.box.halfAlong);
         const Vec3 centre = generator.position + Vec3{0.0f, 0.5f * generator.box.height, 0.0f};
-        const float t =
+        const f32 t =
             length > 0.001f
                 ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f)
                 : 0.0f;
         const Vec3 nearest = from + sweep * t;
         if (flatDistance(nearest, centre) <= radius + reach &&
             std::abs(nearest.y - centre.y) <= radius + 0.5f * generator.box.height + 1.0f) {
-            const float distance = glm::length(nearest - from);
+            const f32 distance = glm::length(nearest - from);
             if (!best.has_value() || distance < bestDistance) {
-                best = static_cast<int>(g);
+                best = static_cast<s32>(g);
                 bestDistance = distance;
             }
         }
@@ -298,17 +298,17 @@ std::optional<int> Generators::struckBy(const Vec3& from, const Vec3& to, float 
     return best;
 }
 
-std::vector<int> Generators::within(const Vec3& centre, float radius) const {
-    std::vector<int> out;
-    for (std::size_t g = 0; g < m_generators.size(); ++g) {
+std::vector<s32> Generators::within(const Vec3& centre, f32 radius) const {
+    std::vector<s32> out;
+    for (usize g = 0; g < m_generators.size(); ++g) {
         const Generator& generator = m_generators[g];
         if (generator.state <= 0) {
             continue;
         }
-        const float reach = std::max(generator.box.halfAcross, generator.box.halfAlong);
+        const f32 reach = std::max(generator.box.halfAcross, generator.box.halfAlong);
         if (glm::length(generator.position + Vec3{0.0f, 0.5f * generator.box.height, 0.0f} -
                         centre) <= radius + reach) {
-            out.push_back(static_cast<int>(g));
+            out.push_back(static_cast<s32>(g));
         }
     }
     return out;
@@ -331,7 +331,7 @@ void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
             continue;
         }
         const TreeModel& model =
-            bodies->models[static_cast<std::size_t>(std::clamp(generator.state, 0, kStates))];
+            bodies->models[static_cast<usize>(std::clamp(generator.state, 0, kStates))];
         if (!model.bound()) {
             continue;
         }
@@ -341,51 +341,50 @@ void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
     }
 }
 
-bool Generators::standing(int id) const {
-    return id >= 0 && static_cast<std::size_t>(id) < m_generators.size() &&
-           m_generators[static_cast<std::size_t>(id)].state > 0;
+bool Generators::standing(s32 id) const {
+    return id >= 0 && static_cast<usize>(id) < m_generators.size() &&
+           m_generators[static_cast<usize>(id)].state > 0;
 }
 
-bool Generators::bodyShown(int id) const {
-    if (id < 0 || static_cast<std::size_t>(id) >= m_generators.size()) {
+bool Generators::bodyShown(s32 id) const {
+    if (id < 0 || static_cast<usize>(id) >= m_generators.size()) {
         return false;
     }
-    const Generator& generator = m_generators[static_cast<std::size_t>(id)];
+    const Generator& generator = m_generators[static_cast<usize>(id)];
     const Bodies* bodies = bodiesOf(generator.kind);
     return bodies != nullptr &&
-           bodies->models[static_cast<std::size_t>(std::clamp(generator.state, 0, kStates))]
-               .bound();
+           bodies->models[static_cast<usize>(std::clamp(generator.state, 0, kStates))].bound();
 }
 
-int Generators::stateOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].state;
+s32 Generators::stateOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].state;
 }
-float Generators::healthOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].health;
+f32 Generators::healthOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].health;
 }
-int Generators::kindOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].kind;
+s32 Generators::kindOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].kind;
 }
-int Generators::tierOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].tier;
+s32 Generators::tierOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].tier;
 }
-int Generators::mostOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].most;
+s32 Generators::mostOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].most;
 }
-int Generators::intervalOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].interval;
+s32 Generators::intervalOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].interval;
 }
-int Generators::countdownOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].countdown;
+s32 Generators::countdownOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].countdown;
 }
-int Generators::bredOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].bred;
+s32 Generators::bredOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].bred;
 }
-const Vec3& Generators::positionOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].position;
+const Vec3& Generators::positionOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].position;
 }
-const Obstacle& Generators::boxOf(int id) const {
-    return m_generators[static_cast<std::size_t>(id)].box;
+const Obstacle& Generators::boxOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].box;
 }
 
 } // namespace gdl::game

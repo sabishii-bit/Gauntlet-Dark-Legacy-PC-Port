@@ -1,10 +1,10 @@
-#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/ObjModel.h"
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -33,7 +33,7 @@ TEST_CASE("OBJ faces become triangles with per-texture parts", "[assets][obj]") 
     const Mesh mesh = parseObj(kSample);
     REQUIRE(mesh.parts.size() == 2);
     REQUIRE(mesh.parts[0].texture == 7);
-    REQUIRE(mesh.parts[0].indices == std::vector<std::uint32_t>{0, 1, 2, 0, 2, 3});
+    REQUIRE(mesh.parts[0].indices == std::vector<u32>{0, 1, 2, 0, 2, 3});
     REQUIRE(mesh.parts[1].texture == 9);
     REQUIRE(mesh.parts[1].indices.size() == 3);
     REQUIRE(mesh.vertices.size() == 7); // four corners with texcoords, three without

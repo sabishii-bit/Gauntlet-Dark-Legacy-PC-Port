@@ -1,10 +1,9 @@
 #include "formats/WorldDataWad.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <format>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 
 #include "formats/WadDirectory.h"
 
@@ -13,41 +12,40 @@ namespace gdl::formats {
 namespace {
 
 constexpr std::string_view kWhat = "world data wad";
-constexpr std::size_t kNameSize = 4;
-constexpr std::size_t kTextSize = 16;
-constexpr std::size_t kFogOffset = 0x70;
+constexpr usize kNameSize = 4;
+constexpr usize kTextSize = 16;
+constexpr usize kFogOffset = 0x70;
 
-std::int16_t readS16(std::span<const std::uint8_t> bytes, std::size_t at) {
-    return static_cast<std::int16_t>(readWadU16(bytes, at, kWhat));
+s16 readS16(std::span<const u8> bytes, usize at) {
+    return static_cast<s16>(readWadU16(bytes, at, kWhat));
 }
 
-Vec3 readVec3(std::span<const std::uint8_t> bytes, std::size_t at) {
+Vec3 readVec3(std::span<const u8> bytes, usize at) {
     return Vec3{readWadF32(bytes, at, kWhat), readWadF32(bytes, at + 4, kWhat),
                 readWadF32(bytes, at + 8, kWhat)};
 }
 
-void requireRecords(std::span<const std::uint8_t> bytes, const WadSection& section,
-                    std::size_t size) {
+void requireRecords(std::span<const u8> bytes, const WadSection& section, usize size) {
     if (section.count > (bytes.size() - section.offset) / size) {
         throw FormatError(std::format("{}: {} records lie outside the file", kWhat, section.tag));
     }
 }
 
-LevelRecord readLevel(std::span<const std::uint8_t> bytes, std::size_t at) {
+LevelRecord readLevel(std::span<const u8> bytes, usize at) {
     LevelRecord level;
     level.flags = readWadU32(bytes, at, kWhat);
     level.name = readWadText(bytes, at + 8, kNameSize, kWhat);
     level.title = readWadText(bytes, at + 0x14, kTextSize, kWhat);
     level.audioBank = readWadText(bytes, at + 0x24, kTextSize, kWhat);
     level.movie = readWadText(bytes, at + 0x34, kTextSize, kWhat);
-    level.bossType = static_cast<std::int32_t>(readWadU32(bytes, at + 0x44, kWhat));
-    for (std::size_t i = 0; i < level.enemyTypes.size(); ++i) {
+    level.bossType = static_cast<s32>(readWadU32(bytes, at + 0x44, kWhat));
+    for (usize i = 0; i < level.enemyTypes.size(); ++i) {
         level.enemyTypes[i] = readS16(bytes, at + 0x4C + i * 2);
     }
     level.cameraIndex = readS16(bytes, at + 0x58);
     level.audioIndex = readS16(bytes, at + 0x5A);
     level.mapIndex = readS16(bytes, at + 0x5C);
-    const std::size_t fog = at + kFogOffset;
+    const usize fog = at + kFogOffset;
     level.fog.type = bytes[fog];
     level.fog.color = {bytes[fog + 1], bytes[fog + 2], bytes[fog + 3]};
     level.fog.intensity = readWadF32(bytes, fog + 4, kWhat);
@@ -62,7 +60,7 @@ LevelRecord readLevel(std::span<const std::uint8_t> bytes, std::size_t at) {
     level.legend = readS16(bytes, at + 0x92);
     level.musicVolume = readWadF32(bytes, at + 0x94, kWhat);
     level.soundVolume = readWadF32(bytes, at + 0x98, kWhat);
-    for (std::size_t i = 0; i < LevelTuningRecord::kCount; ++i) {
+    for (usize i = 0; i < LevelTuningRecord::kCount; ++i) {
         level.tuning.values[i] = readWadF32(bytes, at + 0x9C + i * 4, kWhat);
     }
     level.ambient = readWadF32(bytes, at + 0xEC, kWhat);
@@ -72,7 +70,7 @@ LevelRecord readLevel(std::span<const std::uint8_t> bytes, std::size_t at) {
     return level;
 }
 
-CameraRecord readCamera(std::span<const std::uint8_t> bytes, std::size_t at) {
+CameraRecord readCamera(std::span<const u8> bytes, usize at) {
     CameraRecord camera;
     camera.direction = readS16(bytes, at);
     camera.pitchDirection = readS16(bytes, at + 2);
@@ -104,7 +102,7 @@ CameraRecord readCamera(std::span<const std::uint8_t> bytes, std::size_t at) {
     return camera;
 }
 
-BossCameraRecord readBossCamera(std::span<const std::uint8_t> bytes, std::size_t at) {
+BossCameraRecord readBossCamera(std::span<const u8> bytes, usize at) {
     BossCameraRecord camera;
     camera.flags = readWadU32(bytes, at, kWhat);
     camera.maxYaw = readWadF32(bytes, at + 0x04, kWhat);
@@ -122,22 +120,22 @@ BossCameraRecord readBossCamera(std::span<const std::uint8_t> bytes, std::size_t
     return camera;
 }
 
-AudioRecord readAudio(std::span<const std::uint8_t> bytes, std::size_t at) {
+AudioRecord readAudio(std::span<const u8> bytes, usize at) {
     AudioRecord audio;
     audio.bank = readWadText(bytes, at, kTextSize, kWhat);
     audio.enterSound = readS16(bytes, at + 0x10);
     audio.hitSound = readS16(bytes, at + 0x12);
-    audio.nameSound = static_cast<std::int32_t>(readWadU32(bytes, at + 0x14, kWhat));
+    audio.nameSound = static_cast<s32>(readWadU32(bytes, at + 0x14, kWhat));
     audio.stream = readWadText(bytes, at + 0x18, kTextSize, kWhat);
     audio.areas = readS16(bytes, at + 0x28);
     audio.stereo = readS16(bytes, at + 0x2A);
-    for (std::size_t i = 0; i < audio.parts.size(); ++i) {
+    for (usize i = 0; i < audio.parts.size(); ++i) {
         audio.parts[i] = readS16(bytes, at + 0x2C + i * 2);
     }
     return audio;
 }
 
-SoundRecord readSound(std::span<const std::uint8_t> bytes, std::size_t at) {
+SoundRecord readSound(std::span<const u8> bytes, usize at) {
     SoundRecord sound;
     sound.name = readWadText(bytes, at, kTextSize, kWhat);
     sound.volume = readS16(bytes, at + 0x14);
@@ -147,7 +145,7 @@ SoundRecord readSound(std::span<const std::uint8_t> bytes, std::size_t at) {
 
 } // namespace
 
-WorldDataFile WorldDataFile::parse(std::span<const std::uint8_t> bytes) {
+WorldDataFile WorldDataFile::parse(std::span<const u8> bytes) {
     const std::vector<WadSection> sections = readWadDirectory(bytes, kWhat);
     WorldDataFile out;
     const WadSection* world = findWadSection(sections, "WRLD");
@@ -158,45 +156,44 @@ WorldDataFile WorldDataFile::parse(std::span<const std::uint8_t> bytes) {
     out.prefix = readWadText(bytes, world->offset + 4, kTextSize, kWhat);
     if (const WadSection* enemies = findWadSection(sections, "ENMY"); enemies != nullptr) {
         requireRecords(bytes, *enemies, kEnemySize);
-        for (std::uint32_t i = 0; i < enemies->count; ++i) {
-            const std::size_t at = enemies->offset + std::size_t{i} * kEnemySize;
+        for (u32 i = 0; i < enemies->count; ++i) {
+            const usize at = enemies->offset + usize{i} * kEnemySize;
             WorldEnemyRecord enemy;
-            enemy.kind = static_cast<std::int32_t>(readWadU32(bytes, at, kWhat));
-            enemy.subtype = static_cast<std::int32_t>(readWadU32(bytes, at + 4, kWhat));
+            enemy.kind = static_cast<s32>(readWadU32(bytes, at, kWhat));
+            enemy.subtype = static_cast<s32>(readWadU32(bytes, at + 4, kWhat));
             enemy.stream = readWadText(bytes, at + 8, kTextSize, kWhat);
             out.enemies.push_back(enemy);
         }
     }
     if (const WadSection* levels = findWadSection(sections, "LEVL"); levels != nullptr) {
         requireRecords(bytes, *levels, kLevelSize);
-        for (std::uint32_t i = 0; i < levels->count; ++i) {
-            out.levels.push_back(readLevel(bytes, levels->offset + std::size_t{i} * kLevelSize));
+        for (u32 i = 0; i < levels->count; ++i) {
+            out.levels.push_back(readLevel(bytes, levels->offset + usize{i} * kLevelSize));
         }
     }
     if (const WadSection* cameras = findWadSection(sections, "CAMS"); cameras != nullptr) {
         requireRecords(bytes, *cameras, kCameraSize);
-        for (std::uint32_t i = 0; i < cameras->count; ++i) {
-            out.cameras.push_back(
-                readCamera(bytes, cameras->offset + std::size_t{i} * kCameraSize));
+        for (u32 i = 0; i < cameras->count; ++i) {
+            out.cameras.push_back(readCamera(bytes, cameras->offset + usize{i} * kCameraSize));
         }
     }
     if (const WadSection* bossCameras = findWadSection(sections, "BCAM"); bossCameras != nullptr) {
         requireRecords(bytes, *bossCameras, kBossCameraSize);
-        for (std::uint32_t i = 0; i < bossCameras->count; ++i) {
+        for (u32 i = 0; i < bossCameras->count; ++i) {
             out.bossCameras.push_back(
-                readBossCamera(bytes, bossCameras->offset + std::size_t{i} * kBossCameraSize));
+                readBossCamera(bytes, bossCameras->offset + usize{i} * kBossCameraSize));
         }
     }
     if (const WadSection* audio = findWadSection(sections, "AUDS"); audio != nullptr) {
         requireRecords(bytes, *audio, kAudioSize);
-        for (std::uint32_t i = 0; i < audio->count; ++i) {
-            out.audio.push_back(readAudio(bytes, audio->offset + std::size_t{i} * kAudioSize));
+        for (u32 i = 0; i < audio->count; ++i) {
+            out.audio.push_back(readAudio(bytes, audio->offset + usize{i} * kAudioSize));
         }
     }
     if (const WadSection* sounds = findWadSection(sections, "SNDS"); sounds != nullptr) {
         requireRecords(bytes, *sounds, kSoundSize);
-        for (std::uint32_t i = 0; i < sounds->count; ++i) {
-            out.sounds.push_back(readSound(bytes, sounds->offset + std::size_t{i} * kSoundSize));
+        for (u32 i = 0; i < sounds->count; ++i) {
+            out.sounds.push_back(readSound(bytes, sounds->offset + usize{i} * kSoundSize));
         }
     }
     return out;

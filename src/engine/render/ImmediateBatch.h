@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstddef>
 #include <span>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/render/RenderTypes.h"
 
 namespace gdl {
@@ -23,11 +23,11 @@ public:
     void end();
 
     /** Adds an axis-aligned textured rectangle at a fixed depth. */
-    void rect(const Rect& area, float depth, Color color,
+    void rect(const Rect& area, f32 depth, Color color,
               const Rect& uv = Rect{0.0f, 0.0f, 1.0f, 1.0f});
 
     bool empty() const { return m_triangles.empty(); }
-    std::size_t vertexCount() const { return m_triangles.size(); }
+    usize vertexCount() const { return m_triangles.size(); }
     std::span<const ImmediateVertex> triangles() const { return m_triangles; }
 
 private:

@@ -1,10 +1,10 @@
-#include <cstddef>
 #include <filesystem>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -21,21 +21,20 @@ using Catch::Approx;
 std::filesystem::path sampleHints(std::string_view name) {
     const auto dir = test::scratchDirectory(name);
     std::string messages;
-    const auto add = [&](const std::string& id, const std::vector<std::string>& lines,
-                         float scale) {
+    const auto add = [&](const std::string& id, const std::vector<std::string>& lines, f32 scale) {
         if (!messages.empty()) {
             messages += ",\n";
         }
         messages += R"({"name": ")" + id + R"(", "font": 0, "scale": )" + std::to_string(scale) +
                     R"(, "lines": [)";
-        for (std::size_t i = 0; i < lines.size(); ++i) {
+        for (usize i = 0; i < lines.size(); ++i) {
             messages += (i == 0 ? "\"" : ", \"") + lines[i] + "\"";
         }
         messages += "]}";
     };
     // Messages 0..12 guardians, 13..25 runestones, 26..38 items, 39..42 general.
     for (const std::string topic : {"G", "R", "L"}) {
-        for (int i = 0; i < 13; ++i) {
+        for (s32 i = 0; i < 13; ++i) {
             const std::string id = topic + std::to_string(i);
             add(id, {id + " one", id + " two", id + " three"}, 0.8f);
         }
@@ -46,15 +45,15 @@ std::filesystem::path sampleHints(std::string_view name) {
     add("GEN4", {"battle"}, 1.0f);
     std::vector<std::string> titles;
     titles.reserve(13);
-    for (int i = 0; i < 13; ++i) {
+    for (s32 i = 0; i < 13; ++i) {
         titles.push_back("title " + std::to_string(i));
     }
     add("BOSSHINTDESC", titles, 0.8f);
     add("RUNEHINTDESCS", titles, 0.8f);
     add("LEGENDHINTDESCS", titles, 0.8f);
-    const auto run = [](int from, int count) {
+    const auto run = [](s32 from, s32 count) {
         std::string out;
-        for (int i = 0; i < count; ++i) {
+        for (s32 i = 0; i < count; ++i) {
             out += (i == 0 ? "" : ", ") + std::to_string(from + i);
         }
         return out;
@@ -68,10 +67,10 @@ std::filesystem::path sampleHints(std::string_view name) {
     return dir / "hints.json";
 }
 
-unsigned int worlds(std::initializer_list<int> ids) {
-    unsigned int bits = 0;
-    for (const int id : ids) {
-        bits |= 1U << static_cast<unsigned int>(id);
+u32 worlds(std::initializer_list<s32> ids) {
+    u32 bits = 0;
+    for (const s32 id : ids) {
+        bits |= 1U << static_cast<u32>(id);
     }
     return bits;
 }

@@ -1,11 +1,11 @@
 #include <cmath>
-#include <cstddef>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AdsStream.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -29,34 +29,34 @@ TEST_CASE("the tower's music stream decodes piece by piece and rewinds",
     REQUIRE(stream.seconds() > 60.0);
 
     // Half a second at a time, interleaved stereo, until the stream runs out.
-    std::vector<float> out;
+    std::vector<f32> out;
     REQUIRE(stream.read(out, 22050));
     REQUIRE(out.size() % 2 == 0);
-    REQUIRE(out.size() > std::size_t{2} * 1000);
+    REQUIRE(out.size() > usize{2} * 1000);
     bool loud = false;
-    std::size_t frames = out.size() / 2;
+    usize frames = out.size() / 2;
     while (stream.read(out, 22050)) {
-        for (const float sample : out) {
+        for (const f32 sample : out) {
             loud = loud || std::abs(sample) > 0.1f;
         }
         frames += out.size() / 2;
         out.clear();
     }
     REQUIRE(loud);
-    REQUIRE(static_cast<double>(frames) == Approx(stream.info().sampleCount).epsilon(0.01));
+    REQUIRE(static_cast<f64>(frames) == Approx(stream.info().sampleCount).epsilon(0.01));
     REQUIRE_FALSE(stream.read(out, 22050)); // exhausted stays exhausted
 
     stream.rewind();
     out.clear();
     REQUIRE(stream.read(out, 22050));
-    REQUIRE(out.size() > std::size_t{2} * 1000);
+    REQUIRE(out.size() > usize{2} * 1000);
 }
 
 TEST_CASE("a missing or foreign file is not a stream", "[audio][stream]") {
     AdsStream stream;
     REQUIRE_FALSE(stream.open(test::scratchDirectory("ads-stream-none") / "none.ads"));
     REQUIRE_FALSE(stream.opened());
-    std::vector<float> out;
+    std::vector<f32> out;
     REQUIRE_FALSE(stream.read(out, 100));
     REQUIRE(stream.seconds() == 0.0);
     const auto dir = test::scratchDirectory("ads-stream-bad");

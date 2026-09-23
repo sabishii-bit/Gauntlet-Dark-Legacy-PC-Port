@@ -2,13 +2,13 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstddef>
 #include <format>
 #include <string>
 #include <system_error>
 #include <utility>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
@@ -41,9 +41,9 @@ AssetLocator::AssetLocator(std::filesystem::path root) : m_root(std::move(root))
 
 std::optional<std::filesystem::path> AssetLocator::find(std::string_view relative) const {
     std::filesystem::path current = m_root;
-    std::size_t start = 0;
+    usize start = 0;
     while (start <= relative.size()) {
-        const std::size_t end = relative.find_first_of("/\\", start);
+        const usize end = relative.find_first_of("/\\", start);
         const std::string_view component = relative.substr(
             start, end == std::string_view::npos ? std::string_view::npos : end - start);
         if (!component.empty()) {

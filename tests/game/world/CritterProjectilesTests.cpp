@@ -5,6 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -55,7 +56,7 @@ struct Fixture {
         shot.damageScale = 2;
         projectiles.launch(shot, archive, device, effects, sound);
     }
-    void step(float seconds, std::span<const EnemyView> players = {},
+    void step(f32 seconds, std::span<const EnemyView> players = {},
               const WorldCollision* collision = nullptr) {
         effects.update(seconds);
         projectiles.update(seconds, collision, players, device, effects, sound);
@@ -122,7 +123,7 @@ TEST_CASE("critter projectiles cannot damage players through a world wall",
 TEST_CASE("retail boss projectile records retain physics and effect transitions",
           "[game][boss-projectiles][assets][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/DRIDER.json").parent_path().parent_path();
-    for (int kind = 34; kind <= 44; ++kind) {
+    for (s32 kind = 34; kind <= 44; ++kind) {
         const std::string name{bossNameOf(kind)};
         DYNAMIC_SECTION(name) {
             const auto wad = test::assetOrSkip("CRITTER/" + name + ".WAD");
@@ -136,15 +137,14 @@ TEST_CASE("retail boss projectile records retain physics and effect transitions"
             test::FakeRenderDevice device;
             EffectTrees effects;
             CritterProjectiles projectiles;
-            std::size_t launched = 0;
-            for (std::size_t index = 0; index < data.damages().size(); ++index) {
+            usize launched = 0;
+            for (usize index = 0; index < data.damages().size(); ++index) {
                 const CritterDamage& damage = data.damages()[index];
                 if (damage.type != CritterDamage::kProjectile || damage.sound < 0) {
                     continue;
                 }
                 CAPTURE(name, index);
-                REQUIRE(damage.behaviorFlags ==
-                        static_cast<std::uint16_t>(raw.damages[index].behaviorFlags));
+                REQUIRE(damage.behaviorFlags == static_cast<u16>(raw.damages[index].behaviorFlags));
                 REQUIRE(damage.gravity == raw.damages[index].gravity);
                 REQUIRE(damage.maxSpeed == raw.damages[index].maxSpeed);
                 REQUIRE(damage.morph == raw.damages[index].morph);
@@ -153,7 +153,7 @@ TEST_CASE("retail boss projectile records retain physics and effect transitions"
                 REQUIRE(damage.yawSpread == raw.damages[index].yawSpread);
                 CritterShot shot;
                 shot.data = &data;
-                shot.damageIndex = static_cast<int>(index);
+                shot.damageIndex = static_cast<s32>(index);
                 shot.origin = {0, 30, 0};
                 shot.target = Vec3{0, 5, 60};
                 projectiles.launch(shot, archive, device, effects, {});

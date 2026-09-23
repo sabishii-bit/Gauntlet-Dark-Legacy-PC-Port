@@ -1332,13 +1332,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 
 ## Language and style
 
-* Prefer ordinary C++ primitives for gameplay and engine logic: `int`,
-  `unsigned int`, `float` and `double`. Keep `std::size_t` for container sizes
-  and `std::intN_t` / `std::uintN_t` for binary data, audio samples, packed
-  colours, GPU interfaces and other explicitly width-sensitive values.
-  Do not introduce numeric shorthand aliases or replace 64-bit fields with
-  `long` (its width differs on Windows and Linux). Include `<cstddef>` and
-  `<cstdint>` directly where used; do not rely on a project umbrella header.
+* Use the numeric aliases from `engine/core/Types.h`: `u8`, `u16`, `u32`,
+  `u64`, `s8`, `s16`, `s32`, `s64`, `f32`, `f64`, and `usize` (container sizes).
+  Include that header directly where its aliases are used. They are aliases
+  of the standard fixed-width integers, `float`, `double`, and `std::size_t`,
+  not wrapper types. Keep native spellings where an external API or entry
+  point warrants them. Never replace a 64-bit field with `long` (its width
+  differs on Windows and Linux). Ownership macros live in `SpecialMembers.h`.
   Asset, serialized, audio and GPU field widths must remain unchanged.
   The core type tests enforce the supported platforms' 32-bit `int` and
   `unsigned int` interoperability with fixed-width interfaces in both CI builds.

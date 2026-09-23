@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -122,8 +123,8 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
     REQUIRE(war->moveStrikes[2].type == MoveStrike::kFlies);
     REQUIRE(war->moveStrikes[2].speed == 35.0f); // half way between its least and its most
     REQUIRE(war->moveStrikes[2].startFrame == 9);
-    REQUIRE(war->strikesOf(0) == std::vector<int>{0});
-    REQUIRE(war->strikesOf(1) == std::vector<int>{1, 2, 1}); // a ring is followed once round
+    REQUIRE(war->strikesOf(0) == std::vector<s32>{0});
+    REQUIRE(war->strikesOf(1) == std::vector<s32>{1, 2, 1}); // a ring is followed once round
     REQUIRE(war->strikesOf(-1).empty());
     REQUIRE(war->strikesOf(9).empty());
 }

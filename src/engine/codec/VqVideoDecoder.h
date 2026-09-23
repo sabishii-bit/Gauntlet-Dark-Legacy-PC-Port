@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstdint>
 #include <span>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/render/Image.h"
 
 namespace gdl {
@@ -16,27 +16,27 @@ namespace gdl {
 class VqVideoDecoder {
 public:
     /** Width and height must be multiples of four. */
-    VqVideoDecoder(std::uint32_t width, std::uint32_t height);
+    VqVideoDecoder(u32 width, u32 height);
 
     /** Decodes one packed frame chunk into frame(); throws FormatError on malformed data. */
-    void decode(std::span<const std::uint8_t> packedChunk);
+    void decode(std::span<const u8> packedChunk);
 
     const Image& frame() const { return m_frame; }
-    std::uint32_t decodedFrames() const { return m_decodedFrames; }
+    u32 decodedFrames() const { return m_decodedFrames; }
 
     /** Strips the optional eight-byte length prefix some chunks carry before the LZSS block. */
-    static std::span<const std::uint8_t> chunkPayload(std::span<const std::uint8_t> chunk);
+    static std::span<const u8> chunkPayload(std::span<const u8> chunk);
 
 private:
-    void decodeUnpacked(std::span<const std::uint8_t> data);
-    void buildCodebook(std::span<const std::uint8_t> entries, std::uint32_t count);
-    void writeBlock(std::uint32_t blockX, std::uint32_t blockRow, std::uint32_t index);
+    void decodeUnpacked(std::span<const u8> data);
+    void buildCodebook(std::span<const u8> entries, u32 count);
+    void writeBlock(u32 blockX, u32 blockRow, u32 index);
 
-    std::uint32_t m_width;
-    std::uint32_t m_height;
+    u32 m_width;
+    u32 m_height;
     Image m_frame;
-    std::vector<std::uint8_t> m_codebook; ///< count * 4 pixels * RGB
-    std::uint32_t m_decodedFrames = 0;
+    std::vector<u8> m_codebook; ///< count * 4 pixels * RGB
+    u32 m_decodedFrames = 0;
 };
 
 } // namespace gdl

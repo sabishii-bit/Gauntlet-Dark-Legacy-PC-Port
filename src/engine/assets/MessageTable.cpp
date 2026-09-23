@@ -1,14 +1,13 @@
 #include "engine/assets/MessageTable.h"
 
 #include <cctype>
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 
 #include <nlohmann/json.hpp>
 
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -29,7 +28,7 @@ bool MessageTable::load(const std::filesystem::path& file) {
     m_lists.clear();
     m_byName.clear();
     try {
-        const std::vector<std::uint8_t> bytes = readFile(file);
+        const std::vector<u8> bytes = readFile(file);
         const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
         m_fonts = root.value("fonts", std::vector<std::string>{});
         for (const nlohmann::json& entry : root.at("messages")) {
@@ -46,7 +45,7 @@ bool MessageTable::load(const std::filesystem::path& file) {
         for (const nlohmann::json& entry : root.value("lists", nlohmann::json::array())) {
             MessageList list;
             list.name = entry.value("name", std::string{});
-            list.messages = entry.value("messages", std::vector<std::int32_t>{});
+            list.messages = entry.value("messages", std::vector<s32>{});
             m_lists.push_back(std::move(list));
         }
     } catch (const std::exception& e) {
@@ -56,18 +55,18 @@ bool MessageTable::load(const std::filesystem::path& file) {
         m_lists.clear();
         return false;
     }
-    for (std::uint32_t i = 0; i < m_messages.size(); ++i) {
+    for (u32 i = 0; i < m_messages.size(); ++i) {
         m_byName.try_emplace(m_messages[i].name, i);
     }
     return !m_messages.empty();
 }
 
-const MessageInfo& MessageTable::message(std::uint32_t index) const {
+const MessageInfo& MessageTable::message(u32 index) const {
     GDL_VERIFY(index < m_messages.size(), "message index out of range");
     return m_messages[index];
 }
 
-std::optional<std::uint32_t> MessageTable::find(std::string_view name) const {
+std::optional<u32> MessageTable::find(std::string_view name) const {
     const auto it = m_byName.find(std::string(name));
     if (it == m_byName.end()) {
         return std::nullopt;
@@ -84,25 +83,25 @@ const MessageList* MessageTable::findList(std::string_view name) const {
     return nullptr;
 }
 
-const MessageInfo* MessageTable::listed(const MessageList& list, std::size_t entry) const {
+const MessageInfo* MessageTable::listed(const MessageList& list, usize entry) const {
     if (entry >= list.messages.size()) {
         return nullptr;
     }
-    const std::int32_t index = list.messages[entry];
-    if (index < 0 || static_cast<std::size_t>(index) >= m_messages.size()) {
+    const s32 index = list.messages[entry];
+    if (index < 0 || static_cast<usize>(index) >= m_messages.size()) {
         return nullptr;
     }
-    return &m_messages[static_cast<std::size_t>(index)];
+    return &m_messages[static_cast<usize>(index)];
 }
 
 std::string_view MessageTable::fontOf(const MessageInfo& message) const {
-    if (message.font < 0 || static_cast<std::size_t>(message.font) >= m_fonts.size()) {
+    if (message.font < 0 || static_cast<usize>(message.font) >= m_fonts.size()) {
         return {};
     }
-    return m_fonts[static_cast<std::size_t>(message.font)];
+    return m_fonts[static_cast<usize>(message.font)];
 }
 
-std::string MessageTable::textId(std::string_view prefix, std::string_view name, std::size_t page) {
+std::string MessageTable::textId(std::string_view prefix, std::string_view name, usize page) {
     std::string id{prefix};
     id += '.';
     for (const char c : name) {
@@ -113,14 +112,14 @@ std::string MessageTable::textId(std::string_view prefix, std::string_view name,
     return id;
 }
 
-std::size_t MessageTable::translate(const StringTable& strings, std::string_view prefix) {
-    std::size_t taken = 0;
+usize MessageTable::translate(const StringTable& strings, std::string_view prefix) {
+    usize taken = 0;
     for (MessageInfo& message : m_messages) {
         if (message.name.empty() || !strings.has(textId(prefix, message.name, 1))) {
             continue;
         }
         message.pages.clear();
-        for (std::size_t page = 1; strings.has(textId(prefix, message.name, page)); ++page) {
+        for (usize page = 1; strings.has(textId(prefix, message.name, page)); ++page) {
             message.pages.emplace_back(strings.get(textId(prefix, message.name, page)));
         }
         ++taken;

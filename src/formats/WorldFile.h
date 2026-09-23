@@ -1,13 +1,12 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 #include "formats/KeyframeTrack.h"
@@ -18,21 +17,21 @@ namespace gdl::formats {
 /** One placed object as the level file stores it. */
 struct WorldObjectRecord {
     std::string name;
-    std::uint32_t flags = 0;
-    std::uint32_t objectFlags = 0;
+    u32 flags = 0;
+    u32 objectFlags = 0;
     Vec3 position{0.0f, 0.0f, 0.0f};
-    std::int16_t nextIndex = -1;
-    std::int16_t childIndex = -1;
-    float radius = 0.0f;
+    s16 nextIndex = -1;
+    s16 childIndex = -1;
+    f32 radius = 0.0f;
     bool noCollision = false;
-    std::int16_t collisionTriangleCount = 0;
-    std::int32_t collisionTriangleIndex = 0;
+    s16 collisionTriangleCount = 0;
+    s32 collisionTriangleIndex = 0;
 };
 
 struct WorldLocatorRecord {
     LocatorKind kind = LocatorKind::None;
-    std::uint8_t delay = 0;
-    std::uint16_t next = 0;
+    u8 delay = 0;
+    u16 next = 0;
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 rotation{0.0f, 0.0f, 0.0f};
 };
@@ -46,58 +45,58 @@ struct WorldCollisionTriangle {
 
 /** One placed object's keyframes: its frame count and the channels it moves. */
 struct WorldAnimationRecord {
-    std::int32_t objectIndex = -1;
-    std::int32_t frameCount = 0;
-    std::uint32_t state = 0;
-    float startFrame = 0.0f;
+    s32 objectIndex = -1;
+    s32 frameCount = 0;
+    u32 state = 0;
+    f32 startFrame = 0.0f;
     NodeTrack track;
 };
 
 /** One kind of item a level places: its type and subtype, collision shape, name, display
  * flags and combat values, as the file stores them. */
 struct ItemInfoRecord {
-    static constexpr std::size_t kSize = 0x50;
+    static constexpr usize kSize = 0x50;
 
-    std::int32_t type = 0;
-    std::int32_t subtype = 0;
-    std::int16_t collisionType = 0;
-    std::int16_t collisionFlags = 0;
-    float radius = 0.0f;
-    float height = 0.0f;
-    float xSize = 0.0f;
-    float zSize = 0.0f;
+    s32 type = 0;
+    s32 subtype = 0;
+    s16 collisionType = 0;
+    s16 collisionFlags = 0;
+    f32 radius = 0.0f;
+    f32 height = 0.0f;
+    f32 xSize = 0.0f;
+    f32 zSize = 0.0f;
     Vec3 collisionOffset{0.0f, 0.0f, 0.0f};
     std::string name;
-    std::uint32_t objectFlags = 0;
-    std::uint32_t properties = 0;
-    std::int16_t value = 0;
-    std::int16_t armor = 0;
-    std::int16_t hitPoints = 0;
-    std::int16_t activeType = 0;
-    std::int16_t activeOff = 0;
-    std::int16_t activeOn = 0;
+    u32 objectFlags = 0;
+    u32 properties = 0;
+    s16 value = 0;
+    s16 armor = 0;
+    s16 hitPoints = 0;
+    s16 activeType = 0;
+    s16 activeOff = 0;
+    s16 activeOn = 0;
     /** A record of type -1 is no item but a list to pick one from at random: `subtype` of
      * these indices into the item records, stored where an item keeps its collision. */
-    std::vector<std::int16_t> choices;
+    std::vector<s16> choices;
 
-    static constexpr std::int32_t kChoiceList = -1;
-    static constexpr std::size_t kMostChoices = 36; ///< what fits before the record's end
+    static constexpr s32 kChoiceList = -1;
+    static constexpr usize kMostChoices = 36; ///< what fits before the record's end
 };
 
 /** One item the level places: which kind, how many players it takes, its own name when it
  * has one, where it stands and the kind's parameters. */
 struct ItemInstanceRecord {
-    static constexpr std::size_t kSize = 0x3C;
+    static constexpr usize kSize = 0x3C;
 
-    std::int16_t info = -1;
-    std::int8_t minPlayers = 0;
-    std::uint8_t flags = 0;
-    std::int16_t triangleIndex = -1;
-    std::int16_t triangleCount = 0;
+    s16 info = -1;
+    s8 minPlayers = 0;
+    u8 flags = 0;
+    s16 triangleIndex = -1;
+    s16 triangleCount = 0;
     std::string name;
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 rotation{0.0f, 0.0f, 0.0f}; ///< pitch, yaw, roll
-    std::array<std::uint8_t, 12> params{};
+    std::array<u8, 12> params{};
 };
 
 /**
@@ -108,14 +107,14 @@ struct ItemInstanceRecord {
 struct WorldFile {
     Vec3 minBounds{0.0f, 0.0f, 0.0f};
     Vec3 maxBounds{0.0f, 0.0f, 0.0f};
-    float gridSize = 0.0f;
-    std::uint32_t gridColumns = 0;
-    std::uint32_t gridRows = 0;
-    std::uint32_t collisionTriangleCount = 0;
-    std::uint32_t itemInfoCount = 0;
-    std::uint32_t itemInstanceCount = 0;
-    std::uint32_t animationCount = 0;
-    std::uint32_t particleSystemCount = 0;
+    f32 gridSize = 0.0f;
+    u32 gridColumns = 0;
+    u32 gridRows = 0;
+    u32 collisionTriangleCount = 0;
+    u32 itemInfoCount = 0;
+    u32 itemInstanceCount = 0;
+    u32 animationCount = 0;
+    u32 particleSystemCount = 0;
     std::vector<WorldObjectRecord> objects;
     std::vector<WorldLocatorRecord> locators;
     std::vector<WorldCollisionTriangle> collision; ///< indexed by the objects' ranges
@@ -125,7 +124,7 @@ struct WorldFile {
     std::vector<ItemInstanceRecord> itemInstances;
 
     /** Parses the little-endian file; throws FormatError when malformed. */
-    static WorldFile parse(std::span<const std::uint8_t> bytes);
+    static WorldFile parse(std::span<const u8> bytes);
 };
 
 } // namespace gdl::formats

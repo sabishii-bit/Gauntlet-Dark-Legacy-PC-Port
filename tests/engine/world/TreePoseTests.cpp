@@ -1,9 +1,9 @@
-#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/core/Types.h"
 #include "engine/world/TreePose.h"
 
 namespace {
@@ -12,12 +12,12 @@ using namespace gdl;
 using Catch::Approx;
 
 /** A track keying one channel with the given values at the given frames. */
-TrackInfo track(unsigned int node, std::uint16_t channel, std::vector<std::uint16_t> frames,
-                std::vector<float> values, bool pitchYawRoll = false) {
+TrackInfo track(u32 node, u16 channel, std::vector<u16> frames, std::vector<f32> values,
+                bool pitchYawRoll = false) {
     TrackInfo t;
     t.node = node;
-    t.flags = static_cast<std::uint16_t>(TrackInfo::channelBit(channel) |
-                                         (pitchYawRoll ? TrackInfo::kPitchYawRoll : 0));
+    t.flags = static_cast<u16>(TrackInfo::channelBit(channel) |
+                               (pitchYawRoll ? TrackInfo::kPitchYawRoll : 0));
     t.frames = std::move(frames);
     t.values = std::move(values);
     return t;
@@ -50,7 +50,7 @@ bool near(const Vec3& a, const Vec3& b) {
 }
 
 bool near(const Mat4& a, const Mat4& b) {
-    for (int c = 0; c < 4; ++c) {
+    for (s32 c = 0; c < 4; ++c) {
         if (!glm::all(glm::epsilonEqual(a[c], b[c], 1e-5f))) {
             return false;
         }

@@ -1,8 +1,8 @@
-#include <cstddef>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
@@ -37,7 +37,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot",
     canvas.begin(device, Mat4{1.0f});
     painter.draw(canvas, 0, view, true);
     canvas.end();
-    const std::size_t full = device.draws.size();
+    const usize full = device.draws.size();
     REQUIRE(full >= 4); // the bar, the panel, the frame, the icons and the text
 
     // Keys and potions carried add their icons and counts over the gold and the health.
@@ -81,7 +81,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot",
     canvas.end();
     REQUIRE_FALSE(device.draws.empty());
     REQUIRE(device.draws.size() < full);
-    REQUIRE(test::minCorner(device.draws[0]).x >= static_cast<float>(StatusBoxPainter::kWidth));
+    REQUIRE(test::minCorner(device.draws[0]).x >= static_cast<f32>(StatusBoxPainter::kWidth));
 
     painter.release();
     REQUIRE_FALSE(painter.loaded());

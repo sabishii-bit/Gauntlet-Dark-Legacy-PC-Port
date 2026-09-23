@@ -1,10 +1,12 @@
 #include "game/screens/MovieScene.h"
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 namespace {
 
-constexpr float kMovieDepth = 0.5f;
+constexpr f32 kMovieDepth = 0.5f;
 
 } // namespace
 
@@ -33,7 +35,7 @@ void MovieScene::close() {
     m_textureDirty = false;
 }
 
-bool MovieScene::update(double deltaSeconds) {
+bool MovieScene::update(f64 deltaSeconds) {
     if (!isOpen()) {
         return false;
     }

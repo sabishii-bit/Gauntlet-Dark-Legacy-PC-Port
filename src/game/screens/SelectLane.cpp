@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <format>
+
+#include "engine/core/Types.h"
 
 #include "game/players/Progression.h"
 
@@ -12,74 +12,74 @@ namespace gdl::game {
 
 namespace {
 
-constexpr int kFullOpacity = 255;
-constexpr int kMenuCenterY = 128;
-constexpr int kListMenuY = 70;
-constexpr int kListMenuX = 8;
-constexpr int kConfirmMenuY = 164;
-constexpr float kMenuScale = 0.667f;
-constexpr float kListScale = 0.6f;
-constexpr int kMessageY = 100;
-constexpr int kLineHeight = 10;
-constexpr float kSmallScale = 1.2f;
-constexpr float kCaptionScale = 0.8f;
-constexpr float kStatScale = 0.5f;
-constexpr float kLetterScale = 0.9f;
-constexpr float kFlashScale = 0.75f;
-constexpr int kPromptX = 20;
-constexpr int kPromptSelectY = 252;
-constexpr int kPromptBackY = 272;
-constexpr int kPromptIconSize = 19;
-constexpr int kPromptGap = 8;
-constexpr int kPromptTextDrop = 4;
-constexpr int kLegendY = 180;
-constexpr int kLegendClassY = 232;
-constexpr int kLegendStep = 20;
-constexpr int kLegendX = 10;
-constexpr int kCaptionY = 64;
-constexpr int kCaptionStep = 26;
-constexpr int kLockedTextY = 142;
-constexpr int kLockedLineStep = 12;
-constexpr int kStatsY = 162;
-constexpr int kStatsStep = 16;
-constexpr int kStatNameRight = 81;
-constexpr int kStatValueX = 84;
-constexpr int kStatGlowInset = 6;
-constexpr int kStatGlowWidth = 68;
-constexpr int kLevelY = 292;
-constexpr int kLettersY = 340;
-constexpr int kLetterStep = 18;
+constexpr s32 kFullOpacity = 255;
+constexpr s32 kMenuCenterY = 128;
+constexpr s32 kListMenuY = 70;
+constexpr s32 kListMenuX = 8;
+constexpr s32 kConfirmMenuY = 164;
+constexpr f32 kMenuScale = 0.667f;
+constexpr f32 kListScale = 0.6f;
+constexpr s32 kMessageY = 100;
+constexpr s32 kLineHeight = 10;
+constexpr f32 kSmallScale = 1.2f;
+constexpr f32 kCaptionScale = 0.8f;
+constexpr f32 kStatScale = 0.5f;
+constexpr f32 kLetterScale = 0.9f;
+constexpr f32 kFlashScale = 0.75f;
+constexpr s32 kPromptX = 20;
+constexpr s32 kPromptSelectY = 252;
+constexpr s32 kPromptBackY = 272;
+constexpr s32 kPromptIconSize = 19;
+constexpr s32 kPromptGap = 8;
+constexpr s32 kPromptTextDrop = 4;
+constexpr s32 kLegendY = 180;
+constexpr s32 kLegendClassY = 232;
+constexpr s32 kLegendStep = 20;
+constexpr s32 kLegendX = 10;
+constexpr s32 kCaptionY = 64;
+constexpr s32 kCaptionStep = 26;
+constexpr s32 kLockedTextY = 142;
+constexpr s32 kLockedLineStep = 12;
+constexpr s32 kStatsY = 162;
+constexpr s32 kStatsStep = 16;
+constexpr s32 kStatNameRight = 81;
+constexpr s32 kStatValueX = 84;
+constexpr s32 kStatGlowInset = 6;
+constexpr s32 kStatGlowWidth = 68;
+constexpr s32 kLevelY = 292;
+constexpr s32 kLettersY = 340;
+constexpr s32 kLetterStep = 18;
 /** Where each lane's first name letter starts, a few pixels into the lane. */
-constexpr std::array<int, 4> kLetterStartX{8, 10, 10, 7};
-constexpr int kNameCenterOffset = 64;
-constexpr int kPortraitY = 28;
-constexpr int kPortraitHeight = 256;
-constexpr int kQuestMarkCenterY = 160;
-constexpr int kQuestMarkSize = 64;
-constexpr int kNamePlateX = 8;
-constexpr int kNamePlateY = 272;
-constexpr int kNamePlateWidth = 128;
-constexpr int kNamePlateHeight = 16;
-constexpr int kFlyOutTicks = 16;
-constexpr int kFadeInTicks = 32;
-constexpr int kFadeOutDelay = 16;
-constexpr int kPulseSpan = 64;
-constexpr int kPulseHalf = 32;
-constexpr float kPulseStep = 0.025f;
-constexpr int kOperationSteps = 3;
-constexpr int kGlowTextRadius = 40;
-constexpr int kGlowTextHold = 5;
+constexpr std::array<s32, 4> kLetterStartX{8, 10, 10, 7};
+constexpr s32 kNameCenterOffset = 64;
+constexpr s32 kPortraitY = 28;
+constexpr s32 kPortraitHeight = 256;
+constexpr s32 kQuestMarkCenterY = 160;
+constexpr s32 kQuestMarkSize = 64;
+constexpr s32 kNamePlateX = 8;
+constexpr s32 kNamePlateY = 272;
+constexpr s32 kNamePlateWidth = 128;
+constexpr s32 kNamePlateHeight = 16;
+constexpr s32 kFlyOutTicks = 16;
+constexpr s32 kFadeInTicks = 32;
+constexpr s32 kFadeOutDelay = 16;
+constexpr s32 kPulseSpan = 64;
+constexpr s32 kPulseHalf = 32;
+constexpr f32 kPulseStep = 0.025f;
+constexpr s32 kOperationSteps = 3;
+constexpr s32 kGlowTextRadius = 40;
+constexpr s32 kGlowTextHold = 5;
 constexpr Color kGlowColor = Color::rgba(130, 0, 234);
 constexpr Color kDimLetter = Color::rgba(64, 64, 64);
-constexpr int kMenuNew = 1000;
-constexpr int kMenuLoad = 1001;
-constexpr int kMenuSave = 1002;
-constexpr int kMenuChange = 1003;
-constexpr int kMenuQuit = 1004;
-constexpr int kMenuDone = 1005;
-constexpr int kMenuYes = 1006;
-constexpr int kMenuNo = 1007;
-constexpr int kMenuSlotBase = 2000;
+constexpr s32 kMenuNew = 1000;
+constexpr s32 kMenuLoad = 1001;
+constexpr s32 kMenuSave = 1002;
+constexpr s32 kMenuChange = 1003;
+constexpr s32 kMenuQuit = 1004;
+constexpr s32 kMenuDone = 1005;
+constexpr s32 kMenuYes = 1006;
+constexpr s32 kMenuNo = 1007;
+constexpr s32 kMenuSlotBase = 2000;
 constexpr std::string_view kShadowSuffix = "SHADW";
 constexpr std::string_view kSumnerPortrait = "S12_SUM";
 constexpr std::string_view kQuestMarkTexture = "SELSCRN_QUESTMARK";
@@ -92,13 +92,13 @@ constexpr std::string_view kIconSelect = "BUTTON_X";
 constexpr std::string_view kIconBack = "BUTTON_TRI";
 
 /** Opacity from the original's blit alpha, where 0 is opaque and 256 invisible. */
-std::uint8_t opacityFromBlitAlpha(int alpha) {
-    return static_cast<std::uint8_t>(kFullOpacity - std::clamp(alpha, 0, kFullOpacity));
+u8 opacityFromBlitAlpha(s32 alpha) {
+    return static_cast<u8>(kFullOpacity - std::clamp(alpha, 0, kFullOpacity));
 }
 
 } // namespace
 
-void SelectLane::reset(int index, LaneServices* services) {
+void SelectLane::reset(s32 index, LaneServices* services) {
     m_services = services;
     m_index = index;
     m_state = State::Inactive;
@@ -142,11 +142,11 @@ std::string_view SelectLane::text(std::string_view id) const {
                                                                    : id;
 }
 
-bool SelectLane::classKnown(int classIndex) const {
+bool SelectLane::classKnown(s32 classIndex) const {
     return classUnlocked(classIndex, m_save.classUnlock);
 }
 
-int SelectLane::wrapClass(int classIndex, int step) const {
+s32 SelectLane::wrapClass(s32 classIndex, s32 step) const {
     for (;;) {
         if (classIndex >= kClassCount) {
             classIndex = 0;
@@ -162,11 +162,11 @@ int SelectLane::wrapClass(int classIndex, int step) const {
     }
 }
 
-int SelectLane::pickLevel() const {
+s32 SelectLane::pickLevel() const {
     if (m_pickClass == kSumnerClass) {
         return kMaxLevel;
     }
-    return experienceLevel(m_save.classes[static_cast<std::size_t>(m_pickClass)].experience);
+    return experienceLevel(m_save.classes[static_cast<usize>(m_pickClass)].experience);
 }
 
 void SelectLane::enter(State state) {
@@ -199,7 +199,7 @@ void SelectLane::openMenu(State state) {
     definition.y = -kMenuCenterY;
     definition.scale = kMenuScale;
     definition.startSelects = false;
-    int selection = 0;
+    s32 selection = 0;
     const bool anySaved =
         m_services != nullptr && m_services->slots != nullptr && m_services->slots->anySaved();
     if (state == State::TopMenu) {
@@ -239,18 +239,18 @@ void SelectLane::openListMenu(State state) {
     definition.x = x() + kListMenuX;
     definition.y = kListMenuY;
     definition.scale = kListScale;
-    int selection = 0;
+    s32 selection = 0;
     if (m_services != nullptr && m_services->slots != nullptr) {
         const SaveSlots& slots = *m_services->slots;
-        for (std::size_t i = 0; i < slots.count(); ++i) {
+        for (usize i = 0; i < slots.count(); ++i) {
             const SaveSlotInfo& info = slots.slot(i);
             MenuItem item;
             item.text = info.exists ? info.name : std::string(text("select.empty"));
-            item.code = kMenuSlotBase + static_cast<int>(i);
+            item.code = kMenuSlotBase + static_cast<s32>(i);
             item.enabled = state == State::SavePick || info.exists;
             definition.items.push_back(item);
             if (m_slotTarget.has_value() && *m_slotTarget == i) {
-                selection = static_cast<int>(i);
+                selection = static_cast<s32>(i);
             }
         }
     }
@@ -291,7 +291,7 @@ void SelectLane::setPortrait() {
     mark.opacity = kFullOpacity;
 }
 
-void SelectLane::changeClass(int step, int colorStep) {
+void SelectLane::changeClass(s32 step, s32 colorStep) {
     Blit& flyOut = blit(Sheet::FlyOut);
     flyOut.texture = blit(Sheet::Portrait).texture;
     flyOut.visible = true;
@@ -340,7 +340,7 @@ void SelectLane::clearPlayer() {
     m_hasCharacter = false;
 }
 
-SelectLane::Result SelectLane::update(const MenuInput& input, int ticks, const Frame& frame) {
+SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const Frame& frame) {
     stepAnimations(ticks);
     m_promptStart = frame.othersSelecting;
     if (m_state == State::Inactive) {
@@ -498,7 +498,7 @@ SelectLane::Result SelectLane::update(const MenuInput& input, int ticks, const F
         if (event.action == MenuAction::Back) {
             returnBack();
         } else if (event.action == MenuAction::Choice && event.code >= kMenuSlotBase) {
-            const auto slot = static_cast<std::size_t>(event.code - kMenuSlotBase);
+            const auto slot = static_cast<usize>(event.code - kMenuSlotBase);
             const bool inUse = (frame.slotsInUse & (1U << slot)) != 0;
             if (m_state == State::LoadPick && inUse) {
                 play(SelectSound::Buzzer);
@@ -603,7 +603,7 @@ bool SelectLane::animating() const {
     });
 }
 
-void SelectLane::stepAnimations(int ticks) {
+void SelectLane::stepAnimations(s32 ticks) {
     for (Blit& b : m_blits) {
         if (!b.visible) {
             continue;
@@ -611,8 +611,8 @@ void SelectLane::stepAnimations(int ticks) {
         switch (b.anim) {
         case Anim::FadeIn: {
             b.timer += ticks;
-            const int half = b.timer / 2;
-            const int alpha = std::min(half * half, kFullOpacity + 1);
+            const s32 half = b.timer / 2;
+            const s32 alpha = std::min(half * half, kFullOpacity + 1);
             b.opacity = opacityFromBlitAlpha(kFullOpacity + 1 - alpha);
             if (b.timer >= kFadeInTicks) {
                 b.opacity = kFullOpacity;
@@ -623,11 +623,11 @@ void SelectLane::stepAnimations(int ticks) {
         case Anim::FadeOut:
         case Anim::DelayedFadeOut: {
             b.timer += ticks;
-            int half = b.timer / 2;
+            s32 half = b.timer / 2;
             if (b.anim == Anim::DelayedFadeOut) {
                 half = std::max(0, half - kFadeOutDelay);
             }
-            const int alpha = half * half;
+            const s32 alpha = half * half;
             b.opacity = opacityFromBlitAlpha(alpha);
             if (alpha >= kFullOpacity + 1) {
                 b.visible = false;
@@ -637,7 +637,7 @@ void SelectLane::stepAnimations(int ticks) {
         }
         case Anim::FlyOut: {
             b.timer += ticks;
-            const int u = b.timer * b.timer;
+            const s32 u = b.timer * b.timer;
             b.opacity = opacityFromBlitAlpha(u);
             if (b.timer >= kFlyOutTicks) {
                 b.visible = false;
@@ -662,15 +662,15 @@ void SelectLane::drawBlit(Canvas& canvas, const Blit& b, Rect area) const {
     canvas.draw(*texture, area, Color::white().withAlpha(b.opacity));
 }
 
-void SelectLane::drawLines(Canvas& canvas, const TextPainter& painter, int y, int lineHeight,
-                           float scale, std::string_view lines, Color color) const {
+void SelectLane::drawLines(Canvas& canvas, const TextPainter& painter, s32 y, s32 lineHeight,
+                           f32 scale, std::string_view lines, Color color) const {
     TextStyle style;
     style.scale = scale;
     style.color = color;
-    const int centerX = -(x() + kNameCenterOffset);
-    std::size_t start = 0;
+    const s32 centerX = -(x() + kNameCenterOffset);
+    usize start = 0;
     while (start <= lines.size()) {
-        const std::size_t end = lines.find('\n', start);
+        const usize end = lines.find('\n', start);
         const std::string_view line = lines.substr(
             start, end == std::string_view::npos ? std::string_view::npos : end - start);
         painter.draw(canvas, centerX, y, line, style);
@@ -682,17 +682,17 @@ void SelectLane::drawLines(Canvas& canvas, const TextPainter& painter, int y, in
     }
 }
 
-void SelectLane::drawPrompt(Canvas& canvas, std::string_view icon, int y,
+void SelectLane::drawPrompt(Canvas& canvas, std::string_view icon, s32 y,
                             std::string_view label) const {
     if (m_services == nullptr || m_services->smallPainter == nullptr) {
         return;
     }
-    const int iconX = x() + kPromptX;
+    const s32 iconX = x() + kPromptX;
     if (m_services->staticTexture) {
         if (const Texture* texture = m_services->staticTexture(icon)) {
-            canvas.draw(*texture, Rect{static_cast<float>(iconX), static_cast<float>(y),
-                                       static_cast<float>(kPromptIconSize),
-                                       static_cast<float>(kPromptIconSize)});
+            canvas.draw(*texture,
+                        Rect{static_cast<f32>(iconX), static_cast<f32>(y),
+                             static_cast<f32>(kPromptIconSize), static_cast<f32>(kPromptIconSize)});
         }
     }
     TextStyle style;
@@ -701,7 +701,7 @@ void SelectLane::drawPrompt(Canvas& canvas, std::string_view icon, int y,
                                    y + kPromptTextDrop, label, style);
 }
 
-void SelectLane::drawStats(Canvas& canvas, int time) const {
+void SelectLane::drawStats(Canvas& canvas, s32 time) const {
     if (m_services == nullptr || m_services->largePainter == nullptr ||
         m_services->initialsPainter == nullptr || m_services->smallPainter == nullptr) {
         return;
@@ -710,7 +710,7 @@ void SelectLane::drawStats(Canvas& canvas, int time) const {
     if (!known) {
         return;
     }
-    const int level = pickLevel();
+    const s32 level = pickLevel();
     StatBlock stats;
     bool haveStats = false;
     if (m_pickClass == kSumnerClass) {
@@ -718,20 +718,20 @@ void SelectLane::drawStats(Canvas& canvas, int time) const {
         haveStats = true;
     } else if (m_services->classes != nullptr) {
         if (const ClassStats* classStats = m_services->classes->stats(m_pickClass)) {
-            stats = displayStats(*classStats, level,
-                                 m_save.classes[static_cast<std::size_t>(m_pickClass)]);
+            stats =
+                displayStats(*classStats, level, m_save.classes[static_cast<usize>(m_pickClass)]);
             haveStats = true;
         }
     }
     if (haveStats) {
         const std::array<std::string_view, StatBlock::kCount> ids{"select.strength", "select.speed",
                                                                   "select.armor", "select.magic"};
-        const std::size_t best = m_pickClass == kSumnerClass ? StatBlock::kCount : stats.best();
-        int y = kStatsY;
-        for (std::size_t row = 0; row < StatBlock::kCount; ++row, y += kStatsStep) {
+        const usize best = m_pickClass == kSumnerClass ? StatBlock::kCount : stats.best();
+        s32 y = kStatsY;
+        for (usize row = 0; row < StatBlock::kCount; ++row, y += kStatsStep) {
             const std::string_view name = text(ids[row]);
-            const int width = m_services->largePainter->measure(name, kStatScale);
-            const int nameX = x() + kStatNameRight - width;
+            const s32 width = m_services->largePainter->measure(name, kStatScale);
+            const s32 nameX = x() + kStatNameRight - width;
             TextStyle style;
             style.scale = kStatScale;
             if (row == best) {
@@ -744,15 +744,15 @@ void SelectLane::drawStats(Canvas& canvas, int time) const {
             }
             m_services->largePainter->draw(canvas, nameX, y - 2, name, style);
 
-            const int valueX = x() + kStatValueX;
+            const s32 valueX = x() + kStatValueX;
             if (row == best && m_services->selectTexture) {
                 if (const Texture* glowTexture = m_services->selectTexture(kStatGlowTexture)) {
-                    const float height = static_cast<float>(kStatGlowWidth) *
-                                         static_cast<float>(glowTexture->height()) /
-                                         static_cast<float>(glowTexture->width());
-                    canvas.draw(*glowTexture, Rect{static_cast<float>(valueX - kStatGlowInset),
-                                                   static_cast<float>(y - kStatGlowInset),
-                                                   static_cast<float>(kStatGlowWidth), height});
+                    const f32 height = static_cast<f32>(kStatGlowWidth) *
+                                       static_cast<f32>(glowTexture->height()) /
+                                       static_cast<f32>(glowTexture->width());
+                    canvas.draw(*glowTexture, Rect{static_cast<f32>(valueX - kStatGlowInset),
+                                                   static_cast<f32>(y - kStatGlowInset),
+                                                   static_cast<f32>(kStatGlowWidth), height});
                 }
             }
             m_services->initialsPainter->draw(canvas, valueX, y,
@@ -760,7 +760,7 @@ void SelectLane::drawStats(Canvas& canvas, int time) const {
         }
     }
     const bool hasExperience = m_pickClass != kSumnerClass &&
-                               m_save.classes[static_cast<std::size_t>(m_pickClass)].experience > 0;
+                               m_save.classes[static_cast<usize>(m_pickClass)].experience > 0;
     const std::string levelText =
         hasExperience ? std::vformat(text("select.level"), std::make_format_args(level))
                       : std::string(text("select.newLevel"));
@@ -768,7 +768,7 @@ void SelectLane::drawStats(Canvas& canvas, int time) const {
               Color::white());
 }
 
-void SelectLane::drawNameEntry(Canvas& canvas, int time) const {
+void SelectLane::drawNameEntry(Canvas& canvas, s32 time) const {
     if (m_services == nullptr || m_services->initialsPainter == nullptr) {
         return;
     }
@@ -777,8 +777,8 @@ void SelectLane::drawNameEntry(Canvas& canvas, int time) const {
     if (m_nameEntry.editing()) {
         TextStyle style;
         style.scale = kLetterScale;
-        int letterX = x() + kLetterStartX[static_cast<std::size_t>(m_index) % kLetterStartX.size()];
-        std::size_t drawn = 0;
+        s32 letterX = x() + kLetterStartX[static_cast<usize>(m_index) % kLetterStartX.size()];
+        usize drawn = 0;
         for (const char letter : m_nameEntry.name()) {
             style.color = tint;
             painter.draw(canvas, letterX, kLettersY, std::string_view(&letter, 1), style);
@@ -804,7 +804,7 @@ void SelectLane::drawNameEntry(Canvas& canvas, int time) const {
     }
 }
 
-void SelectLane::drawState(Canvas& canvas, int time) const {
+void SelectLane::drawState(Canvas& canvas, s32 time) const {
     if (m_services == nullptr || m_services->smallPainter == nullptr ||
         m_services->largePainter == nullptr) {
         return;
@@ -820,18 +820,18 @@ void SelectLane::drawState(Canvas& canvas, int time) const {
         drawLines(canvas, *m_services->largePainter, kCaptionY, kCaptionStep, kCaptionScale,
                   text("select.enterName"), Color::white());
         if (m_services->staticTexture) {
-            const int leftX = x() + kLegendX;
-            const int rightX = leftX + kPromptIconSize;
-            const auto icon = [&](std::string_view name, int iconX, int iconY) {
+            const s32 leftX = x() + kLegendX;
+            const s32 rightX = leftX + kPromptIconSize;
+            const auto icon = [&](std::string_view name, s32 iconX, s32 iconY) {
                 if (const Texture* texture = m_services->staticTexture(name)) {
-                    canvas.draw(*texture, Rect{static_cast<float>(iconX), static_cast<float>(iconY),
-                                               static_cast<float>(kPromptIconSize),
-                                               static_cast<float>(kPromptIconSize)});
+                    canvas.draw(*texture, Rect{static_cast<f32>(iconX), static_cast<f32>(iconY),
+                                               static_cast<f32>(kPromptIconSize),
+                                               static_cast<f32>(kPromptIconSize)});
                 }
             };
             TextStyle style;
             style.scale = kSmallScale;
-            const int labelX = rightX + kPromptIconSize + kPromptGap;
+            const s32 labelX = rightX + kPromptIconSize + kPromptGap;
             icon(kIconUp, leftX, kLegendY);
             icon(kIconDown, rightX, kLegendY);
             small.draw(canvas, labelX, kLegendY + kPromptTextDrop, text("select.changeLetter"),
@@ -857,15 +857,15 @@ void SelectLane::drawState(Canvas& canvas, int time) const {
     case State::ClassPick: {
         showSelect = classKnown(m_pickClass);
         if (m_services->staticTexture) {
-            const int leftX = x() + kLegendX;
-            const int rightX = leftX + kPromptIconSize;
+            const s32 leftX = x() + kLegendX;
+            const s32 rightX = leftX + kPromptIconSize;
             for (const auto& [name, iconX] :
                  {std::pair{kIconLeft, leftX}, std::pair{kIconRight, rightX}}) {
                 if (const Texture* texture = m_services->staticTexture(name)) {
                     canvas.draw(*texture,
-                                Rect{static_cast<float>(iconX), static_cast<float>(kLegendClassY),
-                                     static_cast<float>(kPromptIconSize),
-                                     static_cast<float>(kPromptIconSize)});
+                                Rect{static_cast<f32>(iconX), static_cast<f32>(kLegendClassY),
+                                     static_cast<f32>(kPromptIconSize),
+                                     static_cast<f32>(kPromptIconSize)});
                 }
             }
             TextStyle style;
@@ -933,46 +933,46 @@ void SelectLane::drawState(Canvas& canvas, int time) const {
         drawPrompt(canvas, kIconBack, kPromptBackY, text("select.back"));
     }
     if (m_state == State::SaveMenu) {
-        const int level = experienceLevel(m_save.experience());
+        const s32 level = experienceLevel(m_save.experience());
         drawLines(canvas, small, kLevelY, kLineHeight, kSmallScale,
                   std::vformat(text("select.level"), std::make_format_args(level)), Color::white());
     }
 }
 
 void SelectLane::drawImages(Canvas& canvas) const {
-    const auto left = static_cast<float>(x());
+    const auto left = static_cast<f32>(x());
     drawBlit(canvas, blit(Sheet::Weapon),
-             Rect{left, 0.0f, static_cast<float>(kWidth), static_cast<float>(kPanelHeight)});
+             Rect{left, 0.0f, static_cast<f32>(kWidth), static_cast<f32>(kPanelHeight)});
     drawBlit(canvas, blit(Sheet::Portrait),
-             Rect{left, static_cast<float>(kPortraitY), static_cast<float>(kWidth),
-                  static_cast<float>(kPortraitHeight)});
+             Rect{left, static_cast<f32>(kPortraitY), static_cast<f32>(kWidth),
+                  static_cast<f32>(kPortraitHeight)});
     const Blit& flyOut = blit(Sheet::FlyOut);
     if (flyOut.visible) {
-        const int t = flyOut.timer;
-        const int u = t * t;
-        const int drift = u / 8;
+        const s32 t = flyOut.timer;
+        const s32 u = t * t;
+        const s32 drift = u / 8;
         drawBlit(canvas, flyOut,
-                 Rect{left + static_cast<float>(drift), static_cast<float>(kPortraitY + u + t * 3),
-                      static_cast<float>(kWidth), static_cast<float>(kPortraitHeight - u)});
+                 Rect{left + static_cast<f32>(drift), static_cast<f32>(kPortraitY + u + t * 3),
+                      static_cast<f32>(kWidth), static_cast<f32>(kPortraitHeight - u)});
     }
     const Blit& mark = blit(Sheet::QuestMark);
     if (mark.visible) {
-        int amplitude = mark.timer;
+        s32 amplitude = mark.timer;
         if (amplitude >= kPulseHalf) {
             amplitude = kPulseHalf - (amplitude & (kPulseHalf - 1));
         }
-        const float size = static_cast<float>(kQuestMarkSize) *
-                           (1.0f + kPulseStep * static_cast<float>(amplitude));
+        const f32 size =
+            static_cast<f32>(kQuestMarkSize) * (1.0f + kPulseStep * static_cast<f32>(amplitude));
         drawBlit(canvas, mark,
-                 Rect{left + static_cast<float>(kWidth) / 2.0f - size / 2.0f,
-                      static_cast<float>(kQuestMarkCenterY) - size / 2.0f, size, size});
+                 Rect{left + static_cast<f32>(kWidth) / 2.0f - size / 2.0f,
+                      static_cast<f32>(kQuestMarkCenterY) - size / 2.0f, size, size});
     }
     drawBlit(canvas, blit(Sheet::Name),
-             Rect{left + static_cast<float>(kNamePlateX), static_cast<float>(kNamePlateY),
-                  static_cast<float>(kNamePlateWidth), static_cast<float>(kNamePlateHeight)});
+             Rect{left + static_cast<f32>(kNamePlateX), static_cast<f32>(kNamePlateY),
+                  static_cast<f32>(kNamePlateWidth), static_cast<f32>(kNamePlateHeight)});
 }
 
-void SelectLane::drawText(Canvas& canvas, int time) const {
+void SelectLane::drawText(Canvas& canvas, s32 time) const {
     if (m_menu.isOpen() && m_services != nullptr && m_services->menuPainter != nullptr) {
         m_menu.draw(canvas, *m_services->menuPainter, m_services->menuTextures);
     }

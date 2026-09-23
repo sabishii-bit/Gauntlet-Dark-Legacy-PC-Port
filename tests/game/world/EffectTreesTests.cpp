@@ -1,10 +1,10 @@
 #include <algorithm>
-#include <cstddef>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/ItemArchive.h"
+#include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -42,7 +42,7 @@ TEST_CASE("a node-attached effect draws with the moving parent's full basis",
     effects.draw(device, Mat4{1}, {});
     const auto local = device.draws;
     REQUIRE_FALSE(local.empty());
-    for (const float angle : {0.6f, -1.2f}) {
+    for (const f32 angle : {0.6f, -1.2f}) {
         const Mat4 parent =
             glm::rotate(glm::translate(Mat4{1}, Vec3{4, 7, 9}), angle, Vec3{1, 0, 0});
         effects.placeAt(id, parent);
@@ -50,10 +50,10 @@ TEST_CASE("a node-attached effect draws with the moving parent's full basis",
         device.draws.clear();
         effects.draw(device, Mat4{1}, {});
         REQUIRE(device.draws.size() == local.size());
-        float error = 0;
-        for (std::size_t d = 0; d < local.size(); ++d) {
+        f32 error = 0;
+        for (usize d = 0; d < local.size(); ++d) {
             REQUIRE(device.draws[d].vertices.size() == local[d].vertices.size());
-            for (std::size_t v = 0; v < local[d].vertices.size(); ++v) {
+            for (usize v = 0; v < local[d].vertices.size(); ++v) {
                 const Vec3 expected{parent * Vec4{local[d].vertices[v].position, 1}};
                 error =
                     std::max(error, glm::distance(device.draws[d].vertices[v].position, expected));
@@ -76,7 +76,7 @@ TEST_CASE("legend effects carry a world-space trail and draw its sprites facing 
     setting.velocity = Vec3{20.0f, 0.0f, 0.0f};
     setting.unlit = true;
     setting.depthWrite = false;
-    const unsigned int id = effects.startSet(device, items, "LEGENDPRJ", Vec3{0.0f}, setting);
+    const u32 id = effects.startSet(device, items, "LEGENDPRJ", Vec3{0.0f}, setting);
     REQUIRE(id != 0);
     effects.attachTrail(id, LegendShow::trailOf(34), particleTexture);
     effects.update(1.0f / 30.0f);
@@ -123,7 +123,7 @@ TEST_CASE("dragon FIRE plays both authored particle nodes without requiring a me
     REQUIRE(particles.emitter(1).descriptor().texture == "FBALLX");
     REQUIRE(particles.textureOf(0) != &device.whiteTexture());
     REQUIRE(particles.textureOf(1) != &device.whiteTexture());
-    for (std::size_t i = 0; i < particles.size(); ++i) {
+    for (usize i = 0; i < particles.size(); ++i) {
         REQUIRE(particles.emitter(i).node() == parent * effect.pose.matrices()[i + 1]);
         REQUIRE(particles.emitter(i).descriptor().direction == effect.tree->nodes[i + 1].direction);
     }
@@ -142,14 +142,14 @@ TEST_CASE("dragon FIRE plays both authored particle nodes without requiring a me
     replacement.setTextureFrame(*textureSlot, frame);
     REQUIRE(replacement.field().textureOf(0) == &frame);
     REQUIRE(replacement.field().particleCount() == count);
-    for (int i = 0; i < 15; ++i) {
+    for (s32 i = 0; i < 15; ++i) {
         effects.update(1.0f / 30);
     }
     const Mat4 moved = glm::translate(parent, Vec3{2, 3, 4});
     effects.placeAt(id, moved);
     effects.update(1.0f / 30);
     REQUIRE(particles.emitter(0).node() == moved * effect.pose.matrices()[1]);
-    for (int i = 0; i < 60; ++i) {
+    for (s32 i = 0; i < 60; ++i) {
         effects.update(1.0f / 30);
     }
     REQUIRE(particles.particleCount() == 0); // template fades, not an invented endless flame
@@ -172,7 +172,7 @@ TEST_CASE("an effect tree plays its sequence once where it was started, then goe
     REQUIRE(effects.effect(0).scale == 0.5f);
     // Thirty-seven frames of a fifteenth of a second: drawn meanwhile, gone in two and a half.
     bool drew = false;
-    int steps = 0;
+    s32 steps = 0;
     while (effects.count() > 0 && steps < 240) {
         effects.update(1.0f / 60.0f);
         device.draws.clear();
@@ -200,17 +200,17 @@ TEST_CASE("a fast legend charge holds its final pose for the unscaled effect lif
     setting.seconds = 1.0f;
     setting.loop = false;
     setting.playbackRate = LegendShow::kBurstPlaybackRate;
-    const unsigned int id = effects.startSet(device, weapons, "COMBO_BLU", Vec3{0.0f}, setting);
+    const u32 id = effects.startSet(device, weapons, "COMBO_BLU", Vec3{0.0f}, setting);
     REQUIRE(id != 0);
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         effects.update(1.0f / 60.0f);
     }
     REQUIRE(effects.playing(id));
     REQUIRE(effects.effect(0).player.finished());
-    const float lastFrame = effects.effect(0).player.frame();
+    const f32 lastFrame = effects.effect(0).player.frame();
     effects.update(0.1f);
     REQUIRE(effects.effect(0).player.frame() == lastFrame);
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         effects.update(1.0f / 60.0f);
     }
     REQUIRE_FALSE(effects.playing(id));
@@ -229,10 +229,9 @@ TEST_CASE("an effect can be turned, carried along and kept repeating until it is
     setting.velocity = Vec3{10.0f, 0.0f, 0.0f};
     setting.seconds = 30.0f; // far longer than the tree's one playing
     REQUIRE(effects.startSet(device, weapons, "NO_SUCH_TREE", Vec3{0.0f}, setting) == 0);
-    const unsigned int id =
-        effects.startSet(device, weapons, "MP_FIRE", Vec3{0.0f, 1.0f, 0.0f}, setting);
+    const u32 id = effects.startSet(device, weapons, "MP_FIRE", Vec3{0.0f, 1.0f, 0.0f}, setting);
     REQUIRE(id != 0);
-    for (int i = 0; i < 600; ++i) {
+    for (s32 i = 0; i < 600; ++i) {
         effects.update(1.0f / 60.0f);
     }
     REQUIRE(effects.count() == 1); // still going, ten seconds on
@@ -243,7 +242,7 @@ TEST_CASE("an effect can be turned, carried along and kept repeating until it is
     // Left to itself it goes when its time is up.
     setting.seconds = 0.5f;
     REQUIRE(effects.startSet(device, weapons, "MP_FIRE", Vec3{0.0f}, setting) != 0);
-    for (int i = 0; i < 40; ++i) {
+    for (s32 i = 0; i < 40; ++i) {
         effects.update(1.0f / 60.0f);
     }
     REQUIRE(effects.count() == 0);
@@ -262,13 +261,13 @@ TEST_CASE("an effect played through gives way to the tree named to take over, by
     setting.then = "MP_ACID";
     REQUIRE(effects.startSet(device, weapons, "MP_FIRE", Vec3{0.0f}, setting) != 0);
     REQUIRE(effects.effect(0).name == "MP_FIRE");
-    for (int i = 0; i < 180; ++i) {
+    for (s32 i = 0; i < 180; ++i) {
         effects.update(1.0f / 60.0f); // the fire's two and a half seconds
     }
     REQUIRE(effects.count() == 1);
     REQUIRE(effects.effect(0).name == "MP_ACID");
     REQUIRE(effects.effect(0).repeats);
-    for (int i = 0; i < 150; ++i) {
+    for (s32 i = 0; i < 150; ++i) {
         effects.update(1.0f / 60.0f);
     }
     REQUIRE(effects.count() == 0); // the five seconds are up
@@ -280,16 +279,16 @@ TEST_CASE("an effect played through gives way to the tree named to take over, by
         REQUIRE(items.load(crypt));
         setting.then = "LEGENDFX";
         REQUIRE(effects.startSet(device, items, "LEGENDPRJ", Vec3{0.0f}, setting) != 0);
-        for (int i = 0; i < 60; ++i) {
+        for (s32 i = 0; i < 60; ++i) {
             effects.update(1.0f / 60.0f);
         }
         REQUIRE(effects.count() == 1);
         REQUIRE(effects.effect(0).name == "LEGENDFX");
-        for (int i = 0; i < 180; ++i) {
+        for (s32 i = 0; i < 180; ++i) {
             effects.update(1.0f / 60.0f);
         }
         REQUIRE(effects.count() == 1);
-        for (int i = 0; i < 90; ++i) {
+        for (s32 i = 0; i < 90; ++i) {
             effects.update(1.0f / 60.0f);
         }
         REQUIRE(effects.count() == 0);
@@ -307,14 +306,14 @@ TEST_CASE("the classes' turbo effects play through, flip-books that start late a
     for (const char* cls : {"WAR", "VAL", "WIZ", "ARC", "DWF", "KNI", "SOR", "JES"}) {
         ItemArchive archive;
         REQUIRE(archive.load(root / "PLAYERS" / cls / "SFXBLU"));
-        for (std::size_t t = 0; t < archive.trees.size(); ++t) {
-            const std::string name = archive.trees.tree(static_cast<unsigned int>(t)).name;
+        for (usize t = 0; t < archive.trees.size(); ++t) {
+            const std::string name = archive.trees.tree(static_cast<u32>(t)).name;
             CAPTURE(cls, name);
             EffectTrees effects;
             if (!effects.start(device, archive, name, Vec3{0.0f})) {
                 continue; // a tree with nothing to bind
             }
-            for (int i = 0; i < 400 && effects.count() > 0; ++i) {
+            for (s32 i = 0; i < 400 && effects.count() > 0; ++i) {
                 effects.update(1.0f / 60.0f);
                 effects.draw(device, Mat4{1.0f}, WorldLighting{});
             }

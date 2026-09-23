@@ -3,12 +3,11 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <format>
 #include <numbers>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/world/WorldCamera.h"
 
 #include "game/players/ItemPickup.h"
@@ -23,12 +22,12 @@ constexpr std::string_view kWeaponsArchive = "WEAPONS";
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
 constexpr std::array<std::string_view, 2> kTempleLights{"L1XPLOWERLIGHTR", "L1XPUPPERLIGHTR"};
-constexpr float kCutBarTop = 48.0f / 384.0f;    ///< the cut's black bars, as the original's trigger
-constexpr float kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares of the height
+constexpr f32 kCutBarTop = 48.0f / 384.0f;    ///< the cut's black bars, as the original's trigger
+constexpr f32 kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares of the height
 constexpr std::string_view kNeedCrystals = "NEEDCRYSTALS";
 constexpr std::string_view kNeedIcons = "NEEDGARGITEMS";
 constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
-constexpr int kIconTierBase = 101; ///< a gargoyle gate's trigger id less this is its tier
+constexpr s32 kIconTierBase = 101; ///< a gargoyle gate's trigger id less this is its tier
 
 constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
@@ -36,19 +35,19 @@ constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the option
 constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
 constexpr std::string_view kRuneVoicePrefix = "S_RUNE";    ///< then S_RUNE2 to S_RUNE12
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
-constexpr float kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
-constexpr float kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
-constexpr int kSpecialPowerup = 9;        ///< the pickup subtype of the specials
-constexpr unsigned int kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
-constexpr float kFallenSeconds = 3.0f;       ///< from the last death to the tower
+constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
+constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
+constexpr s32 kSpecialPowerup = 9;      ///< the pickup subtype of the specials
+constexpr u32 kTurboFlag = 0x80000;     ///< of them, the one that fills the turbo meter
+constexpr f32 kFallenSeconds = 3.0f;    ///< from the last death to the tower
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
 constexpr std::string_view kMenuSelectSound = "S_OPTMENUSEL";
 constexpr std::string_view kMenuExitSound = "S_OPTMENUEXIT";
-constexpr float kPi = std::numbers::pi_v<float>;
-constexpr int kMinTicks = 1; ///< a frame advances the clock by at least one tick
-constexpr int kMaxTicks = 4; ///< and, however late, by at most four
+constexpr f32 kPi = std::numbers::pi_v<f32>;
+constexpr s32 kMinTicks = 1; ///< a frame advances the clock by at least one tick
+constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 
 } // namespace
 
@@ -89,10 +88,10 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     // shards the save does not keep yet.
     m_beam = -1;
     m_beamAlpha = 0.0f;
-    for (std::size_t i = 0; i < world.layout().objects().size(); ++i) {
+    for (usize i = 0; i < world.layout().objects().size(); ++i) {
         const std::string& name = world.layout().objects()[i].name;
         if (name == kBeamObject) {
-            m_beam = static_cast<int>(i);
+            m_beam = static_cast<s32>(i);
             world.setObjectAlpha(i, 0.0f);
         } else if (std::ranges::find(kTempleLights, name) != kTempleLights.end()) {
             world.setObjectAlpha(i, 0.0f);
@@ -102,8 +101,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     for (const DroppedItem& item : options.items) {
         world.placeItem(device, item.name, item.position);
     }
-    world.setPlayerCount(static_cast<int>(m_players.size()));
-    m_fixtures.setPlayerCount(static_cast<int>(m_players.size()));
+    world.setPlayerCount(static_cast<s32>(m_players.size()));
+    m_fixtures.setPlayerCount(static_cast<s32>(m_players.size()));
     m_opponents.open({device, world, m_weapons, m_effects, m_audio, context.unpackedRoot,
                       context.config != nullptr ? context.config->difficulty.gain() : 1.0f},
                      m_players);
@@ -194,7 +193,7 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
     // Arriving from a realm the party stands where the level marks that realm's way in.
     const WorldLocator* start = m_world->arrivalPoint(options.arrivalWorld);
     Vec3 origin{0.0f, 0.0f, 0.0f};
-    float yaw = 0.0f;
+    f32 yaw = 0.0f;
     if (start != nullptr) {
         origin = start->position;
         yaw = start->rotation.y + kPi;
@@ -204,12 +203,12 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
     origin = options.position.value_or(origin);
     yaw = options.yaw.value_or(yaw);
     const Vec3 sideways{std::cos(yaw), 0.0f, -std::sin(yaw)};
-    const float first = -0.5f * static_cast<float>(party.size() - 1) * kSpawnSpacing;
+    const f32 first = -0.5f * static_cast<f32>(party.size() - 1) * kSpawnSpacing;
     m_players.reserve(party.size());
-    for (std::size_t i = 0; i < party.size(); ++i) {
+    for (usize i = 0; i < party.size(); ++i) {
         const PartyMember& member = party[i];
         PlayerRuntime runtime;
-        const Vec3 position = origin + sideways * (first + static_cast<float>(i) * kSpawnSpacing);
+        const Vec3 position = origin + sideways * (first + static_cast<f32>(i) * kSpawnSpacing);
         runtime.actor.spawn(member.player, member.save, m_classes.stats(member.save.character),
                             position, yaw);
         runtime.actor.settle(m_world->collision());
@@ -233,21 +232,21 @@ std::filesystem::path PlayScene::costumeDirectory(const std::filesystem::path& u
 /** Lets the weapon go: from the body's centre, out by the class's hand and a little ahead,
  * along the facing, as fast as the character's strength (or magic) throws. */
 void PlayScene::throwWeapon(const PlayerActor& actor) {
-    for (std::size_t i = 0; i < m_players.size(); ++i) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         if (&m_players[i].actor == &actor) {
             launchWeapon(i, actor.facing(), 1.0f, true);
         }
     }
 }
 
-void PlayScene::launchWeapon(std::size_t index, const Vec3& direction, float scale, bool spreads) {
+void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads) {
     if (index < m_players.size()) {
         m_arsenal.launchWeapon(m_players[index].actor, m_players[index].figure.get(), direction,
                                scale, spreads);
     }
 }
 
-std::optional<std::filesystem::path> PlayScene::figureDirectory(int player) const {
+std::optional<std::filesystem::path> PlayScene::figureDirectory(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player && runtime.figure != nullptr) {
             return runtime.figure->directory();
@@ -256,7 +255,7 @@ std::optional<std::filesystem::path> PlayScene::figureDirectory(int player) cons
     return std::nullopt;
 }
 
-bool PlayScene::weaponHeld(int player) const {
+bool PlayScene::weaponHeld(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player && runtime.figure != nullptr) {
             // A move may empty the hand for a while.
@@ -269,7 +268,7 @@ bool PlayScene::weaponHeld(int player) const {
 
 /** Sumner's beam comes up over three seconds while a player is near him and goes again once
  * they leave. */
-void PlayScene::updateBeam(int ticks) {
+void PlayScene::updateBeam(s32 ticks) {
     if (m_beam < 0) {
         return;
     }
@@ -278,11 +277,11 @@ void PlayScene::updateBeam(int ticks) {
         const PlayerActor& actor = runtime.actor;
         near = near || glm::distance(actor.position(), m_sumner.position()) <= kBeamRadius;
     }
-    const float step = static_cast<float>(ticks) / static_cast<float>(kBeamFadeTicks);
-    const float alpha = std::clamp(m_beamAlpha + (near ? step : -step), 0.0f, 1.0f);
+    const f32 step = static_cast<f32>(ticks) / static_cast<f32>(kBeamFadeTicks);
+    const f32 alpha = std::clamp(m_beamAlpha + (near ? step : -step), 0.0f, 1.0f);
     if (alpha != m_beamAlpha) {
         m_beamAlpha = alpha;
-        m_world->setObjectAlpha(static_cast<std::size_t>(m_beam), alpha);
+        m_world->setObjectAlpha(static_cast<usize>(m_beam), alpha);
     }
 }
 
@@ -298,18 +297,17 @@ void PlayScene::collectItems() {
         const PlayerActor& actor = runtime.actor;
         // Against an open chest, a character reaches what lies in it.
         const Vec3 here = presenceOf(collectors.size());
-        const int chest = m_fixtures.chests().holdingTouchedBy(ChestVisitor{here, actor.radius()});
+        const s32 chest = m_fixtures.chests().holdingTouchedBy(ChestVisitor{here, actor.radius()});
         const Vec3 from =
-            chest >= 0
-                ? m_fixtures.chests().chest(static_cast<std::size_t>(chest)).figure.position()
-                : here;
+            chest >= 0 ? m_fixtures.chests().chest(static_cast<usize>(chest)).figure.position()
+                       : here;
         collectors.push_back(Collector{from, actor.reach(), actor.height() * 0.5f});
     }
     const std::vector<Pickup> pickups = m_world->collect(
         *m_device, collectors, [this](const Pickup& pickup) { return takePickup(pickup); });
-    for (std::size_t chest = 0; chest < m_fixtures.chests().size(); ++chest) {
-        const int held = m_fixtures.chests().chest(chest).held;
-        if (held >= 0 && m_world->placedItems().item(static_cast<std::size_t>(held)).taken) {
+    for (usize chest = 0; chest < m_fixtures.chests().size(); ++chest) {
+        const s32 held = m_fixtures.chests().chest(chest).held;
+        if (held >= 0 && m_world->placedItems().item(static_cast<usize>(held)).taken) {
             m_fixtures.chests().remove(chest);
         }
     }
@@ -317,13 +315,12 @@ void PlayScene::collectItems() {
         if (pickup.realm <= 0) {
             continue; // handed over as it was judged
         }
-        if (pickup.realm > 0 && static_cast<std::size_t>(pickup.realm) < kRealmCount) {
-            const int wanted = LevelTriggers::crystalsNeeded(pickup.realm);
+        if (pickup.realm > 0 && static_cast<usize>(pickup.realm) < kRealmCount) {
+            const s32 wanted = LevelTriggers::crystalsNeeded(pickup.realm);
             bool enough = wanted > 0;
             for (PlayerRuntime& runtime : m_players) {
                 PlayerActor& actor = runtime.actor;
-                int& count =
-                    actor.save().progress().crystals[static_cast<std::size_t>(pickup.realm)];
+                s32& count = actor.save().progress().crystals[static_cast<usize>(pickup.realm)];
                 if (wanted <= 0 || count < wanted) {
                     ++count;
                 }
@@ -343,13 +340,13 @@ void PlayScene::collectItems() {
     }
 }
 
-Vec3 PlayScene::presenceOf(std::size_t index) const {
+Vec3 PlayScene::presenceOf(usize index) const {
     return index < m_players.size() && !isDown(index) ? m_players[index].actor.position()
                                                       : kNowhere;
 }
 
-bool PlayScene::fallen(int player) const {
-    for (std::size_t i = 0; i < m_players.size(); ++i) {
+bool PlayScene::fallen(s32 player) const {
+    for (usize i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() == player) {
             return isDown(i);
         }
@@ -357,8 +354,8 @@ bool PlayScene::fallen(int player) const {
     return false;
 }
 
-void PlayScene::hurtPlayer(int player, float damage, HurtKind kind, bool directed) {
-    for (std::size_t i = 0; i < m_players.size(); ++i) {
+void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() == player) {
             hurt(i, damage, kind, directed);
         }
@@ -369,7 +366,7 @@ void PlayScene::hurtPlayer(int player, float damage, HurtKind kind, bool directe
  * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
  * nowhere in particular (a trap underfoot); a shove halves either. */
 
-const TurboMeter* PlayScene::turboMeter(int player) const {
+const TurboMeter* PlayScene::turboMeter(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player) {
             return &runtime.turbo;
@@ -381,30 +378,30 @@ const TurboMeter* PlayScene::turboMeter(int player) const {
 /** Experience won, as the original awards it: scaled by the level (its own scale, less the
  * further the character is past the level the place is meant for); what a kill wins also
  * feeds the turbo meter, unless the character is in the middle of a turbo move. */
-void PlayScene::harm(int player, float damage, HurtKind kind) {
-    for (std::size_t i = 0; i < m_players.size(); ++i) {
+void PlayScene::harm(s32 player, f32 damage, HurtKind kind) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() == player) {
             hurt(i, damage, kind);
         }
     }
 }
 
-void PlayScene::awardExperience(int player, int amount, bool kill) {
-    for (std::size_t i = 0; i < m_players.size(); ++i) {
+void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() != player || isDown(i) || amount <= 0) {
             continue;
         }
         CharacterSave& save = m_players[i].actor.save();
         const LevelInfo* level = m_world->level();
-        const float scale = level != nullptr
-                                ? level->tuning.experienceScale(experienceLevel(save.experience()))
-                                : 1.0f;
-        const auto won = static_cast<int>(static_cast<float>(amount) * scale);
+        const f32 scale = level != nullptr
+                              ? level->tuning.experienceScale(experienceLevel(save.experience()))
+                              : 1.0f;
+        const auto won = static_cast<s32>(static_cast<f32>(amount) * scale);
         save.progress().experience += won;
         const bool busy =
             m_players[i].figure != nullptr && m_players[i].figure->animator().turboing();
         if (kill && !busy) {
-            m_players[i].turbo.add(TurboMeter::kPerExperience * static_cast<float>(won));
+            m_players[i].turbo.add(TurboMeter::kPerExperience * static_cast<f32>(won));
         }
     }
 }
@@ -412,7 +409,7 @@ void PlayScene::awardExperience(int player, int amount, bool kill) {
 /** Puts a help message up over a character, the narrator saying it, unless the party has
  * seen it. */
 
-bool PlayScene::postHelp(int id, std::size_t index, int number) {
+bool PlayScene::postHelp(s32 id, usize index, s32 number) {
     return m_hud.postHelp(id, index, m_players, m_audio, number);
 }
 
@@ -421,29 +418,29 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
 }
 
 LevelFixtures::Events PlayScene::fixtureEvents() {
-    return {.hurt = [this](std::size_t i, float damage, HurtKind kind,
+    return {.hurt = [this](usize i, f32 damage, HurtKind kind,
                            bool directed) { hurt(i, damage, kind, directed); },
-            .help = [this](int id, std::size_t i) { postHelp(id, i); },
-            .card = [this](int player,
+            .help = [this](s32 id, usize i) { postHelp(id, i); },
+            .card = [this](s32 player,
                            std::string_view name) { m_hud.pickups().addCard(player, name); },
-            .opponents = [this](const Vec3& position, float radius,
-                                float damage) { hurtOpponentsByBlast(position, radius, damage); }};
+            .opponents = [this](const Vec3& position, f32 radius,
+                                f32 damage) { hurtOpponentsByBlast(position, radius, damage); }};
 }
-void PlayScene::updateFixtures(int ticks, float seconds) {
+void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
     m_fixtures.update(ticks, seconds, m_players, fixtureEvents());
 }
-void PlayScene::blast(const Vec3& position, float radius, float damage) {
+void PlayScene::blast(const Vec3& position, f32 radius, f32 damage) {
     m_fixtures.blast(position, radius, damage, m_players, fixtureEvents());
 }
 void PlayScene::settleBlasts() {
     m_fixtures.settleBlasts(m_players, fixtureEvents());
 }
-void PlayScene::hurtOpponentsByBlast(const Vec3& position, float radius, float damage) {
-    for (const int enemy : m_opponents.enemies().within(position, radius)) {
+void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage) {
+    for (const s32 enemy : m_opponents.enemies().within(position, radius)) {
         const Vec3 away = m_opponents.enemies().positionOf(enemy) - position;
         strikeEnemy(enemy, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
-    for (const int generator : m_opponents.generators().within(position, radius)) {
+    for (const s32 generator : m_opponents.generators().within(position, radius)) {
         strikeGenerator(generator, damage, -1);
     }
     if (m_opponents.bosses().within(position, radius)) {
@@ -455,7 +452,7 @@ void PlayScene::hurtOpponentsByBlast(const Vec3& position, float radius, float d
         }
         m_opponents.bosses().hurt(struck);
     }
-    for (const int critter : m_opponents.critters().within(position, radius)) {
+    for (const s32 critter : m_opponents.critters().within(position, radius)) {
         const Vec3 away = m_opponents.critters().positionOf(critter) - position;
         strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
@@ -465,7 +462,7 @@ void PlayScene::hurtOpponentsByBlast(const Vec3& position, float radius, float d
  * fanfare about the character and heals a hundred; a tenth level besides changes the costume
  * and has the class say its piece (`S_EXP10WAR`, up to `S_EXP99`). */
 void PlayScene::updateLevels() {
-    for (std::size_t i = 0; i < m_players.size(); ++i) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         CharacterSave& save = m_players[i].actor.save();
         const auto change =
             m_levels.observe(m_players[i].actor.player(), experienceLevel(save.experience()));
@@ -473,19 +470,19 @@ void PlayScene::updateLevels() {
             continue;
         }
         postHelp(HelpMessages::kLevelUp, i, change->to);
-        save.progress().health += static_cast<int>(kLevelUpHealth);
+        save.progress().health += static_cast<s32>(kLevelUpHealth);
         if (m_device != nullptr && m_weapons.loaded()) {
             const std::string tree = std::format("LEVELUP_{}", colorCode(save.color));
             if (m_weapons.trees.find(tree).has_value()) {
                 EffectTrees::Setting setting;
                 setting.seconds = kLevelUpEffectSeconds;
-                const unsigned int effect = m_effects.startSet(
-                    *m_device, m_weapons, tree, m_players[i].actor.position(), setting);
+                const u32 effect = m_effects.startSet(*m_device, m_weapons, tree,
+                                                      m_players[i].actor.position(), setting);
                 m_effects.moveTo(effect, m_players[i].actor.position());
             }
         }
         if (change->milestone() && m_device != nullptr) {
-            const int tier = std::min(change->to / LevelChange::kLevelsPerTier, 9);
+            const s32 tier = std::min(change->to / LevelChange::kLevelsPerTier, 9);
             const std::string_view cls = classCode(save.character);
             if (m_audio.playNamed(std::format("S_EXP{}0{}", tier, cls.substr(0, 3))) == kNoSound) {
                 m_audio.playNamed("S_EXP99ALL");
@@ -499,7 +496,7 @@ void PlayScene::updateLevels() {
     }
 }
 
-void PlayScene::updateVictory(int ticks, float seconds) {
+void PlayScene::updateVictory(s32 ticks, f32 seconds) {
     if (m_bossSequence.advanceVictory(ticks, seconds, m_players, m_hud.strings()) && !m_leaving) {
         m_destination = LevelRef::tower();
         m_leaving = true;
@@ -507,20 +504,20 @@ void PlayScene::updateVictory(int ticks, float seconds) {
     }
 }
 
-void PlayScene::updateEnemies(int ticks, float seconds) {
+void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     m_opponents.update(
         ticks, seconds, m_players, m_fixtures.obstacles(),
-        {.hurt = [this](std::size_t i, float damage, HurtKind kind,
+        {.hurt = [this](usize i, f32 damage, HurtKind kind,
                         bool directed) { hurt(i, damage, kind, directed); },
-         .blast = [this](const Vec3& position, float radius,
-                         float damage) { blast(position, radius, damage); },
+         .blast = [this](const Vec3& position, f32 radius,
+                         f32 damage) { blast(position, radius, damage); },
          .settleBlasts = [this] { settleBlasts(); },
          .legend =
              [this](const LegendEvent& event) {
                  m_bossSequence.showLegend(event, m_opponents.bosses(), m_players);
              },
          .advanceLegend =
-             [this](float duration) {
+             [this](f32 duration) {
                  m_bossSequence.advanceLegend(duration, m_opponents.bosses(), m_players);
              },
          .fallen =
@@ -531,25 +528,23 @@ void PlayScene::updateEnemies(int ticks, float seconds) {
              [this](const CritterSpew& spew) {
                  m_bossSequence.spewCoins(spew, m_opponents, m_players);
              },
-         .advanceVictory = [this](int elapsed,
-                                  float duration) { updateVictory(elapsed, duration); },
+         .advanceVictory = [this](s32 elapsed, f32 duration) { updateVictory(elapsed, duration); },
          .levels = [this] { updateLevels(); },
-         .award = [this](int player, int amount,
+         .award = [this](s32 player, s32 amount,
                          bool kill) { awardExperience(player, amount, kill); }});
 }
-void PlayScene::strikeEnemy(int id, float power, unsigned int flags, const Vec3& direction,
-                            int byPlayer) {
+void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);
 }
-void PlayScene::strikeCritter(int id, float power, unsigned int flags, const Vec3& direction,
-                              int byPlayer, std::optional<Vec3> where, bool close) {
+void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+                              std::optional<Vec3> where, bool close) {
     m_opponents.strikeCritter(id, power, flags, direction, byPlayer, where, close, m_players);
 }
-void PlayScene::strikeGenerator(int id, float power, int byPlayer) {
+void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
     m_opponents.strikeGenerator(id, power, byPlayer);
 }
 
-void PlayScene::hurt(std::size_t index, float damage, HurtKind kind, bool directed) {
+void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
     if (index >= m_players.size()) {
         return;
     }
@@ -557,8 +552,8 @@ void PlayScene::hurt(std::size_t index, float damage, HurtKind kind, bool direct
     m_health.hurt(
         m_players[index], damage, kind, directed, m_world->isTower(),
         level != nullptr ? level->tuning.damage : 1.0f,
-        {.block = [this, index](float taken,
-                                float left) { m_attacks.showBlock(index, taken, left, m_players); },
+        {.block = [this, index](f32 taken,
+                                f32 left) { m_attacks.showBlock(index, taken, left, m_players); },
          .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
          .cry = [this, index](std::string_view voice) { m_attacks.cry(index, voice, m_players); },
          .named = [this, index](std::string_view line) { sayWithName(index, line); }});
@@ -566,7 +561,7 @@ void PlayScene::hurt(std::size_t index, float damage, HurtKind kind, bool direct
 
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says
  * `line` after: what the original's announcements by name do. */
-void PlayScene::sayWithName(std::size_t index, std::string_view line) {
+void PlayScene::sayWithName(usize index, std::string_view line) {
     PlayerFigure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (body == nullptr || m_context.sounds == nullptr) {
         return;
@@ -581,7 +576,7 @@ void PlayScene::sayWithName(std::size_t index, std::string_view line) {
 /** The whole party has gone through a portal: where to? Its own level when that is unpacked;
  * from a realm's level whose next is not, back to the tower, so that no one is stranded;
  * from the tower, nowhere, with a word in the log. */
-bool PlayScene::leaveBy(std::size_t portal) {
+bool PlayScene::leaveBy(usize portal) {
     const ExitPortals::Portal& exit = m_portals.portal(portal);
     const bool reachable = exit.destination.has_value() &&
                            LevelCatalog::unpacked(m_context.unpackedRoot, *exit.destination);
@@ -595,8 +590,8 @@ bool PlayScene::leaveBy(std::size_t portal) {
         log::info("Portal {}: its level is not unpacked; back to the tower", exit.tag);
         return true;
     }
-    if (m_refusedPortal != static_cast<int>(portal)) {
-        m_refusedPortal = static_cast<int>(portal);
+    if (m_refusedPortal != static_cast<s32>(portal)) {
+        m_refusedPortal = static_cast<s32>(portal);
         log::warn("Portal {}: its level is not unpacked; unpack it with gdlunpack --only "
                   "<level> (and its realm's items)",
                   exit.tag);
@@ -609,7 +604,7 @@ std::vector<PartyMember> PlayScene::party() const {
     members.reserve(m_players.size());
     // The fallen go on as they came into the level, less what it gave them (but what they
     // were taught stays taught).
-    for (std::size_t i = 0; i < m_players.size(); ++i) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         const PlayerRuntime& runtime = m_players[i];
         const bool down = isDown(i);
         PartyMember member{runtime.actor.player(), down ? runtime.entrySave : runtime.actor.save(),
@@ -621,14 +616,14 @@ std::vector<PartyMember> PlayScene::party() const {
     return members;
 }
 
-float PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
+f32 PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
     return PlayerFigure::bodyScale(save, effects);
 }
 
 /** Hands a touched item to whoever touched it, by the original's rules: their card slides
  * up, the item's sound (or their own eating) plays, and what they cannot carry stays lying
  * where it is. Crystals are the party's and are dealt with once taken. */
-std::optional<int> PlayScene::takePickup(const Pickup& pickup) {
+std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     if (pickup.realm > 0) {
         return 0;
     }
@@ -650,8 +645,7 @@ std::optional<int> PlayScene::takePickup(const Pickup& pickup) {
         }
         return std::nullopt;
     }
-    if (pickup.subtype == kSpecialPowerup &&
-        (static_cast<unsigned int>(pickup.flags) & kTurboFlag) != 0) {
+    if (pickup.subtype == kSpecialPowerup && (static_cast<u32>(pickup.flags) & kTurboFlag) != 0) {
         m_players[pickup.collector].turbo.add(TurboMeter::kFull);
     }
     switch (static_cast<ItemKind>(pickup.subtype)) {
@@ -662,7 +656,7 @@ std::optional<int> PlayScene::takePickup(const Pickup& pickup) {
     case ItemKind::Scroll:
         if (const LevelInfo* level = m_world->level(); level != nullptr && taking.count >= 0) {
             openMessage(std::format("{}{}", kLevelScrollPrefix, level->name),
-                        static_cast<std::size_t>(taking.count));
+                        static_cast<usize>(taking.count));
         }
         break;
     default: break;
@@ -686,15 +680,15 @@ std::optional<int> PlayScene::takePickup(const Pickup& pickup) {
 
 /** A runestone found is everyone's: each character in play gets it, and the narrator counts
  * what the party holds. */
-void PlayScene::shareRune(int rune) {
-    std::uint16_t held = 0;
+void PlayScene::shareRune(s32 rune) {
+    u16 held = 0;
     for (PlayerRuntime& runtime : m_players) {
         PlayerActor& actor = runtime.actor;
         Relics& relics = actor.save().progress().relics;
         relics.addRune(rune);
         held |= relics.runes;
     }
-    const int count = std::popcount(held);
+    const s32 count = std::popcount(held);
     if (count <= 0) {
         return;
     }
@@ -706,7 +700,7 @@ void PlayScene::shareRune(int rune) {
 /** The first of the party standing in the spot before Sumner, or null. */
 const PlayerActor* PlayScene::visitorOfSumner() const {
     const LevelTriggers& triggers = m_world->triggers();
-    for (std::size_t i = 0; i < triggers.size(); ++i) {
+    for (usize i = 0; i < triggers.size(); ++i) {
         const LevelTrigger& spot = triggers.trigger(i);
         if (spot.id != kSumnerSpot) {
             continue;
@@ -714,7 +708,7 @@ const PlayerActor* PlayScene::visitorOfSumner() const {
         for (const PlayerRuntime& runtime : m_players) {
             const PlayerActor& actor = runtime.actor;
             const Vec3 away = actor.position() - spot.spot;
-            const float reach = spot.radius + actor.radius();
+            const f32 reach = spot.radius + actor.radius();
             if (away.x * away.x + away.z * away.z <= reach * reach &&
                 std::abs(away.y) <= LevelTriggers::kReach) {
                 return &actor;
@@ -724,10 +718,10 @@ const PlayerActor* PlayScene::visitorOfSumner() const {
     return nullptr;
 }
 
-void PlayScene::updateSumnerVisit(float seconds) {
+void PlayScene::updateSumnerVisit(f32 seconds) {
     const PlayerActor* visitor = visitorOfSumner();
-    const std::optional<int> player =
-        visitor != nullptr ? std::optional<int>{visitor->player()} : std::nullopt;
+    const std::optional<s32> player =
+        visitor != nullptr ? std::optional<s32>{visitor->player()} : std::nullopt;
     if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_messages.text(), m_context.config,
                             m_context.strings)) {
         m_sumner.play(SumnerFigure::kWelcomeIndex);
@@ -735,8 +729,8 @@ void PlayScene::updateSumnerVisit(float seconds) {
 }
 
 /** The scene routes the scroll owner's input and applies its sound/gesture cues. */
-void PlayScene::updateHints(const Inputs& inputs, int ticks) {
-    const auto player = static_cast<std::size_t>(std::max(m_sumnerVisit.owner(), 0));
+void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
+    const auto player = static_cast<usize>(std::max(m_sumnerVisit.owner(), 0));
     const MenuInput input = player < inputs.size() ? inputs[player].menu : MenuInput{};
     const HintMenuEvent event = m_sumnerVisit.update(*m_device, input, ticks);
     switch (event.kind) {
@@ -799,11 +793,11 @@ void PlayScene::startCrystalCut() {
 }
 
 /** A bit per party member whose player pressed their button this frame. */
-unsigned int PlayScene::acceptedPlayers(const Inputs& inputs) const {
-    unsigned int accepted = 0;
+u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
+    u32 accepted = 0;
     for (const PlayerRuntime& runtime : m_players) {
         const PlayerActor& actor = runtime.actor;
-        const auto player = static_cast<std::size_t>(actor.player());
+        const auto player = static_cast<usize>(actor.player());
         if (player < inputs.size() && inputs[player].menu.select) {
             accepted |= 1U << player;
         }
@@ -850,23 +844,23 @@ BossCameraSubject PlayScene::bossSubject() const {
 bool PlayScene::anyButton(const Inputs& inputs) const {
     return std::ranges::any_of(m_players, [&inputs](const PlayerRuntime& runtime) {
         const PlayerActor& actor = runtime.actor;
-        const auto player = static_cast<std::size_t>(actor.player());
+        const auto player = static_cast<usize>(actor.player());
         return player < inputs.size() && (inputs[player].menu.select || inputs[player].menu.back ||
                                           inputs[player].menu.start);
     });
 }
 
-PlayOutcome PlayScene::update(double deltaSeconds, const Inputs& inputs) {
+PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     if (!m_open) {
         return PlayOutcome::Running;
     }
     // The clock advances in whole ticks, two per frame at the 30 frames per second the game
     // runs at, so a late frame moves everything further rather than smoother.
-    const float tickRate =
-        m_context.config != nullptr ? static_cast<float>(m_context.config->timing.tickRate) : 60.0f;
+    const f32 tickRate =
+        m_context.config != nullptr ? static_cast<f32>(m_context.config->timing.tickRate) : 60.0f;
     const auto ticks =
-        std::clamp(static_cast<int>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
-    const float seconds = static_cast<float>(ticks) / tickRate;
+        std::clamp(static_cast<s32>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
+    const f32 seconds = static_cast<f32>(ticks) / tickRate;
     // A scroll holds everything else still until it has burnt away; the welcome's leads on
     // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
     // Sumner was saying over it.
@@ -933,7 +927,7 @@ PlayOutcome PlayScene::update(double deltaSeconds, const Inputs& inputs) {
     m_sumner.update(seconds);
     const PartyMotion::Events movementEvents{
         .perform =
-            [this](std::size_t i, PartyMotion::Action action) {
+            [this](usize i, PartyMotion::Action action) {
                 switch (action) {
                 case PartyMotion::Action::NoPotion: postHelp(HelpMessages::kNoPotion, i); break;
                 case PartyMotion::Action::Ram:
@@ -953,13 +947,13 @@ PlayOutcome PlayScene::update(double deltaSeconds, const Inputs& inputs) {
                 }
             },
         .select =
-            [this](std::size_t i, const SelectorInput& input, int elapsed) {
+            [this](usize i, const SelectorInput& input, s32 elapsed) {
                 m_hud.stepSelector(m_players[i].actor, input, elapsed, m_audio);
             },
         .advanceTurbo =
-            [this](std::size_t i, int elapsed, float duration) {
+            [this](usize i, s32 elapsed, f32 duration) {
                 m_attacks.updateTurbo(i, elapsed, duration, m_players,
-                                      [this](int id, std::size_t index) { postHelp(id, index); });
+                                      [this](s32 id, usize index) { postHelp(id, index); });
             }};
     const std::vector<CameraSubject> subjects =
         PartyMotion::step(m_players, inputs, held, m_camera.yaw(), ticks, seconds,
@@ -989,7 +983,7 @@ PlayOutcome PlayScene::update(double deltaSeconds, const Inputs& inputs) {
         // A portal waits for everyone still on their feet.
         std::vector<PortalVisitor> standing;
         standing.reserve(m_players.size());
-        for (std::size_t i = 0; i < m_players.size(); ++i) {
+        for (usize i = 0; i < m_players.size(); ++i) {
             if (!isDown(i)) {
                 standing.push_back(
                     PortalVisitor{m_players[i].actor.position(), m_players[i].actor.radius()});
@@ -1013,7 +1007,7 @@ PlayOutcome PlayScene::update(double deltaSeconds, const Inputs& inputs) {
     }
     // The camera keeps to those still standing, while anyone is.
     std::vector<CameraSubject> followed;
-    for (std::size_t i = 0; i < subjects.size(); ++i) {
+    for (usize i = 0; i < subjects.size(); ++i) {
         if (!isDown(i)) {
             followed.push_back(subjects[i]);
         }
@@ -1050,7 +1044,7 @@ void PlayScene::updateAmbience() {
 /** The party as the level's triggers see it. */
 std::vector<TriggerVisitor> PlayScene::visitors() const {
     std::vector<TriggerVisitor> out;
-    for (std::size_t i = 0; i < m_players.size(); ++i) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         const PlayerActor& actor = m_players[i].actor;
         TriggerVisitor visitor;
         visitor.position = presenceOf(i);
@@ -1061,8 +1055,8 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
     return out;
 }
 
-void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, float frameWidth,
-                       float frameHeight) {
+void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
+                       f32 frameHeight) {
     if (!m_open || m_context.config == nullptr) {
         return;
     }
@@ -1078,7 +1072,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, float 
             const PlayerFigure& figure = *runtime.figure;
             const PowerupEffects worn =
                 PowerupEffects::of(runtime.actor.save().progress().inventory);
-            const float size = bodyScale(runtime.actor.save(), worn);
+            const f32 size = bodyScale(runtime.actor.save(), worn);
             const Mat4 body = glm::scale(runtime.actor.transform(), Vec3{size, size, size});
             figure.draw(device, clip, body, m_world->lighting(), worn.bodyAlpha(m_playSeconds),
                         runtime.move.weaponHidden());
@@ -1100,8 +1094,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, float 
     const CameraFrame effectCamera = CameraFrame::of(viewCamera());
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
     m_arrival.drawEffects(device, clip, m_world->lighting());
-    const auto width = static_cast<float>(config.display.virtualWidth);
-    const auto height = static_cast<float>(config.display.virtualHeight);
+    const auto width = static_cast<f32>(config.display.virtualWidth);
+    const auto height = static_cast<f32>(config.display.virtualHeight);
     m_canvas.begin(device, makeVirtualScreenTransform(frameProjection, width, height, frameWidth,
                                                       frameHeight));
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
@@ -1135,13 +1129,13 @@ CameraView PlayScene::cameraView() const {
     CameraView view;
     if (m_context.config != nullptr) {
         view.horizontalFov = m_context.config->horizontalFovRadians();
-        view.aspect = static_cast<float>(m_context.config->display.frameWidth) /
-                      static_cast<float>(m_context.config->display.frameHeight);
+        view.aspect = static_cast<f32>(m_context.config->display.frameWidth) /
+                      static_cast<f32>(m_context.config->display.frameHeight);
     }
     return view;
 }
 
-const PlayerActor* PlayScene::actor(int player) const {
+const PlayerActor* PlayScene::actor(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         const PlayerActor& actor = runtime.actor;
         if (actor.player() == player) {
@@ -1151,7 +1145,7 @@ const PlayerActor* PlayScene::actor(int player) const {
     return nullptr;
 }
 
-const PlayerAnimator* PlayScene::animator(int player) const {
+const PlayerAnimator* PlayScene::animator(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player) {
             return runtime.figure != nullptr && runtime.figure->animator().bound()
@@ -1182,17 +1176,17 @@ void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
 }
 
 /** Opens one page of a scroll message over the tower: the party reads it and presses on. */
-bool PlayScene::openMessage(std::string_view name, std::size_t page) {
+bool PlayScene::openMessage(std::string_view name, usize page) {
     return m_device != nullptr && m_messages.open(*m_device, name, m_context.strings, page);
 }
 
 /** Congratulates the party once its crystals open a realm's gate: the scroll for the realm,
  * its announcing voice, and the save remembers so it is not said twice. */
-void PlayScene::announceUnlock(int realm) {
-    if (realm <= 0 || static_cast<std::size_t>(realm) >= kRealmCount) {
+void PlayScene::announceUnlock(s32 realm) {
+    if (realm <= 0 || static_cast<usize>(realm) >= kRealmCount) {
         return;
     }
-    const unsigned int bit = 1U << static_cast<unsigned int>(realm);
+    const u32 bit = 1U << static_cast<u32>(realm);
     bool fresh = false;
     for (PlayerRuntime& runtime : m_players) {
         PlayerActor& actor = runtime.actor;
@@ -1203,9 +1197,9 @@ void PlayScene::announceUnlock(int realm) {
     if (!fresh) {
         return;
     }
-    openMessage(kUnlockLevel, static_cast<std::size_t>(realm));
-    if (static_cast<std::size_t>(realm) < kUnlockVoices.size()) {
-        m_audio.speakOverScroll(kUnlockVoices[static_cast<std::size_t>(realm)]);
+    openMessage(kUnlockLevel, static_cast<usize>(realm));
+    if (static_cast<usize>(realm) < kUnlockVoices.size()) {
+        m_audio.speakOverScroll(kUnlockVoices[static_cast<usize>(realm)]);
     }
 }
 
@@ -1217,9 +1211,9 @@ void PlayScene::handleTriggerEvents() {
         !refusals.empty()) {
         const TriggerRefusal& refusal = refusals.front();
         if (refusal.crystals) {
-            openMessage(kNeedCrystals, static_cast<std::size_t>(refusal.id));
-        } else if (const int tier = refusal.id - kIconTierBase; tier >= 0) {
-            openMessage(kNeedIcons, static_cast<std::size_t>(tier));
+            openMessage(kNeedCrystals, static_cast<usize>(refusal.id));
+        } else if (const s32 tier = refusal.id - kIconTierBase; tier >= 0) {
+            openMessage(kNeedIcons, static_cast<usize>(tier));
         }
     }
     for (const TriggerOpening& opening : m_world->takeTriggerOpenings()) {

@@ -1,11 +1,11 @@
 #include <algorithm>
-#include <cstddef>
 #include <filesystem>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/BitmapFont.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
@@ -25,7 +25,7 @@ using namespace gdl::game;
 /** Every printable ASCII glyph is 8 pixels wide on a 10 pixel line. */
 BitmapFont fullFont() {
     std::vector<BitmapGlyph> glyphs;
-    for (int c = '!'; c <= '~'; ++c) {
+    for (s32 c = '!'; c <= '~'; ++c) {
         glyphs.push_back({c, 8, 0, 0});
     }
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
@@ -52,8 +52,8 @@ struct Fixture {
     SaveSlots slots;
     LaneServices services;
     std::vector<SelectSound> sounds;
-    int greetedClass = -1;
-    int greetedColor = -1;
+    s32 greetedClass = -1;
+    s32 greetedColor = -1;
     SelectLane lane;
 
     explicit Fixture(std::string_view scratch = "select-lane", bool withSlots = true) {
@@ -86,7 +86,7 @@ struct Fixture {
     }
 
     /** Steps the lane once with `input` and a frame where nobody else plays. */
-    SelectLane::Result step(const MenuInput& input, int ticks = 1,
+    SelectLane::Result step(const MenuInput& input, s32 ticks = 1,
                             const SelectLane::Frame& frame = {}) {
         return lane.update(input, ticks, frame);
     }
@@ -317,9 +317,9 @@ TEST_CASE("name entry letters stay inside the lane", "[game][select]") {
     canvas.end();
     // Lane 1 spans x 128..256; the taken letter, the pending one and four blanks sit on
     // the letter row.
-    float minX = 1e9f;
-    float maxX = -1e9f;
-    std::size_t onRow = 0;
+    f32 minX = 1e9f;
+    f32 maxX = -1e9f;
+    usize onRow = 0;
     for (const test::RecordedDraw& draw : device.draws) {
         for (const ImmediateVertex& v : draw.vertices) {
             if (v.position.y >= 339.0f && v.position.y <= 351.0f) {

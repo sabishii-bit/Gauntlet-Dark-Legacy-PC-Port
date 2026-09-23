@@ -2,26 +2,25 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <string>
 #include <string_view>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 #include "game/menu/ScrollBox.h"
 
 namespace gdl::game {
 namespace {
 constexpr std::string_view kWizardTree = "WIZARD";
-constexpr float kWizardLift = 3.0f;
-constexpr float kCaptionScale = 0.75f;
-constexpr int kCaptionBottom = 96;
-constexpr int kCaptionLineHeight = 18;
+constexpr f32 kWizardLift = 3.0f;
+constexpr f32 kCaptionScale = 0.75f;
+constexpr s32 kCaptionBottom = 96;
+constexpr s32 kCaptionLineHeight = 18;
 } // namespace
 
-void BossVictoryPresentation::begin(int kind, char realm, std::uint16_t runesInRealm,
-                                    std::uint16_t runesFound, bool goldLeft) {
+void BossVictoryPresentation::begin(s32 kind, char realm, u16 runesInRealm, u16 runesFound,
+                                    bool goldLeft) {
     clear();
     m_visit.begin(kind, realm, runesInRealm, runesFound, goldLeft);
 }
@@ -59,7 +58,7 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
     m_pose.rest(figure);
     // Over the middle of the boss's mark and the party, facing the party.
     Vec3 centre = boss;
-    float count = 1.0f;
+    f32 count = 1.0f;
     Vec3 partyCentre{0.0f};
     for (const Vec3& position : party) {
         centre += position;
@@ -71,7 +70,7 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
     m_yaw = std::atan2(toParty.x, toParty.z);
 }
 
-BossVictoryPresentation::Update BossVictoryPresentation::update(int ticks, float seconds,
+BossVictoryPresentation::Update BossVictoryPresentation::update(s32 ticks, f32 seconds,
                                                                 bool goldLeft,
                                                                 const MessageTable& strings) {
     Update result;
@@ -79,7 +78,7 @@ BossVictoryPresentation::Update BossVictoryPresentation::update(int ticks, float
         return result;
     }
     m_visit.setGoldLeft(goldLeft);
-    std::vector<std::size_t> pageLengths;
+    std::vector<usize> pageLengths;
     if (const auto& caption = m_visit.caption(); caption.has_value()) {
         if (const auto found = strings.find(caption->message); found.has_value()) {
             for (const std::string& page : strings.message(*found).pages) {
@@ -119,8 +118,8 @@ void BossVictoryPresentation::drawWizard(RenderDevice& device, const Mat4& clip,
 }
 
 void BossVictoryPresentation::drawCaption(Canvas& canvas, const TextPainter& text,
-                                          const MessageTable& strings, float width,
-                                          float height) const {
+                                          const MessageTable& strings, f32 width,
+                                          f32 height) const {
     const auto& caption = m_visit.caption();
     if (!caption.has_value() || !text.ready()) {
         return;
@@ -134,10 +133,10 @@ void BossVictoryPresentation::drawCaption(Canvas& canvas, const TextPainter& tex
     const std::vector<std::string> lines = ScrollBox::splitLines(shown);
     TextStyle style;
     style.scale = kCaptionScale;
-    int y = static_cast<int>(height) - kCaptionBottom -
-            static_cast<int>(lines.size()) * kCaptionLineHeight;
+    s32 y = static_cast<s32>(height) - kCaptionBottom -
+            static_cast<s32>(lines.size()) * kCaptionLineHeight;
     for (const std::string& line : lines) {
-        text.draw(canvas, -static_cast<int>(width / 2.0f), y, line, style);
+        text.draw(canvas, -static_cast<s32>(width / 2.0f), y, line, style);
         y += kCaptionLineHeight;
     }
 }

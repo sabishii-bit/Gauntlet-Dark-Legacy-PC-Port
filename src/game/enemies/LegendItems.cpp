@@ -2,15 +2,16 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
+
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr float kTenth = 0.1f;
-constexpr float kWearSeconds = 29.0f;
-constexpr float kTicksPerSecond = 60.0f;
+constexpr f32 kTenth = 0.1f;
+constexpr f32 kWearSeconds = 29.0f;
+constexpr f32 kTicksPerSecond = 60.0f;
 
 /** The original's table, boss by boss. */
 constexpr std::array<LegendWeakness, 9> kWeaknesses{{
@@ -27,32 +28,32 @@ constexpr std::array<LegendWeakness, 9> kWeaknesses{{
 }};
 
 /** The chimera, the lich and the temple's boss roar a second after rising; the rest three. */
-bool quickToRoar(int boss) {
+bool quickToRoar(s32 boss) {
     return boss == 35 || boss == 41 || boss == 42;
 }
 
 } // namespace
 
-const LegendWeakness* legendWeaknessOf(int kind) {
+const LegendWeakness* legendWeaknessOf(s32 kind) {
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kWeaknesses, kind, &LegendWeakness::boss);
     return found != kWeaknesses.end() ? &*found : nullptr;
 }
 
-std::string_view LegendShow::chargeTree(int color) {
+std::string_view LegendShow::chargeTree(s32 color) {
     constexpr std::array<std::string_view, 4> kTrees{"COMBO_YEL", "COMBO_BLU", "COMBO_RED",
                                                      "COMBO_GRN"};
-    return kTrees[static_cast<std::size_t>(std::clamp(color, 0, 3))];
+    return kTrees[static_cast<usize>(std::clamp(color, 0, 3))];
 }
 
-Color LegendShow::chargeTint(int color) {
+Color LegendShow::chargeTint(s32 color) {
     constexpr std::array<Color, 4> kTints{Color::rgba(255, 255, 0), Color::rgba(0, 0, 255),
                                           Color::rgba(255, 0, 0), Color::rgba(0, 255, 0)};
-    return kTints[static_cast<std::size_t>(std::clamp(color, 0, 3))];
+    return kTints[static_cast<usize>(std::clamp(color, 0, 3))];
 }
 
-ParticleDescriptor LegendShow::trailOf(int kind) {
+ParticleDescriptor LegendShow::trailOf(s32 kind) {
     ParticleDescriptor trail;
     if (kind != 34 && kind != 35 && kind != 38) {
         return trail;
@@ -72,12 +73,12 @@ ParticleDescriptor LegendShow::trailOf(int kind) {
     return trail;
 }
 
-int legendRealmOf(int kind) {
+s32 legendRealmOf(s32 kind) {
     const LegendWeakness* weakness = legendWeaknessOf(kind);
     return weakness != nullptr ? weakness->realm : 0;
 }
 
-void LegendRite::begin(int player, const LegendWeakness& weakness) {
+void LegendRite::begin(s32 player, const LegendWeakness& weakness) {
     clear();
     m_stage = Stage::Carried;
     m_player = player;
@@ -96,7 +97,7 @@ void LegendRite::clear() {
     m_wearLeft = 0.0f;
 }
 
-std::vector<LegendCue> LegendRite::update(int ticks, bool bossRisen, bool bossRoarDone) {
+std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRoarDone) {
     std::vector<LegendCue> cues;
     if (!running() || ticks <= 0) {
         return cues;
@@ -120,7 +121,7 @@ std::vector<LegendCue> LegendRite::update(int ticks, bool bossRisen, bool bossRo
         cues.push_back(LegendCue::Thrown);
     }
     // The boss roars at it, once its wait is over.
-    const int roarWait = quickToRoar(m_weakness.boss) ? kShortRoarWait : kLongRoarWait;
+    const s32 roarWait = quickToRoar(m_weakness.boss) ? kShortRoarWait : kLongRoarWait;
     if (!m_roarDue && m_ticks >= roarWait) {
         m_roarDue = true;
     }
@@ -134,7 +135,7 @@ std::vector<LegendCue> LegendRite::update(int ticks, bool bossRisen, bool bossRo
         if (m_weakness.curbLasts <= 0.0f) {
             m_stage = Stage::Over;
         } else {
-            m_wearLeft -= static_cast<float>(ticks) / kTicksPerSecond;
+            m_wearLeft -= static_cast<f32>(ticks) / kTicksPerSecond;
             if (m_wearLeft <= 0.0f) {
                 m_stage = Stage::Over;
                 cues.push_back(LegendCue::WornOff);
@@ -153,11 +154,11 @@ bool LegendRite::finishOnImpact() {
     return true;
 }
 
-bool LegendShow::heldInHand(int kind) {
+bool LegendShow::heldInHand(s32 kind) {
     return kind >= 34 && kind <= 39;
 }
 
-PlayerDeed LegendShow::gestureOf(int kind) {
+PlayerDeed LegendShow::gestureOf(s32 kind) {
     switch (kind) {
     case 36:
     case 37: return PlayerDeed::ShootLegend;
@@ -169,7 +170,7 @@ PlayerDeed LegendShow::gestureOf(int kind) {
     }
 }
 
-LegendShow::Flight LegendShow::flightOf(int kind) {
+LegendShow::Flight LegendShow::flightOf(s32 kind) {
     switch (kind) {
     case 34:
     case 35:
@@ -180,15 +181,15 @@ LegendShow::Flight LegendShow::flightOf(int kind) {
     }
 }
 
-std::string_view LegendShow::restingTreeOf(int kind) {
+std::string_view LegendShow::restingTreeOf(s32 kind) {
     return kind == 39 ? kBurstTree : kProjectileTree;
 }
 
-std::string_view LegendShow::burstTreeOf(int kind) {
+std::string_view LegendShow::burstTreeOf(s32 kind) {
     return kind == 39 ? kSecondBurstTree : kBurstTree;
 }
 
-float LegendShow::burstSecondsOf(int kind) {
+f32 LegendShow::burstSecondsOf(s32 kind) {
     switch (kind) {
     case 41: return kLichBurstSeconds;
     case 37: return kSpiderBurstSeconds;
@@ -196,7 +197,7 @@ float LegendShow::burstSecondsOf(int kind) {
     }
 }
 
-Vec3 LegendShow::bossOffsetOf(int kind) {
+Vec3 LegendShow::bossOffsetOf(s32 kind) {
     switch (kind) {
     case 39: return Vec3{-2.4375f, -2.3125f, 3.33203125f};
     case 40: return Vec3{0.0f, -2.3125f, 2.5625f};

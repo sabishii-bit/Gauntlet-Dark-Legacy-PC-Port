@@ -1,11 +1,10 @@
 #include "engine/audio/AdsStream.h"
 
 #include <algorithm>
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -36,16 +35,15 @@ bool AdsStream::open(const std::filesystem::path& file) {
     return true;
 }
 
-double AdsStream::seconds() const {
-    return m_info.sampleRate == 0 ? 0.0
-                                  : static_cast<double>(m_info.sampleCount) / m_info.sampleRate;
+f64 AdsStream::seconds() const {
+    return m_info.sampleRate == 0 ? 0.0 : static_cast<f64>(m_info.sampleCount) / m_info.sampleRate;
 }
 
 AudioStreamDesc AdsStream::desc() const {
     return AudioStreamDesc{m_info.sampleRate, m_info.channels};
 }
 
-bool AdsStream::read(std::vector<float>& out, std::size_t frames) {
+bool AdsStream::read(std::vector<f32>& out, usize frames) {
     if (!opened()) {
         return false;
     }
@@ -54,15 +52,14 @@ bool AdsStream::read(std::vector<float>& out, std::size_t frames) {
             return false;
         }
         m_flushed = true;
-        const std::size_t before = out.size();
+        const usize before = out.size();
         m_decoder.flush(out);
         return out.size() > before;
     }
     // Sixteen ADPCM bytes decode to fourteen frames per channel; take about `frames` worth.
-    const std::size_t wanted =
-        std::clamp<std::size_t>(frames / 14 * 16 * m_info.channels, 1024, kPieceBytes);
-    const std::size_t piece = std::min(wanted, m_dataEnd - m_offset);
-    m_decoder.feed(std::span<const std::uint8_t>(m_bytes).subspan(m_offset, piece), out);
+    const usize wanted = std::clamp<usize>(frames / 14 * 16 * m_info.channels, 1024, kPieceBytes);
+    const usize piece = std::min(wanted, m_dataEnd - m_offset);
+    m_decoder.feed(std::span<const u8>(m_bytes).subspan(m_offset, piece), out);
     m_offset += piece;
     return true;
 }

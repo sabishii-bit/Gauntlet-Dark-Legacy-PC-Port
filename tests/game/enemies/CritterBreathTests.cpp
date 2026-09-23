@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -24,7 +25,7 @@ TEST_CASE("breath transforms the offset but normalizes the animated forward basi
     REQUIRE(breath.origin == Vec3{10, 12, 24});
     REQUIRE(breath.end == Vec3{10, 12, 54});
 
-    const Mat4 turned = glm::rotate(node, std::numbers::pi_v<float> / 2, Vec3{0, 1, 0});
+    const Mat4 turned = glm::rotate(node, std::numbers::pi_v<f32> / 2, Vec3{0, 1, 0});
     const auto moved = CritterBreath::fromNode(turned, damage);
     REQUIRE(moved.origin.x == Approx(4));
     REQUIRE(moved.origin.z == Approx(30));
@@ -36,8 +37,8 @@ TEST_CASE("breath applies authored yaw then pitch, including an inclined node",
           "[game][enemies][breath]") {
     CritterDamage damage;
     damage.maxDistance = 10;
-    damage.yaw = std::numbers::pi_v<float> / 2;
-    damage.pitch = std::numbers::pi_v<float> / 6;
+    damage.yaw = std::numbers::pi_v<f32> / 2;
+    damage.pitch = std::numbers::pi_v<f32> / 6;
     const auto breath = CritterBreath::fromNode(Mat4{1}, damage);
     REQUIRE(breath.end.x == Approx(-8.660254f));
     REQUIRE(breath.end.y == Approx(-5));

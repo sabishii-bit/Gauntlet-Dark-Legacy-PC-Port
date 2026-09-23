@@ -1,7 +1,8 @@
 #include "game/menu/ScrollBox.h"
 
 #include <algorithm>
-#include <cstddef>
+
+#include "engine/core/Types.h"
 
 #include "game/menu/OptionMenu.h"
 
@@ -9,9 +10,9 @@ namespace gdl::game {
 
 std::vector<std::string> ScrollBox::splitLines(std::string_view page) {
     std::vector<std::string> lines;
-    std::size_t at = 0;
+    usize at = 0;
     while (at <= page.size()) {
-        const std::size_t end = page.find('\n', at);
+        const usize end = page.find('\n', at);
         lines.emplace_back(
             page.substr(at, end == std::string_view::npos ? page.size() - at : end - at));
         if (end == std::string_view::npos) {
@@ -25,7 +26,7 @@ std::vector<std::string> ScrollBox::splitLines(std::string_view page) {
     return lines;
 }
 
-bool ScrollBox::open(RenderDevice& device, std::vector<std::string> pages, float scale,
+bool ScrollBox::open(RenderDevice& device, std::vector<std::string> pages, f32 scale,
                      std::string prompt) {
     close();
     if (m_text == nullptr || !m_text->ready() || pages.empty()) {
@@ -52,29 +53,29 @@ void ScrollBox::close() {
 
 /** Sizes the scroll to the page: the text plus its margins, no narrower than the prompt and
  * no wider than the screen, centred on the box's point. */
-void ScrollBox::showPage(std::size_t page) {
+void ScrollBox::showPage(usize page) {
     m_page = page;
     m_lines = splitLines(m_pages[page]);
-    int textWidth = 0;
+    s32 textWidth = 0;
     for (const std::string& line : m_lines) {
         textWidth = std::max(textWidth, m_text->measure(line, m_scale));
     }
-    const auto lineCount = static_cast<int>(m_lines.size());
-    const int textHeight =
+    const auto lineCount = static_cast<s32>(m_lines.size());
+    const s32 textHeight =
         lineCount * m_text->lineHeight(m_scale) + std::max(lineCount - 1, 0) * kLineSpacing;
-    const int narrowest = m_text->measure(m_prompt, kPromptScale) + kPromptExtra;
-    const int width = std::clamp(textWidth + kMargin, narrowest, kMaxWidth);
-    const int height = textHeight + kMargin;
-    const int x = kCentreX - width / 2;
-    const int y = kCentreY - height / 2;
-    m_area = Rect{static_cast<float>(x), static_cast<float>(y), static_cast<float>(width),
-                  static_cast<float>(height)};
+    const s32 narrowest = m_text->measure(m_prompt, kPromptScale) + kPromptExtra;
+    const s32 width = std::clamp(textWidth + kMargin, narrowest, kMaxWidth);
+    const s32 height = textHeight + kMargin;
+    const s32 x = kCentreX - width / 2;
+    const s32 y = kCentreY - height / 2;
+    m_area = Rect{static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(width),
+                  static_cast<f32>(height)};
     m_textTop = y + kTextInset;
     m_promptY = m_textTop + textHeight + kPromptGap;
     m_hold = kHoldTicks;
 }
 
-void ScrollBox::step(int ticks, unsigned int accepted) {
+void ScrollBox::step(s32 ticks, u32 accepted) {
     if (!m_active) {
         return;
     }
@@ -131,7 +132,7 @@ void ScrollBox::draw(Canvas& canvas) const {
     TextStyle style;
     style.scale = m_scale;
     style.color = kTextColor;
-    int y = m_textTop;
+    s32 y = m_textTop;
     for (const std::string& line : m_lines) {
         if (!line.empty()) {
             m_text->draw(canvas, -kCentreX, y, line, style);
@@ -150,8 +151,8 @@ void ScrollBox::draw(Canvas& canvas) const {
     m_text->draw(canvas, -kCentreX, m_promptY, m_prompt, plain);
     if (m_art.button != nullptr) {
         canvas.draw(*m_art.button,
-                    Rect{static_cast<float>(kButtonX), static_cast<float>(m_promptY),
-                         static_cast<float>(kButtonSize), static_cast<float>(kButtonSize)});
+                    Rect{static_cast<f32>(kButtonX), static_cast<f32>(m_promptY),
+                         static_cast<f32>(kButtonSize), static_cast<f32>(kButtonSize)});
     }
 }
 

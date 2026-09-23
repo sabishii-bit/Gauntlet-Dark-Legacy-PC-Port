@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstdint>
 #include <filesystem>
 
 #include "engine/core/SpecialMembers.h"
+#include "engine/core/Types.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/render/vulkan/VulkanCommon.h"
 
@@ -32,7 +32,7 @@ public:
         Vec4 params;
         Vec4 scale;
     };
-    static constexpr std::uint32_t kPushConstantSize = sizeof(PushConstants);
+    static constexpr u32 kPushConstantSize = sizeof(PushConstants);
 
 private:
     VkShaderModule loadShaderModule(const std::filesystem::path& path) const;

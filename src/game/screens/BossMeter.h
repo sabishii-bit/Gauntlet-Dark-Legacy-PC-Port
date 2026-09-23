@@ -1,9 +1,9 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 
 #include "engine/assets/TextureSet.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
@@ -22,38 +22,38 @@ namespace gdl::game {
  */
 class BossMeter {
 public:
-    static constexpr int kY = 8;
-    static constexpr int kPieceWidth = 256;
-    static constexpr int kMostPieces = 2;
-    static constexpr float kEasePerTick = 3.0f;
-    static constexpr std::uint8_t kAlpha = 143; ///< the original's blit alpha of 112, inverted
+    static constexpr s32 kY = 8;
+    static constexpr s32 kPieceWidth = 256;
+    static constexpr s32 kMostPieces = 2;
+    static constexpr f32 kEasePerTick = 3.0f;
+    static constexpr u8 kAlpha = 143; ///< the original's blit alpha of 112, inverted
     static constexpr Color kFrozenTint = Color::rgba(0x80, 0x80, 0xFF, kAlpha);
 
     /** Lays it out for a boss of `meter` at `left`, drawing from `textures`; false when the
      * boss has no meter to show. */
-    bool bind(const CritterMeter& meter, TextureSet* textures, int left = 0);
+    bool bind(const CritterMeter& meter, TextureSet* textures, s32 left = 0);
     void clear();
     bool bound() const { return m_pieces > 0; }
 
     /** Eases the health shown toward `health` of `max` over `ticks`; `alive` false takes the
      * meter down, `frozen` tints it. */
-    void update(int ticks, float health, float maxHealth, bool alive, bool frozen);
-    float shown() const { return m_shown; }
+    void update(s32 ticks, f32 health, f32 maxHealth, bool alive, bool frozen);
+    f32 shown() const { return m_shown; }
     bool showing() const { return bound() && m_alive; }
     /** How wide each strip's fill is drawn, in pixels of the virtual screen. */
-    std::array<int, kMostPieces> fillWidths() const;
+    std::array<s32, kMostPieces> fillWidths() const;
 
     void draw(Canvas& canvas, RenderDevice& device) const;
 
 private:
     TextureSet* m_textures = nullptr;
-    int m_pieces = 0;
-    int m_left = 0;
-    int m_leftInset = 0;
-    int m_rightInset = 0;
+    s32 m_pieces = 0;
+    s32 m_left = 0;
+    s32 m_leftInset = 0;
+    s32 m_rightInset = 0;
     bool m_backed = false;
-    float m_max = 1.0f;
-    float m_shown = 0.0f;
+    f32 m_max = 1.0f;
+    f32 m_shown = 0.0f;
     bool m_fresh = true; ///< nothing shown yet: the first health is taken as it is
     bool m_alive = true;
     bool m_frozen = false;

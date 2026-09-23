@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <numbers>
 #include <vector>
 
@@ -6,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 
 #include "game/world/TowerCamera.h"
 
@@ -15,9 +15,9 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
-WorldLocator marker(const Vec3& position, float pitch, float yaw, std::uint8_t distance = 0) {
+WorldLocator marker(const Vec3& position, f32 pitch, f32 yaw, u8 distance = 0) {
     WorldLocator out;
     out.kind = LocatorKind::TriggerCamera;
     out.position = position;
@@ -26,7 +26,7 @@ WorldLocator marker(const Vec3& position, float pitch, float yaw, std::uint8_t d
     return out;
 }
 
-CameraSubject standing(float x, float z) {
+CameraSubject standing(f32 x, f32 z) {
     return CameraSubject{Vec3{x, 0.0f, z}, Vec3{x, 2.5f, z}};
 }
 
@@ -67,11 +67,11 @@ TEST_CASE("a spread party pulls the camera out until everyone fits the view",
 
     party[0] = standing(-30.0f, 0.0f);
     party[1] = standing(30.0f, 0.0f);
-    for (int i = 0; i < 200; ++i) {
+    for (s32 i = 0; i < 200; ++i) {
         camera.update(party, markers, CameraRange{}, CameraView{}, 1.0f / 30.0f);
     }
     // Half the spread over the half-angle's tangent, plus the slack the fit adds.
-    const float needed = 30.0f / std::tan(CameraView{}.horizontalFov * 0.5f);
+    const f32 needed = 30.0f / std::tan(CameraView{}.horizontalFov * 0.5f);
     REQUIRE(camera.distance() == Approx(needed + TowerCamera::kFarGap).margin(0.5f));
 
     // A marker with a fixed distance overrides the range for the party.
@@ -94,13 +94,13 @@ TEST_CASE("a clearly nearer marker takes over and the camera turns to it over fi
 
     // Half way between the markers the first still holds; well past it the second wins.
     party[0] = standing(55.0f, 0.0f);
-    for (int i = 0; i < 300; ++i) {
+    for (s32 i = 0; i < 300; ++i) {
         camera.update(party, markers, CameraRange{}, CameraView{}, 1.0f / 30.0f);
     }
     REQUIRE(camera.marker() == 0);
     party[0] = standing(90.0f, 0.0f);
     bool turned = false;
-    int frames = 0;
+    s32 frames = 0;
     for (; frames < 300 && (camera.marker() != 1 || camera.turning()); ++frames) {
         camera.update(party, markers, CameraRange{}, CameraView{}, 1.0f / 30.0f);
         turned = turned || camera.turning();

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/WorldData.h"
+#include "engine/core/Types.h"
 #include "engine/world/WorldLighting.h"
 
 namespace {
@@ -24,7 +25,7 @@ TEST_CASE("a level's light shades surfaces by ambient plus the light they face",
     REQUIRE(lighting.shade(Vec3{0.0f, -1.0f, 0.0f}) == Color::rgba(204, 204, 204));
     // A wall catches a little: 0.8 + 1 / sqrt(41).
     const Color wall = lighting.shade(Vec3{1.0f, 0.0f, 0.0f});
-    REQUIRE(static_cast<int>(wall.r) == Approx(244).margin(1.0));
+    REQUIRE(static_cast<s32>(wall.r) == Approx(244).margin(1.0));
     REQUIRE(wall.a == 255);
 
     // Colour and intensity scale the light, not the ambient.

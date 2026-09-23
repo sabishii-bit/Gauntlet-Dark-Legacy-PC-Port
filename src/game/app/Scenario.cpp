@@ -1,12 +1,12 @@
 #include "game/app/Scenario.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <exception>
 
 #include <nlohmann/json.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "game/players/ClassData.h"
@@ -22,7 +22,7 @@ Vec3 readVec3(const Json& array) {
     if (!array.is_array() || array.size() != 3) {
         throw FormatError("scenario: a position needs three numbers");
     }
-    return Vec3{array.at(0).get<float>(), array.at(1).get<float>(), array.at(2).get<float>()};
+    return Vec3{array.at(0).get<f32>(), array.at(1).get<f32>(), array.at(2).get<f32>()};
 }
 
 } // namespace
@@ -47,19 +47,19 @@ Scenario Scenario::fromJson(std::string_view text) {
     }
     for (const Json& entry : root.at("party")) {
         ScenarioMember member;
-        member.player = entry.value("player", static_cast<int>(scenario.party.size()));
+        member.player = entry.value("player", static_cast<s32>(scenario.party.size()));
         member.classCode = entry.value("class", member.classCode);
         member.colorCode = entry.value("color", member.colorCode);
         member.name = entry.value("name", member.name);
         member.level = entry.value("level", 1);
-        member.crystals = entry.value("crystals", std::vector<int>{});
+        member.crystals = entry.value("crystals", std::vector<s32>{});
         member.gold = entry.value("gold", 0);
         member.health = entry.value("health", 0);
         member.keys = entry.value("keys", 0);
         member.slot = entry.value("slot", -1);
         member.turbo = entry.value("turbo", 0.0f);
-        member.potions = entry.value("potions", std::vector<int>{});
-        member.legends = entry.value("legends", std::vector<int>{});
+        member.potions = entry.value("potions", std::vector<s32>{});
+        member.legends = entry.value("legends", std::vector<s32>{});
         for (const Json& powerup : entry.value("powerups", Json::array())) {
             member.powerups.push_back(
                 PowerupSlot{powerup.value("strength", 30.0f), powerup.value("kind", 0),
@@ -75,8 +75,8 @@ Scenario Scenario::fromJson(std::string_view text) {
             member.name.size() > kCharacterNameLength || member.level < 1 ||
             member.crystals.size() > kRealmCount || member.gold < 0 || member.health < 0 ||
             member.keys < 0 || member.keys > Inventory::kMostKeys ||
-            member.potions.size() > static_cast<std::size_t>(Inventory::kMostPotions) ||
-            std::ranges::any_of(member.legends, [](int realm) {
+            member.potions.size() > static_cast<usize>(Inventory::kMostPotions) ||
+            std::ranges::any_of(member.legends, [](s32 realm) {
                 return realm < 1 || realm >= Relics::kRealmCount;
             })) {
             throw FormatError("scenario: a party member is out of range");
@@ -87,7 +87,7 @@ Scenario Scenario::fromJson(std::string_view text) {
         scenario.tower.position = readVec3(root.at("position"));
     }
     if (root.contains("yaw")) {
-        scenario.tower.yaw = root.at("yaw").get<float>();
+        scenario.tower.yaw = root.at("yaw").get<f32>();
     }
     if (root.contains("welcome")) {
         scenario.tower.welcome = root.at("welcome").get<bool>();
@@ -118,14 +118,14 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         save.color = colorIndexOf(member.colorCode).value_or(0);
         ClassProgress& progress = save.progress();
         progress.experience = levelExperience(member.level);
-        for (std::size_t realm = 0; realm < member.crystals.size(); ++realm) {
+        for (usize realm = 0; realm < member.crystals.size(); ++realm) {
             progress.crystals[realm] = member.crystals[realm];
         }
         save.gold = member.gold;
         progress.health = member.health;
         progress.inventory.keys = member.keys;
         progress.inventory.potions = member.potions;
-        for (const int realm : member.legends) {
+        for (const s32 realm : member.legends) {
             progress.relics.addLegend(realm);
         }
         for (const PowerupSlot& slot : member.powerups) {
@@ -133,8 +133,7 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         }
         members.push_back(PartyMember{
             member.player, std::move(save),
-            member.slot >= 0 ? std::optional<std::size_t>{static_cast<std::size_t>(member.slot)}
-                             : std::nullopt,
+            member.slot >= 0 ? std::optional<usize>{static_cast<usize>(member.slot)} : std::nullopt,
             false, member.turbo});
     }
     return members;

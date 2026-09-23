@@ -1,9 +1,8 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 namespace gdl {
@@ -20,9 +19,9 @@ struct MeshVertex {
 
 /** The triangles of a mesh that share one texture (and lightmap). */
 struct MeshPart {
-    std::uint32_t texture = 0;          ///< index into the archive's texture set
-    std::uint32_t lightmap = 0;         ///< index of the lightmap texture, 0 for none
-    std::vector<std::uint32_t> indices; ///< three per triangle, into Mesh::vertices
+    u32 texture = 0;          ///< index into the archive's texture set
+    u32 lightmap = 0;         ///< index of the lightmap texture, 0 for none
+    std::vector<u32> indices; ///< three per triangle, into Mesh::vertices
 };
 
 /** Static triangle geometry with one vertex array and per-texture index ranges. */
@@ -31,8 +30,8 @@ struct Mesh {
     std::vector<MeshPart> parts;
     bool prelit = false; ///< the vertices' colours are the lighting the level was built with
 
-    std::size_t triangleCount() const {
-        std::size_t count = 0;
+    usize triangleCount() const {
+        usize count = 0;
         for (const MeshPart& part : parts) {
             count += part.indices.size() / 3;
         }

@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/enemies/LegendItems.h"
 
 namespace {
@@ -52,7 +54,7 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
     REQUIRE(rite.player() == 1);
     REQUIRE(rite.holdsBoss());
     // Nothing while the boss is still rising.
-    for (int i = 0; i < 100; ++i) {
+    for (s32 i = 0; i < 100; ++i) {
         REQUIRE(rite.update(2, false, false).empty());
     }
     REQUIRE(rite.stage() == LegendRite::Stage::Carried);
@@ -65,7 +67,7 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
     REQUIRE(rite.stage() == LegendRite::Stage::Woken);
     REQUIRE(rite.darkens());
     REQUIRE_FALSE(rite.thrown());
-    int ticks = 2;
+    s32 ticks = 2;
     while (!rite.thrown() && ticks < 600) {
         cues = rite.update(2, true, false);
         ticks += 2;
@@ -90,7 +92,7 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
     REQUIRE_FALSE(rite.wantsRoar());
     REQUIRE_FALSE(rite.darkens());
     REQUIRE(rite.running());
-    int worn = 0;
+    s32 worn = 0;
     bool wornOff = false;
     while (rite.running() && worn < 60 * 40) {
         for (const LegendCue cue : rite.update(2, true, true)) {
@@ -105,7 +107,7 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
     LegendRite forGood;
     forGood.begin(0, *legendWeaknessOf(37));
     forGood.update(2, true, false);
-    for (int i = 0; i < 200; ++i) {
+    for (s32 i = 0; i < 200; ++i) {
         forGood.update(2, true, false);
     }
     cues = forGood.update(2, true, true);

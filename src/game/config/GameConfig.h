@@ -6,35 +6,35 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/platform/Input.h"
 
 namespace gdl::game {
 
 struct DisplayConfig {
-    unsigned int virtualWidth = 512; ///< the 2D layer's coordinate space
-    unsigned int virtualHeight = 384;
-    unsigned int frameWidth = 640; ///< the frame the game composes, letterboxed onto the window
-    unsigned int frameHeight = 448;
-    unsigned int windowWidth = 1280;
-    unsigned int windowHeight = 896;
+    u32 virtualWidth = 512; ///< the 2D layer's coordinate space
+    u32 virtualHeight = 384;
+    u32 frameWidth = 640; ///< the frame the game composes, letterboxed onto the window
+    u32 frameHeight = 448;
+    u32 windowWidth = 1280;
+    u32 windowHeight = 896;
     bool vsync = true;
-    unsigned int maxFrameRate =
-        60; ///< frames per second outside play (the menus); 0 leaves it to vsync
+    u32 maxFrameRate = 60; ///< frames per second outside play (the menus); 0 leaves it to vsync
 };
 
 struct TimingConfig {
-    unsigned int tickRate = 60; ///< logic ticks per second; the original counts 60 Hz retraces
-    unsigned int gameplayFrameRate = 30; ///< the rate gameplay was tuned for: two ticks per frame
+    u32 tickRate = 60;          ///< logic ticks per second; the original counts 60 Hz retraces
+    u32 gameplayFrameRate = 30; ///< the rate gameplay was tuned for: two ticks per frame
 };
 
 struct CameraConfig {
-    float horizontalFovDegrees = 60.0f;
+    f32 horizontalFovDegrees = 60.0f;
 };
 
 struct AudioConfig {
-    float masterVolume = 1.0f;
-    float musicVolume = 0.7f;
-    float effectsVolume = 1.0f;
+    f32 masterVolume = 1.0f;
+    f32 musicVolume = 0.7f;
+    f32 effectsVolume = 1.0f;
 };
 
 struct TextConfig {
@@ -44,19 +44,19 @@ struct TextConfig {
 /** How hard the game is: easy, normal or hard, which scales the levels' own tuning. */
 struct DifficultyConfig {
     static constexpr std::array<std::string_view, 3> kNames{"easy", "normal", "hard"};
-    static constexpr std::array<float, 3> kGains{0.667f, 1.0f, 1.5f};
+    static constexpr std::array<f32, 3> kGains{0.667f, 1.0f, 1.5f};
 
     std::string level = "normal";
 
     /** What the level's scales are multiplied by; normal's for a name it does not know. */
-    float gain() const;
+    f32 gain() const;
 };
 
 /** Where characters are saved: a `saves` folder beside the game when the directory is
  * empty, the directory itself when it is absolute, else that directory beside the game. */
 struct SaveConfig {
     std::string directory;
-    unsigned int slots = 8;
+    u32 slots = 8;
 };
 
 /** Keys and pad buttons that drive the menus. */
@@ -115,7 +115,7 @@ struct PlayBindings {
     std::vector<PadButton> padSelectorDown{PadButton::DpadDown};
     std::vector<PadButton> padSelectorLeft{PadButton::DpadLeft};
     std::vector<PadButton> padSelectorRight{PadButton::DpadRight};
-    float stickDeadZone = 0.25f; ///< stick deflection ignored as rest
+    f32 stickDeadZone = 0.25f; ///< stick deflection ignored as rest
 };
 
 /**
@@ -143,7 +143,7 @@ struct GameConfig {
     void saveFile(const std::filesystem::path& file) const;
     std::string toJson() const;
 
-    float horizontalFovRadians() const;
+    f32 horizontalFovRadians() const;
 
     /** The save directory, resolved from the settings or the user's configuration folder. */
     std::filesystem::path saveDirectory() const;

@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/ui/Canvas.h"
 
 #include "FakeRenderDevice.h"
@@ -35,7 +36,7 @@ TEST_CASE("a pickup card rises over the box, holds, and falls away", "[game][scr
     hud.step(1, 0.0f);
     REQUIRE(hud.cards().empty());
     // Only so many at once, and only for real slots.
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         hud.addCard(0, "KEY");
     }
     REQUIRE(hud.cards().size() == PickupHud::kMostCards);

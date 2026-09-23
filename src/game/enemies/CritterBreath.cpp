@@ -3,18 +3,20 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 CritterBreath CritterBreath::fromNode(const Mat4& node, const CritterDamage& damage) {
     Vec3 forward{node[2]};
-    const float length = glm::length(forward);
+    const f32 length = glm::length(forward);
     if (length > 0.0f) {
         forward /= length;
     }
-    const float cy = std::cos(damage.yaw);
-    const float sy = std::sin(damage.yaw);
+    const f32 cy = std::cos(damage.yaw);
+    const f32 sy = std::sin(damage.yaw);
     forward = {forward.x * cy - forward.z * sy, forward.y, forward.z * cy + forward.x * sy};
-    const float cp = std::cos(damage.pitch);
-    const float sp = std::sin(damage.pitch);
+    const f32 cp = std::cos(damage.pitch);
+    const f32 sp = std::sin(damage.pitch);
     // Pitch about the horizontal perpendicular of the yawed direction, as authored.
     // Do not substitute a world-X rotation or renormalize its horizontal axis.
     const Vec3 direction{sp * forward.x * forward.y + forward.x * cp,
@@ -24,21 +26,21 @@ CritterBreath CritterBreath::fromNode(const Mat4& node, const CritterDamage& dam
     return {origin, origin + direction * damage.maxDistance};
 }
 
-bool CritterBreath::touches(const CritterDamage& damage, const Vec3& centre, float radius,
-                            float halfHeight) const {
+bool CritterBreath::touches(const CritterDamage& damage, const Vec3& centre, f32 radius,
+                            f32 halfHeight) const {
     const Vec3 fromOrigin = centre - origin;
-    const float distance = glm::length(Vec2{fromOrigin.x, fromOrigin.z});
+    const f32 distance = glm::length(Vec2{fromOrigin.x, fromOrigin.z});
     if (distance < damage.minDistance || distance > damage.maxDistance) {
         return false;
     }
     const Vec3 segment = end - origin;
-    const float lengthSquared = glm::dot(segment, segment);
-    const float t = lengthSquared > 0.0f
-                        ? std::clamp(glm::dot(fromOrigin, segment) / lengthSquared, 0.0f, 1.0f)
-                        : 0.0f;
+    const f32 lengthSquared = glm::dot(segment, segment);
+    const f32 t = lengthSquared > 0.0f
+                      ? std::clamp(glm::dot(fromOrigin, segment) / lengthSquared, 0.0f, 1.0f)
+                      : 0.0f;
     const Vec3 separation = origin + t * segment - centre;
-    const float across = radius + damage.radius;
-    const float vertical = halfHeight + damage.radius;
+    const f32 across = radius + damage.radius;
+    const f32 vertical = halfHeight + damage.radius;
     return glm::length(separation) <= across + vertical &&
            glm::length(Vec2{separation.x, separation.z}) <= across &&
            std::abs(separation.y) <= vertical;

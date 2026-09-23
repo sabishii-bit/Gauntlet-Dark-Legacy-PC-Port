@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <functional>
 #include <random>
 #include <span>
@@ -8,6 +7,7 @@
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
+#include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
 #include "game/enemies/CritterProjectile.h"
@@ -16,9 +16,9 @@
 
 namespace gdl::game {
 struct CritterProjectileHit {
-    int player = -1;
-    float damage = 0.0f;
-    unsigned int flags = 0;
+    s32 player = -1;
+    f32 damage = 0.0f;
+    u32 flags = 0;
 };
 
 /** Moving attack effects, independent of the creature's animation after launch.
@@ -29,11 +29,11 @@ public:
     using PlaySound = std::function<void(std::string_view)>;
     void launch(const CritterShot& shot, ItemArchive& archive, RenderDevice& device,
                 EffectTrees& effects, const PlaySound& sound);
-    void update(float seconds, const WorldCollision* collision, std::span<const EnemyView> players,
+    void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
                 RenderDevice& device, EffectTrees& effects, const PlaySound& sound);
     void clear(EffectTrees& effects);
     std::vector<CritterProjectileHit> takeHits();
-    std::size_t count() const { return m_flying.size(); }
+    usize count() const { return m_flying.size(); }
 
 private:
     struct Flying {
@@ -43,11 +43,11 @@ private:
         Vec3 velocity{0.0f};
         Vec3 spin{0.0f};
         Vec3 rotation{0.0f};
-        unsigned int effect = 0;
+        u32 effect = 0;
         bool morphed = false;
     };
-    static unsigned int show(Flying& flying, int index, RenderDevice& device, EffectTrees& effects,
-                             const PlaySound& sound, float life = 0.0f);
+    static u32 show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
+                    const PlaySound& sound, f32 life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
     std::vector<Flying> m_flying;
     std::vector<CritterProjectileHit> m_hits;

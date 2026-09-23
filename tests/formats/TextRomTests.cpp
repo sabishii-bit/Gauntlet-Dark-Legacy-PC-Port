@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <set>
 #include <string>
 #include <string_view>
@@ -7,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -18,44 +18,42 @@ using namespace gdl;
 using namespace gdl::formats;
 using test::ByteWriter;
 
-constexpr std::uint32_t lumpId(std::string_view code) {
-    return (std::uint32_t{static_cast<std::uint8_t>(code[0])} << 24U) |
-           (std::uint32_t{static_cast<std::uint8_t>(code[1])} << 16U) |
-           (std::uint32_t{static_cast<std::uint8_t>(code[2])} << 8U) |
-           std::uint32_t{static_cast<std::uint8_t>(code[3])};
+constexpr u32 lumpId(std::string_view code) {
+    return (u32{static_cast<u8>(code[0])} << 24U) | (u32{static_cast<u8>(code[1])} << 16U) |
+           (u32{static_cast<u8>(code[2])} << 8U) | u32{static_cast<u8>(code[3])};
 }
 
 /** Two fonts, three strings, two messages (one with two lines) and one list. */
-std::vector<std::uint8_t> sampleRom() {
+std::vector<u8> sampleRom() {
     ByteWriter body;
     body.putU32(0).putU32(0); // header placeholder
 
-    const std::uint32_t fontsAt = 8;
+    const u32 fontsAt = 8;
     body.putText("small").putZeros(11).putU32(0);
     body.putText("big").putZeros(13).putU32(1);
 
-    const auto textAt = static_cast<std::uint32_t>(body.size());
+    const auto textAt = static_cast<u32>(body.size());
     body.putText("Hello").putU8(0).putText("World").putU8(0).putText("Bye").putU8(0);
     body.putZeros(2);
-    const auto toffAt = static_cast<std::uint32_t>(body.size());
+    const auto toffAt = static_cast<u32>(body.size());
     body.putU32(0).putU32(6).putU32(12);
-    const auto strsAt = static_cast<std::uint32_t>(body.size());
+    const auto strsAt = static_cast<u32>(body.size());
     body.putS32(2).putS32(0).putS32(1).putU32(0x3F800000).putU32(0x3F000000);
     body.putS32(1).putS32(2).putS32(0).putU32(0x40000000).putU32(0x3F800000);
-    const auto loffAt = static_cast<std::uint32_t>(body.size());
+    const auto loffAt = static_cast<u32>(body.size());
     body.putU32(1).putU32(0);
-    const auto listAt = static_cast<std::uint32_t>(body.size());
+    const auto listAt = static_cast<u32>(body.size());
     body.putS32(2).putS32(0);
-    const auto defsAt = static_cast<std::uint32_t>(body.size());
+    const auto defsAt = static_cast<u32>(body.size());
     body.putText("greeting").putU8(0).putText("farewell").putU8(0).putText("all").putU8(0);
     body.putZeros(1);
-    const auto sdefAt = static_cast<std::uint32_t>(body.size());
+    const auto sdefAt = static_cast<u32>(body.size());
     body.putU32(0).putU32(9);
-    const auto ldefAt = static_cast<std::uint32_t>(body.size());
+    const auto ldefAt = static_cast<u32>(body.size());
     body.putU32(18);
 
-    const auto tableAt = static_cast<std::uint32_t>(body.size());
-    const auto lump = [&body](std::string_view id, std::uint32_t at, std::uint32_t count) {
+    const auto tableAt = static_cast<u32>(body.size());
+    const auto lump = [&body](std::string_view id, u32 at, u32 count) {
         body.putU32(lumpId(id)).putU32(at).putU32(count).putU32(0);
     };
     lump("FONT", fontsAt, 2);
@@ -68,9 +66,9 @@ std::vector<std::uint8_t> sampleRom() {
     lump("SDEF", sdefAt, 2);
     lump("LDEF", ldefAt, 1);
 
-    std::vector<std::uint8_t> bytes = body.bytes();
-    bytes[0] = static_cast<std::uint8_t>(tableAt & 0xFFU);
-    bytes[1] = static_cast<std::uint8_t>((tableAt >> 8U) & 0xFFU);
+    std::vector<u8> bytes = body.bytes();
+    bytes[0] = static_cast<u8>(tableAt & 0xFFU);
+    bytes[1] = static_cast<u8>((tableAt >> 8U) & 0xFFU);
     bytes[4] = 9;
     return bytes;
 }
@@ -89,15 +87,15 @@ TEST_CASE("a synthetic text rom parses fonts, messages and lists", "[formats][te
     REQUIRE(rom.messages[1].lines == std::vector<std::string>{"Bye"});
     REQUIRE(rom.lists.size() == 1);
     REQUIRE(rom.lists[0].name == "ALL");
-    REQUIRE(rom.lists[0].messages == std::vector<std::uint32_t>{1, 0});
+    REQUIRE(rom.lists[0].messages == std::vector<u32>{1, 0});
     REQUIRE(rom.findMessage("farewell") == 1U);
     REQUIRE(rom.findList("ALL") == 0U);
     REQUIRE_FALSE(rom.findMessage("nothing").has_value());
 }
 
 TEST_CASE("damaged text roms are rejected", "[formats][text]") {
-    REQUIRE_THROWS_AS(TextRom::parse(std::vector<std::uint8_t>(4, 0)), FormatError);
-    std::vector<std::uint8_t> bad = sampleRom();
+    REQUIRE_THROWS_AS(TextRom::parse(std::vector<u8>(4, 0)), FormatError);
+    std::vector<u8> bad = sampleRom();
     bad[0] = 0xFF;
     bad[1] = 0xFF;
     REQUIRE_THROWS_AS(TextRom::parse(bad), FormatError);

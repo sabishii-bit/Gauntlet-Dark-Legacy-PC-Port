@@ -1,10 +1,10 @@
 #pragma once
 
-#include <cstddef>
 #include <optional>
 #include <span>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/TreeModel.h"
@@ -17,31 +17,31 @@ namespace gdl::game {
 
 /** What the original's table says of a kind's missile: its harm, pace, size and flight. */
 struct EnemyMissileKind {
-    static constexpr int kArrow = 0; ///< the slot a shot takes
-    static constexpr int kBomb = 1;  ///< and a lob
-    static constexpr unsigned int kKnockBack = 0x10;
+    static constexpr s32 kArrow = 0; ///< the slot a shot takes
+    static constexpr s32 kBomb = 1;  ///< and a lob
+    static constexpr u32 kKnockBack = 0x10;
 
-    unsigned int flags = 0;
-    float damage = 10.0f;
-    float speed = 25.0f;
-    float radius = 0.5f;         ///< of its body, for what it strikes
-    float burstRadius = 0.0f;    ///< of the blast it ends in, none for nought
+    u32 flags = 0;
+    f32 damage = 10.0f;
+    f32 speed = 25.0f;
+    f32 radius = 0.5f;           ///< of its body, for what it strikes
+    f32 burstRadius = 0.0f;      ///< of the blast it ends in, none for nought
     Vec3 spin{0.0f, 0.0f, 0.0f}; ///< turns a second about each axis
-    float weight = 30.0f;        ///< how it falls: nought flies flat
+    f32 weight = 30.0f;          ///< how it falls: nought flies flat
 
     /** The medium kinds' shot and lob, as the original's table has them. */
     static EnemyMissileKind arrow();
     static EnemyMissileKind bomb();
     /** A kind's own shot (slot 2): the demons', ghosts', sorcerers', warlocks', worms' and
      * the garm's, each its own. */
-    static EnemyMissileKind bolt(float damage, float speed, float radius, unsigned int flags = 0);
+    static EnemyMissileKind bolt(f32 damage, f32 speed, f32 radius, u32 flags = 0);
 };
 
 /** What a kind throws from a slot, as the original's table has it; nullopt for a kind and
  * slot with nothing. The slot a way throws from: the shooters (16, 23) the first, the
  * lobbers (17, 26) the second, the rest (28, 29 and the others) the third. */
-std::optional<EnemyMissileKind> enemyMissileOf(int kind, int slot);
-int missileSlotOfWay(int way);
+std::optional<EnemyMissileKind> enemyMissileOf(s32 kind, s32 slot);
+s32 missileSlotOfWay(s32 way);
 
 /** One of the swarm's missiles in flight. */
 struct EnemyMissile {
@@ -50,17 +50,17 @@ struct EnemyMissile {
     Vec3 turned{0.0f, 0.0f, 0.0f};
     EnemyMissileKind kind;
     const TreeModel* model = nullptr; ///< must outlive it
-    int shooter = -1;
-    float secondsLeft = 0.0f;
+    s32 shooter = -1;
+    f32 secondsLeft = 0.0f;
 };
 
 /** Where a missile ended: on a player, or on the world; a lob bursts either way. */
 struct EnemyMissileHit {
-    int player = -1; ///< -1 for the world
-    int shooter = -1;
-    float damage = 0.0f;
-    unsigned int flags = 0;
-    float burstRadius = 0.0f;
+    s32 player = -1; ///< -1 for the world
+    s32 shooter = -1;
+    f32 damage = 0.0f;
+    u32 flags = 0;
+    f32 burstRadius = 0.0f;
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 direction{0.0f, 0.0f, 1.0f};
 };
@@ -72,22 +72,22 @@ struct EnemyMissileHit {
  */
 class EnemyMissiles {
 public:
-    static constexpr float kLife = 6.0f;
-    static constexpr float kGravity = 40.0f; ///< a lob's fall a second a second
-    static constexpr float kLeastFlight = 0.3f;
+    static constexpr f32 kLife = 6.0f;
+    static constexpr f32 kGravity = 40.0f; ///< a lob's fall a second a second
+    static constexpr f32 kLeastFlight = 0.3f;
 
     /** Sends one from `from` at `aim` (a body's middle), `speedScale` the level's. */
-    void launch(const EnemyMissileKind& kind, const Vec3& from, const Vec3& aim, float speedScale,
-                const TreeModel* model, int shooter);
-    void update(float seconds, const WorldCollision* collision, std::span<const EnemyView> players);
+    void launch(const EnemyMissileKind& kind, const Vec3& from, const Vec3& aim, f32 speedScale,
+                const TreeModel* model, s32 shooter);
+    void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players);
     std::vector<EnemyMissileHit> takeHits();
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void clear();
 
-    std::size_t count() const { return m_missiles.size(); }
-    const EnemyMissile& missile(std::size_t index) const { return m_missiles[index]; }
+    usize count() const { return m_missiles.size(); }
+    const EnemyMissile& missile(usize index) const { return m_missiles[index]; }
     /** The velocity a lob leaves with to land `to` from `from` at `speed` along the ground. */
-    static Vec3 lobVelocity(const Vec3& from, const Vec3& to, float speed);
+    static Vec3 lobVelocity(const Vec3& from, const Vec3& to, f32 speed);
 
 private:
     std::vector<EnemyMissile> m_missiles;

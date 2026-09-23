@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <bit>
 #include <cstddef>
-#include <cstdint>
 #include <numbers>
 #include <string_view>
 #include <vector>
@@ -10,6 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -25,26 +25,26 @@ using test::ByteWriter;
 
 /** A zeroed record that fields are written into at their offsets. */
 struct Record {
-    std::vector<std::uint8_t> bytes;
+    std::vector<u8> bytes;
 
-    explicit Record(std::size_t size) : bytes(size, 0) {}
+    explicit Record(usize size) : bytes(size, 0) {}
 
-    void u16At(std::size_t at, std::uint16_t value) {
-        bytes[at] = static_cast<std::uint8_t>(value & 0xFFU);
-        bytes[at + 1] = static_cast<std::uint8_t>(value >> 8U);
+    void u16At(usize at, u16 value) {
+        bytes[at] = static_cast<u8>(value & 0xFFU);
+        bytes[at + 1] = static_cast<u8>(value >> 8U);
     }
-    void u32At(std::size_t at, std::uint32_t value) {
-        u16At(at, static_cast<std::uint16_t>(value & 0xFFFFU));
-        u16At(at + 2, static_cast<std::uint16_t>(value >> 16U));
+    void u32At(usize at, u32 value) {
+        u16At(at, static_cast<u16>(value & 0xFFFFU));
+        u16At(at + 2, static_cast<u16>(value >> 16U));
     }
-    void f32At(std::size_t at, float value) { u32At(at, std::bit_cast<std::uint32_t>(value)); }
-    void textAt(std::size_t at, std::string_view text) {
+    void f32At(usize at, f32 value) { u32At(at, std::bit_cast<u32>(value)); }
+    void textAt(usize at, std::string_view text) {
         std::ranges::copy(text, bytes.begin() + static_cast<std::ptrdiff_t>(at));
     }
 };
 
 /** A realm of one level with its camera, audio and one named sound. */
-std::vector<std::uint8_t> sampleWad() {
+std::vector<u8> sampleWad() {
     Record world(20);
     world.u32At(0, 13);
     world.textAt(4, "levelL");
@@ -91,8 +91,8 @@ std::vector<std::uint8_t> sampleWad() {
     camera.f32At(0x30, 32.0f);
     camera.u16At(0x34, 25);
     camera.f32At(0x58, 0.01f);
-    camera.f32At(0x5C, -std::numbers::pi_v<float>);
-    camera.f32At(0x60, std::numbers::pi_v<float>);
+    camera.f32At(0x5C, -std::numbers::pi_v<f32>);
+    camera.f32At(0x60, std::numbers::pi_v<f32>);
 
     Record audio(WorldDataFile::kAudioSize);
     audio.textAt(0, "WIZTOWER");
@@ -108,13 +108,13 @@ std::vector<std::uint8_t> sampleWad() {
     sound.u16At(0x14, 5);
     sound.u16At(0x16, 2);
 
-    constexpr std::uint32_t kDataAt = 16;
-    const std::uint32_t worldAt = kDataAt;
-    const std::uint32_t levelAt = worldAt + 20;
-    const std::uint32_t cameraAt = levelAt + WorldDataFile::kLevelSize;
-    const std::uint32_t audioAt = cameraAt + WorldDataFile::kCameraSize;
-    const std::uint32_t soundAt = audioAt + WorldDataFile::kAudioSize;
-    const std::uint32_t directoryAt = soundAt + WorldDataFile::kSoundSize;
+    constexpr u32 kDataAt = 16;
+    const u32 worldAt = kDataAt;
+    const u32 levelAt = worldAt + 20;
+    const u32 cameraAt = levelAt + WorldDataFile::kLevelSize;
+    const u32 audioAt = cameraAt + WorldDataFile::kCameraSize;
+    const u32 soundAt = audioAt + WorldDataFile::kAudioSize;
+    const u32 directoryAt = soundAt + WorldDataFile::kSoundSize;
 
     ByteWriter w;
     w.putU32(directoryAt).putU32(5).putZeros(8);
@@ -123,8 +123,7 @@ std::vector<std::uint8_t> sampleWad() {
     w.putBytes(camera.bytes);
     w.putBytes(audio.bytes);
     w.putBytes(sound.bytes);
-    const auto entry = [&](std::string_view reversedTag, std::uint32_t offset,
-                           std::uint32_t count) {
+    const auto entry = [&](std::string_view reversedTag, u32 offset, u32 count) {
         w.putText(reversedTag).putU32(offset).putU32(count).putU32(count);
     };
     entry("DLRW", worldAt, 1);
@@ -137,7 +136,7 @@ std::vector<std::uint8_t> sampleWad() {
 
 TEST_CASE("a wad directory lists its sections with their tags the right way round",
           "[formats][wad]") {
-    const std::vector<std::uint8_t> bytes = sampleWad();
+    const std::vector<u8> bytes = sampleWad();
     const std::vector<WadSection> sections = readWadDirectory(bytes, "sample");
     REQUIRE(sections.size() == 5);
     REQUIRE(sections[0].tag == "WRLD");
@@ -147,8 +146,8 @@ TEST_CASE("a wad directory lists its sections with their tags the right way roun
     REQUIRE(findWadSection(sections, "AUDS") == &sections[3]);
     REQUIRE(findWadSection(sections, "NOPE") == nullptr);
     REQUIRE(readWadText(bytes, sections[0].offset + 4, 16, "sample") == "levelL");
-    REQUIRE_THROWS_AS(readWadDirectory(std::vector<std::uint8_t>(8, 0), "sample"), FormatError);
-    std::vector<std::uint8_t> bad = bytes;
+    REQUIRE_THROWS_AS(readWadDirectory(std::vector<u8>(8, 0), "sample"), FormatError);
+    std::vector<u8> bad = bytes;
     bad[0] = 0xFF;
     bad[1] = 0xFF;
     REQUIRE_THROWS_AS(readWadDirectory(bad, "sample"), FormatError);
@@ -198,7 +197,7 @@ TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds"
     REQUIRE(camera.radiusMax == 32.0f);
     REQUIRE(camera.enemyMax == 25);
     REQUIRE(camera.smooth == Approx(0.01f));
-    REQUIRE(camera.maxYaw == Approx(std::numbers::pi_v<float>));
+    REQUIRE(camera.maxYaw == Approx(std::numbers::pi_v<f32>));
 
     REQUIRE(data.audio.size() == 1);
     REQUIRE(data.audio[0].bank == "WIZTOWER");
@@ -214,11 +213,11 @@ TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds"
     REQUIRE(data.sounds[0].priority == 2);
 
     // A wad without the world header, or with records past its end, is rejected.
-    std::vector<std::uint8_t> bytes = sampleWad();
-    bytes[bytes.size() - std::size_t{5} * 16] = 'X';
+    std::vector<u8> bytes = sampleWad();
+    bytes[bytes.size() - usize{5} * 16] = 'X';
     REQUIRE_THROWS_AS(WorldDataFile::parse(bytes), FormatError);
     bytes = sampleWad();
-    bytes[bytes.size() - std::size_t{4} * 16 + 8] = 200; // two hundred levels
+    bytes[bytes.size() - usize{4} * 16 + 8] = 200; // two hundred levels
     REQUIRE_THROWS_AS(WorldDataFile::parse(bytes), FormatError);
 }
 
