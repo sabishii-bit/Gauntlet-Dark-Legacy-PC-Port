@@ -26,14 +26,12 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
-#include "game/menu/MenuInput.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
 #include "game/players/LevelWatch.h"
 #include "game/players/Party.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerAnimator.h"
-#include "game/players/PlayerControls.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/TurboMeter.h"
 #include "game/screens/BossMeter.h"
@@ -43,6 +41,7 @@
 #include "game/screens/LegendPresentation.h"
 #include "game/screens/LevelArrivalPresentation.h"
 #include "game/screens/LevelMessages.h"
+#include "game/screens/PartyMotion.h"
 #include "game/screens/PickupHud.h"
 #include "game/screens/PowerupSelector.h"
 #include "game/screens/StatusBox.h"
@@ -84,22 +83,6 @@ struct PlayOptions {
                                     ///< it arrives at (none: the level's own entrance)
     bool arriving = false;          ///< the party comes through a portal: the transition picture is
                                     ///< up as the level opens, and clears
-};
-
-/** One player's input for a frame of play. */
-struct PlayInput {
-    MoveInput move;
-    MenuInput menu;
-    bool attack = false; ///< the attack button is held
-    bool usePotion = false;
-    bool throwPotion = false;
-    bool shieldPotion = false;  ///< the shield potion button is held
-    bool strafe = false;        ///< the strafe button is held
-    bool strongAttack = false;  ///< the slow attack button is held
-    bool turbo = false;         ///< the turbo button is held
-    bool chargePressed = false; ///< the charge button went down this frame
-    bool attackPressed = false; ///< the attack button went down this frame
-    SelectorInput selector;     ///< this frame's presses for the powerup selector
 };
 
 enum class PlayOutcome : u8 {
@@ -279,36 +262,6 @@ public:
     const SumnerFigure& sumner() const { return m_sumner; }
 
 private:
-    enum class PlayerLife : u8 { Standing, Dying, InTower };
-
-    /** A turbo move under way: the strikes it has yet to make and what it has yet to pay. */
-    struct MoveProgress {
-        std::vector<s32> pending;
-        std::vector<s32> all; ///< every strike of it, which may keep the level dark
-        f32 owed = 0.0f;
-        bool named = false;           ///< its name has been announced
-        bool weaponHidden = false;    ///< one of its strikes empties the hand for now
-        std::vector<s32> volleysShot; ///< per strike of `all`, how many shots it has let fly
-    };
-    /** Everything that belongs to one participant for this level. The player id may
-     * differ from this record's position in the party; figures may be unavailable. */
-    struct PlayerRuntime {
-        PlayerActor actor;
-        std::unique_ptr<PlayerFigure> figure; ///< null when character assets are unavailable
-        std::optional<usize> slot;            ///< persistent save slot, not the input player id
-        CharacterSave entrySave;              ///< restored when a fallen character leaves the level
-        PlayerLife life = PlayerLife::Standing;
-        f32 painOwed = 0.0f;                    ///< accumulated damage not yet answered by a cry
-        s32 hitSoundGap = 0;                    ///< ticks before another impact sound
-        PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
-        TurboMeter turbo;
-        std::vector<s32> helpHeard; ///< since the character was loaded, distinct from saved help
-        MoveProgress move;
-        std::vector<usize> rammed; ///< barrels already hit by the current charge
-        f32 blockLeft = 0.0f;      ///< seconds before another block effect
-        f32 cloudGap = 0.0f;       ///< seconds before gas can harm this participant again
-    };
-
     void spawnParty(std::span<const PartyMember> party, const PlayOptions& options);
     void throwWeapon(const PlayerActor& actor);
     void loadPotionModels(RenderDevice& device);
@@ -368,9 +321,7 @@ private:
     void cry(usize index, std::string_view which);
     void cryPain(usize index);
     void sayWithName(usize index, std::string_view line);
-    PlayerDeed turboDeed(usize index, const PlayInput& in) const;
     void beginMove(usize index);
-    MoveInput chargeInput(usize index, const MoveInput& stick, f32 cameraYaw) const;
     void ramBarrels(usize index);
     void runMove(usize index);
     void fireStrike(usize index, s32 strike);
@@ -379,7 +330,6 @@ private:
     void showBlock(usize index, f32 taken, f32 left);
     void shieldPotion(usize index);
     void updateShields(f32 seconds);
-    static StrafeWay strafeWayOf(f32 heading, f32 facing);
     void updateStrikes(f32 seconds);
     ItemArchive* moveEffectsOf(usize index);
     f32 ownDamageOf(usize index) const;

@@ -83,12 +83,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   global Escape quit stands down while a lane is typing. It ends when every
   joined player is locked in and nothing is animating, or when the last
   player backs out.
-* `screens/PlayScene::PlayerRuntime` owns each participant's actor, optional
+* `screens/PlayerRuntime` owns each participant's actor, optional
   figure, entry save/slot, life state, turbo move, reactions and cooldowns.
   Keep per-player state in that record, not in parallel index-aligned vectors.
   Party indices, player input ids and save slots are distinct identifiers.
   Camera subjects are frame-local snapshots taken after player movement and
   before fixture collision; changing that phase changes camera behaviour.
+  `screens/PartyMotion` handles input priority, locomotion and animation.
+  It emits synchronous action cues without retaining the scene; turbo updates
+  precede release cues and camera snapshots. Callbacks may not resize the party.
 * `world/PlayerFigure` owns costume selection, mesh/animation/voice archives,
   node-name pose mapping and held/thrown weapon visuals. It has no scene or
   level dependency; the scene supplies actions, placement, lighting and alpha.
