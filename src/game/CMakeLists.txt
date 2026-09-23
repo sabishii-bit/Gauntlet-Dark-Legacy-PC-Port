@@ -127,6 +127,7 @@ add_library(game STATIC
     screens/BossMeter.cpp
     screens/BossVictory.h
     screens/BossVictory.cpp
+    screens/BossVictoryPresentation.cpp
     screens/PlayerSelectScene.h
     screens/PlayerSelectScene.cpp
     screens/LegendPresentation.h

@@ -128,6 +128,7 @@ add_executable(tests
     game/screens/PickupHudTests.cpp
     game/screens/BossMeterTests.cpp
     game/screens/BossVictoryTests.cpp
+    game/screens/BossVictoryPresentationTests.cpp
     game/screens/LegendPresentationTests.cpp
     game/screens/PlaySceneTests.cpp
     game/menu/NameEntryTests.cpp

@@ -104,6 +104,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   their clips, including queued narration. Other SoundPlayer clients are untouched.
   Close it after scene users finish and before destroying the borrowed SoundPlayer;
   do not move it while emitters borrow banks.
+* `screens/BossVictoryPresentation` composes the `BossVictory` timeline with
+  the wizard's borrowed model/animation, placement and typed captions. It
+  consumes standing-party snapshots and messages, returning voice cues and a
+  one-shot sparkle request; it never awards shards, plays audio or changes levels.
+  PlayScene applies those gameplay effects and chooses the camera subject.
+  Clear the presentation before releasing the level's item archive.
 * The tower (`screens/PlayScene`) takes the locked-in lanes as `PartyMember`s
   into the shared `world/LevelWorld` that `GameContext::tower` carries (the
   select screen looks into the same one). `engine/world/WorldCollision` holds

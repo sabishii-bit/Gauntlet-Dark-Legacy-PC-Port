@@ -46,7 +46,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/players/TurboMeter.h"
 #include "game/screens/BossMeter.h"
-#include "game/screens/BossVictory.h"
+#include "game/screens/BossVictoryPresentation.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LegendPresentation.h"
@@ -227,7 +227,7 @@ public:
     }
     const BossMeter& bossMeter() const { return m_bossMeter; }
     /** The wizard's visit once the boss has fallen. */
-    const BossVictory& victory() const { return m_victory; }
+    const BossVictory& victory() const { return m_victory.state(); }
     /** The archive folder a character's figure was loaded from, for tests. */
     std::optional<std::filesystem::path> figureDirectory(usize index) const {
         return index < m_players.size() && m_players[index].figure != nullptr
@@ -365,10 +365,7 @@ private:
     void updateLegend(f32 seconds);
     std::optional<LegendPresentation::Bearer> legendBearer(s32 player, s32 kind) const;
     void bossFallen(const Vec3& where);
-    void loadWizard(RenderDevice& device);
     void updateVictory(s32 ticks, f32 seconds);
-    void drawWizard(RenderDevice& device, const Mat4& clip) const;
-    void drawCaption(f32 width, f32 height);
     void settleBlasts();
     void updateClouds(f32 seconds);
     bool postHelp(s32 id, usize index, s32 number = -1);
@@ -502,13 +499,7 @@ private:
         Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
     };
     std::vector<CritterEffect> m_critterEffects;
-    BossVictory m_victory;
-    const TreeInfo* m_wizardTree = nullptr;
-    TreeModel m_wizardModel;
-    AnimationPlayer m_wizardPlayer;
-    TreePose m_wizardPose;
-    Vec3 m_wizardPosition{0.0f, 0.0f, 0.0f};
-    f32 m_wizardYaw = 0.0f;
+    BossVictoryPresentation m_victory;
     EnemyMissiles m_enemyMissiles;
     LevelWatch m_levels;
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid
@@ -519,7 +510,6 @@ private:
     Traps m_traps;
     TransitionScreen m_transition;
     bool m_leaving = false;
-    bool m_sparkled = false; ///< the teleport's sparkle has been put on the party
     LevelRef m_destination;
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
