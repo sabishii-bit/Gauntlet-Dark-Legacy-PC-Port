@@ -1,0 +1,223 @@
+#include "game/world/LevelSoundscape.h"
+
+#include <exception>
+#include <format>
+#include <memory>
+#include <utility>
+
+#include "engine/audio/AdsStream.h"
+#include "engine/core/Log.h"
+
+namespace gdl::game {
+namespace {
+constexpr std::array<std::string_view, 2> kStepSounds{"S_STEPROCK1", "S_STEPROCK2"};
+constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
+/** What a target sounds while it opens before the party and once it has, by the sound slot its
+ * trigger names: the force fields and magic crossings, the lifts, the east gates, the west
+ * gates. The tower's ambience bank keeps them under the audio directory's elevator slot
+ * names; its own sample names call them ffield, lwrtwr, eastgat and westgat. */
+struct OpeningSounds {
+    std::string_view moving;
+    std::string_view done;
+};
+constexpr std::array<OpeningSounds, 4> kOpeningSounds{{{"S_ELVMETL", "S_ELVMETSTPL"},
+                                                       {"S_ELVROPEL", "S_ELVROPESTPL"},
+                                                       {"S_ELVCHAINL", "S_ELVCHAINSTPL"},
+                                                       {"S_ELVSTONEL", "S_ELVSTONESTPL"}}};
+
+/** The sounds a trigger's slot names, or null for a slot without any. */
+const OpeningSounds* openingSoundsOf(s32 slot) {
+    return slot >= 0 && static_cast<usize>(slot) < kOpeningSounds.size()
+               ? &kOpeningSounds[static_cast<usize>(slot)]
+               : nullptr;
+}
+
+} // namespace
+
+void LevelSoundscape::open(const std::filesystem::path& root, SoundPlayer* output,
+                           const LevelAudioInfo* info) {
+    close();
+    m_output = output;
+    if (info != nullptr) {
+        m_level.load(root / "audio" / info->bank);
+        m_stream = info->stream;
+    }
+    m_ambient.load(root / "audio/TOWAMB");
+    m_narrator.load(root / "audio/VOICE1");
+    m_narratorSecond.load(root / "audio/VOICE2");
+    if (m_common.load(root / "audio/COMMON")) {
+        for (usize foot = 0; foot < kStepSounds.size(); ++foot) {
+            m_steps[foot] = m_common.find(kStepSounds[foot]);
+        }
+        m_pickup = m_common.find(kPickupSound);
+    }
+}
+
+void LevelSoundscape::bindAmbience(const WorldLayout& layout) {
+    if (m_output != nullptr) {
+        m_ambience.stop(*m_output);
+    }
+    const std::array<SoundSet*, 2> banks{&m_ambient, &m_level};
+    m_ambience.bind(layout, banks);
+}
+
+void LevelSoundscape::updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear,
+                                     f32 volume) {
+    if (m_output != nullptr) {
+        m_ambience.update(*m_output, listeners, ear, volume);
+    }
+}
+
+void LevelSoundscape::startMusic(const AssetLocator* assets, f32 volume) {
+    if (m_output == nullptr || assets == nullptr || m_stream.empty()) {
+        return;
+    }
+    const auto file = assets->find(std::format("STREAMS/{}.ads", m_stream));
+    if (!file.has_value()) {
+        log::warn("Tower: music stream {} is not among the game's files", m_stream);
+        return;
+    }
+    auto stream = std::make_shared<AdsStream>();
+    if (!stream->open(*file)) {
+        return;
+    }
+    stop(m_music);
+    m_music = m_output->playStream(std::move(stream), true, volume, SoundCategory::Music);
+}
+
+void LevelSoundscape::stop(SoundHandle handle) {
+    if (m_output != nullptr && handle != kNoSound) {
+        m_output->stop(handle);
+    }
+}
+
+void LevelSoundscape::stopVoice() {
+    stop(m_voice);
+    m_voice = kNoSound;
+}
+
+void LevelSoundscape::stopCues() {
+    stop(m_music);
+    m_music = kNoSound;
+    stopVoice();
+    for (const Opening& sound : m_openings) {
+        stop(sound.handle);
+    }
+    m_openings.clear();
+}
+
+void LevelSoundscape::close() {
+    stopCues();
+    for (const SoundHandle handle : m_voices) {
+        stop(handle);
+    }
+    m_voices.clear();
+    if (m_output != nullptr) {
+        m_ambience.stop(*m_output);
+    }
+    m_ambience.clear();
+    m_common = SoundSet{};
+    m_level = SoundSet{};
+    m_ambient = SoundSet{};
+    m_narrator = SoundSet{};
+    m_narratorSecond = SoundSet{};
+    m_steps.fill(std::nullopt);
+    m_pickup.reset();
+    m_stream.clear();
+    m_output = nullptr;
+}
+
+SoundHandle LevelSoundscape::track(SoundHandle handle) {
+    if (m_output != nullptr && handle != kNoSound) {
+        std::erase_if(m_voices, [this](SoundHandle voice) { return !m_output->isPlaying(voice); });
+        m_voices.push_back(handle);
+    }
+    return handle;
+}
+
+SoundHandle LevelSoundscape::playNamed(std::string_view name) {
+    if (m_output == nullptr || name.empty()) {
+        return kNoSound;
+    }
+    for (SoundSet* bank : {&m_level, &m_common, &m_ambient}) {
+        if (const auto found = bank->find(name); found.has_value()) {
+            try {
+                return track(m_output->play(bank->sequence(*found), 1.0f, SoundCategory::Effects));
+            } catch (const std::exception& e) {
+                log::warn("Tower: sound {}: {}", name, e.what());
+                return kNoSound;
+            }
+        }
+    }
+    return kNoSound;
+}
+
+SoundHandle LevelSoundscape::playFrom(SoundSet& bank, std::string_view name) {
+    if (m_output != nullptr) {
+        if (const auto found = bank.find(name); found.has_value()) {
+            return track(m_output->play(bank.sequence(*found), 1.0f, SoundCategory::Effects));
+        }
+    }
+    return kNoSound;
+}
+
+SoundHandle LevelSoundscape::narrate(std::string_view name, Narrator which, SoundHandle after) {
+    if (m_output == nullptr) {
+        return kNoSound;
+    }
+    for (SoundSet* bank : {&m_narrator, &m_narratorSecond}) {
+        if (const auto found = bank->find(name); found.has_value()) {
+            return track(
+                m_output->playAfter(after, bank->sequence(*found), 1.0f, SoundCategory::Effects));
+        }
+        if (which == Narrator::Primary) {
+            break;
+        }
+    }
+    return kNoSound;
+}
+
+void LevelSoundscape::playCommon(std::optional<u32> sound) {
+    if (m_output != nullptr && sound.has_value()) {
+        track(m_output->play(m_common.sequence(*sound), 1.0f, SoundCategory::Effects));
+    }
+}
+
+void LevelSoundscape::playPickup() {
+    playCommon(m_pickup);
+}
+
+void LevelSoundscape::playFootstep(bool second) {
+    playCommon(m_steps[second ? 1 : 0]);
+}
+
+void LevelSoundscape::speakOverScroll(std::string_view name) {
+    stopVoice();
+    m_voice = playNamed(name);
+}
+
+void LevelSoundscape::opening(const TriggerOpening& event) {
+    const OpeningSounds* sounds = openingSoundsOf(event.sound);
+    if (event.atOnce || sounds == nullptr) {
+        return;
+    }
+    if (const SoundHandle handle = playNamed(sounds->moving); handle != kNoSound) {
+        m_openings.push_back(Opening{event.target, handle});
+    }
+}
+
+void LevelSoundscape::settled(const TriggerOpening& event) {
+    for (usize i = 0; i < m_openings.size();) {
+        if (m_openings[i].target == event.target) {
+            stop(m_openings[i].handle);
+            m_openings.erase(m_openings.begin() + static_cast<std::ptrdiff_t>(i));
+        } else {
+            ++i;
+        }
+    }
+    if (const OpeningSounds* sounds = openingSoundsOf(event.sound); sounds != nullptr) {
+        playNamed(sounds->done);
+    }
+}
+
+} // namespace gdl::game
