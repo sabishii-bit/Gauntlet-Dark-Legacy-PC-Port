@@ -183,10 +183,10 @@ std::optional<int> Critters::spawn(int kind, const Vec3& position, float yaw,
         critter.initialYaw = yaw;
         critter.initialRoot = critter.position + Vec3{0.0f, stock->data.floorOffset(), 0.0f};
         // The table's explicit home is in model-root space; public positions are floors.
-        critter.homePosition =
-            stock->data.movement().home.has_value()
-                ? *stock->data.movement().home - Vec3{0.0f, stock->data.floorOffset(), 0.0f}
-                : critter.position;
+        critter.homePosition = critter.position;
+        if (const auto& home = stock->data.movement().home; home.has_value()) {
+            critter.homePosition = *home - Vec3{0.0f, stock->data.floorOffset(), 0.0f};
+        }
         critter.cooldowns.assign(stock->data.moves().size(), 0.0f);
         // It comes in by its entrance, or its stance when it has none.
         const auto start = stock->data.moveOfType(CritterMove::kStart);
