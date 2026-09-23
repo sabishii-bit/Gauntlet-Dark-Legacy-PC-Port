@@ -30,12 +30,7 @@ constexpr f32 kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares of 
 constexpr std::string_view kNeedCrystals = "NEEDCRYSTALS";
 constexpr std::string_view kNeedIcons = "NEEDGARGITEMS";
 constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
-constexpr s32 kIconTierBase = 101;      ///< a gargoyle gate's trigger id less this is its tier
-constexpr s32 kTitleY = 48;              ///< where the level's title starts, on the canvas
-constexpr s32 kTitleLift = 16;           ///< how far up it slides, per unit of slide
-constexpr f32 kTitleSlideStart = 0.025f; ///< the original's slide, growing by this a tick
-constexpr f32 kTitleSlideRate = 0.025f;
-constexpr f32 kTitleSlideEnd = 2.0f;     ///< where it stops, and sits once the camera rides
+constexpr s32 kIconTierBase = 101; ///< a gargoyle gate's trigger id less this is its tier
 
 constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
@@ -65,21 +60,21 @@ constexpr std::array<PotionLook, 5> kPotions{{{"POT_RED_TW", "MP_FIRE", "S_POTIO
                                               {"POT_BLU_TW", "MP_ELEC", "S_POTION1"},
                                               {"POT_YEL_TW", "MP_LIGHT", "S_POTION3"},
                                               {"POT_GRE_TW", "MP_ACID", "S_POTION4"}}};
-constexpr f32 kPotionToss = 5.0f;       ///< how hard a potion is thrown
+constexpr f32 kPotionToss = 5.0f;        ///< how hard a potion is thrown
 constexpr f32 kBurstPerPower = 0.03125f; ///< a burst's size for each point of magic power
 constexpr f32 kThrownShare = 0.75f;      ///< of that power a thrown potion keeps
-constexpr f32 kPotionLoft = 0.707f;     ///< as much up as forwards
-constexpr f32 kPotionHandHeight = 4.0f; ///< over the feet, where it leaves
-constexpr f32 kPotionHandReach = 2.0f;  ///< and ahead of them
+constexpr f32 kPotionLoft = 0.707f;      ///< as much up as forwards
+constexpr f32 kPotionHandHeight = 4.0f;  ///< over the feet, where it leaves
+constexpr f32 kPotionHandReach = 2.0f;   ///< and ahead of them
 constexpr s32 kOgre = 12;
 constexpr f32 kOgreScale = 1.6f;
 constexpr f32 kMasterScale = 1.2f; ///< at level 99
 constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
 constexpr std::string_view kChestSound = "S_CHEST";
 constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
-constexpr std::string_view kRuneVoicePrefix = "S_RUNE"; ///< then S_RUNE2 to S_RUNE12
+constexpr std::string_view kRuneVoicePrefix = "S_RUNE";    ///< then S_RUNE2 to S_RUNE12
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
-constexpr std::string_view kBossKeyTree = "BOSSKEY";    ///< the key that rises where the boss fell
+constexpr std::string_view kBossKeyTree = "BOSSKEY"; ///< the key that rises where the boss fell
 constexpr std::string_view kBossKeyLaterTree = "BOSSKEY2";
 constexpr f32 kBossKeySeconds = 30.0f;
 constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY"; ///< then the level's letter
@@ -90,24 +85,24 @@ constexpr std::array<std::string_view, 5> kShieldTrees{"MS_FIRE", "MS_FIRE", "MS
                                                        "MS_ACID"};
 constexpr std::array<std::string_view, 5> kShieldSounds{"S_SHIELD2", "S_SHIELD2", "S_SHIELD1",
                                                         "S_SHIELD3", "S_SHIELD4"};
-constexpr f32 kShieldSeconds = 3.0f;      ///< how long a potion's ring lasts
-constexpr f32 kShieldRadius = 25.0f;      ///< at full size; it is sized by the magic, as a burst is
-constexpr f32 kShieldPotency = 0.25f;     ///< of the character's magic power, its harm
-constexpr f32 kShieldHarmEvery = 0.5f;    ///< seconds between its harming what it touches
-constexpr f32 kLevelUpEffectSeconds = 3.0f;   ///< the fanfare's ring about the character
-constexpr f32 kKnockdownFrom = 1.0f;      ///< a blast must do more than this to floor anyone
-constexpr f32 kBehind = 1.5707964f;       ///< a blow from further round than this is from behind
-constexpr f32 kStrongThrowScale = 2.0f;  ///< a strong throw's weapon: twice the size and the harm
+constexpr f32 kShieldSeconds = 3.0f;   ///< how long a potion's ring lasts
+constexpr f32 kShieldRadius = 25.0f;   ///< at full size; it is sized by the magic, as a burst is
+constexpr f32 kShieldPotency = 0.25f;  ///< of the character's magic power, its harm
+constexpr f32 kShieldHarmEvery = 0.5f; ///< seconds between its harming what it touches
+constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
+constexpr f32 kKnockdownFrom = 1.0f;        ///< a blast must do more than this to floor anyone
+constexpr f32 kBehind = 1.5707964f;         ///< a blow from further round than this is from behind
+constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
 constexpr std::string_view kBlockEffect = "BLOCKFX";
-constexpr f32 kBlockWorth = 2.0f;        ///< what a guard must take off a hurt for it to show
-constexpr f32 kBlockPerDamage = 0.01f;   ///< seconds it shows for each point left
+constexpr f32 kBlockWorth = 2.0f;      ///< what a guard must take off a hurt for it to show
+constexpr f32 kBlockPerDamage = 0.01f; ///< seconds it shows for each point left
 constexpr f32 kBlockLeast = 0.333f;
 constexpr f32 kBlockMost = 1.0f;
-constexpr f32 kChargeStick = 0.25f;  ///< the least push of the stick that steers a charge
-constexpr f32 kRamDamage = 3.0f;     ///< what a charge does to what it runs into
-constexpr f32 kRamReach = 0.3f;      ///< how near counts as run into
-constexpr s32 kSpecialPowerup = 9;     ///< the pickup subtype of the specials
-constexpr u32 kTurboFlag = 0x80000;    ///< of them, the one that fills the turbo meter
+constexpr f32 kChargeStick = 0.25f; ///< the least push of the stick that steers a charge
+constexpr f32 kRamDamage = 3.0f;    ///< what a charge does to what it runs into
+constexpr f32 kRamReach = 0.3f;     ///< how near counts as run into
+constexpr s32 kSpecialPowerup = 9;  ///< the pickup subtype of the specials
+constexpr u32 kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
 constexpr std::string_view kScrollTextPrefix = "scroll";
 constexpr std::string_view kStringsFile = "text/english.json";
 constexpr std::string_view kDeathSound = "S_PLAYERDIES";
@@ -126,17 +121,17 @@ constexpr f32 kGasDamage = 10.0f;
 constexpr f32 kGasRadius = 6.5f;
 constexpr f32 kGasSeconds = 4.0f;
 constexpr f32 kGasGapSeconds = 0.5f;
-constexpr f32 kPainEvery = 30.0f;        ///< harm from blows between cries
-constexpr s32 kHeavyBlow = 60;           ///< a blow taking more than this is cried over at once
-constexpr u32 kPainCries = 4;            ///< S_<CLS>PAIN1 to 4
+constexpr f32 kPainEvery = 30.0f; ///< harm from blows between cries
+constexpr s32 kHeavyBlow = 60;    ///< a blow taking more than this is cried over at once
+constexpr u32 kPainCries = 4;     ///< S_<CLS>PAIN1 to 4
 constexpr std::string_view kHitSound = "S_PLYRDMG"; ///< a blow landing, now and then
 constexpr s32 kHitSoundGapTicks = 30;
-constexpr s32 kHealthLowMark = 150;      ///< down to here: "needs food, badly"
-constexpr s32 kHealthLastMark = 50;      ///< and here: the life force, or about to die
+constexpr s32 kHealthLowMark = 150; ///< down to here: "needs food, badly"
+constexpr s32 kHealthLastMark = 50; ///< and here: the life force, or about to die
 constexpr std::string_view kBadlyLine = "S_BADLY";
 constexpr std::string_view kLifeForceLine = "S_LIFEFORCE";
 constexpr std::string_view kAboutToDieLine = "S_ABOUT";
-constexpr f32 kFallenSeconds = 3.0f;     ///< from the last death to the tower
+constexpr f32 kFallenSeconds = 3.0f; ///< from the last death to the tower
 constexpr s32 kFireTrap = 1;
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 constexpr std::string_view kChestBlast = "EXPCHEST"; ///< a trapped chest going up
@@ -156,10 +151,11 @@ struct HintTopicEntry {
     s32 code;
     HintTopic topic;
 };
-constexpr std::array<HintTopicEntry, 4> kHintTopics{{{"hints.general", 39, HintTopic::General},
-                                                     {"hints.guardians", 40, HintTopic::Guardians},
-                                                     {"hints.legends", 41, HintTopic::Legends},
-                                                     {"hints.runestones", 42, HintTopic::Runestones}}};
+constexpr std::array<HintTopicEntry, 4> kHintTopics{
+    {{"hints.general", 39, HintTopic::General},
+     {"hints.guardians", 40, HintTopic::Guardians},
+     {"hints.legends", 41, HintTopic::Legends},
+     {"hints.runestones", 42, HintTopic::Runestones}}};
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 constexpr s32 kMinTicks = 1; ///< a frame advances the clock by at least one tick
 constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
@@ -167,7 +163,7 @@ constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
 } // namespace
 
 bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorld& world,
-                      std::span<const PartyMember> party, const PlayOptions& options) {
+                     std::span<const PartyMember> party, const PlayOptions& options) {
     close();
     m_context = context;
     m_device = &device;
@@ -187,8 +183,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_sumner.load(device, world.items(), world.layout());
     }
     if (context.levels != nullptr) {
-        m_portals.bind(device, world.layout(), world.items(), *context.levels,
-                       &world.collision());
+        m_portals.bind(device, world.layout(), world.items(), *context.levels, &world.collision());
     }
     m_chests.bind(device, world.layout(), world.items(), &world.collision());
     m_gates.bind(device, world.layout(), world.items(), &world.collision());
@@ -269,8 +264,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     // The start camera holds at the level's entrance and rides in to a party that stands
     // there; one back among a realm's portals (as when it has fallen, or come out of a level)
     // materialises with the follow camera already on it.
-    const bool atEntrance =
-        world.arrivalPoint(options.arrivalWorld) == world.startPoint(0);
+    const bool atEntrance = world.arrivalPoint(options.arrivalWorld) == world.startPoint(0);
     beginSpawn(device, !options.position.has_value() && atEntrance);
     loadPotionModels(device);
     m_legend = std::make_unique<LegendPresentation>(
@@ -306,7 +300,7 @@ void PlayScene::close() {
     m_missiles.clear(); // before the figures whose models they fly
     m_critterEffects.clear();
     m_legend.reset();
-    m_effects.clear();  // and before the archive whose trees they play
+    m_effects.clear(); // and before the archive whose trees they play
     m_generators.clear();
     m_enemyMissiles.clear(); // before the archives whose trees they fly
     m_critters.close();
@@ -341,12 +335,8 @@ void PlayScene::close() {
     m_help.clear();
     m_audio.close(); // before the figures whose class voices it can play
     m_players.clear();
-    m_spawns.clear();
-    m_spawnTexmods.clear();
+    m_arrival.clear();
     m_weapons.release(); // its textures must go before the device does
-    m_spawnTicks = 0;
-    m_startCamera.stop();
-    m_titleSlide = 0.0f;
     m_welcomePending = false;
     m_pickups.clear();
     m_boxes.release();
@@ -393,7 +383,7 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
 }
 
 std::filesystem::path PlayScene::costumeDirectory(const std::filesystem::path& unpackedRoot,
-                                                   const CharacterSave& save) {
+                                                  const CharacterSave& save) {
     return PlayerFigure::costumeDirectory(unpackedRoot, save);
 }
 
@@ -440,9 +430,9 @@ void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool
     launch.model = &figure.missile();
     // Thrown into a wall at arm's length, nothing flies.
     const f32 radius = launch.spec->radius;
-    const Vec3 clear = m_world->collision().resolveWalls(
-        launch.position, radius, launch.position.y - radius * 0.5f,
-        launch.position.y + radius * 0.5f);
+    const Vec3 clear = m_world->collision().resolveWalls(launch.position, radius,
+                                                         launch.position.y - radius * 0.5f,
+                                                         launch.position.y + radius * 0.5f);
     if (glm::distance(clear, launch.position) > 1e-4f) {
         return;
     }
@@ -583,8 +573,8 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
             position = box.pushOut(position, actor.radius());
         }
         actor.place(position);
-        visitors.push_back(ChestVisitor{position, actor.radius(),
-                                        actor.save().progress().inventory.keys});
+        visitors.push_back(
+            ChestVisitor{position, actor.radius(), actor.save().progress().inventory.keys});
         victims.push_back(TrapVictim{position, actor.radius()});
     }
     for (const ChestEvent& event : m_chests.update(seconds, visitors)) {
@@ -616,8 +606,7 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
                 // It lies in the open chest, for whoever touches the chest next.
                 const s32 count = m_chests.chest(event.chest).count;
                 if (m_world->placeItemRecord(*m_device, event.contents, event.position, count)) {
-                    m_chests.hold(event.chest,
-                                  static_cast<s32>(m_world->placedItems().size()) - 1);
+                    m_chests.hold(event.chest, static_cast<s32>(m_world->placedItems().size()) - 1);
                 }
             } else {
                 m_chests.remove(event.chest);
@@ -663,8 +652,7 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
  * difficulty's gain. */
 f32 PlayScene::trapDamageScale() const {
     const LevelInfo* level = m_world != nullptr ? m_world->level() : nullptr;
-    const f32 gain =
-        m_context.config != nullptr ? m_context.config->difficulty.gain() : 1.0f;
+    const f32 gain = m_context.config != nullptr ? m_context.config->difficulty.gain() : 1.0f;
     return level != nullptr ? level->tuning.trapDamageScale(gain) : gain;
 }
 
@@ -905,7 +893,7 @@ f32 PlayScene::ownDamageOf(usize index) const {
     const StatBlock block =
         displayStats(*stats, experienceLevel(save.experience()), save.progress());
     return PlayerMissiles::damageFor(MissileSpec::byMagic(save.character) ? block.magic()
-                                                                         : block.strength());
+                                                                          : block.strength());
 }
 
 /** One strike of a move: its effects show and sound where the character stands, the meter
@@ -927,8 +915,7 @@ void PlayScene::fireStrike(usize index, s32 strikeIndex) {
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
     u32 id = 0;
     if (strike.harms()) {
-        id = m_strikes.start(strike, actor.player(), actor.position(), facing,
-                             ownDamageOf(index));
+        id = m_strikes.start(strike, actor.player(), actor.position(), facing, ownDamageOf(index));
         m_strikeSources.push_back(StrikeSource{id, index, strikeIndex});
     }
     const Vec3 origin = MoveStrikes::originOf(strike, actor.position(), facing);
@@ -987,7 +974,8 @@ void PlayScene::updateStrikes(f32 seconds) {
                 m_classes.stats(m_players[source->actor].actor.save().character);
             if (stats != nullptr && source->row >= 0 &&
                 static_cast<usize>(source->row) < stats->moveStrikes.size()) {
-                flags = static_cast<u32>(stats->moveStrikes[static_cast<usize>(source->row)].damageType);
+                flags = static_cast<u32>(
+                    stats->moveStrikes[static_cast<usize>(source->row)].damageType);
             }
         }
         for (const s32 enemy : m_enemies.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
@@ -1009,10 +997,11 @@ void PlayScene::updateStrikes(f32 seconds) {
             }
             m_bosses.hurt(struck);
         }
-        for (const s32 critter : m_critters.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
+        for (const s32 critter :
+             m_critters.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
             const Vec3 direction = m_critters.positionOf(critter) - hit.centre;
-            strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner,
-                          std::nullopt, true);
+            strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z},
+                          hit.owner, std::nullopt, true);
         }
         for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
             const auto& cover = m_safeRocks.rock(rock).obstacle;
@@ -1161,8 +1150,8 @@ void PlayScene::shieldPotion(usize index) {
         EffectTrees::Setting setting;
         setting.scale = size;
         setting.seconds = kShieldSeconds;
-        shield.effect = m_effects.startSet(*m_device, m_weapons, kShieldTrees[look],
-                                           actor.position(), setting);
+        shield.effect =
+            m_effects.startSet(*m_device, m_weapons, kShieldTrees[look], actor.position(), setting);
     }
     m_audio.playNamed(kShieldSounds[look]);
     m_shields.push_back(shield);
@@ -1330,8 +1319,7 @@ void PlayScene::strikeBarrel(usize barrel, f32 power, s32 byPlayer) {
     case BreakableStrike::Kind::Poison:
         playRealmSound(kBarrelGasSound);
         effect(kBarrelGas);
-        m_clouds.push_back(GasCloud{struck->position, kGasDamage * trapDamageScale(),
-                                    kGasSeconds});
+        m_clouds.push_back(GasCloud{struck->position, kGasDamage * trapDamageScale(), kGasSeconds});
         break;
     }
 }
@@ -1397,7 +1385,8 @@ void PlayScene::settleBlasts() {
         }
         for (const s32 critter : m_critters.within(felt.position, felt.radius)) {
             const Vec3 away = m_critters.positionOf(critter) - felt.position;
-            strikeCritter(critter, felt.damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
+            strikeCritter(critter, felt.damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z},
+                          -1);
         }
     }
 }
@@ -1464,18 +1453,21 @@ void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& directio
  * riding along with it when it follows, and its sound. */
 void PlayScene::showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss) {
     if (archive == nullptr || !archive->trees.find(cue.tree).has_value()) {
-        archive = m_weapons.loaded() && m_weapons.trees.find(cue.tree).has_value() ? &m_weapons : nullptr;
+        archive =
+            m_weapons.loaded() && m_weapons.trees.find(cue.tree).has_value() ? &m_weapons : nullptr;
     }
     if (!cue.tree.empty() && archive != nullptr && m_device != nullptr) {
         EffectTrees::Setting setting;
         setting.scale = cue.scale;
         setting.yaw = cue.yaw;
         setting.seconds = cue.life;
-        if (const u32 effect = m_effects.startSet(*m_device, *archive, cue.tree, cue.position, setting);
+        if (const u32 effect =
+                m_effects.startSet(*m_device, *archive, cue.tree, cue.position, setting);
             effect != 0 && cue.follows) {
             const Vec3* at = ofBoss ? m_bosses.position() : &m_critters.positionOf(cue.critter);
             m_critterEffects.push_back(
-                CritterEffect{effect, cue.critter, ofBoss, at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}});
+                CritterEffect{effect, cue.critter, ofBoss,
+                              at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}});
         }
     }
     if (!cue.sound.empty()) {
@@ -1487,13 +1479,15 @@ void PlayScene::showCritterCue(const CritterCue& cue, ItemArchive* archive, bool
 void PlayScene::followCritterEffects() {
     for (usize i = 0; i < m_critterEffects.size();) {
         const CritterEffect& riding = m_critterEffects[i];
-        const bool alive = riding.ofBoss ? m_bosses.present() : m_critters.alive(riding.critter) ||
-                                                                   m_critters.dying(riding.critter);
+        const bool alive =
+            riding.ofBoss ? m_bosses.present()
+                          : m_critters.alive(riding.critter) || m_critters.dying(riding.critter);
         if (!m_effects.playing(riding.effect) || !alive) {
             m_critterEffects.erase(m_critterEffects.begin() + static_cast<std::ptrdiff_t>(i));
             continue;
         }
-        const Vec3* at = riding.ofBoss ? m_bosses.position() : &m_critters.positionOf(riding.critter);
+        const Vec3* at =
+            riding.ofBoss ? m_bosses.position() : &m_critters.positionOf(riding.critter);
         if (at != nullptr) {
             m_effects.moveTo(riding.effect, *at + riding.offset);
         }
@@ -1646,7 +1640,7 @@ void PlayScene::spewBossCoins(const CritterSpew& spew) {
     }
     const auto players = static_cast<s32>(m_players.size());
     for (const SpewedCoin& coin : BossCoins::spray(m_world->ref().realmId, players, spew.velocity,
-                                                  spew.halfAngle, m_coinRandom)) {
+                                                   spew.halfAngle, m_coinRandom)) {
         m_world->throwItem(*m_device, coin.name, spew.origin, coin.velocity,
                            BossCoins::kNoGrabSeconds);
     }
@@ -1684,7 +1678,8 @@ void PlayScene::awardBossLosses() {
 void PlayScene::awardCritterLosses() {
     for (const CritterLoss& loss : m_critters.takeLosses()) {
         // A gargoyle slain leaves the key its form is named by where it fell.
-        if (loss.killed && loss.kind == kGargoyleCritter && !loss.form.empty() && m_device != nullptr) {
+        if (loss.killed && loss.kind == kGargoyleCritter && !loss.form.empty() &&
+            m_device != nullptr) {
             m_world->placeItem(*m_device, "GARG" + loss.form, loss.position);
         }
         for (const PlayerRuntime& runtime : m_players) {
@@ -1738,13 +1733,15 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
                   levelName.empty() ? 'G' : levelName.front());
     m_critterExperienceOwed.fill(0.0f);
     const auto players = static_cast<s32>(m_players.size());
-    const std::span<const LevelEnemy> roster =
-        level != nullptr ? std::span<const LevelEnemy>(level->enemies) : std::span<const LevelEnemy>{};
+    const std::span<const LevelEnemy> roster = level != nullptr
+                                                   ? std::span<const LevelEnemy>(level->enemies)
+                                                   : std::span<const LevelEnemy>{};
     m_generators.bind(device, world.layout(), m_enemies, &world.collision(), breeding, players,
                       roster);
     // The level's boss, at its boss mark.
     if (level != nullptr && !bossNameOf(level->bossType).empty()) {
-        if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss); mark != nullptr) {
+        if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss);
+            mark != nullptr) {
             m_bosses.spawn(level->bossType, mark->position, mark->rotation.y);
             if (const CritterMeter* meter = m_bosses.meter(); meter != nullptr) {
                 ItemArchive* archive = m_bosses.archive();
@@ -1961,7 +1958,8 @@ void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
     if (!event.has_value()) {
         return;
     }
-    if (ItemArchive* archive = m_enemies.archive(event->kind); archive != nullptr && m_device != nullptr) {
+    if (ItemArchive* archive = m_enemies.archive(event->kind);
+        archive != nullptr && m_device != nullptr) {
         const std::string_view tree = event->destroyed ? "GENDIE" : "GENHIT";
         if (archive->trees.find(tree).has_value()) {
             m_effects.start(*m_device, *archive, tree, event->position);
@@ -2091,8 +2089,8 @@ void PlayScene::sayWithName(usize index, std::string_view line) {
         return;
     }
     const CharacterSave& save = m_players[index].actor.save();
-    const std::string name =
-        std::format("S_{}{}2", colorCode(save.color), classCode(save.character % kStartingClassCount));
+    const std::string name = std::format("S_{}{}2", colorCode(save.color),
+                                         classCode(save.character % kStartingClassCount));
     const SoundHandle spoken = m_audio.playFrom(body->voice(), name);
     m_audio.narrate(line, LevelSoundscape::Narrator::Either, spoken);
 }
@@ -2194,8 +2192,8 @@ void PlayScene::throwPotion(PlayerActor& actor) {
     launch.direction = facing;
     launch.position =
         actor.position() + facing * kPotionHandReach + Vec3{0.0f, kPotionHandHeight, 0.0f};
-    launch.velocity = Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} *
-                      kPotionToss;
+    launch.velocity =
+        Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} * kPotionToss;
     launch.potion = kind;
     launch.potency = kThrownShare * magicPowerOf(actor);
     launch.spec = &MissileSpec::potion();
@@ -2243,8 +2241,7 @@ void PlayScene::drawSelectors() {
         }
         const PowerupSlot& slot =
             actor.save().progress().inventory.powerups[static_cast<usize>(chosen)];
-        const std::string_view label =
-            m_context.strings->get(powerupTextId(slot.kind, slot.flags));
+        const std::string_view label = m_context.strings->get(powerupTextId(slot.kind, slot.flags));
         const s32 x = actor.player() * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
         const s32 y = selector.labelY(StatusBoxPainter::kY);
         TextStyle style;
@@ -2272,10 +2269,9 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     }
     PlayerActor& actor = m_players[pickup.collector].actor;
     const ClassStats* stats = m_classes.stats(actor.save().character);
-    const ItemTaking taking =
-        takeItem(actor.save(), ItemOffer{pickup.subtype, pickup.amount, pickup.flags,
-                                         pickup.strength},
-                 stats != nullptr ? stats->powerupTime : 1.0f);
+    const ItemTaking taking = takeItem(
+        actor.save(), ItemOffer{pickup.subtype, pickup.amount, pickup.flags, pickup.strength},
+        stats != nullptr ? stats->powerupTime : 1.0f);
     if (!taking.took()) {
         if (taking.outcome == ItemTaking::Outcome::KeysFull) {
             postHelp(HelpMessages::kKeysFull, pickup.collector);
@@ -2402,8 +2398,7 @@ void PlayScene::loadIntroArt(RenderDevice& device) {
  * archive, the selection arrow from the powerups, and his hints' texts. */
 void PlayScene::loadHintArt(RenderDevice& device) {
     HintMenuArt art;
-    if (!m_staticTextures.loaded() ||
-        !m_hints.load(m_context.unpackedRoot / kHintTextFile)) {
+    if (!m_staticTextures.loaded() || !m_hints.load(m_context.unpackedRoot / kHintTextFile)) {
         log::warn("Tower: Sumner's hints are not unpacked; he has nothing to say");
         m_hintMenu.setArt(std::move(art));
         return;
@@ -2432,8 +2427,7 @@ void PlayScene::loadHintArt(RenderDevice& device) {
     ItemArchive& powerups = m_world->powerups();
     if (const auto tree = powerups.trees.find(kArrowTree);
         powerups.loaded() && tree.has_value() &&
-        m_hintArrow.bind(powerups.trees.tree(*tree), powerups.models, powerups.textures,
-                         device)) {
+        m_hintArrow.bind(powerups.trees.tree(*tree), powerups.models, powerups.textures, device)) {
         art.textures.icon = &m_hintArrow;
     }
     const auto scroll = m_staticTextures.find(kScrollTexture);
@@ -2547,8 +2541,7 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
         m_audio.playNamed(m_hintMenu.burning() ? kScrollBurnSound : kMenuExitSound);
         m_sumner.play(SumnerFigure::kGoAwayIndex);
         break;
-    case HintMenuEvent::Kind::None:
-        break;
+    case HintMenuEvent::Kind::None: break;
     }
     if (!m_hintMenu.active()) {
         m_hintPlayer = -1;
@@ -2631,8 +2624,8 @@ u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
 }
 
 const WorldCamera& PlayScene::viewCamera() const {
-    if (m_startCamera.active()) {
-        return m_startCamera.camera();
+    if (m_arrival.camera().active()) {
+        return m_arrival.camera().camera();
     }
     if (m_intro == Intro::Crystal) {
         return m_cutCamera;
@@ -2669,8 +2662,8 @@ bool PlayScene::anyButton(const Inputs& inputs) const {
     return std::ranges::any_of(m_players, [&inputs](const PlayerRuntime& runtime) {
         const PlayerActor& actor = runtime.actor;
         const auto player = static_cast<usize>(actor.player());
-        return player < inputs.size() && (inputs[player].menu.select ||
-                                          inputs[player].menu.back || inputs[player].menu.start);
+        return player < inputs.size() && (inputs[player].menu.select || inputs[player].menu.back ||
+                                          inputs[player].menu.start);
     });
 }
 
@@ -2682,8 +2675,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     // runs at, so a late frame moves everything further rather than smoother.
     const f32 tickRate =
         m_context.config != nullptr ? static_cast<f32>(m_context.config->timing.tickRate) : 60.0f;
-    const auto ticks = std::clamp(static_cast<s32>(std::lround(deltaSeconds * tickRate)),
-                                  kMinTicks, kMaxTicks);
+    const auto ticks =
+        std::clamp(static_cast<s32>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
     const f32 seconds = static_cast<f32>(ticks) / tickRate;
     // A scroll holds everything else still until it has burnt away; the welcome's leads on
     // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
@@ -2721,7 +2714,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     // around it and the start camera holds, then rides in; the title slides up until the
     // ride, when it sits.
     if (spawning()) {
-        updateSpawn(ticks, seconds);
+        m_arrival.animate(seconds);
         for (const PlayerRuntime& runtime : m_players) {
             const std::unique_ptr<PlayerFigure>& figure = runtime.figure;
             if (figure != nullptr) {
@@ -2731,13 +2724,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         m_world->update(seconds);
         updateAmbience();
         updateBeam(ticks);
-        m_spawnTicks = std::max(m_spawnTicks - ticks, 0);
-        m_startCamera.update(ticks, anyButton(inputs), m_camera.camera().position,
-                             m_camera.attention());
-        m_titleSlide += kTitleSlideRate * static_cast<f32>(ticks);
-        if (m_startCamera.phase() != StartCamera::Phase::Hold || m_titleSlide > kTitleSlideEnd) {
-            m_titleSlide = kTitleSlideEnd;
-        }
+        m_arrival.advance(ticks, anyButton(inputs), m_camera.camera().position,
+                          m_camera.attention());
         if (!spawning() && m_welcomePending) {
             m_welcomePending = false;
             beginIntro(*m_device);
@@ -2897,7 +2885,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_missiles.update(seconds, &m_world->collision(), targets);
     for (const MissileImpact& impact : m_missiles.takeImpacts()) {
         if (impact.potion != 0) {
-            burstPotion(impact.potion, impact.position, impact.potency); // weapons leave no mark yet
+            burstPotion(impact.potion, impact.position,
+                        impact.potency); // weapons leave no mark yet
         }
         if (impact.target >= kSafeRockTargetBase) {
             strikeSafeRock(static_cast<usize>(impact.target - kSafeRockTargetBase), impact.damage);
@@ -2924,8 +2913,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     direction.y = 0.0f;
                 }
             }
-            strikeCritter(impact.target - kCritterTargetBase, impact.damage, 0, direction, impact.owner,
-                          impact.position);
+            strikeCritter(impact.target - kCritterTargetBase, impact.damage, 0, direction,
+                          impact.owner, impact.position);
         } else if (impact.target >= kGeneratorTargetBase) {
             strikeGenerator(impact.target - kGeneratorTargetBase, impact.damage, impact.owner);
         } else if (impact.target >= kEnemyTargetBase) {
@@ -2938,7 +2927,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     direction.y = 0.0f;
                 }
             }
-            strikeEnemy(impact.target - kEnemyTargetBase, impact.damage, 0, direction, impact.owner);
+            strikeEnemy(impact.target - kEnemyTargetBase, impact.damage, 0, direction,
+                        impact.owner);
         } else if (impact.target >= 0) {
             strikeBarrel(static_cast<usize>(impact.target), impact.damage, impact.owner);
             settleBlasts();
@@ -3037,7 +3027,7 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
 }
 
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
-                        f32 frameHeight) {
+                       f32 frameHeight) {
     if (!m_open || m_context.config == nullptr) {
         return;
     }
@@ -3077,7 +3067,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_missiles.draw(device, clip, m_world->lighting());
     const CameraFrame effectCamera = CameraFrame::of(viewCamera());
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
-    drawSpawn(device, clip);
+    m_arrival.drawEffects(device, clip, m_world->lighting());
     const auto width = static_cast<f32>(config.display.virtualWidth);
     const auto height = static_cast<f32>(config.display.virtualHeight);
     m_canvas.begin(device, makeVirtualScreenTransform(frameProjection, width, height, frameWidth,
@@ -3094,8 +3084,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_bossMeter.draw(m_canvas, device);
         m_victory.drawCaption(m_canvas, m_text, m_strings, width, height);
     }
-    if (spawning()) {
-        drawLevelTitle(width);
+    if (const LevelInfo* level = m_world->level(); level != nullptr) {
+        m_arrival.drawTitle(m_canvas, m_text, level->title, width);
     }
     if (cut) {
         m_canvas.fill(Rect{0.0f, 0.0f, width, height * kCutBarTop}, Color::black());
@@ -3128,8 +3118,8 @@ void PlayScene::drawHelp(const Mat4& clip, f32 width, f32 height) {
                         (0.5f - point.y / point.w * 0.5f) * height};
         }
     }
-    const auto sheet = m_staticTextures.loaded() ? m_staticTextures.find(kScrollTexture)
-                                                 : std::nullopt;
+    const auto sheet =
+        m_staticTextures.loaded() ? m_staticTextures.find(kScrollTexture) : std::nullopt;
     const Texture* scroll = nullptr;
     if (sheet.has_value() && m_device != nullptr) {
         try {
@@ -3207,100 +3197,19 @@ StatusBoxView PlayScene::statusOf(s32 player) const {
  * camera at the entrance marker to hold and ride in; the party holds still for it. (The
  * realm's entering sound belongs to the loading screen, not to this.) */
 void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
-    m_spawns.clear();
-    m_spawnTexmods.clear();
-    m_spawnFrames = 0.0f;
-    m_spawnTicks = kSpawnTicks;
-    m_startCamera.stop();
-    m_titleSlide = kTitleSlideStart;
-    if (const auto marker = m_world->entranceCamera(); ride && marker.has_value()) {
-        Vec3 centre{0.0f, 0.0f, 0.0f};
-        for (const PlayerRuntime& runtime : m_players) {
-            const PlayerActor& actor = runtime.actor;
-            centre += actor.position();
-        }
-        if (!m_players.empty()) {
-            centre /= static_cast<f32>(m_players.size());
-        }
-        m_startCamera.start(*marker, centre);
-    } else if (ride) {
+    const auto marker = ride ? m_world->entranceCamera() : std::nullopt;
+    if (ride && !marker.has_value()) {
         log::warn("Tower: no start camera; the party appears under the follow camera");
     }
     if (!m_weapons.loaded()) {
         m_weapons.load(m_context.unpackedRoot / kWeaponsArchive);
     }
-    const auto tree = m_weapons.loaded() ? m_weapons.trees.find(kSpawnEffect) : std::nullopt;
-    if (!tree.has_value()) {
-        log::warn("Tower: no {} in {}; the party appears without it", kSpawnEffect,
-                  kWeaponsArchive);
-    } else {
-        const TreeInfo& effect = m_weapons.trees.tree(*tree);
-        for (const PlayerRuntime& runtime : m_players) {
-            const PlayerActor& actor = runtime.actor;
-            Spawn spawn;
-            spawn.position = actor.position();
-            spawn.tree = &effect;
-            if (!spawn.model.bind(effect, m_weapons.models, m_weapons.textures, device)) {
-                continue;
-            }
-            if (!effect.sequences.empty()) {
-                spawn.player.start(effect.sequences[0], 0);
-                spawn.pose.evaluate(effect, 0, 0.0f);
-                spawn.model.setFrame(0, 0);
-            } else {
-                spawn.pose.rest(effect);
-            }
-            m_spawns.push_back(std::move(spawn));
-        }
-        m_spawnTexmods.bind(m_weapons.trees.textureAnimations(), m_weapons.textures, device);
+    std::vector<Vec3> positions;
+    positions.reserve(m_players.size());
+    for (const PlayerRuntime& runtime : m_players) {
+        positions.push_back(runtime.actor.position());
     }
-}
-
-void PlayScene::updateSpawn(s32 /*ticks*/, f32 seconds) {
-    m_spawnFrames += seconds * AnimationPlayer::kDefaultRate;
-    const f32 whole = std::floor(m_spawnFrames);
-    m_spawnFrames -= whole;
-    if (whole > 0.0f) {
-        m_spawnTexmods.step(static_cast<u32>(whole));
-    }
-    for (Spawn& spawn : m_spawns) {
-        if (spawn.player.playing() && !spawn.player.finished()) {
-            spawn.player.advance(seconds, false);
-            spawn.pose.evaluate(*spawn.tree, spawn.player.sequence(), spawn.player.frame());
-            spawn.model.setFrame(spawn.player.sequence(),
-                                 static_cast<s32>(spawn.player.frame()));
-        }
-        for (usize i = 0; i < m_spawnTexmods.size(); ++i) {
-            const TextureMotion motion = m_spawnTexmods.motion(i);
-            if (motion.frame != nullptr) {
-                spawn.model.setTextureFrame(motion.slot, motion.frame);
-            } else {
-                spawn.model.setTextureOffset(motion.slot, motion.offset);
-            }
-        }
-    }
-}
-
-void PlayScene::drawSpawn(RenderDevice& device, const Mat4& clip) const {
-    if (m_spawnTicks <= 0) {
-        return;
-    }
-    for (const Spawn& spawn : m_spawns) {
-        spawn.model.draw(device, clip, glm::translate(Mat4{1.0f}, spawn.position),
-                         m_world->lighting(), spawn.pose.matrices());
-    }
-}
-
-/** The level's title across the top of the screen while the party materialises, sliding up
- * as the start camera holds, the way the original places it. */
-void PlayScene::drawLevelTitle(f32 width) {
-    const LevelInfo* level = m_world->level();
-    if (level == nullptr || level->title.empty() || !m_text.ready()) {
-        return;
-    }
-    const TextStyle style;
-    const s32 y = kTitleY - static_cast<s32>(static_cast<f32>(kTitleLift) * m_titleSlide);
-    m_text.draw(m_canvas, -static_cast<s32>(width / 2.0f), y, level->title, style);
+    m_arrival.begin(device, m_weapons, positions, marker);
 }
 
 /** Opens one page of a scroll message over the tower: the party reads it and presses on. */

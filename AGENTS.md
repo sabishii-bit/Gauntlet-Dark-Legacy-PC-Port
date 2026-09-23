@@ -110,6 +110,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   one-shot sparkle request; it never awards shards, plays audio or changes levels.
   PlayScene applies those gameplay effects and chooses the camera subject.
   Clear the presentation before releasing the level's item archive.
+* `screens/LevelArrivalPresentation` owns the materialisation effects, their
+  texture clock, the start camera and the sliding title. It takes party-position
+  snapshots and borrows the weapons archive; clear it before releasing that
+  archive. Animate before the world update, then advance its camera after the
+  ambience/listener update. PlayScene keeps player entrance animation, world
+  updates and the decision to start the welcome once arrival finishes. Missing
+  art does not bypass the hold; the spawn effects expire independently of the
+  camera ride.
 * The tower (`screens/PlayScene`) takes the locked-in lanes as `PartyMember`s
   into the shared `world/LevelWorld` that `GameContext::tower` carries (the
   select screen looks into the same one). `engine/world/WorldCollision` holds

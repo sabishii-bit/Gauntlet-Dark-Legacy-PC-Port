@@ -128,6 +128,7 @@ add_library(game STATIC
     screens/BossVictory.h
     screens/BossVictory.cpp
     screens/BossVictoryPresentation.cpp
+    screens/LevelArrivalPresentation.cpp
     screens/PlayerSelectScene.h
     screens/PlayerSelectScene.cpp
     screens/LegendPresentation.h

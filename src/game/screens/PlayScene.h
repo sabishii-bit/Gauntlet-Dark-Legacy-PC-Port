@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "engine/assets/AnimationSet.h"
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/MessageTable.h"
@@ -22,10 +21,7 @@
 #include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
 #include "engine/world/AmbientDimmer.h"
-#include "engine/world/AnimationPlayer.h"
-#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
-#include "engine/world/TreePose.h"
 #include "engine/world/WorldCamera.h"
 
 #include "game/enemies/Bosses.h"
@@ -50,6 +46,7 @@
 #include "game/screens/GameContext.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LegendPresentation.h"
+#include "game/screens/LevelArrivalPresentation.h"
 #include "game/screens/PickupHud.h"
 #include "game/screens/PowerupSelector.h"
 #include "game/screens/StatusBox.h"
@@ -82,15 +79,15 @@ struct DroppedItem {
 
 /** How the tower may open other than as the game does, for tests and scenarios. */
 struct PlayOptions {
-    std::optional<Vec3> position; ///< where the party stands instead of the entrance (the
-                                  ///< start camera then does not ride in from its marker)
-    std::optional<f32> yaw;       ///< the way it faces, instead of the entrance's
-    std::optional<bool> welcome;  ///< whether Sumner welcomes it, else by its experience
+    std::optional<Vec3> position;   ///< where the party stands instead of the entrance (the
+                                    ///< start camera then does not ride in from its marker)
+    std::optional<f32> yaw;         ///< the way it faces, instead of the entrance's
+    std::optional<bool> welcome;    ///< whether Sumner welcomes it, else by its experience
     std::vector<DroppedItem> items; ///< dropped about the level once it opens
-    u32 arrivalWorld = 0; ///< the realm the party comes from, which picks the start point
-                          ///< it arrives at (none: the level's own entrance)
-    bool arriving = false; ///< the party comes through a portal: the transition picture is
-                           ///< up as the level opens, and clears
+    u32 arrivalWorld = 0;           ///< the realm the party comes from, which picks the start point
+                                    ///< it arrives at (none: the level's own entrance)
+    bool arriving = false;          ///< the party comes through a portal: the transition picture is
+                                    ///< up as the level opens, and clears
 };
 
 /** One player's input for a frame of play. */
@@ -106,7 +103,7 @@ struct PlayInput {
     bool turbo = false;         ///< the turbo button is held
     bool chargePressed = false; ///< the charge button went down this frame
     bool attackPressed = false; ///< the attack button went down this frame
-    SelectorInput selector; ///< this frame's presses for the powerup selector
+    SelectorInput selector;     ///< this frame's presses for the powerup selector
 };
 
 enum class PlayOutcome : u8 {
@@ -156,14 +153,14 @@ public:
     static constexpr f32 kSpawnSpacing = 2.0f; ///< between party members at the entrance
     static constexpr u32 kCrystalCamera = 198; ///< the trigger camera the welcome cuts to
     static constexpr f32 kBeamRadius = 12.0f;  ///< how near Sumner his beam of light comes on
-    static constexpr s32 kSpawnTicks = 60;     ///< the materialising effect's life
+    static constexpr s32 kSpawnTicks = LevelArrivalPresentation::kSpawnTicks;
     /** The voice that announces each realm's gate opening, by realm. */
     static constexpr std::array<std::string_view, 9> kUnlockVoices{
         "",           "S_CRYS4TWN", "S_CRYS4MNT", "S_CRYS4CST", "S_CRYS4SKY",
         "S_CRYS4FOR", "S_CRYS4DES", "S_CRYS4ICE", "S_CRYS4DRM"};
-    static constexpr s32 kBeamFadeTicks = 180; ///< and how long it takes to come up or go
-    static constexpr s32 kCrystalTicks = 300;  ///< fifty frames of six ticks
-    static constexpr s32 kSumnerSpot = 240;    ///< the id of the trigger before him
+    static constexpr s32 kBeamFadeTicks = 180;    ///< and how long it takes to come up or go
+    static constexpr s32 kCrystalTicks = 300;     ///< fifty frames of six ticks
+    static constexpr s32 kSumnerSpot = 240;       ///< the id of the trigger before him
     static constexpr f32 kGreetingSeconds = 2.0f; ///< from his greeting to his scroll
     using Inputs = std::array<PlayInput, kPlayerCount>;
 
@@ -178,8 +175,7 @@ public:
     bool isOpen() const { return m_open; }
 
     PlayOutcome update(f64 deltaSeconds, const Inputs& inputs);
-    void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
-                f32 frameHeight);
+    void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);
 
     usize actorCount() const { return m_players.size(); }
     /** The character driven by `player`, or null when that player is not in the party. */
@@ -194,7 +190,7 @@ public:
     const BossCamera& bossCamera() const { return m_bossCamera; }
     bool bossCameraOn() const;
     BossCameraSubject bossSubject() const;
-    const StartCamera& startCamera() const { return m_startCamera; }
+    const StartCamera& startCamera() const { return m_arrival.camera(); }
     /** The music's voice, kNoSound while nothing plays. */
     SoundHandle music() const { return m_audio.music(); }
     /** Sumner's voice over the scroll he is reading, kNoSound while he is quiet. */
@@ -273,8 +269,8 @@ public:
     f32 beamAlpha() const { return m_beamAlpha; }
     /** Whether the party is still materialising: held under the level's title until the start
      * camera has ridden in, or for the effect's life when there is no start camera. */
-    bool spawning() const { return m_startCamera.active() || m_spawnTicks > 0; }
-    usize spawnEffectCount() const { return m_spawns.size(); }
+    bool spawning() const { return m_arrival.active(); }
+    usize spawnEffectCount() const { return m_arrival.effectCount(); }
     /** The folder a character's figure came from, when it loaded. */
     std::optional<std::filesystem::path> figureDirectory(s32 player) const;
     /** Whether a character's figure carries its weapon. */
@@ -303,8 +299,8 @@ private:
     struct PlayerRuntime {
         PlayerActor actor;
         std::unique_ptr<PlayerFigure> figure; ///< null when character assets are unavailable
-        std::optional<usize> slot;      ///< persistent save slot, not the input player id
-        CharacterSave entrySave;        ///< restored when a fallen character leaves the level
+        std::optional<usize> slot;            ///< persistent save slot, not the input player id
+        CharacterSave entrySave;              ///< restored when a fallen character leaves the level
         PlayerLife life = PlayerLife::Standing;
         f32 painOwed = 0.0f;                    ///< accumulated damage not yet answered by a cry
         s32 hitSoundGap = 0;                    ///< ticks before another impact sound
@@ -405,9 +401,6 @@ private:
     void updateAmbience();
     void updateBeam(s32 ticks);
     void beginSpawn(RenderDevice& device, bool ride);
-    void updateSpawn(s32 ticks, f32 seconds);
-    void drawSpawn(RenderDevice& device, const Mat4& clip) const;
-    void drawLevelTitle(f32 width);
     bool anyButton(const Inputs& inputs) const;
     bool openMessage(std::string_view name, usize page);
     void announceUnlock(s32 realm);
@@ -441,9 +434,9 @@ private:
     ScrollBox m_scroll;
     PlayerMissiles m_missiles;
     ExitPortals m_portals;
-    std::mt19937 m_painRandom{0x5A17u};      ///< which cry of pain comes
-    std::mt19937 m_coinRandom{0xC01Eu};      ///< how fast each coin a boss spews flies
-    u32 m_lowHealthTurn = 0;                 ///< the last-health lines take turns
+    std::mt19937 m_painRandom{0x5A17u}; ///< which cry of pain comes
+    std::mt19937 m_coinRandom{0xC01Eu}; ///< how fast each coin a boss spews flies
+    u32 m_lowHealthTurn = 0;            ///< the last-health lines take turns
     AmbientDimmer m_dimmer;
     MoveStrikes m_strikes;
     /** The effect that goes along with a strike that flies. */
@@ -504,7 +497,7 @@ private:
     LevelWatch m_levels;
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid
     HelpMessages m_help;
-    MessageTable m_strings;  ///< the game's own strings, which hold the help messages
+    MessageTable m_strings; ///< the game's own strings, which hold the help messages
     Chests m_chests;
     LockedGates m_gates;
     Traps m_traps;
@@ -514,7 +507,7 @@ private:
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
     std::unique_ptr<LegendPresentation> m_legend; ///< destroyed before its borrowed effect store
-    std::array<TreeModel, 5> m_potionModels; ///< a thrown potion, by its kind
+    std::array<TreeModel, 5> m_potionModels;      ///< a thrown potion, by its kind
     std::array<PowerupSelector, kPlayerCount> m_selectors;
     const Texture* m_glowSheet = nullptr; ///< the glow a worn powerup's name is written in
     f32 m_playSeconds = 0.0f;
@@ -522,30 +515,17 @@ private:
     SumnerHints m_hints;
     HintMenu m_hintMenu;
     ModelSprite m_hintArrow;
-    s32 m_hintPlayer = -1;       ///< whose scroll of hints is out
-    f32 m_greetingLeft = -1.0f;  ///< seconds from his greeting to his scroll; negative: none
-    bool m_hintsGiven = false;   ///< this visit has had its scroll; leaving him clears it
+    s32 m_hintPlayer = -1;      ///< whose scroll of hints is out
+    f32 m_greetingLeft = -1.0f; ///< seconds from his greeting to his scroll; negative: none
+    bool m_hintsGiven = false;  ///< this visit has had its scroll; leaving him clears it
     Intro m_intro = Intro::None;
     WorldCamera m_cutCamera;
     s32 m_cutTicks = 0;
     s32 m_beam = -1; ///< the level object that is Sumner's beam of light
     f32 m_beamAlpha = 0.0f;
 
-    /** A character materialising: the effect tree at their feet. */
-    struct Spawn {
-        Vec3 position{0.0f, 0.0f, 0.0f};
-        const TreeInfo* tree = nullptr;
-        TreeModel model;
-        TreePose pose;
-        AnimationPlayer player;
-    };
-    ItemArchive m_weapons; ///< holds the spawn effect
-    std::vector<Spawn> m_spawns;
-    TextureAnimator m_spawnTexmods;
-    s32 m_spawnTicks = 0;
-    f32 m_spawnFrames = 0.0f;
-    StartCamera m_startCamera;
-    f32 m_titleSlide = 0.0f; ///< how far the level's title has slid up the screen
+    ItemArchive m_weapons;              ///< shared weapon and effect assets
+    LevelArrivalPresentation m_arrival; ///< borrows the weapons archive
     bool m_welcomePending = false;
 };
 
