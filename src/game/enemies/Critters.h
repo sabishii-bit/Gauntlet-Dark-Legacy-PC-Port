@@ -196,6 +196,8 @@ private:
         float maxHealth = 1.0f;
         Vec3 position{0.0f, 0.0f, 0.0f};
         float yaw = 0.0f;
+        float initialYaw = 0.0f;
+        Vec3 homePosition{0.0f}; ///< floor-space home anchor, independent of current position
         Vec3 push{0.0f, 0.0f, 0.0f};
         int target = -1;
         float targetDistance = 100000.0f;

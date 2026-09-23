@@ -599,8 +599,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   distance window, a cone `minDot` wide pointing `yaw` from ahead, so TURN's
   points behind and the gargoyle's LEFT/RIGHT to the sides) and cooldown
   allow it: attacks (types from 128) over walks (52) over the stance (32);
-  a move carries the body at its own `speed` a second (the type's speed is
-  a cap, not a pace) and turns it at its `turnRate`, never onto a player or
+  a move carries the body at its own `speed` a second (TYPE +0xAC is
+  `roamRadius`, not speed) and turns it at its `turnRate`, never onto a player or
   another; over its harmful frames (`frameStart..frameEnd`, a second window
   too) its damage record strikes: a blow (0) whoever is within the part's
   radius plus its reach of the named node's posed position, a ring (3, the
@@ -762,6 +762,41 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Other move effects retain their older landing-frame/body-follow behavior;
   they still need their own parenting/timing audit.
   Scenarios: `level-g1-general.json`.
+* Boss locomotion has two encounter roles; neither role implies melee-only
+  attacks. Dragon, Plague Fiend, Yeti, Wraith, Chimera and Genie are anchored;
+  Lich and Spider Queen pursue the player. Preserve the actual TYPE/MOVE data
+  instead of implementing one generic chase AI or forcing every anchored boss's
+  authored step to zero. `CritterMovement` follows `CritterTranslate`
+  (GC 0x8003a9c4) and `CritterRotate` (0x8003af4c): TYPE +0xAC limits horizontal
+  distance from home, MOVE +0x84 is pace, and TYPE +0xCC limits facing relative
+  to spawn yaw. TYPE flag 0x20 selects square rather than circular territory;
+  0x40 uses initial facing for steps and 0x400 removes the facing limit. Explicit
+  `defaultPos` supplies home unless its Y is the 999 sentinel. Old unpacked
+  JSON calls the radius `speed`; the loader accepts it, but new exports say
+  `roamRadius`. Never reinterpret this value as a cap on movement speed.
+
+  | Boss | Locomotion / home radius | Authored attack families |
+  |---|---|---|
+  | Dragon | Anchored, 3; fixed facing | Near claws; breath, fireballs, stomp and wing attacks |
+  | Plague Fiend | Anchored, 6; local lateral steps | Bite; acid, sprays, gas and splash |
+  | Yeti | Anchored, 5; destination-driven local steps | Claws/swipes/grab; breath, rocks, stomps and pounds |
+  | Wraith | Anchored, 3 | Near swipes/blender; stretch, thrown blades, snakes and bolts |
+  | Chimera | Anchored, 12; entrance and local repositioning | Separate head move tables, plus root SUPER attacks |
+  | Genie | Anchored, 0; turns in place | Near claws; beams/sweep, wind and targeted rock fountain |
+  | Lich | Pursuing, 25; advance, retreat, sidestep and charge | Axe/spike/grab at close range; head toss, spit and hand attack |
+  | Spider Queen (`DRIDER`) | Pursuing, 22; advance, retreat, scurry and charge | Close whip/kick attacks; web, egg, spit and spider projectiles |
+
+  MOVE target distance, bearing and vertical windows govern move selection;
+  DAMG and harmful animation frames govern contact. Do not use a shared melee
+  distance or allow proximity-independent melee just because a boss is anchored.
+  Direction types 50/51/53 mean left/right/backward, not forward pursuit.
+  Type 56 needs a separately supplied destination (retail critter +0x1FC);
+  its waypoint producer is not reconstructed yet, so its animation plays without
+  root translation, rather than incorrectly advancing toward the player. Full
+  Yeti/Chimera repositioning, child-head logic, grabs and authored pattern sequencing
+  remain reconstruction work; this table is an inventory, not a claim all those
+  attacks are complete. `[boss-movement]` tests cover bounds, facing, direction,
+  legacy/new export keys, synthetic near/far encounters and the eight retail tables.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
   is the original's HUD meter (`HealthMeterStart/Update`, boss.c 471-585):

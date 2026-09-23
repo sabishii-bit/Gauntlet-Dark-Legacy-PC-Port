@@ -180,6 +180,12 @@ std::optional<int> Critters::spawn(int kind, const Vec3& position, float yaw,
             }
         }
         critter.yaw = yaw;
+        critter.initialYaw = yaw;
+        // The table's explicit home is in model-root space; public positions are floors.
+        critter.homePosition =
+            stock->data.movement().home.has_value()
+                ? *stock->data.movement().home - Vec3{0.0f, stock->data.floorOffset(), 0.0f}
+                : critter.position;
         critter.cooldowns.assign(stock->data.moves().size(), 0.0f);
         // It comes in by its entrance, or its stance when it has none.
         const auto start = stock->data.moveOfType(CritterMove::kStart);
@@ -468,12 +474,16 @@ void Critters::strikeWith(Critter& critter, int id, const CritterMove& move, int
     }
 }
 
-/** The move carries the body: at its pace toward the player, turning at its rate. */
+/** MOVE supplies pace/direction; TYPE supplies the home territory and facing limits.
+ * Anchored bosses can turn or shift locally without becoming roaming pursuers. */
 void Critters::carry(Critter& critter, float seconds, const CritterMove* move,
                      std::span<const EnemyView> players) {
+    const CritterMovement& movement = critter.stock->data.movement();
+    const bool boss = critter.stock->data.kind() == kBossCritter;
     const EnemyView* view = viewOf(players, critter.target);
     if (move != nullptr && move->turnRate > 0.0f && view != nullptr) {
-        const float wanted = yawBetween(critter.position, view->position);
+        const float wanted =
+            movement.facing(yawBetween(critter.position, view->position), critter.initialYaw);
         const float d = wrapAngle(wanted - critter.yaw);
         // Blinded, it turns at a tenth of its rate.
         const float step =
@@ -481,15 +491,22 @@ void Critters::carry(Critter& critter, float seconds, const CritterMove* move,
         critter.yaw =
             wrapAngle(std::abs(d) <= step ? wanted : critter.yaw + (d > 0.0f ? step : -step));
     }
+    if (boss && movement.roamRadius <= 0.0f) {
+        return; // Zero-radius bosses may turn, but neither locomotion nor knockback moves them.
+    }
     Vec3 translation = critter.push * seconds;
-    if (move != nullptr && move->speed > 0.0f && critter.state == State::Active) {
+    if (move != nullptr && move->speed != 0.0f && critter.state == State::Active) {
         const float pace = move->speed * m_scales.speed * seconds;
-        translation += Vec3{std::sin(critter.yaw), 0.0f, std::cos(critter.yaw)} * pace;
+        const float basis = movement.initialStepBasis ? critter.initialYaw : critter.yaw;
+        translation += CritterMovement::direction(move->type, basis) * pace;
     }
     if (glm::length(translation) <= 0.0f) {
         return;
     }
     Vec3 to = critter.position + translation;
+    if (boss && critter.state != State::Dying) {
+        to = movement.constrain(to, critter.homePosition);
+    }
     // Never onto a player: it stops against them.
     for (const EnemyView& other : players) {
         if (!other.hidden &&

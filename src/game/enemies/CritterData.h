@@ -11,6 +11,8 @@
 
 #include "engine/math/Math.h"
 
+#include "game/enemies/CritterMovement.h"
+
 namespace gdl::game {
 
 /** When a move may be chosen against its target. */
@@ -95,7 +97,11 @@ struct CritterMove {
     static constexpr int kRoar = 34;
     static constexpr int kBlock = 35;
     static constexpr int kStepFrom = 48; ///< the steps: turns, walks, back-steps
+    static constexpr int kStepLeft = 50;
+    static constexpr int kStepRight = 51;
     static constexpr int kWalk = 52;
+    static constexpr int kStepBack = 53;
+    static constexpr int kStepToPoint = 56;
     static constexpr int kStepTo = 64;
     static constexpr int kKnockBack = 65;
     static constexpr int kKnockDown = 66;
@@ -171,6 +177,7 @@ public:
     int kind() const { return m_kind; } ///< 3 a golem, 7 a gargoyle, 8 a general
     float radius() const { return m_radius; }
     float wallRadius() const { return m_wallRadius; }
+    const CritterMovement& movement() const { return m_movement; }
     float armor() const { return m_armor; }
     float maxHealth() const { return m_maxHealth; }
     float experience() const { return m_experience; }
@@ -202,6 +209,7 @@ private:
     int m_kind = 0;
     float m_radius = 1.0f;
     float m_wallRadius = 1.0f;
+    CritterMovement m_movement;
     float m_armor = 0.0f;
     float m_maxHealth = 1.0f;
     float m_experience = 0.0f;

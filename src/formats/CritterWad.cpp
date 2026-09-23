@@ -178,7 +178,7 @@ CritterFile parseCritterWad(std::span<const std::uint8_t> bytes) {
             type.wallRadius = readWadF32(bytes, at + 0x7C, kWhat);
             type.target = readTarget(bytes, at + 0x80);
             type.defaultPos = readVec(bytes, at + 0xA0);
-            type.speed = readWadF32(bytes, at + 0xAC, kWhat);
+            type.roamRadius = readWadF32(bytes, at + 0xAC, kWhat);
             type.floorOffset = readWadF32(bytes, at + 0xB0, kWhat);
             type.vertDrift = readWadF32(bytes, at + 0xB4, kWhat);
             type.damageScale = readWadF32(bytes, at + 0xB8, kWhat);

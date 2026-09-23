@@ -114,7 +114,7 @@ struct CritterTypeRecord {
     float wallRadius = 0.0f;
     CritterTargetRecord target;
     std::array<float, 3> defaultPos{};
-    float speed = 0.0f; ///< a cap on how far it is carried, not its pace
+    float roamRadius = 0.0f; ///< TYPE +0xAC: boss home territory, not MOVE's units/second
     float floorOffset = 0.0f;
     float vertDrift = 0.0f;
     float damageScale = 0.0f;
