@@ -159,6 +159,11 @@ TEST_CASE("tower wizard exports include and render his animated body",
     TowerPromotion promotion;
     promotion.begin(party, strings);
     promotion.bind(device, items, layout, party);
+    REQUIRE(promotion.camera().has_value());
+    const Vec3 wizardPosition{promotion.wizardTransform()[3]};
+    const Vec3 wizardFacing{promotion.wizardTransform()[2]};
+    // The visible front faces the ceremony camera rather than showing its back.
+    REQUIRE(glm::dot(wizardFacing, promotion.camera()->position - wizardPosition) > 0);
     promotion.draw(device, Mat4{1}, {});
     REQUIRE(device.draws.size() >= 25);
     for (const auto& draw : device.draws) {

@@ -97,8 +97,10 @@ void TowerPromotion::bind(RenderDevice& device, ItemArchive& items, const WorldL
     if (nearest == nullptr) {
         return;
     }
-    m_transform =
-        glm::rotate(glm::translate(Mat4{1}, nearest->position), nearest->rotation.y, Vec3{0, 1, 0});
+    // Event headings, like Sumner's lookout and player starts, point the way
+    // the figure came from. Turn back toward the party, not away from it.
+    m_transform = glm::rotate(glm::translate(Mat4{1}, nearest->position), nearest->rotation.y + kPi,
+                              Vec3{0, 1, 0});
     constexpr u32 kPromotionCameraBase = 240;
     if (const auto* camera =
             layout.findLocator(LocatorKind::TriggerCamera, kPromotionCameraBase + nearest->delay)) {
