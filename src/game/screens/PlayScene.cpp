@@ -9,8 +9,6 @@
 #include "engine/core/Log.h"
 #include "engine/world/WorldCamera.h"
 
-#include "game/enemies/BossCoins.h"
-#include "game/enemies/LegendItems.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/Progression.h"
 
@@ -20,7 +18,6 @@ namespace {
 
 constexpr std::string_view kBeamObject = "L1XPLIGHTRAY01"; ///< the light on Sumner's lectern
 constexpr std::string_view kWeaponsArchive = "WEAPONS";
-constexpr std::string_view kSpawnEffect = "STARTFX"; ///< the tree the party materialises in
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
 constexpr std::array<std::string_view, 2> kTempleLights{"L1XPLOWERLIGHTR", "L1XPUPPERLIGHTR"};
@@ -34,16 +31,9 @@ constexpr s32 kIconTierBase = 101; ///< a gargoyle gate's trigger id less this i
 constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
-constexpr s32 kOgre = 12;
-constexpr f32 kOgreScale = 1.6f;
-constexpr f32 kMasterScale = 1.2f; ///< at level 99
 constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
 constexpr std::string_view kRuneVoicePrefix = "S_RUNE";    ///< then S_RUNE2 to S_RUNE12
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
-constexpr std::string_view kBossKeyTree = "BOSSKEY"; ///< the key that rises where the boss fell
-constexpr std::string_view kBossKeyLaterTree = "BOSSKEY2";
-constexpr f32 kBossKeySeconds = 30.0f;
-constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY"; ///< then the level's letter
 constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
 constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
 constexpr s32 kSpecialPowerup = 9;      ///< the pickup subtype of the specials
@@ -151,10 +141,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         {device, m_classes, m_weapons, world.collision(), m_effects, m_audio, context.sounds});
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
                     m_arsenal, m_dimmer});
-    m_legend = std::make_unique<LegendPresentation>(
-        m_effects, LegendPresentation::Assets{device, world.items(), m_weapons, m_staticTextures},
-        LegendPresentation::Audio{[this](std::string_view name) { return m_audio.playNamed(name); },
-                                  [this](SoundHandle handle) { m_audio.stop(handle); }});
+    m_bossSequence.bind(
+        {device, world, m_weapons, m_staticTextures, m_effects, m_audio, context.levels});
     m_open = true;
     log::info("Tower: {} in the party", m_players.size());
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
@@ -176,9 +164,8 @@ void PlayScene::close() {
     m_leaving = false;
     m_attacks.clear();
     m_arsenal.clear(); // before the figures whose models they fly
-    m_legend.reset();
+    m_bossSequence.clear();
     m_effects.clear(); // and before the archive whose trees they play
-    m_victory.clear();
     m_opponents.close();
     m_playSeconds = 0.0f;
     m_hud.clear(); // before the static texture borrowed for selector glow
@@ -508,162 +495,14 @@ void PlayScene::updateLevels() {
     }
 }
 
-/** Translate scene-owned poses into the presentation's small, read-only snapshot. */
-std::optional<LegendPresentation::Bearer> PlayScene::legendBearer(s32 player, s32 kind) const {
-    for (usize i = 0; i < m_players.size(); ++i) {
-        const PlayerActor& actor = m_players[i].actor;
-        if (actor.player() != player) {
-            continue;
-        }
-        const PlayerFigure* figure = i < m_players.size() ? m_players[i].figure.get() : nullptr;
-        LegendPresentation::Bearer bearer;
-        bearer.player = player;
-        bearer.color = actor.save().color;
-        bearer.position = actor.position();
-        bearer.facing = actor.facing();
-        bearer.holdPoint = actor.position() + Vec3{0.0f, LegendShow::kHeldLift, 0.0f};
-        bearer.canGesture = figure != nullptr && !isDown(i);
-        bearer.casting = figure != nullptr && figure->animator().castingLegend();
-        bearer.released = figure != nullptr && figure->animator().legendReleased();
-        if (LegendShow::heldInHand(kind) && figure != nullptr) {
-            const f32 size =
-                bodyScale(actor.save(), PowerupEffects::of(actor.save().progress().inventory));
-            const Mat4 body = glm::scale(actor.transform(), Vec3{size, size, size});
-            if (const auto hand = figure->handPosition(body); hand.has_value()) {
-                bearer.holdPoint = *hand;
-            }
-        }
-        return bearer;
-    }
-    return std::nullopt;
-}
-
-void PlayScene::showLegendEvent(const LegendEvent& event) {
-    if (m_legend != nullptr) {
-        const s32 kind = m_opponents.bosses().view().kind;
-        m_legend->show(event.cue, event.player, event.realm, kind,
-                       legendBearer(event.player, kind));
-    }
-}
-
-void PlayScene::updateLegend(f32 seconds) {
-    if (m_legend == nullptr) {
-        return;
-    }
-    std::optional<LegendPresentation::Target> target;
-    if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
-        target = LegendPresentation::Target{*at, m_opponents.bosses().height()};
-    }
-    const LegendPresentation::Update result =
-        m_legend->update(seconds, legendBearer(m_legend->player(), m_legend->kind()), target);
-    if (result.gesture != PlayerDeed::None) {
-        for (PlayerRuntime& runtime : m_players) {
-            if (runtime.actor.player() == m_legend->player()) {
-                runtime.reaction = result.gesture;
-            }
-        }
-    }
-    if (result.landed) {
-        m_opponents.bosses().landLegend();
-    }
-}
-
-/** The boss has fallen: everyone in play gets its shard, its key rises where it fell, the
- * meter goes, and the wizard's visit is set going. */
-void PlayScene::bossFallen(const Vec3& where) {
-    const LevelInfo* level = m_world->level();
-    if (level == nullptr || m_victory.state().running() || m_victory.state().finished()) {
-        return;
-    }
-    const s32 order = LevelRef::orderOf(m_world->ref().realmId);
-    u16 found = 0;
-    for (PlayerRuntime& runtime : m_players) {
-        PlayerActor& actor = runtime.actor;
-        actor.save().progress().relics.addShard(order);
-        found |= actor.save().progress().relics.runes;
-    }
-    // The realm's runestones are those its levels' records number, from one.
-    u16 inRealm = 0;
-    if (m_context.levels != nullptr) {
-        for (const s32 rune : m_context.levels->runesOf(m_world->ref().realm)) {
-            if (rune > 0 && rune <= Relics::kRuneCount) {
-                inRealm |= static_cast<u16>(1U << static_cast<u32>(rune - 1));
-            }
-        }
-    }
-    const char letter = m_world->ref().name.empty() ? 'G' : m_world->ref().name.front();
-    m_victory.begin(level->bossType, letter, inRealm, found, false);
-    if (m_device != nullptr && m_world->items().loaded()) {
-        EffectTrees::Setting setting;
-        setting.seconds = kBossKeySeconds;
-        setting.then = kBossKeyLaterTree;
-        m_effects.startSet(*m_device, m_world->items(), kBossKeyTree, where, setting);
-        std::vector<Vec3> standing;
-        for (usize i = 0; i < m_players.size(); ++i) {
-            if (!isDown(i)) {
-                standing.push_back(m_players[i].actor.position());
-            }
-        }
-        const Vec3* boss = m_opponents.bosses().position();
-        m_victory.bindWizard(*m_device, m_world->items(), boss != nullptr ? *boss : Vec3{0.0f},
-                             standing);
-    }
-    m_audio.playNamed(std::format("{}{}", kBossKeySoundPrefix, letter));
-}
-
-/** The wizard's visit runs on: he fades in, says his piece (typed out under the view, his
- * lines from the level's bank), then the party sparkles and is taken to the tower. */
 void PlayScene::updateVictory(s32 ticks, f32 seconds) {
-    if (!m_victory.state().running()) {
-        return;
-    }
-    const auto result = m_victory.update(ticks, seconds, m_world->goldLeft(), m_hud.strings());
-    for (const VictoryVoice& voice : result.voices) {
-        m_audio.playNamed(voice.sound);
-    }
-    if (result.sparkle) {
-        if (m_device != nullptr && m_weapons.loaded()) {
-            for (usize i = 0; i < m_players.size(); ++i) {
-                if (!isDown(i)) {
-                    m_effects.start(*m_device, m_weapons, kSpawnEffect,
-                                    m_players[i].actor.position());
-                }
-            }
-        }
-    }
-    if (m_victory.state().finished() && !m_leaving) {
+    if (m_bossSequence.advanceVictory(ticks, seconds, m_players, m_hud.strings()) && !m_leaving) {
         m_destination = LevelRef::tower();
         m_leaving = true;
         m_transition.comeUp();
     }
 }
 
-/** As the death throws them out, the boss's coins for the party fly from where it stands
- * and its blast takes the rest of the level's enemies with it. */
-void PlayScene::spewBossCoins(const CritterSpew& spew) {
-    for (const s32 enemy : m_opponents.enemies().within(spew.origin, kBossDeathBlastRadius)) {
-        const Vec3 away = m_opponents.enemies().positionOf(enemy) - spew.origin;
-        strikeEnemy(enemy, kBossDeathBlast, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
-    }
-    for (const s32 generator :
-         m_opponents.generators().within(spew.origin, kBossDeathBlastRadius)) {
-        strikeGenerator(generator, kBossDeathBlast, -1);
-    }
-    if (m_device == nullptr) {
-        return;
-    }
-    const auto players = static_cast<s32>(m_players.size());
-    for (const SpewedCoin& coin : BossCoins::spray(m_world->ref().realmId, players, spew.velocity,
-                                                   spew.halfAngle, m_coinRandom)) {
-        m_world->throwItem(*m_device, coin.name, spew.origin, coin.velocity,
-                           BossCoins::kNoGrabSeconds);
-    }
-}
-
-/** Takes health from a character the way the original does: harm over a point is scaled by
- * the level's damage, the cry depends on what did it, and with under a point of health left
- * the character dies, to the dying sound and its own last cry. Nobody is hurt in the tower,
- * nor once they have fallen. */
 void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     m_opponents.update(
         ticks, seconds, m_players, m_fixtures.obstacles(),
@@ -672,10 +511,22 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
          .blast = [this](const Vec3& position, f32 radius,
                          f32 damage) { blast(position, radius, damage); },
          .settleBlasts = [this] { settleBlasts(); },
-         .legend = [this](const LegendEvent& event) { showLegendEvent(event); },
-         .advanceLegend = [this](f32 duration) { updateLegend(duration); },
-         .fallen = [this](const Vec3& position) { bossFallen(position); },
-         .spew = [this](const CritterSpew& spew) { spewBossCoins(spew); },
+         .legend =
+             [this](const LegendEvent& event) {
+                 m_bossSequence.showLegend(event, m_opponents.bosses(), m_players);
+             },
+         .advanceLegend =
+             [this](f32 duration) {
+                 m_bossSequence.advanceLegend(duration, m_opponents.bosses(), m_players);
+             },
+         .fallen =
+             [this](const Vec3& position) {
+                 m_bossSequence.fallen(position, m_opponents.bosses(), m_players);
+             },
+         .spew =
+             [this](const CritterSpew& spew) {
+                 m_bossSequence.spewCoins(spew, m_opponents, m_players);
+             },
          .advanceVictory = [this](s32 elapsed, f32 duration) { updateVictory(elapsed, duration); },
          .levels = [this] { updateLevels(); },
          .award = [this](s32 player, s32 amount,
@@ -765,13 +616,7 @@ std::vector<PartyMember> PlayScene::party() const {
 }
 
 f32 PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
-    if (save.character == kOgre) {
-        return kOgreScale;
-    }
-    if (effects.grown()) {
-        return PowerupEffects::kGrowthScale;
-    }
-    return experienceLevel(save.experience()) >= kMaxLevel ? kMasterScale : 1.0f;
+    return PlayerFigure::bodyScale(save, effects);
 }
 
 /** Hands a touched item to whoever touched it, by the original's rules: their card slides
@@ -973,14 +818,14 @@ const WorldCamera& PlayScene::viewCamera() const {
 bool PlayScene::bossCameraOn() const {
     const LevelInfo* level = m_world != nullptr ? m_world->level() : nullptr;
     return level != nullptr && level->bossCamera.has_value() &&
-           (m_opponents.bosses().present() || m_victory.state().running());
+           (m_opponents.bosses().present() || m_bossSequence.victory().state().running());
 }
 
 /** The boss as the camera sees it; once it has fallen, the wizard in its place. */
 BossCameraSubject PlayScene::bossSubject() const {
     BossCameraSubject subject;
-    if (m_victory.state().running() && !m_opponents.bosses().present()) {
-        return m_victory.wizardSubject();
+    if (m_bossSequence.victory().state().running() && !m_opponents.bosses().present()) {
+        return m_bossSequence.victory().wizardSubject();
     }
     if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
         subject.position = *at;
@@ -1240,8 +1085,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_opponents.bosses().draw(device, clip,
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
                                                                       : m_world->lighting(),
-                              m_legend != nullptr ? m_legend->frozenTexture() : nullptr);
-    m_victory.drawWizard(device, clip, m_world->lighting());
+                              m_bossSequence.frozenTexture());
+    m_bossSequence.victory().drawWizard(device, clip, m_world->lighting());
     m_opponents.missiles().draw(device, clip, m_world->lighting());
     m_arsenal.missiles().draw(device, clip, m_world->lighting());
     const CameraFrame effectCamera = CameraFrame::of(viewCamera());
@@ -1258,7 +1103,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
         m_opponents.meter().draw(m_canvas, device);
-        m_victory.drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width, height);
+        m_bossSequence.victory().drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width,
+                                             height);
     }
     if (const LevelInfo* level = m_world->level(); level != nullptr) {
         m_arrival.drawTitle(m_canvas, m_messages.text(), level->title, width);

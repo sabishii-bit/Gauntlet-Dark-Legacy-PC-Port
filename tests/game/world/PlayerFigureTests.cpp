@@ -17,6 +17,19 @@ using namespace gdl::game;
 static_assert(!std::is_move_constructible_v<PlayerFigure>);
 static_assert(!std::is_copy_constructible_v<PlayerFigure>);
 
+TEST_CASE("player figure scale prioritizes ogre and growth over mastery", "[game][world][figure]") {
+    CharacterSave save;
+    REQUIRE(PlayerFigure::bodyScale(save, {}) == 1.0f);
+    save.progress().experience = levelExperience(kMaxLevel);
+    REQUIRE(PlayerFigure::bodyScale(save, {}) == 1.2f);
+    PowerupEffects growth;
+    growth.special = powerup::kGrowth;
+    REQUIRE(PlayerFigure::bodyScale(save, growth) == PowerupEffects::kGrowthScale);
+    save.character = 12;
+    REQUIRE(PlayerFigure::bodyScale(save, growth) == 1.6f);
+    REQUIRE(PlayerFigure::bodyScale(save, {}) == 1.6f);
+}
+
 /** A costume with a wrist and an unmapped ornament, sharing a tiny synthetic mesh. */
 std::filesystem::path costumeFixture(std::string_view name, bool animated) {
     const auto root = test::scratchDirectory(name);
