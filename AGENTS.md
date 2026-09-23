@@ -922,6 +922,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   The throw sound is `S_<FAMILY>THROW` from the class family's bank. Melee,
   damage, targets, aim assist, streaks, spread shots and impact effects are
   still to come.
+* `screens/LevelMessages` owns the level's localized scroll text, scroll
+  presentation and bitmap font/painter shared by play overlays. It borrows
+  STATIC textures, cannot move (the scroll references its own painter), and
+  returns dismissal audio cues without playing sound. Clear its painter's
+  users before clearing it, then release the static textures. PlayScene keeps
+  input eligibility, pause priority and welcome-camera progression.
 * `screens/SumnerVisit` owns hint artwork, greeting/visit timing, the scroll's
   input owner and localized hint answers. It borrows artwork and the text
   painter; clear it before their owners release them. It cannot move because
@@ -1277,6 +1283,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `python scripts/clangd-check.py` clean, and `gauntlet --frames 120` runs to
   a clean shutdown (with `--title` too when the change touches the 2D
   screens; `python scripts/build.py --unpack` first).
+  For responsibility-only PlayScene refactors, use an incremental build,
+  tests for the extracted component and affected scene behavior, and lint/editor
+  checks limited to changed files. Add or update regression tests for the new
+  boundary. Do not rerun project-wide tests or lint for each extraction;
+  reserve broader validation for changes with broader impact.
 * CI (`.github/workflows/ci.yml`) runs `setup.py` then builds and runs the
   unit tests on Windows and Linux, lints on Linux, and tries the `gpu` tier
   on a software Vulkan device under Xvfb (best effort). The game-data tier

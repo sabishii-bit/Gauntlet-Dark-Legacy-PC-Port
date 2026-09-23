@@ -34,19 +34,9 @@ constexpr s32 kIconTierBase = 101; ///< a gargoyle gate's trigger id less this i
 
 constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
-constexpr std::string_view kStaticDirectory = "STATIC";
-constexpr std::string_view kFontFile = "fonts/font32.json";
-constexpr s32 kFont32SpaceWidth = 16;
-constexpr std::string_view kFontTexture = "FONT32";
-constexpr std::string_view kGlowTexture = "FONT32_GLOW";
 constexpr std::string_view kScrollTexture = "SCROLL_A";
-constexpr std::string_view kButtonTexture = "BUTTON_TRI";
-constexpr std::string_view kFireRingTexture = "GREENCIRCTRANS";
-constexpr std::string_view kFireMaskTexture = "GREENCIRCTRANSM";
-constexpr std::string_view kScrollTextFile = "text/scroll_e.json";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
-constexpr std::string_view kPromptText = "scroll.pressButton";
 /** A potion by its kind (0 and 1 red, 2 blue, 3 yellow, 4 green): the bottle as it flies, the
  * magic it bursts into (fire, lightning, light, acid) and the sound of it. */
 struct PotionLook {
@@ -102,7 +92,6 @@ constexpr f32 kRamDamage = 3.0f;    ///< what a charge does to what it runs into
 constexpr f32 kRamReach = 0.3f;     ///< how near counts as run into
 constexpr s32 kSpecialPowerup = 9;  ///< the pickup subtype of the specials
 constexpr u32 kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
-constexpr std::string_view kScrollTextPrefix = "scroll";
 constexpr std::string_view kStringsFile = "text/english.json";
 constexpr std::string_view kDeathSound = "S_PLAYERDIES";
 constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
@@ -163,7 +152,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     m_classes.load(context.unpackedRoot / kClassDataDirectory);
     m_audio.open(context.unpackedRoot, context.sounds, world.audio());
-    loadIntroArt(device);
+    m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
     // Sumner, his hints and his welcome belong to the tower alone.
     if (world.isTower()) {
         m_glowSheet = m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(),
@@ -268,8 +257,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 
 void PlayScene::close() {
     m_audio.stopCues();
-    m_scroll.close();
     m_sumnerVisit.clear();
+    m_messages.clear();
     if (m_world != nullptr) {
         m_world->setPlayerCount(0);
     }
@@ -299,7 +288,6 @@ void PlayScene::close() {
     }
     m_glowSheet = nullptr;
     m_playSeconds = 0.0f;
-    m_text.setFont(nullptr, nullptr);
     m_staticTextures.releaseTextures();
     m_intro = Intro::None;
     m_strikes.clear();
@@ -2212,7 +2200,7 @@ void PlayScene::stepSelector(PlayerActor& actor, const SelectorInput& input, s32
 /** The name of the powerup each open selector has come to, over its player's box: glowing
  * while the powerup is worn, plain once taken off. */
 void PlayScene::drawSelectors() {
-    if (!m_text.ready() || m_context.strings == nullptr) {
+    if (!m_messages.text().ready() || m_context.strings == nullptr) {
         return;
     }
     for (const PlayerRuntime& runtime : m_players) {
@@ -2234,9 +2222,9 @@ void PlayScene::drawSelectors() {
             glow.texture = m_glowSheet;
             glow.color = ScrollBox::kGlowColor;
             glow.expand = OptionMenu::kGlowExpand;
-            m_text.draw(m_canvas, x, y, label, glow);
+            m_messages.text().draw(m_canvas, x, y, label, glow);
         }
-        m_text.draw(m_canvas, x, y, label, style);
+        m_messages.text().draw(m_canvas, x, y, label, style);
     }
 }
 
@@ -2317,66 +2305,6 @@ void PlayScene::shareRune(s32 rune) {
     m_audio.narrate(voice, LevelSoundscape::Narrator::Primary);
 }
 
-/** Gathers the scroll's art: the sheet, the prompt's font and glow, the button icon and the
- * burn frames, and the scroll texts. Missing pieces only lose the welcome's scroll. */
-void PlayScene::loadIntroArt(RenderDevice& device) {
-    ScrollBoxArt art;
-    m_text.setFont(nullptr, nullptr);
-    if (!m_staticTextures.load(m_context.unpackedRoot / kStaticDirectory) ||
-        !m_font32.load(m_context.unpackedRoot / kFontFile, kFont32SpaceWidth) ||
-        !m_scrollText.load(m_context.unpackedRoot / kScrollTextFile)) {
-        log::warn("Tower: the scroll's art or texts are not unpacked; the welcome is skipped");
-        m_scroll.setArt(art);
-        return;
-    }
-    if (m_context.strings != nullptr) {
-        m_scrollText.translate(*m_context.strings, kScrollTextPrefix);
-    }
-    const auto texture = [&](std::string_view name, u32 frame = 0) -> const Texture* {
-        const auto index = m_staticTextures.find(name);
-        if (!index.has_value() || *index + frame >= m_staticTextures.size()) {
-            return nullptr;
-        }
-        try {
-            return &m_staticTextures.texture(device, *index + frame);
-        } catch (const std::exception& e) {
-            log::warn("Tower: texture {}: {}", name, e.what());
-            return nullptr;
-        }
-    };
-    const Texture* font = texture(kFontTexture);
-    if (font != nullptr) {
-        m_text.setFont(&m_font32, font);
-    }
-    art.backdrop = texture(kScrollTexture);
-    art.glow = texture(kGlowTexture);
-    art.button = texture(kButtonTexture);
-    const auto scroll = m_staticTextures.find(kScrollTexture);
-    const auto ring = m_staticTextures.find(kFireRingTexture);
-    const auto mask = m_staticTextures.find(kFireMaskTexture);
-    if (scroll.has_value() && ring.has_value() && mask.has_value()) {
-        const u32 firstRing = *ring;
-        const u32 firstMask = *mask;
-        try {
-            art.backdropImage = &m_staticTextures.image(*scroll);
-            const auto frames = static_cast<u32>(BurnDialogueScroll::kFrameCount);
-            for (u32 i = 1; i <= frames && firstRing + i < m_staticTextures.size(); ++i) {
-                art.burnRing.push_back(&m_staticTextures.texture(device, firstRing + i));
-            }
-            for (u32 i = 1; i <= frames && firstMask + i < m_staticTextures.size(); ++i) {
-                art.burnMasks.push_back(&m_staticTextures.image(firstMask + i));
-            }
-        } catch (const std::exception& e) {
-            log::warn("Tower: burn frames: {}", e.what());
-            art.backdropImage = nullptr;
-            art.burnRing.clear();
-            art.burnMasks.clear();
-        }
-    }
-    m_scroll.setText(&m_text);
-    m_scroll.setArt(std::move(art));
-}
-
 /** The first of the party standing in the spot before Sumner, or null. */
 const PlayerActor* PlayScene::visitorOfSumner() const {
     const LevelTriggers& triggers = m_world->triggers();
@@ -2402,7 +2330,7 @@ void PlayScene::updateSumnerVisit(f32 seconds) {
     const PlayerActor* visitor = visitorOfSumner();
     const std::optional<s32> player =
         visitor != nullptr ? std::optional<s32>{visitor->player()} : std::nullopt;
-    if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_text, m_context.config,
+    if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_messages.text(), m_context.config,
                             m_context.strings)) {
         m_sumner.play(SumnerFigure::kWelcomeIndex);
     }
@@ -2422,7 +2350,8 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
         for (const PlayerRuntime& runtime : m_players) {
             party.push_back(runtime.actor.save().progress());
         }
-        m_sumnerVisit.answer(event.topic, m_text, m_context.strings, HintKnowledge::ofParty(party));
+        m_sumnerVisit.answer(event.topic, m_messages.text(), m_context.strings,
+                             HintKnowledge::ofParty(party));
         break;
     }
     case HintMenuEvent::Kind::Returned: m_audio.playNamed(kMenuExitSound); break;
@@ -2445,15 +2374,9 @@ bool PlayScene::freshParty(std::span<const PartyMember> party) {
 
 /** Opens Sumner's welcome scroll; without it the welcome goes straight to the crystals. */
 void PlayScene::beginIntro(RenderDevice& device) {
-    const auto message = m_scrollText.loaded() ? m_scrollText.find(kWelcomeMessage) : std::nullopt;
-    if (message.has_value()) {
-        const MessageInfo& welcome = m_scrollText.message(*message);
-        const std::string prompt =
-            m_context.strings != nullptr ? std::string(m_context.strings->get(kPromptText)) : "";
-        if (m_scroll.open(device, welcome.pages, welcome.scale, prompt)) {
-            m_intro = Intro::Scroll;
-            return;
-        }
+    if (m_messages.open(device, kWelcomeMessage, m_context.strings)) {
+        m_intro = Intro::Scroll;
+        return;
     }
     log::warn("Tower: no welcome scroll to show; on to the crystals");
     startCrystalCut();
@@ -2548,16 +2471,15 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     // A scroll holds everything else still until it has burnt away; the welcome's leads on
     // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
     // Sumner was saying over it.
-    if (m_scroll.active()) {
-        const bool wasBurning = m_scroll.burning();
-        m_scroll.step(ticks, acceptedPlayers(inputs));
-        if ((m_scroll.burning() && !wasBurning) || !m_scroll.active()) {
+    if (m_messages.active()) {
+        const LevelMessages::Cues cues = m_messages.step(ticks, acceptedPlayers(inputs));
+        if (cues.stopVoice) {
             m_audio.stopVoice();
-            if (!wasBurning) {
-                m_audio.playNamed(kScrollBurnSound);
-            }
         }
-        if (!m_scroll.active() && m_intro == Intro::Scroll) {
+        if (cues.burnSound) {
+            m_audio.playNamed(kScrollBurnSound);
+        }
+        if (!m_messages.active() && m_intro == Intro::Scroll) {
             startCrystalCut();
         }
         return PlayOutcome::Running;
@@ -2814,7 +2736,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     updateBeam(ticks);
     m_world->updateTriggers(seconds, visitors());
     handleTriggerEvents();
-    if (!held && !m_scroll.active() && m_world->isTower()) {
+    if (!held && !m_messages.active() && m_world->isTower()) {
         updateSumnerVisit(seconds);
     }
     if (!held) {
@@ -2899,7 +2821,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         return;
     }
     const GameConfig& config = *m_context.config;
-    m_scroll.prepare(device);
+    m_messages.prepare(device);
     m_sumnerVisit.prepare(device);
     const Mat4 clip = viewCamera().clipTransform(config.horizontalFovRadians(), frameWidth,
                                                  frameHeight, frameProjection);
@@ -2949,10 +2871,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         }
         m_pickups.draw(m_canvas, m_boxes);
         m_bossMeter.draw(m_canvas, device);
-        m_victory.drawCaption(m_canvas, m_text, m_strings, width, height);
+        m_victory.drawCaption(m_canvas, m_messages.text(), m_strings, width, height);
     }
     if (const LevelInfo* level = m_world->level(); level != nullptr) {
-        m_arrival.drawTitle(m_canvas, m_text, level->title, width);
+        m_arrival.drawTitle(m_canvas, m_messages.text(), level->title, width);
     }
     if (cut) {
         m_canvas.fill(Rect{0.0f, 0.0f, width, height * kCutBarTop}, Color::black());
@@ -2963,8 +2885,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         drawSelectors();
         drawHelp(clip, width, height);
     }
-    m_scroll.draw(m_canvas);
-    m_sumnerVisit.draw(m_canvas, m_text);
+    m_messages.draw(m_canvas);
+    m_sumnerVisit.draw(m_canvas, m_messages.text());
     m_canvas.end();
 }
 
@@ -3081,18 +3003,7 @@ void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
 
 /** Opens one page of a scroll message over the tower: the party reads it and presses on. */
 bool PlayScene::openMessage(std::string_view name, usize page) {
-    if (m_device == nullptr || !m_scrollText.loaded()) {
-        return false;
-    }
-    const auto found = m_scrollText.find(name);
-    if (!found.has_value() || page >= m_scrollText.message(*found).pages.size()) {
-        log::warn("Tower: no page {} of the message {}", page, name);
-        return false;
-    }
-    const MessageInfo& message = m_scrollText.message(*found);
-    const std::string prompt =
-        m_context.strings != nullptr ? std::string(m_context.strings->get(kPromptText)) : "";
-    return m_scroll.open(*m_device, {message.pages[page]}, message.scale, prompt);
+    return m_device != nullptr && m_messages.open(*m_device, name, m_context.strings, page);
 }
 
 /** Congratulates the party once its crystals open a realm's gate: the scroll for the realm,

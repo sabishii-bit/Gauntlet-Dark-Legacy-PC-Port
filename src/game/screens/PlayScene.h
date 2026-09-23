@@ -10,7 +10,6 @@
 #include <string>
 #include <vector>
 
-#include "engine/assets/BitmapFont.h"
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/MessageTable.h"
 #include "engine/assets/TextureSet.h"
@@ -18,7 +17,6 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
-#include "engine/ui/TextPainter.h"
 #include "engine/world/AmbientDimmer.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
@@ -29,7 +27,6 @@
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
 #include "game/menu/MenuInput.h"
-#include "game/menu/ScrollBox.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
 #include "game/players/LevelWatch.h"
@@ -45,6 +42,7 @@
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LegendPresentation.h"
 #include "game/screens/LevelArrivalPresentation.h"
+#include "game/screens/LevelMessages.h"
 #include "game/screens/PickupHud.h"
 #include "game/screens/PowerupSelector.h"
 #include "game/screens/StatusBox.h"
@@ -197,7 +195,7 @@ public:
      * opening (a gate's force field humming as it thins, a lift, a gate), kNoSound otherwise. */
     SoundHandle fieldSound() const { return m_audio.fieldSound(); }
     Intro intro() const { return m_intro; }
-    const ScrollBox& scroll() const { return m_scroll; }
+    const ScrollBox& scroll() const { return m_messages.scroll(); }
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
     const PlayerMissiles& missiles() const { return m_missiles; }
     const ExitPortals& portals() const { return m_portals; }
@@ -320,7 +318,6 @@ private:
     f32 magicPowerOf(const PlayerActor& actor) const;
     void stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks);
     void drawSelectors();
-    void loadIntroArt(RenderDevice& device);
     static bool freshParty(std::span<const PartyMember> party);
     void beginIntro(RenderDevice& device);
     void startCrystalCut();
@@ -423,10 +420,7 @@ private:
     LevelSoundscape m_audio;
     SumnerFigure m_sumner;
     TextureSet m_staticTextures;
-    BitmapFont m_font32;
-    TextPainter m_text;
-    MessageTable m_scrollText;
-    ScrollBox m_scroll;
+    LevelMessages m_messages;
     PlayerMissiles m_missiles;
     ExitPortals m_portals;
     std::mt19937 m_painRandom{0x5A17u}; ///< which cry of pain comes
