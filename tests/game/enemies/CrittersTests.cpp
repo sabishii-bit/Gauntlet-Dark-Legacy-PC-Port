@@ -710,6 +710,55 @@ std::filesystem::path targetedCritter() {
     return root;
 }
 
+TEST_CASE("anchored bosses hold their ground while pursuing bosses close for melee",
+          "[game][boss-movement]") {
+    const auto root = targetedCritter();
+    float radius = 0;
+    Vec3 target{0, 0, 40};
+    bool expectMelee = false;
+    SECTION("anchored boss cannot follow an out-of-range player") {}
+    SECTION("anchored boss can still melee a nearby player") {
+        target.z = 6;
+        expectMelee = true;
+    }
+    SECTION("pursuing boss closes into melee range") {
+        radius = 25;
+        target.z = 20;
+        expectMelee = true;
+    }
+    SECTION("pursuing boss cannot leave its territory") {
+        radius = 25;
+    }
+    writeTextFile(root / "critter/DJINN.json",
+                  R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":3,"maxHealth":100,"roamRadius":)" +
+                      std::to_string(radius) + R"(}],
+      "moves":[{"name":"READY","anim":"READY","type":32,"priority":1},
+        {"name":"ADVANCE","anim":"ROARATK","type":52,"priority":10,"speed":15,
+         "turnRate":3,"target":{"minDistance":10,"maxDistance":100}},
+        {"name":"MELEE","anim":"ROARATK","type":128,"priority":20,
+         "target":{"maxDistance":9.5},"frameStart":0,"frameEnd":25,"damage0":0}],
+      "damages":[{"type":0,"radius":3,"maxDistance":10,"damage":10}]})");
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, root, nullptr, {}, 'C');
+    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
+    REQUIRE(id.has_value());
+    const std::vector<EnemyView> party{playerAt(target)};
+    bool melee = false;
+    for (int i = 0; i < 300; ++i) {
+        critters.update(kTicks, kStep, party);
+        REQUIRE(glm::length(critters.positionOf(*id)) <= radius + 0.001f);
+        melee = melee || !critters.takeBlows().empty();
+    }
+    REQUIRE(melee == expectMelee);
+    if (radius == 0) {
+        REQUIRE(critters.positionOf(*id) == Vec3{0});
+    } else {
+        REQUIRE(critters.positionOf(*id).z > 10);
+    }
+}
+
 TEST_CASE("targeted rocks snapshot the player and keep the impact there after a dodge",
           "[game][enemies][genie]") {
     test::FakeRenderDevice device;

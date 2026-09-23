@@ -259,6 +259,47 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
     REQUIRE_FALSE(bosses.cameraBase().has_value());
 }
 
+TEST_CASE("anchored bosses retain local territories and the lich and spider can pursue",
+          "[game][boss-movement][unpacked]") {
+    struct Expected {
+        const char* name;
+        float radius;
+        bool pursuit;
+    };
+    for (const auto& expected :
+         {Expected{"DRAGON", 3, false}, Expected{"CHIMERA", 12, false}, Expected{"DJINN", 0, false},
+          Expected{"PBOSS", 6, false}, Expected{"YETI", 5, false}, Expected{"WRAITH", 3, false},
+          Expected{"LICH", 25, true}, Expected{"DRIDER", 22, true}}) {
+        DYNAMIC_SECTION(expected.name) {
+            CritterData data;
+            REQUIRE(
+                data.load(test::unpackedOrSkip(std::string("critter/") + expected.name + ".json")));
+            REQUIRE(data.movement().roamRadius == expected.radius);
+            bool pursues = false;
+            bool hasNearAttack = false;
+            bool hasRangedAttack = false;
+            for (const CritterMove& move : data.moves()) {
+                if (move.type == CritterMove::kWalk || move.type == 134) {
+                    pursues = pursues || move.speed > 0;
+                }
+                if (move.attack() && move.harms()) {
+                    hasNearAttack = hasNearAttack ||
+                                    (move.target.maxDistance > 0 && move.target.maxDistance <= 40);
+                    const CritterDamage* harm = data.damage(move.damage0);
+                    hasRangedAttack = hasRangedAttack ||
+                                      (harm != nullptr && harm->type == CritterDamage::kProjectile);
+                }
+            }
+            REQUIRE(pursues == expected.pursuit);
+            // Chimera's separate head move tables are not its root body's attacks.
+            if (std::string_view(expected.name) != "CHIMERA") {
+                REQUIRE(hasNearAttack);
+                REQUIRE(hasRangedAttack);
+            }
+        }
+    }
+}
+
 TEST_CASE("every retail boss can enter animate draw take damage and die",
           "[game][boss-roster][unpacked]") {
     for (int kind = 34; kind <= 44; ++kind) {

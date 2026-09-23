@@ -98,6 +98,21 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_originOffset = vecOf(type, "originOffset");
         m_sight = targetOf(type);
         const unsigned int typeFlags = type.value("typeFlags", 0U);
+        m_movement = CritterMovement{};
+        // Older unpacked manifests mislabeled TYPE +0xAC as speed. MOVE +0x84 is
+        // the actual pace; this value limits the boss's displacement from home.
+        m_movement.roamRadius =
+            type.value("roamRadius", type.value("speed", m_movement.roamRadius));
+        m_movement.turnLimit = type.value("turnLimit", m_movement.turnLimit);
+        m_movement.squareBounds = (typeFlags & 0x20U) != 0;
+        m_movement.initialStepBasis = (typeFlags & 0x40U) != 0;
+        m_movement.unrestrictedTurn = (typeFlags & 0x400U) != 0;
+        if (type.contains("defaultPos")) {
+            const Vec3 home = vecOf(type, "defaultPos");
+            if (home.y < 999.0f) {
+                m_movement.home = home;
+            }
+        }
         m_meter.pieces = type.value("meterPieces", 0);
         m_meter.advance = type.value("meterAdvance", 0);
         m_meter.leftInset = type.value("meterLeftInset", 0);

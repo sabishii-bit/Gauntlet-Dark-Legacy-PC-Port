@@ -888,7 +888,7 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.key("wallRadius").value(static_cast<double>(t.wallRadius));
         target(t.target);
         vec("defaultPos", t.defaultPos);
-        json.key("speed").value(static_cast<double>(t.speed));
+        json.key("roamRadius").value(static_cast<double>(t.roamRadius));
         json.key("floorOffset").value(static_cast<double>(t.floorOffset));
         json.key("vertDrift").value(static_cast<double>(t.vertDrift));
         json.key("damageScale").value(static_cast<double>(t.damageScale));

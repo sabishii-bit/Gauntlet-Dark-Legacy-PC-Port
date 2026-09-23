@@ -56,4 +56,30 @@ TEST_CASE("critter damage parser preserves launch policy and the complete effect
     put(kDirectory + 4, kDirectory); // declared record no longer fits
     REQUIRE_THROWS_AS(parseCritterWad(bytes), FormatError);
 }
+TEST_CASE("critter TYPE decodes home radius separately from MOVE speed",
+          "[formats][boss-movement]") {
+    constexpr std::size_t kRecord = 16;
+    constexpr std::size_t kDirectory = kRecord + 0x140;
+    std::vector<std::uint8_t> bytes(kDirectory + 16);
+    const auto put = [&](std::size_t at, std::uint32_t value) {
+        for (std::size_t byte = 0; byte < 4; ++byte) {
+            bytes[at + byte] = static_cast<std::uint8_t>(value >> (byte * 8));
+        }
+    };
+    put(0, kDirectory);
+    put(4, 1);
+    put(kDirectory, 0x54595045); // TYPE
+    put(kDirectory + 4, kRecord);
+    put(kDirectory + 8, 1);
+    put(kDirectory + 12, 1);
+    put(kRecord + 0xA4, std::bit_cast<std::uint32_t>(999.0f));
+    put(kRecord + 0xAC, std::bit_cast<std::uint32_t>(22.0f));
+    put(kRecord + 0xCC, std::bit_cast<std::uint32_t>(0.5f));
+    const auto file = parseCritterWad(bytes);
+    REQUIRE(file.types.size() == 1);
+    REQUIRE(file.types[0].defaultPos[1] == 999);
+    REQUIRE(file.types[0].roamRadius == 22);
+    REQUIRE(file.types[0].turnLimit == 0.5f);
+}
+
 } // namespace
