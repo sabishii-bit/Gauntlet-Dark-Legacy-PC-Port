@@ -92,6 +92,7 @@ add_executable(tests
     game/players/CharacterSaveTests.cpp
     game/players/PartyTests.cpp
     game/players/TurboMeterTests.cpp
+    game/players/TurboMoveTests.cpp
     game/players/InventoryTests.cpp
     game/players/RelicsTests.cpp
     game/players/ItemPickupTests.cpp

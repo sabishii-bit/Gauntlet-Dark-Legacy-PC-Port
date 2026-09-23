@@ -340,8 +340,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `moveStrikes`; loaded into `ClassStats`; re-unpack with `--only PDATA`).
   A move names its first strike and strikes chain by `next`
   (`ClassStats::strikesOf`); the lesser attack runs `turboB`, the greater
-  `turboC1` and `turboC2`. `PlayScene::beginMove` lines them up and
-  `runMove` makes each as the move's sequence reaches its `startFrame`: its
+  `turboC1` and `turboC2`. `players/TurboMove::begin` lines them up and
+  `advance` emits each as the move's sequence reaches its `startFrame`: its
   effects (trees of the costume colour's `PLAYERS/<CLS>/SFX<COL>` archive,
   chained by their own `next`, `NULLFX` showing nothing) start turned to the
   facing with their sounds, the meter pays what the move owes at the first

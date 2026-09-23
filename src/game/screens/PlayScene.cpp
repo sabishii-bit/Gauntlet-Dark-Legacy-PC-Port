@@ -69,7 +69,6 @@ constexpr f32 kBossKeySeconds = 30.0f;
 constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY"; ///< then the level's letter
 constexpr std::string_view kHelpTextPrefix = "help";
 constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
-constexpr f32 kMoveNamedFrame = 1.0f; ///< of a turbo attack, when its name is announced
 constexpr std::array<std::string_view, 5> kShieldTrees{"MS_FIRE", "MS_FIRE", "MS_ELEC", "MS_LIGHT",
                                                        "MS_ACID"};
 constexpr std::array<std::string_view, 5> kShieldSounds{"S_SHIELD2", "S_SHIELD2", "S_SHIELD1",
@@ -434,7 +433,7 @@ bool PlayScene::weaponHeld(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player && runtime.figure != nullptr) {
             // A move may empty the hand for a while.
-            const bool hidden = runtime.move.weaponHidden;
+            const bool hidden = runtime.move.weaponHidden();
             return runtime.figure->heldWeaponBound() && !hidden;
         }
     }
@@ -703,113 +702,6 @@ void PlayScene::ramBarrels(usize index) {
     settleBlasts();
 }
 
-/** A turbo attack begins: the strikes its class's data gives it are lined up, and what it
- * costs is owed until the first of them that does harm is made. A class whose data has none
- * pays at once and cries out, so the move is never free. */
-void PlayScene::beginMove(usize index) {
-    MoveProgress& move = m_players[index].move;
-    move.pending.clear();
-    move.all.clear();
-    move.owed = 0.0f;
-    move.named = false;
-    const PlayerAnimator::Action action = m_players[index].figure->animator().action();
-    const bool full = action == PlayerAnimator::Action::TurboFull;
-    move.weaponHidden = false;
-    move.volleysShot.clear();
-    const ClassStats* known = m_classes.stats(m_players[index].actor.save().character);
-    if (action == PlayerAnimator::Action::StrongThrow) {
-        // The strong throw costs nothing; its strikes are only what it shows and sounds.
-        if (known != nullptr) {
-            move.pending = known->strikesOf(known->moves.turboAThrow);
-            move.all = move.pending;
-            move.volleysShot.assign(move.all.size(), 0);
-        }
-        return;
-    }
-    if (!full && action != PlayerAnimator::Action::TurboStrong) {
-        return;
-    }
-    move.owed = full ? TurboMeter::kFullCost : TurboMeter::kStrongCost;
-    if (const ClassStats* stats = known) {
-        if (full) {
-            move.pending = stats->strikesOf(stats->moves.turboC1);
-            const std::vector<s32> second = stats->strikesOf(stats->moves.turboC2);
-            move.pending.insert(move.pending.end(), second.begin(), second.end());
-        } else {
-            move.pending = stats->strikesOf(stats->moves.turboB);
-        }
-    }
-    move.all = move.pending;
-    move.volleysShot.assign(move.all.size(), 0);
-    if (move.pending.empty()) {
-        m_players[index].turbo.spend(move.owed);
-        move.owed = 0.0f;
-        cry(index, full ? "TURBOC" : "TURBOB");
-    }
-}
-
-/** Makes the strikes of the move under way whose frames have come; a move cut short makes
- * no more of them, and what it still owed is never paid. */
-void PlayScene::runMove(usize index) {
-    MoveProgress& move = m_players[index].move;
-    const PlayerAnimator& body = m_players[index].figure->animator();
-    const bool attacking = body.action() == PlayerAnimator::Action::TurboFull ||
-                           body.action() == PlayerAnimator::Action::TurboStrong ||
-                           body.action() == PlayerAnimator::Action::StrongThrow;
-    if (!attacking) {
-        move.pending.clear();
-        move.all.clear();
-        move.owed = 0.0f;
-        move.weaponHidden = false;
-        return;
-    }
-    const ClassStats* stats = m_classes.stats(m_players[index].actor.save().character);
-    if (stats == nullptr) {
-        return;
-    }
-    const f32 frame = body.player().frame();
-    // A frame in, the move is named.
-    if (!move.named && frame >= kMoveNamedFrame) {
-        move.named = true;
-        for (const s32 strike : move.all) {
-            if (const s32 help = stats->moveStrikes[static_cast<usize>(strike)].help; help >= 0) {
-                postHelp(help, index);
-                break;
-            }
-        }
-    }
-    // The level goes dark for as long as a strike that darkens it lasts; the hand is empty
-    // for as long as one that hides the weapon does; a volley lets fly as it lasts.
-    move.weaponHidden = false;
-    for (usize slot = 0; slot < move.all.size(); ++slot) {
-        const MoveStrike& row = stats->moveStrikes[static_cast<usize>(move.all[slot])];
-        if (!row.lasting(frame)) {
-            continue;
-        }
-        if (row.dimming() != 0.0f) {
-            m_dimmer.ask(row.dimming());
-        }
-        if ((row.flags & MoveStrike::kHidesWeapon) != 0) {
-            move.weaponHidden = true;
-        }
-        if (row.type == MoveStrike::kVolley) {
-            runVolley(index, slot, row, frame);
-        }
-    }
-    std::vector<s32> due;
-    std::erase_if(move.pending, [&](s32 strike) {
-        const bool now =
-            frame >= static_cast<f32>(stats->moveStrikes[static_cast<usize>(strike)].startFrame);
-        if (now) {
-            due.push_back(strike);
-        }
-        return now;
-    });
-    for (const s32 strike : due) {
-        fireStrike(index, strike);
-    }
-}
-
 /** The costume colour's effects, which hold the trees a class's moves show; loaded when
  * first wanted. */
 ItemArchive* PlayScene::moveEffectsOf(usize index) {
@@ -841,11 +733,6 @@ void PlayScene::fireStrike(usize index, s32 strikeIndex) {
     const MoveStrike& strike = stats->moveStrikes[static_cast<usize>(strikeIndex)];
     const PlayerActor& actor = m_players[index].actor;
     const Vec3 facing = actor.facing();
-    MoveProgress& move = m_players[index].move;
-    if (strike.amount != 0.0f && move.owed > 0.0f) {
-        m_players[index].turbo.spend(move.owed);
-        move.owed = 0.0f;
-    }
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
     u32 id = 0;
     if (strike.harms()) {
@@ -1020,35 +907,6 @@ void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
     }
 }
 
-/** A volley lets one of the character's own missiles fly every so many frames while it
- * lasts, off the facing by its angle, which closes to nothing (or opens from it) across the
- * span when it sweeps. */
-void PlayScene::runVolley(usize index, usize slot, const MoveStrike& strike, f32 frame) {
-    MoveProgress& move = m_players[index].move;
-    if (slot >= move.volleysShot.size()) {
-        return;
-    }
-    const f32 since = frame - static_cast<f32>(strike.startFrame);
-    const f32 every = strike.delay > 0.0f ? strike.delay : 1.0e6f; // none: one shot only
-    const auto due = static_cast<s32>(std::floor(since / every)) + 1;
-    const f32 span = static_cast<f32>(strike.endFrame - strike.startFrame);
-    while (move.volleysShot[slot] < due) {
-        const f32 shotAt = static_cast<f32>(move.volleysShot[slot]) * every;
-        f32 angle = strike.angle;
-        if ((strike.flags & (MoveStrike::kSweepsIn | MoveStrike::kSweepsOut)) != 0) {
-            f32 through = span > 0.0f ? std::clamp(shotAt / span, 0.0f, 1.0f) : 1.0f;
-            if ((strike.flags & MoveStrike::kSweepsIn) != 0) {
-                through = 1.0f - through;
-            }
-            angle *= through;
-        }
-        const Vec3 facing = m_players[index].actor.facing();
-        const f32 heading = std::atan2(facing.x, facing.z) + angle;
-        launchWeapon(index, Vec3{std::sin(heading), 0.0f, std::cos(heading)}, 1.0f, false);
-        ++move.volleysShot[slot];
-    }
-}
-
 /** A potion spent on a shield: its magic rings the character for a few seconds, going about
  * with them, to the potion's shield sound. */
 void PlayScene::shieldPotion(usize index) {
@@ -1137,10 +995,21 @@ void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
     }
     TurboMeter& meter = m_players[index].turbo;
     const PlayerAnimator& body = m_players[index].figure->animator();
+    TurboMove& move = m_players[index].move;
+    const ClassStats* stats = m_classes.stats(m_players[index].actor.save().character);
     if (body.turboBegan()) {
-        beginMove(index);
+        if (const std::string_view voice = move.begin(body.action(), stats, meter);
+            !voice.empty()) {
+            cry(index, voice);
+        }
     }
-    runMove(index);
+    move.advance(
+        body.action(), body.player().frame(), m_players[index].actor.facing(), stats, meter,
+        {.announce = [this, index](s32 help) { postHelp(help, index); },
+         .dim = [this](f32 amount) { m_dimmer.ask(amount); },
+         .volley = [this,
+                    index](const Vec3& direction) { launchWeapon(index, direction, 1.0f, false); },
+         .strike = [this, index](s32 row) { fireStrike(index, row); }});
     if (body.action() == PlayerAnimator::Action::Shove) {
         meter.drain(seconds);
     } else if (!isDown(index) && !body.turboing() && meter.fill(seconds)) {
@@ -2708,7 +2577,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             const f32 size = bodyScale(runtime.actor.save(), worn);
             const Mat4 body = glm::scale(runtime.actor.transform(), Vec3{size, size, size});
             figure.draw(device, clip, body, m_world->lighting(), worn.bodyAlpha(m_playSeconds),
-                        runtime.move.weaponHidden);
+                        runtime.move.weaponHidden());
         }
     }
     m_portals.draw(device, clip, m_world->lighting());
