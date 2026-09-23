@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cmath>
-#include <cstdint>
 
 #include "engine/math/Math.h"
 #include "engine/world/WorldCollision.h"
@@ -32,8 +31,8 @@ public:
 
     /** Stands the character for player `player` at `position` facing `yaw`, sized and paced
      * by its class (`stats` may be null for the defaults). */
-    void spawn(std::int32_t player, const CharacterSave& save, const ClassStats* stats,
-               const Vec3& position, float yaw);
+    void spawn(int player, const CharacterSave& save, const ClassStats* stats, const Vec3& position,
+               float yaw);
 
     /** Walks by `input`, whose forward is the camera's `cameraYaw`, for `seconds`; with
      * `collision` the step is kept on a floor and pushed out of walls. `moveScale` is how
@@ -50,7 +49,7 @@ public:
     /** Drops the character onto the floor under it, when there is one. */
     void settle(const WorldCollision& collision);
 
-    std::int32_t player() const { return m_player; }
+    int player() const { return m_player; }
     const CharacterSave& save() const { return m_save; }
     CharacterSave& save() { return m_save; }
     const Vec3& position() const { return m_position; }
@@ -75,7 +74,7 @@ public:
     Mat4 transform() const;
 
 private:
-    std::int32_t m_player = 0;
+    int m_player = 0;
     CharacterSave m_save;
     Vec3 m_position{0.0f, 0.0f, 0.0f};
     float m_yaw = 0.0f;

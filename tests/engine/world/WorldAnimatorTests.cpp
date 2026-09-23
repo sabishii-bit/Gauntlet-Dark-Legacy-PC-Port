@@ -1,5 +1,4 @@
 #include <cmath>
-#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -47,7 +46,7 @@ struct Fixture {
 };
 
 /** A layout of one keyed object with the given level flags. */
-WorldLayout layoutWithFlags(std::string_view name, std::uint32_t flags) {
+WorldLayout layoutWithFlags(std::string_view name, unsigned int flags) {
     const auto dir = test::scratchDirectory(name);
     writeTextFile(dir / "world.json", R"({
   "objects": [{"name": "SPIN", "position": [0, 0, 0], "flags": )" +

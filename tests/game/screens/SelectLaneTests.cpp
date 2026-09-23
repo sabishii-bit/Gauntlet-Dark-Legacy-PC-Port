@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -26,7 +25,7 @@ using namespace gdl::game;
 /** Every printable ASCII glyph is 8 pixels wide on a 10 pixel line. */
 BitmapFont fullFont() {
     std::vector<BitmapGlyph> glyphs;
-    for (std::int32_t c = '!'; c <= '~'; ++c) {
+    for (int c = '!'; c <= '~'; ++c) {
         glyphs.push_back({c, 8, 0, 0});
     }
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
@@ -53,8 +52,8 @@ struct Fixture {
     SaveSlots slots;
     LaneServices services;
     std::vector<SelectSound> sounds;
-    std::int32_t greetedClass = -1;
-    std::int32_t greetedColor = -1;
+    int greetedClass = -1;
+    int greetedColor = -1;
     SelectLane lane;
 
     explicit Fixture(std::string_view scratch = "select-lane", bool withSlots = true) {
@@ -87,7 +86,7 @@ struct Fixture {
     }
 
     /** Steps the lane once with `input` and a frame where nobody else plays. */
-    SelectLane::Result step(const MenuInput& input, std::int32_t ticks = 1,
+    SelectLane::Result step(const MenuInput& input, int ticks = 1,
                             const SelectLane::Frame& frame = {}) {
         return lane.update(input, ticks, frame);
     }

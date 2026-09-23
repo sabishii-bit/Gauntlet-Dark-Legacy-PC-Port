@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -35,20 +34,20 @@ struct ScrollBoxArt {
  */
 class ScrollBox {
 public:
-    static constexpr std::int32_t kCentreX = 256;
-    static constexpr std::int32_t kCentreY = 160;
-    static constexpr std::int32_t kMargin = 96;      ///< scroll beyond the text, both ways
-    static constexpr std::int32_t kTextInset = 32;   ///< the text's top below the scroll's
-    static constexpr std::int32_t kPromptExtra = 32; ///< the narrowest scroll beyond the prompt
-    static constexpr std::int32_t kMaxWidth = 512;
-    static constexpr std::int32_t kLineSpacing = 4;
-    static constexpr std::int32_t kPromptGap = 8;
-    static constexpr std::int32_t kButtonX = 190;
-    static constexpr std::int32_t kButtonSize = 20;
-    static constexpr std::int32_t kHoldTicks = 15; ///< before a page takes a button
+    static constexpr int kCentreX = 256;
+    static constexpr int kCentreY = 160;
+    static constexpr int kMargin = 96;      ///< scroll beyond the text, both ways
+    static constexpr int kTextInset = 32;   ///< the text's top below the scroll's
+    static constexpr int kPromptExtra = 32; ///< the narrowest scroll beyond the prompt
+    static constexpr int kMaxWidth = 512;
+    static constexpr int kLineSpacing = 4;
+    static constexpr int kPromptGap = 8;
+    static constexpr int kButtonX = 190;
+    static constexpr int kButtonSize = 20;
+    static constexpr int kHoldTicks = 15; ///< before a page takes a button
     static constexpr float kPromptScale = 0.5f;
-    static constexpr std::int32_t kGlowPulseTicks = 40;
-    static constexpr std::int32_t kGlowHoldTicks = 5;
+    static constexpr int kGlowPulseTicks = 40;
+    static constexpr int kGlowHoldTicks = 5;
     static constexpr Color kGlowColor = Color::rgba(130, 0, 234);
     static constexpr Color kTextColor = Color::rgba(22, 12, 3); ///< ink on the parchment
 
@@ -62,7 +61,7 @@ public:
     void close();
 
     /** Steps the box; `accepted` has a bit per player who pressed their button this tick. */
-    void step(std::int32_t ticks, std::uint32_t accepted);
+    void step(int ticks, unsigned int accepted);
 
     bool active() const { return m_active; }
     bool burning() const { return m_fire.active(); }
@@ -93,10 +92,10 @@ private:
     float m_scale = 1.0f;
     std::size_t m_page = 0;
     Rect m_area;
-    std::int32_t m_textTop = 0;
-    std::int32_t m_promptY = 0;
-    std::int32_t m_hold = 0;
-    std::int32_t m_time = 0;
+    int m_textTop = 0;
+    int m_promptY = 0;
+    int m_hold = 0;
+    int m_time = 0;
     bool m_active = false;
     BurnDialogueScroll m_fire;
 };

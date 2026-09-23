@@ -240,7 +240,7 @@ AnimationFile AnimationFile::parse(std::span<const std::uint8_t> file) {
             // Its own texture animations: a count and the index of the first in the list.
             const auto texmods = static_cast<std::int16_t>(readU16LE(file, at + 40));
             const std::int32_t first = readS32LE(file, at + 44);
-            const std::int32_t listed = static_cast<std::int32_t>(out.textureAnimations.size());
+            const auto listed = static_cast<std::int32_t>(out.textureAnimations.size());
             if (texmods > 0 && first >= 0 && first + texmods <= listed) {
                 sequence.textureAnimationStart = first;
                 sequence.textureAnimationCount = texmods;

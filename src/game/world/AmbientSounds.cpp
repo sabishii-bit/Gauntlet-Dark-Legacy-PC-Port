@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <cstring>
 #include <exception>
 
@@ -45,7 +44,7 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
             continue;
         }
         AmbientEmitter emitter;
-        emitter.instance = static_cast<std::int32_t>(i);
+        emitter.instance = static_cast<int>(i);
         emitter.position = instance.position;
         // The radius leads the parameters as a float.
         std::memcpy(&emitter.radius, instance.params.data(), sizeof(emitter.radius));

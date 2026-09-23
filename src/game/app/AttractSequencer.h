@@ -24,7 +24,7 @@ enum class AttractScreen : std::uint8_t {
 
 struct AttractEntry {
     AttractScreen screen;
-    std::int32_t variant; ///< movie table row, or a screen-specific style
+    int variant; ///< movie table row, or a screen-specific style
 };
 
 struct AttractStep {
@@ -35,7 +35,7 @@ struct AttractStep {
 /** Walks the attract screen table; the "wave" advances each time the table wraps. */
 class AttractSequencer {
 public:
-    static constexpr std::uint32_t kWaveCount = 4;
+    static constexpr unsigned int kWaveCount = 4;
     static constexpr std::array<AttractEntry, 12> kScreenTable{{
         {AttractScreen::TitleMovie, 0},
         {AttractScreen::Movie, 1},
@@ -55,15 +55,15 @@ public:
     AttractStep next();
 
     void reset();
-    std::uint32_t wave() const { return m_wave; }
+    unsigned int wave() const { return m_wave; }
     std::size_t position() const { return m_position; }
 
     /** Movie played for a movie table row in a given wave. */
-    static std::string_view movieName(std::int32_t variant, std::uint32_t wave);
+    static std::string_view movieName(int variant, unsigned int wave);
 
 private:
     std::size_t m_position = 0;
-    std::uint32_t m_wave = 0;
+    unsigned int m_wave = 0;
 };
 
 } // namespace gdl::game

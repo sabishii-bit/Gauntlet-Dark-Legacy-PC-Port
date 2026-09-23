@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <format>
 
 #include "game/players/Progression.h"
@@ -105,7 +104,7 @@ float PlayerAttacks::ownDamageOf(std::size_t index, std::span<PlayerRuntime> pla
 
 /** One strike of a move: its effects show and sound where the character stands, the meter
  * pays what the move still owes if the strike does harm, and the harm is set going. */
-void PlayerAttacks::fireStrike(std::size_t index, std::int32_t strikeIndex,
+void PlayerAttacks::fireStrike(std::size_t index, int strikeIndex,
                                std::span<PlayerRuntime> players) {
     if (!m_resources.has_value() || index >= players.size() || players[index].figure == nullptr) {
         return;
@@ -119,7 +118,7 @@ void PlayerAttacks::fireStrike(std::size_t index, std::int32_t strikeIndex,
     const PlayerActor& actor = players[index].actor;
     const Vec3 facing = actor.facing();
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
-    std::uint32_t id = 0;
+    unsigned int id = 0;
     if (strike.harms()) {
         id = m_strikes.start(strike, actor.player(), actor.position(), facing,
                              ownDamageOf(index, players));
@@ -130,7 +129,7 @@ void PlayerAttacks::fireStrike(std::size_t index, std::int32_t strikeIndex,
     ItemArchive* archive = moveEffectsOf(index, players);
     // An effect may bring another with it.
     std::size_t followed = 0;
-    for (std::int32_t at = strike.effect;
+    for (int at = strike.effect;
          at >= 0 && static_cast<std::size_t>(at) < stats->moveEffects.size() &&
          followed < stats->moveEffects.size();
          at = stats->moveEffects[static_cast<std::size_t>(at)].next, ++followed) {
@@ -163,7 +162,7 @@ void PlayerAttacks::fireStrike(std::size_t index, std::int32_t strikeIndex,
         const Vec3 side{facing.z, 0.0f, -facing.x};
         const Vec3 at3 = origin + side * effect.offset.x + Vec3{0.0f, effect.offset.y, 0.0f} +
                          facing * effect.offset.z;
-        const std::uint32_t shown =
+        const unsigned int shown =
             m_resources->effects.startSet(m_resources->device, *archive, effect.tree, at3, setting);
         if (shown != 0 && started != nullptr && started->flies) {
             m_strikeEffects.push_back(StrikeEffect{id, shown});
@@ -181,24 +180,23 @@ void PlayerAttacks::updateStrikes(float seconds, std::span<PlayerRuntime> player
     for (const StrikeHit& hit : m_strikes.update(seconds, &m_resources->world.collision())) {
         const auto source = std::ranges::find(m_strikeSources, hit.strike, &StrikeSource::strike);
         // The swarm and the generators in its reach take it, with the row's damage type.
-        std::uint32_t flags = 0;
+        unsigned int flags = 0;
         if (source != m_strikeSources.end() && source->actor < players.size()) {
             const ClassStats* stats =
                 m_resources->classes.stats(players[source->actor].actor.save().character);
             if (stats != nullptr && source->row >= 0 &&
                 static_cast<std::size_t>(source->row) < stats->moveStrikes.size()) {
-                flags = static_cast<std::uint32_t>(
+                flags = static_cast<unsigned int>(
                     stats->moveStrikes[static_cast<std::size_t>(source->row)].damageType);
             }
         }
-        for (const std::int32_t enemy :
+        for (const int enemy :
              targets.opponents.enemies().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
             const Vec3 direction = targets.opponents.enemies().positionOf(enemy) - hit.centre;
             targets.opponents.strikeEnemy(enemy, hit.damage, flags,
                                           Vec3{direction.x, 0.0f, direction.z}, hit.owner, players);
         }
-        for (const std::int32_t generator :
-             targets.opponents.generators().within(hit.centre, hit.radius)) {
+        for (const int generator : targets.opponents.generators().within(hit.centre, hit.radius)) {
             targets.opponents.strikeGenerator(generator, hit.damage, hit.owner);
         }
         if (targets.opponents.bosses().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
@@ -213,7 +211,7 @@ void PlayerAttacks::updateStrikes(float seconds, std::span<PlayerRuntime> player
             }
             targets.opponents.bosses().hurt(struck);
         }
-        for (const std::int32_t critter :
+        for (const int critter :
              targets.opponents.critters().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
             const Vec3 direction = targets.opponents.critters().positionOf(critter) - hit.centre;
             targets.opponents.strikeCritter(critter, hit.damage, flags,
@@ -247,8 +245,7 @@ void PlayerAttacks::updateStrikes(float seconds, std::span<PlayerRuntime> player
             if (stats == nullptr || archive == nullptr) {
                 continue;
             }
-            const std::int32_t mark =
-                stats->moveStrikes[static_cast<std::size_t>(source->row)].hitEffect;
+            const int mark = stats->moveStrikes[static_cast<std::size_t>(source->row)].hitEffect;
             if (mark >= 0 && static_cast<std::size_t>(mark) < stats->moveEffects.size()) {
                 const MoveEffect& effect = stats->moveEffects[static_cast<std::size_t>(mark)];
                 if (!effect.tree.empty() && archive->trees.find(effect.tree).has_value()) {
@@ -281,7 +278,7 @@ void PlayerAttacks::shieldPotion(std::size_t index, std::span<PlayerRuntime> pla
         return;
     }
     PlayerActor& actor = players[index].actor;
-    const std::int32_t kind = actor.save().progress().inventory.takePotion();
+    const int kind = actor.save().progress().inventory.takePotion();
     if (kind == 0) {
         return;
     }
@@ -371,9 +368,9 @@ void PlayerAttacks::showBlock(std::size_t index, float taken, float left,
 /** Runs a character's meter: a turbo attack is paid for as it first does harm, a shove runs
  * it down while it lasts, and otherwise it climbs while the character is free to act, the
  * narrator saying so when it comes full. */
-void PlayerAttacks::updateTurbo(std::size_t index, std::int32_t ticks, float seconds,
+void PlayerAttacks::updateTurbo(std::size_t index, int ticks, float seconds,
                                 std::span<PlayerRuntime> players,
-                                const std::function<void(std::int32_t, std::size_t)>& help) {
+                                const std::function<void(int, std::size_t)>& help) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -390,16 +387,16 @@ void PlayerAttacks::updateTurbo(std::size_t index, std::int32_t ticks, float sec
             cry(index, voice, players);
         }
     }
-    move.advance(
-        body.action(), body.player().frame(), players[index].actor.facing(), stats, meter,
-        {.announce = [&help, index](std::int32_t id) { help(id, index); },
-         .dim = [this](float amount) { m_resources->dimmer.ask(amount); },
-         .volley =
-             [this, index, players](const Vec3& direction) {
-                 m_resources->arsenal.launchWeapon(
-                     players[index].actor, players[index].figure.get(), direction, 1.0f, false);
-             },
-         .strike = [this, index, players](std::int32_t row) { fireStrike(index, row, players); }});
+    move.advance(body.action(), body.player().frame(), players[index].actor.facing(), stats, meter,
+                 {.announce = [&help, index](int id) { help(id, index); },
+                  .dim = [this](float amount) { m_resources->dimmer.ask(amount); },
+                  .volley =
+                      [this, index, players](const Vec3& direction) {
+                          m_resources->arsenal.launchWeapon(players[index].actor,
+                                                            players[index].figure.get(), direction,
+                                                            1.0f, false);
+                      },
+                  .strike = [this, index, players](int row) { fireStrike(index, row, players); }});
     if (body.action() == PlayerAnimator::Action::Shove) {
         meter.drain(seconds);
     } else if (players[index].life == PlayerLife::Standing && !body.turboing() &&
@@ -436,9 +433,8 @@ void PlayerAttacks::updateProjectiles(float seconds, std::span<PlayerRuntime> pl
     for (std::size_t barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
         if (targets.fixtures.barrels().standing(barrel)) {
             const Breakables::Barrel& cask = targets.fixtures.barrels().barrel(barrel);
-            missileTargets.push_back(MissileTarget{static_cast<std::int32_t>(barrel),
-                                                   cask.figure.position(), cask.radius,
-                                                   cask.height});
+            missileTargets.push_back(MissileTarget{static_cast<int>(barrel), cask.figure.position(),
+                                                   cask.radius, cask.height});
         }
     }
     for (MissileTarget target : targets.opponents.enemies().targets()) {
@@ -454,21 +450,20 @@ void PlayerAttacks::updateProjectiles(float seconds, std::span<PlayerRuntime> pl
         missileTargets.push_back(target);
     }
     for (std::size_t g = 0; g < targets.opponents.generators().count(); ++g) {
-        if (targets.opponents.generators().standing(static_cast<std::int32_t>(g))) {
-            const Obstacle& box =
-                targets.opponents.generators().boxOf(static_cast<std::int32_t>(g));
-            missileTargets.push_back(MissileTarget{
-                static_cast<std::int32_t>(g) + kGeneratorTargetBase,
-                targets.opponents.generators().positionOf(static_cast<std::int32_t>(g)),
-                std::max(box.halfAcross, box.halfAlong), box.height});
+        if (targets.opponents.generators().standing(static_cast<int>(g))) {
+            const Obstacle& box = targets.opponents.generators().boxOf(static_cast<int>(g));
+            missileTargets.push_back(
+                MissileTarget{static_cast<int>(g) + kGeneratorTargetBase,
+                              targets.opponents.generators().positionOf(static_cast<int>(g)),
+                              std::max(box.halfAcross, box.halfAlong), box.height});
         }
     }
     for (std::size_t rock = 0; rock < targets.fixtures.safeRocks().size(); ++rock) {
         if (targets.fixtures.safeRocks().standing(rock)) {
             const Obstacle& cover = targets.fixtures.safeRocks().rock(rock).obstacle;
-            missileTargets.push_back(
-                MissileTarget{static_cast<std::int32_t>(rock) + kSafeRockTargetBase, cover.centre,
-                              cover.cylinderRadius, cover.height});
+            missileTargets.push_back(MissileTarget{static_cast<int>(rock) + kSafeRockTargetBase,
+                                                   cover.centre, cover.cylinderRadius,
+                                                   cover.height});
         }
     }
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),

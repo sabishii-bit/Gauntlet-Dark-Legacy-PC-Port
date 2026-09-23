@@ -33,13 +33,13 @@ public:
         bool sparkle = false; ///< one request per visit, even if the caller lacks effects
     };
 
-    void begin(std::int32_t kind, char realm, std::uint16_t runesInRealm, std::uint16_t runesFound,
+    void begin(int kind, char realm, std::uint16_t runesInRealm, std::uint16_t runesFound,
                bool goldLeft);
     /** Borrows the wizard tree and resources; party contains only standing participants. */
     void bindWizard(RenderDevice& device, ItemArchive& items, const Vec3& boss,
                     std::span<const Vec3> party);
     void clear();
-    Update update(std::int32_t ticks, float seconds, bool goldLeft, const MessageTable& strings);
+    Update update(int ticks, float seconds, bool goldLeft, const MessageTable& strings);
     void drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, const MessageTable& strings,
                      float width, float height) const;

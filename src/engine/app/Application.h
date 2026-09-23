@@ -18,7 +18,7 @@ struct ApplicationDesc {
     bool vsync = true;
     bool enableValidation = false;
     std::uint64_t maxFrames = 0; ///< quit after this many frames; 0 runs until closed
-    std::uint32_t maxFrameRate =
+    unsigned int maxFrameRate =
         0; ///< sleep to hold this many frames per second; 0 leaves it to vsync
 };
 
@@ -47,8 +47,8 @@ protected:
 
     void requestQuit() { m_quitRequested = true; }
     /** Holds this many frames a second from the next frame on; 0 leaves it to vsync. */
-    void setMaxFrameRate(std::uint32_t rate) { m_desc.maxFrameRate = rate; }
-    std::uint32_t maxFrameRate() const { return m_desc.maxFrameRate; }
+    void setMaxFrameRate(unsigned int rate) { m_desc.maxFrameRate = rate; }
+    unsigned int maxFrameRate() const { return m_desc.maxFrameRate; }
 
 private:
     void checkAssetDirectory() const;

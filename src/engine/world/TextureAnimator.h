@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <span>
 #include <vector>
@@ -17,7 +16,7 @@ namespace gdl {
 /** What an animation shows now: the frame its cycle has reached, or how far its scroll has
  * slid a coordinate and how much it has stretched it. */
 struct TextureMotion {
-    std::uint32_t slot = 0;
+    unsigned int slot = 0;
     const Texture* frame = nullptr; ///< null for a scroll
     Vec2 offset{0.0f, 0.0f};
     Vec2 scale{1.0f, 1.0f};
@@ -48,10 +47,10 @@ public:
     void clear();
     std::size_t size() const { return m_entries.size(); }
     /** Game frames stepped since binding. */
-    std::uint32_t frame() const { return m_frame; }
+    unsigned int frame() const { return m_frame; }
     /** Where an animation is in its cycle. */
-    std::int32_t counter(std::size_t index) const { return m_entries[index].counter; }
-    std::uint32_t slot(std::size_t index) const { return m_entries[index].slot; }
+    int counter(std::size_t index) const { return m_entries[index].counter; }
+    unsigned int slot(std::size_t index) const { return m_entries[index].slot; }
     /** Whether an entry is keyed to a sequence's frame rather than stepped. */
     bool keyed(std::size_t index) const { return m_entries[index].keyed; }
 
@@ -59,38 +58,37 @@ public:
     TextureMotion motion(std::size_t index) const;
     /** Where the animation numbered `info` in what was bound stands at sequence frame
      * `frame`; nothing when it was not bound. */
-    std::optional<TextureMotion> motionAt(std::int32_t info, std::int32_t frame) const;
+    std::optional<TextureMotion> motionAt(int info, int frame) const;
     /** How far a keyed scroll has run at `sinceStart` frames past its first: the original's
      * easing over `rate` frames, then steady to its `frames`, then held. */
-    static float scrollAt(std::int32_t sinceStart, std::int32_t rate, std::int32_t frames);
+    static float scrollAt(int sinceStart, int rate, int frames);
     /** The same with the stretch it puts on the coordinate: none (the picture collapsed)
      * before it starts, then growing from one to `frames / rate` as it runs. */
-    static ScrollState scrollStateAt(std::int32_t sinceStart, std::int32_t rate,
-                                     std::int32_t frames);
+    static ScrollState scrollStateAt(int sinceStart, int rate, int frames);
     /** Advances `ticks` game frames. */
-    void step(std::uint32_t ticks = 1);
+    void step(unsigned int ticks = 1);
     /** Shows every animation where it stands. */
     void apply(WorldScene& scene) const;
     /** Advances `ticks` game frames, showing each step. */
-    void step(WorldScene& scene, std::uint32_t ticks = 1);
+    void step(WorldScene& scene, unsigned int ticks = 1);
 
 private:
     struct Entry {
-        std::uint32_t slot = 0;
+        unsigned int slot = 0;
         std::vector<const Texture*> frames; ///< the cycle's textures, when it cycles
         Vec2 direction{0.0f, 0.0f};         ///< the coordinate a scroll slides, and which way
-        std::int32_t period = 1;            ///< steps in a cycle
-        std::int32_t rate = 0;              ///< frames per step; 0 or 1 steps every frame
-        std::int32_t counter = 0;
-        bool keyed = false;      ///< read at a sequence frame, never stepped
-        std::int32_t offset = 0; ///< a keyed one's first sequence frame
+        int period = 1;                     ///< steps in a cycle
+        int rate = 0;                       ///< frames per step; 0 or 1 steps every frame
+        int counter = 0;
+        bool keyed = false; ///< read at a sequence frame, never stepped
+        int offset = 0;     ///< a keyed one's first sequence frame
     };
 
     static void show(const Entry& entry, WorldScene& scene);
 
     std::vector<Entry> m_entries;
-    std::vector<std::int32_t> m_entryOfInfo; ///< per animation bound, its entry or -1
-    std::uint32_t m_frame = 0;
+    std::vector<int> m_entryOfInfo; ///< per animation bound, its entry or -1
+    unsigned int m_frame = 0;
 };
 
 } // namespace gdl

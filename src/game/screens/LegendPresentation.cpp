@@ -1,7 +1,6 @@
 #include "game/screens/LegendPresentation.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -19,7 +18,7 @@ LegendPresentation::~LegendPresentation() {
 
 void LegendPresentation::clear() {
     stopLoop();
-    for (const std::uint32_t id : m_ownedEffects) {
+    for (const unsigned int id : m_ownedEffects) {
         m_effects.stop(id);
     }
     m_ownedEffects.clear();
@@ -34,17 +33,17 @@ void LegendPresentation::clear() {
     m_frozenTexture = nullptr;
 }
 
-std::uint32_t LegendPresentation::start(ItemArchive& archive, std::string_view tree,
-                                        const Vec3& position, const EffectTrees::Setting& setting) {
-    const std::uint32_t id = m_effects.startSet(m_assets.device, archive, tree, position, setting);
+unsigned int LegendPresentation::start(ItemArchive& archive, std::string_view tree,
+                                       const Vec3& position, const EffectTrees::Setting& setting) {
+    const unsigned int id = m_effects.startSet(m_assets.device, archive, tree, position, setting);
     if (id != 0) {
         m_ownedEffects.push_back(id);
     }
     return id;
 }
 
-void LegendPresentation::show(LegendCue cue, std::int32_t player, std::int32_t realm,
-                              std::int32_t kind, const std::optional<Bearer>& bearer) {
+void LegendPresentation::show(LegendCue cue, int player, int realm, int kind,
+                              const std::optional<Bearer>& bearer) {
     if (cue == LegendCue::Brandished) {
         clear();
         m_kind = kind;
@@ -113,7 +112,7 @@ LegendPresentation::Update LegendPresentation::update(float seconds,
                                                       const std::optional<Bearer>& bearer,
                                                       const std::optional<Target>& target) {
     Update result;
-    std::erase_if(m_ownedEffects, [this](std::uint32_t id) { return !m_effects.playing(id); });
+    std::erase_if(m_ownedEffects, [this](unsigned int id) { return !m_effects.playing(id); });
     if (!bearer.has_value() || m_player < 0 || bearer->player != m_player) {
         return result;
     }

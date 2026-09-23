@@ -57,12 +57,12 @@ public:
      * under it follows. Objects that are not animated stay where the layout put them. */
     void setObjectTransform(std::size_t object, const Mat4& local);
     /** Shows `texture` wherever the level's texture `slot` is drawn; null restores it. */
-    void setTextureFrame(std::uint32_t slot, const Texture* texture);
+    void setTextureFrame(unsigned int slot, const Texture* texture);
     /** Slides the coordinates of everything drawn with `slot`. */
-    void setTextureOffset(std::uint32_t slot, const Vec2& offset);
+    void setTextureOffset(unsigned int slot, const Vec2& offset);
     /** The texture drawn for a slot, or null when the scene never draws it. */
-    const Texture* textureOf(std::uint32_t slot) const;
-    Vec2 textureOffset(std::uint32_t slot) const;
+    const Texture* textureOf(unsigned int slot) const;
+    Vec2 textureOffset(unsigned int slot) const;
     /** An object's placement composed with every ancestor's, as it stands now. */
     const Mat4& worldTransform(std::size_t object) const;
     /** Fades an object drawn as a unit: 1 as placed, 0 gone. Others are unchanged. */
@@ -93,7 +93,7 @@ private:
         const Texture* current() const { return frame != nullptr ? frame : texture; }
     };
     struct Batch {
-        std::uint32_t slot = 0;
+        unsigned int slot = 0;
         const Texture* lightmap = nullptr; ///< scales the colour by its alpha, when set
         Vec2 lightmapScale{1.0f, 1.0f};    ///< texels of the lightmap to its [0, 1] range
         ImmediateBatch geometry;
@@ -102,7 +102,7 @@ private:
         bool depthWrite = true;
     };
     struct UnitPart {
-        std::uint32_t slot = 0;
+        unsigned int slot = 0;
         const MeshPart* part = nullptr;
         const Texture* lightmap = nullptr;
         Vec2 lightmapScale{1.0f, 1.0f};
@@ -116,7 +116,7 @@ private:
         std::vector<UnitPart> parts;
         float sortBias = 0.0f;
         float alpha = 1.0f;
-        std::uint32_t facing = 0;
+        unsigned int facing = 0;
         bool prelit = false; ///< shaded by its vertices' colours ///< turned to the camera this way
         bool chrome = false;
         bool sorted = false;
@@ -124,11 +124,11 @@ private:
     };
     struct Placement {
         Mat4 local{1.0f}; ///< relative to the parent
-        std::int32_t parent = -1;
+        int parent = -1;
         bool moving = false;
     };
 
-    Slot& slotFor(std::uint32_t index, TextureSet& textures, RenderDevice& device,
+    Slot& slotFor(unsigned int index, TextureSet& textures, RenderDevice& device,
                   std::span<TextureSet* const> lenders);
     const Mat4& worldOf(std::size_t object) const;
     Unit* unitOf(std::size_t object);
@@ -137,7 +137,7 @@ private:
     void drawUnit(RenderDevice& device, const Unit& unit, const Mat4& clip,
                   const CameraFrame& camera, bool opaque, bool translucent) const;
 
-    std::unordered_map<std::uint32_t, Slot> m_slots;
+    std::unordered_map<unsigned int, Slot> m_slots;
     std::vector<Batch> m_batches;
     std::vector<Unit> m_units;
     std::vector<Placement> m_placements;

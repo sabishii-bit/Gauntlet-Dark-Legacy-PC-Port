@@ -1,7 +1,6 @@
 #include "game/world/LevelSoundscape.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <format>
 #include <memory>
@@ -28,7 +27,7 @@ constexpr std::array<OpeningSounds, 4> kOpeningSounds{{{"S_ELVMETL", "S_ELVMETST
                                                        {"S_ELVSTONEL", "S_ELVSTONESTPL"}}};
 
 /** The sounds a trigger's slot names, or null for a slot without any. */
-const OpeningSounds* openingSoundsOf(std::int32_t slot) {
+const OpeningSounds* openingSoundsOf(int slot) {
     return slot >= 0 && static_cast<std::size_t>(slot) < kOpeningSounds.size()
                ? &kOpeningSounds[static_cast<std::size_t>(slot)]
                : nullptr;
@@ -179,7 +178,7 @@ SoundHandle LevelSoundscape::narrate(std::string_view name, Narrator which, Soun
     return kNoSound;
 }
 
-void LevelSoundscape::playCommon(std::optional<std::uint32_t> sound) {
+void LevelSoundscape::playCommon(std::optional<unsigned int> sound) {
     if (m_output != nullptr && sound.has_value()) {
         track(m_output->play(m_common.sequence(*sound), 1.0f, SoundCategory::Effects));
     }

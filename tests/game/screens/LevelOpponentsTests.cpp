@@ -1,6 +1,5 @@
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -52,13 +51,13 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
         .fallen = [](const Vec3&) { FAIL("No boss"); },
         .spew = [](const CritterSpew&) { FAIL("No boss"); },
         .advanceVictory =
-            [&](std::int32_t ticks, float seconds) {
+            [&](int ticks, float seconds) {
                 REQUIRE(ticks == 6);
                 REQUIRE(seconds == 0.1f);
                 phases.emplace_back("victory");
             },
         .levels = [&] { phases.emplace_back("levels"); },
-        .award = [](std::int32_t, std::int32_t, bool) { FAIL("No kills"); }};
+        .award = [](int, int, bool) { FAIL("No kills"); }};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});
@@ -124,7 +123,7 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
         {});
     events.settleBlasts = [] {};
     events.advanceLegend = [](float) {};
-    events.advanceVictory = [](std::int32_t, float) {};
+    events.advanceVictory = [](int, float) {};
     events.levels = [] {};
     opponents.update(14, 0.24f, players, {}, events);
     fire.breath = true;
@@ -158,10 +157,10 @@ TEST_CASE("the level keeps the dragon FIRE effect attached to its animated node"
     events.advanceLegend = [](float) {};
     events.fallen = [](const Vec3&) {};
     events.spew = [](const CritterSpew&) {};
-    events.advanceVictory = [](std::int32_t, float) {};
+    events.advanceVictory = [](int, float) {};
     events.levels = [] {};
-    events.award = [](std::int32_t, std::int32_t, bool) {};
-    std::uint32_t fireId = 0;
+    events.award = [](int, int, bool) {};
+    unsigned int fireId = 0;
     int attachedFrames = 0;
     for (int tick = 0; tick < 2400 && attachedFrames < 20; ++tick) {
         opponents.update(1, 1.0f / 60, players, {}, events);

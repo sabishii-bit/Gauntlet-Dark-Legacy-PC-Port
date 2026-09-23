@@ -3,7 +3,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 
 #include "engine/core/Log.h"
@@ -58,12 +57,11 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     // transform: the animated, and the force fields that only fade.
     for (std::size_t i = 0; i < m_layout.objects().size(); ++i) {
         if ((m_layout.objects()[i].flags & WorldObject::kAnimated) != 0 || m_scene.moving(i)) {
-            m_movingObjects.push_back(static_cast<std::int32_t>(i));
+            m_movingObjects.push_back(static_cast<int>(i));
         }
     }
     m_collision.setMovingObjects(m_movingObjects);
-    std::erase_if(m_movingObjects,
-                  [&](std::int32_t object) { return !m_collision.moving(object); });
+    std::erase_if(m_movingObjects, [&](int object) { return !m_collision.moving(object); });
     m_triggers.bind(m_layout, m_worldAnimator, &m_collision);
     m_worldAnimator.apply(m_scene);
     syncCollision();
@@ -93,7 +91,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
 }
 
 void LevelWorld::syncCollision() {
-    for (const std::int32_t object : m_movingObjects) {
+    for (const int object : m_movingObjects) {
         m_collision.setObjectTransform(object,
                                        m_scene.worldTransform(static_cast<std::size_t>(object)));
     }
@@ -121,7 +119,7 @@ void LevelWorld::update(float seconds) {
     m_frameRemainder += seconds * WorldAnimator::kFramesPerSecond;
     const float frames = std::floor(m_frameRemainder);
     m_frameRemainder -= frames;
-    m_textureAnimator.step(m_scene, static_cast<std::uint32_t>(frames));
+    m_textureAnimator.step(m_scene, static_cast<unsigned int>(frames));
 }
 
 /** Takes the light, the camera range and the sounds from the realm's data. */
@@ -203,16 +201,16 @@ void LevelWorld::setAmbientOffset(float offset) {
     m_scene.setDarken(1.0f - kept);
 }
 
-const WorldLocator* LevelWorld::startPoint(std::uint32_t index) const {
+const WorldLocator* LevelWorld::startPoint(unsigned int index) const {
     return m_layout.findLocator(LocatorKind::Start, index);
 }
 
-std::uint32_t LevelWorld::towerMarkerOf(std::uint32_t realm) {
-    constexpr std::array<std::uint32_t, 14> kMarkers{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
+unsigned int LevelWorld::towerMarkerOf(unsigned int realm) {
+    constexpr std::array<unsigned int, 14> kMarkers{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
     return realm < kMarkers.size() ? kMarkers[realm] : 0;
 }
 
-const WorldLocator* LevelWorld::arrivalPoint(std::uint32_t realm) const {
+const WorldLocator* LevelWorld::arrivalPoint(unsigned int realm) const {
     const WorldLocator* marker = isTower() ? startPoint(towerMarkerOf(realm)) : nullptr;
     return marker != nullptr ? marker : startPoint(0);
 }

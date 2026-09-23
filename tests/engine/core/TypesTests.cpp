@@ -8,6 +8,16 @@
 
 namespace {
 
+TEST_CASE("ordinary integers interoperate with fixed-width interfaces on supported platforms",
+          "[core][types]") {
+    // These are the Windows/Linux ABIs supported by the renderer and asset bridge.
+    // Check identity, not just size: pointers, spans and template arguments must agree.
+    STATIC_REQUIRE(std::is_same_v<int, std::int32_t>);
+    STATIC_REQUIRE(std::is_same_v<unsigned int, std::uint32_t>);
+    STATIC_REQUIRE(sizeof(int) == 4);
+    STATIC_REQUIRE(sizeof(unsigned int) == 4);
+}
+
 TEST_CASE("standard numeric representations preserve asset and GPU widths", "[core][types]") {
     STATIC_REQUIRE(sizeof(std::uint8_t) == 1);
     STATIC_REQUIRE(sizeof(std::uint16_t) == 2);

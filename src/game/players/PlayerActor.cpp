@@ -2,13 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 
 #include "game/players/Progression.h"
 
 namespace gdl::game {
 
-void PlayerActor::spawn(std::int32_t player, const CharacterSave& save, const ClassStats* stats,
+void PlayerActor::spawn(int player, const CharacterSave& save, const ClassStats* stats,
                         const Vec3& position, float yaw) {
     m_player = player;
     m_save = save;
@@ -20,7 +19,7 @@ void PlayerActor::spawn(std::int32_t player, const CharacterSave& save, const Cl
     m_height = kDefaultHeight;
     m_followHeight = kDefaultFollowHeight;
     if (stats != nullptr) {
-        const std::int32_t level = experienceLevel(save.experience());
+        const int level = experienceLevel(save.experience());
         speedStat = static_cast<float>(displayStats(*stats, level, save.progress()).speed());
         if (stats->width > 0.0f) {
             m_radius = stats->width * 0.5f;
@@ -62,10 +61,9 @@ void PlayerActor::update(const MoveInput& input, float cameraYaw, float seconds,
         return;
     }
     // Walk in steps no longer than half the body, so no wall is ever stepped clean through.
-    const auto steps =
-        std::max(1, static_cast<std::int32_t>(std::ceil(distance / (m_radius * 0.5f))));
+    const auto steps = std::max(1, static_cast<int>(std::ceil(distance / (m_radius * 0.5f))));
     const float stride = distance / static_cast<float>(steps);
-    for (std::int32_t i = 0; i < steps; ++i) {
+    for (int i = 0; i < steps; ++i) {
         Vec3 target = m_position + direction * stride;
         target = collision->resolveWalls(target, m_radius, target.y + kFootClearance,
                                          target.y + m_height - kFootClearance);

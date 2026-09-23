@@ -37,8 +37,7 @@ void BossSequence::clear() {
 
 /** Translate scene-owned poses into the presentation's small, read-only snapshot. */
 std::optional<LegendPresentation::Bearer>
-BossSequence::bearer(std::int32_t player, std::int32_t kind,
-                     std::span<const PlayerRuntime> players) {
+BossSequence::bearer(int player, int kind, std::span<const PlayerRuntime> players) {
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         if (actor.player() != player) {
@@ -70,7 +69,7 @@ BossSequence::bearer(std::int32_t player, std::int32_t kind,
 void BossSequence::showLegend(const LegendEvent& event, const Bosses& bosses,
                               std::span<const PlayerRuntime> players) {
     if (m_legend != nullptr) {
-        const std::int32_t kind = bosses.view().kind;
+        const int kind = bosses.view().kind;
         m_legend->show(event.cue, event.player, event.realm, kind,
                        bearer(event.player, kind, players));
     }
@@ -110,7 +109,7 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
     if (level == nullptr || m_victory.state().running() || m_victory.state().finished()) {
         return;
     }
-    const std::int32_t order = LevelRef::orderOf(r.world.ref().realmId);
+    const int order = LevelRef::orderOf(r.world.ref().realmId);
     std::uint16_t found = 0;
     for (PlayerRuntime& runtime : players) {
         PlayerActor& actor = runtime.actor;
@@ -120,9 +119,9 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
     // The realm's runestones are those its levels' records number, from one.
     std::uint16_t inRealm = 0;
     if (r.levels != nullptr) {
-        for (const std::int32_t rune : r.levels->runesOf(r.world.ref().realm)) {
+        for (const int rune : r.levels->runesOf(r.world.ref().realm)) {
             if (rune > 0 && rune <= Relics::kRuneCount) {
-                inRealm |= static_cast<std::uint16_t>(1U << static_cast<std::uint32_t>(rune - 1));
+                inRealm |= static_cast<std::uint16_t>(1U << static_cast<unsigned int>(rune - 1));
             }
         }
     }
@@ -148,8 +147,7 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
 
 /** The wizard's visit runs on: he fades in, says his piece (typed out under the view, his
  * lines from the level's bank), then the party sparkles and is taken to the tower. */
-bool BossSequence::advanceVictory(std::int32_t ticks, float seconds,
-                                  std::span<const PlayerRuntime> players,
+bool BossSequence::advanceVictory(int ticks, float seconds, std::span<const PlayerRuntime> players,
                                   const MessageTable& strings) {
     if (!m_resources || !m_victory.state().running()) {
         return false;
@@ -179,17 +177,15 @@ void BossSequence::spewCoins(const CritterSpew& spew, LevelOpponents& opponents,
         return;
     }
     auto& r = *m_resources;
-    for (const std::int32_t enemy :
-         opponents.enemies().within(spew.origin, kBossDeathBlastRadius)) {
+    for (const int enemy : opponents.enemies().within(spew.origin, kBossDeathBlastRadius)) {
         const Vec3 away = opponents.enemies().positionOf(enemy) - spew.origin;
         opponents.strikeEnemy(enemy, kBossDeathBlast, EnemyHit::kKnockDown,
                               Vec3{away.x, 0.0f, away.z}, -1, players);
     }
-    for (const std::int32_t generator :
-         opponents.generators().within(spew.origin, kBossDeathBlastRadius)) {
+    for (const int generator : opponents.generators().within(spew.origin, kBossDeathBlastRadius)) {
         opponents.strikeGenerator(generator, kBossDeathBlast, -1);
     }
-    const auto count = static_cast<std::int32_t>(players.size());
+    const auto count = static_cast<int>(players.size());
     for (const SpewedCoin& coin : BossCoins::spray(r.world.ref().realmId, count, spew.velocity,
                                                    spew.halfAngle, m_coinRandom)) {
         r.world.throwItem(r.device, coin.name, spew.origin, coin.velocity,

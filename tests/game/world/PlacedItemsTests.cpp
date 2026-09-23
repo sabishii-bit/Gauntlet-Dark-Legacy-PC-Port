@@ -1,7 +1,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 
 #include <catch2/catch_approx.hpp>
@@ -78,7 +77,7 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
     REQUIRE(std::abs(Vec3{turned[1]}.z) < 1e-4f);
     REQUIRE(Vec3{turned[3]} == Vec3{0.0f, 0.0f, 0.0f});
     // The sheen slides over the crystal: the archive's scroll on its texture has moved.
-    constexpr std::uint32_t kSheenTexture = 181;
+    constexpr unsigned int kSheenTexture = 181;
     REQUIRE(items.item(firstGem).model.textureOffset(kSheenTexture) != Vec2{0.0f, 0.0f});
     items.draw(device, Mat4{1.0f}, WorldLighting{});
     REQUIRE(device.draws.size() >= std::size_t{60}); // a shadow, the crystal, its shine and glow
@@ -200,7 +199,7 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
     REQUIRE(ring.value == 3);
     REQUIRE(items.item(before + 1).flags == 4); // the green potion's kind
     // By its record's number too, as a chest drops what it held, holding as many as said.
-    const std::int32_t keyRecord = items.item(before).info;
+    const int keyRecord = items.item(before).info;
     REQUIRE_FALSE(items.placeRecord(device, -1, Vec3{0.0f}, nullptr));
     REQUIRE_FALSE(items.placeRecord(device, 9999, Vec3{0.0f}, nullptr));
     REQUIRE(items.placeRecord(device, keyRecord, Vec3{540.0f, 0.0f, 500.0f}, nullptr, 5));
@@ -214,7 +213,7 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
     int asked = 0;
     REQUIRE(items
                 .collect(device, party,
-                         [&](const Pickup& pickup) -> std::optional<std::int32_t> {
+                         [&](const Pickup& pickup) -> std::optional<int> {
                              ++asked;
                              REQUIRE(pickup.amount == 3);
                              REQUIRE(pickup.subtype == 2);
@@ -223,13 +222,13 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
                 .empty());
     REQUIRE(asked == 1);
     REQUIRE(items.item(before).visible);
-    std::vector<Pickup> got = items.collect(
-        device, party, [](const Pickup&) -> std::optional<std::int32_t> { return 1; });
+    std::vector<Pickup> got =
+        items.collect(device, party, [](const Pickup&) -> std::optional<int> { return 1; });
     REQUIRE(got.size() == 1);
     REQUIRE(got[0].amount == 3);
     REQUIRE(items.item(before).visible);
     REQUIRE(items.item(before).value == 1);
-    got = items.collect(device, party, [](const Pickup& pickup) -> std::optional<std::int32_t> {
+    got = items.collect(device, party, [](const Pickup& pickup) -> std::optional<int> {
         REQUIRE(pickup.amount == 1);
         return 0;
     });

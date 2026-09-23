@@ -32,6 +32,6 @@ public:
 private:
     void cryPain(const Events& events);
     std::mt19937 m_painRandom{0x5A17u};
-    std::uint32_t m_lowHealthTurn = 0;
+    unsigned int m_lowHealthTurn = 0;
 };
 } // namespace gdl::game

@@ -22,11 +22,10 @@ struct PlayerRuntime {
     CharacterSave entrySave;              ///< restored when a fallen character leaves the level
     PlayerLife life = PlayerLife::Standing;
     float painOwed = 0.0f;                  ///< accumulated damage not yet answered by a cry
-    std::int32_t hitSoundGap = 0;           ///< ticks before another impact sound
+    int hitSoundGap = 0;                    ///< ticks before another impact sound
     PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
     TurboMeter turbo;
-    std::vector<std::int32_t>
-        helpHeard; ///< since the character was loaded, distinct from saved help
+    std::vector<int> helpHeard; ///< since the character was loaded, distinct from saved help
     TurboMove move;
     std::vector<std::size_t> rammed; ///< barrels already hit by the current charge
     float blockLeft = 0.0f;          ///< seconds before another block effect

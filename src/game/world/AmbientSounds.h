@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -14,11 +13,11 @@ namespace gdl::game {
 
 /** One of the level's sound items: a loop at a spot, heard within its radius. */
 struct AmbientEmitter {
-    std::int32_t instance = -1;
+    int instance = -1;
     Vec3 position{0.0f, 0.0f, 0.0f};
     float radius = 0.0f;
     SoundSet* bank = nullptr;
-    std::uint32_t sound = 0;
+    unsigned int sound = 0;
     SoundHandle handle = kNoSound;
     float loudness = 0.0f; ///< 0 to 1, as last heard
 };
@@ -38,7 +37,7 @@ struct AmbientEar {
  */
 class AmbientSounds {
 public:
-    static constexpr std::int32_t kSoundItem = 13;
+    static constexpr int kSoundItem = 13;
     static constexpr float kPeak = 224.0f / 255.0f; ///< the original's loudest
     static constexpr float kSilentAt = 1.5f;        ///< radii out where a loop has faded away
 

@@ -10,13 +10,13 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::int32_t kDemon = 42;
-constexpr std::int32_t kDemonUnderworld = 43;
-constexpr std::int32_t kGarm = 44;
+constexpr int kDemon = 42;
+constexpr int kDemonUnderworld = 43;
+constexpr int kGarm = 44;
 
 } // namespace
 
-std::string_view BossVictory::defeatMessageOf(std::int32_t kind) {
+std::string_view BossVictory::defeatMessageOf(int kind) {
     switch (kind) {
     case 34: return "DRAGON_SPEECH";
     case 35: return "CHIMERA_SPEECH";
@@ -33,7 +33,7 @@ std::string_view BossVictory::defeatMessageOf(std::int32_t kind) {
     }
 }
 
-std::string_view BossVictory::runeMessageOf(std::int32_t quality) {
+std::string_view BossVictory::runeMessageOf(int quality) {
     switch (quality) {
     case 0: return "RUNE_PHRASE0";
     case 1: return "RUNE_PHRASE1";
@@ -42,7 +42,7 @@ std::string_view BossVictory::runeMessageOf(std::int32_t quality) {
     }
 }
 
-std::string BossVictory::defeatVoiceOf(std::int32_t kind, char realm) {
+std::string BossVictory::defeatVoiceOf(int kind, char realm) {
     switch (kind) {
     case kDemon: return "S_E2VOXA";
     case kDemonUnderworld: return "S_ENDVOX";
@@ -51,12 +51,12 @@ std::string BossVictory::defeatVoiceOf(std::int32_t kind, char realm) {
     }
 }
 
-std::string BossVictory::runeVoiceOf(std::int32_t kind, char realm, std::int32_t quality) {
+std::string BossVictory::runeVoiceOf(int kind, char realm, int quality) {
     if (kind >= kDemon) {
         return kind == kDemon ? "S_E2VOXB" : std::string{};
     }
     // None found, some, the one (of one), both.
-    std::int32_t which = 1;
+    int which = 1;
     if (quality <= 0) {
         which = 0;
     } else if (quality == 3) {
@@ -65,7 +65,7 @@ std::string BossVictory::runeVoiceOf(std::int32_t kind, char realm, std::int32_t
     return std::format("S_RUNEVOX{}{}", which, realm);
 }
 
-std::int32_t BossVictory::qualityOf(std::uint16_t all, std::uint16_t found) {
+int BossVictory::qualityOf(std::uint16_t all, std::uint16_t found) {
     if (all == 0) {
         return 0;
     }
@@ -75,8 +75,8 @@ std::int32_t BossVictory::qualityOf(std::uint16_t all, std::uint16_t found) {
     return (all & found) != 0 ? 1 : 0;
 }
 
-void BossVictory::begin(std::int32_t kind, char realm, std::uint16_t runesInRealm,
-                        std::uint16_t runesFound, bool goldLeft) {
+void BossVictory::begin(int kind, char realm, std::uint16_t runesInRealm, std::uint16_t runesFound,
+                        bool goldLeft) {
     clear();
     m_stage = Stage::Waiting;
     m_kind = kind;
@@ -103,7 +103,7 @@ void BossVictory::clear() {
     m_sparkling = false;
 }
 
-void BossVictory::say(std::string_view message, std::int32_t pauseAfter, const std::string& voice,
+void BossVictory::say(std::string_view message, int pauseAfter, const std::string& voice,
                       std::vector<VictoryVoice>& voices) {
     m_caption = VictoryCaption{std::string(message), 0, 0};
     m_typeTicks = 0;
@@ -118,7 +118,7 @@ void BossVictory::say(std::string_view message, std::int32_t pauseAfter, const s
 
 /** A character every two ticks; a page done waits a second, then the next; past the last
  * page the caption comes down and the pause after is waited out. */
-bool BossVictory::type(std::int32_t ticks, std::span<const std::size_t> pageLengths) {
+bool BossVictory::type(int ticks, std::span<const std::size_t> pageLengths) {
     if (m_pagesOver) {
         m_pauseTicks += ticks;
         return m_pauseTicks >= m_pauseAfter;
@@ -166,8 +166,7 @@ void BossVictory::setGoldLeft(bool left) {
     }
 }
 
-std::vector<VictoryVoice> BossVictory::update(std::int32_t ticks,
-                                              std::span<const std::size_t> pageLengths) {
+std::vector<VictoryVoice> BossVictory::update(int ticks, std::span<const std::size_t> pageLengths) {
     std::vector<VictoryVoice> voices;
     if (!running() || ticks <= 0) {
         return voices;

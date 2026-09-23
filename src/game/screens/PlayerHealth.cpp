@@ -1,20 +1,19 @@
 #include "game/screens/PlayerHealth.h"
 
 #include <cmath>
-#include <cstdint>
 #include <format>
 
 #include "engine/core/Log.h"
 namespace gdl::game {
 namespace {
-constexpr float kPainEvery = 30.0f;     ///< harm from blows between cries
-constexpr std::int32_t kHeavyBlow = 60; ///< a blow taking more than this is cried over at once
-constexpr std::uint32_t kPainCries = 4; ///< S_<CLS>PAIN1 to 4
+constexpr float kPainEvery = 30.0f;    ///< harm from blows between cries
+constexpr int kHeavyBlow = 60;         ///< a blow taking more than this is cried over at once
+constexpr unsigned int kPainCries = 4; ///< S_<CLS>PAIN1 to 4
 constexpr std::string_view kDeathSound = "S_PLAYERDIES";
 constexpr std::string_view kHitSound = "S_PLYRDMG"; ///< a blow landing, now and then
-constexpr std::int32_t kHitSoundGapTicks = 30;
-constexpr std::int32_t kHealthLowMark = 150; ///< down to here: "needs food, badly"
-constexpr std::int32_t kHealthLastMark = 50; ///< and here: the life force, or about to die
+constexpr int kHitSoundGapTicks = 30;
+constexpr int kHealthLowMark = 150; ///< down to here: "needs food, badly"
+constexpr int kHealthLastMark = 50; ///< and here: the life force, or about to die
 constexpr std::string_view kBadlyLine = "S_BADLY";
 constexpr std::string_view kLifeForceLine = "S_LIFEFORCE";
 constexpr std::string_view kAboutToDieLine = "S_ABOUT";
@@ -47,7 +46,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, float damage, HurtKind kind, boo
         damage *= damageScale;
     }
     CharacterSave& save = runtime.actor.save();
-    const std::int32_t left = save.health() - static_cast<std::int32_t>(std::lround(damage));
+    const int left = save.health() - static_cast<int>(std::lround(damage));
     if (left < 1) {
         // Health of nought would read as a class never played: the fallen keep a point that
         // the status box does not show.
@@ -59,7 +58,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, float damage, HurtKind kind, boo
         log::info("Player {} has fallen", runtime.actor.player() + 1);
         return;
     }
-    const std::int32_t before = save.health();
+    const int before = save.health();
     save.progress().health = left;
     // Crossing into low health is remarked on by name rather than cried over.
     if (before > kHealthLowMark && left <= kHealthLowMark) {
@@ -96,7 +95,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, float damage, HurtKind kind, boo
 }
 
 void PlayerHealth::cryPain(const Events& events) {
-    const std::int32_t which = 1 + static_cast<std::int32_t>(m_painRandom() % kPainCries);
+    const int which = 1 + static_cast<int>(m_painRandom() % kPainCries);
     events.cry(std::format("PAIN{}", which));
 }
 } // namespace gdl::game

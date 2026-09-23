@@ -1,7 +1,6 @@
 #include "game/menu/MenuInput.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <span>
 
 namespace gdl::game {
@@ -68,8 +67,8 @@ bool anyButtonDown(const Input& input, std::span<const PadButton> buttons, int p
     return false;
 }
 
-constexpr std::uint32_t kFirstPrintable = 0x20;
-constexpr std::uint32_t kLastPrintable = 0x7E;
+constexpr unsigned int kFirstPrintable = 0x20;
+constexpr unsigned int kLastPrintable = 0x7E;
 
 } // namespace
 
@@ -94,7 +93,7 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
     out.leftHeld = held(bindings.left, bindings.padLeft);
     out.rightHeld = held(bindings.right, bindings.padRight);
     if (source.keyboard && source.text) {
-        for (const std::uint32_t codepoint : input.typedText()) {
+        for (const unsigned int codepoint : input.typedText()) {
             if (codepoint >= kFirstPrintable && codepoint <= kLastPrintable) {
                 out.typed.push_back(static_cast<char>(codepoint));
             }

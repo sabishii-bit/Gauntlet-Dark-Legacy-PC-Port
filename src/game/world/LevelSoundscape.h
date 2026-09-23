@@ -62,10 +62,10 @@ public:
 
 private:
     struct Opening {
-        std::int32_t target = -1;
+        int target = -1;
         SoundHandle handle = kNoSound;
     };
-    void playCommon(std::optional<std::uint32_t> sound);
+    void playCommon(std::optional<unsigned int> sound);
     SoundHandle track(SoundHandle handle);
 
     SoundPlayer* m_output = nullptr;
@@ -75,8 +75,8 @@ private:
     SoundSet m_narrator;
     SoundSet m_narratorSecond;
     AmbientSounds m_ambience; ///< cleared before its borrowed banks
-    std::array<std::optional<std::uint32_t>, 2> m_steps{};
-    std::optional<std::uint32_t> m_pickup;
+    std::array<std::optional<unsigned int>, 2> m_steps{};
+    std::optional<unsigned int> m_pickup;
     std::string m_stream;
     SoundHandle m_music = kNoSound;
     SoundHandle m_voice = kNoSound;

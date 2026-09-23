@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <cstdint>
 
 namespace gdl::game {
 
@@ -28,32 +27,32 @@ constexpr std::array<LegendWeakness, 9> kWeaknesses{{
 }};
 
 /** The chimera, the lich and the temple's boss roar a second after rising; the rest three. */
-bool quickToRoar(std::int32_t boss) {
+bool quickToRoar(int boss) {
     return boss == 35 || boss == 41 || boss == 42;
 }
 
 } // namespace
 
-const LegendWeakness* legendWeaknessOf(std::int32_t kind) {
+const LegendWeakness* legendWeaknessOf(int kind) {
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kWeaknesses, kind, &LegendWeakness::boss);
     return found != kWeaknesses.end() ? &*found : nullptr;
 }
 
-std::string_view LegendShow::chargeTree(std::int32_t color) {
+std::string_view LegendShow::chargeTree(int color) {
     constexpr std::array<std::string_view, 4> kTrees{"COMBO_YEL", "COMBO_BLU", "COMBO_RED",
                                                      "COMBO_GRN"};
     return kTrees[static_cast<std::size_t>(std::clamp(color, 0, 3))];
 }
 
-Color LegendShow::chargeTint(std::int32_t color) {
+Color LegendShow::chargeTint(int color) {
     constexpr std::array<Color, 4> kTints{Color::rgba(255, 255, 0), Color::rgba(0, 0, 255),
                                           Color::rgba(255, 0, 0), Color::rgba(0, 255, 0)};
     return kTints[static_cast<std::size_t>(std::clamp(color, 0, 3))];
 }
 
-ParticleDescriptor LegendShow::trailOf(std::int32_t kind) {
+ParticleDescriptor LegendShow::trailOf(int kind) {
     ParticleDescriptor trail;
     if (kind != 34 && kind != 35 && kind != 38) {
         return trail;
@@ -73,12 +72,12 @@ ParticleDescriptor LegendShow::trailOf(std::int32_t kind) {
     return trail;
 }
 
-std::int32_t legendRealmOf(std::int32_t kind) {
+int legendRealmOf(int kind) {
     const LegendWeakness* weakness = legendWeaknessOf(kind);
     return weakness != nullptr ? weakness->realm : 0;
 }
 
-void LegendRite::begin(std::int32_t player, const LegendWeakness& weakness) {
+void LegendRite::begin(int player, const LegendWeakness& weakness) {
     clear();
     m_stage = Stage::Carried;
     m_player = player;
@@ -97,7 +96,7 @@ void LegendRite::clear() {
     m_wearLeft = 0.0f;
 }
 
-std::vector<LegendCue> LegendRite::update(std::int32_t ticks, bool bossRisen, bool bossRoarDone) {
+std::vector<LegendCue> LegendRite::update(int ticks, bool bossRisen, bool bossRoarDone) {
     std::vector<LegendCue> cues;
     if (!running() || ticks <= 0) {
         return cues;
@@ -121,7 +120,7 @@ std::vector<LegendCue> LegendRite::update(std::int32_t ticks, bool bossRisen, bo
         cues.push_back(LegendCue::Thrown);
     }
     // The boss roars at it, once its wait is over.
-    const std::int32_t roarWait = quickToRoar(m_weakness.boss) ? kShortRoarWait : kLongRoarWait;
+    const int roarWait = quickToRoar(m_weakness.boss) ? kShortRoarWait : kLongRoarWait;
     if (!m_roarDue && m_ticks >= roarWait) {
         m_roarDue = true;
     }
@@ -154,11 +153,11 @@ bool LegendRite::finishOnImpact() {
     return true;
 }
 
-bool LegendShow::heldInHand(std::int32_t kind) {
+bool LegendShow::heldInHand(int kind) {
     return kind >= 34 && kind <= 39;
 }
 
-PlayerDeed LegendShow::gestureOf(std::int32_t kind) {
+PlayerDeed LegendShow::gestureOf(int kind) {
     switch (kind) {
     case 36:
     case 37: return PlayerDeed::ShootLegend;
@@ -170,7 +169,7 @@ PlayerDeed LegendShow::gestureOf(std::int32_t kind) {
     }
 }
 
-LegendShow::Flight LegendShow::flightOf(std::int32_t kind) {
+LegendShow::Flight LegendShow::flightOf(int kind) {
     switch (kind) {
     case 34:
     case 35:
@@ -181,15 +180,15 @@ LegendShow::Flight LegendShow::flightOf(std::int32_t kind) {
     }
 }
 
-std::string_view LegendShow::restingTreeOf(std::int32_t kind) {
+std::string_view LegendShow::restingTreeOf(int kind) {
     return kind == 39 ? kBurstTree : kProjectileTree;
 }
 
-std::string_view LegendShow::burstTreeOf(std::int32_t kind) {
+std::string_view LegendShow::burstTreeOf(int kind) {
     return kind == 39 ? kSecondBurstTree : kBurstTree;
 }
 
-float LegendShow::burstSecondsOf(std::int32_t kind) {
+float LegendShow::burstSecondsOf(int kind) {
     switch (kind) {
     case 41: return kLichBurstSeconds;
     case 37: return kSpiderBurstSeconds;
@@ -197,7 +196,7 @@ float LegendShow::burstSecondsOf(std::int32_t kind) {
     }
 }
 
-Vec3 LegendShow::bossOffsetOf(std::int32_t kind) {
+Vec3 LegendShow::bossOffsetOf(int kind) {
     switch (kind) {
     case 39: return Vec3{-2.4375f, -2.3125f, 3.33203125f};
     case 40: return Vec3{0.0f, -2.3125f, 2.5625f};

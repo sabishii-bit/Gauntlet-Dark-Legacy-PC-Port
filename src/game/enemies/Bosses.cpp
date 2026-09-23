@@ -1,6 +1,5 @@
 #include "game/enemies/Bosses.h"
 
-#include <cstdint>
 #include <utility>
 
 namespace gdl::game {
@@ -23,7 +22,7 @@ void Bosses::close() {
     m_legendEvents.clear();
 }
 
-bool Bosses::bringLegend(std::int32_t player) {
+bool Bosses::bringLegend(int player) {
     const LegendWeakness* weakness = legendWeaknessOf(m_kind);
     if (!m_id.has_value() || weakness == nullptr || m_rite.stage() != LegendRite::Stage::None) {
         return false;
@@ -36,11 +35,11 @@ bool Bosses::bringLegend(std::int32_t player) {
 
 /** The rite goes by what the boss is doing: risen once its start is over, roared once its
  * roar is; each cue is acted on and kept for the game. */
-void Bosses::stageLegend(std::int32_t ticks) {
+void Bosses::stageLegend(int ticks) {
     if (!m_rite.running() || !m_id.has_value()) {
         return;
     }
-    const std::int32_t moveType = m_fighter.moveTypeOf(*m_id);
+    const int moveType = m_fighter.moveTypeOf(*m_id);
     const bool risen = m_awake && moveType >= 0 && moveType != CritterMove::kStart;
     const CritterData* data = m_fighter.dataOf(*m_id);
     const bool canRoar = data != nullptr && data->moveOfType(CritterMove::kRoar).has_value();
@@ -109,7 +108,7 @@ bool Bosses::curbed() const {
     return m_id.has_value() && m_fighter.curbed(*m_id);
 }
 
-bool Bosses::spawn(std::int32_t kind, const Vec3& position, float yaw, float wakeDistance) {
+bool Bosses::spawn(int kind, const Vec3& position, float yaw, float wakeDistance) {
     const std::string_view name = bossNameOf(kind);
     if (name.empty() || m_id.has_value()) {
         return false;
@@ -129,7 +128,7 @@ bool Bosses::spawn(std::int32_t kind, const Vec3& position, float yaw, float wak
     return true;
 }
 
-void Bosses::update(std::int32_t ticks, float seconds, std::span<const EnemyView> players) {
+void Bosses::update(int ticks, float seconds, std::span<const EnemyView> players) {
     if (!m_id.has_value()) {
         return;
     }
@@ -177,7 +176,7 @@ std::vector<MissileTarget> Bosses::targets() const {
     return m_fighter.targets();
 }
 
-std::optional<std::int32_t> Bosses::struckBy(const Vec3& from, const Vec3& to, float radius) const {
+std::optional<int> Bosses::struckBy(const Vec3& from, const Vec3& to, float radius) const {
     return m_fighter.struckBy(from, to, radius);
 }
 

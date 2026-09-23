@@ -305,7 +305,7 @@ TEST_CASE("level music loops in its own category and stops on replacement and te
     // A single mono DSP frame with zero predictors and positive residuals.
     test::ByteWriter stream;
     stream.putFourcc("dhSS");
-    for (const std::uint32_t value : {24U, 32U, 48000U, 1U, 8U, 0xFFFFFFFFU, 0U}) {
+    for (const unsigned int value : {24U, 32U, 48000U, 1U, 8U, 0xFFFFFFFFU, 0U}) {
         stream.putU32(std::byteswap(value));
     }
     stream.putFourcc("dbSS").putU32(std::byteswap(8U));

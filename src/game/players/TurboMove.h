@@ -1,6 +1,5 @@
 #pragma once
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <string_view>
 #include <vector>
@@ -15,10 +14,10 @@ namespace gdl::game {
 class TurboMove {
 public:
     struct Events {
-        std::function<void(std::int32_t)> announce;
+        std::function<void(int)> announce;
         std::function<void(float)> dim;
         std::function<void(const Vec3&)> volley;
-        std::function<void(std::int32_t)> strike;
+        std::function<void(int)> strike;
     };
     /** Returns a fallback cry when a turbo attack has no rows and is paid immediately. */
     std::string_view begin(PlayerAnimator::Action action, const ClassStats* known,
@@ -31,11 +30,11 @@ public:
 private:
     void volley(std::size_t slot, const MoveStrike& strike, float frame, const Vec3& facing,
                 const Events& events);
-    std::vector<std::int32_t> m_pending;
-    std::vector<std::int32_t> m_all;
+    std::vector<int> m_pending;
+    std::vector<int> m_all;
     float m_owed = 0;
     bool m_named = false;
     bool m_weaponHidden = false;
-    std::vector<std::int32_t> m_volleysShot;
+    std::vector<int> m_volleysShot;
 };
 } // namespace gdl::game

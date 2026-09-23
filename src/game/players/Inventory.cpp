@@ -2,12 +2,11 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 
 namespace gdl::game {
 
-std::int32_t Inventory::addKeys(std::int32_t count) {
-    const std::int32_t taken = std::clamp(count, 0, kMostKeys - std::min(keys, kMostKeys));
+int Inventory::addKeys(int count) {
+    const int taken = std::clamp(count, 0, kMostKeys - std::min(keys, kMostKeys));
     keys += taken;
     return taken;
 }
@@ -20,25 +19,25 @@ bool Inventory::spendKey() {
     return true;
 }
 
-std::int32_t Inventory::takePotion() {
+int Inventory::takePotion() {
     if (potions.empty()) {
         return 0;
     }
-    const std::int32_t kind = potions.back();
+    const int kind = potions.back();
     potions.pop_back();
     return kind;
 }
 
-std::int32_t Inventory::addPotions(std::int32_t kind, std::int32_t count) {
-    std::int32_t taken = 0;
-    while (taken < count && static_cast<std::int32_t>(potions.size()) < kMostPotions) {
+int Inventory::addPotions(int kind, int count) {
+    int taken = 0;
+    while (taken < count && static_cast<int>(potions.size()) < kMostPotions) {
         potions.push_back(kind);
         ++taken;
     }
     return taken;
 }
 
-void Inventory::addPowerup(std::int32_t kind, std::uint32_t flags, float charge, float strength) {
+void Inventory::addPowerup(int kind, unsigned int flags, float charge, float strength) {
     for (PowerupSlot& slot : powerups) {
         if (slot.kind != kind || slot.flags != flags) {
             continue;
@@ -75,7 +74,7 @@ void Inventory::addPowerup(std::int32_t kind, std::uint32_t flags, float charge,
     powerups[pick] = PowerupSlot{strength, kind, charge, flags, true};
 }
 
-const PowerupSlot* Inventory::powerup(std::int32_t kind, std::uint32_t mask) const {
+const PowerupSlot* Inventory::powerup(int kind, unsigned int mask) const {
     for (const PowerupSlot& slot : powerups) {
         if (slot.working() && slot.kind == kind && (slot.flags & mask) != 0) {
             return &slot;
@@ -84,10 +83,10 @@ const PowerupSlot* Inventory::powerup(std::int32_t kind, std::uint32_t mask) con
     return nullptr;
 }
 
-std::int32_t Inventory::nextHeld(std::int32_t from, std::int32_t step) const {
-    const auto count = static_cast<std::int32_t>(powerups.size());
-    std::int32_t at = from;
-    for (std::int32_t tries = 0; tries < count; ++tries) {
+int Inventory::nextHeld(int from, int step) const {
+    const auto count = static_cast<int>(powerups.size());
+    int at = from;
+    for (int tries = 0; tries < count; ++tries) {
         at += step;
         if (at < 0) {
             at = count - 1;

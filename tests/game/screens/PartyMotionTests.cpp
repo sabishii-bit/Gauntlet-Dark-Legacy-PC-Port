@@ -1,6 +1,5 @@
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -27,12 +26,11 @@ struct Fixture {
                 calls.push_back("help" + std::to_string(i));
             },
         .select =
-            [this](std::size_t i, const SelectorInput&, std::int32_t ticks) {
+            [this](std::size_t i, const SelectorInput&, int ticks) {
                 REQUIRE(ticks == 2);
                 calls.push_back("select" + std::to_string(i));
             },
-        .advanceTurbo = [](std::size_t, std::int32_t,
-                           float) { FAIL("No figure, no animation events"); }};
+        .advanceTurbo = [](std::size_t, int, float) { FAIL("No figure, no animation events"); }};
 
     Fixture() {
         CollisionTriangle first;

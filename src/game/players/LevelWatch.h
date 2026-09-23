@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -8,15 +7,15 @@ namespace gdl::game {
 
 /** A level gained (or lost): from what, to what, and whether it crossed a tier. */
 struct LevelChange {
-    std::int32_t player = -1;
-    std::int32_t from = 1;
-    std::int32_t to = 1;
+    int player = -1;
+    int from = 1;
+    int to = 1;
     /** Whether the change crossed a milestone: every tenth level, when the costume changes
      * and the class has something to say. */
     bool milestone() const { return to / kLevelsPerTier != from / kLevelsPerTier; }
     bool gained() const { return to > from; }
 
-    static constexpr std::int32_t kLevelsPerTier = 10;
+    static constexpr int kLevelsPerTier = 10;
 };
 
 /**
@@ -28,16 +27,16 @@ struct LevelChange {
 class LevelWatch {
 public:
     /** Notes `level` for `player`; the first sighting sets the mark and reports nothing. */
-    std::optional<LevelChange> observe(std::int32_t player, std::int32_t level);
+    std::optional<LevelChange> observe(int player, int level);
     /** Forgets a player, or everyone. */
-    void forget(std::int32_t player);
+    void forget(int player);
     void clear() { m_marks.clear(); }
-    std::optional<std::int32_t> markOf(std::int32_t player) const;
+    std::optional<int> markOf(int player) const;
 
 private:
     struct Mark {
-        std::int32_t player = -1;
-        std::int32_t level = 1;
+        int player = -1;
+        int level = 1;
     };
     std::vector<Mark> m_marks;
 };

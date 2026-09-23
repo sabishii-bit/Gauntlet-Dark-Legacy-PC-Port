@@ -126,10 +126,10 @@ public:
         "STRAFE_ATKB1", "STRAFE_ATKB2", "STRAFE_ATKL1", "STRAFE_ATKL2", "STRAFE_ATKR1",
         "STRAFE_ATKR2", "FALLDOWN",     "GETUP",        "FALLFRNT",     "GETUP2",
         "SSHOT1",       "SSHOTR"};
-    static constexpr float kReleaseFrame = 2.0f;       ///< of the wind-up, from which it gives way
-    static constexpr std::int32_t kFidgetTicks = 1800; ///< standing still before the first fidget
-    static constexpr std::int32_t kSecondFidgetTicks = 600; ///< after the first before the second
-    static constexpr float kRunMagnitude = 0.75f;           ///< stick beyond this runs
+    static constexpr float kReleaseFrame = 2.0f;   ///< of the wind-up, from which it gives way
+    static constexpr int kFidgetTicks = 1800;      ///< standing still before the first fidget
+    static constexpr int kSecondFidgetTicks = 600; ///< after the first before the second
+    static constexpr float kRunMagnitude = 0.75f;  ///< stick beyond this runs
     static constexpr float kStanceBlend =
         2.0f / 30.0f; ///< seconds a body eases back into its stance
 
@@ -141,10 +141,10 @@ public:
 
     /** Steps `ticks` of the game clock (`seconds` long) under `motion`, throwing while
      * `attack` is held. */
-    void update(PlayerMotion motion, std::int32_t ticks, float seconds, bool attack = false) {
+    void update(PlayerMotion motion, int ticks, float seconds, bool attack = false) {
         update(motion, ticks, seconds, attack ? PlayerDeed::Attack : PlayerDeed::None);
     }
-    void update(PlayerMotion motion, std::int32_t ticks, float seconds, PlayerDeed deed);
+    void update(PlayerMotion motion, int ticks, float seconds, PlayerDeed deed);
     /** Which way the character strafes from now on (none: it walks and runs as ever). Set
      * before each update: moving, it steps that way with its facing held, and an attack asked
      * of it is made as it goes. */
@@ -245,10 +245,10 @@ public:
     Foot footfall() const { return m_footfall; }
     const TreePose& pose() const { return m_pose; }
     const AnimationPlayer& player() const { return m_player; }
-    std::int32_t stillTicks() const { return m_stillTicks; }
-    std::int32_t fidgetTicks() const { return m_fidgetTicks; }
+    int stillTicks() const { return m_stillTicks; }
+    int fidgetTicks() const { return m_fidgetTicks; }
     /** The sequence an action plays, falling back to the stance when the tree lacks it. */
-    std::uint32_t sequenceOf(Action action) const;
+    unsigned int sequenceOf(Action action) const;
 
 private:
     /** When a decided action may start: the original's four cut-in rules. */
@@ -269,7 +269,7 @@ private:
     void play(const Decision& decision, float seconds);
 
     const TreeInfo* m_tree = nullptr;
-    std::array<std::int32_t, kActionCount> m_sequences{};
+    std::array<int, kActionCount> m_sequences{};
     Action m_current = Action::Ready;
     Foot m_footfall = Foot::None;
     bool m_entered = true; ///< the entrance has played (or was not asked for)
@@ -284,10 +284,10 @@ private:
     bool m_legendAsked = false; ///< the gesture under way is a legend item's
     bool m_legendReleased = false;
     StrafeWay m_strafe = StrafeWay::None;
-    bool m_potionLatch = false;     ///< a potion has gone for this press of its button
-    float m_attackSeconds = 0.0f;   ///< since the attack began, while it goes on
-    std::int32_t m_stillTicks = 0;  ///< ticks standing still
-    std::int32_t m_fidgetTicks = 0; ///< ticks since the first fidget, 0 before it
+    bool m_potionLatch = false;   ///< a potion has gone for this press of its button
+    float m_attackSeconds = 0.0f; ///< since the attack began, while it goes on
+    int m_stillTicks = 0;         ///< ticks standing still
+    int m_fidgetTicks = 0;        ///< ticks since the first fidget, 0 before it
     AnimationPlayer m_player;
     TreePose m_pose;
     TreePose m_previous; ///< what showed when the current sequence started, for blending

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <vector>
 
@@ -26,16 +25,16 @@ public:
     void clear();
     std::size_t size() const { return m_tracks.size(); }
     float frame(std::size_t index) const { return m_tracks[index].frame; }
-    std::int32_t object(std::size_t index) const { return m_tracks[index].object; }
+    int object(std::size_t index) const { return m_tracks[index].object; }
     bool finished(std::size_t index) const { return m_tracks[index].finished; }
 
     /** The track of an object, when the layout animates it. */
-    std::optional<std::size_t> trackOf(std::int32_t object) const;
+    std::optional<std::size_t> trackOf(int object) const;
     /** Holds an object at its first frame until fired, as a trigger's target waits. */
-    void hold(std::int32_t object);
+    void hold(int object);
     /** Plays an object's animation once from where it stands: forwards to open, backwards
      * to close; `atOnce` jumps straight to the end. */
-    void fire(std::int32_t object, bool open, bool atOnce = false);
+    void fire(int object, bool open, bool atOnce = false);
     bool held(std::size_t index) const { return m_tracks[index].held; }
 
     /** Poses every object at its current frame. */
@@ -45,8 +44,8 @@ public:
 
 private:
     struct Track {
-        std::int32_t object = -1;
-        std::int32_t frames = 0;
+        int object = -1;
+        int frames = 0;
         TrackInfo track;
         Vec3 origin{0.0f, 0.0f, 0.0f}; ///< the object's rest offset from its parent
         float frame = 0.0f;

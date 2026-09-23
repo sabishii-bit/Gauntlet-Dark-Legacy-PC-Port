@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <numbers>
 
 namespace gdl::game {
@@ -57,8 +56,8 @@ void TowerCamera::reset(std::span<const CameraSubject> subjects,
     m_distance = range.radiusMin;
     place();
     // A fresh start settles before anyone sees it: run until nothing moves for a whole ring.
-    std::int32_t still = 0;
-    for (std::int32_t i = 0; i < kSettleLimit && still < kRing; ++i) {
+    int still = 0;
+    for (int i = 0; i < kSettleLimit && still < kRing; ++i) {
         still = update(subjects, markers, range, view, 1.0f / kStepRate) ? 0 : still + 1;
     }
 }
@@ -108,16 +107,16 @@ void TowerCamera::chooseMarker(std::span<const WorldLocator> markers, const Vec3
         m_marker = -1;
         return;
     }
-    std::int32_t best = -1;
+    int best = -1;
     float bestDistance = 0.0f;
     for (std::size_t i = 0; i < markers.size(); ++i) {
-        if (static_cast<std::int32_t>(i) == m_marker) {
+        if (static_cast<int>(i) == m_marker) {
             continue;
         }
         const Vec3 away = near - markers[i].position;
         const float distance = glm::dot(away, away);
         if (best < 0 || distance < bestDistance) {
-            best = static_cast<std::int32_t>(i);
+            best = static_cast<int>(i);
             bestDistance = distance;
         }
     }

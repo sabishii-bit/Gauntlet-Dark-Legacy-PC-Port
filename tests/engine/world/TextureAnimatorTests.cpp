@@ -1,6 +1,5 @@
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -21,9 +20,8 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
-TextureAnimationInfo cycle(std::string_view name, std::int32_t texture, std::int32_t source,
-                           std::int32_t frames, std::int32_t start, std::int32_t rate,
-                           std::string_view frameName = "") {
+TextureAnimationInfo cycle(std::string_view name, int texture, int source, int frames, int start,
+                           int rate, std::string_view frameName = "") {
     TextureAnimationInfo info;
     info.name = std::string(name);
     info.frameName = std::string(frameName);

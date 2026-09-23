@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <string>
@@ -66,7 +65,7 @@ struct LegendFixture {
     LegendPresentation::Target target{Vec3{20.0f, 0.0f, 1.0f}, 4.0f};
 
     void load(std::string_view name) { REQUIRE(items.load(legendArchive(name))); }
-    void show(LegendCue cue, std::int32_t kind = 34) {
+    void show(LegendCue cue, int kind = 34) {
         presentation.show(cue, bearer.player, 2, kind, bearer);
     }
     const EffectTrees::Effect* find(std::string_view name) const {
@@ -118,7 +117,7 @@ TEST_CASE("legend flight follows its held pose and reports impact exactly once",
     REQUIRE_FALSE(fixture.presentation.update(0.0f, fixture.bearer, fixture.target).landed);
     REQUIRE(fixture.find("LEGENDHLD") == nullptr);
     REQUIRE(fixture.find("LEGENDPRJ") != nullptr);
-    const std::uint32_t flight = fixture.find("LEGENDPRJ")->id;
+    const unsigned int flight = fixture.find("LEGENDPRJ")->id;
     REQUIRE(fixture.find("LEGENDPRJ")->velocity == Vec3{20.0f, 0.0f, 0.0f});
     REQUIRE(fixture.find("LEGENDPRJ")->trails.size() == 1);
     // Repeated animation snapshots neither spawn again nor reset the flight clock.
@@ -142,7 +141,7 @@ TEST_CASE("legend cleanup releases its own effects and sound but not other effec
     REQUIRE(fixture.weapons.load(legendArchive("legend-cleanup-weapons")));
     EffectTrees::Setting setting;
     setting.seconds = 60.0f;
-    const std::uint32_t unrelated =
+    const unsigned int unrelated =
         fixture.effects.startSet(fixture.device, fixture.items, "LEGENDFX2", Vec3{0.0f}, setting);
     fixture.show(LegendCue::Brandished);
     REQUIRE(fixture.find("COMBO_SPH") != nullptr);

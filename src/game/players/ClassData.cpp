@@ -107,9 +107,9 @@ ClassStats parseClassStats(std::string_view text) {
 } // namespace
 
 float MoveStrike::dimming() const {
-    constexpr std::int32_t kCombo = 0x2000;
-    constexpr std::int32_t kGreater = 0x20;
-    constexpr std::int32_t kLesser = 0x10;
+    constexpr int kCombo = 0x2000;
+    constexpr int kGreater = 0x20;
+    constexpr int kLesser = 0x10;
     if ((flags & kCombo) != 0) {
         return -0.8f;
     }
@@ -119,34 +119,34 @@ float MoveStrike::dimming() const {
     return (flags & kLesser) != 0 ? -0.4f : 0.0f;
 }
 
-std::vector<std::int32_t> ClassStats::strikesOf(std::int32_t first) const {
-    std::vector<std::int32_t> chain;
+std::vector<int> ClassStats::strikesOf(int first) const {
+    std::vector<int> chain;
     // A chain is followed once round at most.
-    for (std::int32_t at = first; at >= 0 && static_cast<std::size_t>(at) < moveStrikes.size() &&
-                                  chain.size() < moveStrikes.size();
+    for (int at = first; at >= 0 && static_cast<std::size_t>(at) < moveStrikes.size() &&
+                         chain.size() < moveStrikes.size();
          at = moveStrikes[static_cast<std::size_t>(at)].next) {
         chain.push_back(at);
     }
     return chain;
 }
 
-std::string_view classCode(std::int32_t classIndex) {
+std::string_view classCode(int classIndex) {
     if (classIndex < 0 || classIndex >= kClassCount) {
         return {};
     }
     return kClassCodes[static_cast<std::size_t>(classIndex)];
 }
 
-std::string_view colorCode(std::int32_t color) {
+std::string_view colorCode(int color) {
     if (color < 0 || color >= kColorCount) {
         return {};
     }
     return kColorCodes[static_cast<std::size_t>(color)];
 }
 
-std::optional<std::int32_t> classIndexOf(std::string_view code) {
+std::optional<int> classIndexOf(std::string_view code) {
     const std::string wanted = normalizeAssetName(code);
-    for (std::int32_t i = 0; i < kClassCount; ++i) {
+    for (int i = 0; i < kClassCount; ++i) {
         if (kClassCodes[static_cast<std::size_t>(i)] == wanted) {
             return i;
         }
@@ -154,9 +154,9 @@ std::optional<std::int32_t> classIndexOf(std::string_view code) {
     return std::nullopt;
 }
 
-std::optional<std::int32_t> colorIndexOf(std::string_view code) {
+std::optional<int> colorIndexOf(std::string_view code) {
     const std::string wanted = normalizeAssetName(code);
-    for (std::int32_t i = 0; i < kColorCount; ++i) {
+    for (int i = 0; i < kColorCount; ++i) {
         if (kColorCodes[static_cast<std::size_t>(i)] == wanted) {
             return i;
         }
@@ -164,14 +164,14 @@ std::optional<std::int32_t> colorIndexOf(std::string_view code) {
     return std::nullopt;
 }
 
-Color playerColor(std::int32_t color) {
+Color playerColor(int color) {
     if (color < 0 || color >= kColorCount) {
         return Color::white();
     }
     return kPlayerColors[static_cast<std::size_t>(color)];
 }
 
-Color boxTint(std::int32_t color, bool active) {
+Color boxTint(int color, bool active) {
     if (color < 0 || color >= kColorCount) {
         return Color::white();
     }
@@ -179,7 +179,7 @@ Color boxTint(std::int32_t color, bool active) {
                   : kIdleBoxTints[static_cast<std::size_t>(color)];
 }
 
-bool classUnlocked(std::int32_t classIndex, std::uint16_t unlockMask) {
+bool classUnlocked(int classIndex, std::uint16_t unlockMask) {
     if (classIndex < 0 || classIndex >= kClassCount) {
         return false;
     }
@@ -192,7 +192,7 @@ bool classUnlocked(std::int32_t classIndex, std::uint16_t unlockMask) {
 bool ClassDataSet::load(const std::filesystem::path& directory) {
     m_classes = {};
     m_loadedCount = 0;
-    for (std::int32_t i = 0; i < kClassCount; ++i) {
+    for (int i = 0; i < kClassCount; ++i) {
         const std::filesystem::path file = directory / (std::string(classCode(i)) + ".json");
         if (!std::filesystem::exists(file)) {
             continue;
@@ -210,7 +210,7 @@ bool ClassDataSet::load(const std::filesystem::path& directory) {
     return m_loadedCount > 0;
 }
 
-const ClassStats* ClassDataSet::stats(std::int32_t classIndex) const {
+const ClassStats* ClassDataSet::stats(int classIndex) const {
     if (classIndex < 0 || classIndex >= kClassCount) {
         return nullptr;
     }

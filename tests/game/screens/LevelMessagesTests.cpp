@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstdint>
 #include <format>
 
 #include <catch2/catch_test_macros.hpp>
@@ -115,8 +114,8 @@ TEST_CASE("level scroll dismissal reports audio cues only at its boundaries",
         if (burn) {
             REQUIRE(f.messages.scroll().burning());
             f.messages.prepare(f.device);
-            std::int32_t endings = 0;
-            for (std::int32_t i = 0; i < 300 && f.messages.active(); ++i) {
+            int endings = 0;
+            for (int i = 0; i < 300 && f.messages.active(); ++i) {
                 const auto cue = f.messages.step(1, 1);
                 REQUIRE_FALSE(cue.burnSound);
                 if (cue.stopVoice) {

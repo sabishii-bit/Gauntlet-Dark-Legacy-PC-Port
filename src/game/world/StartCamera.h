@@ -17,8 +17,8 @@ namespace gdl::game {
  */
 class StartCamera {
 public:
-    static constexpr std::int32_t kHoldTicks = 91;  ///< the original's timer
-    static constexpr std::int32_t kSkipBelow = 45;  ///< a button ends the hold from here down
+    static constexpr int kHoldTicks = 91;           ///< the original's timer
+    static constexpr int kSkipBelow = 45;           ///< a button ends the hold from here down
     static constexpr float kUnitsPerTick = 0.25f;   ///< the ride's pace: a glide, not a snap
     static constexpr float kPositionReach = 200.0f; ///< beyond these the pace grows with the gap
     static constexpr float kAttentionReach = 20.0f;
@@ -31,23 +31,23 @@ public:
     void stop() { m_phase = Phase::Off; }
     /** Advances `ticks`, `skip` ending a hold that has run long enough, riding toward the
      * follow camera's `position` and `attention`; false once it has arrived. */
-    bool update(std::int32_t ticks, bool skip, const Vec3& position, const Vec3& attention);
+    bool update(int ticks, bool skip, const Vec3& position, const Vec3& attention);
 
     bool active() const { return m_phase != Phase::Off; }
     Phase phase() const { return m_phase; }
-    std::int32_t ticksLeft() const { return m_ticks; }
+    int ticksLeft() const { return m_ticks; }
     const WorldCamera& camera() const { return m_camera; }
     const Vec3& attention() const { return m_attention; }
 
 private:
     /** Moves `point` at the pace toward `target`, or by the gap's share of `reach` when it is
      * farther than that; true when it was already within kArrival. */
-    static bool approach(Vec3& point, const Vec3& target, float reach, std::int32_t ticks);
+    static bool approach(Vec3& point, const Vec3& target, float reach, int ticks);
     /** Turns the camera to look at its attention. */
     void look();
 
     Phase m_phase = Phase::Off;
-    std::int32_t m_ticks = 0;
+    int m_ticks = 0;
     WorldCamera m_camera;
     Vec3 m_attention{0.0f, 0.0f, 0.0f};
 };

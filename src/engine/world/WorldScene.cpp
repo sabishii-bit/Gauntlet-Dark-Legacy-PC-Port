@@ -12,7 +12,7 @@ namespace gdl {
 
 namespace {
 
-constexpr std::uint32_t kLightmapShift = 20U;
+constexpr unsigned int kLightmapShift = 20U;
 constexpr std::uint64_t kAdditiveKey = std::uint64_t{1} << 40U;
 constexpr std::uint64_t kNoDepthKey = std::uint64_t{1} << 41U;
 
@@ -23,7 +23,7 @@ Vec2 chromeUv(const Vec3& normal) {
 
 } // namespace
 
-WorldScene::Slot& WorldScene::slotFor(std::uint32_t index, TextureSet& textures,
+WorldScene::Slot& WorldScene::slotFor(unsigned int index, TextureSet& textures,
                                       RenderDevice& device, std::span<TextureSet* const> lenders) {
     if (const auto found = m_slots.find(index); found != m_slots.end()) {
         return found->second;
@@ -82,7 +82,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         Placement& placement = m_placements[i];
         placement.local = glm::translate(Mat4{1.0f}, objects[i].position);
         placement.parent = objects[i].parent;
-        for (std::int32_t at = static_cast<std::int32_t>(i); at >= 0;
+        for (auto at = static_cast<int>(i); at >= 0;
              at = objects[static_cast<std::size_t>(at)].parent) {
             if (animated[static_cast<std::size_t>(at)] != 0) {
                 placement.moving = true;
@@ -94,7 +94,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
     // Still geometry is keyed by texture and lightmap, the glows and the objects that keep
     // depth unwritten apart from the rest.
     std::unordered_map<std::uint64_t, std::size_t> batchByKey;
-    const auto batchFor = [&](std::uint32_t slot, std::uint32_t lightmap, bool additive,
+    const auto batchFor = [&](unsigned int slot, unsigned int lightmap, bool additive,
                               bool depthWrite) -> Batch& {
         const std::uint64_t key = std::uint64_t{slot} |
                                   (std::uint64_t{lightmap} << kLightmapShift) |
@@ -140,7 +140,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         const bool additive = object.additive();
         const bool prelit = object.prelit() && mesh->prelit;
         const bool depthWrite = (object.objectFlags & WorldObject::kNoDepthWrite) == 0;
-        const std::uint32_t facing = CameraFrame::facingOf(object.objectFlags);
+        const unsigned int facing = CameraFrame::facingOf(object.objectFlags);
         const bool unit = m_placements[i].moving || object.sorted() || facing != 0;
         Unit placedUnit;
         placedUnit.object = i;
@@ -179,7 +179,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
                     placedUnit.parts.push_back(unitPart);
                 } else {
                     Batch& batch = batchFor(part.texture, part.lightmap, additive, depthWrite);
-                    for (const std::uint32_t index : part.indices) {
+                    for (const unsigned int index : part.indices) {
                         const MeshVertex& v = mesh->vertices[index];
                         batch.geometry.vertex(
                             v.position + offset, shadeOf(additive, prelit, v, v.normal, lighting),
@@ -283,24 +283,24 @@ float WorldScene::objectAlpha(std::size_t object) const {
     return unit != nullptr ? unit->alpha : 1.0f;
 }
 
-void WorldScene::setTextureFrame(std::uint32_t slot, const Texture* texture) {
+void WorldScene::setTextureFrame(unsigned int slot, const Texture* texture) {
     if (const auto found = m_slots.find(slot); found != m_slots.end()) {
         found->second.frame = texture;
     }
 }
 
-void WorldScene::setTextureOffset(std::uint32_t slot, const Vec2& offset) {
+void WorldScene::setTextureOffset(unsigned int slot, const Vec2& offset) {
     if (const auto found = m_slots.find(slot); found != m_slots.end()) {
         found->second.offset = offset;
     }
 }
 
-const Texture* WorldScene::textureOf(std::uint32_t slot) const {
+const Texture* WorldScene::textureOf(unsigned int slot) const {
     const auto found = m_slots.find(slot);
     return found != m_slots.end() && found->second.usable ? found->second.current() : nullptr;
 }
 
-Vec2 WorldScene::textureOffset(std::uint32_t slot) const {
+Vec2 WorldScene::textureOffset(unsigned int slot) const {
     const auto found = m_slots.find(slot);
     return found != m_slots.end() ? found->second.offset : Vec2{0.0f, 0.0f};
 }
@@ -309,7 +309,7 @@ Vec2 WorldScene::textureOffset(std::uint32_t slot) const {
  * chain up to the nearest ancestor already composed, then composed back down. */
 const Mat4& WorldScene::worldOf(std::size_t object) const {
     m_chain.clear();
-    for (std::int32_t at = static_cast<std::int32_t>(object);
+    for (auto at = static_cast<int>(object);
          at >= 0 && m_worldValid[static_cast<std::size_t>(at)] == 0;
          at = m_placements[static_cast<std::size_t>(at)].parent) {
         m_chain.push_back(static_cast<std::size_t>(at));
@@ -363,7 +363,7 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
         const Slot& slot = m_slots.at(part.slot);
         m_scratch.clear();
         m_scratch.begin(PrimitiveTopology::TriangleList);
-        for (const std::uint32_t index : part.part->indices) {
+        for (const unsigned int index : part.part->indices) {
             const MeshVertex& v = unit.mesh->vertices[index];
             const Vec3 normal = glm::normalize(normalMatrix * v.normal);
             const Vec4 placed = world * Vec4{v.position, 1.0f};

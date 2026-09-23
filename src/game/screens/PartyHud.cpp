@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 
 #include "game/menu/OptionMenu.h"
@@ -42,13 +41,13 @@ void PartyHud::clear() {
     m_boxes.release();
 }
 void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players) {
-    for (std::int32_t player = 0; player < kPlayerCount; ++player) {
+    for (int player = 0; player < kPlayerCount; ++player) {
         m_boxes.draw(canvas, player, status(player, players), true);
     }
     m_pickups.draw(canvas, m_boxes);
 }
-bool PartyHud::postHelp(std::int32_t id, std::size_t index, std::span<PlayerRuntime> players,
-                        LevelSoundscape& audio, std::int32_t number) {
+bool PartyHud::postHelp(int id, std::size_t index, std::span<PlayerRuntime> players,
+                        LevelSoundscape& audio, int number) {
     if (index >= players.size()) {
         return false;
     }
@@ -75,7 +74,7 @@ bool PartyHud::postHelp(std::int32_t id, std::size_t index, std::span<PlayerRunt
     return true;
 }
 
-void PartyHud::stepSelector(PlayerActor& actor, const SelectorInput& input, std::int32_t ticks,
+void PartyHud::stepSelector(PlayerActor& actor, const SelectorInput& input, int ticks,
                             LevelSoundscape& audio) {
     const auto slot = static_cast<std::size_t>(std::clamp(actor.player(), 0, kPlayerCount - 1));
     switch (m_selectors[slot].step(input, actor.save().progress().inventory, ticks)) {
@@ -87,7 +86,7 @@ void PartyHud::stepSelector(PlayerActor& actor, const SelectorInput& input, std:
     }
 }
 
-StatusBoxView PartyHud::status(std::int32_t player, std::span<const PlayerRuntime> players) {
+StatusBoxView PartyHud::status(int player, std::span<const PlayerRuntime> players) {
     StatusBoxView view;
     const auto found = std::ranges::find_if(players, [player](const PlayerRuntime& runtime) {
         return runtime.actor.player() == player;
@@ -112,7 +111,7 @@ StatusBoxView PartyHud::status(std::int32_t player, std::span<const PlayerRuntim
     view.health = save.health();
     view.turbo = found->turbo.look();
     view.keys = save.progress().inventory.keys;
-    view.potions = static_cast<std::int32_t>(save.progress().inventory.potions.size());
+    view.potions = static_cast<int>(save.progress().inventory.potions.size());
     view.potionKind = save.progress().inventory.nextPotion();
     return view;
 }
@@ -125,15 +124,15 @@ void PartyHud::drawSelectors(Canvas& canvas, const TextPainter& text, const Stri
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         const PowerupSelector& selector = this->selector(actor.player());
-        const std::int32_t chosen = selector.selection();
+        const int chosen = selector.selection();
         if (!selector.showing() || chosen < 0) {
             continue;
         }
         const PowerupSlot& slot =
             actor.save().progress().inventory.powerups[static_cast<std::size_t>(chosen)];
         const std::string_view label = strings->get(powerupTextId(slot.kind, slot.flags));
-        const std::int32_t x = actor.player() * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
-        const std::int32_t y = selector.labelY(StatusBoxPainter::kY);
+        const int x = actor.player() * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
+        const int y = selector.labelY(StatusBoxPainter::kY);
         TextStyle style;
         style.scale = PowerupSelector::kLabelScale;
         if (slot.on && m_glowSheet != nullptr) {

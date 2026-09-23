@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <span>
@@ -179,8 +178,8 @@ void Gauntlet::updateTitle(double deltaSeconds) {
 }
 
 /** The player whose Start or Select is down this frame; the first when none is. */
-std::int32_t Gauntlet::playerPressingStart() const {
-    for (std::int32_t player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+int Gauntlet::playerPressingStart() const {
+    for (int player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         const MenuInput menu =
             readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
         if (menu.start || menu.select) {
@@ -190,7 +189,7 @@ std::int32_t Gauntlet::playerPressingStart() const {
     return 0;
 }
 
-bool Gauntlet::startPlayerSelect(std::int32_t startingPlayer) {
+bool Gauntlet::startPlayerSelect(int startingPlayer) {
     if (m_select.open(renderDevice(), context(), startingPlayer)) {
         return true;
     }
@@ -201,7 +200,7 @@ bool Gauntlet::startPlayerSelect(std::int32_t startingPlayer) {
 
 void Gauntlet::updateSelect(double deltaSeconds) {
     PlayerSelectScene::Inputs inputs;
-    for (std::int32_t player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+    for (int player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         inputs[static_cast<std::size_t>(player)] =
             readMenuInput(input(), m_config.menu, m_select.inputSource(player));
     }
@@ -210,7 +209,7 @@ void Gauntlet::updateSelect(double deltaSeconds) {
         return;
     }
     std::vector<PartyMember> party;
-    for (std::int32_t player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+    for (int player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         const SelectLane& lane = m_select.lane(player);
         if (lane.lockedIn()) {
             party.push_back(PartyMember{player, lane.save(), lane.slotInUse()});
@@ -262,7 +261,7 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
 
 void Gauntlet::updateTower(double deltaSeconds) {
     PlayScene::Inputs inputs;
-    for (std::int32_t player = 0; player < PlayScene::kPlayerCount; ++player) {
+    for (int player = 0; player < PlayScene::kPlayerCount; ++player) {
         const MenuInputSource source = MenuInputSource::forPlayer(player);
         PlayInput& in = inputs[static_cast<std::size_t>(player)];
         in.move = readMoveInput(input(), m_config.play, source.keyboard, source.pad);
@@ -292,7 +291,7 @@ void Gauntlet::updateTower(double deltaSeconds) {
         journey.options.welcome = false;
         journey.options.arriving = true;
         journey.options.arrivalWorld =
-            static_cast<std::uint32_t>(std::max(m_towerWorld.ref().realmId, 0));
+            static_cast<unsigned int>(std::max(m_towerWorld.ref().realmId, 0));
         m_tower.close();
         m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
         m_loadingPicture.cover();
@@ -308,7 +307,7 @@ void Gauntlet::updateTower(double deltaSeconds) {
         journey.options.welcome = false;
         journey.options.arriving = true;
         journey.options.arrivalWorld =
-            static_cast<std::uint32_t>(std::max(m_towerWorld.ref().realmId, 0));
+            static_cast<unsigned int>(std::max(m_towerWorld.ref().realmId, 0));
         m_tower.close();
         m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
         m_loadingPicture.cover();

@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <utility>
 
 #include "engine/core/Log.h"
@@ -11,8 +10,8 @@
 namespace gdl::game {
 namespace {
 constexpr std::string_view kSpawnEffect = "STARTFX";
-constexpr std::int32_t kTitleY = 48;
-constexpr std::int32_t kTitleLift = 16;
+constexpr int kTitleY = 48;
+constexpr int kTitleLift = 16;
 constexpr float kTitleSlideStart = 0.025f;
 constexpr float kTitleSlideRate = 0.025f;
 constexpr float kTitleSlideEnd = 2.0f;
@@ -76,14 +75,13 @@ void LevelArrivalPresentation::animate(float seconds) {
     const float whole = std::floor(m_frames);
     m_frames -= whole;
     if (whole > 0.0f) {
-        m_textures.step(static_cast<std::uint32_t>(whole));
+        m_textures.step(static_cast<unsigned int>(whole));
     }
     for (Spawn& spawn : m_spawns) {
         if (spawn.player.playing() && !spawn.player.finished()) {
             spawn.player.advance(seconds, false);
             spawn.pose.evaluate(*spawn.tree, spawn.player.sequence(), spawn.player.frame());
-            spawn.model.setFrame(spawn.player.sequence(),
-                                 static_cast<std::int32_t>(spawn.player.frame()));
+            spawn.model.setFrame(spawn.player.sequence(), static_cast<int>(spawn.player.frame()));
         }
         for (std::size_t i = 0; i < m_textures.size(); ++i) {
             const TextureMotion motion = m_textures.motion(i);
@@ -96,7 +94,7 @@ void LevelArrivalPresentation::animate(float seconds) {
     }
 }
 
-void LevelArrivalPresentation::advance(std::int32_t ticks, bool skip, const Vec3& followPosition,
+void LevelArrivalPresentation::advance(int ticks, bool skip, const Vec3& followPosition,
                                        const Vec3& followAttention) {
     if (!active()) {
         return;
@@ -126,9 +124,8 @@ void LevelArrivalPresentation::drawTitle(Canvas& canvas, const TextPainter& text
         return;
     }
     const TextStyle style;
-    const std::int32_t y =
-        kTitleY - static_cast<std::int32_t>(static_cast<float>(kTitleLift) * m_titleSlide);
-    text.draw(canvas, -static_cast<std::int32_t>(width / 2.0f), y, title, style);
+    const int y = kTitleY - static_cast<int>(static_cast<float>(kTitleLift) * m_titleSlide);
+    text.draw(canvas, -static_cast<int>(width / 2.0f), y, title, style);
 }
 
 } // namespace gdl::game

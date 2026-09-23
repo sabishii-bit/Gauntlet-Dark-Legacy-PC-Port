@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstdint>
-
 #include "engine/assets/AnimationSet.h"
 
 namespace gdl {
@@ -21,8 +19,8 @@ public:
     static constexpr float kTick = 1.0f / 30.0f; ///< frames shorter than a tick always snap
 
     /** Starts `sequence` at `frame`, holding it for `transitionSeconds` first. */
-    void start(const TreeSequenceInfo& sequence, std::uint32_t index,
-               float transitionSeconds = 0.0f, float frame = 0.0f);
+    void start(const TreeSequenceInfo& sequence, unsigned int index, float transitionSeconds = 0.0f,
+               float frame = 0.0f);
     void stop();
 
     /** Steps by `seconds`; true the step the sequence wraps or reaches its end. A finished
@@ -30,9 +28,9 @@ public:
     bool advance(float seconds, bool repeat);
 
     bool playing() const { return m_sequence != nullptr; }
-    std::uint32_t sequence() const { return m_index; }
+    unsigned int sequence() const { return m_index; }
     float frame() const { return m_frame; }
-    std::int32_t frameCount() const { return m_sequence != nullptr ? m_sequence->frames : 0; }
+    int frameCount() const { return m_sequence != nullptr ? m_sequence->frames : 0; }
     /** True from the step the sequence wrapped or ended until the next step moves on. */
     bool finished() const { return m_finished; }
     bool transitioning() const { return m_transitionTime < m_transitionLength; }
@@ -47,7 +45,7 @@ public:
 
 private:
     const TreeSequenceInfo* m_sequence = nullptr;
-    std::uint32_t m_index = 0;
+    unsigned int m_index = 0;
     float m_secondsPerFrame = kDefaultRate * kRateUnit;
     float m_time = 0.0f; ///< seconds into the sequence
     float m_frame = 0.0f;

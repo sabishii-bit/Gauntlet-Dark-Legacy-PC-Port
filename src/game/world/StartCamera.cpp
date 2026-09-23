@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 
 namespace gdl::game {
 
@@ -14,8 +13,7 @@ void StartCamera::start(const WorldCamera& marker, const Vec3& party) {
     m_phase = Phase::Hold;
 }
 
-bool StartCamera::update(std::int32_t ticks, bool skip, const Vec3& position,
-                         const Vec3& attention) {
+bool StartCamera::update(int ticks, bool skip, const Vec3& position, const Vec3& attention) {
     switch (m_phase) {
     case Phase::Off: return false;
     case Phase::Hold:
@@ -41,7 +39,7 @@ bool StartCamera::update(std::int32_t ticks, bool skip, const Vec3& position,
     return false;
 }
 
-bool StartCamera::approach(Vec3& point, const Vec3& target, float reach, std::int32_t ticks) {
+bool StartCamera::approach(Vec3& point, const Vec3& target, float reach, int ticks) {
     const Vec3 gap = target - point;
     const float distance = glm::length(gap);
     if (distance < kArrival) {

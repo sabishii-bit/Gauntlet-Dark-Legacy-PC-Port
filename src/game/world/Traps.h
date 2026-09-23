@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <random>
 #include <span>
@@ -28,8 +27,8 @@ struct TrapHit {
     std::size_t trap = 0;
     std::size_t victim = 0;
     float damage = 0.0f;
-    std::int32_t subtype = 0; ///< which picks the trap's sound
-    bool pierces = false;     ///< spikes and blades, which a victim groans at
+    int subtype = 0;      ///< which picks the trap's sound
+    bool pierces = false; ///< spikes and blades, which a victim groans at
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
 
@@ -44,22 +43,22 @@ struct TrapHit {
  */
 class Traps {
 public:
-    static constexpr std::int32_t kResting = 0;
+    static constexpr int kResting = 0;
     static constexpr float kSecondsPerTickLeft = 1.0f / 30.0f; ///< a victim's respite
-    static constexpr std::int32_t kSpikes = 0;                 ///< the subtypes that pierce
-    static constexpr std::int32_t kBlade = 3;
-    static constexpr std::int32_t kBlades = 4;
-    static constexpr std::int32_t kTicksPerTimeUnit = 2; ///< the record's times are in half ticks
+    static constexpr int kSpikes = 0;                          ///< the subtypes that pierce
+    static constexpr int kBlade = 3;
+    static constexpr int kBlades = 4;
+    static constexpr int kTicksPerTimeUnit = 2; ///< the record's times are in half ticks
 
     /** One trap. */
     struct Trap {
-        std::int32_t instance = -1;
+        int instance = -1;
         float damage = 0.0f;
-        std::int32_t offTime = 0; ///< the record's, in its own units
-        std::int32_t subtype = 0;
-        std::int32_t action = kResting;
-        std::int32_t ticksLeft = 0;
-        std::int32_t minPlayers = 0;
+        int offTime = 0; ///< the record's, in its own units
+        int subtype = 0;
+        int action = kResting;
+        int ticksLeft = 0;
+        int minPlayers = 0;
         bool shown = true;
         ItemFigure figure;
         Obstacle box;
@@ -67,21 +66,20 @@ public:
 
     /** `timeScale` stretches every rest and `damageScale` every hurt, as the level says. */
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-              const WorldCollision* collision, std::uint32_t seed = 1, float timeScale = 1.0f,
+              const WorldCollision* collision, unsigned int seed = 1, float timeScale = 1.0f,
               float damageScale = 1.0f);
     void clear();
     std::size_t size() const { return m_traps.size(); }
     const Trap& trap(std::size_t index) const { return *m_traps[index]; }
-    void setPlayerCount(std::int32_t players);
+    void setPlayerCount(int players);
     /** Whether a trap is out of its rest, and hurts. */
     bool armed(std::size_t index) const { return m_traps[index]->action != kResting; }
 
-    std::vector<TrapHit> update(std::int32_t ticks, float seconds,
-                                std::span<const TrapVictim> party);
+    std::vector<TrapHit> update(int ticks, float seconds, std::span<const TrapVictim> party);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:
-    std::int32_t restTicks(const Trap& trap);
+    int restTicks(const Trap& trap);
 
     std::vector<std::unique_ptr<Trap>> m_traps;
     std::vector<float> m_gaps; ///< per victim, seconds before they can be hurt again

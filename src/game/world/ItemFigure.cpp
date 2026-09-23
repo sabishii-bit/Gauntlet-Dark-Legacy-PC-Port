@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 
 namespace gdl::game {
 
@@ -12,7 +11,7 @@ namespace {
 constexpr float kFloorReachAbove = 0.5f;
 constexpr float kFloorReachBelow = 3.0f;
 constexpr float kTicksPerSecond = 60.0f;
-constexpr std::int32_t kExactPlayersMark = 10;
+constexpr int kExactPlayersMark = 10;
 
 /** `position` in the box's own space, about its centre. */
 Vec2 localOf(const Obstacle& box, const Vec3& position) {
@@ -107,7 +106,7 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     return true;
 }
 
-void ItemFigure::play(std::int32_t index, bool loop) {
+void ItemFigure::play(int index, bool loop) {
     m_index = index;
     m_loop = loop;
     if (m_tree == nullptr || index < 0 ||
@@ -115,9 +114,9 @@ void ItemFigure::play(std::int32_t index, bool loop) {
         return;
     }
     m_player.start(m_tree->sequences[static_cast<std::size_t>(index)],
-                   static_cast<std::uint32_t>(index));
-    m_pose.evaluate(*m_tree, static_cast<std::uint32_t>(index), 0.0f);
-    m_model.setFrame(static_cast<std::uint32_t>(index), 0);
+                   static_cast<unsigned int>(index));
+    m_pose.evaluate(*m_tree, static_cast<unsigned int>(index), 0.0f);
+    m_model.setFrame(static_cast<unsigned int>(index), 0);
 }
 
 void ItemFigure::update(float seconds) {
@@ -126,14 +125,14 @@ void ItemFigure::update(float seconds) {
     }
     m_player.advance(seconds, m_loop);
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
-    m_model.setFrame(m_player.sequence(), static_cast<std::int32_t>(m_player.frame()));
+    m_model.setFrame(m_player.sequence(), static_cast<int>(m_player.frame()));
 }
 
 bool ItemFigure::finished() const {
     return m_tree == nullptr || !m_player.playing() || m_player.finished();
 }
 
-std::int32_t ItemFigure::ticksOf(std::int32_t index) const {
+int ItemFigure::ticksOf(int index) const {
     if (m_tree == nullptr || index < 0 ||
         static_cast<std::size_t>(index) >= m_tree->sequences.size()) {
         return 0;
@@ -141,8 +140,8 @@ std::int32_t ItemFigure::ticksOf(std::int32_t index) const {
     const TreeSequenceInfo& info = m_tree->sequences[static_cast<std::size_t>(index)];
     const float rate =
         info.frameRate > 0 ? static_cast<float>(info.frameRate) : AnimationPlayer::kDefaultRate;
-    return static_cast<std::int32_t>(std::ceil(static_cast<float>(info.frames) * rate *
-                                               AnimationPlayer::kRateUnit * kTicksPerSecond));
+    return static_cast<int>(std::ceil(static_cast<float>(info.frames) * rate *
+                                      AnimationPlayer::kRateUnit * kTicksPerSecond));
 }
 
 void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
@@ -169,7 +168,7 @@ Obstacle ItemFigure::obstacle(const ItemInfo& info) const {
     return box;
 }
 
-bool shownToParty(std::int32_t minPlayers, std::int32_t players) {
+bool shownToParty(int minPlayers, int players) {
     if (minPlayers > kExactPlayersMark) {
         return players == minPlayers - kExactPlayersMark;
     }

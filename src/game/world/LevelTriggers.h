@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -20,8 +19,8 @@ namespace gdl::game {
  * they carry towards each realm. */
 /** A player stood in a trigger's spot without what it asks for. */
 struct TriggerRefusal {
-    std::int32_t trigger = -1;
-    std::int32_t id = 0;  ///< the realm, or 100 plus the gargoyle tier
+    int trigger = -1;
+    int id = 0;           ///< the realm, or 100 plus the gargoyle tier
     bool crystals = true; ///< crystals were wanted, else the golden icons
 };
 
@@ -29,34 +28,34 @@ struct TriggerRefusal {
  * its trigger lies, whether it fades away, whether it opened at once (at the level's start)
  * rather than before the party, and the sound slot its trigger names (-1 for none). */
 struct TriggerOpening {
-    std::int32_t target = -1;
+    int target = -1;
     Vec3 spot{0.0f, 0.0f, 0.0f};
     bool fades = false;
     bool atOnce = false;
-    std::int32_t sound = -1;
+    int sound = -1;
 };
 
 struct TriggerVisitor {
     Vec3 position{0.0f, 0.0f, 0.0f};
     float radius = 0.75f;
-    std::array<std::int32_t, kRealmCount> crystals{};
+    std::array<int, kRealmCount> crystals{};
 };
 
 /** One of a level's triggers: a spot that, stepped into, opens the world object it names
  * and every trigger chained after it. */
 struct LevelTrigger {
-    std::int32_t instance = -1; ///< the item instance it came from
+    int instance = -1; ///< the item instance it came from
     Vec3 spot{0.0f, 0.0f, 0.0f};
-    std::int32_t target = -1; ///< the world object it drives, or -1
-    std::int32_t id = 0;
-    std::int32_t nextId = 0;
+    int target = -1; ///< the world object it drives, or -1
+    int id = 0;
+    int nextId = 0;
     float refusalCooldown = 0.0f; ///< seconds before the trigger refuses anyone again
-    std::int32_t next = -1;       ///< the trigger chained after this one, or -1
+    int next = -1;                ///< the trigger chained after this one, or -1
     bool chained = false;         ///< another trigger's next: fired through it, never stepped on
-    std::uint32_t flags = 0;      ///< the trigger's own flags
-    std::uint32_t kind = 0; ///< how the target moves: the flags the object's trigger type carries
+    unsigned int flags = 0;       ///< the trigger's own flags
+    unsigned int kind = 0; ///< how the target moves: the flags the object's trigger type carries
     float radius = 0.0f;
-    std::int32_t sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
+    int sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
     bool occupied = false; ///< the party stood in it as the level opened: it waits for them
                            ///< to leave and come back before it goes off (it still refuses)
@@ -66,13 +65,13 @@ struct LevelTrigger {
     /** Whether it guards a gargoyle gate, which wants the golden icons. */
     bool needsIcons() const { return (flags & kRequirement) != 0 && id >= kGargoyleIds; }
 
-    static constexpr std::uint32_t kRequirement = 0x40;
-    static constexpr std::uint32_t kOpensOnce = 0x2;
-    static constexpr std::uint32_t kCloses = 0x1;
-    static constexpr std::int32_t kGargoyleIds = 100; ///< ids from here guard the gargoyle gates
-    static constexpr std::uint32_t kFades = 0x10;     ///< the target fades out rather than moving
-    static constexpr std::uint32_t kToggles = 0x20;
-    static constexpr std::uint32_t kStaysSolid = 0x8; ///< the target keeps blocking while it moves
+    static constexpr unsigned int kRequirement = 0x40;
+    static constexpr unsigned int kOpensOnce = 0x2;
+    static constexpr unsigned int kCloses = 0x1;
+    static constexpr int kGargoyleIds = 100;     ///< ids from here guard the gargoyle gates
+    static constexpr unsigned int kFades = 0x10; ///< the target fades out rather than moving
+    static constexpr unsigned int kToggles = 0x20;
+    static constexpr unsigned int kStaysSolid = 0x8; ///< the target keeps blocking while it moves
 };
 
 /**
@@ -85,8 +84,7 @@ struct LevelTrigger {
  */
 class LevelTriggers {
 public:
-    static constexpr std::array<std::int32_t, 9> kCrystalsToOpen{0,   15,  100, 125, 150,
-                                                                 175, 200, 225, 250};
+    static constexpr std::array<int, 9> kCrystalsToOpen{0, 15, 100, 125, 150, 175, 200, 225, 250};
     static constexpr float kFadeRate = 16.0f / 255.0f;
     static constexpr float kRefusalCooldown =
         2.5625f; ///< the original's, between two refusals ///< of full alpha, per game frame
@@ -101,11 +99,11 @@ public:
     std::size_t size() const { return m_triggers.size(); }
     const LevelTrigger& trigger(std::size_t index) const { return m_triggers[index]; }
     /** The crystals a realm's gate wants; none for realms without one. */
-    static std::int32_t crystalsNeeded(std::int32_t realm);
+    static int crystalsNeeded(int realm);
     /** Whether the target of a trigger has been opened. */
-    bool opened(std::int32_t object) const;
+    bool opened(int object) const;
     /** How solid a fading target still looks, 1 shut to 0 gone. */
-    float alphaOf(std::int32_t object) const;
+    float alphaOf(int object) const;
 
     /** Opens at once whatever the party already qualifies for, as a level does when it
      * starts; a spot the party is already standing in (a scenario's doing: nobody starts
@@ -124,18 +122,18 @@ public:
 
 private:
     struct Target {
-        std::int32_t object = -1;
-        std::uint32_t kind = 0;
+        int object = -1;
+        unsigned int kind = 0;
         bool animated = false;
         bool open = false;
         bool settled = false; ///< done opening, or opened at once
         float alpha = 1.0f;
         Vec3 spot{0.0f, 0.0f, 0.0f}; ///< the spot of the trigger that opened it
-        std::int32_t sound = -1;
+        int sound = -1;
     };
 
-    Target* targetOf(std::int32_t object);
-    const Target* targetOf(std::int32_t object) const;
+    Target* targetOf(int object);
+    const Target* targetOf(int object) const;
     static TriggerOpening openingOf(const Target& target, bool atOnce);
     static bool qualifies(const LevelTrigger& trigger, std::span<const TriggerVisitor> visitors);
     /** Whether anyone stands in the trigger's spot, `radius` wide. */

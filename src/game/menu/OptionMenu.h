@@ -18,16 +18,16 @@ namespace gdl::game {
 
 /** The virtual screen a menu lays itself out on, and the camera its 3D icon is sized for. */
 struct MenuScreen {
-    std::int32_t width = 512;
-    std::int32_t height = 384;
+    int width = 512;
+    int height = 384;
     float horizontalFov = glm::radians(60.0f);
 };
 
 struct MenuItem {
     std::string text;
-    std::int32_t code = 0;
-    std::int32_t extraSpacing = 0; ///< pixels added below the item
-    bool enabled = true;           ///< disabled items are greyed and skipped
+    int code = 0;
+    int extraSpacing = 0; ///< pixels added below the item
+    bool enabled = true;  ///< disabled items are greyed and skipped
 };
 
 struct MenuColors {
@@ -39,8 +39,8 @@ struct MenuColors {
 struct MenuDefinition {
     std::string title; ///< drawn above the backdrop; empty for a bare menu
     float titleScale = 1.2f;
-    std::int32_t x = -256; ///< item x; negative centres the column on -x
-    std::int32_t y = -1;   ///< first item y; -1 centres the column vertically
+    int x = -256; ///< item x; negative centres the column on -x
+    int y = -1;   ///< first item y; -1 centres the column vertically
     float scale = 1.0f;
     std::vector<MenuItem> items;
     MenuColors colors;
@@ -48,17 +48,17 @@ struct MenuDefinition {
     bool prompts = false;      ///< draw the back / select prompt row
     std::string backLabel;
     std::string selectLabel;
-    std::int32_t promptY = 304;
-    bool fades = false;          ///< fade in when opened and out when closed
-    bool backdropFades = true;   ///< the backdrop fades with the text, else it stays solid
-    bool parchmentFont = false;  ///< unselected items use the parchment glyph sheet
-    bool garamondIntro = false;  ///< items flip through the ornate sheets when opened
-    std::string playerLabel;     ///< drawn on the backdrop when set, e.g. "Player 1"
-    std::string backdrop;        ///< texture name; empty for none
-    std::int32_t backdropX = -1; ///< -1 sizes and centres the backdrop on the column
-    std::int32_t backdropY = -1;
-    std::int32_t backdropWidth = -1;
-    std::int32_t backdropHeight = -1;
+    int promptY = 304;
+    bool fades = false;         ///< fade in when opened and out when closed
+    bool backdropFades = true;  ///< the backdrop fades with the text, else it stays solid
+    bool parchmentFont = false; ///< unselected items use the parchment glyph sheet
+    bool garamondIntro = false; ///< items flip through the ornate sheets when opened
+    std::string playerLabel;    ///< drawn on the backdrop when set, e.g. "Player 1"
+    std::string backdrop;       ///< texture name; empty for none
+    int backdropX = -1;         ///< -1 sizes and centres the backdrop on the column
+    int backdropY = -1;
+    int backdropWidth = -1;
+    int backdropHeight = -1;
     std::string burn; ///< animated flame overlay texture (first of five frames)
     Rect burnArea;
     /** Passages written on the backdrop in the unselected colour, each with its own line
@@ -66,19 +66,19 @@ struct MenuDefinition {
      * between them, or (bodyY -1) centred on the column's middle. */
     std::vector<std::string> body;
     float bodyScale = 1.0f;
-    std::int32_t bodyY = -1;
-    std::int32_t bodyGap = 0;
+    int bodyY = -1;
+    int bodyGap = 0;
 };
 
 enum class MenuAction : std::uint8_t { None, Moved, Choice, Back, Closed };
 
 struct MenuEvent {
     MenuAction action = MenuAction::None;
-    std::int32_t code = 0;
+    int code = 0;
 };
 
 /** Pulsing opacity shared by glowing text: a triangle wave with a short hold between pulses. */
-std::uint8_t pulseOpacity(std::int32_t time, std::int32_t radius, std::int32_t hold);
+std::uint8_t pulseOpacity(int time, int radius, int hold);
 
 /** The glyph sheets a menu can draw with; any missing sheet falls back to `font`. */
 struct MenuTextures {
@@ -99,15 +99,15 @@ struct MenuTextures {
  */
 class OptionMenu {
 public:
-    static constexpr std::int32_t kFadeTicks = 30;
-    static constexpr std::int32_t kPulseTicks = 40;
-    static constexpr std::int32_t kPulseHoldTicks = 5;
-    static constexpr std::int32_t kIconGlideTicks = 15;
-    static constexpr std::int32_t kBackdropMargin = 64;
-    static constexpr std::int32_t kTitleMargin = 58;
-    static constexpr std::int32_t kPlayerTagMargin = 34;
-    static constexpr std::int32_t kIconOffsetX = -16;
-    static constexpr std::int32_t kGlowExpand = 2;
+    static constexpr int kFadeTicks = 30;
+    static constexpr int kPulseTicks = 40;
+    static constexpr int kPulseHoldTicks = 5;
+    static constexpr int kIconGlideTicks = 15;
+    static constexpr int kBackdropMargin = 64;
+    static constexpr int kTitleMargin = 58;
+    static constexpr int kPlayerTagMargin = 34;
+    static constexpr int kIconOffsetX = -16;
+    static constexpr int kGlowExpand = 2;
     static constexpr float kPromptScale = 0.667f;
     static constexpr float kIconWorldScale = 0.05f; ///< the arrow model's scale in the original
     static constexpr float kIconDepth = 1.1f;       ///< its distance from the camera
@@ -117,7 +117,7 @@ public:
 
     /** Opens the menu and lays it out with the painter's font on `screen`. */
     void open(const MenuDefinition& definition, const TextPainter& painter,
-              const MenuScreen& screen, std::int32_t selection = 0);
+              const MenuScreen& screen, int selection = 0);
 
     /** Starts the fade-out for fading menus; removes others at once. */
     void close();
@@ -131,22 +131,22 @@ public:
     bool backdropReleased() const { return m_backdropReleased; }
 
     /** Applies one frame of input; `ticks` is the elapsed tick count. */
-    MenuEvent update(const MenuInput& input, std::int32_t ticks);
+    MenuEvent update(const MenuInput& input, int ticks);
 
     void draw(Canvas& canvas, const TextPainter& painter, const MenuTextures& textures) const;
 
     const MenuDefinition& definition() const { return m_definition; }
-    std::int32_t selection() const { return m_selection; }
-    std::int32_t time() const { return m_time; }
-    std::int32_t finishTimer() const { return m_finishTimer; }
-    std::int32_t columnX() const { return m_columnX; }
-    std::int32_t columnWidth() const { return m_columnWidth; }
-    std::int32_t columnHeight() const { return m_columnHeight; }
-    std::int32_t itemY(std::size_t index) const;
-    std::int32_t lineHeight() const { return m_lineHeight; }
-    std::int32_t iconY() const { return m_iconDrawY; }
+    int selection() const { return m_selection; }
+    int time() const { return m_time; }
+    int finishTimer() const { return m_finishTimer; }
+    int columnX() const { return m_columnX; }
+    int columnWidth() const { return m_columnWidth; }
+    int columnHeight() const { return m_columnHeight; }
+    int itemY(std::size_t index) const;
+    int lineHeight() const { return m_lineHeight; }
+    int iconY() const { return m_iconDrawY; }
     /** Where the body's first line is drawn. */
-    std::int32_t bodyTop() const { return m_bodyTop; }
+    int bodyTop() const { return m_bodyTop; }
     float iconScale() const { return m_iconScale; }
     Rect backdropArea() const { return m_backdrop; }
 
@@ -157,28 +157,28 @@ public:
     std::uint8_t fadeOpacity() const;
 
 private:
-    void glideIcon(std::int32_t ticks);
-    std::int32_t nextEnabled(std::int32_t from, std::int32_t step) const;
+    void glideIcon(int ticks);
+    int nextEnabled(int from, int step) const;
     const Texture* itemSheet(const MenuTextures& textures, bool selected) const;
 
     MenuDefinition m_definition;
     MenuScreen m_screen;
     bool m_open = false;
     bool m_backdropReleased = false;
-    std::int32_t m_selection = 0;
-    std::int32_t m_time = 0;
-    std::int32_t m_finishTimer = 0;
-    std::int32_t m_lineHeight = 0;
-    std::int32_t m_columnX = 0;
-    std::int32_t m_columnY = 0;
-    std::int32_t m_columnWidth = 0;
-    std::int32_t m_columnHeight = 0;
+    int m_selection = 0;
+    int m_time = 0;
+    int m_finishTimer = 0;
+    int m_lineHeight = 0;
+    int m_columnX = 0;
+    int m_columnY = 0;
+    int m_columnWidth = 0;
+    int m_columnHeight = 0;
     float m_iconScale = 0.0f;
     Rect m_backdrop;
-    std::int32_t m_iconY = 0;
-    std::int32_t m_iconTimer = kIconGlideTicks;
-    std::int32_t m_iconDrawY = 0;
-    std::int32_t m_bodyTop = 0;
+    int m_iconY = 0;
+    int m_iconTimer = kIconGlideTicks;
+    int m_iconDrawY = 0;
+    int m_bodyTop = 0;
 };
 
 } // namespace gdl::game

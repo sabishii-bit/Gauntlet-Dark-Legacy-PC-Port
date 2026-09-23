@@ -1,5 +1,4 @@
 #include <array>
-#include <cstdint>
 #include <filesystem>
 #include <type_traits>
 
@@ -116,8 +115,8 @@ TEST_CASE("boss victory rewards the entire party once and signals completion onc
     f.sequence.fallen(Vec3{0}, f.bosses, f.players);
     REQUIRE(f.players[0].actor.save().progress().relics.shards == 0);
     REQUIRE(f.sequence.victory().state().stage() == BossVictory::Stage::Appearing);
-    std::int32_t completions = 0;
-    for (std::int32_t tick = 0; tick < 2000; ++tick) {
+    int completions = 0;
+    for (int tick = 0; tick < 2000; ++tick) {
         completions += f.sequence.advanceVictory(2, 1.0f / 30.0f, f.players, f.strings) ? 1 : 0;
     }
     REQUIRE(completions == 1);

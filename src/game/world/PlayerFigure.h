@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -40,7 +39,7 @@ public:
     load(RenderDevice& device, const std::filesystem::path& root, const CharacterSave& save);
     static std::filesystem::path costumeDirectory(const std::filesystem::path& root,
                                                   const CharacterSave& save);
-    void animate(float stickMagnitude, std::int32_t ticks, float seconds,
+    void animate(float stickMagnitude, int ticks, float seconds,
                  PlayerDeed deed = PlayerDeed::None);
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
               const WorldLighting& lighting, float alpha, bool hideWeapon) const;
@@ -52,16 +51,15 @@ public:
     const PlayerAnimator& animator() const { return m_animator; }
     const TreeModel& missile() const { return m_missile; }
     SoundSet& voice() { return m_voice; }
-    std::optional<std::uint32_t> throwSound() const { return m_throwSound; }
+    std::optional<unsigned int> throwSound() const { return m_throwSound; }
     /** Lazily loads the costume colour's effect archive; null when unavailable. */
     ItemArchive* effects();
 
 private:
     /** An unlockable class without its own archive borrows the class it shadows. */
-    static std::filesystem::path classFolder(const std::filesystem::path& root,
-                                             std::int32_t character, std::string_view sub);
-    static std::string_view actionsClassOf(const std::filesystem::path& root,
-                                           std::int32_t character);
+    static std::filesystem::path classFolder(const std::filesystem::path& root, int character,
+                                             std::string_view sub);
+    static std::string_view actionsClassOf(const std::filesystem::path& root, int character);
     void loadWeapon(const CharacterSave& save, RenderDevice& device);
     void loadMissile(const std::filesystem::path& root, const CharacterSave& save,
                      RenderDevice& device);
@@ -77,13 +75,13 @@ private:
     std::filesystem::path m_directory;
     TreeInfo m_weaponTree;
     TreeModel m_weapon;
-    std::int32_t m_handNode = -1;
-    std::vector<std::int32_t> m_classNodeOfNode;
+    int m_handNode = -1;
+    std::vector<int> m_classNodeOfNode;
     std::vector<Mat4> m_transforms;
     ItemArchive m_effects;
     TreeModel m_missile;
     SoundSet m_voice;
-    std::optional<std::uint32_t> m_throwSound;
+    std::optional<unsigned int> m_throwSound;
     std::filesystem::path m_effectDirectory;
     bool m_staysInHand = false;
 };

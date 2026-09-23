@@ -1,7 +1,6 @@
 #include "game/enemies/EnemyAnimator.h"
 
 #include <cstddef>
-#include <cstdint>
 
 namespace gdl::game {
 
@@ -21,7 +20,7 @@ bool EnemyAnimator::bind(const TreeInfo& tree, bool walksIn) {
     unbind();
     for (std::size_t a = 0; a < kEnemyActionCount; ++a) {
         const auto sequence = tree.findSequence(kSequenceNames[a]);
-        m_sequences[a] = sequence.has_value() ? static_cast<std::int32_t>(*sequence) : -1;
+        m_sequences[a] = sequence.has_value() ? static_cast<int>(*sequence) : -1;
     }
     if (m_sequences[index(Action::Ready)] < 0) {
         return false;
@@ -29,7 +28,7 @@ bool EnemyAnimator::bind(const TreeInfo& tree, bool walksIn) {
     m_tree = &tree;
     m_walksIn = walksIn;
     m_current = has(Action::Start) ? Action::Start : Action::Ready;
-    const std::uint32_t first = sequenceOf(m_current);
+    const unsigned int first = sequenceOf(m_current);
     m_player.start(tree.sequences[first], first);
     m_pose.evaluate(tree, first, 0.0f);
     m_previous = m_pose;
@@ -62,13 +61,13 @@ void EnemyAnimator::request(Action action) {
     m_requested = action;
 }
 
-std::uint32_t EnemyAnimator::sequenceOf(Action action) const {
-    const std::int32_t sequence = m_sequences[index(action)];
-    return sequence >= 0 ? static_cast<std::uint32_t>(sequence)
-                         : static_cast<std::uint32_t>(m_sequences[index(Action::Ready)]);
+unsigned int EnemyAnimator::sequenceOf(Action action) const {
+    const int sequence = m_sequences[index(action)];
+    return sequence >= 0 ? static_cast<unsigned int>(sequence)
+                         : static_cast<unsigned int>(m_sequences[index(Action::Ready)]);
 }
 
-void EnemyAnimator::update(std::int32_t ticks, float seconds, bool contact) {
+void EnemyAnimator::update(int ticks, float seconds, bool contact) {
     m_struck = false;
     m_powerStruck = false;
     m_threw = false;
@@ -302,7 +301,7 @@ EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
 void EnemyAnimator::play(Decision decision, float seconds) {
     // A death the tree has no sequence for is played as being knocked down; anything else it
     // lacks is the stance, looping, and gives way at once.
-    std::uint32_t target = sequenceOf(decision.action);
+    unsigned int target = sequenceOf(decision.action);
     if (!has(decision.action)) {
         if (decision.action == Action::Dying && has(Action::HitReact2)) {
             target = sequenceOf(Action::HitReact2);

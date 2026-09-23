@@ -1,6 +1,5 @@
 #pragma once
 #include <array>
-#include <cstdint>
 #include <optional>
 
 #include "game/players/PlayerActor.h"
@@ -36,7 +35,7 @@ public:
                       float scale, bool spreads);
     void usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor);
-    void burstPotion(std::int32_t kind, const Vec3& position, float power);
+    void burstPotion(int kind, const Vec3& position, float power);
     float magicPowerOf(const PlayerActor& actor) const;
     PlayerMissiles& missiles() { return m_missiles; }
     const PlayerMissiles& missiles() const { return m_missiles; }

@@ -4,7 +4,6 @@
 #include <array>
 #include <cctype>
 #include <cstddef>
-#include <cstdint>
 #include <numbers>
 
 namespace gdl::game {
@@ -64,17 +63,16 @@ bool sameName(std::string_view a, std::string_view b) {
 
 } // namespace
 
-float EnemyKind::healthAtTier(std::int32_t tier) const {
+float EnemyKind::healthAtTier(int tier) const {
     return health * 0.333f * static_cast<float>(std::clamp(tier, 1, 3));
 }
 
-const EnemyKind& enemyKind(std::int32_t kind) {
+const EnemyKind& enemyKind(int kind) {
     return kKinds[static_cast<std::size_t>(std::clamp(kind, 0, kEnemyKindCount - 1))];
 }
 
-std::int32_t levelKindOf(std::span<const LevelEnemy> roster, std::int32_t named,
-                         std::int32_t strength) {
-    const auto ofClass = [&roster](std::int32_t subtype) -> std::optional<std::int32_t> {
+int levelKindOf(std::span<const LevelEnemy> roster, int named, int strength) {
+    const auto ofClass = [&roster](int subtype) -> std::optional<int> {
         for (const LevelEnemy& enemy : roster) {
             if (enemy.subtype == subtype && enemy.kind >= 0) {
                 return enemy.kind;
@@ -96,8 +94,8 @@ std::int32_t levelKindOf(std::span<const LevelEnemy> roster, std::int32_t named,
     return named;
 }
 
-std::optional<std::int32_t> enemyKindOf(std::string_view name) {
-    for (std::int32_t i = 0; i < kEnemyKindCount; ++i) {
+std::optional<int> enemyKindOf(std::string_view name) {
+    for (int i = 0; i < kEnemyKindCount; ++i) {
         const EnemyKind& kind = kKinds[static_cast<std::size_t>(i)];
         if (kind.height > 0.0f && (sameName(kind.name, name) || sameName(kind.prefix, name))) {
             return i;

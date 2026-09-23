@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 
 #include "game/menu/ScrollBox.h"
 
@@ -64,14 +63,14 @@ constexpr std::array<Color, 4> kInks{Color::rgba(0x1F, 0x1F, 0x00), Color::rgba(
 
 } // namespace
 
-const HelpMessageSpec* HelpMessages::specOf(std::int32_t id) {
+const HelpMessageSpec* HelpMessages::specOf(int id) {
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kSpecs, id, &HelpMessageSpec::id);
     return found != kSpecs.end() ? &*found : nullptr;
 }
 
-Color HelpMessages::inkOf(std::int32_t player) {
+Color HelpMessages::inkOf(int player) {
     return player >= 0 && static_cast<std::size_t>(player) < kInks.size()
                ? kInks[static_cast<std::size_t>(player)]
                : ScrollBox::kTextColor;
@@ -86,8 +85,8 @@ void HelpMessages::clear() {
     m_posted = 0;
 }
 
-const HelpMessageSpec* HelpMessages::post(std::int32_t id, std::int32_t player,
-                                          std::span<const HelpReader> party, std::int32_t number) {
+const HelpMessageSpec* HelpMessages::post(int id, int player, std::span<const HelpReader> party,
+                                          int number) {
     const HelpMessageSpec* spec = specOf(id);
     if (spec == nullptr || m_strings == nullptr) {
         return nullptr;
@@ -139,7 +138,7 @@ const HelpMessageSpec* HelpMessages::post(std::int32_t id, std::int32_t player,
         return nullptr;
     }
     m_lines = std::move(lines);
-    const auto note = [id](std::vector<std::int32_t>* list) {
+    const auto note = [id](std::vector<int>* list) {
         if (list != nullptr && !std::ranges::binary_search(*list, id)) {
             list->insert(std::ranges::upper_bound(*list, id), id);
         }
@@ -153,11 +152,11 @@ const HelpMessageSpec* HelpMessages::post(std::int32_t id, std::int32_t player,
     m_id = id;
     m_priority = spec->priority;
     m_player = player;
-    m_ticksLeft = static_cast<std::int32_t>(m_lines.size()) * kTicksPerLine + kTicksOver;
+    m_ticksLeft = static_cast<int>(m_lines.size()) * kTicksPerLine + kTicksOver;
     return spec;
 }
 
-void HelpMessages::update(std::int32_t ticks) {
+void HelpMessages::update(int ticks) {
     m_pauseLeft = std::max(m_pauseLeft - ticks, 0);
     if (m_ticksLeft <= 0) {
         return;
@@ -172,13 +171,13 @@ void HelpMessages::update(std::int32_t ticks) {
 }
 
 Rect HelpMessages::areaFor(const TextPainter& text, const Vec2& head) const {
-    std::int32_t widest = 0;
+    int widest = 0;
     for (const std::string& line : m_lines) {
         widest = std::max(widest, text.measure(line));
     }
     const auto width = static_cast<float>(widest + kMarginAcross);
-    const auto height = static_cast<float>(
-        static_cast<std::int32_t>(m_lines.size()) * text.lineHeight() + kMarginDown);
+    const auto height =
+        static_cast<float>(static_cast<int>(m_lines.size()) * text.lineHeight() + kMarginDown);
     const float left = std::clamp(head.x - width * 0.5f, 0.0f,
                                   std::max(static_cast<float>(kWidest) - width, 0.0f));
     const float top = std::clamp(head.y - static_cast<float>(kAboveHead) - height * 0.5f, 2.0f,
@@ -197,8 +196,8 @@ void HelpMessages::draw(Canvas& canvas, const TextPainter& text, const Texture* 
     }
     TextStyle style;
     style.color = inkOf(m_player);
-    const auto centre = static_cast<std::int32_t>(area.x + area.width * 0.5f);
-    std::int32_t y = static_cast<std::int32_t>(area.y) + kMarginDown / 2;
+    const auto centre = static_cast<int>(area.x + area.width * 0.5f);
+    int y = static_cast<int>(area.y) + kMarginDown / 2;
     for (const std::string& line : m_lines) {
         text.draw(canvas, -centre, y, line, style);
         y += text.lineHeight();

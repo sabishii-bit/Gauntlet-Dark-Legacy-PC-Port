@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 
 #include "game/menu/OptionMenu.h"
 
@@ -56,18 +55,18 @@ void ScrollBox::close() {
 void ScrollBox::showPage(std::size_t page) {
     m_page = page;
     m_lines = splitLines(m_pages[page]);
-    std::int32_t textWidth = 0;
+    int textWidth = 0;
     for (const std::string& line : m_lines) {
         textWidth = std::max(textWidth, m_text->measure(line, m_scale));
     }
-    const auto lineCount = static_cast<std::int32_t>(m_lines.size());
-    const std::int32_t textHeight =
+    const auto lineCount = static_cast<int>(m_lines.size());
+    const int textHeight =
         lineCount * m_text->lineHeight(m_scale) + std::max(lineCount - 1, 0) * kLineSpacing;
-    const std::int32_t narrowest = m_text->measure(m_prompt, kPromptScale) + kPromptExtra;
-    const std::int32_t width = std::clamp(textWidth + kMargin, narrowest, kMaxWidth);
-    const std::int32_t height = textHeight + kMargin;
-    const std::int32_t x = kCentreX - width / 2;
-    const std::int32_t y = kCentreY - height / 2;
+    const int narrowest = m_text->measure(m_prompt, kPromptScale) + kPromptExtra;
+    const int width = std::clamp(textWidth + kMargin, narrowest, kMaxWidth);
+    const int height = textHeight + kMargin;
+    const int x = kCentreX - width / 2;
+    const int y = kCentreY - height / 2;
     m_area = Rect{static_cast<float>(x), static_cast<float>(y), static_cast<float>(width),
                   static_cast<float>(height)};
     m_textTop = y + kTextInset;
@@ -75,7 +74,7 @@ void ScrollBox::showPage(std::size_t page) {
     m_hold = kHoldTicks;
 }
 
-void ScrollBox::step(std::int32_t ticks, std::uint32_t accepted) {
+void ScrollBox::step(int ticks, unsigned int accepted) {
     if (!m_active) {
         return;
     }
@@ -132,7 +131,7 @@ void ScrollBox::draw(Canvas& canvas) const {
     TextStyle style;
     style.scale = m_scale;
     style.color = kTextColor;
-    std::int32_t y = m_textTop;
+    int y = m_textTop;
     for (const std::string& line : m_lines) {
         if (!line.empty()) {
             m_text->draw(canvas, -kCentreX, y, line, style);

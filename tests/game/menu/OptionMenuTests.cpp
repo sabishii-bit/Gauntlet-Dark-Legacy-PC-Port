@@ -1,5 +1,4 @@
 #include <cmath>
-#include <cstdint>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -26,7 +25,7 @@ using namespace gdl::game;
 /** Every upper-case letter is 8 pixels wide on a 10 pixel line. */
 BitmapFont wideFont() {
     std::vector<BitmapGlyph> glyphs;
-    for (std::int32_t c = 'A'; c <= 'Z'; ++c) {
+    for (int c = 'A'; c <= 'Z'; ++c) {
         glyphs.push_back({c, 8, 0, 0});
     }
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
@@ -136,8 +135,8 @@ TEST_CASE("fading menus close over thirty ticks and others at once", "[game][men
 TEST_CASE("the selection icon glides between items", "[game][menu]") {
     Fixture f;
     f.menu.open(threeItems(), f.painter, MenuScreen{});
-    const std::int32_t first = f.menu.itemY(0) + 5;
-    const std::int32_t second = f.menu.itemY(1) + 5;
+    const int first = f.menu.itemY(0) + 5;
+    const int second = f.menu.itemY(1) + 5;
     REQUIRE(f.menu.iconY() == first);
     f.menu.update(pressed(false, true, false, false), 1);
     REQUIRE(f.menu.iconY() == first);

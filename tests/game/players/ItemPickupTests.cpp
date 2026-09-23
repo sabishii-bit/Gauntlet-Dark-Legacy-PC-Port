@@ -1,4 +1,3 @@
-#include <cstdint>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,9 +10,8 @@ using namespace gdl;
 using namespace gdl::game;
 using Outcome = ItemTaking::Outcome;
 
-ItemOffer offer(ItemKind kind, std::int32_t amount, std::uint32_t flags = 0,
-                float strength = 0.0f) {
-    return ItemOffer{static_cast<std::int32_t>(kind), amount, flags, strength};
+ItemOffer offer(ItemKind kind, int amount, unsigned int flags = 0, float strength = 0.0f) {
+    return ItemOffer{static_cast<int>(kind), amount, flags, strength};
 }
 
 TEST_CASE("gold adds up to its limit and shows as treasure or junk", "[game][players][items]") {

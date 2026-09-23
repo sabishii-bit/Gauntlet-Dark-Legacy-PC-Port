@@ -1,6 +1,5 @@
 #pragma once
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
@@ -39,9 +38,8 @@ public:
     void ramBarrels(std::size_t index, std::span<PlayerRuntime> players, const Targets& targets);
     void shieldPotion(std::size_t index, std::span<PlayerRuntime> players);
     void showBlock(std::size_t index, float taken, float left, std::span<PlayerRuntime> players);
-    void updateTurbo(std::size_t index, std::int32_t ticks, float seconds,
-                     std::span<PlayerRuntime> players,
-                     const std::function<void(std::int32_t, std::size_t)>& help);
+    void updateTurbo(std::size_t index, int ticks, float seconds, std::span<PlayerRuntime> players,
+                     const std::function<void(int, std::size_t)>& help);
     void updateProjectiles(float seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateStrikes(float seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateShields(float seconds, std::span<PlayerRuntime> players, const Targets& targets);
@@ -52,33 +50,33 @@ public:
 private:
     static ItemArchive* moveEffectsOf(std::size_t index, std::span<PlayerRuntime> players);
     float ownDamageOf(std::size_t index, std::span<PlayerRuntime> players) const;
-    void fireStrike(std::size_t index, std::int32_t strikeIndex, std::span<PlayerRuntime> players);
-    static constexpr std::int32_t kEnemyTargetBase = 1000;
-    static constexpr std::int32_t kGeneratorTargetBase = 2000;
-    static constexpr std::int32_t kCritterTargetBase = 3000;
-    static constexpr std::int32_t kBossTargetBase = 4000;
-    static constexpr std::int32_t kSafeRockTargetBase = 5000;
+    void fireStrike(std::size_t index, int strikeIndex, std::span<PlayerRuntime> players);
+    static constexpr int kEnemyTargetBase = 1000;
+    static constexpr int kGeneratorTargetBase = 2000;
+    static constexpr int kCritterTargetBase = 3000;
+    static constexpr int kBossTargetBase = 4000;
+    static constexpr int kSafeRockTargetBase = 5000;
 
     std::optional<Resources> m_resources;
     MoveStrikes m_strikes;
     /** The effect that goes along with a strike that flies. */
     struct StrikeEffect {
-        std::uint32_t strike = 0;
-        std::uint32_t effect = 0;
+        unsigned int strike = 0;
+        unsigned int effect = 0;
     };
     std::vector<StrikeEffect> m_strikeEffects;
     /** Whose strike a number is, and which of their class's, for what it shows on a hit. */
     struct StrikeSource {
-        std::uint32_t strike = 0;
+        unsigned int strike = 0;
         std::size_t actor = 0;
-        std::int32_t row = -1;
+        int row = -1;
     };
     std::vector<StrikeSource> m_strikeSources;
     /** A potion's magic ringing a character: it goes about with them and harms what it
      * touches, every so often, until it is spent. */
     struct PotionShield {
         std::size_t actor = 0;
-        std::uint32_t effect = 0;
+        unsigned int effect = 0;
         float radius = 0.0f;
         float damage = 0.0f;
         float secondsLeft = 0.0f;

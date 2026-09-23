@@ -1,7 +1,6 @@
 #include "game/screens/StatusBox.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <format>
 
@@ -18,25 +17,25 @@ constexpr std::string_view kStaticDirectory = "STATIC";
 constexpr std::string_view kInitialsFile = "fonts/initials.json";
 constexpr std::string_view kScoreFile = "fonts/score.json";
 constexpr std::string_view kSmallCapsFile = "fonts/8hifonts.json";
-constexpr std::int32_t kInitialsSpaceWidth = 12;
-constexpr std::int32_t kScoreSpaceWidth = 9;
-constexpr std::int32_t kSmallCapsSpaceWidth = 8;
-constexpr std::int32_t kIconSize = 20;
-constexpr std::int32_t kIconY = 357;
-constexpr std::int32_t kCoinX = 6;
-constexpr std::int32_t kHeartX = 61;
-constexpr std::int32_t kGoldRight = 60;
-constexpr std::int32_t kHealthRight = 116;
-constexpr std::int32_t kValueY = 359;
-constexpr std::int32_t kNameY = 339;
-constexpr std::int32_t kLevelY = 326;
+constexpr int kInitialsSpaceWidth = 12;
+constexpr int kScoreSpaceWidth = 9;
+constexpr int kSmallCapsSpaceWidth = 8;
+constexpr int kIconSize = 20;
+constexpr int kIconY = 357;
+constexpr int kCoinX = 6;
+constexpr int kHeartX = 61;
+constexpr int kGoldRight = 60;
+constexpr int kHealthRight = 116;
+constexpr int kValueY = 359;
+constexpr int kNameY = 339;
+constexpr int kLevelY = 326;
 constexpr float kNameScale = 0.667f;
 constexpr std::string_view kStrip = "S3";
-constexpr std::int32_t kCountIconX = 28;
-constexpr std::int32_t kCountIconY = 288;
-constexpr std::int32_t kCountIconSize = 16;
-constexpr std::int32_t kCountTextX = 48;
-constexpr std::int32_t kCountTextY = 292;
+constexpr int kCountIconX = 28;
+constexpr int kCountIconY = 288;
+constexpr int kCountIconSize = 16;
+constexpr int kCountTextX = 48;
+constexpr int kCountTextY = 292;
 constexpr float kCountScale = 1.5f;
 
 } // namespace
@@ -79,21 +78,20 @@ void StatusBoxPainter::release() {
     m_strings = nullptr;
 }
 
-std::string_view StatusBoxPainter::potionIcon(std::int32_t kind) {
+std::string_view StatusBoxPainter::potionIcon(int kind) {
     return kind >= 0 && static_cast<std::size_t>(kind) < kPotionIcons.size()
                ? kPotionIcons[static_cast<std::size_t>(kind)]
                : kPotionIcons[0];
 }
 
-void StatusBoxPainter::draw(Canvas& canvas, std::int32_t slot, const StatusBoxView& view,
-                            bool bar) {
+void StatusBoxPainter::draw(Canvas& canvas, int slot, const StatusBoxView& view, bool bar) {
     if (!loaded()) {
         return;
     }
-    const std::int32_t left = slot * kWidth;
+    const int left = slot * kWidth;
     const Rect box{static_cast<float>(left), static_cast<float>(kY), static_cast<float>(kWidth),
                    static_cast<float>(kHeight)};
-    const std::int32_t color = view.active ? view.color : slot;
+    const int color = view.active ? view.color : slot;
     if (bar) {
         if (const Texture* strip = staticTexture(kStrip)) {
             canvas.draw(*strip,
@@ -131,7 +129,7 @@ void StatusBoxPainter::draw(Canvas& canvas, std::int32_t slot, const StatusBoxVi
         }
         return;
     }
-    const auto icon = [&](std::string_view name, std::int32_t x) {
+    const auto icon = [&](std::string_view name, int x) {
         if (const Texture* texture = staticTexture(name)) {
             canvas.draw(*texture,
                         Rect{static_cast<float>(left + x), static_cast<float>(kIconY),
@@ -151,8 +149,7 @@ void StatusBoxPainter::draw(Canvas& canvas, std::int32_t slot, const StatusBoxVi
     // What is carried shows over the gold and the health: keys to the left, potions (the
     // colour of the next to be thrown) to the right, each with its count in the costume's
     // colour.
-    const auto carried = [&](std::string_view name, std::int32_t iconX, std::int32_t count,
-                             std::int32_t countX) {
+    const auto carried = [&](std::string_view name, int iconX, int count, int countX) {
         if (count <= 0) {
             return;
         }
@@ -173,7 +170,7 @@ void StatusBoxPainter::draw(Canvas& canvas, std::int32_t slot, const StatusBoxVi
         carried("KEY_ICON", kKeyIconX, view.keys, kKeyCountX);
         carried(potionIcon(view.potionKind), kPotionIconX, view.potions, kPotionCountX);
     }
-    const std::int32_t centerX = -(left + kWidth / 2);
+    const int centerX = -(left + kWidth / 2);
     if (view.mode == StatusBoxView::Mode::Status && m_smallCaps.ready()) {
         m_smallCaps.draw(canvas, centerX, kLevelY,
                          std::vformat(text("select.levelShort"), std::make_format_args(view.level)),
@@ -185,7 +182,7 @@ void StatusBoxPainter::draw(Canvas& canvas, std::int32_t slot, const StatusBoxVi
     m_initials.draw(canvas, centerX, kNameY, view.name, nameStyle);
 }
 
-void StatusBoxPainter::drawTurbo(Canvas& canvas, std::int32_t slot, const TurboMeterLook& look) {
+void StatusBoxPainter::drawTurbo(Canvas& canvas, int slot, const TurboMeterLook& look) {
     const auto left = static_cast<float>(slot * kWidth);
     const auto top = static_cast<float>(kTurboY);
     if (const Texture* bar = staticTexture("TRBO_FULL_NEW")) {
@@ -248,8 +245,7 @@ std::string_view StatusBoxPainter::text(std::string_view id) const {
     return m_strings != nullptr ? m_strings->get(id) : id;
 }
 
-void StatusBoxPainter::drawCard(Canvas& canvas, std::int32_t slot, std::string_view card,
-                                std::int32_t y) {
+void StatusBoxPainter::drawCard(Canvas& canvas, int slot, std::string_view card, int y) {
     if (!loaded()) {
         return;
     }
@@ -264,12 +260,12 @@ void StatusBoxPainter::drawCard(Canvas& canvas, std::int32_t slot, std::string_v
     }
 }
 
-void StatusBoxPainter::drawCount(Canvas& canvas, std::int32_t slot, std::string_view icon,
-                                 std::int32_t count, std::int32_t total) {
+void StatusBoxPainter::drawCount(Canvas& canvas, int slot, std::string_view icon, int count,
+                                 int total) {
     if (!loaded()) {
         return;
     }
-    const std::int32_t left = slot * kWidth;
+    const int left = slot * kWidth;
     if (const Texture* mark = staticTexture(icon)) {
         canvas.draw(*mark,
                     Rect{static_cast<float>(left + kCountIconX), static_cast<float>(kCountIconY),

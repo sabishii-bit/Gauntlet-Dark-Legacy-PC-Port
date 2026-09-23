@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
@@ -55,8 +54,8 @@ private:
     bool startLevel(const LevelRef& level, std::span<const PartyMember> party,
                     const PlayOptions& options = {});
     bool startScenario(const std::filesystem::path& file);
-    bool startPlayerSelect(std::int32_t startingPlayer);
-    std::int32_t playerPressingStart() const;
+    bool startPlayerSelect(int startingPlayer);
+    int playerPressingStart() const;
     GameContext context();
     void applyWindowIcon();
 
@@ -89,7 +88,7 @@ private:
     bool m_movieActive = false;
     bool m_titleWarned = false;
     double m_fpsAccumulator = 0.0;
-    std::uint32_t m_fpsFrames = 0;
+    unsigned int m_fpsFrames = 0;
 };
 
 } // namespace gdl::game

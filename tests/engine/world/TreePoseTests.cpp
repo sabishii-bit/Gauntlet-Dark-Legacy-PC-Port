@@ -12,7 +12,7 @@ using namespace gdl;
 using Catch::Approx;
 
 /** A track keying one channel with the given values at the given frames. */
-TrackInfo track(std::uint32_t node, std::uint16_t channel, std::vector<std::uint16_t> frames,
+TrackInfo track(unsigned int node, std::uint16_t channel, std::vector<std::uint16_t> frames,
                 std::vector<float> values, bool pitchYawRoll = false) {
     TrackInfo t;
     t.node = node;

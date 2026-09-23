@@ -24,8 +24,8 @@ struct BreakableStrike {
     Kind kind = Kind::Plain;
     bool broken = false; ///< its last hit point went; else it only took the blow
     Vec3 position{0.0f, 0.0f, 0.0f};
-    std::int32_t contents = -1; ///< the item record a holding barrel gives up, broken
-    std::int32_t count = 0;
+    int contents = -1; ///< the item record a holding barrel gives up, broken
+    int count = 0;
 };
 
 /**
@@ -38,25 +38,25 @@ struct BreakableStrike {
  */
 class Breakables {
 public:
-    static constexpr std::int32_t kBreakable = 10; ///< the item type of barrels and breakable walls
-    static constexpr std::int32_t kBarrel = 43;    ///< of either type
-    static constexpr std::int32_t kExploding = 44;
-    static constexpr std::int32_t kPoison = 45;
-    static constexpr std::int32_t kWhole = 0; ///< its sequences, in order
-    static constexpr std::int32_t kBreaking = 1;
-    static constexpr std::int32_t kBroken = 2;
-    static constexpr std::uint32_t kSeedStart = 7919; ///< its random picks' own seed
+    static constexpr int kBreakable = 10; ///< the item type of barrels and breakable walls
+    static constexpr int kBarrel = 43;    ///< of either type
+    static constexpr int kExploding = 44;
+    static constexpr int kPoison = 45;
+    static constexpr int kWhole = 0; ///< its sequences, in order
+    static constexpr int kBreaking = 1;
+    static constexpr int kBroken = 2;
+    static constexpr unsigned int kSeedStart = 7919; ///< its random picks' own seed
 
     /** One barrel. */
     struct Barrel {
-        std::int32_t instance = -1;
+        int instance = -1;
         BreakableStrike::Kind kind = BreakableStrike::Kind::Plain;
-        std::int32_t health = 0;
-        std::int32_t armor = 0;
-        std::int32_t contents = -1;
-        std::int32_t count = 0;
-        std::int32_t minPlayers = 0;
-        std::int32_t state = kWhole;
+        int health = 0;
+        int armor = 0;
+        int contents = -1;
+        int count = 0;
+        int minPlayers = 0;
+        int state = kWhole;
         bool shown = true;
         bool gone = false;
         float radius = 1.0f;
@@ -70,7 +70,7 @@ public:
     void clear();
     std::size_t size() const { return m_barrels.size(); }
     const Barrel& barrel(std::size_t index) const { return *m_barrels[index]; }
-    void setPlayerCount(std::int32_t players);
+    void setPlayerCount(int players);
 
     /** Whether a barrel still stands to be hit. */
     bool standing(std::size_t index) const;
@@ -89,7 +89,7 @@ public:
 private:
     std::vector<std::unique_ptr<Barrel>> m_barrels;
     std::vector<ItemInfo> m_infos;
-    std::uint32_t m_seed = kSeedStart;
+    unsigned int m_seed = kSeedStart;
 };
 
 } // namespace gdl::game

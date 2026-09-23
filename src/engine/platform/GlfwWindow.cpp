@@ -229,8 +229,8 @@ Extent2D GlfwWindow::framebufferSize() const {
     int width = 0;
     int height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
-    return Extent2D{static_cast<std::uint32_t>(std::max(width, 0)),
-                    static_cast<std::uint32_t>(std::max(height, 0))};
+    return Extent2D{static_cast<unsigned int>(std::max(width, 0)),
+                    static_cast<unsigned int>(std::max(height, 0))};
 }
 
 void GlfwWindow::waitWhileMinimized() {
@@ -240,7 +240,7 @@ void GlfwWindow::waitWhileMinimized() {
 }
 
 std::vector<const char*> GlfwWindow::requiredVulkanInstanceExtensions() const {
-    std::uint32_t count = 0;
+    unsigned int count = 0;
     const char** names = glfwGetRequiredInstanceExtensions(&count);
     GDL_VERIFY(names != nullptr, "glfwGetRequiredInstanceExtensions failed");
     const std::span<const char* const> extensions(names, count);

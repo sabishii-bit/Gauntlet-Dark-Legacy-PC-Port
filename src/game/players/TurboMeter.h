@@ -12,7 +12,7 @@ struct TurboMeterLook {
     Color front = Color::black();
     Color back = Color::black(); ///< the whole bar, behind it
     std::uint8_t glow = 0;       ///< the full meter's glow, pulsing
-    std::int32_t gleam = -1;     ///< the frame of the gleam that marks a change of zone, or none
+    int gleam = -1;              ///< the frame of the gleam that marks a change of zone, or none
 };
 
 /**
@@ -35,9 +35,9 @@ public:
     static constexpr float kFallPerTick = 2.0f;
     static constexpr float kHighFrom = 0.4f; ///< of full, where the second zone begins
     static constexpr float kFullFrom = 0.99f;
-    static constexpr std::int32_t kGleamFrames = 5; ///< played up and back down
-    static constexpr std::int32_t kGleamTicksPerFrame = 4;
-    static constexpr std::int32_t kGlowTicks = 120; ///< one pulse of the full meter's glow
+    static constexpr int kGleamFrames = 5; ///< played up and back down
+    static constexpr int kGleamTicksPerFrame = 4;
+    static constexpr int kGlowTicks = 120; ///< one pulse of the full meter's glow
 
     enum class Zone : std::uint8_t { Low = 1, High = 2, Full = 3 };
     enum class Flash : std::uint8_t { None, Gleam, Glow };
@@ -51,7 +51,7 @@ public:
     /** Takes `cost` from it when it holds that much; whether it did. */
     bool spend(float cost);
     /** Moves what is shown towards what is held and runs the gleam and the glow. */
-    void step(std::int32_t ticks);
+    void step(int ticks);
 
     float held() const { return m_held; }
     float shown() const { return m_shown; }
@@ -67,7 +67,7 @@ private:
     float m_held = 0.0f;
     float m_shown = 0.0f;
     Flash m_flash = Flash::None;
-    std::int32_t m_flashTicks = 0;
+    int m_flashTicks = 0;
 };
 
 } // namespace gdl::game

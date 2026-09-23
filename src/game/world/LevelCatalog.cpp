@@ -34,12 +34,12 @@ LevelRef LevelRef::tower() {
                     "LEVELS/LEVELL1", "ITEMS/LEVELL", "ITEMS/LEVELL1"};
 }
 
-std::int32_t LevelRef::orderOf(std::int32_t realmId) {
-    constexpr std::array<std::int32_t, 12> kOrder{kTowerRealm, 7, 2, 1, 11, 4, 3, 9, 10, 5, 6, 8};
+int LevelRef::orderOf(int realmId) {
+    constexpr std::array<int, 12> kOrder{kTowerRealm, 7, 2, 1, 11, 4, 3, 9, 10, 5, 6, 8};
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kOrder, realmId);
-    return found != kOrder.end() ? static_cast<std::int32_t>(found - kOrder.begin()) : 0;
+    return found != kOrder.end() ? static_cast<int>(found - kOrder.begin()) : 0;
 }
 
 bool LevelCatalog::load(const std::filesystem::path& unpackedRoot) {
@@ -94,7 +94,7 @@ LevelRef LevelCatalog::refOf(const Realm& realm, std::size_t index) {
     return level;
 }
 
-std::vector<std::int32_t> LevelCatalog::runesOf(std::string_view realmFile) const {
+std::vector<int> LevelCatalog::runesOf(std::string_view realmFile) const {
     const std::string wanted = upper(realmFile);
     for (const Realm& realm : m_realms) {
         if (realm.file == wanted) {

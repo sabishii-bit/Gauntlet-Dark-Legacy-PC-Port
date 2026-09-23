@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 
 #include "game/players/PowerupEffects.h"
 namespace gdl::game {
@@ -56,7 +55,7 @@ StrafeWay PartyMotion::strafeWayOf(float heading, float facing) {
 
 std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                                              std::span<const PlayInput> inputs, bool held,
-                                             float cameraYaw, std::int32_t ticks, float seconds,
+                                             float cameraYaw, int ticks, float seconds,
                                              const WorldCollision& collision,
                                              const Events& events) {
     // Snapshot after movement, before fixture collision, preserving the camera's frame phase.

@@ -1,5 +1,4 @@
 #include <array>
-#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -15,7 +14,7 @@ using namespace gdl::game;
 using Catch::Approx;
 using Action = PlayerAnimator::Action;
 
-constexpr std::int32_t kTicks = 2; ///< per frame at thirty frames a second
+constexpr int kTicks = 2; ///< per frame at thirty frames a second
 constexpr float kStep = 1.0f / 30.0f;
 
 /** The class sequences with their real lengths, each sliding the one node along x by its
@@ -29,8 +28,8 @@ TreeInfo classTree() {
     tree.nodes.push_back(root);
     struct Entry {
         const char* name;
-        std::int32_t frames;
-        std::int32_t rate;
+        int frames;
+        int rate;
         bool repeats;
     };
     const std::array<Entry, 22> entries{
@@ -42,7 +41,7 @@ TreeInfo classTree() {
          {"MAGICS", 11, 30, false},      {"MAGICR", 15, 30, false}, {"THROWPOTIONS", 11, 30, false},
          {"THROWPOTIONR", 9, 30, false}, {"DEATH", 20, 30, false},  {"HITREACT", 11, 30, false},
          {"STUN1", 15, 30, false}}};
-    std::uint32_t index = 0;
+    unsigned int index = 0;
     for (const Entry& entry : entries) {
         TreeSequenceInfo sequence;
         sequence.name = entry.name;
@@ -359,7 +358,7 @@ TEST_CASE("struck, a character flinches or reels where it stands and then carrie
 TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it begins",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, std::int32_t frames) {
+    const auto add = [&tree](const char* name, int frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -404,7 +403,7 @@ TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it beg
 TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and is let down",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, std::int32_t frames) {
+    const auto add = [&tree](const char* name, int frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -460,7 +459,7 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
 TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recovers",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, std::int32_t frames) {
+    const auto add = [&tree](const char* name, int frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -499,7 +498,7 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
 TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and falls can floor it",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, std::int32_t frames) {
+    const auto add = [&tree](const char* name, int frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -582,7 +581,7 @@ TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the
           "shot's gesture, and nothing else leaves the hand",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, std::int32_t frames) {
+    const auto add = [&tree](const char* name, int frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;

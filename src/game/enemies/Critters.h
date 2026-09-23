@@ -26,19 +26,19 @@
 namespace gdl::game {
 
 /** The great creatures the level can hold. */
-inline constexpr std::int32_t kGolemCritter = 3;
-inline constexpr std::int32_t kGargoyleCritter = 7;
-inline constexpr std::int32_t kGeneralCritter = 8;
-inline constexpr std::int32_t kBossCritter = 4; ///< a realm's boss, by its name ("LICH")
+inline constexpr int kGolemCritter = 3;
+inline constexpr int kGargoyleCritter = 7;
+inline constexpr int kGeneralCritter = 8;
+inline constexpr int kBossCritter = 4; ///< a realm's boss, by its name ("LICH")
 
 /** The boss a level's `bossType` names (34 the dragon to 44 the garm), or nothing. */
-std::string_view bossNameOf(std::int32_t kind);
+std::string_view bossNameOf(int kind);
 
 /** A contact a critter has made. Breath contacts repeat while touching; the
  * recipient's shared breath timer decides when they may damage it again. */
 struct CritterBlow {
-    std::int32_t player = -1;
-    std::int32_t critter = -1;
+    int player = -1;
+    int critter = -1;
     float damage = 0.0f;
     Vec3 direction{0.0f, 0.0f, 1.0f};
     bool breath = false;
@@ -47,7 +47,7 @@ struct CritterBlow {
 /** An effect and a sound a critter has set off: a move's, a strike's or a hit's, where it
  * happened; `follows` for one that rides on the body. */
 struct CritterCue {
-    std::int32_t critter = -1;
+    int critter = -1;
     std::string tree;  ///< of the critter's own archive; empty for a sound alone
     std::string sound; ///< empty for an effect alone
     Vec3 position{0.0f, 0.0f, 0.0f};
@@ -63,7 +63,7 @@ struct CritterCue {
 /** A dying critter's death throwing something out (the coins a boss spews): from where,
  * which way and how fast, and how far round each side of that way. */
 struct CritterSpew {
-    std::int32_t critter = -1;
+    int critter = -1;
     Vec3 origin{0.0f, 0.0f, 0.0f};
     Vec3 velocity{0.0f, 0.0f, 0.0f};
     float halfAngle = 0.0f; ///< radians
@@ -72,10 +72,10 @@ struct CritterSpew {
 /** Experience a critter is worth: a share of its value for each hit, to the hitter, and
  * a fifth of it to everyone (`player` -1) when it falls. */
 struct CritterLoss {
-    std::int32_t critter = -1;
-    std::int32_t kind = 0;
+    int critter = -1;
+    int kind = 0;
     std::string form; ///< a gargoyle's ("EAGL"): the key it drops is named by it
-    std::int32_t player = -1;
+    int player = -1;
     float experience = 0.0f;
     bool killed = false;
     Vec3 position{0.0f, 0.0f, 0.0f};
@@ -92,12 +92,12 @@ struct CritterLoss {
  */
 class Critters {
 public:
-    static constexpr std::int32_t kMost = 16;
+    static constexpr int kMost = 16;
     static constexpr float kBlockShare = 0.25f;     ///< what gets through a block
     static constexpr float kKillShare = 0.2f;       ///< of the value, to everyone, on a kill
     static constexpr float kRoarAfter = 50.0f;      ///< damage taken before it roars
     static constexpr float kUnderLevelLoss = 0.02f; ///< experience lost a level under the place's
-    static constexpr std::int32_t kTicksPerSecond = 60;
+    static constexpr int kTicksPerSecond = 60;
 
     Critters() = default;
     Critters(const Critters&) = delete;
@@ -114,10 +114,9 @@ public:
     /** Stands one of `kind` (a golem, a general, a gargoyle by its form: "GAR_EAGL", or a
      * boss by its name: "LICH") at `position` facing `yaw`. Nullopt when its data or
      * archive is missing or there is no room. */
-    std::optional<std::int32_t> spawn(std::int32_t kind, const Vec3& position, float yaw,
-                                      std::string_view form = "");
+    std::optional<int> spawn(int kind, const Vec3& position, float yaw, std::string_view form = "");
 
-    void update(std::int32_t ticks, float seconds, std::span<const EnemyView> players);
+    void update(int ticks, float seconds, std::span<const EnemyView> players);
     std::vector<CritterBlow> takeBlows();
     std::vector<CritterLoss> takeLosses();
     /** The effects and sounds set off since the last call. */
@@ -126,56 +125,56 @@ public:
     std::vector<CritterSpew> takeSpews();
     std::vector<CritterShot> takeShots();
 
-    void hurt(std::int32_t id, const EnemyHit& hit);
+    void hurt(int id, const EnemyHit& hit);
     /** Stops it where it stands, its animation with it, for `ticks`. */
-    void freeze(std::int32_t id, std::int32_t ticks);
+    void freeze(int id, int ticks);
     /** Takes its targets from it for `ticks`, over which it turns at a tenth of its rate. */
-    void blind(std::int32_t id, std::int32_t ticks);
+    void blind(int id, int ticks);
     /** Refuses its curbed attacks (those whose harm is flagged so) while `seconds` is over
      * nought; nought lifts the curb. */
-    void curb(std::int32_t id, float seconds);
-    void resize(std::int32_t id, float scale);
+    void curb(int id, float seconds);
+    void resize(int id, float scale);
     /** Keeps it to its stance between moves while `held`. */
-    void hold(std::int32_t id, bool held);
+    void hold(int id, bool held);
     /** Has it roar as soon as its move is over. */
-    void roar(std::int32_t id);
+    void roar(int id);
     std::vector<MissileTarget> targets() const;
-    std::optional<std::int32_t> struckBy(const Vec3& from, const Vec3& to, float radius) const;
-    std::vector<std::int32_t> within(const Vec3& centre, float radius) const;
-    std::vector<std::int32_t> reachedBy(const Vec3& centre, float radius, float arc,
-                                        const Vec3& facing) const;
+    std::optional<int> struckBy(const Vec3& from, const Vec3& to, float radius) const;
+    std::vector<int> within(const Vec3& centre, float radius) const;
+    std::vector<int> reachedBy(const Vec3& centre, float radius, float arc,
+                               const Vec3& facing) const;
 
     /** Optional frozen skin is borrowed for this draw only. */
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr) const;
 
     std::size_t count() const;
-    bool alive(std::int32_t id) const;
-    bool dying(std::int32_t id) const;
-    std::int32_t kindOf(std::int32_t id) const;
-    float healthOf(std::int32_t id) const;
-    float maxHealthOf(std::int32_t id) const;
+    bool alive(int id) const;
+    bool dying(int id) const;
+    int kindOf(int id) const;
+    float healthOf(int id) const;
+    float maxHealthOf(int id) const;
     /** Floor anchor, not the animation root (which includes the type's floorOffset). */
-    const Vec3& positionOf(std::int32_t id) const;
-    float yawOf(std::int32_t id) const;
-    std::optional<Mat4> nodeTransformOf(std::int32_t id, std::string_view node) const;
-    float radiusOf(std::int32_t id) const;
-    std::int32_t targetOf(std::int32_t id) const;
+    const Vec3& positionOf(int id) const;
+    float yawOf(int id) const;
+    std::optional<Mat4> nodeTransformOf(int id, std::string_view node) const;
+    float radiusOf(int id) const;
+    int targetOf(int id) const;
     /** The name of the move it is doing ("WALK", "ATTACK1L"). */
-    std::string_view moveOf(std::int32_t id) const;
+    std::string_view moveOf(int id) const;
     /** The type of the move it is doing, -1 with none. */
-    std::int32_t moveTypeOf(std::int32_t id) const;
+    int moveTypeOf(int id) const;
     /** Whether the move it is doing has played out. */
-    bool moveDoneOf(std::int32_t id) const;
-    bool frozen(std::int32_t id) const;
-    bool blinded(std::int32_t id) const;
-    bool curbed(std::int32_t id) const;
-    float scaleOf(std::int32_t id) const;
-    const CritterData* dataOf(std::int32_t id) const;
+    bool moveDoneOf(int id) const;
+    bool frozen(int id) const;
+    bool blinded(int id) const;
+    bool curbed(int id) const;
+    float scaleOf(int id) const;
+    const CritterData* dataOf(int id) const;
     /** The archive its body and textures came from, or null. */
-    ItemArchive* archiveOf(std::int32_t id);
+    ItemArchive* archiveOf(int id);
     /** A gargoyle's form ("EAGL"), empty for the rest. */
-    std::string formOf(std::int32_t id) const;
+    std::string formOf(int id) const;
 
 private:
     enum class State : std::uint8_t { Inactive, Active, Dying };
@@ -196,31 +195,31 @@ private:
         Vec3 position{0.0f, 0.0f, 0.0f};
         float yaw = 0.0f;
         Vec3 push{0.0f, 0.0f, 0.0f};
-        std::int32_t target = -1;
+        int target = -1;
         float targetDistance = 100000.0f;
-        std::int32_t move = -1; ///< the move playing
+        int move = -1; ///< the move playing
         bool moveDone = false;
-        std::vector<float> cooldowns; ///< seconds left before each move may be chosen again
-        std::vector<std::int32_t> struckThisMove; ///< players already hurt by the move playing
+        std::vector<float> cooldowns;    ///< seconds left before each move may be chosen again
+        std::vector<int> struckThisMove; ///< players already hurt by the move playing
         float hurtPending = 0.0f;
-        std::uint32_t hurtFlags = 0;
+        unsigned int hurtFlags = 0;
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
         float roarOwed = 0.0f; ///< damage taken toward the next roar
         float alpha = 1.0f;
         float scale = 1.0f;
-        std::int32_t frozenTicks = 0;  ///< a legend item's: it stands still this long
-        std::int32_t blindTicks = 0;   ///< and finds no one this long
-        float curbSeconds = 0.0f;      ///< over nought, its curbed attacks are refused
-        bool held = false;             ///< keeps to its stance between moves
-        bool roarWanted = false;       ///< roars as soon as it may
-        std::uint32_t soundsGiven = 0; ///< bits: the move's sound, its second, each strike's
-        std::int32_t shotFrame = -1;
+        int frozenTicks = 0;          ///< a legend item's: it stands still this long
+        int blindTicks = 0;           ///< and finds no one this long
+        float curbSeconds = 0.0f;     ///< over nought, its curbed attacks are refused
+        bool held = false;            ///< keeps to its stance between moves
+        bool roarWanted = false;      ///< roars as soon as it may
+        unsigned int soundsGiven = 0; ///< bits: the move's sound, its second, each strike's
+        int shotFrame = -1;
         AnimationPlayer player;
         TreePose pose;
     };
 
-    Stock* stockFor(std::int32_t kind, std::string_view form);
-    Critter* critterAt(std::int32_t id);
+    Stock* stockFor(int kind, std::string_view form);
+    Critter* critterAt(int id);
     static bool startMove(Critter& critter, std::size_t index);
     static void chooseMove(Critter& critter, std::span<const EnemyView> players);
     static std::optional<std::size_t> bestMove(const Critter& critter,
@@ -230,24 +229,24 @@ private:
     /** What of a sound record is set off. */
     enum class CueParts : std::uint8_t { Both, Sound, Effect };
     /** Sets off sound record `index` (and what it links to) at `position`. */
-    void cue(const Critter& critter, std::int32_t id, std::int32_t index, const Vec3& position,
+    void cue(const Critter& critter, int id, int index, const Vec3& position,
              CueParts parts = CueParts::Both, std::optional<std::string_view> node = std::nullopt);
 
     std::vector<CritterCue> m_cues;
     std::vector<CritterSpew> m_spews;
     std::vector<CritterShot> m_shots;
-    void shoot(const Critter& critter, std::int32_t id, const CritterMove& move,
-               std::int32_t damageIndex, std::span<const EnemyView> players);
+    void shoot(const Critter& critter, int id, const CritterMove& move, int damageIndex,
+               std::span<const EnemyView> players);
     char m_levelLetter = 'G';
-    void strikeWith(Critter& critter, std::int32_t id, const CritterMove& move,
-                    std::int32_t damageIndex, std::span<const EnemyView> players);
+    void strikeWith(Critter& critter, int id, const CritterMove& move, int damageIndex,
+                    std::span<const EnemyView> players);
     static Vec3 partPosition(const Critter& critter, std::string_view node);
     static Mat4 partTransform(const Critter& critter, std::string_view node);
     static Mat4 modelTransform(const Critter& critter);
     void carry(Critter& critter, float seconds, const CritterMove* move,
                std::span<const EnemyView> players);
     static void chooseTarget(Critter& critter, std::span<const EnemyView> players);
-    static const EnemyView* viewOf(std::span<const EnemyView> players, std::int32_t player);
+    static const EnemyView* viewOf(std::span<const EnemyView> players, int player);
 
     RenderDevice* m_device = nullptr;
     std::filesystem::path m_root;

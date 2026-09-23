@@ -1,5 +1,4 @@
 #include <cmath>
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -18,7 +17,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr std::int32_t kTicks = 2;
+constexpr int kTicks = 2;
 constexpr float kStep = 1.0f / 30.0f;
 
 std::filesystem::path unpackedRoot() {
@@ -28,7 +27,7 @@ std::filesystem::path unpackedRoot() {
         .parent_path();
 }
 
-EnemyView playerAt(const Vec3& position, std::int32_t player = 0) {
+EnemyView playerAt(const Vec3& position, int player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;
@@ -385,7 +384,7 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     REQUIRE(enemies.within(Vec3{0.0f, 3.0f, 0.0f}, 12.0f).size() == 2);
     REQUIRE(enemies.within(Vec3{0.0f, 3.0f, 0.0f}, 5.0f).empty());
     REQUIRE((enemies.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{0.0f, 0.0f, 1.0f}) ==
-             std::vector<std::int32_t>{*first}));
+             std::vector<int>{*first}));
     REQUIRE(enemies.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 3.2f, Vec3{0.0f, 0.0f, 1.0f}).size() ==
             2);
     // The sleeper does not stir for a player; woken, it does.

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 
 #include "engine/core/Log.h"
@@ -66,7 +65,7 @@ void ModelSprite::draw(Canvas& canvas, Vec2 position, float scale, float pitch,
             const MeshPart& part = node.mesh->parts[p];
             m_batch.clear();
             m_batch.begin(PrimitiveTopology::TriangleList);
-            for (const std::uint32_t index : part.indices) {
+            for (const unsigned int index : part.indices) {
                 const MeshVertex& v = node.mesh->vertices[index];
                 const Vec3 normal = glm::normalize(normalRotation * v.normal);
                 const float light =
