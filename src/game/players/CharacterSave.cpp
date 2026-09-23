@@ -74,6 +74,7 @@ Relics relicsFromJson(const Json& object) {
 
 Json progressJson(const ClassProgress& progress) {
     return Json{{"experience", progress.experience},
+                {"promotedLevel", progress.appearanceLevel()},
                 {"health", progress.health},
                 {"fightAdd", progress.fightAdd},
                 {"armorAdd", progress.armorAdd},
@@ -88,6 +89,9 @@ Json progressJson(const ClassProgress& progress) {
 ClassProgress progressFromJson(const Json& object) {
     ClassProgress progress;
     progress.experience = object.value("experience", 0);
+    progress.promotedLevel =
+        std::clamp(object.value("promotedLevel", experienceLevel(progress.experience)), 1,
+                   experienceLevel(progress.experience));
     progress.health = object.value("health", 0);
     progress.fightAdd = object.value("fightAdd", 0.0f);
     progress.armorAdd = object.value("armorAdd", 0.0f);

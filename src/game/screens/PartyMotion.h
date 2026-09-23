@@ -51,6 +51,8 @@ public:
         std::function<void(usize, s32, f32)> advanceTurbo;
         std::function<void(usize, f32)> thrownImpact;
         std::function<std::optional<Vec3>(usize)> aim;
+        /** Consulted after collision, before attack events; false blocks the horizontal step. */
+        std::function<bool(const Vec3&, const Vec3&)> allowMovement;
     };
     static std::vector<CameraSubject> step(std::span<PlayerRuntime> players,
                                            std::span<const PlayInput> inputs, bool held,

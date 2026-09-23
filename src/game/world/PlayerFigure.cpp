@@ -34,7 +34,7 @@ f32 PlayerFigure::bodyScale(const CharacterSave& save, const PowerupEffects& eff
     if (effects.grown()) {
         return PowerupEffects::kGrowthScale;
     }
-    return experienceLevel(save.experience()) >= kMaxLevel ? kMasterScale : 1.0f;
+    return save.progress().appearanceLevel() >= kMaxLevel ? kMasterScale : 1.0f;
 }
 
 std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path& unpackedRoot,
@@ -43,14 +43,14 @@ std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path
     const std::string_view costume = colorCode(save.color);
     const std::filesystem::path base =
         unpackedRoot / kPlayersDirectory / std::string(cls) / std::string(costume);
-    const s32 tier = experienceLevel(save.progress().experience) / kLevelsPerTier;
+    const s32 tier = save.progress().appearanceLevel() / kLevelsPerTier;
     const std::filesystem::path tiered = base.parent_path() / std::format("{}{}0", costume, tier);
     return std::filesystem::exists(tiered / "objects.json") ? tiered : base;
 }
 
 std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
                                                  const std::filesystem::path& root,
-                                                 const CharacterSave& save) {
+                                                 const CharacterSave& save, bool enter) {
     const std::string_view cls = classCode(save.character);
     const std::string_view costume = colorCode(save.color);
     const std::filesystem::path directory = costumeDirectory(root, save);
@@ -73,13 +73,23 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
     figure->m_staysInHand = MissileSpec::of(save.character).staysInHand;
     figure->loadWeapon(save, device);
     figure->loadMissile(root, save, device);
-    figure->loadActions(root, save);
+    figure->loadActions(root, save, enter);
+    if (PlayerFamiliar::tierFor(save.progress().appearanceLevel()) > 0) {
+        ClassDataSet classes;
+        classes.load(root / "pdata");
+        if (const auto* stats = classes.stats(save.character); stats != nullptr) {
+            if (auto* archive = figure->effects(); archive != nullptr) {
+                figure->m_familiar.bind(device, *archive, save.progress().appearanceLevel(),
+                                        stats->familiarOffset);
+            }
+        }
+    }
     return figure;
 }
 
 void PlayerFigure::loadMissile(const std::filesystem::path& root, const CharacterSave& save,
                                RenderDevice& device) {
-    const s32 level = experienceLevel(save.progress().experience);
+    const s32 level = save.progress().appearanceLevel();
     bool inCostume = true;
     const std::string name = MissileSpec::treeName(save.character, level, &inCostume);
     bool bound = false;
@@ -104,7 +114,7 @@ void PlayerFigure::loadMissile(const std::filesystem::path& root, const Characte
 }
 
 void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
-    const s32 level = experienceLevel(save.progress().experience);
+    const s32 level = save.progress().appearanceLevel();
     s32 tier = 1;
     if (level >= kWeaponTierThreeLevel) {
         tier = 3;
@@ -157,11 +167,12 @@ std::string_view PlayerFigure::actionsClassOf(const std::filesystem::path& root,
     return classCode(std::filesystem::exists(own) ? character : character % kStartingClassCount);
 }
 
-void PlayerFigure::loadActions(const std::filesystem::path& root, const CharacterSave& save) {
+void PlayerFigure::loadActions(const std::filesystem::path& root, const CharacterSave& save,
+                               bool enter) {
     const std::string_view cls = actionsClassOf(root, save.character);
     const std::filesystem::path directory = classFolder(root, save.character, kClassAnimations);
     const auto tree = m_actions.load(directory) ? m_actions.find(cls) : std::nullopt;
-    if (!tree.has_value() || !m_animator.bind(m_actions.tree(*tree))) {
+    if (!tree.has_value() || !m_animator.bind(m_actions.tree(*tree), enter)) {
         log::warn("Tower: no sequences for the {} under {}; the figure stands still", cls,
                   directory.string());
         return;
@@ -176,6 +187,7 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
 }
 
 void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed) {
+    m_familiar.update(seconds, deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack);
     if (!m_animator.bound()) {
         return;
     }
@@ -207,6 +219,7 @@ std::optional<Vec3> PlayerFigure::handPosition(const Mat4& body) const {
 void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
                         const WorldLighting& lighting, f32 alpha, bool hideWeapon) const {
     m_model.draw(device, clip, body, lighting, m_transforms, nullptr, alpha);
+    m_familiar.draw(device, clip, body, lighting, alpha);
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;
     if (heldWeaponBound() && !hideWeapon && (!thrown || m_staysInHand)) {

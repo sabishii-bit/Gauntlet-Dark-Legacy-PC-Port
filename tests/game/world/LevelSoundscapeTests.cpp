@@ -136,6 +136,31 @@ TEST_CASE("level narration selects its bank and queues after the character name"
     soundscape.close();
 }
 
+TEST_CASE("promotion speeches queue behind names and the legend uses the shared bank",
+          "[game][world][soundscape][promotion]") {
+    const auto root = test::scratchDirectory("soundscape-promotions");
+    writeBank(root, "VOICE1", {"NAME", "S_EXP99ALL"});
+    writeBank(root, "WIZTOWER", {"S_EXP30WAR"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    const auto name = soundscape.narrate("NAME");
+    const auto speech = soundscape.playPromotion("S_EXP30WAR", name);
+    const auto legend = soundscape.playPromotion("S_EXP99ALL", speech);
+    REQUIRE(name != kNoSound);
+    REQUIRE(speech != kNoSound);
+    REQUIRE(legend != kNoSound);
+    REQUIRE(player.isPlaying(speech));
+    REQUIRE(player.isPlaying(legend));
+    REQUIRE(player.voiceCount() == 1);
+    REQUIRE(soundscape.playPromotion("MISSING", name) == name);
+    soundscape.close();
+    REQUIRE_FALSE(player.isPlaying(name));
+    REQUIRE_FALSE(player.isPlaying(speech));
+    REQUIRE_FALSE(player.isPlaying(legend));
+}
+
 TEST_CASE("scroll voices replace each other without stopping unrelated sounds",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-scroll");

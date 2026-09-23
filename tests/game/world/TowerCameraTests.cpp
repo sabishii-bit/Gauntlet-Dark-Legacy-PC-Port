@@ -53,7 +53,7 @@ TEST_CASE("the camera settles behind one player at the marker's angle and the sh
     REQUIRE_FALSE(camera.update(party, markers, CameraRange{}, CameraView{}, 1.0f / 30.0f));
 }
 
-TEST_CASE("a spread party pulls the camera out until everyone fits the view",
+TEST_CASE("a spread party pulls the camera out no further than the level's maximum",
           "[game][world][camera]") {
     const std::vector<WorldLocator> markers{marker(Vec3{0.0f, 10.0f, 0.0f}, 0.2f, 0.0f)};
     std::vector<CameraSubject> party{standing(-2.0f, 0.0f), standing(2.0f, 0.0f)};
@@ -70,9 +70,9 @@ TEST_CASE("a spread party pulls the camera out until everyone fits the view",
     for (s32 i = 0; i < 200; ++i) {
         camera.update(party, markers, CameraRange{}, CameraView{}, 1.0f / 30.0f);
     }
-    // Half the spread over the half-angle's tangent, plus the slack the fit adds.
-    const f32 needed = 30.0f / std::tan(CameraView{}.horizontalFov * 0.5f);
-    REQUIRE(camera.distance() == Approx(needed + TowerCamera::kFarGap).margin(0.5f));
+    // Impossible spreads do not defeat the level's limit. Movement back into view
+    // remains available through CameraMovementLimit.
+    REQUIRE(camera.distance() == Approx(CameraRange{}.radiusMax).margin(0.01f));
 
     // A marker with a fixed distance overrides the range for the party.
     const std::vector<WorldLocator> fixed{marker(Vec3{0.0f, 10.0f, 0.0f}, 0.2f, 0.0f, 40)};

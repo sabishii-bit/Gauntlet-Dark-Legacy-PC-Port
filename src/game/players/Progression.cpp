@@ -6,6 +6,17 @@
 
 namespace gdl::game {
 
+s32 ClassProgress::appearanceLevel() const {
+    return std::clamp(promotedLevel < 0 ? experienceLevel(experience) : promotedLevel, 1,
+                      kMaxLevel);
+}
+
+bool ClassProgress::promotionPending() const {
+    const s32 level = experienceLevel(experience);
+    return level / 10 > appearanceLevel() / 10 ||
+           (level == kMaxLevel && appearanceLevel() < kMaxLevel);
+}
+
 namespace {
 
 constexpr s32 kCurveTopLevel = 60;

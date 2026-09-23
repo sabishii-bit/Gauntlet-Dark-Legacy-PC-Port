@@ -14,6 +14,19 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("a scenario can stage pending tower promotions", "[game][scenario][promotion]") {
+    const auto scenario = Scenario::fromJson(R"({"party":[
+        {"level":30,"promotedLevel":29},{"level":80,"promotedLevel":79}],"arrivalWorld":7})");
+    REQUIRE(scenario.tower.arrivalWorld == 7);
+    const auto party = scenario.partyMembers();
+    REQUIRE(party[0].save.progress().appearanceLevel() == 29);
+    REQUIRE(party[1].save.progress().appearanceLevel() == 79);
+    REQUIRE(party[0].save.progress().promotionPending());
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party":[{"level":30,"promotedLevel":80}]})"),
+                      FormatError);
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party":[{"promotedLevel":0}]})"), FormatError);
+}
+
 TEST_CASE("a scenario describes a party, where it stands and whether it is welcomed",
           "[game][scenario]") {
     const Scenario scenario = Scenario::fromJson(R"({

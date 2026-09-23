@@ -19,6 +19,22 @@ TEST_CASE("the experience curve matches the original's levels", "[game][players]
     REQUIRE(experienceLevel(10'000'000) == kMaxLevel);
 }
 
+TEST_CASE("every decade and legend rank require a separate tower award",
+          "[game][players][promotion]") {
+    ClassProgress progress;
+    progress.promotedLevel = 1;
+    for (s32 level = 1; level <= kMaxLevel; ++level) {
+        progress.experience = levelExperience(level);
+        const bool milestone = level % 10 == 0 || level == kMaxLevel;
+        REQUIRE(progress.promotionPending() == milestone);
+        if (milestone) {
+            REQUIRE(progress.appearanceLevel() < level);
+            progress.promotedLevel = level;
+            REQUIRE_FALSE(progress.promotionPending());
+        }
+    }
+}
+
 TEST_CASE("displayed stats grow with the level and the saved bonuses", "[game][players]") {
     ClassStats warrior;
     warrior.fightMin = 600.0f;

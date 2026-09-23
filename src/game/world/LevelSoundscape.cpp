@@ -54,6 +54,7 @@ void LevelSoundscape::open(const std::filesystem::path& root, SoundPlayer* outpu
     m_ambient.load(root / "audio/TOWAMB");
     m_narrator.load(root / "audio/VOICE1");
     m_narratorSecond.load(root / "audio/VOICE2");
+    m_promotions.load(root / "audio/WIZTOWER");
     if (m_common.load(root / "audio/COMMON")) {
         for (usize foot = 0; foot < kStepSounds.size(); ++foot) {
             m_steps[foot] = m_common.find(kStepSounds[foot]);
@@ -143,6 +144,7 @@ void LevelSoundscape::close() {
     m_ambient = SoundSet{};
     m_narrator = SoundSet{};
     m_narratorSecond = SoundSet{};
+    m_promotions = SoundSet{};
     m_steps.fill(std::nullopt);
     m_pickup.reset();
     m_stream.clear();
@@ -182,6 +184,18 @@ SoundHandle LevelSoundscape::playFrom(SoundSet& bank, std::string_view name) {
         }
     }
     return kNoSound;
+}
+
+SoundHandle LevelSoundscape::playPromotion(std::string_view name, SoundHandle after) {
+    if (m_output != nullptr) {
+        if (const auto found = m_promotions.find(name); found.has_value()) {
+            return track(m_output->playAfter(after, m_promotions.sequence(*found), 1.0f,
+                                             SoundCategory::Effects));
+        }
+    }
+    // The shared level-99 speech is in the main narrator bank, not WIZTOWER.
+    const SoundHandle shared = narrate(name, Narrator::Primary, after);
+    return shared != kNoSound ? shared : after;
 }
 
 SoundHandle LevelSoundscape::narrate(std::string_view name, Narrator which, SoundHandle after) {

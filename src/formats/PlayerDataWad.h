@@ -64,7 +64,8 @@ struct PlayerClassRecord {
     f32 attachY = 0.0f;    ///< where things attach to the body
     f32 collisionY = 0.0f; ///< the collision anchor
     f32 powerupTime = 0.0f;
-    std::array<f32, 3> weaponOffset{}; ///< where a thrown weapon leaves the body, in its space
+    std::array<f32, 3> weaponOffset{};   ///< where a thrown weapon leaves the body, in its space
+    std::array<f32, 3> familiarOffset{}; ///< class-specific permanent familiar attachment
     /** The first strike of each move, in the record's order; -1 for a move the class lacks. */
     static constexpr usize kMoveCount = 12;
     static constexpr std::array<std::string_view, kMoveCount> kMoveNames{
