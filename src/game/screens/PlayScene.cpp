@@ -540,7 +540,8 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
              [this](const Vec3& from, const Vec3& to) {
                  constexpr f32 kAreaProbeRadius = 0.1f;
                  return m_fixtures.safeRocks().blocksSegment(from, to, kAreaProbeRadius);
-             }});
+             },
+         .arenaAnchors = [this] { return m_fixtures.safeRocks().attackAnchors(); }});
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);

@@ -38,6 +38,8 @@ public:
     bool spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 yaw,
                const WorldCollision* collision, const EnemyScales& scales, char realm);
     void clear();
+    /** Static stage attachment points supplied by the encounter, not player targets. */
+    void setArenaAnchors(std::span<const Mat4> anchors);
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Combatant> peers = {});
     void hurt(const EnemyHit& hit);
@@ -109,6 +111,7 @@ private:
         std::vector<f32> cooldowns;      ///< seconds left before each move may be chosen again
         std::vector<s32> struckThisMove; ///< players already hurt by the move playing
         std::vector<CritterArea> areas;
+        std::vector<Mat4> arenaAnchors;
         f32 hurtPending = 0.0f;
         u32 hurtFlags = 0;
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
@@ -135,7 +138,8 @@ private:
                             std::span<const EnemyView> players);
     static f32 attackRate(const Actor& critter);
     static bool supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound);
-    void startArea(Actor& critter, s32 id, const AttackDefinition& damage, std::string_view node);
+    void startArea(Actor& critter, s32 id, const AttackDefinition& damage, std::string_view node,
+                   std::optional<Mat4> worldParent = std::nullopt);
     void updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players);
     /** Whether a legend item's curb keeps the move from it. */
     static bool curbedMove(const Actor& critter, const MoveDefinition& move);

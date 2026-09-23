@@ -124,7 +124,7 @@ TEST_CASE("expanding damage starts near the source then fades before the effect 
     REQUIRE(area.currentDamage() == 0);
 }
 
-std::filesystem::path areaArchive(bool expanding = false) {
+std::filesystem::path areaArchive(bool expanding = false, bool arena = false) {
     const auto root = test::scratchDirectory("boss-area-attacks");
     const auto archive = root / "MONSTERS/DJINN";
     std::filesystem::create_directories(root / "critter");
@@ -140,7 +140,10 @@ std::filesystem::path areaArchive(bool expanding = false) {
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"DJINN",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"STEP","frames":3}]}]})");
-    const std::string type = expanding ? "3" : "2";
+    std::string type = expanding ? "3" : "2";
+    if (arena) {
+        type = "5";
+    }
     const std::string flags = expanding ? "0" : "1";
     writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
       "types":[{"moveCount":2,"maxHealth":100,"originOffset":[0,50,0]}],
@@ -320,5 +323,86 @@ TEST_CASE("Chimera SUPER expands towards the player and attaches fire to the bod
     INFO("Last move: " << actor.moveName());
     REQUIRE(fire);
     REQUIRE(hit);
+}
+
+TEST_CASE("arena eruptions use all supplied placements and never substitute the boss",
+          "[game][boss-areas][plague]") {
+    const auto root = areaArchive(true, true);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'K');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    auto& actor = fixture.actor;
+    const f32 quarter = std::numbers::pi_v<f32> / 2;
+    const std::array<Mat4, 2> anchors{
+        glm::translate(Mat4{1}, Vec3{20, 0, 0}),
+        glm::rotate(glm::translate(Mat4{1}, Vec3{-20, 0, 0}), quarter, Vec3{0, 1, 0})};
+    actor.setArenaAnchors(anchors);
+    std::array<EnemyView, 3> players{playerAt({20, 0, 2}), playerAt({-18, 0, 0}),
+                                     playerAt({0, 0, 2})};
+    players[0].player = 0;
+    players[1].player = 1;
+    players[2].player = 2;
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    const auto blows = actor.takeBlows();
+    REQUIRE(blows.size() == 2);
+    REQUIRE(blows[0].player == 0);
+    REQUIRE(blows[1].player == 1);
+    REQUIRE(blows[0].origin == Vec3{20, 5, 0});
+    REQUIRE(glm::length(blows[1].origin - Vec3{-20, 5, 0}) < 0.001f);
+    REQUIRE(blows[0].damage == Approx(40.2f));
+    actor.freeze(120);
+    actor.setArenaAnchors({}); // an existing eruption keeps its static placement
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeBlows().size() == 2);
+    fixture.update(30, 0.5f, players);
+    REQUIRE(actor.takeBlows().empty());
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeBlows().empty()); // replacement has no anchors; no invented fallback
+}
+
+TEST_CASE("Plague Fiend SPOUT emits its visual and damage at authored stage anchors",
+          "[game][boss-areas][plague][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/PBOSS.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/PBOSS/animations.json");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'K');
+    REQUIRE(fixture.spawn("PBOSS", Vec3{0}, 0));
+    auto& actor = fixture.actor;
+    const std::array<Mat4, 2> anchors{glm::translate(Mat4{1}, Vec3{0, 0, 35}),
+                                      glm::translate(Mat4{1}, Vec3{20, 0, 35})};
+    actor.setArenaAnchors(anchors);
+    const std::array<EnemyView, 1> players{playerAt({0, 0, 35})};
+    bool stageHit = false;
+    usize visuals = 0;
+    for (s32 frame = 0; frame < 3600 && (!stageHit || visuals < 2); ++frame) {
+        fixture.update(2, 1.0f / 30.0f, players);
+        for (const auto& cue : actor.takeCues()) {
+            if (cue.tree == "ATCK10FX") {
+                REQUIRE(cue.placement.has_value());
+                REQUIRE_FALSE(cue.follows);
+                REQUIRE_FALSE(cue.loop);
+                REQUIRE(cue.position.z == 35);
+                REQUIRE((cue.position.x == 0 || cue.position.x == 20));
+                REQUIRE(cue.sound == "S_PLGATTCK10");
+                ++visuals;
+            }
+        }
+        for (const auto& blow : actor.takeBlows()) {
+            if (blow.area && blow.origin == Vec3{0, 0, 35}) {
+                REQUIRE(blow.damage > 0);
+                REQUIRE(blow.repeatGap > 0);
+                stageHit = true;
+            }
+        }
+        actor.takeShots();
+    }
+    INFO("Last move: " << actor.moveName());
+    REQUIRE(visuals == 2);
+    REQUIRE(stageHit);
 }
 } // namespace

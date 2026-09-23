@@ -23,6 +23,9 @@ void Combatant::clear() {
     m_spews.clear();
     m_shots.clear();
 }
+void Combatant::setArenaAnchors(std::span<const Mat4> anchors) {
+    m_actor.arenaAnchors.assign(anchors.begin(), anchors.end());
+}
 bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 yaw,
                       const WorldCollision* collision, const EnemyScales& scales, char realm) {
     m_actor = Actor{};
@@ -170,6 +173,15 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                 const bool crossed = start >= 0 && critter.shotFrame < start && frame >= start;
                 if ((!active(start, end) && !(targeted && crossed)) ||
                     (targeted && !critter.attackTarget.has_value())) {
+                    return;
+                }
+                if (harm->type == AttackDefinition::kArenaAreas) {
+                    if ((critter.soundsGiven & bit) == 0) {
+                        critter.soundsGiven |= bit;
+                        for (const Mat4& anchor : critter.arenaAnchors) {
+                            startArea(critter, i, *harm, {}, anchor);
+                        }
+                    }
                     return;
                 }
                 if (harm->type == AttackDefinition::kAttachedArea ||

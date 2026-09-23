@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 
 #include "engine/core/Types.h"
@@ -13,6 +14,7 @@ namespace gdl::game {
 struct CritterArea {
     Mat4 local{1.0f};
     std::string node;
+    std::optional<Mat4> worldParent; ///< static arena placement, independent of the fighter
     f32 radius = 0.0f;
     f32 minDot = -1.0f;
     f32 damage = 0.0f;

@@ -132,6 +132,20 @@ std::vector<Obstacle> SafeRocks::obstacles() const {
     return out;
 }
 
+std::vector<Mat4> SafeRocks::attackAnchors() const {
+    constexpr usize kMaxAnchors = 16;
+    std::vector<Mat4> anchors;
+    for (const auto& rock : m_rocks) {
+        if (rock->shown) {
+            anchors.push_back(rock->placement);
+            if (anchors.size() == kMaxAnchors) {
+                break;
+            }
+        }
+    }
+    return anchors;
+}
+
 void SafeRocks::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
     for (const auto& rock : m_rocks) {
         if (rock->shown) {

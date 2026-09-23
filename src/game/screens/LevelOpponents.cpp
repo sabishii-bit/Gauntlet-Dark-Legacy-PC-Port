@@ -18,8 +18,12 @@ void LevelOpponents::close() {
         for (const CritterEffect& cue : m_critterEffects) {
             m_resources->effects.stop(cue.effect);
         }
+        for (const u32 effect : m_arenaEffects) {
+            m_resources->effects.stop(effect);
+        }
     }
     m_critterEffects.clear();
+    m_arenaEffects.clear();
     m_generators.clear();
     m_enemyMissiles.clear();
     m_critters.close();
@@ -228,6 +232,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     events.settleBlasts();
     m_critters.update(ticks, seconds, views);
+    m_bosses.setArenaAnchors(events.arenaAnchors ? events.arenaAnchors() : std::vector<Mat4>{});
     m_bosses.update(ticks, seconds, views);
     const auto shotSound = [&](std::string_view name) { m_resources->audio.playNamed(name); };
     for (const CombatShot& shot : m_bosses.takeShots()) {
@@ -396,9 +401,13 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
         setting.yaw = cue.yaw;
         setting.seconds = cue.life;
         setting.loop = cue.loop;
-        if (const u32 effect = m_resources->effects.startSet(m_resources->device, *archive,
-                                                             cue.tree, cue.position, setting);
-            effect != 0 && cue.follows) {
+        const u32 effect = m_resources->effects.startSet(m_resources->device, *archive, cue.tree,
+                                                         cue.position, setting);
+        if (effect != 0 && cue.placement.has_value()) {
+            m_resources->effects.placeAt(effect, *cue.placement);
+            m_arenaEffects.push_back(effect);
+        }
+        if (effect != 0 && cue.follows) {
             const Vec3* at = ofBoss ? m_bosses.position() : &m_critters.positionOf(cue.critter);
             m_critterEffects.push_back(
                 CritterEffect{effect, cue.critter, ofBoss,
@@ -416,6 +425,8 @@ void LevelOpponents::followCritterEffects() {
     if (!m_resources.has_value()) {
         return;
     }
+    std::erase_if(m_arenaEffects,
+                  [this](u32 effect) { return !m_resources->effects.playing(effect); });
     for (usize i = 0; i < m_critterEffects.size();) {
         const CritterEffect& riding = m_critterEffects[i];
         const bool alive =
