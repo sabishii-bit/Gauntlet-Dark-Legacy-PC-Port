@@ -7,10 +7,20 @@
 
 #include "game/enemies/CombatantKind.h"
 namespace gdl::game {
-/** An available stage attachment, identified by its encounter-owned obstacle index. */
+/** Hold updates carry an animated attachment; release carries the authored throw force.
+ * Damage is deferred until the thrown player reaches the floor. A zero force cancels. */
+struct CombatGrab {
+    s32 player = -1;
+    s32 critter = -1;
+    std::optional<Mat4> attachment;
+    Vec3 velocity{0};
+    f32 damage = 0;
+};
+/** A stage attachment, identified by its encounter-owned obstacle index. */
 struct CombatArenaTarget {
     usize index = 0;
     Mat4 placement{1};
+    bool active = false;
 };
 
 /** A successful eruption makes its obstacle solid after the visual wind-up. */

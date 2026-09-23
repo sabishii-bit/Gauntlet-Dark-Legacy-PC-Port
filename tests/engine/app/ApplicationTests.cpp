@@ -64,6 +64,11 @@ protected:
         device.draw(m_batch, *m_texture, projection, ice);
         ice.blend = BlendMode::Alpha;
         device.draw(m_batch, *m_texture, projection, ice);
+        // An authored overlay bypasses comparison, independently of depth writes.
+        ice.depthTest = false;
+        ice.depthWrite = false;
+        device.draw(m_batch, *m_texture, projection, ice);
+        device.draw(m_batch, *m_texture, projection); // restore default depth state
         ++m_renderedFrames;
     }
 

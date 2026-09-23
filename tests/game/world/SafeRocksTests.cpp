@@ -100,6 +100,9 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.standing(0));
     REQUIRE_FALSE(rocks.rock(0).dormant);
     REQUIRE(rocks.eruptionTargets().size() == 1);
+    REQUIRE(rocks.arenaTargets().size() == 2);
+    REQUIRE(rocks.arenaTargets()[0].active);
+    REQUIRE_FALSE(rocks.arenaTargets()[1].active);
     REQUIRE(rocks.eruptionTargets()[0].index == 1);
     REQUIRE(rocks.rock(0).health == 120);
     REQUIRE(rocks.strike(0, 1000));

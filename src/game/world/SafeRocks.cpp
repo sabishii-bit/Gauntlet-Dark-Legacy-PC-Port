@@ -154,11 +154,17 @@ void SafeRocks::update(f32 seconds) {
 }
 
 std::vector<CombatArenaTarget> SafeRocks::eruptionTargets() const {
+    auto targets = arenaTargets();
+    std::erase_if(targets, [](const CombatArenaTarget& target) { return target.active; });
+    return targets;
+}
+
+std::vector<CombatArenaTarget> SafeRocks::arenaTargets() const {
     constexpr usize kMaxAnchors = 16;
     std::vector<CombatArenaTarget> targets;
     for (usize i = 0; i < std::min(size(), kMaxAnchors); ++i) {
-        if (m_rocks[i]->shown && !standing(i)) {
-            targets.push_back({i, m_rocks[i]->placement});
+        if (m_rocks[i]->shown) {
+            targets.push_back({i, m_rocks[i]->placement, standing(i)});
         }
     }
     return targets;

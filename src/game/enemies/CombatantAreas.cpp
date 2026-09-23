@@ -68,16 +68,18 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
             }
         }
     }
-    // World-mode damage rotates its offset by the fighter before the effect is
-    // reparented to the stage node. SFXX offsets are scaled but not body-rotated.
-    const Vec3 offset =
-        worldParent.has_value()
-            ? Vec3{modelTransform(critter) * Vec4{damage.offset, 0}} + sound->offset * critter.scale
-            : damage.offset + sound->offset;
+    // Root-parent SFXX policies replace the supplied DAMG position outright.
+    // World-mode damage rotates its offset before reparenting to the stage node.
+    const bool rootParent = (sound->flags & 0x801U) != 0;
+    Vec3 offset = rootParent ? sound->offset : damage.offset + sound->offset;
+    if (worldParent.has_value()) {
+        offset =
+            Vec3{modelTransform(critter) * Vec4{damage.offset, 0}} + sound->offset * critter.scale;
+    }
     const Vec2 angles{damage.pitch, damage.yaw};
     CritterArea area;
     area.worldParent = worldParent;
-    if ((sound->flags & CombatEffectDefinition::kFollows) == 0) {
+    if (!rootParent) {
         area.node = node;
     }
     area.local = CritterArea::placement(Mat4{1}, offset, angles);
@@ -121,22 +123,33 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
 void Combatant::eruptArena(Actor& critter, s32 id, const AttackDefinition& damage,
                            std::span<const EnemyView> players) {
     const EnemyView* player = viewOf(players, critter.target);
-    if (player == nullptr) {
-        return;
-    }
     const CombatArenaTarget* nearest = nullptr;
     f32 best = 1.0e21f;
-    for (const auto& target : critter.arenaTargets) {
-        const Vec3 delta = Vec3{target.placement[3]} - player->position;
-        const f32 distance = arenaDistance(delta);
+    const auto count = static_cast<s32>(critter.arenaTargets.size());
+    s32 selected = -1;
+    for (s32 i = 0; i < count; ++i) {
+        const auto& target = critter.arenaTargets[static_cast<usize>(i)];
+        if (target.active) {
+            continue;
+        }
+        if (player == nullptr) {
+            // SafeRockNearestTarget (0x80035c04..c34) checks entry i but returns
+            // the rotated index. Preserve that asymmetry: the returned rock can
+            // already be active. Do not silently turn it into a corrected search.
+            selected = (critter.lastArenaTarget + i + 1) % count;
+            break;
+        }
+        const f32 distance = arenaDistance(Vec3{target.placement[3]} - player->position);
         if (distance < best) {
-            nearest = &target;
+            selected = i;
             best = distance;
         }
     }
-    if (nearest == nullptr) {
+    critter.lastArenaTarget = selected;
+    if (selected < 0) {
         return;
     }
+    nearest = &critter.arenaTargets[static_cast<usize>(selected)];
     if (const auto life = startArea(critter, id, damage, {}, nearest->placement)) {
         // The stage becomes solid one 30 Hz effect tick before its carrier expires.
         constexpr f32 kEffectTick = 1.0f / 30.0f;

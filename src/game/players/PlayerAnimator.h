@@ -35,7 +35,9 @@ enum class PlayerDeed : u8 {
     // leaves the hand meanwhile.
     HurlLegend,  ///< as a potion is used
     ThrowLegend, ///< as the strong throw
-    ShootLegend  ///< the special shot
+    ShootLegend, ///< the special shot
+    Grabbed,
+    Thrown
 };
 
 /** Which way a strafing character steps, against the way it faces. */
@@ -110,11 +112,12 @@ public:
         GetUpForward,
         SpecialShot, ///< the special shot's wind-up, at whose end the legend item leaves
         SpecialShotRecover,
-        SpikeHit
+        SpikeHit,
+        Grabbed
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 53;
+    static constexpr usize kActionCount = 54;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -126,7 +129,7 @@ public:
         "STRAFE_WLKL2", "STRAFE_WLKR1", "STRAFE_WLKR2", "STRAFE_ATKF1", "STRAFE_ATKF2",
         "STRAFE_ATKB1", "STRAFE_ATKB2", "STRAFE_ATKL1", "STRAFE_ATKL2", "STRAFE_ATKR1",
         "STRAFE_ATKR2", "FALLDOWN",     "GETUP",        "FALLFRNT",     "GETUP2",
-        "SSHOT1",       "SSHOTR",       "SPIKEHIT"};
+        "SSHOT1",       "SSHOTR",       "SPIKEHIT",     "GRABBED"};
     static constexpr f32 kReleaseFrame = 2.0f;        ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -240,7 +243,7 @@ public:
      * does nothing else, and is not set reeling again until it is over. */
     bool reacting() const {
         return m_current == Action::HitReact || m_current == Action::Stun ||
-               m_current == Action::SpikeHit || floored();
+               m_current == Action::SpikeHit || m_current == Action::Grabbed || floored();
     }
     /** The footfall this tick, if a half cycle of walking or running just ended. */
     Foot footfall() const { return m_footfall; }

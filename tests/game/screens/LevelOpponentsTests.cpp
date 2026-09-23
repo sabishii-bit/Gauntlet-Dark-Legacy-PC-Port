@@ -52,7 +52,7 @@ TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstac
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
-    events.arenaTargets = [&rocks] { return rocks.eruptionTargets(); };
+    events.arenaTargets = [&rocks] { return rocks.arenaTargets(); };
     usize eruptions = 0;
     events.activateArena = [&](const CombatArenaActivation& activation) {
         REQUIRE(activation.index == 3);
@@ -202,7 +202,8 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
         .blocksArea = {},
         .arenaAnchors = {},
         .arenaTargets = {},
-        .activateArena = {}};
+        .activateArena = {},
+        .shake = {}};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});

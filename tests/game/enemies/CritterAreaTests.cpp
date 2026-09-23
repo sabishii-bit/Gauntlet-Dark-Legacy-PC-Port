@@ -180,7 +180,7 @@ TEST_CASE("invisible areas outlive their attack window and remain rooted while f
     REQUIRE(blows[0].area);
     REQUIRE(blows[0].damage == 80);
     REQUIRE(blows[0].flags == 32);
-    REQUIRE(blows[0].origin == Vec3{0, 5, 0}); // DAMG + SFXX, not the body's origin
+    REQUIRE(blows[0].origin == Vec3{0, 2, 0}); // root-parent SFXX replaces the DAMG offset
     REQUIRE(blows[0].repeatGap == Approx(0.5f));
     REQUIRE(critters.takeCues().empty()); // absence of artwork cannot remove damage
     critters.freeze(120);
@@ -456,6 +456,75 @@ TEST_CASE("single arena eruptions select the nearest available anchor once per w
     const auto tied = actor.takeArenaActivations();
     REQUIRE(tied.size() == 1);
     REQUIRE(tied[0].index == 1); // retail piecewise distance, not sqrt's slightly nearer index 0
+}
+
+TEST_CASE("an eruption losing its player preserves the retail rotated-index fallback",
+          "[game][boss-areas][yeti]") {
+    const auto root = areaArchive(true, false, true);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'I');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    auto& actor = fixture.actor;
+    std::array<CombatArenaTarget, 2> targets{{{9, glm::translate(Mat4{1}, Vec3{20, 0, 35})},
+                                              {4, glm::translate(Mat4{1}, Vec3{0, 0, 35})}}};
+    actor.setArenaTargets(targets);
+    std::array<EnemyView, 1> players{playerAt({20, 0, 35})};
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeArenaActivations().front().index == 9); // cursor is roster entry 0
+    fixture.update(60, 21.0f, players);                       // ready; attack's cooldown expires
+    fixture.update(1, 0.001f, players); // next attack, before its damage frame
+    REQUIRE(actor.moveName() == "WHIP");
+    targets[1].active = true;
+    actor.setArenaTargets(targets);
+    players[0].hidden = true;
+    fixture.update(4, 0.06f, players);
+    const auto events = actor.takeArenaActivations();
+    REQUIRE(events.size() == 1);
+    REQUIRE(events[0].index == 4); // tests inactive entry 0, returns rotated (active) entry 1
+
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    targets[0].active = true;
+    actor.setArenaTargets(targets);
+    players[0].hidden = false;
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeArenaActivations().empty());
+}
+
+TEST_CASE("Yeti stomp reaches the front of the arena from its root effect offset",
+          "[game][boss-areas][yeti][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'I');
+    REQUIRE(fixture.spawn("YETI", Vec3{0}, 0));
+    auto& actor = fixture.actor;
+    const std::array<EnemyView, 1> players{playerAt({0, 0, 60})};
+    bool stomped = false;
+    bool hit = false;
+    for (s32 frame = 0; frame < 3600 && !hit; ++frame) {
+        fixture.update(2, 1.0f / 30.0f, players);
+        for (const auto& cue : actor.takeCues()) {
+            if (cue.tree == "ATTACK4FX") {
+                REQUIRE(cue.rootAttachment);
+                REQUIRE(cue.nodeOffset == Vec3{0, -3, 0});
+                stomped = true;
+            }
+        }
+        for (const auto& blow : actor.takeBlows()) {
+            if (stomped && blow.area && blow.damage > 0) {
+                REQUIRE(blow.player == 2);
+                REQUIRE(blow.origin == Vec3{0, -3, 0});
+                hit = true;
+            }
+        }
+        actor.takeShots();
+    }
+    REQUIRE(stomped);
+    REQUIRE(hit);
 }
 
 TEST_CASE("Yeti POUND emits its authored eruption and schedules the solid rock",

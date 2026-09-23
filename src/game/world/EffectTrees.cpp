@@ -66,6 +66,25 @@ bool EffectTrees::playing(u32 id) const {
         m_effects, [id](const std::unique_ptr<Effect>& effect) { return effect->id == id; });
 }
 
+void EffectTrees::shortenLifetime(u32 id, f32 secondsLost, f32 maximum) {
+    for (auto& effect : m_effects) {
+        if (effect->id != id) {
+            continue;
+        }
+        const f32 remaining =
+            effect->timed || effect->tree->sequences.empty()
+                ? effect->secondsLeft
+                : (static_cast<f32>(effect->player.frameCount()) - effect->player.frame()) *
+                      effect->player.secondsPerFrame() / std::max(effect->playbackRate, 1e-6f);
+        // The cap applies before the loss: a long-lived reflected shot is set
+        // to ten seconds; only subsequent contacts subtract a second.
+        effect->secondsLeft =
+            std::max(0.0f, remaining > maximum ? maximum : remaining - secondsLost);
+        effect->timed = true;
+        return;
+    }
+}
+
 void EffectTrees::attachTrail(u32 id, const ParticleDescriptor& descriptor,
                               const Texture& texture) {
     for (const std::unique_ptr<Effect>& effect : m_effects) {
@@ -130,6 +149,11 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
         m_motions.push_back(std::move(motion));
     }
     const u32 id = effect->id;
+    for (const auto& motion : m_motions) {
+        if (motion->archive == &archive) {
+            motion->animator.apply(effect->model, *effect->tree, 0, 0);
+        }
+    }
     m_effects.push_back(std::move(effect));
     return id;
 }
@@ -189,12 +213,11 @@ void EffectTrees::update(f32 seconds) {
             }
             const auto show = [&](const TextureMotion& moved) {
                 if (moved.frame != nullptr) {
-                    effect->model.setTextureFrame(moved.slot, moved.frame);
                     effect->particles.setTextureFrame(moved.slot, *moved.frame);
-                } else {
-                    effect->model.setTextureOffset(moved.slot, moved.offset, moved.scale);
                 }
             };
+            motion->animator.apply(effect->model, *effect->tree, effect->player.sequence(),
+                                   static_cast<s32>(effect->player.frame()));
             // The archive's own animations run on the clock; the tree's texture nodes and
             // the sequence's own animations are read off at the frame the tree has reached.
             for (usize i = 0; i < motion->animator.size(); ++i) {

@@ -117,6 +117,7 @@ bool WorldCollision::load(const std::filesystem::path& directory, const WorldLay
             for (usize t = 0; t < count; ++t) {
                 CollisionTriangle triangle;
                 triangle.object = object;
+                triangle.objectFlags = layout.objects()[static_cast<usize>(object)].flags;
                 triangle.normal = readVec3(normals, t * 3);
                 for (usize k = 0; k < 3; ++k) {
                     triangle.vertices[k] = readVec3(vertices, (t * 3 + k) * 3);
@@ -322,7 +323,7 @@ std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above,
                 return;
             }
             if (!best.has_value() || y > best->y) {
-                best = FloorHit{y, triangle.normal, triangle.object};
+                best = FloorHit{y, triangle.normal, triangle.object, triangle.objectFlags};
             }
         });
     return best;

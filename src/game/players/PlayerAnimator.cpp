@@ -142,6 +142,28 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         }
         return;
     }
+    if (deed == PlayerDeed::Grabbed || deed == PlayerDeed::Thrown) {
+        Decision captured;
+        captured.action = deed == PlayerDeed::Grabbed ? Action::Grabbed : Action::FallBack;
+        captured.cut = m_current == captured.action ? Cut::WhenDoneIfDifferent : Cut::Now;
+        captured.repeat = deed == PlayerDeed::Grabbed;
+        play(captured, seconds);
+        m_released = false;
+        m_strongReleased = false;
+        m_potionUsed = false;
+        m_potionThrown = false;
+        m_potionShielded = false;
+        m_legendAsked = false;
+        m_legendReleased = false;
+        m_shieldAsked = false;
+        m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+        return;
+    }
+    if (m_current == Action::Grabbed) {
+        Decision freed;
+        freed.cut = Cut::Now;
+        play(freed, 0);
+    }
     // A hit cuts into anything at once, unless one is already being reeled from; while it
     // plays nothing else is asked of the body.
     const bool felled = deed == PlayerDeed::FallBack || deed == PlayerDeed::FallForward;

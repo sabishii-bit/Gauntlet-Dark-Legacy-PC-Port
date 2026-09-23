@@ -80,6 +80,7 @@ public:
         return m_fighter.takeArenaActivations();
     }
     std::vector<CombatBlow> takeBlows();
+    std::vector<CombatGrab> takeGrabs() { return m_fighter.takeGrabs(); }
     std::vector<CombatLoss> takeLosses();
     std::vector<CombatCue> takeCues() { return m_fighter.takeCues(); }
     std::vector<CombatShot> takeShots() { return m_fighter.takeShots(); }

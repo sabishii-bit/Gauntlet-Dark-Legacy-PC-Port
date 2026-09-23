@@ -40,7 +40,8 @@ struct EnemyView {
     f32 radius = 1.0f;
     f32 height = 6.0f;
     s32 level = 1;
-    bool hidden = false; ///< not to be seen or sought
+    bool hidden = false;   ///< not to be seen or sought
+    bool captured = false; ///< already parented to another combatant, not a new grab candidate
 };
 
 /** A blow an enemy has landed on a player. */

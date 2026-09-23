@@ -1,5 +1,6 @@
 #pragma once
 #include <optional>
+#include <random>
 #include <span>
 #include <string>
 #include <string_view>
@@ -82,6 +83,7 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr) const;
     std::vector<CombatBlow> takeBlows();
+    std::vector<CombatGrab> takeGrabs();
     std::vector<CombatLoss> takeLosses();
     std::vector<CombatCue> takeCues();
     std::vector<CombatSpew> takeSpews();
@@ -116,6 +118,8 @@ private:
         std::vector<CritterArea> areas;
         std::vector<Mat4> arenaAnchors;
         std::vector<CombatArenaTarget> arenaTargets;
+        s32 lastArenaTarget = -1; ///< position in the collected stage roster, not the item id
+        bool arenaCollected = false;
         f32 hurtPending = 0.0f;
         u32 hurtFlags = 0;
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
@@ -130,6 +134,11 @@ private:
         u32 soundsGiven = 0;     ///< bits: the move's sound, its second, each strike's
         s32 shotFrame = -1;
         std::optional<Vec3> attackTarget; ///< captured by a targeted-area move, not a homing point
+        std::optional<Vec3> stepTarget;   ///< latest ready-step target, retained if sight is lost
+        s32 grabbed = -1;
+        s32 grabMove = -1;
+        std::string grabNode;
+        Vec3 grabOffset{0};
         AnimationPlayer player;
         TreePose pose;
     };
@@ -155,6 +164,10 @@ private:
              std::optional<std::string_view> node = std::nullopt);
 
     std::vector<CombatCue> m_cues;
+    std::vector<CombatGrab> m_grabs;
+    void grab(Actor& actor, const MoveDefinition& move, const AttackDefinition& damage,
+              bool release, std::span<const EnemyView> players);
+    void carryGrab(Actor& actor, std::span<const EnemyView> players);
     std::vector<CombatSpew> m_spews;
     std::vector<CombatShot> m_shots;
     std::vector<CombatArenaActivation> m_arenaActivations;
@@ -178,5 +191,6 @@ private:
     char m_realm = 'G';
     std::vector<CombatBlow> m_blows;
     std::vector<CombatLoss> m_losses;
+    std::minstd_rand m_arenaRandom;
 };
 } // namespace gdl::game

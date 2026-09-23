@@ -462,6 +462,8 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     vkCmdSetCullMode(cmd, state.cullBack ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE);
     vkCmdSetDepthWriteEnable(
         cmd, (state.depthWrite && state.blend != BlendMode::Additive) ? VK_TRUE : VK_FALSE);
+    vkCmdSetDepthCompareOp(cmd,
+                           state.depthTest ? VK_COMPARE_OP_GREATER_OR_EQUAL : VK_COMPARE_OP_ALWAYS);
     vkCmdDraw(cmd, count, 1, frame.vertexCursor, 0);
 
     frame.vertexCursor += count;

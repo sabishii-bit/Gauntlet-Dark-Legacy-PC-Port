@@ -82,6 +82,8 @@ public:
                  const Vec3& position, const Setting& setting);
     /** Ends effect number `id` now. */
     void stop(u32 id);
+    /** Removes time from the remaining lifetime and caps it, without restarting animation. */
+    void shortenLifetime(u32 id, f32 secondsLost, f32 maximum);
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
     void moveTo(u32 id, const Vec3& position);
     /** Places an effect on a fully posed attachment. Its own scale still applies. */

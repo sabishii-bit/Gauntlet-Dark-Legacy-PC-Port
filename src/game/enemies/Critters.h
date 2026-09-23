@@ -45,6 +45,7 @@ public:
 
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
     std::vector<CombatBlow> takeBlows();
+    std::vector<CombatGrab> takeGrabs();
     std::vector<CombatLoss> takeLosses();
     /** The effects and sounds set off since the last call. */
     std::vector<CombatCue> takeCues();
@@ -119,6 +120,7 @@ private:
     std::vector<std::unique_ptr<CombatantAssets>> m_stocks;
     std::array<Combatant, kMost> m_critters;
     std::vector<CombatBlow> m_blows;
+    std::vector<CombatGrab> m_grabs;
     std::vector<CombatLoss> m_losses;
     std::vector<CombatCue> m_cues;
     std::vector<CombatSpew> m_spews;

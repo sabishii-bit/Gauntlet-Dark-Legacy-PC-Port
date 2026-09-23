@@ -1034,7 +1034,9 @@ TEST_CASE("a party back from a realm materialises among its portals, the camera 
     // while they play their entrance under the level's title.
     REQUIRE_FALSE(scene.startCamera().active());
     REQUIRE(scene.spawning());
-    REQUIRE(&scene.viewCamera() == &scene.camera().camera());
+    REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
+    REQUIRE(scene.viewCamera().yaw == scene.camera().camera().yaw);
+    REQUIRE(scene.viewCamera().pitch == scene.camera().camera().pitch);
     REQUIRE(glm::distance(scene.viewCamera().position, ring) < 60.0f);
     scene.update(1.0 / 60.0, PlayScene::Inputs{});
     REQUIRE(scene.animator(0) != nullptr);

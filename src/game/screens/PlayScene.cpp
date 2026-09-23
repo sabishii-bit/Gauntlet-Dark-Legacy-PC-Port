@@ -155,6 +155,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 }
 
 void PlayScene::close() {
+    m_shake.clear();
     m_audio.stopCues();
     m_sumnerVisit.clear();
     m_messages.clear();
@@ -545,11 +546,12 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
                  return m_fixtures.safeRocks().blocksSegment(from, to, kAreaProbeRadius);
              },
          .arenaAnchors = [this] { return m_fixtures.safeRocks().attackAnchors(); },
-         .arenaTargets = [this] { return m_fixtures.safeRocks().eruptionTargets(); },
+         .arenaTargets = [this] { return m_fixtures.safeRocks().arenaTargets(); },
          .activateArena =
              [this](const CombatArenaActivation& activation) {
                  m_fixtures.safeRocks().scheduleActivation(activation.index, activation.delay);
-             }});
+             },
+         .shake = [this] { m_shake.start(); }});
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);
@@ -825,14 +827,15 @@ u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
     return accepted;
 }
 
-const WorldCamera& PlayScene::viewCamera() const {
+WorldCamera PlayScene::viewCamera() const {
     if (m_arrival.camera().active()) {
         return m_arrival.camera().camera();
     }
     if (m_intro == Intro::Crystal) {
         return m_cutCamera;
     }
-    return bossCameraOn() ? m_bossCamera.camera() : m_camera.camera();
+    return bossCameraOn() ? m_shake.apply(m_bossCamera.camera(), m_bossCamera.attention())
+                          : m_shake.apply(m_camera.camera(), m_camera.attention());
 }
 
 /** A boss level with a boss camera record frames the fight with it while the boss stands. */
@@ -974,11 +977,13 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             [this](usize i, s32 elapsed, f32 duration) {
                 m_attacks.updateTurbo(i, elapsed, duration, m_players,
                                       [this](s32 id, usize index) { postHelp(id, index); });
-            }};
+            },
+        .thrownImpact = [this](usize i, f32 damage) { hurt(i, damage, HurtKind::Blow, true); }};
     const std::vector<CameraSubject> subjects =
         PartyMotion::step(m_players, inputs, held, m_camera.yaw(), ticks, seconds,
                           m_world->collision(), movementEvents);
     m_playSeconds += seconds;
+    m_shake.update(ticks);
     m_hud.help().update(ticks);
     updateFixtures(ticks, seconds);
     updateEnemies(ticks, seconds);
@@ -1093,7 +1098,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             const PowerupEffects worn =
                 PowerupEffects::of(runtime.actor.save().progress().inventory);
             const f32 size = bodyScale(runtime.actor.save(), worn);
-            const Mat4 body = glm::scale(runtime.actor.transform(), Vec3{size, size, size});
+            const Mat4 body = glm::scale(runtime.capture.body().value_or(runtime.actor.transform()),
+                                         Vec3{size, size, size});
             figure.draw(device, clip, body, m_world->lighting(), worn.bodyAlpha(m_playSeconds),
                         runtime.move.weaponHidden());
         }

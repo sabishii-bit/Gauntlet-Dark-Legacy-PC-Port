@@ -116,6 +116,40 @@ TEST_CASE("alternate skin preserves base coverage and the original opaque or tra
     REQUIRE(device.draws[0].state.maskedTexture == nullptr);
 }
 
+TEST_CASE("node texture changes affect descendants without leaking to ancestors and reset cleanly",
+          "[world][model][animation]") {
+    const auto dir = sampleFigure("tree-subtree-textures");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    test::FakeTexture replacement{1, 1};
+    figure.setNodeTextureFrame(2, 1, &replacement);
+    figure.setNodeTextureOffset(2, Vec2{0.25f, 0}, Vec2{0.5f, 1});
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[0].state.uvScale == Vec2(1));
+    REQUIRE(device.draws[0].texture == &textures.texture(device, 0));
+    REQUIRE(device.draws[1].state.uvOffset == Vec2(0.25f, 0));
+    REQUIRE(device.draws[1].texture == &replacement);
+    figure.setNodeTextureOffset(0, Vec2{0.5f, 0}, Vec2{0, 1});
+    device.draws.clear();
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws[0].state.uvScale == Vec2(0, 1));
+    REQUIRE(device.draws[1].state.uvScale == Vec2(0, 1));
+    figure.resetTextures();
+    device.draws.clear();
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws[0].state.uvOffset == Vec2(0));
+    REQUIRE(device.draws[1].state.uvScale == Vec2(1));
+    REQUIRE(device.draws[1].texture == &textures.texture(device, 1));
+}
+
 TEST_CASE(
     "effect appearance stays fully lit and tinted without changing depth flags on other models",
     "[world][model]") {
@@ -288,7 +322,7 @@ TEST_CASE("a tree model adds glowing nodes onto the frame without writing depth"
   {"name": "FIGURE", "prefix": "", "sequences": [], "nodes": [
     {"name": "BODY", "object": "BODY", "type": 0, "flags": 0, "objectFlags": 0, "parent": -1,
      "position": [0.0, 0.0, 0.0]},
-    {"name": "GLOW", "object": "BODY", "type": 0, "flags": 0, "objectFlags": 8388736,
+    {"name": "GLOW", "object": "BODY", "type": 0, "flags": 0, "objectFlags": 8388800,
      "parent": 0, "position": [0.0, 2.0, 0.0]}]}]})");
     ModelSet models;
     TextureSet textures;
@@ -305,8 +339,10 @@ TEST_CASE("a tree model adds glowing nodes onto the frame without writing depth"
     REQUIRE(device.draws[0].state.blend == BlendMode::Alpha);
     REQUIRE(device.draws[0].state.depthWrite);
     REQUIRE(device.draws[0].state.alphaTest == 0.0f);
+    REQUIRE(device.draws[0].state.depthTest);
     REQUIRE(device.draws[1].state.blend == BlendMode::Additive);
     REQUIRE_FALSE(device.draws[1].state.depthWrite);
+    REQUIRE_FALSE(device.draws[1].state.depthTest);
     REQUIRE(device.draws[1].state.alphaTest == DrawState::kTranslucentAlphaTest);
     REQUIRE(device.draws[1].vertices[0].position == Vec3{0.0f, 2.0f, 0.0f});
 }

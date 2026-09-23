@@ -37,6 +37,8 @@ add_library(game STATIC
     players/PlayerControls.cpp
     players/PlayerActor.h
     players/PlayerActor.cpp
+    players/PlayerCapture.h
+    players/PlayerCapture.cpp
     players/PlayerAnimator.h
     players/PlayerAnimator.cpp
     players/PlayerImpact.h
@@ -70,6 +72,7 @@ add_library(game STATIC
     enemies/CombatantMoves.cpp
     enemies/CombatantMotion.cpp
     enemies/CombatantAttacks.cpp
+    enemies/CombatantGrabs.cpp
     enemies/CombatantView.cpp
     enemies/Golem.cpp
     enemies/General.cpp
@@ -95,6 +98,8 @@ add_library(game STATIC
     world/TowerCamera.cpp
     world/BossCamera.h
     world/BossCamera.cpp
+    world/CameraShake.h
+    world/CameraShake.cpp
     world/StartCamera.h
     world/StartCamera.cpp
     world/SumnerFigure.h

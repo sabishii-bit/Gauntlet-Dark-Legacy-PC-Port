@@ -83,6 +83,7 @@ TEST_CASE("a moving object's triangles stay in its own space and follow its tran
     const Vec3 up{0.0f, 1.0f, 0.0f};
     const Vec3 south{0.0f, 0.0f, 1.0f};
     triangles.push_back(triangle({-1, 0.5f, -1}, {1, 0.5f, -1}, {1, 0.5f, 1}, up, 3));
+    triangles.back().objectFlags = WorldObject::kFloor;
     triangles.push_back(triangle({-1, 0.5f, -1}, {1, 0.5f, 1}, {-1, 0.5f, 1}, up, 3));
     triangles.push_back(triangle({-1, 0.5f, 1}, {-1, 3, 1}, {1, 3, 1}, south, 3));
     triangles.push_back(triangle({-1, 0.5f, 1}, {1, 3, 1}, {1, 0.5f, 1}, south, 3));
@@ -98,12 +99,14 @@ TEST_CASE("a moving object's triangles stay in its own space and follow its tran
     REQUIRE(hit.has_value());
     REQUIRE(hit->object == 3);
     REQUIRE(hit->y == Approx(0.5f));
+    REQUIRE(hit->objectFlags == WorldObject::kFloor);
     // Placed, it is found there, and nowhere else.
     collision.setObjectTransform(3, glm::translate(Mat4{1.0f}, Vec3{-5.0f, 2.0f, -5.0f}));
     hit = collision.floorAt(Vec3{-5.0f, 3.0f, -5.0f}, 1.0f, 1.0f);
     REQUIRE(hit.has_value());
     REQUIRE(hit->object == 3);
     REQUIRE(hit->y == Approx(2.5f));
+    REQUIRE(hit->objectFlags == WorldObject::kFloor);
     hit = collision.floorAt(Vec3{0.0f, 0.5f, 0.0f}, 1.0f, 1.0f);
     REQUIRE(hit.has_value());
     REQUIRE(hit->object == 0); // the room's floor again
@@ -127,7 +130,7 @@ TEST_CASE("collision files load their world-space triangles, skipping decoration
     writeTextFile(dir / "world.json", R"({
   "objects": [
     {"name": "ROOM", "position": [10, 0, 0], "next": -1, "child": 1},
-    {"name": "FLOOR", "position": [0, 2, 0], "next": 2, "child": -1},
+    {"name": "FLOOR", "position": [0, 2, 0], "flags": 4, "next": 2, "child": -1},
     {"name": "DECOR", "position": [0, 0, 0], "next": -1, "child": -1, "noCollision": true}
   ],
   "locators": []
@@ -148,6 +151,7 @@ TEST_CASE("collision files load their world-space triangles, skipping decoration
     REQUIRE(hit.has_value());
     REQUIRE(hit->y == Approx(2.0f)); // the file's coordinates, not offset by the object
     REQUIRE(hit->object == 1);
+    REQUIRE(hit->objectFlags == WorldObject::kFloor);
 
     writeTextFile(dir / "collision.json",
                   R"({"objects": [{"object": 7, "normals": [], "vertices": []}]})");

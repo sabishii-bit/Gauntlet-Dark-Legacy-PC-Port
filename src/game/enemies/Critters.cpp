@@ -26,6 +26,7 @@ void Critters::close() {
     }
     m_stocks.clear();
     m_blows.clear();
+    m_grabs.clear();
     m_losses.clear();
     m_cues.clear();
     m_spews.clear();
@@ -87,6 +88,9 @@ std::optional<s32> Critters::spawn(const CombatantDefinition& definition, const 
     return std::nullopt;
 }
 void Critters::collect(Combatant& actor) {
+    for (auto& event : actor.takeGrabs()) {
+        m_grabs.push_back(event);
+    }
     for (auto& event : actor.takeBlows()) {
         m_blows.push_back(event);
     }
@@ -158,6 +162,9 @@ void Critters::roar(s32 id) {
 }
 std::vector<CombatBlow> Critters::takeBlows() {
     return std::exchange(m_blows, {});
+}
+std::vector<CombatGrab> Critters::takeGrabs() {
+    return std::exchange(m_grabs, {});
 }
 std::vector<CombatLoss> Critters::takeLosses() {
     return std::exchange(m_losses, {});

@@ -245,9 +245,13 @@ void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence
             show(*moved);
         }
     }
-    for (const TreeNodeInfo& node : tree.nodes) {
-        if (const auto moved = motionAt(node.textureAnimation, frame)) {
-            show(*moved);
+    for (usize i = 0; i < tree.nodes.size(); ++i) {
+        if (const auto moved = motionAt(tree.nodes[i].textureAnimation, frame)) {
+            if (moved->frame != nullptr) {
+                model.setNodeTextureFrame(i, moved->slot, moved->frame);
+            } else {
+                model.setNodeTextureOffset(i, moved->offset, moved->scale);
+            }
         }
     }
 }
