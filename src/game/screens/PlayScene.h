@@ -14,7 +14,6 @@
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/MessageTable.h"
-#include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
@@ -55,12 +54,12 @@
 #include "game/screens/PowerupSelector.h"
 #include "game/screens/StatusBox.h"
 #include "game/screens/TransitionScreen.h"
-#include "game/world/AmbientSounds.h"
 #include "game/world/BossCamera.h"
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
 #include "game/world/EffectTrees.h"
 #include "game/world/ExitPortals.h"
+#include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
 #include "game/world/LockedGates.h"
 #include "game/world/MoveStrikes.h"
@@ -197,14 +196,12 @@ public:
     BossCameraSubject bossSubject() const;
     const StartCamera& startCamera() const { return m_startCamera; }
     /** The music's voice, kNoSound while nothing plays. */
-    SoundHandle music() const { return m_music; }
+    SoundHandle music() const { return m_audio.music(); }
     /** Sumner's voice over the scroll he is reading, kNoSound while he is quiet. */
-    SoundHandle voice() const { return m_voice; }
+    SoundHandle voice() const { return m_audio.voice(); }
     /** The sound of the target that opened before the party most recently and is still
      * opening (a gate's force field humming as it thins, a lift, a gate), kNoSound otherwise. */
-    SoundHandle fieldSound() const {
-        return m_openingSounds.empty() ? kNoSound : m_openingSounds.back().handle;
-    }
+    SoundHandle fieldSound() const { return m_audio.fieldSound(); }
     Intro intro() const { return m_intro; }
     const ScrollBox& scroll() const { return m_scroll; }
     const HintMenu& hints() const { return m_hintMenu; }
@@ -271,7 +268,7 @@ public:
     static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
     const SumnerHints& hintTexts() const { return m_hints; }
     const PickupHud& pickups() const { return m_pickups; }
-    const AmbientSounds& ambience() const { return m_ambience; }
+    const AmbientSounds& ambience() const { return m_audio.ambience(); }
     /** How far Sumner's beam of light has come up, 0 to 1. */
     f32 beamAlpha() const { return m_beamAlpha; }
     /** Whether the party is still materialising: held under the level's title until the start
@@ -329,9 +326,6 @@ private:
     f32 magicPowerOf(const PlayerActor& actor) const;
     void stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks);
     void drawSelectors();
-    void loadSounds();
-    void startMusic();
-    void playStep(PlayerAnimator::Foot foot);
     void loadIntroArt(RenderDevice& device);
     static bool freshParty(std::span<const PartyMember> party);
     void beginIntro(RenderDevice& device);
@@ -411,7 +405,6 @@ private:
     void drawHelp(const Mat4& clip, f32 width, f32 height);
     std::optional<s32> takePickup(const Pickup& pickup);
     void shareRune(s32 rune);
-    void playCommon(std::optional<u32> sound);
     void updateAmbience();
     void updateBeam(s32 ticks);
     void beginSpawn(RenderDevice& device, bool ride);
@@ -420,11 +413,6 @@ private:
     void drawLevelTitle(f32 width);
     bool anyButton(const Inputs& inputs) const;
     bool openMessage(std::string_view name, usize page);
-    /** Plays a sound by name from whichever of the level's banks holds it; kNoSound when
-     * none does. */
-    SoundHandle playNamed(std::string_view name);
-    void stopVoice();
-    void stopOpeningSounds();
     void announceUnlock(s32 realm);
     void handleTriggerEvents();
     void loadHintArt(RenderDevice& device);
@@ -447,20 +435,7 @@ private:
     TowerCamera m_camera;
     BossCamera m_bossCamera;
     std::vector<PlayerRuntime> m_players;
-    SoundSet m_commonSounds;
-    SoundSet m_levelBank;   ///< the realm's bank for the level
-    SoundSet m_ambientBank; ///< the tower's ambience
-    AmbientSounds m_ambience;
-    std::array<std::optional<u32>, 2> m_stepSounds{};
-    std::optional<u32> m_pickupSound; ///< one per foot
-    SoundHandle m_music = kNoSound;
-    SoundHandle m_voice = kNoSound; ///< Sumner's line over the scroll, cut when it is left
-    /** A target opening before the party and the sound it makes meanwhile. */
-    struct OpeningSound {
-        s32 target = -1;
-        SoundHandle handle = kNoSound;
-    };
-    std::vector<OpeningSound> m_openingSounds;
+    LevelSoundscape m_audio;
     SumnerFigure m_sumner;
     TextureSet m_staticTextures;
     BitmapFont m_font32;
@@ -539,8 +514,6 @@ private:
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid
     HelpMessages m_help;
     MessageTable m_strings;  ///< the game's own strings, which hold the help messages
-    SoundSet m_narrator;     ///< who says them
-    SoundSet m_narratorSecond; ///< the narrator's other bank: the legend items' names
     Chests m_chests;
     LockedGates m_gates;
     Traps m_traps;

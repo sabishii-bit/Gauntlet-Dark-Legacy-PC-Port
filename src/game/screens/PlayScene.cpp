@@ -7,7 +7,6 @@
 #include <format>
 #include <numbers>
 
-#include "engine/audio/AdsStream.h"
 #include "engine/core/Log.h"
 #include "engine/world/WorldCamera.h"
 
@@ -39,11 +38,6 @@ constexpr f32 kTitleSlideRate = 0.025f;
 constexpr f32 kTitleSlideEnd = 2.0f;     ///< where it stops, and sits once the camera rides
 
 constexpr std::string_view kClassDataDirectory = "pdata";
-constexpr std::string_view kStreamsDirectory = "STREAMS"; ///< the music, among the game's files
-constexpr std::string_view kSoundDirectory = "audio";
-constexpr std::string_view kAmbientBank = "TOWAMB"; ///< the tower's ambience, with its own bank
-constexpr std::string_view kCommonBank = "COMMON";
-constexpr std::array<std::string_view, 2> kStepSounds{"S_STEPROCK1", "S_STEPROCK2"};
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
 constexpr std::string_view kStaticDirectory = "STATIC";
 constexpr std::string_view kFontFile = "fonts/font32.json";
@@ -57,25 +51,6 @@ constexpr std::string_view kFireMaskTexture = "GREENCIRCTRANSM";
 constexpr std::string_view kScrollTextFile = "text/scroll_e.json";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
-/** What a target sounds while it opens before the party and once it has, by the sound slot its
- * trigger names: the force fields and magic crossings, the lifts, the east gates, the west
- * gates. The tower's ambience bank keeps them under the audio directory's elevator slot
- * names; its own sample names call them ffield, lwrtwr, eastgat and westgat. */
-struct OpeningSounds {
-    std::string_view moving;
-    std::string_view done;
-};
-constexpr std::array<OpeningSounds, 4> kOpeningSounds{{{"S_ELVMETL", "S_ELVMETSTPL"},
-                                                       {"S_ELVROPEL", "S_ELVROPESTPL"},
-                                                       {"S_ELVCHAINL", "S_ELVCHAINSTPL"},
-                                                       {"S_ELVSTONEL", "S_ELVSTONESTPL"}}};
-
-/** The sounds a trigger's slot names, or null for a slot without any. */
-const OpeningSounds* openingSoundsOf(s32 slot) {
-    return slot >= 0 && static_cast<usize>(slot) < kOpeningSounds.size()
-               ? &kOpeningSounds[static_cast<usize>(slot)]
-               : nullptr;
-}
 constexpr std::string_view kPromptText = "scroll.pressButton";
 constexpr std::string_view kHintTextFile = "text/hints_e.json";
 /** A potion by its kind (0 and 1 red, 2 blue, 3 yellow, 4 green): the bottle as it flies, the
@@ -101,8 +76,6 @@ constexpr f32 kOgreScale = 1.6f;
 constexpr f32 kMasterScale = 1.2f; ///< at level 99
 constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
 constexpr std::string_view kChestSound = "S_CHEST";
-constexpr std::string_view kNarratorBank = "VOICE1";
-constexpr std::string_view kNarratorSecondBank = "VOICE2"; ///< the legend items' names
 constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
 constexpr std::string_view kRuneVoicePrefix = "S_RUNE"; ///< then S_RUNE2 to S_RUNE12
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
@@ -211,7 +184,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         return false;
     }
     m_classes.load(context.unpackedRoot / kClassDataDirectory);
-    loadSounds();
+    m_audio.open(context.unpackedRoot, context.sounds, world.audio());
     loadIntroArt(device);
     // Sumner, his hints and his welcome belong to the tower alone.
     if (world.isTower()) {
@@ -278,8 +251,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_levels.observe(actor.player(), experienceLevel(actor.save().experience()));
     }
     world.startTriggers(visitors());
-    const std::array<SoundSet*, 2> banks{&m_ambientBank, &m_levelBank};
-    m_ambience.bind(world.layout(), banks);
+    m_audio.bindAmbience(world.layout());
     std::vector<CameraSubject> subjects;
     subjects.reserve(m_players.size());
     for (PlayerRuntime& runtime : m_players) {
@@ -290,7 +262,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     if (bossCameraOn()) {
         m_bossCamera.reset(bossSubject(), subjects, *world.level()->bossCamera, cameraView());
     }
-    startMusic();
+    m_audio.startMusic(context.assets,
+                       world.level() != nullptr ? world.level()->musicVolume : 1.0f);
     m_intro = Intro::None;
     // The party materialises first; Sumner's welcome, when it is due, follows.
     m_welcomePending = world.isTower() && options.welcome.value_or(freshParty(party));
@@ -306,12 +279,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     loadPotionModels(device);
     m_legend = std::make_unique<LegendPresentation>(
         m_effects, LegendPresentation::Assets{device, world.items(), m_weapons, m_staticTextures},
-        LegendPresentation::Audio{[this](std::string_view name) { return playNamed(name); },
-                                  [this](SoundHandle handle) {
-                                      if (m_context.sounds != nullptr) {
-                                          m_context.sounds->stop(handle);
-                                      }
-                                  }});
+        LegendPresentation::Audio{[this](std::string_view name) { return m_audio.playNamed(name); },
+                                  [this](SoundHandle handle) { m_audio.stop(handle); }});
     m_open = true;
     log::info("Tower: {} in the party", m_players.size());
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
@@ -320,12 +289,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 }
 
 void PlayScene::close() {
-    if (m_context.sounds != nullptr && m_music != kNoSound) {
-        m_context.sounds->stop(m_music);
-    }
-    m_music = kNoSound;
-    stopVoice();
-    stopOpeningSounds();
+    m_audio.stopCues();
     m_scroll.close();
     m_hintMenu.close();
     m_hintMenu.setArt(HintMenuArt{});
@@ -382,11 +346,8 @@ void PlayScene::close() {
     m_barrels.clear();
     m_safeRocks.clear();
     m_help.clear();
+    m_audio.close(); // before the figures whose class voices it can play
     m_players.clear();
-    if (m_context.sounds != nullptr) {
-        m_ambience.stop(*m_context.sounds);
-    }
-    m_ambience.clear();
     m_spawns.clear();
     m_spawnTexmods.clear();
     m_weapons.release(); // its textures must go before the device does
@@ -546,31 +507,6 @@ void PlayScene::updateBeam(s32 ticks) {
     }
 }
 
-/** Finds the footstep sounds in the common bank. */
-void PlayScene::loadSounds() {
-    m_stepSounds.fill(std::nullopt);
-    if (const LevelAudioInfo* audio = m_world->audio(); audio != nullptr) {
-        m_levelBank.load(m_context.unpackedRoot / kSoundDirectory / audio->bank);
-    }
-    m_ambientBank.load(m_context.unpackedRoot / kSoundDirectory / kAmbientBank);
-    m_narrator.load(m_context.unpackedRoot / kSoundDirectory / kNarratorBank);
-    m_narratorSecond.load(m_context.unpackedRoot / kSoundDirectory / kNarratorSecondBank);
-    if (!m_commonSounds.load(m_context.unpackedRoot / kSoundDirectory / kCommonBank)) {
-        return;
-    }
-    for (usize foot = 0; foot < kStepSounds.size(); ++foot) {
-        m_stepSounds[foot] = m_commonSounds.find(kStepSounds[foot]);
-    }
-    m_pickupSound = m_commonSounds.find(kPickupSound);
-}
-
-void PlayScene::playCommon(std::optional<u32> sound) {
-    if (m_context.sounds == nullptr || !sound.has_value()) {
-        return;
-    }
-    m_context.sounds->play(m_commonSounds.sequence(*sound), 1.0f, SoundCategory::Effects);
-}
-
 /** Takes what the party stands on: a crystal counts for everyone, towards its realm's gate,
  * up to what the gate wants; the taker's box gets the card, every box the count. */
 void PlayScene::collectItems() {
@@ -621,7 +557,7 @@ void PlayScene::collectItems() {
                 announceUnlock(pickup.realm);
             }
         }
-        playCommon(m_pickupSound);
+        m_audio.playPickup();
     }
 }
 
@@ -668,7 +604,7 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
             if (m_chests.chest(event.chest).locked) {
                 actor.save().progress().inventory.spendKey();
             }
-            playNamed(kChestSound);
+            m_audio.playNamed(kChestSound);
             break;
         case ChestEvent::Kind::Opened:
             if (event.explodes) {
@@ -682,7 +618,7 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
             } else if (event.gold > 0) {
                 takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
                 m_pickups.addCard(actor.player(), "GOLD");
-                playNamed(kPickupSound);
+                m_audio.playNamed(kPickupSound);
             } else if (event.contents >= 0 && m_device != nullptr) {
                 // It lies in the open chest, for whoever touches the chest next.
                 const s32 count = m_chests.chest(event.chest).count;
@@ -779,7 +715,7 @@ f32 PlayScene::guarded(usize index, f32 damage, bool directed) const {
 SoundHandle PlayScene::playRealmSound(std::string_view stem) {
     const std::string& level = m_world->ref().name;
     const char letter = level.empty() ? 'G' : level.front();
-    return playNamed(std::format("{}{}", stem, letter));
+    return m_audio.playNamed(std::format("{}{}", stem, letter));
 }
 
 const TurboMeter* PlayScene::turboMeter(s32 player) const {
@@ -1017,7 +953,7 @@ void PlayScene::fireStrike(usize index, s32 strikeIndex) {
                 m_context.sounds->play(m_players[index].figure->voice().sequence(*sound), 1.0f,
                                        SoundCategory::Effects);
             } else {
-                playNamed(effect.sound);
+                m_audio.playNamed(effect.sound);
             }
         }
         if (effect.tree.empty() || effect.tree == kNoEffectTree || archive == nullptr ||
@@ -1119,7 +1055,7 @@ void PlayScene::updateStrikes(f32 seconds) {
                                     effect.scale);
                 }
                 if (!effect.sound.empty()) {
-                    playNamed(effect.sound);
+                    m_audio.playNamed(effect.sound);
                 }
             }
         }
@@ -1235,7 +1171,7 @@ void PlayScene::shieldPotion(usize index) {
         shield.effect = m_effects.startSet(*m_device, m_weapons, kShieldTrees[look],
                                            actor.position(), setting);
     }
-    playNamed(kShieldSounds[look]);
+    m_audio.playNamed(kShieldSounds[look]);
     m_shields.push_back(shield);
 }
 
@@ -1346,15 +1282,10 @@ bool PlayScene::postHelp(s32 id, usize index, s32 number) {
     if (m_context.sounds != nullptr) {
         // A turbo attack's name is called from the character's own class's bank; the
         // narrator's lines are in either of its banks.
-        std::vector<SoundSet*> banks{&m_narrator, &m_narratorSecond};
         if (spec->classVoice && index < m_players.size() && m_players[index].figure != nullptr) {
-            banks = {&m_players[index].figure->voice()};
-        }
-        for (SoundSet* bank : banks) {
-            if (const auto line = bank->find(spec->voice); line.has_value()) {
-                m_context.sounds->play(bank->sequence(*line), 1.0f, SoundCategory::Effects);
-                break;
-            }
+            m_audio.playFrom(m_players[index].figure->voice(), spec->voice);
+        } else {
+            m_audio.narrate(spec->voice);
         }
     }
     return true;
@@ -1374,7 +1305,7 @@ void PlayScene::strikeBarrel(usize barrel, f32 power, s32 byPlayer) {
         return;
     }
     if (!struck->broken) {
-        playNamed(kWoodHitSound);
+        m_audio.playNamed(kWoodHitSound);
         return;
     }
     const auto effect = [&](std::string_view tree) {
@@ -1504,8 +1435,8 @@ void PlayScene::updateLevels() {
         if (change->milestone() && m_device != nullptr) {
             const s32 tier = std::min(change->to / LevelChange::kLevelsPerTier, 9);
             const std::string_view cls = classCode(save.character);
-            if (playNamed(std::format("S_EXP{}0{}", tier, cls.substr(0, 3))) == kNoSound) {
-                playNamed("S_EXP99ALL");
+            if (m_audio.playNamed(std::format("S_EXP{}0{}", tier, cls.substr(0, 3))) == kNoSound) {
+                m_audio.playNamed("S_EXP99ALL");
             }
             // The costume of the new tier, weapon and all, where the character stands.
             if (auto figure = PlayerFigure::load(*m_device, m_context.unpackedRoot, save);
@@ -1555,7 +1486,7 @@ void PlayScene::showCritterCue(const CritterCue& cue, ItemArchive* archive, bool
         }
     }
     if (!cue.sound.empty()) {
-        playNamed(cue.sound);
+        m_audio.playNamed(cue.sound);
     }
 }
 
@@ -1669,7 +1600,7 @@ void PlayScene::bossFallen(const Vec3& where) {
         m_effects.startSet(*m_device, m_world->items(), kBossKeyTree, where, setting);
         loadWizard(*m_device);
     }
-    playNamed(std::format("{}{}", kBossKeySoundPrefix, letter));
+    m_audio.playNamed(std::format("{}{}", kBossKeySoundPrefix, letter));
 }
 
 /** The good wizard's figure from the level's own archive, stood over the party. */
@@ -1723,7 +1654,7 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
         }
     }
     for (const VictoryVoice& voice : m_victory.update(ticks, pageLengths)) {
-        playNamed(voice.sound);
+        m_audio.playNamed(voice.sound);
     }
     if (m_wizardTree != nullptr && m_victory.wizardShown()) {
         m_wizardPlayer.advance(seconds, true);
@@ -2148,7 +2079,7 @@ void PlayScene::playGateSound(s32 /*subtype*/) {
     const char letter = level.empty() ? 'G' : level.front();
     for (const std::string_view stem : {"S_GATEMET", "S_GATEWOOD", "S_GATE"}) {
         for (const std::string_view tail : {"", "1"}) {
-            if (playNamed(std::format("{}{}{}", stem, letter, tail)) != kNoSound) {
+            if (m_audio.playNamed(std::format("{}{}{}", stem, letter, tail)) != kNoSound) {
                 return;
             }
         }
@@ -2183,7 +2114,7 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
         save.progress().health = 1;
         m_players[index].life = PlayerLife::Dying;
         m_players[index].turbo.reset();
-        playNamed(kDeathSound);
+        m_audio.playNamed(kDeathSound);
         cry(index, "DIE2");
         log::info("Player {} has fallen", m_players[index].actor.player() + 1);
         return;
@@ -2217,7 +2148,7 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
             m_players[index].painOwed -= kPainEvery;
             cryPain(index);
         } else if (m_players[index].hitSoundGap <= 0) {
-            playNamed(kHitSound);
+            m_audio.playNamed(kHitSound);
             m_players[index].hitSoundGap = kHitSoundGapTicks;
         }
         break;
@@ -2240,18 +2171,8 @@ void PlayScene::sayWithName(usize index, std::string_view line) {
     const CharacterSave& save = m_players[index].actor.save();
     const std::string name =
         std::format("S_{}{}2", colorCode(save.color), classCode(save.character % kStartingClassCount));
-    SoundHandle spoken = kNoSound;
-    if (const auto sound = body->voice().find(name); sound.has_value()) {
-        spoken =
-            m_context.sounds->play(body->voice().sequence(*sound), 1.0f, SoundCategory::Effects);
-    }
-    for (SoundSet* bank : {&m_narrator, &m_narratorSecond}) {
-        if (const auto sound = bank->find(line); sound.has_value()) {
-            m_context.sounds->playAfter(spoken, bank->sequence(*sound), 1.0f,
-                                        SoundCategory::Effects);
-            return;
-        }
-    }
+    const SoundHandle spoken = m_audio.playFrom(body->voice(), name);
+    m_audio.narrate(line, LevelSoundscape::Narrator::Either, spoken);
 }
 
 /** The whole party has gone through a portal: where to? Its own level when that is unpacked;
@@ -2318,7 +2239,7 @@ void PlayScene::burstPotion(s32 kind, const Vec3& position, f32 power) {
         m_effects.start(*m_device, m_weapons, look.burst, position,
                         std::min(kBurstPerPower * power, 1.0f));
     }
-    playNamed(look.sound);
+    m_audio.playNamed(look.sound);
 }
 
 f32 PlayScene::magicPowerOf(const PlayerActor& actor) const {
@@ -2378,9 +2299,9 @@ void PlayScene::stepSelector(PlayerActor& actor, const SelectorInput& input, s32
     const auto slot = static_cast<usize>(std::clamp(actor.player(), 0, kPlayerCount - 1));
     switch (m_selectors[slot].step(input, actor.save().progress().inventory, ticks)) {
     case SelectorCue::Opened:
-    case SelectorCue::Closed: playNamed(kMenuMoveSound); break;
-    case SelectorCue::Moved: playNamed(kSelectorMoveSound); break;
-    case SelectorCue::Switched: playNamed(kMenuSelectSound); break;
+    case SelectorCue::Closed: m_audio.playNamed(kMenuMoveSound); break;
+    case SelectorCue::Moved: m_audio.playNamed(kSelectorMoveSound); break;
+    case SelectorCue::Switched: m_audio.playNamed(kMenuSelectSound); break;
     case SelectorCue::None: break;
     }
 }
@@ -2463,7 +2384,7 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
         m_pickups.addCard(actor.player(), taking.card);
     }
     if (!taking.sound.empty()) {
-        playNamed(taking.sound);
+        m_audio.playNamed(taking.sound);
     } else if (PlayerFigure* figure = m_players[pickup.collector].figure.get();
                figure != nullptr && m_context.sounds != nullptr) {
         const std::string_view voice = classCode(actor.save().character % kStartingClassCount);
@@ -2492,38 +2413,7 @@ void PlayScene::shareRune(s32 rune) {
     }
     const std::string voice =
         count == 1 ? std::string(kFirstRuneVoice) : std::format("{}{}", kRuneVoicePrefix, count);
-    if (m_context.sounds != nullptr) {
-        if (const auto line = m_narrator.find(voice); line.has_value()) {
-            m_context.sounds->play(m_narrator.sequence(*line), 1.0f, SoundCategory::Effects);
-        }
-    }
-}
-
-/** Loops the level's music stream from the game's files at the level's volume. */
-void PlayScene::startMusic() {
-    const LevelAudioInfo* audio = m_world->audio();
-    if (m_context.sounds == nullptr || m_context.assets == nullptr || audio == nullptr ||
-        audio->stream.empty()) {
-        return;
-    }
-    const auto file =
-        m_context.assets->find(std::format("{}/{}.ads", kStreamsDirectory, audio->stream));
-    if (!file.has_value()) {
-        log::warn("Tower: music stream {} is not among the game's files", audio->stream);
-        return;
-    }
-    auto stream = std::make_shared<AdsStream>();
-    if (!stream->open(*file)) {
-        return;
-    }
-    const LevelInfo* level = m_world->level();
-    m_music = m_context.sounds->playStream(std::move(stream), true,
-                                          level != nullptr ? level->musicVolume : 1.0f,
-                                          SoundCategory::Music);
-}
-
-void PlayScene::playStep(PlayerAnimator::Foot foot) {
-    playCommon(m_stepSounds[foot == PlayerAnimator::Foot::Second ? 1 : 0]);
+    m_audio.narrate(voice, LevelSoundscape::Narrator::Primary);
 }
 
 /** Gathers the scroll's art: the sheet, the prompt's font and glow, the button icon and the
@@ -2725,18 +2615,14 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
     const MenuInput input = player < inputs.size() ? inputs[player].menu : MenuInput{};
     const HintMenuEvent event = m_hintMenu.update(*m_device, input, ticks);
     switch (event.kind) {
-    case HintMenuEvent::Kind::Moved:
-        playNamed(kMenuMoveSound);
-        break;
+    case HintMenuEvent::Kind::Moved: m_audio.playNamed(kMenuMoveSound); break;
     case HintMenuEvent::Kind::Asked:
-        playNamed(kMenuSelectSound);
+        m_audio.playNamed(kMenuSelectSound);
         answerHint(event.topic);
         break;
-    case HintMenuEvent::Kind::Returned:
-        playNamed(kMenuExitSound);
-        break;
+    case HintMenuEvent::Kind::Returned: m_audio.playNamed(kMenuExitSound); break;
     case HintMenuEvent::Kind::Left:
-        playNamed(m_hintMenu.burning() ? kScrollBurnSound : kMenuExitSound);
+        m_audio.playNamed(m_hintMenu.burning() ? kScrollBurnSound : kMenuExitSound);
         m_sumner.play(SumnerFigure::kGoAwayIndex);
         break;
     case HintMenuEvent::Kind::None:
@@ -2888,9 +2774,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         const bool wasBurning = m_scroll.burning();
         m_scroll.step(ticks, acceptedPlayers(inputs));
         if ((m_scroll.burning() && !wasBurning) || !m_scroll.active()) {
-            stopVoice();
+            m_audio.stopVoice();
             if (!wasBurning) {
-                playNamed(kScrollBurnSound);
+                m_audio.playNamed(kScrollBurnSound);
             }
         }
         if (!m_scroll.active() && m_intro == Intro::Scroll) {
@@ -3043,7 +2929,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             }
             if (const PlayerAnimator::Foot foot = m_players[i].figure->animator().footfall();
                 foot != PlayerAnimator::Foot::None) {
-                playStep(foot);
+                m_audio.playFootstep(foot == PlayerAnimator::Foot::Second);
             }
         }
         if (m_players[i].figure == nullptr && m_players[i].life == PlayerLife::Dying) {
@@ -3213,8 +3099,8 @@ void PlayScene::updateAmbience() {
     }
     const CameraFrame frame = CameraFrame::of(viewCamera());
     const LevelInfo* level = m_world->level();
-    m_ambience.update(*m_context.sounds, listeners, AmbientEar{frame.position, frame.right},
-                      level != nullptr ? level->soundVolume : 1.0f);
+    m_audio.updateAmbience(listeners, AmbientEar{frame.position, frame.right},
+                           level != nullptr ? level->soundVolume : 1.0f);
 }
 
 /** The party as the level's triggers see it. */
@@ -3514,41 +3400,6 @@ bool PlayScene::openMessage(std::string_view name, usize page) {
     return m_scroll.open(*m_device, {message.pages[page]}, message.scale, prompt);
 }
 
-/** Plays a sound by name from whichever loaded bank holds it; false when none does. */
-SoundHandle PlayScene::playNamed(std::string_view name) {
-    if (m_context.sounds == nullptr || name.empty()) {
-        return kNoSound;
-    }
-    for (SoundSet* bank : {&m_levelBank, &m_commonSounds, &m_ambientBank}) {
-        if (const auto found = bank->find(name); found.has_value()) {
-            try {
-                return m_context.sounds->play(bank->sequence(*found), 1.0f,
-                                              SoundCategory::Effects);
-            } catch (const std::exception& e) {
-                log::warn("Tower: sound {}: {}", name, e.what());
-                return kNoSound;
-            }
-        }
-    }
-    return kNoSound;
-}
-
-void PlayScene::stopVoice() {
-    if (m_context.sounds != nullptr && m_voice != kNoSound) {
-        m_context.sounds->stop(m_voice);
-    }
-    m_voice = kNoSound;
-}
-
-void PlayScene::stopOpeningSounds() {
-    if (m_context.sounds != nullptr) {
-        for (const OpeningSound& sound : m_openingSounds) {
-            m_context.sounds->stop(sound.handle);
-        }
-    }
-    m_openingSounds.clear();
-}
-
 /** Congratulates the party once its crystals open a realm's gate: the scroll for the realm,
  * its announcing voice, and the save remembers so it is not said twice. */
 void PlayScene::announceUnlock(s32 realm) {
@@ -3568,8 +3419,7 @@ void PlayScene::announceUnlock(s32 realm) {
     }
     openMessage(kUnlockLevel, static_cast<usize>(realm));
     if (static_cast<usize>(realm) < kUnlockVoices.size()) {
-        stopVoice();
-        m_voice = playNamed(kUnlockVoices[static_cast<usize>(realm)]);
+        m_audio.speakOverScroll(kUnlockVoices[static_cast<usize>(realm)]);
     }
 }
 
@@ -3587,28 +3437,10 @@ void PlayScene::handleTriggerEvents() {
         }
     }
     for (const TriggerOpening& opening : m_world->takeTriggerOpenings()) {
-        const OpeningSounds* sounds = openingSoundsOf(opening.sound);
-        if (opening.atOnce || sounds == nullptr) {
-            continue;
-        }
-        if (const SoundHandle handle = playNamed(sounds->moving); handle != kNoSound) {
-            m_openingSounds.push_back(OpeningSound{opening.target, handle});
-        }
+        m_audio.opening(opening);
     }
     for (const TriggerOpening& settled : m_world->takeTriggerSettled()) {
-        for (usize i = 0; i < m_openingSounds.size();) {
-            if (m_openingSounds[i].target == settled.target) {
-                if (m_context.sounds != nullptr) {
-                    m_context.sounds->stop(m_openingSounds[i].handle);
-                }
-                m_openingSounds.erase(m_openingSounds.begin() + static_cast<std::ptrdiff_t>(i));
-            } else {
-                ++i;
-            }
-        }
-        if (const OpeningSounds* sounds = openingSoundsOf(settled.sound); sounds != nullptr) {
-            playNamed(sounds->done);
-        }
+        m_audio.settled(settled);
     }
 }
 

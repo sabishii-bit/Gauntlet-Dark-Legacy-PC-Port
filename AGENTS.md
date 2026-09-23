@@ -95,6 +95,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Figure internals stay private. Borrowers of its missile model and effects
   must finish before it is released; the figure itself cannot move because
   its bound models and animator reference its own archives.
+* `world/LevelSoundscape` owns level/common/ambient/narrator banks, music,
+  scroll voice and target-opening sound lifetimes. It borrows only the audio
+  output, not the scene or world. PlayScene supplies cues and listener snapshots.
+  Named effects search level, common, then ambient; ambient items prefer TOWAMB.
+  `stopCues` stops music/scroll/openings early in teardown; `close` also stops
+  ambience and every voice it started before clearing banks: sequences borrow
+  their clips, including queued narration. Other SoundPlayer clients are untouched.
+  Close it after scene users finish and before destroying the borrowed SoundPlayer;
+  do not move it while emitters borrow banks.
 * The tower (`screens/PlayScene`) takes the locked-in lanes as `PartyMember`s
   into the shared `world/LevelWorld` that `GameContext::tower` carries (the
   select screen looks into the same one). `engine/world/WorldCollision` holds
