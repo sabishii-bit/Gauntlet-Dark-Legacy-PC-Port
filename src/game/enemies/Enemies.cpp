@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <numbers>
 
@@ -11,69 +13,91 @@ namespace gdl::game {
 
 namespace {
 
-constexpr f32 kPi = std::numbers::pi_v<f32>;
-constexpr f32 kStepUp = 1.5f;
-constexpr f32 kDrop = 3.0f;
-constexpr f32 kFootClearance = 0.1f;
-constexpr f32 kSpawnDrop = 6.0f;        ///< a spawn finds its floor within this
-constexpr s32 kFarRecycleCost = 10000;  ///< an unseen enemy is that much cheaper to reuse
-constexpr f32 kPushFloor = 0.01f;
-constexpr f32 kGravity = 100.0f;
+constexpr float kPi = std::numbers::pi_v<float>;
+constexpr float kStepUp = 1.5f;
+constexpr float kDrop = 3.0f;
+constexpr float kFootClearance = 0.1f;
+constexpr float kSpawnDrop = 6.0f;              ///< a spawn finds its floor within this
+constexpr std::int32_t kFarRecycleCost = 10000; ///< an unseen enemy is that much cheaper to reuse
+constexpr float kPushFloor = 0.01f;
+constexpr float kGravity = 100.0f;
 
-constexpr s32 kRetargetEvery = 8;       ///< frames between a mind looking round again
-constexpr f32 kRunFrom = 1.25f;         ///< a pace this much over a walk's runs
-constexpr f32 kStopped = 0.01f;         ///< a step that gets less than this is a dead stop
+constexpr std::int32_t kRetargetEvery = 8; ///< frames between a mind looking round again
+constexpr float kRunFrom = 1.25f;          ///< a pace this much over a walk's runs
+constexpr float kStopped = 0.01f;          ///< a step that gets less than this is a dead stop
 
 // The octants about a generator, as its facing is turned into each.
-Vec3 octant(const Vec3& v, s32 direction, f32& yawOffset) {
-    constexpr f32 kHalfRoot = 0.707f;
-    const f32 x = v.x;
-    const f32 z = v.z;
+Vec3 octant(const Vec3& v, std::int32_t direction, float& yawOffset) {
+    constexpr float kHalfRoot = 0.707f;
+    const float x = v.x;
+    const float z = v.z;
     switch (direction) {
     case 1: yawOffset = kPi; return Vec3{-x, v.y, -z};
     case 2: yawOffset = -kPi / 2.0f; return Vec3{-z, v.y, x};
     case 3: yawOffset = kPi / 2.0f; return Vec3{z, v.y, -x};
-    case 4: yawOffset = kPi / 4.0f; return Vec3{kHalfRoot * x + kHalfRoot * z, v.y, kHalfRoot * -x + kHalfRoot * z};
-    case 5: yawOffset = -kPi / 4.0f; return Vec3{kHalfRoot * -z + kHalfRoot * x, v.y, kHalfRoot * z + kHalfRoot * x};
-    case 6: yawOffset = 3.0f * kPi / 4.0f; return Vec3{kHalfRoot * z - kHalfRoot * x, v.y, kHalfRoot * -x - kHalfRoot * z};
-    case 7: yawOffset = -3.0f * kPi / 4.0f; return Vec3{kHalfRoot * -z - kHalfRoot * x, v.y, kHalfRoot * z - kHalfRoot * x};
+    case 4:
+        yawOffset = kPi / 4.0f;
+        return Vec3{kHalfRoot * x + kHalfRoot * z, v.y, kHalfRoot * -x + kHalfRoot * z};
+    case 5:
+        yawOffset = -kPi / 4.0f;
+        return Vec3{kHalfRoot * -z + kHalfRoot * x, v.y, kHalfRoot * z + kHalfRoot * x};
+    case 6:
+        yawOffset = 3.0f * kPi / 4.0f;
+        return Vec3{kHalfRoot * z - kHalfRoot * x, v.y, kHalfRoot * -x - kHalfRoot * z};
+    case 7:
+        yawOffset = -3.0f * kPi / 4.0f;
+        return Vec3{kHalfRoot * -z - kHalfRoot * x, v.y, kHalfRoot * z - kHalfRoot * x};
     default: yawOffset = 0.0f; return v;
     }
 }
 
 // The octants a kind may be born into: the humanoids only ahead of the generator.
-u32 octantMaskOf(s32 kind) {
+std::uint32_t octantMaskOf(std::int32_t kind) {
     switch (kind) {
-    case 1: case 4: case 5: case 7: case 8: case 10: case 11: case 14: case 15: case 19:
-    case 24: case 25:
-        return 0xFFCE;
-    default:
-        return 0;
+    case 1:
+    case 4:
+    case 5:
+    case 7:
+    case 8:
+    case 10:
+    case 11:
+    case 14:
+    case 15:
+    case 19:
+    case 24:
+    case 25: return 0xFFCE;
+    default: return 0;
     }
 }
 
 // The small kinds (scorpions, rats, snakes, spiders, maggots, wolves, dogs, acid, hands) go
 // about the way of their own, whatever a generator asks.
-bool smallKind(s32 kind) {
+bool smallKind(std::int32_t kind) {
     switch (kind) {
-    case 0: case 3: case 6: case 9: case 12: case 15: case 18: case 21: case 22:
-        return true;
-    default:
-        return false;
+    case 0:
+    case 3:
+    case 6:
+    case 9:
+    case 12:
+    case 15:
+    case 18:
+    case 21:
+    case 22: return true;
+    default: return false;
     }
 }
 
 // Which way to turn round something at `to`: along the axis of the wider gap.
-s32 turnDirection(const Vec3& from, const Vec3& to) {
+std::int32_t turnDirection(const Vec3& from, const Vec3& to) {
     if (std::abs(from.x - to.x) >= std::abs(from.z - to.z)) {
         return from.z < to.z ? 1 : -1;
     }
     return from.x < to.x ? -1 : 1;
 }
 
-f32 flatDistance(const Vec3& a, const Vec3& b) {
-    const f32 dx = a.x - b.x;
-    const f32 dz = a.z - b.z;
+float flatDistance(const Vec3& a, const Vec3& b) {
+    const float dx = a.x - b.x;
+    const float dz = a.z - b.z;
     return std::sqrt(dx * dx + dz * dz);
 }
 
@@ -84,8 +108,8 @@ Enemies::~Enemies() {
 }
 
 void Enemies::open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
-                   const WorldCollision* collision, s32 most, const EnemyScales& scales,
-                   u32 seed) {
+                   const WorldCollision* collision, std::int32_t most, const EnemyScales& scales,
+                   std::uint32_t seed) {
     close();
     m_device = &device;
     m_root = unpackedRoot;
@@ -118,7 +142,7 @@ void Enemies::close() {
     m_frame = 0;
 }
 
-Enemies::Stock* Enemies::stockOf(s32 kind) {
+Enemies::Stock* Enemies::stockOf(std::int32_t kind) {
     for (auto& stock : m_stocks) {
         if (stock->kind == kind) {
             return stock.get();
@@ -127,7 +151,7 @@ Enemies::Stock* Enemies::stockOf(s32 kind) {
     return nullptr;
 }
 
-const Enemies::Stock* Enemies::stockOf(s32 kind) const {
+const Enemies::Stock* Enemies::stockOf(std::int32_t kind) const {
     for (const auto& stock : m_stocks) {
         if (stock->kind == kind) {
             return stock.get();
@@ -136,7 +160,7 @@ const Enemies::Stock* Enemies::stockOf(s32 kind) const {
     return nullptr;
 }
 
-bool Enemies::loadKind(s32 kind) {
+bool Enemies::loadKind(std::int32_t kind) {
     if (stockOf(kind) != nullptr) {
         return true;
     }
@@ -149,61 +173,66 @@ bool Enemies::loadKind(s32 kind) {
     if (!stock->archive.load(m_root / "MONSTERS" / std::string(info.name))) {
         return false;
     }
-    for (s32 tier = 1; tier <= 3; ++tier) {
+    for (std::int32_t tier = 1; tier <= 3; ++tier) {
         const auto tree = stock->archive.trees.find(std::format("{}{}", info.prefix, tier));
         if (!tree.has_value()) {
             continue;
         }
         const TreeInfo& treeInfo = stock->archive.trees.tree(*tree);
-        if (stock->bodies[static_cast<usize>(tier - 1)].bind(treeInfo, stock->archive.models,
-                                                             stock->archive.textures, *m_device)) {
-            stock->trees[static_cast<usize>(tier - 1)] = &treeInfo;
+        if (stock->bodies[static_cast<std::size_t>(tier - 1)].bind(
+                treeInfo, stock->archive.models, stock->archive.textures, *m_device)) {
+            stock->trees[static_cast<std::size_t>(tier - 1)] = &treeInfo;
         }
     }
     // The archer, bomber and suicide ("ZOMA", "ZOMB", "ZOMS") and what the first two throw.
     const std::array<const char*, 3> suffixes{"A", "B", "S"};
-    for (usize v = 0; v < suffixes.size(); ++v) {
+    for (std::size_t v = 0; v < suffixes.size(); ++v) {
         const auto tree = stock->archive.trees.find(std::format("{}{}", info.prefix, suffixes[v]));
         if (!tree.has_value()) {
             continue;
         }
         const TreeInfo& treeInfo = stock->archive.trees.tree(*tree);
-        if (stock->variantBodies[v].bind(treeInfo, stock->archive.models, stock->archive.textures, *m_device)) {
+        if (stock->variantBodies[v].bind(treeInfo, stock->archive.models, stock->archive.textures,
+                                         *m_device)) {
             stock->variantTrees[v] = &treeInfo;
         }
     }
-    if (const auto arrow = stock->archive.trees.find(std::format("{}_ARROW", info.prefix)); arrow.has_value()) {
-        stock->arrow.bind(stock->archive.trees.tree(*arrow), stock->archive.models, stock->archive.textures, *m_device);
+    if (const auto arrow = stock->archive.trees.find(std::format("{}_ARROW", info.prefix));
+        arrow.has_value()) {
+        stock->arrow.bind(stock->archive.trees.tree(*arrow), stock->archive.models,
+                          stock->archive.textures, *m_device);
     }
-    if (const auto bomb = stock->archive.trees.find(std::format("{}_BOMB", info.prefix)); bomb.has_value()) {
-        stock->bomb.bind(stock->archive.trees.tree(*bomb), stock->archive.models, stock->archive.textures, *m_device);
+    if (const auto bomb = stock->archive.trees.find(std::format("{}_BOMB", info.prefix));
+        bomb.has_value()) {
+        stock->bomb.bind(stock->archive.trees.tree(*bomb), stock->archive.models,
+                         stock->archive.textures, *m_device);
     }
     m_stocks.push_back(std::move(stock));
     return true;
 }
 
-bool Enemies::kindLoaded(s32 kind) const {
+bool Enemies::kindLoaded(std::int32_t kind) const {
     return stockOf(kind) != nullptr;
 }
 
-const ItemArchive* Enemies::archiveOf(s32 kind) const {
+const ItemArchive* Enemies::archiveOf(std::int32_t kind) const {
     const Stock* stock = stockOf(kind);
     return stock != nullptr ? &stock->archive : nullptr;
 }
 
-ItemArchive* Enemies::archive(s32 kind) {
+ItemArchive* Enemies::archive(std::int32_t kind) {
     Stock* stock = stockOf(kind);
     return stock != nullptr ? &stock->archive : nullptr;
 }
 
-const TreeInfo* Enemies::treeOf(s32 kind, s32 tier) const {
+const TreeInfo* Enemies::treeOf(std::int32_t kind, std::int32_t tier) const {
     const Stock* stock = stockOf(kind);
     if (stock == nullptr) {
         return nullptr;
     }
     // A tier the archive lacks wears the nearest it has.
-    for (s32 t = std::clamp(tier, 1, 3); t >= 1; --t) {
-        if (const TreeInfo* tree = stock->trees[static_cast<usize>(t - 1)]; tree != nullptr) {
+    for (std::int32_t t = std::clamp(tier, 1, 3); t >= 1; --t) {
+        if (const TreeInfo* tree = stock->trees[static_cast<std::size_t>(t - 1)]; tree != nullptr) {
             return tree;
         }
     }
@@ -215,7 +244,7 @@ const TreeInfo* Enemies::treeOf(s32 kind, s32 tier) const {
     return nullptr;
 }
 
-f32 Enemies::paceOf(s32 kind) const {
+float Enemies::paceOf(std::int32_t kind) const {
     return enemyKind(kind).pace * m_scales.speed;
 }
 
@@ -223,7 +252,7 @@ Vec3 Enemies::bodyCentre(const Enemy& enemy) {
     return enemy.position + Vec3{0.0f, enemy.reach, 0.0f};
 }
 
-const EnemyView* Enemies::viewOf(std::span<const EnemyView> players, s32 player) {
+const EnemyView* Enemies::viewOf(std::span<const EnemyView> players, std::int32_t player) {
     for (const EnemyView& view : players) {
         if (view.player == player) {
             return &view;
@@ -234,19 +263,20 @@ const EnemyView* Enemies::viewOf(std::span<const EnemyView> players, s32 player)
 
 // ---- spawning ---------------------------------------------------------------------------
 
-std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn, std::span<const EnemyView> players) {
+std::optional<std::int32_t> Enemies::takeSlot(const EnemySpawn& spawn,
+                                              std::span<const EnemyView> players) {
     // The first empty slot; failing one, the least worth keeping: the furthest from its
     // player, the dying and sleeping hardly worth anything, the unseen worth still less.
-    for (s32 i = 0; i < m_most; ++i) {
-        if (m_enemies[static_cast<usize>(i)].state == State::Inactive) {
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        if (m_enemies[static_cast<std::size_t>(i)].state == State::Inactive) {
             return i;
         }
     }
-    s32 best = -1;
-    f32 bestCost = -1.0f;
-    for (s32 i = 0; i < m_most; ++i) {
-        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
-        f32 cost = enemy.targetDistance;
+    std::int32_t best = -1;
+    float bestCost = -1.0f;
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<std::size_t>(i)];
+        float cost = enemy.targetDistance;
         if (enemy.state == State::Dying || enemy.state == State::Asleep) {
             cost *= 0.01f;
         }
@@ -266,24 +296,25 @@ std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn, std::span<const En
         return std::nullopt;
     }
     // A lesser one is never made room for by a greater.
-    if (spawn.kind < kSwarmKindCount && spawn.tier < m_enemies[static_cast<usize>(best)].tier) {
+    if (spawn.kind < kSwarmKindCount &&
+        spawn.tier < m_enemies[static_cast<std::size_t>(best)].tier) {
         return std::nullopt;
     }
-    Enemy& taken = m_enemies[static_cast<usize>(best)];
+    Enemy& taken = m_enemies[static_cast<std::size_t>(best)];
     taken = Enemy{};
     return best;
 }
 
 bool Enemies::clearAt(Enemy& enemy, const Vec3& position, std::span<const EnemyView> players,
-                      std::span<const Obstacle> obstacles, s32 self) const {
+                      std::span<const Obstacle> obstacles, std::int32_t self) const {
     for (const EnemyView& view : players) {
         if (flatDistance(view.position, position) < view.radius + enemy.radius &&
             std::abs(view.position.y - position.y) < view.height) {
             return false;
         }
     }
-    for (s32 i = 0; i < m_most; ++i) {
-        const Enemy& other = m_enemies[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        const Enemy& other = m_enemies[static_cast<std::size_t>(i)];
         if (i == self || other.state == State::Inactive) {
             continue;
         }
@@ -309,7 +340,8 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
         enemy.tier = enemy.variant == kSuicideStrength ? 1 : 2;
     }
     enemy.idleTicks = spawn.idleTicks;
-    enemy.algorithm = spawn.algorithm >= 0 && spawn.algorithm < 32 ? spawn.algorithm : kind.algorithm;
+    enemy.algorithm =
+        spawn.algorithm >= 0 && spawn.algorithm < 32 ? spawn.algorithm : kind.algorithm;
     if (spawn.algorithm < 0 || spawn.algorithm == kind.algorithm) {
         switch (enemy.variant) {
         case kArcherStrength: enemy.algorithm = kSkirmishWay; break;
@@ -328,10 +360,10 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     enemy.sight = kBaseSight * m_scales.sight;
     // Death alone is not scaled by the level; the swarm has a third of its kind's health a
     // tier, and hits softer as it loses its kind's full share.
-    const f32 scale = spawn.kind != kDeathKind ? m_scales.health : 1.0f;
+    const float scale = spawn.kind != kDeathKind ? m_scales.health : 1.0f;
     enemy.fullHealth = kind.health * scale;
-    enemy.health = spawn.kind < kSwarmKindCount ? kind.healthAtTier(enemy.tier) * scale
-                                                : enemy.fullHealth;
+    enemy.health =
+        spawn.kind < kSwarmKindCount ? kind.healthAtTier(enemy.tier) * scale : enemy.fullHealth;
     enemy.target = -1;
     enemy.targetBefore = -1;
     enemy.targetDistance = 100000.0f;
@@ -340,8 +372,9 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     enemy.attackIndex = -1;
 }
 
-std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const EnemyView> players,
-                                  std::span<const Obstacle> obstacles) {
+std::optional<std::int32_t> Enemies::spawn(const EnemySpawn& spawn,
+                                           std::span<const EnemyView> players,
+                                           std::span<const Obstacle> obstacles) {
     const Stock* stock = stockOf(spawn.kind);
     if (stock == nullptr) {
         return std::nullopt;
@@ -350,12 +383,13 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     if (!slot.has_value()) {
         return std::nullopt;
     }
-    Enemy& enemy = m_enemies[static_cast<usize>(*slot)];
+    Enemy& enemy = m_enemies[static_cast<std::size_t>(*slot)];
     const EnemyKind& kind = enemyKind(spawn.kind);
     initialise(enemy, spawn, kind);
     const TreeInfo* tree = treeOf(spawn.kind, enemy.tier);
-    if (enemy.variant != 0 && stock->variantTrees[static_cast<usize>(enemy.variant - kArcherStrength)] != nullptr) {
-        tree = stock->variantTrees[static_cast<usize>(enemy.variant - kArcherStrength)];
+    if (enemy.variant != 0 &&
+        stock->variantTrees[static_cast<std::size_t>(enemy.variant - kArcherStrength)] != nullptr) {
+        tree = stock->variantTrees[static_cast<std::size_t>(enemy.variant - kArcherStrength)];
     }
     const bool walksIn = enemy.variant == 0 && (spawn.kind == 1 || spawn.kind == kGruntKind ||
                                                 spawn.kind == 10 || spawn.kind == 7);
@@ -363,7 +397,7 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
         enemy = Enemy{};
         return std::nullopt;
     }
-    const f32 facing = std::atan2(spawn.direction.x, spawn.direction.z);
+    const float facing = std::atan2(spawn.direction.x, spawn.direction.z);
     const auto settle = [this](Vec3 at, Vec3& out) {
         if (m_collision == nullptr) {
             out = at;
@@ -379,29 +413,31 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     };
     bool placed = false;
     Vec3 where = spawn.position;
-    f32 yaw = facing;
+    float yaw = facing;
     if (spawn.placed) {
         placed = settle(spawn.position, where);
     } else {
-        const f32 out = spawn.clearance + enemy.radius;
+        const float out = spawn.clearance + enemy.radius;
         const Vec3 v = spawn.direction * out;
-        u32 mask = octantMaskOf(spawn.kind);
-        const s32 directions = 8;
-        const s32 start = static_cast<s32>(m_random() % static_cast<u32>(directions));
-        s32 d = start;
+        std::uint32_t mask = octantMaskOf(spawn.kind);
+        const std::int32_t directions = 8;
+        const std::int32_t start =
+            static_cast<std::int32_t>(m_random() % static_cast<std::uint32_t>(directions));
+        std::int32_t d = start;
         do {
-            if ((mask & (1U << static_cast<u32>(d))) == 0) {
-                f32 yawOffset = 0.0f;
+            if ((mask & (1U << static_cast<std::uint32_t>(d))) == 0) {
+                float yawOffset = 0.0f;
                 const Vec3 offset = octant(v, d, yawOffset);
                 Vec3 at = spawn.position + offset;
                 bool clear = settle(at, at) && std::abs(at.y - spawn.position.y) <= kSpawnDrop;
                 if (clear && m_collision != nullptr) {
-                    const Vec3 pushed = m_collision->resolveWalls(
-                        at, enemy.radius, at.y + kFootClearance, at.y + enemy.height - kFootClearance);
+                    const Vec3 pushed =
+                        m_collision->resolveWalls(at, enemy.radius, at.y + kFootClearance,
+                                                  at.y + enemy.height - kFootClearance);
                     clear = flatDistance(pushed, at) < 0.01f;
                 }
                 if (!clear) {
-                    mask |= 1U << static_cast<u32>(d);
+                    mask |= 1U << static_cast<std::uint32_t>(d);
                 } else if (clearAt(enemy, at, players, obstacles, *slot)) {
                     where = at;
                     yaw = wrapAngle(facing + yawOffset);
@@ -423,13 +459,13 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     return slot;
 }
 
-void Enemies::wake(s32 id) {
-    if (id >= 0 && id < m_most && m_enemies[static_cast<usize>(id)].state == State::Asleep) {
-        m_enemies[static_cast<usize>(id)].state = State::Active;
+void Enemies::wake(std::int32_t id) {
+    if (id >= 0 && id < m_most && m_enemies[static_cast<std::size_t>(id)].state == State::Asleep) {
+        m_enemies[static_cast<std::size_t>(id)].state = State::Active;
     }
 }
 
-void Enemies::generatorGone(s32 generator) {
+void Enemies::generatorGone(std::int32_t generator) {
     for (Enemy& enemy : m_enemies) {
         if (enemy.generator == generator) {
             enemy.generator = -1;
@@ -439,16 +475,16 @@ void Enemies::generatorGone(s32 generator) {
 
 // ---- the tick ----------------------------------------------------------------------------
 
-void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
+void Enemies::update(std::int32_t ticks, float seconds, std::span<const EnemyView> players,
                      std::span<const Obstacle> obstacles, EnemyMissiles* missiles,
-                     f32 missileSpeedScale) {
+                     float missileSpeedScale) {
     if (ticks <= 0) {
         return;
     }
     ++m_frame;
-    std::array<f32, 4> crowding{};
-    for (s32 i = 0; i < m_most; ++i) {
-        Enemy& enemy = m_enemies[static_cast<usize>(i)];
+    std::array<float, 4> crowding{};
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        Enemy& enemy = m_enemies[static_cast<std::size_t>(i)];
         if (enemy.state == State::Inactive || enemy.state == State::Asleep) {
             continue;
         }
@@ -484,7 +520,7 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             shoot(enemy, i, players, *missiles, missileSpeedScale);
         }
         // Knock-back dies away, and what was thrown up comes down.
-        enemy.push *= std::pow(kPushDecay, static_cast<f32>(ticks));
+        enemy.push *= std::pow(kPushDecay, static_cast<float>(ticks));
         if (std::abs(enemy.push.x) < kPushFloor) {
             enemy.push.x = 0.0f;
         }
@@ -495,8 +531,8 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
     }
 }
 
-void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
-                           std::span<f32> crowding) {
+void Enemies::chooseTarget(Enemy& enemy, std::int32_t slot, std::span<const EnemyView> players,
+                           std::span<float> crowding) {
     bool anyone = false;
     for (const EnemyView& view : players) {
         anyone = anyone || !view.hidden;
@@ -505,7 +541,7 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         enemy.recognized = false;
     }
     // A mind looks round again every eighth frame, or at once when its player is gone.
-    bool look = (m_frame % kRetargetEvery) == (static_cast<u32>(slot) % kRetargetEvery) ||
+    bool look = (m_frame % kRetargetEvery) == (static_cast<std::uint32_t>(slot) % kRetargetEvery) ||
                 enemy.target < 0;
     if (enemy.target >= 0) {
         const EnemyView* current = viewOf(players, enemy.target);
@@ -522,14 +558,14 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
             if (view.hidden) {
                 continue;
             }
-            const f32 distance = flatDistance(view.position, enemy.position);
+            const float distance = flatDistance(view.position, enemy.position);
             if (distance > enemy.sight) {
                 continue;
             }
-            f32 weighted = distance;
+            float weighted = distance;
             if (distance > 5.0f * enemy.radius && view.player >= 0 &&
-                static_cast<usize>(view.player) < crowding.size()) {
-                weighted += crowding[static_cast<usize>(view.player)];
+                static_cast<std::size_t>(view.player) < crowding.size()) {
+                weighted += crowding[static_cast<std::size_t>(view.player)];
             }
             if (weighted < enemy.weightedDistance) {
                 enemy.weightedDistance = weighted;
@@ -543,8 +579,9 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
     if (enemy.target >= 0) {
         if (enemy.targetDistance <= enemy.sight) {
             enemy.recognized = true;
-            if (static_cast<usize>(enemy.target) < crowding.size()) {
-                crowding[static_cast<usize>(enemy.target)] += 2.0f; // the next prefers another
+            if (static_cast<std::size_t>(enemy.target) < crowding.size()) {
+                crowding[static_cast<std::size_t>(enemy.target)] +=
+                    2.0f; // the next prefers another
             }
         }
     } else {
@@ -553,18 +590,18 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
     }
 }
 
-f32 Enemies::fightOf(const Enemy& enemy) const {
+float Enemies::fightOf(const Enemy& enemy) const {
     const EnemyKind& kind = enemyKind(enemy.kind);
-    const f32 fight = kind.damage * m_scales.damage;
+    const float fight = kind.damage * m_scales.damage;
     // A weakened one hits softer: two thirds under two thirds health, a third under a third.
-    const f32 full = enemy.fullHealth;
+    const float full = enemy.fullHealth;
     if (enemy.health > 0.667f * full || enemy.kind == kDeathKind) {
         return fight;
     }
     return enemy.health > 0.333f * full ? 0.667f * fight : 0.333f * fight;
 }
 
-void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> players) {
+void Enemies::resolveBlows(Enemy& enemy, std::int32_t slot, std::span<const EnemyView> players) {
     (void)slot;
     const bool landed = enemy.animator.struck() || enemy.animator.powerStruck();
     if (!landed || enemy.attackIndex < 0) {
@@ -586,7 +623,7 @@ void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
             blow.knocksDown = enemy.reach > kKnockDownHeight;
         }
         const Vec3 toward = victim->position - enemy.position;
-        const f32 length = flatDistance(victim->position, enemy.position);
+        const float length = flatDistance(victim->position, enemy.position);
         blow.direction = length > 0.001f ? Vec3{toward.x / length, 0.0f, toward.z / length}
                                          : Vec3{std::sin(enemy.yaw), 0.0f, std::cos(enemy.yaw)};
         m_blows.push_back(blow);
@@ -602,7 +639,7 @@ void Enemies::react(Enemy& enemy) { // NOLINT(readability-convert-member-functio
     }
     const bool floors = (enemy.hurtFlags & EnemyHit::kFloors) != 0 ||
                         (enemy.hurtPending > 10.0f && (enemy.hurtFlags & EnemyHit::kMagic) != 0);
-    f32 scale = 0.0f;
+    float scale = 0.0f;
     if (floors) {
         enemy.animator.request(EnemyAction::HitReact2);
         scale = enemy.reach <= kKnockDownHeight ? 40.0f : 20.0f;
@@ -616,7 +653,7 @@ void Enemies::react(Enemy& enemy) { // NOLINT(readability-convert-member-functio
         enemy.push += enemy.hurtDirection * scale;
         ++enemy.pushes;
     }
-    const f32 magnitude = glm::length(enemy.push);
+    const float magnitude = glm::length(enemy.push);
     if (magnitude > kMostPush) {
         enemy.push *= kMostPush / magnitude;
     }
@@ -632,17 +669,17 @@ void Enemies::react(Enemy& enemy) { // NOLINT(readability-convert-member-functio
 
 // ---- minds -------------------------------------------------------------------------------
 
-f32 Enemies::turnToward(const Enemy& enemy, f32 wanted, s32 ticks) {
+float Enemies::turnToward(const Enemy& enemy, float wanted, std::int32_t ticks) {
     const EnemyAction action = enemy.animator.action();
     if (action >= EnemyAction::HitReact1 || action == EnemyAction::Start) {
         return enemy.yaw;
     }
-    f32 rate = enemyKind(enemy.kind).turnRate;
+    float rate = enemyKind(enemy.kind).turnRate;
     if (action == EnemyAction::Run) {
         rate *= 3.0f;
     }
-    const f32 step = rate * static_cast<f32>(ticks);
-    const f32 d = wrapAngle(wanted - enemy.yaw);
+    const float step = rate * static_cast<float>(ticks);
+    const float d = wrapAngle(wanted - enemy.yaw);
     if (std::abs(d) <= step) {
         return wrapAngle(wanted);
     }
@@ -654,7 +691,7 @@ f32 Enemies::turnToward(const Enemy& enemy, f32 wanted, s32 ticks) {
  * wall (a body already against one may still slide along it), off the floor, in a box or
  * in another. */
 bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obstacle> obstacles,
-                         s32 self) const {
+                         std::int32_t self) const {
     if (m_collision != nullptr) {
         const Vec3 pushed = m_collision->resolveWalls(at, kFootClearance, at.y + kFootClearance,
                                                       at.y + enemy.height - kFootClearance);
@@ -670,8 +707,8 @@ bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obs
             return false;
         }
     }
-    for (s32 i = 0; i < m_most; ++i) {
-        const Enemy& other = m_enemies[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        const Enemy& other = m_enemies[static_cast<std::size_t>(i)];
         if (i == self || other.state == State::Inactive) {
             continue;
         }
@@ -684,7 +721,8 @@ bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obs
 }
 
 /** What the mind is given to go on this tick. */
-MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players,
+MindSense Enemies::sense(const Enemy& enemy, std::int32_t slot, std::int32_t ticks,
+                         std::span<const EnemyView> players,
                          std::span<const Obstacle> obstacles) const {
     MindSense sense;
     sense.position = enemy.position;
@@ -714,14 +752,14 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks, std::span<cons
     if (const EnemyView* view = viewOf(players, enemy.target); view != nullptr) {
         sense.targetVertical = view->position.y - enemy.position.y;
     }
-    const f32 reach = paceOf(enemy.kind) * static_cast<f32>(ticks);
-    sense.clear = [this, &enemy, obstacles, slot, reach](f32 heading) {
+    const float reach = paceOf(enemy.kind) * static_cast<float>(ticks);
+    sense.clear = [this, &enemy, obstacles, slot, reach](float heading) {
         Vec3 probe = enemy.position;
         probe.x += reach * std::sin(heading);
         probe.z += reach * std::cos(heading);
         return probeClear(enemy, probe, obstacles, slot);
     };
-    sense.open = [this, &enemy, reach](f32 heading) {
+    sense.open = [this, &enemy, reach](float heading) {
         if (m_collision == nullptr) {
             return true;
         }
@@ -731,20 +769,21 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks, std::span<cons
         const Vec3 pushed = m_collision->resolveWalls(probe, enemy.radius * kWallRadiusScale,
                                                       probe.y + kFootClearance,
                                                       probe.y + enemy.height - kFootClearance);
-        return flatDistance(pushed, probe) <= 0.01f && m_collision->floorAt(probe, kStepUp, kDrop).has_value();
+        return flatDistance(pushed, probe) <= 0.01f &&
+               m_collision->floorAt(probe, kStepUp, kDrop).has_value();
     };
     return sense;
 }
 
 /** The mind decides and the body carries it out: a step along the heading at the pace, a
  * turn toward it, the action asked of the animator, and perhaps a change of mind. */
-void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players,
-                    std::span<const Obstacle> obstacles) {
+void Enemies::think(Enemy& enemy, std::int32_t slot, std::int32_t ticks,
+                    std::span<const EnemyView> players, std::span<const Obstacle> obstacles) {
     if (enemy.stunTicks > 0) {
         enemy.stunTicks -= ticks;
     }
-    const MindIntent intent = enemyMindOf(enemy.algorithm).think(
-        enemy.mind, sense(enemy, slot, ticks, players, obstacles));
+    const MindIntent intent = enemyMindOf(enemy.algorithm)
+                                  .think(enemy.mind, sense(enemy, slot, ticks, players, obstacles));
     if (intent.become.has_value()) {
         enemy.algorithm = *intent.become;
     }
@@ -780,15 +819,16 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
         enemy.yaw = turnToward(enemy, intent.heading, ticks);
     }
     const Vec3 step = Vec3{std::sin(intent.heading), 0.0f, std::cos(intent.heading)} *
-                      (paceOf(enemy.kind) * intent.pace * static_cast<f32>(ticks));
-    move(enemy, slot, ticks, static_cast<f32>(ticks) / static_cast<f32>(kTicksPerSecond), step,
+                      (paceOf(enemy.kind) * intent.pace * static_cast<float>(ticks));
+    move(enemy, slot, ticks, static_cast<float>(ticks) / static_cast<float>(kTicksPerSecond), step,
          players, obstacles);
 }
 
 // ---- bodies ------------------------------------------------------------------------------
 
-void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
-                   std::span<const EnemyView> players, std::span<const Obstacle> obstacles) {
+void Enemies::move(Enemy& enemy, std::int32_t slot, std::int32_t ticks, float seconds,
+                   const Vec3& step, std::span<const EnemyView> players,
+                   std::span<const Obstacle> obstacles) {
     Vec3 translation = step;
     // Nothing of its own while stunned, reacting or swinging (a running attack runs on); a
     // push moves it regardless.
@@ -832,7 +872,7 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         return;
     }
     if (m_collision != nullptr && glm::length(translation) > 0.0f) {
-        const f32 wallRadius = enemy.radius * kWallRadiusScale;
+        const float wallRadius = enemy.radius * kWallRadiusScale;
         Vec3 target = m_collision->resolveWalls(to, wallRadius, to.y + kFootClearance,
                                                 to.y + enemy.height - kFootClearance);
         const bool wall = flatDistance(target, to) > 0.001f;
@@ -845,7 +885,7 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         target.y = floor->y;
         if (wall) {
             // A slide along the wall that still gets somewhere is no bump; a dead stop is.
-            const f32 kept = flatDistance(target, from);
+            const float kept = flatDistance(target, from);
             if (kept < kStopped) {
                 enemy.bumpedWall = true;
                 enemy.blocked = true;
@@ -864,8 +904,8 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         }
     }
     // Against another it stops, unless it is being thrown, when half the push carries over.
-    for (s32 i = 0; i < m_most; ++i) {
-        Enemy& other = m_enemies[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        Enemy& other = m_enemies[static_cast<std::size_t>(i)];
         if (i == slot || other.state == State::Inactive || other.state == State::Asleep) {
             continue;
         }
@@ -888,20 +928,20 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
 
 // ---- being hit ---------------------------------------------------------------------------
 
-void Enemies::hurt(s32 id, const EnemyHit& hit) {
+void Enemies::hurt(std::int32_t id, const EnemyHit& hit) {
     if (id < 0 || id >= m_most) {
         return;
     }
-    Enemy& enemy = m_enemies[static_cast<usize>(id)];
+    Enemy& enemy = m_enemies[static_cast<std::size_t>(id)];
     if (enemy.state != State::Active && enemy.state != State::Asleep) {
         return;
     }
     const EnemyKind& kind = enemyKind(enemy.kind);
-    f32 amount = hit.damage;
+    float amount = hit.damage;
     // A character under the level the place is meant for hits a hundredth softer a level;
     // one over it a tenth harder. Armour comes off, but a character always gets a point in.
     if (hit.player >= 0 && m_scales.playerLevel > 0.0f) {
-        const f32 gap = static_cast<f32>(hit.level) - m_scales.playerLevel;
+        const float gap = static_cast<float>(hit.level) - m_scales.playerLevel;
         amount *= gap < 0.0f ? 1.0f + 0.01f * gap : 1.0f + 0.1f * gap;
     }
     amount = std::max(amount - kind.armor, hit.player >= 0 ? 1.0f : 0.0f);
@@ -912,7 +952,7 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
     enemy.health -= amount;
     enemy.hurtPending += amount;
     enemy.hurtFlags |= hit.flags;
-    const f32 length = glm::length(hit.direction);
+    const float length = glm::length(hit.direction);
     if (length > 0.001f) {
         enemy.hurtDirection = hit.direction / length;
     }
@@ -939,8 +979,8 @@ void Enemies::die(Enemy& enemy) {
 }
 
 /** A shot or a lob at the player it is after, from its eyes to their middle. */
-void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players, EnemyMissiles& missiles,
-                    f32 speedScale) {
+void Enemies::shoot(Enemy& enemy, std::int32_t slot, std::span<const EnemyView> players,
+                    EnemyMissiles& missiles, float speedScale) {
     Stock* stock = stockOf(enemy.kind);
     if (stock == nullptr) {
         return;
@@ -953,9 +993,10 @@ void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players, 
     }
     // The slot its way throws from, and what the kind keeps there; the medium kinds' arrow
     // when it keeps nothing.
-    const s32 which = enemy.variant == kBomberStrength ? EnemyMissileKind::kBomb
-                                                         : missileSlotOfWay(enemy.algorithm);
-    const EnemyMissileKind what = enemyMissileOf(enemy.kind, which).value_or(EnemyMissileKind::arrow());
+    const std::int32_t which = enemy.variant == kBomberStrength ? EnemyMissileKind::kBomb
+                                                                : missileSlotOfWay(enemy.algorithm);
+    const EnemyMissileKind what =
+        enemyMissileOf(enemy.kind, which).value_or(EnemyMissileKind::arrow());
     const TreeModel* model = which == EnemyMissileKind::kBomb ? &stock->bomb : &stock->arrow;
     missiles.launch(what, from, aim, speedScale, model->bound() ? model : nullptr, slot);
 }
@@ -966,16 +1007,16 @@ const TreeModel* Enemies::bodyOf(const Enemy& enemy) {
         return nullptr;
     }
     if (enemy.variant != 0) {
-        const auto v = static_cast<usize>(enemy.variant - kArcherStrength);
+        const auto v = static_cast<std::size_t>(enemy.variant - kArcherStrength);
         if (v < stock->variantBodies.size() && stock->variantBodies[v].bound()) {
             return &stock->variantBodies[v];
         }
     }
-    s32 tier = enemy.tier;
-    while (tier > 1 && stock->trees[static_cast<usize>(tier - 1)] == nullptr) {
+    std::int32_t tier = enemy.tier;
+    while (tier > 1 && stock->trees[static_cast<std::size_t>(tier - 1)] == nullptr) {
         --tier;
     }
-    const TreeModel& body = stock->bodies[static_cast<usize>(tier - 1)];
+    const TreeModel& body = stock->bodies[static_cast<std::size_t>(tier - 1)];
     return body.bound() ? &body : nullptr;
 }
 
@@ -993,8 +1034,8 @@ std::vector<EnemyLoss> Enemies::takeLosses() {
 
 std::vector<MissileTarget> Enemies::targets() const {
     std::vector<MissileTarget> out;
-    for (s32 i = 0; i < m_most; ++i) {
-        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<std::size_t>(i)];
         if (enemy.state != State::Active && enemy.state != State::Asleep) {
             continue;
         }
@@ -1003,22 +1044,26 @@ std::vector<MissileTarget> Enemies::targets() const {
     return out;
 }
 
-std::optional<s32> Enemies::struckBy(const Vec3& from, const Vec3& to, f32 radius) const {
-    std::optional<s32> best;
-    f32 bestDistance = 0.0f;
+std::optional<std::int32_t> Enemies::struckBy(const Vec3& from, const Vec3& to,
+                                              float radius) const {
+    std::optional<std::int32_t> best;
+    float bestDistance = 0.0f;
     const Vec3 sweep = to - from;
-    const f32 length = glm::length(sweep);
-    for (s32 i = 0; i < m_most; ++i) {
-        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+    const float length = glm::length(sweep);
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<std::size_t>(i)];
         if (enemy.state != State::Active && enemy.state != State::Asleep) {
             continue;
         }
         const Vec3 centre = bodyCentre(enemy);
-        const f32 t = length > 0.001f ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f) : 0.0f;
+        const float t =
+            length > 0.001f
+                ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f)
+                : 0.0f;
         const Vec3 nearest = from + sweep * t;
         if (flatDistance(nearest, centre) <= radius + enemy.radius &&
             std::abs(nearest.y - centre.y) <= radius + enemy.reach) {
-            const f32 distance = glm::length(nearest - from);
+            const float distance = glm::length(nearest - from);
             if (!best.has_value() || distance < bestDistance) {
                 best = i;
                 bestDistance = distance;
@@ -1028,10 +1073,10 @@ std::optional<s32> Enemies::struckBy(const Vec3& from, const Vec3& to, f32 radiu
     return best;
 }
 
-std::vector<s32> Enemies::within(const Vec3& centre, f32 radius) const {
-    std::vector<s32> out;
-    for (s32 i = 0; i < m_most; ++i) {
-        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+std::vector<std::int32_t> Enemies::within(const Vec3& centre, float radius) const {
+    std::vector<std::int32_t> out;
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<std::size_t>(i)];
         if (enemy.state != State::Active && enemy.state != State::Asleep) {
             continue;
         }
@@ -1042,23 +1087,23 @@ std::vector<s32> Enemies::within(const Vec3& centre, f32 radius) const {
     return out;
 }
 
-std::vector<s32> Enemies::reachedBy(const Vec3& centre, f32 radius, f32 arc,
-                                    const Vec3& facing) const {
-    std::vector<s32> out;
-    for (s32 i = 0; i < m_most; ++i) {
-        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+std::vector<std::int32_t> Enemies::reachedBy(const Vec3& centre, float radius, float arc,
+                                             const Vec3& facing) const {
+    std::vector<std::int32_t> out;
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<std::size_t>(i)];
         if (enemy.state != State::Active && enemy.state != State::Asleep) {
             continue;
         }
         const Vec3 toward = enemy.position - centre;
-        const f32 distance = flatDistance(enemy.position, centre);
+        const float distance = flatDistance(enemy.position, centre);
         if (distance > radius + enemy.radius || centre.y > enemy.position.y + enemy.height ||
             centre.y < enemy.position.y - enemy.height) {
             continue;
         }
         if (arc < kPi && distance > 0.001f) {
-            const f32 angle = std::acos(std::clamp(
-                (toward.x * facing.x + toward.z * facing.z) / distance, -1.0f, 1.0f));
+            const float angle = std::acos(
+                std::clamp((toward.x * facing.x + toward.z * facing.z) / distance, -1.0f, 1.0f));
             if (angle > arc) {
                 continue;
             }
@@ -1071,8 +1116,8 @@ std::vector<s32> Enemies::reachedBy(const Vec3& centre, f32 radius, f32 arc,
 // ---- looking -----------------------------------------------------------------------------
 
 void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) {
-    for (s32 i = 0; i < m_most; ++i) {
-        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<std::size_t>(i)];
         if (enemy.state == State::Inactive || !enemy.animator.bound()) {
             continue;
         }
@@ -1080,52 +1125,78 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         if (found == nullptr) {
             continue;
         }
-        TreeModel& body = *const_cast<TreeModel*>(found); // NOLINT(cppcoreguidelines-pro-type-const-cast)
+        TreeModel& body =
+            *const_cast<TreeModel*>(found); // NOLINT(cppcoreguidelines-pro-type-const-cast)
         // The flip-book kinds change their whole mesh with the frame; the rest are posed.
         const AnimationPlayer& player = enemy.animator.player();
-        body.setFrame(player.sequence(), static_cast<s32>(std::lround(player.frame())));
-        const Mat4 model =
-            glm::rotate(glm::translate(Mat4{1.0f}, enemy.position), enemy.yaw, Vec3{0.0f, 1.0f, 0.0f});
+        body.setFrame(player.sequence(), static_cast<std::int32_t>(std::lround(player.frame())));
+        const Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, enemy.position), enemy.yaw,
+                                       Vec3{0.0f, 1.0f, 0.0f});
         body.draw(device, clip, model, lighting, enemy.animator.pose().matrices());
     }
 }
 
-bool Enemies::alive(s32 id) const {
+bool Enemies::alive(std::int32_t id) const {
     return id >= 0 && id < m_most &&
-           (m_enemies[static_cast<usize>(id)].state == State::Active ||
-            m_enemies[static_cast<usize>(id)].state == State::Asleep);
+           (m_enemies[static_cast<std::size_t>(id)].state == State::Active ||
+            m_enemies[static_cast<std::size_t>(id)].state == State::Asleep);
 }
 
-bool Enemies::dying(s32 id) const {
-    return id >= 0 && id < m_most && m_enemies[static_cast<usize>(id)].state == State::Dying;
+bool Enemies::dying(std::int32_t id) const {
+    return id >= 0 && id < m_most && m_enemies[static_cast<std::size_t>(id)].state == State::Dying;
 }
 
-usize Enemies::count() const {
-    usize n = 0;
-    for (s32 i = 0; i < m_most; ++i) {
-        n += m_enemies[static_cast<usize>(i)].state != State::Inactive ? 1 : 0;
+std::size_t Enemies::count() const {
+    std::size_t n = 0;
+    for (std::int32_t i = 0; i < m_most; ++i) {
+        n += m_enemies[static_cast<std::size_t>(i)].state != State::Inactive ? 1 : 0;
     }
     return n;
 }
 
-s32 Enemies::kindOf(s32 id) const { return m_enemies[static_cast<usize>(id)].kind; }
-s32 Enemies::tierOf(s32 id) const { return m_enemies[static_cast<usize>(id)].tier; }
-s32 Enemies::generatorOf(s32 id) const { return m_enemies[static_cast<usize>(id)].generator; }
-f32 Enemies::healthOf(s32 id) const { return m_enemies[static_cast<usize>(id)].health; }
-const Vec3& Enemies::positionOf(s32 id) const { return m_enemies[static_cast<usize>(id)].position; }
-f32 Enemies::yawOf(s32 id) const { return m_enemies[static_cast<usize>(id)].yaw; }
-f32 Enemies::radiusOf(s32 id) const { return m_enemies[static_cast<usize>(id)].radius; }
-f32 Enemies::heightOf(s32 id) const { return m_enemies[static_cast<usize>(id)].height; }
-s32 Enemies::targetOf(s32 id) const { return m_enemies[static_cast<usize>(id)].target; }
-s32 Enemies::algorithmOf(s32 id) const { return m_enemies[static_cast<usize>(id)].algorithm; }
-s32 Enemies::pushCountOf(s32 id) const { return m_enemies[static_cast<usize>(id)].pushes; }
-s32 Enemies::variantOf(s32 id) const { return m_enemies[static_cast<usize>(id)].variant; }
+std::int32_t Enemies::kindOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].kind;
+}
+std::int32_t Enemies::tierOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].tier;
+}
+std::int32_t Enemies::generatorOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].generator;
+}
+float Enemies::healthOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].health;
+}
+const Vec3& Enemies::positionOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].position;
+}
+float Enemies::yawOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].yaw;
+}
+float Enemies::radiusOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].radius;
+}
+float Enemies::heightOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].height;
+}
+std::int32_t Enemies::targetOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].target;
+}
+std::int32_t Enemies::algorithmOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].algorithm;
+}
+std::int32_t Enemies::pushCountOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].pushes;
+}
+std::int32_t Enemies::variantOf(std::int32_t id) const {
+    return m_enemies[static_cast<std::size_t>(id)].variant;
+}
 
-const EnemyAnimator* Enemies::animatorOf(s32 id) const {
-    if (id < 0 || id >= m_most || m_enemies[static_cast<usize>(id)].state == State::Inactive) {
+const EnemyAnimator* Enemies::animatorOf(std::int32_t id) const {
+    if (id < 0 || id >= m_most ||
+        m_enemies[static_cast<std::size_t>(id)].state == State::Inactive) {
         return nullptr;
     }
-    return &m_enemies[static_cast<usize>(id)].animator;
+    return &m_enemies[static_cast<std::size_t>(id)].animator;
 }
 
 } // namespace gdl::game

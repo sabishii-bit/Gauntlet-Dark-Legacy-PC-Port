@@ -17,7 +17,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr float kStep = 1.0f / 30.0f;
 
 TEST_CASE("Sumner stands at his lookout, cycles his idles and gestures on request",
           "[game][world][unpacked]") {
@@ -38,7 +38,7 @@ TEST_CASE("Sumner stands at his lookout, cycles his idles and gestures on reques
     REQUIRE(sumner.position().x == Approx(2.97f).margin(0.01f));
     REQUIRE(sumner.position().z == Approx(-53.47f).margin(0.01f));
     REQUIRE(sumner.yaw() == Approx(-3.0954f + kPi).margin(0.001f)); // turned to the party
-    REQUIRE(sumner.sequence() == 0); // the stance
+    REQUIRE(sumner.sequence() == 0);                                // the stance
     REQUIRE(sumner.index() == 0);
     REQUIRE_FALSE(sumner.gesturing());
 

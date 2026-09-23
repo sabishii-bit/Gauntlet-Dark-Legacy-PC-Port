@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -10,7 +12,6 @@
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/TextureSet.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
@@ -60,16 +61,16 @@ struct DroppedItem {
 struct PlayOptions {
     std::optional<Vec3> position;   ///< where the party stands instead of the entrance (the
                                     ///< start camera then does not ride in from its marker)
-    std::optional<f32> yaw;         ///< the way it faces, instead of the entrance's
+    std::optional<float> yaw;       ///< the way it faces, instead of the entrance's
     std::optional<bool> welcome;    ///< whether Sumner welcomes it, else by its experience
     std::vector<DroppedItem> items; ///< dropped about the level once it opens
-    u32 arrivalWorld = 0;           ///< the realm the party comes from, which picks the start point
+    std::uint32_t arrivalWorld = 0; ///< the realm the party comes from, which picks the start point
                                     ///< it arrives at (none: the level's own entrance)
     bool arriving = false;          ///< the party comes through a portal: the transition picture is
                                     ///< up as the level opens, and clears
 };
 
-enum class PlayOutcome : u8 {
+enum class PlayOutcome : std::uint8_t {
     Running,
     Leave,  ///< back to the title
     Travel, ///< through an exit portal to destination()
@@ -104,23 +105,23 @@ enum class PlayOutcome : u8 {
  */
 class PlayScene {
 public:
-    static constexpr s32 kPlayerCount = 4;
-    static constexpr f32 kSpawnSpacing = 2.0f; ///< between party members at the entrance
-    static constexpr u32 kCrystalCamera = 198; ///< the trigger camera the welcome cuts to
-    static constexpr f32 kBeamRadius = 12.0f;  ///< how near Sumner his beam of light comes on
-    static constexpr s32 kSpawnTicks = LevelArrivalPresentation::kSpawnTicks;
+    static constexpr std::int32_t kPlayerCount = 4;
+    static constexpr float kSpawnSpacing = 2.0f;         ///< between party members at the entrance
+    static constexpr std::uint32_t kCrystalCamera = 198; ///< the trigger camera the welcome cuts to
+    static constexpr float kBeamRadius = 12.0f; ///< how near Sumner his beam of light comes on
+    static constexpr std::int32_t kSpawnTicks = LevelArrivalPresentation::kSpawnTicks;
     /** The voice that announces each realm's gate opening, by realm. */
     static constexpr std::array<std::string_view, 9> kUnlockVoices{
         "",           "S_CRYS4TWN", "S_CRYS4MNT", "S_CRYS4CST", "S_CRYS4SKY",
         "S_CRYS4FOR", "S_CRYS4DES", "S_CRYS4ICE", "S_CRYS4DRM"};
-    static constexpr s32 kBeamFadeTicks = 180; ///< and how long it takes to come up or go
-    static constexpr s32 kCrystalTicks = 300;  ///< fifty frames of six ticks
-    static constexpr s32 kSumnerSpot = 240;    ///< the id of the trigger before him
-    static constexpr f32 kGreetingSeconds = SumnerVisit::kGreetingSeconds;
+    static constexpr std::int32_t kBeamFadeTicks = 180; ///< and how long it takes to come up or go
+    static constexpr std::int32_t kCrystalTicks = 300;  ///< fifty frames of six ticks
+    static constexpr std::int32_t kSumnerSpot = 240;    ///< the id of the trigger before him
+    static constexpr float kGreetingSeconds = SumnerVisit::kGreetingSeconds;
     using Inputs = std::array<PlayInput, kPlayerCount>;
 
     /** Where a new party's welcome has got to. */
-    enum class Intro : u8 { None, Scroll, Crystal, Done };
+    enum class Intro : std::uint8_t { None, Scroll, Crystal, Done };
 
     /** Brings the party into `world` (loading it when needed); false when the level or the
      * status boxes are not unpacked. */
@@ -129,14 +130,15 @@ public:
     void close();
     bool isOpen() const { return m_open; }
 
-    PlayOutcome update(f64 deltaSeconds, const Inputs& inputs);
-    void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);
+    PlayOutcome update(double deltaSeconds, const Inputs& inputs);
+    void render(RenderDevice& device, const Mat4& frameProjection, float frameWidth,
+                float frameHeight);
 
-    usize actorCount() const { return m_players.size(); }
+    std::size_t actorCount() const { return m_players.size(); }
     /** The character driven by `player`, or null when that player is not in the party. */
-    const PlayerActor* actor(s32 player) const;
+    const PlayerActor* actor(std::int32_t player) const;
     /** The body animation of `player`'s character, or null without a figure for it. */
-    const PlayerAnimator* animator(s32 player) const;
+    const PlayerAnimator* animator(std::int32_t player) const;
     const TowerCamera& camera() const { return m_camera; }
     /** The camera the scene is seen through: the start camera while it holds and rides in,
      * the crystals during the welcome's cut, else the follow camera. */
@@ -181,7 +183,7 @@ public:
     /** The wizard's visit once the boss has fallen. */
     const BossVictory& victory() const { return m_bossSequence.victory().state(); }
     /** The archive folder a character's figure was loaded from, for tests. */
-    std::optional<std::filesystem::path> figureDirectory(usize index) const {
+    std::optional<std::filesystem::path> figureDirectory(std::size_t index) const {
         return index < m_players.size() && m_players[index].figure != nullptr
                    ? std::optional<std::filesystem::path>(m_players[index].figure->directory())
                    : std::nullopt;
@@ -191,19 +193,19 @@ public:
     const AmbientDimmer& dimmer() const { return m_dimmer; }
     /** Gives `player`'s character experience won in play, which also feeds its turbo meter
      * (unless it is in the middle of a turbo move), as a kill does in the original. */
-    void awardExperience(s32 player, s32 amount, bool kill = true);
+    void awardExperience(std::int32_t player, std::int32_t amount, bool kill = true);
     /** Harms `player`'s character as a blow, a burn, a piercing or gas would, for tests. */
-    void harm(s32 player, f32 damage, HurtKind kind);
+    void harm(std::int32_t player, float damage, HurtKind kind);
     /** What `player`'s status box shows. */
-    StatusBoxView status(s32 player) const { return PartyHud::status(player, m_players); }
+    StatusBoxView status(std::int32_t player) const { return PartyHud::status(player, m_players); }
     /** The turbo meter of `player`'s character, or null when that player is not in. */
-    const TurboMeter* turboMeter(s32 player) const;
+    const TurboMeter* turboMeter(std::int32_t player) const;
     /** Whether `player`'s character has fallen (dying or gone to the tower). */
-    bool fallen(s32 player) const;
+    bool fallen(std::int32_t player) const;
     /** Hurts `player`'s character, as anything in the level does. */
-    void hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed = false);
+    void hurtPlayer(std::int32_t player, float damage, HurtKind kind, bool directed = false);
     /** A blast at `position`: hurts and breaks what is within `radius`. */
-    void blast(const Vec3& position, f32 radius, f32 damage);
+    void blast(const Vec3& position, float radius, float damage);
     const TransitionScreen& transition() const { return m_transition; }
     /** Whether the party has gone through a portal and the picture is coming up over it. */
     bool leaving() const { return m_leaving; }
@@ -213,22 +215,22 @@ public:
     std::vector<PartyMember> party() const;
     const EffectTrees& effects() const { return m_effects; }
     /** The powerup selector over `player`'s box. */
-    const PowerupSelector& selector(s32 player) const { return m_hud.selector(player); }
+    const PowerupSelector& selector(std::int32_t player) const { return m_hud.selector(player); }
     /** How large a character is drawn: an ogre, one grown by a powerup, one of level 99. */
-    static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
+    static float bodyScale(const CharacterSave& save, const PowerupEffects& effects);
     const SumnerHints& hintTexts() const { return m_sumnerVisit.texts(); }
     const PickupHud& pickups() const { return m_hud.pickups(); }
     const AmbientSounds& ambience() const { return m_audio.ambience(); }
     /** How far Sumner's beam of light has come up, 0 to 1. */
-    f32 beamAlpha() const { return m_beamAlpha; }
+    float beamAlpha() const { return m_beamAlpha; }
     /** Whether the party is still materialising: held under the level's title until the start
      * camera has ridden in, or for the effect's life when there is no start camera. */
     bool spawning() const { return m_arrival.active(); }
-    usize spawnEffectCount() const { return m_arrival.effectCount(); }
+    std::size_t spawnEffectCount() const { return m_arrival.effectCount(); }
     /** The folder a character's figure came from, when it loaded. */
-    std::optional<std::filesystem::path> figureDirectory(s32 player) const;
+    std::optional<std::filesystem::path> figureDirectory(std::int32_t player) const;
     /** Whether a character's figure carries its weapon. */
-    bool weaponHeld(s32 player) const;
+    bool weaponHeld(std::int32_t player) const;
     /** The folder holding a character's figure at their level: the costume tier of ten
      * levels (`BLU00` for levels 1 to 9, `BLU10` for 10 to 19, and so on) when it is
      * unpacked, else the untiered costume. */
@@ -242,46 +244,48 @@ private:
     static bool freshParty(std::span<const PartyMember> party);
     void beginIntro(RenderDevice& device);
     void startCrystalCut();
-    u32 acceptedPlayers(const Inputs& inputs) const;
+    std::uint32_t acceptedPlayers(const Inputs& inputs) const;
     std::vector<TriggerVisitor> visitors() const;
     void collectItems();
-    bool leaveBy(usize portal);
-    void updateFixtures(s32 ticks, f32 seconds);
+    bool leaveBy(std::size_t portal);
+    void updateFixtures(std::int32_t ticks, float seconds);
     LevelFixtures::Events fixtureEvents();
     PlayerAttacks::Targets attackTargets();
-    void hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage);
-    void hurt(usize index, f32 damage, HurtKind kind, bool directed = false);
-    void updateEnemies(s32 ticks, f32 seconds);
-    void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer);
-    void strikeGenerator(s32 id, f32 power, s32 byPlayer);
-    void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                       std::optional<Vec3> where = std::nullopt, bool close = false);
-    void updateVictory(s32 ticks, f32 seconds);
+    void hurtOpponentsByBlast(const Vec3& position, float radius, float damage);
+    void hurt(std::size_t index, float damage, HurtKind kind, bool directed = false);
+    void updateEnemies(std::int32_t ticks, float seconds);
+    void strikeEnemy(std::int32_t id, float power, std::uint32_t flags, const Vec3& direction,
+                     std::int32_t byPlayer);
+    void strikeGenerator(std::int32_t id, float power, std::int32_t byPlayer);
+    void strikeCritter(std::int32_t id, float power, std::uint32_t flags, const Vec3& direction,
+                       std::int32_t byPlayer, std::optional<Vec3> where = std::nullopt,
+                       bool close = false);
+    void updateVictory(std::int32_t ticks, float seconds);
     void settleBlasts();
-    bool postHelp(s32 id, usize index, s32 number = -1);
+    bool postHelp(std::int32_t id, std::size_t index, std::int32_t number = -1);
     /** Answers the party's levels gained since last looked: the fanfare, a hundred health,
      * the message, the costume of a new tier, and the class's word at a milestone. */
     void updateLevels();
-    static constexpr f32 kLevelUpHealth = 100.0f;
-    void sayWithName(usize index, std::string_view line);
-    void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
-    bool isDown(usize index) const {
+    static constexpr float kLevelUpHealth = 100.0f;
+    void sayWithName(std::size_t index, std::string_view line);
+    void launchWeapon(std::size_t index, const Vec3& direction, float scale, bool spreads);
+    bool isDown(std::size_t index) const {
         return index < m_players.size() && m_players[index].life != PlayerLife::Standing;
     }
     /** Where the level finds a character: nowhere once it has fallen. */
-    Vec3 presenceOf(usize index) const;
-    std::optional<s32> takePickup(const Pickup& pickup);
-    void shareRune(s32 rune);
+    Vec3 presenceOf(std::size_t index) const;
+    std::optional<std::int32_t> takePickup(const Pickup& pickup);
+    void shareRune(std::int32_t rune);
     void updateAmbience();
-    void updateBeam(s32 ticks);
+    void updateBeam(std::int32_t ticks);
     void beginSpawn(RenderDevice& device, bool ride);
     bool anyButton(const Inputs& inputs) const;
-    bool openMessage(std::string_view name, usize page);
-    void announceUnlock(s32 realm);
+    bool openMessage(std::string_view name, std::size_t page);
+    void announceUnlock(std::int32_t realm);
     void handleTriggerEvents();
     const PlayerActor* visitorOfSumner() const;
-    void updateSumnerVisit(f32 seconds);
-    void updateHints(const Inputs& inputs, s32 ticks);
+    void updateSumnerVisit(float seconds);
+    void updateHints(const Inputs& inputs, std::int32_t ticks);
     CameraView cameraView() const;
 
     bool m_open = false;
@@ -308,16 +312,17 @@ private:
     LevelWatch m_levels;
     TransitionScreen m_transition;
     LevelRef m_destination;
-    s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
+    std::int32_t m_refusedPortal =
+        -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
     BossSequence m_bossSequence;
-    f32 m_playSeconds = 0.0f;
-    f32 m_fallenSeconds = 0.0f; ///< since the last of the party fell
+    float m_playSeconds = 0.0f;
+    float m_fallenSeconds = 0.0f; ///< since the last of the party fell
     SumnerVisit m_sumnerVisit;
     WorldCamera m_cutCamera;
-    s32 m_cutTicks = 0;
-    s32 m_beam = -1; ///< the level object that is Sumner's beam of light
-    f32 m_beamAlpha = 0.0f;
+    std::int32_t m_cutTicks = 0;
+    std::int32_t m_beam = -1; ///< the level object that is Sumner's beam of light
+    float m_beamAlpha = 0.0f;
 
     ItemArchive m_weapons;              ///< shared weapon and effect assets
     LevelArrivalPresentation m_arrival; ///< borrows the weapons archive

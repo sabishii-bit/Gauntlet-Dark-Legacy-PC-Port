@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 namespace gdl {
 
@@ -20,7 +22,7 @@ bool playable(const SoundSequence& sequence) {
 
 } // namespace
 
-SoundHandle SoundPlayer::play(const SoundSequence& sequence, f32 volume, SoundCategory category) {
+SoundHandle SoundPlayer::play(const SoundSequence& sequence, float volume, SoundCategory category) {
     if (!playable(sequence)) {
         return kNoSound;
     }
@@ -28,7 +30,7 @@ SoundHandle SoundPlayer::play(const SoundSequence& sequence, f32 volume, SoundCa
 }
 
 SoundHandle SoundPlayer::playAfter(SoundHandle previous, const SoundSequence& sequence,
-                                   f32 volume, SoundCategory category) {
+                                   float volume, SoundCategory category) {
     if (!isPlaying(previous)) {
         return play(sequence, volume, category);
     }
@@ -39,7 +41,7 @@ SoundHandle SoundPlayer::playAfter(SoundHandle previous, const SoundSequence& se
     return m_nextHandle++;
 }
 
-SoundHandle SoundPlayer::playStream(std::shared_ptr<StreamSource> source, bool loop, f32 volume,
+SoundHandle SoundPlayer::playStream(std::shared_ptr<StreamSource> source, bool loop, float volume,
                                     SoundCategory category) {
     if (source == nullptr || source->desc().sampleRate == 0 || source->desc().channels == 0) {
         return kNoSound;
@@ -57,8 +59,8 @@ SoundHandle SoundPlayer::playStream(std::shared_ptr<StreamSource> source, bool l
     return m_voices.back().handle;
 }
 
-SoundHandle SoundPlayer::start(const SoundSequence& sequence, f32 volume,
-                               SoundCategory category, SoundHandle handle) {
+SoundHandle SoundPlayer::start(const SoundSequence& sequence, float volume, SoundCategory category,
+                               SoundHandle handle) {
     Voice voice;
     voice.handle = handle;
     voice.sequence = sequence;
@@ -72,22 +74,22 @@ SoundHandle SoundPlayer::start(const SoundSequence& sequence, f32 volume,
     return m_voices.back().handle;
 }
 
-void SoundPlayer::setMasterVolume(f32 volume) {
+void SoundPlayer::setMasterVolume(float volume) {
     m_masterVolume = std::clamp(volume, 0.0f, 1.0f);
     for (Voice& voice : m_voices) {
         applyVolume(voice);
     }
 }
 
-void SoundPlayer::setCategoryVolume(SoundCategory category, f32 volume) {
-    m_categoryVolumes[static_cast<usize>(category)] = std::clamp(volume, 0.0f, 1.0f);
+void SoundPlayer::setCategoryVolume(SoundCategory category, float volume) {
+    m_categoryVolumes[static_cast<std::size_t>(category)] = std::clamp(volume, 0.0f, 1.0f);
     for (Voice& voice : m_voices) {
         applyVolume(voice);
     }
 }
 
-f32 SoundPlayer::categoryVolume(SoundCategory category) const {
-    return m_categoryVolumes[static_cast<usize>(category)];
+float SoundPlayer::categoryVolume(SoundCategory category) const {
+    return m_categoryVolumes[static_cast<std::size_t>(category)];
 }
 
 void SoundPlayer::applyVolume(Voice& voice) const {
@@ -95,7 +97,7 @@ void SoundPlayer::applyVolume(Voice& voice) const {
         std::clamp(m_masterVolume * categoryVolume(voice.category) * voice.volume, 0.0f, 1.0f));
 }
 
-void SoundPlayer::setVolume(SoundHandle handle, f32 volume) {
+void SoundPlayer::setVolume(SoundHandle handle, float volume) {
     for (Voice& voice : m_voices) {
         if (voice.handle == handle) {
             voice.volume = std::clamp(volume, 0.0f, 1.0f) * voice.sequence.volume;
@@ -109,7 +111,7 @@ void SoundPlayer::setVolume(SoundHandle handle, f32 volume) {
     }
 }
 
-void SoundPlayer::setPan(SoundHandle handle, f32 pan) {
+void SoundPlayer::setPan(SoundHandle handle, float pan) {
     for (const Voice& voice : m_voices) {
         if (voice.handle == handle) {
             voice.stream->setPan(pan);
@@ -140,10 +142,10 @@ void SoundPlayer::stopAll() {
 bool SoundPlayer::isPlaying(SoundHandle handle) const {
     return std::ranges::any_of(m_voices,
                                [handle](const Voice& v) {
-                                   return v.handle == handle && !v.stopped &&
-                                          !v.stream->drained();
+                                   return v.handle == handle && !v.stopped && !v.stream->drained();
                                }) ||
-           std::ranges::any_of(m_pending, [handle](const Pending& p) { return p.handle == handle; });
+           std::ranges::any_of(m_pending,
+                               [handle](const Pending& p) { return p.handle == handle; });
 }
 
 void SoundPlayer::update() {
@@ -166,7 +168,7 @@ void SoundPlayer::update() {
 
 void SoundPlayer::feedSource(Voice& voice) {
     const AudioStreamDesc desc = voice.source->desc();
-    const auto pieceFrames = static_cast<usize>(desc.sampleRate / 2);
+    const auto pieceFrames = static_cast<std::size_t>(desc.sampleRate / 2);
     while (!voice.finished && voice.stream->queuedSeconds() < kLookaheadSeconds) {
         m_scratch.clear();
         bool more = voice.source->read(m_scratch, pieceFrames);
@@ -195,13 +197,13 @@ void SoundPlayer::feed(Voice& voice) {
             voice.finished = true;
             break;
         }
-        const usize current = voice.nextStep;
+        const std::size_t current = voice.nextStep;
         const SoundSequenceStep& step = steps[current];
         if (step.clip != nullptr) {
             pushClip(*voice.stream, *step.clip);
         }
         if (step.loopBack) {
-            usize target = current;
+            std::size_t target = current;
             while (target > 0 && !steps[target].loopStart) {
                 --target;
             }
@@ -223,19 +225,20 @@ void SoundPlayer::pushClip(AudioStream& stream, const SoundClip& clip) {
         return;
     }
     // Different rate or layout: resample linearly and fold the channels to the stream's.
-    const usize frames = clip.frames();
-    const auto outFrames = static_cast<usize>(std::llround(
-        static_cast<f64>(frames) * desc.sampleRate / std::max<u32>(clip.sampleRate, 1)));
-    std::vector<f32> out(outFrames * desc.channels);
-    for (usize i = 0; i < outFrames; ++i) {
-        const f64 source = static_cast<f64>(i) * clip.sampleRate / desc.sampleRate;
-        const auto index = std::min(frames - 1, static_cast<usize>(source));
+    const std::size_t frames = clip.frames();
+    const auto outFrames =
+        static_cast<std::size_t>(std::llround(static_cast<double>(frames) * desc.sampleRate /
+                                              std::max<std::uint32_t>(clip.sampleRate, 1)));
+    std::vector<float> out(outFrames * desc.channels);
+    for (std::size_t i = 0; i < outFrames; ++i) {
+        const double source = static_cast<double>(i) * clip.sampleRate / desc.sampleRate;
+        const auto index = std::min(frames - 1, static_cast<std::size_t>(source));
         const auto next = std::min(frames - 1, index + 1);
-        const auto t = static_cast<f32>(source - static_cast<f64>(index));
-        for (u32 c = 0; c < desc.channels; ++c) {
-            const u32 sourceChannel = std::min(c, clip.channels - 1);
-            const f32 a = clip.samples[index * clip.channels + sourceChannel];
-            const f32 b = clip.samples[next * clip.channels + sourceChannel];
+        const auto t = static_cast<float>(source - static_cast<double>(index));
+        for (std::uint32_t c = 0; c < desc.channels; ++c) {
+            const std::uint32_t sourceChannel = std::min(c, clip.channels - 1);
+            const float a = clip.samples[index * clip.channels + sourceChannel];
+            const float b = clip.samples[next * clip.channels + sourceChannel];
             out[i * desc.channels + c] = a + (b - a) * t;
         }
     }

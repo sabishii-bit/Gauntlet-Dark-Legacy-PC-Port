@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,18 +12,19 @@ namespace {
 using namespace gdl;
 using Catch::Matchers::WithinAbs;
 
-void putBigU32(std::vector<u8>& out, u32 value) {
-    out.push_back(static_cast<u8>(value >> 24U));
-    out.push_back(static_cast<u8>((value >> 16U) & 0xFFU));
-    out.push_back(static_cast<u8>((value >> 8U) & 0xFFU));
-    out.push_back(static_cast<u8>(value & 0xFFU));
+void putBigU32(std::vector<std::uint8_t>& out, std::uint32_t value) {
+    out.push_back(static_cast<std::uint8_t>(value >> 24U));
+    out.push_back(static_cast<std::uint8_t>((value >> 16U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>((value >> 8U) & 0xFFU));
+    out.push_back(static_cast<std::uint8_t>(value & 0xFFU));
 }
 
 /** Header for a stream whose channels all use zero predictors. */
-std::vector<u8> header(u32 channels, u32 blockSize, u32 bodySize) {
-    std::vector<u8> bytes;
+std::vector<std::uint8_t> header(std::uint32_t channels, std::uint32_t blockSize,
+                                 std::uint32_t bodySize) {
+    std::vector<std::uint8_t> bytes;
     for (const char c : std::string_view("dhSS")) {
-        bytes.push_back(static_cast<u8>(c));
+        bytes.push_back(static_cast<std::uint8_t>(c));
     }
     putBigU32(bytes, 24);
     putBigU32(bytes, 32);
@@ -32,11 +34,11 @@ std::vector<u8> header(u32 channels, u32 blockSize, u32 bodySize) {
     putBigU32(bytes, 0xFFFFFFFFU);
     putBigU32(bytes, 0);
     for (const char c : std::string_view("dbSS")) {
-        bytes.push_back(static_cast<u8>(c));
+        bytes.push_back(static_cast<std::uint8_t>(c));
     }
     putBigU32(bytes, bodySize);
-    for (u32 c = 0; c < channels; ++c) {
-        std::vector<u8> channelHeader(96, 0);
+    for (std::uint32_t c = 0; c < channels; ++c) {
+        std::vector<std::uint8_t> channelHeader(96, 0);
         channelHeader[3] = 28; // sample count
         bytes.insert(bytes.end(), channelHeader.begin(), channelHeader.end());
     }
@@ -44,9 +46,9 @@ std::vector<u8> header(u32 channels, u32 blockSize, u32 bodySize) {
 }
 
 TEST_CASE("the header is recognised and parsed", "[codec][ads]") {
-    const std::vector<u8> bytes = header(2, 32, 64);
+    const std::vector<std::uint8_t> bytes = header(2, 32, 64);
     REQUIRE(AdsAudioDecoder::looksLikeAds(bytes));
-    REQUIRE_FALSE(AdsAudioDecoder::looksLikeAds(std::vector<u8>{1, 2, 3, 4}));
+    REQUIRE_FALSE(AdsAudioDecoder::looksLikeAds(std::vector<std::uint8_t>{1, 2, 3, 4}));
     REQUIRE(AdsAudioDecoder::headerSize(2) == 232);
 
     AdsAudioDecoder decoder;
@@ -67,15 +69,15 @@ TEST_CASE("interleaved blocks decode into interleaved samples", "[codec][ads]") 
     REQUIRE(decoder.parseHeader(header(2, 8, 32)).has_value());
 
     // left frames carry residual +1 per sample, right frames -2 (scale 0, zero predictors)
-    std::vector<u8> body;
-    const std::vector<u8> left{0x00, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
-    const std::vector<u8> right{0x00, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE};
+    std::vector<std::uint8_t> body;
+    const std::vector<std::uint8_t> left{0x00, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
+    const std::vector<std::uint8_t> right{0x00, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE};
     body.insert(body.end(), left.begin(), left.end());
     body.insert(body.end(), right.begin(), right.end());
     body.insert(body.end(), left.begin(), left.end());
     body.insert(body.end(), right.begin(), right.end());
 
-    std::vector<f32> out;
+    std::vector<float> out;
     decoder.feed(std::span(body).subspan(0, 20), out);
     REQUIRE(out.size() == 28);
     decoder.feed(std::span(body).subspan(20), out);
@@ -93,12 +95,12 @@ TEST_CASE("interleaved blocks decode into interleaved samples", "[codec][ads]") 
 
 TEST_CASE("bad streams are rejected", "[codec][ads]") {
     AdsAudioDecoder decoder;
-    std::vector<f32> out;
-    REQUIRE_THROWS_AS(decoder.feed(std::vector<u8>(16, 0), out), FormatError);
-    std::vector<u8> wrongFormat = header(1, 8, 8);
+    std::vector<float> out;
+    REQUIRE_THROWS_AS(decoder.feed(std::vector<std::uint8_t>(16, 0), out), FormatError);
+    std::vector<std::uint8_t> wrongFormat = header(1, 8, 8);
     wrongFormat[11] = 16;
     REQUIRE_THROWS_AS(decoder.parseHeader(wrongFormat), FormatError);
-    std::vector<u8> notAds = header(1, 8, 8);
+    std::vector<std::uint8_t> notAds = header(1, 8, 8);
     notAds[0] = 'X';
     REQUIRE_THROWS_AS(decoder.parseHeader(notAds), FormatError);
 }

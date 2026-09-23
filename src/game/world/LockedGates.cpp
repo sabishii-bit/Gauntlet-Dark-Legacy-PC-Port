@@ -1,6 +1,8 @@
 #include "game/world/LockedGates.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 #include "engine/core/Log.h"
 
@@ -11,15 +13,15 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
     clear();
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
-    for (usize index = 0; index < instances.size(); ++index) {
+    for (std::size_t index = 0; index < instances.size(); ++index) {
         const ItemInstance& instance = instances[index];
-        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size() ||
-            infos[static_cast<usize>(instance.info)].type != ItemInfo::kGate) {
+        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= infos.size() ||
+            infos[static_cast<std::size_t>(instance.info)].type != ItemInfo::kGate) {
             continue;
         }
-        const ItemInfo& info = infos[static_cast<usize>(instance.info)];
+        const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
         auto gate = std::make_unique<Gate>();
-        gate->instance = static_cast<s32>(index);
+        gate->instance = static_cast<std::int32_t>(index);
         gate->minPlayers = instance.minPlayers;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         if (!gate->figure.place(device, items, name, instance, collision)) {
@@ -35,16 +37,16 @@ void LockedGates::clear() {
     m_gates.clear();
 }
 
-void LockedGates::setPlayerCount(s32 players) {
+void LockedGates::setPlayerCount(std::int32_t players) {
     for (const std::unique_ptr<Gate>& gate : m_gates) {
         gate->shown = shownToParty(gate->minPlayers, players);
     }
 }
 
-std::vector<GateEvent> LockedGates::update(s32 ticks, f32 seconds,
+std::vector<GateEvent> LockedGates::update(std::int32_t ticks, float seconds,
                                            std::span<const ChestVisitor> party) {
     std::vector<GateEvent> events;
-    for (usize index = 0; index < m_gates.size(); ++index) {
+    for (std::size_t index = 0; index < m_gates.size(); ++index) {
         Gate& gate = *m_gates[index];
         if (!gate.shown) {
             continue;
@@ -52,7 +54,7 @@ std::vector<GateEvent> LockedGates::update(s32 ticks, f32 seconds,
         gate.figure.update(seconds);
         gate.refusalLeft = std::max(gate.refusalLeft - seconds, 0.0f);
         if (gate.state == kShut) {
-            for (usize v = 0; v < party.size(); ++v) {
+            for (std::size_t v = 0; v < party.size(); ++v) {
                 if (!gate.box.touchedBy(party[v].position, party[v].radius)) {
                     continue;
                 }

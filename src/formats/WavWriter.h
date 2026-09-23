@@ -1,13 +1,13 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 #include <vector>
-
-#include "engine/core/Types.h"
 
 namespace gdl::formats {
 
 /** Encodes interleaved 16-bit PCM as a RIFF WAVE file. */
-std::vector<u8> encodeWav(std::span<const s16> samples, u32 sampleRate, u32 channels);
+std::vector<std::uint8_t> encodeWav(std::span<const std::int16_t> samples, std::uint32_t sampleRate,
+                                    std::uint32_t channels);
 
 } // namespace gdl::formats

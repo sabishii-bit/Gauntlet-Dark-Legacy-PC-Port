@@ -1,5 +1,8 @@
 #include "engine/platform/GlfwWindow.h"
 
+#include <cstddef>
+#include <cstdint>
+
 // clang-format off
 // volk must precede glfw3.h so GLFW declares its Vulkan helpers.
 #include <volk.h>
@@ -94,7 +97,7 @@ constexpr auto kKeyMap = std::to_array<KeyMapping>({
     {GLFW_KEY_F12, Key::F12},
 });
 
-constexpr std::array<int, static_cast<usize>(PadButton::Count)> kPadButtonMap{
+constexpr std::array<int, static_cast<std::size_t>(PadButton::Count)> kPadButtonMap{
     GLFW_GAMEPAD_BUTTON_A,           GLFW_GAMEPAD_BUTTON_B,
     GLFW_GAMEPAD_BUTTON_X,           GLFW_GAMEPAD_BUTTON_Y,
     GLFW_GAMEPAD_BUTTON_LEFT_BUMPER, GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER,
@@ -105,7 +108,7 @@ constexpr std::array<int, static_cast<usize>(PadButton::Count)> kPadButtonMap{
     GLFW_GAMEPAD_BUTTON_DPAD_LEFT,
 };
 
-constexpr std::array<int, static_cast<usize>(PadAxis::Count)> kPadAxisMap{
+constexpr std::array<int, static_cast<std::size_t>(PadAxis::Count)> kPadAxisMap{
     GLFW_GAMEPAD_AXIS_LEFT_X,  GLFW_GAMEPAD_AXIS_LEFT_Y,       GLFW_GAMEPAD_AXIS_RIGHT_X,
     GLFW_GAMEPAD_AXIS_RIGHT_Y, GLFW_GAMEPAD_AXIS_LEFT_TRIGGER, GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER,
 };
@@ -153,7 +156,7 @@ void GlfwWindow::pollEvents() {
 
 void GlfwWindow::setIcon(std::span<const Image> images) {
     // GLFW wants writable pixel pointers, so the icons are copied for the call.
-    std::vector<std::vector<u8>> pixels;
+    std::vector<std::vector<std::uint8_t>> pixels;
     pixels.reserve(images.size());
     std::vector<GLFWimage> handles;
     for (const Image& image : images) {
@@ -199,12 +202,12 @@ void GlfwWindow::pollGamepads() {
         if (glfwJoystickIsGamepad(joystick) == GLFW_TRUE &&
             glfwGetGamepadState(joystick, &state) == GLFW_TRUE) {
             snapshot.connected = true;
-            for (usize i = 0; i < snapshot.buttons.size(); ++i) {
+            for (std::size_t i = 0; i < snapshot.buttons.size(); ++i) {
                 snapshot.buttons[i] = state.buttons[kPadButtonMap[i]] == GLFW_PRESS;
             }
-            for (usize i = 0; i < snapshot.axes.size(); ++i) {
-                f32 value = state.axes[kPadAxisMap[i]];
-                if (i >= static_cast<usize>(PadAxis::LeftTrigger)) {
+            for (std::size_t i = 0; i < snapshot.axes.size(); ++i) {
+                float value = state.axes[kPadAxisMap[i]];
+                if (i >= static_cast<std::size_t>(PadAxis::LeftTrigger)) {
                     value = (value + 1.0f) * 0.5f;
                 }
                 snapshot.axes[i] = value;
@@ -226,7 +229,8 @@ Extent2D GlfwWindow::framebufferSize() const {
     int width = 0;
     int height = 0;
     glfwGetFramebufferSize(m_window, &width, &height);
-    return Extent2D{static_cast<u32>(std::max(width, 0)), static_cast<u32>(std::max(height, 0))};
+    return Extent2D{static_cast<std::uint32_t>(std::max(width, 0)),
+                    static_cast<std::uint32_t>(std::max(height, 0))};
 }
 
 void GlfwWindow::waitWhileMinimized() {
@@ -236,7 +240,7 @@ void GlfwWindow::waitWhileMinimized() {
 }
 
 std::vector<const char*> GlfwWindow::requiredVulkanInstanceExtensions() const {
-    u32 count = 0;
+    std::uint32_t count = 0;
     const char** names = glfwGetRequiredInstanceExtensions(&count);
     GDL_VERIFY(names != nullptr, "glfwGetRequiredInstanceExtensions failed");
     const std::span<const char* const> extensions(names, count);

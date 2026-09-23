@@ -1,4 +1,5 @@
 #include <cmath>
+#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -19,7 +20,7 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr float kStep = 1.0f / 30.0f;
 
 struct Fixture {
     test::FakeRenderDevice device;
@@ -46,7 +47,7 @@ struct Fixture {
 };
 
 /** A layout of one keyed object with the given level flags. */
-WorldLayout layoutWithFlags(std::string_view name, u32 flags) {
+WorldLayout layoutWithFlags(std::string_view name, std::uint32_t flags) {
     const auto dir = test::scratchDirectory(name);
     writeTextFile(dir / "world.json", R"({
   "objects": [{"name": "SPIN", "position": [0, 0, 0], "flags": )" +
@@ -110,7 +111,8 @@ TEST_CASE("one-shot animations stop at their last frame, backwards ones at their
     REQUIRE(animator.finished(0));
 
     // Both flags together switch the animation off.
-    animator.bind(layoutWithFlags("world-animator-off", WorldObject::kOnce | WorldObject::kReverse));
+    animator.bind(
+        layoutWithFlags("world-animator-off", WorldObject::kOnce | WorldObject::kReverse));
     REQUIRE(animator.size() == 0);
 }
 

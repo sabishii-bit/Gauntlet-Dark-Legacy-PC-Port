@@ -1,11 +1,13 @@
 #include "game/players/Inventory.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 namespace gdl::game {
 
-s32 Inventory::addKeys(s32 count) {
-    const s32 taken = std::clamp(count, 0, kMostKeys - std::min(keys, kMostKeys));
+std::int32_t Inventory::addKeys(std::int32_t count) {
+    const std::int32_t taken = std::clamp(count, 0, kMostKeys - std::min(keys, kMostKeys));
     keys += taken;
     return taken;
 }
@@ -18,25 +20,25 @@ bool Inventory::spendKey() {
     return true;
 }
 
-s32 Inventory::takePotion() {
+std::int32_t Inventory::takePotion() {
     if (potions.empty()) {
         return 0;
     }
-    const s32 kind = potions.back();
+    const std::int32_t kind = potions.back();
     potions.pop_back();
     return kind;
 }
 
-s32 Inventory::addPotions(s32 kind, s32 count) {
-    s32 taken = 0;
-    while (taken < count && static_cast<s32>(potions.size()) < kMostPotions) {
+std::int32_t Inventory::addPotions(std::int32_t kind, std::int32_t count) {
+    std::int32_t taken = 0;
+    while (taken < count && static_cast<std::int32_t>(potions.size()) < kMostPotions) {
         potions.push_back(kind);
         ++taken;
     }
     return taken;
 }
 
-void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength) {
+void Inventory::addPowerup(std::int32_t kind, std::uint32_t flags, float charge, float strength) {
     for (PowerupSlot& slot : powerups) {
         if (slot.kind != kind || slot.flags != flags) {
             continue;
@@ -53,12 +55,12 @@ void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength) {
     }
     // The first free slot, else the one with least left; one held for good gives way only
     // when nothing else does, its own kind last of all.
-    constexpr f32 kOtherForGood = -2.0f;
-    constexpr f32 kSameForGood = -1.0f;
-    f32 best = kOtherForGood;
-    usize pick = 0;
-    for (usize i = 0; i < powerups.size(); ++i) {
-        f32 weight = powerups[i].strength;
+    constexpr float kOtherForGood = -2.0f;
+    constexpr float kSameForGood = -1.0f;
+    float best = kOtherForGood;
+    std::size_t pick = 0;
+    for (std::size_t i = 0; i < powerups.size(); ++i) {
+        float weight = powerups[i].strength;
         if (weight < 0.0f) {
             weight = powerups[i].kind == kind ? kSameForGood : kOtherForGood;
         }
@@ -73,7 +75,7 @@ void Inventory::addPowerup(s32 kind, u32 flags, f32 charge, f32 strength) {
     powerups[pick] = PowerupSlot{strength, kind, charge, flags, true};
 }
 
-const PowerupSlot* Inventory::powerup(s32 kind, u32 mask) const {
+const PowerupSlot* Inventory::powerup(std::int32_t kind, std::uint32_t mask) const {
     for (const PowerupSlot& slot : powerups) {
         if (slot.working() && slot.kind == kind && (slot.flags & mask) != 0) {
             return &slot;
@@ -82,25 +84,25 @@ const PowerupSlot* Inventory::powerup(s32 kind, u32 mask) const {
     return nullptr;
 }
 
-s32 Inventory::nextHeld(s32 from, s32 step) const {
-    const auto count = static_cast<s32>(powerups.size());
-    s32 at = from;
-    for (s32 tries = 0; tries < count; ++tries) {
+std::int32_t Inventory::nextHeld(std::int32_t from, std::int32_t step) const {
+    const auto count = static_cast<std::int32_t>(powerups.size());
+    std::int32_t at = from;
+    for (std::int32_t tries = 0; tries < count; ++tries) {
         at += step;
         if (at < 0) {
             at = count - 1;
         } else if (at >= count) {
             at = 0;
         }
-        if (powerups[static_cast<usize>(at)].held()) {
+        if (powerups[static_cast<std::size_t>(at)].held()) {
             return at;
         }
     }
     return -1;
 }
 
-usize Inventory::powerupCount() const {
-    return static_cast<usize>(
+std::size_t Inventory::powerupCount() const {
+    return static_cast<std::size_t>(
         std::ranges::count_if(powerups, [](const PowerupSlot& slot) { return slot.held(); }));
 }
 

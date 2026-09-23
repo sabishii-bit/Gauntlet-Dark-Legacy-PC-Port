@@ -1,6 +1,8 @@
 #include "engine/codec/MoviePlayback.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 
 #include "engine/core/Error.h"
@@ -11,15 +13,15 @@ namespace gdl {
 
 namespace {
 
-constexpr u32 kVideoStreamType = fourcc("vids");
-constexpr u32 kAudioStreamType = fourcc("auds");
-constexpr u32 kVqCodec = fourcc("MVDV");
-constexpr u16 kPcmFormat = 1;
-constexpr f64 kMaxStepSeconds = 0.25;
-constexpr u32 kMaxFramesPerUpdate = 8;
-constexpr usize kVideoLookahead = 2;
-constexpr f64 kAudioLookaheadSeconds = 1.0;
-constexpr f64 kMicrosecondsPerSecond = 1'000'000.0;
+constexpr std::uint32_t kVideoStreamType = fourcc("vids");
+constexpr std::uint32_t kAudioStreamType = fourcc("auds");
+constexpr std::uint32_t kVqCodec = fourcc("MVDV");
+constexpr std::uint16_t kPcmFormat = 1;
+constexpr double kMaxStepSeconds = 0.25;
+constexpr std::uint32_t kMaxFramesPerUpdate = 8;
+constexpr std::size_t kVideoLookahead = 2;
+constexpr double kAudioLookaheadSeconds = 1.0;
+constexpr double kMicrosecondsPerSecond = 1'000'000.0;
 
 } // namespace
 
@@ -30,7 +32,7 @@ bool MoviePlayback::open(const std::filesystem::path& path) {
         const AviHeader& header = m_reader->header();
         const AviStream* video = nullptr;
         const AviStream* audio = nullptr;
-        for (u32 i = 0; i < header.streams.size(); ++i) {
+        for (std::uint32_t i = 0; i < header.streams.size(); ++i) {
             const AviStream& stream = header.streams[i];
             if (stream.type == kVideoStreamType && video == nullptr) {
                 video = &stream;
@@ -49,10 +51,10 @@ bool MoviePlayback::open(const std::filesystem::path& path) {
 
         m_info = MovieInfo{};
         m_info.width = video->video->width;
-        m_info.height = static_cast<u32>(std::abs(video->video->height));
+        m_info.height = static_cast<std::uint32_t>(std::abs(video->video->height));
         m_info.frameCount = video->length != 0 ? video->length : header.totalFrames;
         if (video->scale != 0 && video->rate != 0) {
-            m_info.framesPerSecond = static_cast<f64>(video->rate) / video->scale;
+            m_info.framesPerSecond = static_cast<double>(video->rate) / video->scale;
         } else if (header.microSecondsPerFrame != 0) {
             m_info.framesPerSecond = kMicrosecondsPerSecond / header.microSecondsPerFrame;
         } else {
@@ -103,22 +105,22 @@ const Image& MoviePlayback::frame() const {
     return m_decoder ? m_decoder->frame() : kEmpty;
 }
 
-bool MoviePlayback::update(f64 deltaSeconds) {
+bool MoviePlayback::update(double deltaSeconds) {
     m_frameChanged = false;
     if (!isOpen()) {
         return false;
     }
     m_playTime += std::clamp(deltaSeconds, 0.0, kMaxStepSeconds);
 
-    const u32 due =
-        std::min(static_cast<u32>(m_playTime * m_info.framesPerSecond), m_info.frameCount);
-    u32 steps = 0;
+    const std::uint32_t due = std::min(
+        static_cast<std::uint32_t>(m_playTime * m_info.framesPerSecond), m_info.frameCount);
+    std::uint32_t steps = 0;
     while (m_decodedFrames < due && steps < kMaxFramesPerUpdate) {
         fillLookahead();
         if (m_pendingVideo.empty()) {
             break;
         }
-        const std::vector<u8> chunk = std::move(m_pendingVideo.front());
+        const std::vector<std::uint8_t> chunk = std::move(m_pendingVideo.front());
         m_pendingVideo.pop_front();
         try {
             m_decoder->decode(chunk);
@@ -136,11 +138,11 @@ bool MoviePlayback::update(f64 deltaSeconds) {
 
     const bool noMoreFrames =
         m_decodedFrames >= m_info.frameCount || (m_endOfStream && m_pendingVideo.empty());
-    const f64 dueFrames = m_playTime * m_info.framesPerSecond;
-    return !noMoreFrames || dueFrames < static_cast<f64>(m_decodedFrames);
+    const double dueFrames = m_playTime * m_info.framesPerSecond;
+    return !noMoreFrames || dueFrames < static_cast<double>(m_decodedFrames);
 }
 
-void MoviePlayback::takeAudio(std::vector<f32>& out) {
+void MoviePlayback::takeAudio(std::vector<float>& out) {
     out.insert(out.end(), m_audio.begin(), m_audio.end());
     m_audio.clear();
 }
@@ -152,7 +154,7 @@ void MoviePlayback::fillLookahead() {
         if (!demuxNext()) {
             m_endOfStream = true;
             if (m_audioCoding == AudioCoding::Ads) {
-                const usize before = m_audio.size();
+                const std::size_t before = m_audio.size();
                 m_ads.flush(m_audio);
                 countQueuedAudio(before);
             }
@@ -179,7 +181,7 @@ bool MoviePlayback::demuxNext() {
     }
 }
 
-void MoviePlayback::queueAudio(std::span<const u8> data) {
+void MoviePlayback::queueAudio(std::span<const std::uint8_t> data) {
     if (m_audioCoding == AudioCoding::Unknown) {
         m_audioCoding = AdsAudioDecoder::looksLikeAds(data) ? AudioCoding::Ads : AudioCoding::Pcm;
         if (m_audioCoding == AudioCoding::Pcm) {
@@ -188,7 +190,7 @@ void MoviePlayback::queueAudio(std::span<const u8> data) {
             m_info.audioReady = true;
         }
     }
-    const usize before = m_audio.size();
+    const std::size_t before = m_audio.size();
     if (m_audioCoding == AudioCoding::Ads) {
         queueAds(data);
     } else {
@@ -197,27 +199,27 @@ void MoviePlayback::queueAudio(std::span<const u8> data) {
     countQueuedAudio(before);
 }
 
-void MoviePlayback::queuePcm(std::span<const u8> data) {
-    constexpr f32 kUnsigned8Scale = 1.0f / 128.0f;
-    constexpr f32 kSigned16Scale = 1.0f / 32768.0f;
+void MoviePlayback::queuePcm(std::span<const std::uint8_t> data) {
+    constexpr float kUnsigned8Scale = 1.0f / 128.0f;
+    constexpr float kSigned16Scale = 1.0f / 32768.0f;
     constexpr int kUnsigned8Bias = 128;
 
     if (m_audioFormat.bitsPerSample == 8) {
         m_audio.reserve(m_audio.size() + data.size());
-        for (const u8 sample : data) {
-            m_audio.push_back(static_cast<f32>(int{sample} - kUnsigned8Bias) * kUnsigned8Scale);
+        for (const std::uint8_t sample : data) {
+            m_audio.push_back(static_cast<float>(int{sample} - kUnsigned8Bias) * kUnsigned8Scale);
         }
     } else if (m_audioFormat.bitsPerSample == 16) {
-        const usize samples = data.size() / 2;
+        const std::size_t samples = data.size() / 2;
         m_audio.reserve(m_audio.size() + samples);
-        for (usize i = 0; i < samples; ++i) {
-            const auto sample = static_cast<s16>(readU16LE(data, i * 2));
-            m_audio.push_back(static_cast<f32>(sample) * kSigned16Scale);
+        for (std::size_t i = 0; i < samples; ++i) {
+            const auto sample = static_cast<std::int16_t>(readU16LE(data, i * 2));
+            m_audio.push_back(static_cast<float>(sample) * kSigned16Scale);
         }
     }
 }
 
-void MoviePlayback::queueAds(std::span<const u8> data) {
+void MoviePlayback::queueAds(std::span<const std::uint8_t> data) {
     if (!m_ads.hasHeader()) {
         m_adsHeaderBytes.insert(m_adsHeaderBytes.end(), data.begin(), data.end());
         const auto used = m_ads.parseHeader(m_adsHeaderBytes);
@@ -227,8 +229,8 @@ void MoviePlayback::queueAds(std::span<const u8> data) {
         m_info.audioSampleRate = m_ads.info().sampleRate;
         m_info.audioChannels = m_ads.info().channels;
         m_info.audioReady = true;
-        const std::vector<u8> rest(m_adsHeaderBytes.begin() + static_cast<std::ptrdiff_t>(*used),
-                                   m_adsHeaderBytes.end());
+        const std::vector<std::uint8_t> rest(
+            m_adsHeaderBytes.begin() + static_cast<std::ptrdiff_t>(*used), m_adsHeaderBytes.end());
         m_adsHeaderBytes.clear();
         m_ads.feed(rest, m_audio);
         return;
@@ -236,12 +238,12 @@ void MoviePlayback::queueAds(std::span<const u8> data) {
     m_ads.feed(data, m_audio);
 }
 
-void MoviePlayback::countQueuedAudio(usize samplesBefore) {
+void MoviePlayback::countQueuedAudio(std::size_t samplesBefore) {
     if (!m_info.audioReady || m_info.audioSampleRate == 0 || m_info.audioChannels == 0) {
         return;
     }
-    const usize frames = (m_audio.size() - samplesBefore) / m_info.audioChannels;
-    m_audioQueuedSeconds += static_cast<f64>(frames) / m_info.audioSampleRate;
+    const std::size_t frames = (m_audio.size() - samplesBefore) / m_info.audioChannels;
+    m_audioQueuedSeconds += static_cast<double>(frames) / m_info.audioSampleRate;
 }
 
 } // namespace gdl

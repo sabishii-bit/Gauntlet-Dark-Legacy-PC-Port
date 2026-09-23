@@ -1,10 +1,10 @@
 #include <array>
+#include <cstdint>
 #include <utility>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/app/Application.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/Image.h"
 #include "engine/render/ImmediateBatch.h"
@@ -25,15 +25,15 @@ public:
 
 protected:
     void onInit() override {
-        constexpr std::array<u8, 16> kPixels{255, 0, 0,   255, 0,   255, 0,   255,
-                                             0,   0, 255, 255, 255, 255, 255, 255};
+        constexpr std::array<std::uint8_t, 16> kPixels{255, 0, 0,   255, 0,   255, 0,   255,
+                                                       0,   0, 255, 255, 255, 255, 255, 255};
         m_texture = renderDevice().createTexture(TextureDesc{2, 2}, kPixels);
         REQUIRE(m_texture->width() == 2);
         REQUIRE(m_texture->height() == 2);
         m_streamed = renderDevice().createTexture(TextureDesc{8, 8}, m_image.pixels);
     }
 
-    void onUpdate(f64 deltaSeconds) override {
+    void onUpdate(double deltaSeconds) override {
         REQUIRE(deltaSeconds >= 0.0);
         m_sawInput = !input().isKeyDown(Key::Unknown);
     }
@@ -41,10 +41,10 @@ protected:
     void onRender(RenderDevice& device) override {
         const Extent2D extent = device.framebufferExtent();
         REQUIRE_FALSE(extent.isZero());
-        const Mat4 projection =
-            makeScreenProjection(static_cast<f32>(extent.width), static_cast<f32>(extent.height));
+        const Mat4 projection = makeScreenProjection(static_cast<float>(extent.width),
+                                                     static_cast<float>(extent.height));
 
-        const auto shade = static_cast<u8>(m_renderedFrames * 40);
+        const auto shade = static_cast<std::uint8_t>(m_renderedFrames * 40);
         m_image = Image::filled(8, 8, Color::rgba(shade, 255 - shade, shade));
         device.updateTexture(*m_streamed, m_image.pixels);
 

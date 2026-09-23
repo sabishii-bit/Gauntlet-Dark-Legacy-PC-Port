@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <string>
 
@@ -48,16 +50,16 @@ const Texture* findTexture(std::string_view name, TextureSet& textures, RenderDe
 } // namespace
 
 void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, RenderDevice& device,
-                         std::span<TextureSet* const> lenders, u32 seed) {
+                         std::span<TextureSet* const> lenders, std::uint32_t seed) {
     clear();
     const std::vector<WorldObject>& objects = layout.objects();
-    for (usize i = 0; i < objects.size(); ++i) {
+    for (std::size_t i = 0; i < objects.size(); ++i) {
         const WorldObject& object = objects[i];
         if (!object.particles()) {
             continue;
         }
         const std::string name = normalizeAssetName(object.name);
-        const usize tag = name.find(kTag);
+        const std::size_t tag = name.find(kTag);
         if (tag == std::string::npos || tag + kTag.size() >= name.size()) {
             log::warn("Particle marker {} names no template", object.name);
             continue;
@@ -71,7 +73,7 @@ void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, Render
         Entry entry;
         const ParticleDescriptor descriptor = ParticleDescriptor::fromTemplate(*source);
         entry.emitter.start(descriptor, glm::translate(Mat4{1.0f}, layout.worldPosition(i)),
-                            seed + static_cast<u32>(i));
+                            seed + static_cast<std::uint32_t>(i));
         entry.texture = findTexture(descriptor.texture, textures, device, lenders);
         if (entry.texture == nullptr) {
             log::warn("Particle marker {}: texture {} not found; drawn white", object.name,
@@ -94,8 +96,8 @@ void ParticleField::clear() {
     m_frameRemainder = 0.0f;
 }
 
-usize ParticleField::start(const ParticleDescriptor& descriptor, const Mat4& node,
-                           const Texture* texture, u32 seed) {
+std::size_t ParticleField::start(const ParticleDescriptor& descriptor, const Mat4& node,
+                                 const Texture* texture, std::uint32_t seed) {
     Entry entry;
     entry.emitter.start(descriptor, node, seed);
     entry.texture = texture;
@@ -106,13 +108,13 @@ usize ParticleField::start(const ParticleDescriptor& descriptor, const Mat4& nod
     return m_entries.size() - 1;
 }
 
-void ParticleField::setNode(usize index, const Mat4& node) {
+void ParticleField::setNode(std::size_t index, const Mat4& node) {
     if (index < m_entries.size()) {
         m_entries[index].emitter.setNode(node);
     }
 }
 
-void ParticleField::stop(usize index) {
+void ParticleField::stop(std::size_t index) {
     if (index < m_entries.size()) {
         m_entries[index].emitter.finish();
     }
@@ -122,19 +124,19 @@ void ParticleField::prune() {
     std::erase_if(m_entries, [](const Entry& entry) { return !entry.emitter.active(); });
 }
 
-usize ParticleField::particleCount() const {
-    usize count = 0;
+std::size_t ParticleField::particleCount() const {
+    std::size_t count = 0;
     for (const Entry& entry : m_entries) {
         count += entry.emitter.particles().size();
     }
     return count;
 }
 
-void ParticleField::step(f32 seconds) {
+void ParticleField::step(float seconds) {
     m_frameRemainder += seconds * kFrameRate;
-    const f32 whole = std::floor(m_frameRemainder);
+    const float whole = std::floor(m_frameRemainder);
     m_frameRemainder -= whole;
-    const auto frames = static_cast<u32>(whole);
+    const auto frames = static_cast<std::uint32_t>(whole);
     if (frames == 0) {
         return;
     }

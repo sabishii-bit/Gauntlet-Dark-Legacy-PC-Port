@@ -1,6 +1,8 @@
 #include "game/world/SumnerHints.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 #include "game/world/LevelTriggers.h"
 
@@ -15,28 +17,29 @@ constexpr std::string_view kRunestoneList = "RUNE_HINTS";
 constexpr std::string_view kGuardianTitles = "BOSSHINTDESC";
 constexpr std::string_view kLegendTitles = "LEGENDHINTDESCS";
 constexpr std::string_view kRunestoneTitles = "RUNEHINTDESCS";
-constexpr s32 kLastGeneralList = 3;
-constexpr s32 kTowerWorld = 13;
+constexpr std::int32_t kLastGeneralList = 3;
+constexpr std::int32_t kTowerWorld = 13;
 /** The realm whose crystals open each world; worlds 5, 6 and 8 want runestones instead. */
-constexpr std::array<s32, 14> kWorldCrystals{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
-constexpr std::array<s32, 3> kRunestoneWorlds{5, 6, 8};
+constexpr std::array<std::int32_t, 14> kWorldCrystals{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
+constexpr std::array<std::int32_t, 3> kRunestoneWorlds{5, 6, 8};
 
-u32 bitOf(s32 index) {
-    return 1U << static_cast<u32>(index);
+std::uint32_t bitOf(std::int32_t index) {
+    return 1U << static_cast<std::uint32_t>(index);
 }
 
 } // namespace
 
 HintKnowledge HintKnowledge::ofParty(std::span<const ClassProgress> party) {
     HintKnowledge knowledge;
-    for (s32 world = 0; world < static_cast<s32>(kWorldCrystals.size()); ++world) {
+    for (std::int32_t world = 0; world < static_cast<std::int32_t>(kWorldCrystals.size());
+         ++world) {
         if (std::ranges::find(kRunestoneWorlds, world) != kRunestoneWorlds.end()) {
             continue; // runestones are not gathered yet
         }
-        const s32 realm = kWorldCrystals[static_cast<usize>(world)];
-        s32 best = 0;
+        const std::int32_t realm = kWorldCrystals[static_cast<std::size_t>(world)];
+        std::int32_t best = 0;
         for (const ClassProgress& progress : party) {
-            best = std::max(best, progress.crystals[static_cast<usize>(realm)]);
+            best = std::max(best, progress.crystals[static_cast<std::size_t>(realm)]);
         }
         if (world == kTowerWorld ||
             (!party.empty() && best >= LevelTriggers::crystalsNeeded(realm))) {
@@ -63,19 +66,21 @@ void SumnerHints::beginVisit() {
  * round again. */
 void SumnerHints::stepGeneral(const HintKnowledge& knowledge) {
     const MessageList* lists = m_text.findList(kGeneralList);
-    for (s32 tries = 0; tries < 2 * (kLastGeneralList + 2); ++tries) {
+    for (std::int32_t tries = 0; tries < 2 * (kLastGeneralList + 2); ++tries) {
         if (m_generalList < 0) {
             m_generalList = kLastGeneralList;
         }
         while (m_generalList > 0 &&
-               !knowledge.wingsOpen[static_cast<usize>(m_generalList - 1)]) {
+               !knowledge.wingsOpen[static_cast<std::size_t>(m_generalList - 1)]) {
             m_generalHint = -1;
             --m_generalList;
         }
         ++m_generalHint;
         const MessageInfo* message =
-            lists != nullptr ? m_text.listed(*lists, static_cast<usize>(m_generalList)) : nullptr;
-        const auto count = message != nullptr ? static_cast<s32>(message->pages.size()) : 0;
+            lists != nullptr ? m_text.listed(*lists, static_cast<std::size_t>(m_generalList))
+                             : nullptr;
+        const auto count =
+            message != nullptr ? static_cast<std::int32_t>(message->pages.size()) : 0;
         if (m_generalHint < count) {
             return;
         }
@@ -86,17 +91,18 @@ void SumnerHints::stepGeneral(const HintKnowledge& knowledge) {
 
 /** The next open world not yet `done`; with none left, the next open one at all; with none
  * open, the first. */
-void SumnerHints::stepWorlds(Cursor& cursor, s32 count, u32 open, u32 done) {
-    s32 from = cursor.index + 1;
+void SumnerHints::stepWorlds(Cursor& cursor, std::int32_t count, std::uint32_t open,
+                             std::uint32_t done) {
+    std::int32_t from = cursor.index + 1;
     for (;;) {
         if (from >= count) {
             from %= count;
             cursor.widened = 1;
         }
         from = std::max(from, 1);
-        s32 at = from;
+        std::int32_t at = from;
         for (; at < count; ++at) {
-            const u32 world = bitOf(kWorldOrder[static_cast<usize>(at)]);
+            const std::uint32_t world = bitOf(kWorldOrder[static_cast<std::size_t>(at)]);
             if ((open & world) != 0 && (cursor.widened != 0 || (done & world) == 0)) {
                 break;
             }
@@ -116,17 +122,17 @@ void SumnerHints::stepWorlds(Cursor& cursor, s32 count, u32 open, u32 done) {
 }
 
 /** The next runestone still missing; with them all found, the next one at all. */
-void SumnerHints::stepRunestones(Cursor& cursor, u32 found) {
-    const auto count = static_cast<s32>(kRunestoneOrder.size());
-    s32 from = cursor.index + 1;
+void SumnerHints::stepRunestones(Cursor& cursor, std::uint32_t found) {
+    const auto count = static_cast<std::int32_t>(kRunestoneOrder.size());
+    std::int32_t from = cursor.index + 1;
     for (;;) {
         if (from >= count) {
             from %= count;
             cursor.widened = 1;
         }
-        s32 at = from;
+        std::int32_t at = from;
         for (; at < count; ++at) {
-            const u32 stone = bitOf(kRunestoneOrder[static_cast<usize>(at)] - 1);
+            const std::uint32_t stone = bitOf(kRunestoneOrder[static_cast<std::size_t>(at)] - 1);
             if (cursor.widened != 0 || (found & stone) == 0) {
                 break;
             }
@@ -146,15 +152,16 @@ void SumnerHints::stepRunestones(Cursor& cursor, u32 found) {
 }
 
 /** One passage, and one more for each time the party has tried. */
-s32 SumnerHints::passagesFor(u32 bit, const std::array<u32, 2>& tries) {
+std::int32_t SumnerHints::passagesFor(std::uint32_t bit,
+                                      const std::array<std::uint32_t, 2>& tries) {
     if ((tries[1] & bit) != 0) {
         return 3;
     }
     return (tries[0] & bit) != 0 ? 2 : 1;
 }
 
-HintPage SumnerHints::pageOf(std::string_view titles, usize title, std::string_view list,
-                             usize entry, s32 passages, s32 gap) const {
+HintPage SumnerHints::pageOf(std::string_view titles, std::size_t title, std::string_view list,
+                             std::size_t entry, std::int32_t passages, std::int32_t gap) const {
     HintPage page;
     page.gap = gap;
     if (const auto found = m_text.find(titles); found.has_value()) {
@@ -167,7 +174,8 @@ HintPage SumnerHints::pageOf(std::string_view titles, usize title, std::string_v
     const MessageInfo* message = entries != nullptr ? m_text.listed(*entries, entry) : nullptr;
     if (message != nullptr) {
         page.scale = message->scale;
-        const usize count = std::min(static_cast<usize>(passages), message->pages.size());
+        const std::size_t count =
+            std::min(static_cast<std::size_t>(passages), message->pages.size());
         page.passages.assign(message->pages.begin(),
                              message->pages.begin() + static_cast<std::ptrdiff_t>(count));
     }
@@ -188,35 +196,34 @@ HintPage SumnerHints::next(HintTopic topic, const HintKnowledge& knowledge,
         const MessageList* lists = m_text.findList(kGeneralList);
         const MessageInfo* message =
             lists != nullptr && m_generalList >= 0
-                ? m_text.listed(*lists, static_cast<usize>(m_generalList))
+                ? m_text.listed(*lists, static_cast<std::size_t>(m_generalList))
                 : nullptr;
         if (message != nullptr && m_generalHint >= 0 &&
-            static_cast<usize>(m_generalHint) < message->pages.size()) {
+            static_cast<std::size_t>(m_generalHint) < message->pages.size()) {
             page.scale = message->scale;
-            page.passages.push_back(message->pages[static_cast<usize>(m_generalHint)]);
+            page.passages.push_back(message->pages[static_cast<std::size_t>(m_generalHint)]);
         }
         return page;
     }
     case HintTopic::Guardians: {
         stepWorlds(m_guardian, kGuardianCount, knowledge.worldsOpen, knowledge.guardiansBeaten);
-        const auto entry = static_cast<usize>(m_guardian.index);
+        const auto entry = static_cast<std::size_t>(m_guardian.index);
         return pageOf(kGuardianTitles, entry, kGuardianList, entry,
-                      passagesFor(bitOf(kWorldOrder[entry]), knowledge.guardianTries),
-                      kPassageGap);
+                      passagesFor(bitOf(kWorldOrder[entry]), knowledge.guardianTries), kPassageGap);
     }
     case HintTopic::Legends: {
         stepWorlds(m_legend, kLegendCount, knowledge.worldsOpen, knowledge.legendsFound);
-        const auto entry = static_cast<usize>(m_legend.index);
+        const auto entry = static_cast<std::size_t>(m_legend.index);
         return pageOf(kLegendTitles, entry, kLegendList, entry,
-                      passagesFor(bitOf(kWorldOrder[entry]), knowledge.legendTries),
-                      kPassageGap);
+                      passagesFor(bitOf(kWorldOrder[entry]), knowledge.legendTries), kPassageGap);
     }
     case HintTopic::Runestones: {
         stepRunestones(m_runestone, knowledge.runestonesFound);
-        const auto stone =
-            static_cast<usize>(kRunestoneOrder[static_cast<usize>(m_runestone.index)] - 1);
-        return pageOf(kRunestoneTitles, stone, kRunestoneList, stone,
-                      passagesFor(bitOf(static_cast<s32>(stone)), knowledge.runestoneTries), 0);
+        const auto stone = static_cast<std::size_t>(
+            kRunestoneOrder[static_cast<std::size_t>(m_runestone.index)] - 1);
+        return pageOf(
+            kRunestoneTitles, stone, kRunestoneList, stone,
+            passagesFor(bitOf(static_cast<std::int32_t>(stone)), knowledge.runestoneTries), 0);
     }
     }
     return {};

@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -20,13 +22,14 @@ using Catch::Approx;
 std::filesystem::path sampleHints(std::string_view name) {
     const auto dir = test::scratchDirectory(name);
     std::string messages;
-    const auto add = [&](const std::string& id, const std::vector<std::string>& lines, f32 scale) {
+    const auto add = [&](const std::string& id, const std::vector<std::string>& lines,
+                         float scale) {
         if (!messages.empty()) {
             messages += ",\n";
         }
         messages += R"({"name": ")" + id + R"(", "font": 0, "scale": )" + std::to_string(scale) +
                     R"(, "lines": [)";
-        for (usize i = 0; i < lines.size(); ++i) {
+        for (std::size_t i = 0; i < lines.size(); ++i) {
             messages += (i == 0 ? "\"" : ", \"") + lines[i] + "\"";
         }
         messages += "]}";
@@ -66,10 +69,10 @@ std::filesystem::path sampleHints(std::string_view name) {
     return dir / "hints.json";
 }
 
-u32 worlds(std::initializer_list<int> ids) {
-    u32 bits = 0;
+std::uint32_t worlds(std::initializer_list<int> ids) {
+    std::uint32_t bits = 0;
     for (const int id : ids) {
-        bits |= 1U << static_cast<u32>(id);
+        bits |= 1U << static_cast<std::uint32_t>(id);
     }
     return bits;
 }

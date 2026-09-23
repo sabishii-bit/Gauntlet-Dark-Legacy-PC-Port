@@ -1,5 +1,7 @@
 #include "game/screens/StatusBox.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <format>
 
@@ -16,26 +18,26 @@ constexpr std::string_view kStaticDirectory = "STATIC";
 constexpr std::string_view kInitialsFile = "fonts/initials.json";
 constexpr std::string_view kScoreFile = "fonts/score.json";
 constexpr std::string_view kSmallCapsFile = "fonts/8hifonts.json";
-constexpr s32 kInitialsSpaceWidth = 12;
-constexpr s32 kScoreSpaceWidth = 9;
-constexpr s32 kSmallCapsSpaceWidth = 8;
-constexpr s32 kIconSize = 20;
-constexpr s32 kIconY = 357;
-constexpr s32 kCoinX = 6;
-constexpr s32 kHeartX = 61;
-constexpr s32 kGoldRight = 60;
-constexpr s32 kHealthRight = 116;
-constexpr s32 kValueY = 359;
-constexpr s32 kNameY = 339;
-constexpr s32 kLevelY = 326;
-constexpr f32 kNameScale = 0.667f;
+constexpr std::int32_t kInitialsSpaceWidth = 12;
+constexpr std::int32_t kScoreSpaceWidth = 9;
+constexpr std::int32_t kSmallCapsSpaceWidth = 8;
+constexpr std::int32_t kIconSize = 20;
+constexpr std::int32_t kIconY = 357;
+constexpr std::int32_t kCoinX = 6;
+constexpr std::int32_t kHeartX = 61;
+constexpr std::int32_t kGoldRight = 60;
+constexpr std::int32_t kHealthRight = 116;
+constexpr std::int32_t kValueY = 359;
+constexpr std::int32_t kNameY = 339;
+constexpr std::int32_t kLevelY = 326;
+constexpr float kNameScale = 0.667f;
 constexpr std::string_view kStrip = "S3";
-constexpr s32 kCountIconX = 28;
-constexpr s32 kCountIconY = 288;
-constexpr s32 kCountIconSize = 16;
-constexpr s32 kCountTextX = 48;
-constexpr s32 kCountTextY = 292;
-constexpr f32 kCountScale = 1.5f;
+constexpr std::int32_t kCountIconX = 28;
+constexpr std::int32_t kCountIconY = 288;
+constexpr std::int32_t kCountIconSize = 16;
+constexpr std::int32_t kCountTextX = 48;
+constexpr std::int32_t kCountTextY = 292;
+constexpr float kCountScale = 1.5f;
 
 } // namespace
 
@@ -77,25 +79,26 @@ void StatusBoxPainter::release() {
     m_strings = nullptr;
 }
 
-std::string_view StatusBoxPainter::potionIcon(s32 kind) {
-    return kind >= 0 && static_cast<usize>(kind) < kPotionIcons.size()
-               ? kPotionIcons[static_cast<usize>(kind)]
+std::string_view StatusBoxPainter::potionIcon(std::int32_t kind) {
+    return kind >= 0 && static_cast<std::size_t>(kind) < kPotionIcons.size()
+               ? kPotionIcons[static_cast<std::size_t>(kind)]
                : kPotionIcons[0];
 }
 
-void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view, bool bar) {
+void StatusBoxPainter::draw(Canvas& canvas, std::int32_t slot, const StatusBoxView& view,
+                            bool bar) {
     if (!loaded()) {
         return;
     }
-    const s32 left = slot * kWidth;
-    const Rect box{static_cast<f32>(left), static_cast<f32>(kY), static_cast<f32>(kWidth),
-                   static_cast<f32>(kHeight)};
-    const s32 color = view.active ? view.color : slot;
+    const std::int32_t left = slot * kWidth;
+    const Rect box{static_cast<float>(left), static_cast<float>(kY), static_cast<float>(kWidth),
+                   static_cast<float>(kHeight)};
+    const std::int32_t color = view.active ? view.color : slot;
     if (bar) {
         if (const Texture* strip = staticTexture(kStrip)) {
             canvas.draw(*strip,
-                        Rect{static_cast<f32>(left), static_cast<f32>(kBarY),
-                             static_cast<f32>(kWidth), static_cast<f32>(kBarHeight)},
+                        Rect{static_cast<float>(left), static_cast<float>(kBarY),
+                             static_cast<float>(kWidth), static_cast<float>(kBarHeight)},
                         boxTint(color, view.active));
         }
     }
@@ -128,10 +131,11 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         }
         return;
     }
-    const auto icon = [&](std::string_view name, s32 x) {
+    const auto icon = [&](std::string_view name, std::int32_t x) {
         if (const Texture* texture = staticTexture(name)) {
-            canvas.draw(*texture, Rect{static_cast<f32>(left + x), static_cast<f32>(kIconY),
-                                       static_cast<f32>(kIconSize), static_cast<f32>(kIconSize)});
+            canvas.draw(*texture,
+                        Rect{static_cast<float>(left + x), static_cast<float>(kIconY),
+                             static_cast<float>(kIconSize), static_cast<float>(kIconSize)});
         }
     };
     icon("COIN", kCoinX);
@@ -142,21 +146,21 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         const std::string gold = std::format("{}", view.gold);
         const std::string health = std::format("{}", view.health);
         m_score.draw(canvas, left + kGoldRight - m_score.measure(gold), kValueY, gold, style);
-        m_score.draw(canvas, left + kHealthRight - m_score.measure(health), kValueY, health,
-                     style);
+        m_score.draw(canvas, left + kHealthRight - m_score.measure(health), kValueY, health, style);
     }
     // What is carried shows over the gold and the health: keys to the left, potions (the
     // colour of the next to be thrown) to the right, each with its count in the costume's
     // colour.
-    const auto carried = [&](std::string_view name, s32 iconX, s32 count, s32 countX) {
+    const auto carried = [&](std::string_view name, std::int32_t iconX, std::int32_t count,
+                             std::int32_t countX) {
         if (count <= 0) {
             return;
         }
         if (const Texture* texture = staticTexture(name)) {
-            canvas.draw(*texture, Rect{static_cast<f32>(left + iconX),
-                                       static_cast<f32>(kCarriedY),
-                                       static_cast<f32>(texture->width()),
-                                       static_cast<f32>(texture->height())});
+            canvas.draw(*texture,
+                        Rect{static_cast<float>(left + iconX), static_cast<float>(kCarriedY),
+                             static_cast<float>(texture->width()),
+                             static_cast<float>(texture->height())});
         }
         if (m_score.ready()) {
             TextStyle style;
@@ -169,7 +173,7 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         carried("KEY_ICON", kKeyIconX, view.keys, kKeyCountX);
         carried(potionIcon(view.potionKind), kPotionIconX, view.potions, kPotionCountX);
     }
-    const s32 centerX = -(left + kWidth / 2);
+    const std::int32_t centerX = -(left + kWidth / 2);
     if (view.mode == StatusBoxView::Mode::Status && m_smallCaps.ready()) {
         m_smallCaps.draw(canvas, centerX, kLevelY,
                          std::vformat(text("select.levelShort"), std::make_format_args(view.level)),
@@ -181,34 +185,35 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
     m_initials.draw(canvas, centerX, kNameY, view.name, nameStyle);
 }
 
-void StatusBoxPainter::drawTurbo(Canvas& canvas, s32 slot, const TurboMeterLook& look) {
-    const auto left = static_cast<f32>(slot * kWidth);
-    const auto top = static_cast<f32>(kTurboY);
+void StatusBoxPainter::drawTurbo(Canvas& canvas, std::int32_t slot, const TurboMeterLook& look) {
+    const auto left = static_cast<float>(slot * kWidth);
+    const auto top = static_cast<float>(kTurboY);
     if (const Texture* bar = staticTexture("TRBO_FULL_NEW")) {
-        const auto width = static_cast<f32>(bar->width());
-        const auto height = static_cast<f32>(bar->height());
+        const auto width = static_cast<float>(bar->width());
+        const auto height = static_cast<float>(bar->height());
         canvas.draw(*bar, Rect{left, top, width, height}, look.back);
         // The front colour is the same sheet squeezed about the bar's middle.
-        const f32 across = std::max(width * look.fill, 2.0f);
+        const float across = std::max(width * look.fill, 2.0f);
         canvas.draw(*bar, Rect{left + (width - across) * 0.5f, top, across, height}, look.front);
     }
     if (const Texture* glint = staticTexture("TRBO_GLINT")) {
-        canvas.draw(*glint, Rect{left, top, static_cast<f32>(glint->width()),
-                                 static_cast<f32>(glint->height())});
+        canvas.draw(*glint, Rect{left, top, static_cast<float>(glint->width()),
+                                 static_cast<float>(glint->height())});
     }
     if (look.glow > 0) {
         if (const Texture* glow = staticTexture("TURBO_GLOW_NEW")) {
             canvas.draw(*glow,
-                        Rect{left, top, static_cast<f32>(glow->width()),
-                             static_cast<f32>(glow->height())},
+                        Rect{left, top, static_cast<float>(glow->width()),
+                             static_cast<float>(glow->height())},
                         Color::white().withAlpha(look.glow));
         }
     }
     if (look.gleam >= 0) {
         if (const Texture* gleam = staticTexture(std::format("TRBO_GLEEM{}", look.gleam + 1))) {
-            canvas.draw(*gleam, Rect{left + static_cast<f32>(kGleamX), static_cast<f32>(kGleamY),
-                                     static_cast<f32>(gleam->width()),
-                                     static_cast<f32>(gleam->height())});
+            canvas.draw(*gleam,
+                        Rect{left + static_cast<float>(kGleamX), static_cast<float>(kGleamY),
+                             static_cast<float>(gleam->width()),
+                             static_cast<float>(gleam->height())});
         }
     }
 }
@@ -243,31 +248,32 @@ std::string_view StatusBoxPainter::text(std::string_view id) const {
     return m_strings != nullptr ? m_strings->get(id) : id;
 }
 
-void StatusBoxPainter::drawCard(Canvas& canvas, s32 slot, std::string_view card, s32 y) {
+void StatusBoxPainter::drawCard(Canvas& canvas, std::int32_t slot, std::string_view card,
+                                std::int32_t y) {
     if (!loaded()) {
         return;
     }
-    const auto left = static_cast<f32>(slot * kWidth);
+    const auto left = static_cast<float>(slot * kWidth);
     if (const Texture* strip = staticTexture(kStrip)) {
-        canvas.draw(*strip, Rect{left, static_cast<f32>(y), static_cast<f32>(kWidth),
-                                 static_cast<f32>(kBarHeight)});
+        canvas.draw(*strip, Rect{left, static_cast<float>(y), static_cast<float>(kWidth),
+                                 static_cast<float>(kBarHeight)});
     }
     if (const Texture* face = staticTexture(card)) {
-        canvas.draw(*face, Rect{left, static_cast<f32>(y + kBarHeight), static_cast<f32>(kWidth),
-                                static_cast<f32>(kHeight)});
+        canvas.draw(*face, Rect{left, static_cast<float>(y + kBarHeight),
+                                static_cast<float>(kWidth), static_cast<float>(kHeight)});
     }
 }
 
-void StatusBoxPainter::drawCount(Canvas& canvas, s32 slot, std::string_view icon, s32 count,
-                                 s32 total) {
+void StatusBoxPainter::drawCount(Canvas& canvas, std::int32_t slot, std::string_view icon,
+                                 std::int32_t count, std::int32_t total) {
     if (!loaded()) {
         return;
     }
-    const s32 left = slot * kWidth;
+    const std::int32_t left = slot * kWidth;
     if (const Texture* mark = staticTexture(icon)) {
-        canvas.draw(*mark, Rect{static_cast<f32>(left + kCountIconX),
-                                static_cast<f32>(kCountIconY), static_cast<f32>(kCountIconSize),
-                                static_cast<f32>(kCountIconSize)});
+        canvas.draw(*mark,
+                    Rect{static_cast<float>(left + kCountIconX), static_cast<float>(kCountIconY),
+                         static_cast<float>(kCountIconSize), static_cast<float>(kCountIconSize)});
     }
     if (m_smallCaps.ready()) {
         TextStyle style;

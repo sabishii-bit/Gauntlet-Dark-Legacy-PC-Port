@@ -1,11 +1,12 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <vector>
 
 #include "engine/assets/AnimationSet.h"
 #include "engine/assets/WorldLayout.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/world/WorldScene.h"
 
@@ -18,41 +19,41 @@ namespace gdl {
  */
 class WorldAnimator {
 public:
-    static constexpr f32 kFramesPerSecond = 30.0f;
+    static constexpr float kFramesPerSecond = 30.0f;
 
     /** Takes the layout's animations, each starting where its record says. */
     void bind(const WorldLayout& layout);
     void clear();
-    usize size() const { return m_tracks.size(); }
-    f32 frame(usize index) const { return m_tracks[index].frame; }
-    s32 object(usize index) const { return m_tracks[index].object; }
-    bool finished(usize index) const { return m_tracks[index].finished; }
+    std::size_t size() const { return m_tracks.size(); }
+    float frame(std::size_t index) const { return m_tracks[index].frame; }
+    std::int32_t object(std::size_t index) const { return m_tracks[index].object; }
+    bool finished(std::size_t index) const { return m_tracks[index].finished; }
 
     /** The track of an object, when the layout animates it. */
-    std::optional<usize> trackOf(s32 object) const;
+    std::optional<std::size_t> trackOf(std::int32_t object) const;
     /** Holds an object at its first frame until fired, as a trigger's target waits. */
-    void hold(s32 object);
+    void hold(std::int32_t object);
     /** Plays an object's animation once from where it stands: forwards to open, backwards
      * to close; `atOnce` jumps straight to the end. */
-    void fire(s32 object, bool open, bool atOnce = false);
-    bool held(usize index) const { return m_tracks[index].held; }
+    void fire(std::int32_t object, bool open, bool atOnce = false);
+    bool held(std::size_t index) const { return m_tracks[index].held; }
 
     /** Poses every object at its current frame. */
     void apply(WorldScene& scene) const;
     /** Poses every object, then moves `seconds` on. */
-    void step(f32 seconds, WorldScene& scene);
+    void step(float seconds, WorldScene& scene);
 
 private:
     struct Track {
-        s32 object = -1;
-        s32 frames = 0;
+        std::int32_t object = -1;
+        std::int32_t frames = 0;
         TrackInfo track;
         Vec3 origin{0.0f, 0.0f, 0.0f}; ///< the object's rest offset from its parent
-        f32 frame = 0.0f;
+        float frame = 0.0f;
         bool reverse = false; ///< plays backwards once
         bool once = false;    ///< plays forwards once
         bool finished = false;
-        bool held = false;    ///< waiting at its first frame for a trigger
+        bool held = false; ///< waiting at its first frame for a trigger
     };
 
     static void pose(const Track& track, WorldScene& scene);

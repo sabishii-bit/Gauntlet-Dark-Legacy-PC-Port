@@ -1,4 +1,5 @@
 #include <array>
+#include <cstddef>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -60,14 +61,14 @@ TEST_CASE("an emitter can be started on its own, stopped and pruned", "[world][p
     test::FakeRenderDevice device;
     ParticleField field;
     ParticleTemplate t;
-    t.enables = ParticleTemplate::kEmitterLife | ParticleTemplate::kParticleLife |
-                ParticleTemplate::kRate;
+    t.enables =
+        ParticleTemplate::kEmitterLife | ParticleTemplate::kParticleLife | ParticleTemplate::kRate;
     t.emitterLife = {-1.0f, 0.0f}; // endless
     t.particleLife = {0.1f, 0.0f}; // three frames
     t.rate = {30.0f, 30.0f, 30.0f, 30.0f};
     const ParticleDescriptor d = ParticleDescriptor::fromTemplate(t);
-    const usize spark = field.start(d, glm::translate(Mat4{1.0f}, Vec3{1.0f, 2.0f, 3.0f}),
-                                    &device.whiteTexture());
+    const std::size_t spark =
+        field.start(d, glm::translate(Mat4{1.0f}, Vec3{1.0f, 2.0f, 3.0f}), &device.whiteTexture());
     REQUIRE(field.size() == 1);
     REQUIRE(field.active(spark));
     field.step(2.0f / 30.0f);

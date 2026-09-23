@@ -1,10 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string_view>
 
 #include "engine/assets/TextureSet.h"
-#include "engine/core/Types.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
 
@@ -19,11 +19,11 @@ namespace gdl::game {
 class TransitionScreen {
 public:
     static constexpr std::string_view kTexture = "TRANSITION_SCREEN";
-    static constexpr f32 kFadeInSeconds = 2.0f;  ///< the original's, leaving a level
-    static constexpr f32 kFadeOutSeconds = 0.5f; ///< arriving; the original's was not found
-    static constexpr f32 kViewHeight = 320.0f;   ///< of the 384 rows: the rest is the boxes'
+    static constexpr float kFadeInSeconds = 2.0f;  ///< the original's, leaving a level
+    static constexpr float kFadeOutSeconds = 0.5f; ///< arriving; the original's was not found
+    static constexpr float kViewHeight = 320.0f;   ///< of the 384 rows: the rest is the boxes'
 
-    enum class Phase : u8 { Off, ComingUp, Covering, Clearing };
+    enum class Phase : std::uint8_t { Off, ComingUp, Covering, Clearing };
 
     /** Finds the picture in the unpacked static archive; false (with a warning) without it,
      * in which case the screen covers the view in black. */
@@ -36,22 +36,22 @@ public:
     void cover();
     /** Starts the picture clearing from wherever it stands. */
     void clearAway();
-    void update(f32 seconds);
+    void update(float seconds);
 
     Phase phase() const { return m_phase; }
     bool showing() const { return m_phase != Phase::Off; }
     bool covering() const { return m_phase == Phase::Covering; }
     /** How much of the view the picture hides, 0 to 1. */
-    f32 opacity() const { return m_opacity; }
+    float opacity() const { return m_opacity; }
 
     /** Draws the picture over a view `width` across, on the canvas's virtual screen. */
-    void draw(Canvas& canvas, f32 width) const;
+    void draw(Canvas& canvas, float width) const;
 
 private:
     TextureSet m_textures;
     const Texture* m_picture = nullptr;
     Phase m_phase = Phase::Off;
-    f32 m_opacity = 0.0f;
+    float m_opacity = 0.0f;
 };
 
 } // namespace gdl::game

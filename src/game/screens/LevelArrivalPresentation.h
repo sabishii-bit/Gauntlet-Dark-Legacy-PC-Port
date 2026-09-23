@@ -1,12 +1,13 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
@@ -25,7 +26,7 @@ namespace gdl::game {
  * weapons archive; clear before releasing it. No players or world are retained. */
 class LevelArrivalPresentation {
 public:
-    static constexpr s32 kSpawnTicks = 60;
+    static constexpr std::int32_t kSpawnTicks = 60;
 
     /** Starts at fixed party positions; without a marker the follow camera is used. */
     void begin(RenderDevice& device, ItemArchive& weapons, std::span<const Vec3> positions,
@@ -33,16 +34,17 @@ public:
     void clear();
 
     /** Advance visuals before the world and its listener update. */
-    void animate(f32 seconds);
+    void animate(float seconds);
     /** Advance the hold and camera after the listener update, preserving its frame phase. */
-    void advance(s32 ticks, bool skip, const Vec3& followPosition, const Vec3& followAttention);
+    void advance(std::int32_t ticks, bool skip, const Vec3& followPosition,
+                 const Vec3& followAttention);
     void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void drawTitle(Canvas& canvas, const TextPainter& text, std::string_view title,
-                   f32 width) const;
+                   float width) const;
 
     bool active() const { return m_camera.active() || m_ticks > 0; }
     const StartCamera& camera() const { return m_camera; }
-    usize effectCount() const { return m_spawns.size(); }
+    std::size_t effectCount() const { return m_spawns.size(); }
 
 private:
     /** One character's materialisation at its entry position. */
@@ -55,10 +57,10 @@ private:
     };
     std::vector<Spawn> m_spawns;
     TextureAnimator m_textures;
-    s32 m_ticks = 0;
-    f32 m_frames = 0.0f;
+    std::int32_t m_ticks = 0;
+    float m_frames = 0.0f;
     StartCamera m_camera;
-    f32 m_titleSlide = 0.0f;
+    float m_titleSlide = 0.0f;
 };
 
 } // namespace gdl::game

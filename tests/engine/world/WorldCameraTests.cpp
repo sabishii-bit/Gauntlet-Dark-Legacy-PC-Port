@@ -9,11 +9,11 @@ namespace {
 
 using namespace gdl;
 
-bool near(f32 a, f32 b, f32 tolerance = 1e-4f) {
+bool near(float a, float b, float tolerance = 1e-4f) {
     return std::abs(a - b) <= tolerance;
 }
 
-bool near(const Vec3& a, const Vec3& b, f32 tolerance = 1e-4f) {
+bool near(const Vec3& a, const Vec3& b, float tolerance = 1e-4f) {
     return near(a.x, b.x, tolerance) && near(a.y, b.y, tolerance) && near(a.z, b.z, tolerance);
 }
 
@@ -73,7 +73,7 @@ TEST_CASE("the view moves the world in front of the eye", "[world][camera]") {
 
 TEST_CASE("the projection keeps depth reversed and under the 2D layers", "[world][camera]") {
     const Mat4 projection = WorldCamera::projection(glm::radians(60.0f), 640.0f / 448.0f);
-    const auto depthAt = [&](f32 distance) {
+    const auto depthAt = [&](float distance) {
         const Vec4 clip = projection * Vec4{0.0f, 0.0f, distance, 1.0f};
         return clip.z / clip.w;
     };
@@ -82,7 +82,7 @@ TEST_CASE("the projection keeps depth reversed and under the 2D layers", "[world
     REQUIRE(depthAt(10.0f) > depthAt(100.0f));
     REQUIRE(depthAt(10.0f) < WorldCamera::kDepthRange);
     // A point at the edge of the horizontal field of view lands on the clip edge.
-    const f32 edge = std::tan(glm::radians(30.0f)) * 10.0f;
+    const float edge = std::tan(glm::radians(30.0f)) * 10.0f;
     const Vec4 side = projection * Vec4{edge, 0.0f, 10.0f, 1.0f};
     REQUIRE(near(side.x / side.w, 1.0f, 1e-3f));
     const Vec4 above = projection * Vec4{0.0f, 1.0f, 10.0f, 1.0f};

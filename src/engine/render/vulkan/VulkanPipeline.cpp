@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <fstream>
 #include <vector>
@@ -29,7 +30,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     const std::array<VkDescriptorSetLayout, 2> setLayouts{textureSetLayout, textureSetLayout};
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layoutInfo.setLayoutCount = static_cast<u32>(setLayouts.size());
+    layoutInfo.setLayoutCount = static_cast<std::uint32_t>(setLayouts.size());
     layoutInfo.pSetLayouts = setLayouts.data();
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &pushRange;
@@ -57,25 +58,25 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     attributes[0].location = 0;
     attributes[0].binding = 0;
     attributes[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributes[0].offset = static_cast<u32>(offsetof(ImmediateVertex, position));
+    attributes[0].offset = static_cast<std::uint32_t>(offsetof(ImmediateVertex, position));
     attributes[1].location = 1;
     attributes[1].binding = 0;
     attributes[1].format = VK_FORMAT_R8G8B8A8_UNORM;
-    attributes[1].offset = static_cast<u32>(offsetof(ImmediateVertex, color));
+    attributes[1].offset = static_cast<std::uint32_t>(offsetof(ImmediateVertex, color));
     attributes[2].location = 2;
     attributes[2].binding = 0;
     attributes[2].format = VK_FORMAT_R32G32_SFLOAT;
-    attributes[2].offset = static_cast<u32>(offsetof(ImmediateVertex, uv));
+    attributes[2].offset = static_cast<std::uint32_t>(offsetof(ImmediateVertex, uv));
     attributes[3].location = 3;
     attributes[3].binding = 0;
     attributes[3].format = VK_FORMAT_R32G32_SFLOAT;
-    attributes[3].offset = static_cast<u32>(offsetof(ImmediateVertex, uv2));
+    attributes[3].offset = static_cast<std::uint32_t>(offsetof(ImmediateVertex, uv2));
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInput.vertexBindingDescriptionCount = 1;
     vertexInput.pVertexBindingDescriptions = &binding;
-    vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attributes.size());
+    vertexInput.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attributes.size());
     vertexInput.pVertexAttributeDescriptions = attributes.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -125,13 +126,12 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     colorBlend.pAttachments = &blendAttachment;
 
     // Culling and depth writes are set per draw.
-    constexpr std::array<VkDynamicState, 4> kDynamicStates{VK_DYNAMIC_STATE_CULL_MODE,
-                                                           VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
-                                                           VK_DYNAMIC_STATE_VIEWPORT,
-                                                           VK_DYNAMIC_STATE_SCISSOR};
+    constexpr std::array<VkDynamicState, 4> kDynamicStates{
+        VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR};
     VkPipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-    dynamicState.dynamicStateCount = static_cast<u32>(kDynamicStates.size());
+    dynamicState.dynamicStateCount = static_cast<std::uint32_t>(kDynamicStates.size());
     dynamicState.pDynamicStates = kDynamicStates.data();
 
     VkPipelineRenderingCreateInfo rendering{};
@@ -143,7 +143,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineInfo.pNext = &rendering;
-    pipelineInfo.stageCount = static_cast<u32>(stages.size());
+    pipelineInfo.stageCount = static_cast<std::uint32_t>(stages.size());
     pipelineInfo.pStages = stages.data();
     pipelineInfo.pVertexInputState = &vertexInput;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
@@ -181,15 +181,15 @@ VkShaderModule VulkanPipeline::loadShaderModule(const std::filesystem::path& pat
     }
     const std::streamsize size = file.tellg();
     GDL_VERIFY(size > 0 && (size % 4) == 0, "SPIR-V file size must be a multiple of four bytes");
-    std::vector<char> bytes(static_cast<usize>(size));
+    std::vector<char> bytes(static_cast<std::size_t>(size));
     file.seekg(0);
     file.read(bytes.data(), size);
-    std::vector<u32> words(bytes.size() / sizeof(u32));
+    std::vector<std::uint32_t> words(bytes.size() / sizeof(std::uint32_t));
     std::memcpy(words.data(), bytes.data(), bytes.size());
 
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-    createInfo.codeSize = static_cast<usize>(size);
+    createInfo.codeSize = static_cast<std::size_t>(size);
     createInfo.pCode = words.data();
 
     VkShaderModule module = VK_NULL_HANDLE;

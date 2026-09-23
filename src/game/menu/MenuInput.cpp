@@ -1,6 +1,7 @@
 #include "game/menu/MenuInput.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <span>
 
 namespace gdl::game {
@@ -67,19 +68,17 @@ bool anyButtonDown(const Input& input, std::span<const PadButton> buttons, int p
     return false;
 }
 
-constexpr u32 kFirstPrintable = 0x20;
-constexpr u32 kLastPrintable = 0x7E;
+constexpr std::uint32_t kFirstPrintable = 0x20;
+constexpr std::uint32_t kLastPrintable = 0x7E;
 
 } // namespace
 
 MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuInputSource source) {
     const auto pressed = [&](const std::vector<Key>& keys, const std::vector<PadButton>& buttons) {
-        return anyKeyPressed(input, keys, source) ||
-               anyButtonPressed(input, buttons, source.pad);
+        return anyKeyPressed(input, keys, source) || anyButtonPressed(input, buttons, source.pad);
     };
     const auto held = [&](const std::vector<Key>& keys, const std::vector<PadButton>& buttons) {
-        return anyKeyDown(input, keys, source) ||
-               anyButtonDown(input, buttons, source.pad);
+        return anyKeyDown(input, keys, source) || anyButtonDown(input, buttons, source.pad);
     };
     MenuInput out;
     out.up = pressed(bindings.up, bindings.padUp);
@@ -95,7 +94,7 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
     out.leftHeld = held(bindings.left, bindings.padLeft);
     out.rightHeld = held(bindings.right, bindings.padRight);
     if (source.keyboard && source.text) {
-        for (const u32 codepoint : input.typedText()) {
+        for (const std::uint32_t codepoint : input.typedText()) {
             if (codepoint >= kFirstPrintable && codepoint <= kLastPrintable) {
                 out.typed.push_back(static_cast<char>(codepoint));
             }

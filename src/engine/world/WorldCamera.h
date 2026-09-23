@@ -1,6 +1,7 @@
 #pragma once
 
-#include "engine/core/Types.h"
+#include <cstdint>
+
 #include "engine/math/Math.h"
 
 namespace gdl {
@@ -11,14 +12,14 @@ namespace gdl {
  * under the 2D layers, so screens can draw sprites over the world without clearing depth.
  */
 struct WorldCamera {
-    static constexpr f32 kNear = 0.25f;
-    static constexpr f32 kFar = 2000.0f;
-    static constexpr f32 kDepthRange = 0.45f; ///< world depths stay below the canvas' 0.5
+    static constexpr float kNear = 0.25f;
+    static constexpr float kFar = 2000.0f;
+    static constexpr float kDepthRange = 0.45f; ///< world depths stay below the canvas' 0.5
 
     Vec3 position{0.0f, 0.0f, 0.0f};
-    f32 pitch = 0.0f; ///< radians, positive looks down
-    f32 yaw = 0.0f;
-    f32 roll = 0.0f;
+    float pitch = 0.0f; ///< radians, positive looks down
+    float yaw = 0.0f;
+    float roll = 0.0f;
 
     /** Camera axes in world space: right, up and the direction looked along. */
     Vec3 right() const;
@@ -29,13 +30,13 @@ struct WorldCamera {
     Mat4 view() const;
 
     /** Perspective with reversed depth: nearer is larger, within [0, kDepthRange]. */
-    static Mat4 projection(f32 horizontalFov, f32 aspect);
+    static Mat4 projection(float horizontalFov, float aspect);
 
     /** Maps clip space onto a frame's pixel space (y down), for the letterbox projection. */
-    static Mat4 frameMapping(f32 frameWidth, f32 frameHeight);
+    static Mat4 frameMapping(float frameWidth, float frameHeight);
 
     /** Everything from world space to the frame's clip space. */
-    Mat4 clipTransform(f32 horizontalFov, f32 frameWidth, f32 frameHeight,
+    Mat4 clipTransform(float horizontalFov, float frameWidth, float frameHeight,
                        const Mat4& frameProjection) const;
 };
 
@@ -51,14 +52,16 @@ struct CameraFrame {
     static CameraFrame at(const Vec3& eye);
 
     /** The facing modes an object's flags ask for, in their top nibble. */
-    static constexpr u32 kFacingShift = 24U;
-    static constexpr u32 kFacingMask = 0xFU;
-    static constexpr u32 kFacingFull = 4; ///< the whole rotation follows the camera
-    static u32 facingOf(u32 objectFlags) { return (objectFlags >> kFacingShift) & kFacingMask; }
+    static constexpr std::uint32_t kFacingShift = 24U;
+    static constexpr std::uint32_t kFacingMask = 0xFU;
+    static constexpr std::uint32_t kFacingFull = 4; ///< the whole rotation follows the camera
+    static std::uint32_t facingOf(std::uint32_t objectFlags) {
+        return (objectFlags >> kFacingShift) & kFacingMask;
+    }
 
     /** `placement` with its rotation turned to face this camera: fully for kFacingFull,
      * else about the vertical so its z axis points at the camera. */
-    Mat4 face(const Mat4& placement, u32 mode) const;
+    Mat4 face(const Mat4& placement, std::uint32_t mode) const;
 };
 
 } // namespace gdl

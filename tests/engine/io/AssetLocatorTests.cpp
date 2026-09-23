@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -16,8 +17,8 @@ using namespace gdl;
 std::filesystem::path makeTree() {
     const auto root = test::scratchDirectory("asset-locator");
     std::filesystem::create_directories(root / "VQMOVIES");
-    writeFile(root / "VQMOVIES" / "OPENING.avi", std::vector<u8>{1});
-    writeFile(root / "VQMOVIES" / "midway.avi", std::vector<u8>{2});
+    writeFile(root / "VQMOVIES" / "OPENING.avi", std::vector<std::uint8_t>{1});
+    writeFile(root / "VQMOVIES" / "midway.avi", std::vector<std::uint8_t>{2});
     return root;
 }
 

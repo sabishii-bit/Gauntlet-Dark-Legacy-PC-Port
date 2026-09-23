@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "game/players/Inventory.h"
@@ -49,8 +51,9 @@ TEST_CASE("powerups renew the one held, fill a free slot, or push out the weakes
     REQUIRE(fire->strength == -1.0f);
     // Ten more fill the other slots; an eleventh pushes out the weakest of those, never the
     // one held for good.
-    for (s32 i = 0; i < 10; ++i) {
-        inventory.addPowerup(9, 1U << static_cast<u32>(i), 0.0f, 10.0f + static_cast<f32>(i));
+    for (std::int32_t i = 0; i < 10; ++i) {
+        inventory.addPowerup(9, 1U << static_cast<std::uint32_t>(i), 0.0f,
+                             10.0f + static_cast<float>(i));
     }
     REQUIRE(inventory.powerupCount() == Inventory::kPowerupSlots);
     inventory.addPowerup(7, 0x1, 0.0f, 99.0f);

@@ -1,6 +1,8 @@
 #include "game/world/AmbientSounds.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <exception>
 
@@ -8,25 +10,24 @@
 
 namespace gdl::game {
 
-f32 AmbientSounds::loudness(f32 distance, f32 radius) {
+float AmbientSounds::loudness(float distance, float radius) {
     if (radius <= 0.0f || distance <= radius) {
         return 1.0f;
     }
     // Linear from full at the radius to nothing at kSilentAt radii, as the original tapers.
-    return std::clamp((kSilentAt * radius - distance) / ((kSilentAt - 1.0f) * radius), 0.0f,
-                      1.0f);
+    return std::clamp((kSilentAt * radius - distance) / ((kSilentAt - 1.0f) * radius), 0.0f, 1.0f);
 }
 
-f32 AmbientSounds::panOf(const Vec3& position, const AmbientEar& ear) {
+float AmbientSounds::panOf(const Vec3& position, const AmbientEar& ear) {
     Vec3 away = position - ear.position;
     away.y = 0.0f;
-    const f32 length = glm::length(away);
+    const float length = glm::length(away);
     if (length <= 0.0f) {
         return 0.0f;
     }
     Vec3 right = ear.right;
     right.y = 0.0f;
-    const f32 span = glm::length(right);
+    const float span = glm::length(right);
     if (span <= 0.0f) {
         return 0.0f;
     }
@@ -37,14 +38,14 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
     clear();
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
-    for (usize i = 0; i < instances.size(); ++i) {
+    for (std::size_t i = 0; i < instances.size(); ++i) {
         const ItemInstance& instance = instances[i];
-        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size() ||
-            infos[static_cast<usize>(instance.info)].type != kSoundItem) {
+        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= infos.size() ||
+            infos[static_cast<std::size_t>(instance.info)].type != kSoundItem) {
             continue;
         }
         AmbientEmitter emitter;
-        emitter.instance = static_cast<s32>(i);
+        emitter.instance = static_cast<std::int32_t>(i);
         emitter.position = instance.position;
         // The radius leads the parameters as a float.
         std::memcpy(&emitter.radius, instance.params.data(), sizeof(emitter.radius));
@@ -68,11 +69,11 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
 }
 
 void AmbientSounds::update(SoundPlayer& player, std::span<const Vec3> listeners,
-                           const AmbientEar& ear, f32 levelVolume) {
+                           const AmbientEar& ear, float levelVolume) {
     for (AmbientEmitter& emitter : m_emitters) {
-        f32 nearest = -1.0f;
+        float nearest = -1.0f;
         for (const Vec3& listener : listeners) {
-            const f32 distance = glm::distance(listener, emitter.position);
+            const float distance = glm::distance(listener, emitter.position);
             nearest = nearest < 0.0f ? distance : std::min(nearest, distance);
         }
         emitter.loudness = nearest < 0.0f ? 0.0f : loudness(nearest, emitter.radius);
@@ -83,7 +84,7 @@ void AmbientSounds::update(SoundPlayer& player, std::span<const Vec3> listeners,
             }
             continue;
         }
-        const f32 volume = std::clamp(kPeak * emitter.loudness * levelVolume, 0.0f, 1.0f);
+        const float volume = std::clamp(kPeak * emitter.loudness * levelVolume, 0.0f, 1.0f);
         if (emitter.handle == kNoSound || !player.isPlaying(emitter.handle)) {
             try {
                 emitter.handle = player.play(emitter.bank->sequence(emitter.sound), volume,
@@ -116,8 +117,8 @@ void AmbientSounds::clear() {
     m_emitters.clear();
 }
 
-usize AmbientSounds::playingCount() const {
-    return static_cast<usize>(std::ranges::count_if(
+std::size_t AmbientSounds::playingCount() const {
+    return static_cast<std::size_t>(std::ranges::count_if(
         m_emitters, [](const AmbientEmitter& emitter) { return emitter.handle != kNoSound; }));
 }
 

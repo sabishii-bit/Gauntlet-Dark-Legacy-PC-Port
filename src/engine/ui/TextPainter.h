@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <string_view>
 
 #include "engine/assets/BitmapFont.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
 #include "engine/ui/Canvas.h"
@@ -11,10 +11,10 @@
 namespace gdl {
 
 struct TextStyle {
-    f32 scale = 1.0f;
+    float scale = 1.0f;
     Color color = Color::white();
     const Texture* texture = nullptr; ///< glyph sheet to sample; the painter's own when null
-    s32 expand = 0;                   ///< pixels added on every side of each glyph
+    std::int32_t expand = 0;          ///< pixels added on every side of each glyph
 };
 
 /**
@@ -25,24 +25,25 @@ class TextPainter {
 public:
     /** How far inside its cell a glyph is sampled, in texels: half a texel keeps the
      * filtering from pulling in the cell's borders and its neighbours. */
-    static constexpr f32 kCellInset = 0.5f;
+    static constexpr float kCellInset = 0.5f;
 
     void setFont(const BitmapFont* font, const Texture* texture);
 
     const BitmapFont* font() const { return m_font; }
     bool ready() const { return m_font != nullptr && m_texture != nullptr; }
 
-    s32 measure(std::string_view text, f32 scale = 1.0f) const;
-    s32 lineHeight(f32 scale = 1.0f) const;
+    std::int32_t measure(std::string_view text, float scale = 1.0f) const;
+    std::int32_t lineHeight(float scale = 1.0f) const;
 
     /** Resolves a possibly-negative x to the line's left edge. */
-    s32 leftEdge(s32 x, std::string_view text, f32 scale) const;
+    std::int32_t leftEdge(std::int32_t x, std::string_view text, float scale) const;
 
     /** Draws one line and returns the x just past its last glyph. */
-    s32 draw(Canvas& canvas, s32 x, s32 y, std::string_view text, const TextStyle& style) const;
+    std::int32_t draw(Canvas& canvas, std::int32_t x, std::int32_t y, std::string_view text,
+                      const TextStyle& style) const;
 
 private:
-    s32 advance(u8 code, f32 scale) const;
+    std::int32_t advance(std::uint8_t code, float scale) const;
 
     const BitmapFont* m_font = nullptr;
     const Texture* m_texture = nullptr;

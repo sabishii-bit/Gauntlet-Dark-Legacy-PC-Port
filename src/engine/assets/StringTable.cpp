@@ -1,5 +1,6 @@
 #include "engine/assets/StringTable.h"
 
+#include <cstdint>
 #include <exception>
 
 #include <nlohmann/json.hpp>
@@ -35,7 +36,7 @@ std::string_view StringTable::get(std::string_view id) const {
 
 bool StringTable::merge(const std::filesystem::path& file) {
     try {
-        const std::vector<u8> bytes = readFile(file);
+        const std::vector<std::uint8_t> bytes = readFile(file);
         const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
         for (const auto& [key, value] : root.items()) {
             if (value.is_string()) {

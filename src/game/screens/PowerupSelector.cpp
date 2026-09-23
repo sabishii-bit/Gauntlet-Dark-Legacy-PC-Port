@@ -1,6 +1,8 @@
 #include "game/screens/PowerupSelector.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 namespace gdl::game {
 
@@ -10,11 +12,12 @@ void PowerupSelector::close() {
     m_slide = 0;
 }
 
-SelectorCue PowerupSelector::step(const SelectorInput& input, Inventory& inventory, s32 ticks) {
+SelectorCue PowerupSelector::step(const SelectorInput& input, Inventory& inventory,
+                                  std::int32_t ticks) {
     SelectorCue cue = SelectorCue::None;
-    const auto held = [&](s32 slot) {
-        return slot >= 0 && static_cast<usize>(slot) < inventory.powerups.size() &&
-               inventory.powerups[static_cast<usize>(slot)].held();
+    const auto held = [&](std::int32_t slot) {
+        return slot >= 0 && static_cast<std::size_t>(slot) < inventory.powerups.size() &&
+               inventory.powerups[static_cast<std::size_t>(slot)].held();
     };
     if (m_state == State::Open) {
         // The one named running out, or left, hands over to the one before it.
@@ -25,7 +28,7 @@ SelectorCue PowerupSelector::step(const SelectorInput& input, Inventory& invento
             cue = SelectorCue::Moved;
             m_selection = inventory.nextHeld(m_selection, 1);
         } else if (input.up) {
-            PowerupSlot& slot = inventory.powerups[static_cast<usize>(m_selection)];
+            PowerupSlot& slot = inventory.powerups[static_cast<std::size_t>(m_selection)];
             slot.on = !slot.on;
             cue = SelectorCue::Switched;
         }

@@ -1,10 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 
 #include "engine/core/Clock.h"
-#include "engine/core/Types.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/platform/Input.h"
 #include "engine/platform/Window.h"
 #include "engine/render/RenderDevice.h"
@@ -16,8 +17,9 @@ struct ApplicationDesc {
     std::filesystem::path assetDirectory;
     bool vsync = true;
     bool enableValidation = false;
-    u64 maxFrames = 0;    ///< quit after this many frames; 0 runs until closed
-    u32 maxFrameRate = 0; ///< sleep to hold this many frames per second; 0 leaves it to vsync
+    std::uint64_t maxFrames = 0; ///< quit after this many frames; 0 runs until closed
+    std::uint32_t maxFrameRate =
+        0; ///< sleep to hold this many frames per second; 0 leaves it to vsync
 };
 
 /** Owns the window, the render device and the frame loop. Subclass and override the hooks. */
@@ -33,7 +35,7 @@ public:
 
 protected:
     virtual void onInit() {}
-    virtual void onUpdate(f64 /*deltaSeconds*/) {}
+    virtual void onUpdate(double /*deltaSeconds*/) {}
     virtual void onRender(RenderDevice& /*device*/) {}
     virtual void onShutdown() {}
 
@@ -45,8 +47,8 @@ protected:
 
     void requestQuit() { m_quitRequested = true; }
     /** Holds this many frames a second from the next frame on; 0 leaves it to vsync. */
-    void setMaxFrameRate(u32 rate) { m_desc.maxFrameRate = rate; }
-    u32 maxFrameRate() const { return m_desc.maxFrameRate; }
+    void setMaxFrameRate(std::uint32_t rate) { m_desc.maxFrameRate = rate; }
+    std::uint32_t maxFrameRate() const { return m_desc.maxFrameRate; }
 
 private:
     void checkAssetDirectory() const;

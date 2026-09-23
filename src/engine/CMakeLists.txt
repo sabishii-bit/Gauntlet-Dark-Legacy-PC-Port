@@ -9,7 +9,7 @@ find_package(Stb REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 add_library(engine STATIC
-    core/Types.h
+    core/SpecialMembers.h
     core/Error.h
     core/Log.h
     core/Log.cpp

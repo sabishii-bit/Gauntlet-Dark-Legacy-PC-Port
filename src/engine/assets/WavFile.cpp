@@ -1,5 +1,7 @@
 #include "engine/assets/WavFile.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 #include "engine/core/Error.h"
@@ -10,14 +12,14 @@ namespace gdl {
 
 namespace {
 
-constexpr usize kRiffHeaderSize = 12;
-constexpr usize kChunkHeaderSize = 8;
-constexpr u16 kPcmFormat = 1;
-constexpr u16 kSixteenBits = 16;
+constexpr std::size_t kRiffHeaderSize = 12;
+constexpr std::size_t kChunkHeaderSize = 8;
+constexpr std::uint16_t kPcmFormat = 1;
+constexpr std::uint16_t kSixteenBits = 16;
 
-bool tagIs(std::span<const u8> bytes, usize at, std::string_view tag) {
-    for (usize i = 0; i < 4; ++i) {
-        if (bytes[at + i] != static_cast<u8>(tag[i])) {
+bool tagIs(std::span<const std::uint8_t> bytes, std::size_t at, std::string_view tag) {
+    for (std::size_t i = 0; i < 4; ++i) {
+        if (bytes[at + i] != static_cast<std::uint8_t>(tag[i])) {
             return false;
         }
     }
@@ -26,17 +28,17 @@ bool tagIs(std::span<const u8> bytes, usize at, std::string_view tag) {
 
 } // namespace
 
-WavData decodeWav(std::span<const u8> bytes) {
+WavData decodeWav(std::span<const std::uint8_t> bytes) {
     if (bytes.size() < kRiffHeaderSize || !tagIs(bytes, 0, "RIFF") || !tagIs(bytes, 8, "WAVE")) {
         throw FormatError("not a RIFF WAVE file");
     }
     WavData wav;
     bool haveFormat = false;
     bool haveData = false;
-    usize at = kRiffHeaderSize;
+    std::size_t at = kRiffHeaderSize;
     while (at + kChunkHeaderSize <= bytes.size()) {
-        const u32 size = readU32LE(bytes, at + 4);
-        const usize body = at + kChunkHeaderSize;
+        const std::uint32_t size = readU32LE(bytes, at + 4);
+        const std::size_t body = at + kChunkHeaderSize;
         if (size > bytes.size() - body) {
             throw FormatError("WAVE chunk runs past the end of the file");
         }
@@ -53,8 +55,8 @@ WavData decodeWav(std::span<const u8> bytes) {
             haveFormat = true;
         } else if (tagIs(bytes, at, "data")) {
             wav.samples.resize(size / 2);
-            for (usize i = 0; i < wav.samples.size(); ++i) {
-                wav.samples[i] = static_cast<s16>(readU16LE(bytes, body + i * 2));
+            for (std::size_t i = 0; i < wav.samples.size(); ++i) {
+                wav.samples[i] = static_cast<std::int16_t>(readU16LE(bytes, body + i * 2));
             }
             haveData = true;
         }

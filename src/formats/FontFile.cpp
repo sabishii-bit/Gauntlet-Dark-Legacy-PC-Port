@@ -1,5 +1,8 @@
 #include "formats/FontFile.h"
 
+#include <cstddef>
+#include <cstdint>
+
 #include "engine/core/Error.h"
 #include "engine/io/ByteReader.h"
 
@@ -7,12 +10,12 @@ namespace gdl::formats {
 
 namespace {
 
-constexpr usize kHeaderSize = 12;
-constexpr usize kGlyphSize = 16;
+constexpr std::size_t kHeaderSize = 12;
+constexpr std::size_t kGlyphSize = 16;
 
 } // namespace
 
-FontFile FontFile::parse(std::span<const u8> file) {
+FontFile FontFile::parse(std::span<const std::uint8_t> file) {
     if (file.size() < kHeaderSize) {
         throw FormatError("font file is too small for its header");
     }
@@ -21,7 +24,7 @@ FontFile FontFile::parse(std::span<const u8> file) {
     if (font.height <= 0) {
         throw FormatError("font file has no glyph height");
     }
-    for (usize at = kHeaderSize; at + kGlyphSize <= file.size(); at += kGlyphSize) {
+    for (std::size_t at = kHeaderSize; at + kGlyphSize <= file.size(); at += kGlyphSize) {
         FontGlyph glyph;
         glyph.code = readS32LE(file, at);
         if (glyph.code == 0) {

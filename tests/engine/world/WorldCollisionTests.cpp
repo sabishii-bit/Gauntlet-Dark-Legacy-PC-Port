@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -17,7 +19,7 @@ using namespace gdl;
 using Catch::Approx;
 
 CollisionTriangle triangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal,
-                           s32 object = 0) {
+                           std::int32_t object = 0) {
     CollisionTriangle out;
     out.vertices = {a, b, c};
     out.normal = normal;
@@ -86,7 +88,7 @@ TEST_CASE("a moving object's triangles stay in its own space and follow its tran
     triangles.push_back(triangle({-1, 0.5f, 1}, {-1, 3, 1}, {1, 3, 1}, south, 3));
     triangles.push_back(triangle({-1, 0.5f, 1}, {1, 3, 1}, {1, 0.5f, 1}, south, 3));
     collision.build(triangles);
-    const std::array<s32, 1> movers{3};
+    const std::array<std::int32_t, 1> movers{3};
     collision.setMovingObjects(movers);
     REQUIRE(collision.moving(3));
     REQUIRE_FALSE(collision.moving(1));
@@ -148,20 +150,22 @@ TEST_CASE("collision files load their world-space triangles, skipping decoration
     REQUIRE(hit->y == Approx(2.0f)); // the file's coordinates, not offset by the object
     REQUIRE(hit->object == 1);
 
-    writeTextFile(dir / "collision.json", R"({"objects": [{"object": 7, "normals": [], "vertices": []}]})");
+    writeTextFile(dir / "collision.json",
+                  R"({"objects": [{"object": 7, "normals": [], "vertices": []}]})");
     REQUIRE_FALSE(collision.load(dir, layout));
     REQUIRE_FALSE(collision.loaded());
     REQUIRE_FALSE(collision.load(test::scratchDirectory("world-collision-none"), layout));
 }
 
 TEST_CASE("the unpacked tower has floors under its start points", "[world][collision][unpacked]") {
-    const std::filesystem::path dir = test::unpackedOrSkip("LEVELS/LEVELL1/collision.json").parent_path();
+    const std::filesystem::path dir =
+        test::unpackedOrSkip("LEVELS/LEVELL1/collision.json").parent_path();
     WorldLayout layout;
     REQUIRE(layout.load(dir));
     WorldCollision collision;
     REQUIRE(collision.load(dir, layout));
     REQUIRE(collision.triangleCount() > 5000);
-    usize found = 0;
+    std::size_t found = 0;
     for (const WorldLocator& locator : layout.locators()) {
         if (locator.kind != LocatorKind::Start) {
             continue;

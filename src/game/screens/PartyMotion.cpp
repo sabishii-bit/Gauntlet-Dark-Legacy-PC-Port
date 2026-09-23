@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 
 #include "game/players/PowerupEffects.h"
 namespace gdl::game {
 namespace {
-constexpr f32 kChargeStick = 0.25f;
+constexpr float kChargeStick = 0.25f;
 }
 PlayerDeed PartyMotion::turboDeed(const PlayerRuntime& runtime, const PlayInput& in) {
     if (runtime.figure == nullptr) {
@@ -27,7 +29,7 @@ PlayerDeed PartyMotion::turboDeed(const PlayerRuntime& runtime, const PlayInput&
 }
 
 MoveInput PartyMotion::chargeInput(const PlayerActor& actor, const MoveInput& stick,
-                                   f32 cameraYaw) {
+                                   float cameraYaw) {
     MoveInput rush;
     rush.magnitude = 1.0f;
     if (stick.magnitude >= kChargeStick) {
@@ -35,14 +37,14 @@ MoveInput PartyMotion::chargeInput(const PlayerActor& actor, const MoveInput& st
         return rush;
     }
     const Vec3 facing = actor.facing();
-    const f32 ahead = std::atan2(facing.x, facing.z) - cameraYaw;
+    const float ahead = std::atan2(facing.x, facing.z) - cameraYaw;
     rush.direction = Vec2{std::sin(ahead), std::cos(ahead)};
     return rush;
 }
 
-StrafeWay PartyMotion::strafeWayOf(f32 heading, f32 facing) {
-    constexpr f32 kEighth = 0.7853982f;
-    const f32 off = std::remainder(heading - facing, 8.0f * kEighth);
+StrafeWay PartyMotion::strafeWayOf(float heading, float facing) {
+    constexpr float kEighth = 0.7853982f;
+    const float off = std::remainder(heading - facing, 8.0f * kEighth);
     if (std::abs(off) > 3.0f * kEighth) {
         return StrafeWay::Back;
     }
@@ -54,15 +56,15 @@ StrafeWay PartyMotion::strafeWayOf(f32 heading, f32 facing) {
 
 std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                                              std::span<const PlayInput> inputs, bool held,
-                                             f32 cameraYaw, s32 ticks, f32 seconds,
+                                             float cameraYaw, std::int32_t ticks, float seconds,
                                              const WorldCollision& collision,
                                              const Events& events) {
     // Snapshot after movement, before fixture collision, preserving the camera's frame phase.
     std::vector<CameraSubject> subjects;
     subjects.reserve(players.size());
-    for (usize i = 0; i < players.size(); ++i) {
+    for (std::size_t i = 0; i < players.size(); ++i) {
         PlayerActor& actor = players[i].actor;
-        const auto player = static_cast<usize>(actor.player());
+        const auto player = static_cast<std::size_t>(actor.player());
         const bool down = players[i].life != PlayerLife::Standing;
         // Reeling from a hit, a character neither moves nor does anything.
         const bool reeling =
@@ -106,7 +108,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
         // A body in a throw keeps its feet where they are, turning to the stick.
-        const f32 pace =
+        const float pace =
             players[i].figure != nullptr ? players[i].figure->animator().moveScale() : 1.0f;
         const bool charging =
             players[i].figure != nullptr && players[i].figure->animator().shoving();

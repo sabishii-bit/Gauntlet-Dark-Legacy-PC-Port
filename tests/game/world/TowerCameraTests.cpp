@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
@@ -14,9 +15,9 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr f32 kPi = std::numbers::pi_v<f32>;
+constexpr float kPi = std::numbers::pi_v<float>;
 
-WorldLocator marker(const Vec3& position, f32 pitch, f32 yaw, u8 distance = 0) {
+WorldLocator marker(const Vec3& position, float pitch, float yaw, std::uint8_t distance = 0) {
     WorldLocator out;
     out.kind = LocatorKind::TriggerCamera;
     out.position = position;
@@ -25,7 +26,7 @@ WorldLocator marker(const Vec3& position, f32 pitch, f32 yaw, u8 distance = 0) {
     return out;
 }
 
-CameraSubject standing(f32 x, f32 z) {
+CameraSubject standing(float x, float z) {
     return CameraSubject{Vec3{x, 0.0f, z}, Vec3{x, 2.5f, z}};
 }
 
@@ -70,7 +71,7 @@ TEST_CASE("a spread party pulls the camera out until everyone fits the view",
         camera.update(party, markers, CameraRange{}, CameraView{}, 1.0f / 30.0f);
     }
     // Half the spread over the half-angle's tangent, plus the slack the fit adds.
-    const f32 needed = 30.0f / std::tan(CameraView{}.horizontalFov * 0.5f);
+    const float needed = 30.0f / std::tan(CameraView{}.horizontalFov * 0.5f);
     REQUIRE(camera.distance() == Approx(needed + TowerCamera::kFarGap).margin(0.5f));
 
     // A marker with a fixed distance overrides the range for the party.

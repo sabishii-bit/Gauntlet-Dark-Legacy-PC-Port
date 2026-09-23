@@ -1,3 +1,5 @@
+#include <cstddef>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/platform/Input.h"
@@ -79,11 +81,11 @@ TEST_CASE("keys and pad buttons round-trip through their names", "[platform][inp
     REQUIRE(padButtonFromName("dpadup") == PadButton::DpadUp);
     REQUIRE(padButtonFromName("start") == PadButton::Start);
     REQUIRE_FALSE(padButtonFromName("Select").has_value());
-    for (usize i = 1; i < static_cast<usize>(Key::Count); ++i) {
+    for (std::size_t i = 1; i < static_cast<std::size_t>(Key::Count); ++i) {
         const auto key = static_cast<Key>(i);
         REQUIRE(keyFromName(keyName(key)) == key);
     }
-    for (usize i = 0; i < static_cast<usize>(PadButton::Count); ++i) {
+    for (std::size_t i = 0; i < static_cast<std::size_t>(PadButton::Count); ++i) {
         const auto button = static_cast<PadButton>(i);
         REQUIRE(padButtonFromName(padButtonName(button)) == button);
     }
@@ -101,8 +103,8 @@ TEST_CASE("gamepad snapshots are exposed per pad with edge detection", "[platfor
     Input input;
     PadSnapshot snapshot;
     snapshot.connected = true;
-    snapshot.buttons[static_cast<usize>(PadButton::A)] = true;
-    snapshot.axes[static_cast<usize>(PadAxis::LeftX)] = -0.5f;
+    snapshot.buttons[static_cast<std::size_t>(PadButton::A)] = true;
+    snapshot.axes[static_cast<std::size_t>(PadAxis::LeftX)] = -0.5f;
 
     input.beginPoll();
     input.setPad(1, snapshot);

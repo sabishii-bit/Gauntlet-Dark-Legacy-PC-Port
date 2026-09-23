@@ -2,14 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace gdl::game {
 
-bool StrikeHit::reaches(const Vec3& position, f32 targetRadius, f32 targetHeight) const {
+bool StrikeHit::reaches(const Vec3& position, float targetRadius, float targetHeight) const {
     const Vec3 offset = position - centre;
-    const f32 across = std::hypot(offset.x, offset.z);
-    if (across > radius + targetRadius || offset.y > radius ||
-        offset.y + targetHeight < -radius) {
+    const float across = std::hypot(offset.x, offset.z);
+    if (across > radius + targetRadius || offset.y > radius || offset.y + targetHeight < -radius) {
         return false;
     }
     if (arc <= -1.0f || across < 1e-4f) {
@@ -18,7 +18,7 @@ bool StrikeHit::reaches(const Vec3& position, f32 targetRadius, f32 targetHeight
     return (offset.x * facing.x + offset.z * facing.z) / across >= arc;
 }
 
-f32 MoveStrikes::damageOf(const MoveStrike& strike, f32 ownDamage) {
+float MoveStrikes::damageOf(const MoveStrike& strike, float ownDamage) {
     return strike.amount < 0.0f ? ownDamage * -strike.amount : strike.amount;
 }
 
@@ -29,8 +29,8 @@ Vec3 MoveStrikes::originOf(const MoveStrike& strike, const Vec3& position, const
            facing * strike.offset.z;
 }
 
-u32 MoveStrikes::start(const MoveStrike& strike, s32 owner, const Vec3& position,
-                       const Vec3& facing, f32 ownDamage) {
+std::uint32_t MoveStrikes::start(const MoveStrike& strike, std::int32_t owner, const Vec3& position,
+                                 const Vec3& facing, float ownDamage) {
     Strike started;
     started.id = m_next++;
     started.owner = owner;
@@ -47,7 +47,7 @@ u32 MoveStrikes::start(const MoveStrike& strike, s32 owner, const Vec3& position
     return started.id;
 }
 
-std::vector<StrikeHit> MoveStrikes::update(f32 seconds, const WorldCollision* collision) {
+std::vector<StrikeHit> MoveStrikes::update(float seconds, const WorldCollision* collision) {
     std::vector<StrikeHit> hits;
     for (Strike& strike : m_strikes) {
         const auto hit = [&] {
@@ -88,7 +88,7 @@ void MoveStrikes::clear() {
     m_next = 1;
 }
 
-const MoveStrikes::Strike* MoveStrikes::find(u32 id) const {
+const MoveStrikes::Strike* MoveStrikes::find(std::uint32_t id) const {
     const auto found = std::ranges::find(m_strikes, id, &Strike::id);
     return found != m_strikes.end() ? &*found : nullptr;
 }

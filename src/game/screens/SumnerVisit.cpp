@@ -1,6 +1,8 @@
 #include "game/screens/SumnerVisit.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <format>
 #include <utility>
@@ -18,7 +20,7 @@ constexpr std::string_view kFireMaskTexture = "GREENCIRCTRANSM";
 /** Sumner's topics: the text id of each and the code the original's menu gives it. */
 struct HintTopicEntry {
     std::string_view text;
-    s32 code;
+    std::int32_t code;
     HintTopic topic;
 };
 constexpr std::array<HintTopicEntry, 4> kHintTopics{
@@ -51,7 +53,7 @@ const Texture* SumnerVisit::load(RenderDevice& device, TextureSet& textures, Ite
     const Texture* glow = art.textures.glow;
     art.textures.parchment = texture("FONT32_PARCH");
     art.textures.arrows = texture("ARROWS");
-    for (usize i = 0; i < art.textures.garamond.size(); ++i) {
+    for (std::size_t i = 0; i < art.textures.garamond.size(); ++i) {
         art.textures.garamond[i] = texture(std::format("FONT32GAR{}", i));
     }
     art.textures.backdrop = texture(kScrollTexture);
@@ -64,15 +66,15 @@ const Texture* SumnerVisit::load(RenderDevice& device, TextureSet& textures, Ite
     const auto ring = textures.find(kFireRingTexture);
     const auto mask = textures.find(kFireMaskTexture);
     if (scroll.has_value() && ring.has_value() && mask.has_value()) {
-        const u32 firstRing = *ring;
-        const u32 firstMask = *mask;
+        const std::uint32_t firstRing = *ring;
+        const std::uint32_t firstMask = *mask;
         try {
             art.scroll = &textures.image(*scroll);
-            const auto frames = static_cast<u32>(BurnDialogueScroll::kFrameCount);
-            for (u32 i = 1; i <= frames && firstRing + i < textures.size(); ++i) {
+            const auto frames = static_cast<std::uint32_t>(BurnDialogueScroll::kFrameCount);
+            for (std::uint32_t i = 1; i <= frames && firstRing + i < textures.size(); ++i) {
                 art.burnRing.push_back(&textures.texture(device, firstRing + i));
             }
-            for (u32 i = 1; i <= frames && firstMask + i < textures.size(); ++i) {
+            for (std::uint32_t i = 1; i <= frames && firstMask + i < textures.size(); ++i) {
                 art.burnMasks.push_back(&textures.image(firstMask + i));
             }
         } catch (const std::exception& e) {
@@ -103,7 +105,7 @@ void SumnerVisit::clear() {
     m_hintsGiven = false;
 }
 
-bool SumnerVisit::visit(f32 seconds, std::optional<s32> visitor, bool sumnerReady,
+bool SumnerVisit::visit(float seconds, std::optional<std::int32_t> visitor, bool sumnerReady,
                         const TextPainter& text, const GameConfig* config,
                         const StringTable* strings) {
     if (m_greetingLeft > 0.0f) {
@@ -128,7 +130,7 @@ bool SumnerVisit::visit(f32 seconds, std::optional<s32> visitor, bool sumnerRead
     return false;
 }
 
-void SumnerVisit::open(s32 player, const TextPainter& text, const GameConfig* config,
+void SumnerVisit::open(std::int32_t player, const TextPainter& text, const GameConfig* config,
                        const StringTable* stringsTable) {
     if (stringsTable == nullptr || config == nullptr) {
         return;
@@ -146,8 +148,8 @@ void SumnerVisit::open(s32 player, const TextPainter& text, const GameConfig* co
         labels.player.replace(slot, 2, std::to_string(player + 1));
     }
     MenuScreen screen;
-    screen.width = static_cast<s32>(config->display.virtualWidth);
-    screen.height = static_cast<s32>(config->display.virtualHeight);
+    screen.width = static_cast<std::int32_t>(config->display.virtualWidth);
+    screen.height = static_cast<std::int32_t>(config->display.virtualHeight);
     screen.horizontalFov = config->horizontalFovRadians();
     m_hints.beginVisit();
     if (m_menu.open(text, screen, std::move(labels))) {
@@ -155,7 +157,8 @@ void SumnerVisit::open(s32 player, const TextPainter& text, const GameConfig* co
     }
 }
 
-HintMenuEvent SumnerVisit::update(RenderDevice& device, const MenuInput& input, s32 ticks) {
+HintMenuEvent SumnerVisit::update(RenderDevice& device, const MenuInput& input,
+                                  std::int32_t ticks) {
     const HintMenuEvent event = m_menu.update(device, input, ticks);
     if (!m_menu.active()) {
         m_owner = -1;
@@ -163,7 +166,7 @@ HintMenuEvent SumnerVisit::update(RenderDevice& device, const MenuInput& input, 
     return event;
 }
 
-void SumnerVisit::answer(s32 topic, const TextPainter& text, const StringTable* strings,
+void SumnerVisit::answer(std::int32_t topic, const TextPainter& text, const StringTable* strings,
                          const HintKnowledge& knowledge) {
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)

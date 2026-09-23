@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,7 +14,8 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][screens][unpacked]") {
+TEST_CASE("status boxes draw a player's panel and a dimmed empty slot",
+          "[game][screens][unpacked]") {
     const std::filesystem::path root =
         test::unpackedOrSkip("STATIC/textures.json").parent_path().parent_path();
     test::FakeRenderDevice device;
@@ -35,7 +37,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     canvas.begin(device, Mat4{1.0f});
     painter.draw(canvas, 0, view, true);
     canvas.end();
-    const usize full = device.draws.size();
+    const std::size_t full = device.draws.size();
     REQUIRE(full >= 4); // the bar, the panel, the frame, the icons and the text
 
     // Keys and potions carried add their icons and counts over the gold and the health.
@@ -79,7 +81,7 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][
     canvas.end();
     REQUIRE_FALSE(device.draws.empty());
     REQUIRE(device.draws.size() < full);
-    REQUIRE(test::minCorner(device.draws[0]).x >= static_cast<f32>(StatusBoxPainter::kWidth));
+    REQUIRE(test::minCorner(device.draws[0]).x >= static_cast<float>(StatusBoxPainter::kWidth));
 
     painter.release();
     REQUIRE_FALSE(painter.loaded());

@@ -1,6 +1,8 @@
 #pragma once
 
-#include "engine/core/Types.h"
+#include <cstdint>
+
+#include "engine/core/SpecialMembers.h"
 #include "engine/render/vulkan/VulkanCommon.h"
 
 namespace gdl {
@@ -20,7 +22,7 @@ public:
     VkDevice device() const { return m_device; }
     VkSurfaceKHR surface() const { return m_surface; }
     VkQueue graphicsQueue() const { return m_graphicsQueue; }
-    u32 graphicsQueueFamily() const { return m_graphicsQueueFamily; }
+    std::uint32_t graphicsQueueFamily() const { return m_graphicsQueueFamily; }
     VmaAllocator allocator() const { return m_allocator; }
     const VkPhysicalDeviceProperties& properties() const { return m_properties; }
     VkFormat depthFormat() const { return m_depthFormat; }
@@ -47,7 +49,7 @@ private:
     VkPhysicalDeviceProperties m_properties{};
     VkDevice m_device = VK_NULL_HANDLE;
     VkQueue m_graphicsQueue = VK_NULL_HANDLE;
-    u32 m_graphicsQueueFamily = 0;
+    std::uint32_t m_graphicsQueueFamily = 0;
     VmaAllocator m_allocator = VK_NULL_HANDLE;
     VkCommandPool m_uploadPool = VK_NULL_HANDLE;
     VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;

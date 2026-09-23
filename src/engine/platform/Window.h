@@ -1,11 +1,12 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
 #include <vector>
 
-#include "engine/core/Types.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/platform/Input.h"
 #include "engine/render/Image.h"
 #include "engine/render/RenderTypes.h"
@@ -15,8 +16,8 @@ namespace gdl {
 
 struct WindowDesc {
     std::string title = "Gauntlet Dark Legacy";
-    u32 width = 1280;
-    u32 height = 896;
+    std::uint32_t width = 1280;
+    std::uint32_t height = 896;
     bool resizable = true;
 };
 

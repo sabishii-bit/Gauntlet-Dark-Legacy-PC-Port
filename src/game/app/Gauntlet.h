@@ -1,30 +1,30 @@
 #pragma once
 
-#include <vector>
-#include <optional>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 #include "engine/app/Application.h"
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioDevice.h"
 #include "engine/audio/SoundPlayer.h"
-#include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/render/RenderDevice.h"
+#include "engine/ui/Canvas.h"
 
 #include "game/app/AttractSequencer.h"
 #include "game/app/CommandLine.h"
 #include "game/config/GameConfig.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/MovieScene.h"
+#include "game/screens/PlayScene.h"
 #include "game/screens/PlayerSelectScene.h"
 #include "game/screens/SmokeTestScene.h"
-#include "engine/ui/Canvas.h"
-#include "game/screens/PlayScene.h"
-#include "game/world/LevelWorld.h"
 #include "game/screens/TitleScene.h"
+#include "game/world/LevelWorld.h"
 
 namespace gdl::game {
 
@@ -35,7 +35,7 @@ public:
 
 protected:
     void onInit() override;
-    void onUpdate(f64 deltaSeconds) override;
+    void onUpdate(double deltaSeconds) override;
     void onRender(RenderDevice& device) override;
     void onShutdown() override;
 
@@ -43,10 +43,10 @@ private:
     bool startMovie(std::string_view name);
     bool startTitleScreen();
     void startNextAttractScreen();
-    void updateMovie(f64 deltaSeconds);
-    void updateTitle(f64 deltaSeconds);
-    void updateSelect(f64 deltaSeconds);
-    void updateTower(f64 deltaSeconds);
+    void updateMovie(double deltaSeconds);
+    void updateTitle(double deltaSeconds);
+    void updateSelect(double deltaSeconds);
+    void updateTower(double deltaSeconds);
     void finishJourney();
     /** Writes the party in play back into its save slots. */
     void keepParty();
@@ -55,8 +55,8 @@ private:
     bool startLevel(const LevelRef& level, std::span<const PartyMember> party,
                     const PlayOptions& options = {});
     bool startScenario(const std::filesystem::path& file);
-    bool startPlayerSelect(s32 startingPlayer);
-    s32 playerPressingStart() const;
+    bool startPlayerSelect(std::int32_t startingPlayer);
+    std::int32_t playerPressingStart() const;
     GameContext context();
     void applyWindowIcon();
 
@@ -88,8 +88,8 @@ private:
     SmokeTestScene m_smokeTest;
     bool m_movieActive = false;
     bool m_titleWarned = false;
-    f64 m_fpsAccumulator = 0.0;
-    u32 m_fpsFrames = 0;
+    double m_fpsAccumulator = 0.0;
+    std::uint32_t m_fpsFrames = 0;
 };
 
 } // namespace gdl::game

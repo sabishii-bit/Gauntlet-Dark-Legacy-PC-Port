@@ -1,5 +1,7 @@
 #include "game/world/LevelSoundscape.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <format>
 #include <memory>
@@ -26,9 +28,9 @@ constexpr std::array<OpeningSounds, 4> kOpeningSounds{{{"S_ELVMETL", "S_ELVMETST
                                                        {"S_ELVSTONEL", "S_ELVSTONESTPL"}}};
 
 /** The sounds a trigger's slot names, or null for a slot without any. */
-const OpeningSounds* openingSoundsOf(s32 slot) {
-    return slot >= 0 && static_cast<usize>(slot) < kOpeningSounds.size()
-               ? &kOpeningSounds[static_cast<usize>(slot)]
+const OpeningSounds* openingSoundsOf(std::int32_t slot) {
+    return slot >= 0 && static_cast<std::size_t>(slot) < kOpeningSounds.size()
+               ? &kOpeningSounds[static_cast<std::size_t>(slot)]
                : nullptr;
 }
 
@@ -46,7 +48,7 @@ void LevelSoundscape::open(const std::filesystem::path& root, SoundPlayer* outpu
     m_narrator.load(root / "audio/VOICE1");
     m_narratorSecond.load(root / "audio/VOICE2");
     if (m_common.load(root / "audio/COMMON")) {
-        for (usize foot = 0; foot < kStepSounds.size(); ++foot) {
+        for (std::size_t foot = 0; foot < kStepSounds.size(); ++foot) {
             m_steps[foot] = m_common.find(kStepSounds[foot]);
         }
         m_pickup = m_common.find(kPickupSound);
@@ -62,13 +64,13 @@ void LevelSoundscape::bindAmbience(const WorldLayout& layout) {
 }
 
 void LevelSoundscape::updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear,
-                                     f32 volume) {
+                                     float volume) {
     if (m_output != nullptr) {
         m_ambience.update(*m_output, listeners, ear, volume);
     }
 }
 
-void LevelSoundscape::startMusic(const AssetLocator* assets, f32 volume) {
+void LevelSoundscape::startMusic(const AssetLocator* assets, float volume) {
     if (m_output == nullptr || assets == nullptr || m_stream.empty()) {
         return;
     }
@@ -177,7 +179,7 @@ SoundHandle LevelSoundscape::narrate(std::string_view name, Narrator which, Soun
     return kNoSound;
 }
 
-void LevelSoundscape::playCommon(std::optional<u32> sound) {
+void LevelSoundscape::playCommon(std::optional<std::uint32_t> sound) {
     if (m_output != nullptr && sound.has_value()) {
         track(m_output->play(m_common.sequence(*sound), 1.0f, SoundCategory::Effects));
     }
@@ -207,7 +209,7 @@ void LevelSoundscape::opening(const TriggerOpening& event) {
 }
 
 void LevelSoundscape::settled(const TriggerOpening& event) {
-    for (usize i = 0; i < m_openings.size();) {
+    for (std::size_t i = 0; i < m_openings.size();) {
         if (m_openings[i].target == event.target) {
             stop(m_openings[i].handle);
             m_openings.erase(m_openings.begin() + static_cast<std::ptrdiff_t>(i));

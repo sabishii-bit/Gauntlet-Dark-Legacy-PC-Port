@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <string_view>
@@ -8,7 +10,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/ByteReader.h"
 
@@ -59,7 +60,7 @@ inline std::filesystem::path dataDirectory() {
 }
 
 /** A 2x2 RGBA PNG: red, green on the top row; blue, transparent white below. */
-inline constexpr std::array<u8, 76> kTinyPng{
+inline constexpr std::array<std::uint8_t, 76> kTinyPng{
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
     0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x08, 0x06, 0x00, 0x00, 0x00, 0x72, 0xB6, 0x0D,
     0x24, 0x00, 0x00, 0x00, 0x13, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0xF0,
@@ -69,47 +70,47 @@ inline constexpr std::array<u8, 76> kTinyPng{
 /** Little-endian byte builder for synthetic files. */
 class ByteWriter {
 public:
-    ByteWriter& putU8(u8 value) {
+    ByteWriter& putU8(std::uint8_t value) {
         m_bytes.push_back(value);
         return *this;
     }
 
-    ByteWriter& putU16(u16 value) {
-        putU8(static_cast<u8>(value & 0xFFU));
-        return putU8(static_cast<u8>(value >> 8U));
+    ByteWriter& putU16(std::uint16_t value) {
+        putU8(static_cast<std::uint8_t>(value & 0xFFU));
+        return putU8(static_cast<std::uint8_t>(value >> 8U));
     }
 
-    ByteWriter& putU32(u32 value) {
-        putU16(static_cast<u16>(value & 0xFFFFU));
-        return putU16(static_cast<u16>(value >> 16U));
+    ByteWriter& putU32(std::uint32_t value) {
+        putU16(static_cast<std::uint16_t>(value & 0xFFFFU));
+        return putU16(static_cast<std::uint16_t>(value >> 16U));
     }
 
-    ByteWriter& putS32(s32 value) { return putU32(static_cast<u32>(value)); }
+    ByteWriter& putS32(std::int32_t value) { return putU32(static_cast<std::uint32_t>(value)); }
 
     ByteWriter& putFourcc(std::string_view code) { return putU32(fourcc(code)); }
 
-    ByteWriter& putBytes(std::span<const u8> bytes) {
+    ByteWriter& putBytes(std::span<const std::uint8_t> bytes) {
         m_bytes.insert(m_bytes.end(), bytes.begin(), bytes.end());
         return *this;
     }
 
     ByteWriter& putText(std::string_view text) {
         for (const char c : text) {
-            putU8(static_cast<u8>(c));
+            putU8(static_cast<std::uint8_t>(c));
         }
         return *this;
     }
 
-    ByteWriter& putZeros(usize count) {
-        m_bytes.insert(m_bytes.end(), count, u8{0});
+    ByteWriter& putZeros(std::size_t count) {
+        m_bytes.insert(m_bytes.end(), count, std::uint8_t{0});
         return *this;
     }
 
-    const std::vector<u8>& bytes() const { return m_bytes; }
-    usize size() const { return m_bytes.size(); }
+    const std::vector<std::uint8_t>& bytes() const { return m_bytes; }
+    std::size_t size() const { return m_bytes.size(); }
 
 private:
-    std::vector<u8> m_bytes;
+    std::vector<std::uint8_t> m_bytes;
 };
 
 } // namespace gdl::test

@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <limits>
 #include <string>
 
@@ -19,7 +20,7 @@ TEST_CASE("nested objects and arrays are written with indentation", "[formats][j
     json.key("on").value(true);
     json.key("items").beginArray();
     json.value(1).value(2U);
-    json.beginObject().key("k").value(static_cast<s64>(-7)).endObject();
+    json.beginObject().key("k").value(static_cast<std::int64_t>(-7)).endObject();
     json.endArray();
     json.key("empty").beginArray().endArray();
     json.key("nothing").beginObject().endObject();
@@ -49,7 +50,7 @@ TEST_CASE("control characters and non-finite numbers are escaped", "[formats][js
     json.beginArray()
         .value(std::string("a\x01"
                            "b"))
-        .value(std::numeric_limits<f64>::infinity())
+        .value(std::numeric_limits<double>::infinity())
         .endArray();
     REQUIRE(json.take() == "[\n  \"a\\u0001b\",\n  null\n]\n");
 }

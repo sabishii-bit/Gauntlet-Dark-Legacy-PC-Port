@@ -1,4 +1,6 @@
 #pragma once
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <string_view>
 #include <vector>
@@ -13,27 +15,27 @@ namespace gdl::game {
 class TurboMove {
 public:
     struct Events {
-        std::function<void(s32)> announce;
-        std::function<void(f32)> dim;
+        std::function<void(std::int32_t)> announce;
+        std::function<void(float)> dim;
         std::function<void(const Vec3&)> volley;
-        std::function<void(s32)> strike;
+        std::function<void(std::int32_t)> strike;
     };
     /** Returns a fallback cry when a turbo attack has no rows and is paid immediately. */
     std::string_view begin(PlayerAnimator::Action action, const ClassStats* known,
                            TurboMeter& meter);
-    void advance(PlayerAnimator::Action action, f32 frame, const Vec3& facing,
+    void advance(PlayerAnimator::Action action, float frame, const Vec3& facing,
                  const ClassStats* stats, TurboMeter& meter, const Events& events);
     bool weaponHidden() const { return m_weaponHidden; }
-    f32 owed() const { return m_owed; }
+    float owed() const { return m_owed; }
 
 private:
-    void volley(usize slot, const MoveStrike& strike, f32 frame, const Vec3& facing,
+    void volley(std::size_t slot, const MoveStrike& strike, float frame, const Vec3& facing,
                 const Events& events);
-    std::vector<s32> m_pending;
-    std::vector<s32> m_all;
-    f32 m_owed = 0;
+    std::vector<std::int32_t> m_pending;
+    std::vector<std::int32_t> m_all;
+    float m_owed = 0;
     bool m_named = false;
     bool m_weaponHidden = false;
-    std::vector<s32> m_volleysShot;
+    std::vector<std::int32_t> m_volleysShot;
 };
 } // namespace gdl::game

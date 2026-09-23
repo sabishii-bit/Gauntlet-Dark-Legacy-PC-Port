@@ -1,3 +1,5 @@
+#include <cstddef>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "game/app/AttractSequencer.h"
@@ -5,7 +7,6 @@
 namespace {
 
 using namespace gdl::game;
-using gdl::usize;
 
 TEST_CASE("the attract loop opens with the three intro movies", "[game][attract]") {
     AttractSequencer sequencer;
@@ -35,12 +36,12 @@ TEST_CASE("the character movie row follows the wave", "[game][attract]") {
 TEST_CASE("wrapping the table advances the wave and reset returns to the start",
           "[game][attract]") {
     AttractSequencer sequencer;
-    for (usize i = 0; i < AttractSequencer::kScreenTable.size(); ++i) {
+    for (std::size_t i = 0; i < AttractSequencer::kScreenTable.size(); ++i) {
         sequencer.next();
     }
     REQUIRE(sequencer.position() == 0);
     REQUIRE(sequencer.wave() == 1);
-    for (usize i = 0; i < 7; ++i) {
+    for (std::size_t i = 0; i < 7; ++i) {
         sequencer.next();
     }
     REQUIRE(sequencer.next().movie == "val_kni");

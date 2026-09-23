@@ -17,7 +17,7 @@ struct Fixture {
     std::vector<std::string> cries;
     std::vector<std::string> named;
     PlayerHealth::Events events{
-        .block = [](f32, f32) { FAIL("No figure means no guard presentation"); },
+        .block = [](float, float) { FAIL("No figure means no guard presentation"); },
         .sound = [this](std::string_view cue) { sounds.emplace_back(cue); },
         .cry = [this](std::string_view cue) { cries.emplace_back(cue); },
         .named = [this](std::string_view cue) { named.emplace_back(cue); }};
@@ -25,7 +25,7 @@ struct Fixture {
         player.actor.spawn(3, {}, nullptr, Vec3{0}, 0);
         player.actor.save().progress().health = 1000;
     }
-    void hit(f32 damage, HurtKind kind = HurtKind::Blow, bool tower = false, f32 scale = 1) {
+    void hit(float damage, HurtKind kind = HurtKind::Blow, bool tower = false, float scale = 1) {
         health.hurt(player, damage, kind, false, tower, scale, events);
     }
 };

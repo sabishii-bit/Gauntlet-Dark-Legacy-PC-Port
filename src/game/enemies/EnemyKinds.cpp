@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstddef>
+#include <cstdint>
 #include <numbers>
 
 namespace gdl::game {
@@ -10,7 +12,7 @@ namespace gdl::game {
 namespace {
 
 // A sixty-fourth of a half turn a tick, the one turning pace every kind shares.
-constexpr f32 kTurn = std::numbers::pi_v<f32> / 64.0f;
+constexpr float kTurn = std::numbers::pi_v<float> / 64.0f;
 
 // name, prefix, height, radius, attention, collision, pace, damage, armor, health, generator
 // armor, experience for a hit and for a kill, algorithm, turn rate. The twenty-ninth row is
@@ -45,7 +47,8 @@ constexpr std::array<EnemyKind, kEnemyKindCount> kKinds{{
     {"WIND", "WIND", 6.0f, 2.0f, 3.8f, 3.0f, 0.1f, 15.0f, 0.0f, 46.0f, 3.0f, 3, 6, 7, kTurn},
     {"GRM", "GRM", 10.0f, 4.0f, 3.8f, 4.0f, 0.1f, 20.0f, 0.0f, 100.0f, 3.0f, 15, 20, 7, kTurn},
     {"NONE", "NONE", -1.0f, -1.0f, -1.0f, -1.0f, -1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0, 0, 0, 0.0f},
-    {"GOLEM", "GOLEM", 12.0f, 3.0f, 5.0f, 4.0f, 0.09f, 20.0f, 0.0f, 200.0f, 3.0f, 30, 40, 19, kTurn},
+    {"GOLEM", "GOLEM", 12.0f, 3.0f, 5.0f, 4.0f, 0.09f, 20.0f, 0.0f, 200.0f, 3.0f, 30, 40, 19,
+     kTurn},
     {"DEATH", "DEATH", 6.0f, 1.5f, 3.0f, 3.0f, 0.125f, 1.0f, 1.0f, 100.0f, 0.0f, 1, 1, 3, kTurn},
     {"IT", "IT", 5.0f, 1.5f, 3.0f, 3.0f, 0.1f, 0.0f, 0.0f, 9999.0f, 0.0f, 2, 4, 27, kTurn},
     {"GAR", "GAR", 10.0f, 6.0f, 5.0f, 3.0f, 0.1f, 30.0f, 0.0f, 500.0f, 0.0f, 300, 300, 7, kTurn},
@@ -53,8 +56,7 @@ constexpr std::array<EnemyKind, kEnemyKindCount> kKinds{{
 }};
 
 bool sameName(std::string_view a, std::string_view b) {
-    return a.size() == b.size() &&
-           std::ranges::equal(a, b, [](char x, char y) {
+    return a.size() == b.size() && std::ranges::equal(a, b, [](char x, char y) {
                return std::toupper(static_cast<unsigned char>(x)) ==
                       std::toupper(static_cast<unsigned char>(y));
            });
@@ -62,16 +64,17 @@ bool sameName(std::string_view a, std::string_view b) {
 
 } // namespace
 
-f32 EnemyKind::healthAtTier(s32 tier) const {
-    return health * 0.333f * static_cast<f32>(std::clamp(tier, 1, 3));
+float EnemyKind::healthAtTier(std::int32_t tier) const {
+    return health * 0.333f * static_cast<float>(std::clamp(tier, 1, 3));
 }
 
-const EnemyKind& enemyKind(s32 kind) {
-    return kKinds[static_cast<usize>(std::clamp(kind, 0, kEnemyKindCount - 1))];
+const EnemyKind& enemyKind(std::int32_t kind) {
+    return kKinds[static_cast<std::size_t>(std::clamp(kind, 0, kEnemyKindCount - 1))];
 }
 
-s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength) {
-    const auto ofClass = [&roster](s32 subtype) -> std::optional<s32> {
+std::int32_t levelKindOf(std::span<const LevelEnemy> roster, std::int32_t named,
+                         std::int32_t strength) {
+    const auto ofClass = [&roster](std::int32_t subtype) -> std::optional<std::int32_t> {
         for (const LevelEnemy& enemy : roster) {
             if (enemy.subtype == subtype && enemy.kind >= 0) {
                 return enemy.kind;
@@ -93,9 +96,9 @@ s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength) {
     return named;
 }
 
-std::optional<s32> enemyKindOf(std::string_view name) {
-    for (s32 i = 0; i < kEnemyKindCount; ++i) {
-        const EnemyKind& kind = kKinds[static_cast<usize>(i)];
+std::optional<std::int32_t> enemyKindOf(std::string_view name) {
+    for (std::int32_t i = 0; i < kEnemyKindCount; ++i) {
+        const EnemyKind& kind = kKinds[static_cast<std::size_t>(i)];
         if (kind.height > 0.0f && (sameName(kind.name, name) || sameName(kind.prefix, name))) {
             return i;
         }

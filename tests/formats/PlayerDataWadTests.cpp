@@ -1,4 +1,6 @@
 #include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 #include <vector>
@@ -14,25 +16,25 @@ namespace {
 using namespace gdl;
 using namespace gdl::formats;
 
-constexpr usize kRecordSize = 0x180;
+constexpr std::size_t kRecordSize = 0x180;
 
-void putU32(std::vector<u8>& bytes, usize offset, u32 value) {
+void putU32(std::vector<std::uint8_t>& bytes, std::size_t offset, std::uint32_t value) {
     if constexpr (std::endian::native == std::endian::big) {
         value = std::byteswap(value);
     }
     std::memcpy(&bytes[offset], &value, 4);
 }
 
-void putF32(std::vector<u8>& bytes, usize offset, f32 value) {
-    putU32(bytes, offset, std::bit_cast<u32>(value));
+void putF32(std::vector<std::uint8_t>& bytes, std::size_t offset, float value) {
+    putU32(bytes, offset, std::bit_cast<std::uint32_t>(value));
 }
 
 /** A wad with one PDAT record after the header and its directory at the end. */
-std::vector<u8> sampleWad() {
-    const usize record = 16;
-    const usize directory = record + kRecordSize;
-    std::vector<u8> bytes(directory + 16, 0);
-    putU32(bytes, 0, static_cast<u32>(directory));
+std::vector<std::uint8_t> sampleWad() {
+    const std::size_t record = 16;
+    const std::size_t directory = record + kRecordSize;
+    std::vector<std::uint8_t> bytes(directory + 16, 0);
+    putU32(bytes, 0, static_cast<std::uint32_t>(directory));
     putU32(bytes, 4, 1);
     bytes[record] = 15; // effect count
     bytes[record + 2] = 14;
@@ -56,7 +58,7 @@ std::vector<u8> sampleWad() {
     bytes[directory + 1] = 'A';
     bytes[directory + 2] = 'D';
     bytes[directory + 3] = 'P';
-    putU32(bytes, directory + 4, static_cast<u32>(record));
+    putU32(bytes, directory + 4, static_cast<std::uint32_t>(record));
     putU32(bytes, directory + 8, 1);
     putU32(bytes, directory + 12, 1);
     return bytes;
@@ -75,11 +77,11 @@ TEST_CASE("a class record parses from its wad", "[formats][pdata]") {
     REQUIRE(record.attachY == 4.4f);
     REQUIRE(record.collisionY == 2.5f);
     REQUIRE(record.powerupTime == 1.25f);
-    REQUIRE(record.weaponOffset == std::array<f32, 3>{-0.5f, 0.5f, 1.5f});
+    REQUIRE(record.weaponOffset == std::array<float, 3>{-0.5f, 0.5f, 1.5f});
 }
 
 TEST_CASE("damaged class wads are rejected", "[formats][pdata]") {
-    std::vector<u8> bytes = sampleWad();
+    std::vector<std::uint8_t> bytes = sampleWad();
     bytes.resize(8);
     REQUIRE_THROWS_AS(parsePlayerDataWad(bytes), FormatError);
 
@@ -99,39 +101,40 @@ TEST_CASE("damaged class wads are rejected", "[formats][pdata]") {
 TEST_CASE("a class wad gives its moves: the effects they show and the strikes they make",
           "[formats][pdata]") {
     // One effect, two strikes, then the class record, then the directory of all three.
-    constexpr usize kEffect = 0x50;
-    constexpr usize kStrike = 0x58;
-    const usize effects = 16;
-    const usize strikes = effects + kEffect;
-    const usize record = strikes + 2 * kStrike;
-    const usize directory = record + kRecordSize;
-    constexpr usize kEntry = 16;
-    std::vector<u8> bytes(directory + 3 * kEntry, 0);
-    putU32(bytes, 0, static_cast<u32>(directory));
+    constexpr std::size_t kEffect = 0x50;
+    constexpr std::size_t kStrike = 0x58;
+    const std::size_t effects = 16;
+    const std::size_t strikes = effects + kEffect;
+    const std::size_t record = strikes + 2 * kStrike;
+    const std::size_t directory = record + kRecordSize;
+    constexpr std::size_t kEntry = 16;
+    std::vector<std::uint8_t> bytes(directory + 3 * kEntry, 0);
+    putU32(bytes, 0, static_cast<std::uint32_t>(directory));
     putU32(bytes, 4, 3);
-    const auto section = [&](usize slot, std::string_view tag, usize offset, u32 count) {
-        const usize at = directory + slot * kEntry;
-        for (usize c = 0; c < 4; ++c) {
-            bytes[at + c] = static_cast<u8>(tag[3 - c]); // tags lie the other way round
+    const auto section = [&](std::size_t slot, std::string_view tag, std::size_t offset,
+                             std::uint32_t count) {
+        const std::size_t at = directory + slot * kEntry;
+        for (std::size_t c = 0; c < 4; ++c) {
+            bytes[at + c] = static_cast<std::uint8_t>(tag[3 - c]); // tags lie the other way round
         }
-        putU32(bytes, at + 4, static_cast<u32>(offset));
+        putU32(bytes, at + 4, static_cast<std::uint32_t>(offset));
         putU32(bytes, at + 8, count);
         putU32(bytes, at + 12, count);
     };
     section(0, "SFXX", effects, 1);
     section(1, "DAMG", strikes, 2);
     section(2, "PDAT", record, 1);
-    const auto put16 = [&](usize at, s16 value) {
-        const auto raw = static_cast<u16>(value);
-        bytes[at] = static_cast<u8>(raw & 0xFF);
-        bytes[at + 1] = static_cast<u8>(raw >> 8);
+    const auto put16 = [&](std::size_t at, std::int16_t value) {
+        const auto raw = static_cast<std::uint16_t>(value);
+        bytes[at] = static_cast<std::uint8_t>(raw & 0xFF);
+        bytes[at + 1] = static_cast<std::uint8_t>(raw >> 8);
     };
     put16(record, 1);     // effects
     put16(record + 2, 2); // strikes
-    for (usize move = 0; move < PlayerClassRecord::kMoveCount; ++move) {
+    for (std::size_t move = 0; move < PlayerClassRecord::kMoveCount; ++move) {
         put16(record + 0x0C + move * 2, -1);
     }
-    put16(record + 0x0C + usize{5} * 2, 0); // turbo B starts at the first strike
+    put16(record + 0x0C + std::size_t{5} * 2, 0); // turbo B starts at the first strike
     putU32(bytes, effects, 4);
     putU32(bytes, effects + 4, 0xFFFFFFFF);
     std::memcpy(&bytes[effects + 0x10], "WAR_POWERB", 10);
@@ -163,7 +166,7 @@ TEST_CASE("a class wad gives its moves: the effects they show and the strikes th
     REQUIRE(parsed.effects[0].tree == "WAR_POWERB");
     REQUIRE(parsed.effects[0].sound == "S_WARTURBOB");
     REQUIRE(parsed.effects[0].next == -1);
-    REQUIRE(parsed.effects[0].offset == std::array<f32, 3>{0.0f, 5.0f, 0.0f});
+    REQUIRE(parsed.effects[0].offset == std::array<float, 3>{0.0f, 5.0f, 0.0f});
     REQUIRE(parsed.effects[0].scale == 2.0f);
     REQUIRE(parsed.strikes.size() == 2);
     REQUIRE(parsed.strikes[0].type == 4);
@@ -174,7 +177,7 @@ TEST_CASE("a class wad gives its moves: the effects they show and the strikes th
     REQUIRE(parsed.strikes[1].type == 2);
     REQUIRE(parsed.strikes[1].hitRadius == 10.0f);
     REQUIRE(parsed.strikes[1].maxTime == 6.0f);
-    REQUIRE(parsed.strikes[1].offset == std::array<f32, 3>{0.0f, 0.0f, 5.0f});
+    REQUIRE(parsed.strikes[1].offset == std::array<float, 3>{0.0f, 0.0f, 5.0f});
     REQUIRE(parsed.strikes[1].amount == -1.5f);
     REQUIRE(parsed.strikes[1].speedMax == 40.0f);
     REQUIRE(parsed.strikes[1].startFrame == 9);

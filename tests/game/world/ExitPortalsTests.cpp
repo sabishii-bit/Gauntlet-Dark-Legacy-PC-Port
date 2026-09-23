@@ -1,4 +1,5 @@
 #include <array>
+#include <cstddef>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -54,7 +55,7 @@ struct Fixture {
     }
 
     /** Steps until a portal is left by or `frames` have gone; the portal, if any. */
-    std::optional<usize> run(std::span<const PortalVisitor> party, int frames) {
+    std::optional<std::size_t> run(std::span<const PortalVisitor> party, int frames) {
         for (int i = 0; i < frames; ++i) {
             if (const auto left = portals.update(2, 1.0f / 30.0f, party); left.has_value()) {
                 return left;
@@ -102,8 +103,7 @@ TEST_CASE("a portal runs through with the whole party on it and waits for stragg
     REQUIRE(f.portals.portal(1).action == 0);
 }
 
-TEST_CASE("a portal left alone plays itself out and goes back to idle",
-          "[game][world][portals]") {
+TEST_CASE("a portal left alone plays itself out and goes back to idle", "[game][world][portals]") {
     Fixture f("portals-alone");
     const std::array<PortalVisitor, 1> on{PortalVisitor{Vec3{10.0f, 0.0f, 10.0f}, 0.75f}};
     f.portals.update(2, 1.0f / 30.0f, on);

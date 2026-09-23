@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <functional>
 
@@ -37,10 +39,10 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     RenderDevice& device = resources.device;
     const LevelWorld& world = resources.world;
     const LevelInfo* level = world.level();
-    const f32 gain = resources.difficultyGain;
+    const float gain = resources.difficultyGain;
     EnemyScales scales;
     GeneratorScales breeding;
-    s32 most = Enemies::kMost;
+    std::int32_t most = Enemies::kMost;
     if (level != nullptr) {
         scales.health = level->tuning.enemyHealth;
         scales.speed = level->tuning.enemySpeedScale(gain);
@@ -52,7 +54,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         breeding.most = level->tuning.generatorMostScale(gain);
         most = level->maxEnemies;
     }
-    const auto seed = static_cast<u32>(std::hash<std::string>{}(world.ref().name));
+    const auto seed = static_cast<std::uint32_t>(std::hash<std::string>{}(world.ref().name));
     m_enemies.open(device, resources.root, &world.collision(), most, scales, seed);
     const std::string& levelName = world.ref().name;
     m_critters.open(device, resources.root, &world.collision(), scales,
@@ -60,7 +62,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     m_bosses.open(device, resources.root, &world.collision(), scales,
                   levelName.empty() ? 'G' : levelName.front());
     m_critterExperienceOwed.fill(0.0f);
-    const auto playerCount = static_cast<s32>(players.size());
+    const auto playerCount = static_cast<std::int32_t>(players.size());
     const std::span<const LevelEnemy> roster = level != nullptr
                                                    ? std::span<const LevelEnemy>(level->enemies)
                                                    : std::span<const LevelEnemy>{};
@@ -91,23 +93,23 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     }
     const std::vector<ItemInfo>& infos = world.layout().itemInfos();
     for (const ItemInstance& instance : world.layout().itemInstances()) {
-        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
+        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= infos.size()) {
             continue;
         }
-        const ItemInfo& info = infos[static_cast<usize>(instance.info)];
+        const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
         if (info.type != ItemInfo::kPlacedEnemy ||
             !shownToParty(instance.minPlayers, playerCount)) {
             continue;
         }
         const auto named = enemyKindOf(info.name);
-        const s32 strength = Generators::paramOf(instance, 0);
+        const std::int32_t strength = Generators::paramOf(instance, 0);
         if (!named.has_value()) {
             continue;
         }
-        const std::optional<s32> kind = levelKindOf(roster, *named, strength);
+        const std::optional<std::int32_t> kind = levelKindOf(roster, *named, strength);
         // The great ones stand where they are put, facing as placed.
         const Mat4 stood = itemPlacement(instance.position, instance.rotation);
-        const f32 facing = std::atan2(stood[2][0], stood[2][2]);
+        const float facing = std::atan2(stood[2][0], stood[2][2]);
         if (*kind == kGolemEnemyKind) {
             m_critters.spawn(kGolemCritter, instance.position, facing);
             continue;
@@ -127,7 +129,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         spawn.kind = *kind;
         spawn.tier = std::max(strength, 1);
         spawn.algorithm = Generators::paramOf(instance, 1);
-        if (const s32 interval = Generators::paramOf(instance, 3); interval > 0) {
+        if (const std::int32_t interval = Generators::paramOf(instance, 3); interval > 0) {
             spawn.idleTicks = interval;
         }
         spawn.position = instance.position;
@@ -161,7 +163,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
 /** The generators breed, the swarm goes about its business, and what it lands on the party
  * is taken: a power blow from a tall one is a knock that makes its victim flinch. What the
  * party has done to it is paid in experience. */
-void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
+void LevelOpponents::update(std::int32_t ticks, float seconds, std::span<PlayerRuntime> players,
                             std::span<const Obstacle> fixtures, const Events& events) {
     if (!m_resources.has_value()) {
         return;
@@ -170,14 +172,14 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     std::vector<Obstacle> boxes = m_generators.obstacles();
     boxes.insert(boxes.end(), fixtures.begin(), fixtures.end());
     const LevelInfo* level = m_resources->world.level();
-    const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
+    const float missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
     m_generators.update(ticks, m_enemies, views, boxes);
     m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed);
     m_enemyMissiles.update(seconds, &m_resources->world.collision(), views);
     // What the throwers let fly lands on the party, or bursts where it fell; what blows
     // itself up blasts everything about it.
     for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
-        for (usize i = 0; i < players.size(); ++i) {
+        for (std::size_t i = 0; i < players.size(); ++i) {
             if (hit.player >= 0 && players[i].actor.player() == hit.player &&
                 players[i].life == PlayerLife::Standing) {
                 const bool guarding =
@@ -218,7 +220,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     events.advanceLegend(seconds);
     for (const CritterBlow& blow : m_bosses.takeBlows()) {
-        for (usize i = 0; i < players.size(); ++i) {
+        for (std::size_t i = 0; i < players.size(); ++i) {
             if (players[i].actor.player() == blow.player &&
                 players[i].life == PlayerLife::Standing) {
                 events.hurt(i, blow.damage, HurtKind::Blow, true);
@@ -236,7 +238,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     followCritterEffects();
     for (const CritterBlow& blow : m_critters.takeBlows()) {
-        for (usize i = 0; i < players.size(); ++i) {
+        for (std::size_t i = 0; i < players.size(); ++i) {
             if (players[i].actor.player() == blow.player &&
                 players[i].life == PlayerLife::Standing) {
                 events.hurt(i, blow.damage, HurtKind::Blow, true);
@@ -246,7 +248,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     awardCritterLosses(players, events);
     events.levels();
     for (const EnemyBlow& blow : m_enemies.takeBlows()) {
-        for (usize i = 0; i < players.size(); ++i) {
+        for (std::size_t i = 0; i < players.size(); ++i) {
             if (players[i].actor.player() != blow.player ||
                 players[i].life != PlayerLife::Standing) {
                 continue;
@@ -265,7 +267,8 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
 }
 
 /** A hit on one of the swarm, from a player or the world. */
-void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+void LevelOpponents::strikeEnemy(std::int32_t id, float power, std::uint32_t flags,
+                                 const Vec3& direction, std::int32_t byPlayer,
                                  std::span<const PlayerRuntime> players) {
     if (!m_resources.has_value()) {
         return;
@@ -285,8 +288,9 @@ void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direc
 }
 
 /** A hit on one of the great ones. */
-void LevelOpponents::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction,
-                                   s32 byPlayer, std::optional<Vec3> where, bool close,
+void LevelOpponents::strikeCritter(std::int32_t id, float power, std::uint32_t flags,
+                                   const Vec3& direction, std::int32_t byPlayer,
+                                   std::optional<Vec3> where, bool close,
                                    std::span<const PlayerRuntime> players) {
     if (!m_resources.has_value()) {
         return;
@@ -310,7 +314,7 @@ void LevelOpponents::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& dir
 /** A hit on a generator: as it crumbles a state its kind's hit or death effect plays over
  * it to the realm's own sound (`S_GENDAMG`, `S_GENKILLG`), and, gone, its brood is freed of
  * it. */
-void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
+void LevelOpponents::strikeGenerator(std::int32_t id, float power, std::int32_t byPlayer) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -350,8 +354,8 @@ void LevelOpponents::showCritterCue(const CritterCue& cue, ItemArchive* archive,
         setting.scale = cue.scale;
         setting.yaw = cue.yaw;
         setting.seconds = cue.life;
-        if (const u32 effect = m_resources->effects.startSet(m_resources->device, *archive,
-                                                             cue.tree, cue.position, setting);
+        if (const std::uint32_t effect = m_resources->effects.startSet(
+                m_resources->device, *archive, cue.tree, cue.position, setting);
             effect != 0 && cue.follows) {
             const Vec3* at = ofBoss ? m_bosses.position() : &m_critters.positionOf(cue.critter);
             m_critterEffects.push_back(
@@ -369,7 +373,7 @@ void LevelOpponents::followCritterEffects() {
     if (!m_resources.has_value()) {
         return;
     }
-    for (usize i = 0; i < m_critterEffects.size();) {
+    for (std::size_t i = 0; i < m_critterEffects.size();) {
         const CritterEffect& riding = m_critterEffects[i];
         const bool alive =
             riding.ofBoss ? m_bosses.present()
@@ -401,16 +405,16 @@ void LevelOpponents::awardBossLosses(std::span<const PlayerRuntime> players, con
         }
         for (const PlayerRuntime& runtime : players) {
             const PlayerActor& actor = runtime.actor;
-            const s32 player = actor.player();
+            const std::int32_t player = actor.player();
             if ((loss.player >= 0 && loss.player != player) || player < 0 ||
-                static_cast<usize>(player) >= m_critterExperienceOwed.size()) {
+                static_cast<std::size_t>(player) >= m_critterExperienceOwed.size()) {
                 continue;
             }
-            f32& owed = m_critterExperienceOwed[static_cast<usize>(player)];
+            float& owed = m_critterExperienceOwed[static_cast<std::size_t>(player)];
             owed += loss.experience;
-            const auto whole = static_cast<s32>(std::floor(owed));
+            const auto whole = static_cast<std::int32_t>(std::floor(owed));
             if (whole > 0) {
-                owed -= static_cast<f32>(whole);
+                owed -= static_cast<float>(whole);
                 events.award(player, whole, loss.killed);
             }
         }
@@ -431,18 +435,18 @@ void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
         }
         for (const PlayerRuntime& runtime : players) {
             const PlayerActor& actor = runtime.actor;
-            const s32 player = actor.player();
+            const std::int32_t player = actor.player();
             if (loss.player >= 0 && loss.player != player) {
                 continue;
             }
-            if (player < 0 || static_cast<usize>(player) >= m_critterExperienceOwed.size()) {
+            if (player < 0 || static_cast<std::size_t>(player) >= m_critterExperienceOwed.size()) {
                 continue;
             }
-            f32& owed = m_critterExperienceOwed[static_cast<usize>(player)];
+            float& owed = m_critterExperienceOwed[static_cast<std::size_t>(player)];
             owed += loss.experience;
-            const auto whole = static_cast<s32>(std::floor(owed));
+            const auto whole = static_cast<std::int32_t>(std::floor(owed));
             if (whole > 0) {
-                owed -= static_cast<f32>(whole);
+                owed -= static_cast<float>(whole);
                 events.award(player, whole, loss.killed);
             }
         }

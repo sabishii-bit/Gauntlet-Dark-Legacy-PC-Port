@@ -1,7 +1,6 @@
 #pragma once
 
 #include "engine/assets/WorldData.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 namespace gdl {
@@ -18,8 +17,8 @@ struct WorldLighting {
 
     /** The level's light: a grey ambient, one light of `lightColor` scaled by `intensity`,
      * and `lightDirection` the way the light travels. */
-    static WorldLighting forLevel(f32 ambient, const Vec3& lightDirection, const Vec3& lightColor,
-                                  f32 intensity);
+    static WorldLighting forLevel(float ambient, const Vec3& lightDirection, const Vec3& lightColor,
+                                  float intensity);
     static WorldLighting forLevel(const LevelInfo& level);
 
     /** A surface's shade: ambient plus the light where it faces it. */

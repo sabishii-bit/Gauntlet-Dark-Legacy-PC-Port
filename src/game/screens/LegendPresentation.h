@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string_view>
@@ -7,7 +8,6 @@
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/audio/SoundPlayer.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 #include "game/enemies/LegendItems.h"
@@ -33,8 +33,8 @@ public:
     };
     /** Current pose supplied by the scene, independent of its actor/figure storage. */
     struct Bearer {
-        s32 player = -1;
-        s32 color = 0;
+        std::int32_t player = -1;
+        std::int32_t color = 0;
         Vec3 position{0.0f};
         Vec3 facing{0.0f, 0.0f, 1.0f};
         Vec3 holdPoint{0.0f};
@@ -44,7 +44,7 @@ public:
     };
     struct Target {
         Vec3 position{0.0f};
-        f32 height = 0.0f;
+        float height = 0.0f;
     };
     struct Update {
         PlayerDeed gesture = PlayerDeed::None;
@@ -58,13 +58,14 @@ public:
     LegendPresentation(LegendPresentation&&) = delete;
     LegendPresentation& operator=(LegendPresentation&&) = delete;
 
-    void show(LegendCue cue, s32 player, s32 realm, s32 kind, const std::optional<Bearer>& bearer);
-    Update update(f32 seconds, const std::optional<Bearer>& bearer,
+    void show(LegendCue cue, std::int32_t player, std::int32_t realm, std::int32_t kind,
+              const std::optional<Bearer>& bearer);
+    Update update(float seconds, const std::optional<Bearer>& bearer,
                   const std::optional<Target>& target);
     /** Stops only this presentation's effects and loop, leaving unrelated effects alone. */
     void clear();
-    s32 player() const { return m_player; }
-    s32 kind() const { return m_kind; }
+    std::int32_t player() const { return m_player; }
+    std::int32_t kind() const { return m_kind; }
     /** Borrowed ice skin for the draw call, not part of the boss's gameplay state. */
     const Texture* frozenTexture() const { return m_frozenTexture; }
 
@@ -74,21 +75,21 @@ private:
     void land(const std::optional<Target>& target);
     void playSound(LegendShow::Sound sound, bool looping = false);
     void stopLoop();
-    u32 start(ItemArchive& archive, std::string_view tree, const Vec3& position,
-              const EffectTrees::Setting& setting);
+    std::uint32_t start(ItemArchive& archive, std::string_view tree, const Vec3& position,
+                        const EffectTrees::Setting& setting);
 
     EffectTrees& m_effects;
     Assets m_assets;
     Audio m_audio;
-    std::vector<u32> m_ownedEffects;
-    s32 m_player = -1;
-    s32 m_kind = -1;
+    std::vector<std::uint32_t> m_ownedEffects;
+    std::int32_t m_player = -1;
+    std::int32_t m_kind = -1;
     char m_realm = 'A';
-    u32 m_held = 0;
-    u32 m_flying = 0;
+    std::uint32_t m_held = 0;
+    std::uint32_t m_flying = 0;
     bool m_gestureOwed = false;
     bool m_released = false;
-    f32 m_flightLeft = 0.0f;
+    float m_flightLeft = 0.0f;
     SoundHandle m_loop = kNoSound;
     const Texture* m_frozenTexture = nullptr;
 };

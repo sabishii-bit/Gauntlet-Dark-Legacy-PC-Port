@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -12,9 +14,9 @@ namespace {
 using namespace gdl;
 using namespace gdl::formats;
 
-u32 readU32(const std::vector<u8>& bytes, usize offset) {
-    return u32{bytes[offset]} | (u32{bytes[offset + 1]} << 8U) | (u32{bytes[offset + 2]} << 16U) |
-           (u32{bytes[offset + 3]} << 24U);
+std::uint32_t readU32(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
+    return std::uint32_t{bytes[offset]} | (std::uint32_t{bytes[offset + 1]} << 8U) |
+           (std::uint32_t{bytes[offset + 2]} << 16U) | (std::uint32_t{bytes[offset + 3]} << 24U);
 }
 
 TEST_CASE("pixel art enlarges by repeating pixels", "[formats][ico]") {
@@ -31,7 +33,7 @@ TEST_CASE("icons hold BGRA bitmaps with a transparency mask", "[formats][ico]") 
     Image image = Image::filled(2, 2, Color::rgba(10, 20, 30, 255));
     image.setPixel(1, 0, Color::rgba(0, 0, 0, 0));
     const std::array<Image, 2> images{image, enlargeImage(image, 128)};
-    const std::vector<u8> ico = encodeIco(images);
+    const std::vector<std::uint8_t> ico = encodeIco(images);
 
     // The directory: two icon entries, the second 256 pixels wide (written as 0).
     REQUIRE(ico[2] == 1);

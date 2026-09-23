@@ -1,16 +1,17 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include "engine/audio/AudioMixer.h"
-#include "engine/core/Types.h"
+#include "engine/core/SpecialMembers.h"
 
 namespace gdl {
 
 /** Opens the default playback device and pulls from an AudioMixer on the device thread. */
 class AudioDevice {
 public:
-    static constexpr u32 kSampleRate = 48000;
+    static constexpr std::uint32_t kSampleRate = 48000;
 
     AudioDevice();
     ~AudioDevice();

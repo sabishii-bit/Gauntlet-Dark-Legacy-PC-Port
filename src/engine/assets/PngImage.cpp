@@ -1,5 +1,7 @@
 #include "engine/assets/PngImage.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <format>
 #include <limits>
@@ -22,8 +24,8 @@ constexpr int kRgbaChannels = 4;
 
 } // namespace
 
-Image decodeImageFile(std::span<const u8> bytes) {
-    if (bytes.size() > static_cast<usize>(std::numeric_limits<int>::max())) {
+Image decodeImageFile(std::span<const std::uint8_t> bytes) {
+    if (bytes.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
         throw FormatError("image file is too large to decode");
     }
     int width = 0;
@@ -35,8 +37,8 @@ Image decodeImageFile(std::span<const u8> bytes) {
         throw FormatError(std::format("cannot decode image: {}", stbi_failure_reason()));
     }
     Image image;
-    image.width = static_cast<u32>(width);
-    image.height = static_cast<u32>(height);
+    image.width = static_cast<std::uint32_t>(width);
+    image.height = static_cast<std::uint32_t>(height);
     image.pixels.resize(image.rowBytes() * image.height);
     std::memcpy(image.pixels.data(), pixels.get(), image.pixels.size());
     return image;

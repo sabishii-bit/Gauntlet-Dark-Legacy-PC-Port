@@ -1,4 +1,6 @@
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -52,13 +54,13 @@ PlayerSelectScene::Inputs nobody() {
     return {};
 }
 
-PlayerSelectScene::Inputs player(s32 index, bool select, bool back = false, bool start = false,
-                                 bool right = false) {
+PlayerSelectScene::Inputs player(std::int32_t index, bool select, bool back = false,
+                                 bool start = false, bool right = false) {
     PlayerSelectScene::Inputs inputs{};
-    inputs[static_cast<usize>(index)].select = select;
-    inputs[static_cast<usize>(index)].back = back;
-    inputs[static_cast<usize>(index)].start = start;
-    inputs[static_cast<usize>(index)].right = right;
+    inputs[static_cast<std::size_t>(index)].select = select;
+    inputs[static_cast<std::size_t>(index)].back = back;
+    inputs[static_cast<std::size_t>(index)].start = start;
+    inputs[static_cast<std::size_t>(index)].right = right;
     return inputs;
 }
 
@@ -139,9 +141,9 @@ TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][se
     const auto context = f.context(unpackedRoot(), &sounds);
     REQUIRE(scene.open(device, context, 0));
     REQUIRE_FALSE(scene.speaking());
-    const usize before = sounds.voiceCount(); // the music, when the bank is there
-    scene.step(1, player(0, true));           // New
-    scene.step(1, player(0, true));           // a random name
+    const std::size_t before = sounds.voiceCount(); // the music, when the bank is there
+    scene.step(1, player(0, true));                 // New
+    scene.step(1, player(0, true));                 // a random name
     scene.step(NameEntry::kFlashTicks + 1, nobody());
     scene.step(1, player(0, true)); // lock in the warrior
     REQUIRE(scene.lane(0).lockedIn());
@@ -153,12 +155,12 @@ TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][se
     SoundSet bank;
     REQUIRE(bank.load(unpackedRoot() / "audio" / "SELECT"));
     const SoundSequence welcome = bank.sequence(bank.find("S_WELCOME").value());
-    f64 welcomeSeconds = 0.0;
+    double welcomeSeconds = 0.0;
     for (const SoundSequenceStep& step : welcome.steps) {
         welcomeSeconds += step.clip->seconds();
     }
-    std::vector<f32> out(usize{4800} * 2); // a tenth of a second of stereo
-    const auto drain = [&](f64 seconds) {
+    std::vector<float> out(std::size_t{4800} * 2); // a tenth of a second of stereo
+    const auto drain = [&](double seconds) {
         const auto chunks = static_cast<int>(std::ceil(seconds * 10.0));
         for (int i = 0; i < chunks; ++i) {
             mixer.mix(out);

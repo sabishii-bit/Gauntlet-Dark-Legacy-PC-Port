@@ -1,25 +1,25 @@
+#include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 #include <catch2/catch_test_macros.hpp>
 
-#include "engine/core/Types.h"
+#include "engine/core/SpecialMembers.h"
 
 namespace {
 
-using namespace gdl;
-
-TEST_CASE("fixed-width aliases have the expected sizes", "[core][types]") {
-    STATIC_REQUIRE(sizeof(u8) == 1);
-    STATIC_REQUIRE(sizeof(u16) == 2);
-    STATIC_REQUIRE(sizeof(u32) == 4);
-    STATIC_REQUIRE(sizeof(u64) == 8);
-    STATIC_REQUIRE(sizeof(s8) == 1);
-    STATIC_REQUIRE(sizeof(s16) == 2);
-    STATIC_REQUIRE(sizeof(s32) == 4);
-    STATIC_REQUIRE(sizeof(s64) == 8);
-    STATIC_REQUIRE(sizeof(f32) == 4);
-    STATIC_REQUIRE(sizeof(f64) == 8);
-    STATIC_REQUIRE(sizeof(usize) == sizeof(void*));
+TEST_CASE("standard numeric representations preserve asset and GPU widths", "[core][types]") {
+    STATIC_REQUIRE(sizeof(std::uint8_t) == 1);
+    STATIC_REQUIRE(sizeof(std::uint16_t) == 2);
+    STATIC_REQUIRE(sizeof(std::uint32_t) == 4);
+    STATIC_REQUIRE(sizeof(std::uint64_t) == 8);
+    STATIC_REQUIRE(sizeof(std::int8_t) == 1);
+    STATIC_REQUIRE(sizeof(std::int16_t) == 2);
+    STATIC_REQUIRE(sizeof(std::int32_t) == 4);
+    STATIC_REQUIRE(sizeof(std::int64_t) == 8);
+    STATIC_REQUIRE(sizeof(float) == 4);
+    STATIC_REQUIRE(sizeof(double) == 8);
+    STATIC_REQUIRE(sizeof(std::size_t) == sizeof(void*));
 }
 
 struct Pinned {

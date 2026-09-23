@@ -1,9 +1,11 @@
 #include <array>
+#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
+
 #include "game/enemies/EnemyAnimator.h"
 
 namespace {
@@ -12,8 +14,8 @@ using namespace gdl;
 using namespace gdl::game;
 using Action = EnemyAction;
 
-constexpr s32 kTicks = 2;
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr std::int32_t kTicks = 2;
+constexpr float kStep = 1.0f / 30.0f;
 
 /** A grunt's sequences: no DEATH, no ATTACK2, a ready-to-walk in and out. */
 TreeInfo gruntTree() {
@@ -25,21 +27,21 @@ TreeInfo gruntTree() {
     tree.nodes.push_back(root);
     struct Entry {
         const char* name;
-        s32 frames;
+        std::int32_t frames;
         bool repeats;
     };
     const std::array<Entry, 12> entries{{{"READY", 20, true},
-                                        {"WALK", 16, true},
-                                        {"ATTACK1", 8, false},
-                                        {"ATTACK1R", 8, false},
-                                        {"ATTACK3", 10, false},
-                                        {"ATTACK3R", 10, false},
-                                        {"START", 12, false},
-                                        {"HIT1", 6, false},
-                                        {"HIT2", 12, false},
-                                        {"GETUP", 10, false},
-                                        {"READYTOWALK", 4, false},
-                                        {"WALKTOREADY", 4, false}}};
+                                         {"WALK", 16, true},
+                                         {"ATTACK1", 8, false},
+                                         {"ATTACK1R", 8, false},
+                                         {"ATTACK3", 10, false},
+                                         {"ATTACK3R", 10, false},
+                                         {"START", 12, false},
+                                         {"HIT1", 6, false},
+                                         {"HIT2", 12, false},
+                                         {"GETUP", 10, false},
+                                         {"READYTOWALK", 4, false},
+                                         {"WALKTOREADY", 4, false}}};
     for (const Entry& entry : entries) {
         TreeSequenceInfo sequence;
         sequence.name = entry.name;

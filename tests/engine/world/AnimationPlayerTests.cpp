@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,9 +11,9 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr float kStep = 1.0f / 30.0f;
 
-TreeSequenceInfo sequence(s32 frames, s32 rate) {
+TreeSequenceInfo sequence(std::int32_t frames, std::int32_t rate) {
     TreeSequenceInfo info;
     info.name = "TEST";
     info.frames = frames;
@@ -31,7 +33,7 @@ TEST_CASE("a sequence steps a frame per tick, wraps when it repeats and holds wh
     REQUIRE(player.secondsPerFrame() == Approx(kStep));
     for (int i = 1; i <= 11; ++i) {
         REQUIRE_FALSE(player.advance(kStep, true));
-        REQUIRE(player.frame() == Approx(static_cast<f32>(i)));
+        REQUIRE(player.frame() == Approx(static_cast<float>(i)));
         REQUIRE_FALSE(player.finished());
     }
     // The step past the last frame wraps to the first and reports the loop.

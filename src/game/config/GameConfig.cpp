@@ -1,6 +1,8 @@
 #include "game/config/GameConfig.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <numbers>
@@ -83,7 +85,7 @@ std::filesystem::path environmentPath(const char* variable) {
 
 bool GameConfig::loadFile(const std::filesystem::path& file) {
     try {
-        const std::vector<u8> bytes = readFile(file);
+        const std::vector<std::uint8_t> bytes = readFile(file);
         mergeJson(std::string(bytes.begin(), bytes.end()));
         return true;
     } catch (const std::exception& e) {
@@ -288,23 +290,22 @@ void GameConfig::saveFile(const std::filesystem::path& file) const {
     writeTextFile(file, toJson());
 }
 
-f32 DifficultyConfig::gain() const {
+float DifficultyConfig::gain() const {
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto named = std::ranges::find(kNames, level);
-    return named != kNames.end() ? kGains[static_cast<usize>(named - kNames.begin())] : 1.0f;
+    return named != kNames.end() ? kGains[static_cast<std::size_t>(named - kNames.begin())] : 1.0f;
 }
 
-f32 GameConfig::horizontalFovRadians() const {
-    return camera.horizontalFovDegrees * (std::numbers::pi_v<f32> / 180.0f);
+float GameConfig::horizontalFovRadians() const {
+    return camera.horizontalFovDegrees * (std::numbers::pi_v<float> / 180.0f);
 }
 
 std::filesystem::path GameConfig::saveDirectory() const {
     return saveDirectory(paths::executableDirectory());
 }
 
-std::filesystem::path GameConfig::saveDirectory(
-    const std::filesystem::path& gameDirectory) const {
+std::filesystem::path GameConfig::saveDirectory(const std::filesystem::path& gameDirectory) const {
     if (save.directory.empty()) {
         return gameDirectory / kSavesFolder;
     }

@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -29,7 +30,7 @@ TEST_CASE("font files list glyph cells until a zero code", "[formats][font]") {
     REQUIRE(font.glyphs[1].x == 17);
     REQUIRE(font.glyphs[1].y == 20);
 
-    REQUIRE_THROWS_AS(FontFile::parse(std::vector<u8>(8, 0)), FormatError);
+    REQUIRE_THROWS_AS(FontFile::parse(std::vector<std::uint8_t>(8, 0)), FormatError);
     ByteWriter zeroHeight;
     zeroHeight.putU32(0).putS32(0).putU32(0);
     REQUIRE_THROWS_AS(FontFile::parse(zeroHeight.bytes()), FormatError);

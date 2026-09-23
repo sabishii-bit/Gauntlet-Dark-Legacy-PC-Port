@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdint>
 #include <string>
 
 #include <catch2/catch_test_macros.hpp>
@@ -13,8 +14,8 @@ using namespace gdl;
 using namespace gdl::formats;
 
 TEST_CASE("wave files carry a canonical 44-byte header", "[formats][wav]") {
-    const std::array<s16, 4> kSamples{0, 1000, -1000, 32767};
-    const std::vector<u8> wav = encodeWav(kSamples, 22050, 2);
+    const std::array<std::int16_t, 4> kSamples{0, 1000, -1000, 32767};
+    const std::vector<std::uint8_t> wav = encodeWav(kSamples, 22050, 2);
     REQUIRE(wav.size() == 44 + 8);
     REQUIRE(std::string(wav.begin(), wav.begin() + 4) == "RIFF");
     REQUIRE(readU32LE(wav, 4) == 36 + 8);
@@ -28,8 +29,8 @@ TEST_CASE("wave files carry a canonical 44-byte header", "[formats][wav]") {
     REQUIRE(readU16LE(wav, 34) == 16);
     REQUIRE(std::string(wav.begin() + 36, wav.begin() + 40) == "data");
     REQUIRE(readU32LE(wav, 40) == 8);
-    REQUIRE(static_cast<s16>(readU16LE(wav, 46)) == 1000);
-    REQUIRE(static_cast<s16>(readU16LE(wav, 48)) == -1000);
+    REQUIRE(static_cast<std::int16_t>(readU16LE(wav, 46)) == 1000);
+    REQUIRE(static_cast<std::int16_t>(readU16LE(wav, 48)) == -1000);
 }
 
 } // namespace

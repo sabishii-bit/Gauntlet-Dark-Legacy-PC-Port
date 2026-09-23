@@ -1,11 +1,14 @@
 #include "game/enemies/EnemyAnimator.h"
 
+#include <cstddef>
+#include <cstdint>
+
 namespace gdl::game {
 
 namespace {
 
-constexpr usize index(EnemyAction action) {
-    return static_cast<usize>(action);
+constexpr std::size_t index(EnemyAction action) {
+    return static_cast<std::size_t>(action);
 }
 
 constexpr bool isHit(EnemyAction action) {
@@ -16,9 +19,9 @@ constexpr bool isHit(EnemyAction action) {
 
 bool EnemyAnimator::bind(const TreeInfo& tree, bool walksIn) {
     unbind();
-    for (usize a = 0; a < kEnemyActionCount; ++a) {
+    for (std::size_t a = 0; a < kEnemyActionCount; ++a) {
         const auto sequence = tree.findSequence(kSequenceNames[a]);
-        m_sequences[a] = sequence.has_value() ? static_cast<s32>(*sequence) : -1;
+        m_sequences[a] = sequence.has_value() ? static_cast<std::int32_t>(*sequence) : -1;
     }
     if (m_sequences[index(Action::Ready)] < 0) {
         return false;
@@ -26,7 +29,7 @@ bool EnemyAnimator::bind(const TreeInfo& tree, bool walksIn) {
     m_tree = &tree;
     m_walksIn = walksIn;
     m_current = has(Action::Start) ? Action::Start : Action::Ready;
-    const u32 first = sequenceOf(m_current);
+    const std::uint32_t first = sequenceOf(m_current);
     m_player.start(tree.sequences[first], first);
     m_pose.evaluate(tree, first, 0.0f);
     m_previous = m_pose;
@@ -59,13 +62,13 @@ void EnemyAnimator::request(Action action) {
     m_requested = action;
 }
 
-u32 EnemyAnimator::sequenceOf(Action action) const {
-    const s32 sequence = m_sequences[index(action)];
-    return sequence >= 0 ? static_cast<u32>(sequence)
-                         : static_cast<u32>(m_sequences[index(Action::Ready)]);
+std::uint32_t EnemyAnimator::sequenceOf(Action action) const {
+    const std::int32_t sequence = m_sequences[index(action)];
+    return sequence >= 0 ? static_cast<std::uint32_t>(sequence)
+                         : static_cast<std::uint32_t>(m_sequences[index(Action::Ready)]);
 }
 
-void EnemyAnimator::update(s32 ticks, f32 seconds, bool contact) {
+void EnemyAnimator::update(std::int32_t ticks, float seconds, bool contact) {
     m_struck = false;
     m_powerStruck = false;
     m_threw = false;
@@ -157,9 +160,7 @@ EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
     case Action::HitReact3:
     case Action::Dying:
     case Action::GetUp:
-    case Action::Taunt:
-        whenDone();
-        break;
+    case Action::Taunt: whenDone(); break;
     case Action::HitReact2:
         whenDone();
         if (has(Action::GetUp)) {
@@ -200,9 +201,7 @@ EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
             d.action = Action::PowerAttackRecover;
         }
         break;
-    case Action::PowerAttackRecover:
-        cutForHit();
-        break;
+    case Action::PowerAttackRecover: cutForHit(); break;
     case Action::Attack4:
         cutForHit();
         if (!isHit(next)) {
@@ -254,8 +253,7 @@ EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
         cutForHit();
         d.action = Action::Ready;
         break;
-    default:
-        break;
+    default: break;
     }
     // What the tree lacks is stood in for.
     switch (d.action) {
@@ -296,16 +294,15 @@ EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
             d.action = Action::Throw2;
         }
         break;
-    default:
-        break;
+    default: break;
     }
     return d;
 }
 
-void EnemyAnimator::play(Decision decision, f32 seconds) {
+void EnemyAnimator::play(Decision decision, float seconds) {
     // A death the tree has no sequence for is played as being knocked down; anything else it
     // lacks is the stance, looping, and gives way at once.
-    u32 target = sequenceOf(decision.action);
+    std::uint32_t target = sequenceOf(decision.action);
     if (!has(decision.action)) {
         if (decision.action == Action::Dying && has(Action::HitReact2)) {
             target = sequenceOf(Action::HitReact2);
@@ -324,14 +321,15 @@ void EnemyAnimator::play(Decision decision, f32 seconds) {
         return;
     }
     const bool different = !m_player.playing() || m_player.sequence() != target;
-    const bool restart = decision.cut == Cut::IfDifferent ? (done || different) : (done && different);
+    const bool restart =
+        decision.cut == Cut::IfDifferent ? (done || different) : (done && different);
     if (!restart) {
         return;
     }
     const Action was = m_current;
     const Action now = decision.action;
-    const bool swing = was == Action::Attack || was == Action::Attack2 ||
-                       was == Action::Attack4 || was == Action::Attack5;
+    const bool swing = was == Action::Attack || was == Action::Attack2 || was == Action::Attack4 ||
+                       was == Action::Attack5;
     const bool recover = now == Action::AttackRecover || now == Action::Attack2Recover ||
                          now == Action::Attack4Recover || now == Action::Attack5Recover;
     m_struck = swing && recover;

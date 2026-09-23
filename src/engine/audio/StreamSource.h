@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cstddef>
 #include <vector>
 
 #include "engine/audio/AudioStream.h"
-#include "engine/core/Types.h"
 
 namespace gdl {
 
@@ -15,7 +15,7 @@ public:
     virtual AudioStreamDesc desc() const = 0;
     /** Appends about `frames` decoded interleaved frames to `out`; false once nothing is
      * left. */
-    virtual bool read(std::vector<f32>& out, usize frames) = 0;
+    virtual bool read(std::vector<float>& out, std::size_t frames) = 0;
     /** Starts over from the beginning. */
     virtual void rewind() = 0;
 };

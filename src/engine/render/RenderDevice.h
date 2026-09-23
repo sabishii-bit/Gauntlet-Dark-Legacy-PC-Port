@@ -1,10 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <span>
 
-#include "engine/core/Types.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
 
@@ -21,7 +22,7 @@ struct RenderDeviceDesc {
 };
 
 /** How a draw combines with what is already in the frame. */
-enum class BlendMode : u8 {
+enum class BlendMode : std::uint8_t {
     Opaque,  ///< replaces the frame; texture alpha may still cut holes through alpha testing
     Alpha,   ///< blended by alpha, writing depth
     Additive ///< added onto the frame without writing depth, for glows and flames
@@ -31,7 +32,7 @@ enum class BlendMode : u8 {
 struct DrawState {
     /** The alpha test translucent surfaces use, so their clear texels neither show nor
      * write depth, like the console's compare. */
-    static constexpr f32 kTranslucentAlphaTest = 3.0f / 255.0f;
+    static constexpr float kTranslucentAlphaTest = 3.0f / 255.0f;
 
     BlendMode blend = BlendMode::Alpha;
     /** Sampled with the vertices' second coordinates, its alpha scales the colour; null
@@ -42,10 +43,10 @@ struct DrawState {
     const Texture* maskedTexture = nullptr;
     Vec2 uvScale{1.0f, 1.0f};  ///< every texture coordinate is scaled by this...
     Vec2 uvOffset{0.0f, 0.0f}; ///< ...then has this added
-    f32 alphaTest = 0.0f;      ///< texels with less alpha than this are dropped; 0 keeps all
+    float alphaTest = 0.0f;    ///< texels with less alpha than this are dropped; 0 keeps all
     bool cullBack = false;     ///< triangles facing away are skipped
     bool depthWrite = true;
-    f32 darken = 0.0f;         ///< how much of its colour is taken away: 0 none, 1 all
+    float darken = 0.0f; ///< how much of its colour is taken away: 0 none, 1 all
 
     bool operator==(const DrawState&) const = default;
 };
@@ -69,10 +70,10 @@ public:
 
     /** Uploads RGBA8 pixels, rows top to bottom. */
     virtual std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
-                                                   std::span<const u8> rgba8Pixels) = 0;
+                                                   std::span<const std::uint8_t> rgba8Pixels) = 0;
 
     /** Replaces a texture's pixels. Valid after beginFrame and before the frame's first draw. */
-    virtual void updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) = 0;
+    virtual void updateTexture(Texture& texture, std::span<const std::uint8_t> rgba8Pixels) = 0;
 
     /** 1x1 opaque white texture for untextured drawing. */
     virtual const Texture& whiteTexture() const = 0;

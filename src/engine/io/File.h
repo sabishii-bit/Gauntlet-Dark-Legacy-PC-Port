@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -8,18 +10,16 @@
 #include <string_view>
 #include <vector>
 
-#include "engine/core/Types.h"
-
 namespace gdl {
 
 /** Reads a whole file into memory; throws FileError. */
-std::vector<u8> readFile(const std::filesystem::path& path);
+std::vector<std::uint8_t> readFile(const std::filesystem::path& path);
 
 /** Reads a whole file as text; throws FileError. */
 std::string readTextFile(const std::filesystem::path& path);
 
 /** Writes a whole file, replacing any existing one; throws FileError. */
-void writeFile(const std::filesystem::path& path, std::span<const u8> bytes);
+void writeFile(const std::filesystem::path& path, std::span<const std::uint8_t> bytes);
 
 /** Writes text as UTF-8 bytes, replacing any existing file; throws FileError. */
 void writeTextFile(const std::filesystem::path& path, std::string_view text);
@@ -29,17 +29,17 @@ class FileStream {
 public:
     explicit FileStream(const std::filesystem::path& path);
 
-    u64 size() const { return m_size; }
-    u64 position() const { return m_position; }
+    std::uint64_t size() const { return m_size; }
+    std::uint64_t position() const { return m_position; }
     const std::filesystem::path& path() const { return m_path; }
 
-    void seek(u64 offset);
+    void seek(std::uint64_t offset);
 
     /** Reads up to out.size() bytes; returns how many were read (fewer only at end of file). */
-    usize read(std::span<u8> out);
+    std::size_t read(std::span<std::uint8_t> out);
 
     /** Reads exactly `count` bytes or throws. */
-    std::vector<u8> readExact(usize count);
+    std::vector<std::uint8_t> readExact(std::size_t count);
 
 private:
     struct FileCloser {
@@ -48,8 +48,8 @@ private:
 
     std::filesystem::path m_path;
     std::unique_ptr<std::FILE, FileCloser> m_file;
-    u64 m_size = 0;
-    u64 m_position = 0;
+    std::uint64_t m_size = 0;
+    std::uint64_t m_position = 0;
 };
 
 } // namespace gdl

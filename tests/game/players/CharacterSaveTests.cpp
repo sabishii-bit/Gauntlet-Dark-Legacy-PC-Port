@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -114,7 +115,7 @@ TEST_CASE("a character keeps the help it has been shown, in order", "[game][play
     CharacterSave save = sampleSave();
     save.helpSeen = {21, 2, 133};
     const CharacterSave loaded = CharacterSave::fromJson(save.toJson());
-    REQUIRE(loaded.helpSeen == std::vector<s32>{2, 21, 133});
+    REQUIRE(loaded.helpSeen == std::vector<std::int32_t>{2, 21, 133});
     REQUIRE(CharacterSave::fromJson(sampleSave().toJson()).helpSeen.empty());
 }
 

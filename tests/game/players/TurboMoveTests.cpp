@@ -1,4 +1,6 @@
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -19,12 +21,12 @@ struct Fixture {
     std::vector<std::string> calls;
     std::vector<Vec3> shots;
     TurboMove::Events events{
-        .announce = [this](s32 id) { calls.push_back("help" + std::to_string(id)); },
-        .dim = [this](f32) { calls.emplace_back("dim"); },
+        .announce = [this](std::int32_t id) { calls.push_back("help" + std::to_string(id)); },
+        .dim = [this](float) { calls.emplace_back("dim"); },
         .volley = [this](const Vec3& direction) { shots.push_back(direction); },
         .strike =
-            [this](s32 row) {
-                if (stats.moveStrikes[static_cast<usize>(row)].amount != 0) {
+            [this](std::int32_t row) {
+                if (stats.moveStrikes[static_cast<std::size_t>(row)].amount != 0) {
                     REQUIRE(move.owed() == 0); // Payment precedes world effects.
                 }
                 calls.push_back("strike" + std::to_string(row));
@@ -44,7 +46,7 @@ struct Fixture {
         hit.amount = 5;
         stats.moveStrikes = {window, hit};
     }
-    void advance(f32 frame, Action action = Action::TurboStrong) {
+    void advance(float frame, Action action = Action::TurboStrong) {
         move.advance(action, frame, Vec3{0, 0, 1}, &stats, meter, events);
     }
 };

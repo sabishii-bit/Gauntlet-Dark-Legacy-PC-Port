@@ -1,3 +1,5 @@
+#include <cstddef>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "game/menu/MenuInput.h"
@@ -121,8 +123,7 @@ TEST_CASE("typed letters go straight into the name", "[game][menu][name]") {
     // Enter takes a typed name; a sixth letter completes it by itself.
     typed.typed = "y";
     REQUIRE(entry.update(typed, 1) == NameEntry::Event::LetterAdded);
-    REQUIRE(entry.update(press(false, false, false, false, true), 1) ==
-            NameEntry::Event::Accepted);
+    REQUIRE(entry.update(press(false, false, false, false, true), 1) == NameEntry::Event::Accepted);
     REQUIRE(entry.name() == "BOBY");
     REQUIRE(entry.flashing());
     NameEntry full;
@@ -148,7 +149,7 @@ TEST_CASE("a held direction keeps cycling letters, faster and faster", "[game][m
     REQUIRE(entry.update(hold, 1) == NameEntry::Event::LetterChanged);
     REQUIRE(entry.pendingLetter() == 'C');
     // Down the ladder the repeats come every tick.
-    for (usize step = 2; step < NameEntry::kRepeatLadder.size(); ++step) {
+    for (std::size_t step = 2; step < NameEntry::kRepeatLadder.size(); ++step) {
         entry.update(hold, NameEntry::kRepeatLadder[step]);
     }
     const char before = entry.pendingLetter();

@@ -4,7 +4,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr f32 kMovieDepth = 0.5f;
+constexpr float kMovieDepth = 0.5f;
 
 } // namespace
 
@@ -33,7 +33,7 @@ void MovieScene::close() {
     m_textureDirty = false;
 }
 
-bool MovieScene::update(f64 deltaSeconds) {
+bool MovieScene::update(double deltaSeconds) {
     if (!isOpen()) {
         return false;
     }

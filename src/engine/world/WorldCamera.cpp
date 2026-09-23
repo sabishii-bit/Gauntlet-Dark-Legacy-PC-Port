@@ -1,6 +1,7 @@
 #include "engine/world/WorldCamera.h"
 
 #include <cmath>
+#include <cstdint>
 
 namespace gdl {
 
@@ -17,13 +18,13 @@ struct Axes {
     Vec3 forward;
 };
 
-Axes axesOf(f32 pitch, f32 yaw, f32 roll) {
-    const f32 cp = std::cos(pitch);
-    const f32 sp = std::sin(pitch);
-    const f32 cy = std::cos(yaw);
-    const f32 sy = std::sin(yaw);
-    const f32 cr = std::cos(roll);
-    const f32 sr = std::sin(roll);
+Axes axesOf(float pitch, float yaw, float roll) {
+    const float cp = std::cos(pitch);
+    const float sp = std::sin(pitch);
+    const float cy = std::cos(yaw);
+    const float sy = std::sin(yaw);
+    const float cr = std::cos(roll);
+    const float sr = std::sin(roll);
     Axes axes{};
     axes.forward = Vec3{sy * cp, -sp, cy * cp};
     const Vec3 up{sy * sp, cp, cy * sp};
@@ -60,23 +61,23 @@ Mat4 WorldCamera::view() const {
     return view;
 }
 
-Mat4 WorldCamera::projection(f32 horizontalFov, f32 aspect) {
-    const f32 verticalFov = 2.0f * std::atan(std::tan(horizontalFov / 2.0f) / aspect);
+Mat4 WorldCamera::projection(float horizontalFov, float aspect) {
+    const float verticalFov = 2.0f * std::atan(std::tan(horizontalFov / 2.0f) / aspect);
     // Swapping the planes reverses depth so that nearer is larger; then it is squeezed under
     // the 2D layers.
-    const f32 reversedNear = kFar;
-    const f32 reversedFar = kNear;
+    const float reversedNear = kFar;
+    const float reversedFar = kNear;
     const Mat4 reversed = glm::perspectiveLH_ZO(verticalFov, aspect, reversedNear, reversedFar);
     return glm::scale(Mat4{1.0f}, Vec3{1.0f, 1.0f, kDepthRange}) * reversed;
 }
 
-Mat4 WorldCamera::frameMapping(f32 frameWidth, f32 frameHeight) {
+Mat4 WorldCamera::frameMapping(float frameWidth, float frameHeight) {
     const Mat4 mapping =
         glm::translate(Mat4{1.0f}, Vec3{frameWidth / 2.0f, frameHeight / 2.0f, 0.0f});
     return glm::scale(mapping, Vec3{frameWidth / 2.0f, -frameHeight / 2.0f, 1.0f});
 }
 
-Mat4 WorldCamera::clipTransform(f32 horizontalFov, f32 frameWidth, f32 frameHeight,
+Mat4 WorldCamera::clipTransform(float horizontalFov, float frameWidth, float frameHeight,
                                 const Mat4& frameProjection) const {
     return frameProjection * frameMapping(frameWidth, frameHeight) *
            projection(horizontalFov, frameWidth / frameHeight) * view();
@@ -97,7 +98,7 @@ CameraFrame CameraFrame::at(const Vec3& eye) {
     return frame;
 }
 
-Mat4 CameraFrame::face(const Mat4& placement, u32 mode) const {
+Mat4 CameraFrame::face(const Mat4& placement, std::uint32_t mode) const {
     if (mode == 0) {
         return placement;
     }
@@ -114,9 +115,9 @@ Mat4 CameraFrame::face(const Mat4& placement, u32 mode) const {
     if (toCamera.x * toCamera.x + toCamera.z * toCamera.z < 1e-8f) {
         return placement;
     }
-    const f32 yaw = std::atan2(toCamera.x, toCamera.z);
-    const f32 c = std::cos(yaw);
-    const f32 s = std::sin(yaw);
+    const float yaw = std::atan2(toCamera.x, toCamera.z);
+    const float c = std::cos(yaw);
+    const float s = std::sin(yaw);
     faced[0] = Vec4{c, 0.0f, -s, 0.0f};
     faced[1] = Vec4{0.0f, 1.0f, 0.0f, 0.0f};
     faced[2] = Vec4{s, 0.0f, c, 0.0f};

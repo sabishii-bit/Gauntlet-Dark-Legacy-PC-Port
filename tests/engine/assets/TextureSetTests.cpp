@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 #include <string_view>
 
@@ -112,7 +113,7 @@ TEST_CASE("a slot the archive keeps no picture for is clear", "[assets][textures
     const Image& clear = set.image(0); // no such file, and none is looked for
     REQUIRE(clear.width == 1);
     REQUIRE(clear.height == 1);
-    REQUIRE(clear.pixels == std::vector<u8>{0, 0, 0, 0});
+    REQUIRE(clear.pixels == std::vector<std::uint8_t>{0, 0, 0, 0});
     test::FakeRenderDevice device;
     REQUIRE(set.texture(device, 0).width() == 1);
 }

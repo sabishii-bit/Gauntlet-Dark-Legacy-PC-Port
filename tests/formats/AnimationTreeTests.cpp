@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -18,28 +20,28 @@ using namespace gdl::formats;
 using Catch::Approx;
 using test::ByteWriter;
 
-ByteWriter& putName(ByteWriter& w, std::string_view name, usize width) {
+ByteWriter& putName(ByteWriter& w, std::string_view name, std::size_t width) {
     w.putText(name);
     return w.putZeros(width - name.size());
 }
 
-ByteWriter& putF32(ByteWriter& w, f32 value) {
-    return w.putU32(std::bit_cast<u32>(value));
+ByteWriter& putF32(ByteWriter& w, float value) {
+    return w.putU32(std::bit_cast<std::uint32_t>(value));
 }
 
-constexpr u32 kInfosAt = 24;
-constexpr u32 kTreeAt = kInfosAt + 36;
-constexpr u32 kSequencesAt = 56;
-constexpr u32 kNodesAt = kSequencesAt + 48;
-constexpr u32 kKeysAt = kNodesAt + 2 * 60;   ///< the key header, relative to the tree
-constexpr u32 kEntriesAt = 28;               ///< the nodes' entries, relative to the header
-constexpr u32 kTableAt = kEntriesAt + 2 * 8; ///< the angle delta table
-constexpr u32 kBlocksAt = kTableAt + 256 * 4;
+constexpr std::uint32_t kInfosAt = 24;
+constexpr std::uint32_t kTreeAt = kInfosAt + 36;
+constexpr std::uint32_t kSequencesAt = 56;
+constexpr std::uint32_t kNodesAt = kSequencesAt + 48;
+constexpr std::uint32_t kKeysAt = kNodesAt + 2 * 60; ///< the key header, relative to the tree
+constexpr std::uint32_t kEntriesAt = 28;             ///< the nodes' entries, relative to the header
+constexpr std::uint32_t kTableAt = kEntriesAt + 2 * 8; ///< the angle delta table
+constexpr std::uint32_t kBlocksAt = kTableAt + 256 * 4;
 
 /** One tree "ARROW" with a skeletal root and a chrome mesh child, plus one sequence of
  * twelve frames: the root keys pitch and height as plain floats at frames 0, 4 and 11, the
  * child keys yaw in compressed form at frames 0 and 6. */
-std::vector<u8> sampleFile() {
+std::vector<std::uint8_t> sampleFile() {
     ByteWriter w;
     w.putU16(1).putU16(8).putU32(kInfosAt).putU32(0).putU32(0).putU32(0).putU32(0);
     putName(w, "ARROW", 32).putU32(kTreeAt);
@@ -65,7 +67,7 @@ std::vector<u8> sampleFile() {
         putF32(w, i == 3 ? 0.5f : 0.0f);
     }
     w.putU32(0x811); // keys at frames 0, 4 and 11
-    for (const f32 value : {0.5f, 1.0f, 1.0f, 2.0f, -0.5f, 3.0f}) {
+    for (const float value : {0.5f, 1.0f, 1.0f, 2.0f, -0.5f, 3.0f}) {
         putF32(w, value);
     }
     w.putU32(0x41); // keys at frames 0 and 6: the first as a float, the next a table step
@@ -114,24 +116,24 @@ TEST_CASE("animation trees decode each node's keys, plain or compressed", "[form
     REQUIRE(root.has(0));
     REQUIRE(root.has(4));
     REQUIRE_FALSE(root.has(3));
-    REQUIRE(root.frames == std::vector<u16>{0, 4, 11});
-    REQUIRE(root.values == std::vector<f32>{0.5f, 1.0f, 1.0f, 2.0f, -0.5f, 3.0f});
+    REQUIRE(root.frames == std::vector<std::uint16_t>{0, 4, 11});
+    REQUIRE(root.values == std::vector<float>{0.5f, 1.0f, 1.0f, 2.0f, -0.5f, 3.0f});
     const NodeTrack& spike = sequence.tracks[1];
     REQUIRE(spike.node == 1);
     REQUIRE(spike.flags == (NodeTrack::kRotationY | NodeTrack::kPitchYawRoll));
-    REQUIRE(spike.frames == std::vector<u16>{0, 6});
+    REQUIRE(spike.frames == std::vector<std::uint16_t>{0, 6});
     REQUIRE(spike.values.size() == 2);
     REQUIRE(spike.values[0] == 0.25f);
     REQUIRE(spike.values[1] == Approx(0.75f)); // the first key plus the table's step
 
     // A record too short for its channels is rejected.
-    std::vector<u8> bad = sampleFile();
+    std::vector<std::uint8_t> bad = sampleFile();
     bad[kTreeAt + kKeysAt + kEntriesAt + 2] = 1;
     REQUIRE_THROWS_AS(AnimationFile::parse(bad), FormatError);
 }
 
 /** A level's file: no trees, two texture animations in the header's list. */
-std::vector<u8> sampleLevelFile() {
+std::vector<std::uint8_t> sampleLevelFile() {
     ByteWriter w;
     w.putU16(0).putU16(0).putU32(24).putU32(2).putU32(24).putU32(0).putU32(0);
     // A torch: fifteen frames found by name, every second frame, starting five in.
@@ -143,7 +145,12 @@ std::vector<u8> sampleLevelFile() {
     w.putU16(0xFFFF).putU16(0xFFFF);
     putName(w, "SUNBEAMS", 32);
     putName(w, "", 32);
-    w.putU32(413).putU32(0xFFFFFFFE).putU16(static_cast<u16>(-350)).putU16(0).putU32(0).putU32(0);
+    w.putU32(413)
+        .putU32(0xFFFFFFFE)
+        .putU16(static_cast<std::uint16_t>(-350))
+        .putU16(0)
+        .putU32(0)
+        .putU32(0);
     return w.bytes();
 }
 
@@ -170,7 +177,8 @@ TEST_CASE("a level's file lists its texture animations", "[formats][animation]")
     REQUIRE(AnimationFile::parse(sampleFile()).textureAnimations.empty());
 }
 
-TEST_CASE("the tower's level file animates its torches and clouds", "[formats][animation][assets]") {
+TEST_CASE("the tower's level file animates its torches and clouds",
+          "[formats][animation][assets]") {
     const auto path = test::assetOrSkip("LEVELS/levelL1/ANIM.PS2");
     const AnimationFile file = AnimationFile::parse(readFile(path));
     REQUIRE(file.trees.empty());
@@ -197,18 +205,19 @@ TEST_CASE("an archive's file lists its particle templates and the nodes that emi
     REQUIRE(tree.has_value());
     const TreeDefinition& burst = file.trees[*tree];
     REQUIRE(burst.nodes.size() == 7);
-    REQUIRE(static_cast<u16>(burst.nodes[3].type) == 4);
+    REQUIRE(static_cast<std::uint16_t>(burst.nodes[3].type) == 4);
     REQUIRE(burst.nodes[3].particle == 3); // the orange sparks
     REQUIRE(burst.nodes[3].direction == Vec3{0.0f, 1.0f, 0.0f});
     REQUIRE(burst.nodes[0].particle == -1);
     // A level's older file lists none.
-    const AnimationFile level = AnimationFile::parse(readFile(test::assetOrSkip("LEVELS/levelL1/ANIM.PS2")));
+    const AnimationFile level =
+        AnimationFile::parse(readFile(test::assetOrSkip("LEVELS/levelL1/ANIM.PS2")));
     REQUIRE(level.particles.empty());
 }
 
 TEST_CASE("damaged animation files are rejected", "[formats][animation]") {
-    REQUIRE_THROWS_AS(AnimationFile::parse(std::vector<u8>(4, 0)), FormatError);
-    std::vector<u8> bad = sampleFile();
+    REQUIRE_THROWS_AS(AnimationFile::parse(std::vector<std::uint8_t>(4, 0)), FormatError);
+    std::vector<std::uint8_t> bad = sampleFile();
     bad[24 + 36 + 16] = 200; // node count past the file
     REQUIRE_THROWS_AS(AnimationFile::parse(bad), FormatError);
 }
@@ -231,7 +240,8 @@ TEST_CASE("the powerups file defines the menu arrow", "[formats][animation][asse
     REQUIRE(tree.nodes[8].object == "ICON_ARROWGR#1");
 }
 
-TEST_CASE("the warrior's class file carries every sequence's keys", "[formats][animation][assets]") {
+TEST_CASE("the warrior's class file carries every sequence's keys",
+          "[formats][animation][assets]") {
     const auto path = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     const AnimationFile file = AnimationFile::parse(readFile(path));
     const auto index = file.find("WAR");
@@ -254,7 +264,7 @@ TEST_CASE("the warrior's class file carries every sequence's keys", "[formats][a
     REQUIRE(pelvis->frames.size() == 57);
     REQUIRE(pelvis->frames[1] == 1);
     REQUIRE(pelvis->frames.back() == 59);
-    REQUIRE(pelvis->values.size() == usize{57} * 6);
+    REQUIRE(pelvis->values.size() == std::size_t{57} * 6);
     REQUIRE(pelvis->values[0] == Approx(-0.223f).margin(0.001f));
     REQUIRE(pelvis->values[1] == Approx(0.565f).margin(0.001f));
     REQUIRE(pelvis->values[4] == Approx(0.024f).margin(0.001f));
@@ -269,10 +279,10 @@ TEST_CASE("the warrior's class file carries every sequence's keys", "[formats][a
 
 /** One tree "FLAME" of a root and an object node whose one sequence flips through thirteen
  * objects from FX0F01, starting at frame 2. */
-std::vector<u8> objectFrameFile() {
-    constexpr u32 kTree = kInfosAt + 36;
-    constexpr u32 kNodes = 56 + 48;
-    constexpr u32 kRuns = kNodes + 2 * 60;
+std::vector<std::uint8_t> objectFrameFile() {
+    constexpr std::uint32_t kTree = kInfosAt + 36;
+    constexpr std::uint32_t kNodes = 56 + 48;
+    constexpr std::uint32_t kRuns = kNodes + 2 * 60;
     ByteWriter w;
     w.putU16(1).putU16(8).putU32(kInfosAt).putU32(0).putU32(0).putU32(0).putU32(0);
     putName(w, "FLAME", 32).putU32(kTree);

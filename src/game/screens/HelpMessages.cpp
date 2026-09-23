@@ -1,6 +1,8 @@
 #include "game/screens/HelpMessages.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
 #include "game/menu/ScrollBox.h"
 
@@ -62,16 +64,16 @@ constexpr std::array<Color, 4> kInks{Color::rgba(0x1F, 0x1F, 0x00), Color::rgba(
 
 } // namespace
 
-const HelpMessageSpec* HelpMessages::specOf(s32 id) {
+const HelpMessageSpec* HelpMessages::specOf(std::int32_t id) {
     // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kSpecs, id, &HelpMessageSpec::id);
     return found != kSpecs.end() ? &*found : nullptr;
 }
 
-Color HelpMessages::inkOf(s32 player) {
-    return player >= 0 && static_cast<usize>(player) < kInks.size()
-               ? kInks[static_cast<usize>(player)]
+Color HelpMessages::inkOf(std::int32_t player) {
+    return player >= 0 && static_cast<std::size_t>(player) < kInks.size()
+               ? kInks[static_cast<std::size_t>(player)]
                : ScrollBox::kTextColor;
 }
 
@@ -84,14 +86,15 @@ void HelpMessages::clear() {
     m_posted = 0;
 }
 
-const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
-                                          std::span<const HelpReader> party, s32 number) {
+const HelpMessageSpec* HelpMessages::post(std::int32_t id, std::int32_t player,
+                                          std::span<const HelpReader> party, std::int32_t number) {
     const HelpMessageSpec* spec = specOf(id);
     if (spec == nullptr || m_strings == nullptr) {
         return nullptr;
     }
     // One at a time, unless it outranks what is up; the pause between them is the lessons'.
-    const bool lesson = spec->repeat != HelpRepeat::OncePerSession && spec->repeat != HelpRepeat::Always;
+    const bool lesson =
+        spec->repeat != HelpRepeat::OncePerSession && spec->repeat != HelpRepeat::Always;
     if ((showing() && m_priority >= spec->priority) || (lesson && m_pauseLeft > 0)) {
         return nullptr;
     }
@@ -110,9 +113,8 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
     if (spec->repeat == HelpRepeat::OncePerSession) {
         wanted = std::ranges::none_of(party, heardIt);
     } else if (!wanted) {
-        wanted = std::ranges::any_of(party, [&](const HelpReader& reader) {
-                  return concerns(reader) && !sawIt(reader);
-              });
+        wanted = std::ranges::any_of(
+            party, [&](const HelpReader& reader) { return concerns(reader) && !sawIt(reader); });
     }
     const auto message = m_strings->find(spec->text);
     if (!wanted || !message.has_value()) {
@@ -121,8 +123,8 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
     const MessageInfo& info = m_strings->message(*message);
     // The strings keep a message's lines as its pages.
     std::vector<std::string> lines;
-    for (usize page = 0; page < info.pages.size(); ++page) {
-        if (spec->line >= 0 && page != static_cast<usize>(spec->line)) {
+    for (std::size_t page = 0; page < info.pages.size(); ++page) {
+        if (spec->line >= 0 && page != static_cast<std::size_t>(spec->line)) {
             continue;
         }
         for (std::string& line : ScrollBox::splitLines(info.pages[page])) {
@@ -137,7 +139,7 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
         return nullptr;
     }
     m_lines = std::move(lines);
-    const auto note = [id](std::vector<s32>* list) {
+    const auto note = [id](std::vector<std::int32_t>* list) {
         if (list != nullptr && !std::ranges::binary_search(*list, id)) {
             list->insert(std::ranges::upper_bound(*list, id), id);
         }
@@ -151,11 +153,11 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player,
     m_id = id;
     m_priority = spec->priority;
     m_player = player;
-    m_ticksLeft = static_cast<s32>(m_lines.size()) * kTicksPerLine + kTicksOver;
+    m_ticksLeft = static_cast<std::int32_t>(m_lines.size()) * kTicksPerLine + kTicksOver;
     return spec;
 }
 
-void HelpMessages::update(s32 ticks) {
+void HelpMessages::update(std::int32_t ticks) {
     m_pauseLeft = std::max(m_pauseLeft - ticks, 0);
     if (m_ticksLeft <= 0) {
         return;
@@ -170,17 +172,17 @@ void HelpMessages::update(s32 ticks) {
 }
 
 Rect HelpMessages::areaFor(const TextPainter& text, const Vec2& head) const {
-    s32 widest = 0;
+    std::int32_t widest = 0;
     for (const std::string& line : m_lines) {
         widest = std::max(widest, text.measure(line));
     }
-    const auto width = static_cast<f32>(widest + kMarginAcross);
-    const auto height =
-        static_cast<f32>(static_cast<s32>(m_lines.size()) * text.lineHeight() + kMarginDown);
-    const f32 left = std::clamp(head.x - width * 0.5f, 0.0f,
-                                std::max(static_cast<f32>(kWidest) - width, 0.0f));
-    const f32 top = std::clamp(head.y - static_cast<f32>(kAboveHead) - height * 0.5f, 2.0f,
-                               std::max(static_cast<f32>(kLowest) - height, 2.0f));
+    const auto width = static_cast<float>(widest + kMarginAcross);
+    const auto height = static_cast<float>(
+        static_cast<std::int32_t>(m_lines.size()) * text.lineHeight() + kMarginDown);
+    const float left = std::clamp(head.x - width * 0.5f, 0.0f,
+                                  std::max(static_cast<float>(kWidest) - width, 0.0f));
+    const float top = std::clamp(head.y - static_cast<float>(kAboveHead) - height * 0.5f, 2.0f,
+                                 std::max(static_cast<float>(kLowest) - height, 2.0f));
     return Rect{left, top, width, height};
 }
 
@@ -195,8 +197,8 @@ void HelpMessages::draw(Canvas& canvas, const TextPainter& text, const Texture* 
     }
     TextStyle style;
     style.color = inkOf(m_player);
-    const auto centre = static_cast<s32>(area.x + area.width * 0.5f);
-    s32 y = static_cast<s32>(area.y) + kMarginDown / 2;
+    const auto centre = static_cast<std::int32_t>(area.x + area.width * 0.5f);
+    std::int32_t y = static_cast<std::int32_t>(area.y) + kMarginDown / 2;
     for (const std::string& line : m_lines) {
         text.draw(canvas, -centre, y, line, style);
         y += text.lineHeight();

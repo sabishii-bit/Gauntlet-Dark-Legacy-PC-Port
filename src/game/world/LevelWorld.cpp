@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 
 #include "engine/core/Log.h"
@@ -32,7 +34,8 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
                      std::filesystem::exists(unpackedRoot / m_ref.ownItems / "animations.json") &&
                      m_items.load(unpackedRoot / m_ref.ownItems);
     if (!own && !m_items.load(unpackedRoot / m_ref.items)) {
-        log::warn("Level: without the realm's item archive its borrowed textures and figures are absent");
+        log::warn(
+            "Level: without the realm's item archive its borrowed textures and figures are absent");
     }
     // The item archive lends the level its external textures and the torches' frames.
     const std::array<TextureSet*, 1> lenders{&m_items.textures};
@@ -53,13 +56,14 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     }
     // Objects flagged to move keep their collision in their own space, placed by their
     // transform: the animated, and the force fields that only fade.
-    for (usize i = 0; i < m_layout.objects().size(); ++i) {
+    for (std::size_t i = 0; i < m_layout.objects().size(); ++i) {
         if ((m_layout.objects()[i].flags & WorldObject::kAnimated) != 0 || m_scene.moving(i)) {
-            m_movingObjects.push_back(static_cast<s32>(i));
+            m_movingObjects.push_back(static_cast<std::int32_t>(i));
         }
     }
     m_collision.setMovingObjects(m_movingObjects);
-    std::erase_if(m_movingObjects, [&](s32 object) { return !m_collision.moving(object); });
+    std::erase_if(m_movingObjects,
+                  [&](std::int32_t object) { return !m_collision.moving(object); });
     m_triggers.bind(m_layout, m_worldAnimator, &m_collision);
     m_worldAnimator.apply(m_scene);
     syncCollision();
@@ -89,8 +93,9 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
 }
 
 void LevelWorld::syncCollision() {
-    for (const s32 object : m_movingObjects) {
-        m_collision.setObjectTransform(object, m_scene.worldTransform(static_cast<usize>(object)));
+    for (const std::int32_t object : m_movingObjects) {
+        m_collision.setObjectTransform(object,
+                                       m_scene.worldTransform(static_cast<std::size_t>(object)));
     }
 }
 
@@ -100,11 +105,11 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
     syncCollision();
 }
 
-void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors) {
+void LevelWorld::updateTriggers(float seconds, std::span<const TriggerVisitor> visitors) {
     m_triggers.update(seconds, visitors, m_worldAnimator, m_scene, &m_collision);
 }
 
-void LevelWorld::update(f32 seconds) {
+void LevelWorld::update(float seconds) {
     if (!built()) {
         return;
     }
@@ -114,9 +119,9 @@ void LevelWorld::update(f32 seconds) {
     m_placedItems.update(seconds);
     // Texture animations count whole game frames.
     m_frameRemainder += seconds * WorldAnimator::kFramesPerSecond;
-    const f32 frames = std::floor(m_frameRemainder);
+    const float frames = std::floor(m_frameRemainder);
     m_frameRemainder -= frames;
-    m_textureAnimator.step(m_scene, static_cast<u32>(frames));
+    m_textureAnimator.step(m_scene, static_cast<std::uint32_t>(frames));
 }
 
 /** Takes the light, the camera range and the sounds from the realm's data. */
@@ -138,8 +143,7 @@ void LevelWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
     m_lighting = WorldLighting::forLevel(*level);
     m_litNow = m_lighting;
     m_ambientOffset = 0.0f;
-    if (const LevelCameraInfo* camera = m_worldData.camera(level->cameraIndex);
-        camera != nullptr) {
+    if (const LevelCameraInfo* camera = m_worldData.camera(level->cameraIndex); camera != nullptr) {
         m_cameraRange.radiusMin = camera->radiusMin;
         m_cameraRange.radiusMax = camera->radiusMax;
         m_cameraRange.minPitch = camera->minPitch;
@@ -183,7 +187,7 @@ std::optional<WorldCamera> LevelWorld::entranceCamera() const {
     return camera;
 }
 
-void LevelWorld::setAmbientOffset(f32 offset) {
+void LevelWorld::setAmbientOffset(float offset) {
     if (offset == m_ambientOffset) {
         return;
     }
@@ -192,23 +196,23 @@ void LevelWorld::setAmbientOffset(f32 offset) {
     // alone would leave most of it as bright as ever; the original darkens the whole picture
     // with it, and so is everything lit here: the level's baked geometry through the scene,
     // what is lit as it is drawn through the light it is given. What glows is left alone.
-    const f32 kept = std::clamp(1.0f + offset, 0.0f, 1.0f);
+    const float kept = std::clamp(1.0f + offset, 0.0f, 1.0f);
     m_litNow = m_lighting;
     m_litNow.ambient = m_lighting.ambient * kept;
     m_litNow.lightColor = m_lighting.lightColor * kept;
     m_scene.setDarken(1.0f - kept);
 }
 
-const WorldLocator* LevelWorld::startPoint(u32 index) const {
+const WorldLocator* LevelWorld::startPoint(std::uint32_t index) const {
     return m_layout.findLocator(LocatorKind::Start, index);
 }
 
-u32 LevelWorld::towerMarkerOf(u32 realm) {
-    constexpr std::array<u32, 14> kMarkers{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
+std::uint32_t LevelWorld::towerMarkerOf(std::uint32_t realm) {
+    constexpr std::array<std::uint32_t, 14> kMarkers{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
     return realm < kMarkers.size() ? kMarkers[realm] : 0;
 }
 
-const WorldLocator* LevelWorld::arrivalPoint(u32 realm) const {
+const WorldLocator* LevelWorld::arrivalPoint(std::uint32_t realm) const {
     const WorldLocator* marker = isTower() ? startPoint(towerMarkerOf(realm)) : nullptr;
     return marker != nullptr ? marker : startPoint(0);
 }

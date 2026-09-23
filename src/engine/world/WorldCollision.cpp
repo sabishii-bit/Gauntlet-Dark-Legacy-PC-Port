@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <utility>
 
@@ -17,19 +19,19 @@ namespace {
 
 using Json = nlohmann::json;
 
-constexpr f32 kEpsilon = 0.001f;
-constexpr s32 kPasses = 4;
+constexpr float kEpsilon = 0.001f;
+constexpr std::int32_t kPasses = 4;
 /** Heights within a cylinder at which walls are checked: about the knees and the chest. */
-constexpr std::array<f32, 2> kProbeFractions{0.25f, 0.75f};
+constexpr std::array<float, 2> kProbeFractions{0.25f, 0.75f};
 
 /** Whether (x, z) lies inside the triangle's ground-plane projection. */
-bool insideXZ(const CollisionTriangle& triangle, f32 x, f32 z) {
+bool insideXZ(const CollisionTriangle& triangle, float x, float z) {
     const auto side = [&](const Vec3& a, const Vec3& b) {
         return (b.x - a.x) * (z - a.z) - (b.z - a.z) * (x - a.x);
     };
-    const f32 s0 = side(triangle.vertices[0], triangle.vertices[1]);
-    const f32 s1 = side(triangle.vertices[1], triangle.vertices[2]);
-    const f32 s2 = side(triangle.vertices[2], triangle.vertices[0]);
+    const float s0 = side(triangle.vertices[0], triangle.vertices[1]);
+    const float s1 = side(triangle.vertices[1], triangle.vertices[2]);
+    const float s2 = side(triangle.vertices[2], triangle.vertices[0]);
     const bool negative = s0 < -kEpsilon || s1 < -kEpsilon || s2 < -kEpsilon;
     const bool positive = s0 > kEpsilon || s1 > kEpsilon || s2 > kEpsilon;
     return !(negative && positive);
@@ -42,10 +44,10 @@ struct Slice {
     bool valid = false;
 };
 
-Slice sliceAt(const CollisionTriangle& triangle, f32 y) {
+Slice sliceAt(const CollisionTriangle& triangle, float y) {
     std::array<Vec2, 6> points{};
-    usize count = 0;
-    for (usize i = 0; i < 3; ++i) {
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < 3; ++i) {
         const Vec3& p = triangle.vertices[i];
         const Vec3& q = triangle.vertices[(i + 1) % 3];
         if (p.y == q.y) {
@@ -58,14 +60,14 @@ Slice sliceAt(const CollisionTriangle& triangle, f32 y) {
         if ((p.y - y) * (q.y - y) > 0.0f) {
             continue;
         }
-        const f32 t = (y - p.y) / (q.y - p.y);
+        const float t = (y - p.y) / (q.y - p.y);
         points[count++] = Vec2{p.x + (q.x - p.x) * t, p.z + (q.z - p.z) * t};
     }
     Slice slice;
-    f32 longest = kEpsilon * kEpsilon;
-    for (usize i = 0; i < count; ++i) {
-        for (usize j = i + 1; j < count; ++j) {
-            const f32 length = glm::dot(points[j] - points[i], points[j] - points[i]);
+    float longest = kEpsilon * kEpsilon;
+    for (std::size_t i = 0; i < count; ++i) {
+        for (std::size_t j = i + 1; j < count; ++j) {
+            const float length = glm::dot(points[j] - points[i], points[j] - points[i]);
             if (length > longest) {
                 longest = length;
                 slice = Slice{points[i], points[j], true};
@@ -77,17 +79,17 @@ Slice sliceAt(const CollisionTriangle& triangle, f32 y) {
 
 Vec2 closestOnSegment(const Vec2& a, const Vec2& b, const Vec2& point) {
     const Vec2 edge = b - a;
-    const f32 length = glm::dot(edge, edge);
+    const float length = glm::dot(edge, edge);
     if (length <= kEpsilon * kEpsilon) {
         return a;
     }
-    const f32 t = std::clamp(glm::dot(point - a, edge) / length, 0.0f, 1.0f);
+    const float t = std::clamp(glm::dot(point - a, edge) / length, 0.0f, 1.0f);
     return a + edge * t;
 }
 
-Vec3 readVec3(const Json& array, usize first) {
-    return Vec3{array.at(first).get<f32>(), array.at(first + 1).get<f32>(),
-                array.at(first + 2).get<f32>()};
+Vec3 readVec3(const Json& array, std::size_t first) {
+    return Vec3{array.at(first).get<float>(), array.at(first + 1).get<float>(),
+                array.at(first + 2).get<float>()};
 }
 
 } // namespace
@@ -99,11 +101,11 @@ bool WorldCollision::load(const std::filesystem::path& directory, const WorldLay
         const Json root = Json::parse(readTextFile(file), nullptr, true, true);
         std::vector<CollisionTriangle> triangles;
         for (const Json& entry : root.at("objects")) {
-            const auto object = entry.at("object").get<s32>();
-            if (object < 0 || static_cast<usize>(object) >= layout.objects().size()) {
+            const auto object = entry.at("object").get<std::int32_t>();
+            if (object < 0 || static_cast<std::size_t>(object) >= layout.objects().size()) {
                 throw FormatError("object index out of range");
             }
-            if (layout.objects()[static_cast<usize>(object)].noCollision) {
+            if (layout.objects()[static_cast<std::size_t>(object)].noCollision) {
                 continue;
             }
             const Json& normals = entry.at("normals");
@@ -112,12 +114,12 @@ bool WorldCollision::load(const std::filesystem::path& directory, const WorldLay
                 vertices.size() != normals.size() * 3) {
                 throw FormatError("malformed triangle lists");
             }
-            const usize count = normals.size() / 3;
-            for (usize t = 0; t < count; ++t) {
+            const std::size_t count = normals.size() / 3;
+            for (std::size_t t = 0; t < count; ++t) {
                 CollisionTriangle triangle;
                 triangle.object = object;
                 triangle.normal = readVec3(normals, t * 3);
-                for (usize k = 0; k < 3; ++k) {
+                for (std::size_t k = 0; k < 3; ++k) {
                     triangle.vertices[k] = readVec3(vertices, (t * 3 + k) * 3);
                 }
                 triangles.push_back(triangle);
@@ -141,11 +143,11 @@ void WorldCollision::build(std::vector<CollisionTriangle> triangles) {
 void WorldCollision::MovingObject::place(const Mat4& world) {
     const Mat3 rotation{world};
     bool first = true;
-    for (usize i = 0; i < local.size(); ++i) {
+    for (std::size_t i = 0; i < local.size(); ++i) {
         const CollisionTriangle& from = local[i];
         CollisionTriangle& to = placed[i];
         to.normal = glm::normalize(rotation * from.normal);
-        for (usize k = 0; k < 3; ++k) {
+        for (std::size_t k = 0; k < 3; ++k) {
             to.vertices[k] = Vec3{world * Vec4{from.vertices[k], 1.0f}};
             boundsMin = first ? to.vertices[k] : glm::min(boundsMin, to.vertices[k]);
             boundsMax = first ? to.vertices[k] : glm::max(boundsMax, to.vertices[k]);
@@ -154,8 +156,8 @@ void WorldCollision::MovingObject::place(const Mat4& world) {
     }
 }
 
-void WorldCollision::setMovingObjects(std::span<const s32> objects) {
-    for (const s32 object : objects) {
+void WorldCollision::setMovingObjects(std::span<const std::int32_t> objects) {
+    for (const std::int32_t object : objects) {
         if (moving(object)) {
             continue;
         }
@@ -178,7 +180,7 @@ void WorldCollision::setMovingObjects(std::span<const s32> objects) {
     index();
 }
 
-void WorldCollision::setObjectTransform(s32 object, const Mat4& world) {
+void WorldCollision::setObjectTransform(std::int32_t object, const Mat4& world) {
     for (MovingObject& mover : m_moving) {
         if (mover.object == object) {
             mover.place(world);
@@ -187,7 +189,7 @@ void WorldCollision::setObjectTransform(s32 object, const Mat4& world) {
     }
 }
 
-void WorldCollision::setSolid(s32 object, bool solid) {
+void WorldCollision::setSolid(std::int32_t object, bool solid) {
     const auto found = std::ranges::find(m_hidden, object);
     if (solid && found != m_hidden.end()) {
         m_hidden.erase(found);
@@ -196,17 +198,17 @@ void WorldCollision::setSolid(s32 object, bool solid) {
     }
 }
 
-bool WorldCollision::solid(s32 object) const {
+bool WorldCollision::solid(std::int32_t object) const {
     return std::ranges::find(m_hidden, object) == m_hidden.end();
 }
 
-bool WorldCollision::moving(s32 object) const {
+bool WorldCollision::moving(std::int32_t object) const {
     return std::ranges::any_of(m_moving,
                                [&](const MovingObject& mover) { return mover.object == object; });
 }
 
-usize WorldCollision::triangleCount() const {
-    usize count = m_triangles.size();
+std::size_t WorldCollision::triangleCount() const {
+    std::size_t count = m_triangles.size();
     for (const MovingObject& mover : m_moving) {
         count += mover.local.size();
     }
@@ -214,8 +216,9 @@ usize WorldCollision::triangleCount() const {
 }
 
 template <typename Visit>
-void WorldCollision::eachTriangle(f32 minX, f32 minZ, f32 maxX, f32 maxZ, const Visit& visit) const {
-    for (const u32 index : candidates(minX, minZ, maxX, maxZ)) {
+void WorldCollision::eachTriangle(float minX, float minZ, float maxX, float maxZ,
+                                  const Visit& visit) const {
+    for (const std::uint32_t index : candidates(minX, minZ, maxX, maxZ)) {
         const CollisionTriangle& triangle = m_triangles[index];
         if (solid(triangle.object)) {
             visit(triangle);
@@ -253,47 +256,48 @@ void WorldCollision::index() {
             m_max = glm::max(m_max, v);
         }
     }
-    m_columns = static_cast<u32>(std::ceil((m_max.x - m_min.x) / kCellSize)) + 1;
-    m_rows = static_cast<u32>(std::ceil((m_max.z - m_min.z) / kCellSize)) + 1;
-    m_cells.assign(usize{m_columns} * m_rows, {});
-    const auto column = [&](f32 x) {
-        return static_cast<u32>(std::clamp((x - m_min.x) / kCellSize, 0.0f,
-                                           static_cast<f32>(m_columns - 1)));
+    m_columns = static_cast<std::uint32_t>(std::ceil((m_max.x - m_min.x) / kCellSize)) + 1;
+    m_rows = static_cast<std::uint32_t>(std::ceil((m_max.z - m_min.z) / kCellSize)) + 1;
+    m_cells.assign(std::size_t{m_columns} * m_rows, {});
+    const auto column = [&](float x) {
+        return static_cast<std::uint32_t>(
+            std::clamp((x - m_min.x) / kCellSize, 0.0f, static_cast<float>(m_columns - 1)));
     };
-    const auto row = [&](f32 z) {
-        return static_cast<u32>(
-            std::clamp((z - m_min.z) / kCellSize, 0.0f, static_cast<f32>(m_rows - 1)));
+    const auto row = [&](float z) {
+        return static_cast<std::uint32_t>(
+            std::clamp((z - m_min.z) / kCellSize, 0.0f, static_cast<float>(m_rows - 1)));
     };
-    for (usize i = 0; i < m_triangles.size(); ++i) {
+    for (std::size_t i = 0; i < m_triangles.size(); ++i) {
         const auto& v = m_triangles[i].vertices;
-        const f32 minX = std::min({v[0].x, v[1].x, v[2].x});
-        const f32 maxX = std::max({v[0].x, v[1].x, v[2].x});
-        const f32 minZ = std::min({v[0].z, v[1].z, v[2].z});
-        const f32 maxZ = std::max({v[0].z, v[1].z, v[2].z});
-        for (u32 r = row(minZ); r <= row(maxZ); ++r) {
-            for (u32 c = column(minX); c <= column(maxX); ++c) {
-                m_cells[usize{r} * m_columns + c].push_back(static_cast<u32>(i));
+        const float minX = std::min({v[0].x, v[1].x, v[2].x});
+        const float maxX = std::max({v[0].x, v[1].x, v[2].x});
+        const float minZ = std::min({v[0].z, v[1].z, v[2].z});
+        const float maxZ = std::max({v[0].z, v[1].z, v[2].z});
+        for (std::uint32_t r = row(minZ); r <= row(maxZ); ++r) {
+            for (std::uint32_t c = column(minX); c <= column(maxX); ++c) {
+                m_cells[std::size_t{r} * m_columns + c].push_back(static_cast<std::uint32_t>(i));
             }
         }
     }
 }
 
-std::vector<u32> WorldCollision::candidates(f32 minX, f32 minZ, f32 maxX, f32 maxZ) const {
-    std::vector<u32> out;
+std::vector<std::uint32_t> WorldCollision::candidates(float minX, float minZ, float maxX,
+                                                      float maxZ) const {
+    std::vector<std::uint32_t> out;
     if (m_cells.empty()) {
         return out;
     }
-    const auto column = [&](f32 x) {
-        return static_cast<u32>(std::clamp((x - m_min.x) / kCellSize, 0.0f,
-                                           static_cast<f32>(m_columns - 1)));
+    const auto column = [&](float x) {
+        return static_cast<std::uint32_t>(
+            std::clamp((x - m_min.x) / kCellSize, 0.0f, static_cast<float>(m_columns - 1)));
     };
-    const auto row = [&](f32 z) {
-        return static_cast<u32>(
-            std::clamp((z - m_min.z) / kCellSize, 0.0f, static_cast<f32>(m_rows - 1)));
+    const auto row = [&](float z) {
+        return static_cast<std::uint32_t>(
+            std::clamp((z - m_min.z) / kCellSize, 0.0f, static_cast<float>(m_rows - 1)));
     };
-    for (u32 r = row(minZ); r <= row(maxZ); ++r) {
-        for (u32 c = column(minX); c <= column(maxX); ++c) {
-            const std::vector<u32>& cell = m_cells[usize{r} * m_columns + c];
+    for (std::uint32_t r = row(minZ); r <= row(maxZ); ++r) {
+        for (std::uint32_t c = column(minX); c <= column(maxX); ++c) {
+            const std::vector<std::uint32_t>& cell = m_cells[std::size_t{r} * m_columns + c];
             out.insert(out.end(), cell.begin(), cell.end());
         }
     }
@@ -303,67 +307,69 @@ std::vector<u32> WorldCollision::candidates(f32 minX, f32 minZ, f32 maxX, f32 ma
     return out;
 }
 
-std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above,
-                                                f32 below) const {
+std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, float above,
+                                                float below) const {
     std::optional<FloorHit> best;
-    const f32 highest = position.y + above;
-    const f32 lowest = position.y - below;
-    eachTriangle(position.x, position.z, position.x, position.z,
-                 [&](const CollisionTriangle& triangle) {
-        if (triangle.normal.y < kFloorNormalY || !insideXZ(triangle, position.x, position.z)) {
-            return;
-        }
-        const Vec3& v = triangle.vertices[0];
-        const f32 y = v.y - (triangle.normal.x * (position.x - v.x) +
-                             triangle.normal.z * (position.z - v.z)) /
-                                triangle.normal.y;
-        if (y > highest || y < lowest) {
-            return;
-        }
-        if (!best.has_value() || y > best->y) {
-            best = FloorHit{y, triangle.normal, triangle.object};
-        }
-    });
+    const float highest = position.y + above;
+    const float lowest = position.y - below;
+    eachTriangle(
+        position.x, position.z, position.x, position.z, [&](const CollisionTriangle& triangle) {
+            if (triangle.normal.y < kFloorNormalY || !insideXZ(triangle, position.x, position.z)) {
+                return;
+            }
+            const Vec3& v = triangle.vertices[0];
+            const float y = v.y - (triangle.normal.x * (position.x - v.x) +
+                                   triangle.normal.z * (position.z - v.z)) /
+                                      triangle.normal.y;
+            if (y > highest || y < lowest) {
+                return;
+            }
+            if (!best.has_value() || y > best->y) {
+                best = FloorHit{y, triangle.normal, triangle.object};
+            }
+        });
     return best;
 }
 
-Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top) const {
+Vec3 WorldCollision::resolveWalls(const Vec3& centre, float radius, float bottom, float top) const {
     Vec3 out = centre;
-    const f32 reach = radius * 2.0f;
-    for (s32 pass = 0; pass < kPasses; ++pass) {
+    const float reach = radius * 2.0f;
+    for (std::int32_t pass = 0; pass < kPasses; ++pass) {
         bool pushed = false;
         eachTriangle(out.x - reach, out.z - reach, out.x + reach, out.z + reach,
                      [&](const CollisionTriangle& triangle) {
-            if (std::abs(triangle.normal.y) >= kFloorNormalY) {
-                return; // a floor or a ceiling
-            }
-            Vec2 wallNormal{triangle.normal.x, triangle.normal.z};
-            const f32 normalLength = glm::length(wallNormal);
-            wallNormal = normalLength > kEpsilon ? wallNormal / normalLength : Vec2{1.0f, 0.0f};
-            for (const f32 fraction : kProbeFractions) {
-                const Slice slice = sliceAt(triangle, bottom + (top - bottom) * fraction);
-                if (!slice.valid) {
-                    continue;
-                }
-                const Vec2 here{out.x, out.z};
-                const Vec2 away = here - closestOnSegment(slice.a, slice.b, here);
-                const f32 distance = glm::length(away);
-                if (distance >= radius) {
-                    continue;
-                }
-                // Push straight away from the wall when in front of it, else out along its
-                // normal so a mover never ends up behind it.
-                Vec2 direction = wallNormal;
-                f32 depth = radius - glm::dot(away, wallNormal);
-                if (distance > kEpsilon && glm::dot(away, wallNormal) > 0.0f) {
-                    direction = away / distance;
-                    depth = radius - distance;
-                }
-                out.x += direction.x * depth;
-                out.z += direction.y * depth;
-                pushed = true;
-            }
-        });
+                         if (std::abs(triangle.normal.y) >= kFloorNormalY) {
+                             return; // a floor or a ceiling
+                         }
+                         Vec2 wallNormal{triangle.normal.x, triangle.normal.z};
+                         const float normalLength = glm::length(wallNormal);
+                         wallNormal =
+                             normalLength > kEpsilon ? wallNormal / normalLength : Vec2{1.0f, 0.0f};
+                         for (const float fraction : kProbeFractions) {
+                             const Slice slice =
+                                 sliceAt(triangle, bottom + (top - bottom) * fraction);
+                             if (!slice.valid) {
+                                 continue;
+                             }
+                             const Vec2 here{out.x, out.z};
+                             const Vec2 away = here - closestOnSegment(slice.a, slice.b, here);
+                             const float distance = glm::length(away);
+                             if (distance >= radius) {
+                                 continue;
+                             }
+                             // Push straight away from the wall when in front of it, else out along
+                             // its normal so a mover never ends up behind it.
+                             Vec2 direction = wallNormal;
+                             float depth = radius - glm::dot(away, wallNormal);
+                             if (distance > kEpsilon && glm::dot(away, wallNormal) > 0.0f) {
+                                 direction = away / distance;
+                                 depth = radius - distance;
+                             }
+                             out.x += direction.x * depth;
+                             out.z += direction.y * depth;
+                             pushed = true;
+                         }
+                     });
         if (!pushed) {
             break;
         }
