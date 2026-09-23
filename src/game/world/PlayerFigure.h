@@ -16,6 +16,7 @@
 
 #include "game/players/CharacterSave.h"
 #include "game/players/PlayerAnimator.h"
+#include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
 
@@ -24,6 +25,8 @@ namespace gdl::game {
 class PlayerFigure {
 public:
     PlayerFigure() = default;
+    /** Character size shared by body rendering and posed-hand attachments. */
+    static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
     // Bound models and animation poses refer into these archives: their owner stays put.
     PlayerFigure(const PlayerFigure&) = delete;
     PlayerFigure& operator=(const PlayerFigure&) = delete;

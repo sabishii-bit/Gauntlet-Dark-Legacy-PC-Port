@@ -126,7 +126,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the wizard's borrowed model/animation, placement and typed captions. It
   consumes standing-party snapshots and messages, returning voice cues and a
   one-shot sparkle request; it never awards shards, plays audio or changes levels.
-  PlayScene applies those gameplay effects and chooses the camera subject.
+  `screens/BossSequence` applies rewards, legend impacts, audio and coin showers,
+  using frame-local party snapshots; PlayScene chooses travel and camera/draw
+  order. Clear the sequence before releasing audio, effects and item archives.
+  Its completion signal is one-shot; its coin RNG survives level reopenings.
   Clear the presentation before releasing the level's item archive.
 * `screens/LevelArrivalPresentation` owns the materialisation effects, their
   texture clock, the start camera and the sliding title. It takes party-position

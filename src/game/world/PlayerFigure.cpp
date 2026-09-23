@@ -21,7 +21,20 @@ constexpr std::array<std::string_view, 3> kHandObjects{"R_WRIST", "RIGHTHAN", "R
 constexpr std::string_view kHeldWeapon = "WEAP_HOLD";
 constexpr std::string_view kClassAnimations = "ANIM";
 constexpr std::string_view kSoundDirectory = "audio";
+constexpr s32 kOgre = 12;
+constexpr f32 kOgreScale = 1.6f;
+constexpr f32 kMasterScale = 1.2f;
 } // namespace
+
+f32 PlayerFigure::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
+    if (save.character == kOgre) {
+        return kOgreScale;
+    }
+    if (effects.grown()) {
+        return PowerupEffects::kGrowthScale;
+    }
+    return experienceLevel(save.experience()) >= kMaxLevel ? kMasterScale : 1.0f;
+}
 
 std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path& unpackedRoot,
                                                      const CharacterSave& save) {

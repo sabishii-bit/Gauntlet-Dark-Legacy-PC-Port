@@ -4,7 +4,6 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
-#include <random>
 #include <span>
 #include <string>
 #include <vector>
@@ -26,9 +25,8 @@
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/TurboMeter.h"
-#include "game/screens/BossVictoryPresentation.h"
+#include "game/screens/BossSequence.h"
 #include "game/screens/GameContext.h"
-#include "game/screens/LegendPresentation.h"
 #include "game/screens/LevelArrivalPresentation.h"
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelMessages.h"
@@ -181,7 +179,7 @@ public:
     }
     const BossMeter& bossMeter() const { return m_opponents.meter(); }
     /** The wizard's visit once the boss has fallen. */
-    const BossVictory& victory() const { return m_victory.state(); }
+    const BossVictory& victory() const { return m_bossSequence.victory().state(); }
     /** The archive folder a character's figure was loaded from, for tests. */
     std::optional<std::filesystem::path> figureDirectory(usize index) const {
         return index < m_players.size() && m_players[index].figure != nullptr
@@ -258,14 +256,6 @@ private:
     void strikeGenerator(s32 id, f32 power, s32 byPlayer);
     void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
                        std::optional<Vec3> where = std::nullopt, bool close = false);
-    /** The blast a boss's death lets off, which nothing of the swarm survives. */
-    static constexpr f32 kBossDeathBlast = 1000.0f;
-    static constexpr f32 kBossDeathBlastRadius = 1000.0f;
-    void spewBossCoins(const CritterSpew& spew);
-    void showLegendEvent(const LegendEvent& event);
-    void updateLegend(f32 seconds);
-    std::optional<LegendPresentation::Bearer> legendBearer(s32 player, s32 kind) const;
-    void bossFallen(const Vec3& where);
     void updateVictory(s32 ticks, f32 seconds);
     void settleBlasts();
     bool postHelp(s32 id, usize index, s32 number = -1);
@@ -311,18 +301,16 @@ private:
     PlayerArsenal m_arsenal;
     ExitPortals m_portals;
     PlayerHealth m_health;
-    std::mt19937 m_coinRandom{0xC01Eu}; ///< how fast each coin a boss spews flies
     AmbientDimmer m_dimmer;
     PlayerAttacks m_attacks;
     LevelFixtures m_fixtures;
     LevelOpponents m_opponents;
-    BossVictoryPresentation m_victory;
     LevelWatch m_levels;
     TransitionScreen m_transition;
     LevelRef m_destination;
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
-    std::unique_ptr<LegendPresentation> m_legend; ///< destroyed before its borrowed effect store
+    BossSequence m_bossSequence;
     f32 m_playSeconds = 0.0f;
     f32 m_fallenSeconds = 0.0f; ///< since the last of the party fell
     SumnerVisit m_sumnerVisit;
