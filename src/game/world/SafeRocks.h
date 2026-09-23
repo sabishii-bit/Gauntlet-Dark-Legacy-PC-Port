@@ -50,6 +50,8 @@ public:
     void scheduleActivation(usize index, f32 delay);
     void update(f32 seconds);
     std::vector<CombatArenaTarget> eruptionTargets() const;
+    /** Complete visible roster, including active entries needed by retail's cycling selector. */
+    std::vector<CombatArenaTarget> arenaTargets() const;
     std::vector<Obstacle> obstacles() const;
     /** Authored effect anchors include destroyed cover, not just standing obstacles. */
     std::vector<Mat4> attackAnchors() const;

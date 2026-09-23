@@ -105,6 +105,7 @@ add_executable(tests
     game/world/CombatantProjectilesTests.cpp
     game/players/PlayerControlsTests.cpp
     game/players/PlayerActorTests.cpp
+    game/players/PlayerCaptureTests.cpp
     game/players/PlayerAnimatorTests.cpp
     game/players/PlayerImpactTests.cpp
     game/world/LevelWorldTests.cpp
@@ -121,6 +122,8 @@ add_executable(tests
     game/enemies/GeneratorsTests.cpp
     game/enemies/CrittersTests.cpp
     game/enemies/CombatantTests.cpp
+    game/enemies/CombatantGrabsTests.cpp
+    game/world/CameraShakeTests.cpp
     game/enemies/CritterAttackSelectionTests.cpp
     game/enemies/CritterAreaTests.cpp
     game/enemies/CritterMovementTests.cpp

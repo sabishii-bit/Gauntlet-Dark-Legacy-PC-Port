@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -45,6 +46,10 @@ public:
      * or slides their coordinates by `offset`, the way texture animations move. */
     void setTextureFrame(u32 slot, const Texture* frame);
     void setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale = Vec2{1.0f, 1.0f});
+    /** Texture-node changes apply only to that node's subtree. UV transforms affect
+     * every material there, while frame substitutions still name a texture slot. */
+    void setNodeTextureFrame(usize root, u32 slot, const Texture* frame);
+    void setNodeTextureOffset(usize root, const Vec2& offset, const Vec2& scale);
     void resetTextures();
     /** Applies an alternate appearance without making solid skin translucent or filling
      * its cutouts. Cleared by resetTextures(). */
@@ -92,8 +97,13 @@ private:
         bool chrome = false;
         bool additive = false; ///< added onto the frame, after the opaque
         bool depthWrite = true;
-        u32 facing = 0;             ///< turned to the camera this way, when given one
-        std::vector<FrameRun> runs; ///< an object node's, one per sequence
+        bool depthTest = true;
+        u32 facing = 0;               ///< turned to the camera this way, when given one
+        std::vector<FrameRun> runs;   ///< an object node's, one per sequence
+        std::vector<usize> ancestors; ///< includes this node, then its parents
+        std::vector<std::pair<u32, const Texture*>> frames;
+        std::optional<Vec2> uvOffset;
+        Vec2 uvScale{1.0f};
     };
 
     static Shape makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device);

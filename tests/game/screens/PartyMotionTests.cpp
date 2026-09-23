@@ -34,7 +34,8 @@ struct Fixture {
                 REQUIRE(ticks == 2);
                 calls.push_back("select" + std::to_string(i));
             },
-        .advanceTurbo = [](usize, s32, f32) { FAIL("No figure, no animation events"); }};
+        .advanceTurbo = [](usize, s32, f32) { FAIL("No figure, no animation events"); },
+        .thrownImpact = {}};
 
     Fixture() {
         CollisionTriangle first;
@@ -186,6 +187,69 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
     f.inputs[3].attack = false;
     f.step();
     REQUIRE(player.actor.position().z > 0);
+}
+
+TEST_CASE("boss capture owns the full body transform and defers throw damage until landing",
+          "[game][screens][party-motion][yeti]") {
+    Fixture f;
+    auto& runtime = f.players[0];
+    f.players[1].life = PlayerLife::InTower;
+    f.inputs[3].move = MoveInput{Vec2{1, 0}, 1};
+    f.inputs[3].attack = true;
+    f.inputs[3].usePotion = true;
+    const Mat4 hand = glm::rotate(glm::translate(Mat4{1}, Vec3{0, 10, 0}), 0.5f, Vec3{0, 0, 1});
+    LevelOpponents::applyGrab({3, 0, hand, Vec3{0}, 0}, true, f.players);
+    REQUIRE(runtime.capture.held());
+    REQUIRE(runtime.capture.body().has_value());
+    REQUIRE((*runtime.capture.body())[0] == hand[0]);
+    const Vec3 heldPosition = runtime.actor.position();
+    const s32 before = runtime.actor.save().health();
+    f.step();
+    REQUIRE(runtime.actor.position() == heldPosition);
+    REQUIRE(f.calls.empty()); // walking, attacks, potions, turbo and selectors all suppressed
+    // Another actor cannot steal a player or release somebody else's grip.
+    LevelOpponents::applyGrab({3, 4, std::nullopt, Vec3{0, 0, 1000}, 100}, false, f.players);
+    REQUIRE(runtime.capture.held());
+    LevelOpponents::applyGrab({3, 0, std::nullopt, Vec3{0, -100, 1000}, 100}, true, f.players);
+    REQUIRE_FALSE(runtime.capture.held());
+    REQUIRE(runtime.capture.flying());
+    REQUIRE(runtime.actor.save().health() == before);
+    s32 impacts = 0;
+    f.events.thrownImpact = [&](usize index, f32 damage) {
+        REQUIRE(index == 0);
+        REQUIRE(damage == 100);
+        ++impacts;
+    };
+    f.step();
+    REQUIRE(runtime.actor.position().z <= 40.0f / 30.0f);
+    REQUIRE(impacts == 0);
+    for (s32 frame = 0; runtime.capture.flying() && frame < 120; ++frame) {
+        f.step();
+    }
+    REQUIRE_FALSE(runtime.capture.active());
+    REQUIRE(runtime.actor.position().y == 0);
+    REQUIRE(impacts == 1);
+    f.step();
+    REQUIRE(impacts == 1);
+}
+
+TEST_CASE("cancelled capture lowers safely and dead players do not retain attachments",
+          "[game][screens][party-motion][yeti]") {
+    Fixture f;
+    auto& runtime = f.players[0];
+    const Mat4 hand = glm::translate(Mat4{1}, Vec3{0, 8, 0});
+    LevelOpponents::applyGrab({3, 0, hand, Vec3{0}, 0}, true, f.players);
+    LevelOpponents::applyGrab({3, 0, std::nullopt, Vec3{0}, 0}, true, f.players);
+    f.events.thrownImpact = [](usize, f32 damage) { REQUIRE(damage == 0); };
+    for (s32 i = 0; runtime.capture.active() && i < 120; ++i) {
+        f.step();
+    }
+    REQUIRE_FALSE(runtime.capture.active());
+    REQUIRE(runtime.actor.position() == Vec3{0});
+    LevelOpponents::applyGrab({3, 0, hand, Vec3{0}, 0}, true, f.players);
+    runtime.life = PlayerLife::Dying;
+    f.step();
+    REQUIRE_FALSE(runtime.capture.active());
 }
 
 TEST_CASE("charge steering and strafe directions remain camera relative",

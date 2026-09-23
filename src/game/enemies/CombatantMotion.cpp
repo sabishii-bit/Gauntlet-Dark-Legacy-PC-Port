@@ -27,7 +27,7 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     const CritterMovement& movement = critter.stock->data.movement();
     const bool bounded = critter.stock->definition.boundsToHome;
     const EnemyView* view = viewOf(players, critter.target);
-    if (move != nullptr && move->turnRate > 0.0f && view != nullptr) {
+    if (move != nullptr && move->turnRate > 0.0f && view != nullptr && critter.grabbed < 0) {
         const f32 wanted =
             movement.facing(yawBetween(critter.position, view->position), critter.initialYaw);
         const f32 d = wrapAngle(wanted - critter.yaw);
@@ -41,10 +41,24 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
         return; // Zero-radius bosses may turn, but neither locomotion nor knockback moves them.
     }
     Vec3 translation = critter.push * seconds;
+    if (move != nullptr && move->type == MoveDefinition::kStepToPoint && view != nullptr) {
+        // The ready-move search refreshes targetPos during local locomotion.
+        // CritterInitHeader enables that search from the MOVE roster, even when
+        // the raw TYPE does not yet have its derived 0x10000 flag.
+        critter.stepTarget = view->position;
+    }
     if (move != nullptr && move->speed != 0.0f && critter.state == State::Active) {
         const f32 pace = move->speed * m_scales.speed * seconds;
         const f32 basis = movement.initialStepBasis ? critter.initialYaw : critter.yaw;
-        translation += CritterMovement::direction(move->type, basis) * pace;
+        if (move->type == MoveDefinition::kStepToPoint && critter.stepTarget.has_value()) {
+            const Vec3 delta = *critter.stepTarget - critter.position;
+            const f32 distance = glm::length(Vec2{delta.x, delta.z});
+            if (distance > 0.0001f) {
+                translation += Vec3{delta.x, 0, delta.z} * (pace / distance);
+            }
+        } else {
+            translation += CritterMovement::direction(move->type, basis) * pace;
+        }
     }
     if (glm::length(translation) <= 0.0f) {
         return;
@@ -52,6 +66,12 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     Vec3 to = critter.position + translation;
     if (bounded && critter.state != State::Dying) {
         to = movement.constrain(to, critter.homePosition);
+    }
+    // Retail bosses clamp to their home region directly. Their authored stage/root
+    // heights are not ordinary walking-floor probes (several stand above the arena).
+    if (bounded) {
+        critter.position = to;
+        return;
     }
     // Never onto a player: it stops against them.
     for (const EnemyView& other : players) {

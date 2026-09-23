@@ -4,6 +4,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
@@ -12,7 +13,9 @@
 #include "TestSupport.h"
 #include "formats/CritterWad.h"
 #include "game/enemies/BossDefinition.h"
+#include "game/enemies/CombatantFixture.h"
 #include "game/world/CombatantProjectiles.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 using namespace gdl;
@@ -43,8 +46,11 @@ struct Fixture {
         writeTextFile(root / "critter.json",
                       R"({"name":"TEST","types":[{"moveCount":1}],"descriptors":[{}],"moves":[{}],
             "damages":[{"type":1,"flags":32,"behaviorFlags":9,"radius":0.5,"damage":12,"minSpeed":30,"maxSpeed":30,
-                "sfxIndex":0,"sfx":2,"morph":1,"morphEnd":2,"morphLife":0.5}],
-            "sounds":[{"name":"SHOT","levelFormat":"S_%cSHOT"},{"name":"LOOP"},{"name":"HIT","levelFormat":"S_%cHIT"}]})");
+                "sfxIndex":0,"sfx":2,"morph":1,"morphEnd":2,"morphLife":0.5},
+                {"type":1,"flags":2097184,"behaviorFlags":9,"radius":0.5,"damage":12,
+                 "minSpeed":30,"maxSpeed":30,"sfxIndex":3,"sfx":2}],
+            "sounds":[{"name":"SHOT","levelFormat":"S_%cSHOT"},{"name":"LOOP"},
+                      {"name":"HIT","levelFormat":"S_%cHIT"},{"name":"LOOP","life":100}]})");
         REQUIRE(archive.load(root));
         REQUIRE(data.load(root / "critter.json"));
     }
@@ -127,6 +133,140 @@ TEST_CASE("critter projectiles cannot damage players through a world wall",
     REQUIRE(f.projectiles.takeHits().empty());
     REQUIRE(f.effects.effect(0).name == "HIT");
 }
+TEST_CASE("reflecting projectiles rebound from walls without impact bursts and shorten their life",
+          "[game][boss-projectiles][yeti]") {
+    Fixture f;
+    WorldCollision world;
+    CollisionTriangle wall;
+    wall.normal = {0, 0, -1};
+    wall.vertices = {Vec3{-10, 0, 2}, Vec3{0, 20, 2}, Vec3{10, 0, 2}};
+    world.build({wall});
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 1;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    f.step(0.1f, {}, &world);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.count() == 1);
+    REQUIRE(f.effects.effect(0).name == "LOOP");
+    REQUIRE(f.effects.effect(0).position.z < 1);
+    REQUIRE(f.effects.effect(0).secondsLeft == 10);
+    REQUIRE(f.sounds.empty());
+    // A second wall behind the launch point catches the reflected projectile.
+    wall.normal = {0, 0, 1};
+    wall.vertices = {Vec3{-10, 0, -2}, Vec3{10, 0, -2}, Vec3{0, 20, -2}};
+    world.build({wall});
+    f.step(0.1f, {}, &world);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.effect(0).secondsLeft == Approx(8.9f));
+    f.step(9);
+    REQUIRE(f.projectiles.count() == 0);
+    REQUIRE(f.effects.count() == 0);
+}
+
+TEST_CASE("Yeti iceballs bounce off floors and remain harmful afterward",
+          "[game][boss-projectiles][yeti][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+    Fixture f;
+    REQUIRE(f.data.load(root / "critter/YETI.json"));
+    REQUIRE(f.archive.load(root / "MONSTERS/YETI"));
+    WorldCollision world;
+    CollisionTriangle floor;
+    floor.objectFlags = WorldObject::kFloor;
+    floor.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{100, 0, 100}};
+    CollisionTriangle other = floor;
+    other.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, 100}, Vec3{-100, 0, 100}};
+    world.build({floor, other});
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 9;
+    shot.origin = {0, 10, 0};
+    shot.target = Vec3{0, 0, 30};
+    shot.realm = 'I';
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    bool bounced = false;
+    f32 previousY = shot.origin.y;
+    for (s32 frame = 0; frame < 60 && !bounced; ++frame) {
+        f.step(1.0f / 120, {}, &world);
+        REQUIRE(f.projectiles.count() == 1);
+        REQUIRE(f.effects.effect(0).name == "ATTACK8FXB");
+        const f32 y = f.effects.effect(0).position.y;
+        bounced = y > previousY;
+        previousY = y;
+    }
+    REQUIRE(bounced);
+    REQUIRE(f.projectiles.takeHits().empty());
+    const Vec3 ball = f.effects.effect(0).position;
+    const std::vector<EnemyView> players{EnemyView{3, {ball.x, 0, ball.z + 5}, 1, 6}};
+    for (s32 frame = 0; frame < 120 && f.projectiles.count() != 0; ++frame) {
+        f.step(1.0f / 120, players, &world);
+    }
+    const auto hits = f.projectiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    REQUIRE(hits.front().player == 3);
+    REQUIRE(hits.front().damage == 100);
+    REQUIRE(f.effects.effect(0).name == "ATTACK8FXC");
+}
+
+TEST_CASE("Yeti mouth-conjured throw survives its launch in the I5 arena",
+          "[game][boss-projectiles][yeti][unpacked]") {
+    const s32 framesPerSecond = GENERATE(30, 60, 120);
+    const f32 dt = 1.0f / static_cast<f32>(framesPerSecond);
+    CAPTURE(framesPerSecond);
+    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELI5/world.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("I5");
+    REQUIRE(level.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    test::CombatantFixture fixture;
+    fixture.open(device, root, &world.collision(), {}, 'I');
+    REQUIRE(fixture.spawn("YETI", {9.6015625f, -3.5f, -67.203125f}, 0));
+    const std::vector<EnemyView> players{EnemyView{0, {6.375f, -3.6484375f, -19.875f}, 1, 6}};
+    EffectTrees effects;
+    CombatantProjectiles projectiles;
+    bool launched = false;
+    for (s32 frame = 0; frame < 3600 && !launched; ++frame) {
+        fixture.update(2, 1.0f / 30, players);
+        for (const auto& shot : fixture.actor.takeShots()) {
+            if (shot.damageIndex == 9 || shot.damageIndex == 10) {
+                INFO("Launch " << shot.origin.x << ", " << shot.origin.y << ", " << shot.origin.z);
+                projectiles.launch(shot, fixture.assets.archive, device, effects, {});
+                launched = true;
+                break;
+            }
+        }
+        fixture.actor.takeCues();
+        fixture.actor.takeBlows();
+    }
+    REQUIRE(launched);
+    const Vec3 launchPosition = effects.effect(0).position;
+    for (s32 frame = 0; frame < framesPerSecond / 2; ++frame) {
+        CAPTURE(frame);
+        effects.update(dt);
+        projectiles.update(dt, &world.collision(), {}, device, effects, {});
+        REQUIRE(projectiles.count() == 1);
+        REQUIRE(effects.effect(0).name == "ATTACK8FXB");
+    }
+    REQUIRE(effects.effect(0).position.z > launchPosition.z + 20);
+    // The rebound must still reach the player, not merely leave a stationary effect alive.
+    for (s32 frame = 0; frame < framesPerSecond * 2 && projectiles.count() != 0; ++frame) {
+        effects.update(dt);
+        projectiles.update(dt, &world.collision(), players, device, effects, {});
+    }
+    const auto hits = projectiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    REQUIRE(hits.front().player == 0);
+    REQUIRE(hits.front().damage == 100);
+}
+
 TEST_CASE("retail boss projectile records retain physics and effect transitions",
           "[game][boss-projectiles][assets][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/DRIDER.json").parent_path().parent_path();

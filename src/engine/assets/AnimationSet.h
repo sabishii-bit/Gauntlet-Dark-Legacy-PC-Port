@@ -40,12 +40,14 @@ struct TreeNodeInfo {
     static constexpr s32 kParticleType = 4;
     static constexpr s32 kObjectType = 2; ///< a node whose object changes with the frame
     bool chrome() const { return (objectFlags & kChromeFlag) != 0; }
-    /** Whether the object adds onto the frame, and whether it leaves depth unwritten. */
+    /** The object's blending and independent depth-write/compare policies. */
     bool additive() const { return (objectFlags & kAdditiveFlag) != 0; }
     bool writesDepth() const { return (objectFlags & kNoDepthWriteFlag) == 0; }
+    bool testsDepth() const { return (objectFlags & kNoDepthTestFlag) == 0; }
     static constexpr u32 kChromeFlag = 0x8000;
     static constexpr u32 kAdditiveFlag = 0x800000;
     static constexpr u32 kNoDepthWriteFlag = 0x80;
+    static constexpr u32 kNoDepthTestFlag = 0x40;
 };
 
 /**

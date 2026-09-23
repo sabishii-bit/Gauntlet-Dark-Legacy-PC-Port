@@ -58,10 +58,17 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
         try {
             Node node;
             node.index = i;
+            for (s32 parent = static_cast<s32>(i);
+                 parent >= 0 && static_cast<usize>(parent) < tree.nodes.size() &&
+                 node.ancestors.size() < tree.nodes.size();
+                 parent = tree.nodes[static_cast<usize>(parent)].parent) {
+                node.ancestors.push_back(static_cast<usize>(parent));
+            }
             node.offset = tree.worldPosition(i);
             node.chrome = info.chrome();
             node.additive = info.additive();
             node.depthWrite = info.writesDepth();
+            node.depthTest = info.testsDepth();
             node.facing = CameraFrame::facingOf(info.objectFlags);
             if (!info.object.empty()) {
                 const auto model = models.find(info.object);
@@ -180,10 +187,20 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             state.maskedTexture = m_maskedTexture;
             state.alphaTest = blended ? DrawState::kTranslucentAlphaTest : 0.0f;
             state.depthWrite = node.depthWrite && m_depthWrite && !fading;
+            state.depthTest = node.depthTest;
             state.uvOffset = textureOffset(shape.slots[p]);
             state.uvScale = textureScale(shape.slots[p]);
+            if (node.uvOffset.has_value()) {
+                state.uvOffset = *node.uvOffset;
+                state.uvScale = node.uvScale;
+            }
             const Texture* texture = shape.textures[p];
             for (const auto& [slot, frame] : m_frames) {
+                if (slot == shape.slots[p]) {
+                    texture = frame;
+                }
+            }
+            for (const auto& [slot, frame] : node.frames) {
                 if (slot == shape.slots[p]) {
                     texture = frame;
                 }
@@ -215,6 +232,32 @@ void TreeModel::resetTextures() {
     m_maskedTexture = nullptr;
     m_frames.clear();
     m_offsets.clear();
+    for (Node& node : m_nodes) {
+        node.frames.clear();
+        node.uvOffset.reset();
+        node.uvScale = Vec2{1.0f};
+    }
+}
+
+void TreeModel::setNodeTextureFrame(usize root, u32 slot, const Texture* frame) {
+    for (Node& node : m_nodes) {
+        if (std::ranges::find(node.ancestors, root) == node.ancestors.end()) {
+            continue;
+        }
+        std::erase_if(node.frames, [slot](const auto& shown) { return shown.first == slot; });
+        if (frame != nullptr) {
+            node.frames.emplace_back(slot, frame);
+        }
+    }
+}
+
+void TreeModel::setNodeTextureOffset(usize root, const Vec2& offset, const Vec2& scale) {
+    for (Node& node : m_nodes) {
+        if (std::ranges::find(node.ancestors, root) != node.ancestors.end()) {
+            node.uvOffset = offset;
+            node.uvScale = scale;
+        }
+    }
 }
 
 Vec2 TreeModel::textureOffset(u32 slot) const {

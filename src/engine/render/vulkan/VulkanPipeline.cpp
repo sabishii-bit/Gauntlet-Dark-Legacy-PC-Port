@@ -125,10 +125,10 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     colorBlend.attachmentCount = 1;
     colorBlend.pAttachments = &blendAttachment;
 
-    // Culling and depth writes are set per draw.
-    constexpr std::array<VkDynamicState, 4> kDynamicStates{
+    // Culling, depth comparison and depth writes are set per draw.
+    constexpr std::array<VkDynamicState, 5> kDynamicStates{
         VK_DYNAMIC_STATE_CULL_MODE, VK_DYNAMIC_STATE_DEPTH_WRITE_ENABLE, VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR};
+        VK_DYNAMIC_STATE_SCISSOR, VK_DYNAMIC_STATE_DEPTH_COMPARE_OP};
     VkPipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicState.dynamicStateCount = static_cast<u32>(kDynamicStates.size());

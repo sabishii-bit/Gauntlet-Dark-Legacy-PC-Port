@@ -150,8 +150,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Glowing objects (`WorldObject::kAdditive`) draw last with
   `BlendMode::Additive`, which never writes depth.
 * Draw state: `RenderDevice::draw` takes a `DrawState` (blend, lightmap,
-  coordinate offset, alpha test, back-face culling, depth write); the Vulkan
-  device sets cull mode and depth write dynamically and pushes the offset and
+  coordinate offset, alpha test, back-face culling, depth test/write); the Vulkan
+  device sets cull mode, depth compare and depth write dynamically and pushes the offset and
   alpha test beside the transform. Meshes are wound the way the console
   culls them: `formats/GeometryStream` undoes each strip's alternation and
   turns a strip whose first vertex has the other parity of the packet's
@@ -856,12 +856,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   DAMG and harmful animation frames govern contact. Do not use a shared melee
   distance or allow proximity-independent melee just because a boss is anchored.
   Direction types 50/51/53 mean left/right/backward, not forward pursuit.
-  Type 56 needs a separately supplied destination (retail critter +0x1FC);
-  its waypoint producer is not reconstructed yet, so its animation plays without
-  root translation, rather than incorrectly advancing toward the player. Full
-  Yeti/Chimera repositioning, child-head logic and grabs
-  remain reconstruction work; this table is an inventory, not a claim all those
-  attacks are complete. `[boss-movement]` tests cover bounds, facing, direction,
+  Type 56 uses the ready-move search's player destination (retail +0x1FC),
+  refreshed during locomotion and retained if the target disappears. Boss steps
+  stay inside TYPE.roamRadius; they are not unrestricted pursuit. CritterInitHeader
+  derives the ready-search flag 0x10000 from MOVE types 48..57, so the raw TYPE
+  flags alone do not establish that stepping is disabled. Non-player waypoint
+  producers and Chimera child-head logic remain separate reconstruction work.
+  `[boss-movement]` tests cover bounds, facing, direction,
   legacy/new export keys, synthetic near/far encounters and the eight retail tables.
 * Boss attack selection (`enemies/CombatantPatterns.cpp`) consumes PTRN
   sequences and MOVE/PTRN health gates. Re-run `gdlunpack <assets> <out>
@@ -968,7 +969,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   seconds. `SafeRockNearestTarget` (0x80035bc8) uses the piecewise `fqdist`
   metric (0x800bcb44), not Euclidean distance; close ties can select differently.
   Its eight slope constants are retained in the targeted arena selector.
-  `Combatant` receives available anchor snapshots and emits activation requests;
+  `Combatant` receives the full anchor roster with active flags and emits activation requests;
   `SafeRocks` owns dormant/solid state and delayed activation through
   `LevelFixtures`. No scene/item dependency is introduced into combat execution.
   Encounter setup detects referenced type-6 damage and initially hides its rocks,
@@ -983,10 +984,42 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   and projectile impact/end effects (including ATTACK8FXC) are retained for
   cleanup before their borrowed archives are released, just like attached cues.
   `python scripts/scenario.py yeti` runs I5; unpack LEVELI5, LEVELI and
-  MONSTERS/YETI first. This is not full Yeti fidelity: grab/carry/throw, type-56
-  destination steps, camera-shake cues and thrown-rock impact areas still need
-  reconstruction. The no-player cycling selector is not implemented; targeted
-  eruptions without a current player are skipped rather than guessed.
+  MONSTERS/YETI first. Without a player target, the selector uses its random
+  initial cursor and retail's asymmetric index scan: it checks entry i but
+  returns (cursor+i+1)%count, which can select an already-active rock.
+  Yeti grabs test JOINT_13 during frames 25..30, carry the player's full body
+  transform through the hand animation, and release at frame 100. DAMG's force
+  is 1000 along normalized (forward.x,-0.1,forward.z); its 100 damage is deferred
+  until landing. `PlayerCapture` owns held/thrown state, with input suppressed,
+  GRABBED/FALLDOWN/GETUP animation, cancellation on owner loss/death/interruption,
+  horizontal speed capped at 40, descent 16 and velocity decay 0.9 per 30 Hz frame.
+  Shared collision still uses the port's floor/wall solver, not an assertion of
+  identical trajectory on every retail surface. SFXX shake cues perturb camera
+  attention by radius 0.1 for 90 ticks without accumulating into its base pose.
+  STOMP's ATTACK4FX has root-parent SFXX flags: its (0,-3,0) offset REPLACES
+  DAMG's (0,8,-25), rather than adding to it. Using both shifts the expanding
+  damage backward out of reach of players in the front arena. Tests require a
+  hit at distance 60 using actual YETI data. Iceballs carry DMG_REFLECT (0x200000):
+  world contact reflects velocity, scales upward velocity by 0.4 and caps lifetime
+  at ten seconds (otherwise subtracts one). World contact uses half the player-hit
+  radius. Floor-object flag 0x4 raises the impact to the surface plus two units;
+  preserve this flag through collision loading and moving-object transforms.
+  Without the lift, shallow throws consume their lifetime in repeated micro-bounces.
+  They must not burst on first floor contact. Their maxDistance is zero,
+  so there is no extra splash-damage area; ATTACK8FXC's SFXX flags are zero, so no
+  floor-aligned impact policy is requested. `[yeti]` includes actual animation,
+  stomp reach, floor-bounce and an actual I5 hand-launch/player-contact regression;
+  ATTACK4FX's mesh flag 0x40 requests always-pass depth compare, separately from
+  0x80 disabling depth writes. Ignoring it lets the arena floor hide the stomp.
+  Texture-node overrides are subtree-local: frame substitutions retain their
+  texture-slot filter, but UV scale/add applies to every material below the node.
+  ATTACK11FXB's scroll record names slot 0 while its trail mesh uses slot 116;
+  slot-filtering the UV transform leaves the grab streak permanently visible.
+  ATTACK3FX has eighteen branches sharing slot 11 with separate delays; applying
+  the last branch globally erases the authored frost-breath progression. Initialize
+  texture modifiers at frame zero as well as on subsequent updates.
+  Synthetic wall
+  reflections/lifetime and grab/throw tests also run without game assets.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
   is the original's HUD meter (`HealthMeterStart/Update`, boss.c 471-585):

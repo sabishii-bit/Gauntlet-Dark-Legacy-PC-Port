@@ -38,6 +38,7 @@
 #include "game/screens/SumnerVisit.h"
 #include "game/screens/TransitionScreen.h"
 #include "game/world/BossCamera.h"
+#include "game/world/CameraShake.h"
 #include "game/world/EffectTrees.h"
 #include "game/world/ExitPortals.h"
 #include "game/world/LevelSoundscape.h"
@@ -140,7 +141,7 @@ public:
     const TowerCamera& camera() const { return m_camera; }
     /** The camera the scene is seen through: the start camera while it holds and rides in,
      * the crystals during the welcome's cut, else the follow camera. */
-    const WorldCamera& viewCamera() const;
+    WorldCamera viewCamera() const;
     /** The boss fight's camera, used while a boss level's boss stands. */
     const BossCamera& bossCamera() const { return m_bossCamera; }
     bool bossCameraOn() const;
@@ -316,6 +317,7 @@ private:
     f32 m_fallenSeconds = 0.0f; ///< since the last of the party fell
     SumnerVisit m_sumnerVisit;
     WorldCamera m_cutCamera;
+    CameraShake m_shake;
     s32 m_cutTicks = 0;
     s32 m_beam = -1; ///< the level object that is Sumner's beam of light
     f32 m_beamAlpha = 0.0f;

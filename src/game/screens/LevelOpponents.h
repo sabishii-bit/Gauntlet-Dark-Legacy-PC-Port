@@ -49,6 +49,7 @@ public:
         std::function<std::vector<Mat4>()> arenaAnchors;
         std::function<std::vector<CombatArenaTarget>()> arenaTargets;
         std::function<void(const CombatArenaActivation&)> activateArena;
+        std::function<void()> shake;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
@@ -58,6 +59,7 @@ public:
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
     static void applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
                                  const Events& events);
+    static void applyGrab(const CombatGrab& grab, bool boss, std::span<PlayerRuntime> players);
     void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
                      std::span<const PlayerRuntime> players);
     void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,

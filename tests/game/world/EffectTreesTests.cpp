@@ -30,6 +30,66 @@ TEST_CASE("effect transforms retain pitch roll and scale from a full attachment"
     REQUIRE(effect.transform() == expected);
 }
 
+TEST_CASE("Yeti stomp geometry draws through the floor using its authored depth policy",
+          "[game][world][effects][yeti][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/YETI/animations.json").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    REQUIRE(effects.start(device, archive, "ATTACK4FX", Vec3{0, -3, 0}));
+    effects.update(0.2f);
+    effects.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    for (const auto& draw : device.draws) {
+        REQUIRE_FALSE(draw.state.depthTest);
+        REQUIRE_FALSE(draw.state.depthWrite);
+    }
+}
+
+TEST_CASE("Yeti grab trail scrolls its subtree rather than the record's unrelated texture slot",
+          "[game][world][effects][yeti][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/YETI/animations.json").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    REQUIRE(effects.start(device, archive, "ATTACK11FXB", Vec3{0}));
+    effects.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 1);
+    REQUIRE(device.draws.front().state.uvScale == Vec2(0, 1));
+    REQUIRE(device.draws.front().state.uvOffset == Vec2(0));
+    effects.update(94.0f / 30);
+    device.draws.clear();
+    effects.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.front().state.uvScale == Vec2(0, 1));
+    effects.update(5.0f / 30);
+    device.draws.clear();
+    effects.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.front().state.uvScale.x > 0);
+    REQUIRE(device.draws.front().state.uvOffset.x < 0);
+    effects.update(1);
+    REQUIRE(effects.count() == 0);
+}
+
+TEST_CASE("Yeti frost breath preserves the staggered frame of each mist branch",
+          "[game][world][effects][yeti][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/YETI/animations.json").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    REQUIRE(effects.start(device, archive, "ATTACK3FX", Vec3{0}));
+    effects.update(10.0f / 30);
+    effects.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 18);
+    // The first pair shares slot 11 but has animation delays of 1 and 9 frames.
+    // All branches using the last node's delay would render the same texture.
+    REQUIRE(device.draws[0].texture == &archive.textures.texture(device, 12 + 9));
+    REQUIRE(device.draws[1].texture == &archive.textures.texture(device, 12 + 1));
+    REQUIRE(device.draws[0].texture != device.draws.back().texture);
+}
+
 TEST_CASE("a node-attached effect draws with the moving parent's full basis",
           "[game][world][effects][unpacked]") {
     const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();

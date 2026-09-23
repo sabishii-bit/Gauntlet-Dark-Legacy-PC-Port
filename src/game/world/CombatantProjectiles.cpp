@@ -16,6 +16,11 @@ constexpr f32 kWallTolerance = 0.001f;
 constexpr f32 kFloorClearance = 0.1f;
 constexpr u32 kSpin = 8;
 constexpr u32 kCustomEffect = 0xF000000;
+constexpr u32 kReflect = 0x200000;
+constexpr f32 kBounceLift = 0.4f;
+constexpr f32 kBounceLifetime = 10.0f;
+constexpr f32 kBounceTimeLoss = 1.0f;
+constexpr f32 kFloorImpactLift = 2.0f;
 } // namespace
 
 u32 CombatantProjectiles::show(Flying& flying, s32 index, RenderDevice& device,
@@ -133,17 +138,31 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             flying.velocity += acceleration * dt;
             flying.rotation += flying.spin * dt;
             bool wall = false;
+            Vec3 normal{0};
             Vec3 destination = to;
             if (collision != nullptr &&
                 (damage.behaviorFlags & CombatantProjectile::kIgnoreWorld) == 0) {
-                const Vec3 pushed =
-                    collision->resolveWalls(to, radius, to.y - radius, to.y + radius);
+                // WeaponWallCollide uses half the player-contact radius.
+                const f32 worldRadius = 0.5f * radius;
+                const Vec3 pushed = collision->resolveWalls(to, worldRadius, to.y - worldRadius,
+                                                            to.y + worldRadius);
                 wall = glm::length(pushed - to) > kWallTolerance;
-                const auto floor = collision->floorAt(to, std::abs(to.y - from.y) + radius,
-                                                      radius + kFloorClearance);
-                if (floor.has_value() && to.y <= floor->y + radius) {
+                if (wall) {
+                    normal = glm::normalize(pushed - to);
+                    destination = pushed;
+                }
+                const auto floor = collision->floorAt(to, std::abs(to.y - from.y) + worldRadius,
+                                                      worldRadius + kFloorClearance);
+                if (floor.has_value() && to.y <= floor->y + worldRadius &&
+                    glm::dot(flying.velocity, floor->normal) < 0) {
                     wall = true;
-                    destination.y = floor->y + radius;
+                    normal = floor->normal;
+                    destination.y = floor->y + worldRadius;
+                    // Floor objects lift effect impacts off the hit plane. Without this
+                    // clearance, a shallow rebound hits again on every physics substep.
+                    if ((floor->objectFlags & WorldObject::kFloor) != 0) {
+                        destination.y = floor->y + kFloorImpactLift;
+                    }
                 }
             }
             f32 nearest = 1.0f;
@@ -165,6 +184,16 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             // A blocking world overlap owns this small step; do not hit through its wall.
             if (wall || victim != nullptr) {
                 flying.position = wall ? destination : glm::mix(from, to, nearest);
+                if (wall && (damage.flags & kReflect) != 0) {
+                    if (glm::dot(flying.velocity, normal) < 0) {
+                        flying.velocity = glm::reflect(flying.velocity, normal);
+                        if (flying.velocity.y > 0) {
+                            flying.velocity.y *= kBounceLift;
+                        }
+                        effects.shortenLifetime(flying.effect, kBounceTimeLoss, kBounceLifetime);
+                    }
+                    continue;
+                }
                 if (!wall) {
                     const f32 speed = glm::length(flying.velocity);
                     m_hits.push_back({victim->player, damage.damage * flying.shot.damageScale,

@@ -160,6 +160,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         view.height = actor.height();
         view.level = experienceLevel(actor.save().experience());
         view.hidden = player.life != PlayerLife::Standing;
+        view.captured = player.capture.held();
         views.push_back(view);
     }
     return views;
@@ -191,6 +192,26 @@ void LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
         }
         events.hurt(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true,
                     {blow.flags, blow.direction});
+    }
+}
+
+void LevelOpponents::applyGrab(const CombatGrab& grab, bool boss,
+                               std::span<PlayerRuntime> players) {
+    for (PlayerRuntime& player : players) {
+        if (player.actor.player() != grab.player || player.life != PlayerLife::Standing) {
+            continue;
+        }
+        PlayerCapture& capture = player.capture;
+        if (capture.held() && (capture.owner() != grab.critter || capture.boss() != boss)) {
+            continue;
+        }
+        if (grab.attachment.has_value()) {
+            capture.attach(grab.critter, boss, *grab.attachment, player.actor);
+            player.reaction = PlayerDeed::None;
+            player.rammed.clear();
+        } else {
+            capture.release(grab.velocity, grab.damage);
+        }
     }
 }
 
@@ -236,6 +257,21 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     m_bosses.setArenaTargets(events.arenaTargets ? events.arenaTargets()
                                                  : std::vector<CombatArenaTarget>{});
     m_bosses.update(ticks, seconds, views);
+    for (const auto& grab : m_critters.takeGrabs()) {
+        applyGrab(grab, false, players);
+    }
+    for (const auto& grab : m_bosses.takeGrabs()) {
+        applyGrab(grab, true, players);
+    }
+    for (PlayerRuntime& player : players) {
+        PlayerCapture& capture = player.capture;
+        if (player.life != PlayerLife::Standing) {
+            capture.clear();
+        } else if (capture.held() && !(capture.boss() ? m_bosses.present() && m_bosses.view().alive
+                                                      : m_critters.alive(capture.owner()))) {
+            capture.release(Vec3{0}, 0);
+        }
+    }
     for (const auto& activation : m_bosses.takeArenaActivations()) {
         if (events.activateArena) {
             events.activateArena(activation);
@@ -289,9 +325,15 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     events.advanceVictory(ticks, seconds);
     // The great ones' effects and sounds: a move's, a strike's, a hit's.
     for (const CombatCue& cue : m_bosses.takeCues()) {
+        if (cue.shakes && events.shake) {
+            events.shake();
+        }
         showCritterCue(cue, m_bosses.archive(), true);
     }
     for (const CombatCue& cue : m_critters.takeCues()) {
+        if (cue.shakes && events.shake) {
+            events.shake();
+        }
         showCritterCue(cue, m_critters.archiveOf(cue.critter), false);
     }
     followCritterEffects();

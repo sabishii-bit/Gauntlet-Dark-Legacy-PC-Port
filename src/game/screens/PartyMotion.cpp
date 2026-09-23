@@ -66,6 +66,24 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         PlayerActor& actor = players[i].actor;
         const auto player = static_cast<usize>(actor.player());
         const bool down = players[i].life != PlayerLife::Standing;
+        if (down) {
+            players[i].capture.clear();
+        } else if (players[i].capture.active()) {
+            PlayerCapture& capture = players[i].capture;
+            const PlayerDeed deed = capture.held() ? PlayerDeed::Grabbed : PlayerDeed::Thrown;
+            if (const auto impact = capture.update(seconds, actor, collision);
+                impact.has_value() && events.thrownImpact) {
+                events.thrownImpact(i, *impact);
+            }
+            players[i].rammed.clear();
+            if (players[i].figure != nullptr) {
+                players[i].figure->animate(
+                    0, ticks, seconds,
+                    players[i].life == PlayerLife::Standing ? deed : PlayerDeed::Die);
+            }
+            subjects.push_back({actor.position(), actor.followPoint()});
+            continue;
+        }
         // Reeling from a hit, a character neither moves nor does anything.
         const bool reeling =
             players[i].reaction != PlayerDeed::None ||

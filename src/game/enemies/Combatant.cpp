@@ -19,6 +19,7 @@ void Combatant::clear() {
     m_id = -1;
     m_collision = nullptr;
     m_blows.clear();
+    m_grabs.clear();
     m_losses.clear();
     m_cues.clear();
     m_spews.clear();
@@ -30,6 +31,11 @@ void Combatant::setArenaAnchors(std::span<const Mat4> anchors) {
 }
 void Combatant::setArenaTargets(std::span<const CombatArenaTarget> targets) {
     m_actor.arenaTargets.assign(targets.begin(), targets.end());
+    if (!m_actor.arenaCollected && !targets.empty()) {
+        std::uniform_int_distribution<s32> choose{0, static_cast<s32>(targets.size()) - 1};
+        m_actor.lastArenaTarget = choose(m_arenaRandom);
+        m_actor.arenaCollected = true;
+    }
 }
 bool Combatant::raisesArenaRocks() const {
     if (const CritterData* definition = data()) {
@@ -114,6 +120,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     if (critter.frozenTicks > 0) {
         critter.frozenTicks = std::max(critter.frozenTicks - ticks, 0);
         updateAreas(critter, i, players);
+        carryGrab(critter, players);
         return;
     }
     if (critter.state == State::Active) {
@@ -124,6 +131,11 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         }
     }
     chooseMove(critter, players);
+    if (critter.grabbed >= 0 &&
+        (critter.state != State::Active || critter.grabMove != critter.move)) {
+        m_grabs.push_back({critter.grabbed, i, std::nullopt, Vec3{0}, 0});
+        critter.grabbed = -1;
+    }
     const MoveDefinition* move =
         critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
     // The move plays; over its harmful frames its part strikes.
@@ -199,6 +211,16 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                     }
                     return;
                 }
+                if (harm->type == AttackDefinition::kGrab) {
+                    // First window catches continuously; second is a single release edge.
+                    if (bit != 8U || (critter.soundsGiven & bit) == 0) {
+                        grab(critter, *move, *harm, bit == 8U, players);
+                        if (bit == 8U) {
+                            critter.soundsGiven |= bit;
+                        }
+                    }
+                    return;
+                }
                 if (harm->type == AttackDefinition::kArenaAreas) {
                     if ((critter.soundsGiven & bit) == 0) {
                         critter.soundsGiven |= bit;
@@ -245,6 +267,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         critter.moveDone = true;
     }
     carry(critter, seconds, move, players, peers);
+    carryGrab(critter, players);
     updateAreas(critter, i, players);
     critter.push *= std::pow(kPushDecay, static_cast<f32>(ticks));
     critter.push.y = std::max(critter.push.y - kGravity * seconds, 0.0f);
@@ -331,6 +354,9 @@ void Combatant::hurt(const EnemyHit& hit) {
 
 std::vector<CombatBlow> Combatant::takeBlows() {
     return std::exchange(m_blows, {});
+}
+std::vector<CombatGrab> Combatant::takeGrabs() {
+    return std::exchange(m_grabs, {});
 }
 
 std::vector<CombatLoss> Combatant::takeLosses() {

@@ -47,6 +47,7 @@ public:
         std::function<void(usize, Action)> perform;
         std::function<void(usize, const SelectorInput&, s32)> select;
         std::function<void(usize, s32, f32)> advanceTurbo;
+        std::function<void(usize, f32)> thrownImpact;
     };
     static std::vector<CameraSubject> step(std::span<PlayerRuntime> players,
                                            std::span<const PlayInput> inputs, bool held,

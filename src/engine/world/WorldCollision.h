@@ -16,7 +16,8 @@ namespace gdl {
 struct CollisionTriangle {
     Vec3 normal{0.0f, 1.0f, 0.0f};
     std::array<Vec3, 3> vertices{};
-    s32 object = -1; ///< the placed object it belongs to
+    s32 object = -1;     ///< the placed object it belongs to
+    u32 objectFlags = 0; ///< level flags, preserved for surface-specific collision responses
 };
 
 /** Where a downward probe met a floor. */
@@ -24,6 +25,7 @@ struct FloorHit {
     f32 y = 0.0f;
     Vec3 normal{0.0f, 1.0f, 0.0f};
     s32 object = -1;
+    u32 objectFlags = 0;
 };
 
 /**

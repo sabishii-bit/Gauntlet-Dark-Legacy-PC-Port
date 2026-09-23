@@ -50,6 +50,7 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
     critter.soundsGiven = 0;
     critter.shotFrame = -1;
     critter.attackTarget.reset();
+    critter.stepTarget.reset();
     critter.player.start(critter.stock->tree->sequences[*sequence], *sequence);
     if (recordUse) {
         critter.moveTimes[index] =
@@ -207,6 +208,12 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
     }
     if (const auto next = bestMove(critter, players); next.has_value()) {
         startMove(critter, *next);
+        if (data.moves()[*next].type == MoveDefinition::kStepToPoint) {
+            if (const EnemyView* destination = viewOf(players, critter.target)) {
+                // CritterLookForReady supplies CritterGetTarget's player position.
+                critter.stepTarget = destination->position;
+            }
+        }
         critter.cooldowns[*next] = data.moves()[*next].cooldown;
         return;
     }

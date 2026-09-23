@@ -665,4 +665,38 @@ TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the
     REQUIRE_FALSE(other.canBegin(PlayerDeed::HurlLegend));
 }
 
+TEST_CASE("captured players loop GRABBED and hold their fall until released by physics",
+          "[game][players][animation][yeti]") {
+    TreeInfo tree = classTree();
+    for (const auto& name : {"GRABBED", "FALLDOWN", "GETUP"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 4;
+        tree.sequences.push_back(sequence);
+    }
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Grabbed);
+    REQUIRE(animator.action() == Action::Grabbed);
+    REQUIRE(animator.reacting());
+    REQUIRE(animator.moveScale() == 0);
+    for (s32 frame = 0; frame < 20; ++frame) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Grabbed);
+        REQUIRE(animator.action() == Action::Grabbed);
+        REQUIRE_FALSE(animator.released());
+    }
+    for (s32 frame = 0; frame < 20; ++frame) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Thrown);
+        REQUIRE(animator.action() == Action::FallBack);
+        REQUIRE_FALSE(animator.released());
+    }
+    animator.update(PlayerMotion::Stand, kTicks, kStep);
+    REQUIRE(animator.action() == Action::GetUpBack);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Grabbed);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Die);
+    REQUIRE(animator.dying());
+}
+
 } // namespace
