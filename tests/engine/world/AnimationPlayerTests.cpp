@@ -78,19 +78,23 @@ TEST_CASE("a sequence's rate is 900 over its frames per second and frames snap t
     REQUIRE(player.frame() == 2.0f);
 
     // A rate of 0 plays at thirty a second; a doubled speed halves the frame time.
+    // Playback borrows the sequence, so the record must outlive every advance.
+    const TreeSequenceInfo fallback = sequence(10, 0);
+    const TreeSequenceInfo normal = sequence(10, 30);
     player.setSmooth(false);
-    player.start(sequence(10, 0), 0);
+    player.start(fallback, 0);
     REQUIRE(player.secondsPerFrame() == Approx(kStep));
     player.setSpeed(2.0f);
-    player.start(sequence(10, 30), 0);
+    player.start(normal, 0);
     REQUIRE(player.secondsPerFrame() == Approx(kStep / 2.0f));
     player.advance(kStep, false);
     REQUIRE(player.frame() == 2.0f);
 }
 
 TEST_CASE("a transition holds the first frame while it blends in", "[world][animation]") {
+    const TreeSequenceInfo cycle = sequence(12, 30);
     AnimationPlayer player;
-    player.start(sequence(12, 30), 0, 2.0f * kStep);
+    player.start(cycle, 0, 2.0f * kStep);
     REQUIRE(player.transitioning());
     REQUIRE(player.transition() == 0.0f);
     REQUIRE_FALSE(player.advance(kStep, true));
@@ -104,15 +108,16 @@ TEST_CASE("a transition holds the first frame while it blends in", "[world][anim
     REQUIRE(player.frame() == 1.0f);
 
     // Without a transition the blend is already complete.
-    player.start(sequence(12, 30), 0);
+    player.start(cycle, 0);
     REQUIRE_FALSE(player.transitioning());
     REQUIRE(player.transition() == 1.0f);
 }
 
 TEST_CASE("an empty sequence is finished at once and a stopped player plays nothing",
           "[world][animation]") {
+    const TreeSequenceInfo empty = sequence(0, 30);
     AnimationPlayer player;
-    player.start(sequence(0, 30), 0);
+    player.start(empty, 0);
     REQUIRE_FALSE(player.advance(kStep, true));
     REQUIRE(player.finished());
     player.stop();

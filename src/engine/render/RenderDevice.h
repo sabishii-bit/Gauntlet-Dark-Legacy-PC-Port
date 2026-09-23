@@ -22,6 +22,7 @@ struct RenderDeviceDesc {
 
 /** How a draw combines with what is already in the frame. */
 enum class BlendMode : u8 {
+    Opaque,  ///< replaces the frame; texture alpha may still cut holes through alpha testing
     Alpha,   ///< blended by alpha, writing depth
     Additive ///< added onto the frame without writing depth, for glows and flames
 };
@@ -36,6 +37,9 @@ struct DrawState {
     /** Sampled with the vertices' second coordinates, its alpha scales the colour; null
      * leaves the colour alone. */
     const Texture* lightmap = nullptr;
+    /** Alternate colour sampled at the base UV, masked by base alpha above 2/255.
+     * Mutually exclusive with a lightmap; retains the surface's original blend mode. */
+    const Texture* maskedTexture = nullptr;
     Vec2 uvScale{1.0f, 1.0f};  ///< every texture coordinate is scaled by this...
     Vec2 uvOffset{0.0f, 0.0f}; ///< ...then has this added
     f32 alphaTest = 0.0f;      ///< texels with less alpha than this are dropped; 0 keeps all

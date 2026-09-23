@@ -6,6 +6,8 @@
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/world/ParticleSystem.h"
+
 #include "game/players/PlayerAnimator.h"
 
 namespace gdl::game {
@@ -21,16 +23,16 @@ namespace gdl::game {
  * javelin. The underworld's and the battlefield's bosses have none.
  */
 struct LegendWeakness {
-    s32 boss = -1;            ///< the boss kind, 34 the dragon to 44 the garm
-    s32 realm = 0;            ///< the item, by the realm whose boss this is
-    f32 healthShare = 0.0f;   ///< of its health now, taken at once
-    f32 damage = 0.0f;        ///< or this much, taken at once
-    s32 frozenTicks = 0;      ///< it stands frozen this long
-    s32 blindTicks = 0;       ///< it loses its targets and turns at a tenth this long
-    f32 curbSeconds = 0.0f;   ///< over nought its curbed attacks are refused, bursts cut to this
-    f32 curbLasts = 0.0f;     ///< seconds the curb lasts, from its roar; for good when nought
-    f32 scale = 1.0f;         ///< how big it stands afterwards
-    bool beheads = false;     ///< the item takes one of its heads (a third of it, for now)
+    s32 boss = -1;          ///< the boss kind, 34 the dragon to 44 the garm
+    s32 realm = 0;          ///< the item, by the realm whose boss this is
+    f32 healthShare = 0.0f; ///< of its health now, taken at once
+    f32 damage = 0.0f;      ///< or this much, taken at once
+    s32 frozenTicks = 0;    ///< it stands frozen this long
+    s32 blindTicks = 0;     ///< it loses its targets and turns at a tenth this long
+    f32 curbSeconds = 0.0f; ///< over nought its curbed attacks are refused, bursts cut to this
+    f32 curbLasts = 0.0f;   ///< seconds the curb lasts, from its roar; for good when nought
+    f32 scale = 1.0f;       ///< how big it stands afterwards
+    bool beheads = false;   ///< the item takes one of its heads (a third of it, for now)
 
     bool harms() const { return healthShare > 0.0f || damage > 0.0f; }
     bool curbs() const { return curbSeconds > 0.0f; }
@@ -44,7 +46,7 @@ s32 legendRealmOf(s32 kind);
 /** Something the rite did that the game shows. */
 enum class LegendCue : u8 {
     Brandished, ///< the bearer holds the item up: it is theirs no more
-    Thrown,     ///< they throw it, and it strikes
+    Thrown,     ///< the bearer begins the throwing gesture
     Roared,     ///< the boss roars at it
     WornOff     ///< its weakness has passed
 };
@@ -71,11 +73,16 @@ public:
     /** Moves the rite `ticks` on, told whether the boss has finished rising and whether it
      * has finished roaring; the cues to show come back. */
     std::vector<LegendCue> update(s32 ticks, bool bossRisen, bool bossRoarDone);
+    /** The Dragon's projectile hit advances retail state 2/3 to 4 without waiting for a
+     * roar; its twenty-second freeze is independent of the presentation's darkness. */
+    bool finishOnImpact();
 
     Stage stage() const { return m_stage; }
     bool running() const { return m_stage != Stage::None && m_stage != Stage::Over; }
     s32 player() const { return m_player; }
-    const LegendWeakness* weakness() const { return m_stage != Stage::None ? &m_weakness : nullptr; }
+    const LegendWeakness* weakness() const {
+        return m_stage != Stage::None ? &m_weakness : nullptr;
+    }
     /** Whether the boss holds its stance for the bearer. */
     bool holdsBoss() const { return m_stage == Stage::Carried || m_stage == Stage::Woken; }
     /** Whether the boss should roar now. */
@@ -83,16 +90,18 @@ public:
     bool thrown() const { return m_thrown; }
     /** Whether its weakness is on the boss. */
     bool weakening() const { return m_thrown && m_stage != Stage::Over; }
-    /** Whether the level goes dark for it, as the original has it: from the boss rising
-     * until its roar is over. */
-    bool darkens() const { return running() && m_stage != Stage::Carried && !m_roared; }
+    /** The opening presentation dims the scene, not the weakness timer. The Dragon's
+     * ends on projectile impact; the other bosses' end with their roar. */
+    bool darkens() const {
+        return running() && m_stage != Stage::Carried && (m_weakness.boss == 34 || !m_roared);
+    }
     static constexpr f32 kDarkening = -0.8f; ///< what it takes off the ambient light
 
 private:
     Stage m_stage = Stage::None;
     LegendWeakness m_weakness;
     s32 m_player = -1;
-    s32 m_ticks = 0;      ///< since the boss rose
+    s32 m_ticks = 0; ///< since the boss rose
     bool m_roarDue = false;
     bool m_roared = false;
     bool m_brandished = false;
@@ -122,15 +131,24 @@ struct LegendShow {
     static constexpr std::string_view kProjectileTree = "LEGENDPRJ";
     static constexpr std::string_view kBurstTree = "LEGENDFX";
     static constexpr std::string_view kSecondBurstTree = "LEGENDFX2";
-    static constexpr f32 kHeldLift = 8.0f;     ///< over the bearer, held with no hand
+    static constexpr f32 kHeldLift = 8.0f;         ///< over the bearer, held with no hand
     static constexpr f32 kHeldSeconds = 999999.0f; ///< held until let go of, as the original
-    static constexpr f32 kSpeed = 20.0f;       ///< units a second, flying
-    static constexpr f32 kLift = 2.0f;         ///< the flight starts this high
-    static constexpr f32 kFlightSeconds = 6.0f; ///< at most
-    static constexpr f32 kAhead = 5.0f;        ///< the bearer's, ahead of them
+    static constexpr f32 kSpeed = 20.0f;           ///< units a second, flying
+    static constexpr f32 kLift = 2.0f;             ///< the flight starts this high
+    static constexpr f32 kFlightSeconds = 6.0f;    ///< at most
+    static constexpr f32 kAhead = 5.0f;            ///< the bearer's, ahead of them
     static constexpr f32 kBurstSeconds = 30.0f;
     static constexpr f32 kLichBurstSeconds = 5.0f;
     static constexpr f32 kSpiderBurstSeconds = 3.0f;
+    static constexpr std::string_view kAuraTree = "COMBO_SPH";
+    static constexpr f32 kBurstPlaybackRate = 1.0f / 0.333f;
+
+    /** The coloured charge-up burst and sphere tint selected by costume colour. */
+    static std::string_view chargeTree(s32 color);
+    static Color chargeTint(s32 color);
+    /** The code-created trail on the dragon's axe, chimera's scimitar and plague vial;
+     * an empty texture means the item has no such trail. */
+    static ParticleDescriptor trailOf(s32 kind);
 
     /** Whether the held item is in the bearer's hand, not over their head. */
     static bool heldInHand(s32 kind);

@@ -12,6 +12,7 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
+
 #include "game/enemies/Critters.h"
 #include "game/enemies/LegendItems.h"
 
@@ -26,8 +27,8 @@ struct LegendEvent {
 
 /** The boss a realm keeps: which, and how it stands. */
 struct BossView {
-    s32 kind = -1;         ///< the original's kind, 34 the dragon to 44 the garm
-    std::string name;      ///< "LICH"
+    s32 kind = -1;    ///< the original's kind, 34 the dragon to 44 the garm
+    std::string name; ///< "LICH"
     f32 health = 0.0f;
     f32 maxHealth = 1.0f;
     bool awake = false;
@@ -66,6 +67,9 @@ public:
     /** Begins the rite of the boss's legend item, carried by `player`; false when the boss
      * has none, or it is already begun. */
     bool bringLegend(s32 player);
+    /** The Dragon's ice axe acts on impact, not on the request to throw it.
+     * Repeated impacts are ignored. Appearance is supplied separately at draw time. */
+    void landLegend();
     const LegendRite& legend() const { return m_rite; }
 
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
@@ -84,7 +88,8 @@ public:
     std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
     bool within(const Vec3& centre, f32 radius) const;
     bool reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const Texture* frozenTexture = nullptr) const;
 
     bool present() const { return m_id.has_value(); }
     BossView view() const;
@@ -98,6 +103,8 @@ public:
     f32 radius() const;
     /** How high its body's centre stands, which the fight's camera keeps in view. */
     f32 height() const;
+    /** Camera attention uses the model root plus vertical drift, not the floor. */
+    Vec3 cameraOffset() const;
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */
     static constexpr s32 kTargetId = 0;

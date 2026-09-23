@@ -569,7 +569,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   gauntworld.c 1262): thrown, it takes a tenth of the boss's health now
   (a quarter of the lich's, 500 flat off the wraith, a head off the chimera:
   a third here until its heads are children), and freezes the dragon 1200
-  ticks (`pausecnt` with the `SEETHROUGH` texture, not drawn yet), blinds
+  ticks (`pausecnt` with the `SEETHROUGH` texture), blinds
   the genie 1800 and the plague fiend 18000 (`unkAC6`: no targets, turning
   at a tenth), or curbs the attacks whose damage entry has flag 0x4000
   (`unkAC8`: the spider's for good at 0.8 scale, tinted green in the
@@ -588,9 +588,28 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   level's own light meanwhile. The rules are keyed by boss kind and realm,
   and the mountain's dragon fight (`LEVELB6`, scenario
   `level-b6-dragon.json`) runs the rite, the freeze and the coin spew in
-  its scene test; in the game, though, the dragon is still drawn wrong
-  (its body half under the floor and unseen, the lair's stone barriers
-  not appearing), to be taken up with the other bosses. `LegendShow` is
+  its scene test. Critter positions are floor anchors; drawing and posed hit
+  points add the type's `floorOffset` (the Dragon's root is 18.5 units above
+  the floor). The Dragon's damage and freeze begin when the axe lands, not
+  when the throw gesture is requested. That impact ends its dimmed opening
+  independently of the twenty-second freeze; other bosses still finish their
+  opening on their roar. Its skin uses the level item's `SEETHROUGH` texture
+  in keep-alpha mode (`texchangeidx = -4`): the original skin supplies the
+  coverage mask (alpha above 2/255), the alternate texture supplies colour,
+  and solid parts stay opaque instead of blending the ice alpha with the
+  background. `DrawState::maskedTexture` uses the second texture stage,
+  mutually exclusive with lightmaps. The skin blinks back to normal on timer
+  bit 3 during the final 180 freeze ticks.
+  `world/SafeRocks` draws the lair's six type-10/subtype-41 barriers from
+  `SAFEROCK0L1` through `SAFEROCK3L1`; their tier and health fall under player
+  attacks, rubble remains visible, and only standing tiers block movement.
+  Boss-driven barrier reactivation and their protection against breath are
+  not wired yet. `screens/LegendPresentation` owns the held/flight/charge
+  effects, gesture retry and flight sound lifetime. `PlayScene` supplies
+  bearer/target snapshots and applies returned impact events to `Bosses`;
+  the presentation never mutates gameplay actors. Clear it before releasing
+  its borrowed archives or effect store. The ice skin is a draw-time input,
+  not a texture retained in the fighter's simulation state. `LegendShow` is
   how it looks (pmotion.c 2092-2447, sounds_evt.c `fn_8009C9DC`): the
   `LEGENDHLD` of the boss level's own item archive glows in the hand for
   bosses 34-39 (`SfxSetParent` on `hand_node`) and 8 over the head for
@@ -608,17 +627,34 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   brandished, the realm's `S_<L>LEGWTHROW` thrown (J's is `S_JEGWTHROW`),
   `LEGWFLY`/`LEGWALL` let go of (stopped on landing or wearing off),
   `LEGWHIT`/`LEGWALSTP` landed, `LEGWPDN` worn off; `soundNamesOf` gives
-  the spellings to try and `PlayScene::playLegendSound` the first a bank
-  has. Not yet: the bearer's glow (`MBTreeSetAmbientAdd 0x1FF`), the
-  particle trail (`MBNewPsysDefault` for 34/35/38), the fade of the set
+  the spellings to try and `LegendPresentation` selects the first playable
+  name through the scene's audio port (level, common, then ambient bank).
+  Held and flying items are full-bright and do not write depth. The
+  charge starts `COMBO_SPH` tinted by costume colour and that colour's combo
+  burst with a 0.333 animation time scale. `EffectTrees` passes the camera to
+  billboard nodes and draws code-created trails from moving effect roots.
+  The projectile trail (34/35/38) emits thirty particles a second for three
+  seconds, at one unit a second, width two, with a one-second life and
+  one-second alpha fade; the axe uses STATIC's `PARTICLE1_A`. Not yet: the
+  bearer's own glow (`MBTreeSetAmbientAdd 0x1FF`), the charge's dynamic light,
+  the fade of the set
   effect's last seconds (gauntworld.c 1333), the spider's `0xFF40FF40`
-  tint, the genie's `LEGEND1` for 28 s, the dragon's ice texture, the
+  tint, the genie's `LEGEND1` for 28 s, the
   in-world bar (`typeFlags & 0x800`, the `GMETER` tree hung at the type's
   `healthBarOffset`),
   the patterns (PTRN), phases, cameras, children (the chimera's heads),
   projectile moves, the general's waypoint patrol, the gargoyle's
   fireball, per-part damage and breaking, the critters' sounds, the
   statue's waking, and a boss level unpacked (`--only levelG5`).
+  Dragon breath is still incomplete: `Critters::strikeWith` uses a flat
+  reach/facing test, but `CritterFirePlayerCollide` tests a yawed/pitched
+  segment from the active move node against the player's cylinder, with a
+  quarter-second hit gate and item obstruction. `CritterDoSfxSub` also
+  parents an unflagged move effect to that active node; a floor position
+  and yaw alone cannot reproduce FIRE's animated attachment. Its authored
+  `sfxFrame` precedes `frameStart`, so the generic delayed-effect path is
+  not a faithful substitute. Fix collision, attachment and timing together;
+  do not merely widen the angle or move the fire sprite up by a constant.
   Scenarios: `level-g1-general.json`.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
@@ -640,7 +676,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (0, -9.3, -2) far, maxYaw pi): while the boss (or, after it, the wizard)
   stands it looks from behind the party along their line to the boss, swung
   no further about the boss's facing than `maxYaw` when the party is round
-  it (`cosMaxYaw`), at the record's pitch (steeper nearer), backing off by
+  it (recomputing `cos(maxYaw)` rather than using the file's stale cache),
+  at the record's pitch (steeper nearer), backing off by
   the original's steps (10 out when something is cut off, 2 x (2.5 -
   margin) when within 2 of the edge, in by (margin - 2.5) past 4) to keep
   the boss's base and body centre and every player in view. The original's

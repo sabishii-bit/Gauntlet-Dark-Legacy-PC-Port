@@ -118,4 +118,31 @@ TEST_CASE("the boss camera keeps within the boss's facing when the record limits
     REQUIRE(off == Approx(kPi / 4.0f).margin(0.02f));
 }
 
+TEST_CASE("the dragon camera uses its authored yaw limit and elevated attention anchor",
+          "[game][world][camera]") {
+    BossCameraInfo record = cryptRecord();
+    record.flags = 1;
+    record.maxYaw = kPi / 10.0f;             // the mountain's 18 degrees
+    record.cosMaxYaw = std::cos(kPi / 4.0f); // stale cache in the level record
+    record.minAttention = record.maxAttention = Vec3{0.0f, -5.0f, 0.0f};
+    BossCameraSubject boss;
+    boss.awake = true;
+    boss.attentionOffset = Vec3{0.0f, 18.5f, 0.0f};
+    const CameraView view;
+    for (const f32 side : {-1.0f, 1.0f}) {
+        const f32 angle = side * kPi / 6.0f; // 30 degrees: outside 18, inside stale 45
+        const std::vector<CameraSubject> party{
+            standing(Vec3{30.0f * std::sin(angle), 0.0f, 30.0f * std::cos(angle)})};
+        BossCamera camera;
+        camera.reset(boss, party, record, view);
+        for (int i = 0; i < 300; ++i) {
+            camera.update(boss, party, record, view, 1.0f / 60.0f);
+        }
+        REQUIRE(BossCamera::wrapAngle(camera.yaw() - kPi) ==
+                Approx(side * record.maxYaw).margin(0.001f));
+        REQUIRE(camera.attention().y == Approx(13.5f));
+        REQUIRE(camera.camera().position.x * side > 0.0f);
+    }
+}
+
 } // namespace

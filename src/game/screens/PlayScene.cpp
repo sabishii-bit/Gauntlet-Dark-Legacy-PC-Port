@@ -12,6 +12,7 @@
 #include "engine/world/WorldCamera.h"
 
 #include "game/enemies/BossCoins.h"
+#include "game/enemies/LegendItems.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/Progression.h"
 
@@ -238,6 +239,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                      trapDamageScale());
     }
     m_barrels.bind(device, world.layout(), world.items(), &world.collision());
+    m_safeRocks.bind(device, world.layout(), world.items());
     m_strings.load(context.unpackedRoot / kStringsFile);
     // What the player reads is the string table's, so that it can be in any language.
     if (context.strings != nullptr) {
@@ -274,6 +276,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_gates.setPlayerCount(static_cast<s32>(m_actors.size()));
     m_traps.setPlayerCount(static_cast<s32>(m_actors.size()));
     m_barrels.setPlayerCount(static_cast<s32>(m_actors.size()));
+    m_safeRocks.setPlayerCount(static_cast<s32>(m_actors.size()));
     bindEnemies(device, world, context);
     // The levels the party comes in at: what is gained from here is news.
     m_levels.clear();
@@ -305,6 +308,14 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         world.arrivalPoint(options.arrivalWorld) == world.startPoint(0);
     beginSpawn(device, !options.position.has_value() && atEntrance);
     loadPotionModels(device);
+    m_legend = std::make_unique<LegendPresentation>(
+        m_effects, LegendPresentation::Assets{device, world.items(), m_weapons, m_staticTextures},
+        LegendPresentation::Audio{[this](std::string_view name) { return playNamed(name); },
+                                  [this](SoundHandle handle) {
+                                      if (m_context.sounds != nullptr) {
+                                          m_context.sounds->stop(handle);
+                                      }
+                                  }});
     m_open = true;
     log::info("Tower: {} in the party", m_actors.size());
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
@@ -338,7 +349,7 @@ void PlayScene::close() {
     m_leaving = false;
     m_missiles.clear(); // before the figures whose models they fly
     m_critterEffects.clear();
-    m_legend = LegendSight{};
+    m_legend.reset();
     m_effects.clear();  // and before the archive whose trees they play
     m_generators.clear();
     m_enemyMissiles.clear(); // before the archives whose trees they fly
@@ -386,6 +397,7 @@ void PlayScene::close() {
     m_cloudGaps.clear();
     m_fallenSeconds = 0.0f;
     m_barrels.clear();
+    m_safeRocks.clear();
     m_help.clear();
     m_figures.clear();
     m_subjects.clear();
@@ -783,6 +795,8 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
     const std::vector<Obstacle> casks = m_barrels.obstacles();
     boxes.insert(boxes.end(), casks.begin(), casks.end());
     m_barrels.update(seconds);
+    const auto cover = m_safeRocks.obstacles();
+    boxes.insert(boxes.end(), cover.begin(), cover.end());
     std::vector<ChestVisitor> visitors;
     std::vector<TrapVictim> victims;
     visitors.reserve(m_actors.size());
@@ -982,6 +996,16 @@ void PlayScene::ramBarrels(usize index) {
         }
         rammed.push_back(barrel);
         strikeBarrel(barrel, kRamDamage, actor.player());
+    }
+    for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
+        // Keep the shared per-charge hit ledger disjoint from barrel indices.
+        const usize key = rock + static_cast<usize>(kSafeRockTargetBase);
+        if (m_safeRocks.standing(rock) && std::ranges::find(rammed, key) == rammed.end() &&
+            m_safeRocks.rock(rock).obstacle.touchedBy(actor.position(), actor.radius(),
+                                                      kRamReach)) {
+            rammed.push_back(key);
+            strikeSafeRock(rock, kRamDamage);
+        }
     }
     settleBlasts();
 }
@@ -1228,6 +1252,13 @@ void PlayScene::updateStrikes(f32 seconds) {
             strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner,
                           std::nullopt, true);
         }
+        for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
+            const auto& cover = m_safeRocks.rock(rock).obstacle;
+            if (m_safeRocks.standing(rock) &&
+                hit.reaches(cover.centre, cover.cylinderRadius, cover.height)) {
+                strikeSafeRock(rock, hit.damage);
+            }
+        }
         for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
             if (!m_barrels.standing(barrel)) {
                 continue;
@@ -1391,6 +1422,11 @@ void PlayScene::updateShields(f32 seconds) {
         for (const usize barrel : m_barrels.within(at, shield.radius)) {
             strikeBarrel(barrel, shield.damage, m_actors[shield.actor].player());
         }
+        for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
+            if (m_safeRocks.rock(rock).obstacle.touchedBy(at, shield.radius, 0.0f)) {
+                strikeSafeRock(rock, shield.damage);
+            }
+        }
     }
     settleBlasts();
     std::erase_if(m_shields, [this](const PotionShield& shield) {
@@ -1488,6 +1524,12 @@ bool PlayScene::postHelp(s32 id, usize index, s32 number) {
     return true;
 }
 
+void PlayScene::strikeSafeRock(usize index, f32 power) {
+    if (m_safeRocks.strike(index, power) && m_device != nullptr && m_world != nullptr) {
+        m_effects.start(*m_device, m_world->items(), "SAFEREXP", m_safeRocks.rock(index).position);
+    }
+}
+
 /** A blow on a barrel: wood sounds under it until it breaks, when what it held is left
  * lying, or it blows up, or its gas hangs where it stood. */
 void PlayScene::strikeBarrel(usize barrel, f32 power, s32 byPlayer) {
@@ -1570,6 +1612,11 @@ void PlayScene::settleBlasts() {
         }
         for (const usize barrel : m_barrels.within(felt.position, felt.radius)) {
             strikeBarrel(barrel, felt.damage, -1);
+        }
+        for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
+            if (m_safeRocks.rock(rock).obstacle.touchedBy(felt.position, felt.radius, 0.0f)) {
+                strikeSafeRock(rock, felt.damage);
+            }
         }
         for (const s32 enemy : m_enemies.within(felt.position, felt.radius)) {
             const Vec3 away = m_enemies.positionOf(enemy) - felt.position;
@@ -1689,190 +1736,65 @@ void PlayScene::followCritterEffects() {
     }
 }
 
-/** The item held glows in the hand (or over the head, for a boss with no hand to hold it
- * at) and the realm's pickup sounds; thrown, the realm's throw sounds and the bearer owes
- * the gesture; worn off, the flight's sound stops and the realm says so. */
+/** Translate scene-owned poses into the presentation's small, read-only snapshot. */
+std::optional<LegendPresentation::Bearer> PlayScene::legendBearer(s32 player, s32 kind) const {
+    for (usize i = 0; i < m_actors.size(); ++i) {
+        const PlayerActor& actor = m_actors[i];
+        if (actor.player() != player) {
+            continue;
+        }
+        const Figure* figure = i < m_figures.size() ? m_figures[i].get() : nullptr;
+        LegendPresentation::Bearer bearer;
+        bearer.player = player;
+        bearer.color = actor.save().color;
+        bearer.position = actor.position();
+        bearer.facing = actor.facing();
+        bearer.holdPoint = actor.position() + Vec3{0.0f, LegendShow::kHeldLift, 0.0f};
+        bearer.canGesture = figure != nullptr && !isDown(i);
+        bearer.casting = figure != nullptr && figure->animator.castingLegend();
+        bearer.released = figure != nullptr && figure->animator.legendReleased();
+        if (LegendShow::heldInHand(kind) && figure != nullptr && figure->handNode >= 0 &&
+            static_cast<usize>(figure->handNode) < figure->transforms.size()) {
+            const f32 size =
+                bodyScale(actor.save(), PowerupEffects::of(actor.save().progress().inventory));
+            const Mat4 body = glm::scale(actor.transform(), Vec3{size, size, size});
+            bearer.holdPoint =
+                Vec3{body * figure->transforms[static_cast<usize>(figure->handNode)] *
+                     Vec4{0.0f, 0.0f, 0.0f, 1.0f}};
+        }
+        return bearer;
+    }
+    return std::nullopt;
+}
+
 void PlayScene::showLegendEvent(const LegendEvent& event) {
-    const BossView boss = m_bosses.view();
-    switch (event.cue) {
-    case LegendCue::Brandished: {
-        m_legend = LegendSight{};
-        m_legend.kind = boss.kind;
-        m_legend.realm = static_cast<char>('A' + std::clamp(event.realm - 1, 0, 25));
-        for (usize i = 0; i < m_actors.size(); ++i) {
-            if (m_actors[i].player() == event.player) {
-                m_legend.actor = static_cast<s32>(i);
-            }
-        }
-        if (m_legend.actor >= 0 && m_device != nullptr && m_world->items().loaded() &&
-            m_world->items().trees.find(LegendShow::kHeldTree).has_value()) {
-            EffectTrees::Setting setting;
-            setting.seconds = LegendShow::kHeldSeconds;
-            m_legend.held = m_effects.startSet(*m_device, m_world->items(), LegendShow::kHeldTree,
-                                               legendHoldPoint(static_cast<usize>(m_legend.actor)),
-                                               setting);
-        }
-        playLegendSound(LegendShow::Sound::PickedUp);
-        break;
-    }
-    case LegendCue::Thrown:
-        if (m_legend.actor >= 0) {
-            m_legend.gestureOwed = true;
-            playLegendSound(LegendShow::Sound::Thrown);
-        }
-        break;
-    case LegendCue::WornOff:
-        if (m_legend.loop != kNoSound && m_context.sounds != nullptr) {
-            m_context.sounds->stop(m_legend.loop);
-            m_legend.loop = kNoSound;
-        }
-        if (LegendShow::flightOf(m_legend.kind) == LegendShow::Flight::AtBoss) {
-            playLegendSound(LegendShow::Sound::Landed);
-        }
-        playLegendSound(LegendShow::Sound::WornOff);
-        break;
-    case LegendCue::Roared:
-        break;
+    if (m_legend != nullptr) {
+        const s32 kind = m_bosses.view().kind;
+        m_legend->show(event.cue, event.player, event.realm, kind,
+                       legendBearer(event.player, kind));
     }
 }
 
-/** The gesture owed is asked of the bearer until their body takes it up; the item held
- * goes with the hand until the gesture lets it go; what flies lands when its time is up;
- * what rides ahead of the bearer keeps up with them. */
 void PlayScene::updateLegend(f32 seconds) {
-    if (m_legend.actor < 0) {
+    if (m_legend == nullptr) {
         return;
     }
-    const auto bearer = static_cast<usize>(m_legend.actor);
-    Figure* figure = bearer < m_figures.size() ? m_figures[bearer].get() : nullptr;
-    if (m_legend.gestureOwed) {
-        if (figure == nullptr || isDown(bearer)) {
-            m_legend.gestureOwed = false;
-            releaseLegend(); // no body to make it: the item goes at once
-        } else if (figure->animator.castingLegend()) {
-            m_legend.gestureOwed = false;
-        } else {
-            m_struck[bearer] = LegendShow::gestureOf(m_legend.kind);
-        }
+    std::optional<LegendPresentation::Target> target;
+    if (const Vec3* at = m_bosses.position(); at != nullptr) {
+        target = LegendPresentation::Target{*at, m_bosses.height()};
     }
-    if (figure != nullptr && figure->animator.legendReleased()) {
-        releaseLegend();
-    }
-    if (m_legend.held != 0) {
-        if (m_effects.playing(m_legend.held)) {
-            m_effects.moveTo(m_legend.held, legendHoldPoint(bearer));
-        } else {
-            m_legend.held = 0;
-        }
-    }
-    if (m_legend.flying != 0 && !m_effects.playing(m_legend.flying)) {
-        m_legend.flying = 0;
-    }
-    if (m_legend.flying != 0 && LegendShow::flightOf(m_legend.kind) == LegendShow::Flight::Flies) {
-        m_legend.flightLeft -= seconds;
-        if (m_legend.flightLeft <= 0.0f) {
-            landLegend();
-        }
-    } else if (m_legend.flying != 0 &&
-               LegendShow::flightOf(m_legend.kind) == LegendShow::Flight::WithBearer) {
-        const PlayerActor& actor = m_actors[bearer];
-        m_effects.moveTo(m_legend.flying, actor.position() + actor.facing() * LegendShow::kAhead);
-    }
-}
-
-/** The item leaves the hand: it flies at the boss, is set on it to burst for a while, or
- * rides ahead of the bearer; the realm's flight sound goes with it. */
-void PlayScene::releaseLegend() {
-    if (m_legend.actor < 0) {
-        return;
-    }
-    if (m_legend.held != 0) {
-        m_effects.stop(m_legend.held);
-        m_legend.held = 0;
-    }
-    const auto bearer = static_cast<usize>(m_legend.actor);
-    const PlayerActor& actor = m_actors[bearer];
-    const Vec3* at = m_bosses.position();
-    if (m_device == nullptr || !m_world->items().loaded() || at == nullptr) {
-        return;
-    }
-    ItemArchive& items = m_world->items();
-    const s32 kind = m_legend.kind;
-    EffectTrees::Setting setting;
-    switch (LegendShow::flightOf(kind)) {
-    case LegendShow::Flight::Flies: {
-        const Vec3 from = actor.position() + actor.facing() + Vec3{0.0f, LegendShow::kLift, 0.0f};
-        const Vec3 to = *at + Vec3{0.0f, m_bosses.height() * 0.5f, 0.0f};
-        const f32 distance = glm::length(to - from);
-        m_legend.flightLeft = std::min(distance / LegendShow::kSpeed, LegendShow::kFlightSeconds);
-        if (distance > 0.0f) {
-            setting.velocity = (to - from) * (LegendShow::kSpeed / distance);
-        }
-        setting.seconds = LegendShow::kFlightSeconds;
-        m_legend.flying = m_effects.startSet(*m_device, items, LegendShow::kProjectileTree, from, setting);
-        break;
-    }
-    case LegendShow::Flight::AtBoss:
-        setting.seconds = LegendShow::burstSecondsOf(kind);
-        setting.then = std::string(LegendShow::burstTreeOf(kind));
-        m_legend.flying = m_effects.startSet(*m_device, items, LegendShow::restingTreeOf(kind),
-                                             *at + LegendShow::bossOffsetOf(kind), setting);
-        break;
-    case LegendShow::Flight::WithBearer:
-        setting.seconds = LegendShow::burstSecondsOf(kind);
-        setting.then = std::string(LegendShow::burstTreeOf(kind));
-        m_legend.flying = m_effects.startSet(*m_device, items, LegendShow::kProjectileTree,
-                                             actor.position() + actor.facing() * LegendShow::kAhead,
-                                             setting);
-        break;
-    }
-    playLegendSound(LegendShow::Sound::Flying, true);
-}
-
-/** What flew has reached the boss: it bursts there and the realm's landing sounds. */
-void PlayScene::landLegend() {
-    if (m_legend.flying != 0) {
-        m_effects.stop(m_legend.flying);
-        m_legend.flying = 0;
-    }
-    if (m_legend.loop != kNoSound && m_context.sounds != nullptr) {
-        m_context.sounds->stop(m_legend.loop);
-        m_legend.loop = kNoSound;
-    }
-    if (const Vec3* at = m_bosses.position();
-        at != nullptr && m_device != nullptr && m_world->items().loaded() &&
-        m_world->items().trees.find(LegendShow::kBurstTree).has_value()) {
-        m_effects.start(*m_device, m_world->items(), LegendShow::kBurstTree,
-                        *at + Vec3{0.0f, m_bosses.height() * 0.5f, 0.0f});
-    }
-    playLegendSound(LegendShow::Sound::Landed);
-}
-
-/** The first of the names the realm's sound goes by that a bank has; `looping`, it is
- * kept to be stopped when the flight ends. */
-void PlayScene::playLegendSound(LegendShow::Sound sound, bool looping) {
-    for (const std::string& name : LegendShow::soundNamesOf(sound, m_legend.realm)) {
-        if (const SoundHandle handle = playNamed(name); handle != kNoSound) {
-            if (looping) {
-                m_legend.loop = handle;
+    const LegendPresentation::Update result =
+        m_legend->update(seconds, legendBearer(m_legend->player(), m_legend->kind()), target);
+    if (result.gesture != PlayerDeed::None) {
+        for (usize i = 0; i < m_actors.size(); ++i) {
+            if (m_actors[i].player() == m_legend->player()) {
+                m_struck[i] = result.gesture;
             }
-            return;
         }
     }
-}
-
-Vec3 PlayScene::legendHoldPoint(usize index) const {
-    const PlayerActor& actor = m_actors[index];
-    const Figure* figure = index < m_figures.size() ? m_figures[index].get() : nullptr;
-    if (LegendShow::heldInHand(m_legend.kind) && figure != nullptr && figure->handNode >= 0 &&
-        static_cast<usize>(figure->handNode) < figure->transforms.size()) {
-        const f32 size = bodyScale(actor.save(), PowerupEffects::of(actor.save().progress().inventory));
-        const Mat4 body = glm::scale(actor.transform(), Vec3{size, size, size});
-        const Vec4 hand = body * figure->transforms[static_cast<usize>(figure->handNode)] *
-                          Vec4{0.0f, 0.0f, 0.0f, 1.0f};
-        return Vec3{hand.x, hand.y, hand.z};
+    if (result.landed) {
+        m_bosses.landLegend();
     }
-    return actor.position() + Vec3{0.0f, LegendShow::kHeldLift, 0.0f};
 }
 
 /** The boss has fallen: everyone in play gets its shard, its key rises where it fell, the
@@ -2226,6 +2148,8 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     boxes.insert(boxes.end(), casks.begin(), casks.end());
     const LevelInfo* level = m_world->level();
     const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
+    const auto cover = m_safeRocks.obstacles();
+    boxes.insert(boxes.end(), cover.begin(), cover.end());
     m_generators.update(ticks, m_enemies, views, boxes);
     m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed);
     m_enemyMissiles.update(seconds, &m_world->collision(), views);
@@ -3077,6 +3001,7 @@ BossCameraSubject PlayScene::bossSubject() const {
     subject.facing = m_bosses.facing();
     subject.radius = m_bosses.radius();
     subject.height = m_bosses.height();
+    subject.attentionOffset = m_bosses.cameraOffset();
     subject.awake = m_bosses.view().awake;
     return subject;
 }
@@ -3311,12 +3236,21 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                                             std::max(box.halfAcross, box.halfAlong), box.height});
         }
     }
+    for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
+        if (m_safeRocks.standing(rock)) {
+            const Obstacle& cover = m_safeRocks.rock(rock).obstacle;
+            targets.push_back(MissileTarget{static_cast<s32>(rock) + kSafeRockTargetBase,
+                                            cover.centre, cover.cylinderRadius, cover.height});
+        }
+    }
     m_missiles.update(seconds, &m_world->collision(), targets);
     for (const MissileImpact& impact : m_missiles.takeImpacts()) {
         if (impact.potion != 0) {
             burstPotion(impact.potion, impact.position, impact.potency); // weapons leave no mark yet
         }
-        if (impact.target >= kBossTargetBase) {
+        if (impact.target >= kSafeRockTargetBase) {
+            strikeSafeRock(static_cast<usize>(impact.target - kSafeRockTargetBase), impact.damage);
+        } else if (impact.target >= kBossTargetBase) {
             EnemyHit hit;
             hit.damage = impact.damage;
             hit.player = impact.owner;
@@ -3487,16 +3421,19 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_gates.draw(device, clip, m_world->lighting());
     m_traps.draw(device, clip, m_world->lighting());
     m_barrels.draw(device, clip, m_world->lighting());
+    m_safeRocks.draw(device, clip, m_world->lighting());
     m_generators.draw(device, clip, m_world->lighting());
     m_enemies.draw(device, clip, m_world->lighting());
     m_critters.draw(device, clip, m_world->lighting());
     // The boss stands out in the level's own light while the rite darkens the rest.
     m_bosses.draw(device, clip,
-                  m_bosses.legend().darkens() ? m_world->fullLighting() : m_world->lighting());
+                  m_bosses.legend().darkens() ? m_world->fullLighting() : m_world->lighting(),
+                  m_legend != nullptr ? m_legend->frozenTexture() : nullptr);
     drawWizard(device, clip);
     m_enemyMissiles.draw(device, clip, m_world->lighting());
     m_missiles.draw(device, clip, m_world->lighting());
-    m_effects.draw(device, clip, m_world->fullLighting());
+    const CameraFrame effectCamera = CameraFrame::of(viewCamera());
+    m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
     drawSpawn(device, clip);
     const auto width = static_cast<f32>(config.display.virtualWidth);
     const auto height = static_cast<f32>(config.display.virtualHeight);

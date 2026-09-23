@@ -135,7 +135,9 @@ public:
     std::vector<s32> within(const Vec3& centre, f32 radius) const;
     std::vector<s32> reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
 
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    /** Optional frozen skin is borrowed for this draw only. */
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const Texture* frozenTexture = nullptr) const;
 
     usize count() const;
     bool alive(s32 id) const;
@@ -143,6 +145,7 @@ public:
     s32 kindOf(s32 id) const;
     f32 healthOf(s32 id) const;
     f32 maxHealthOf(s32 id) const;
+    /** Floor anchor, not the animation root (which includes the type's floorOffset). */
     const Vec3& positionOf(s32 id) const;
     f32 yawOf(s32 id) const;
     f32 radiusOf(s32 id) const;
@@ -223,6 +226,7 @@ private:
     void strikeWith(Critter& critter, s32 id, const CritterMove& move, s32 damageIndex,
                     std::span<const EnemyView> players);
     static Vec3 partPosition(const Critter& critter, std::string_view node);
+    static Mat4 modelTransform(const Critter& critter);
     void carry(Critter& critter, f32 seconds, const CritterMove* move, std::span<const EnemyView> players);
     static void chooseTarget(Critter& critter, std::span<const EnemyView> players);
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);

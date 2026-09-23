@@ -17,12 +17,22 @@ layout(location = 0) out vec4 outColor;
 
 void main() {
     outColor = texture(uTexture, vUv) * vColor;
+    if (pc.scale.z > 0.5) {
+        // Keep-alpha alternate-texture mode: the original skin supplies coverage, not colour.
+        // The alpha comparison is against K0.a = 2, followed by alternate alpha * vertex alpha.
+        bool covered = outColor.a > 2.0 / 255.0;
+        outColor = texture(uLightmap, vUv) * vColor;
+        if (!covered) {
+            discard;
+        }
+    } else {
+        // The lightmap's alpha carries its intensity, like the console's second texture stage.
+        outColor.rgb *= texture(uLightmap, vUv2).a;
+    }
     // Texels under the alpha test neither show nor write depth, like the console's compare.
     if (outColor.a < pc.params.z) {
         discard;
     }
-    // The lightmap's alpha carries its intensity, like the console's second texture stage.
-    outColor.rgb *= texture(uLightmap, vUv2).a;
     // What a draw is darkened by, as when the level's ambient light is pulled down.
     outColor.rgb *= 1.0 - pc.params.w;
 }

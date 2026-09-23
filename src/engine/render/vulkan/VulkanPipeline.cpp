@@ -107,7 +107,7 @@ VulkanPipeline::VulkanPipeline(VulkanContext& context, const std::filesystem::pa
     depthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
 
     VkPipelineColorBlendAttachmentState blendAttachment{};
-    blendAttachment.blendEnable = VK_TRUE;
+    blendAttachment.blendEnable = blend == BlendMode::Opaque ? VK_FALSE : VK_TRUE;
     blendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
     blendAttachment.dstColorBlendFactor =
         additive ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;

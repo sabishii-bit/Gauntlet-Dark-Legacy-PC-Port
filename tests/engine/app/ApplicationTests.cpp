@@ -57,6 +57,13 @@ protected:
         m_batch.clear();
         m_batch.rect(Rect{152.0f, 8.0f, 64.0f, 64.0f}, 0.7f, Color::white());
         device.draw(m_batch, *m_streamed, projection);
+        // Exercise both the opaque keep-alpha pass and the return to ordinary blending.
+        DrawState ice;
+        ice.blend = BlendMode::Opaque;
+        ice.maskedTexture = m_streamed.get();
+        device.draw(m_batch, *m_texture, projection, ice);
+        ice.blend = BlendMode::Alpha;
+        device.draw(m_batch, *m_texture, projection, ice);
         ++m_renderedFrames;
     }
 

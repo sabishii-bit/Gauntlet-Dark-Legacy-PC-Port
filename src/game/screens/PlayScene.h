@@ -23,55 +23,55 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
+#include "engine/world/AmbientDimmer.h"
+#include "engine/world/AnimationPlayer.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/TreePose.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/enemies/Bosses.h"
+#include "game/enemies/Critters.h"
+#include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyMissiles.h"
+#include "game/enemies/Generators.h"
 #include "game/menu/HintMenu.h"
 #include "game/menu/MenuInput.h"
 #include "game/menu/ScrollBox.h"
 #include "game/players/CharacterSave.h"
-#include "game/players/Party.h"
-#include "game/players/TurboMeter.h"
 #include "game/players/ClassData.h"
+#include "game/players/LevelWatch.h"
+#include "game/players/Party.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PlayerControls.h"
+#include "game/players/PowerupEffects.h"
+#include "game/players/TurboMeter.h"
 #include "game/screens/BossMeter.h"
 #include "game/screens/BossVictory.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/HelpMessages.h"
+#include "game/screens/LegendPresentation.h"
 #include "game/screens/PickupHud.h"
 #include "game/screens/PowerupSelector.h"
 #include "game/screens/StatusBox.h"
 #include "game/screens/TransitionScreen.h"
-#include "engine/world/AmbientDimmer.h"
-#include "engine/world/AnimationPlayer.h"
-#include "engine/world/TextureAnimator.h"
-#include "engine/world/TreePose.h"
-
-#include "game/players/PowerupEffects.h"
-#include "game/enemies/Bosses.h"
-#include "game/enemies/Critters.h"
-#include "game/players/LevelWatch.h"
-#include "game/enemies/Enemies.h"
-#include "game/enemies/EnemyMissiles.h"
-#include "game/enemies/Generators.h"
-#include "game/enemies/LegendItems.h"
 #include "game/world/AmbientSounds.h"
+#include "game/world/BossCamera.h"
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
-#include "game/world/LockedGates.h"
-#include "game/world/MoveStrikes.h"
-#include "game/world/Traps.h"
 #include "game/world/EffectTrees.h"
 #include "game/world/ExitPortals.h"
+#include "game/world/LevelWorld.h"
+#include "game/world/LockedGates.h"
+#include "game/world/MoveStrikes.h"
 #include "game/world/PlayerMissiles.h"
+#include "game/world/SafeRocks.h"
 #include "game/world/StartCamera.h"
 #include "game/world/SumnerFigure.h"
 #include "game/world/SumnerHints.h"
-#include "game/world/BossCamera.h"
 #include "game/world/TowerCamera.h"
-#include "game/world/LevelWorld.h"
+#include "game/world/Traps.h"
 
 namespace gdl::game {
 
@@ -214,6 +214,7 @@ public:
     const LockedGates& gates() const { return m_gates; }
     const Traps& traps() const { return m_traps; }
     const Breakables& barrels() const { return m_barrels; }
+    const SafeRocks& safeRocks() const { return m_safeRocks; }
     const Enemies& enemies() const { return m_enemies; }
     Enemies& enemies() { return m_enemies; }
     const Generators& generators() const { return m_generators; }
@@ -342,6 +343,7 @@ private:
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false);
     f32 guarded(usize index, f32 damage, bool directed) const;
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer);
+    void strikeSafeRock(usize index, f32 power);
     void bindEnemies(RenderDevice& device, LevelWorld& world, const GameContext& context);
     std::vector<EnemyView> enemyViews() const;
     void updateEnemies(s32 ticks, f32 seconds);
@@ -355,6 +357,7 @@ private:
     static constexpr s32 kGeneratorTargetBase = 2000;
     static constexpr s32 kCritterTargetBase = 3000;
     static constexpr s32 kBossTargetBase = 4000;
+    static constexpr s32 kSafeRockTargetBase = 5000;
     void awardBossLosses();
     /** The blast a boss's death lets off, which nothing of the swarm survives. */
     static constexpr f32 kBossDeathBlast = 1000.0f;
@@ -364,13 +367,7 @@ private:
     void followCritterEffects();
     void showLegendEvent(const LegendEvent& event);
     void updateLegend(f32 seconds);
-    void releaseLegend();
-    void landLegend();
-    void playLegendSound(LegendShow::Sound sound, bool looping = false);
-    /** Where the bearer holds the legend item: in the weapon hand, or over the head. */
-    Vec3 legendHoldPoint(usize index) const;
-    /** Whether the legend item is shown at all: held, flying or set on the boss. */
-    bool legendShown() const { return m_legend.held != 0 || m_legend.flying != 0; }
+    std::optional<LegendPresentation::Bearer> legendBearer(s32 player, s32 kind) const;
     void bossFallen(const Vec3& where);
     void loadWizard(RenderDevice& device);
     void updateVictory(s32 ticks, f32 seconds);
@@ -544,6 +541,7 @@ private:
     std::vector<Blast> m_blasts;
     std::vector<f32> m_cloudGaps; ///< per actor, seconds before gas hurts them again
     Breakables m_barrels;
+    SafeRocks m_safeRocks;
     Enemies m_enemies;
     Generators m_generators;
     Critters m_critters;
@@ -557,18 +555,6 @@ private:
         Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
     };
     std::vector<CritterEffect> m_critterEffects;
-    /** The legend item's rite as shown: what the bearer holds, what flies, and its sounds. */
-    struct LegendSight {
-        s32 actor = -1;   ///< the bearer, by index
-        s32 kind = -1;    ///< the boss
-        char realm = 'A';
-        u32 held = 0;     ///< the item glowing in the hand
-        u32 flying = 0;   ///< the item let go of
-        bool gestureOwed = false; ///< the bearer has yet to make the gesture
-        f32 flightLeft = 0.0f;    ///< seconds until what flies lands
-        SoundHandle loop = kNoSound; ///< the sound of its flight
-    };
-    LegendSight m_legend;
     BossVictory m_victory;
     const TreeInfo* m_wizardTree = nullptr;
     TreeModel m_wizardModel;
@@ -592,6 +578,7 @@ private:
     LevelRef m_destination;
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
+    std::unique_ptr<LegendPresentation> m_legend; ///< destroyed before its borrowed effect store
     std::array<TreeModel, 5> m_potionModels; ///< a thrown potion, by its kind
     std::array<PowerupSelector, kPlayerCount> m_selectors;
     const Texture* m_glowSheet = nullptr; ///< the glow a worn powerup's name is written in

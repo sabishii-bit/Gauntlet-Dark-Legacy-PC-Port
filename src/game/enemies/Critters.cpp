@@ -26,6 +26,8 @@ constexpr f32 kKnockScale = 20.0f;
 constexpr f32 kGolemKnockLoss = 5.0f; ///< a golem is that much harder to throw
 constexpr f32 kDeathFade = 1.0f;      ///< seconds the fallen fades over after its death
 constexpr f32 kBlindTurnShare = 0.1f; ///< of its turn rate while blinded
+constexpr s32 kThawBlinkTicks = 180;
+constexpr s32 kThawBlinkBit = 8;
 
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
@@ -341,10 +343,19 @@ void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) 
     }
 }
 
-/** Where a named part of the body is now, in the world: the pose's node, or the feet. */
+Mat4 Critters::modelTransform(const Critter& critter) {
+    // The original places the root at floor Y + floorOffset, then transforms originOffset
+    // and the animated nodes from that root. Keep our floor probes at the ground anchor:
+    // the Dragon's root is 18.5 units above it, outside the probe's vertical search range.
+    const Vec3 root = critter.position + Vec3{0.0f, critter.stock->data.floorOffset(), 0.0f};
+    const Mat4 model =
+        glm::rotate(glm::translate(Mat4{1.0f}, root), critter.yaw, Vec3{0.0f, 1.0f, 0.0f});
+    return glm::scale(model, Vec3{critter.scale});
+}
+
+/** Where a named part is now: its animated node, or the type's body origin. */
 Vec3 Critters::partPosition(const Critter& critter, std::string_view node) {
-    const Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, critter.position), critter.yaw,
-                                   Vec3{0.0f, 1.0f, 0.0f});
+    const Mat4 model = modelTransform(critter);
     if (!node.empty()) {
         if (const auto index = critter.stock->tree->findNode(node); index.has_value()) {
             const std::span<const Mat4> matrices = critter.pose.matrices();
@@ -586,7 +597,7 @@ void Critters::hurt(s32 id, const EnemyHit& hit) {
     }
     // Where it was struck, its own mark of a hit: a blow's or a missile's.
     const s32 mark = hit.close && data.hitSoundClose() >= 0 ? data.hitSoundClose() : data.hitSoundFar();
-    cue(critter, id, mark, hit.where.value_or(critter.position + data.originOffset()));
+    cue(critter, id, mark, hit.where.value_or(partPosition(critter, {})));
     // Every hit is worth its share of the creature's value to the one who dealt it, less a
     // fiftieth a level under the level the place is meant for.
     if (hit.player >= 0) {
@@ -740,18 +751,25 @@ std::vector<s32> Critters::reachedBy(const Vec3& centre, f32 radius, f32 arc, co
     return out;
 }
 
-void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
+void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                    const Texture* frozenTexture) const {
     for (const Critter& critter : m_critters) {
         if (critter.state == State::Inactive || critter.stock == nullptr) {
             continue;
         }
-        Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, critter.position), critter.yaw,
-                                 Vec3{0.0f, 1.0f, 0.0f});
-        if (critter.scale != 1.0f) {
-            model = glm::scale(model, Vec3{critter.scale});
+        // The model is shared by this species, but object-frame selection belongs to the
+        // individual. Set it for every draw, including the first and frozen frames.
+        critter.stock->body.setFrame(critter.player.sequence(),
+                                     static_cast<s32>(critter.player.frame()));
+        critter.stock->body.resetTextures();
+        // Retail flashes the normal skin on bit 3 in the final 180 frozen ticks.
+        if (frozenTexture != nullptr && critter.frozenTicks > 0 &&
+            (critter.frozenTicks >= kThawBlinkTicks ||
+             (critter.frozenTicks & kThawBlinkBit) == 0)) {
+            critter.stock->body.setMaskedTexture(frozenTexture);
         }
-        critter.stock->body.draw(device, clip, model, lighting, critter.pose.matrices(), nullptr,
-                                 critter.alpha);
+        critter.stock->body.draw(device, clip, modelTransform(critter), lighting,
+                                 critter.pose.matrices(), nullptr, critter.alpha);
     }
 }
 
@@ -765,6 +783,7 @@ Critters::Critter* Critters::critterAt(s32 id) {
 void Critters::freeze(s32 id, s32 ticks) {
     if (Critter* critter = critterAt(id); critter != nullptr) {
         critter->frozenTicks = std::max(ticks, 0);
+        critter->roarWanted = false;
     }
 }
 

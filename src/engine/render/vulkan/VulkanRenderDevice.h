@@ -84,6 +84,7 @@ private:
     std::unique_ptr<VulkanSwapchain> m_swapchain;
     std::unique_ptr<VulkanPipeline> m_pipeline;         ///< alpha blended
     std::unique_ptr<VulkanPipeline> m_additivePipeline; ///< the same, adding onto the frame
+    std::unique_ptr<VulkanPipeline> m_opaquePipeline;   ///< no framebuffer blending
     BlendMode m_boundBlend = BlendMode::Alpha;
 
     static constexpr u32 kTexturesPerPool = 512;

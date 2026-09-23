@@ -92,6 +92,7 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_experience = type.value("expValue", 0.0f);
         m_wake = type.value("wakeThreshold", 0.0f);
         m_vertDrift = type.value("vertDrift", 0.0f);
+        m_floorOffset = type.value("floorOffset", 0.0f);
         m_originOffset = vecOf(type, "originOffset");
         m_sight = targetOf(type);
         const u32 typeFlags = type.value("typeFlags", 0U);
