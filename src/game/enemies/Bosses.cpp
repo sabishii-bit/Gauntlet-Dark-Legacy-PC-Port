@@ -224,7 +224,10 @@ f32 Bosses::radius() const {
 }
 
 f32 Bosses::height() const {
-    const CritterData* data = m_id.has_value() ? m_fighter.dataOf(*m_id) : nullptr;
+    if (!m_id.has_value()) {
+        return 0.0f;
+    }
+    const CritterData* data = m_fighter.dataOf(*m_id);
     if (data == nullptr) {
         return 0.0f;
     }

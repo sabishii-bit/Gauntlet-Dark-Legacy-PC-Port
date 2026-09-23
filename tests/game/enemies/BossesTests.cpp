@@ -39,6 +39,15 @@ TEST_CASE("the bosses are named by kind, from the dragon to the garm", "[game][e
     REQUIRE(none.fraction() == Approx(0.25f));
 }
 
+TEST_CASE("an absent boss has no height or camera offset", "[game][enemies]") {
+    Bosses bosses;
+    REQUIRE(bosses.height() == 0.0f);
+    REQUIRE(bosses.cameraOffset() == Vec3{0.0f});
+    bosses.close();
+    REQUIRE(bosses.height() == 0.0f);
+    REQUIRE(bosses.cameraOffset() == Vec3{0.0f});
+}
+
 TEST_CASE("a boss sleeps until the party comes near, then fights by its table, and its "
           "meter follows its health to the end",
           "[game][enemies][unpacked]") {
