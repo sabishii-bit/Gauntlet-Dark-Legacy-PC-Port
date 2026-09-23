@@ -33,6 +33,7 @@ void BossSequence::bind(Resources resources) {
 void BossSequence::clear() {
     m_legend.reset(); // stops its loop while audio and effects remain available
     m_victory.clear();
+    m_shardPosition = Vec3{0};
     m_resources.reset();
 }
 
@@ -128,11 +129,12 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
     }
     const char letter = r.world.ref().name.empty() ? 'G' : r.world.ref().name.front();
     m_victory.begin(level->bossType, letter, inRealm, found, false);
+    m_shardPosition = where + bosses.rewardOffset();
     if (r.world.items().loaded()) {
         EffectTrees::Setting setting;
         setting.seconds = kBossKeySeconds;
         setting.then = kBossKeyLaterTree;
-        r.effects.startSet(r.device, r.world.items(), kBossKeyTree, where, setting);
+        r.effects.startSet(r.device, r.world.items(), kBossKeyTree, m_shardPosition, setting);
         std::vector<Vec3> standing;
         for (const PlayerRuntime& runtime : players) {
             if (runtime.life == PlayerLife::Standing) {
@@ -168,6 +170,18 @@ bool BossSequence::advanceVictory(s32 ticks, f32 seconds, std::span<const Player
         }
     }
     return m_victory.state().finished();
+}
+
+BossCameraSubject BossSequence::victorySubject() const {
+    if (m_victory.state().wizardShown()) {
+        return m_victory.wizardSubject();
+    }
+    BossCameraSubject subject;
+    subject.position = m_shardPosition;
+    subject.radius = 5.0f;
+    subject.awake = true;
+    subject.focus = BossCameraSubject::Focus::Shard;
+    return subject;
 }
 
 /** As the death throws them out, the boss's coins for the party fly from where it stands

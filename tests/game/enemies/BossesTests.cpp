@@ -263,6 +263,46 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE(gone > 10);
 }
 
+TEST_CASE("sustained damage cannot lock the Lich in its roar reaction",
+          "[game][enemies][lich][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    EnemyScales scales;
+    scales.health = 100.0f;
+    bosses.open(device, root, nullptr, scales, 'G');
+    REQUIRE(bosses.spawn(41, Vec3{0}, 0, 20));
+    REQUIRE(bosses.rewardOffset() == Vec3{0, 10, 0});
+    const std::vector<EnemyView> near{playerAt({0, 0, 20})};
+    for (s32 frame = 0; frame < 300; ++frame) {
+        bosses.update(kTicks, kStep, near);
+    }
+    s32 roars = 0;
+    bool attackedAfterRoar = false;
+    std::string previous;
+    for (s32 frame = 0; frame < 600; ++frame) {
+        if (frame % 6 == 0) {
+            EnemyHit hit;
+            hit.damage = 50.0f;
+            bosses.hurt(hit);
+        }
+        bosses.update(kTicks, kStep, near);
+        const std::string move{bosses.moveName()};
+        if (move == "ROAR" && previous != move) {
+            ++roars;
+        }
+        attackedAfterRoar |=
+            roars > 0 && (move.starts_with("AXE") || move.starts_with("SPIKE") || move == "CHAIN" ||
+                          move == "STOMP" || move == "HEADTOSS" || move == "CHARGE" ||
+                          move == "SPIT" || move == "FSTEPF");
+        previous = move;
+        bosses.takeCues();
+    }
+    REQUIRE(bosses.view().alive);
+    REQUIRE(roars == 1);
+    REQUIRE(attackedAfterRoar);
+}
+
 TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its toll",
           "[game][enemies][unpacked]") {
     const std::filesystem::path root =

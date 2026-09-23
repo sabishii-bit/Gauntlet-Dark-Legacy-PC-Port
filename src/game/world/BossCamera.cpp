@@ -40,6 +40,11 @@ f32 BossCamera::wrapAngle(f32 angle) {
  * back the camera stands; the party's middle while the boss sleeps. */
 Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                            const BossCameraInfo& record) const {
+    if (boss.focus != BossCameraSubject::Focus::Combat) {
+        return boss.position + boss.attentionOffset +
+               (boss.focus == BossCameraSubject::Focus::Wizard ? record.wizardAttention
+                                                               : record.keyAttention);
+    }
     if (!boss.awake) {
         return middleOf(party);
     }
@@ -75,7 +80,8 @@ f32 BossCamera::wantedYaw(const BossCameraSubject& boss, std::span<const CameraS
     // The camera looks the opposite way to the party's side: from them toward the boss.
     // BossCameraStart recomputes this cache. The Dragon's file contains cos(45 degrees),
     // although its authored maxYaw is 18 degrees.
-    if (dot < std::cos(record.maxYaw) && record.maxYaw < kPi) {
+    if (boss.focus == BossCameraSubject::Focus::Combat && dot < std::cos(record.maxYaw) &&
+        record.maxYaw < kPi) {
         const f32 cross = facing.z * side.x - facing.x * side.z;
         const f32 swung = boss.facing + (cross >= 0.0f ? record.maxYaw : -record.maxYaw);
         return wrapAngle(swung + kPi);

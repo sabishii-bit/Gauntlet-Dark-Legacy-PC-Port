@@ -1920,6 +1920,7 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     EnemyHit slay;
     slay.damage = 100000.0f;
     slay.player = 0;
+    const Vec3 shardSpot = *scene.bosses().position() + scene.bosses().rewardOffset();
     scene.bosses().hurt(slay);
     scene.update(1.0 / 60.0, still);
     REQUIRE_FALSE(scene.bossView()->alive);
@@ -1930,6 +1931,9 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     bool key = false;
     for (usize e = 0; e < scene.effects().count(); ++e) {
         key = key || scene.effects().effect(e).name == "BOSSKEY";
+        if (scene.effects().effect(e).name == "BOSSKEY") {
+            REQUIRE(scene.effects().effect(e).position == shardSpot);
+        }
     }
     REQUIRE(key);
     REQUIRE_FALSE(scene.bossMeter().showing());
@@ -1958,6 +1962,14 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.victory().stage() == BossVictory::Stage::Defeat);
     REQUIRE(scene.victory().caption()->message == "LICH_SPEECH");
     REQUIRE(scene.bossCameraOn()); // the camera stays the fight's, on the wizard
+    // Movement follows the camera the player actually sees after the focus changes.
+    const Vec3 beforeStep = scene.actor(0)->position();
+    const f32 yaw = scene.bossCamera().yaw();
+    PlayScene::Inputs walk{};
+    walk[0].move = MoveInput{Vec2{1, 0}, 1};
+    scene.update(1.0 / 60.0, walk);
+    const Vec3 stepped = scene.actor(0)->position() - beforeStep;
+    REQUIRE(glm::dot(stepped, Vec3{std::cos(yaw), 0, -std::sin(yaw)}) > 0);
     // The coins come down within a few seconds and can be taken (those that flew off the
     // level's edge are lost); left lying, they keep the wizard waiting ten seconds after
     // his lines.

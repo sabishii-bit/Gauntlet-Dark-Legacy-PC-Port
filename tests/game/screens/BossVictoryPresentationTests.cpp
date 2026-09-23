@@ -90,7 +90,9 @@ TEST_CASE("victory wizard placement animation lighting and fade follow the visit
     const auto subject = presentation.wizardSubject();
     REQUIRE(subject.position == Vec3{2, 3, 2});
     REQUIRE(subject.facing == Approx(kPi / 4.0f));
-    REQUIRE(subject.height == 3.0f);
+    REQUIRE(subject.height == 1.0f);
+    REQUIRE(subject.attentionOffset == Vec3{0, 10, 0});
+    REQUIRE(subject.focus == BossCameraSubject::Focus::Wizard);
     REQUIRE(subject.awake);
     WorldLighting lighting;
     lighting.ambient = Vec3{0.25f, 0.5f, 0.75f};
@@ -105,8 +107,8 @@ TEST_CASE("victory wizard placement animation lighting and fade follow the visit
     REQUIRE(device.draws.size() == 1);
     const auto& fade = device.draws.front();
     REQUIRE(fade.vertices.front().position == subject.position);
-    REQUIRE(fade.vertices.front().color == lighting.shade(Vec3{0, 1, 0}).withAlpha(128));
-    REQUIRE(fade.state.blend == BlendMode::Alpha);
+    REQUIRE(fade.vertices.front().color == Color::white().withAlpha(128));
+    REQUIRE(fade.state.blend == BlendMode::Additive);
     REQUIRE_FALSE(fade.state.depthWrite);
     device.draws.clear();
     presentation.update(32, 1.0f / 30.0f, false, strings);
@@ -116,7 +118,8 @@ TEST_CASE("victory wizard placement animation lighting and fade follow the visit
     REQUIRE(opaque.vertices.front().position.x == Approx(2.0f + std::sqrt(0.5f)));
     REQUIRE(opaque.vertices.front().position.z == Approx(2.0f - std::sqrt(0.5f)));
     REQUIRE(opaque.vertices.front().color.a == 255);
-    REQUIRE(opaque.state.depthWrite);
+    REQUIRE_FALSE(opaque.state.depthWrite);
+    REQUIRE(opaque.state.blend == BlendMode::Additive);
     presentation.clear();
     archive.clear(); // no subsequent update or draw may refer into the old archive
     device.draws.clear();
@@ -124,6 +127,38 @@ TEST_CASE("victory wizard placement animation lighting and fade follow the visit
     presentation.drawWizard(device, Mat4{1.0f}, lighting);
     REQUIRE(device.draws.empty());
     REQUIRE(presentation.wizardSubject().position == Vec3{0.0f});
+}
+
+TEST_CASE("victory wizard selects and advances its animated lower body meshes",
+          "[game][screens][victory-presentation]") {
+    const auto root = wizardFixture("victory-presentation-object-frames");
+    writeTextFile(root / "lower.obj",
+                  "v 0 -2 0\nv 1 -2 0\nv 0 -1 0\nvt 0 1\nvt 1 1\nvt 0 0\nvn 0 1 0\n"
+                  "usemtl tex0\nf 1/1/1 2/2/1 3/3/1\n");
+    writeTextFile(root / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"mesh.obj","meshTriangles":1},
+        {"index":1,"name":"LOWER0","file":"lower.obj","meshTriangles":1},
+        {"index":2,"name":"LOWER1","file":"mesh.obj","meshTriangles":1}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[{"name":"WIZARD","nodes":[
+        {"name":"BODY","object":"BODY","position":[0,0,0]},
+        {"name":"OANIM","position":[0,0,0],"type":2,"objectFrames":[{"object":"LOWER0","start":0,"frames":2}]}],
+        "sequences":[{"name":"READY","frames":2,"frameRate":30,"repeats":true}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    BossVictoryPresentation presentation;
+    presentation.begin(41, 'G', 0, 0, false);
+    presentation.bindWizard(device, archive, Vec3{0}, {});
+    presentation.update(BossVictory::kWaitTicks, 0, false, {});
+    presentation.update(64, 0, false, {});
+    presentation.drawWizard(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[1].vertices[0].position.y == Approx(1));
+    device.draws.clear();
+    presentation.update(2, 1.0f / 30.0f, false, {});
+    presentation.drawWizard(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[1].vertices[0].position.y == Approx(3));
 }
 
 TEST_CASE("a static victory wizard needs no animation sequence and can be rebound",

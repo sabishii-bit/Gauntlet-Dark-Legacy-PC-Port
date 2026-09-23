@@ -46,6 +46,8 @@ public:
 
     /** Moves the character to `position`, as something solid in its way pushes it. */
     void place(const Vec3& position) { m_position = position; }
+    /** Turn in place toward an assisted attack target without moving the feet. */
+    void faceToward(const Vec3& point);
 
     /** Drops the character onto the floor under it, when there is one. */
     void settle(const WorldCollision& collision);

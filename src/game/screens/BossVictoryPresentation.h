@@ -9,6 +9,7 @@
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 #include "engine/world/AnimationPlayer.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/TreePose.h"
 
@@ -39,7 +40,8 @@ public:
                     std::span<const Vec3> party);
     void clear();
     Update update(s32 ticks, f32 seconds, bool goldLeft, const MessageTable& strings);
-    void drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                    const CameraFrame* camera = nullptr) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, const MessageTable& strings,
                      f32 width, f32 height) const;
 
@@ -52,6 +54,8 @@ private:
     TreeModel m_model;
     AnimationPlayer m_player;
     TreePose m_pose;
+    TextureAnimator m_textures;
+    f32 m_textureFrames = 0.0f;
     Vec3 m_position{0.0f};
     f32 m_yaw = 0.0f;
     bool m_sparkled = false;

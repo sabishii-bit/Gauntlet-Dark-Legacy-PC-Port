@@ -61,6 +61,7 @@ using PickupJudge = std::function<std::optional<s32>(const Pickup&)>;
 class PlacedItems {
 public:
     static constexpr f32 kFloorLift = 0.1f;
+    static constexpr f32 kThrownFloorLift = 1.0f; ///< ProcessSpewItems rests coins above the floor
     static constexpr f32 kFloorReachAbove = 0.5f; ///< a floor this far over the instance
     static constexpr f32 kFloorReachBelow = 3.0f; ///< or this far under it
     static constexpr s32 kExactPlayersMark = 10;  ///< a minimum past this means exactly

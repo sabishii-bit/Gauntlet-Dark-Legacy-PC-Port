@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <format>
 
 #include "engine/core/Types.h"
 
@@ -68,6 +69,12 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
         // narrator's lines are in either of its banks.
         if (spec->classVoice && index < players.size() && players[index].figure != nullptr) {
             audio.playFrom(players[index].figure->voice(), spec->voice);
+        } else if (id == HelpMessages::kLevelUp && players[index].figure != nullptr) {
+            const CharacterSave& save = players[index].actor.save();
+            const std::string name = std::format("S_{}{}2", colorCode(save.color),
+                                                 classCode(save.character % kStartingClassCount));
+            const SoundHandle spoken = audio.playFrom(players[index].figure->voice(), name);
+            audio.narrate(spec->voice, LevelSoundscape::Narrator::Either, spoken);
         } else {
             audio.narrate(spec->voice);
         }

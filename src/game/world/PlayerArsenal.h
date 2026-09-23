@@ -34,7 +34,7 @@ public:
     void bind(const Resources& resources);
     void clear();
     void launchWeapon(const PlayerActor& actor, PlayerFigure* body, const Vec3& direction,
-                      f32 scale, bool spreads);
+                      f32 scale, bool spreads, std::optional<Vec3> target = std::nullopt);
     void usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor);
     void burstPotion(s32 kind, const Vec3& position, f32 power);

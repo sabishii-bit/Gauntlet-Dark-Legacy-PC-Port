@@ -148,8 +148,19 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
     // What is loudest cuts in: the death, a roar after enough taken, a hit's reaction.
     const auto cutIn = [&](std::optional<usize> index) {
-        if (!index.has_value() || (current != nullptr && !critter.moveDone &&
-                                   data.moves()[*index].priority <= current->priority)) {
+        if (!index.has_value()) {
+            return false;
+        }
+        const MoveDefinition& candidate = data.moves()[*index];
+        // CritterFindMoveType uses the authored cooldown for reactions too.
+        // In particular Lich ROAR has a 20-second cooldown: damage still counts
+        // during it, but sustained fire must not continually restart the roar.
+        if (candidate.type != MoveDefinition::kDeath && candidate.cooldown > 0.0f &&
+            critter.age < critter.moveTimes[*index] + candidate.cooldown) {
+            return false;
+        }
+        if (current != nullptr && !critter.moveDone && !candidate.interrupts(*current) &&
+            candidate.type != MoveDefinition::kDeath) {
             return false;
         }
         if (startMove(critter, *index)) {

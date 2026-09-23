@@ -31,6 +31,8 @@ void BossVictoryPresentation::clear() {
     m_player.stop();
     m_tree = nullptr;
     m_pose = TreePose{};
+    m_textures = TextureAnimator{};
+    m_textureFrames = 0.0f;
     m_position = Vec3{0.0f};
     m_yaw = 0.0f;
     m_sparkled = false;
@@ -52,10 +54,20 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
         return;
     }
     m_tree = &figure;
+    // DoGoodWizard creates this tree with 0x881880: additive (0x800000)
+    // and no depth writes (0x80), including the animated lower-body meshes.
+    m_model.setAppearance(true, Color::white(), false, true);
+    m_textures.bind(items.trees.textureAnimations(), items.textures, device);
+    m_textureFrames = 0.0f;
     if (!figure.sequences.empty()) {
         m_player.start(figure.sequences[0], 0);
     }
     m_pose.rest(figure);
+    if (!figure.sequences.empty()) {
+        m_pose.evaluate(figure, 0, 0.0f);
+        m_model.setFrame(0, 0);
+        m_textures.apply(m_model, figure, 0, 0);
+    }
     // Over the middle of the boss's mark and the party, facing the party.
     Vec3 centre = boss;
     f32 count = 1.0f;
@@ -90,6 +102,12 @@ BossVictoryPresentation::Update BossVictoryPresentation::update(s32 ticks, f32 s
     if (m_tree != nullptr && m_player.playing() && m_visit.wizardShown()) {
         m_player.advance(seconds, true);
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+        m_model.setFrame(m_player.sequence(), static_cast<s32>(m_player.frame()));
+        m_textureFrames += seconds * AnimationPlayer::kDefaultRate;
+        const auto frames = static_cast<u32>(std::floor(m_textureFrames));
+        m_textureFrames -= static_cast<f32>(frames);
+        m_textures.step(frames);
+        m_textures.apply(m_model, *m_tree, m_player.sequence(), static_cast<s32>(m_player.frame()));
     }
     if (m_visit.sparkling() && !m_sparkled) {
         m_sparkled = true;
@@ -102,19 +120,23 @@ BossCameraSubject BossVictoryPresentation::wizardSubject() const {
     BossCameraSubject subject;
     subject.position = m_position;
     subject.facing = m_yaw;
-    subject.height = kWizardLift;
+    // DoGoodWizard's camera target is ten units above its parent transform.
+    subject.attentionOffset = Vec3{0, 10, 0};
+    subject.height = std::max(0.0f, m_model.maxBounds().y);
+    subject.focus = BossCameraSubject::Focus::Wizard;
     subject.awake = true;
     return subject;
 }
 
 void BossVictoryPresentation::drawWizard(RenderDevice& device, const Mat4& clip,
-                                         const WorldLighting& lighting) const {
+                                         const WorldLighting& lighting,
+                                         const CameraFrame* camera) const {
     if (m_tree == nullptr || !m_visit.wizardShown() || m_visit.wizardAlpha() <= 0.0f) {
         return;
     }
     const Mat4 model =
         glm::rotate(glm::translate(Mat4{1.0f}, m_position), m_yaw, Vec3{0.0f, 1.0f, 0.0f});
-    m_model.draw(device, clip, model, lighting, m_pose.matrices(), nullptr, m_visit.wizardAlpha());
+    m_model.draw(device, clip, model, lighting, m_pose.matrices(), camera, m_visit.wizardAlpha());
 }
 
 void BossVictoryPresentation::drawCaption(Canvas& canvas, const TextPainter& text,

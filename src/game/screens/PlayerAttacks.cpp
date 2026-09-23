@@ -8,6 +8,7 @@
 
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
+#include "game/world/TargetAssist.h"
 namespace gdl::game {
 namespace {
 constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
@@ -421,11 +422,7 @@ void PlayerAttacks::cry(usize index, std::string_view which, std::span<PlayerRun
     }
 }
 
-void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> players,
-                                      const Targets& targets) {
-    if (!m_resources.has_value()) {
-        return;
-    }
+std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targets) {
     std::vector<MissileTarget> missileTargets;
     for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
         if (targets.fixtures.barrels().standing(barrel)) {
@@ -463,6 +460,26 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                                                    cover.height});
         }
     }
+    return missileTargets;
+}
+
+std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& facing,
+                                       const Targets& targets) const {
+    if (!m_resources) {
+        return std::nullopt;
+    }
+    return TargetAssist::select(actor.followPoint(), facing, projectileTargets(targets),
+                                targets.opponents.bosses().view().alive ? TargetAssist::kBossRange
+                                                                        : TargetAssist::kRange,
+                                &m_resources->world.collision());
+}
+
+void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> players,
+                                      const Targets& targets) {
+    if (!m_resources) {
+        return;
+    }
+    const auto missileTargets = projectileTargets(targets);
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),
                                            missileTargets);
     for (const MissileImpact& impact : m_resources->arsenal.missiles().takeImpacts()) {

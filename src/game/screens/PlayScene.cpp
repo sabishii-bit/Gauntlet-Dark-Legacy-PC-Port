@@ -246,7 +246,8 @@ void PlayScene::throwWeapon(const PlayerActor& actor) {
 void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads) {
     if (index < m_players.size()) {
         m_arsenal.launchWeapon(m_players[index].actor, m_players[index].figure.get(), direction,
-                               scale, spreads);
+                               scale, spreads,
+                               m_attacks.aim(m_players[index].actor, direction, attackTargets()));
     }
 }
 
@@ -473,7 +474,6 @@ void PlayScene::updateLevels() {
         if (!change.has_value() || !change->gained()) {
             continue;
         }
-        postHelp(HelpMessages::kLevelUp, i, change->to);
         save.progress().health += static_cast<s32>(kLevelUpHealth);
         if (m_device != nullptr && m_weapons.loaded()) {
             const std::string tree = std::format("LEVELUP_{}", colorCode(save.color));
@@ -497,6 +497,9 @@ void PlayScene::updateLevels() {
                 m_players[i].figure = std::move(figure);
             }
         }
+        // The name borrows clips from the figure's voice bank. Start it after
+        // replacing a milestone costume, not from the figure being destroyed.
+        postHelp(HelpMessages::kLevelUp, i, change->to);
     }
 }
 
@@ -848,8 +851,8 @@ bool PlayScene::bossCameraOn() const {
 /** The boss as the camera sees it; once it has fallen, the wizard in its place. */
 BossCameraSubject PlayScene::bossSubject() const {
     BossCameraSubject subject;
-    if (m_bossSequence.victory().state().running() && !m_opponents.bosses().present()) {
-        return m_bossSequence.victory().wizardSubject();
+    if (m_bossSequence.victory().state().running()) {
+        return m_bossSequence.victorySubject();
     }
     if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
         subject.position = *at;
@@ -978,10 +981,15 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 m_attacks.updateTurbo(i, elapsed, duration, m_players,
                                       [this](s32 id, usize index) { postHelp(id, index); });
             },
-        .thrownImpact = [this](usize i, f32 damage) { hurt(i, damage, HurtKind::Blow, true); }};
-    const std::vector<CameraSubject> subjects =
-        PartyMotion::step(m_players, inputs, held, m_camera.yaw(), ticks, seconds,
-                          m_world->collision(), movementEvents);
+        .thrownImpact = [this](usize i, f32 damage) { hurt(i, damage, HurtKind::Blow, true); },
+        .aim =
+            [this](usize i) {
+                const PlayerActor& actor = m_players[i].actor;
+                return m_attacks.aim(actor, actor.facing(), attackTargets());
+            }};
+    const std::vector<CameraSubject> subjects = PartyMotion::step(
+        m_players, inputs, held, bossCameraOn() ? m_bossCamera.yaw() : m_camera.yaw(), ticks,
+        seconds, m_world->collision(), movementEvents);
     m_playSeconds += seconds;
     m_shake.update(ticks);
     m_hud.help().update(ticks);
@@ -1114,10 +1122,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
                                                                       : m_world->lighting(),
                               m_bossSequence.frozenTexture());
-    m_bossSequence.victory().drawWizard(device, clip, m_world->lighting());
+    const CameraFrame effectCamera = CameraFrame::of(viewCamera());
+    m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.missiles().draw(device, clip, m_world->lighting());
     m_arsenal.missiles().draw(device, clip, m_world->lighting());
-    const CameraFrame effectCamera = CameraFrame::of(viewCamera());
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
     m_arrival.drawEffects(device, clip, m_world->lighting());
     const auto width = static_cast<f32>(config.display.virtualWidth);

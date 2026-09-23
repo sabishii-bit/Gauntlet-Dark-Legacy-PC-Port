@@ -108,6 +108,7 @@ add_library(game STATIC
     world/SumnerHints.cpp
     world/PlayerMissiles.h
     world/PlayerMissiles.cpp
+    world/TargetAssist.cpp
     world/PlayerFigure.cpp
     world/PlayerArsenal.cpp
     world/LevelSoundscape.cpp

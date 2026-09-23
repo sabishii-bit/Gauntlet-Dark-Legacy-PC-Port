@@ -15,6 +15,7 @@ namespace gdl::game {
 /** The boss as the camera sees it: where it stands, which way it faces, how big it is, and
  * whether the fight is on. */
 struct BossCameraSubject {
+    enum class Focus : u8 { Combat, Shard, Wizard };
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 facing = 0.0f;
     f32 radius = 4.0f;
@@ -22,6 +23,7 @@ struct BossCameraSubject {
     bool awake = false;
     Vec3 attentionOffset{0.0f};        ///< root and vertical drift above the floor position
     std::optional<Vec3> baseAttention; ///< initialized model root, without vertical drift
+    Focus focus = Focus::Combat;
 };
 
 /**
