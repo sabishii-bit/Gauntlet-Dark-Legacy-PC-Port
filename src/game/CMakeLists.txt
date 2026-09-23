@@ -141,6 +141,7 @@ add_library(game STATIC
     screens/PartyMotion.cpp
     screens/PartyHud.cpp
     screens/LevelFixtures.cpp
+    screens/LevelOpponents.cpp
     screens/PlayerHealth.cpp
     screens/PlayScene.cpp)
 

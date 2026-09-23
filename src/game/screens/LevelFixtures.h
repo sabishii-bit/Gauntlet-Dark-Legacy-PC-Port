@@ -37,6 +37,7 @@ public:
     void bind(const Resources& resources);
     void clear();
     void setPlayerCount(s32 count);
+    std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     void strikeSafeRock(usize index, f32 power);
