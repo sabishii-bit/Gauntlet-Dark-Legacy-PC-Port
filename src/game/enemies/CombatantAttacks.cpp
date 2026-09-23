@@ -96,7 +96,8 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
     shot.damageIndex = damageIndex;
     // The launch point follows the active node, but the offset and facing use the body.
     const Mat4 body = modelTransform(critter);
-    shot.origin = partPosition(critter, move.colnode) + Vec3{body * Vec4{damage->offset, 0.0f}};
+    shot.origin = Vec3{attachmentTransform(critter, move.colnode)[3]} +
+                  Vec3{body * Vec4{damage->offset, 0.0f}};
     shot.forward = Vec3{std::sin(critter.yaw), 0.0f, std::cos(critter.yaw)};
     if (const EnemyView* target = viewOf(players, critter.target); target != nullptr) {
         shot.target = target->position + Vec3{0.0f, 0.5f * target->height, 0.0f};
@@ -111,7 +112,7 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
     m_shots.push_back(shot);
 }
 
-void Combatant::cue(const Actor& critter, s32 id, s32 index, const Vec3& position,
+void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
                     std::optional<std::string_view> node) {
     const CritterData& data = critter.stock->data;
     for (s32 at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
@@ -132,6 +133,8 @@ void Combatant::cue(const Actor& critter, s32 id, s32 index, const Vec3& positio
         out.follows = record->follows();
         out.shakes = (record->flags & CombatEffectDefinition::kShakes) != 0;
         out.arena = (record->flags & CombatEffectDefinition::kArenaCue) != 0;
+        out.untilNextMove = (record->flags & CombatEffectDefinition::kUntilNextMove) != 0;
+        critter.moveEffect |= out.untilNextMove;
         // Without a root/entity/global parenting override, a move effect uses its
         // active animated node. Hit marks have no requested attachment.
         constexpr u32 kAlternateParent = 0x2000U | 0x800U | 0x80U | 0x40U | 1U;

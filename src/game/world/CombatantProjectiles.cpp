@@ -21,6 +21,10 @@ constexpr f32 kBounceLift = 0.4f;
 constexpr f32 kBounceLifetime = 10.0f;
 constexpr f32 kBounceTimeLoss = 1.0f;
 constexpr f32 kFloorImpactLift = 2.0f;
+constexpr u32 kPassThrough = 0x100000;
+constexpr u32 kSticky = 0x4000000;
+constexpr f32 kStickyLife = 20.0f;
+constexpr f32 kProjectileHitGap = 0.25f;
 } // namespace
 
 u32 CombatantProjectiles::show(Flying& flying, s32 index, RenderDevice& device,
@@ -105,7 +109,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
     for (Flying& flying : m_flying) {
         const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
         if (!effects.playing(flying.effect)) {
-            if (!flying.morphed && damage.morph >= 0) {
+            if (!flying.stuck && !flying.morphed && damage.morph >= 0) {
                 flying.morphed = true;
                 flying.effect = show(flying, damage.morph, device, effects, sound,
                                      damage.morphLife > 0.0f ? damage.morphLife : kMorphLife);
@@ -125,6 +129,24 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             continue;
         }
         const f32 radius = std::max(0.0f, damage.radius * flying.shot.scale);
+        if (flying.stuck) {
+            constexpr f32 kContactStep = 1.0f / 30.0f;
+            flying.contactSeconds += seconds;
+            const f32 reach = std::max(0.0f, damage.maxDistance * flying.shot.scale);
+            while (flying.contactSeconds >= kContactStep) {
+                flying.contactSeconds -= kContactStep;
+                for (const EnemyView& player : players) {
+                    if (!player.hidden && CombatantProjectile::contact(
+                                              flying.position, flying.position, reach,
+                                              player.position, player.radius, player.height)) {
+                        m_hits.push_back({player.player, damage.damage * flying.shot.damageScale,
+                                          damage.flags, Vec3{0}, 0});
+                    }
+                }
+            }
+            continue;
+        }
+        std::vector<s32> contacted;
         // Small steps also cover thin walls with the world's overlap-based collider.
         const f32 spatialStep =
             std::max(radius * 0.5f, kFloorClearance) / std::max(glm::length(flying.velocity), 1.0f);
@@ -169,7 +191,8 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             const EnemyView* victim = nullptr;
             if ((damage.behaviorFlags & CombatantProjectile::kNoPlayerDamage) == 0) {
                 for (const EnemyView& player : players) {
-                    if (player.hidden) {
+                    if (player.hidden ||
+                        std::ranges::find(contacted, player.player) != contacted.end()) {
                         continue;
                     }
                     const auto at = CombatantProjectile::contact(from, to, radius, player.position,
@@ -195,12 +218,49 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     continue;
                 }
                 if (!wall) {
+                    if (flying.piercedPlayer == victim->player) {
+                        effects.stop(flying.effect);
+                        flying.effect = 0;
+                        break;
+                    }
                     const f32 speed = glm::length(flying.velocity);
-                    m_hits.push_back({victim->player, damage.damage * flying.shot.damageScale,
-                                      damage.flags,
-                                      speed > 0.0f ? flying.velocity / speed : Vec3{0.0f}});
+                    m_hits.push_back(
+                        {victim->player, damage.damage * flying.shot.damageScale, damage.flags,
+                         speed > 0.0f ? flying.velocity / speed : Vec3{0.0f},
+                         damage.damage * flying.shot.damageScale > 2 ? kProjectileHitGap : 0});
+                    if ((damage.flags & kPassThrough) != 0 && flying.piercedPlayer < 0) {
+                        // Reflecting super shots leave an impact and spend their
+                        // pass-through bit; ordinary super shots keep travelling.
+                        if ((damage.flags & kReflect) != 0 && damage.hitSound >= 0 &&
+                            damage.damage * flying.shot.damageScale > 2) {
+                            show(flying, damage.hitSound, device, effects, sound);
+                            flying.piercedPlayer = victim->player;
+                        }
+                        contacted.push_back(victim->player);
+                        flying.position = to;
+                        continue;
+                    }
                 }
                 effects.stop(flying.effect);
+                if ((damage.flags & kSticky) != 0 && damage.hitSound >= 0) {
+                    flying.stuck = true;
+                    flying.velocity = Vec3{0};
+                    flying.spin = Vec3{0};
+                    flying.rotation = Vec3{0};
+                    const auto* impact = flying.shot.data->sound(damage.hitSound);
+                    if (collision != nullptr && impact != nullptr && (impact->flags & 0x10U) != 0) {
+                        if (const auto floor = collision->floorAt(
+                                flying.position, 1 + radius * 0.5f, 5 + radius * 0.5f)) {
+                            flying.position.y = floor->y + kFloorClearance;
+                            flying.rotation.x = std::atan2(floor->normal.z, floor->normal.y);
+                            flying.rotation.z = -std::atan2(
+                                floor->normal.x, std::hypot(floor->normal.y, floor->normal.z));
+                        }
+                    }
+                    flying.effect =
+                        show(flying, damage.hitSound, device, effects, sound, kStickyLife);
+                    break;
+                }
                 show(flying, damage.hitSound, device, effects, sound);
                 flying.effect = 0;
                 break;

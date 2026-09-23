@@ -15,6 +15,66 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("Wraith entrance stops its persistent portal before the emergence effects",
+          "[game][screens][level-opponents][wraith][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/WRAITH/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELJ5/world.json");
+    test::unpackedOrSkip("ITEMS/LEVELJ5/objects.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("J5");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {0, 0, 0}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.bosses().view().kind == 40);
+    LevelOpponents::Events events;
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.blast = [](const Vec3&, f32, f32) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    u32 portal = 0;
+    bool emerged = false;
+    bool second = false;
+    for (s32 frame = 0; frame < 900 && !second; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+        for (usize i = 0; i < effects.count(); ++i) {
+            const auto& effect = effects.effect(i);
+            if (effect.name == "INITFX") {
+                REQUIRE_FALSE(emerged);
+                portal = effect.id;
+                REQUIRE(effect.secondsLeft > 1000);
+            } else if (effect.name == "GENFX") {
+                REQUIRE(portal != 0);
+                REQUIRE_FALSE(effects.playing(portal));
+                emerged = true;
+            } else if (effect.name == "GENFX2") {
+                second = true;
+            }
+        }
+        effects.update(1.0f / 30);
+    }
+    REQUIRE(portal != 0);
+    REQUIRE(emerged);
+    REQUIRE(second);
+    opponents.close();
+    REQUIRE(effects.count() == 0);
+}
+
 TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstacle",
           "[game][screens][level-opponents][yeti][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();

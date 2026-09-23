@@ -43,6 +43,13 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
     if (!sequence.has_value()) {
         return false;
     }
+    if (critter.moveEffect) {
+        CombatCue stop;
+        stop.critter = m_id;
+        stop.stopMoveEffect = true;
+        m_cues.push_back(stop);
+        critter.moveEffect = false;
+    }
     critter.move = static_cast<s32>(index);
     critter.moveDone = false;
     critter.finishedSeconds = 0.0f;

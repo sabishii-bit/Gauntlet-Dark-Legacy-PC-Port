@@ -899,6 +899,45 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
     REQUIRE_FALSE(critters.rootTransform().has_value());
 }
 
+TEST_CASE("move-lifetime effects cancel once on completion or a death interruption",
+          "[game][boss-effects][wraith]") {
+    const auto root = targetedCritter();
+    writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":3,"maxHealth":100}],
+      "moves":[{"name":"START","anim":"ROARATK","type":16,"sfx":0,"sfxFrame":0,"link":1},
+        {"name":"READY","anim":"READY","type":32},
+        {"name":"DEATH","anim":"ROARATK","type":17,"priority":4095}],
+      "sounds":[{"name":"PORTAL","flags":262145,"life":1000,"link":1},
+        {"name":"WIND","flags":1,"life":10}]})");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'J');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    fixture.update(kTicks, kStep, {});
+    const auto cues = fixture.actor.takeCues();
+    REQUIRE(cues.size() == 2);
+    REQUIRE(cues[0].untilNextMove);
+    REQUIRE_FALSE(cues[1].untilNextMove);
+    SECTION("linked completion") {}
+    SECTION("death interruption") {
+        EnemyHit hit;
+        hit.damage = 1000;
+        fixture.actor.hurt(hit);
+    }
+    usize stops = 0;
+    for (s32 frame = 0; frame < 180; ++frame) {
+        fixture.update(kTicks, kStep, {});
+        for (const auto& cue : fixture.actor.takeCues()) {
+            if (cue.stopMoveEffect) {
+                REQUIRE(cue.critter == 0);
+                REQUIRE(cue.tree.empty());
+                ++stops;
+            }
+        }
+    }
+    REQUIRE(stops == 1);
+}
+
 TEST_CASE("anchored bosses hold their ground while pursuing bosses close for melee",
           "[game][boss-movement]") {
     const auto root = targetedCritter();

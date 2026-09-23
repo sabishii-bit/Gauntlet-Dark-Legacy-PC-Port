@@ -74,10 +74,10 @@ struct AttackDefinition {
 /** An effect and a sound a critter's move, strike or hurt starts: the tree of its own
  * archive, the sound named with the level's letter, and how it is placed. */
 struct CombatEffectDefinition {
-    static constexpr u32 kFollows = 0x801;     ///< rides on the body rather than staying put
-    static constexpr u32 kShakes = 0x2;        ///< shakes the camera
-    static constexpr u32 kArenaCue = 0x20;     ///< invokes the current boss arena's callback
-    static constexpr u32 kDeathMark = 0x40000; ///< the one that marks the death
+    static constexpr u32 kFollows = 0x801;         ///< rides on the body rather than staying put
+    static constexpr u32 kShakes = 0x2;            ///< shakes the camera
+    static constexpr u32 kArenaCue = 0x20;         ///< invokes the current boss arena's callback
+    static constexpr u32 kUntilNextMove = 0x40000; ///< removed when its owner's move changes
 
     std::string tree;        ///< "ATK01FX"; "NULLFX" or empty shows nothing
     std::string soundFormat; ///< "S_GOL%cSWING"

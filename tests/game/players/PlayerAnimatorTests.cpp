@@ -33,7 +33,7 @@ TreeInfo classTree() {
         s32 rate;
         bool repeats;
     };
-    const std::array<Entry, 23> entries{
+    const std::array<Entry, 24> entries{
         {{"READY", 60, 30, true},        {"IDLE1", 150, 45, false},
          {"IDLE2", 71, 30, false},       {"IDLE2_LOOP", 69, 30, true},
          {"START", 60, 30, false},       {"WALK1", 12, 30, false},
@@ -45,7 +45,7 @@ TreeInfo classTree() {
          {"MAGICR", 15, 30, false},      {"THROWPOTIONS", 11, 30, false},
          {"THROWPOTIONR", 9, 30, false}, {"DEATH", 20, 30, false},
          {"HITREACT", 11, 30, false},    {"STUN1", 15, 30, false},
-         {"SPIKEHIT", 15, 30, false}}};
+         {"SPIKEHIT", 15, 30, false},    {"WEBREACT", 15, 30, false}}};
     u32 index = 0;
     for (const Entry& entry : entries) {
         TreeSequenceInfo sequence;
@@ -103,6 +103,25 @@ TEST_CASE("spike hits interrupt an attack with their own animation then release 
     REQUIRE_FALSE(animator.released());
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
     REQUIRE(animator.action() == Action::SpikeHit);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
+    REQUIRE_FALSE(animator.reacting());
+}
+
+TEST_CASE("sticky contacts use WEBREACT without restarting the reaction every frame",
+          "[game][players][animation][player-impact][wraith]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Webbed);
+    REQUIRE(animator.action() == Action::WebReact);
+    REQUIRE(animator.reacting());
+    REQUIRE(animator.moveScale() == 0);
+    REQUIRE_FALSE(animator.released());
+    for (s32 i = 0; i < 5; ++i) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Webbed);
+        REQUIRE(animator.action() == Action::WebReact);
+    }
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
     REQUIRE_FALSE(animator.reacting());
 }

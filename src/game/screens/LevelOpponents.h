@@ -103,6 +103,12 @@ private:
         Vec2 pitchYaw{0.0f};
     };
     std::vector<CritterEffect> m_critterEffects;
+    struct MoveEffect {
+        u32 effect = 0;
+        s32 critter = -1;
+        bool ofBoss = false;
+    };
+    std::vector<MoveEffect> m_moveEffects;
     std::vector<u32>
         m_cueEffects; ///< all emitted cues, including detached effects borrowing artwork
 

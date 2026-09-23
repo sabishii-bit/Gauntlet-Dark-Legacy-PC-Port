@@ -20,6 +20,7 @@ struct CombatantProjectileHit {
     f32 damage = 0.0f;
     u32 flags = 0;
     Vec3 direction{0.0f}; ///< direction of travel at contact
+    f32 repeatGap = 0.0f; ///< shared player effect immunity after damage above two
 };
 
 /** Moving attack effects, independent of the creature's animation after launch.
@@ -46,6 +47,9 @@ private:
         Vec3 rotation{0.0f};
         u32 effect = 0;
         bool morphed = false;
+        bool stuck = false;     ///< stationary sticky impact, no longer a flying missile
+        f32 contactSeconds = 0; ///< sticky contacts advance on the authored 30 Hz game clock
+        s32 piercedPlayer = -1; ///< reflecting shots spend their pass-through on first contact
     };
     u32 show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
              const PlaySound& sound, f32 life = 0.0f);
