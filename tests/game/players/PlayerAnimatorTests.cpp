@@ -33,15 +33,19 @@ TreeInfo classTree() {
         s32 rate;
         bool repeats;
     };
-    const std::array<Entry, 22> entries{
-        {{"READY", 60, 30, true},        {"IDLE1", 150, 45, false}, {"IDLE2", 71, 30, false},
-         {"IDLE2_LOOP", 69, 30, true},   {"START", 60, 30, false},  {"WALK1", 12, 30, false},
-         {"WALK2", 11, 30, false},       {"RUN1", 10, 30, false},   {"RUN2", 10, 30, false},
-         {"THROW1S", 10, 24, false},     {"THROW1", 3, 24, false},  {"THROW1R", 10, 24, false},
-         {"THROW2S", 10, 24, false},     {"THROW2", 2, 24, false},  {"THROW2R", 10, 24, false},
-         {"MAGICS", 11, 30, false},      {"MAGICR", 15, 30, false}, {"THROWPOTIONS", 11, 30, false},
-         {"THROWPOTIONR", 9, 30, false}, {"DEATH", 20, 30, false},  {"HITREACT", 11, 30, false},
-         {"STUN1", 15, 30, false}}};
+    const std::array<Entry, 23> entries{
+        {{"READY", 60, 30, true},        {"IDLE1", 150, 45, false},
+         {"IDLE2", 71, 30, false},       {"IDLE2_LOOP", 69, 30, true},
+         {"START", 60, 30, false},       {"WALK1", 12, 30, false},
+         {"WALK2", 11, 30, false},       {"RUN1", 10, 30, false},
+         {"RUN2", 10, 30, false},        {"THROW1S", 10, 24, false},
+         {"THROW1", 3, 24, false},       {"THROW1R", 10, 24, false},
+         {"THROW2S", 10, 24, false},     {"THROW2", 2, 24, false},
+         {"THROW2R", 10, 24, false},     {"MAGICS", 11, 30, false},
+         {"MAGICR", 15, 30, false},      {"THROWPOTIONS", 11, 30, false},
+         {"THROWPOTIONR", 9, 30, false}, {"DEATH", 20, 30, false},
+         {"HITREACT", 11, 30, false},    {"STUN1", 15, 30, false},
+         {"SPIKEHIT", 15, 30, false}}};
     u32 index = 0;
     for (const Entry& entry : entries) {
         TreeSequenceInfo sequence;
@@ -82,6 +86,25 @@ s32 stepsUntilAttack(PlayerAnimator& animator, Action wanted, s32 limit) {
         ++steps;
     }
     return steps;
+}
+
+TEST_CASE("spike hits interrupt an attack with their own animation then release control",
+          "[game][players][animation][player-impact]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+    REQUIRE(animator.action() == Action::Throw);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Spike);
+    REQUIRE(animator.action() == Action::SpikeHit);
+    REQUIRE(playingIndex(animator) == 22);
+    REQUIRE(animator.reacting());
+    REQUIRE(animator.moveScale() == 0);
+    REQUIRE_FALSE(animator.released());
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+    REQUIRE(animator.action() == Action::SpikeHit);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
+    REQUIRE_FALSE(animator.reacting());
 }
 
 TEST_CASE("a held attack winds up, lets go and recovers, over and over",

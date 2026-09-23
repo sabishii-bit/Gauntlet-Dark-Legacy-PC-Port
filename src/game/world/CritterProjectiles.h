@@ -19,6 +19,7 @@ struct CritterProjectileHit {
     s32 player = -1;
     f32 damage = 0.0f;
     u32 flags = 0;
+    Vec3 direction{0.0f}; ///< direction of travel at contact
 };
 
 /** Moving attack effects, independent of the creature's animation after launch.

@@ -507,8 +507,8 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
 void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     m_opponents.update(
         ticks, seconds, m_players, m_fixtures.obstacles(),
-        {.hurt = [this](usize i, f32 damage, HurtKind kind,
-                        bool directed) { hurt(i, damage, kind, directed); },
+        {.hurt = [this](usize i, f32 damage, HurtKind kind, bool directed,
+                        const PlayerImpact& impact) { hurt(i, damage, kind, directed, impact); },
          .blast = [this](const Vec3& position, f32 radius,
                          f32 damage) { blast(position, radius, damage); },
          .settleBlasts = [this] { settleBlasts(); },
@@ -544,7 +544,8 @@ void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
     m_opponents.strikeGenerator(id, power, byPlayer);
 }
 
-void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
+void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
+                     const PlayerImpact& impact) {
     if (index >= m_players.size()) {
         return;
     }
@@ -556,7 +557,8 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
                                 f32 left) { m_attacks.showBlock(index, taken, left, m_players); },
          .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
          .cry = [this, index](std::string_view voice) { m_attacks.cry(index, voice, m_players); },
-         .named = [this, index](std::string_view line) { sayWithName(index, line); }});
+         .named = [this, index](std::string_view line) { sayWithName(index, line); }},
+        impact);
 }
 
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says

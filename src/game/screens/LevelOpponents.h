@@ -34,7 +34,7 @@ public:
         f32 difficultyGain = 1;
     };
     struct Events {
-        std::function<void(usize, f32, HurtKind, bool)> hurt;
+        std::function<void(usize, f32, HurtKind, bool, const PlayerImpact&)> hurt;
         std::function<void(const Vec3&, f32, f32)> blast;
         std::function<void()> settleBlasts;
         std::function<void(const LegendEvent&)> legend;

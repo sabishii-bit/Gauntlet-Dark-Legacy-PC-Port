@@ -99,4 +99,28 @@ TEST_CASE("player pain accumulates while burns pierces and gas retain their own 
     REQUIRE(f.cries[4] == "POISON");
     REQUIRE(f.sounds.size() == 1);
 }
+
+TEST_CASE("surviving hits request reactions after health gates and damage scaling",
+          "[game][screens][player-health][player-impact]") {
+    Fixture f;
+    const PlayerImpact impact{PlayerImpact::kKnockDown, {0, 0, -1}};
+    f.health.hurt(f.player, 10, HurtKind::Blow, true, true, 1, f.events, impact);
+    REQUIRE(f.player.reaction == PlayerDeed::None);
+    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 0.1f, f.events, impact);
+    REQUIRE(f.player.reaction == PlayerDeed::None);
+    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, impact);
+    REQUIRE(f.player.reaction == PlayerDeed::FallBack);
+    f.hit(1);
+    REQUIRE(f.player.reaction == PlayerDeed::FallBack);
+    f.player.reaction = PlayerDeed::None;
+    f.player.actor.save().progress().health = 151;
+    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, impact);
+    REQUIRE(f.player.reaction == PlayerDeed::FallBack); // low-health cue cannot swallow it
+    f.player.reaction = PlayerDeed::None;
+    f.health.hurt(f.player, 1000, HurtKind::Blow, true, false, 1, f.events, impact);
+    REQUIRE(f.player.life == PlayerLife::Dying);
+    REQUIRE(f.player.reaction == PlayerDeed::None);
+    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, impact);
+    REQUIRE(f.player.reaction == PlayerDeed::None);
+}
 } // namespace

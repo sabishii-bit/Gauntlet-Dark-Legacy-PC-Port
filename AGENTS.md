@@ -288,13 +288,22 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   half to one and a half of it), play the rest in turn, and while out hurt
   whoever is in their box by the record's value, who is then left alone for
   (ticks left in that sequence + 1) / 30 seconds, as the original leaves
-  them. Every trap hit over a point also stuns (`PlayerDeed::Flinch` for
-  spikes and blades, which play `HITREACT`, `Reel` for the rest, `STUN1`):
+  them. Every trap hit over a point also stuns (`PlayerDeed::Spike` for
+  spikes and blades, which play `SPIKEHIT`, `Reel` for the rest, `STUN1`):
   the victim stands where it was struck until the sequence ends and is not
-  set reeling again meanwhile. The class trees' `SPIKEHIT` is named nowhere
-  in the original's code and goes unused. Open question: a victim standing
+  set reeling again meanwhile. Open question: a victim standing
   still is hit twice a cycle (once by the zero-frame ONA, once by ON), which
   the original's timings seem to do too but was not confirmed.
+* `players/PlayerImpact` carries attack flags and travel direction through
+  opponent contacts to `PlayerHealth`. Surviving hits select grounded reactions
+  after guard/scaling gates: knockback (`HITREACT`), stun (`STUN1`), spikes
+  (`SPIKEHIT`), or directional `FALLDOWN`/`FALLFRNT` followed by their get-up.
+  Heavy flags are downgraded to knockback by a raised guard or shove; damage
+  at most two removes knockback/heavy flags. Ordinary unflagged damage does
+  not force a stagger. A lesser contact cannot erase a pending fall.
+  Knockback translation, airborne/whirlwind physics and exact same-frame
+  accumulation of damage/force remain separate unfinished behavior; grounded
+  reaction selection is not a claim that these have been reconstructed.
 * Level tuning: each level record of a realm's data wad holds seventeen
   floats from +0x9C (`LevelTuningRecord`, unpacked as `tuning`): the player
   level it is meant for, experience and damage multipliers, the difficulty,

@@ -39,6 +39,8 @@ add_library(game STATIC
     players/PlayerActor.cpp
     players/PlayerAnimator.h
     players/PlayerAnimator.cpp
+    players/PlayerImpact.h
+    players/PlayerImpact.cpp
     world/LevelCatalog.h
     world/LevelCatalog.cpp
     world/ItemFigure.h

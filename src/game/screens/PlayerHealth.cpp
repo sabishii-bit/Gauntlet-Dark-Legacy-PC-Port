@@ -31,7 +31,8 @@ f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directe
 }
 
 void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed,
-                        bool inTower, f32 damageScale, const Events& events) {
+                        bool inTower, f32 damageScale, const Events& events,
+                        const PlayerImpact& impact) {
     if (runtime.life != PlayerLife::Standing || inTower || damage <= 0.0f) {
         return;
     }
@@ -61,6 +62,10 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     }
     const s32 before = save.health();
     save.progress().health = left;
+    const bool braced = runtime.figure != nullptr && (runtime.figure->animator().defending() ||
+                                                      runtime.figure->animator().shoving());
+    runtime.reaction = PlayerImpact::combine(runtime.reaction,
+                                             impact.reaction(damage, runtime.actor.yaw(), braced));
     // Crossing into low health is remarked on by name rather than cried over.
     if (before > kHealthLowMark && left <= kHealthLowMark) {
         events.named(kBadlyLine);

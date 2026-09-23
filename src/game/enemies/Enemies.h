@@ -50,7 +50,7 @@ struct EnemyBlow {
     s32 tier = 1;
     f32 damage = 0.0f;
     bool power = false;               ///< the stronger every-eighth blow
-    bool knocksDown = false;          ///< a tall one's power blow floors its victim
+    bool knocksBack = false;          ///< a tall one's power blow makes its victim recoil
     Vec3 direction{0.0f, 0.0f, 1.0f}; ///< from the enemy to the player
 };
 
@@ -122,7 +122,7 @@ public:
     static constexpr f32 kMostPush = 40.0f;
     static constexpr f32 kPushDecay = 0.8f;
     static constexpr f32 kBlowGrowth = 1.5f;      ///< a power blow's share over an ordinary one
-    static constexpr f32 kKnockDownHeight = 2.0f; ///< a body reaching above this floors
+    static constexpr f32 kKnockBackHeight = 2.0f; ///< a body reaching above this can knock back
     static constexpr f32 kSuicideDamage = 50.0f;  ///< at the level's enemy damage
     static constexpr s32 kTicksPerSecond = 60;
 

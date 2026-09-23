@@ -614,7 +614,7 @@ void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         blow.power = enemy.animator.powerStruck();
         if (blow.power) {
             blow.damage *= kBlowGrowth;
-            blow.knocksDown = enemy.reach > kKnockDownHeight;
+            blow.knocksBack = enemy.reach > kKnockBackHeight;
         }
         const Vec3 toward = victim->position - enemy.position;
         const f32 length = flatDistance(victim->position, enemy.position);
@@ -636,7 +636,7 @@ void Enemies::react(Enemy& enemy) { // NOLINT(readability-convert-member-functio
     f32 scale = 0.0f;
     if (floors) {
         enemy.animator.request(EnemyAction::HitReact2);
-        scale = enemy.reach <= kKnockDownHeight ? 40.0f : 20.0f;
+        scale = enemy.reach <= kKnockBackHeight ? 40.0f : 20.0f;
     } else if ((enemy.hurtFlags & EnemyHit::kKnockBack) != 0) {
         enemy.animator.request(EnemyAction::HitReact1);
         scale = 8.0f;
