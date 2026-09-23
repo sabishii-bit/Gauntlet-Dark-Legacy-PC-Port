@@ -55,10 +55,12 @@ public:
      * its cutouts. Cleared by resetTextures(). */
     void setMaskedTexture(const Texture* texture) { m_maskedTexture = texture; }
     /** Full ambient illumination and an optional RGB tint applied to every node. */
-    void setAppearance(bool unlit, Color tint = Color::white(), bool depthWrite = true) {
+    void setAppearance(bool unlit, Color tint = Color::white(), bool depthWrite = true,
+                       bool additive = false) {
         m_unlit = unlit;
         m_tint = tint;
         m_depthWrite = depthWrite;
+        m_additive = additive;
     }
     Vec2 textureOffset(u32 slot) const;
     /** How a slot's coordinates are stretched, one and one when they are not. */
@@ -117,6 +119,7 @@ private:
     std::vector<Node> m_nodes;
     const Texture* m_maskedTexture = nullptr;
     bool m_unlit = false;
+    bool m_additive = false;
     bool m_depthWrite = true;
     Color m_tint = Color::white();
     std::vector<std::pair<u32, const Texture*>> m_frames; ///< slot, frame shown

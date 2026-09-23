@@ -36,7 +36,8 @@ struct Fixture {
                 calls.push_back("select" + std::to_string(i));
             },
         .advanceTurbo = [](usize, s32, f32) { FAIL("No figure, no animation events"); },
-        .thrownImpact = {}};
+        .thrownImpact = {},
+        .aim = {}};
 
     Fixture() {
         CollisionTriangle first;
@@ -53,6 +54,23 @@ struct Fixture {
         return PartyMotion::step(players, inputs, held, 0, 2, 1.0f / 30.0f, collision, events);
     }
 };
+
+TEST_CASE("stationary attacks face assisted targets without overriding movement or strafe",
+          "[game][screens][party-motion][target-assist]") {
+    Fixture f;
+    f.inputs[3].attack = true;
+    f.events.aim = [](usize) { return std::optional<Vec3>{{5, 3, 10}}; };
+    f.step();
+    REQUIRE(f.players[0].actor.yaw() == Approx(std::atan2(5.0f, 10.0f)));
+    REQUIRE(f.players[0].actor.position() == Vec3{0});
+    f.inputs[3].move = MoveInput{Vec2{-1, 0}, 1};
+    f.step();
+    REQUIRE(f.players[0].actor.yaw() == Approx(-std::numbers::pi_v<f32> / 2));
+    f.inputs[3].move = {};
+    f.inputs[3].strafe = true;
+    f.step();
+    REQUIRE(f.players[0].actor.yaw() == Approx(-std::numbers::pi_v<f32> / 2));
+}
 
 TEST_CASE("party motion routes sparse input ids and snapshots after movement",
           "[game][screens][party-motion]") {

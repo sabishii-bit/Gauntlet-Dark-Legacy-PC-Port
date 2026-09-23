@@ -142,6 +142,14 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         actor.update(charging ? chargeInput(actor, move, cameraYaw) : move, cameraYaw, seconds,
                      &collision, pace, strafes);
+        // Stationary normal attacks face the assisted target. The stick, strafe,
+        // charging and authored turbo movement retain control of their heading.
+        if (!move.any() && !charging && player < inputs.size() && !inputs[player].strafe &&
+            (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack) && events.aim) {
+            if (const auto target = events.aim(i)) {
+                actor.faceToward(*target);
+            }
+        }
         if (charging) {
             events.perform(i, Action::Ram);
         } else {

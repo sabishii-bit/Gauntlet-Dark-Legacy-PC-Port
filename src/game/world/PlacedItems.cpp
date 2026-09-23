@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <unordered_map>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -345,17 +344,9 @@ void PlacedItems::applyTextureMotion() {
             if (motion.archive != item.archive) {
                 continue;
             }
-            std::unordered_map<u32, Vec2> offsets;
-            for (usize i = 0; i < motion.animator.size(); ++i) {
-                const TextureMotion shown = motion.animator.motion(i);
-                if (shown.frame != nullptr) {
-                    item.model.setTextureFrame(shown.slot, shown.frame);
-                } else {
-                    offsets[shown.slot] += shown.offset;
-                }
-            }
-            for (const auto& [slot, offset] : offsets) {
-                item.model.setTextureOffset(slot, offset);
+            if (item.figure != nullptr) {
+                motion.animator.apply(item.model, *item.figure, item.player.sequence(),
+                                      static_cast<s32>(item.player.frame()));
             }
         }
     }
@@ -379,7 +370,7 @@ void PlacedItems::fly(Item& item, f32 seconds) {
             item.thrown = false;
             return;
         }
-        const f32 rest = floor->y + kFloorLift;
+        const f32 rest = floor->y + kThrownFloorLift;
         over = item.position.y - rest;
         if (over < kRestHeight) {
             item.velocity.y = -kBounce * item.velocity.y;
@@ -411,7 +402,6 @@ void PlacedItems::update(f32 seconds) {
         for (ArchiveMotion& motion : m_motions) {
             motion.animator.step(static_cast<u32>(whole));
         }
-        applyTextureMotion();
     }
     // The figures on show play their sequence over and over.
     for (Item& item : m_items) {
@@ -425,6 +415,9 @@ void PlacedItems::update(f32 seconds) {
             fly(item, seconds);
         }
     }
+    // Sequence-keyed textures (including boss coins) follow the new pose frame,
+    // even on a render frame without a whole free-running texture tick.
+    applyTextureMotion();
     // A burst's emitters ride their nodes through the tree's sequence, then stop emitting.
     for (Effect& effect : m_effects) {
         if (!effect.emitting) {

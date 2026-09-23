@@ -154,7 +154,8 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
         const Shape& shape = node.shape;
         for (usize p = 0; p < shape.mesh->parts.size(); ++p) {
             // A fading figure blends its solid parts too, so the whole of it thins together.
-            const bool blended = shape.translucent[p] || node.additive || fading;
+            const bool additive = node.additive || m_additive;
+            const bool blended = shape.translucent[p] || additive || fading;
             if (blended != translucent) {
                 continue;
             }
@@ -168,7 +169,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                     node.chrome ? Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)} : v.uv;
                 const Vec4 placed = placement * Vec4{v.position, 1.0f};
                 // Glows add their whole texture; the original never lights them.
-                Color color = node.additive || m_unlit ? Color::white() : lighting.shade(normal);
+                Color color = additive || m_unlit ? Color::white() : lighting.shade(normal);
                 color.r = static_cast<u8>(static_cast<u32>(color.r) * m_tint.r / 255);
                 color.g = static_cast<u8>(static_cast<u32>(color.g) * m_tint.g / 255);
                 color.b = static_cast<u8>(static_cast<u32>(color.b) * m_tint.b / 255);
@@ -180,7 +181,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             m_batch.end();
             DrawState state;
             state.cullBack = true;
-            state.blend = node.additive ? BlendMode::Additive : BlendMode::Alpha;
+            state.blend = additive ? BlendMode::Additive : BlendMode::Alpha;
             if (m_maskedTexture != nullptr && !blended) {
                 state.blend = BlendMode::Opaque;
             }

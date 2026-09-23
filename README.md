@@ -31,6 +31,12 @@ These map to existing gameplay actions; they do not implement the still-missing
 two-player partner-combo system (GameCube Z) or the complete linked melee-combo
 chains. Bumpers remain free rather than being assigned a nonfunctional partner move.
 
+Target assist is built-in gameplay, not a settings toggle. Normal and strong
+throws select a live damageable target in the forward cone, reject intervening
+walls, and aim at its height. Stationary attacks face that target; movement and
+strafe retain their heading. Projectiles do not home after release, and authored
+turbo volleys retain their spread patterns.
+
 Bindings live in `data/config.json`, under `controls.play.keyboard` and
 `controls.play.pad`. Per-user overrides live at
 `%APPDATA%/GauntletDarkLegacy/settings.json` on Windows (the platform configuration

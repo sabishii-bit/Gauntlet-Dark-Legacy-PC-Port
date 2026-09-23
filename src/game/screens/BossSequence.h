@@ -51,6 +51,7 @@ public:
     bool advanceVictory(s32 ticks, f32 seconds, std::span<const PlayerRuntime> players,
                         const MessageTable& strings);
     const BossVictoryPresentation& victory() const { return m_victory; }
+    BossCameraSubject victorySubject() const;
     const Texture* frozenTexture() const {
         return m_legend != nullptr ? m_legend->frozenTexture() : nullptr;
     }
@@ -62,6 +63,7 @@ private:
     std::optional<Resources> m_resources;
     std::mt19937 m_coinRandom{0xC01Eu};
     BossVictoryPresentation m_victory;
+    Vec3 m_shardPosition{0};
     std::unique_ptr<LegendPresentation> m_legend;
 };
 } // namespace gdl::game

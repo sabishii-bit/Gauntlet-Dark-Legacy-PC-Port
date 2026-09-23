@@ -44,10 +44,13 @@ public:
     void updateStrikes(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateShields(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void cry(usize index, std::string_view which, std::span<PlayerRuntime> players);
+    std::optional<Vec3> aim(const PlayerActor& actor, const Vec3& facing,
+                            const Targets& targets) const;
     const MoveStrikes& strikes() const { return m_strikes; }
     usize shieldCount() const { return m_shields.size(); }
 
 private:
+    static std::vector<MissileTarget> projectileTargets(const Targets& targets);
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
     void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players);

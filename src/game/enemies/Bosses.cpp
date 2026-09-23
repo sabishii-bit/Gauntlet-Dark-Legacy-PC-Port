@@ -292,6 +292,11 @@ Vec3 Bosses::cameraOffset() const {
     return data != nullptr ? Vec3{0.0f, data->floorOffset() + data->vertDrift(), 0.0f} : Vec3{0.0f};
 }
 
+Vec3 Bosses::rewardOffset() const {
+    const CritterData* data = m_id.has_value() ? m_fighter.data() : nullptr;
+    return data != nullptr ? data->originOffset() + Vec3{0, data->floorOffset(), 0} : Vec3{0};
+}
+
 std::string_view Bosses::moveName() const {
     return m_id.has_value() ? m_fighter.moveName() : std::string_view{};
 }

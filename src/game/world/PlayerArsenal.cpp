@@ -1,6 +1,7 @@
 #include "game/world/PlayerArsenal.h"
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 
 #include "engine/core/Log.h"
@@ -8,6 +9,7 @@
 
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
+#include "game/world/TargetAssist.h"
 namespace gdl::game {
 namespace {
 struct PotionLook {
@@ -46,12 +48,20 @@ void PlayerArsenal::clear() {
     m_resources.reset();
 }
 void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
-                                 const Vec3& direction, f32 scale, bool spreads) {
+                                 const Vec3& direction, f32 scale, bool spreads,
+                                 std::optional<Vec3> target) {
     if (!m_resources.has_value() || body == nullptr) {
         return;
     }
     PlayerFigure& figure = *body;
-    const Vec3 facing = direction;
+    Vec3 facing = direction;
+    if (target.has_value()) {
+        const Vec3 offset = *target - actor.position();
+        const f32 distance = std::hypot(offset.x, offset.z);
+        if (distance > 1e-5f) {
+            facing = Vec3{offset.x / distance, 0, offset.z / distance};
+        }
+    }
     const CharacterSave& save = actor.save();
     const ClassStats* stats = m_resources->classes.stats(save.character);
     s32 stat = 0;
@@ -86,6 +96,14 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     const s32 shots = spreads ? PowerupEffects::of(save.progress().inventory).shots() : 1;
     for (const Vec3& way : PlayerMissiles::spread(facing, shots)) {
         launch.direction = way;
+        if (target.has_value()) {
+            const Vec3 aim =
+                TargetAssist::velocity(launch.position, *target, launch.speed, launch.spec->weight);
+            // Preserve spread instead of converging every shot on one point.
+            const f32 turn = std::atan2(way.x, way.z) - std::atan2(facing.x, facing.z);
+            launch.velocity = Vec3{aim.x * std::cos(turn) + aim.z * std::sin(turn), aim.y,
+                                   aim.z * std::cos(turn) - aim.x * std::sin(turn)};
+        }
         m_missiles.launch(launch);
     }
     if (const auto sound = figure.throwSound();

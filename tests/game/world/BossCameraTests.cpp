@@ -38,6 +38,27 @@ CameraSubject standing(const Vec3& feet) {
     return CameraSubject{feet, feet + Vec3{0.0f, 3.0f, 0.0f}};
 }
 
+TEST_CASE("victory camera uses wizard and shard offsets instead of combat attention",
+          "[game][world][camera]") {
+    auto record = cryptRecord();
+    record.flags |= 0x10;
+    record.wizardAttention = Vec3{1, 2, 3};
+    record.keyAttention = Vec3{-1, 4, -3};
+    const std::vector<CameraSubject> party{standing({0, 0, 30})};
+    BossCameraSubject subject;
+    subject.position = Vec3{0, 3, 5};
+    subject.attentionOffset = Vec3{0, 10, 0};
+    subject.focus = BossCameraSubject::Focus::Wizard;
+    subject.awake = true;
+    BossCamera camera;
+    camera.reset(subject, party, record, {});
+    REQUIRE(camera.attention() == Vec3{1, 15, 8});
+    subject.focus = BossCameraSubject::Focus::Shard;
+    subject.attentionOffset = Vec3{0};
+    camera.reset(subject, party, record, {});
+    REQUIRE(camera.attention() == Vec3{-1, 7, 2});
+}
+
 TEST_CASE("the boss camera looks at the boss from behind the party, flatter than the follow "
           "camera, and backs off to keep everyone in view",
           "[game][world][camera]") {

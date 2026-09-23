@@ -320,6 +320,15 @@ TEST_CASE("a thrown item sails out, bounces to rest on the floor and can be take
     REQUIRE(coin.value == 5000);
     REQUIRE(coin.position == Vec3{0.0f, 3.0f, 0.0f}); // not on the floor yet
     REQUIRE_FALSE(coin.takeable());
+    // These sprites spin through sequence-keyed texture frames, not geometry.
+    coin.model.draw(device, Mat4{1}, coin.transform);
+    REQUIRE_FALSE(device.draws.empty());
+    const Texture* firstTexture = device.draws.back().texture;
+    device.draws.clear();
+    items.update(5.0f / 30.0f);
+    coin.model.draw(device, Mat4{1}, coin.transform);
+    REQUIRE_FALSE(device.draws.empty());
+    REQUIRE(device.draws.back().texture != firstTexture);
     // It rises first, then falls and bounces.
     f32 highest = 0.0f;
     s32 bounces = 0;
@@ -341,7 +350,7 @@ TEST_CASE("a thrown item sails out, bounces to rest on the floor and can be take
     const auto floor = collision.floorAt(coin.position, PlacedItems::kFloorReachAbove,
                                          PlacedItems::kFloorReachBelow);
     REQUIRE(floor.has_value());
-    REQUIRE(coin.position.y == Approx(floor->y + PlacedItems::kFloorLift));
+    REQUIRE(coin.position.y == Approx(floor->y + PlacedItems::kThrownFloorLift));
     REQUIRE(Vec3{coin.transform[3]} == coin.position);
     // Five seconds on it can be taken, and once it is no gold is left.
     REQUIRE(coin.takeable());

@@ -115,6 +115,8 @@ public:
     f32 height() const;
     /** The tracking camera anchor includes the model root and vertical drift. */
     Vec3 cameraOffset() const;
+    /** BossDeath places the shard above the body root by TYPE.originOffset. */
+    Vec3 rewardOffset() const;
     const std::optional<Vec3>& cameraBase() const { return m_cameraBase; }
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */

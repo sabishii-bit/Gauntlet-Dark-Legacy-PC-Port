@@ -44,6 +44,27 @@ TEST_CASE("player arsenal throws the next potion from its owner's hand",
     REQUIRE(f.arsenal.missiles().count() == 1); // Immediate potion doesn't launch a bottle.
 }
 
+TEST_CASE("assisted weapon launch aims from its actual muzzle without retaining a lock",
+          "[game][world][player-arsenal][target-assist]") {
+    Fixture f;
+    PlayerFigure figure;
+    const Vec3 target{16, 7, 40};
+    f.arsenal.launchWeapon(f.actor, &figure, Vec3{0, 0, 1}, 1, false, target);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    const auto first = f.arsenal.missiles().missile(0);
+    const Vec3 offset = target - first.position;
+    const f32 time =
+        std::hypot(offset.x, offset.z) / std::hypot(first.velocity.x, first.velocity.z);
+    const Vec3 reached = first.position + first.velocity * time -
+                         Vec3{0, 0.5f * first.spec->weight * time * time, 0};
+    REQUIRE(glm::distance(reached, target) == Approx(0).margin(0.0001f));
+    REQUIRE(first.velocity.x > 0);
+    // No selected target preserves the ordinary forward throw (no sticky lock).
+    f.arsenal.launchWeapon(f.actor, &figure, Vec3{0, 0, 1}, 1, false);
+    REQUIRE(f.arsenal.missiles().count() == 2);
+    REQUIRE(f.arsenal.missiles().missile(1).velocity.x == 0);
+}
+
 TEST_CASE("player arsenal tolerates missing artwork and clears projectiles before rebinding",
           "[game][world][player-arsenal]") {
     Fixture f;

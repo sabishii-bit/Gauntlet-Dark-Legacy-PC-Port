@@ -40,6 +40,13 @@ f32 PlayerActor::headingOf(const MoveInput& input, f32 cameraYaw) {
     return std::atan2(input.direction.x, input.direction.y) + cameraYaw;
 }
 
+void PlayerActor::faceToward(const Vec3& point) {
+    const Vec3 offset = point - m_position;
+    if (std::hypot(offset.x, offset.z) > 1e-5f) {
+        m_yaw = std::atan2(offset.x, offset.z);
+    }
+}
+
 void PlayerActor::update(const MoveInput& input, f32 cameraYaw, f32 seconds,
                          const WorldCollision* collision, f32 moveScale, bool keepFacing) {
     m_moving = input.any() && seconds > 0.0f;
