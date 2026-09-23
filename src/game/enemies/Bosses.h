@@ -104,8 +104,9 @@ public:
     float radius() const;
     /** How high its body's centre stands, which the fight's camera keeps in view. */
     float height() const;
-    /** Camera attention uses the model root plus vertical drift, not the floor. */
+    /** The tracking camera anchor includes the model root and vertical drift. */
     Vec3 cameraOffset() const;
+    const std::optional<Vec3>& cameraBase() const { return m_cameraBase; }
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */
     static constexpr int kTargetId = 0;
@@ -116,6 +117,7 @@ private:
 
     Critters m_fighter; ///< holds the one boss
     std::optional<int> m_id;
+    std::optional<Vec3> m_cameraBase;
     int m_kind = -1;
     std::string m_name;
     bool m_awake = false;

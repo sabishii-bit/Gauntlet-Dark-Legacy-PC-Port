@@ -623,6 +623,19 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   legend curbs use the former. Web shots with behavior 0x800 wait for the
   birth-to-loop transition before moving. Re-run `gdlunpack --only CRITTER`
   for the DAMG tail (morph lifetime, two morph indices and yaw spread).
+  Targeted-area move 136 snapshots the selected player's centre at its first
+  damage frame (retail `CritterCopyAnim` 0x8003c11c). Damage type 8 places
+  its effects and impact at that saved world point, not the creature's
+  active node; crossing frame zero must still emit the effect. The Genie's
+  FOUNTAIN combines DAMG -100 and SFXX +97 with the player's centre,
+  then uses the same snapshot for the later impact. Its basic radius contact
+  is implemented; general effect-owned area lifetimes/status effects remain
+  incomplete. Do not turn this snapshot into a homing target.
+  Critter bodies apply `TextureAnimator` clock, sequence, then texture-node
+  overrides at draw time, resetting shared model state between instances.
+  The DJINN idle sequences pin the transparent GENIE_BEAM00 frame; BEAMARC
+  selects the authored 30-frame texture cycle at rate 2. Do not hide the
+  whole mesh or add a separate guessed beam lifetime.
   This is not complete boss fidelity: damaging impact areas/status effects,
   linked custom SFXX callbacks (including Dragon's fireball trail), generated
   stage hazards/minions, attached damage areas (2), grabs (7), attack patterns
@@ -773,7 +786,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   at the record's pitch (steeper nearer), backing off by
   the original's steps (10 out when something is cut off, 2 x (2.5 -
   margin) when within 2 of the edge, in by (margin - 2.5) past 4) to keep
-  the boss's base and body centre and every player in view. The original's
+  the boss's base and body centre and every player in view.
+  BCAM bit 0 selects the live root plus vertical drift; without it the
+  attention anchor is the base root saved by geometry initialization
+  (`CritterInitGeo` 0x8003e3e8), and bit 4 selects the party. The Genie's
+  flags 2 therefore exclude its ten-unit vertical drift.
+  The original's
   `BossCamBossCalc` is only partly reconstructed (bosscam.c); this is its
   described behaviour, not its arithmetic.
 * The great ones' sounds and effects: each critter's SFXX records are read

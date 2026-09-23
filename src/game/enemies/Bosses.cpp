@@ -13,6 +13,7 @@ void Bosses::open(RenderDevice& device, const std::filesystem::path& unpackedRoo
 void Bosses::close() {
     m_fighter.close();
     m_id.reset();
+    m_cameraBase.reset();
     m_kind = -1;
     m_name.clear();
     m_awake = false;
@@ -122,6 +123,8 @@ bool Bosses::spawn(int kind, const Vec3& position, float yaw, float wakeDistance
     m_awake = false;
     const CritterData* data = m_fighter.dataOf(*m_id);
     m_wakeDistance = wakeDistance;
+    m_cameraBase = m_fighter.positionOf(*m_id) +
+                   Vec3{0.0f, data != nullptr ? data->floorOffset() : 0.0f, 0.0f};
     if (m_wakeDistance <= 0.0f && data != nullptr) {
         m_wakeDistance = data->wakeThreshold();
     }

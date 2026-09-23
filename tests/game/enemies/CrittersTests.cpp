@@ -678,4 +678,141 @@ TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, los
     REQUIRE_FALSE(critters.frozen(5));
 }
 
+/** Minimal authored move table: a frame-zero target effect followed by an impact.
+ * Uses no retail files, so CI covers skipped frames, snapshots and shared draws. */
+std::filesystem::path targetedCritter() {
+    const auto root = test::scratchDirectory("targeted-critter");
+    const auto archive = root / "MONSTERS/DJINN";
+    std::filesystem::create_directories(root / "critter");
+    std::filesystem::create_directories(archive / "models");
+    std::filesystem::create_directories(archive / "textures");
+    writeTextFile(archive / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(archive / "textures/skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"DJINN",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"READY","frames":1},{"name":"ROARATK","frames":25}]}]})");
+    writeTextFile(root / "critter/DJINN.json", R"({"name":"DJINN",
+      "descriptors":[{"name":"djinn","prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"floorOffset":7,"vertDrift":10,"maxHealth":100}],
+      "moves":[{"name":"READY","anim":"READY","type":32,"priority":1},
+        {"name":"FOUNTAIN","anim":"ROARATK","type":136,"priority":10,"cooldown":10,
+         "frameStart":0,"frameEnd":0,"damage0":0,
+         "frameStart2":14,"frameEnd2":25,"damage1":1}],
+      "damages":[{"type":8,"offset":[0,-100,0],"sfxIndex":0},
+        {"type":8,"radius":3,"maxDistance":10,"damage":100,"sfxIndex":1}],
+      "sounds":[{"name":"ROARFX","flags":66,"offset":[0,97,0]},
+        {"name":"IMPACT","flags":66,"offset":[0,-2,0]}]})");
+    return root;
+}
+
+TEST_CASE("targeted rocks snapshot the player and keep the impact there after a dodge",
+          "[game][enemies][genie]") {
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, targetedCritter(), nullptr, {}, 'C');
+    const auto id = critters.spawn(kBossCritter, Vec3{50, 0, 50}, kPi / 2, "DJINN");
+    REQUIRE(id.has_value());
+    std::vector<EnemyView> party{playerAt(Vec3{5, 0, 10})};
+    std::vector<CritterCue> cues;
+    for (int i = 0; i < 5 && cues.empty(); ++i) {
+        critters.update(kTicks, kStep, party);
+        cues = critters.takeCues();
+    }
+    REQUIRE(critters.moveOf(*id) == "FOUNTAIN");
+    REQUIRE(cues.size() == 1);
+    REQUIRE(cues[0].tree == "ROARFX");
+    CAPTURE(cues[0].position.x, cues[0].position.y, cues[0].position.z);
+    REQUIRE(glm::distance(cues[0].position, Vec3{5, 0, 10}) < 0.0001f); // -100 + 97 + centre 3
+    REQUIRE_FALSE(cues[0].follows);
+    REQUIRE(critters.takeBlows().empty());
+    SECTION("a dodge leaves the impact at the old position") {
+        party[0].position = Vec3{-30, 0, 10};
+    }
+    SECTION("standing under the rock takes one impact") {}
+    int hits = 0;
+    std::vector<CritterCue> impacts;
+    for (int i = 0; i < 28; ++i) {
+        critters.update(kTicks, kStep, party);
+        for (const CritterBlow& blow : critters.takeBlows()) {
+            REQUIRE(blow.damage == 100);
+            ++hits;
+        }
+        for (const CritterCue& cue : critters.takeCues()) {
+            impacts.push_back(cue);
+        }
+    }
+    REQUIRE(impacts.size() == 1);
+    REQUIRE(impacts[0].tree == "IMPACT");
+    REQUIRE(impacts[0].position == Vec3{5, 1, 10});
+    REQUIRE(hits == (party[0].position.x == 5 ? 1 : 0));
+}
+
+TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",
+          "[game][enemies][genie][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/DJINN.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DJINN/animations.json");
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, root, nullptr, {}, 'C');
+    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
+    REQUIRE(id.has_value());
+    critters.draw(device, Mat4{1}, {});
+    auto* archive = critters.archiveOf(*id);
+    REQUIRE(archive != nullptr);
+    const Texture* blank = &archive->textures.texture(device, 17);
+    const Texture* base = &archive->textures.texture(device, 16);
+    bool sawBlank = false;
+    for (const auto& draw : device.draws) {
+        REQUIRE(draw.texture != base);
+        sawBlank = sawBlank || draw.texture == blank;
+    }
+    REQUIRE(sawBlank);
+    const auto& pixels = dynamic_cast<const test::FakeTexture&>(*blank).pixels;
+    REQUIRE_FALSE(pixels.empty());
+    for (std::size_t i = 3; i < pixels.size(); i += 4) {
+        REQUIRE(pixels[i] == 0);
+    }
+    const TreeInfo& tree = archive->trees.tree(*archive->trees.find("DJINN"));
+    TreeModel model;
+    REQUIRE(model.bind(tree, archive->models, archive->textures, device));
+    TextureAnimator textures;
+    textures.bind(archive->trees.textureAnimations(), archive->textures, device);
+    const auto sweep = tree.findSequence("BEAMARC");
+    REQUIRE(sweep.has_value());
+    model.setFrame(*sweep, 30);
+    textures.apply(model, tree, *sweep, 30);
+    device.draws.clear();
+    model.draw(device, Mat4{1}, Mat4{1});
+    const Texture* beam = &archive->textures.texture(device, 32); // source 17 + frame 30 / rate 2
+    bool sawBeam = false;
+    for (const auto& draw : device.draws) {
+        sawBeam = sawBeam || draw.texture == beam;
+    }
+    REQUIRE(sawBeam);
+    const auto& beamPixels = dynamic_cast<const test::FakeTexture&>(*beam).pixels;
+    bool visible = false;
+    for (std::size_t i = 3; i < beamPixels.size(); i += 4) {
+        visible = visible || beamPixels[i] != 0;
+    }
+    REQUIRE(visible);
+    const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 20})};
+    bool droppedRock = false;
+    for (int frame = 0; frame < 1200 && !droppedRock; ++frame) {
+        critters.update(kTicks, kStep, party);
+        for (const CritterCue& cue : critters.takeCues()) {
+            if (cue.tree == "ROARFX") {
+                REQUIRE(glm::distance(cue.position, party[0].position) < 0.0001f);
+                REQUIRE_FALSE(cue.follows);
+                droppedRock = true;
+            }
+        }
+    }
+    REQUIRE(droppedRock);
+}
+
 } // namespace

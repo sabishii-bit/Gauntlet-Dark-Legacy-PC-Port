@@ -145,4 +145,37 @@ TEST_CASE("the dragon camera uses its authored yaw limit and elevated attention 
     }
 }
 
+TEST_CASE("the genie camera selects the base anchor without vertical drift",
+          "[game][world][camera][genie]") {
+    BossCameraInfo record = cryptRecord();
+    record.flags = 2;
+    record.minDistance = 50;
+    record.maxDistance = 65;
+    record.minPitch = 0.2617994f;
+    record.maxPitch = 0.19198622f;
+    record.minAttention = Vec3{0, 13, 0};
+    record.maxAttention = Vec3{0, 9, 0};
+    BossCameraSubject boss;
+    boss.awake = true;
+    boss.position = Vec3{10, 0, 20};
+    boss.baseAttention = Vec3{10, 7, 20};
+    boss.attentionOffset = Vec3{0, 17, 0};
+    const std::vector<CameraSubject> party{standing(Vec3{10, 0, 50})};
+    BossCamera camera;
+    camera.reset(boss, party, record, CameraView{});
+    REQUIRE(camera.attention().y >= 16);
+    REQUIRE(camera.attention().y <= 20);
+    // Hold the authored offset fixed to isolate anchor selection from distance easing.
+    record.maxAttention = record.minAttention;
+    camera.reset(boss, party, record, CameraView{});
+    REQUIRE(camera.attention().y == Approx(20));
+    record.flags |= 1;
+    camera.reset(boss, party, record, CameraView{});
+    REQUIRE(camera.attention().y == Approx(30));
+    record.flags = 0x10;
+    record.minAttention = record.maxAttention = Vec3{0};
+    camera.reset(boss, party, record, CameraView{});
+    REQUIRE(camera.attention() == party[0].follow);
+}
+
 } // namespace

@@ -841,6 +841,7 @@ BossCameraSubject PlayScene::bossSubject() const {
     subject.radius = m_opponents.bosses().radius();
     subject.height = m_opponents.bosses().height();
     subject.attentionOffset = m_opponents.bosses().cameraOffset();
+    subject.baseAttention = m_opponents.bosses().cameraBase();
     subject.awake = m_opponents.bosses().view().awake;
     return subject;
 }

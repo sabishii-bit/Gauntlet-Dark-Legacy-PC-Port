@@ -237,6 +237,8 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'C');
     REQUIRE(bosses.spawn(36, Vec3{0}, 0, 100));
+    REQUIRE(bosses.cameraBase() == Vec3{0, 7, 0});
+    REQUIRE(bosses.cameraOffset() == Vec3{0, 17, 0});
     const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 40})};
     std::vector<CritterShot> shots;
     for (int frame = 0; frame < 900 && shots.empty(); ++frame) {
@@ -254,6 +256,7 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
     }
     bosses.close();
     REQUIRE(bosses.takeShots().empty());
+    REQUIRE_FALSE(bosses.cameraBase().has_value());
 }
 
 TEST_CASE("every retail boss can enter animate draw take damage and die",
