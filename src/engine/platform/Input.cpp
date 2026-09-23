@@ -36,8 +36,9 @@ constexpr std::array<std::string_view, static_cast<usize>(Key::Count)> kKeyNames
     "F6",    "F7",        "F8",          "F9",      "F10", "F11",       "F12"};
 
 constexpr std::array<std::string_view, static_cast<usize>(PadButton::Count)> kPadButtonNames{
-    "A",     "B",         "X",          "Y",      "LeftBumper", "RightBumper", "Back",    "Start",
-    "Guide", "LeftThumb", "RightThumb", "DpadUp", "DpadRight",  "DpadDown",    "DpadLeft"};
+    "A",         "B",        "X",        "Y",           "LeftBumper",  "RightBumper",
+    "Back",      "Start",    "Guide",    "LeftThumb",   "RightThumb",  "DpadUp",
+    "DpadRight", "DpadDown", "DpadLeft", "LeftTrigger", "RightTrigger"};
 
 bool sameIgnoringCase(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
@@ -97,12 +98,11 @@ bool Input::isPadConnected(s32 pad) const {
 }
 
 bool Input::isPadButtonDown(s32 pad, PadButton button) const {
-    return validPad(pad) && m_pads[pad].buttons[index(button)];
+    return isPadConnected(pad) && button < PadButton::Count && m_pads[pad].buttons[index(button)];
 }
 
 bool Input::wasPadButtonPressed(s32 pad, PadButton button) const {
-    return validPad(pad) && m_pads[pad].buttons[index(button)] &&
-           !m_previousPads[pad].buttons[index(button)];
+    return isPadButtonDown(pad, button) && !m_previousPads[pad].buttons[index(button)];
 }
 
 f32 Input::padAxis(s32 pad, PadAxis axis) const {
@@ -132,7 +132,16 @@ void Input::latchKey(Key key) {
 
 void Input::setPad(s32 pad, const PadSnapshot& snapshot) {
     if (validPad(pad)) {
-        m_pads[pad] = snapshot;
+        const PadSnapshot previous = m_pads[pad];
+        m_pads[pad] = snapshot.connected ? snapshot : PadSnapshot{};
+        for (const auto button : {PadButton::LeftTrigger, PadButton::RightTrigger}) {
+            const PadAxis axis =
+                button == PadButton::LeftTrigger ? PadAxis::LeftTrigger : PadAxis::RightTrigger;
+            const f32 threshold =
+                previous.connected && previous.buttons[index(button)] ? 0.4f : 0.5f;
+            m_pads[pad].buttons[index(button)] =
+                snapshot.connected && snapshot.axes[index(axis)] >= threshold;
+        }
     }
 }
 

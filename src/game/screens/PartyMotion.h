@@ -18,13 +18,14 @@ struct PlayInput {
     bool attack = false; ///< the attack button is held
     bool usePotion = false;
     bool throwPotion = false;
-    bool shieldPotion = false;  ///< the shield potion button is held
-    bool strafe = false;        ///< the strafe button is held
-    bool strongAttack = false;  ///< the slow attack button is held
-    bool turbo = false;         ///< the turbo button is held
-    bool chargePressed = false; ///< the charge button went down this frame
-    bool attackPressed = false; ///< the attack button went down this frame
-    SelectorInput selector;     ///< this frame's presses for the powerup selector
+    bool shieldPotion = false;       ///< the shield potion button is held
+    bool strafe = false;             ///< the strafe button is held
+    bool strongAttack = false;       ///< the slow attack button is held
+    bool turbo = false;              ///< the turbo button is held
+    bool chargePressed = false;      ///< the charge button went down this frame
+    bool attackPressed = false;      ///< the attack button went down this frame
+    bool turboAttackPressed = false; ///< resolved same-device chord, not two merged buttons
+    SelectorInput selector;          ///< this frame's presses for the powerup selector
 };
 
 /** Advances player input, locomotion and animation, independently of scene/world orchestration.

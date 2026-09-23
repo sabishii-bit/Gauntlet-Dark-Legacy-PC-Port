@@ -56,7 +56,30 @@ TEST_CASE("bad configuration is rejected", "[game][config]") {
     REQUIRE_THROWS_AS(config.mergeJson("{not json"), FormatError);
     REQUIRE_THROWS_AS(config.mergeJson(R"({"display": {"virtualWidth": 0}})"), FormatError);
     REQUIRE_THROWS_AS(config.mergeJson(R"({"timing": {"tickRate": 0}})"), FormatError);
+    REQUIRE_THROWS_AS(config.mergeJson(R"({"controls":{"play":{"magicHoldSeconds":0}}})"),
+                      FormatError);
     REQUIRE_FALSE(config.loadFile(test::scratchDirectory("config-missing") / "none.json"));
+}
+
+TEST_CASE("GameCube controls and rebindable triggers and gestures round-trip", "[game][config]") {
+    GameConfig config;
+    REQUIRE(config.play.padAttack == std::vector<PadButton>{PadButton::A});
+    REQUIRE(config.play.padStrongAttack == std::vector<PadButton>{PadButton::Y});
+    REQUIRE(config.play.padUsePotion == std::vector<PadButton>{PadButton::X});
+    REQUIRE(config.play.padTurbo == std::vector<PadButton>{PadButton::B});
+    REQUIRE(config.play.padCharge == std::vector<PadButton>{PadButton::LeftTrigger});
+    REQUIRE(config.play.padStrafe == std::vector<PadButton>{PadButton::RightTrigger});
+    config.mergeJson(R"({"controls":{"play":{
+        "pad":{"attack":["RightTrigger"],"turbo":["LeftTrigger"],"usePotion":["Y"],"charge":[]},
+        "magicHoldSeconds":0.4,"magicDoubleTapSeconds":0.3,"actionChords":false,"padMagicGestures":false
+    }}})");
+    GameConfig roundTrip;
+    roundTrip.mergeJson(config.toJson());
+    REQUIRE(roundTrip.toJson() == config.toJson());
+    REQUIRE(roundTrip.play.padAttack == std::vector<PadButton>{PadButton::RightTrigger});
+    REQUIRE(roundTrip.play.padCharge.empty());
+    REQUIRE_FALSE(roundTrip.play.actionChords);
+    REQUIRE_FALSE(roundTrip.play.padMagicGestures);
 }
 
 TEST_CASE("the configuration round-trips through JSON files", "[game][config]") {
@@ -87,8 +110,7 @@ TEST_CASE("the shipped defaults file matches the built-in defaults", "[game][con
     REQUIRE(loaded.toJson() == GameConfig{}.toJson());
 }
 
-TEST_CASE("characters are saved beside the game unless the settings say where",
-          "[game][config]") {
+TEST_CASE("characters are saved beside the game unless the settings say where", "[game][config]") {
     GameConfig config;
     const std::filesystem::path game = std::filesystem::path("somewhere") / "bin";
     REQUIRE(config.saveDirectory(game) == game / "saves");
@@ -100,10 +122,8 @@ TEST_CASE("characters are saved beside the game unless the settings say where",
     // With nothing said, that is beside the running program, never the per-user folder.
     const GameConfig plain;
     REQUIRE(plain.saveDirectory().filename() == "saves");
-    REQUIRE(plain.saveDirectory().parent_path() ==
-            GameConfig{}.saveDirectory().parent_path());
-    REQUIRE(plain.saveDirectory().parent_path() !=
-            GameConfig::userSettingsPath().parent_path());
+    REQUIRE(plain.saveDirectory().parent_path() == GameConfig{}.saveDirectory().parent_path());
+    REQUIRE(plain.saveDirectory().parent_path() != GameConfig::userSettingsPath().parent_path());
 }
 
 TEST_CASE("user settings live in a per-user folder", "[game][config]") {

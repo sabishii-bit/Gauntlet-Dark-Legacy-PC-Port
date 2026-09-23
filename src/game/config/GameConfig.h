@@ -74,7 +74,7 @@ struct MenuBindings {
     std::vector<PadButton> padLeft{PadButton::DpadLeft};
     std::vector<PadButton> padRight{PadButton::DpadRight};
     std::vector<PadButton> padSelect{PadButton::A};
-    std::vector<PadButton> padBack{PadButton::B};
+    std::vector<PadButton> padBack{PadButton::Y};
     std::vector<PadButton> padStart{PadButton::Start};
 };
 
@@ -93,20 +93,20 @@ struct PlayBindings {
     std::vector<Key> attack{Key::Space};
     std::vector<PadButton> padAttack{PadButton::A};
     std::vector<Key> usePotion{Key::E};
-    std::vector<PadButton> padUsePotion{PadButton::B};
+    std::vector<PadButton> padUsePotion{PadButton::X};
     std::vector<Key> throwPotion{Key::Q};
-    std::vector<PadButton> padThrowPotion{PadButton::X};
+    std::vector<PadButton> padThrowPotion;
     std::vector<Key> shieldPotion{Key::C}; ///< a potion spent on a ring of its magic
-    std::vector<PadButton> padShieldPotion{PadButton::RightThumb};
+    std::vector<PadButton> padShieldPotion;
     std::vector<Key> strafe{Key::LeftControl}; ///< held: steps keep the facing
-    std::vector<PadButton> padStrafe{PadButton::LeftThumb};
+    std::vector<PadButton> padStrafe{PadButton::RightTrigger};
     std::vector<Key> strongAttack{
         Key::R}; ///< the slow attack: with nothing in reach, a strong throw
-    std::vector<PadButton> padStrongAttack{PadButton::LeftBumper};
+    std::vector<PadButton> padStrongAttack{PadButton::Y};
     std::vector<Key> turbo{Key::LeftShift}; ///< held with the attack for a turbo attack
-    std::vector<PadButton> padTurbo{PadButton::RightBumper};
+    std::vector<PadButton> padTurbo{PadButton::B};
     std::vector<Key> charge{Key::F}; ///< the shove that runs the turbo meter down
-    std::vector<PadButton> padCharge{PadButton::Y};
+    std::vector<PadButton> padCharge{PadButton::LeftTrigger};
     std::vector<Key> selectorUp{Key::I};
     std::vector<Key> selectorDown{Key::K};
     std::vector<Key> selectorLeft{Key::J};
@@ -116,6 +116,11 @@ struct PlayBindings {
     std::vector<PadButton> padSelectorLeft{PadButton::DpadLeft};
     std::vector<PadButton> padSelectorRight{PadButton::DpadRight};
     f32 stickDeadZone = 0.25f; ///< stick deflection ignored as rest
+    // Input recognition windows, not claimed retail timing constants.
+    f32 magicHoldSeconds = 0.25f;
+    f32 magicDoubleTapSeconds = 0.25f;
+    bool padMagicGestures = true; ///< false: usePotion binding casts immediately
+    bool actionChords = true; ///< quick+turbo, quick+magic and turbo+magic follow action bindings
 };
 
 /**

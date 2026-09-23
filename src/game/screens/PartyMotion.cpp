@@ -16,7 +16,7 @@ PlayerDeed PartyMotion::turboDeed(const PlayerRuntime& runtime, const PlayInput&
     }
     const TurboMeter& meter = runtime.turbo;
     PlayerDeed deed = PlayerDeed::None;
-    if (in.turbo && in.attackPressed) {
+    if (in.turboAttackPressed) {
         if (meter.held() >= TurboMeter::kFullCost) {
             deed = PlayerDeed::TurboFull;
         } else if (meter.held() >= TurboMeter::kStrongCost) {
