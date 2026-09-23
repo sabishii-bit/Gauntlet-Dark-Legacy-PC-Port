@@ -225,8 +225,9 @@ TEST_CASE("Spider Queen and Wraith authored areas use supported root policies",
           "[game][boss-areas][unpacked]") {
     usize total = 0;
     for (const std::string name : {"DRIDER", "WRAITH"}) {
+        const auto path = test::unpackedOrSkip("critter/" + name + ".json");
         CritterData data;
-        REQUIRE(data.load(test::unpackedOrSkip("critter/" + name + ".json")));
+        REQUIRE(data.load(path));
         usize count = 0;
         for (const AttackDefinition& damage : data.damages()) {
             if (damage.type != AttackDefinition::kAttachedArea) {

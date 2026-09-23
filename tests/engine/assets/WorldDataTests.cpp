@@ -96,8 +96,9 @@ TEST_CASE("world data names a realm's levels and the records they point at", "[a
 
 TEST_CASE("Wraith music metadata names a two-part single-area stream",
           "[assets][world][unpacked][wraith]") {
+    const auto path = test::unpackedOrSkip("wdata/DREAM.json");
     WorldData data;
-    REQUIRE(data.load(test::unpackedOrSkip("wdata/DREAM.json")));
+    REQUIRE(data.load(path));
     const auto* level = data.level("J5");
     REQUIRE(level != nullptr);
     const auto* audio = data.audio(level->audioIndex);
