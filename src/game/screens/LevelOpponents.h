@@ -13,6 +13,7 @@
 #include "game/enemies/Generators.h"
 #include "game/screens/BossMeter.h"
 #include "game/screens/PlayerHealth.h"
+#include "game/world/CritterProjectiles.h"
 #include "game/world/EffectTrees.h"
 #include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
@@ -82,6 +83,7 @@ private:
     Bosses m_bosses;
     BossMeter m_bossMeter;
     EnemyMissiles m_enemyMissiles;
+    CritterProjectiles m_critterProjectiles;
     /** An effect riding on one of the great ones. */
     struct CritterEffect {
         std::uint32_t effect = 0;

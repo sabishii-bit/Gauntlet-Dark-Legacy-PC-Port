@@ -87,6 +87,9 @@ void Critters::close() {
     m_stocks.clear();
     m_blows.clear();
     m_losses.clear();
+    m_cues.clear();
+    m_spews.clear();
+    m_shots.clear();
     m_device = nullptr;
     m_collision = nullptr;
 }
@@ -202,6 +205,7 @@ bool Critters::startMove(Critter& critter, std::size_t index) {
     critter.moveDone = false;
     critter.struckThisMove.clear();
     critter.soundsGiven = 0;
+    critter.shotFrame = -1;
     critter.player.start(critter.stock->tree->sequences[*sequence], *sequence);
     critter.pose.evaluate(*critter.stock->tree, *sequence, 0.0f);
     return true;
@@ -273,8 +277,8 @@ bool Critters::curbedMove(const Critter& critter, const CritterMove& move) {
     }
     return std::ranges::any_of(std::array{move.damage0, move.damage1}, [&](std::int32_t index) {
         const CritterDamage* damage = critter.stock->data.damage(index);
-        return damage != nullptr && (damage->flags & CritterDamage::kCurbed) != 0 &&
-               damage->type != CritterDamage::kBurst;
+        return damage != nullptr && (damage->behaviorFlags & CritterDamage::kCurbed) != 0 &&
+               damage->type != CritterDamage::kProjectile;
     });
 }
 
@@ -504,6 +508,37 @@ void Critters::carry(Critter& critter, float seconds, const CritterMove* move,
     critter.position = to;
 }
 
+void Critters::shoot(const Critter& critter, std::int32_t id, const CritterMove& move,
+                     std::int32_t damageIndex, std::span<const EnemyView> players) {
+    const CritterDamage* damage = critter.stock->data.damage(damageIndex);
+    if (damage == nullptr) {
+        return;
+    }
+    CritterShot shot;
+    shot.data = &critter.stock->data;
+    shot.critter = id;
+    shot.damageIndex = damageIndex;
+    // The launch point follows the active node, but the offset and facing use the body.
+    const Mat4 body = modelTransform(critter);
+    shot.origin = partPosition(critter, move.colnode) + Vec3{body * Vec4{damage->offset, 0.0f}};
+    shot.forward = Vec3{std::sin(critter.yaw), 0.0f, std::cos(critter.yaw)};
+    if (const EnemyView* target = viewOf(players, critter.target); target != nullptr) {
+        shot.target = target->position + Vec3{0.0f, 0.5f * target->height, 0.0f};
+    }
+    shot.rate = m_scales.speed;
+    shot.scale = critter.scale;
+    shot.damageScale = m_scales.damage;
+    if ((damage->behaviorFlags & CritterDamage::kCurbed) != 0 && critter.curbSeconds > 0.0f) {
+        shot.birthLife = critter.curbSeconds;
+    }
+    shot.realm = m_realm;
+    m_shots.push_back(shot);
+}
+
+std::vector<CritterShot> Critters::takeShots() {
+    return std::exchange(m_shots, {});
+}
+
 void Critters::update(std::int32_t ticks, float seconds, std::span<const EnemyView> players) {
     if (ticks <= 0) {
         return;
@@ -574,7 +609,22 @@ void Critters::update(std::int32_t ticks, float seconds, std::span<const EnemyVi
                 giveOnce(2U, move->sound2, critter.position, CueParts::Both);
             }
             if (critter.state == State::Active) {
-                if (active(move->frameStart, move->frameEnd) && move->damage0 >= 0) {
+                const auto projectile = [&](std::int32_t index, bool second) {
+                    const CritterDamage* harm = data.damage(index);
+                    if (harm == nullptr || harm->type != CritterDamage::kProjectile) {
+                        return false;
+                    }
+                    const std::int32_t count =
+                        move->projectileTriggers(critter.shotFrame, frame, second);
+                    for (std::int32_t shot = 0; shot < count; ++shot) {
+                        shoot(critter, i, *move, index, players);
+                    }
+                    return true;
+                };
+                const bool shot0 = projectile(move->damage0, false);
+                const bool shot1 = projectile(move->damage1, true);
+                critter.shotFrame = frame;
+                if (!shot0 && active(move->frameStart, move->frameEnd) && move->damage0 >= 0) {
                     if (const CritterDamage* harm = data.damage(move->damage0); harm != nullptr) {
                         giveOnce(4U, harm->sound,
                                  partPosition(critter, move->colnode) + harm->offset,
@@ -582,7 +632,7 @@ void Critters::update(std::int32_t ticks, float seconds, std::span<const EnemyVi
                     }
                     strikeWith(critter, i, *move, move->damage0, players);
                 }
-                if (active(move->frameStart2, move->frameEnd2) && move->damage1 >= 0) {
+                if (!shot1 && active(move->frameStart2, move->frameEnd2) && move->damage1 >= 0) {
                     if (const CritterDamage* harm = data.damage(move->damage1); harm != nullptr) {
                         giveOnce(8U, harm->sound,
                                  partPosition(critter, move->colnode) + harm->offset,

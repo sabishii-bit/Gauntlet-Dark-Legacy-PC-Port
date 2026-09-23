@@ -102,6 +102,7 @@ add_executable(tests
     game/screens/PowerupSelectorTests.cpp
     game/screens/TransitionScreenTests.cpp
     game/world/EffectTreesTests.cpp
+    game/world/CritterProjectilesTests.cpp
     game/players/PlayerControlsTests.cpp
     game/players/PlayerActorTests.cpp
     game/players/PlayerAnimatorTests.cpp
@@ -119,6 +120,8 @@ add_executable(tests
     game/enemies/GeneratorsTests.cpp
     game/enemies/CrittersTests.cpp
     game/enemies/CritterBreathTests.cpp
+    game/enemies/CritterProjectileTests.cpp
+    formats/CritterWadTests.cpp
     game/enemies/BossCoinsTests.cpp
     game/enemies/BossesTests.cpp
     game/enemies/LegendItemsTests.cpp

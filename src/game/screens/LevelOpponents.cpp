@@ -14,6 +14,7 @@
 namespace gdl::game {
 void LevelOpponents::close() {
     if (m_resources.has_value()) {
+        m_critterProjectiles.clear(m_resources->effects);
         for (const CritterEffect& cue : m_critterEffects) {
             m_resources->effects.stop(cue.effect);
         }
@@ -219,6 +220,29 @@ void LevelOpponents::update(std::int32_t ticks, float seconds, std::span<PlayerR
     events.settleBlasts();
     m_critters.update(ticks, seconds, views);
     m_bosses.update(ticks, seconds, views);
+    const auto shotSound = [&](std::string_view name) { m_resources->audio.playNamed(name); };
+    for (const CritterShot& shot : m_bosses.takeShots()) {
+        if (ItemArchive* archive = m_bosses.archive(); archive != nullptr) {
+            m_critterProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
+                                        shotSound);
+        }
+    }
+    for (const CritterShot& shot : m_critters.takeShots()) {
+        if (ItemArchive* archive = m_critters.archiveOf(shot.critter); archive != nullptr) {
+            m_critterProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
+                                        shotSound);
+        }
+    }
+    m_critterProjectiles.update(seconds, &m_resources->world.collision(), views,
+                                m_resources->device, m_resources->effects, shotSound);
+    for (const CritterProjectileHit& hit : m_critterProjectiles.takeHits()) {
+        for (std::size_t player = 0; player < players.size(); ++player) {
+            if (players[player].actor.player() == hit.player &&
+                players[player].life == PlayerLife::Standing) {
+                events.hurt(player, hit.damage, HurtKind::Pierce, true);
+            }
+        }
+    }
     if (m_bossMeter.bound()) {
         const BossView boss = m_bosses.view();
         m_bossMeter.update(ticks, boss.health, boss.maxHealth, m_bosses.present() && boss.alive,

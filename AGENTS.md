@@ -610,6 +610,25 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the player's expanded cylinder. Repeated contacts are routed by
   `LevelOpponents` through the recipient's shared quarter-second `breathGap`,
   for `damage` at the level's enemy damage scale.
+  Projectile damage (1) is queued as `CritterShot` at the authored launch
+  frame; move 133 repeats at `framePeriod`, including triggers crossed by a
+  coarse update without re-firing a held frame. `CritterProjectile` owns the
+  retail launch math (0x8003d0a4 / 0x80030ae8): rate clamped to 0.5..1.5,
+  speed interpolation factor 0.75, fixed-horizontal-speed ballistic aiming
+  or normalized straight aiming, body/target selection, yaw spread and pitch.
+  `world/CritterProjectiles` owns moving effects, swept player contacts,
+  world collisions, impact sound/visual and birth-to-loop-to-end transitions.
+  Clear it before releasing the borrowed critter archives/tables. Launch
+  policy (`behaviorFlags`, DAMG +2) is separate from player harm flags (+4);
+  legend curbs use the former. Web shots with behavior 0x800 wait for the
+  birth-to-loop transition before moving. Re-run `gdlunpack --only CRITTER`
+  for the DAMG tail (morph lifetime, two morph indices and yaw spread).
+  This is not complete boss fidelity: damaging impact areas/status effects,
+  linked custom SFXX callbacks (including Dragon's fireball trail), generated
+  stage hazards/minions, attached damage areas (2), grabs (7), attack patterns
+  and Chimera child-head control still need reconstruction. The remaining
+  shared move-effect landing delay also needs replacing with authored SFXX
+  timing/parenting; retail 0x8003b300 starts at sfxFrame, not damage frame.
   A hit takes the armour off (a point always through for a character), a
   block lets a quarter through and shrugs off the throw, and is worth
   amount / (1 + health) of the value to the hitter (a fiftieth less a level

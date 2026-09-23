@@ -20,6 +20,7 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/enemies/CritterData.h"
+#include "game/enemies/CritterProjectile.h"
 #include "game/enemies/Enemies.h"
 
 namespace gdl::game {
@@ -123,6 +124,7 @@ public:
     std::vector<CritterCue> takeCues();
     /** What the deaths since the last call threw out. */
     std::vector<CritterSpew> takeSpews();
+    std::vector<CritterShot> takeShots();
 
     void hurt(std::int32_t id, const EnemyHit& hit);
     /** Stops it where it stands, its animation with it, for `ticks`. */
@@ -212,6 +214,7 @@ private:
         bool held = false;             ///< keeps to its stance between moves
         bool roarWanted = false;       ///< roars as soon as it may
         std::uint32_t soundsGiven = 0; ///< bits: the move's sound, its second, each strike's
+        std::int32_t shotFrame = -1;
         AnimationPlayer player;
         TreePose pose;
     };
@@ -232,6 +235,9 @@ private:
 
     std::vector<CritterCue> m_cues;
     std::vector<CritterSpew> m_spews;
+    std::vector<CritterShot> m_shots;
+    void shoot(const Critter& critter, std::int32_t id, const CritterMove& move,
+               std::int32_t damageIndex, std::span<const EnemyView> players);
     char m_levelLetter = 'G';
     void strikeWith(Critter& critter, std::int32_t id, const CritterMove& move,
                     std::int32_t damageIndex, std::span<const EnemyView> players);

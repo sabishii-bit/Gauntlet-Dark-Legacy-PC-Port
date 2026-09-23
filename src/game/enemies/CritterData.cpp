@@ -125,6 +125,7 @@ bool CritterData::load(const std::filesystem::path& file) {
             move.frameEnd = m.value("frameEnd", -1);
             move.frameStart2 = m.value("frameStart2", -1);
             move.frameEnd2 = m.value("frameEnd2", -1);
+            move.framePeriod = m.value("framePeriod", 0.0f);
             move.damage0 = m.value("damage0", -1);
             move.damage1 = m.value("damage1", -1);
             move.link = m.value("link", -1);
@@ -148,6 +149,7 @@ bool CritterData::load(const std::filesystem::path& file) {
         for (const Json& d : root.value("damages", Json::array())) {
             CritterDamage damage;
             damage.type = static_cast<std::int16_t>(d.value("type", 0));
+            damage.behaviorFlags = static_cast<std::uint16_t>(d.value("behaviorFlags", 0));
             damage.flags = d.value("flags", 0U);
             damage.radius = d.value("radius", 0.0f);
             damage.maxDistance = d.value("maxDistance", 0.0f);
@@ -158,7 +160,14 @@ bool CritterData::load(const std::filesystem::path& file) {
             damage.offset = vecOf(d, "offset");
             damage.damage = d.value("damage", 0.0f);
             damage.speed = d.value("minSpeed", 0.0f);
+            damage.maxSpeed = d.value("maxSpeed", damage.speed);
+            damage.gravity = d.value("gravity", 0.0f);
+            damage.morphLife = d.value("morphLife", 0.0f);
+            damage.yawSpread = d.value("yawSpread", 0.0f);
             damage.sound = d.value("sfxIndex", -1);
+            damage.hitSound = d.value("sfx", -1);
+            damage.morph = d.value("morph", -1);
+            damage.morphEnd = d.value("morphEnd", -1);
             m_damages.push_back(damage);
         }
         for (const Json& s : root.value("sounds", Json::array())) {
@@ -198,6 +207,28 @@ bool CritterData::load(const std::filesystem::path& file) {
         log::warn("critter data {}: {}", file.string(), e.what());
         return false;
     }
+}
+
+std::int32_t CritterMove::projectileTriggers(std::int32_t previous, std::int32_t current,
+                                             bool second) const {
+    const std::int32_t first = second ? frameStart2 : frameStart;
+    if (first < 0 || current < first || current <= previous) {
+        return 0;
+    }
+    constexpr std::int32_t kRepeatedProjectile = 133;
+    if (type != kRepeatedProjectile) {
+        return previous < first ? 1 : 0;
+    }
+    const std::int32_t last = second ? frameEnd2 : frameEnd;
+    std::int32_t count = 0;
+    for (std::int32_t frame = std::max(first, previous + 1); frame <= std::min(last, current);
+         ++frame) {
+        if (framePeriod <= 0.0f || static_cast<std::int32_t>(std::fmod(
+                                       static_cast<float>(frame - first), framePeriod)) == 0) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 std::string CritterSound::soundFor(char letter) const {
