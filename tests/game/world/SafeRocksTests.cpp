@@ -49,6 +49,8 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.rock(0).tier == 3);
     REQUIRE(rocks.obstacles().size() == 1);
     REQUIRE(rocks.rock(0).obstacle.cylinderRadius == Approx(2.3f));
+    REQUIRE(rocks.blocksBreath(Vec3{7, 32, -10}, Vec3{7, 32, 10}));
+    REQUIRE_FALSE(rocks.blocksBreath(Vec3{20, 32, -10}, Vec3{20, 32, 10}));
 
     REQUIRE_FALSE(rocks.strike(0, 50)); // 40 after armour, exactly the tier boundary
     REQUIRE(rocks.rock(0).health == 80);
@@ -63,6 +65,7 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.rock(0).tier == 0);
     REQUIRE_FALSE(rocks.standing(0));
     REQUIRE(rocks.obstacles().empty());
+    REQUIRE_FALSE(rocks.blocksBreath(Vec3{7, 32, -10}, Vec3{7, 32, 10}));
     REQUIRE_FALSE(rocks.strike(0, 1000)); // destruction effect is not replayed
     REQUIRE_FALSE(rocks.strike(99, 1000));
     rocks.activate(0);
@@ -70,12 +73,34 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.rock(0).health == 120);
     REQUIRE(rocks.rock(0).tier == 3);
     REQUIRE_FALSE(rocks.strike(0, -20));
+    REQUIRE(rocks.blocksBreath(Vec3{7, 32, -10}, Vec3{7, 32, 10}));
     REQUIRE(rocks.rock(0).health == 120);
     rocks.setPlayerCount(2);
     REQUIRE(rocks.obstacles().size() == 2);
     REQUIRE(rocks.rock(1).health == 80);
     rocks.clear();
     REQUIRE(rocks.size() == 0);
+}
+
+TEST_CASE("breath cover segments respect shape height radius rotation and endpoints",
+          "[game][world][safe-rocks][breath]") {
+    Obstacle cover;
+    cover.height = 5;
+    cover.cylinderRadius = 2;
+    REQUIRE(cover.blocksSegment(Vec3{0, 2, -8}, Vec3{0, 2, 8}, 0.5f));
+    REQUIRE_FALSE(cover.blocksSegment(Vec3{0, 6, -8}, Vec3{0, 6, 8}, 0.5f));
+    REQUIRE_FALSE(cover.blocksSegment(Vec3{0, 2, -8}, Vec3{0, 2, -4}, 0.5f));
+    REQUIRE(cover.blocksSegment(Vec3{2.4f, 2, -8}, Vec3{2.4f, 2, 8}, 0.5f));
+    REQUIRE_FALSE(cover.blocksSegment(Vec3{2.6f, 2, -8}, Vec3{2.6f, 2, 8}, 0.5f));
+    REQUIRE(cover.blocksSegment(Vec3{0, -8, 0}, Vec3{0, 8, 0}, 0.5f));
+    cover.cylinderRadius = 0;
+    cover.halfAcross = 1;
+    cover.halfAlong = 5;
+    REQUIRE_FALSE(cover.blocksSegment(Vec3{4, 2, -8}, Vec3{4, 2, 8}, 0.5f));
+    cover.yaw = 1.5707963f;
+    REQUIRE(cover.blocksSegment(Vec3{4, 2, -8}, Vec3{4, 2, 8}, 0.5f));
+    cover.solid = false;
+    REQUIRE_FALSE(cover.blocksSegment(Vec3{4, 2, -8}, Vec3{4, 2, 8}, 0.5f));
 }
 
 TEST_CASE("round arena cover pushes radially rather than using a square bounding box",

@@ -170,6 +170,10 @@ void LevelOpponents::applyCritterBlow(const CritterBlow& blow, std::span<PlayerR
             continue;
         }
         if (blow.breath) {
+            const Vec3 centre = player.actor.position() + Vec3{0, player.actor.height() * 0.5f, 0};
+            if (events.blocksBreath && events.blocksBreath(blow.origin, centre)) {
+                continue;
+            }
             player.breathGap = 0.25f;
         }
         events.hurt(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true,

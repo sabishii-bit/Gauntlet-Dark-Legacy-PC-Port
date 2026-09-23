@@ -141,4 +141,14 @@ void SafeRocks::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
     }
 }
 
+bool SafeRocks::blocksBreath(const Vec3& from, const Vec3& to) const {
+    constexpr f32 kBreathProbeRadius = 0.5f;
+    for (usize i = 0; i < m_rocks.size(); ++i) {
+        if (standing(i) && m_rocks[i]->obstacle.blocksSegment(from, to, kBreathProbeRadius)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace gdl::game

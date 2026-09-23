@@ -152,6 +152,19 @@ TEST_CASE("the dragon's item presentation ends on impact without waiting for it 
     REQUIRE(rite.darkens());
 }
 
+TEST_CASE("the genie lamp awaits impact even after the boss has finished roaring",
+          "[game][enemies][legend][genie]") {
+    LegendRite rite;
+    rite.begin(0, *legendWeaknessOf(36));
+    REQUIRE_FALSE(rite.finishOnImpact());
+    rite.update(LegendRite::kBrandishTicks, true, false);
+    rite.update(LegendRite::kLongRoarWait, true, true);
+    REQUIRE(rite.running());
+    REQUIRE(rite.finishOnImpact());
+    REQUIRE_FALSE(rite.darkens());
+    REQUIRE_FALSE(rite.finishOnImpact());
+}
+
 TEST_CASE("the rite is shown by the boss's kind: the hold, the gesture, the flight and the "
           "burst",
           "[game][enemies]") {

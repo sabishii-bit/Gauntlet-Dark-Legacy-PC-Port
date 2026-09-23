@@ -28,6 +28,7 @@ void LegendPresentation::clear() {
     m_realm = 'A';
     m_held = 0;
     m_flying = 0;
+    m_attached = 0;
     m_gestureOwed = false;
     m_released = false;
     m_flightLeft = 0.0f;
@@ -114,6 +115,7 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
                                                       const std::optional<Target>& target) {
     Update result;
     std::erase_if(m_ownedEffects, [this](u32 id) { return !m_effects.playing(id); });
+    followTarget(target);
     if (!bearer.has_value() || m_player < 0 || bearer->player != m_player) {
         return result;
     }
@@ -224,10 +226,32 @@ void LegendPresentation::land(const std::optional<Target>& target) {
     stopLoop();
     if (target.has_value() && m_assets.items.loaded() &&
         m_assets.items.trees.find(LegendShow::kBurstTree).has_value()) {
-        start(m_assets.items, LegendShow::kBurstTree,
-              target->position + Vec3{0.0f, target->height * 0.5f, 0.0f}, {});
+        EffectTrees::Setting setting;
+        if (m_kind == 36) {
+            setting.seconds = 28.0f;
+        }
+        const u32 effect =
+            start(m_assets.items, LegendShow::kBurstTree,
+                  target->position + Vec3{0.0f, target->height * 0.5f, 0.0f}, setting);
+        if (m_kind == 36) {
+            m_attached = effect;
+            followTarget(target);
+        }
     }
     playSound(LegendShow::Sound::Landed);
+}
+
+void LegendPresentation::followTarget(const std::optional<Target>& target) {
+    if (m_attached == 0) {
+        return;
+    }
+    if (!target.has_value() || !m_effects.playing(m_attached)) {
+        m_effects.stop(m_attached);
+        m_attached = 0;
+        return;
+    }
+    const Mat4 root = target->root.value_or(glm::translate(Mat4{1.0f}, target->position));
+    m_effects.placeAt(m_attached, glm::translate(root, Vec3{0.0f, 6.0f, 0.0f}));
 }
 
 void LegendPresentation::playSound(LegendShow::Sound sound, bool looping) {

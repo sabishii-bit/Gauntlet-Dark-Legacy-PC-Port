@@ -31,6 +31,8 @@ struct Obstacle {
     Vec3 pushOut(const Vec3& position, f32 radius) const;
     /** Whether a body of `radius` at `position` is against the box, within `margin`. */
     bool touchedBy(const Vec3& position, f32 radius, f32 margin = 0.3f) const;
+    /** Swept line of the given radius, respecting height, shape, yaw and solidity. */
+    bool blocksSegment(const Vec3& from, const Vec3& to, f32 radius) const;
 };
 
 /**

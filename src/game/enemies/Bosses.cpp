@@ -50,7 +50,7 @@ void Bosses::stageLegend(s32 ticks) {
         m_roarAsked &&
         (!canRoar || (moveType == CritterMove::kRoar && m_fighter.moveDoneOf(*m_id)));
     for (const LegendCue cue : m_rite.update(ticks, risen, roarDone)) {
-        if (cue == LegendCue::Thrown && m_kind != 34) {
+        if (cue == LegendCue::Thrown && m_kind != 34 && m_kind != 36) {
             strikeWithLegend();
         } else if (cue == LegendCue::WornOff) {
             m_fighter.curb(*m_id, 0.0f);

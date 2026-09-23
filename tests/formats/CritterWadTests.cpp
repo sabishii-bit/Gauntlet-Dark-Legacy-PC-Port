@@ -81,4 +81,45 @@ TEST_CASE("critter TYPE decodes home radius separately from MOVE speed",
     REQUIRE(file.types[0].turnLimit == 0.5f);
 }
 
+TEST_CASE("critter patterns preserve all eight signed slots and phase gates",
+          "[formats][boss-attacks]") {
+    constexpr usize kRecord = 16;
+    constexpr usize kDirectory = kRecord + 0x50;
+    std::vector<u8> bytes(kDirectory + 16);
+    const auto put = [&](usize at, u32 value) {
+        for (usize byte = 0; byte < 4; ++byte) {
+            bytes[at + byte] = static_cast<u8>(value >> (byte * 8));
+        }
+    };
+    put(0, kDirectory);
+    put(4, 1);
+    put(kDirectory, 0x5054524E); // PTRN
+    put(kDirectory + 4, kRecord);
+    put(kDirectory + 8, 1);
+    put(kRecord + 0x10, 0x1002);
+    put(kRecord + 0x14, std::bit_cast<u32>(3.0f));
+    put(kRecord + 0x20, 0x0025002B);
+    put(kRecord + 0x24, 0xFFFFFFFF);
+    put(kRecord + 0x28, 0xFFFFFFFF);
+    put(kRecord + 0x2C, 0xFFFF0007);
+    put(kRecord + 0x40, std::bit_cast<u32>(1.5f));
+    put(kRecord + 0x44, std::bit_cast<u32>(2.5f));
+    put(kRecord + 0x48, std::bit_cast<u32>(20.0f));
+    const auto file = parseCritterWad(bytes);
+    REQUIRE(file.patterns.size() == 1);
+    const auto& pattern = file.patterns.front();
+    REQUIRE(pattern.flags == 0x1002);
+    REQUIRE(pattern.cooldown == 3);
+    REQUIRE(pattern.moves[0] == 43);
+    REQUIRE(pattern.moves[1] == 37);
+    REQUIRE(pattern.moves[2] == -1);
+    REQUIRE(pattern.moves[6] == 7);
+    REQUIRE(pattern.moves[7] == -1);
+    REQUIRE(pattern.target.minRateScale == 1.5f);
+    REQUIRE(pattern.target.maxRateScale == 2.5f);
+    REQUIRE(pattern.target.idleGate == 20);
+    put(kDirectory + 8, 2);
+    REQUIRE_THROWS_AS(parseCritterWad(bytes), FormatError);
+}
+
 } // namespace

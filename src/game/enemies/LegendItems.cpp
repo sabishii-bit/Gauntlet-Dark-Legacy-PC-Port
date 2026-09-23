@@ -131,7 +131,7 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
         m_wearLeft = m_weakness.curbLasts;
     }
     // Then its weakness runs its course, where it has one.
-    if (m_roared && m_thrown && m_weakness.boss != 34) {
+    if (m_roared && m_thrown && m_weakness.boss != 34 && m_weakness.boss != 36) {
         if (m_weakness.curbLasts <= 0.0f) {
             m_stage = Stage::Over;
         } else {
@@ -146,7 +146,7 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
 }
 
 bool LegendRite::finishOnImpact() {
-    if (m_weakness.boss != 34 || m_stage != Stage::Struck) {
+    if ((m_weakness.boss != 34 && m_weakness.boss != 36) || m_stage != Stage::Struck) {
         return false;
     }
     m_stage = Stage::Over;

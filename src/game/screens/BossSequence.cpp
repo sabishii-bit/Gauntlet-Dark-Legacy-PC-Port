@@ -82,7 +82,7 @@ void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRu
     }
     std::optional<LegendPresentation::Target> target;
     if (const Vec3* at = bosses.position(); at != nullptr) {
-        target = LegendPresentation::Target{*at, bosses.height()};
+        target = LegendPresentation::Target{*at, bosses.height(), bosses.rootTransform()};
     }
     const LegendPresentation::Update result =
         m_legend->update(seconds, bearer(m_legend->player(), m_legend->kind(), players), target);

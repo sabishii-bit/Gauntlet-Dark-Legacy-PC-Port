@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <exception>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -30,6 +31,9 @@ CritterTarget targetOf(const Json& json) {
         target.yaw = t->value("yaw", 0.0f);
         target.minDot = t->value("minDot", -1.0f);
         target.maxVertical = t->value("maxVertical", 0.0f);
+        target.minRateScale = t->value("minRateScale", 0.0f);
+        target.maxRateScale = t->value("maxRateScale", 0.0f);
+        target.maxHomeDistance = t->value("idleGate", 0.0f);
     }
     return target;
 }
@@ -57,6 +61,23 @@ bool CritterTarget::allows(f32 distance, f32 bearing, f32 vertical) const {
     return maxVertical <= 0.0f || std::abs(vertical) <= maxVertical;
 }
 
+bool CritterTarget::allowsPhase(f32 rateScale, f32 homeDistance) const {
+    return rateScale >= minRateScale &&
+           (maxRateScale <= minRateScale || rateScale < maxRateScale) &&
+           (maxHomeDistance <= 0.0f || homeDistance <= maxHomeDistance);
+}
+
+bool CritterMove::interrupts(const CritterMove& current) const {
+    switch (current.interrupt) {
+    case 0: return false;
+    case 20: return (priority & ~0xFF) > (current.priority & ~0xFF);
+    case 60: return priority >= current.priority;
+    case 80: return priority > 0;
+    case 90: return true;
+    default: return priority > current.priority;
+    }
+}
+
 /** The body's way turned by the record's yaw, then tipped by its pitch (under nought, up),
  * at its speed. */
 Vec3 CritterDamage::spewVelocity(f32 bodyYaw) const {
@@ -70,6 +91,7 @@ f32 CritterDamage::spewHalfAngle() const {
 }
 
 bool CritterData::load(const std::filesystem::path& file) {
+    *this = CritterData{};
     try {
         const Json root = Json::parse(readTextFile(file), nullptr, true, true);
         const auto types = root.value("types", Json::array());
@@ -159,6 +181,35 @@ bool CritterData::load(const std::filesystem::path& file) {
                 move.colnode.clear();
             }
             m_moves.push_back(move);
+        }
+        const auto patterns = root.value("patterns", Json::array());
+        const s32 patternIndex = type.value("patternIndex", 0);
+        const s32 patternCount = type.value("patternCount", 0);
+        if (patternCount > 0 && patterns.empty()) {
+            log::warn("critter {}: missing attack patterns; re-run gdlunpack", m_name);
+        }
+        for (s32 i = 0; i < patternCount; ++i) {
+            const s32 at = patternIndex + i;
+            if (at < 0 || static_cast<usize>(at) >= patterns.size()) {
+                break;
+            }
+            const Json& p = patterns[static_cast<usize>(at)];
+            CritterPattern pattern;
+            pattern.flags = p.value("flags", 0U);
+            pattern.cooldown = p.value("cooldown", 0.0f);
+            pattern.target = targetOf(p);
+            constexpr usize kPatternSlots = 8;
+            for (const s32 move : p.value("moves", std::vector<s32>{})) {
+                if (move < 0 || pattern.moves.size() == kPatternSlots) {
+                    break;
+                }
+                if (static_cast<usize>(move) >= m_moves.size()) {
+                    pattern.moves.clear();
+                    break;
+                }
+                pattern.moves.push_back(move);
+            }
+            m_patterns.push_back(std::move(pattern));
         }
         for (const Json& d : root.value("damages", Json::array())) {
             CritterDamage damage;

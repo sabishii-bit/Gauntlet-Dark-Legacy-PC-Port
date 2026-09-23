@@ -821,10 +821,39 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Type 56 needs a separately supplied destination (retail critter +0x1FC);
   its waypoint producer is not reconstructed yet, so its animation plays without
   root translation, rather than incorrectly advancing toward the player. Full
-  Yeti/Chimera repositioning, child-head logic, grabs and authored pattern sequencing
+  Yeti/Chimera repositioning, child-head logic and grabs
   remain reconstruction work; this table is an inventory, not a claim all those
   attacks are complete. `[boss-movement]` tests cover bounds, facing, direction,
   legacy/new export keys, synthetic near/far encounters and the eight retail tables.
+* Boss attack selection (`enemies/CritterAttackSelection.cpp`) consumes PTRN
+  sequences and MOVE/PTRN health gates. Re-run `gdlunpack <assets> <out>
+  --only CRITTER` after updating: older manifests omitted patterns and now
+  produce a warning instead of silently losing combos. Rate scale is
+  `0.5 + 4.5 * (1 - health / (1 + maxHealth))`; projectile speed uses its
+  existing clamped interpolation. A maximum at or below the minimum means
+  no upper bound. The exported `idleGate` is a home-distance limit, not time.
+  Patterns gate entry, then continue their authored indices (including repeated
+  moves); individual move gates do not cancel a chain. Pattern and solo-use
+  timestamps are independent. Unused attacks are immediately available on a
+  fresh scenario, avoiding an artificial cooldown from resetting its clock.
+  Selection uses last-use order and MOVE interrupt policy, excluding linked-only
+  attacks and invalid required nodes. This is not yet the full mid-animation
+  interruption/child-head scheduler. `[boss-attacks]` tests exercise synthetic
+  chains, phase boundaries, target eligibility and the three retail WADs.
+  Crossed contact/death frames survive coarse updates; death holds use MOVE.hold,
+  fading over the final half second. Safe rocks explicitly occlude breath before
+  player damage/cooldown; other eligible retail obstacle families still need the
+  same selective cover query. Genie blindness begins on lamp impact, with the
+  level's LEGENDFX attached at root+(0,6,0) for 28 seconds. Its flight and attachment
+  have independent lifetimes, and losing the bearer does not detach the effect.
+  Move-effect node lookup falls back to the animation root, separately from the
+  body-origin fallback used for targeting/hit positions. Lich START's GENFX has
+  no node and zero offset: adding TYPE.originOffset incorrectly raised the gravel
+  ten units. Synthetic attachment tests and the retail START cue cover this.
+  Remaining combat work includes Lich grabs/sticky hands, whirlwind player motion,
+  effect-spawned BOSSGEN instances, effect-owned impact damage/trails, SFXX camera
+  shakes and the Lich's arena-dirt visibility cue. Playing a move or its visual
+  is not evidence these gameplay paths are implemented.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
   is the original's HUD meter (`HealthMeterStart/Update`, boss.c 471-585):

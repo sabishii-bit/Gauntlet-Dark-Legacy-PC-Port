@@ -67,7 +67,7 @@ public:
     /** Begins the rite of the boss's legend item, carried by `player`; false when the boss
      * has none, or it is already begun. */
     bool bringLegend(s32 player);
-    /** The Dragon's ice axe acts on impact, not on the request to throw it.
+    /** The Dragon's ice axe and Genie's lamp act on impact, not on the request to throw them.
      * Repeated impacts are ignored. Appearance is supplied separately at draw time. */
     void landLegend();
     const LegendRite& legend() const { return m_rite; }

@@ -18,6 +18,7 @@ constexpr usize kDamageSize = 0x50;
 constexpr usize kDescriptorSize = 0x30;
 constexpr usize kNodeSize = 0x50;
 constexpr usize kMoveSize = 0x90;
+constexpr usize kPatternSize = 0x50;
 constexpr usize kTypeSize = 0x140;
 
 s16 readS16(std::span<const u8> bytes, usize offset) {
@@ -162,6 +163,17 @@ CritterFile parseCritterWad(std::span<const u8> bytes) {
         move.hold = readWadF32(bytes, at + 0x8C, kWhat);
         return move;
     });
+    file.patterns =
+        readRecords<CritterPatternRecord>(bytes, sections, "PTRN", kPatternSize, [&](usize at) {
+            CritterPatternRecord pattern;
+            pattern.flags = readWadU16(bytes, at + 0x10, kWhat);
+            pattern.cooldown = readWadF32(bytes, at + 0x14, kWhat);
+            for (usize i = 0; i < pattern.moves.size(); ++i) {
+                pattern.moves[i] = readS16(bytes, at + 0x20 + i * 2);
+            }
+            pattern.target = readTarget(bytes, at + 0x30);
+            return pattern;
+        });
     file.types = readRecords<CritterTypeRecord>(bytes, sections, "TYPE", kTypeSize, [&](usize at) {
         CritterTypeRecord type;
         type.suffix = readWadText(bytes, at, kNameWidth, kWhat);

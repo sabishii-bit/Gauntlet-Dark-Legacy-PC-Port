@@ -44,6 +44,7 @@ public:
         std::function<void(s32, f32)> advanceVictory;
         std::function<void()> levels;
         std::function<void(s32, s32, bool)> award;
+        std::function<bool(const Vec3&, const Vec3&)> blocksBreath;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
