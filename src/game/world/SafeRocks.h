@@ -6,6 +6,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/enemies/CombatEvents.h"
 #include "game/world/ItemFigure.h"
 
 namespace gdl::game {
@@ -26,6 +27,8 @@ public:
         s32 tier = 0;
         s32 minPlayers = 0;
         bool shown = true;
+        bool dormant = false;
+        f32 activationDelay = 0;
         Vec3 position{0.0f};
         Obstacle obstacle;
         Mat4 placement{1.0f};
@@ -42,6 +45,11 @@ public:
     bool strike(usize index, f32 power);
     /** Restore all three health tiers, as the boss's reactivation does. */
     void activate(usize index);
+    /** Eruption arenas start with invisible, non-solid rocks, not visible rubble. */
+    void hideForEruptions();
+    void scheduleActivation(usize index, f32 delay);
+    void update(f32 seconds);
+    std::vector<CombatArenaTarget> eruptionTargets() const;
     std::vector<Obstacle> obstacles() const;
     /** Authored effect anchors include destroyed cover, not just standing obstacles. */
     std::vector<Mat4> attackAnchors() const;

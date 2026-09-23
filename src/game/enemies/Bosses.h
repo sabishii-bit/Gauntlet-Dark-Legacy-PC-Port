@@ -72,6 +72,13 @@ public:
 
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
     void setArenaAnchors(std::span<const Mat4> anchors) { m_fighter.setArenaAnchors(anchors); }
+    void setArenaTargets(std::span<const CombatArenaTarget> targets) {
+        m_fighter.setArenaTargets(targets);
+    }
+    bool raisesArenaRocks() const { return m_fighter.raisesArenaRocks(); }
+    std::vector<CombatArenaActivation> takeArenaActivations() {
+        return m_fighter.takeArenaActivations();
+    }
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatLoss> takeLosses();
     std::vector<CombatCue> takeCues() { return m_fighter.takeCues(); }

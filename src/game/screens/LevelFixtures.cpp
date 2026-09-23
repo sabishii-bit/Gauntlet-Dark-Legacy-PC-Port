@@ -112,6 +112,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     const std::vector<Obstacle> casks = m_barrels.obstacles();
     boxes.insert(boxes.end(), casks.begin(), casks.end());
     m_barrels.update(seconds);
+    m_safeRocks.update(seconds);
     const auto cover = m_safeRocks.obstacles();
     boxes.insert(boxes.end(), cover.begin(), cover.end());
     std::vector<ChestVisitor> visitors;

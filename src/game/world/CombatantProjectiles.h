@@ -47,10 +47,11 @@ private:
         u32 effect = 0;
         bool morphed = false;
     };
-    static u32 show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
-                    const PlaySound& sound, f32 life = 0.0f);
+    u32 show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
+             const PlaySound& sound, f32 life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
     std::vector<Flying> m_flying;
+    std::vector<u32> m_emittedEffects; ///< impacts and end effects still borrow the launch archive
     std::vector<CombatantProjectileHit> m_hits;
     std::mt19937 m_random;
 };

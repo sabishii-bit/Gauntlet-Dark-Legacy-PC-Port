@@ -90,8 +90,8 @@ void SafeRocks::setPlayerCount(s32 players) {
 }
 
 bool SafeRocks::standing(usize index) const {
-    return index < m_rocks.size() && m_rocks[index]->shown && m_rocks[index]->health > 0 &&
-           m_rocks[index]->tier > 0;
+    return index < m_rocks.size() && m_rocks[index]->shown && !m_rocks[index]->dormant &&
+           m_rocks[index]->health > 0 && m_rocks[index]->tier > 0;
 }
 
 bool SafeRocks::strike(usize index, f32 power) {
@@ -119,7 +119,49 @@ void SafeRocks::activate(usize index) {
         Rock& rock = *m_rocks[index];
         rock.health = kWhole * rock.baseHealth;
         rock.tier = kWhole;
+        rock.dormant = false;
+        rock.activationDelay = 0;
     }
+}
+
+void SafeRocks::hideForEruptions() {
+    constexpr usize kMaxAnchors = 16;
+    for (usize i = 0; i < std::min(size(), kMaxAnchors); ++i) {
+        m_rocks[i]->dormant = true;
+        m_rocks[i]->activationDelay = 0;
+    }
+}
+
+void SafeRocks::scheduleActivation(usize index, f32 delay) {
+    if (index < size() && std::isfinite(delay) && delay > 0) {
+        m_rocks[index]->activationDelay = delay;
+    }
+}
+
+void SafeRocks::update(f32 seconds) {
+    if (!std::isfinite(seconds) || seconds <= 0) {
+        return;
+    }
+    for (usize i = 0; i < size(); ++i) {
+        auto& rock = *m_rocks[i];
+        if (rock.activationDelay > 0) {
+            rock.activationDelay -= seconds;
+            if (rock.activationDelay <= 0) {
+                activate(i);
+            }
+        }
+    }
+}
+
+std::vector<CombatArenaTarget> SafeRocks::eruptionTargets() const {
+    constexpr usize kMaxAnchors = 16;
+    std::vector<CombatArenaTarget> targets;
+    for (usize i = 0; i < std::min(size(), kMaxAnchors); ++i) {
+        if (m_rocks[i]->shown && !standing(i)) {
+            targets.push_back({i, m_rocks[i]->placement});
+        }
+    }
+    return targets;
 }
 
 std::vector<Obstacle> SafeRocks::obstacles() const {
@@ -148,7 +190,7 @@ std::vector<Mat4> SafeRocks::attackAnchors() const {
 
 void SafeRocks::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
     for (const auto& rock : m_rocks) {
-        if (rock->shown) {
+        if (rock->shown && !rock->dormant) {
             rock->models[static_cast<usize>(rock->tier)].draw(device, clip, rock->placement,
                                                               lighting);
         }

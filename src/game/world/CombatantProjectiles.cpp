@@ -18,8 +18,8 @@ constexpr u32 kSpin = 8;
 constexpr u32 kCustomEffect = 0xF000000;
 } // namespace
 
-u32 CombatantProjectiles::show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
-                             const PlaySound& sound, f32 life) {
+u32 CombatantProjectiles::show(Flying& flying, s32 index, RenderDevice& device,
+                               EffectTrees& effects, const PlaySound& sound, f32 life) {
     const CombatEffectDefinition* cue = flying.shot.data->sound(index);
     if (cue == nullptr) {
         return 0;
@@ -37,7 +37,12 @@ u32 CombatantProjectiles::show(Flying& flying, s32 index, RenderDevice& device, 
     setting.scale = cue->scale * flying.shot.scale;
     setting.yaw = std::atan2(flying.velocity.x, flying.velocity.z);
     setting.seconds = life > 0.0f ? life : cue->life;
-    return effects.startSet(device, *flying.archive, cue->tree, flying.position, setting);
+    const u32 effect =
+        effects.startSet(device, *flying.archive, cue->tree, flying.position, setting);
+    if (effect != 0) {
+        m_emittedEffects.push_back(effect);
+    }
+    return effect;
 }
 
 void CombatantProjectiles::place(const Flying& flying, EffectTrees& effects) {
@@ -48,8 +53,9 @@ void CombatantProjectiles::place(const Flying& flying, EffectTrees& effects) {
     effects.placeAt(flying.effect, transform);
 }
 
-void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,
-                                EffectTrees& effects, const PlaySound& sound) {
+void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
+                                  RenderDevice& device, EffectTrees& effects,
+                                  const PlaySound& sound) {
     const AttackDefinition* damage =
         shot.data != nullptr ? shot.data->damage(shot.damageIndex) : nullptr;
     if (damage == nullptr || damage->type != AttackDefinition::kProjectile) {
@@ -86,8 +92,8 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive, 
 }
 
 void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
-                                std::span<const EnemyView> players, RenderDevice& device,
-                                EffectTrees& effects, const PlaySound& sound) {
+                                  std::span<const EnemyView> players, RenderDevice& device,
+                                  EffectTrees& effects, const PlaySound& sound) {
     if (seconds <= 0.0f) {
         return;
     }
@@ -148,7 +154,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         continue;
                     }
                     const auto at = CombatantProjectile::contact(from, to, radius, player.position,
-                                                               player.radius, player.height);
+                                                                 player.radius, player.height);
                     if (at.has_value() &&
                         (*at < nearest || (victim == nullptr && *at == nearest))) {
                         nearest = *at;
@@ -177,12 +183,14 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
         }
     }
     std::erase_if(m_flying, [](const Flying& flying) { return flying.effect == 0; });
+    std::erase_if(m_emittedEffects, [&](u32 effect) { return !effects.playing(effect); });
 }
 
 void CombatantProjectiles::clear(EffectTrees& effects) {
-    for (const Flying& flying : m_flying) {
-        effects.stop(flying.effect);
+    for (const u32 effect : m_emittedEffects) {
+        effects.stop(effect);
     }
+    m_emittedEffects.clear();
     m_flying.clear();
     m_hits.clear();
 }

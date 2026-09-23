@@ -26,7 +26,9 @@ struct Fixture {
     EffectTrees effects;
     CombatantProjectiles projectiles;
     std::vector<std::string> sounds;
-    CombatantProjectiles::PlaySound sound = [&](std::string_view name) { sounds.emplace_back(name); };
+    CombatantProjectiles::PlaySound sound = [&](std::string_view name) {
+        sounds.emplace_back(name);
+    };
     Fixture() {
         const auto root = test::scratchDirectory("critter-projectiles");
         writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
@@ -77,7 +79,8 @@ TEST_CASE("critter projectiles move birth effects morph expire and clear their b
     REQUIRE(f.projectiles.count() == 0);
     REQUIRE(f.effects.effect(0).name == "HIT");
     REQUIRE(f.sounds.back() == "S_CHIT");
-    f.effects.clear();
+    f.projectiles.clear(f.effects);
+    REQUIRE(f.effects.count() == 0); // the detached morph-end still borrows the archive
     f.launch();
     f.projectiles.clear(f.effects);
     REQUIRE(f.projectiles.count() == 0);
@@ -104,6 +107,8 @@ TEST_CASE("critter projectiles choose the nearest visible victim regardless of p
     REQUIRE(f.effects.effect(0).position.z == Approx(1.5f));
     f.step(0.1f, players);
     REQUIRE(f.projectiles.takeHits().empty());
+    f.projectiles.clear(f.effects);
+    REQUIRE(f.effects.count() == 0); // an impact is owned after its projectile is removed
 }
 
 TEST_CASE("critter projectiles cannot damage players through a world wall",

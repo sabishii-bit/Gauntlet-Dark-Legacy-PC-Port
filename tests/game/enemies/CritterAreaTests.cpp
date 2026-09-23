@@ -124,7 +124,8 @@ TEST_CASE("expanding damage starts near the source then fades before the effect 
     REQUIRE(area.currentDamage() == 0);
 }
 
-std::filesystem::path areaArchive(bool expanding = false, bool arena = false) {
+std::filesystem::path areaArchive(bool expanding = false, bool arena = false,
+                                  bool eruption = false) {
     const auto root = test::scratchDirectory("boss-area-attacks");
     const auto archive = root / "MONSTERS/DJINN";
     std::filesystem::create_directories(root / "critter");
@@ -143,6 +144,9 @@ std::filesystem::path areaArchive(bool expanding = false, bool arena = false) {
     std::string type = expanding ? "3" : "2";
     if (arena) {
         type = "5";
+    }
+    if (eruption) {
+        type = "6";
     }
     const std::string flags = expanding ? "0" : "1";
     writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
@@ -404,5 +408,97 @@ TEST_CASE("Plague Fiend SPOUT emits its visual and damage at authored stage anch
     INFO("Last move: " << actor.moveName());
     REQUIRE(visuals == 2);
     REQUIRE(stageHit);
+}
+TEST_CASE("single arena eruptions select the nearest available anchor once per window",
+          "[game][boss-areas][yeti]") {
+    const auto root = areaArchive(true, false, true);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'I');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    auto& actor = fixture.actor;
+    REQUIRE(actor.raisesArenaRocks());
+    const std::array<CombatArenaTarget, 2> targets{{{9, glm::translate(Mat4{1}, Vec3{20, 0, 35})},
+                                                    {4, glm::translate(Mat4{1}, Vec3{0, 0, 35})}}};
+    actor.setArenaTargets(targets);
+    std::array<EnemyView, 1> players{playerAt({0, 0, 36})};
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players); // crosses the one-frame attack window
+    const auto activations = actor.takeArenaActivations();
+    REQUIRE(activations.size() == 1);
+    REQUIRE(activations[0].index == 4);
+    REQUIRE(activations[0].delay == Approx(0.5f - 1.0f / 30.0f));
+    const auto blows = actor.takeBlows();
+    REQUIRE(blows.size() == 1);
+    REQUIRE(blows[0].area);
+    REQUIRE(blows[0].origin == Vec3{0, 5, 35});
+    REQUIRE(blows[0].damage == Approx(40.2f));
+    actor.freeze(120);
+    actor.setArenaTargets({});
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeArenaActivations().empty());
+    REQUIRE(actor.takeBlows().size() == 1); // the already-created effect retains its anchor
+    players[0].position = {0, 0, 1};
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeBlows().empty()); // it does not home on a moving victim
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeArenaActivations().empty()); // no anchors: no invented rock or body hit
+    REQUIRE(actor.takeBlows().empty());
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    const std::array<CombatArenaTarget, 2> nearTie{
+        {{0, glm::translate(Mat4{1}, Vec3{10, 0, 2.24f})},
+         {1, glm::translate(Mat4{1}, Vec3{0, 0, 11.077f})}}};
+    actor.setArenaTargets(nearTie);
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    const auto tied = actor.takeArenaActivations();
+    REQUIRE(tied.size() == 1);
+    REQUIRE(tied[0].index == 1); // retail piecewise distance, not sqrt's slightly nearer index 0
+}
+
+TEST_CASE("Yeti POUND emits its authored eruption and schedules the solid rock",
+          "[game][boss-areas][yeti][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'I');
+    REQUIRE(fixture.spawn("YETI", Vec3{0}, 0));
+    auto& actor = fixture.actor;
+    REQUIRE(actor.raisesArenaRocks());
+    const std::array<CombatArenaTarget, 1> targets{{{7, glm::translate(Mat4{1}, Vec3{0, 0, 45})}}};
+    actor.setArenaTargets(targets);
+    const std::array<EnemyView, 1> players{playerAt({0, 0, 45})};
+    bool erupted = false;
+    bool hit = false;
+    for (s32 frame = 0; frame < 3600 && !erupted; ++frame) {
+        fixture.update(2, 1.0f / 30.0f, players);
+        for (const auto& activation : actor.takeArenaActivations()) {
+            REQUIRE(activation.index == 7);
+            REQUIRE(activation.delay == Approx(35.0f / 30.0f));
+            erupted = true;
+        }
+        for (const auto& cue : actor.takeCues()) {
+            if (cue.tree == "ATTACK12_S0") {
+                REQUIRE(cue.placement.has_value());
+                REQUIRE(cue.position == Vec3{0, 0, 45});
+                REQUIRE(cue.life == Approx(36.0f / 30.0f));
+                REQUIRE_FALSE(cue.follows);
+                REQUIRE_FALSE(cue.loop);
+            }
+        }
+        for (const auto& blow : actor.takeBlows()) {
+            if (blow.area && blow.origin == Vec3{0, 0, 45}) {
+                REQUIRE(blow.damage == Approx(100.5f));
+                hit = true;
+            }
+        }
+        actor.takeShots();
+    }
+    INFO("Last move: " << actor.moveName());
+    REQUIRE(erupted);
+    REQUIRE(hit);
 }
 } // namespace

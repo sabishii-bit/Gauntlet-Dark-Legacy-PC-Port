@@ -47,6 +47,8 @@ public:
         std::function<bool(const Vec3&, const Vec3&)> blocksBreath;
         std::function<bool(const Vec3&, const Vec3&)> blocksArea;
         std::function<std::vector<Mat4>()> arenaAnchors;
+        std::function<std::vector<CombatArenaTarget>()> arenaTargets;
+        std::function<void(const CombatArenaActivation&)> activateArena;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
@@ -99,7 +101,8 @@ private:
         Vec2 pitchYaw{0.0f};
     };
     std::vector<CritterEffect> m_critterEffects;
-    std::vector<u32> m_arenaEffects; ///< static effects still borrowing opponent artwork
+    std::vector<u32>
+        m_cueEffects; ///< all emitted cues, including detached effects borrowing artwork
 
     std::array<f32, 4> m_critterExperienceOwed{};
 };
