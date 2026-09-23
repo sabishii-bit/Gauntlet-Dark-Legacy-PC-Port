@@ -102,6 +102,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Bind the arsenal to borrowed level services after loading the shared weapon
   archive; clear it before releasing player figures and that archive. Neither
   owner may move while its model addresses are borrowed.
+  `screens/PlayerAttacks` coordinates charge contacts, turbo strike effects,
+  potion shields and projectile impacts against fixtures/opponents. It owns
+  only transient attack state; the arsenal owns models and TurboMove owns the
+  timeline. Preserve projectile -> strike -> shield phase order, and clear
+  attack effects before releasing borrowed effect/weapon/figure resources.
   PlayerFigure owns
   node-name pose mapping and held/thrown weapon visuals. It has no scene or
   level dependency; the scene supplies actions, placement, lighting and alpha.
