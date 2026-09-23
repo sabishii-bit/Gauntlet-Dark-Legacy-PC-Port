@@ -13,6 +13,8 @@
 
 namespace gdl {
 
+class TreeModel;
+
 /** What an animation shows now: the frame its cycle has reached, or how far its scroll has
  * slid a coordinate and how much it has stretched it. */
 struct TextureMotion {
@@ -69,6 +71,9 @@ public:
     void step(unsigned int ticks = 1);
     /** Shows every animation where it stands. */
     void apply(WorldScene& scene) const;
+    /** Resets a shared model, then applies clock, sequence and texture-node overrides in
+     * that order. Sequence overrides must not leak into the next instance's draw. */
+    void apply(TreeModel& model, const TreeInfo& tree, unsigned int sequence, int frame) const;
     /** Advances `ticks` game frames, showing each step. */
     void step(WorldScene& scene, unsigned int ticks = 1);
 

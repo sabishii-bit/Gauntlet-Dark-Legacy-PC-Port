@@ -44,8 +44,15 @@ Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const Camera
     const float range = record.maxDistance - record.minDistance;
     const float t =
         range > 0.01f ? std::clamp((m_distance - record.minDistance) / range, 0.0f, 1.0f) : 1.0f;
-    return boss.position + boss.attentionOffset + record.minAttention +
-           (record.maxAttention - record.minAttention) * t;
+    // BCAM bit 0 selects the live elevated anchor; otherwise retail uses the base
+    // position initialized with the creature's geometry. Bit 4 tracks the party.
+    Vec3 anchor = boss.baseAttention.value_or(boss.position);
+    if ((record.flags & 0x10) != 0) {
+        anchor = middleOf(party);
+    } else if ((record.flags & 1) != 0) {
+        anchor = boss.position + boss.attentionOffset;
+    }
+    return anchor + record.minAttention + (record.maxAttention - record.minAttention) * t;
 }
 
 /** The way the camera looks: along the party's line to the boss, or, when the party is

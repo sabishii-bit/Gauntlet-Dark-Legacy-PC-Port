@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 
 #include "engine/assets/WorldData.h"
@@ -18,7 +19,8 @@ struct BossCameraSubject {
     float radius = 4.0f;
     float height = 4.0f; ///< of its body's centre, which is kept in view
     bool awake = false;
-    Vec3 attentionOffset{0.0f}; ///< root and vertical drift above the floor position
+    Vec3 attentionOffset{0.0f};        ///< root and vertical drift above the floor position
+    std::optional<Vec3> baseAttention; ///< initialized model root, without vertical drift
 };
 
 /**

@@ -33,6 +33,7 @@ struct CritterDamage {
     static constexpr std::int16_t kRing = 3; ///< a stomp's, over its reach
     static constexpr std::int16_t kBreath = 4;
     static constexpr std::int16_t kGrab = 7;
+    static constexpr std::int16_t kTargetArea = 8;  ///< effect at the move's saved player position
     static constexpr std::int16_t kSpew = 9;        ///< a boss's death throwing its coins out
     static constexpr unsigned int kCurbed = 0x4000; ///< a legend item's weakness takes this from it
 
@@ -99,6 +100,7 @@ struct CritterMove {
     static constexpr int kKnockBack = 65;
     static constexpr int kKnockDown = 66;
     static constexpr int kAttackFrom = 128; ///< attacks are this and over
+    static constexpr int kTargetArea = 136; ///< snapshots the target before emitting its effects
 
     int type = 0;
     unsigned int flags = 0;

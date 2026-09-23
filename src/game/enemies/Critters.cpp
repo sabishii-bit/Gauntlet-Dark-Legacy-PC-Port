@@ -80,6 +80,7 @@ void Critters::close() {
         critter = Critter{};
     }
     for (auto& stock : m_stocks) {
+        stock->textures.clear();
         stock->body.clear();
         stock->archive.release();
     }
@@ -91,6 +92,7 @@ void Critters::close() {
     m_shots.clear();
     m_device = nullptr;
     m_collision = nullptr;
+    m_textureFrames = 0.0f;
 }
 
 const EnemyView* Critters::viewOf(std::span<const EnemyView> players, int player) {
@@ -149,6 +151,8 @@ Critters::Stock* Critters::stockFor(int kind, std::string_view form) {
                           *m_device)) {
         return nullptr;
     }
+    stock->textures.bind(stock->archive.trees.textureAnimations(), stock->archive.textures,
+                         *m_device);
     m_stocks.push_back(std::move(stock));
     return m_stocks.back().get();
 }
@@ -205,6 +209,7 @@ bool Critters::startMove(Critter& critter, std::size_t index) {
     critter.struckThisMove.clear();
     critter.soundsGiven = 0;
     critter.shotFrame = -1;
+    critter.attackTarget.reset();
     critter.player.start(critter.stock->tree->sequences[*sequence], *sequence);
     critter.pose.evaluate(*critter.stock->tree, *sequence, 0.0f);
     return true;
@@ -414,6 +419,13 @@ void Critters::strikeWith(Critter& critter, int id, const CritterMove& move, int
         centre = critter.position;
         reach = damage->maxDistance;
         break;
+    case CritterDamage::kTargetArea:
+        if (!critter.attackTarget.has_value()) {
+            return;
+        }
+        centre = *critter.attackTarget + Vec3{modelTransform(critter) * Vec4{damage->offset, 0.0f}};
+        reach = damage->maxDistance;
+        break;
     case CritterDamage::kBreath:
         breath = CritterBreath::fromNode(partTransform(critter, move.colnode), *damage);
         centre = breath->origin;
@@ -542,6 +554,12 @@ void Critters::update(int ticks, float seconds, std::span<const EnemyView> playe
     if (ticks <= 0) {
         return;
     }
+    m_textureFrames += seconds * AnimationPlayer::kDefaultRate;
+    const auto textureFrames = static_cast<unsigned int>(std::floor(m_textureFrames));
+    m_textureFrames -= static_cast<float>(textureFrames);
+    for (const auto& stock : m_stocks) {
+        stock->textures.step(textureFrames);
+    }
     for (int i = 0; i < kMost; ++i) {
         Critter& critter = m_critters[static_cast<std::size_t>(i)];
         if (critter.state == State::Inactive) {
@@ -608,6 +626,15 @@ void Critters::update(int ticks, float seconds, std::span<const EnemyView> playe
                 giveOnce(2U, move->sound2, critter.position, CueParts::Both);
             }
             if (critter.state == State::Active) {
+                // Retail move 0x88 captures Player.effectpos at its first damage frame.
+                // Both the falling rock and its later impact use that same world point.
+                if (move->type == CritterMove::kTargetArea && !critter.attackTarget.has_value() &&
+                    move->frameStart >= 0 && frame >= move->frameStart) {
+                    if (const EnemyView* target = viewOf(players, critter.target)) {
+                        critter.attackTarget =
+                            target->position + Vec3{0.0f, 0.5f * target->height, 0.0f};
+                    }
+                }
                 const auto projectile = [&](int index, bool second) {
                     const CritterDamage* harm = data.damage(index);
                     if (harm == nullptr || harm->type != CritterDamage::kProjectile) {
@@ -621,23 +648,31 @@ void Critters::update(int ticks, float seconds, std::span<const EnemyView> playe
                 };
                 const bool shot0 = projectile(move->damage0, false);
                 const bool shot1 = projectile(move->damage1, true);
+                const auto contact = [&](int index, int start, int end, unsigned int bit) {
+                    const CritterDamage* harm = data.damage(index);
+                    if (harm == nullptr) {
+                        return;
+                    }
+                    const bool targeted = harm->type == CritterDamage::kTargetArea;
+                    const bool crossed = start >= 0 && critter.shotFrame < start && frame >= start;
+                    if ((!active(start, end) && !(targeted && crossed)) ||
+                        (targeted && !critter.attackTarget.has_value())) {
+                        return;
+                    }
+                    const Vec3 where =
+                        targeted ? *critter.attackTarget +
+                                       Vec3{modelTransform(critter) * Vec4{harm->offset, 0.0f}}
+                                 : partPosition(critter, move->colnode) + harm->offset;
+                    giveOnce(bit, harm->sound, where, CueParts::Both);
+                    strikeWith(critter, i, *move, index, players);
+                };
+                if (!shot0) {
+                    contact(move->damage0, move->frameStart, move->frameEnd, 4U);
+                }
+                if (!shot1) {
+                    contact(move->damage1, move->frameStart2, move->frameEnd2, 8U);
+                }
                 critter.shotFrame = frame;
-                if (!shot0 && active(move->frameStart, move->frameEnd) && move->damage0 >= 0) {
-                    if (const CritterDamage* harm = data.damage(move->damage0); harm != nullptr) {
-                        giveOnce(4U, harm->sound,
-                                 partPosition(critter, move->colnode) + harm->offset,
-                                 CueParts::Both);
-                    }
-                    strikeWith(critter, i, *move, move->damage0, players);
-                }
-                if (!shot1 && active(move->frameStart2, move->frameEnd2) && move->damage1 >= 0) {
-                    if (const CritterDamage* harm = data.damage(move->damage1); harm != nullptr) {
-                        giveOnce(8U, harm->sound,
-                                 partPosition(critter, move->colnode) + harm->offset,
-                                 CueParts::Both);
-                    }
-                    strikeWith(critter, i, *move, move->damage1, players);
-                }
             } else if (critter.state == State::Dying && active(move->frameStart, move->frameEnd) &&
                        (critter.soundsGiven & 32U) == 0) {
                 // The death's harm is not a strike but a throw: what it spews goes out
@@ -882,7 +917,9 @@ void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting&
         // individual. Set it for every draw, including the first and frozen frames.
         critter.stock->body.setFrame(critter.player.sequence(),
                                      static_cast<int>(critter.player.frame()));
-        critter.stock->body.resetTextures();
+        critter.stock->textures.apply(critter.stock->body, *critter.stock->tree,
+                                      critter.player.sequence(),
+                                      static_cast<int>(critter.player.frame()));
         // Retail flashes the normal skin on bit 3 in the final 180 frozen ticks.
         if (frozenTexture != nullptr && critter.frozenTicks > 0 &&
             (critter.frozenTicks >= kThawBlinkTicks ||

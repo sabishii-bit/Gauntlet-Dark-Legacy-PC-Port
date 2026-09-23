@@ -7,6 +7,7 @@
 #include <optional>
 
 #include "engine/core/Log.h"
+#include "engine/world/TreeModel.h"
 
 namespace gdl {
 
@@ -219,6 +220,37 @@ void TextureAnimator::apply(WorldScene& scene) const {
     for (const Entry& entry : m_entries) {
         if (!entry.keyed) {
             show(entry, scene);
+        }
+    }
+}
+
+void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, unsigned int sequence,
+                            int frame) const {
+    model.resetTextures();
+    const auto show = [&](const TextureMotion& moved) {
+        if (moved.frame != nullptr) {
+            model.setTextureFrame(moved.slot, moved.frame);
+        } else {
+            model.setTextureOffset(moved.slot, moved.offset, moved.scale);
+        }
+    };
+    for (std::size_t i = 0; i < size(); ++i) {
+        if (!keyed(i)) {
+            show(motion(i));
+        }
+    }
+    if (sequence >= tree.sequences.size()) {
+        return;
+    }
+    const TreeSequenceInfo& selected = tree.sequences[sequence];
+    for (int i = 0; i < selected.textureAnimationCount; ++i) {
+        if (const auto moved = motionAt(selected.textureAnimationStart + i, frame)) {
+            show(*moved);
+        }
+    }
+    for (const TreeNodeInfo& node : tree.nodes) {
+        if (const auto moved = motionAt(node.textureAnimation, frame)) {
+            show(*moved);
         }
     }
 }

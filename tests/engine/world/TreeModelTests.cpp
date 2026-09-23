@@ -10,6 +10,7 @@
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/io/File.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 
 #include "FakeRenderDevice.h"
@@ -431,6 +432,52 @@ TEST_CASE("a tree model refuses a figure with a missing mesh", "[world][model]")
     TreeModel figure;
     REQUIRE_FALSE(figure.bind(trees.tree(0), models, textures, device));
     REQUIRE_FALSE(figure.bound());
+}
+
+TEST_CASE("tree texture overrides follow each sequence and reset between shared instances",
+          "[world][animation][genie]") {
+    const auto dir = sampleFigure("tree-keyed-textures");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    TreeInfo tree = trees.tree(0);
+    tree.sequences.resize(3);
+    tree.sequences[0].textureAnimationStart = 1;
+    tree.sequences[0].textureAnimationCount = 1;
+    tree.sequences[1].textureAnimationStart = 2;
+    tree.sequences[1].textureAnimationCount = 1;
+    std::vector<TextureAnimationInfo> animations(3);
+    animations[0].texture = 0;
+    animations[0].source = 0;
+    animations[0].frames = 2;
+    animations[0].rate = 1;
+    animations[1] = animations[0];
+    animations[1].source = 1;
+    animations[1].frames = 1; // idle sequence pins its own frame over the global cycle
+    animations[2] = animations[0];
+    animations[2].rate = 2;
+    test::FakeRenderDevice device;
+    TreeModel model;
+    REQUIRE(model.bind(tree, models, textures, device));
+    TextureAnimator animator;
+    animator.bind(animations, textures, device);
+    const auto drawn = [&](unsigned int sequence, int frame) {
+        device.draws.clear();
+        animator.apply(model, tree, sequence, frame);
+        model.draw(device, Mat4{1}, Mat4{1});
+        REQUIRE(device.draws.size() == 2);
+        return device.draws.front().texture;
+    };
+    REQUIRE(drawn(0, 20) == &textures.texture(device, 1));
+    REQUIRE(drawn(1, 0) == &textures.texture(device, 0));
+    REQUIRE(drawn(1, 2) == &textures.texture(device, 1));
+    REQUIRE(drawn(0, 0) == &textures.texture(device, 1));
+    REQUIRE(drawn(2, 0) == &textures.texture(device, 0)); // no inherited sequence override
+    tree.nodes.front().textureAnimation = 1;
+    REQUIRE(drawn(1, 0) == &textures.texture(device, 1)); // node override takes precedence
 }
 
 } // namespace

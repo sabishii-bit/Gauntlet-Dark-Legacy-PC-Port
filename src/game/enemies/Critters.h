@@ -14,6 +14,7 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/AnimationPlayer.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/TreePose.h"
 #include "engine/world/WorldCollision.h"
@@ -185,6 +186,7 @@ private:
         ItemArchive archive;
         const TreeInfo* tree = nullptr;
         TreeModel body;
+        TextureAnimator textures;
     };
 
     struct Critter {
@@ -214,6 +216,7 @@ private:
         bool roarWanted = false;      ///< roars as soon as it may
         unsigned int soundsGiven = 0; ///< bits: the move's sound, its second, each strike's
         int shotFrame = -1;
+        std::optional<Vec3> attackTarget; ///< captured by a targeted-area move, not a homing point
         AnimationPlayer player;
         TreePose pose;
     };
@@ -257,6 +260,7 @@ private:
     std::array<Critter, kMost> m_critters;
     std::vector<CritterBlow> m_blows;
     std::vector<CritterLoss> m_losses;
+    float m_textureFrames = 0.0f;
 };
 
 } // namespace gdl::game
