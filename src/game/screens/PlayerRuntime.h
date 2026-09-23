@@ -31,6 +31,7 @@ struct PlayerRuntime {
     f32 blockLeft = 0.0f;      ///< seconds before another block effect
     f32 cloudGap = 0.0f;       ///< seconds before gas can harm this participant again
     f32 breathGap = 0.0f;      ///< shared across all creatures' breath, not reset by a new move
+    f32 effectGap = 0.0f;      ///< shared attached-area damage gate, independent of breath
 };
 
 } // namespace gdl::game

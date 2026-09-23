@@ -60,7 +60,8 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
             },
         .levels = [&] { phases.emplace_back("levels"); },
         .award = [](s32, s32, bool) { FAIL("No kills"); },
-        .blocksBreath = {}};
+        .blocksBreath = {},
+        .blocksArea = {}};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});
@@ -72,6 +73,77 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
     REQUIRE(phases.size() == 4);
     REQUIRE_FALSE(opponents.bosses().present());
     REQUIRE_FALSE(opponents.meter().bound());
+}
+
+TEST_CASE("area immunity counts down independently for each player's runtime",
+          "[game][screens][level-opponents][boss-areas]") {
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    const auto root = test::scratchDirectory("area-immunity");
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(3, {}, nullptr, {}, 0);
+    players[1].actor.spawn(1, {}, nullptr, {}, 0);
+    players[0].effectGap = 0.25f;
+    players[1].effectGap = 0.05f;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.update(6, 0.1f, players, {}, events);
+    REQUIRE(players[0].effectGap > 0.14f);
+    REQUIRE(players[0].effectGap < 0.16f);
+    REQUIRE(players[1].effectGap == 0);
+    opponents.update(12, 0.2f, players, {}, events);
+    REQUIRE(players[0].effectGap == 0);
+}
+
+TEST_CASE("area contacts share effect immunity but not the breath timer",
+          "[game][screens][level-opponents][boss-areas]") {
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(3, {}, nullptr, Vec3{0, 0, 12}, 0);
+    LevelOpponents::Events events;
+    s32 contacts = 0;
+    events.hurt = [&](usize index, f32 amount, HurtKind kind, bool directed, const PlayerImpact&) {
+        REQUIRE(index == 0);
+        REQUIRE(amount == 50);
+        REQUIRE(kind == HurtKind::Blow);
+        REQUIRE(directed);
+        ++contacts;
+    };
+    CritterBlow blow;
+    blow.player = 3;
+    blow.damage = 50;
+    blow.area = true;
+    blow.repeatGap = 0.25f;
+    bool blocked = true;
+    events.blocksArea = [&](const Vec3&, const Vec3&) { return blocked; };
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 0);
+    REQUIRE(players[0].effectGap == 0);
+    blocked = false;
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 1);
+    REQUIRE(players[0].effectGap == 0.25f);
+    REQUIRE(players[0].breathGap == 0);
+    blow.critter = 7;
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 1);
+    players[0].effectGap = 0;
+    players[0].breathGap = 1;
+    blocked = true;
+    blow.origin.z = 3; // contacts within ten units do not consult cover
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 2);
+    players[0].effectGap = 0;
+    players[0].life = PlayerLife::Dying;
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 2);
 }
 
 TEST_CASE("breath contacts share a player's quarter-second gate across creatures",

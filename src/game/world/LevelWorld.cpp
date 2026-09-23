@@ -3,6 +3,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <vector>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -40,10 +41,16 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         std::filesystem::exists(unpackedRoot / m_ref.items / "animations.json")) {
         m_realmItems.load(unpackedRoot / m_ref.items);
     }
-    // The item archive lends the level its external textures and the torches' frames.
-    const std::array<TextureSet*, 1> lenders{&m_items.textures};
-    const std::span<TextureSet* const> lent =
-        m_items.loaded() ? std::span<TextureSet* const>{lenders} : std::span<TextureSet* const>{};
+    // Boss-specific items take precedence, but realm textures (including torch particles)
+    // remain available when that archive does not contain a requested bitmap.
+    std::vector<TextureSet*> lenders;
+    if (m_items.loaded()) {
+        lenders.push_back(&m_items.textures);
+    }
+    if (m_realmItems.loaded()) {
+        lenders.push_back(&m_realmItems.textures);
+    }
+    const std::span<TextureSet* const> lent{lenders};
     if (!m_scene.build(m_layout, m_models, m_textures, device, m_lighting, lent)) {
         clear();
         return false;

@@ -625,12 +625,17 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
         }
         const CritterData& data = critter.stock->data;
         critter.age += seconds;
+        for (CritterArea& area : critter.areas) {
+            area.secondsLeft -= seconds;
+        }
+        std::erase_if(critter.areas, [](const CritterArea& area) { return area.secondsLeft <= 0; });
         for (f32& cooldown : critter.cooldowns) {
             cooldown = std::max(cooldown - seconds, 0.0f);
         }
         // Frozen, it stands as it is: no move, no step, no one in its sights.
         if (critter.frozenTicks > 0) {
             critter.frozenTicks = std::max(critter.frozenTicks - ticks, 0);
+            updateAreas(critter, i, players);
             continue;
         }
         if (critter.state == State::Active) {
@@ -709,6 +714,13 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
                         (targeted && !critter.attackTarget.has_value())) {
                         return;
                     }
+                    if (harm->type == CritterDamage::kAttachedArea) {
+                        if ((critter.soundsGiven & bit) == 0) {
+                            critter.soundsGiven |= bit;
+                            startArea(critter, i, *harm);
+                        }
+                        return;
+                    }
                     const Vec3 where =
                         targeted ? *critter.attackTarget +
                                        Vec3{modelTransform(critter) * Vec4{harm->offset, 0.0f}}
@@ -739,6 +751,7 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
             critter.moveDone = true;
         }
         carry(critter, seconds, move, players);
+        updateAreas(critter, i, players);
         critter.push *= std::pow(kPushDecay, static_cast<f32>(ticks));
         critter.push.y = std::max(critter.push.y - kGravity * seconds, 0.0f);
         if (glm::length(critter.push) < 0.01f) {

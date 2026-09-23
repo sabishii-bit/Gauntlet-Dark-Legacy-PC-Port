@@ -19,6 +19,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/enemies/CritterArea.h"
 #include "game/enemies/CritterData.h"
 #include "game/enemies/CritterProjectile.h"
 #include "game/enemies/Enemies.h"
@@ -44,6 +45,8 @@ struct CritterBlow {
     bool breath = false;
     u32 flags = 0;     ///< authored player damage modifiers, not the attack's behavior flags
     Vec3 origin{0.0f}; ///< emitted segment origin, used for breath cover queries
+    bool area = false;
+    f32 repeatGap = 0.0f; ///< area-effect immunity requested on contact
 };
 
 /** An effect and a sound a critter has set off: a move's, a strike's or a hit's, where it
@@ -61,6 +64,8 @@ struct CritterCue {
     bool rootAttachment = false;     ///< root transform, not a fixed world-space body offset
     std::optional<std::string> node; ///< animated attachment, distinct from a body translation
     Vec3 nodeOffset{0.0f};
+    Vec2 pitchYaw{0.0f}; ///< local effect rotation, independent of its attachment offset
+    bool loop = true;
 };
 
 /** A dying critter's death throwing something out (the coins a boss spews): from where,
@@ -214,6 +219,7 @@ private:
         usize patternStep = 0;
         std::vector<f32> cooldowns;      ///< seconds left before each move may be chosen again
         std::vector<s32> struckThisMove; ///< players already hurt by the move playing
+        std::vector<CritterArea> areas;
         f32 hurtPending = 0.0f;
         u32 hurtFlags = 0;
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
@@ -242,6 +248,8 @@ private:
     static s32 attackTarget(const Critter& critter, const CritterTarget& criteria,
                             std::span<const EnemyView> players);
     static f32 attackRate(const Critter& critter);
+    void startArea(Critter& critter, s32 id, const CritterDamage& damage);
+    void updateAreas(Critter& critter, s32 id, std::span<const EnemyView> players);
     /** Whether a legend item's curb keeps the move from it. */
     static bool curbedMove(const Critter& critter, const CritterMove& move);
     /** Sets off sound record `index` (and what it links to) at `position`. */

@@ -45,6 +45,7 @@ public:
         std::function<void()> levels;
         std::function<void(s32, s32, bool)> award;
         std::function<bool(const Vec3&, const Vec3&)> blocksBreath;
+        std::function<bool(const Vec3&, const Vec3&)> blocksArea;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
@@ -94,6 +95,7 @@ private:
         std::optional<std::string> node;
         Vec3 nodeOffset{0.0f};
         bool rootAttachment = false;
+        Vec2 pitchYaw{0.0f};
     };
     std::vector<CritterEffect> m_critterEffects;
 

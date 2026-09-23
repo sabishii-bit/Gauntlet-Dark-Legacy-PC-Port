@@ -202,4 +202,35 @@ TEST_CASE("the tower reports a missing level without building", "[game][world]")
     REQUIRE_FALSE(tower.entranceCamera().has_value());
 }
 
+TEST_CASE("boss arenas can borrow torch particles from the realm beside their own items",
+          "[game][world][boss-arena][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELD5/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELD5/animations.json");
+    test::unpackedOrSkip("ITEMS/LEVELD/animations.json");
+    test::unpackedOrSkip("wdata/FOREST.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("D5");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.hasItems());
+    REQUIRE(world.realmItems().loaded());
+    REQUIRE_FALSE(world.items().textures.find("P_TORCH").has_value());
+    const auto slot = world.realmItems().textures.find("P_TORCH");
+    REQUIRE(slot.has_value());
+    const auto* torch = &world.realmItems().textures.texture(device, *slot);
+    REQUIRE(torch != &device.whiteTexture());
+    usize torches = 0;
+    for (usize i = 0; i < world.particles().size(); ++i) {
+        torches += world.particles().textureOf(i) == torch ? 1 : 0;
+    }
+    REQUIRE(torches > 0);
+    world.clear();
+    REQUIRE(world.particles().size() == 0);
+    REQUIRE_FALSE(world.realmItems().loaded());
+}
+
 } // namespace
