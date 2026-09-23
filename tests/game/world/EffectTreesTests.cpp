@@ -59,8 +59,9 @@ TEST_CASE("Wraith's waiting portal retains its authored static scale throughout 
 
 TEST_CASE("Wraith emergence smoke preserves its growing geometry when facing the camera",
           "[game][world][effects][wraith][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/WRAITH/animations.json").parent_path();
     ItemArchive archive;
-    REQUIRE(archive.load(test::unpackedOrSkip("MONSTERS/WRAITH/animations.json").parent_path()));
+    REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
     EffectTrees effects;
     REQUIRE(effects.start(device, archive, "GENFX2", Vec3{0}));

@@ -22,7 +22,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-std::filesystem::path familyAssets() {
+std::filesystem::path familyAssets(s32 readyInterrupt = 60) {
     const auto root = test::scratchDirectory("combatant-families");
     std::filesystem::create_directories(root / "critter");
     for (const auto& definition :
@@ -47,9 +47,11 @@ std::filesystem::path familyAssets() {
         const std::string header = R"({"descriptors":[{"prefix":"BODY","name":")" +
                                    definition.name + R"(","type":)" +
                                    std::to_string(static_cast<s32>(definition.kind)) + "}],";
-        writeTextFile(root / "critter" / (definition.name + ".json"), header + R"(
+        writeTextFile(root / "critter" / (definition.name + ".json"),
+                      header + R"(
           "types":[{"moveCount":5,"maxHealth":100,"radius":1,"expValue":50}],
-          "moves":[{"name":"READY","anim":"STEP","type":32},
+          "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":)" +
+                          std::to_string(readyInterrupt) + R"(},
                    {"name":"WALK","anim":"STEP","type":52,"priority":10,"speed":3},
                    {"name":"ATTACK","anim":"STEP","type":128,"priority":20,
                     "target":{"maxDistance":5}},
@@ -156,7 +158,12 @@ TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
 
 TEST_CASE("golem knockback resistance remains a family rule not a shared actor special case",
           "[game][combatant]") {
-    const auto root = familyAssets();
+    s32 readyInterrupt = 60;
+    SECTION("an interruptible stance accepts knockdown") {}
+    SECTION("an uninterruptible stance rejects knockdown") {
+        readyInterrupt = 0;
+    }
+    const auto root = familyAssets(readyInterrupt);
     test::FakeRenderDevice device;
     for (const auto& definition : {Golem::definition(), General::definition()}) {
         CombatantAssets assets;
@@ -170,8 +177,14 @@ TEST_CASE("golem knockback resistance remains a family rule not a shared actor s
         hit.direction = {1, 0, 0};
         actor.hurt(hit);
         actor.update(2, 1.0f / 30, {});
-        REQUIRE(actor.moveName() == "KD");
-        REQUIRE(actor.position().x == Approx((20.0f - definition.knockbackReduction) / 30));
+        REQUIRE(actor.health() == 90); // refusing a reaction does not prevent the damage
+        if (readyInterrupt != 0) {
+            REQUIRE(actor.moveName() == "KD");
+            REQUIRE(actor.position().x == Approx((20.0f - definition.knockbackReduction) / 30));
+        } else {
+            REQUIRE(actor.moveName() == "READY");
+            REQUIRE(actor.position().x == 0);
+        }
     }
 }
 
