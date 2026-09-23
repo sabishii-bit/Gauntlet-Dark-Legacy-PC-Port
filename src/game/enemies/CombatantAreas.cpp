@@ -13,13 +13,13 @@ bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectD
 }
 
 void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage,
-                          std::string_view node) {
+                          std::string_view node, std::optional<Mat4> worldParent) {
     const CombatEffectDefinition* sound = critter.stock->data.sound(damage.sound);
     if (sound == nullptr) {
         return;
     }
     // Other policies need a world-space/moving effect owner, not a guessed root.
-    if (!supportsArea(damage, sound)) {
+    if (!supportsArea(damage, sound) || (worldParent.has_value() && sound->flags != 0)) {
         log::warn("critter {}: unsupported attached area policy for {}", critter.stock->data.name(),
                   sound->tree);
         return;
@@ -45,9 +45,15 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
             }
         }
     }
-    const Vec3 offset = damage.offset + sound->offset;
+    // World-mode damage rotates its offset by the fighter before the effect is
+    // reparented to the stage node. SFXX offsets are scaled but not body-rotated.
+    const Vec3 offset =
+        worldParent.has_value()
+            ? Vec3{modelTransform(critter) * Vec4{damage.offset, 0}} + sound->offset * critter.scale
+            : damage.offset + sound->offset;
     const Vec2 angles{damage.pitch, damage.yaw};
     CritterArea area;
+    area.worldParent = worldParent;
     if ((sound->flags & CombatEffectDefinition::kFollows) == 0) {
         area.node = node;
     }
@@ -58,17 +64,18 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
     area.flags = damage.flags;
     area.secondsLeft = life;
     area.lifetime = life;
-    area.expanding = damage.type == AttackDefinition::kRing;
+    area.expanding = damage.type != AttackDefinition::kAttachedArea;
     critter.areas.push_back(area);
 
     CombatCue cue;
     cue.critter = id;
     cue.tree = sound->shows() ? sound->tree : std::string{};
     cue.sound = sound->soundFor(m_realm);
-    cue.position = Vec3{(attachmentTransform(critter, area.node) * area.local)[3]};
-    cue.scale = sound->scale;
+    const Mat4 parent = worldParent.value_or(attachmentTransform(critter, area.node));
+    cue.position = Vec3{(parent * area.local)[3]};
+    cue.scale = sound->scale * (worldParent.has_value() ? critter.scale : 1.0f);
     cue.life = life;
-    cue.follows = true;
+    cue.follows = !worldParent.has_value();
     cue.shakes = (sound->flags & CombatEffectDefinition::kShakes) != 0;
     cue.rootAttachment = area.node.empty();
     if (!area.node.empty()) {
@@ -77,6 +84,11 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
     cue.nodeOffset = offset;
     cue.pitchYaw = angles;
     cue.loop = false;
+    if (worldParent.has_value()) {
+        cue.placement = parent * area.local;
+        cue.rootAttachment = false;
+        cue.node.reset();
+    }
     if (!cue.tree.empty() || !cue.sound.empty() || cue.shakes) {
         m_cues.push_back(cue);
     }
@@ -84,7 +96,7 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
 
 void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players) {
     for (const CritterArea& area : critter.areas) {
-        const Mat4 parent = attachmentTransform(critter, area.node);
+        const Mat4 parent = area.worldParent.value_or(attachmentTransform(critter, area.node));
         for (const EnemyView& player : players) {
             if (!area.touches(parent, player)) {
                 continue;

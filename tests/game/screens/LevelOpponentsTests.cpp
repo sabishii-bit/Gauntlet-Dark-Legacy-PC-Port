@@ -10,9 +10,70 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/screens/LevelOpponents.h"
+#include "game/world/SafeRocks.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Plague Fiend eruptions are rendered at all three K5 arena anchors",
+          "[game][screens][level-opponents][plague][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/PBOSS.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/PBOSS/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELK5/world.json");
+    test::unpackedOrSkip("ITEMS/LEVELK5/objects.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("K5");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    SafeRocks rocks;
+    REQUIRE(rocks.bind(device, world.layout(), world.items()));
+    rocks.setPlayerCount(1);
+    const auto anchors = rocks.attackAnchors();
+    REQUIRE(anchors.size() == 3);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 35}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.bosses().view().kind == 38);
+    LevelOpponents::Events events;
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.blast = [](const Vec3&, f32, f32) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.arenaAnchors = [&rocks] { return rocks.attackAnchors(); };
+    usize eruptions = 0;
+    for (s32 frame = 0; frame < 3600 && eruptions == 0; ++frame) {
+        opponents.update(2, 1.0f / 30.0f, players, {}, events);
+        for (usize i = 0; i < effects.count(); ++i) {
+            const auto& effect = effects.effect(i);
+            if (effect.name == "ATCK10FX") {
+                REQUIRE(effect.attachment.has_value());
+                REQUIRE(std::ranges::any_of(anchors, [&](const Mat4& anchor) {
+                    return glm::length(Vec3{anchor[3]} - effect.position) < 0.001f &&
+                           glm::length(Vec3{anchor[2]} - Vec3{effect.transform()[2]}) < 0.001f;
+                }));
+                ++eruptions;
+            }
+        }
+        effects.update(1.0f / 30.0f);
+    }
+    INFO("Last move: " << opponents.bosses().moveName());
+    REQUIRE(eruptions == 3);
+    opponents.close();
+    REQUIRE(effects.count() == 0);
+}
 
 TEST_CASE("opponent views preserve player identity and hide fallen participants",
           "[game][screens][level-opponents]") {
@@ -61,7 +122,8 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
         .levels = [&] { phases.emplace_back("levels"); },
         .award = [](s32, s32, bool) { FAIL("No kills"); },
         .blocksBreath = {},
-        .blocksArea = {}};
+        .blocksArea = {},
+        .arenaAnchors = {}};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});

@@ -941,6 +941,27 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   The current loader warns about absent optional tiers 0/2/3; those warnings
   do not mean the initial tier-1 cover mesh is missing. Do not copy Dragon's
   three-tier rock artwork into this arena to suppress the warnings.
+* Plague Fiend SPOUT uses DAMG type 5, not an attack at the boss's feet or a
+  player-targeted fountain. Retail dispatcher 0x8003ca98 creates one effect per
+  collected subtype-41 stage item and reparents it to that item's node. K5 has
+  three such points. `SafeRocks::attackAnchors` supplies their static transforms
+  (including destroyed cover, up to the original sixteen); the scene passes
+  them through LevelOpponents/Bosses to Combatant without introducing item or
+  scene dependencies into attack execution. Both authored damage windows fire
+  once: ATCK10FX at frame 8, then the separate NULLFX damage at frame 20.
+  Each uses its own lifetime and expanding damage curve. World-placed cues keep
+  the stage orientation and do not follow boss movement; LevelOpponents retains
+  and stops their effect handles before releasing borrowed boss artwork.
+  `[plague]` covers asset-free execution, actual PBOSS attacks and all three
+  rendered K5 placements. `python scripts/scenario.py plague` needs LEVELK5,
+  LEVELK and MONSTERS/PBOSS unpacked. This is not a completed fidelity audit:
+  SPLASH still takes the old approximation because its damage carrier moves
+  at speed 1; acid impact damage/status behavior and legendary-javelin timing
+  need further investigation. K5's BLOB_BOSS texture animation also references
+  BLOB_BOSS00 in MONSTERS/PBOSS, outside the current world texture lenders;
+  the missing-frame warning is still open, not evidence the texture is absent
+  from the retail assets. Moving stage anchors and type-6 reactivation are not
+  implemented by this static type-5 path.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
   is the original's HUD meter (`HealthMeterStart/Update`, boss.c 471-585):

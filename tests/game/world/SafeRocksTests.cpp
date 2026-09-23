@@ -48,6 +48,8 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.rock(0).health == 120);
     REQUIRE(rocks.rock(0).tier == 3);
     REQUIRE(rocks.obstacles().size() == 1);
+    REQUIRE(rocks.attackAnchors().size() == 1);
+    REQUIRE(Vec3{rocks.attackAnchors()[0][3]} == Vec3{7, 30, -1});
     REQUIRE(rocks.rock(0).obstacle.cylinderRadius == Approx(2.3f));
     REQUIRE(rocks.blocksBreath(Vec3{7, 32, -10}, Vec3{7, 32, 10}));
     REQUIRE(rocks.blocksSegment(Vec3{9.6f, 32, -10}, Vec3{9.6f, 32, 10}, 0.5f));
@@ -67,6 +69,7 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.rock(0).tier == 0);
     REQUIRE_FALSE(rocks.standing(0));
     REQUIRE(rocks.obstacles().empty());
+    REQUIRE(rocks.attackAnchors().size() == 1); // eruptions still use destroyed cover
     REQUIRE_FALSE(rocks.blocksBreath(Vec3{7, 32, -10}, Vec3{7, 32, 10}));
     REQUIRE_FALSE(rocks.strike(0, 1000)); // destruction effect is not replayed
     REQUIRE_FALSE(rocks.strike(99, 1000));
@@ -79,6 +82,7 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.rock(0).health == 120);
     rocks.setPlayerCount(2);
     REQUIRE(rocks.obstacles().size() == 2);
+    REQUIRE(rocks.attackAnchors().size() == 2);
     REQUIRE(rocks.rock(1).health == 80);
     rocks.clear();
     REQUIRE(rocks.size() == 0);

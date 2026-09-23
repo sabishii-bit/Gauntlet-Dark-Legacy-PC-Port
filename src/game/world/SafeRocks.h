@@ -43,6 +43,8 @@ public:
     /** Restore all three health tiers, as the boss's reactivation does. */
     void activate(usize index);
     std::vector<Obstacle> obstacles() const;
+    /** Authored effect anchors include destroyed cover, not just standing obstacles. */
+    std::vector<Mat4> attackAnchors() const;
     bool blocksBreath(const Vec3& from, const Vec3& to) const;
     bool blocksSegment(const Vec3& from, const Vec3& to, f32 radius) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;

@@ -71,6 +71,7 @@ public:
     const LegendRite& legend() const { return m_rite; }
 
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
+    void setArenaAnchors(std::span<const Mat4> anchors) { m_fighter.setArenaAnchors(anchors); }
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatLoss> takeLosses();
     std::vector<CombatCue> takeCues() { return m_fighter.takeCues(); }
