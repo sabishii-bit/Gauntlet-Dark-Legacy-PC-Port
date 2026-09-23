@@ -94,8 +94,8 @@ bool PlayerAnimator::canBegin(PlayerDeed deed) const {
     if (action == Action::Ready) {
         return false;
     }
-    return bound() && m_sequences[index(action)] >= 0 && m_entered && !throwing() && !conjuring() &&
-           !reacting() && !turboing() && !dying();
+    return bound() && m_sequences[index(action)] >= 0 && !entering() && !throwing() &&
+           !conjuring() && !reacting() && !turboing() && !dying();
 }
 
 PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
@@ -207,7 +207,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // The guard: up at once when asked for, held for as long as it is, then let down. A
     // class without the sequences does not guard.
-    const bool free = m_entered && !throwing() && !conjuring() && !reacting() && !turboing();
+    const bool free = !entering() && !throwing() && !conjuring() && !reacting() && !turboing();
     const bool asked =
         deed == PlayerDeed::Defend && free && m_sequences[index(Action::Defend)] >= 0;
     if (asked || guarding()) {

@@ -254,13 +254,19 @@ TEST_CASE("a character plays its entrance, settles into its stance and walks in 
     REQUIRE(animator.bound());
     REQUIRE(animator.action() == Action::Ready);
     REQUIRE(animator.sequenceOf(Action::Start) == 4);
+    REQUIRE(animator.entering());
+    REQUIRE(animator.moveScale() == 0);
 
     // The entrance cuts in at once and, asked to walk, plays out first.
     animator.update(PlayerMotion::Walk, kTicks, kStep);
     REQUIRE(animator.action() == Action::Start);
     REQUIRE(playingIndex(animator) == 4.0f);
+    REQUIRE(animator.entering());
+    REQUIRE(animator.moveScale() == 0);
     const s32 untilWalk = stepsUntil(animator, PlayerMotion::Walk, Action::Walk1, 200);
     REQUIRE(untilWalk == 60);
+    REQUIRE_FALSE(animator.entering());
+    REQUIRE(animator.moveScale() == 1);
     REQUIRE(playingIndex(animator) == 5.0f);
 
     // The walk's halves take turns as each cycle ends, each end a foot coming down.

@@ -297,6 +297,37 @@ TEST_CASE("level soundscape is silent without an output and tolerates missing mu
     soundscape.close();
 }
 
+TEST_CASE("Wraith music resolves its numbered ADS parts and produces audio",
+          "[game][world][soundscape][assets][unpacked][wraith]") {
+    const auto disc = test::assetOrSkip("STREAMS/DREAM5_1.ads").parent_path().parent_path();
+    test::assetOrSkip("STREAMS/DREAM5_2.ads");
+    const auto manifest = test::unpackedOrSkip("wdata/DREAM.json");
+    WorldData world;
+    REQUIRE(world.load(manifest));
+    const auto* level = world.level("J5");
+    REQUIRE(level != nullptr);
+    const auto* audio = world.audio(level->audioIndex);
+    REQUIRE(audio != nullptr);
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(manifest.parent_path().parent_path(), &player, audio);
+    const AssetLocator assets(disc);
+    soundscape.startMusic(&assets, 1);
+    REQUIRE(player.isPlaying(soundscape.music()));
+    std::array<f32, 2048> output{};
+    bool audible = false;
+    for (s32 i = 0; i < 100; ++i) {
+        player.update();
+        mixer.mix(output);
+        for (const f32 sample : output) {
+            audible |= sample > 0.001f || sample < -0.001f;
+        }
+    }
+    REQUIRE(audible);
+    soundscape.close();
+}
+
 TEST_CASE("level music loops in its own category and stops on replacement and teardown",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-music");
@@ -313,11 +344,25 @@ TEST_CASE("level music loops in its own category and stops on replacement and te
     const std::array<u8, 8> frame{0, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
     stream.putBytes(channel).putBytes(frame);
     writeFile(root / "STREAMS/test.ads", stream.bytes());
+    LevelAudioInfo info{.bank = {}, .stream = "test"};
+    SECTION("single stream") {}
+    SECTION("multipart stream without an unsuffixed file") {
+        writeFile(root / "STREAMS/parts_1.ads", stream.bytes());
+        writeFile(root / "STREAMS/parts_2.ads", stream.bytes());
+        info.stream = "parts";
+        info.parts[0] = 2;
+    }
+    SECTION("first area and its numbered parts") {
+        writeFile(root / "STREAMS/areaa_1.ads", stream.bytes());
+        writeFile(root / "STREAMS/areaa_2.ads", stream.bytes());
+        info.stream = "area";
+        info.areas = 2;
+        info.parts[0] = 2;
+    }
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);
     const AssetLocator assets(root);
     LevelSoundscape soundscape;
-    const LevelAudioInfo info{.bank = {}, .stream = "test"};
     soundscape.open(root, &player, &info);
     soundscape.startMusic(&assets, 0.5f);
     const SoundHandle first = soundscape.music();

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <numbers>
 #include <string>
@@ -99,6 +100,41 @@ TEST_CASE("party motion ignores invalid player ids", "[game][screens][party-moti
     f.players[1].actor.spawn(4, {}, nullptr, Vec3{0}, 0);
     f.step();
     REQUIRE(f.calls.empty());
+}
+
+TEST_CASE("arrival locks movement turning and buttons until the player animation ends",
+          "[game][screens][party-motion][unpacked]") {
+    const auto root = test::unpackedOrSkip("PLAYERS/WAR/RED/objects.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Fixture f;
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(device, root, player.actor.save());
+    REQUIRE(player.figure != nullptr);
+    f.inputs[3].move = MoveInput{Vec2{1, 0}, 1};
+    f.inputs[3].usePotion = true;
+    f.inputs[3].attack = true;
+    const Vec3 start = player.actor.position();
+    const f32 yaw = player.actor.yaw();
+    s32 frames = 0;
+    while (player.figure->animator().entering() && frames < 300) {
+        f.calls.clear();
+        f.step();
+        REQUIRE(player.actor.position() == start);
+        REQUIRE(player.actor.yaw() == yaw);
+        // The other party member may receive input; the arriving member may not.
+        REQUIRE(std::ranges::none_of(
+            f.calls, [](const std::string& call) { return call == "help0" || call == "select0"; }));
+        ++frames;
+    }
+    REQUIRE(frames > 10);
+    REQUIRE(frames < 300);
+    f.step();
+    REQUIRE(player.actor.position() != start);
 }
 
 TEST_CASE("boss impacts reach retail player animations and lock input through recovery",

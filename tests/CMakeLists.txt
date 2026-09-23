@@ -36,6 +36,7 @@ add_executable(tests
     engine/assets/SoundSetTests.cpp
     engine/audio/SoundPlayerTests.cpp
     engine/audio/AdsStreamTests.cpp
+    engine/audio/StreamPlaylistTests.cpp
     engine/assets/ObjModelTests.cpp
     engine/assets/ModelSetTests.cpp
     engine/assets/AnimationSetTests.cpp

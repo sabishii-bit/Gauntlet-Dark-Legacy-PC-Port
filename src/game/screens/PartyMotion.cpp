@@ -88,7 +88,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         const bool reeling =
             players[i].reaction != PlayerDeed::None ||
             (players[i].figure != nullptr && players[i].figure->animator().reacting());
-        const MoveInput& move = !held && !down && !reeling && player < inputs.size()
+        const bool entering =
+            players[i].figure != nullptr && players[i].figure->animator().entering();
+        const MoveInput& move = !held && !down && !reeling && !entering && player < inputs.size()
                                     ? inputs[player].move
                                     : MoveInput{};
         // What the buttons ask: a potion first, when one is carried, then the attack.
@@ -97,7 +99,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             deed = players[i].reaction;
         }
         players[i].reaction = PlayerDeed::None;
-        if (!held && !down && !reeling && player < inputs.size()) {
+        if (!held && !down && !reeling && !entering && player < inputs.size()) {
             const PlayInput& in = inputs[player];
             const bool carrying = !actor.save().progress().inventory.potions.empty();
             if ((in.usePotion || in.throwPotion) && !carrying) {
