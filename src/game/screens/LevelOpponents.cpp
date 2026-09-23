@@ -74,7 +74,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss);
             mark != nullptr) {
             m_bosses.spawn(level->bossType, mark->position, mark->rotation.y);
-            if (const CritterMeter* meter = m_bosses.meter(); meter != nullptr) {
+            if (const HealthMeterDefinition* meter = m_bosses.meter(); meter != nullptr) {
                 ItemArchive* archive = m_bosses.archive();
                 m_bossMeter.bind(*meter, archive != nullptr ? &archive->textures : nullptr);
                 const BossView boss = m_bosses.view();
@@ -112,15 +112,15 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         const Mat4 stood = itemPlacement(instance.position, instance.rotation);
         const f32 facing = std::atan2(stood[2][0], stood[2][2]);
         if (*kind == kGolemEnemyKind) {
-            m_critters.spawn(kGolemCritter, instance.position, facing);
+            m_critters.spawnGolem(instance.position, facing);
             continue;
         }
         if (*kind == kGeneralEnemyKind) {
-            m_critters.spawn(kGeneralCritter, instance.position, facing);
+            m_critters.spawnGeneral(instance.position, facing);
             continue;
         }
         if (*kind == kGargoyleEnemyKind) {
-            m_critters.spawn(kGargoyleCritter, instance.position, facing);
+            m_critters.spawnGargoyle(instance.position, facing);
             continue;
         }
         if (*kind >= kSwarmKindCount || !m_enemies.loadKind(*kind)) {
@@ -161,7 +161,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
     return views;
 }
 
-void LevelOpponents::applyCritterBlow(const CritterBlow& blow, std::span<PlayerRuntime> players,
+void LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
                                       const Events& events) {
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
@@ -230,13 +230,13 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     m_critters.update(ticks, seconds, views);
     m_bosses.update(ticks, seconds, views);
     const auto shotSound = [&](std::string_view name) { m_resources->audio.playNamed(name); };
-    for (const CritterShot& shot : m_bosses.takeShots()) {
+    for (const CombatShot& shot : m_bosses.takeShots()) {
         if (ItemArchive* archive = m_bosses.archive(); archive != nullptr) {
             m_critterProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
                                         shotSound);
         }
     }
-    for (const CritterShot& shot : m_critters.takeShots()) {
+    for (const CombatShot& shot : m_critters.takeShots()) {
         if (ItemArchive* archive = m_critters.archiveOf(shot.critter); archive != nullptr) {
             m_critterProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
                                         shotSound);
@@ -270,20 +270,20 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         events.legend(event);
     }
     events.advanceLegend(seconds);
-    for (const CritterBlow& blow : m_bosses.takeBlows()) {
+    for (const CombatBlow& blow : m_bosses.takeBlows()) {
         applyCritterBlow(blow, players, events);
     }
     awardBossLosses(players, events);
     events.advanceVictory(ticks, seconds);
     // The great ones' effects and sounds: a move's, a strike's, a hit's.
-    for (const CritterCue& cue : m_bosses.takeCues()) {
+    for (const CombatCue& cue : m_bosses.takeCues()) {
         showCritterCue(cue, m_bosses.archive(), true);
     }
-    for (const CritterCue& cue : m_critters.takeCues()) {
+    for (const CombatCue& cue : m_critters.takeCues()) {
         showCritterCue(cue, m_critters.archiveOf(cue.critter), false);
     }
     followCritterEffects();
-    for (const CritterBlow& blow : m_critters.takeBlows()) {
+    for (const CombatBlow& blow : m_critters.takeBlows()) {
         applyCritterBlow(blow, players, events);
     }
     awardCritterLosses(players, events);
@@ -374,7 +374,7 @@ void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
 /** Plays what one of the great ones (the boss with `ofBoss`) has set off: its tree from its
  * own archive (or the weapons', which holds the common marks of a hit) where it happened,
  * riding along with it when it follows, and its sound. */
-void LevelOpponents::showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss) {
+void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -453,10 +453,10 @@ void LevelOpponents::awardBossLosses(std::span<const PlayerRuntime> players, con
     if (!m_resources.has_value()) {
         return;
     }
-    for (const CritterSpew& spew : m_bosses.takeSpews()) {
+    for (const CombatSpew& spew : m_bosses.takeSpews()) {
         events.spew(spew);
     }
-    for (const CritterLoss& loss : m_bosses.takeLosses()) {
+    for (const CombatLoss& loss : m_bosses.takeLosses()) {
         if (loss.killed) {
             events.fallen(loss.position);
         }
@@ -485,7 +485,7 @@ void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
     if (!m_resources.has_value()) {
         return;
     }
-    for (const CritterLoss& loss : m_critters.takeLosses()) {
+    for (const CombatLoss& loss : m_critters.takeLosses()) {
         // A gargoyle slain leaves the key its form is named by where it fell.
         if (loss.killed && loss.kind == kGargoyleCritter && !loss.form.empty()) {
             m_resources->world.placeItem(m_resources->device, "GARG" + loss.form, loss.position);

@@ -12,8 +12,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/Combatant.h"
+#include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterArea.h"
-#include "game/enemies/Critters.h"
 
 namespace {
 using namespace gdl;
@@ -116,15 +117,16 @@ TEST_CASE("invisible areas outlive their attack window and remain rooted while f
           "[game][boss-areas]") {
     const auto root = areaArchive();
     test::FakeRenderDevice device;
-    Critters critters;
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
     EnemyScales scales;
     scales.damage = 2;
-    critters.open(device, root, nullptr, scales, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
-    REQUIRE(id.has_value());
+    fixture.open(device, root, nullptr, scales, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    REQUIRE(critters.present());
     std::array<EnemyView, 1> players{playerAt({0, 0, 8})};
-    critters.update(6, 0.1f, players); // READY ends
-    critters.update(6, 0.1f, players); // crosses the entire one-frame WHIP window
+    fixture.update(6, 0.1f, players); // READY ends
+    fixture.update(6, 0.1f, players); // crosses the entire one-frame WHIP window
     auto blows = critters.takeBlows();
     REQUIRE(blows.size() == 1);
     REQUIRE(blows[0].area);
@@ -133,14 +135,14 @@ TEST_CASE("invisible areas outlive their attack window and remain rooted while f
     REQUIRE(blows[0].origin == Vec3{0, 5, 0}); // DAMG + SFXX, not the body's origin
     REQUIRE(blows[0].repeatGap == Approx(0.5f));
     REQUIRE(critters.takeCues().empty()); // absence of artwork cannot remove damage
-    critters.freeze(*id, 120);
-    critters.update(6, 0.1f, players);
+    critters.freeze(120);
+    fixture.update(6, 0.1f, players);
     REQUIRE(critters.takeBlows().size() == 1);
     players[0].position = {0, 0, -8};
-    critters.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
     REQUIRE(critters.takeBlows().empty());
     players[0].position = {0, 0, 8};
-    critters.update(24, 0.4f, players);
+    fixture.update(24, 0.4f, players);
     REQUIRE(critters.takeBlows().empty());
 }
 
@@ -151,8 +153,8 @@ TEST_CASE("Spider Queen and Wraith authored areas use supported root policies",
         CritterData data;
         REQUIRE(data.load(test::unpackedOrSkip("critter/" + name + ".json")));
         usize count = 0;
-        for (const CritterDamage& damage : data.damages()) {
-            if (damage.type != CritterDamage::kAttachedArea) {
+        for (const AttackDefinition& damage : data.damages()) {
+            if (damage.type != AttackDefinition::kAttachedArea) {
                 continue;
             }
             ++count;
@@ -181,14 +183,15 @@ TEST_CASE("Spider Queen and Wraith encounters emit damaging areas from their aut
                 test::unpackedOrSkip("critter/" + name + ".json").parent_path().parent_path();
             test::unpackedOrSkip("MONSTERS/" + name + "/animations.json");
             test::FakeRenderDevice device;
-            Critters critters;
-            critters.open(device, root, nullptr, {}, 'D');
-            const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, name);
-            REQUIRE(id.has_value());
+            test::CombatantFixture fixture;
+            Combatant& critters = fixture.actor;
+            fixture.open(device, root, nullptr, {}, 'D');
+            REQUIRE(fixture.spawn(name, Vec3{0}, 0));
+            REQUIRE(critters.present());
             const std::array<EnemyView, 1> players{playerAt({0, 0, 15})};
             bool areaHit = false;
             for (s32 frame = 0; frame < 1800 && !areaHit; ++frame) {
-                critters.update(2, 1.0f / 30.0f, players);
+                fixture.update(2, 1.0f / 30.0f, players);
                 for (const auto& blow : critters.takeBlows()) {
                     if (blow.area) {
                         REQUIRE(blow.player == 2);
@@ -200,7 +203,7 @@ TEST_CASE("Spider Queen and Wraith encounters emit damaging areas from their aut
                 critters.takeCues();
                 critters.takeShots();
             }
-            INFO("Last move: " << critters.moveOf(*id));
+            INFO("Last move: " << critters.moveName());
             REQUIRE(areaHit);
         }
     }

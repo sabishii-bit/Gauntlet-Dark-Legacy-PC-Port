@@ -34,7 +34,7 @@ const Texture* textureOf(TextureSet* textures, RenderDevice& device, std::string
 
 } // namespace
 
-bool BossMeter::bind(const CritterMeter& meter, TextureSet* textures, s32 left) {
+bool BossMeter::bind(const HealthMeterDefinition& meter, TextureSet* textures, s32 left) {
     clear();
     if (!meter.shown || meter.pieces <= 0) {
         return false;

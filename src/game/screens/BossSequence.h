@@ -45,7 +45,7 @@ public:
                     std::span<const PlayerRuntime> players);
     void advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRuntime> players);
     void fallen(const Vec3& where, const Bosses& bosses, std::span<PlayerRuntime> players);
-    void spewCoins(const CritterSpew& spew, LevelOpponents& opponents,
+    void spewCoins(const CombatSpew& spew, LevelOpponents& opponents,
                    std::span<PlayerRuntime> players);
     /** True only on the update that completes the visit; the caller chooses how to travel. */
     bool advanceVictory(s32 ticks, f32 seconds, std::span<const PlayerRuntime> players,

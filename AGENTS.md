@@ -590,6 +590,30 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   realm's `S_GENDAM<letter>` / `S_GENKILL<letter>`), melee for the player
   (now that there is something to hit), and the original's on-screen gate
   on breeding.
+* Combat ownership: `enemies/Combatant` is one noncopyable fighter borrowing stable
+  `CombatantAssets`; it owns animation, movement, health/status and outgoing combat
+  events, not a population or an encounter. `MoveDefinition.h` holds the shared
+  target, move, attack, effect and meter definitions; `CombatEvents.h` carries
+  neutral CombatBlow/Cue/Loss/Spew events. `CritterData` and `formats/CritterWad`
+  retain their names only at the original CRITTER data boundary; file names and
+  serialized records are unchanged. Execution is divided into CombatantMoves,
+  Patterns, Motion, Attacks, Areas and View, with no per-kind id checks in those
+  modules. Family definitions select policies instead of duplicating combat code.
+  `Golem` owns realm-costume selection and five-unit knockback resistance;
+  `General` owns its realm-costumed priority-move definition; `Gargoyle` owns
+  form-specific assets and the defeated form used for key drops. These definitions
+  do not invent missing patrol/statue behavior. `Critters` owns their shared
+  sixteen-slot roster and shared assets, preserving stable ids, cross-family
+  collision, slot-order updates and event submission order. Use its typed
+  spawnGolem/spawnGeneral/spawnGargoyle entry points; the legacy kind-id adapter
+  refuses bosses. `Bosses` owns one Combatant and its own assets, not a Critters
+  pool; BossDefinition selects pattern scheduling and territory constraints.
+  Keep encounter waking, legend staging, cameras and victory outside the common
+  fighter. Texture clocks advance once per shared stock, not once per actor.
+  Clear actors and external effect/projectile borrowers before releasing assets.
+  `[combatant]` covers family policy, state isolation, shared capacity/collision,
+  knockback, key drops, slot reuse, event order, independent boss ownership and
+  retained asset/event lifetimes across boss replacement.
 * The great ones (`game/enemies/Critters`, `CritterData`,
   `formats/CritterWad`): golems, generals and gargoyles, the original's
   critters, whose minds are data. `gdlunpack --only CRITTER` writes
@@ -604,7 +628,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   its form's, `MONSTERS/GAR_EAGL`) and the tree of prefix plus suffix
   (`GOLEM1`), and health `maxHealth` at the level's enemy health. Each tick
   the move it is doing plays; done (or something louder come), what it links
-  to plays, else the loudest move whose target rule (`CritterTarget`:
+  to plays, else the loudest move whose target rule (`TargetCriteria`:
   distance window, a cone `minDot` wide pointing `yaw` from ahead, so TURN's
   points behind and the gargoyle's LEFT/RIGHT to the sides) and cooldown
   allow it: attacks (types from 128) over walks (52) over the stance (32);
@@ -619,7 +643,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the player's expanded cylinder. Repeated contacts are routed by
   `LevelOpponents` through the recipient's shared quarter-second `breathGap`,
   for `damage` at the level's enemy damage scale.
-  Projectile damage (1) is queued as `CritterShot` at the authored launch
+  Projectile damage (1) is queued as `CombatShot` at the authored launch
   frame; move 133 repeats at `framePeriod`, including triggers crossed by a
   coarse update without re-firing a held frame. `CritterProjectile` owns the
   retail launch math (0x8003d0a4 / 0x80030ae8): rate clamped to 0.5..1.5,
@@ -663,7 +687,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   archive `MONSTERS/<NAME>`, tree prefix plus suffix, `LICH`), stood at the
   level's `boss` mark by `bossType`, asleep until the party comes within
   its table's `wakeThreshold` (or struck), fighting by the same move table
-  through a `Critters` fighter of its own (composition, not the shared
+  through a `Combatant` fighter of its own (composition, not the shared
   pool: the step family, types 48 to 63, is chosen like the walk, and a
   named attack of speed, the lich's `CHARGE`, carries it), with a `BossView`
   (name, health, `fraction()`) for the meter through `PlayScene::bossView`,
@@ -689,7 +713,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   start for the first of the party with the item; the boss holds `READY`
   while it rises; risen, the bearer brandishes (the item is spent:
   `LegendCue::Brandished`) and throws a second on (`Thrown`: the toll and
-  the weakness go on the fighter through `Critters::freeze/blind/curb/
+  the weakness go on the fighter through `Combatant::freeze/blind/curb/
   resize`), the boss roars a second (chimera, lich, temple) or three after
   rising (`Roared`) and the curb wears off (`WornOff`); from the rise to
   the end of the roar the level goes dark by 0.8 through the ambient
@@ -825,7 +849,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   remain reconstruction work; this table is an inventory, not a claim all those
   attacks are complete. `[boss-movement]` tests cover bounds, facing, direction,
   legacy/new export keys, synthetic near/far encounters and the eight retail tables.
-* Boss attack selection (`enemies/CritterAttackSelection.cpp`) consumes PTRN
+* Boss attack selection (`enemies/CombatantPatterns.cpp`) consumes PTRN
   sequences and MOVE/PTRN health gates. Re-run `gdlunpack <assets> <out>
   --only CRITTER` after updating: older manifests omitted patterns and now
   produce a warning instead of silently losing combos. Rate scale is
@@ -855,7 +879,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   shakes and the Lich's arena-dirt visibility cue. Playing a move or its visual
   is not evidence these gameplay paths are implemented.
 * Spider Queen and Wraith's type-2 attacks use `CritterArea` and
-  `CritterAreaAttacks`: constant-radius root-attached sectors, independent of
+  `CombatantAreas`: constant-radius root-attached sectors, independent of
   the move's remaining frames and of whether their SFXX has visible artwork.
   Eight DRIDER and three WRAITH damage records use this path. `NULLFX` is an
   intentional invisible damage carrier, not an absent attack. SFXX.life wins;
@@ -911,10 +935,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `BossCamBossCalc` is only partly reconstructed (bosscam.c); this is its
   described behaviour, not its arithmetic.
 * The great ones' sounds and effects: each critter's SFXX records are read
-  whole (`CritterSound`: tree, `%c` sound format, offset, life, scale,
-  flags, link) and set off as `CritterCue`s: a move's at its `sfxFrame`
+  whole (`CombatEffectDefinition`: tree, `%c` sound format, offset, life, scale,
+  flags, link) and set off as `CombatCue`s: a move's at its `sfxFrame`
   (its own effect sequence supplies the wind-up), a strike's
-  (`CritterDamage::sound`) at the part it strikes
+  (`AttackDefinition::sound`) at the part it strikes
   with, a hit's mark (`hitSoundClose` @0xF4 for a blow, `hitSoundFar` @0xF6
   for a missile) where it landed (`EnemyHit::where/close`). The scene plays
   the trees from the creature's archive or the weapons' (`HITDIE`), the
@@ -936,11 +960,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   from `LevelWorld::goldLeft`, cut to two once it is all gathered) the
   party sparkles (the spawn effect) and, 35 ticks on, travels to the tower.
   The coins (`enemies/BossCoins`, the original's `BossSpewCoins`, boss.c
-  262): the death move's first damage record is of type 9 (`CritterDamage::
+  262): the death move's first damage record is of type 9 (`AttackDefinition::
   kSpew`: its `yaw`/`pitch` turn and tip the body's facing, `minSpeed`
   @0x30 is the throw's speed, `acos(minDot)` half its arc), and when the
   death reaches its frame (the lich's 95th) the fighter reports a
-  `CritterSpew`; the scene then throws, for each player in the game, the
+  `CombatSpew`; the scene then throws, for each player in the game, the
   realm's counts of bronze (500), silver (1000) and gold (5000) coins
   (`kCounts`, the original's table at 0x801189E0: the town's 4/1/0, the
   castle's 2/1/1...) fanned evenly over the arc at 0.85-0.95, 0.8-0.9 and

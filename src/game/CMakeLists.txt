@@ -64,9 +64,20 @@ add_library(game STATIC
     enemies/CritterProjectile.cpp
     world/CritterProjectiles.cpp
     enemies/Critters.cpp
-    enemies/CritterAttackSelection.cpp
+    enemies/Combatant.cpp
+    enemies/MoveDefinition.cpp
+    enemies/CombatantAssets.cpp
+    enemies/CombatantMoves.cpp
+    enemies/CombatantMotion.cpp
+    enemies/CombatantAttacks.cpp
+    enemies/CombatantView.cpp
+    enemies/Golem.cpp
+    enemies/General.cpp
+    enemies/Gargoyle.cpp
+    enemies/BossDefinition.cpp
+    enemies/CombatantPatterns.cpp
     enemies/CritterArea.cpp
-    enemies/CritterAreaAttacks.cpp
+    enemies/CombatantAreas.cpp
     enemies/BossCoins.cpp
     enemies/Bosses.cpp
     enemies/LegendItems.cpp

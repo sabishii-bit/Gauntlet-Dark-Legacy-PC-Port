@@ -9,8 +9,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/Combatant.h"
+#include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterData.h"
-#include "game/enemies/Critters.h"
 
 namespace {
 using namespace gdl;
@@ -47,7 +48,7 @@ EnemyView targetAt(f32 z) {
 
 TEST_CASE("boss health gates use exclusive upper bounds only above the lower bound",
           "[game][boss-attacks]") {
-    CritterTarget target;
+    TargetCriteria target;
     target.minRateScale = 1.5f;
     target.maxRateScale = 2.5f;
     REQUIRE_FALSE(target.allowsPhase(1.49f, 0));
@@ -68,18 +69,19 @@ TEST_CASE("boss attack rotation does not starve equal-priority attacks", "[game]
         {"name":"B","anim":"STEP","type":128,"priority":10},
         {"name":"LINK_ONLY","anim":"STEP","type":128,"priority":100,"flags":4}]})");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
-    REQUIRE(id.has_value());
+    test::CombatantFixture fixture;
+    const Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    REQUIRE(critters.present());
     const std::vector<EnemyView> party{targetAt(8)};
-    critters.update(6, 0.1f, party);
-    critters.update(6, 0.1f, party);
-    REQUIRE(critters.moveOf(*id) == "A");
-    critters.update(6, 0.1f, party);
-    REQUIRE(critters.moveOf(*id) == "B");
-    critters.update(6, 0.1f, party);
-    REQUIRE(critters.moveOf(*id) == "A");
+    fixture.update(6, 0.1f, party);
+    fixture.update(6, 0.1f, party);
+    REQUIRE(critters.moveName() == "A");
+    fixture.update(6, 0.1f, party);
+    REQUIRE(critters.moveName() == "B");
+    fixture.update(6, 0.1f, party);
+    REQUIRE(critters.moveName() == "A");
 }
 
 TEST_CASE("boss chains gate entry not continuation and preserve repeated moves",
@@ -93,21 +95,22 @@ TEST_CASE("boss chains gate entry not continuation and preserve repeated moves",
         {"name":"OTHER","anim":"STEP","type":128,"priority":10}],
       "patterns":[{"moves":[1,2,2,-1,3],"target":{"minRateScale":0.5,"maxRateScale":1}}]})");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
-    REQUIRE(id.has_value());
+    test::CombatantFixture fixture;
+    const Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    REQUIRE(critters.present());
     const std::vector<EnemyView> party{targetAt(8)};
-    critters.update(6, 0.1f, party);
-    critters.update(6, 0.1f, party);
-    REQUIRE(critters.moveOf(*id) == "A");
-    critters.update(6, 0.1f, party);
-    REQUIRE(critters.moveOf(*id) == "B");
-    critters.update(6, 0.1f, party);
-    REQUIRE(critters.moveOf(*id) == "B");
-    critters.update(6, 0.1f, party);
+    fixture.update(6, 0.1f, party);
+    fixture.update(6, 0.1f, party);
+    REQUIRE(critters.moveName() == "A");
+    fixture.update(6, 0.1f, party);
+    REQUIRE(critters.moveName() == "B");
+    fixture.update(6, 0.1f, party);
+    REQUIRE(critters.moveName() == "B");
+    fixture.update(6, 0.1f, party);
     // A pattern has its own timestamp; it does not consume its members' solo cooldowns.
-    REQUIRE(critters.moveOf(*id) == "A");
+    REQUIRE(critters.moveName() == "A");
 }
 
 TEST_CASE("boss health opens new moves and evaluates each player's eligibility",
@@ -123,20 +126,21 @@ TEST_CASE("boss health opens new moves and evaluates each player's eligibility",
       "damages":[{"type":1,"minSpeed":20,"maxSpeed":40,"sfxIndex":0}],
       "sounds":[{"name":"SHOT"}]})");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
-    REQUIRE(id.has_value());
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    REQUIRE(critters.present());
     std::vector<EnemyView> party{targetAt(5), targetAt(20)};
     party[1].player = 1;
-    critters.update(6, 0.1f, party);
-    critters.update(6, 0.1f, party);
-    REQUIRE(critters.moveOf(*id) == "HEALTHY");
+    fixture.update(6, 0.1f, party);
+    fixture.update(6, 0.1f, party);
+    REQUIRE(critters.moveName() == "HEALTHY");
     EnemyHit hit;
     hit.damage = 50;
-    critters.hurt(*id, hit);
-    critters.update(6, 0.1f, party);
-    REQUIRE(critters.moveOf(*id) == "WOUNDED");
+    critters.hurt(hit);
+    fixture.update(6, 0.1f, party);
+    REQUIRE(critters.moveName() == "WOUNDED");
     const auto shots = critters.takeShots();
     REQUIRE(shots.size() == 1);
     REQUIRE(shots.front().rate > 2);
@@ -156,27 +160,28 @@ TEST_CASE("single-frame boss stomps survive coarse updates and deaths keep autho
       "damages":[{"type":3,"maxDistance":10,"damage":10},
         {"type":9,"minSpeed":10}]})");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
-    REQUIRE(id.has_value());
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    REQUIRE(critters.present());
     const std::vector<EnemyView> party{targetAt(5)};
-    critters.update(6, 0.1f, party);
-    critters.update(6, 0.1f, party);
+    fixture.update(6, 0.1f, party);
+    fixture.update(6, 0.1f, party);
     REQUIRE(critters.takeBlows().size() == 1);
     EnemyHit hit;
     hit.damage = 1000;
-    critters.hurt(*id, hit);
-    critters.update(6, 0.1f, party);
+    critters.hurt(hit);
+    fixture.update(6, 0.1f, party);
     REQUIRE(critters.takeSpews().size() == 1);
     for (s32 frame = 0; frame < 15; ++frame) {
-        critters.update(6, 0.1f, party);
+        fixture.update(6, 0.1f, party);
     }
-    REQUIRE(critters.count() == 1);
-    REQUIRE_FALSE(critters.moveDoneOf(*id));
+    REQUIRE(critters.present());
+    REQUIRE_FALSE(critters.moveDone());
     for (s32 frame = 0; frame < 6; ++frame) {
-        critters.update(6, 0.1f, party);
+        fixture.update(6, 0.1f, party);
     }
-    REQUIRE(critters.count() == 0);
+    REQUIRE(!critters.present());
 }
 } // namespace
