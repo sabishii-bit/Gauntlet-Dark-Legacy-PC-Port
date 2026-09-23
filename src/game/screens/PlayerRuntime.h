@@ -31,6 +31,7 @@ struct PlayerRuntime {
     std::vector<std::size_t> rammed; ///< barrels already hit by the current charge
     float blockLeft = 0.0f;          ///< seconds before another block effect
     float cloudGap = 0.0f;           ///< seconds before gas can harm this participant again
+    float breathGap = 0.0f; ///< shared across all creatures' breath, not reset by a new move
 };
 
 } // namespace gdl::game

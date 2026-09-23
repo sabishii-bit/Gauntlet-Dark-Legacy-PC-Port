@@ -14,6 +14,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "formats/CritterWad.h"
+#include "game/enemies/CritterBreath.h"
 #include "game/enemies/CritterData.h"
 #include "game/enemies/Critters.h"
 
@@ -275,6 +276,90 @@ TEST_CASE("the dragon wears its ice texture while frozen and restores its skin w
     critters.update(144, 144.0f / 60.0f, {});
     REQUIRE_FALSE(critters.frozen(*id));
     checkSkin(false);
+}
+
+TEST_CASE("dragon breath starts its node effect before harm and keeps contacting during the move",
+          "[game][enemies][breath][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, root, nullptr, {}, 'B');
+    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DRAGON");
+    REQUIRE(id.has_value());
+    const CritterData& data = *critters.dataOf(*id);
+    auto* archive = critters.archiveOf(*id);
+    REQUIRE(archive != nullptr);
+    const auto treeIndex = archive->trees.find(data.tree());
+    REQUIRE(treeIndex.has_value());
+    const auto& tree = archive->trees.tree(*treeIndex);
+    std::vector<EnemyView> players{playerAt({0, 0, 25}), playerAt({0, 0, 25}, 1)};
+    const CritterMove* move = nullptr;
+    for (int tick = 0; tick < 2400; ++tick) {
+        critters.update(1, 1.0f / 60, players);
+        const auto index = data.moveNamed(critters.moveOf(*id));
+        REQUIRE(index.has_value());
+        const auto& candidate = data.moves()[*index];
+        const auto* damage = data.damage(candidate.damage0);
+        if (damage != nullptr && damage->type == CritterDamage::kBreath) {
+            move = &candidate;
+            break;
+        }
+        critters.takeCues();
+        critters.takeBlows();
+    }
+    REQUIRE(move != nullptr);
+    REQUIRE(move->soundFrame < move->frameStart);
+    const auto sequence = tree.findSequence(move->anim);
+    REQUIRE(sequence.has_value());
+    AnimationPlayer clock;
+    clock.start(tree.sequences[*sequence], *sequence);
+    clock.advance(1.0f / 60, false); // first step happened when the move started
+    const auto node = tree.findNode(move->colnode);
+    REQUIRE(node.has_value());
+    bool fire = false;
+    int contacts = 0;
+    while (!clock.finished()) {
+        clock.advance(1.0f / 60, false);
+        TreePose pose;
+        pose.evaluate(tree, *sequence, clock.frame());
+        const Mat4 model = glm::translate(Mat4{1}, Vec3{0, data.floorOffset(), 0});
+        const Mat4 parent = model * pose.matrices()[*node];
+        const auto breath = CritterBreath::fromNode(parent, *data.damage(move->damage0));
+        // A second player follows the damaging segment, independently of move targeting.
+        players[1].position = (breath.origin + breath.end) * 0.5f - Vec3{0, 3, 0};
+        critters.update(1, 1.0f / 60, players);
+        REQUIRE(critters.moveOf(*id) == move->name);
+        for (const auto& cue : critters.takeCues()) {
+            if (cue.tree != "FIRE") {
+                continue;
+            }
+            REQUIRE_FALSE(fire);
+            fire = true;
+            REQUIRE(clock.frame() >= static_cast<float>(move->soundFrame));
+            REQUIRE(clock.frame() < static_cast<float>(move->soundFrame + 1));
+            REQUIRE(clock.frame() < static_cast<float>(move->frameStart));
+            REQUIRE(cue.node == move->colnode);
+            REQUIRE(cue.follows);
+            REQUIRE(cue.sound == "S_DRGBREEZ");
+            REQUIRE(glm::distance(cue.position, Vec3{parent[3]}) < 0.001f);
+        }
+        for (const auto& blow : critters.takeBlows()) {
+            if (blow.player != 1) {
+                continue;
+            }
+            REQUIRE(blow.breath);
+            REQUIRE(clock.frame() >= static_cast<float>(move->frameStart));
+            REQUIRE(clock.frame() < static_cast<float>(move->frameEnd + 1));
+            REQUIRE(glm::distance(blow.direction, glm::normalize(breath.end - breath.origin)) <
+                    0.001f);
+            ++contacts;
+        }
+    }
+    REQUIRE(fire);
+    REQUIRE(contacts > 1); // not suppressed forever by struckThisMove
+    critters.close();
+    REQUIRE_FALSE(critters.nodeTransformOf(*id, "NODE#01").has_value());
 }
 
 TEST_CASE("a boss's death record throws its coins all round it, up at seventy degrees",

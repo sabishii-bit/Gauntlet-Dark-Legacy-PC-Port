@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -15,6 +16,53 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("effect transforms retain pitch roll and scale from a full attachment",
+          "[game][world][effects]") {
+    EffectTrees::Effect effect;
+    effect.scale = 2;
+    effect.position = {5, 6, 7};
+    REQUIRE(effect.transform() == glm::scale(glm::translate(Mat4{1}, effect.position), Vec3{2}));
+    effect.attachment = glm::rotate(Mat4{1}, 0.7f, glm::normalize(Vec3{1, 0, 1}));
+    Mat4 expected = glm::scale(*effect.attachment, Vec3{2});
+    expected[3] = Vec4{effect.position, 1};
+    REQUIRE(effect.transform() == expected);
+    effect.yaw = 1; // full attachment replaces the world-yaw path
+    REQUIRE(effect.transform() == expected);
+}
+
+TEST_CASE("a node-attached effect draws with the moving parent's full basis",
+          "[game][world][effects][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    const auto id = effects.startSet(device, archive, "MP_FIRE", Vec3{0}, {});
+    REQUIRE(id != 0);
+    effects.draw(device, Mat4{1}, {});
+    const auto local = device.draws;
+    REQUIRE_FALSE(local.empty());
+    for (const float angle : {0.6f, -1.2f}) {
+        const Mat4 parent =
+            glm::rotate(glm::translate(Mat4{1}, Vec3{4, 7, 9}), angle, Vec3{1, 0, 0});
+        effects.placeAt(id, parent);
+        REQUIRE(effects.effect(0).transform() == parent);
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, {});
+        REQUIRE(device.draws.size() == local.size());
+        float error = 0;
+        for (std::size_t d = 0; d < local.size(); ++d) {
+            REQUIRE(device.draws[d].vertices.size() == local[d].vertices.size());
+            for (std::size_t v = 0; v < local[d].vertices.size(); ++v) {
+                const Vec3 expected{parent * Vec4{local[d].vertices[v].position, 1}};
+                error =
+                    std::max(error, glm::distance(device.draws[d].vertices[v].position, expected));
+            }
+        }
+        REQUIRE(error < 0.001f);
+    }
+}
 
 TEST_CASE("legend effects carry a world-space trail and draw its sprites facing the camera",
           "[game][world][effects][unpacked]") {
@@ -54,6 +102,60 @@ TEST_CASE("legend effects carry a world-space trail and draw its sprites facing 
     device.draws.clear();
     effects.draw(device, Mat4{1.0f}, {});
     REQUIRE(device.draws.empty());
+}
+
+TEST_CASE("dragon FIRE plays both authored particle nodes without requiring a mesh",
+          "[game][world][effects][breath][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/DRAGON/animations.json").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    const auto id = effects.startSet(device, archive, "FIRE", Vec3{0}, {});
+    REQUIRE(id != 0);
+    REQUIRE(effects.effect(0).particles.field().size() == 2);
+    const Mat4 parent = glm::rotate(glm::translate(Mat4{1}, Vec3{4, 8, 12}), 0.6f, Vec3{1, 0, 0});
+    effects.placeAt(id, parent);
+    effects.update(1.0f / 30);
+    const auto& effect = effects.effect(0);
+    const auto& particles = effect.particles.field();
+    REQUIRE(particles.particleCount() > 0);
+    REQUIRE(particles.emitter(0).descriptor().texture == "DRAGONBREATH");
+    REQUIRE(particles.emitter(1).descriptor().texture == "FBALLX");
+    REQUIRE(particles.textureOf(0) != &device.whiteTexture());
+    REQUIRE(particles.textureOf(1) != &device.whiteTexture());
+    for (std::size_t i = 0; i < particles.size(); ++i) {
+        REQUIRE(particles.emitter(i).node() == parent * effect.pose.matrices()[i + 1]);
+        REQUIRE(particles.emitter(i).descriptor().direction == effect.tree->nodes[i + 1].direction);
+    }
+    effects.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    REQUIRE_FALSE(device.draws.front().vertices.empty());
+    // Frame replacement preserves the emitter; this tree has no texture-motion track.
+    const auto textureSlot = archive.textures.find("DRAGONBREATH");
+    REQUIRE(textureSlot.has_value());
+    const test::FakeTexture frame{1, 1};
+    // The public tree-particle binding also supports shared archive frame animations.
+    TreeParticles replacement;
+    replacement.bind(*effect.tree, archive, device, parent, effect.pose.matrices());
+    replacement.step(1.0f / 30, parent, effect.pose.matrices());
+    const auto count = replacement.field().particleCount();
+    replacement.setTextureFrame(*textureSlot, frame);
+    REQUIRE(replacement.field().textureOf(0) == &frame);
+    REQUIRE(replacement.field().particleCount() == count);
+    for (int i = 0; i < 15; ++i) {
+        effects.update(1.0f / 30);
+    }
+    const Mat4 moved = glm::translate(parent, Vec3{2, 3, 4});
+    effects.placeAt(id, moved);
+    effects.update(1.0f / 30);
+    REQUIRE(particles.emitter(0).node() == moved * effect.pose.matrices()[1]);
+    for (int i = 0; i < 60; ++i) {
+        effects.update(1.0f / 30);
+    }
+    REQUIRE(particles.particleCount() == 0); // template fades, not an invented endless flame
+    effects.stop(id);
+    REQUIRE_FALSE(effects.playing(id));
 }
 
 TEST_CASE("an effect tree plays its sequence once where it was started, then goes",

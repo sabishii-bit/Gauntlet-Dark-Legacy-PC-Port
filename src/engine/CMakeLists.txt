@@ -132,6 +132,8 @@ add_library(engine STATIC
     world/ParticleSystem.cpp
     world/ParticleField.h
     world/ParticleField.cpp
+    world/TreeParticles.h
+    world/TreeParticles.cpp
     world/WorldCollision.h
     world/WorldCollision.cpp
     world/TreeModel.h

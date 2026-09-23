@@ -47,6 +47,7 @@ add_executable(tests
     engine/world/WorldAnimatorTests.cpp
     engine/world/ParticleSystemTests.cpp
     engine/world/ParticleFieldTests.cpp
+    engine/world/TreeParticlesTests.cpp
     engine/world/WorldCollisionTests.cpp
     engine/world/TreeModelTests.cpp
     engine/world/AnimationPlayerTests.cpp
@@ -117,6 +118,7 @@ add_executable(tests
     game/enemies/EnemiesTests.cpp
     game/enemies/GeneratorsTests.cpp
     game/enemies/CrittersTests.cpp
+    game/enemies/CritterBreathTests.cpp
     game/enemies/BossCoinsTests.cpp
     game/enemies/BossesTests.cpp
     game/enemies/LegendItemsTests.cpp

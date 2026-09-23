@@ -604,8 +604,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   another; over its harmful frames (`frameStart..frameEnd`, a second window
   too) its damage record strikes: a blow (0) whoever is within the part's
   radius plus its reach of the named node's posed position, a ring (3, the
-  stomp) or a breath (4, in its cone) whoever is within its reach of the
-  feet, each player once a move, for `damage` at the level's enemy damage.
+  stomp) whoever is within reach of the feet, each player once a move.
+  Breath (4) instead uses `enemies/CritterBreath`: an animated-node segment,
+  authored offset/yaw/pitch and min/max horizontal distance, tested against
+  the player's expanded cylinder. Repeated contacts are routed by
+  `LevelOpponents` through the recipient's shared quarter-second `breathGap`,
+  for `damage` at the level's enemy damage scale.
   A hit takes the armour off (a point always through for a character), a
   block lets a quarter through and shrugs off the throw, and is worth
   amount / (1 + health) of the value to the hitter (a fiftieth less a level
@@ -713,15 +717,18 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   projectile moves, the general's waypoint patrol, the gargoyle's
   fireball, per-part damage and breaking, the critters' sounds, the
   statue's waking, and a boss level unpacked (`--only levelG5`).
-  Dragon breath is still incomplete: `Critters::strikeWith` uses a flat
-  reach/facing test, but `CritterFirePlayerCollide` tests a yawed/pitched
-  segment from the active move node against the player's cylinder, with a
-  quarter-second hit gate and item obstruction. `CritterDoSfxSub` also
-  parents an unflagged move effect to that active node; a floor position
-  and yaw alone cannot reproduce FIRE's animated attachment. Its authored
-  `sfxFrame` precedes `frameStart`, so the generic delayed-effect path is
-  not a faithful substitute. Fix collision, attachment and timing together;
-  do not merely widen the angle or move the fire sprite up by a constant.
+  Dragon breath's collision and effect use the active animated node. The
+  unflagged FIRE move cue attaches there at `sfxFrame` (38 for BREATH), not
+  the later damage frame (49). `EffectTrees::placeAt` preserves its full
+  basis. `engine/world/TreeParticles` plays the archive's particle nodes,
+  including particle-only effect trees: FIRE has two emitters and no mesh.
+  Templates govern their direction, emission/fade, speed, size and textures;
+  shared texture-animation frame replacements preserve live particles.
+  Still incomplete: retail's item obstruction/filtering (including the
+  safe rocks), and auditing per-particle texture selection against retail.
+  Do not substitute all collision obstacles for that selective item query.
+  Other move effects retain their older landing-frame/body-follow behavior;
+  they still need their own parenting/timing audit.
   Scenarios: `level-g1-general.json`.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)

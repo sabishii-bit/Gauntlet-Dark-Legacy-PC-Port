@@ -71,4 +71,118 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
     REQUIRE_FALSE(opponents.bosses().present());
     REQUIRE_FALSE(opponents.meter().bound());
 }
+
+TEST_CASE("breath contacts share a player's quarter-second gate across creatures",
+          "[game][screens][level-opponents][breath]") {
+    std::array<PlayerRuntime, 3> players;
+    players[0].actor.spawn(3, {}, nullptr, {}, 0);
+    players[1].actor.spawn(1, {}, nullptr, {}, 0);
+    players[2].actor.spawn(2, {}, nullptr, {}, 0);
+    players[2].life = PlayerLife::Dying;
+    std::vector<std::size_t> hurt;
+    std::vector<HurtKind> kinds;
+    LevelOpponents::Events events;
+    events.hurt = [&](std::size_t index, float damage, HurtKind kind, bool directed) {
+        REQUIRE(damage == 40);
+        REQUIRE(directed);
+        hurt.push_back(index);
+        kinds.push_back(kind);
+    };
+    CritterBlow fire;
+    fire.player = 3;
+    fire.damage = 40;
+    fire.breath = true;
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hurt == std::vector<std::size_t>{0});
+    REQUIRE(kinds.back() == HurtKind::Burn);
+    REQUIRE(players[0].breathGap == 0.25f);
+    fire.critter = 7;
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hurt.size() == 1);
+    fire.player = 1;
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hurt == std::vector<std::size_t>{0, 1});
+    fire.player = 2;
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hurt.size() == 2);
+    fire.player = 3;
+    fire.breath = false;
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hurt.size() == 3);
+    REQUIRE(kinds.back() == HurtKind::Blow);
+    REQUIRE(players[0].breathGap == 0.25f);
+
+    // Run the real level phase to expire the gate, without any assets/combatants.
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    opponents.open(
+        {device, world, weapons, effects, audio, test::scratchDirectory("breath-contact-level"), 1},
+        {});
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](float) {};
+    events.advanceVictory = [](std::int32_t, float) {};
+    events.levels = [] {};
+    opponents.update(14, 0.24f, players, {}, events);
+    fire.breath = true;
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hurt.size() == 3);
+    opponents.update(1, 0.011f, players, {}, events);
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hurt.size() == 4);
+    REQUIRE(players[0].breathGap == 0.25f);
+}
+
+TEST_CASE("the level keeps the dragon FIRE effect attached to its animated node",
+          "[game][screens][level-opponents][breath][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 25}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.bosses().spawn(34, Vec3{0}, 0));
+    LevelOpponents::Events events;
+    events.hurt = [](std::size_t, float, HurtKind, bool) {};
+    events.blast = [](const Vec3&, float, float) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](float) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CritterSpew&) {};
+    events.advanceVictory = [](std::int32_t, float) {};
+    events.levels = [] {};
+    events.award = [](std::int32_t, std::int32_t, bool) {};
+    std::uint32_t fireId = 0;
+    int attachedFrames = 0;
+    for (int tick = 0; tick < 2400 && attachedFrames < 20; ++tick) {
+        opponents.update(1, 1.0f / 60, players, {}, events);
+        for (std::size_t e = 0; e < effects.count(); ++e) {
+            const auto& effect = effects.effect(e);
+            if (effect.name != "FIRE") {
+                continue;
+            }
+            fireId = effect.id;
+            REQUIRE(effect.attachment.has_value());
+            const auto parent = opponents.bosses().nodeTransform("NODE#01");
+            REQUIRE(parent.has_value());
+            REQUIRE(effect.transform() == *parent);
+            REQUIRE(effect.particles.field().size() == 2);
+            ++attachedFrames;
+        }
+        effects.update(1.0f / 60);
+    }
+    REQUIRE(attachedFrames == 20);
+    REQUIRE(effects.playing(fireId));
+    opponents.close();
+    REQUIRE_FALSE(effects.playing(fireId));
+}
 } // namespace
