@@ -776,6 +776,12 @@ TEST_CASE("the Lich's emergence gravel attaches at his ground root",
     const auto parent = critters.nodeTransform(*gravel->node);
     REQUIRE(parent.has_value());
     REQUIRE(glm::distance(Vec3{(*parent)[3]}, gravel->position) < 0.001f);
+    REQUIRE(std::ranges::count(cues, true, &CombatCue::arena) == 1);
+    const auto arena = std::ranges::find(cues, true, &CombatCue::arena);
+    REQUIRE(arena->tree.empty());
+    REQUIRE(arena->sound.empty());
+    fixture.update(kTicks, kStep, {});
+    REQUIRE(std::ranges::count(critters.takeCues(), true, &CombatCue::arena) == 0);
 }
 
 TEST_CASE("unpacked boss patterns and health gates agree with the authored WAD",
@@ -826,9 +832,12 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
       "sounds":[{"name":"ROOTFX","flags":1,"offset":[1,2,3],"link":1},
         {"name":"NODEFX","flags":0,"offset":[1,2,3],"link":2},
         {"name":"BASEFX","flags":128,"offset":[1,2,3],"link":3},
-        {"name":"WORLDFX","flags":64,"offset":[1,2,3]},
+        {"name":"WORLDFX","flags":64,"offset":[1,2,3],"link":6},
         {"name":"SECOND","flags":1},
-        {"name":"IMPACT","flags":0,"offset":[1,2,3]}]})");
+        {"name":"IMPACT","flags":0,"offset":[1,2,3]},
+        {"name":"","flags":32,"link":7},
+        {"name":"NULLFX","flags":2,"link":8},
+        {"name":"","flags":0}]})");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     Combatant& critters = fixture.actor;
@@ -845,6 +854,8 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
     fixture.update(1, 1.0f / 30, party); // finish the one-frame READY before starting the clock
     REQUIRE(critters.moveName() == "READY");
     s32 cueCount = 0;
+    s32 arenaCount = 0;
+    s32 shakeCount = 0;
     AnimationPlayer clock;
     const auto& tree = critters.archive()->trees.tree(0);
     clock.start(tree.sequences[1], 1);
@@ -853,6 +864,8 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
         fixture.update(1, step, party);
         for (const CombatCue& cue : critters.takeCues()) {
             ++cueCount;
+            arenaCount += cue.arena ? 1 : 0;
+            shakeCount += cue.shakes ? 1 : 0;
             REQUIRE(clock.frame() >= (cue.tree == "SECOND" ? 5 : 2));
             if (cue.tree == "IMPACT") {
                 REQUIRE(clock.frame() >= 12);
@@ -879,7 +892,9 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
             }
         }
     }
-    REQUIRE(cueCount == 6);
+    REQUIRE(cueCount == 8);
+    REQUIRE(arenaCount == 1);
+    REQUIRE(shakeCount == 1);
     critters.clear();
     REQUIRE_FALSE(critters.rootTransform().has_value());
 }

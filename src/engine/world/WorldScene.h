@@ -38,10 +38,13 @@ public:
     static constexpr f32 kSortBehindBias = -20000.0f;
 
     /** Gathers every placed object that has a mesh; false when nothing could be placed.
-     * Textures the level's set marks external are looked up by name in `lenders`. */
+     * Textures the level's set marks external are looked up by name in `lenders`.
+     * `controlledObjects` stay individual units even without animation, so gameplay
+     * may hide them without affecting other geometry sharing the same texture. */
     bool build(const WorldLayout& layout, ModelSet& models, TextureSet& textures,
                RenderDevice& device, const WorldLighting& lighting = {},
-               std::span<TextureSet* const> lenders = {});
+               std::span<TextureSet* const> lenders = {},
+               std::span<const usize> controlledObjects = {});
 
     void clear();
     bool built() const { return !m_batches.empty() || !m_units.empty(); }
@@ -67,6 +70,10 @@ public:
     /** Fades an object drawn as a unit: 1 as placed, 0 gone. Others are unchanged. */
     void setObjectAlpha(usize object, f32 alpha);
     f32 objectAlpha(usize object) const;
+    /** Changes only this unit's visibility, not its children, alpha or collision.
+     * Returns false for baked geometry or an absent object. */
+    bool setObjectVisible(usize object, bool visible);
+    bool objectVisible(usize object) const;
 
     /** Draws the still opaque geometry, the moving objects, the still translucent geometry,
      * then the sorted objects farthest from the camera first (those flagged to face it
@@ -119,6 +126,7 @@ private:
         bool prelit = false; ///< shaded by its vertices' colours ///< turned to the camera this way
         bool chrome = false;
         bool sorted = false;
+        bool visible = true;
         bool depthWrite = true;
     };
     struct Placement {

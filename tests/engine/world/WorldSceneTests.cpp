@@ -20,6 +20,7 @@ using namespace gdl;
 using Catch::Approx;
 
 struct Fixture {
+    std::filesystem::path directory;
     test::FakeRenderDevice device;
     ModelSet models;
     TextureSet textures;
@@ -29,17 +30,57 @@ struct Fixture {
 
     explicit Fixture(std::string_view name) {
         const auto dir = test::sampleLevel(name);
+        directory = dir;
         REQUIRE(models.load(dir));
         REQUIRE(textures.load(dir));
         REQUIRE(layout.load(dir));
         REQUIRE(lender.load(test::sampleLender(std::string(name) + "-lender")));
     }
 
-    bool build() {
+    bool build(std::span<const usize> controlled = {}) {
         const std::array<TextureSet*, 1> lenders{&lender};
-        return scene.build(layout, models, textures, device, WorldLighting{}, lenders);
+        return scene.build(layout, models, textures, device, WorldLighting{}, lenders, controlled);
     }
 };
+
+TEST_CASE("controlled static geometry hides only its own mesh without moving or fading",
+          "[world][scene][boss-effects]") {
+    Fixture f("world-scene-controlled");
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"WALL","position":[10,0,0],"next":2,"child":1},
+      {"name":"WINDOW","position":[0,5,0],"next":-1,"child":-1},
+      {"name":"WALL","position":[20,0,0],"next":-1,"child":-1}]})");
+    REQUIRE(f.layout.load(f.directory));
+    const std::array<usize, 1> controlled{0};
+    REQUIRE(f.build(controlled));
+    REQUIRE(f.scene.unitCount() == 1);
+    REQUIRE_FALSE(f.scene.moving(0));
+    const Mat4 placement = f.scene.worldTransform(0);
+    f.scene.setObjectTransform(0, Mat4{1});
+    REQUIRE(f.scene.worldTransform(0) == placement);
+    f.scene.draw(f.device, Mat4{1});
+    REQUIRE(f.device.draws.size() == 3);
+    REQUIRE(f.scene.setObjectVisible(0, false));
+    REQUIRE_FALSE(f.scene.objectVisible(0));
+    REQUIRE(f.scene.objectVisible(1));
+    REQUIRE(f.scene.objectAlpha(0) == 1);
+    REQUIRE_FALSE(f.scene.setObjectVisible(2, false)); // baked, same texture as the hidden mesh
+    REQUIRE_FALSE(f.scene.setObjectVisible(99, false));
+    REQUIRE_FALSE(f.scene.objectVisible(99));
+    f.device.draws.clear();
+    f.scene.draw(f.device, Mat4{1});
+    REQUIRE(f.device.draws.size() == 2);
+    REQUIRE(f.device.draws[0].vertices[0].position == Vec3{20, 0, 0});
+    REQUIRE(f.device.draws[1].vertices[0].position == Vec3{10, 5, 0}); // child still draws
+    REQUIRE(f.scene.setObjectVisible(0, true));
+    f.scene.setObjectAlpha(0, 0.5f);
+    REQUIRE(f.scene.setObjectVisible(0, false));
+    REQUIRE(f.scene.setObjectVisible(0, true));
+    REQUIRE(f.scene.objectAlpha(0) == 0.5f); // visibility does not replace a fade
+    REQUIRE(f.scene.setObjectVisible(0, false));
+    REQUIRE(f.build(controlled));
+    REQUIRE(f.scene.objectVisible(0)); // a new scene restores the object
+}
 
 TEST_CASE("a world scene places every object that has a mesh and draws it in passes",
           "[world][scene]") {
@@ -75,7 +116,7 @@ TEST_CASE("a world scene places every object that has a mesh and draws it in pas
     REQUIRE(floor.texture == wall.texture);
     REQUIRE(floor.lightmap() == &f.textures.texture(f.device, 2));
     REQUIRE(floor.vertices[0].position == Vec3{10.0f, 0.0f, 20.0f}); // under the group
-    REQUIRE(floor.vertices[1].uv2 == Vec2{0.5f, 0.25f}); // texels over the 2x2 lightmap
+    REQUIRE(floor.vertices[1].uv2 == Vec2{0.5f, 0.25f});             // texels over the 2x2 lightmap
     const auto& blade = f.device.draws[2];
     REQUIRE(blade.texture == wall.texture);
     REQUIRE(blade.vertices[0].position == Vec3{11.0f, 0.0f, 50.0f});
@@ -119,8 +160,8 @@ TEST_CASE("moving objects carry what stands under them", "[world][scene]") {
     Fixture f("world-scene-moving");
     REQUIRE(f.build());
     // A quarter turn of the spinning group swings its blade from +x to -z.
-    const Mat4 turned = glm::rotate(glm::translate(Mat4{1.0f}, Vec3{0.0f, 0.0f, 50.0f}),
-                                    kHalfPi, Vec3{0.0f, 1.0f, 0.0f});
+    const Mat4 turned = glm::rotate(glm::translate(Mat4{1.0f}, Vec3{0.0f, 0.0f, 50.0f}), kHalfPi,
+                                    Vec3{0.0f, 1.0f, 0.0f});
     f.scene.setObjectTransform(8, turned);
     f.scene.setObjectTransform(2, turned); // the still wall ignores it
     f.scene.draw(f.device, Mat4{1.0f}, Vec3{10.0f, 0.0f, 0.0f});
@@ -131,8 +172,7 @@ TEST_CASE("moving objects carry what stands under them", "[world][scene]") {
     REQUIRE(f.device.draws[0].vertices[0].position == Vec3{11.0f, 0.0f, 0.0f});
 }
 
-TEST_CASE("texture slots can show another frame or slide their coordinates",
-          "[world][scene]") {
+TEST_CASE("texture slots can show another frame or slide their coordinates", "[world][scene]") {
     Fixture f("world-scene-slots");
     REQUIRE(f.build());
     REQUIRE(f.scene.textureOf(1) == &f.textures.texture(f.device, 1));
@@ -193,8 +233,8 @@ TEST_CASE("a prelit object is shaded by its vertices, not the lights", "[world][
     bool dim = false;
     bool lit = false;
     for (const ImmediateVertex& v : vertices) {
-        dim = dim || v.color.r == 51;  // 0.2 of the way, its own colour
-        lit = lit || v.color.r > 200;  // the lit copy, facing the light
+        dim = dim || v.color.r == 51; // 0.2 of the way, its own colour
+        lit = lit || v.color.r > 200; // the lit copy, facing the light
     }
     REQUIRE(dim);
     REQUIRE(lit);
@@ -210,8 +250,7 @@ TEST_CASE("an external texture nobody lends is drawn white", "[world][scene]") {
 TEST_CASE("a layout whose objects have no meshes builds nothing", "[world][scene]") {
     Fixture f("world-scene-empty");
     const auto dir = test::scratchDirectory("world-scene-empty-layout");
-    writeTextFile(dir / "world.json",
-                  R"({"objects": [{"name": "GHOST", "position": [0, 0, 0]}]})");
+    writeTextFile(dir / "world.json", R"({"objects": [{"name": "GHOST", "position": [0, 0, 0]}]})");
     WorldLayout ghosts;
     REQUIRE(ghosts.load(dir));
     REQUIRE_FALSE(f.scene.build(ghosts, f.models, f.textures, f.device));

@@ -74,6 +74,7 @@ struct AttackDefinition {
 struct CombatEffectDefinition {
     static constexpr u32 kFollows = 0x801;     ///< rides on the body rather than staying put
     static constexpr u32 kShakes = 0x2;        ///< shakes the camera
+    static constexpr u32 kArenaCue = 0x20;     ///< invokes the current boss arena's callback
     static constexpr u32 kDeathMark = 0x40000; ///< the one that marks the death
 
     std::string tree;        ///< "ATK01FX"; "NULLFX" or empty shows nothing

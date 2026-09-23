@@ -50,6 +50,16 @@ TEST_CASE("an absent boss has no height or camera offset", "[game][enemies]") {
     REQUIRE(bosses.cameraOffset() == Vec3{0.0f});
 }
 
+TEST_CASE("arena mesh cues belong only to the Lich and Garm", "[game][enemies][boss-effects]") {
+    REQUIRE(bossArenaObject(41) == "G5BIGDIRT");
+    REQUIRE(bossArenaObject(44) == "H4NSFFXL_PURPLE");
+    for (s32 kind = -1; kind <= 45; ++kind) {
+        if (kind != 41 && kind != 44) {
+            REQUIRE(bossArenaObject(kind).empty());
+        }
+    }
+}
+
 TEST_CASE("a boss sleeps until the party comes near, then fights by its table, and its "
           "meter follows its health to the end",
           "[game][enemies][unpacked]") {

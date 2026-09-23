@@ -817,10 +817,16 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   This follows `CritterSfx`/its create helper at 0x8003d7e0/0x8003dc64.
   SFXX's parent-of-root/global overrides and custom callbacks still require
   reconstruction, as do camera-shake cues. The Lich's empty SFXX flag-0x20
-  row calls the arena callback (0x80063c58) to animate `G5BIGDIRT`; this is
-  not a missing particle effect. Its object has no animation track in the
-  current exported LEVELG5 world, so recover the object-tree binding before
-  inventing a world-track animation for it.
+  row calls the arena callback (0x80063c58) to HIDE `G5BIGDIRT`, not animate
+  it: world lookup 0x800a9c50 supplies its tree, and 0x800ba368 sets flag 1
+  with recursion disabled. The draw traversal (0x800c7a70) skips that mesh,
+  not its children. `Combatant` retains nonvisual cues, `LevelOpponents`
+  dispatches them, and `LevelWorld` keeps this stage mesh separately
+  controllable rather than baking it into shared geometry. Garm's matching
+  callback hides `H4NSFFXL_PURPLE`. Visibility leaves alpha, transforms and
+  collision unchanged and resets on level load. The Skorne1 callback's
+  counter at 0x80344958 still needs its consuming behavior reconstructed;
+  do not treat it as a hide/animation request or claim all callbacks complete.
   Scenarios: `level-g1-general.json`.
 * Boss locomotion has two encounter roles; neither role implies melee-only
   attacks. Dragon, Plague Fiend, Yeti, Wraith, Chimera and Genie are anchored;

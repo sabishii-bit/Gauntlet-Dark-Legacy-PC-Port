@@ -66,7 +66,8 @@ WorldScene::Slot& WorldScene::slotFor(u32 index, TextureSet& textures, RenderDev
 
 bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& textures,
                        RenderDevice& device, const WorldLighting& lighting,
-                       std::span<TextureSet* const> lenders) {
+                       std::span<TextureSet* const> lenders,
+                       std::span<const usize> controlledObjects) {
     clear();
     m_lighting = lighting;
     const std::vector<WorldObject>& objects = layout.objects();
@@ -137,7 +138,8 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         const bool prelit = object.prelit() && mesh->prelit;
         const bool depthWrite = (object.objectFlags & WorldObject::kNoDepthWrite) == 0;
         const u32 facing = CameraFrame::facingOf(object.objectFlags);
-        const bool unit = m_placements[i].moving || object.sorted() || facing != 0;
+        const bool unit = m_placements[i].moving || object.sorted() || facing != 0 ||
+                          std::ranges::find(controlledObjects, i) != controlledObjects.end();
         Unit placedUnit;
         placedUnit.object = i;
         placedUnit.mesh = mesh;
@@ -279,6 +281,19 @@ f32 WorldScene::objectAlpha(usize object) const {
     return unit != nullptr ? unit->alpha : 1.0f;
 }
 
+bool WorldScene::setObjectVisible(usize object, bool visible) {
+    if (Unit* unit = unitOf(object); unit != nullptr) {
+        unit->visible = visible;
+        return true;
+    }
+    return false;
+}
+
+bool WorldScene::objectVisible(usize object) const {
+    const Unit* unit = unitOf(object);
+    return object < m_placements.size() && (unit == nullptr || unit->visible);
+}
+
 void WorldScene::setTextureFrame(u32 slot, const Texture* texture) {
     if (const auto found = m_slots.find(slot); found != m_slots.end()) {
         found->second.frame = texture;
@@ -344,7 +359,7 @@ Color WorldScene::shadeOf(bool additive, bool prelit, const MeshVertex& vertex, 
  * and glowing ones when `translucent`. */
 void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& clip,
                           const CameraFrame& camera, bool opaque, bool translucent) const {
-    if (unit.alpha <= 0.0f) {
+    if (!unit.visible || unit.alpha <= 0.0f) {
         return;
     }
     const Mat4 world = camera.face(worldOf(unit.object), unit.facing);

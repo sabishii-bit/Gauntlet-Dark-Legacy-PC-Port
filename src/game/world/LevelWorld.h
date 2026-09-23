@@ -71,6 +71,9 @@ public:
     /** Fades one of the level's objects (a unit); see WorldScene::setObjectAlpha. */
     void setObjectAlpha(usize object, f32 alpha) { m_scene.setObjectAlpha(object, alpha); }
     f32 objectAlpha(usize object) const { return m_scene.objectAlpha(object); }
+    /** Hides/shows a separately controlled stage mesh without changing its collision.
+     * False when absent or baked into static geometry. */
+    bool setObjectVisible(std::string_view name, bool visible);
     /** Hides the crystals until revealCrystals() brings them in. */
     void hideCrystals() { m_placedItems.hideCrystals(); }
     void revealCrystals(f32 seconds) { m_placedItems.reveal(seconds); }

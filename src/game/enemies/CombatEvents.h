@@ -33,6 +33,7 @@ struct CombatCue {
     f32 life = 0.0f; ///< seconds, when it does not play out
     bool follows = false;
     bool shakes = false;
+    bool arena = false;              ///< stage callback, even when both tree and sound are empty
     bool rootAttachment = false;     ///< root transform, not a fixed world-space body offset
     std::optional<std::string> node; ///< animated attachment, distinct from a body translation
     Vec3 nodeOffset{0.0f};

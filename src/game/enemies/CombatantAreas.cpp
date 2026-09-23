@@ -64,7 +64,7 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
     cue.nodeOffset = offset;
     cue.pitchYaw = angles;
     cue.loop = false;
-    if (!cue.tree.empty() || !cue.sound.empty()) {
+    if (!cue.tree.empty() || !cue.sound.empty() || cue.shakes) {
         m_cues.push_back(cue);
     }
 }
