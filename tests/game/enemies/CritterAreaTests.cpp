@@ -86,7 +86,45 @@ TEST_CASE("area immunity is capped by remaining life with an explicit half-secon
     REQUIRE(area.hitGap() == 0);
 }
 
-std::filesystem::path areaArchive() {
+TEST_CASE("expanding damage starts near the source then fades before the effect ends",
+          "[game][boss-areas][chimera]") {
+    CritterArea area;
+    area.expanding = true;
+    area.lifetime = area.secondsLeft = 1;
+    area.radius = 95;
+    area.damage = 75;
+    area.minDot = 0;
+    REQUIRE(area.currentRadius() == Approx(31.35f));
+    REQUIRE(area.currentDamage() == Approx(75.375f));
+    REQUIRE(area.hitGap() == Approx(1.066667f));
+    REQUIRE(area.touches(Mat4{1}, playerAt({0, 0, 30})));
+    REQUIRE_FALSE(area.touches(Mat4{1}, playerAt({0, 0, 60})));
+    REQUIRE_FALSE(area.touches(Mat4{1}, playerAt({0, 0, -30})));
+
+    area.secondsLeft = 0.5f;
+    REQUIRE(area.currentRadius() == Approx(78.85f));
+    REQUIRE(area.currentDamage() == Approx(19.125f));
+    REQUIRE(area.hitGap() == Approx(0.566667f));
+    REQUIRE(area.touches(Mat4{1}, playerAt({0, 0, 60})));
+    REQUIRE_FALSE(area.touches(Mat4{1}, playerAt({0, 0, -60})));
+    area.secondsLeft = 0.34f;
+    REQUIRE(area.currentDamage() < 2);
+    REQUIRE(area.hitGap() == 0);
+    area.flags = 0x800;
+    REQUIRE(area.hitGap() == 0.5f);
+
+    area.secondsLeft = 0.33f;
+    REQUIRE(area.currentRadius() == 0);
+    REQUIRE(area.currentDamage() == 0);
+    REQUIRE_FALSE(area.touches(Mat4{1}, playerAt({0, 0, 30})));
+    area.lifetime = area.secondsLeft = 1.0f / 60.0f;
+    REQUIRE(area.currentRadius() == Approx(31.35f));
+    area.secondsLeft = 0;
+    REQUIRE(area.currentRadius() == 0);
+    REQUIRE(area.currentDamage() == 0);
+}
+
+std::filesystem::path areaArchive(bool expanding = false) {
     const auto root = test::scratchDirectory("boss-area-attacks");
     const auto archive = root / "MONSTERS/DJINN";
     std::filesystem::create_directories(root / "critter");
@@ -102,14 +140,17 @@ std::filesystem::path areaArchive() {
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"DJINN",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"STEP","frames":3}]}]})");
+    const std::string type = expanding ? "3" : "2";
+    const std::string flags = expanding ? "0" : "1";
     writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
       "types":[{"moveCount":2,"maxHealth":100,"originOffset":[0,50,0]}],
       "moves":[{"name":"READY","anim":"STEP","type":32},
         {"name":"WHIP","anim":"STEP","type":130,"priority":10,"cooldown":20,
          "frameStart":1,"frameEnd":1,"damage0":0}],
-      "damages":[{"type":2,"damage":40,"flags":32,"radius":0.1,"maxDistance":10,
+      "damages":[{"type":)" + type + R"(,"damage":40,"flags":32,"radius":0.1,"maxDistance":10,
                    "minDot":0.8,"offset":[0,3,0],"sfxIndex":0}],
-      "sounds":[{"name":"NULLFX","flags":1,"life":0.5,"offset":[0,2,0]}]})");
+      "sounds":[{"name":"NULLFX","flags":)" + flags +
+                                                   R"(,"life":0.5,"offset":[0,2,0]}]})");
     return root;
 }
 
@@ -144,6 +185,33 @@ TEST_CASE("invisible areas outlive their attack window and remain rooted while f
     players[0].position = {0, 0, 8};
     fixture.update(24, 0.4f, players);
     REQUIRE(critters.takeBlows().empty());
+}
+
+TEST_CASE("type three damage waits for expansion and survives the move while frozen",
+          "[game][boss-areas][chimera]") {
+    const auto root = areaArchive(true);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'A');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    auto& actor = fixture.actor;
+    const std::array<EnemyView, 1> players{playerAt({0, 0, 8})};
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.moveName() == "WHIP");
+    REQUIRE(actor.takeBlows().empty()); // radius 3.3, not the full authored 10
+    actor.freeze(120);
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeBlows().empty()); // radius 5.3
+    fixture.update(6, 0.1f, players);
+    const auto hits = actor.takeBlows();
+    REQUIRE(hits.size() == 1);
+    REQUIRE(hits[0].area);
+    REQUIRE(hits[0].damage == Approx(16.2f));
+    REQUIRE(hits[0].repeatGap == Approx(0.366667f));
+    REQUIRE(hits[0].origin == Vec3{0, 5, 0});
+    fixture.update(12, 0.2f, players);
+    REQUIRE(actor.takeBlows().empty()); // final visual tail is harmless
 }
 
 TEST_CASE("Spider Queen and Wraith authored areas use supported root policies",
@@ -207,5 +275,50 @@ TEST_CASE("Spider Queen and Wraith encounters emit damaging areas from their aut
             REQUIRE(areaHit);
         }
     }
+}
+
+TEST_CASE("Chimera SUPER expands towards the player and attaches fire to the body",
+          "[game][boss-areas][chimera][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/CHIMERA.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    Combatant& actor = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'A');
+    const f32 quarter = std::numbers::pi_v<f32> / 2;
+    REQUIRE(fixture.spawn("CHIMERA", Vec3{0}, quarter));
+    const std::array<EnemyView, 1> players{playerAt({60, 0, 0})};
+    bool hit = false;
+    bool fire = false;
+    for (s32 frame = 0; frame < 1800 && !hit; ++frame) {
+        fixture.update(2, 1.0f / 30.0f, players);
+        for (const auto& cue : actor.takeCues()) {
+            if (cue.tree == "SFIRE2") {
+                REQUIRE(cue.follows);
+                REQUIRE(cue.rootAttachment);
+                REQUIRE(cue.nodeOffset == Vec3{0, 8, 20});
+                const auto parent = actor.rootTransform();
+                REQUIRE(parent.has_value());
+                const Vec3 expected = Vec3{*parent * Vec4{0, 8, 20, 1}};
+                REQUIRE(glm::length(cue.position - expected) < 0.01f);
+                REQUIRE(cue.position.x - (*parent)[3].x ==
+                        Approx(20 * actor.scale()).margin(0.01f));
+                fire = true;
+            }
+        }
+        for (const auto& blow : actor.takeBlows()) {
+            REQUIRE(blow.area);
+            REQUIRE(blow.damage > 0);
+            // At sixty units the growing sector reaches the player only after
+            // its initial high-damage phase; the old instant full-radius hit did 75.
+            REQUIRE(blow.damage < 75);
+            REQUIRE(blow.repeatGap > 0);
+            hit = true;
+        }
+        actor.takeShots();
+    }
+    INFO("Last move: " << actor.moveName());
+    REQUIRE(fire);
+    REQUIRE(hit);
 }
 } // namespace

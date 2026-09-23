@@ -134,7 +134,8 @@ private:
     static s32 attackTarget(const Actor& critter, const TargetCriteria& criteria,
                             std::span<const EnemyView> players);
     static f32 attackRate(const Actor& critter);
-    void startArea(Actor& critter, s32 id, const AttackDefinition& damage);
+    static bool supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound);
+    void startArea(Actor& critter, s32 id, const AttackDefinition& damage, std::string_view node);
     void updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players);
     /** Whether a legend item's curb keeps the move from it. */
     static bool curbedMove(const Actor& critter, const MoveDefinition& move);

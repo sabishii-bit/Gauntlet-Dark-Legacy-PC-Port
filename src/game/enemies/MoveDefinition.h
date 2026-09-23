@@ -35,7 +35,7 @@ struct AttackDefinition {
     static constexpr s16 kBlow = 0;
     static constexpr s16 kProjectile = 1;
     static constexpr s16 kAttachedArea = 2;
-    static constexpr s16 kRing = 3; ///< a stomp's, over its reach
+    static constexpr s16 kRing = 3; ///< an expanding effect with fading damage
     static constexpr s16 kBreath = 4;
     static constexpr s16 kGrab = 7;
     static constexpr s16 kTargetArea = 8;  ///< effect at the move's saved player position

@@ -172,10 +172,12 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                     (targeted && !critter.attackTarget.has_value())) {
                     return;
                 }
-                if (harm->type == AttackDefinition::kAttachedArea) {
+                if (harm->type == AttackDefinition::kAttachedArea ||
+                    (harm->type == AttackDefinition::kRing &&
+                     supportsArea(*harm, data.sound(harm->sound)))) {
                     if ((critter.soundsGiven & bit) == 0) {
                         critter.soundsGiven |= bit;
-                        startArea(critter, i, *harm);
+                        startArea(critter, i, *harm, move->colnode);
                     }
                     return;
                 }
