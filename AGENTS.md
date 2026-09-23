@@ -92,6 +92,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `screens/PartyMotion` handles input priority, locomotion and animation.
   It emits synchronous action cues without retaining the scene; turbo updates
   precede release cues and camera snapshots. Callbacks may not resize the party.
+* `screens/PartyHud` owns status artwork, pickup cards, powerup selectors and
+  localized help text. It is nonmovable because help borrows its message table.
+  Scene rendering retains canvas/overlay order; HUD methods consume party
+  snapshots without reaching back into PlayScene. Clear before releasing the
+  borrowed glow texture supplied by Sumner's presentation.
 * `world/PlayerFigure` owns costume selection, mesh/animation/voice archives,
   while `world/PlayerArsenal` owns active missiles and thrown-potion models.
   Bind the arsenal to borrowed level services after loading the shared weapon

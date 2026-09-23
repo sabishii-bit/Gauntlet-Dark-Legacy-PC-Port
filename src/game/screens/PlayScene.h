@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <memory>
@@ -11,7 +10,6 @@
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
-#include "engine/assets/MessageTable.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
@@ -36,15 +34,12 @@
 #include "game/screens/BossMeter.h"
 #include "game/screens/BossVictoryPresentation.h"
 #include "game/screens/GameContext.h"
-#include "game/screens/HelpMessages.h"
 #include "game/screens/LegendPresentation.h"
 #include "game/screens/LevelArrivalPresentation.h"
 #include "game/screens/LevelMessages.h"
+#include "game/screens/PartyHud.h"
 #include "game/screens/PartyMotion.h"
-#include "game/screens/PickupHud.h"
 #include "game/screens/PlayerHealth.h"
-#include "game/screens/PowerupSelector.h"
-#include "game/screens/StatusBox.h"
 #include "game/screens/SumnerVisit.h"
 #include "game/screens/TransitionScreen.h"
 #include "game/world/BossCamera.h"
@@ -201,7 +196,7 @@ public:
                    ? std::optional<std::filesystem::path>(m_players[index].figure->directory())
                    : std::nullopt;
     }
-    const HelpMessages& help() const { return m_help; }
+    const HelpMessages& help() const { return m_hud.help(); }
     const MoveStrikes& strikes() const { return m_strikes; }
     const AmbientDimmer& dimmer() const { return m_dimmer; }
     /** Gives `player`'s character experience won in play, which also feeds its turbo meter
@@ -210,7 +205,7 @@ public:
     /** Harms `player`'s character as a blow, a burn, a piercing or gas would, for tests. */
     void harm(s32 player, f32 damage, HurtKind kind);
     /** What `player`'s status box shows. */
-    StatusBoxView status(s32 player) const { return statusOf(player); }
+    StatusBoxView status(s32 player) const { return PartyHud::status(player, m_players); }
     /** The turbo meter of `player`'s character, or null when that player is not in. */
     const TurboMeter* turboMeter(s32 player) const;
     /** Whether `player`'s character has fallen (dying or gone to the tower). */
@@ -228,13 +223,11 @@ public:
     std::vector<PartyMember> party() const;
     const EffectTrees& effects() const { return m_effects; }
     /** The powerup selector over `player`'s box. */
-    const PowerupSelector& selector(s32 player) const {
-        return m_selectors[static_cast<usize>(std::clamp(player, 0, kPlayerCount - 1))];
-    }
+    const PowerupSelector& selector(s32 player) const { return m_hud.selector(player); }
     /** How large a character is drawn: an ogre, one grown by a powerup, one of level 99. */
     static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
     const SumnerHints& hintTexts() const { return m_sumnerVisit.texts(); }
-    const PickupHud& pickups() const { return m_pickups; }
+    const PickupHud& pickups() const { return m_hud.pickups(); }
     const AmbientSounds& ambience() const { return m_audio.ambience(); }
     /** How far Sumner's beam of light has come up, 0 to 1. */
     f32 beamAlpha() const { return m_beamAlpha; }
@@ -256,8 +249,6 @@ public:
 private:
     void spawnParty(std::span<const PartyMember> party, const PlayOptions& options);
     void throwWeapon(const PlayerActor& actor);
-    void stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks);
-    void drawSelectors();
     static bool freshParty(std::span<const PartyMember> party);
     void beginIntro(RenderDevice& device);
     void startCrystalCut();
@@ -323,7 +314,6 @@ private:
     /** Where the level finds a character: nowhere once it has fallen. */
     Vec3 presenceOf(usize index) const;
     f32 trapDamageScale() const;
-    void drawHelp(const Mat4& clip, f32 width, f32 height);
     std::optional<s32> takePickup(const Pickup& pickup);
     void shareRune(s32 rune);
     void updateAmbience();
@@ -336,7 +326,6 @@ private:
     const PlayerActor* visitorOfSumner() const;
     void updateSumnerVisit(f32 seconds);
     void updateHints(const Inputs& inputs, s32 ticks);
-    StatusBoxView statusOf(s32 player) const;
     CameraView cameraView() const;
 
     bool m_open = false;
@@ -344,8 +333,7 @@ private:
     GameContext m_context;
     LevelWorld* m_world = nullptr;
     ClassDataSet m_classes;
-    StatusBoxPainter m_boxes;
-    PickupHud m_pickups;
+    PartyHud m_hud;
     Canvas m_canvas;
     TowerCamera m_camera;
     BossCamera m_bossCamera;
@@ -417,8 +405,6 @@ private:
     EnemyMissiles m_enemyMissiles;
     LevelWatch m_levels;
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid
-    HelpMessages m_help;
-    MessageTable m_strings; ///< the game's own strings, which hold the help messages
     Chests m_chests;
     LockedGates m_gates;
     Traps m_traps;
@@ -427,8 +413,6 @@ private:
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
     std::unique_ptr<LegendPresentation> m_legend; ///< destroyed before its borrowed effect store
-    std::array<PowerupSelector, kPlayerCount> m_selectors;
-    const Texture* m_glowSheet = nullptr; ///< the glow a worn powerup's name is written in
     f32 m_playSeconds = 0.0f;
     f32 m_fallenSeconds = 0.0f; ///< since the last of the party fell
     SumnerVisit m_sumnerVisit;
