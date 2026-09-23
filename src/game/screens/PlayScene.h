@@ -43,6 +43,7 @@
 #include "game/screens/LevelMessages.h"
 #include "game/screens/PartyMotion.h"
 #include "game/screens/PickupHud.h"
+#include "game/screens/PlayerHealth.h"
 #include "game/screens/PowerupSelector.h"
 #include "game/screens/StatusBox.h"
 #include "game/screens/SumnerVisit.h"
@@ -90,14 +91,6 @@ enum class PlayOutcome : u8 {
     Leave,  ///< back to the title
     Travel, ///< through an exit portal to destination()
     Fallen  ///< everyone has died: back to the tower, where they stand again
-};
-
-/** What hurt a character, which picks how it cries out. */
-enum class HurtKind : u8 {
-    Blow,   ///< cries out once enough has been taken
-    Burn,   ///< always cries out
-    Pierce, ///< groans
-    Gas     ///< coughs
 };
 
 /**
@@ -319,7 +312,6 @@ private:
     static constexpr f32 kLevelUpHealth = 100.0f;
     SoundHandle playRealmSound(std::string_view stem);
     void cry(usize index, std::string_view which);
-    void cryPain(usize index);
     void sayWithName(usize index, std::string_view line);
     void ramBarrels(usize index);
     void fireStrike(usize index, s32 strike);
@@ -370,9 +362,8 @@ private:
     LevelMessages m_messages;
     PlayerMissiles m_missiles;
     ExitPortals m_portals;
-    std::mt19937 m_painRandom{0x5A17u}; ///< which cry of pain comes
+    PlayerHealth m_health;
     std::mt19937 m_coinRandom{0xC01Eu}; ///< how fast each coin a boss spews flies
-    u32 m_lowHealthTurn = 0;            ///< the last-health lines take turns
     AmbientDimmer m_dimmer;
     MoveStrikes m_strikes;
     /** The effect that goes along with a strike that flies. */
