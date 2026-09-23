@@ -82,6 +82,7 @@ add_library(game STATIC
     world/SumnerHints.cpp
     world/PlayerMissiles.h
     world/PlayerMissiles.cpp
+    world/PlayerFigure.cpp
     world/EffectTrees.h
     world/EffectTrees.cpp
     world/PlacedItems.h
