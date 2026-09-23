@@ -160,6 +160,21 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
     return views;
 }
 
+void LevelOpponents::applyCritterBlow(const CritterBlow& blow, std::span<PlayerRuntime> players,
+                                      const Events& events) {
+    for (std::size_t i = 0; i < players.size(); ++i) {
+        PlayerRuntime& player = players[i];
+        if (player.actor.player() != blow.player || player.life != PlayerLife::Standing ||
+            (blow.breath && player.breathGap > 0.0f)) {
+            continue;
+        }
+        if (blow.breath) {
+            player.breathGap = 0.25f;
+        }
+        events.hurt(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true);
+    }
+}
+
 /** The generators breed, the swarm goes about its business, and what it lands on the party
  * is taken: a power blow from a tall one is a knock that makes its victim flinch. What the
  * party has done to it is paid in experience. */
@@ -167,6 +182,9 @@ void LevelOpponents::update(std::int32_t ticks, float seconds, std::span<PlayerR
                             std::span<const Obstacle> fixtures, const Events& events) {
     if (!m_resources.has_value()) {
         return;
+    }
+    for (PlayerRuntime& player : players) {
+        player.breathGap = std::max(0.0f, player.breathGap - std::max(seconds, 0.0f));
     }
     const std::vector<EnemyView> views = enemyViews(players);
     std::vector<Obstacle> boxes = m_generators.obstacles();
@@ -220,12 +238,7 @@ void LevelOpponents::update(std::int32_t ticks, float seconds, std::span<PlayerR
     }
     events.advanceLegend(seconds);
     for (const CritterBlow& blow : m_bosses.takeBlows()) {
-        for (std::size_t i = 0; i < players.size(); ++i) {
-            if (players[i].actor.player() == blow.player &&
-                players[i].life == PlayerLife::Standing) {
-                events.hurt(i, blow.damage, HurtKind::Blow, true);
-            }
-        }
+        applyCritterBlow(blow, players, events);
     }
     awardBossLosses(players, events);
     events.advanceVictory(ticks, seconds);
@@ -238,12 +251,7 @@ void LevelOpponents::update(std::int32_t ticks, float seconds, std::span<PlayerR
     }
     followCritterEffects();
     for (const CritterBlow& blow : m_critters.takeBlows()) {
-        for (std::size_t i = 0; i < players.size(); ++i) {
-            if (players[i].actor.player() == blow.player &&
-                players[i].life == PlayerLife::Standing) {
-                events.hurt(i, blow.damage, HurtKind::Blow, true);
-            }
-        }
+        applyCritterBlow(blow, players, events);
     }
     awardCritterLosses(players, events);
     events.levels();
@@ -360,7 +368,8 @@ void LevelOpponents::showCritterCue(const CritterCue& cue, ItemArchive* archive,
             const Vec3* at = ofBoss ? m_bosses.position() : &m_critters.positionOf(cue.critter);
             m_critterEffects.push_back(
                 CritterEffect{effect, cue.critter, ofBoss,
-                              at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}});
+                              at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}, cue.node,
+                              cue.nodeOffset});
         }
     }
     if (!cue.sound.empty()) {
@@ -379,12 +388,23 @@ void LevelOpponents::followCritterEffects() {
             riding.ofBoss ? m_bosses.present()
                           : m_critters.alive(riding.critter) || m_critters.dying(riding.critter);
         if (!m_resources->effects.playing(riding.effect) || !alive) {
+            if (!alive && riding.node.has_value()) {
+                m_resources->effects.stop(riding.effect);
+            }
             m_critterEffects.erase(m_critterEffects.begin() + static_cast<std::ptrdiff_t>(i));
             continue;
         }
         const Vec3* at =
             riding.ofBoss ? m_bosses.position() : &m_critters.positionOf(riding.critter);
-        if (at != nullptr) {
+        if (riding.node.has_value()) {
+            const auto parent = riding.ofBoss
+                                    ? m_bosses.nodeTransform(*riding.node)
+                                    : m_critters.nodeTransformOf(riding.critter, *riding.node);
+            if (parent.has_value()) {
+                m_resources->effects.placeAt(riding.effect,
+                                             glm::translate(*parent, riding.nodeOffset));
+            }
+        } else if (at != nullptr) {
             m_resources->effects.moveTo(riding.effect, *at + riding.offset);
         }
         ++i;

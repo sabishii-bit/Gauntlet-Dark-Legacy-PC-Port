@@ -33,12 +33,14 @@ inline constexpr std::int32_t kBossCritter = 4; ///< a realm's boss, by its name
 /** The boss a level's `bossType` names (34 the dragon to 44 the garm), or nothing. */
 std::string_view bossNameOf(std::int32_t kind);
 
-/** A blow a critter has landed. */
+/** A contact a critter has made. Breath contacts repeat while touching; the
+ * recipient's shared breath timer decides when they may damage it again. */
 struct CritterBlow {
     std::int32_t player = -1;
     std::int32_t critter = -1;
     float damage = 0.0f;
     Vec3 direction{0.0f, 0.0f, 1.0f};
+    bool breath = false;
 };
 
 /** An effect and a sound a critter has set off: a move's, a strike's or a hit's, where it
@@ -53,6 +55,8 @@ struct CritterCue {
     float life = 0.0f; ///< seconds, when it does not play out
     bool follows = false;
     bool shakes = false;
+    std::optional<std::string> node; ///< animated attachment, distinct from a body translation
+    Vec3 nodeOffset{0.0f};
 };
 
 /** A dying critter's death throwing something out (the coins a boss spews): from where,
@@ -152,6 +156,7 @@ public:
     /** Floor anchor, not the animation root (which includes the type's floorOffset). */
     const Vec3& positionOf(std::int32_t id) const;
     float yawOf(std::int32_t id) const;
+    std::optional<Mat4> nodeTransformOf(std::int32_t id, std::string_view node) const;
     float radiusOf(std::int32_t id) const;
     std::int32_t targetOf(std::int32_t id) const;
     /** The name of the move it is doing ("WALK", "ATTACK1L"). */
@@ -223,7 +228,7 @@ private:
     enum class CueParts : std::uint8_t { Both, Sound, Effect };
     /** Sets off sound record `index` (and what it links to) at `position`. */
     void cue(const Critter& critter, std::int32_t id, std::int32_t index, const Vec3& position,
-             CueParts parts = CueParts::Both);
+             CueParts parts = CueParts::Both, std::optional<std::string_view> node = std::nullopt);
 
     std::vector<CritterCue> m_cues;
     std::vector<CritterSpew> m_spews;
@@ -231,6 +236,7 @@ private:
     void strikeWith(Critter& critter, std::int32_t id, const CritterMove& move,
                     std::int32_t damageIndex, std::span<const EnemyView> players);
     static Vec3 partPosition(const Critter& critter, std::string_view node);
+    static Mat4 partTransform(const Critter& critter, std::string_view node);
     static Mat4 modelTransform(const Critter& critter);
     void carry(Critter& critter, float seconds, const CritterMove* move,
                std::span<const EnemyView> players);

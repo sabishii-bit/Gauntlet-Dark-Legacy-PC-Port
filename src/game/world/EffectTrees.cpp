@@ -9,11 +9,44 @@
 
 namespace gdl::game {
 
+Mat4 EffectTrees::Effect::transform() const {
+    Mat4 basis = attachment.value_or(glm::rotate(Mat4{1.0f}, yaw, Vec3{0, 1, 0}));
+    basis[3] = Vec4{position, 1.0f};
+    return glm::scale(basis, Vec3{scale});
+}
+
+void EffectTrees::placeAt(std::uint32_t id, const Mat4& attachment) {
+    for (const std::unique_ptr<Effect>& effect : m_effects) {
+        if (effect->id == id) {
+            effect->attachment = attachment;
+            effect->position = Vec3{attachment[3]};
+            return;
+        }
+    }
+}
+
 bool EffectTrees::start(RenderDevice& device, ItemArchive& archive, std::string_view tree,
                         const Vec3& position, float scale) {
     Setting setting;
     setting.scale = scale;
     return startSet(device, archive, tree, position, setting) != 0;
+}
+
+bool EffectTrees::bindVisuals(Effect& effect) {
+    const bool mesh = effect.model.bind(*effect.tree, effect.archive->models,
+                                        effect.archive->textures, *effect.device);
+    const bool wantsMesh = std::ranges::any_of(effect.tree->nodes, [](const TreeNodeInfo& node) {
+        return !node.object.empty() || std::ranges::any_of(node.objectFrames, [](const auto& run) {
+            return !run.object.empty();
+        });
+    });
+    if (wantsMesh && !mesh) {
+        return false;
+    }
+    effect.model.setAppearance(effect.unlit, effect.tint, effect.depthWrite);
+    effect.particles.bind(*effect.tree, *effect.archive, *effect.device, effect.transform(),
+                          effect.pose.matrices());
+    return mesh || effect.particles.field().size() > 0;
 }
 
 void EffectTrees::stop(std::uint32_t id) {
@@ -38,8 +71,11 @@ void EffectTrees::attachTrail(std::uint32_t id, const ParticleDescriptor& descri
                               const Texture& texture) {
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         if (effect->id == id) {
-            effect->trails.start(descriptor, glm::translate(Mat4{1.0f}, effect->position), &texture,
-                                 id);
+            effect->trails.start(descriptor,
+                                 effect->attachment.has_value()
+                                     ? effect->transform()
+                                     : glm::translate(Mat4{1.0f}, effect->position),
+                                 &texture, id);
             return;
         }
     }
@@ -55,9 +91,6 @@ std::uint32_t EffectTrees::startSet(RenderDevice& device, ItemArchive& archive,
     }
     auto effect = std::make_unique<Effect>();
     effect->tree = &archive.trees.tree(*index);
-    if (!effect->model.bind(*effect->tree, archive.models, archive.textures, device)) {
-        return 0;
-    }
     effect->name = std::string(tree);
     effect->id = m_nextId++;
     effect->position = position;
@@ -67,7 +100,6 @@ std::uint32_t EffectTrees::startSet(RenderDevice& device, ItemArchive& archive,
     effect->depthWrite = setting.depthWrite;
     effect->tint = setting.tint;
     effect->playbackRate = setting.playbackRate;
-    effect->model.setAppearance(setting.unlit, setting.tint, setting.depthWrite);
     effect->velocity = setting.velocity;
     effect->timed = setting.seconds > 0.0f;
     effect->repeats = effect->timed && setting.then.empty() && setting.loop;
@@ -85,8 +117,11 @@ std::uint32_t EffectTrees::startSet(RenderDevice& device, ItemArchive& archive,
     } else {
         effect->player.start(effect->tree->sequences[0], 0);
         effect->pose.evaluate(*effect->tree, 0, 0.0f);
-        effect->model.setFrame(0, 0);
     }
+    if (!bindVisuals(*effect)) {
+        return 0;
+    }
+    effect->model.setFrame(0, 0);
     const bool known = std::ranges::any_of(m_motions, [&](const std::unique_ptr<Motion>& motion) {
         return motion->archive == &archive;
     });
@@ -113,7 +148,9 @@ void EffectTrees::update(float seconds) {
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         effect->position += effect->velocity * seconds;
         for (std::size_t i = 0; i < effect->trails.size(); ++i) {
-            effect->trails.setNode(i, glm::translate(Mat4{1.0f}, effect->position));
+            effect->trails.setNode(i, effect->attachment.has_value()
+                                          ? effect->transform()
+                                          : glm::translate(Mat4{1.0f}, effect->position));
         }
         effect->trails.step(seconds);
         if (effect->tree->sequences.empty() || effect->timed) {
@@ -128,16 +165,16 @@ void EffectTrees::update(float seconds) {
             effect->repeats = true;
             if (next.has_value() && effect->device != nullptr) {
                 const TreeInfo& tree = effect->archive->trees.tree(*next);
-                if (effect->model.bind(tree, effect->archive->models, effect->archive->textures,
-                                       *effect->device)) {
-                    effect->tree = &tree;
-                    effect->model.setAppearance(effect->unlit, effect->tint, effect->depthWrite);
-                    effect->name = name;
-                    if (tree.sequences.empty()) {
-                        effect->pose.rest(tree);
-                    } else {
-                        effect->player.start(tree.sequences[0], 0);
-                    }
+                effect->tree = &tree;
+                effect->name = name;
+                if (tree.sequences.empty()) {
+                    effect->pose.rest(tree);
+                } else {
+                    effect->player.start(tree.sequences[0], 0);
+                    effect->pose.evaluate(tree, 0, 0);
+                }
+                if (!bindVisuals(*effect)) {
+                    effect->secondsLeft = 0;
                 }
             }
         }
@@ -147,6 +184,7 @@ void EffectTrees::update(float seconds) {
             effect->model.setFrame(effect->player.sequence(),
                                    static_cast<std::int32_t>(effect->player.frame()));
         }
+        effect->particles.step(seconds, effect->transform(), effect->pose.matrices());
         for (const std::unique_ptr<Motion>& motion : m_motions) {
             if (motion->archive != effect->archive) {
                 continue;
@@ -154,6 +192,7 @@ void EffectTrees::update(float seconds) {
             const auto show = [&](const TextureMotion& moved) {
                 if (moved.frame != nullptr) {
                     effect->model.setTextureFrame(moved.slot, moved.frame);
+                    effect->particles.setTextureFrame(moved.slot, *moved.frame);
                 } else {
                     effect->model.setTextureOffset(moved.slot, moved.offset, moved.scale);
                 }
@@ -194,10 +233,9 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                        const CameraFrame* camera) const {
     const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
     for (const std::unique_ptr<Effect>& effect : m_effects) {
-        const Mat4 turned = glm::rotate(glm::translate(Mat4{1.0f}, effect->position), effect->yaw,
-                                        Vec3{0.0f, 1.0f, 0.0f});
-        const Mat4 placed = glm::scale(turned, Vec3{effect->scale, effect->scale, effect->scale});
+        const Mat4 placed = effect->transform();
         effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), camera);
+        effect->particles.draw(device, clip, frame.right, frame.up);
         effect->trails.draw(device, clip, frame.right, frame.up);
     }
 }

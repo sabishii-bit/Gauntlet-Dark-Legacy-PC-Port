@@ -114,6 +114,12 @@ void ParticleField::setNode(std::size_t index, const Mat4& node) {
     }
 }
 
+void ParticleField::setTexture(std::size_t index, const Texture& texture) {
+    if (index < m_entries.size()) {
+        m_entries[index].texture = &texture;
+    }
+}
+
 void ParticleField::stop(std::size_t index) {
     if (index < m_entries.size()) {
         m_entries[index].emitter.finish();

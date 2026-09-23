@@ -41,9 +41,10 @@ struct CritterDamage {
     std::uint32_t flags = 0;
     float radius = 0.0f;
     float maxDistance = 0.0f;
-    float yaw = 0.0f;    ///< a spew's way, turned from the body's facing
-    float minDot = 0.0f; ///< also the cosine of half a spew's arc
-    float pitch = 0.0f;  ///< a spew's way, tipped (under nought: up)
+    float minDistance = 0.0f; ///< inner horizontal limit of a damaging breath
+    float yaw = 0.0f;         ///< a spew's way, turned from the body's facing
+    float minDot = 0.0f;      ///< also the cosine of half a spew's arc
+    float pitch = 0.0f;       ///< a spew's way, tipped (under nought: up)
     Vec3 offset{0.0f, 0.0f, 0.0f};
     float damage = 0.0f;
     float speed = 0.0f;      ///< a spew's, in units a second

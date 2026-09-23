@@ -49,6 +49,9 @@ public:
     void update(std::int32_t ticks, float seconds, std::span<PlayerRuntime> players,
                 std::span<const Obstacle> fixtures, const Events& events);
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
+    /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
+    static void applyCritterBlow(const CritterBlow& blow, std::span<PlayerRuntime> players,
+                                 const Events& events);
     void strikeEnemy(std::int32_t id, float power, std::uint32_t flags, const Vec3& direction,
                      std::int32_t byPlayer, std::span<const PlayerRuntime> players);
     void strikeCritter(std::int32_t id, float power, std::uint32_t flags, const Vec3& direction,
@@ -85,6 +88,8 @@ private:
         std::int32_t critter = -1;
         bool ofBoss = false;
         Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
+        std::optional<std::string> node;
+        Vec3 nodeOffset{0.0f};
     };
     std::vector<CritterEffect> m_critterEffects;
 

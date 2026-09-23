@@ -12,6 +12,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 
+#include "game/enemies/CritterBreath.h"
 #include "game/enemies/EnemyMind.h"
 
 namespace gdl::game {
@@ -365,20 +366,33 @@ Mat4 Critters::modelTransform(const Critter& critter) {
 
 /** Where a named part is now: its animated node, or the type's body origin. */
 Vec3 Critters::partPosition(const Critter& critter, std::string_view node) {
+    return Vec3{partTransform(critter, node)[3]};
+}
+
+Mat4 Critters::partTransform(const Critter& critter, std::string_view node) {
     const Mat4 model = modelTransform(critter);
     if (!node.empty()) {
         if (const auto index = critter.stock->tree->findNode(node); index.has_value()) {
             const std::span<const Mat4> matrices = critter.pose.matrices();
             if (*index < matrices.size()) {
-                return Vec3{model * matrices[*index] * Vec4{0.0f, 0.0f, 0.0f, 1.0f}};
+                return model * matrices[*index];
             }
         }
     }
-    return Vec3{model * Vec4{critter.stock->data.originOffset(), 1.0f}};
+    return glm::translate(model, critter.stock->data.originOffset());
 }
 
-/** The harm a move does over its active frames: a blow reaches whoever is within the
- * part's radius, a ring whoever is within its reach of the feet; each player once a move. */
+std::optional<Mat4> Critters::nodeTransformOf(std::int32_t id, std::string_view node) const {
+    if (id < 0 || id >= kMost) {
+        return std::nullopt;
+    }
+    const Critter& critter = m_critters[static_cast<std::size_t>(id)];
+    return critter.state != State::Inactive ? std::optional{partTransform(critter, node)}
+                                            : std::nullopt;
+}
+
+/** Blows and rings hit each player once per move. Breath emits cylinder contacts
+ * throughout its harmful frames; the recipient owns its repeated-damage timer. */
 void Critters::strikeWith(Critter& critter, std::int32_t id, const CritterMove& move,
                           std::int32_t damageIndex, std::span<const EnemyView> players) {
     const CritterDamage* damage = critter.stock->data.damage(damageIndex);
@@ -387,45 +401,55 @@ void Critters::strikeWith(Critter& critter, std::int32_t id, const CritterMove& 
     }
     Vec3 centre;
     float reach = 0.0f;
+    std::optional<CritterBreath> breath;
     switch (damage->type) {
     case CritterDamage::kBlow:
         centre = partPosition(critter, move.colnode) + damage->offset;
         reach = damage->radius + damage->maxDistance;
         break;
     case CritterDamage::kRing:
-    case CritterDamage::kBreath:
         centre = critter.position;
         reach = damage->maxDistance;
+        break;
+    case CritterDamage::kBreath:
+        breath = CritterBreath::fromNode(partTransform(critter, move.colnode), *damage);
+        centre = breath->origin;
         break;
     default: return;
     }
     for (const EnemyView& view : players) {
-        if (view.hidden || std::ranges::find(critter.struckThisMove, view.player) !=
-                               critter.struckThisMove.end()) {
+        if (view.hidden ||
+            (!breath.has_value() && std::ranges::find(critter.struckThisMove, view.player) !=
+                                        critter.struckThisMove.end())) {
             continue;
         }
         const Vec3 feet = view.position;
         const Vec3 body = feet + Vec3{0.0f, 0.5f * view.height, 0.0f};
-        const bool within = flatDistance(centre, feet) <= reach + view.radius &&
-                            std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius;
+        const bool within =
+            breath.has_value()
+                ? breath->touches(*damage, body, view.radius, 0.5f * view.height)
+                : flatDistance(centre, feet) <= reach + view.radius &&
+                      std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius;
         if (!within) {
-            continue;
-        }
-        if (damage->type == CritterDamage::kBreath &&
-            std::cos(wrapAngle(yawBetween(critter.position, feet) - critter.yaw)) <
-                damage->minDot) {
             continue;
         }
         CritterBlow blow;
         blow.player = view.player;
         blow.critter = id;
         blow.damage = damage->damage * m_scales.damage;
+        blow.breath = breath.has_value();
         const Vec3 away = feet - critter.position;
         const float length = flatDistance(feet, critter.position);
         blow.direction = length > 0.001f ? Vec3{away.x / length, 0.0f, away.z / length}
                                          : Vec3{std::sin(critter.yaw), 0.0f, std::cos(critter.yaw)};
+        if (breath.has_value()) {
+            const Vec3 direction = breath->end - breath->origin;
+            const float size = glm::length(direction);
+            blow.direction = size > 0.0f ? direction / size : Vec3{0.0f};
+        } else {
+            critter.struckThisMove.push_back(view.player);
+        }
         m_blows.push_back(blow);
-        critter.struckThisMove.push_back(view.player);
     }
 }
 
@@ -520,17 +544,25 @@ void Critters::update(std::int32_t ticks, float seconds, std::span<const EnemyVi
                 const std::int32_t last = end < start ? start : end;
                 return start >= 0 && frame >= start && frame <= last;
             };
-            // The move's effects and sounds go off as it passes their frames, once each. An
-            // attack's sound comes at its frame, but its effect (a swing's glow, a stomp's
-            // ring) waits for the frame the blow lands on.
+            const auto isBreath = [&](std::int32_t index) {
+                const CritterDamage* harm = data.damage(index);
+                return harm != nullptr && harm->type == CritterDamage::kBreath;
+            };
+            const bool breathMove = isBreath(move->damage0) || isBreath(move->damage1);
+            // Breath's effect starts at its authored sound frame and rides on the node.
+            // Other attack effects retain their existing landing-frame presentation:
+            // a swing's glow or a stomp's ring waits while its sound starts earlier.
             const auto giveOnce = [&](std::uint32_t bit, std::int32_t sound, const Vec3& where,
                                       CueParts parts) {
                 if (sound >= 0 && (critter.soundsGiven & bit) == 0) {
                     critter.soundsGiven |= bit;
-                    cue(critter, i, sound, where, parts);
+                    const auto node = breathMove && (bit == 1U || bit == 2U)
+                                          ? std::optional<std::string_view>{move->colnode}
+                                          : std::nullopt;
+                    cue(critter, i, sound, where, parts, node);
                 }
             };
-            const bool lands = move->attack() && move->frameStart > move->soundFrame;
+            const bool lands = !breathMove && move->attack() && move->frameStart > move->soundFrame;
             if (frame >= move->soundFrame) {
                 giveOnce(1U, move->sound, critter.position,
                          lands ? CueParts::Sound : CueParts::Both);
@@ -657,7 +689,7 @@ void Critters::hurt(std::int32_t id, const EnemyHit& hit) {
  * record's way, turned with the body), riding the body when the record says so, and the
  * sound named for the level. */
 void Critters::cue(const Critter& critter, std::int32_t id, std::int32_t index,
-                   const Vec3& position, CueParts parts) {
+                   const Vec3& position, CueParts parts, std::optional<std::string_view> node) {
     const CritterData& data = critter.stock->data;
     for (std::int32_t at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
         const CritterSound* record = data.sound(at);
@@ -682,6 +714,16 @@ void Critters::cue(const Critter& critter, std::int32_t id, std::int32_t index,
         out.life = record->life;
         out.follows = record->follows();
         out.shakes = (record->flags & CritterSound::kShakes) != 0;
+        // Without a root/entity/global parenting override, a move effect uses its
+        // active animated node. Hit marks have no requested attachment.
+        constexpr std::uint32_t kAlternateParent = 0x2000U | 0x800U | 0x40U | 1U;
+        if (node.has_value() && !out.tree.empty() && (record->flags & kAlternateParent) == 0) {
+            out.node = *node;
+            out.nodeOffset = record->offset;
+            out.position = Vec3{partTransform(critter, *node) * Vec4{record->offset, 1.0f}};
+            out.scale = record->scale; // creature scale is already in the parent matrix
+            out.follows = true;
+        }
         if (!out.tree.empty() || !out.sound.empty()) {
             m_cues.push_back(std::move(out));
         }

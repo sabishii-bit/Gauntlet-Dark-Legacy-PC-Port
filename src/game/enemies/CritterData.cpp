@@ -151,6 +151,7 @@ bool CritterData::load(const std::filesystem::path& file) {
             damage.flags = d.value("flags", 0U);
             damage.radius = d.value("radius", 0.0f);
             damage.maxDistance = d.value("maxDistance", 0.0f);
+            damage.minDistance = d.value("minDistance", 0.0f);
             damage.yaw = d.value("yaw", 0.0f);
             damage.minDot = d.value("minDot", 0.0f);
             damage.pitch = d.value("pitch", 0.0f);

@@ -41,6 +41,8 @@ public:
                       const Texture* texture, std::uint32_t seed = 1);
     /** Moves an emitter's marker; new particles leave from there. */
     void setNode(std::size_t index, const Mat4& node);
+    /** Replaces a sprite frame without restarting its emitter or live particles. */
+    void setTexture(std::size_t index, const Texture& texture);
     /** Ends an emitter's emission; its particles live out their time. */
     void stop(std::size_t index);
     bool active(std::size_t index) const { return m_entries[index].emitter.active(); }

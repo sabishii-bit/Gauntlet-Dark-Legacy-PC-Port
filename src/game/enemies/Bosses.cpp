@@ -158,6 +158,10 @@ std::vector<CritterBlow> Bosses::takeBlows() {
     return m_fighter.takeBlows();
 }
 
+std::optional<Mat4> Bosses::nodeTransform(std::string_view node) const {
+    return m_id.has_value() ? m_fighter.nodeTransformOf(*m_id, node) : std::nullopt;
+}
+
 std::vector<CritterLoss> Bosses::takeLosses() {
     return m_fighter.takeLosses();
 }

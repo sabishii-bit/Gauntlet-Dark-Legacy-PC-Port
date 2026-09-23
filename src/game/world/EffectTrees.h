@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -14,6 +15,7 @@
 #include "engine/world/ParticleField.h"
 #include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/TreeParticles.h"
 #include "engine/world/TreePose.h"
 #include "engine/world/WorldLighting.h"
 
@@ -66,7 +68,10 @@ public:
         bool depthWrite = true;
         Color tint = Color::white();
         float playbackRate = 1.0f;
-        ParticleField trails; ///< code-created emitters following the effect's root
+        ParticleField trails;           ///< code-created emitters following the effect's root
+        TreeParticles particles;        ///< particle nodes authored in the archive
+        std::optional<Mat4> attachment; ///< full posed parent, rather than world yaw alone
+        Mat4 transform() const;
     };
 
     /** Starts `tree` of `archive` (which must outlive the effect) at `position`; false, with
@@ -80,6 +85,8 @@ public:
     void stop(std::uint32_t id);
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
     void moveTo(std::uint32_t id, const Vec3& position);
+    /** Places an effect on a fully posed attachment. Its own scale still applies. */
+    void placeAt(std::uint32_t id, const Mat4& attachment);
     /** Attaches an emitter to the effect root; existing particles remain in world space
      * unless its descriptor explicitly requests dynamic particles. */
     void attachTrail(std::uint32_t id, const ParticleDescriptor& descriptor,
@@ -94,6 +101,7 @@ public:
     const Effect& effect(std::size_t index) const { return *m_effects[index]; }
 
 private:
+    static bool bindVisuals(Effect& effect);
     /** An archive's texture animations, shared by its effects. */
     struct Motion {
         ItemArchive* archive = nullptr;
