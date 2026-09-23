@@ -32,6 +32,7 @@ public:
     void clear() {
         m_nodes.clear();
         resetTextures();
+        setAppearance(false);
     }
     bool bound() const { return !m_nodes.empty(); }
     usize nodeCount() const { return m_nodes.size(); }
@@ -45,6 +46,15 @@ public:
     void setTextureFrame(u32 slot, const Texture* frame);
     void setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale = Vec2{1.0f, 1.0f});
     void resetTextures();
+    /** Applies an alternate appearance without making solid skin translucent or filling
+     * its cutouts. Cleared by resetTextures(). */
+    void setMaskedTexture(const Texture* texture) { m_maskedTexture = texture; }
+    /** Full ambient illumination and an optional RGB tint applied to every node. */
+    void setAppearance(bool unlit, Color tint = Color::white(), bool depthWrite = true) {
+        m_unlit = unlit;
+        m_tint = tint;
+        m_depthWrite = depthWrite;
+    }
     Vec2 textureOffset(u32 slot) const;
     /** How a slot's coordinates are stretched, one and one when they are not. */
     Vec2 textureScale(u32 slot) const;
@@ -95,6 +105,10 @@ private:
                    const CameraFrame* camera, f32 alpha, bool translucent) const;
 
     std::vector<Node> m_nodes;
+    const Texture* m_maskedTexture = nullptr;
+    bool m_unlit = false;
+    bool m_depthWrite = true;
+    Color m_tint = Color::white();
     std::vector<std::pair<u32, const Texture*>> m_frames; ///< slot, frame shown
     /** A slot's coordinates slid and stretched. */
     struct Slide {

@@ -104,6 +104,7 @@ add_executable(tests
     game/world/LevelCatalogTests.cpp
     game/world/ExitPortalsTests.cpp
     game/world/LevelFixturesTests.cpp
+    game/world/SafeRocksTests.cpp
     game/players/LevelWatchTests.cpp
     game/enemies/EnemyKindsTests.cpp
     game/enemies/EnemyAnimatorTests.cpp
@@ -125,6 +126,7 @@ add_executable(tests
     game/screens/PickupHudTests.cpp
     game/screens/BossMeterTests.cpp
     game/screens/BossVictoryTests.cpp
+    game/screens/LegendPresentationTests.cpp
     game/screens/PlaySceneTests.cpp
     game/menu/NameEntryTests.cpp
     game/screens/SelectLaneTests.cpp

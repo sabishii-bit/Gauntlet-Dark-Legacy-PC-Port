@@ -10,6 +10,7 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/AnimationPlayer.h"
+#include "engine/world/ParticleField.h"
 #include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 #include "engine/world/TreePose.h"
@@ -33,8 +34,13 @@ public:
         f32 yaw = 0.0f;                   ///< turned about the upright
         Vec3 velocity{0.0f, 0.0f, 0.0f};  ///< carried along, as what a move sends flying is
         f32 seconds = 0.0f; ///< over nought, it repeats for this long instead of playing once
+        bool loop = true;   ///< with seconds, false holds the final pose until the lifetime ends
         /** With `seconds`: the tree plays once and this one then repeats in its place. */
         std::string then;
+        bool unlit = false;
+        bool depthWrite = true;
+        Color tint = Color::white();
+        f32 playbackRate = 1.0f; ///< animation speed, independent of motion and particle clocks
     };
 
     /** One effect playing. */
@@ -46,6 +52,7 @@ public:
         f32 yaw = 0.0f;
         Vec3 velocity{0.0f, 0.0f, 0.0f};
         bool repeats = false;
+        bool timed = false;        ///< lifetime is separate from animation speed or completion
         std::string then;          ///< the tree that takes over once this has played
         RenderDevice* device = nullptr;
         const TreeInfo* tree = nullptr;
@@ -54,6 +61,11 @@ public:
         TreePose pose;
         AnimationPlayer player;
         f32 secondsLeft = 0.0f; ///< for a tree without a sequence
+        bool unlit = false;
+        bool depthWrite = true;
+        Color tint = Color::white();
+        f32 playbackRate = 1.0f;
+        ParticleField trails; ///< code-created emitters following the effect's root
     };
 
     /** Starts `tree` of `archive` (which must outlive the effect) at `position`; false, with
@@ -67,9 +79,13 @@ public:
     void stop(u32 id);
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
     void moveTo(u32 id, const Vec3& position);
+    /** Attaches an emitter to the effect root; existing particles remain in world space
+     * unless its descriptor explicitly requests dynamic particles. */
+    void attachTrail(u32 id, const ParticleDescriptor& descriptor, const Texture& texture);
     bool playing(u32 id) const;
     void update(f32 seconds);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const CameraFrame* camera = nullptr) const;
     void clear();
 
     usize count() const { return m_effects.size(); }

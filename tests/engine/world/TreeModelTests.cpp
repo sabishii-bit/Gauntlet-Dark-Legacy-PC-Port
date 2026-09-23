@@ -80,6 +80,68 @@ TEST_CASE("a tree model stands its meshes in the world, lit, opaque parts first"
     REQUIRE(device.draws[1].texture != device.draws[0].texture);
 }
 
+TEST_CASE("alternate skin preserves base coverage and the original opaque or translucent material",
+          "[world][model]") {
+    const auto dir = sampleFigure("tree-model-masked");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    test::FakeTexture ice{1, 1};
+    figure.setMaskedTexture(&ice);
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[0].texture == &textures.texture(device, 0));
+    REQUIRE(device.draws[1].texture == &textures.texture(device, 1));
+    REQUIRE(device.draws[0].state.maskedTexture == &ice);
+    REQUIRE(device.draws[1].state.maskedTexture == &ice);
+    REQUIRE(device.draws[0].state.blend == BlendMode::Opaque);
+    REQUIRE(device.draws[0].state.depthWrite);
+    REQUIRE(device.draws[1].state.blend == BlendMode::Alpha);
+    REQUIRE(device.draws[1].state.alphaTest == DrawState::kTranslucentAlphaTest);
+    device.draws.clear();
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f}, {}, {}, nullptr, 0.5f);
+    REQUIRE(device.draws[0].state.blend == BlendMode::Alpha);
+    REQUIRE_FALSE(device.draws[0].state.depthWrite);
+    figure.resetTextures();
+    device.draws.clear();
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws[0].state.maskedTexture == nullptr);
+}
+
+TEST_CASE(
+    "effect appearance stays fully lit and tinted without changing depth flags on other models",
+    "[world][model]") {
+    const auto dir = sampleFigure("tree-model-appearance");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    WorldLighting dark;
+    dark.ambient = dark.lightColor = Vec3{0.0f};
+    const Color blue = Color::rgba(0, 0, 255);
+    figure.setAppearance(true, blue, false);
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f}, dark);
+    REQUIRE(device.draws[0].vertices[0].color == blue);
+    REQUIRE_FALSE(device.draws[0].state.depthWrite);
+    // A new binding resets instance overrides.
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    device.draws.clear();
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f}, dark);
+    REQUIRE(device.draws[0].vertices[0].color == Color::black());
+    REQUIRE(device.draws[0].state.depthWrite);
+}
+
 TEST_CASE("a faded tree model blends every part, and draws nothing once unseen",
           "[world][model]") {
     const auto dir = sampleFigure("tree-model-fade");

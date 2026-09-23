@@ -164,6 +164,116 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE_FALSE(missing.loaded());
 }
 
+TEST_CASE("the dragon's animated root sits above its floor anchor, including hit effects",
+          "[game][enemies][unpacked][assets]") {
+    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    const auto wad = test::assetOrSkip("CRITTER/DRAGON.WAD");
+    const auto original = formats::parseCritterWad(readFile(wad));
+    REQUIRE_FALSE(original.types.empty());
+    REQUIRE(original.types.front().floorOffset == 18.5f);
+
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    const auto ground = floor();
+    collision.build(ground);
+    Critters critters;
+    critters.open(device, root, &collision, EnemyScales{}, 'B');
+    const auto id = critters.spawn(kBossCritter, Vec3{0.0f, 2.0f, 0.0f}, 0.0f, "DRAGON");
+    REQUIRE(id.has_value());
+    REQUIRE(critters.positionOf(*id) == Vec3{0.0f}); // collision continues to use the floor
+    const CritterData* data = critters.dataOf(*id);
+    REQUIRE(data != nullptr);
+    REQUIRE(data->floorOffset() == original.types.front().floorOffset);
+    auto* archive = critters.archiveOf(*id);
+    REQUIRE(archive != nullptr);
+    const auto treeIndex = archive->trees.find(data->tree());
+    REQUIRE(treeIndex.has_value());
+    const auto& tree = archive->trees.tree(*treeIndex);
+    const auto start = data->moveOfType(CritterMove::kStart);
+    REQUIRE(start.has_value());
+    const auto sequence = tree.findSequence(data->moves()[*start].anim);
+    REQUIRE(sequence.has_value());
+    TreePose pose;
+    pose.evaluate(tree, *sequence, 0.0f);
+    TreeModel model;
+    REQUIRE(model.bind(tree, archive->models, archive->textures, device));
+    model.setFrame(*sequence, 0);
+    model.draw(device, Mat4{1.0f}, Mat4{1.0f}, {}, pose.matrices());
+    const auto local = device.draws;
+    REQUIRE_FALSE(local.empty());
+    device.draws.clear();
+    critters.draw(device, Mat4{1.0f}, {});
+    REQUIRE(device.draws.size() == local.size());
+    f32 error = 0.0f;
+    for (usize draw = 0; draw < local.size(); ++draw) {
+        REQUIRE(device.draws[draw].vertices.size() == local[draw].vertices.size());
+        for (usize vertex = 0; vertex < local[draw].vertices.size(); ++vertex) {
+            const Vec3 expected = local[draw].vertices[vertex].position + Vec3{0.0f, 18.5f, 0.0f};
+            error = std::max(error,
+                             glm::length(device.draws[draw].vertices[vertex].position - expected));
+        }
+    }
+    REQUIRE(error < 0.0001f);
+    EnemyHit hit;
+    hit.damage = 20.0f;
+    critters.hurt(*id, hit);
+    const auto cues = critters.takeCues();
+    REQUIRE_FALSE(cues.empty());
+    const auto* sound = data->sound(data->hitSoundFar());
+    REQUIRE(sound != nullptr);
+    REQUIRE(cues.front().position.y == Approx(18.5f + data->originOffset().y + sound->offset.y));
+}
+
+TEST_CASE("the dragon wears its ice texture while frozen and restores its skin when thawing",
+          "[game][enemies][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, root, nullptr, EnemyScales{}, 'B');
+    const auto id = critters.spawn(kBossCritter, Vec3{0.0f}, 0.0f, "DRAGON");
+    REQUIRE(id.has_value());
+    test::FakeTexture ice{1, 1};
+    critters.freeze(*id, 1200);
+    const auto checkSkin = [&](bool frozenSkin) {
+        device.draws.clear();
+        critters.draw(device, Mat4{1.0f}, {}, &ice);
+        REQUIRE_FALSE(device.draws.empty());
+        if (frozenSkin) {
+            REQUIRE(std::ranges::any_of(device.draws, [](const auto& draw) {
+                return draw.state.blend == BlendMode::Opaque;
+            }));
+        }
+        for (const auto& draw : device.draws) {
+            REQUIRE(draw.texture != &ice);
+            REQUIRE((draw.state.maskedTexture == &ice) == frozenSkin);
+            if (frozenSkin && draw.state.alphaTest == 0.0f) {
+                REQUIRE(draw.state.blend == BlendMode::Opaque);
+            }
+        }
+    };
+    checkSkin(true);
+    // Appearance belongs to this draw, not to simulation state or the shared model.
+    device.draws.clear();
+    critters.draw(device, Mat4{1.0f}, {});
+    REQUIRE(critters.frozen(*id));
+    REQUIRE_FALSE(device.draws.empty());
+    for (const auto& draw : device.draws) {
+        REQUIRE(draw.state.maskedTexture == nullptr);
+    }
+    checkSkin(true);
+    critters.update(1040, 1040.0f / 60.0f, {}); // 160 remain: bit 3 clear
+    checkSkin(true);
+    critters.update(8, 8.0f / 60.0f, {}); // 152 remain: bit 3 set
+    checkSkin(false);
+    critters.update(8, 8.0f / 60.0f, {}); // 144 remain: bit 3 clear
+    checkSkin(true);
+    critters.update(144, 144.0f / 60.0f, {});
+    REQUIRE_FALSE(critters.frozen(*id));
+    checkSkin(false);
+}
+
 TEST_CASE("a boss's death record throws its coins all round it, up at seventy degrees",
           "[game][enemies][unpacked]") {
     const std::filesystem::path root = unpackedRoot();

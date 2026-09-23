@@ -6,12 +6,53 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/LegendItems.h"
 #include "game/world/EffectTrees.h"
 
 namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("legend effects carry a world-space trail and draw its sprites facing the camera",
+          "[game][world][effects][unpacked]") {
+    const auto root = test::unpackedOrSkip("ITEMS/LEVELB6/animations.json").parent_path();
+    ItemArchive items;
+    REQUIRE(items.load(root));
+    test::FakeRenderDevice device;
+    test::FakeTexture particleTexture{1, 1};
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.seconds = 6.0f;
+    setting.velocity = Vec3{20.0f, 0.0f, 0.0f};
+    setting.unlit = true;
+    setting.depthWrite = false;
+    const u32 id = effects.startSet(device, items, "LEGENDPRJ", Vec3{0.0f}, setting);
+    REQUIRE(id != 0);
+    effects.attachTrail(id, LegendShow::trailOf(34), particleTexture);
+    effects.update(1.0f / 30.0f);
+    const ParticleEmitter& emitter = effects.effect(0).trails.emitter(0);
+    REQUIRE(emitter.particles().size() == 1);
+    const Vec3 origin = emitter.particles()[0].origin;
+    effects.update(1.0f / 30.0f);
+    REQUIRE(emitter.particles().size() == 2);
+    REQUIRE(emitter.particles()[0].origin == origin);
+    REQUIRE(emitter.particles()[1].origin.x > origin.x);
+    CameraFrame camera;
+    camera.right = Vec3{0.0f, 0.0f, 1.0f};
+    effects.draw(device, Mat4{1.0f}, {}, &camera);
+    REQUIRE_FALSE(device.draws.empty());
+    const auto& particles = device.draws.back();
+    REQUIRE(particles.texture == &particleTexture);
+    REQUIRE_FALSE(particles.state.depthWrite);
+    REQUIRE(particles.vertices.size() == 12);
+    REQUIRE(particles.vertices[1].position - particles.vertices[0].position == camera.right * 2.0f);
+    effects.stop(id);
+    REQUIRE(effects.count() == 0);
+    device.draws.clear();
+    effects.draw(device, Mat4{1.0f}, {});
+    REQUIRE(device.draws.empty());
+}
 
 TEST_CASE("an effect tree plays its sequence once where it was started, then goes",
           "[game][world][effects][unpacked]") {
@@ -43,6 +84,33 @@ TEST_CASE("an effect tree plays its sequence once where it was started, then goe
     effects.start(device, weapons, "MP_ACID", Vec3{0.0f});
     effects.clear();
     REQUIRE(effects.count() == 0);
+}
+
+TEST_CASE("a fast legend charge holds its final pose for the unscaled effect lifetime",
+          "[game][world][effects][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.seconds = 1.0f;
+    setting.loop = false;
+    setting.playbackRate = LegendShow::kBurstPlaybackRate;
+    const u32 id = effects.startSet(device, weapons, "COMBO_BLU", Vec3{0.0f}, setting);
+    REQUIRE(id != 0);
+    for (int i = 0; i < 30; ++i) {
+        effects.update(1.0f / 60.0f);
+    }
+    REQUIRE(effects.playing(id));
+    REQUIRE(effects.effect(0).player.finished());
+    const f32 lastFrame = effects.effect(0).player.frame();
+    effects.update(0.1f);
+    REQUIRE(effects.effect(0).player.frame() == lastFrame);
+    for (int i = 0; i < 30; ++i) {
+        effects.update(1.0f / 60.0f);
+    }
+    REQUIRE_FALSE(effects.playing(id));
 }
 
 TEST_CASE("an effect can be turned, carried along and kept repeating until it is stopped",

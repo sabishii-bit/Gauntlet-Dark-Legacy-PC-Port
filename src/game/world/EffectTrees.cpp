@@ -32,6 +32,17 @@ bool EffectTrees::playing(u32 id) const {
         m_effects, [id](const std::unique_ptr<Effect>& effect) { return effect->id == id; });
 }
 
+void EffectTrees::attachTrail(u32 id, const ParticleDescriptor& descriptor,
+                              const Texture& texture) {
+    for (const std::unique_ptr<Effect>& effect : m_effects) {
+        if (effect->id == id) {
+            effect->trails.start(descriptor, glm::translate(Mat4{1.0f}, effect->position), &texture,
+                                 id);
+            return;
+        }
+    }
+}
+
 u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
                           const Vec3& position, const Setting& setting) {
     const auto index = archive.loaded() ? archive.trees.find(tree) : std::nullopt;
@@ -49,8 +60,14 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     effect->position = position;
     effect->scale = setting.scale;
     effect->yaw = setting.yaw;
+    effect->unlit = setting.unlit;
+    effect->depthWrite = setting.depthWrite;
+    effect->tint = setting.tint;
+    effect->playbackRate = setting.playbackRate;
+    effect->model.setAppearance(setting.unlit, setting.tint, setting.depthWrite);
     effect->velocity = setting.velocity;
-    effect->repeats = setting.seconds > 0.0f && setting.then.empty();
+    effect->timed = setting.seconds > 0.0f;
+    effect->repeats = effect->timed && setting.then.empty() && setting.loop;
     effect->then = setting.then;
     effect->device = &device;
     effect->archive = &archive;
@@ -59,7 +76,7 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     }
     if (effect->tree->sequences.empty()) {
         effect->pose.rest(*effect->tree);
-        if (!effect->repeats) {
+        if (!effect->timed) {
             effect->secondsLeft = kStillSeconds;
         }
     } else {
@@ -91,8 +108,11 @@ void EffectTrees::update(f32 seconds) {
     }
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         effect->position += effect->velocity * seconds;
-        const bool timed = effect->repeats || !effect->then.empty();
-        if (effect->tree->sequences.empty() || timed) {
+        for (usize i = 0; i < effect->trails.size(); ++i) {
+            effect->trails.setNode(i, glm::translate(Mat4{1.0f}, effect->position));
+        }
+        effect->trails.step(seconds);
+        if (effect->tree->sequences.empty() || effect->timed) {
             effect->secondsLeft -= seconds;
         }
         // Played through, it gives way to the tree that repeats in its place.
@@ -107,6 +127,7 @@ void EffectTrees::update(f32 seconds) {
                 if (effect->model.bind(tree, effect->archive->models, effect->archive->textures,
                                        *effect->device)) {
                     effect->tree = &tree;
+                    effect->model.setAppearance(effect->unlit, effect->tint, effect->depthWrite);
                     effect->name = name;
                     if (tree.sequences.empty()) {
                         effect->pose.rest(tree);
@@ -117,7 +138,7 @@ void EffectTrees::update(f32 seconds) {
             }
         }
         if (!effect->tree->sequences.empty()) {
-            effect->player.advance(seconds, effect->repeats);
+            effect->player.advance(seconds * effect->playbackRate, effect->repeats);
             effect->pose.evaluate(*effect->tree, effect->player.sequence(),
                                   effect->player.frame());
             effect->model.setFrame(effect->player.sequence(),
@@ -159,20 +180,21 @@ void EffectTrees::update(f32 seconds) {
         }
     }
     std::erase_if(m_effects, [](const std::unique_ptr<Effect>& effect) {
-        const bool timed = effect->tree->sequences.empty() || effect->repeats ||
-                           !effect->then.empty();
+        const bool timed = effect->tree->sequences.empty() || effect->timed;
         return timed ? effect->secondsLeft <= 0.0f : effect->player.finished();
     });
 }
 
-void EffectTrees::draw(RenderDevice& device, const Mat4& clip,
-                       const WorldLighting& lighting) const {
+void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                       const CameraFrame* camera) const {
+    const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         const Mat4 turned = glm::rotate(glm::translate(Mat4{1.0f}, effect->position),
                                         effect->yaw, Vec3{0.0f, 1.0f, 0.0f});
         const Mat4 placed =
             glm::scale(turned, Vec3{effect->scale, effect->scale, effect->scale});
-        effect->model.draw(device, clip, placed, lighting, effect->pose.matrices());
+        effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), camera);
+        effect->trails.draw(device, clip, frame.right, frame.up);
     }
 }
 

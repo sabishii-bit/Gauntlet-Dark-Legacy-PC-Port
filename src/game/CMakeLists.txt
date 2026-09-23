@@ -46,6 +46,8 @@ add_library(game STATIC
     world/MoveStrikes.cpp
     world/Breakables.h
     world/Breakables.cpp
+    world/SafeRocks.h
+    world/SafeRocks.cpp
     players/LevelWatch.cpp
     enemies/EnemyKinds.cpp
     enemies/EnemyAnimator.cpp
@@ -125,6 +127,8 @@ add_library(game STATIC
     screens/BossVictory.cpp
     screens/PlayerSelectScene.h
     screens/PlayerSelectScene.cpp
+    screens/LegendPresentation.h
+    screens/LegendPresentation.cpp
     screens/PlayScene.h
     screens/PlayScene.cpp)
 

@@ -42,10 +42,10 @@ Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const Camera
         return middleOf(party);
     }
     const f32 range = record.maxDistance - record.minDistance;
-    const f32 t = range > 0.01f
-                      ? std::clamp((m_distance - record.minDistance) / range, 0.0f, 1.0f)
-                      : 1.0f;
-    return boss.position + record.minAttention + (record.maxAttention - record.minAttention) * t;
+    const f32 t =
+        range > 0.01f ? std::clamp((m_distance - record.minDistance) / range, 0.0f, 1.0f) : 1.0f;
+    return boss.position + boss.attentionOffset + record.minAttention +
+           (record.maxAttention - record.minAttention) * t;
 }
 
 /** The way the camera looks: along the party's line to the boss, or, when the party is
@@ -64,8 +64,10 @@ f32 BossCamera::wantedYaw(const BossCameraSubject& boss, std::span<const CameraS
     const Vec3 facing{std::sin(boss.facing), 0.0f, std::cos(boss.facing)};
     const f32 dot = side.x * facing.x + side.z * facing.z;
     // The camera looks the opposite way to the party's side: from them toward the boss.
-    if (dot < record.cosMaxYaw && record.maxYaw < kPi) {
-        const f32 cross = facing.x * side.z - facing.z * side.x;
+    // BossCameraStart recomputes this cache. The Dragon's file contains cos(45 degrees),
+    // although its authored maxYaw is 18 degrees.
+    if (dot < std::cos(record.maxYaw) && record.maxYaw < kPi) {
+        const f32 cross = facing.z * side.x - facing.x * side.z;
         const f32 swung = boss.facing + (cross >= 0.0f ? record.maxYaw : -record.maxYaw);
         return wrapAngle(swung + kPi);
     }

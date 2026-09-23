@@ -31,6 +31,16 @@ Vec3 Obstacle::pushOut(const Vec3& position, f32 radius) const {
     if (!solid || !levelWith(*this, position)) {
         return position;
     }
+    if (cylinderRadius > 0.0f) {
+        Vec2 away{position.x - centre.x, position.z - centre.z};
+        const f32 distance = glm::length(away);
+        const f32 reach = cylinderRadius + radius;
+        if (distance >= reach) {
+            return position;
+        }
+        away = distance > 1e-5f ? away / distance : Vec2{1.0f, 0.0f};
+        return Vec3{centre.x + away.x * reach, position.y, centre.z + away.y * reach};
+    }
     const Vec2 local = localOf(*this, position);
     const Vec2 nearest{std::clamp(local.x, -halfAcross, halfAcross),
                        std::clamp(local.y, -halfAlong, halfAlong)};
@@ -59,6 +69,10 @@ Vec3 Obstacle::pushOut(const Vec3& position, f32 radius) const {
 bool Obstacle::touchedBy(const Vec3& position, f32 radius, f32 margin) const {
     if (!levelWith(*this, position)) {
         return false;
+    }
+    if (cylinderRadius > 0.0f) {
+        return glm::length(Vec2{position.x - centre.x, position.z - centre.z}) <=
+               cylinderRadius + radius + margin;
     }
     const Vec2 local = localOf(*this, position);
     const Vec2 nearest{std::clamp(local.x, -halfAcross, halfAcross),

@@ -1888,6 +1888,9 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     REQUIRE(scene.open(device, context, world, party, options));
     REQUIRE(scene.bosses().present());
     REQUIRE(scene.bossView()->name == "DRAGON");
+    REQUIRE(scene.safeRocks().size() == 6);
+    REQUIRE(scene.safeRocks().obstacles().size() == 6);
+    REQUIRE(scene.bosses().height() == Approx(4.5f)); // root 18.5, body origin -14
     REQUIRE(scene.bosses().legend().stage() == LegendRite::Stage::Carried);
     const PlayScene::Inputs still{};
     for (int i = 0; i < 400 && scene.spawning(); ++i) {
@@ -1903,11 +1906,16 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     };
     // The axe glows in the bearer's hand, by the body rather than high over the head.
     bool held = false;
+    bool charged = false;
     int waited = 0;
     while (!scene.bosses().legend().thrown() && waited < 3000) {
         scene.update(1.0 / 60.0, still);
+        charged =
+            charged || (find(LegendShow::kAuraTree) != nullptr &&
+                        find(LegendShow::chargeTree(scene.actor(0)->save().color)) != nullptr);
         if (const EffectTrees::Effect* axe = find(LegendShow::kHeldTree); axe != nullptr) {
             held = true;
+            REQUIRE(axe->unlit);
             const f32 over = axe->position.y - scene.actor(0)->position().y;
             REQUIRE(over < LegendShow::kHeldLift - 1.0f);
             REQUIRE(glm::distance(axe->position, scene.actor(0)->position()) < 8.0f);
@@ -1916,30 +1924,66 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     }
     REQUIRE(scene.bosses().legend().thrown());
     REQUIRE(held);
+    REQUIRE(charged);
     REQUIRE(scene.bosses().legend().darkens());
     const f32 whole = scene.bossView()->maxHealth;
-    REQUIRE(scene.bossView()->health == Approx(whole - (0.1f * whole - 1.0f)));
-    REQUIRE(scene.bosses().frozen());
+    REQUIRE(scene.bossView()->health == Approx(whole));
+    REQUIRE_FALSE(scene.bosses().frozen());
     // The strong throw's gesture lets it fly toward the dragon without the weapon going,
     // and it lands within its flight's time.
     bool gestured = false;
     bool flying = false;
+    bool trailVisible = false;
     f32 nearest = 1000.0f;
     for (int i = 0; i < 900 && (!flying || find(LegendShow::kProjectileTree) != nullptr); ++i) {
         scene.update(1.0 / 60.0, still);
         gestured = gestured || scene.animator(0)->action() == PlayerAnimator::Action::StrongThrow;
         if (const EffectTrees::Effect* axe = find(LegendShow::kProjectileTree); axe != nullptr) {
             flying = true;
+            REQUIRE(axe->unlit);
+            REQUIRE(axe->trails.size() == 1);
+            trailVisible = trailVisible || axe->trails.particleCount() > 0;
             REQUIRE(glm::length(axe->velocity) == Approx(LegendShow::kSpeed));
             nearest = std::min(nearest, glm::distance(axe->position, *scene.bosses().position()));
         }
     }
     REQUIRE(gestured);
     REQUIRE(flying);
+    REQUIRE(trailVisible);
     REQUIRE(find(LegendShow::kProjectileTree) == nullptr);
     REQUIRE(nearest < 12.0f);
     REQUIRE(scene.missiles().count() == 0);
     REQUIRE_FALSE(find(LegendShow::kHeldTree));
+    REQUIRE(scene.bossView()->health == Approx(whole - (0.1f * whole - 1.0f)));
+    REQUIRE(scene.bosses().frozen());
+    REQUIRE_FALSE(scene.bosses().legend().darkens());
+    const auto iceSlot = world.items().textures.find("SEETHROUGH");
+    REQUIRE(iceSlot.has_value());
+    const Texture& ice = world.items().textures.texture(device, *iceSlot);
+    device.draws.clear();
+    scene.render(device, makeScreenProjection(640.0f, 448.0f), 640.0f, 448.0f);
+    REQUIRE(std::ranges::any_of(
+        device.draws, [&ice](const auto& draw) { return draw.state.maskedTexture == &ice; }));
+    device.draws.clear();
+    scene.bosses().draw(device, Mat4{1.0f}, world.lighting(), &ice);
+    REQUIRE_FALSE(device.draws.empty());
+    for (const auto& draw : device.draws) {
+        REQUIRE(draw.texture != &ice);
+        REQUIRE(draw.state.maskedTexture == &ice);
+        if (draw.state.alphaTest == 0.0f) {
+            REQUIRE(draw.state.blend == BlendMode::Opaque);
+        }
+    }
+    const f32 afterImpact = scene.bossView()->health;
+    scene.bosses().landLegend();
+    REQUIRE(scene.bossView()->health == afterImpact); // duplicate presentation callback is harmless
+    // Lighting recovers while the freeze is still active, not after its twenty seconds.
+    for (int i = 0; i < 120; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.bosses().frozen());
+    REQUIRE_FALSE(scene.bosses().legend().darkens());
+    REQUIRE(world.ambientOffset() == Approx(0.0f).margin(0.001f));
     // Thawed, the dragon fights on; slain, it throws the mountain's five silver coins.
     for (int i = 0; i < 1500 && scene.bosses().frozen(); ++i) {
         scene.update(1.0 / 60.0, still);

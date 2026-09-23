@@ -19,6 +19,7 @@ struct BossCameraSubject {
     f32 radius = 4.0f;
     f32 height = 4.0f; ///< of its body's centre, which is kept in view
     bool awake = false;
+    Vec3 attentionOffset{0.0f}; ///< root and vertical drift above the floor position
 };
 
 /**
@@ -32,14 +33,14 @@ struct BossCameraSubject {
  */
 class BossCamera {
 public:
-    static constexpr f32 kFrameRate = 30.0f;    ///< the original's steps are per frame
-    static constexpr f32 kOutStep = 10.0f;      ///< units back a frame when something is off screen
-    static constexpr f32 kTightMargin = 2.0f;   ///< within this of the edge it backs off
-    static constexpr f32 kWantedMargin = 2.5f;  ///< the slack it settles at
-    static constexpr f32 kLooseMargin = 4.0f;   ///< past this it comes in
-    static constexpr f32 kFarthest = 2.0f;      ///< of the record's greatest distance
-    static constexpr f32 kTurnRate = 2.0f;      ///< radians a second the yaw may swing
-    static constexpr f32 kEase = 6.0f;          ///< how quickly the look point follows
+    static constexpr f32 kFrameRate = 30.0f;   ///< the original's steps are per frame
+    static constexpr f32 kOutStep = 10.0f;     ///< units back a frame when something is off screen
+    static constexpr f32 kTightMargin = 2.0f;  ///< within this of the edge it backs off
+    static constexpr f32 kWantedMargin = 2.5f; ///< the slack it settles at
+    static constexpr f32 kLooseMargin = 4.0f;  ///< past this it comes in
+    static constexpr f32 kFarthest = 2.0f;     ///< of the record's greatest distance
+    static constexpr f32 kTurnRate = 2.0f;     ///< radians a second the yaw may swing
+    static constexpr f32 kEase = 6.0f;         ///< how quickly the look point follows
 
     /** Stands the camera up at once, as the level starts. */
     void reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,

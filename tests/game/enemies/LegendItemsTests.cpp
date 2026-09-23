@@ -116,6 +116,40 @@ TEST_CASE("the rite waits for the boss to rise, brandishes and throws, has it ro
     REQUIRE(forGood.stage() == LegendRite::Stage::None);
 }
 
+TEST_CASE("the dragon's item presentation ends on impact without waiting for it to thaw or roar",
+          "[game][enemies][legend]") {
+    LegendRite rite;
+    REQUIRE_FALSE(rite.finishOnImpact());
+    rite.begin(0, *legendWeaknessOf(34));
+    REQUIRE_FALSE(rite.finishOnImpact());
+    rite.update(1, true, false);
+    REQUIRE(rite.darkens());
+    REQUIRE_FALSE(rite.finishOnImpact());
+    rite.update(LegendRite::kBrandishTicks, true, false);
+    REQUIRE(rite.thrown());
+    REQUIRE(rite.darkens());
+    SECTION("the axe lands before a roar can finish") {
+        REQUIRE(rite.finishOnImpact());
+    }
+    SECTION("a completed roar cannot discard the pending impact") {
+        rite.update(LegendRite::kLongRoarWait, true, true);
+        REQUIRE(rite.running());
+        REQUIRE(rite.darkens());
+        REQUIRE(rite.finishOnImpact());
+    }
+    REQUIRE_FALSE(rite.darkens());
+    REQUIRE_FALSE(rite.running());
+    REQUIRE_FALSE(rite.wantsRoar());
+    REQUIRE_FALSE(rite.finishOnImpact()); // no second application of damage or freeze
+    REQUIRE(rite.update(1200, true, false).empty());
+    REQUIRE_FALSE(rite.darkens());
+
+    rite.begin(0, *legendWeaknessOf(39));
+    rite.update(LegendRite::kBrandishTicks, true, false);
+    REQUIRE_FALSE(rite.finishOnImpact()); // other bosses still use their own sequence
+    REQUIRE(rite.darkens());
+}
+
 TEST_CASE("the rite is shown by the boss's kind: the hold, the gesture, the flight and the "
           "burst",
           "[game][enemies]") {
@@ -159,6 +193,29 @@ TEST_CASE("the rite is shown by the boss's kind: the hold, the gesture, the flig
             std::vector<std::string>{"S_GLEGWHIT", "S_GLEGWALSTP"});
     REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::WornOff, 'K') ==
             std::vector<std::string>{"S_KLEGWPDN"});
+}
+
+TEST_CASE("legend charge colours and projectile particles follow the item's retail settings",
+          "[game][legend]") {
+    REQUIRE(LegendShow::chargeTree(0) == "COMBO_YEL");
+    REQUIRE(LegendShow::chargeTree(1) == "COMBO_BLU");
+    REQUIRE(LegendShow::chargeTree(2) == "COMBO_RED");
+    REQUIRE(LegendShow::chargeTree(3) == "COMBO_GRN");
+    REQUIRE(LegendShow::chargeTint(1) == Color::rgba(0, 0, 255));
+    const ParticleDescriptor trail = LegendShow::trailOf(34);
+    REQUIRE(trail.texture == "PARTICLE1_A");
+    REQUIRE(trail.emitFrames == 90);
+    REQUIRE(trail.fadeFrames == 1);
+    REQUIRE(trail.particleLife == 30);
+    REQUIRE(trail.particleFade == 30);
+    REQUIRE(trail.speed == Approx(1.0f / 30.0f));
+    REQUIRE(trail.width.at(10.0f, 30.0f, 30.0f) == Approx(2.0f));
+    REQUIRE(trail.alpha.at(45.0f, 30.0f, 30.0f) == Approx(127.5f));
+    REQUIRE_FALSE(trail.depthWrite);
+    REQUIRE_FALSE(trail.dynamic);
+    REQUIRE(LegendShow::trailOf(35).texture == "CHIMKEY_PART");
+    REQUIRE(LegendShow::trailOf(38).texture == "PARTICLE1_A");
+    REQUIRE(LegendShow::trailOf(41).texture.empty());
 }
 
 } // namespace

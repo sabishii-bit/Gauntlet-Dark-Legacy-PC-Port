@@ -51,6 +51,9 @@ VulkanRenderDevice::VulkanRenderDevice(Window& window, const RenderDeviceDesc& d
     m_additivePipeline = std::make_unique<VulkanPipeline>(
         *m_context, desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
         m_textureSetLayout, BlendMode::Additive);
+    m_opaquePipeline = std::make_unique<VulkanPipeline>(
+        *m_context, desc.shaderDirectory, m_swapchain->colorFormat(), m_swapchain->depthFormat(),
+        m_textureSetLayout, BlendMode::Opaque);
     createFrameResources();
     createPresentSemaphores();
 
@@ -84,6 +87,7 @@ VulkanRenderDevice::~VulkanRenderDevice() {
         }
     }
     m_additivePipeline.reset();
+    m_opaquePipeline.reset();
     m_pipeline.reset();
     for (VkSampler& sampler : m_samplers) {
         if (sampler != VK_NULL_HANDLE) {
@@ -402,10 +406,14 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
         beginRendering();
     }
     if (state.blend != m_boundBlend) {
-        const VulkanPipeline& pipeline =
-            state.blend == BlendMode::Additive ? *m_additivePipeline : *m_pipeline;
+        const VulkanPipeline* pipeline = m_pipeline.get();
+        if (state.blend == BlendMode::Opaque) {
+            pipeline = m_opaquePipeline.get();
+        } else if (state.blend == BlendMode::Additive) {
+            pipeline = m_additivePipeline.get();
+        }
         vkCmdBindPipeline(m_frames[m_frameIndex].commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                          pipeline.handle());
+                          pipeline->handle());
         m_boundBlend = state.blend;
     }
     const auto triangles = batch.triangles();
@@ -430,15 +438,22 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
                 triangles.size_bytes());
 
     const VkCommandBuffer cmd = frame.commandBuffer;
-    const Texture& second = state.lightmap != nullptr ? *state.lightmap : *m_whiteTexture;
+    GDL_ASSERT(state.maskedTexture == nullptr || state.lightmap == nullptr,
+               "masked colour and lightmap share the second texture stage");
+    const Texture* second = m_whiteTexture.get();
+    if (state.maskedTexture != nullptr) {
+        second = state.maskedTexture;
+    } else if (state.lightmap != nullptr) {
+        second = state.lightmap;
+    }
     const std::array<VkDescriptorSet, 2> sets{
         dynamic_cast<const VulkanTexture&>(texture).descriptorSet(),
-        dynamic_cast<const VulkanTexture&>(second).descriptorSet()};
+        dynamic_cast<const VulkanTexture&>(*second).descriptorSet()};
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(), 0,
                             static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
     const VulkanPipeline::PushConstants constants{
         transform, Vec4{state.uvOffset.x, state.uvOffset.y, state.alphaTest, state.darken},
-        Vec4{state.uvScale.x, state.uvScale.y, 0.0f, 0.0f}};
+        Vec4{state.uvScale.x, state.uvScale.y, state.maskedTexture != nullptr ? 1.0f : 0.0f, 0.0f}};
     vkCmdPushConstants(cmd, m_pipeline->layout(),
                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        VulkanPipeline::kPushConstantSize, &constants);

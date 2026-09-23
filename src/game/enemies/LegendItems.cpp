@@ -14,15 +14,15 @@ constexpr f32 kTicksPerSecond = 60.0f;
 /** The original's table, boss by boss. */
 constexpr std::array<LegendWeakness, 9> kWeaknesses{{
     // boss, realm, share, damage, frozen, blind, curb, lasts, scale, beheads
-    {34, 2, kTenth, 0.0f, 1200, 0, 0.0f, 0.0f, 1.0f, false},       // the dragon, iced
-    {35, 1, 1.0f / 3.0f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, true},      // the chimera, beheaded
-    {36, 3, kTenth, 0.0f, 0, 1800, 0.0f, 0.0f, 1.0f, false},       // the genie, in the dark
-    {37, 4, kTenth, 0.0f, 0, 0, 0.5f, 0.0f, 0.8f, false},          // the spider, poisoned
-    {38, 11, kTenth, 0.0f, 0, 18000, 0.0f, 0.0f, 1.0f, false},     // the plague fiend, blinded
-    {39, 9, kTenth, 0.0f, 0, 0, 0.5f, kWearSeconds, 1.0f, false},  // the yeti, melted
+    {34, 2, kTenth, 0.0f, 1200, 0, 0.0f, 0.0f, 1.0f, false},        // the dragon, iced
+    {35, 1, 1.0f / 3.0f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, true},       // the chimera, beheaded
+    {36, 3, kTenth, 0.0f, 0, 1800, 0.0f, 0.0f, 1.0f, false},        // the genie, in the dark
+    {37, 4, kTenth, 0.0f, 0, 0, 0.5f, 0.0f, 0.8f, false},           // the spider, poisoned
+    {38, 11, kTenth, 0.0f, 0, 18000, 0.0f, 0.0f, 1.0f, false},      // the plague fiend, blinded
+    {39, 9, kTenth, 0.0f, 0, 0, 0.5f, kWearSeconds, 1.0f, false},   // the yeti, melted
     {40, 10, 0.0f, 500.0f, 0, 0, 0.25f, kWearSeconds, 1.0f, false}, // the wraith, shown
-    {41, 7, 0.25f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, false},           // the lich, burned
-    {42, 5, kTenth, 0.0f, 0, 0, 0.1f, kWearSeconds, 1.0f, false},  // the temple's, shaken
+    {41, 7, 0.25f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, false},            // the lich, burned
+    {42, 5, kTenth, 0.0f, 0, 0, 0.1f, kWearSeconds, 1.0f, false},   // the temple's, shaken
 }};
 
 /** The chimera, the lich and the temple's boss roar a second after rising; the rest three. */
@@ -37,6 +37,38 @@ const LegendWeakness* legendWeaknessOf(s32 kind) {
     // NOLINTNEXTLINE(readability-qualified-auto)
     const auto found = std::ranges::find(kWeaknesses, kind, &LegendWeakness::boss);
     return found != kWeaknesses.end() ? &*found : nullptr;
+}
+
+std::string_view LegendShow::chargeTree(s32 color) {
+    constexpr std::array<std::string_view, 4> kTrees{"COMBO_YEL", "COMBO_BLU", "COMBO_RED",
+                                                     "COMBO_GRN"};
+    return kTrees[static_cast<usize>(std::clamp(color, 0, 3))];
+}
+
+Color LegendShow::chargeTint(s32 color) {
+    constexpr std::array<Color, 4> kTints{Color::rgba(255, 255, 0), Color::rgba(0, 0, 255),
+                                          Color::rgba(255, 0, 0), Color::rgba(0, 255, 0)};
+    return kTints[static_cast<usize>(std::clamp(color, 0, 3))];
+}
+
+ParticleDescriptor LegendShow::trailOf(s32 kind) {
+    ParticleDescriptor trail;
+    if (kind != 34 && kind != 35 && kind != 38) {
+        return trail;
+    }
+    trail.texture = kind == 35 ? "CHIMKEY_PART" : "PARTICLE1_A";
+    trail.emitFrames = 90; // three seconds, then 0.034 seconds of emission fade
+    trail.fadeFrames = 1;
+    trail.angle = ParticleDescriptor::kSphere;
+    trail.rate = {1.0f, 1.0f, 1.0f, 1.0f}; // thirty particles a second
+    trail.speed = 1.0f / ParticleDescriptor::kFrameRate;
+    trail.particleLife = 30;
+    trail.particleFade = 30;
+    trail.red = trail.green = trail.blue = {255.0f, 255.0f, 255.0f, 255.0f};
+    trail.alpha = {255.0f, 255.0f, 255.0f, 0.0f};
+    trail.width = {2.0f, 2.0f, 2.0f, 2.0f};
+    trail.depthWrite = false;
+    return trail;
 }
 
 s32 legendRealmOf(s32 kind) {
@@ -97,7 +129,7 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
         m_wearLeft = m_weakness.curbLasts;
     }
     // Then its weakness runs its course, where it has one.
-    if (m_roared && m_thrown) {
+    if (m_roared && m_thrown && m_weakness.boss != 34) {
         if (m_weakness.curbLasts <= 0.0f) {
             m_stage = Stage::Over;
         } else {
@@ -109,6 +141,15 @@ std::vector<LegendCue> LegendRite::update(s32 ticks, bool bossRisen, bool bossRo
         }
     }
     return cues;
+}
+
+bool LegendRite::finishOnImpact() {
+    if (m_weakness.boss != 34 || m_stage != Stage::Struck) {
+        return false;
+    }
+    m_stage = Stage::Over;
+    m_roarDue = false;
+    return true;
 }
 
 bool LegendShow::heldInHand(s32 kind) {

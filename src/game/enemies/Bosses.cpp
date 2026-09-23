@@ -43,10 +43,11 @@ void Bosses::stageLegend(s32 ticks) {
     const bool risen = m_awake && moveType >= 0 && moveType != CritterMove::kStart;
     const CritterData* data = m_fighter.dataOf(*m_id);
     const bool canRoar = data != nullptr && data->moveOfType(CritterMove::kRoar).has_value();
-    const bool roarDone = m_roarAsked && (!canRoar || (moveType == CritterMove::kRoar &&
-                                                        m_fighter.moveDoneOf(*m_id)));
+    const bool roarDone =
+        m_roarAsked &&
+        (!canRoar || (moveType == CritterMove::kRoar && m_fighter.moveDoneOf(*m_id)));
     for (const LegendCue cue : m_rite.update(ticks, risen, roarDone)) {
-        if (cue == LegendCue::Thrown) {
+        if (cue == LegendCue::Thrown && m_kind != 34) {
             strikeWithLegend();
         } else if (cue == LegendCue::WornOff) {
             m_fighter.curb(*m_id, 0.0f);
@@ -58,6 +59,14 @@ void Bosses::stageLegend(s32 ticks) {
         m_fighter.hold(*m_id, false);
         m_fighter.roar(*m_id);
     }
+}
+
+void Bosses::landLegend() {
+    if (!m_id.has_value() || !m_rite.finishOnImpact()) {
+        return;
+    }
+    strikeWithLegend();
+    m_fighter.hold(*m_id, false);
 }
 
 /** The item lands: a share of its health goes at once, and its weakness is put on it. */
@@ -89,9 +98,15 @@ std::vector<LegendEvent> Bosses::takeLegendEvents() {
     return std::exchange(m_legendEvents, {});
 }
 
-bool Bosses::frozen() const { return m_id.has_value() && m_fighter.frozen(*m_id); }
-bool Bosses::blinded() const { return m_id.has_value() && m_fighter.blinded(*m_id); }
-bool Bosses::curbed() const { return m_id.has_value() && m_fighter.curbed(*m_id); }
+bool Bosses::frozen() const {
+    return m_id.has_value() && m_fighter.frozen(*m_id);
+}
+bool Bosses::blinded() const {
+    return m_id.has_value() && m_fighter.blinded(*m_id);
+}
+bool Bosses::curbed() const {
+    return m_id.has_value() && m_fighter.curbed(*m_id);
+}
 
 bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
     const std::string_view name = bossNameOf(kind);
@@ -169,8 +184,9 @@ bool Bosses::reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& faci
     return !m_fighter.reachedBy(centre, radius, arc, facing).empty();
 }
 
-void Bosses::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
-    m_fighter.draw(device, clip, lighting);
+void Bosses::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                  const Texture* frozenTexture) const {
+    m_fighter.draw(device, clip, lighting, frozenTexture);
 }
 
 BossView Bosses::view() const {
@@ -212,7 +228,13 @@ f32 Bosses::height() const {
     if (data == nullptr) {
         return 0.0f;
     }
-    return data->originOffset().y > 0.0f ? data->originOffset().y : data->radius();
+    const f32 centre = data->floorOffset() + data->originOffset().y * m_fighter.scaleOf(*m_id);
+    return centre > 0.0f ? centre : data->radius();
+}
+
+Vec3 Bosses::cameraOffset() const {
+    const CritterData* data = m_id.has_value() ? m_fighter.dataOf(*m_id) : nullptr;
+    return data != nullptr ? Vec3{0.0f, data->floorOffset() + data->vertDrift(), 0.0f} : Vec3{0.0f};
 }
 
 std::string_view Bosses::moveName() const {
