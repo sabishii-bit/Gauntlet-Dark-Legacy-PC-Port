@@ -50,6 +50,14 @@ struct CritterMoveRecord {
     f32 hold = 0.0f;
 };
 
+/** An authored attack chain; negative move indices terminate its eight-slot sequence. */
+struct CritterPatternRecord {
+    u16 flags = 0;
+    f32 cooldown = 0.0f;
+    std::array<s16, 8> moves{};
+    CritterTargetRecord target;
+};
+
 /** How a move harms: where about the node, how far, how much. */
 struct CritterDamageRecord {
     s16 type = 0; ///< 0 a blow, 4 a breath, 7 a grab, the rest effects
@@ -156,6 +164,7 @@ struct CritterFile {
     std::vector<CritterDescriptorRecord> descriptors;
     std::vector<CritterNodeRecord> nodes;
     std::vector<CritterMoveRecord> moves;
+    std::vector<CritterPatternRecord> patterns;
     std::vector<CritterTypeRecord> types;
 };
 

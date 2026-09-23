@@ -946,6 +946,20 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.endObject();
     }
     json.endArray();
+    json.key("patterns").beginArray();
+    for (const CritterPatternRecord& p : critter.patterns) {
+        json.beginObject();
+        json.key("flags").value(static_cast<u32>(p.flags));
+        json.key("cooldown").value(static_cast<f64>(p.cooldown));
+        json.key("moves").beginArray();
+        for (const s16 move : p.moves) {
+            json.value(static_cast<int>(move));
+        }
+        json.endArray();
+        target(p.target);
+        json.endObject();
+    }
+    json.endArray();
     json.key("damages").beginArray();
     for (const CritterDamageRecord& d : critter.damages) {
         json.beginObject();

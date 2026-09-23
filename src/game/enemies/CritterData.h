@@ -21,10 +21,22 @@ struct CritterTarget {
     f32 yaw = 0.0f;         ///< where the cone points, from ahead: behind for a turn about
     f32 minDot = -1.0f;     ///< how squarely the cone must hold the target
     f32 maxVertical = 0.0f; ///< none when nought
+    f32 minRateScale = 0.0f;
+    f32 maxRateScale = 0.0f;    ///< exclusive; uncapped when not above the minimum
+    f32 maxHomeDistance = 0.0f; ///< WAD's idleGate: distance from the boss's home
 
     /** Whether a target `distance` away, `bearing` round from ahead and `vertical` above or
      * below, passes. */
     bool allows(f32 distance, f32 bearing, f32 vertical) const;
+    bool allowsPhase(f32 rateScale, f32 homeDistance) const;
+};
+
+/** A gated sequence of moves. Its entry criteria do not apply again between steps. */
+struct CritterPattern {
+    u32 flags = 0;
+    f32 cooldown = 0.0f;
+    std::vector<s32> moves;
+    CritterTarget target;
 };
 
 /** How a move harms: a blow about a part of the body, a breath, or a ring about the feet. */
@@ -132,7 +144,8 @@ struct CritterMove {
     f32 turnRate = 0.0f; ///< radians a second
     f32 hold = 0.0f;
 
-    bool attack() const { return type >= kAttackFrom; }
+    bool attack() const { return type >= kAttackFrom && type < 240; }
+    bool interrupts(const CritterMove& current) const;
     bool harms() const { return damage0 >= 0 || damage1 >= 0; }
     /** Projectile triggers crossed between integer animation frames; -1 precedes frame zero. */
     s32 projectileTriggers(s32 previous, s32 current, bool second = false) const;
@@ -188,6 +201,7 @@ public:
     const CritterTarget& sight() const { return m_sight; }
     const CritterMeter& meter() const { return m_meter; }
     std::span<const CritterMove> moves() const { return m_moves; }
+    std::span<const CritterPattern> patterns() const { return m_patterns; }
     std::span<const CritterDamage> damages() const { return m_damages; }
     std::span<const CritterPart> parts() const { return m_parts; }
     std::span<const CritterSound> sounds() const { return m_sounds; }
@@ -219,6 +233,7 @@ private:
     CritterTarget m_sight;
     CritterMeter m_meter;
     std::vector<CritterMove> m_moves;
+    std::vector<CritterPattern> m_patterns;
     std::vector<CritterDamage> m_damages;
     std::vector<CritterPart> m_parts;
     std::vector<CritterSound> m_sounds;

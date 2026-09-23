@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <numbers>
 #include <utility>
 
@@ -187,6 +188,11 @@ std::optional<s32> Critters::spawn(s32 kind, const Vec3& position, f32 yaw, std:
             critter.homePosition = *home - Vec3{0.0f, stock->data.floorOffset(), 0.0f};
         }
         critter.cooldowns.assign(stock->data.moves().size(), 0.0f);
+        // Unused attacks are ready on arrival, independent of this instance's clock.
+        // Subsequent cooldowns count from their recorded use, not the spawn time.
+        const f32 unused = -std::numeric_limits<f32>::infinity();
+        critter.moveTimes.assign(stock->data.moves().size(), unused);
+        critter.patternTimes.assign(stock->data.patterns().size(), unused);
         // It comes in by its entrance, or its stance when it has none.
         const auto start = stock->data.moveOfType(CritterMove::kStart);
         const auto ready = stock->data.moveOfType(CritterMove::kReady);
@@ -200,7 +206,7 @@ std::optional<s32> Critters::spawn(s32 kind, const Vec3& position, f32 yaw, std:
     return std::nullopt;
 }
 
-bool Critters::startMove(Critter& critter, usize index) {
+bool Critters::startMove(Critter& critter, usize index, bool recordUse) {
     const CritterData& data = critter.stock->data;
     if (index >= data.moves().size()) {
         return false;
@@ -212,11 +218,16 @@ bool Critters::startMove(Critter& critter, usize index) {
     }
     critter.move = static_cast<s32>(index);
     critter.moveDone = false;
+    critter.finishedSeconds = 0.0f;
     critter.struckThisMove.clear();
     critter.soundsGiven = 0;
     critter.shotFrame = -1;
     critter.attackTarget.reset();
     critter.player.start(critter.stock->tree->sequences[*sequence], *sequence);
+    if (recordUse) {
+        critter.moveTimes[index] =
+            critter.age + static_cast<f32>(std::max(critter.player.frameCount() - 2, 0)) / 30.0f;
+    }
     critter.pose.evaluate(*critter.stock->tree, *sequence, 0.0f);
     return true;
 }
@@ -260,16 +271,21 @@ std::optional<usize> Critters::bestMove(const Critter& critter,
         // Attacks, the steps (walks, turns and back-steps, types 48 to 63), the stance and
         // the taunt.
         const bool step = move.type >= CritterMove::kStepFrom && move.type < CritterMove::kStepTo;
-        const bool considered = move.attack() || step || move.type == CritterMove::kReady ||
+        const bool considered = (move.attack() && data.kind() != kBossCritter) || step ||
+                                move.type == CritterMove::kReady ||
                                 move.type == CritterMove::kTaunt;
-        if (!considered || critter.cooldowns[i] > 0.0f) {
+        constexpr u32 kLinkedOnly = 4;
+        if (!considered || critter.cooldowns[i] > 0.0f || (move.flags & kLinkedOnly) != 0) {
             continue;
         }
         // Attacks and walks want a player; the stance and the taunt want none in particular.
         if ((move.attack() || step) && view == nullptr) {
             continue;
         }
-        if (!move.target.allows(distance, bearing, vertical) || curbedMove(critter, move)) {
+        if (!move.target.allows(distance, bearing, vertical) ||
+            !move.target.allowsPhase(attackRate(critter),
+                                     flatDistance(critter.position, critter.homePosition)) ||
+            curbedMove(critter, move)) {
             continue;
         }
         if (move.priority > bestPriority) {
@@ -303,6 +319,7 @@ void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) 
             return false;
         }
         if (startMove(critter, *index)) {
+            critter.pattern = -1;
             critter.cooldowns[*index] = data.moves()[*index].cooldown;
             return true;
         }
@@ -346,6 +363,7 @@ void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) 
     }
     // Asked to roar, it does so before anything else; held, it keeps to its stance.
     if (critter.roarWanted) {
+        critter.pattern = -1;
         critter.roarWanted = false;
         if (const auto bellow = data.moveOfType(CritterMove::kRoar);
             bellow.has_value() && startMove(critter, *bellow)) {
@@ -353,9 +371,13 @@ void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) 
         }
     }
     if (critter.held) {
+        critter.pattern = -1;
         if (const auto ready = data.moveOfType(CritterMove::kReady); ready.has_value()) {
             startMove(critter, *ready);
         }
+        return;
+    }
+    if (data.kind() == kBossCritter && chooseBossAttack(critter, players)) {
         return;
     }
     if (const auto next = bestMove(critter, players); next.has_value()) {
@@ -384,6 +406,15 @@ Vec3 Critters::partPosition(const Critter& critter, std::string_view node) {
 }
 
 Mat4 Critters::partTransform(const Critter& critter, std::string_view node) {
+    if (node.empty() || !critter.stock->tree->findNode(node).has_value()) {
+        return glm::translate(modelTransform(critter), critter.stock->data.originOffset());
+    }
+    return attachmentTransform(critter, node);
+}
+
+/** Effects without a resolved move node attach to the animation root, not the
+ * body's targeting origin. The Lich's emergence gravel is one such effect. */
+Mat4 Critters::attachmentTransform(const Critter& critter, std::string_view node) {
     const Mat4 model = modelTransform(critter);
     if (!node.empty()) {
         if (const auto index = critter.stock->tree->findNode(node); index.has_value()) {
@@ -393,7 +424,7 @@ Mat4 Critters::partTransform(const Critter& critter, std::string_view node) {
             }
         }
     }
-    return glm::translate(model, critter.stock->data.originOffset());
+    return model;
 }
 
 std::optional<Mat4> Critters::nodeTransformOf(s32 id, std::string_view node) const {
@@ -401,7 +432,7 @@ std::optional<Mat4> Critters::nodeTransformOf(s32 id, std::string_view node) con
         return std::nullopt;
     }
     const Critter& critter = m_critters[static_cast<usize>(id)];
-    return critter.state != State::Inactive ? std::optional{partTransform(critter, node)}
+    return critter.state != State::Inactive ? std::optional{attachmentTransform(critter, node)}
                                             : std::nullopt;
 }
 
@@ -468,6 +499,7 @@ void Critters::strikeWith(Critter& critter, s32 id, const CritterMove& move, s32
         blow.damage = damage->damage * m_scales.damage;
         blow.breath = breath.has_value();
         blow.flags = damage->flags;
+        blow.origin = centre;
         const Vec3 away = feet - critter.position;
         const f32 length = flatDistance(feet, critter.position);
         blow.direction = length > 0.001f ? Vec3{away.x / length, 0.0f, away.z / length}
@@ -562,7 +594,7 @@ void Critters::shoot(const Critter& critter, s32 id, const CritterMove& move, s3
     if (const EnemyView* target = viewOf(players, critter.target); target != nullptr) {
         shot.target = target->position + Vec3{0.0f, 0.5f * target->height, 0.0f};
     }
-    shot.rate = m_scales.speed;
+    shot.rate = attackRate(critter);
     shot.scale = critter.scale;
     shot.damageScale = m_scales.damage;
     if ((damage->behaviorFlags & CritterDamage::kCurbed) != 0 && critter.curbSeconds > 0.0f) {
@@ -592,6 +624,7 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
             continue;
         }
         const CritterData& data = critter.stock->data;
+        critter.age += seconds;
         for (f32& cooldown : critter.cooldowns) {
             cooldown = std::max(cooldown - seconds, 0.0f);
         }
@@ -612,14 +645,18 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
             critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
         // The move plays; over its harmful frames its part strikes.
         if (move != nullptr && critter.player.playing()) {
+            const bool wasFinished = critter.player.finished();
             critter.player.advance(seconds, false);
-            critter.moveDone = critter.player.finished();
+            if (wasFinished) {
+                critter.finishedSeconds += seconds;
+            }
+            critter.moveDone = critter.player.finished() && critter.finishedSeconds >= move->hold;
             critter.pose.evaluate(*critter.stock->tree, critter.player.sequence(),
                                   critter.player.frame());
             const auto frame = static_cast<s32>(std::floor(critter.player.frame()));
             const auto active = [&](s32 start, s32 end) {
                 const s32 last = end < start ? start : end;
-                return start >= 0 && frame >= start && frame <= last;
+                return start >= 0 && frame >= start && (frame <= last || critter.shotFrame < start);
             };
             // SFXX frames start sound and visuals together. The effect's own sequence
             // contains its wind-up; delaying it until the damage frame delays that twice.
@@ -685,7 +722,6 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
                 if (!shot1) {
                     contact(move->damage1, move->frameStart2, move->frameEnd2, 8U);
                 }
-                critter.shotFrame = frame;
             } else if (critter.state == State::Dying && active(move->frameStart, move->frameEnd) &&
                        (critter.soundsGiven & 32U) == 0) {
                 // The death's harm is not a strike but a throw: what it spews goes out
@@ -698,6 +734,7 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
                                                   harm->spewHalfAngle()});
                 }
             }
+            critter.shotFrame = frame;
         } else {
             critter.moveDone = true;
         }
@@ -708,8 +745,16 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
             critter.push = Vec3{0.0f, 0.0f, 0.0f};
         }
         // The fallen fades once its death has played out, and is gone.
-        if (critter.state == State::Dying &&
-            (move == nullptr || move->type != CritterMove::kDeath || critter.moveDone)) {
+        if (critter.state == State::Dying && move != nullptr && move->type == CritterMove::kDeath &&
+            move->hold > 0.0f) {
+            constexpr f32 kBossDeathFade = 0.5f;
+            const f32 remaining = move->hold - critter.finishedSeconds;
+            critter.alpha = std::clamp(remaining / kBossDeathFade, 0.0f, 1.0f);
+            if (critter.moveDone) {
+                critter = Critter{};
+            }
+        } else if (critter.state == State::Dying &&
+                   (move == nullptr || move->type != CritterMove::kDeath || critter.moveDone)) {
             critter.alpha -= seconds / kDeathFade;
             if (critter.alpha <= 0.0f) {
                 critter = Critter{};
@@ -821,15 +866,16 @@ void Critters::cue(const Critter& critter, s32 id, s32 index, const Vec3& positi
                    (record->flags & kAlternateParent) == 0) {
             out.node = *node;
             out.nodeOffset = record->offset;
-            out.position = Vec3{partTransform(critter, *node) * Vec4{record->offset, 1.0f}};
+            out.position = Vec3{attachmentTransform(critter, *node) * Vec4{record->offset, 1.0f}};
             out.scale = record->scale; // creature scale is already in the parent matrix
             out.follows = true;
         } else if ((record->flags & 0x40U) != 0) {
             // A move's unattached effect is placed at the active node once. Damage
             // cues instead supply their already-resolved world point in position.
-            out.position = node.has_value()
-                               ? Vec3{partTransform(critter, *node) * Vec4{record->offset, 1.0f}}
-                               : position + record->offset * critter.scale;
+            out.position =
+                node.has_value()
+                    ? Vec3{attachmentTransform(critter, *node) * Vec4{record->offset, 1.0f}}
+                    : position + record->offset * critter.scale;
             out.follows = false;
             out.yaw = 0;
         }

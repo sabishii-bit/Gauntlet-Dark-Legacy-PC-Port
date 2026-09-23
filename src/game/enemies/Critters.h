@@ -42,7 +42,8 @@ struct CritterBlow {
     f32 damage = 0.0f;
     Vec3 direction{0.0f, 0.0f, 1.0f};
     bool breath = false;
-    u32 flags = 0; ///< authored player damage modifiers, not the attack's behavior flags
+    u32 flags = 0;     ///< authored player damage modifiers, not the attack's behavior flags
+    Vec3 origin{0.0f}; ///< emitted segment origin, used for breath cover queries
 };
 
 /** An effect and a sound a critter has set off: a move's, a strike's or a hit's, where it
@@ -205,6 +206,12 @@ private:
         f32 targetDistance = 100000.0f;
         s32 move = -1; ///< the move playing
         bool moveDone = false;
+        f32 finishedSeconds = 0.0f;
+        f32 age = 0.0f;
+        std::vector<f32> moveTimes;
+        std::vector<f32> patternTimes;
+        s32 pattern = -1;
+        usize patternStep = 0;
         std::vector<f32> cooldowns;      ///< seconds left before each move may be chosen again
         std::vector<s32> struckThisMove; ///< players already hurt by the move playing
         f32 hurtPending = 0.0f;
@@ -227,10 +234,14 @@ private:
 
     Stock* stockFor(s32 kind, std::string_view form);
     Critter* critterAt(s32 id);
-    static bool startMove(Critter& critter, usize index);
+    static bool startMove(Critter& critter, usize index, bool recordUse = true);
     static void chooseMove(Critter& critter, std::span<const EnemyView> players);
     static std::optional<usize> bestMove(const Critter& critter,
                                          std::span<const EnemyView> players);
+    static bool chooseBossAttack(Critter& critter, std::span<const EnemyView> players);
+    static s32 attackTarget(const Critter& critter, const CritterTarget& criteria,
+                            std::span<const EnemyView> players);
+    static f32 attackRate(const Critter& critter);
     /** Whether a legend item's curb keeps the move from it. */
     static bool curbedMove(const Critter& critter, const CritterMove& move);
     /** Sets off sound record `index` (and what it links to) at `position`. */
@@ -247,6 +258,7 @@ private:
                     std::span<const EnemyView> players);
     static Vec3 partPosition(const Critter& critter, std::string_view node);
     static Mat4 partTransform(const Critter& critter, std::string_view node);
+    static Mat4 attachmentTransform(const Critter& critter, std::string_view node);
     static Mat4 modelTransform(const Critter& critter);
     void carry(Critter& critter, f32 seconds, const CritterMove* move,
                std::span<const EnemyView> players);

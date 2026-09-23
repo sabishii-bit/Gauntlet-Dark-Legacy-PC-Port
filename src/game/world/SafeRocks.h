@@ -43,6 +43,7 @@ public:
     /** Restore all three health tiers, as the boss's reactivation does. */
     void activate(usize index);
     std::vector<Obstacle> obstacles() const;
+    bool blocksBreath(const Vec3& from, const Vec3& to) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:

@@ -134,6 +134,30 @@ TEST_CASE("legend flight follows its held pose and reports impact exactly once",
     REQUIRE(fixture.stopped.size() == 1);
 }
 
+TEST_CASE("the genie lamp's blindness effect rides its root for 28 seconds",
+          "[game][screens][legend][genie]") {
+    LegendFixture fixture;
+    fixture.load("legend-genie-blindness");
+    fixture.show(LegendCue::Brandished, 36);
+    fixture.show(LegendCue::Thrown, 36);
+    fixture.bearer.released = true;
+    fixture.target.root = glm::translate(Mat4{1}, Vec3{20, 7, 1});
+    fixture.presentation.update(0, fixture.bearer, fixture.target);
+    REQUIRE(fixture.presentation.update(2, fixture.bearer, fixture.target).landed);
+    const auto* effect = fixture.find("LEGENDFX");
+    REQUIRE(effect != nullptr);
+    REQUIRE(effect->secondsLeft == 28);
+    REQUIRE(Vec3{effect->transform()[3]} == Vec3{20, 13, 1});
+    fixture.target.root = glm::translate(Mat4{1}, Vec3{22, 8, 1});
+    // The effect follows the boss even if its bearer is no longer present.
+    fixture.presentation.update(0, std::nullopt, fixture.target);
+    REQUIRE(Vec3{fixture.find("LEGENDFX")->transform()[3]} == Vec3{22, 14, 1});
+    fixture.effects.update(27.9f);
+    REQUIRE(fixture.find("LEGENDFX") != nullptr);
+    fixture.effects.update(0.2f);
+    REQUIRE(fixture.find("LEGENDFX") == nullptr);
+}
+
 TEST_CASE("legend cleanup releases its own effects and sound but not other effects",
           "[game][screens][legend]") {
     LegendFixture fixture;

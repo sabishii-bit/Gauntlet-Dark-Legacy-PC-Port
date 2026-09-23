@@ -59,7 +59,8 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
                 phases.emplace_back("victory");
             },
         .levels = [&] { phases.emplace_back("levels"); },
-        .award = [](s32, s32, bool) { FAIL("No kills"); }};
+        .award = [](s32, s32, bool) { FAIL("No kills"); },
+        .blocksBreath = {}};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});
@@ -139,6 +140,33 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
     opponents.update(1, 0.011f, players, {}, events);
     LevelOpponents::applyCritterBlow(fire, players, events);
     REQUIRE(hurt.size() == 4);
+    REQUIRE(players[0].breathGap == 0.25f);
+}
+
+TEST_CASE("breath blocked by arena cover neither damages nor consumes the breath timer",
+          "[game][screens][level-opponents][breath]") {
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 20}, 0);
+    LevelOpponents::Events events;
+    s32 hits = 0;
+    events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { ++hits; };
+    bool blocked = true;
+    events.blocksBreath = [&](const Vec3& from, const Vec3& to) {
+        REQUIRE(from == Vec3{0, 7, 0});
+        REQUIRE(to.z == 20);
+        return blocked;
+    };
+    CritterBlow fire;
+    fire.player = 0;
+    fire.damage = 40;
+    fire.breath = true;
+    fire.origin = Vec3{0, 7, 0};
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hits == 0);
+    REQUIRE(players[0].breathGap == 0);
+    blocked = false;
+    LevelOpponents::applyCritterBlow(fire, players, events);
+    REQUIRE(hits == 1);
     REQUIRE(players[0].breathGap == 0.25f);
 }
 

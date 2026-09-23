@@ -531,7 +531,11 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
          .advanceVictory = [this](s32 elapsed, f32 duration) { updateVictory(elapsed, duration); },
          .levels = [this] { updateLevels(); },
          .award = [this](s32 player, s32 amount,
-                         bool kill) { awardExperience(player, amount, kill); }});
+                         bool kill) { awardExperience(player, amount, kill); },
+         .blocksBreath =
+             [this](const Vec3& from, const Vec3& to) {
+                 return m_fixtures.safeRocks().blocksBreath(from, to);
+             }});
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);

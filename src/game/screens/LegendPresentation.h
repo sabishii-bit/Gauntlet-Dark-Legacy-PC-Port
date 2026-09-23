@@ -45,6 +45,7 @@ public:
     struct Target {
         Vec3 position{0.0f};
         f32 height = 0.0f;
+        std::optional<Mat4> root = std::nullopt;
     };
     struct Update {
         PlayerDeed gesture = PlayerDeed::None;
@@ -72,6 +73,7 @@ private:
     void brandish(const Bearer& bearer);
     void release(const Bearer& bearer, const std::optional<Target>& target);
     void land(const std::optional<Target>& target);
+    void followTarget(const std::optional<Target>& target);
     void playSound(LegendShow::Sound sound, bool looping = false);
     void stopLoop();
     u32 start(ItemArchive& archive, std::string_view tree, const Vec3& position,
@@ -86,6 +88,7 @@ private:
     char m_realm = 'A';
     u32 m_held = 0;
     u32 m_flying = 0;
+    u32 m_attached = 0;
     bool m_gestureOwed = false;
     bool m_released = false;
     f32 m_flightLeft = 0.0f;

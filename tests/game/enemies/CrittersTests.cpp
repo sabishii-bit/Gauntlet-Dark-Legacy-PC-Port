@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <filesystem>
 #include <numbers>
 #include <string>
@@ -708,6 +709,97 @@ std::filesystem::path targetedCritter() {
       "sounds":[{"name":"ROARFX","flags":66,"offset":[0,97,0]},
         {"name":"IMPACT","flags":66,"offset":[0,-2,0]}]})");
     return root;
+}
+
+TEST_CASE("move effects without an animated node use the root rather than the body centre",
+          "[game][enemies][boss-effects]") {
+    const auto root = targetedCritter();
+    std::string node;
+    SECTION("no authored node") {}
+    SECTION("unresolved authored node") {
+        node = "MISSING";
+    }
+    writeTextFile(root / "critter/DJINN.json",
+                  R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":1,"maxHealth":100,"floorOffset":7,"originOffset":[0,10,0]}],
+      "moves":[{"name":"START","anim":"ROARATK","type":16,"colnode":")" +
+                      node +
+                      R"(","sfx":0,"sfxFrame":0}],
+      "sounds":[{"name":"GRAVEL","flags":0,"offset":[1,2,3],"link":1},
+        {"name":"WORLD","flags":64,"offset":[1,2,3]}]})");
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, root, nullptr, {}, 'G');
+    const auto id = critters.spawn(kBossCritter, Vec3{4, 0, 6}, kPi / 2, "DJINN");
+    REQUIRE(id.has_value());
+    critters.resize(*id, 2);
+    critters.update(kTicks, kStep, {});
+    const auto cues = critters.takeCues();
+    REQUIRE(cues.size() == 2);
+    for (const auto& cue : cues) {
+        REQUIRE(glm::distance(cue.position, Vec3{10, 11, 4}) < 0.001f);
+        REQUIRE(cue.follows == (cue.tree == "GRAVEL"));
+    }
+    REQUIRE(cues[0].node.has_value());
+    const auto parent = critters.nodeTransformOf(*id, *cues[0].node);
+    REQUIRE(parent.has_value());
+    REQUIRE(glm::distance(Vec3{*parent * Vec4{cues[0].nodeOffset, 1}}, cues[0].position) < 0.001f);
+}
+
+TEST_CASE("the Lich's emergence gravel attaches at his ground root",
+          "[game][enemies][boss-effects][unpacked][assets]") {
+    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, root, nullptr, {}, 'G');
+    const auto id = critters.spawn(kBossCritter, Vec3{4, 0, 6}, kPi / 2, "LICH");
+    REQUIRE(id.has_value());
+    REQUIRE(critters.dataOf(*id)->originOffset() == Vec3{0, 10, 0});
+    REQUIRE(critters.moveOf(*id) == "START");
+    critters.update(kTicks, kStep, {});
+    const auto cues = critters.takeCues();
+    const auto gravel = std::ranges::find(cues, "GENFX", &CritterCue::tree);
+    REQUIRE(gravel != cues.end());
+    REQUIRE(gravel->follows);
+    REQUIRE(gravel->node.has_value());
+    REQUIRE(gravel->node->empty());
+    REQUIRE(glm::distance(gravel->position, Vec3{4, 0, 6}) < 0.001f);
+    const auto parent = critters.nodeTransformOf(*id, *gravel->node);
+    REQUIRE(parent.has_value());
+    REQUIRE(glm::distance(Vec3{(*parent)[3]}, gravel->position) < 0.001f);
+}
+
+TEST_CASE("unpacked boss patterns and health gates agree with the authored WAD",
+          "[game][boss-attacks][assets][unpacked]") {
+    for (const std::string name : {"LICH", "DRAGON", "DJINN"}) {
+        DYNAMIC_SECTION(name) {
+            const auto raw = test::assetOrSkip("CRITTER/" + name + ".WAD");
+            const auto manifest = test::unpackedOrSkip("critter/" + name + ".json");
+            const auto file = formats::parseCritterWad(readFile(raw));
+            CritterData data;
+            REQUIRE(data.load(manifest));
+            REQUIRE(data.moves().size() == file.moves.size());
+            REQUIRE(data.patterns().size() == file.patterns.size());
+            REQUIRE(data.patterns().size() == (name == "DRAGON" ? 0 : 4));
+            for (usize i = 0; i < data.moves().size(); ++i) {
+                REQUIRE(data.moves()[i].target.minRateScale == file.moves[i].target.minRateScale);
+                REQUIRE(data.moves()[i].target.maxRateScale == file.moves[i].target.maxRateScale);
+                REQUIRE(data.moves()[i].target.maxHomeDistance == file.moves[i].target.idleGate);
+            }
+            for (usize i = 0; i < data.patterns().size(); ++i) {
+                REQUIRE_FALSE(data.patterns()[i].moves.empty());
+                REQUIRE(data.patterns()[i].cooldown == file.patterns[i].cooldown);
+                REQUIRE(data.patterns()[i].target.minRateScale ==
+                        file.patterns[i].target.minRateScale);
+                REQUIRE(data.patterns()[i].target.maxRateScale ==
+                        file.patterns[i].target.maxRateScale);
+                for (usize j = 0; j < data.patterns()[i].moves.size(); ++j) {
+                    REQUIRE(data.patterns()[i].moves[j] == file.patterns[i].moves[j]);
+                }
+            }
+        }
+    }
 }
 
 TEST_CASE("move effects start at authored frames with distinct root node base and world placement",
