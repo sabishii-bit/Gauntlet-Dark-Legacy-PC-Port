@@ -89,6 +89,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Party indices, player input ids and save slots are distinct identifiers.
   Camera subjects are frame-local snapshots taken after player movement and
   before fixture collision; changing that phase changes camera behaviour.
+* `world/PlayerFigure` owns costume selection, mesh/animation/voice archives,
+  node-name pose mapping and held/thrown weapon visuals. It has no scene or
+  level dependency; the scene supplies actions, placement, lighting and alpha.
+  Figure internals stay private. Borrowers of its missile model and effects
+  must finish before it is released; the figure itself cannot move because
+  its bound models and animator reference its own archives.
 * The tower (`screens/PlayScene`) takes the locked-in lanes as `PartyMember`s
   into the shared `world/LevelWorld` that `GameContext::tower` carries (the
   select screen looks into the same one). `engine/world/WorldCollision` holds
@@ -178,7 +184,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   those colours, additive parts unlit, and everything else by
   `WorldLighting`. Items and characters are lit by the lights, as the
   original lights them.
-* Characters: `PlayScene::costumeDirectory` picks the costume tier of ten
+* Characters: `PlayerFigure::costumeDirectory` picks the costume tier of ten
   levels (`PLAYERS/<CLS>/<COL><tier>0`, unpacked with `--tiers`) when it
   exists, else `<COL>`; the weapon is the costume archive's own `WEAP_HOLD`
   (a tiered costume) or `WEAP_<COL>_HD<1|2|3>` (levels 1, 10, 50; the
@@ -344,7 +350,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the projectile and half of each burst are simply not there.
   Every class's moves run from its own rows, the unlockable ones' too: they
   have no `ANIM` or `SFX<COL>` folders of their own, and
-  `PlayScene::classFolder` gives them those of the class they shadow
+  `PlayerFigure::classFolder` gives them those of the class they shadow
   (`character % kStartingClassCount`), which hold their sequences, their
   thrown weapons (`MIN_THROW1` is in `WAR/SFX<COL>`) and the trees their
   rows name. Besides bursts and what flies, a row may be a span that only

@@ -14,7 +14,6 @@
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/MessageTable.h"
-#include "engine/assets/ModelSet.h"
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
@@ -65,6 +64,7 @@
 #include "game/world/LevelWorld.h"
 #include "game/world/LockedGates.h"
 #include "game/world/MoveStrikes.h"
+#include "game/world/PlayerFigure.h"
 #include "game/world/PlayerMissiles.h"
 #include "game/world/SafeRocks.h"
 #include "game/world/StartCamera.h"
@@ -234,7 +234,7 @@ public:
     /** The archive folder a character's figure was loaded from, for tests. */
     std::optional<std::filesystem::path> figureDirectory(usize index) const {
         return index < m_players.size() && m_players[index].figure != nullptr
-                   ? std::optional<std::filesystem::path>(m_players[index].figure->directory)
+                   ? std::optional<std::filesystem::path>(m_players[index].figure->directory())
                    : std::nullopt;
     }
     const HelpMessages& help() const { return m_help; }
@@ -290,30 +290,6 @@ public:
     const SumnerFigure& sumner() const { return m_sumner; }
 
 private:
-    /** A character's model as it stands in the tower, and the class's sequences it plays. */
-    struct Figure {
-        ModelSet models;
-        TextureSet textures;
-        AnimationSet trees;   ///< the costume's own tree
-        AnimationSet actions; ///< the class's sequences
-        TreeModel model;
-        PlayerAnimator animator;
-        const TreeInfo* costume = nullptr;
-        std::filesystem::path directory;
-        TreeInfo weaponTree; ///< one node: the weapon in the hand
-        TreeModel weapon;
-        s32 handNode = -1;   ///< the costume node the weapon hangs from
-        std::vector<s32> classNodeOfNode; ///< per costume node: the class tree node it follows
-        std::vector<Mat4> transforms;     ///< per costume node, from the current pose
-        ItemArchive effects; ///< the costume colour's effects, when the thrown weapon is there
-        TreeModel missile;   ///< the weapon as it flies
-        SoundSet voice;      ///< the class's own sounds
-        std::optional<u32> throwSound;
-
-        void animate(f32 stickMagnitude, s32 ticks, f32 seconds,
-                     PlayerDeed deed = PlayerDeed::None);
-    };
-
     enum class PlayerLife : u8 { Standing, Dying, InTower };
 
     /** A turbo move under way: the strikes it has yet to make and what it has yet to pay. */
@@ -329,7 +305,7 @@ private:
      * differ from this record's position in the party; figures may be unavailable. */
     struct PlayerRuntime {
         PlayerActor actor;
-        std::unique_ptr<Figure> figure; ///< null when character assets are unavailable
+        std::unique_ptr<PlayerFigure> figure; ///< null when character assets are unavailable
         std::optional<usize> slot;      ///< persistent save slot, not the input player id
         CharacterSave entrySave;        ///< restored when a fallen character leaves the level
         PlayerLife life = PlayerLife::Standing;
@@ -345,11 +321,7 @@ private:
     };
 
     void spawnParty(std::span<const PartyMember> party, const PlayOptions& options);
-    std::unique_ptr<Figure> loadFigure(RenderDevice& device, const CharacterSave& save);
-    void loadActions(Figure& figure, const CharacterSave& save);
-    static void loadWeapon(Figure& figure, const CharacterSave& save, RenderDevice& device);
-    void loadMissile(Figure& figure, const CharacterSave& save, RenderDevice& device);
-    void throwWeapon(const PlayerActor& actor, Figure& figure);
+    void throwWeapon(const PlayerActor& actor);
     void loadPotionModels(RenderDevice& device);
     void usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor);
@@ -428,12 +400,6 @@ private:
     static StrafeWay strafeWayOf(f32 heading, f32 facing);
     void updateStrikes(f32 seconds);
     ItemArchive* moveEffectsOf(usize index);
-    /** A class's folder `sub` under the players' directory: its own, or, for an unlockable
-     * class that has none, that of the class it shadows (whose sequences, thrown weapons and
-     * effects it shares). */
-    std::filesystem::path classFolder(s32 character, std::string_view sub) const;
-    /** The name the class's sequences go by: the shadowed class's when the folder is its. */
-    std::string_view actionsClassOf(s32 character) const;
     f32 ownDamageOf(usize index) const;
     void updateTurbo(usize index, s32 ticks, f32 seconds);
     bool isDown(usize index) const {

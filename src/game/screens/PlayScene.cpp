@@ -20,7 +20,6 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::string_view kPlayersDirectory = "PLAYERS";
 constexpr std::string_view kBeamObject = "L1XPLIGHTRAY01"; ///< the light on Sumner's lectern
 constexpr std::string_view kWeaponsArchive = "WEAPONS";
 constexpr std::string_view kSpawnEffect = "STARTFX"; ///< the tree the party materialises in
@@ -38,13 +37,7 @@ constexpr s32 kTitleLift = 16;           ///< how far up it slides, per unit of 
 constexpr f32 kTitleSlideStart = 0.025f; ///< the original's slide, growing by this a tick
 constexpr f32 kTitleSlideRate = 0.025f;
 constexpr f32 kTitleSlideEnd = 2.0f;     ///< where it stops, and sits once the camera rides
-constexpr s32 kLevelsPerTier = 10;                          ///< costume tiers
-constexpr s32 kWeaponTierTwoLevel = 10;                     ///< the weapon's tiers
-constexpr s32 kWeaponTierThreeLevel = 50;
-/** The costume objects the weapon hangs from, by class: the base classes, then the others. */
-constexpr std::array<std::string_view, 3> kHandObjects{"R_WRIST", "RIGHTHAN", "RHEND"};
-constexpr std::string_view kHeldWeapon = "WEAP_HOLD"; ///< a tiered costume's own weapon
-constexpr std::string_view kClassAnimations = "ANIM"; ///< under the class folder
+
 constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kStreamsDirectory = "STREAMS"; ///< the music, among the game's files
 constexpr std::string_view kSoundDirectory = "audio";
@@ -290,7 +283,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     std::vector<CameraSubject> subjects;
     subjects.reserve(m_players.size());
     for (PlayerRuntime& runtime : m_players) {
-        runtime.figure = loadFigure(device, runtime.actor.save());
+        runtime.figure = PlayerFigure::load(device, m_context.unpackedRoot, runtime.actor.save());
         subjects.push_back(CameraSubject{runtime.actor.position(), runtime.actor.followPoint()});
     }
     m_camera.reset(subjects, world.cameraMarkers(), world.cameraRange(), cameraView());
@@ -447,73 +440,12 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
 
 std::filesystem::path PlayScene::costumeDirectory(const std::filesystem::path& unpackedRoot,
                                                    const CharacterSave& save) {
-    const std::string_view cls = classCode(save.character);
-    const std::string_view costume = colorCode(save.color);
-    const std::filesystem::path base =
-        unpackedRoot / kPlayersDirectory / std::string(cls) / std::string(costume);
-    const s32 tier = experienceLevel(save.progress().experience) / kLevelsPerTier;
-    const std::filesystem::path tiered =
-        base.parent_path() / std::format("{}{}0", costume, tier);
-    return std::filesystem::exists(tiered / "objects.json") ? tiered : base;
-}
-
-std::unique_ptr<PlayScene::Figure> PlayScene::loadFigure(RenderDevice& device,
-                                                           const CharacterSave& save) {
-    const std::string_view cls = classCode(save.character);
-    const std::string_view costume = colorCode(save.color);
-    const std::filesystem::path directory = costumeDirectory(m_context.unpackedRoot, save);
-    auto figure = std::make_unique<Figure>();
-    if (!figure->models.load(directory) || !figure->textures.load(directory) ||
-        !figure->trees.load(directory)) {
-        log::warn("Tower: no model for the {} {} under {}", costume, cls, directory.string());
-        return nullptr;
-    }
-    const auto tree = figure->trees.find(std::format("{}_{}", cls, costume));
-    if (!tree.has_value() ||
-        !figure->model.bind(figure->trees.tree(*tree), figure->models, figure->textures, device)) {
-        log::warn("Tower: the {} {} figure could not be built", costume, cls);
-        return nullptr;
-    }
-    figure->costume = &figure->trees.tree(*tree);
-    figure->directory = directory;
-    loadWeapon(*figure, save, device);
-    loadMissile(*figure, save, device);
-    loadActions(*figure, save);
-    return figure;
-}
-
-/** Finds the weapon as it flies (the costume's own throw tree, or the tier of the costume
- * colour's effects archive that the character's level earns) and the class's throw sound. */
-void PlayScene::loadMissile(Figure& figure, const CharacterSave& save, RenderDevice& device) {
-    const s32 level = experienceLevel(save.progress().experience);
-    bool inCostume = true;
-    const std::string name = MissileSpec::treeName(save.character, level, &inCostume);
-    bool bound = false;
-    if (inCostume) {
-        if (const auto tree = figure.trees.find(name); tree.has_value()) {
-            bound = figure.missile.bind(figure.trees.tree(*tree), figure.models, figure.textures,
-                                        device);
-        }
-    } else if (figure.effects.load(
-                   classFolder(save.character, std::format("SFX{}", colorCode(save.color))))) {
-        if (const auto tree = figure.effects.trees.find(name); tree.has_value()) {
-            bound = figure.missile.bind(figure.effects.trees.tree(*tree), figure.effects.models,
-                                        figure.effects.textures, device);
-        }
-    }
-    if (!bound) {
-        log::warn("Tower: no {} for the {} to throw", name, classCode(save.character));
-    }
-    // The unlockable classes speak with the voice of the class they shadow.
-    const std::string_view voice = classCode(save.character % kStartingClassCount);
-    if (figure.voice.load(m_context.unpackedRoot / kSoundDirectory / voice)) {
-        figure.throwSound = figure.voice.find(std::format("S_{}THROW", voice));
-    }
+    return PlayerFigure::costumeDirectory(unpackedRoot, save);
 }
 
 /** Lets the weapon go: from the body's centre, out by the class's hand and a little ahead,
  * along the facing, as fast as the character's strength (or magic) throws. */
-void PlayScene::throwWeapon(const PlayerActor& actor, Figure& /*figure*/) {
+void PlayScene::throwWeapon(const PlayerActor& actor) {
     for (usize i = 0; i < m_players.size(); ++i) {
         if (&m_players[i].actor == &actor) {
             launchWeapon(i, actor.facing(), 1.0f, true);
@@ -528,7 +460,7 @@ void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool
         return;
     }
     const PlayerActor& actor = m_players[index].actor;
-    Figure& figure = *m_players[index].figure;
+    PlayerFigure& figure = *m_players[index].figure;
     const Vec3 facing = direction;
     const CharacterSave& save = actor.save();
     const ClassStats* stats = m_classes.stats(save.character);
@@ -549,9 +481,9 @@ void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool
                       facing * (hand.z + PlayerMissiles::kMuzzle);
     launch.speed = PlayerMissiles::speedFor(stat);
     launch.damage = PlayerMissiles::damageFor(stat) * scale;
-    launch.reach = PlayerMissiles::reachFor(figure.animator.attackSeconds());
+    launch.reach = PlayerMissiles::reachFor(figure.animator().attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
-    launch.model = &figure.missile;
+    launch.model = &figure.missile();
     // Thrown into a wall at arm's length, nothing flies.
     const f32 radius = launch.spec->radius;
     const Vec3 clear = m_world->collision().resolveWalls(
@@ -566,61 +498,19 @@ void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool
         launch.direction = way;
         m_missiles.launch(launch);
     }
-    if (m_context.sounds != nullptr && figure.throwSound.has_value()) {
+    if (const auto sound = figure.throwSound(); m_context.sounds != nullptr && sound.has_value()) {
         try {
-            m_context.sounds->play(figure.voice.sequence(*figure.throwSound), 1.0f,
-                                   SoundCategory::Effects);
+            m_context.sounds->play(figure.voice().sequence(*sound), 1.0f, SoundCategory::Effects);
         } catch (const std::exception& e) {
             log::warn("Tower: throw sound: {}", e.what());
         }
     }
 }
 
-/** Hangs the weapon from the costume's hand: a tiered costume holds its own `WEAP_HOLD`,
- * an untiered one `WEAP_<colour>_HD<tier>` for the character's level, and the hand is the
- * object named after the class's wrist. */
-void PlayScene::loadWeapon(Figure& figure, const CharacterSave& save, RenderDevice& device) {
-    const s32 level = experienceLevel(save.progress().experience);
-    s32 tier = 1;
-    if (level >= kWeaponTierThreeLevel) {
-        tier = 3;
-    } else if (level >= kWeaponTierTwoLevel) {
-        tier = 2;
-    }
-    std::string weapon{kHeldWeapon};
-    if (!figure.models.find(weapon).has_value()) {
-        weapon = std::format("WEAP_{}_HD{}", colorCode(save.color), tier);
-    }
-    if (!figure.models.find(weapon).has_value()) {
-        log::warn("Tower: no {} in {}", weapon, figure.directory.string());
-        return;
-    }
-    for (usize n = 0; n < figure.costume->nodes.size() && figure.handNode < 0; ++n) {
-        for (const std::string_view suffix : kHandObjects) {
-            if (figure.costume->nodes[n].object.ends_with(suffix)) {
-                figure.handNode = static_cast<s32>(n);
-                break;
-            }
-        }
-    }
-    if (figure.handNode < 0) {
-        log::warn("Tower: no hand to hold {} in {}", weapon, figure.directory.string());
-        return;
-    }
-    figure.weaponTree.name = weapon;
-    TreeNodeInfo held;
-    held.name = weapon;
-    held.object = weapon;
-    figure.weaponTree.nodes.push_back(held);
-    if (!figure.weapon.bind(figure.weaponTree, figure.models, figure.textures, device)) {
-        figure.handNode = -1;
-    }
-}
-
 std::optional<std::filesystem::path> PlayScene::figureDirectory(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player && runtime.figure != nullptr) {
-            return runtime.figure->directory;
+            return runtime.figure->directory();
         }
     }
     return std::nullopt;
@@ -631,7 +521,7 @@ bool PlayScene::weaponHeld(s32 player) const {
         if (runtime.actor.player() == player && runtime.figure != nullptr) {
             // A move may empty the hand for a while.
             const bool hidden = runtime.move.weaponHidden;
-            return runtime.figure->handNode >= 0 && runtime.figure->weapon.bound() && !hidden;
+            return runtime.figure->heldWeaponBound() && !hidden;
         }
     }
     return false;
@@ -654,42 +544,6 @@ void PlayScene::updateBeam(s32 ticks) {
         m_beamAlpha = alpha;
         m_world->setObjectAlpha(static_cast<usize>(m_beam), alpha);
     }
-}
-
-/** Binds the class's sequences to the figure: the class tree carries the keys and its nodes
- * share their names with the costume's, so each costume node follows its namesake. */
-std::filesystem::path PlayScene::classFolder(s32 character, std::string_view sub) const {
-    const std::filesystem::path players = m_context.unpackedRoot / kPlayersDirectory;
-    std::filesystem::path own = players / classCode(character) / sub;
-    if (std::filesystem::exists(own)) {
-        return own;
-    }
-    return players / classCode(character % kStartingClassCount) / sub;
-}
-
-std::string_view PlayScene::actionsClassOf(s32 character) const {
-    const std::filesystem::path own =
-        m_context.unpackedRoot / kPlayersDirectory / classCode(character) / kClassAnimations;
-    return classCode(std::filesystem::exists(own) ? character
-                                                  : character % kStartingClassCount);
-}
-
-void PlayScene::loadActions(Figure& figure, const CharacterSave& save) {
-    const std::string_view cls = actionsClassOf(save.character);
-    const std::filesystem::path directory = classFolder(save.character, kClassAnimations);
-    const auto tree = figure.actions.load(directory) ? figure.actions.find(cls) : std::nullopt;
-    if (!tree.has_value() || !figure.animator.bind(figure.actions.tree(*tree))) {
-        log::warn("Tower: no sequences for the {} under {}; the figure stands still", cls,
-                  directory.string());
-        return;
-    }
-    const TreeInfo& actions = figure.actions.tree(*tree);
-    figure.classNodeOfNode.clear();
-    for (const TreeNodeInfo& node : figure.costume->nodes) {
-        const auto match = actions.findNode(node.name);
-        figure.classNodeOfNode.push_back(match.has_value() ? static_cast<s32>(*match) : -1);
-    }
-    figure.animate(0.0f, 0, 0.0f);
 }
 
 /** Finds the footstep sounds in the common bank. */
@@ -911,14 +765,14 @@ void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed)
  * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
  * nowhere in particular (a trap underfoot); a shove halves either. */
 f32 PlayScene::guarded(usize index, f32 damage, bool directed) const {
-    const Figure* figure = index < m_players.size() ? m_players[index].figure.get() : nullptr;
+    const PlayerFigure* figure = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (figure == nullptr || damage <= 1.0f) {
         return damage;
     }
-    if (figure->animator.defending()) {
+    if (figure->animator().defending()) {
         return directed ? damage * 0.5f : 0.0f;
     }
-    return figure->animator.shoving() ? damage * 0.5f : damage;
+    return figure->animator().shoving() ? damage * 0.5f : damage;
 }
 
 /** A sound of the realm's bank, whose names end in the realm's letter. */
@@ -956,7 +810,7 @@ PlayerDeed PlayScene::turboDeed(usize index, const PlayInput& in) const {
     } else if (in.chargePressed && meter.held() >= TurboMeter::kShoveFrom) {
         deed = PlayerDeed::Shove;
     }
-    return m_players[index].figure->animator.canBegin(deed) ? deed : PlayerDeed::None;
+    return m_players[index].figure->animator().canBegin(deed) ? deed : PlayerDeed::None;
 }
 
 /** A charge goes flat out the way the stick is pushed, or straight ahead when it is not. */
@@ -1007,7 +861,7 @@ void PlayScene::beginMove(usize index) {
     move.all.clear();
     move.owed = 0.0f;
     move.named = false;
-    const PlayerAnimator::Action action = m_players[index].figure->animator.action();
+    const PlayerAnimator::Action action = m_players[index].figure->animator().action();
     const bool full = action == PlayerAnimator::Action::TurboFull;
     move.weaponHidden = false;
     move.volleysShot.clear();
@@ -1047,7 +901,7 @@ void PlayScene::beginMove(usize index) {
  * no more of them, and what it still owed is never paid. */
 void PlayScene::runMove(usize index) {
     MoveProgress& move = m_players[index].move;
-    const PlayerAnimator& body = m_players[index].figure->animator;
+    const PlayerAnimator& body = m_players[index].figure->animator();
     const bool attacking = body.action() == PlayerAnimator::Action::TurboFull ||
                            body.action() == PlayerAnimator::Action::TurboStrong ||
                            body.action() == PlayerAnimator::Action::StrongThrow;
@@ -1108,18 +962,8 @@ void PlayScene::runMove(usize index) {
 /** The costume colour's effects, which hold the trees a class's moves show; loaded when
  * first wanted. */
 ItemArchive* PlayScene::moveEffectsOf(usize index) {
-    Figure* figure = index < m_players.size() ? m_players[index].figure.get() : nullptr;
-    if (figure == nullptr) {
-        return nullptr;
-    }
-    if (!figure->effects.loaded()) {
-        // An unlockable class has none of its own: its moves show the trees of the class it
-        // shadows.
-        const CharacterSave& save = m_players[index].actor.save();
-        figure->effects.load(
-            classFolder(save.character, std::format("SFX{}", colorCode(save.color))));
-    }
-    return figure->effects.loaded() ? &figure->effects : nullptr;
+    PlayerFigure* figure = index < m_players.size() ? m_players[index].figure.get() : nullptr;
+    return figure != nullptr ? figure->effects() : nullptr;
 }
 
 /** What a character's own blows do, which a strike with a negative amount multiplies. */
@@ -1168,9 +1012,9 @@ void PlayScene::fireStrike(usize index, s32 strikeIndex) {
          at = stats->moveEffects[static_cast<usize>(at)].next, ++followed) {
         const MoveEffect& effect = stats->moveEffects[static_cast<usize>(at)];
         if (!effect.sound.empty()) {
-            if (const auto sound = m_players[index].figure->voice.find(effect.sound);
+            if (const auto sound = m_players[index].figure->voice().find(effect.sound);
                 sound.has_value() && m_context.sounds != nullptr) {
-                m_context.sounds->play(m_players[index].figure->voice.sequence(*sound), 1.0f,
+                m_context.sounds->play(m_players[index].figure->voice().sequence(*sound), 1.0f,
                                        SoundCategory::Effects);
             } else {
                 playNamed(effect.sound);
@@ -1317,7 +1161,7 @@ void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
         const auto won = static_cast<s32>(static_cast<f32>(amount) * scale);
         save.progress().experience += won;
         const bool busy =
-            m_players[i].figure != nullptr && m_players[i].figure->animator.turboing();
+            m_players[i].figure != nullptr && m_players[i].figure->animator().turboing();
         if (kill && !busy) {
             m_players[i].turbo.add(TurboMeter::kPerExperience * static_cast<f32>(won));
         }
@@ -1454,7 +1298,7 @@ void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
         return;
     }
     TurboMeter& meter = m_players[index].turbo;
-    const PlayerAnimator& body = m_players[index].figure->animator;
+    const PlayerAnimator& body = m_players[index].figure->animator();
     if (body.turboBegan()) {
         beginMove(index);
     }
@@ -1469,15 +1313,15 @@ void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
 
 /** One of a character's own cries, `which` being what follows its class in the name. */
 void PlayScene::cry(usize index, std::string_view which) {
-    Figure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
+    PlayerFigure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (body == nullptr || m_context.sounds == nullptr) {
         return;
     }
     const std::string_view voice =
         classCode(m_players[index].actor.save().character % kStartingClassCount);
-    if (const auto sound = body->voice.find(std::format("S_{}{}", voice, which));
+    if (const auto sound = body->voice().find(std::format("S_{}{}", voice, which));
         sound.has_value()) {
-        m_context.sounds->play(body->voice.sequence(*sound), 1.0f, SoundCategory::Effects);
+        m_context.sounds->play(body->voice().sequence(*sound), 1.0f, SoundCategory::Effects);
     }
 }
 
@@ -1504,7 +1348,7 @@ bool PlayScene::postHelp(s32 id, usize index, s32 number) {
         // narrator's lines are in either of its banks.
         std::vector<SoundSet*> banks{&m_narrator, &m_narratorSecond};
         if (spec->classVoice && index < m_players.size() && m_players[index].figure != nullptr) {
-            banks = {&m_players[index].figure->voice};
+            banks = {&m_players[index].figure->voice()};
         }
         for (SoundSet* bank : banks) {
             if (const auto line = bank->find(spec->voice); line.has_value()) {
@@ -1591,7 +1435,7 @@ void PlayScene::settleBlasts() {
                 // A blast that gets through knocks its victim off their feet: onto their face
                 // when it came from behind them, onto their back otherwise.
                 const bool guarding =
-                    m_players[i].figure != nullptr && m_players[i].figure->animator.guarding();
+                    m_players[i].figure != nullptr && m_players[i].figure->animator().guarding();
                 if (guarded(i, felt.damage, true) > kKnockdownFrom && !guarding &&
                     !m_world->isTower()) {
                     const Vec3 push = actor.position() - felt.position;
@@ -1664,7 +1508,8 @@ void PlayScene::updateLevels() {
                 playNamed("S_EXP99ALL");
             }
             // The costume of the new tier, weapon and all, where the character stands.
-            if (auto figure = loadFigure(*m_device, save); figure != nullptr) {
+            if (auto figure = PlayerFigure::load(*m_device, m_context.unpackedRoot, save);
+                figure != nullptr) {
                 m_players[i].figure = std::move(figure);
             }
         }
@@ -1739,7 +1584,7 @@ std::optional<LegendPresentation::Bearer> PlayScene::legendBearer(s32 player, s3
         if (actor.player() != player) {
             continue;
         }
-        const Figure* figure = i < m_players.size() ? m_players[i].figure.get() : nullptr;
+        const PlayerFigure* figure = i < m_players.size() ? m_players[i].figure.get() : nullptr;
         LegendPresentation::Bearer bearer;
         bearer.player = player;
         bearer.color = actor.save().color;
@@ -1747,16 +1592,15 @@ std::optional<LegendPresentation::Bearer> PlayScene::legendBearer(s32 player, s3
         bearer.facing = actor.facing();
         bearer.holdPoint = actor.position() + Vec3{0.0f, LegendShow::kHeldLift, 0.0f};
         bearer.canGesture = figure != nullptr && !isDown(i);
-        bearer.casting = figure != nullptr && figure->animator.castingLegend();
-        bearer.released = figure != nullptr && figure->animator.legendReleased();
-        if (LegendShow::heldInHand(kind) && figure != nullptr && figure->handNode >= 0 &&
-            static_cast<usize>(figure->handNode) < figure->transforms.size()) {
+        bearer.casting = figure != nullptr && figure->animator().castingLegend();
+        bearer.released = figure != nullptr && figure->animator().legendReleased();
+        if (LegendShow::heldInHand(kind) && figure != nullptr) {
             const f32 size =
                 bodyScale(actor.save(), PowerupEffects::of(actor.save().progress().inventory));
             const Mat4 body = glm::scale(actor.transform(), Vec3{size, size, size});
-            bearer.holdPoint =
-                Vec3{body * figure->transforms[static_cast<usize>(figure->handNode)] *
-                     Vec4{0.0f, 0.0f, 0.0f, 1.0f}};
+            if (const auto hand = figure->handPosition(body); hand.has_value()) {
+                bearer.holdPoint = *hand;
+            }
         }
         return bearer;
     }
@@ -2160,7 +2004,7 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
         for (usize i = 0; i < m_players.size(); ++i) {
             if (hit.player >= 0 && m_players[i].actor.player() == hit.player && !isDown(i)) {
                 const bool guarding =
-                    m_players[i].figure != nullptr && m_players[i].figure->animator.guarding();
+                    m_players[i].figure != nullptr && m_players[i].figure->animator().guarding();
                 if ((hit.flags & EnemyMissileKind::kKnockBack) != 0 && !guarding &&
                     m_players[i].reaction == PlayerDeed::None) {
                     m_players[i].reaction = PlayerDeed::Flinch;
@@ -2228,7 +2072,7 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
                 continue;
             }
             const bool guarding =
-                m_players[i].figure != nullptr && m_players[i].figure->animator.guarding();
+                m_players[i].figure != nullptr && m_players[i].figure->animator().guarding();
             if (blow.knocksDown && !guarding && m_players[i].reaction == PlayerDeed::None) {
                 m_players[i].reaction = PlayerDeed::Flinch;
             }
@@ -2321,7 +2165,7 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
     }
     const f32 unguarded = damage;
     damage = guarded(index, damage, directed);
-    if (m_players[index].figure != nullptr && m_players[index].figure->animator.defending()) {
+    if (m_players[index].figure != nullptr && m_players[index].figure->animator().defending()) {
         showBlock(index, unguarded - damage, damage);
     }
     if (damage <= 0.0f) {
@@ -2389,7 +2233,7 @@ void PlayScene::cryPain(usize index) {
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says
  * `line` after: what the original's announcements by name do. */
 void PlayScene::sayWithName(usize index, std::string_view line) {
-    Figure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
+    PlayerFigure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (body == nullptr || m_context.sounds == nullptr) {
         return;
     }
@@ -2397,8 +2241,9 @@ void PlayScene::sayWithName(usize index, std::string_view line) {
     const std::string name =
         std::format("S_{}{}2", colorCode(save.color), classCode(save.character % kStartingClassCount));
     SoundHandle spoken = kNoSound;
-    if (const auto sound = body->voice.find(name); sound.has_value()) {
-        spoken = m_context.sounds->play(body->voice.sequence(*sound), 1.0f, SoundCategory::Effects);
+    if (const auto sound = body->voice().find(name); sound.has_value()) {
+        spoken =
+            m_context.sounds->play(body->voice().sequence(*sound), 1.0f, SoundCategory::Effects);
     }
     for (SoundSet* bank : {&m_narrator, &m_narratorSecond}) {
         if (const auto sound = bank->find(line); sound.has_value()) {
@@ -2619,13 +2464,13 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     }
     if (!taking.sound.empty()) {
         playNamed(taking.sound);
-    } else if (Figure* figure = m_players[pickup.collector].figure.get();
+    } else if (PlayerFigure* figure = m_players[pickup.collector].figure.get();
                figure != nullptr && m_context.sounds != nullptr) {
         const std::string_view voice = classCode(actor.save().character % kStartingClassCount);
-        const auto sound = figure->voice.find(
-            std::format("S_{}{}", voice, taking.hurt ? "PAIN1" : "EATSFX"));
+        const auto sound =
+            figure->voice().find(std::format("S_{}{}", voice, taking.hurt ? "PAIN1" : "EATSFX"));
         if (sound.has_value()) {
-            m_context.sounds->play(figure->voice.sequence(*sound), 1.0f, SoundCategory::Effects);
+            m_context.sounds->play(figure->voice().sequence(*sound), 1.0f, SoundCategory::Effects);
         }
     }
     return taking.left;
@@ -3025,21 +2870,6 @@ bool PlayScene::anyButton(const Inputs& inputs) const {
     });
 }
 
-void PlayScene::Figure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed) {
-    if (!animator.bound()) {
-        return;
-    }
-    animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed);
-    const std::span<const Mat4> matrices = animator.pose().matrices();
-    transforms.resize(costume->nodes.size());
-    for (usize n = 0; n < transforms.size(); ++n) {
-        const s32 source = classNodeOfNode[n];
-        transforms[n] = source >= 0 && static_cast<usize>(source) < matrices.size()
-                            ? matrices[static_cast<usize>(source)]
-                            : glm::translate(Mat4{1.0f}, costume->worldPosition(n));
-    }
-}
-
 PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     if (!m_open) {
         return PlayOutcome::Running;
@@ -3089,7 +2919,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     if (spawning()) {
         updateSpawn(ticks, seconds);
         for (const PlayerRuntime& runtime : m_players) {
-            const std::unique_ptr<Figure>& figure = runtime.figure;
+            const std::unique_ptr<PlayerFigure>& figure = runtime.figure;
             if (figure != nullptr) {
                 figure->animate(0.0f, ticks, seconds);
             }
@@ -3132,7 +2962,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         // Reeling from a hit, a character neither moves nor does anything.
         const bool reeling =
             m_players[i].reaction != PlayerDeed::None ||
-            (m_players[i].figure != nullptr && m_players[i].figure->animator.reacting());
+            (m_players[i].figure != nullptr && m_players[i].figure->animator().reacting());
         const MoveInput& move = !held && !down && !reeling && player < inputs.size()
                                     ? inputs[player].move
                                     : MoveInput{};
@@ -3160,7 +2990,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
             } else if (in.strongAttack &&
-                       m_players[i].figure->animator.canBegin(PlayerDeed::StrongAttack)) {
+                       m_players[i].figure->animator().canBegin(PlayerDeed::StrongAttack)) {
                 deed = PlayerDeed::StrongAttack; // nothing is ever in reach yet: the strong throw
             } else if (in.turbo) {
                 deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
@@ -3172,14 +3002,14 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
         // A body in a throw keeps its feet where they are, turning to the stick.
         const f32 pace =
-            m_players[i].figure != nullptr ? m_players[i].figure->animator.moveScale() : 1.0f;
+            m_players[i].figure != nullptr ? m_players[i].figure->animator().moveScale() : 1.0f;
         const bool charging =
-            m_players[i].figure != nullptr && m_players[i].figure->animator.shoving();
+            m_players[i].figure != nullptr && m_players[i].figure->animator().shoving();
         // Strafing, the character steps the way the stick is pushed without turning to it.
         const bool strafes = !held && !down && !charging && player < inputs.size() &&
                              inputs[player].strafe && move.any();
         if (m_players[i].figure != nullptr) {
-            m_players[i].figure->animator.setStrafe(
+            m_players[i].figure->setStrafe(
                 strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
                         : StrafeWay::None);
         }
@@ -3193,25 +3023,25 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         if (m_players[i].figure != nullptr) {
             m_players[i].figure->animate(move.magnitude, ticks, seconds, deed);
             updateTurbo(i, ticks, seconds);
-            if (m_players[i].life == PlayerLife::Dying && m_players[i].figure->animator.dead()) {
+            if (m_players[i].life == PlayerLife::Dying && m_players[i].figure->animator().dead()) {
                 m_players[i].life = PlayerLife::InTower; // the body goes; its box says where
             }
-            if (m_players[i].figure->animator.released()) {
-                throwWeapon(actor, *m_players[i].figure);
+            if (m_players[i].figure->animator().released()) {
+                throwWeapon(actor);
             }
-            if (m_players[i].figure->animator.strongReleased()) {
+            if (m_players[i].figure->animator().strongReleased()) {
                 launchWeapon(i, actor.facing(), kStrongThrowScale, true);
             }
             m_players[i].blockLeft = std::max(m_players[i].blockLeft - seconds, 0.0f);
-            if (m_players[i].figure->animator.potionShielded()) {
+            if (m_players[i].figure->animator().potionShielded()) {
                 shieldPotion(i);
             }
-            if (m_players[i].figure->animator.potionUsed()) {
+            if (m_players[i].figure->animator().potionUsed()) {
                 usePotion(actor);
-            } else if (m_players[i].figure->animator.potionThrown()) {
+            } else if (m_players[i].figure->animator().potionThrown()) {
                 throwPotion(actor);
             }
-            if (const PlayerAnimator::Foot foot = m_players[i].figure->animator.footfall();
+            if (const PlayerAnimator::Foot foot = m_players[i].figure->animator().footfall();
                 foot != PlayerAnimator::Foot::None) {
                 playStep(foot);
             }
@@ -3415,29 +3245,13 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_sumner.draw(device, clip, m_world->lighting());
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower) {
-            const Figure& figure = *runtime.figure;
+            const PlayerFigure& figure = *runtime.figure;
             const PowerupEffects worn =
                 PowerupEffects::of(runtime.actor.save().progress().inventory);
             const f32 size = bodyScale(runtime.actor.save(), worn);
             const Mat4 body = glm::scale(runtime.actor.transform(), Vec3{size, size, size});
-            figure.model.draw(device, clip, body, m_world->lighting(), figure.transforms, nullptr,
-                              worn.bodyAlpha(m_playSeconds));
-            // The hand is empty while a throw is recovered from, unless what flies is not
-            // what it holds.
-            const bool thrown = figure.animator.recovering() ||
-                                figure.animator.action() ==
-                                    PlayerAnimator::Action::StrongThrowRecover;
-            const bool hidden = runtime.move.weaponHidden;
-            const bool inHand =
-                !hidden && (!thrown || MissileSpec::of(runtime.actor.save().character).staysInHand);
-            if (figure.handNode >= 0 && figure.weapon.bound() && inHand) {
-                const auto hand = static_cast<usize>(figure.handNode);
-                const Mat4 wrist = hand < figure.transforms.size()
-                                       ? figure.transforms[hand]
-                                       : glm::translate(Mat4{1.0f}, figure.costume->worldPosition(hand));
-                figure.weapon.draw(device, clip, body * wrist, m_world->lighting(), {}, nullptr,
-                                   worn.bodyAlpha(m_playSeconds));
-            }
+            figure.draw(device, clip, body, m_world->lighting(), worn.bodyAlpha(m_playSeconds),
+                        runtime.move.weaponHidden);
         }
     }
     m_portals.draw(device, clip, m_world->lighting());
@@ -3545,8 +3359,8 @@ const PlayerActor* PlayScene::actor(s32 player) const {
 const PlayerAnimator* PlayScene::animator(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player) {
-            return runtime.figure != nullptr && runtime.figure->animator.bound()
-                       ? &runtime.figure->animator
+            return runtime.figure != nullptr && runtime.figure->animator().bound()
+                       ? &runtime.figure->animator()
                        : nullptr;
         }
     }
