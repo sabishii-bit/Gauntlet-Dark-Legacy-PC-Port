@@ -32,13 +32,11 @@ constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
 constexpr s32 kIconTierBase = 101; ///< a gargoyle gate's trigger id less this is its tier
 
 constexpr std::string_view kClassDataDirectory = "pdata";
-constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
 constexpr s32 kOgre = 12;
 constexpr f32 kOgreScale = 1.6f;
 constexpr f32 kMasterScale = 1.2f; ///< at level 99
-constexpr std::string_view kChestSound = "S_CHEST";
 constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
 constexpr std::string_view kRuneVoicePrefix = "S_RUNE";    ///< then S_RUNE2 to S_RUNE12
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
@@ -56,37 +54,18 @@ constexpr f32 kShieldRadius = 25.0f;   ///< at full size; it is sized by the mag
 constexpr f32 kShieldPotency = 0.25f;  ///< of the character's magic power, its harm
 constexpr f32 kShieldHarmEvery = 0.5f; ///< seconds between its harming what it touches
 constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
-constexpr f32 kKnockdownFrom = 1.0f;        ///< a blast must do more than this to floor anyone
-constexpr f32 kBehind = 1.5707964f;         ///< a blow from further round than this is from behind
 constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
 constexpr std::string_view kBlockEffect = "BLOCKFX";
 constexpr f32 kBlockWorth = 2.0f;      ///< what a guard must take off a hurt for it to show
 constexpr f32 kBlockPerDamage = 0.01f; ///< seconds it shows for each point left
 constexpr f32 kBlockLeast = 0.333f;
 constexpr f32 kBlockMost = 1.0f;
-constexpr f32 kRamDamage = 3.0f;    ///< what a charge does to what it runs into
-constexpr f32 kRamReach = 0.3f;     ///< how near counts as run into
-constexpr s32 kSpecialPowerup = 9;  ///< the pickup subtype of the specials
-constexpr u32 kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
-constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
-constexpr std::string_view kBarrelBreakSound = "S_BARREL_WOOD"; ///< with the realm's letter
-constexpr std::string_view kBarrelBlastSound = "S_BARREL_EXPLO";
-constexpr std::string_view kBarrelGasSound = "S_BARREL_GAS";
-constexpr std::string_view kFireTrapSound = "S_FIREHOLE";
-constexpr std::string_view kBarrelBlast = "EXPLOSION";
-constexpr std::string_view kBarrelGas = "POISONEXP1";
-constexpr std::string_view kBarrelSmoke = "DESTSMOKE";
-constexpr f32 kBlastRadius = 12.0f;      ///< of a chest or a barrel blowing up
-constexpr f32 kChestBlastDamage = 50.0f; ///< each times the level's trap damage
-constexpr f32 kBarrelBlastDamage = 30.0f;
-constexpr f32 kGasDamage = 10.0f;
-constexpr f32 kGasRadius = 6.5f;
-constexpr f32 kGasSeconds = 4.0f;
-constexpr f32 kGasGapSeconds = 0.5f;
+constexpr f32 kRamDamage = 3.0f;     ///< what a charge does to what it runs into
+constexpr f32 kRamReach = 0.3f;      ///< how near counts as run into
+constexpr s32 kSpecialPowerup = 9;   ///< the pickup subtype of the specials
+constexpr u32 kTurboFlag = 0x80000;  ///< of them, the one that fills the turbo meter
 constexpr f32 kFallenSeconds = 3.0f; ///< from the last death to the tower
-constexpr s32 kFireTrap = 1;
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
-constexpr std::string_view kChestBlast = "EXPCHEST"; ///< a trapped chest going up
 
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
 constexpr std::string_view kMenuSelectSound = "S_OPTMENUSEL";
@@ -121,17 +100,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     if (context.levels != nullptr) {
         m_portals.bind(device, world.layout(), world.items(), *context.levels, &world.collision());
     }
-    m_chests.bind(device, world.layout(), world.items(), &world.collision());
-    m_gates.bind(device, world.layout(), world.items(), &world.collision());
-    {
-        const LevelInfo* level = world.level();
-        const f32 gain = context.config != nullptr ? context.config->difficulty.gain() : 1.0f;
-        m_traps.bind(device, world.layout(), world.items(), &world.collision(), 1,
-                     level != nullptr ? level->tuning.trapTimeScale(gain) : 1.0f,
-                     trapDamageScale());
-    }
-    m_barrels.bind(device, world.layout(), world.items(), &world.collision());
-    m_safeRocks.bind(device, world.layout(), world.items());
+    m_fixtures.bind({device, world, m_weapons, m_effects, m_audio,
+                     context.config != nullptr ? context.config->difficulty.gain() : 1.0f});
     m_refusedPortal = -1;
     m_leaving = false;
     m_transition.load(device, context.unpackedRoot);
@@ -157,11 +127,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         world.placeItem(device, item.name, item.position);
     }
     world.setPlayerCount(static_cast<s32>(m_players.size()));
-    m_chests.setPlayerCount(static_cast<s32>(m_players.size()));
-    m_gates.setPlayerCount(static_cast<s32>(m_players.size()));
-    m_traps.setPlayerCount(static_cast<s32>(m_players.size()));
-    m_barrels.setPlayerCount(static_cast<s32>(m_players.size()));
-    m_safeRocks.setPlayerCount(static_cast<s32>(m_players.size()));
+    m_fixtures.setPlayerCount(static_cast<s32>(m_players.size()));
     bindEnemies(device, world, context);
     // The levels the party comes in at: what is gained from here is news.
     m_levels.clear();
@@ -217,9 +183,7 @@ void PlayScene::close() {
     }
     m_sumner.clear();
     m_portals.clear();
-    m_chests.clear();
-    m_gates.clear();
-    m_traps.clear();
+    m_fixtures.clear();
     m_transition.release();
     m_leaving = false;
     m_arsenal.clear(); // before the figures whose models they fly
@@ -245,11 +209,7 @@ void PlayScene::close() {
     if (m_world != nullptr) {
         m_world->setAmbientOffset(0.0f);
     }
-    m_clouds.clear();
-    m_blasts.clear();
     m_fallenSeconds = 0.0f;
-    m_barrels.clear();
-    m_safeRocks.clear();
     m_audio.close(); // before the figures whose class voices it can play
     m_players.clear();
     m_arrival.clear();
@@ -370,17 +330,18 @@ void PlayScene::collectItems() {
         const PlayerActor& actor = runtime.actor;
         // Against an open chest, a character reaches what lies in it.
         const Vec3 here = presenceOf(collectors.size());
-        const s32 chest = m_chests.holdingTouchedBy(ChestVisitor{here, actor.radius()});
+        const s32 chest = m_fixtures.chests().holdingTouchedBy(ChestVisitor{here, actor.radius()});
         const Vec3 from =
-            chest >= 0 ? m_chests.chest(static_cast<usize>(chest)).figure.position() : here;
+            chest >= 0 ? m_fixtures.chests().chest(static_cast<usize>(chest)).figure.position()
+                       : here;
         collectors.push_back(Collector{from, actor.reach(), actor.height() * 0.5f});
     }
     const std::vector<Pickup> pickups = m_world->collect(
         *m_device, collectors, [this](const Pickup& pickup) { return takePickup(pickup); });
-    for (usize chest = 0; chest < m_chests.size(); ++chest) {
-        const s32 held = m_chests.chest(chest).held;
+    for (usize chest = 0; chest < m_fixtures.chests().size(); ++chest) {
+        const s32 held = m_fixtures.chests().chest(chest).held;
         if (held >= 0 && m_world->placedItems().item(static_cast<usize>(held)).taken) {
-            m_chests.remove(chest);
+            m_fixtures.chests().remove(chest);
         }
     }
     for (const Pickup& pickup : pickups) {
@@ -412,118 +373,6 @@ void PlayScene::collectItems() {
     }
 }
 
-/** The level's chests, gates and traps under the party: nobody walks through a chest or a
- * gate that is shut; against one, a key carried is spent and it opens (a chest's sound is
- * the common one, a gate's its realm's); an opened chest drops what it held, pays its gold
- * to its opener or blows up; a trap that is out hurts whoever is in it. */
-void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
-    std::vector<Obstacle> boxes = m_chests.obstacles();
-    const std::vector<Obstacle> barred = m_gates.obstacles();
-    boxes.insert(boxes.end(), barred.begin(), barred.end());
-    const std::vector<Obstacle> casks = m_barrels.obstacles();
-    boxes.insert(boxes.end(), casks.begin(), casks.end());
-    m_barrels.update(seconds);
-    const auto cover = m_safeRocks.obstacles();
-    boxes.insert(boxes.end(), cover.begin(), cover.end());
-    std::vector<ChestVisitor> visitors;
-    std::vector<TrapVictim> victims;
-    visitors.reserve(m_players.size());
-    victims.reserve(m_players.size());
-    for (usize i = 0; i < m_players.size(); ++i) {
-        PlayerActor& actor = m_players[i].actor;
-        if (isDown(i)) {
-            visitors.push_back(ChestVisitor{kNowhere, actor.radius(), 0});
-            victims.push_back(TrapVictim{kNowhere, actor.radius()});
-            continue;
-        }
-        Vec3 position = actor.position();
-        for (const Obstacle& box : boxes) {
-            position = box.pushOut(position, actor.radius());
-        }
-        actor.place(position);
-        visitors.push_back(
-            ChestVisitor{position, actor.radius(), actor.save().progress().inventory.keys});
-        victims.push_back(TrapVictim{position, actor.radius()});
-    }
-    for (const ChestEvent& event : m_chests.update(seconds, visitors)) {
-        if (event.visitor >= m_players.size()) {
-            continue;
-        }
-        PlayerActor& actor = m_players[event.visitor].actor;
-        switch (event.kind) {
-        case ChestEvent::Kind::Unlocked:
-            if (m_chests.chest(event.chest).locked) {
-                actor.save().progress().inventory.spendKey();
-            }
-            m_audio.playNamed(kChestSound);
-            break;
-        case ChestEvent::Kind::Opened:
-            if (event.explodes) {
-                if (m_device != nullptr && m_weapons.loaded()) {
-                    m_effects.start(*m_device, m_weapons, kChestBlast, event.position);
-                }
-                playRealmSound(kBarrelBlastSound);
-                m_chests.remove(event.chest);
-                postHelp(HelpMessages::kChestsExplode, event.visitor);
-                blast(event.position, kBlastRadius, kChestBlastDamage * trapDamageScale());
-            } else if (event.gold > 0) {
-                takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
-                m_hud.pickups().addCard(actor.player(), "GOLD");
-                m_audio.playNamed(kPickupSound);
-            } else if (event.contents >= 0 && m_device != nullptr) {
-                // It lies in the open chest, for whoever touches the chest next.
-                const s32 count = m_chests.chest(event.chest).count;
-                if (m_world->placeItemRecord(*m_device, event.contents, event.position, count)) {
-                    m_chests.hold(event.chest, static_cast<s32>(m_world->placedItems().size()) - 1);
-                }
-            } else {
-                m_chests.remove(event.chest);
-            }
-            break;
-        case ChestEvent::Kind::Refused:
-            postHelp(HelpMessages::kChestNeedsKey, event.visitor);
-            break;
-        }
-    }
-    for (const GateEvent& event : m_gates.update(ticks, seconds, visitors)) {
-        if (event.visitor >= m_players.size()) {
-            continue;
-        }
-        if (event.kind == GateEvent::Kind::Unlocked) {
-            m_players[event.visitor].actor.save().progress().inventory.spendKey();
-            playGateSound(0);
-        } else if (event.kind == GateEvent::Kind::Refused) {
-            postHelp(HelpMessages::kDoorNeedsKey, event.visitor);
-        }
-    }
-    for (const TrapHit& hit : m_traps.update(ticks, seconds, victims)) {
-        if (hit.victim >= m_players.size()) {
-            continue;
-        }
-        if (hit.subtype == kFireTrap) {
-            playRealmSound(kFireTrapSound);
-        }
-        // Every trap stuns: spikes and blades make their victim flinch, the rest reel.
-        if (guarded(hit.victim, hit.damage, false) > 1.0f && !isDown(hit.victim)) {
-            m_players[hit.victim].reaction = hit.pierces ? PlayerDeed::Flinch : PlayerDeed::Reel;
-        }
-        hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn);
-        postHelp(HelpMessages::kTrapsHurt, hit.victim);
-    }
-    updateClouds(seconds);
-    for (PlayerRuntime& runtime : m_players) {
-        runtime.hitSoundGap = std::max(runtime.hitSoundGap - ticks, 0);
-    }
-}
-
-/** What the level's traps and blasts are scaled by: its own trap damage and the
- * difficulty's gain. */
-f32 PlayScene::trapDamageScale() const {
-    const LevelInfo* level = m_world != nullptr ? m_world->level() : nullptr;
-    const f32 gain = m_context.config != nullptr ? m_context.config->difficulty.gain() : 1.0f;
-    return level != nullptr ? level->tuning.trapDamageScale(gain) : gain;
-}
-
 Vec3 PlayScene::presenceOf(usize index) const {
     return index < m_players.size() && !isDown(index) ? m_players[index].actor.position()
                                                       : kNowhere;
@@ -549,10 +398,6 @@ void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed)
 /** What a guard or a shove leaves of a hurt over a point, by the original's rules as it
  * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
  * nowhere in particular (a trap underfoot); a shove halves either. */
-f32 PlayScene::guarded(usize index, f32 damage, bool directed) const {
-    return index < m_players.size() ? PlayerHealth::guarded(m_players[index], damage, directed)
-                                    : damage;
-}
 
 /** A sound of the realm's bank, whose names end in the realm's letter. */
 SoundHandle PlayScene::playRealmSound(std::string_view stem) {
@@ -574,20 +419,23 @@ const TurboMeter* PlayScene::turboMeter(s32 player) const {
 void PlayScene::ramBarrels(usize index) {
     const PlayerActor& actor = m_players[index].actor;
     std::vector<usize>& rammed = m_players[index].rammed;
-    for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
-        if (!m_barrels.standing(barrel) || std::ranges::find(rammed, barrel) != rammed.end() ||
-            !m_barrels.barrel(barrel).box.touchedBy(actor.position(), actor.radius(), kRamReach)) {
+    for (usize barrel = 0; barrel < m_fixtures.barrels().size(); ++barrel) {
+        if (!m_fixtures.barrels().standing(barrel) ||
+            std::ranges::find(rammed, barrel) != rammed.end() ||
+            !m_fixtures.barrels().barrel(barrel).box.touchedBy(actor.position(), actor.radius(),
+                                                               kRamReach)) {
             continue;
         }
         rammed.push_back(barrel);
         strikeBarrel(barrel, kRamDamage, actor.player());
     }
-    for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
+    for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
         // Keep the shared per-charge hit ledger disjoint from barrel indices.
         const usize key = rock + static_cast<usize>(kSafeRockTargetBase);
-        if (m_safeRocks.standing(rock) && std::ranges::find(rammed, key) == rammed.end() &&
-            m_safeRocks.rock(rock).obstacle.touchedBy(actor.position(), actor.radius(),
-                                                      kRamReach)) {
+        if (m_fixtures.safeRocks().standing(rock) &&
+            std::ranges::find(rammed, key) == rammed.end() &&
+            m_fixtures.safeRocks().rock(rock).obstacle.touchedBy(actor.position(), actor.radius(),
+                                                                 kRamReach)) {
             rammed.push_back(key);
             strikeSafeRock(rock, kRamDamage);
         }
@@ -717,18 +565,18 @@ void PlayScene::updateStrikes(f32 seconds) {
             strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z},
                           hit.owner, std::nullopt, true);
         }
-        for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
-            const auto& cover = m_safeRocks.rock(rock).obstacle;
-            if (m_safeRocks.standing(rock) &&
+        for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
+            const auto& cover = m_fixtures.safeRocks().rock(rock).obstacle;
+            if (m_fixtures.safeRocks().standing(rock) &&
                 hit.reaches(cover.centre, cover.cylinderRadius, cover.height)) {
                 strikeSafeRock(rock, hit.damage);
             }
         }
-        for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
-            if (!m_barrels.standing(barrel)) {
+        for (usize barrel = 0; barrel < m_fixtures.barrels().size(); ++barrel) {
+            if (!m_fixtures.barrels().standing(barrel)) {
                 continue;
             }
-            const Breakables::Barrel& cask = m_barrels.barrel(barrel);
+            const Breakables::Barrel& cask = m_fixtures.barrels().barrel(barrel);
             if (!hit.reaches(cask.figure.position(), cask.radius, cask.height)) {
                 continue;
             }
@@ -843,11 +691,11 @@ void PlayScene::updateShields(f32 seconds) {
             continue;
         }
         shield.harmIn = kShieldHarmEvery;
-        for (const usize barrel : m_barrels.within(at, shield.radius)) {
+        for (const usize barrel : m_fixtures.barrels().within(at, shield.radius)) {
             strikeBarrel(barrel, shield.damage, m_players[shield.actor].actor.player());
         }
-        for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
-            if (m_safeRocks.rock(rock).obstacle.touchedBy(at, shield.radius, 0.0f)) {
+        for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
+            if (m_fixtures.safeRocks().rock(rock).obstacle.touchedBy(at, shield.radius, 0.0f)) {
                 strikeSafeRock(rock, shield.damage);
             }
         }
@@ -932,121 +780,50 @@ bool PlayScene::postHelp(s32 id, usize index, s32 number) {
     return m_hud.postHelp(id, index, m_players, m_audio, number);
 }
 
+LevelFixtures::Events PlayScene::fixtureEvents() {
+    return {.hurt = [this](usize i, f32 damage, HurtKind kind,
+                           bool directed) { hurt(i, damage, kind, directed); },
+            .help = [this](s32 id, usize i) { postHelp(id, i); },
+            .card = [this](s32 player,
+                           std::string_view name) { m_hud.pickups().addCard(player, name); },
+            .opponents = [this](const Vec3& position, f32 radius,
+                                f32 damage) { hurtOpponentsByBlast(position, radius, damage); }};
+}
+void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
+    m_fixtures.update(ticks, seconds, m_players, fixtureEvents());
+}
 void PlayScene::strikeSafeRock(usize index, f32 power) {
-    if (m_safeRocks.strike(index, power) && m_device != nullptr && m_world != nullptr) {
-        m_effects.start(*m_device, m_world->items(), "SAFEREXP", m_safeRocks.rock(index).position);
-    }
+    m_fixtures.strikeSafeRock(index, power);
 }
-
-/** A blow on a barrel: wood sounds under it until it breaks, when what it held is left
- * lying, or it blows up, or its gas hangs where it stood. */
 void PlayScene::strikeBarrel(usize barrel, f32 power, s32 byPlayer) {
-    const auto struck = m_barrels.strike(barrel, power);
-    if (!struck.has_value()) {
-        return;
-    }
-    if (!struck->broken) {
-        m_audio.playNamed(kWoodHitSound);
-        return;
-    }
-    const auto effect = [&](std::string_view tree) {
-        if (m_device != nullptr && m_weapons.loaded()) {
-            m_effects.start(*m_device, m_weapons, tree, struck->position);
-        }
-    };
-    switch (struck->kind) {
-    case BreakableStrike::Kind::Plain:
-    case BreakableStrike::Kind::Holding:
-        playRealmSound(kBarrelBreakSound);
-        effect(kBarrelSmoke);
-        if (struck->contents >= 0 && m_device != nullptr &&
-            m_world->placeItemRecord(*m_device, struck->contents, struck->position,
-                                     struck->count)) {
-            for (usize i = 0; i < m_players.size(); ++i) {
-                if (m_players[i].actor.player() == byPlayer) {
-                    postHelp(HelpMessages::kBarrelsHold, i);
-                }
-            }
-        }
-        break;
-    case BreakableStrike::Kind::Exploding:
-        playRealmSound(kBarrelBlastSound);
-        effect(kBarrelBlast);
-        m_blasts.push_back(
-            Blast{struck->position, kBlastRadius, kBarrelBlastDamage * trapDamageScale()});
-        break;
-    case BreakableStrike::Kind::Poison:
-        playRealmSound(kBarrelGasSound);
-        effect(kBarrelGas);
-        m_clouds.push_back(GasCloud{struck->position, kGasDamage * trapDamageScale(), kGasSeconds});
-        break;
-    }
+    m_fixtures.strikeBarrel(barrel, power, byPlayer, m_players, fixtureEvents());
 }
-
-/** Whoever is within a blast is hurt by it, and the barrels within it are struck by it (so
- * one that blows up sets off its neighbours). */
 void PlayScene::blast(const Vec3& position, f32 radius, f32 damage) {
-    m_blasts.push_back(Blast{position, radius, damage});
-    settleBlasts();
+    m_fixtures.blast(position, radius, damage, m_players, fixtureEvents());
 }
-
-/** Feels out every blast waiting, and those they set off in turn. */
 void PlayScene::settleBlasts() {
-    while (!m_blasts.empty()) {
-        const Blast felt = m_blasts.back();
-        m_blasts.pop_back();
-        for (usize i = 0; i < m_players.size(); ++i) {
-            if (isDown(i)) {
-                continue;
-            }
-            const PlayerActor& actor = m_players[i].actor;
-            const Vec3 offset = actor.followPoint() - felt.position;
-            if (std::hypot(offset.x, offset.z) <= felt.radius + actor.radius() &&
-                std::abs(offset.y) <= actor.height() * 0.5f + felt.radius) {
-                // A blast that gets through knocks its victim off their feet: onto their face
-                // when it came from behind them, onto their back otherwise.
-                const bool guarding =
-                    m_players[i].figure != nullptr && m_players[i].figure->animator().guarding();
-                if (guarded(i, felt.damage, true) > kKnockdownFrom && !guarding &&
-                    !m_world->isTower()) {
-                    const Vec3 push = actor.position() - felt.position;
-                    f32 round = std::atan2(push.x, push.z) - actor.yaw();
-                    round = std::remainder(round, 2.0f * kBehind * 2.0f);
-                    m_players[i].reaction =
-                        std::abs(round) > kBehind ? PlayerDeed::FallBack : PlayerDeed::FallForward;
-                }
-                hurt(i, felt.damage, HurtKind::Blow, true);
-            }
+    m_fixtures.settleBlasts(m_players, fixtureEvents());
+}
+void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage) {
+    for (const s32 enemy : m_enemies.within(position, radius)) {
+        const Vec3 away = m_enemies.positionOf(enemy) - position;
+        strikeEnemy(enemy, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
+    }
+    for (const s32 generator : m_generators.within(position, radius)) {
+        strikeGenerator(generator, damage, -1);
+    }
+    if (m_bosses.within(position, radius)) {
+        EnemyHit struck;
+        struck.damage = damage;
+        struck.flags = EnemyHit::kKnockDown;
+        if (const Vec3* at = m_bosses.position(); at != nullptr) {
+            struck.direction = Vec3{at->x - position.x, 0.0f, at->z - position.z};
         }
-        for (const usize barrel : m_barrels.within(felt.position, felt.radius)) {
-            strikeBarrel(barrel, felt.damage, -1);
-        }
-        for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
-            if (m_safeRocks.rock(rock).obstacle.touchedBy(felt.position, felt.radius, 0.0f)) {
-                strikeSafeRock(rock, felt.damage);
-            }
-        }
-        for (const s32 enemy : m_enemies.within(felt.position, felt.radius)) {
-            const Vec3 away = m_enemies.positionOf(enemy) - felt.position;
-            strikeEnemy(enemy, felt.damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
-        }
-        for (const s32 generator : m_generators.within(felt.position, felt.radius)) {
-            strikeGenerator(generator, felt.damage, -1);
-        }
-        if (m_bosses.within(felt.position, felt.radius)) {
-            EnemyHit struck;
-            struck.damage = felt.damage;
-            struck.flags = EnemyHit::kKnockDown;
-            if (const Vec3* at = m_bosses.position(); at != nullptr) {
-                struck.direction = Vec3{at->x - felt.position.x, 0.0f, at->z - felt.position.z};
-            }
-            m_bosses.hurt(struck);
-        }
-        for (const s32 critter : m_critters.within(felt.position, felt.radius)) {
-            const Vec3 away = m_critters.positionOf(critter) - felt.position;
-            strikeCritter(critter, felt.damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z},
-                          -1);
-        }
+        m_bosses.hurt(struck);
+    }
+    for (const s32 critter : m_critters.within(position, radius)) {
+        const Vec3 away = m_critters.positionOf(critter) - position;
+        strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
 }
 
@@ -1494,15 +1271,15 @@ std::vector<EnemyView> PlayScene::enemyViews() const {
 void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     const std::vector<EnemyView> views = enemyViews();
     std::vector<Obstacle> boxes = m_generators.obstacles();
-    const std::vector<Obstacle> chests = m_chests.obstacles();
+    const std::vector<Obstacle> chests = m_fixtures.chests().obstacles();
     boxes.insert(boxes.end(), chests.begin(), chests.end());
-    const std::vector<Obstacle> barred = m_gates.obstacles();
+    const std::vector<Obstacle> barred = m_fixtures.gates().obstacles();
     boxes.insert(boxes.end(), barred.begin(), barred.end());
-    const std::vector<Obstacle> casks = m_barrels.obstacles();
+    const std::vector<Obstacle> casks = m_fixtures.barrels().obstacles();
     boxes.insert(boxes.end(), casks.begin(), casks.end());
     const LevelInfo* level = m_world->level();
     const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
-    const auto cover = m_safeRocks.obstacles();
+    const auto cover = m_fixtures.safeRocks().obstacles();
     boxes.insert(boxes.end(), cover.begin(), cover.end());
     m_generators.update(ticks, m_enemies, views, boxes);
     m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed);
@@ -1526,7 +1303,7 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
         }
     }
     for (const EnemyBurst& burst : m_enemies.takeBursts()) {
-        blast(burst.position, kBlastRadius, burst.damage);
+        blast(burst.position, LevelFixtures::kBlastRadius, burst.damage);
     }
     settleBlasts();
     m_critters.update(ticks, seconds, views);
@@ -1627,41 +1404,6 @@ void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
     playRealmSound(event->destroyed ? "S_GENKILL" : "S_GENDAM");
     if (event->destroyed) {
         m_enemies.generatorGone(id);
-    }
-}
-
-/** Gas hangs for a while and hurts whoever stands in it, every half second. */
-void PlayScene::updateClouds(f32 seconds) {
-    for (PlayerRuntime& runtime : m_players) {
-        runtime.cloudGap = std::max(runtime.cloudGap - seconds, 0.0f);
-    }
-    for (GasCloud& cloud : m_clouds) {
-        cloud.secondsLeft -= seconds;
-        for (usize i = 0; i < m_players.size(); ++i) {
-            if (isDown(i) || m_players[i].cloudGap > 0.0f) {
-                continue;
-            }
-            const Vec3 offset = m_players[i].actor.followPoint() - cloud.position;
-            if (std::hypot(offset.x, offset.z) <= kGasRadius + m_players[i].actor.radius() &&
-                std::abs(offset.y) <= m_players[i].actor.height() * 0.5f + kGasRadius) {
-                m_players[i].cloudGap = kGasGapSeconds;
-                hurt(i, cloud.damage, HurtKind::Gas, true);
-            }
-        }
-    }
-    std::erase_if(m_clouds, [](const GasCloud& cloud) { return cloud.secondsLeft <= 0.0f; });
-}
-
-/** A gate's opening sounds from the realm's own bank, named after the level's letter. */
-void PlayScene::playGateSound(s32 /*subtype*/) {
-    const std::string& level = m_world->ref().name;
-    const char letter = level.empty() ? 'G' : level.front();
-    for (const std::string_view stem : {"S_GATEMET", "S_GATEWOOD", "S_GATE"}) {
-        for (const std::string_view tail : {"", "1"}) {
-            if (m_audio.playNamed(std::format("{}{}{}", stem, letter, tail)) != kNoSound) {
-                return;
-            }
-        }
     }
 }
 
@@ -2086,9 +1828,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     updateFixtures(ticks, seconds);
     updateEnemies(ticks, seconds);
     std::vector<MissileTarget> targets;
-    for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
-        if (m_barrels.standing(barrel)) {
-            const Breakables::Barrel& cask = m_barrels.barrel(barrel);
+    for (usize barrel = 0; barrel < m_fixtures.barrels().size(); ++barrel) {
+        if (m_fixtures.barrels().standing(barrel)) {
+            const Breakables::Barrel& cask = m_fixtures.barrels().barrel(barrel);
             targets.push_back(MissileTarget{static_cast<s32>(barrel), cask.figure.position(),
                                             cask.radius, cask.height});
         }
@@ -2113,9 +1855,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                                             std::max(box.halfAcross, box.halfAlong), box.height});
         }
     }
-    for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
-        if (m_safeRocks.standing(rock)) {
-            const Obstacle& cover = m_safeRocks.rock(rock).obstacle;
+    for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
+        if (m_fixtures.safeRocks().standing(rock)) {
+            const Obstacle& cover = m_fixtures.safeRocks().rock(rock).obstacle;
             targets.push_back(MissileTarget{static_cast<s32>(rock) + kSafeRockTargetBase,
                                             cover.centre, cover.cylinderRadius, cover.height});
         }
@@ -2288,11 +2030,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         }
     }
     m_portals.draw(device, clip, m_world->lighting());
-    m_chests.draw(device, clip, m_world->lighting());
-    m_gates.draw(device, clip, m_world->lighting());
-    m_traps.draw(device, clip, m_world->lighting());
-    m_barrels.draw(device, clip, m_world->lighting());
-    m_safeRocks.draw(device, clip, m_world->lighting());
+    m_fixtures.draw(device, clip, m_world->lighting());
     m_generators.draw(device, clip, m_world->lighting());
     m_enemies.draw(device, clip, m_world->lighting());
     m_critters.draw(device, clip, m_world->lighting());
