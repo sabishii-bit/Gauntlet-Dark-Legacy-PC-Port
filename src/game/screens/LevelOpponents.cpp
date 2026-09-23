@@ -390,7 +390,7 @@ void LevelOpponents::showCritterCue(const CritterCue& cue, ItemArchive* archive,
             m_critterEffects.push_back(
                 CritterEffect{effect, cue.critter, ofBoss,
                               at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}, cue.node,
-                              cue.nodeOffset});
+                              cue.nodeOffset, cue.rootAttachment});
         }
     }
     if (!cue.sound.empty()) {
@@ -409,7 +409,7 @@ void LevelOpponents::followCritterEffects() {
             riding.ofBoss ? m_bosses.present()
                           : m_critters.alive(riding.critter) || m_critters.dying(riding.critter);
         if (!m_resources->effects.playing(riding.effect) || !alive) {
-            if (!alive && riding.node.has_value()) {
+            if (!alive && (riding.node.has_value() || riding.rootAttachment)) {
                 m_resources->effects.stop(riding.effect);
             }
             m_critterEffects.erase(m_critterEffects.begin() + static_cast<std::ptrdiff_t>(i));
@@ -417,7 +417,14 @@ void LevelOpponents::followCritterEffects() {
         }
         const Vec3* at =
             riding.ofBoss ? m_bosses.position() : &m_critters.positionOf(riding.critter);
-        if (riding.node.has_value()) {
+        if (riding.rootAttachment) {
+            const auto parent = riding.ofBoss ? m_bosses.rootTransform()
+                                              : m_critters.rootTransformOf(riding.critter);
+            if (parent.has_value()) {
+                m_resources->effects.placeAt(riding.effect,
+                                             glm::translate(*parent, riding.nodeOffset));
+            }
+        } else if (riding.node.has_value()) {
             const auto parent = riding.ofBoss
                                     ? m_bosses.nodeTransform(*riding.node)
                                     : m_critters.nodeTransformOf(riding.critter, *riding.node);

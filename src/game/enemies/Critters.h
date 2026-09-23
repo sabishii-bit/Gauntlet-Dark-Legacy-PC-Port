@@ -57,6 +57,7 @@ struct CritterCue {
     float life = 0.0f; ///< seconds, when it does not play out
     bool follows = false;
     bool shakes = false;
+    bool rootAttachment = false;     ///< root transform, not a fixed world-space body offset
     std::optional<std::string> node; ///< animated attachment, distinct from a body translation
     Vec3 nodeOffset{0.0f};
 };
@@ -159,6 +160,7 @@ public:
     const Vec3& positionOf(int id) const;
     float yawOf(int id) const;
     std::optional<Mat4> nodeTransformOf(int id, std::string_view node) const;
+    std::optional<Mat4> rootTransformOf(int id) const;
     float radiusOf(int id) const;
     int targetOf(int id) const;
     /** The name of the move it is doing ("WALK", "ATTACK1L"). */
@@ -198,6 +200,7 @@ private:
         float yaw = 0.0f;
         float initialYaw = 0.0f;
         Vec3 homePosition{0.0f}; ///< floor-space home anchor, independent of current position
+        Vec3 initialRoot{0.0f};  ///< geometry's saved base, distinct from an explicit roaming home
         Vec3 push{0.0f, 0.0f, 0.0f};
         int target = -1;
         float targetDistance = 100000.0f;
@@ -231,11 +234,9 @@ private:
                                                std::span<const EnemyView> players);
     /** Whether a legend item's curb keeps the move from it. */
     static bool curbedMove(const Critter& critter, const CritterMove& move);
-    /** What of a sound record is set off. */
-    enum class CueParts : std::uint8_t { Both, Sound, Effect };
     /** Sets off sound record `index` (and what it links to) at `position`. */
     void cue(const Critter& critter, int id, int index, const Vec3& position,
-             CueParts parts = CueParts::Both, std::optional<std::string_view> node = std::nullopt);
+             std::optional<std::string_view> node = std::nullopt);
 
     std::vector<CritterCue> m_cues;
     std::vector<CritterSpew> m_spews;

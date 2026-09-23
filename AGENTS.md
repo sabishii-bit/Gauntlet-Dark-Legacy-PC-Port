@@ -639,9 +639,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   This is not complete boss fidelity: damaging impact areas/status effects,
   linked custom SFXX callbacks (including Dragon's fireball trail), generated
   stage hazards/minions, attached damage areas (2), grabs (7), attack patterns
-  and Chimera child-head control still need reconstruction. The remaining
-  shared move-effect landing delay also needs replacing with authored SFXX
-  timing/parenting; retail 0x8003b300 starts at sfxFrame, not damage frame.
+  and Chimera child-head control still need reconstruction.
   A hit takes the armour off (a point always through for a character), a
   block lets a quarter through and shrugs off the throw, and is worth
   amount / (1 + health) of the value to the hitter (a fiftieth less a level
@@ -707,7 +705,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `SAFEROCK0L1` through `SAFEROCK3L1`; their tier and health fall under player
   attacks, rubble remains visible, and only standing tiers block movement.
   Boss-driven barrier reactivation and their protection against breath are
-  not wired yet. `screens/LegendPresentation` owns the held/flight/charge
+  not wired yet. Boss-level item archives do not replace all realm assets:
+  `LevelWorld::realmItems()` keeps the common archive when an own-level archive
+  is selected. Traps prefer the boss-specific figure, then the realm's. The
+  Dragon arena's ten `FLAMEV` figures come from `ITEMS/LEVELB`, not `LEVELB6`;
+  unpack the former too (`gdlunpack <assets> <out> --only levelB`). Their
+  OFF/ONA/ON/ONB sequences now supply the hazard timing. The authored particle
+  node still needs sequence-aware emission in `ItemFigure`; do not start it
+  continuously during OFF. `screens/LegendPresentation` owns the held/flight/charge
   effects, gesture retry and flight sound lifetime. `PlayScene` supplies
   bearer/target snapshots and applies returned impact events to `Bosses`;
   the presentation never mutates gameplay actors. Clear it before releasing
@@ -759,8 +764,22 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Still incomplete: retail's item obstruction/filtering (including the
   safe rocks), and auditing per-particle texture selection against retail.
   Do not substitute all collision obstacles for that selective item query.
-  Other move effects retain their older landing-frame/body-follow behavior;
-  they still need their own parenting/timing audit.
+  All move effects now start with their sound at `sfxFrame`/`sfx2Frame`
+  (`CritterAnimate`, 0x8003b300), once per move even when an update crosses
+  the frame. The effect's animation already contains the visual wind-up;
+  do not add another delay until the damage frame. SFXX flag 1 attaches to
+  the full elevated model root (not floor position), an unflagged move effect
+  uses the active animated node, and 0x40 snapshots a world-space placement.
+  Flag 0x80 without 0x801 uses the initial geometry base with a world-axis
+  offset. Root/node parents carry scale once and follow rotation as well as
+  translation; `LevelOpponents` updates them before effects are rendered.
+  This follows `CritterSfx`/its create helper at 0x8003d7e0/0x8003dc64.
+  SFXX's parent-of-root/global overrides and custom callbacks still require
+  reconstruction, as do camera-shake cues. The Lich's empty SFXX flag-0x20
+  row calls the arena callback (0x80063c58) to animate `G5BIGDIRT`; this is
+  not a missing particle effect. Its object has no animation track in the
+  current exported LEVELG5 world, so recover the object-tree binding before
+  inventing a world-track animation for it.
   Scenarios: `level-g1-general.json`.
 * Boss locomotion has two encounter roles; neither role implies melee-only
   attacks. Dragon, Plague Fiend, Yeti, Wraith, Chimera and Genie are anchored;
@@ -832,8 +851,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * The great ones' sounds and effects: each critter's SFXX records are read
   whole (`CritterSound`: tree, `%c` sound format, offset, life, scale,
   flags, link) and set off as `CritterCue`s: a move's at its `sfxFrame`
-  (an attack's effect waiting for the frame its blow lands on, riding on
-  the body), a strike's (`CritterDamage::sound`) at the part it strikes
+  (its own effect sequence supplies the wind-up), a strike's
+  (`CritterDamage::sound`) at the part it strikes
   with, a hit's mark (`hitSoundClose` @0xF4 for a blow, `hitSoundFar` @0xF6
   for a missile) where it landed (`EnemyHit::where/close`). The scene plays
   the trees from the creature's archive or the weapons' (`HITDIE`), the

@@ -99,6 +99,7 @@ public:
     ItemArchive* archive();
     const Vec3* position() const;
     std::optional<Mat4> nodeTransform(std::string_view node) const;
+    std::optional<Mat4> rootTransform() const;
     /** The way it faces, and how big it stands; nought without a boss. */
     float facing() const;
     float radius() const;

@@ -11,7 +11,7 @@ namespace gdl::game {
 
 bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
                  const WorldCollision* collision, unsigned int seed, float timeScale,
-                 float damageScale) {
+                 float damageScale, ItemArchive* realmItems) {
     clear();
     m_random.seed(seed);
     m_timeScale = timeScale;
@@ -36,7 +36,9 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
         trap->subtype = info.subtype;
         trap->offTime = ownRest != 0 ? -ownRest * 3 : info.activeOff;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
-        if (!trap->figure.place(device, items, name, instance, collision)) {
+        ItemArchive& source =
+            !items.trees.find(name).has_value() && realmItems != nullptr ? *realmItems : items;
+        if (!trap->figure.place(device, source, name, instance, collision)) {
             log::warn("Traps: no figure {} in the item archive", name);
         }
         trap->box = trap->figure.obstacle(info);

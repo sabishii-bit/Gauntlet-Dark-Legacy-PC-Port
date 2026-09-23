@@ -710,6 +710,79 @@ std::filesystem::path targetedCritter() {
     return root;
 }
 
+TEST_CASE("move effects start at authored frames with distinct root node base and world placement",
+          "[game][enemies][boss-effects]") {
+    const auto root = targetedCritter();
+    writeTextFile(root / "MONSTERS/DJINN/animations.json", R"({"trees":[{"name":"DJINN",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[3,5,2]}],
+      "sequences":[{"name":"READY","frames":1},{"name":"ROARATK","frames":25}]}]})");
+    writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100,"floorOffset":7}],
+      "moves":[{"name":"READY","anim":"READY","type":32,"priority":1},
+        {"name":"MELEE","anim":"ROARATK","type":128,"priority":20,"cooldown":100,
+         "colnode":"BODY","frameStart":12,"frameEnd":24,"damage0":0,
+         "sfx":0,"sfxFrame":2,"sfx2":4,"sfx2Frame":5}],
+      "damages":[{"type":0,"radius":3,"maxDistance":10,"damage":10,"sfxIndex":5}],
+      "sounds":[{"name":"ROOTFX","flags":1,"offset":[1,2,3],"link":1},
+        {"name":"NODEFX","flags":0,"offset":[1,2,3],"link":2},
+        {"name":"BASEFX","flags":128,"offset":[1,2,3],"link":3},
+        {"name":"WORLDFX","flags":64,"offset":[1,2,3]},
+        {"name":"SECOND","flags":1},
+        {"name":"IMPACT","flags":0,"offset":[1,2,3]}]})");
+    test::FakeRenderDevice device;
+    Critters critters;
+    critters.open(device, root, nullptr, {}, 'C');
+    const auto id = critters.spawn(kBossCritter, Vec3{4, 0, 6}, kPi / 2, "DJINN");
+    REQUIRE(id.has_value());
+    critters.resize(*id, 2);
+    float step = 1.0f / 60;
+    SECTION("ordinary frames") {}
+    SECTION("coarse frames still emit each cue once") {
+        step = 0.25f;
+    }
+    const std::vector<EnemyView> party{playerAt(Vec3{20, 0, 6})};
+    critters.update(1, 1.0f / 30, party); // finish the one-frame READY before starting the clock
+    REQUIRE(critters.moveOf(*id) == "READY");
+    int cueCount = 0;
+    AnimationPlayer clock;
+    const auto& tree = critters.archiveOf(*id)->trees.tree(0);
+    clock.start(tree.sequences[1], 1);
+    while (!clock.finished()) {
+        clock.advance(step, false);
+        critters.update(1, step, party);
+        for (const CritterCue& cue : critters.takeCues()) {
+            ++cueCount;
+            REQUIRE(clock.frame() >= (cue.tree == "SECOND" ? 5 : 2));
+            if (cue.tree == "IMPACT") {
+                REQUIRE(clock.frame() >= 12);
+                REQUIRE_FALSE(cue.follows);
+                REQUIRE(cue.yaw == 0);
+                REQUIRE(glm::distance(cue.position, Vec3{10, 21, 6}) < 0.001f);
+            } else {
+                REQUIRE(clock.frame() < 12); // visual wind-up must precede damage
+            }
+            if (cue.tree == "ROOTFX") {
+                REQUIRE(cue.rootAttachment);
+                REQUIRE(cue.follows);
+                REQUIRE_FALSE(cue.node.has_value());
+                REQUIRE(cue.scale == 1); // parent carries the creature's scale exactly once
+                REQUIRE(glm::distance(cue.position, Vec3{10, 11, 4}) < 0.001f);
+            } else if (cue.tree == "NODEFX" || cue.tree == "WORLDFX") {
+                REQUIRE(cue.follows == (cue.tree == "NODEFX"));
+                REQUIRE(cue.node.has_value() == (cue.tree == "NODEFX"));
+                REQUIRE(glm::distance(cue.position, Vec3{14, 21, -2}) < 0.001f);
+            } else if (cue.tree == "BASEFX") {
+                REQUIRE_FALSE(cue.follows);
+                REQUIRE(cue.yaw == 0);
+                REQUIRE(glm::distance(cue.position, Vec3{6, 11, 12}) < 0.001f);
+            }
+        }
+    }
+    REQUIRE(cueCount == 6);
+    critters.close();
+    REQUIRE_FALSE(critters.rootTransformOf(*id).has_value());
+}
+
 TEST_CASE("anchored bosses hold their ground while pursuing bosses close for melee",
           "[game][boss-movement]") {
     const auto root = targetedCritter();

@@ -91,6 +91,7 @@ private:
         Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
         std::optional<std::string> node;
         Vec3 nodeOffset{0.0f};
+        bool rootAttachment = false;
     };
     std::vector<CritterEffect> m_critterEffects;
 

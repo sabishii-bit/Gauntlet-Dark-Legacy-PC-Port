@@ -181,6 +181,7 @@ std::optional<int> Critters::spawn(int kind, const Vec3& position, float yaw,
         }
         critter.yaw = yaw;
         critter.initialYaw = yaw;
+        critter.initialRoot = critter.position + Vec3{0.0f, stock->data.floorOffset(), 0.0f};
         // The table's explicit home is in model-root space; public positions are floors.
         critter.homePosition =
             stock->data.movement().home.has_value()
@@ -405,6 +406,14 @@ std::optional<Mat4> Critters::nodeTransformOf(int id, std::string_view node) con
                                             : std::nullopt;
 }
 
+std::optional<Mat4> Critters::rootTransformOf(int id) const {
+    if (id < 0 || id >= kMost) {
+        return std::nullopt;
+    }
+    const Critter& critter = m_critters[static_cast<std::size_t>(id)];
+    return critter.state != State::Inactive ? std::optional{modelTransform(critter)} : std::nullopt;
+}
+
 /** Blows and rings hit each player once per move. Breath emits cylinder contacts
  * throughout its harmful frames; the recipient owns its repeated-damage timer. */
 void Critters::strikeWith(Critter& critter, int id, const CritterMove& move, int damageIndex,
@@ -603,7 +612,6 @@ void Critters::update(int ticks, float seconds, std::span<const EnemyView> playe
             critter.move >= 0 ? &data.moves()[static_cast<std::size_t>(critter.move)] : nullptr;
         // The move plays; over its harmful frames its part strikes.
         if (move != nullptr && critter.player.playing()) {
-            const float before = critter.player.frame();
             critter.player.advance(seconds, false);
             critter.moveDone = critter.player.finished();
             critter.pose.evaluate(*critter.stock->tree, critter.player.sequence(),
@@ -613,34 +621,22 @@ void Critters::update(int ticks, float seconds, std::span<const EnemyView> playe
                 const int last = end < start ? start : end;
                 return start >= 0 && frame >= start && frame <= last;
             };
-            const auto isBreath = [&](int index) {
-                const CritterDamage* harm = data.damage(index);
-                return harm != nullptr && harm->type == CritterDamage::kBreath;
-            };
-            const bool breathMove = isBreath(move->damage0) || isBreath(move->damage1);
-            // Breath's effect starts at its authored sound frame and rides on the node.
-            // Other attack effects retain their existing landing-frame presentation:
-            // a swing's glow or a stomp's ring waits while its sound starts earlier.
-            const auto giveOnce = [&](unsigned int bit, int sound, const Vec3& where,
-                                      CueParts parts) {
+            // SFXX frames start sound and visuals together. The effect's own sequence
+            // contains its wind-up; delaying it until the damage frame delays that twice.
+            const auto giveOnce = [&](unsigned int bit, int sound, const Vec3& where) {
                 if (sound >= 0 && (critter.soundsGiven & bit) == 0) {
                     critter.soundsGiven |= bit;
-                    const auto node = breathMove && (bit == 1U || bit == 2U)
+                    const auto node = (bit == 1U || bit == 2U)
                                           ? std::optional<std::string_view>{move->colnode}
                                           : std::nullopt;
-                    cue(critter, i, sound, where, parts, node);
+                    cue(critter, i, sound, where, node);
                 }
             };
-            const bool lands = !breathMove && move->attack() && move->frameStart > move->soundFrame;
             if (frame >= move->soundFrame) {
-                giveOnce(1U, move->sound, critter.position,
-                         lands ? CueParts::Sound : CueParts::Both);
-            }
-            if (lands && frame >= move->frameStart) {
-                giveOnce(16U, move->sound, critter.position, CueParts::Effect);
+                giveOnce(1U, move->sound, critter.position);
             }
             if (frame >= move->sound2Frame) {
-                giveOnce(2U, move->sound2, critter.position, CueParts::Both);
+                giveOnce(2U, move->sound2, critter.position);
             }
             if (critter.state == State::Active) {
                 // Retail move 0x88 captures Player.effectpos at its first damage frame.
@@ -680,7 +676,7 @@ void Critters::update(int ticks, float seconds, std::span<const EnemyView> playe
                         targeted ? *critter.attackTarget +
                                        Vec3{modelTransform(critter) * Vec4{harm->offset, 0.0f}}
                                  : partPosition(critter, move->colnode) + harm->offset;
-                    giveOnce(bit, harm->sound, where, CueParts::Both);
+                    giveOnce(bit, harm->sound, where);
                     strikeWith(critter, i, *move, index, players);
                 };
                 if (!shot0) {
@@ -702,7 +698,6 @@ void Critters::update(int ticks, float seconds, std::span<const EnemyView> playe
                                                   harm->spewHalfAngle()});
                 }
             }
-            (void)before;
         } else {
             critter.moveDone = true;
         }
@@ -785,10 +780,9 @@ void Critters::hurt(int id, const EnemyHit& hit) {
     }
 }
 
-/** A sound record and what it links to become cues: the tree at `position` (offset the
- * record's way, turned with the body), riding the body when the record says so, and the
- * sound named for the level. */
-void Critters::cue(const Critter& critter, int id, int index, const Vec3& position, CueParts parts,
+/** Linked sound records become visual/audio cues. Parenting flags choose root/node
+ * transforms or fixed world positions; sounds resolve through the realm's name. */
+void Critters::cue(const Critter& critter, int id, int index, const Vec3& position,
                    std::optional<std::string_view> node) {
     const CritterData& data = critter.stock->data;
     for (int at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
@@ -798,31 +792,46 @@ void Critters::cue(const Critter& critter, int id, int index, const Vec3& positi
         }
         CritterCue out;
         out.critter = id;
-        if (parts != CueParts::Sound) {
-            out.tree = record->shows() ? record->tree : std::string{};
-        }
-        if (parts != CueParts::Effect) {
-            out.sound = record->soundFor(m_realm);
-        }
-        const float sy = std::sin(critter.yaw);
-        const float cy = std::cos(critter.yaw);
-        const Vec3 turned{record->offset.x * cy + record->offset.z * sy, record->offset.y,
-                          record->offset.z * cy - record->offset.x * sy};
-        out.position = position + turned;
-        out.yaw = critter.yaw;
+        out.tree = record->shows() ? record->tree : std::string{};
+        out.sound = record->soundFor(m_realm);
+        // Explicit positions are already world-space. Only a parent transform
+        // rotates an offset; impact marks must not inherit the attacker's yaw.
+        out.position = position + record->offset * critter.scale;
+        out.yaw = record->follows() ? critter.yaw : 0.0f;
         out.scale = record->scale * critter.scale;
         out.life = record->life;
         out.follows = record->follows();
         out.shakes = (record->flags & CritterSound::kShakes) != 0;
         // Without a root/entity/global parenting override, a move effect uses its
         // active animated node. Hit marks have no requested attachment.
-        constexpr unsigned int kAlternateParent = 0x2000U | 0x800U | 0x40U | 1U;
-        if (node.has_value() && !out.tree.empty() && (record->flags & kAlternateParent) == 0) {
+        constexpr unsigned int kAlternateParent = 0x2000U | 0x800U | 0x80U | 0x40U | 1U;
+        const bool root =
+            (record->flags & 1U) != 0 && (record->flags & (0x2000U | 0x800U | 0x40U)) == 0;
+        if (root && !out.tree.empty()) {
+            out.rootAttachment = true;
+            out.nodeOffset = record->offset;
+            out.position = Vec3{modelTransform(critter) * Vec4{record->offset, 1.0f}};
+            out.scale = record->scale;
+            out.follows = true;
+        } else if ((record->flags & 0x80U) != 0 && (record->flags & 0x801U) == 0) {
+            out.position = critter.initialRoot + record->offset * critter.scale;
+            out.follows = false;
+            out.yaw = 0;
+        } else if (node.has_value() && !out.tree.empty() &&
+                   (record->flags & kAlternateParent) == 0) {
             out.node = *node;
             out.nodeOffset = record->offset;
             out.position = Vec3{partTransform(critter, *node) * Vec4{record->offset, 1.0f}};
             out.scale = record->scale; // creature scale is already in the parent matrix
             out.follows = true;
+        } else if ((record->flags & 0x40U) != 0) {
+            // A move's unattached effect is placed at the active node once. Damage
+            // cues instead supply their already-resolved world point in position.
+            out.position = node.has_value()
+                               ? Vec3{partTransform(critter, *node) * Vec4{record->offset, 1.0f}}
+                               : position + record->offset * critter.scale;
+            out.follows = false;
+            out.yaw = 0;
         }
         if (!out.tree.empty() || !out.sound.empty()) {
             m_cues.push_back(std::move(out));

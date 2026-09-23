@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "game/screens/LevelFixtures.h"
 namespace {
 using namespace gdl;
@@ -55,6 +56,40 @@ TEST_CASE("fixture explosions resolve live nearby players before opponents and d
     f.fixtures.clear();
     f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
     REQUIRE(f.calls.size() == 2);
+}
+
+TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific items",
+          "[game][screens][level-fixtures][boss-stage][unpacked]") {
+    const auto root = test::unpackedOrSkip("ITEMS/LEVELB/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELB6/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELB6/world.json");
+    test::unpackedOrSkip("wdata/MOUNT.json");
+    Fixture fixture;
+    fixture.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("B6");
+    REQUIRE(level.has_value());
+    REQUIRE(fixture.world.load(fixture.device, root, *level));
+    REQUIRE(fixture.world.items().trees.find("WIZARD").has_value());
+    REQUIRE_FALSE(fixture.world.items().trees.find("FLAMEV").has_value());
+    REQUIRE(fixture.world.realmItems().trees.find("FLAMEV").has_value());
+    fixture.fixtures.bind(
+        {fixture.device, fixture.world, fixture.weapons, fixture.effects, fixture.audio, 1});
+    const Traps& traps = fixture.fixtures.traps();
+    REQUIRE(traps.size() == 10);
+    for (std::size_t i = 0; i < traps.size(); ++i) {
+        const ItemFigure& vent = traps.trap(i).figure;
+        REQUIRE(vent.hasFigure());
+        REQUIRE(vent.sequenceCount() == 4); // OFF, ONA, ON, ONB, not an invented one-tick cycle
+        REQUIRE(vent.ticksOf(2) > 1);
+    }
+    fixture.fixtures.clear(); // borrowed figures must go before either archive
+    fixture.world.clear();
+    REQUIRE_FALSE(fixture.world.realmItems().loaded());
 }
 
 TEST_CASE("fixture updates age per-player hazard cooldowns without reordering the party",

@@ -64,10 +64,11 @@ public:
         Obstacle box;
     };
 
-    /** `timeScale` stretches every rest and `damageScale` every hurt, as the level says. */
+    /** `timeScale` stretches every rest and `damageScale` every hurt, as the level says.
+     * The optional realm archive supplies figures absent from a boss's own archive. */
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
               const WorldCollision* collision, unsigned int seed = 1, float timeScale = 1.0f,
-              float damageScale = 1.0f);
+              float damageScale = 1.0f, ItemArchive* realmItems = nullptr);
     void clear();
     std::size_t size() const { return m_traps.size(); }
     const Trap& trap(std::size_t index) const { return *m_traps[index]; }
