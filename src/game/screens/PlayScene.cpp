@@ -91,7 +91,6 @@ constexpr f32 kRamReach = 0.3f;     ///< how near counts as run into
 constexpr s32 kSpecialPowerup = 9;  ///< the pickup subtype of the specials
 constexpr u32 kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
 constexpr std::string_view kStringsFile = "text/english.json";
-constexpr std::string_view kDeathSound = "S_PLAYERDIES";
 constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
 constexpr std::string_view kBarrelBreakSound = "S_BARREL_WOOD"; ///< with the realm's letter
 constexpr std::string_view kBarrelBlastSound = "S_BARREL_EXPLO";
@@ -107,16 +106,6 @@ constexpr f32 kGasDamage = 10.0f;
 constexpr f32 kGasRadius = 6.5f;
 constexpr f32 kGasSeconds = 4.0f;
 constexpr f32 kGasGapSeconds = 0.5f;
-constexpr f32 kPainEvery = 30.0f; ///< harm from blows between cries
-constexpr s32 kHeavyBlow = 60;    ///< a blow taking more than this is cried over at once
-constexpr u32 kPainCries = 4;     ///< S_<CLS>PAIN1 to 4
-constexpr std::string_view kHitSound = "S_PLYRDMG"; ///< a blow landing, now and then
-constexpr s32 kHitSoundGapTicks = 30;
-constexpr s32 kHealthLowMark = 150; ///< down to here: "needs food, badly"
-constexpr s32 kHealthLastMark = 50; ///< and here: the life force, or about to die
-constexpr std::string_view kBadlyLine = "S_BADLY";
-constexpr std::string_view kLifeForceLine = "S_LIFEFORCE";
-constexpr std::string_view kAboutToDieLine = "S_ABOUT";
 constexpr f32 kFallenSeconds = 3.0f; ///< from the last death to the tower
 constexpr s32 kFireTrap = 1;
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
@@ -651,14 +640,8 @@ void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed)
  * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
  * nowhere in particular (a trap underfoot); a shove halves either. */
 f32 PlayScene::guarded(usize index, f32 damage, bool directed) const {
-    const PlayerFigure* figure = index < m_players.size() ? m_players[index].figure.get() : nullptr;
-    if (figure == nullptr || damage <= 1.0f) {
-        return damage;
-    }
-    if (figure->animator().defending()) {
-        return directed ? damage * 0.5f : 0.0f;
-    }
-    return figure->animator().shoving() ? damage * 0.5f : damage;
+    return index < m_players.size() ? PlayerHealth::guarded(m_players[index], damage, directed)
+                                    : damage;
 }
 
 /** A sound of the realm's bank, whose names end in the realm's letter. */
@@ -1800,74 +1783,16 @@ void PlayScene::playGateSound(s32 /*subtype*/) {
  * the character dies, to the dying sound and its own last cry. Nobody is hurt in the tower,
  * nor once they have fallen. */
 void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
-    if (index >= m_players.size() || isDown(index) || m_world->isTower() || damage <= 0.0f) {
-        return;
-    }
-    const f32 unguarded = damage;
-    damage = guarded(index, damage, directed);
-    if (m_players[index].figure != nullptr && m_players[index].figure->animator().defending()) {
-        showBlock(index, unguarded - damage, damage);
-    }
-    if (damage <= 0.0f) {
+    if (index >= m_players.size()) {
         return;
     }
     const LevelInfo* level = m_world->level();
-    if (damage > 1.0f && level != nullptr) {
-        damage *= level->tuning.damage;
-    }
-    CharacterSave& save = m_players[index].actor.save();
-    const s32 left = save.health() - static_cast<s32>(std::lround(damage));
-    if (left < 1) {
-        // Health of nought would read as a class never played: the fallen keep a point that
-        // the status box does not show.
-        save.progress().health = 1;
-        m_players[index].life = PlayerLife::Dying;
-        m_players[index].turbo.reset();
-        m_audio.playNamed(kDeathSound);
-        cry(index, "DIE2");
-        log::info("Player {} has fallen", m_players[index].actor.player() + 1);
-        return;
-    }
-    const s32 before = save.health();
-    save.progress().health = left;
-    // Crossing into low health is remarked on by name rather than cried over.
-    if (before > kHealthLowMark && left <= kHealthLowMark) {
-        sayWithName(index, kBadlyLine);
-        return;
-    }
-    if (before > kHealthLastMark && left <= kHealthLastMark) {
-        sayWithName(index, (m_lowHealthTurn++ % 2 == 0) ? kLifeForceLine : kAboutToDieLine);
-        return;
-    }
-    switch (kind) {
-    case HurtKind::Burn:
-        cryPain(index);
-        m_players[index].painOwed = 0.0f;
-        break;
-    case HurtKind::Pierce: cry(index, "DIE1"); break;
-    case HurtKind::Gas: cry(index, "POISON"); break;
-    case HurtKind::Blow:
-        // A heavy blow gets a cry at once; lesser ones add up to one, and land with the
-        // sound of the hit itself now and then.
-        m_players[index].painOwed += damage;
-        if (before - left > kHeavyBlow) {
-            m_players[index].painOwed = 0.0f;
-            cryPain(index);
-        } else if (m_players[index].painOwed >= kPainEvery) {
-            m_players[index].painOwed -= kPainEvery;
-            cryPain(index);
-        } else if (m_players[index].hitSoundGap <= 0) {
-            m_audio.playNamed(kHitSound);
-            m_players[index].hitSoundGap = kHitSoundGapTicks;
-        }
-        break;
-    }
-}
-
-/** One of the character's four cries of pain, whichever comes. */
-void PlayScene::cryPain(usize index) {
-    const s32 which = 1 + static_cast<s32>(m_painRandom() % kPainCries);
-    cry(index, std::format("PAIN{}", which));
+    m_health.hurt(m_players[index], damage, kind, directed, m_world->isTower(),
+                  level != nullptr ? level->tuning.damage : 1.0f,
+                  {.block = [this, index](f32 taken, f32 left) { showBlock(index, taken, left); },
+                   .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
+                   .cry = [this, index](std::string_view voice) { cry(index, voice); },
+                   .named = [this, index](std::string_view line) { sayWithName(index, line); }});
 }
 
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says

@@ -286,7 +286,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `trapDamage` (times gain). The gain is the game's difficulty
   (`game.difficulty` in the settings: easy 0.667, normal 1, hard 1.5, the
   original's). G1 is 0.75 and 0.5, so its spikes do 10.
-* Harm and death (`PlayScene::hurt`, `blast`, `settleBlasts`): blasts hurt
+* Harm and death (`screens/PlayerHealth`, scene `blast`/`settleBlasts`): blasts hurt
   whoever is within their radius and strike the barrels in it (queued, so a
   barrel that blows up sets off its neighbours without recursion): a trapped
   chest 50, an exploding barrel 30, both over 12 units, a poison barrel a
