@@ -93,6 +93,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   It emits synchronous action cues without retaining the scene; turbo updates
   precede release cues and camera snapshots. Callbacks may not resize the party.
 * `world/PlayerFigure` owns costume selection, mesh/animation/voice archives,
+  while `world/PlayerArsenal` owns active missiles and thrown-potion models.
+  Bind the arsenal to borrowed level services after loading the shared weapon
+  archive; clear it before releasing player figures and that archive. Neither
+  owner may move while its model addresses are borrowed.
+  PlayerFigure owns
   node-name pose mapping and held/thrown weapon visuals. It has no scene or
   level dependency; the scene supplies actions, placement, lighting and alpha.
   Figure internals stay private. Borrowers of its missile model and effects

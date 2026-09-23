@@ -61,6 +61,7 @@ add_executable(tests
     game/world/SumnerHintsTests.cpp
     game/world/PlayerMissilesTests.cpp
     game/world/PlayerFigureTests.cpp
+    game/world/PlayerArsenalTests.cpp
     game/world/LevelSoundscapeTests.cpp
     game/menu/HintMenuTests.cpp
     game/world/PlacedItemsTests.cpp
