@@ -76,6 +76,21 @@ TEST_CASE("victory presentation is inert when cleared and tolerates an absent wi
     REQUIRE(presentation.state().stage() == Stage::None);
 }
 
+TEST_CASE("Skorne victory uses the fixed altar position regardless of party spread",
+          "[skorne][victory-presentation]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(wizardFixture("skorne-victory-position")));
+    test::FakeRenderDevice device;
+    BossVictoryPresentation presentation;
+    const std::array party{Vec3{40, 10, 50}, Vec3{-10, 5, 20}};
+    for (const s32 kind : {42, 43}) {
+        presentation.begin(kind, 'E', 0, 0, false);
+        presentation.bindWizard(device, archive, {0, -25, -19}, party);
+        REQUIRE(presentation.wizardSubject().position == Vec3{0, -12, 6});
+        REQUIRE(presentation.wizardSubject().attentionOffset == Vec3{0, 10, 0});
+    }
+}
+
 TEST_CASE("victory wizard placement animation lighting and fade follow the visit",
           "[game][screens][victory-presentation]") {
     const auto root = wizardFixture("victory-presentation-wizard");

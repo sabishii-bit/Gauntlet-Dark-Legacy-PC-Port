@@ -78,6 +78,11 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
         count += 1.0f;
     }
     m_position = centre / count + Vec3{0.0f, kWizardLift, 0.0f};
+    if (m_visit.kind() == 42 || m_visit.kind() == 43) {
+        // Both Skorne arenas use DoGoodWizard's fixed altar position, not the
+        // ordinary boss/party midpoint (0x80345a08..0x80345a10).
+        m_position = Vec3{0, -12, 6};
+    }
     const Vec3 toParty = partyCentre / std::max(count - 1.0f, 1.0f) - m_position;
     m_yaw = std::atan2(toParty.x, toParty.z);
 }

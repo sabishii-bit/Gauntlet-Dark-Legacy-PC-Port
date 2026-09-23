@@ -1,0 +1,8 @@
+{
+    "screen": "tower",
+    "level": "E2",
+    "party": [
+        {"player": 0, "class": "WAR", "color": "BLU", "name": "TEST", "level": 74, "health": 10000}
+    ],
+    "welcome": false
+}

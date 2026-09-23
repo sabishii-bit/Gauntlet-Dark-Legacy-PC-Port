@@ -82,6 +82,7 @@ add_library(game STATIC
     enemies/CritterArea.cpp
     enemies/CombatantAreas.cpp
     enemies/BossCoins.cpp
+    enemies/SkorneRelics.cpp
     enemies/Bosses.cpp
     enemies/LegendItems.cpp
     world/Chests.h
@@ -112,6 +113,7 @@ add_library(game STATIC
     world/PlayerFigure.cpp
     world/PlayerFamiliar.cpp
     world/CameraMovementLimit.cpp
+    world/SkorneArena.cpp
     screens/TowerPromotion.cpp
     screens/PlayScenePromotion.cpp
     world/PlayerArsenal.cpp

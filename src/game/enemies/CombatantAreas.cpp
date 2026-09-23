@@ -29,8 +29,9 @@ f32 arenaDistance(const Vec3& delta) {
 } // namespace
 
 bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound) {
-    constexpr u32 kAttachedAppearanceFlags = 1U | 2U | 4U | 0x800U;
+    constexpr u32 kAttachedAppearanceFlags = 1U | 2U | 4U | 0x40U | 0x800U;
     return sound != nullptr && (sound->flags & ~kAttachedAppearanceFlags) == 0 &&
+           ((sound->flags & 0x40U) == 0 || (sound->flags & 0x801U) == 0) &&
            damage.behaviorFlags == 0 && damage.speed == 0 && damage.morph < 0 &&
            damage.morphEnd < 0 && sound->link < 0;
 }
@@ -75,6 +76,15 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     if (worldParent.has_value()) {
         offset =
             Vec3{modelTransform(critter) * Vec4{damage.offset, 0}} + sound->offset * critter.scale;
+    }
+    if ((sound->flags & 0x40U) != 0) {
+        // Detached damage effects snapshot the hit node's world position. The
+        // slam's hand can lift again without dragging the ground wave with it.
+        const Vec3 position = Vec3{attachmentTransform(critter, node) * Vec4{sound->offset, 1}} +
+                              Vec3{modelTransform(critter) * Vec4{damage.offset, 0}};
+        // SfxSetMat copies the body's orientation, not the animated hand's.
+        worldParent = glm::rotate(glm::translate(Mat4{1}, position), critter.yaw, Vec3{0, 1, 0});
+        offset = Vec3{0};
     }
     const Vec2 angles{damage.pitch, damage.yaw};
     CritterArea area;

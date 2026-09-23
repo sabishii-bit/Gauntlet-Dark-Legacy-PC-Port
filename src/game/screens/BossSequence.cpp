@@ -5,6 +5,7 @@
 #include "engine/core/Types.h"
 
 #include "game/enemies/BossCoins.h"
+#include "game/enemies/SkorneRelics.h"
 #include "game/players/PowerupEffects.h"
 #include "game/world/PlayerFigure.h"
 
@@ -199,6 +200,13 @@ void BossSequence::spewCoins(const CombatSpew& spew, LevelOpponents& opponents,
     }
     for (const s32 generator : opponents.generators().within(spew.origin, kBossDeathBlastRadius)) {
         opponents.strikeGenerator(generator, kBossDeathBlast, -1);
+    }
+    if (const auto* level = r.world.level(); level != nullptr && level->bossType == 42) {
+        for (const auto& relic : SkorneRelics::spray(spew.velocity, spew.halfAngle)) {
+            r.world.throwItem(r.device, relic.name, spew.origin, relic.velocity,
+                              SkorneRelics::kNoGrabSeconds, SkorneRelics::kStrength);
+        }
+        return;
     }
     const auto count = static_cast<s32>(players.size());
     for (const SpewedCoin& coin : BossCoins::spray(r.world.ref().realmId, count, spew.velocity,
