@@ -73,14 +73,16 @@ void readTracks(std::span<const u8> file, usize base, u32 keyHeaderAt, usize nod
         for (usize s = 0; s < sequenceCount; ++s) {
             TreeSequence& sequence = tree.sequences[s];
             const usize info = infos + s * KeyHeader::kEntrySize;
-            if ((readU16LE(file, info) & NodeTrack::kChannels) == 0 || sequence.frameCount <= 0) {
+            if ((readU16LE(file, info) & NodeTrack::kChannels) == 0) {
                 continue;
             }
             NodeTrack track = readKeyTrack(
                 file, info, header, sequence.frameCount,
                 std::format("animation {} {} {}", tree.name, sequence.name, tree.nodes[n].name));
             track.node = static_cast<u32>(n);
-            sequence.tracks.push_back(std::move(track));
+            if (track.channelCount() != 0) {
+                sequence.tracks.push_back(std::move(track));
+            }
         }
     }
 }

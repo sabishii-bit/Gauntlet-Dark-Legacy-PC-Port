@@ -31,6 +31,46 @@ EnemyView playerAt(const Vec3& position, s32 player = 0) {
     return view;
 }
 
+TEST_CASE("Wraith waits in its lowered entrance pose and rises only in START3",
+          "[game][enemies][wraith][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/WRAITH/animations.json");
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'J');
+    REQUIRE(bosses.spawn(40, Vec3{0}, 0));
+    REQUIRE(bosses.moveName() == "START");
+    const auto initial = bosses.nodeTransform("ROOT");
+    REQUIRE(initial.has_value());
+    // The negative key cancels ROOT's 24.9408-unit bind offset above L1ROOT.
+    REQUIRE((*initial)[3].y == Approx(4.020784f));
+    const std::vector<EnemyView> far{playerAt({0, 0, 100})};
+    bosses.update(kTicks, kStep, far);
+    REQUIRE_FALSE(bosses.view().awake);
+    REQUIRE(bosses.nodeTransform("ROOT") == initial);
+
+    const std::vector<EnemyView> near{playerAt({0, 0, 40})};
+    bool second = false;
+    bool third = false;
+    bool risen = false;
+    for (s32 frame = 0; frame < 450 && !risen; ++frame) {
+        bosses.update(kTicks, kStep, near);
+        const auto pose = bosses.nodeTransform("ROOT");
+        REQUIRE(pose.has_value());
+        if (bosses.moveName() == "START" || bosses.moveName() == "START2") {
+            REQUIRE((*pose)[3].y == Approx((*initial)[3].y));
+            second |= bosses.moveName() == "START2";
+        } else if (bosses.moveName() == "START3") {
+            third = true;
+            risen |= (*pose)[3].y > (*initial)[3].y + 10.0f;
+        }
+        bosses.takeCues();
+    }
+    REQUIRE(second);
+    REQUIRE(third);
+    REQUIRE(risen);
+}
+
 TEST_CASE("Wraith health and range windows expose every authored attack family",
           "[game][enemies][wraith][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();

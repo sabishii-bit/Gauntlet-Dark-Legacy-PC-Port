@@ -923,6 +923,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   not ten units above that. SFXX flag 0x40000 owns a move-lifetime effect;
   CritterCopyAnim (0x8003c11c) cancels it on the next successful move change.
   Wraith START's long-lived INITFX must end before START2's GENFX/GENFX2.
+  Zero-duration animation sequences may still carry initial-only keys (0x4000):
+  preserve them in the format decoder. WRAITH INIT contains 34 pose tracks;
+  its ROOT's -24.920017 Y offset lowers the waiting body, while INITFX carries
+  a 0.001 scale. Dropping these keys exposes the bind pose and enlarges the
+  waiting effect. START and START2 use INIT; START3 plays the rising animation.
+  Existing exports need regeneration with the rebuilt gdlunpack:
+  `gdlunpack assets/GUNE5D/Gauntlet/MONSTERS assets/unpacked/MONSTERS --only WRAITH`.
   Projectile DMG_SUPER passes through players, with the shared player effect-gap
   gating repeat damage. DMG_SUPER+DMG_REFLECT spends its pass-through on contact
   and leaves an impact; ordinary snakes retain it through SNAKEFX -> SNAKELOOP.

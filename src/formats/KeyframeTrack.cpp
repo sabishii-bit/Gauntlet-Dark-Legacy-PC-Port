@@ -88,7 +88,9 @@ NodeTrack readKeyTrack(std::span<const u8> file, usize info, const KeyHeader& he
     const usize data = header.blocks + readU32LE(file, info + 4);
     track.flags = static_cast<u16>(type & kKeptFlags);
     const u32 channels = track.channelCount();
-    if (channels == 0 || frameCount <= 0) {
+    // A static sequence can have zero playback frames and still supply a pose.
+    // Initial-only records store their values directly, without a frame bitmap.
+    if (channels == 0 || (frameCount <= 0 && (type & kInitialOnly) == 0)) {
         track.flags = 0;
         track.frames = {0};
         return track;
