@@ -5,16 +5,21 @@
 #include "game/enemies/Combatant.h"
 
 namespace gdl::game {
-void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage) {
+bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound) {
+    constexpr u32 kAttachedAppearanceFlags = 1U | 2U | 4U | 0x800U;
+    return sound != nullptr && (sound->flags & ~kAttachedAppearanceFlags) == 0 &&
+           damage.behaviorFlags == 0 && damage.speed == 0 && damage.morph < 0 &&
+           damage.morphEnd < 0 && sound->link < 0;
+}
+
+void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage,
+                          std::string_view node) {
     const CombatEffectDefinition* sound = critter.stock->data.sound(damage.sound);
     if (sound == nullptr) {
         return;
     }
-    // The shipped Spider Queen and Wraith areas all use a root parent with no
-    // motion, morph or linked effects. Other policies need their own effect owner.
-    constexpr u32 kRootAppearanceFlags = 1U | 2U | 4U;
-    if ((sound->flags & 1U) == 0 || (sound->flags & ~kRootAppearanceFlags) != 0 ||
-        damage.behaviorFlags != 0 || damage.speed != 0 || damage.morph >= 0 || sound->link >= 0) {
+    // Other policies need a world-space/moving effect owner, not a guessed root.
+    if (!supportsArea(damage, sound)) {
         log::warn("critter {}: unsupported attached area policy for {}", critter.stock->data.name(),
                   sound->tree);
         return;
@@ -43,24 +48,32 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
     const Vec3 offset = damage.offset + sound->offset;
     const Vec2 angles{damage.pitch, damage.yaw};
     CritterArea area;
+    if ((sound->flags & CombatEffectDefinition::kFollows) == 0) {
+        area.node = node;
+    }
     area.local = CritterArea::placement(Mat4{1}, offset, angles);
     area.radius = damage.maxDistance * critter.scale;
     area.minDot = damage.minDot;
     area.damage = damage.damage * m_scales.damage;
     area.flags = damage.flags;
     area.secondsLeft = life;
+    area.lifetime = life;
+    area.expanding = damage.type == AttackDefinition::kRing;
     critter.areas.push_back(area);
 
     CombatCue cue;
     cue.critter = id;
     cue.tree = sound->shows() ? sound->tree : std::string{};
     cue.sound = sound->soundFor(m_realm);
-    cue.position = Vec3{(modelTransform(critter) * area.local)[3]};
+    cue.position = Vec3{(attachmentTransform(critter, area.node) * area.local)[3]};
     cue.scale = sound->scale;
     cue.life = life;
     cue.follows = true;
     cue.shakes = (sound->flags & CombatEffectDefinition::kShakes) != 0;
-    cue.rootAttachment = true;
+    cue.rootAttachment = area.node.empty();
+    if (!area.node.empty()) {
+        cue.node = area.node;
+    }
     cue.nodeOffset = offset;
     cue.pitchYaw = angles;
     cue.loop = false;
@@ -70,8 +83,8 @@ void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage
 }
 
 void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players) {
-    const Mat4 parent = modelTransform(critter);
     for (const CritterArea& area : critter.areas) {
+        const Mat4 parent = attachmentTransform(critter, area.node);
         for (const EnemyView& player : players) {
             if (!area.touches(parent, player)) {
                 continue;
@@ -79,7 +92,7 @@ void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> p
             CombatBlow blow;
             blow.player = player.player;
             blow.critter = id;
-            blow.damage = area.damage;
+            blow.damage = area.currentDamage();
             blow.flags = area.flags;
             if (blow.damage < 5) {
                 constexpr u32 kHeavyHitFlags = 0x170;

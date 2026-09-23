@@ -916,6 +916,31 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   first, then realm textures, to world geometry, texture animations and particles.
   LEVELD5's torch particles reference LEVELD's P_TORCH, absent from its own item
   archive; `[boss-arena]` verifies the borrowed texture rather than a white fallback.
+* Chimera SUPER's type-3 NULLFX now uses the expanding `CritterArea` path rather
+  than an immediate omnidirectional full-radius hit. In ProcessEffects (0x80094be0),
+  phase is remaining/lifetime: radius is maxDistance*(1.33-phase), damage is
+  baseDamage*1.5*(phase-0.33), and both stop at phase <= 0.33. The directional
+  cone still applies, and hit immunity lasts remaining+0.066667 seconds (subject
+  to the existing damage threshold/half-second override). Stationary attached
+  type-3 effects with supported policies share this path; unsupported policies
+  retain the older approximation and are not validated retail behavior.
+  Unflagged attachments follow the move's animated node, while SFXX 0x800 fire
+  effects (SFIRE1/2) follow the full body transform, including rotated offsets.
+  `[chimera]` covers the curve, synthetic execution without assets, and actual
+  SUPER/fire cues. `python scripts/scenario.py chimera` loads A5; unpack LEVELA5
+  (world and items), LEVELA (realm textures), and MONSTERS/CHIMERA first.
+  **Chimera is not behavior-complete:** the current actor loads TYPE row zero
+  only. Retail CritterNewInst (0x8003e048) walks children EAGLE/LION/SNAKE,
+  sharing CHIM's tree but detaching BODY1_EAGLE/LION/SNAKE animation subtrees.
+  Each has 15 local moves, its own health/collision nodes and damage bindings.
+  CritterBossAI (0x80039ad8) synchronizes them with body patterns or body SYNC;
+  outside those windows they copy the body's sequence/frame. Independent
+  unsynchronized actors are not an equivalent implementation. Head hit routing,
+  death/stumps, legend-item head removal and type-56 repositioning remain open.
+  A5 also has three tier-1 SAFEROCK instances and only SAFEROCK1L1 artwork.
+  The current loader warns about absent optional tiers 0/2/3; those warnings
+  do not mean the initial tier-1 cover mesh is missing. Do not copy Dragon's
+  three-tier rock artwork into this arena to suppress the warnings.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
   is the original's HUD meter (`HealthMeterStart/Update`, boss.c 471-585):

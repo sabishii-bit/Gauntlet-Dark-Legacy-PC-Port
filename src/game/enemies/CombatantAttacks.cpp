@@ -135,8 +135,9 @@ void Combatant::cue(const Actor& critter, s32 id, s32 index, const Vec3& positio
         // Without a root/entity/global parenting override, a move effect uses its
         // active animated node. Hit marks have no requested attachment.
         constexpr u32 kAlternateParent = 0x2000U | 0x800U | 0x80U | 0x40U | 1U;
-        const bool root =
-            (record->flags & 1U) != 0 && (record->flags & (0x2000U | 0x800U | 0x40U)) == 0;
+        // SFXX 0x800 selects the animation root's parent (the body transform).
+        // Chimera's SFIRE1/2 need rotated offsets, not translation-only following.
+        const bool root = (record->flags & 0x801U) != 0 && (record->flags & (0x2000U | 0x40U)) == 0;
         if (root && !out.tree.empty()) {
             out.rootAttachment = true;
             out.nodeOffset = record->offset;
