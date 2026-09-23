@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <string>
@@ -135,10 +136,23 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
     REQUIRE(players[0].breathGap == 0.25f);
 }
 
-TEST_CASE("the level keeps the dragon FIRE effect attached to its animated node",
-          "[game][screens][level-opponents][breath][unpacked]") {
+TEST_CASE("the level keeps boss effects on their animated node or full model root",
+          "[game][screens][level-opponents][breath][boss-effects][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
     test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    int kind = 34;
+    float distance = 25;
+    bool rootEffect = false;
+    CritterData lichData;
+    SECTION("Dragon FIRE rides its animated mouth") {}
+    SECTION("Lich attack wind-up rides its elevated root") {
+        test::unpackedOrSkip("critter/LICH.json");
+        test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+        kind = 41;
+        distance = 6;
+        rootEffect = true;
+        REQUIRE(lichData.load(root / "critter/LICH.json"));
+    }
     test::FakeRenderDevice device;
     LevelWorld world;
     ItemArchive weapons;
@@ -146,9 +160,9 @@ TEST_CASE("the level keeps the dragon FIRE effect attached to its animated node"
     LevelSoundscape audio;
     LevelOpponents opponents;
     std::array<PlayerRuntime, 1> players;
-    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 25}, 0);
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, distance}, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-    REQUIRE(opponents.bosses().spawn(34, Vec3{0}, 0));
+    REQUIRE(opponents.bosses().spawn(kind, Vec3{0}, 0));
     LevelOpponents::Events events;
     events.hurt = [](std::size_t, float, HurtKind, bool) {};
     events.blast = [](const Vec3&, float, float) {};
@@ -160,28 +174,37 @@ TEST_CASE("the level keeps the dragon FIRE effect attached to its animated node"
     events.advanceVictory = [](int, float) {};
     events.levels = [] {};
     events.award = [](int, int, bool) {};
-    unsigned int fireId = 0;
+    unsigned int effectId = 0;
     int attachedFrames = 0;
     for (int tick = 0; tick < 2400 && attachedFrames < 20; ++tick) {
         opponents.update(1, 1.0f / 60, players, {}, events);
         for (std::size_t e = 0; e < effects.count(); ++e) {
             const auto& effect = effects.effect(e);
-            if (effect.name != "FIRE") {
+            const bool rootAttack = effect.name.starts_with("ATK") &&
+                                    std::ranges::any_of(lichData.sounds(), [&](const auto& sound) {
+                                        return sound.tree == effect.name && (sound.flags & 1U) != 0;
+                                    });
+            if (rootEffect ? !rootAttack : effect.name != "FIRE") {
                 continue;
             }
-            fireId = effect.id;
+            effectId = effect.id;
             REQUIRE(effect.attachment.has_value());
-            const auto parent = opponents.bosses().nodeTransform("NODE#01");
+            const auto parent = rootEffect ? opponents.bosses().rootTransform()
+                                           : opponents.bosses().nodeTransform("NODE#01");
             REQUIRE(parent.has_value());
+            CAPTURE(effect.name, effect.position.x, effect.position.y, effect.position.z,
+                    (*parent)[3].x, (*parent)[3].y, (*parent)[3].z, effect.scale);
             REQUIRE(effect.transform() == *parent);
-            REQUIRE(effect.particles.field().size() == 2);
+            if (!rootEffect) {
+                REQUIRE(effect.particles.field().size() == 2);
+            }
             ++attachedFrames;
         }
         effects.update(1.0f / 60);
     }
     REQUIRE(attachedFrames == 20);
-    REQUIRE(effects.playing(fireId));
+    REQUIRE(effects.playing(effectId));
     opponents.close();
-    REQUIRE_FALSE(effects.playing(fireId));
+    REQUIRE_FALSE(effects.playing(effectId));
 }
 } // namespace

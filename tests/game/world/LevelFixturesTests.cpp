@@ -259,6 +259,40 @@ TEST_CASE("a trap rests, comes out to hurt whoever is in it, and rests again",
     REQUIRE(hits <= armedFrames); // no oftener than its gap allows
 }
 
+TEST_CASE("traps prefer level-specific figures and fall back to the realm archive",
+          "[game][world][fixtures][boss-stage]") {
+    Fixture f("fixtures-trap-archives");
+    const auto directory = test::scratchDirectory("fixtures-trap-figure");
+    std::filesystem::create_directories(directory / "models");
+    std::filesystem::create_directories(directory / "textures");
+    writeTextFile(directory / "models/body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(
+        directory / "objects.json",
+        R"({"objects":[{"index":0,"name":"SPIKESBODY","file":"models/body.obj","meshTriangles":1}]})");
+    writeFile(directory / "textures/skin.png", test::kTinyPng);
+    writeTextFile(
+        directory / "textures.json",
+        R"({"bitmaps":[{"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    writeTextFile(
+        directory / "animations.json",
+        R"({"trees":[{"name":"SPIKES","nodes":[{"name":"BODY","object":"SPIKESBODY","parent":-1,"position":[0,0,0]}],
+                    "sequences":[{"name":"OFF","frames":1},{"name":"ON","frames":20}]}]})");
+    REQUIRE(f.items.load(directory));
+    ItemArchive missing;
+    Traps traps;
+    SECTION("realm archive supplies missing boss-level figures") {
+        REQUIRE(traps.bind(f.device, f.layout, missing, nullptr, 1, 1, 1, &f.items));
+    }
+    SECTION("level-specific figures retain precedence") {
+        REQUIRE(traps.bind(f.device, f.layout, f.items, nullptr, 1, 1, 1, &missing));
+    }
+    REQUIRE(traps.size() == 1);
+    REQUIRE(traps.trap(0).figure.hasFigure());
+    REQUIRE(traps.trap(0).figure.sequenceCount() > 1);
+    REQUIRE(traps.trap(0).figure.ticksOf(1) > 1);
+}
+
 TEST_CASE("a level scales how fast its traps cycle and how much they hurt",
           "[game][world][fixtures]") {
     Fixture f("fixtures-trap-scales");

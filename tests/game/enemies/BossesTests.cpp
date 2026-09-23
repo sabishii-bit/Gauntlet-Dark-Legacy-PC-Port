@@ -107,20 +107,21 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE_FALSE(blows.empty());
     REQUIRE(blows[0].player == 0);
     REQUIRE(bosses.position()->z > 5.0f);
-    // Its entrance played its own effect with its sound; an attack's sound came at the
-    // attack's start but its glow only as the blow landed, riding along with it.
+    // Sounds and visuals start together at sfxFrame; the glow's own sequence contains
+    // the wind-up. Root-attached effects follow the full transform, not just translation.
     const std::vector<CritterCue> cues = bosses.takeCues();
     bool entrance = false;
     bool swingSound = false;
     bool swingGlow = false;
     for (const CritterCue& cue : cues) {
         entrance = entrance || (cue.tree == "GENFX" && cue.sound == "S_LICHENT");
-        if (cue.tree.empty() && cue.sound.starts_with("S_LICHATK")) {
+        if (cue.sound.starts_with("S_LICHATK")) {
             swingSound = true;
         }
-        if (cue.tree.starts_with("ATK") && cue.sound.empty()) {
+        if (cue.tree.starts_with("ATK")) {
             swingGlow = true;
             REQUIRE(cue.follows);
+            REQUIRE(cue.rootAttachment);
         }
     }
     REQUIRE(entrance);

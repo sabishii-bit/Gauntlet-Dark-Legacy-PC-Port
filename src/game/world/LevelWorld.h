@@ -102,6 +102,8 @@ public:
     /** The level's item archive, lending the torch flames and Sumner; empty when it is not
      * unpacked. */
     ItemArchive& items() { return m_items; }
+    /** Common realm figures still available when a boss supplies its own item archive. */
+    ItemArchive& realmItems() { return m_realmItems; }
     ItemArchive& powerups() { return m_powerups; }
     bool hasItems() const { return m_items.loaded(); }
     const WorldCollision& collision() const { return m_collision; }
@@ -160,6 +162,7 @@ private:
     TextureSet m_textures;
     AnimationSet m_animations; ///< the level's texture animations
     ItemArchive m_items;
+    ItemArchive m_realmItems;
     ItemArchive m_powerups;
     PlacedItems m_placedItems;
     WorldLayout m_layout;

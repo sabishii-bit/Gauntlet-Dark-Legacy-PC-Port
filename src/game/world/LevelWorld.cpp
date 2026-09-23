@@ -36,6 +36,10 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         log::warn(
             "Level: without the realm's item archive its borrowed textures and figures are absent");
     }
+    if (own && m_ref.items != m_ref.ownItems &&
+        std::filesystem::exists(unpackedRoot / m_ref.items / "animations.json")) {
+        m_realmItems.load(unpackedRoot / m_ref.items);
+    }
     // The item archive lends the level its external textures and the torches' frames.
     const std::array<TextureSet*, 1> lenders{&m_items.textures};
     const std::span<TextureSet* const> lent =
@@ -164,6 +168,7 @@ void LevelWorld::clear() {
     m_markers.clear();
     m_textures.releaseTextures();
     m_items.clear();
+    m_realmItems.clear();
     m_frameRemainder = 0.0f;
     m_level = nullptr;
     m_audio = nullptr;
