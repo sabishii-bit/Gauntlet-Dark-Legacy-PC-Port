@@ -14,6 +14,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "formats/CritterWad.h"
+#include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterBreath.h"
 #include "game/enemies/CritterData.h"
 #include "game/enemies/Critters.h"
@@ -114,7 +115,7 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE(golem.parts().size() == 6);
     const auto walk = golem.moveNamed("WALK");
     REQUIRE(walk.has_value());
-    REQUIRE(golem.moves()[*walk].type == CritterMove::kWalk);
+    REQUIRE(golem.moves()[*walk].type == MoveDefinition::kWalk);
     REQUIRE(golem.moves()[*walk].speed == 5.0f);
     REQUIRE(golem.moves()[*walk].colnode.empty()); // a tab in the file
     REQUIRE(golem.moves()[*walk].target.allows(8.0f, 0.0f, 0.0f));
@@ -131,8 +132,8 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE(golem.moves()[*swing].harms());
     REQUIRE(golem.moves()[*swing].colnode == "BALL");
     REQUIRE(golem.damage(golem.moves()[*swing].damage0)->damage == 10.0f);
-    REQUIRE(golem.moveOfType(CritterMove::kDeath).has_value());
-    REQUIRE(golem.moveOfType(CritterMove::kRoar).has_value());
+    REQUIRE(golem.moveOfType(MoveDefinition::kDeath).has_value());
+    REQUIRE(golem.moveOfType(MoveDefinition::kRoar).has_value());
     REQUIRE_FALSE(golem.damage(99));
     // Its sounds and effects: the walk's two steps, the swing's swish at its sixth frame,
     // the stomp's ring where the heel lands, and the marks of a blow and a missile on it.
@@ -145,12 +146,12 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE(golem.moves()[*swing].sound == 9);
     REQUIRE(golem.moves()[*swing].soundFrame == 6);
     REQUIRE(golem.sound(9)->soundFor('A') == "S_GOLASWING");
-    const CritterSound* stomp = golem.sound(10);
+    const CombatEffectDefinition* stomp = golem.sound(10);
     REQUIRE(stomp != nullptr);
     REQUIRE(stomp->tree == "EXPRING");
     REQUIRE(stomp->shows());
     REQUIRE(stomp->offset == Vec3{0.0f, 1.0f, 0.0f});
-    REQUIRE((stomp->flags & CritterSound::kShakes) != 0);
+    REQUIRE((stomp->flags & CombatEffectDefinition::kShakes) != 0);
     REQUIRE(golem.damage(3)->sound == 10);
     REQUIRE_FALSE(golem.sound(8)->shows()); // NULLFX
     REQUIRE(golem.hitSoundClose() == 0);
@@ -181,20 +182,21 @@ TEST_CASE("the dragon's animated root sits above its floor anchor, including hit
     WorldCollision collision;
     const auto ground = floor();
     collision.build(ground);
-    Critters critters;
-    critters.open(device, root, &collision, EnemyScales{}, 'B');
-    const auto id = critters.spawn(kBossCritter, Vec3{0.0f, 2.0f, 0.0f}, 0.0f, "DRAGON");
-    REQUIRE(id.has_value());
-    REQUIRE(critters.positionOf(*id) == Vec3{0.0f}); // collision continues to use the floor
-    const CritterData* data = critters.dataOf(*id);
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, &collision, EnemyScales{}, 'B');
+    REQUIRE(fixture.spawn("DRAGON", Vec3{0.0f, 2.0f, 0.0f}, 0.0f));
+    REQUIRE(critters.present());
+    REQUIRE(critters.position() == Vec3{0.0f}); // collision continues to use the floor
+    const CritterData* data = critters.data();
     REQUIRE(data != nullptr);
     REQUIRE(data->floorOffset() == original.types.front().floorOffset);
-    auto* archive = critters.archiveOf(*id);
+    auto* archive = critters.archive();
     REQUIRE(archive != nullptr);
     const auto treeIndex = archive->trees.find(data->tree());
     REQUIRE(treeIndex.has_value());
     const auto& tree = archive->trees.tree(*treeIndex);
-    const auto start = data->moveOfType(CritterMove::kStart);
+    const auto start = data->moveOfType(MoveDefinition::kStart);
     REQUIRE(start.has_value());
     const auto sequence = tree.findSequence(data->moves()[*start].anim);
     REQUIRE(sequence.has_value());
@@ -221,7 +223,7 @@ TEST_CASE("the dragon's animated root sits above its floor anchor, including hit
     REQUIRE(error < 0.0001f);
     EnemyHit hit;
     hit.damage = 20.0f;
-    critters.hurt(*id, hit);
+    critters.hurt(hit);
     const auto cues = critters.takeCues();
     REQUIRE_FALSE(cues.empty());
     const auto* sound = data->sound(data->hitSoundFar());
@@ -234,12 +236,13 @@ TEST_CASE("the dragon wears its ice texture while frozen and restores its skin w
     const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
     test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, EnemyScales{}, 'B');
-    const auto id = critters.spawn(kBossCritter, Vec3{0.0f}, 0.0f, "DRAGON");
-    REQUIRE(id.has_value());
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, EnemyScales{}, 'B');
+    REQUIRE(fixture.spawn("DRAGON", Vec3{0.0f}, 0.0f));
+    REQUIRE(critters.present());
     test::FakeTexture ice{1, 1};
-    critters.freeze(*id, 1200);
+    critters.freeze(1200);
     const auto checkSkin = [&](bool frozenSkin) {
         device.draws.clear();
         critters.draw(device, Mat4{1.0f}, {}, &ice);
@@ -261,20 +264,20 @@ TEST_CASE("the dragon wears its ice texture while frozen and restores its skin w
     // Appearance belongs to this draw, not to simulation state or the shared model.
     device.draws.clear();
     critters.draw(device, Mat4{1.0f}, {});
-    REQUIRE(critters.frozen(*id));
+    REQUIRE(critters.frozen());
     REQUIRE_FALSE(device.draws.empty());
     for (const auto& draw : device.draws) {
         REQUIRE(draw.state.maskedTexture == nullptr);
     }
     checkSkin(true);
-    critters.update(1040, 1040.0f / 60.0f, {}); // 160 remain: bit 3 clear
+    fixture.update(1040, 1040.0f / 60.0f, {}); // 160 remain: bit 3 clear
     checkSkin(true);
-    critters.update(8, 8.0f / 60.0f, {}); // 152 remain: bit 3 set
+    fixture.update(8, 8.0f / 60.0f, {}); // 152 remain: bit 3 set
     checkSkin(false);
-    critters.update(8, 8.0f / 60.0f, {}); // 144 remain: bit 3 clear
+    fixture.update(8, 8.0f / 60.0f, {}); // 144 remain: bit 3 clear
     checkSkin(true);
-    critters.update(144, 144.0f / 60.0f, {});
-    REQUIRE_FALSE(critters.frozen(*id));
+    fixture.update(144, 144.0f / 60.0f, {});
+    REQUIRE_FALSE(critters.frozen());
     checkSkin(false);
 }
 
@@ -283,25 +286,26 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
     const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
     test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'B');
-    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DRAGON");
-    REQUIRE(id.has_value());
-    const CritterData& data = *critters.dataOf(*id);
-    auto* archive = critters.archiveOf(*id);
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'B');
+    REQUIRE(fixture.spawn("DRAGON", Vec3{0}, 0));
+    REQUIRE(critters.present());
+    const CritterData& data = *critters.data();
+    auto* archive = critters.archive();
     REQUIRE(archive != nullptr);
     const auto treeIndex = archive->trees.find(data.tree());
     REQUIRE(treeIndex.has_value());
     const auto& tree = archive->trees.tree(*treeIndex);
     std::vector<EnemyView> players{playerAt({0, 0, 25}), playerAt({0, 0, 25}, 1)};
-    const CritterMove* move = nullptr;
+    const MoveDefinition* move = nullptr;
     for (s32 tick = 0; tick < 2400; ++tick) {
-        critters.update(1, 1.0f / 60, players);
-        const auto index = data.moveNamed(critters.moveOf(*id));
+        fixture.update(1, 1.0f / 60, players);
+        const auto index = data.moveNamed(critters.moveName());
         REQUIRE(index.has_value());
         const auto& candidate = data.moves()[*index];
         const auto* damage = data.damage(candidate.damage0);
-        if (damage != nullptr && damage->type == CritterDamage::kBreath) {
+        if (damage != nullptr && damage->type == AttackDefinition::kBreath) {
             move = &candidate;
             break;
         }
@@ -328,8 +332,8 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
         const auto breath = CritterBreath::fromNode(parent, *data.damage(move->damage0));
         // A second player follows the damaging segment, independently of move targeting.
         players[1].position = (breath.origin + breath.end) * 0.5f - Vec3{0, 3, 0};
-        critters.update(1, 1.0f / 60, players);
-        REQUIRE(critters.moveOf(*id) == move->name);
+        fixture.update(1, 1.0f / 60, players);
+        REQUIRE(critters.moveName() == move->name);
         for (const auto& cue : critters.takeCues()) {
             if (cue.tree != "FIRE") {
                 continue;
@@ -358,8 +362,8 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
     }
     REQUIRE(fire);
     REQUIRE(contacts > 1); // not suppressed forever by struckThisMove
-    critters.close();
-    REQUIRE_FALSE(critters.nodeTransformOf(*id, "NODE#01").has_value());
+    critters.clear();
+    REQUIRE_FALSE(critters.nodeTransform("NODE#01").has_value());
 }
 
 TEST_CASE("a boss's death record throws its coins all round it, up at seventy degrees",
@@ -373,12 +377,12 @@ TEST_CASE("a boss's death record throws its coins all round it, up at seventy de
     REQUIRE(file.damages[1].maxSpeed == 30.0f);
     CritterData lich;
     REQUIRE(lich.load(root / "critter/LICH.json"));
-    const auto death = lich.moveOfType(CritterMove::kDeath);
+    const auto death = lich.moveOfType(MoveDefinition::kDeath);
     REQUIRE(death.has_value());
     REQUIRE(lich.moves()[*death].frameStart == 95);
-    const CritterDamage* spew = lich.damage(lich.moves()[*death].damage0);
+    const AttackDefinition* spew = lich.damage(lich.moves()[*death].damage0);
     REQUIRE(spew != nullptr);
-    REQUIRE(spew->type == CritterDamage::kSpew);
+    REQUIRE(spew->type == AttackDefinition::kSpew);
     if (spew->speed == 0.0f) {
         SKIP("the critter data was unpacked before the spew's speed was read");
     }
@@ -437,7 +441,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(critters.positionOf(*id).z > from.z - 6.0f);
     REQUIRE(std::abs(critters.yawOf(*id)) > 3.0f); // facing -z
     // Within seven it attacks, and the blows land on the player.
-    std::vector<CritterBlow> blows;
+    std::vector<CombatBlow> blows;
     bool attacked = false;
     for (s32 i = 0; i < 1200 && blows.empty(); ++i) {
         critters.update(kTicks, kStep, party);
@@ -454,11 +458,11 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(critters.positionOf(*id).z > -25.0f + 4.0f); // never onto the player
     // Its walk sounded its steps as it came (the fields' own, by the realm's letter), and
     // its attack its swish, or its stomp's ring where the heel came down; each once a move.
-    const std::vector<CritterCue> cues = critters.takeCues();
+    const std::vector<CombatCue> cues = critters.takeCues();
     usize steps = 0;
     usize swishes = 0;
     usize rings = 0;
-    for (const CritterCue& cue : cues) {
+    for (const CombatCue& cue : cues) {
         REQUIRE(cue.critter == *id);
         steps += cue.sound == "S_GENGSTEP1" || cue.sound == "S_GENGSTEP2" ? 1U : 0U;
         swishes += cue.sound == "S_GOLGSWING" ? 1U : 0U;
@@ -613,7 +617,7 @@ TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, los
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.moveOf(*id) == "READY");
-    REQUIRE(critters.moveTypeOf(*id) == CritterMove::kReady);
+    REQUIRE(critters.moveTypeOf(*id) == MoveDefinition::kReady);
     REQUIRE(critters.targetOf(*id) == 0);
     REQUIRE(critters.positionOf(*id) == Vec3{0.0f, 0.0f, 0.0f});
     // Asked to roar, it does as soon as its stance is over, and then holds again.
@@ -621,7 +625,7 @@ TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, los
     bool roared = false;
     for (s32 i = 0; i < 600 && !roared; ++i) {
         critters.update(kTicks, kStep, party);
-        roared = critters.moveTypeOf(*id) == CritterMove::kRoar;
+        roared = critters.moveTypeOf(*id) == MoveDefinition::kRoar;
     }
     REQUIRE(roared);
     for (s32 i = 0; i < 600; ++i) {
@@ -728,12 +732,13 @@ TEST_CASE("move effects without an animated node use the root rather than the bo
       "sounds":[{"name":"GRAVEL","flags":0,"offset":[1,2,3],"link":1},
         {"name":"WORLD","flags":64,"offset":[1,2,3]}]})");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'G');
-    const auto id = critters.spawn(kBossCritter, Vec3{4, 0, 6}, kPi / 2, "DJINN");
-    REQUIRE(id.has_value());
-    critters.resize(*id, 2);
-    critters.update(kTicks, kStep, {});
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'G');
+    REQUIRE(fixture.spawn("DJINN", Vec3{4, 0, 6}, kPi / 2));
+    REQUIRE(critters.present());
+    critters.resize(2);
+    fixture.update(kTicks, kStep, {});
     const auto cues = critters.takeCues();
     REQUIRE(cues.size() == 2);
     for (const auto& cue : cues) {
@@ -741,7 +746,7 @@ TEST_CASE("move effects without an animated node use the root rather than the bo
         REQUIRE(cue.follows == (cue.tree == "GRAVEL"));
     }
     REQUIRE(cues[0].node.has_value());
-    const auto parent = critters.nodeTransformOf(*id, *cues[0].node);
+    const auto parent = critters.nodeTransform(*cues[0].node);
     REQUIRE(parent.has_value());
     REQUIRE(glm::distance(Vec3{*parent * Vec4{cues[0].nodeOffset, 1}}, cues[0].position) < 0.001f);
 }
@@ -751,21 +756,22 @@ TEST_CASE("the Lich's emergence gravel attaches at his ground root",
     const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
     test::unpackedOrSkip("MONSTERS/LICH/animations.json");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'G');
-    const auto id = critters.spawn(kBossCritter, Vec3{4, 0, 6}, kPi / 2, "LICH");
-    REQUIRE(id.has_value());
-    REQUIRE(critters.dataOf(*id)->originOffset() == Vec3{0, 10, 0});
-    REQUIRE(critters.moveOf(*id) == "START");
-    critters.update(kTicks, kStep, {});
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'G');
+    REQUIRE(fixture.spawn("LICH", Vec3{4, 0, 6}, kPi / 2));
+    REQUIRE(critters.present());
+    REQUIRE(critters.data()->originOffset() == Vec3{0, 10, 0});
+    REQUIRE(critters.moveName() == "START");
+    fixture.update(kTicks, kStep, {});
     const auto cues = critters.takeCues();
-    const auto gravel = std::ranges::find(cues, "GENFX", &CritterCue::tree);
+    const auto gravel = std::ranges::find(cues, "GENFX", &CombatCue::tree);
     REQUIRE(gravel != cues.end());
     REQUIRE(gravel->follows);
     REQUIRE(gravel->node.has_value());
     REQUIRE(gravel->node->empty());
     REQUIRE(glm::distance(gravel->position, Vec3{4, 0, 6}) < 0.001f);
-    const auto parent = critters.nodeTransformOf(*id, *gravel->node);
+    const auto parent = critters.nodeTransform(*gravel->node);
     REQUIRE(parent.has_value());
     REQUIRE(glm::distance(Vec3{(*parent)[3]}, gravel->position) < 0.001f);
 }
@@ -822,27 +828,28 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
         {"name":"SECOND","flags":1},
         {"name":"IMPACT","flags":0,"offset":[1,2,3]}]})");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{4, 0, 6}, kPi / 2, "DJINN");
-    REQUIRE(id.has_value());
-    critters.resize(*id, 2);
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{4, 0, 6}, kPi / 2));
+    REQUIRE(critters.present());
+    critters.resize(2);
     f32 step = 1.0f / 60;
     SECTION("ordinary frames") {}
     SECTION("coarse frames still emit each cue once") {
         step = 0.25f;
     }
     const std::vector<EnemyView> party{playerAt(Vec3{20, 0, 6})};
-    critters.update(1, 1.0f / 30, party); // finish the one-frame READY before starting the clock
-    REQUIRE(critters.moveOf(*id) == "READY");
+    fixture.update(1, 1.0f / 30, party); // finish the one-frame READY before starting the clock
+    REQUIRE(critters.moveName() == "READY");
     s32 cueCount = 0;
     AnimationPlayer clock;
-    const auto& tree = critters.archiveOf(*id)->trees.tree(0);
+    const auto& tree = critters.archive()->trees.tree(0);
     clock.start(tree.sequences[1], 1);
     while (!clock.finished()) {
         clock.advance(step, false);
-        critters.update(1, step, party);
-        for (const CritterCue& cue : critters.takeCues()) {
+        fixture.update(1, step, party);
+        for (const CombatCue& cue : critters.takeCues()) {
             ++cueCount;
             REQUIRE(clock.frame() >= (cue.tree == "SECOND" ? 5 : 2));
             if (cue.tree == "IMPACT") {
@@ -871,8 +878,8 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
         }
     }
     REQUIRE(cueCount == 6);
-    critters.close();
-    REQUIRE_FALSE(critters.rootTransformOf(*id).has_value());
+    critters.clear();
+    REQUIRE_FALSE(critters.rootTransform().has_value());
 }
 
 TEST_CASE("anchored bosses hold their ground while pursuing bosses close for melee",
@@ -905,39 +912,41 @@ TEST_CASE("anchored bosses hold their ground while pursuing bosses close for mel
          "target":{"maxDistance":9.5},"frameStart":0,"frameEnd":25,"damage0":0}],
       "damages":[{"type":0,"radius":3,"maxDistance":10,"damage":10}]})");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
-    REQUIRE(id.has_value());
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    REQUIRE(critters.present());
     const std::vector<EnemyView> party{playerAt(target)};
     bool melee = false;
     for (s32 i = 0; i < 300; ++i) {
-        critters.update(kTicks, kStep, party);
-        REQUIRE(glm::length(critters.positionOf(*id)) <= radius + 0.001f);
+        fixture.update(kTicks, kStep, party);
+        REQUIRE(glm::length(critters.position()) <= radius + 0.001f);
         melee = melee || !critters.takeBlows().empty();
     }
     REQUIRE(melee == expectMelee);
     if (radius == 0) {
-        REQUIRE(critters.positionOf(*id) == Vec3{0});
+        REQUIRE(critters.position() == Vec3{0});
     } else {
-        REQUIRE(critters.positionOf(*id).z > 10);
+        REQUIRE(critters.position().z > 10);
     }
 }
 
 TEST_CASE("targeted rocks snapshot the player and keep the impact there after a dodge",
           "[game][enemies][genie]") {
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, targetedCritter(), nullptr, {}, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{50, 0, 50}, kPi / 2, "DJINN");
-    REQUIRE(id.has_value());
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, targetedCritter(), nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{50, 0, 50}, kPi / 2));
+    REQUIRE(critters.present());
     std::vector<EnemyView> party{playerAt(Vec3{5, 0, 10})};
-    std::vector<CritterCue> cues;
+    std::vector<CombatCue> cues;
     for (s32 i = 0; i < 5 && cues.empty(); ++i) {
-        critters.update(kTicks, kStep, party);
+        fixture.update(kTicks, kStep, party);
         cues = critters.takeCues();
     }
-    REQUIRE(critters.moveOf(*id) == "FOUNTAIN");
+    REQUIRE(critters.moveName() == "FOUNTAIN");
     REQUIRE(cues.size() == 1);
     REQUIRE(cues[0].tree == "ROARFX");
     CAPTURE(cues[0].position.x, cues[0].position.y, cues[0].position.z);
@@ -949,15 +958,15 @@ TEST_CASE("targeted rocks snapshot the player and keep the impact there after a 
     }
     SECTION("standing under the rock takes one impact") {}
     s32 hits = 0;
-    std::vector<CritterCue> impacts;
+    std::vector<CombatCue> impacts;
     for (s32 i = 0; i < 28; ++i) {
-        critters.update(kTicks, kStep, party);
-        for (const CritterBlow& blow : critters.takeBlows()) {
+        fixture.update(kTicks, kStep, party);
+        for (const CombatBlow& blow : critters.takeBlows()) {
             REQUIRE(blow.damage == 100);
             REQUIRE(blow.flags == 0x20);
             ++hits;
         }
-        for (const CritterCue& cue : critters.takeCues()) {
+        for (const CombatCue& cue : critters.takeCues()) {
             impacts.push_back(cue);
         }
     }
@@ -972,12 +981,13 @@ TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",
     const auto root = test::unpackedOrSkip("critter/DJINN.json").parent_path().parent_path();
     test::unpackedOrSkip("MONSTERS/DJINN/animations.json");
     test::FakeRenderDevice device;
-    Critters critters;
-    critters.open(device, root, nullptr, {}, 'C');
-    const auto id = critters.spawn(kBossCritter, Vec3{0}, 0, "DJINN");
-    REQUIRE(id.has_value());
+    test::CombatantFixture fixture;
+    Combatant& critters = fixture.actor;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    REQUIRE(critters.present());
     critters.draw(device, Mat4{1}, {});
-    auto* archive = critters.archiveOf(*id);
+    auto* archive = critters.archive();
     REQUIRE(archive != nullptr);
     const Texture* blank = &archive->textures.texture(device, 17);
     const Texture* base = &archive->textures.texture(device, 16);
@@ -1018,8 +1028,8 @@ TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",
     const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 20})};
     bool droppedRock = false;
     for (s32 frame = 0; frame < 1200 && !droppedRock; ++frame) {
-        critters.update(kTicks, kStep, party);
-        for (const CritterCue& cue : critters.takeCues()) {
+        fixture.update(kTicks, kStep, party);
+        for (const CombatCue& cue : critters.takeCues()) {
             if (cue.tree == "ROARFX") {
                 REQUIRE(glm::distance(cue.position, party[0].position) < 0.0001f);
                 REQUIRE_FALSE(cue.follows);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -13,7 +14,8 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
-#include "game/enemies/Critters.h"
+#include "game/enemies/BossDefinition.h" // IWYU pragma: export
+#include "game/enemies/Combatant.h"
 #include "game/enemies/LegendItems.h"
 
 namespace gdl::game {
@@ -37,13 +39,9 @@ struct BossView {
 };
 
 /**
- * A realm's boss. It fights by the same move table as the great ones (the original keeps
- * it in the same pool, but a boss is its own thing: one to a level, with its own name, a
- * sleep it wakes from when the party comes within its threshold, a health meter, and a
- * value in experience paid to everyone), so it keeps a fighter of its own rather than
- * sharing the critters' pool. A legend item brought to it is thrown as it rises (the
- * `LegendRite`), and its weakness is put on the fighter: a share of its health, a freeze,
- * a blinding or a curb on its attacks.
+ * One realm encounter: owns a single combatant and its assets, waking and legendary-item
+ * progression. Shared move execution belongs to Combatant; population limits and ordinary
+ * creature spawning do not apply to the boss.
  */
 class Bosses {
 public:
@@ -73,12 +71,12 @@ public:
     const LegendRite& legend() const { return m_rite; }
 
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
-    std::vector<CritterBlow> takeBlows();
-    std::vector<CritterLoss> takeLosses();
-    std::vector<CritterCue> takeCues() { return m_fighter.takeCues(); }
-    std::vector<CritterShot> takeShots() { return m_fighter.takeShots(); }
+    std::vector<CombatBlow> takeBlows();
+    std::vector<CombatLoss> takeLosses();
+    std::vector<CombatCue> takeCues() { return m_fighter.takeCues(); }
+    std::vector<CombatShot> takeShots() { return m_fighter.takeShots(); }
     /** What its death threw out: the coins it spews. */
-    std::vector<CritterSpew> takeSpews() { return m_fighter.takeSpews(); }
+    std::vector<CombatSpew> takeSpews() { return m_fighter.takeSpews(); }
     std::vector<LegendEvent> takeLegendEvents();
     void hurt(const EnemyHit& hit);
     bool frozen() const;
@@ -95,7 +93,7 @@ public:
     bool present() const { return m_id.has_value(); }
     BossView view() const;
     /** How its meter is laid out, or null without a boss. */
-    const CritterMeter* meter() const;
+    const HealthMeterDefinition* meter() const;
     /** Its archive, whose textures the meter is drawn from; null without a boss. */
     ItemArchive* archive();
     const Vec3* position() const;
@@ -117,7 +115,15 @@ private:
     void stageLegend(s32 ticks);
     void strikeWithLegend();
 
-    Critters m_fighter; ///< holds the one boss
+    Combatant m_fighter;
+    // Effects and projectiles can outlive their boss. Retain borrowed assets until close().
+    std::vector<std::unique_ptr<CombatantAssets>> m_assets;
+    RenderDevice* m_device = nullptr;
+    std::filesystem::path m_root;
+    const WorldCollision* m_collision = nullptr;
+    EnemyScales m_scales;
+    char m_realm = 'G';
+    f32 m_textureFrames = 0;
     std::optional<s32> m_id;
     std::optional<Vec3> m_cameraBase;
     s32 m_kind = -1;

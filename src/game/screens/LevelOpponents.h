@@ -40,7 +40,7 @@ public:
         std::function<void(const LegendEvent&)> legend;
         std::function<void(f32)> advanceLegend;
         std::function<void(const Vec3&)> fallen;
-        std::function<void(const CritterSpew&)> spew;
+        std::function<void(const CombatSpew&)> spew;
         std::function<void(s32, f32)> advanceVictory;
         std::function<void()> levels;
         std::function<void(s32, s32, bool)> award;
@@ -53,7 +53,7 @@ public:
                 std::span<const Obstacle> fixtures, const Events& events);
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
-    static void applyCritterBlow(const CritterBlow& blow, std::span<PlayerRuntime> players,
+    static void applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
                                  const Events& events);
     void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
                      std::span<const PlayerRuntime> players);
@@ -76,7 +76,7 @@ public:
 private:
     void awardBossLosses(std::span<const PlayerRuntime> players, const Events& events);
     void awardCritterLosses(std::span<const PlayerRuntime> players, const Events& events);
-    void showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss);
+    void showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss);
     void followCritterEffects();
     std::optional<Resources> m_resources;
     Enemies m_enemies;

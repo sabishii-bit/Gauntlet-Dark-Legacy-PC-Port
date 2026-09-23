@@ -14,8 +14,8 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-CritterMeter lichMeter() {
-    CritterMeter meter;
+HealthMeterDefinition lichMeter() {
+    HealthMeterDefinition meter;
     meter.pieces = 2;
     meter.advance = 256;
     meter.leftInset = 44;
@@ -31,7 +31,7 @@ TEST_CASE("a boss meter fills its two strips by the original's arithmetic and ea
     BossMeter meter;
     REQUIRE_FALSE(meter.bound());
     REQUIRE(meter.fillWidths() == std::array<s32, 2>{0, 0});
-    const CritterMeter none;
+    const HealthMeterDefinition none;
     REQUIRE_FALSE(meter.bind(none, nullptr));
     REQUIRE(meter.bind(lichMeter(), nullptr));
     REQUIRE(meter.bound());
@@ -68,7 +68,7 @@ TEST_CASE("a boss meter fills its two strips by the original's arithmetic and ea
     meter.clear();
     REQUIRE_FALSE(meter.bound());
     // One strip runs from its cap to its tail.
-    CritterMeter single = lichMeter();
+    HealthMeterDefinition single = lichMeter();
     single.pieces = 1;
     REQUIRE(meter.bind(single, nullptr));
     meter.update(2, 3000.0f, 3000.0f, true, false);

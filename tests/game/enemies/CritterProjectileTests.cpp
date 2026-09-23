@@ -14,7 +14,7 @@ using Catch::Approx;
 
 TEST_CASE("critter projectiles interpolate the retail speed range without extrapolating",
           "[game][boss-projectiles]") {
-    CritterDamage damage;
+    AttackDefinition damage;
     damage.speed = 40;
     damage.maxSpeed = 80;
     REQUIRE(CritterProjectile::speed(damage, -1) == 40);
@@ -26,11 +26,11 @@ TEST_CASE("critter projectiles interpolate the retail speed range without extrap
 
 TEST_CASE("critter ballistic projectiles reach the target at fixed horizontal speed",
           "[game][boss-projectiles]") {
-    CritterDamage damage;
+    AttackDefinition damage;
     damage.speed = damage.maxSpeed = 20;
     damage.gravity = 10;
     damage.behaviorFlags = CritterProjectile::kAimAtPlayer;
-    CritterShot shot;
+    CombatShot shot;
     shot.origin = {10, 7, 10};
     shot.target = Vec3{40, 3, 50};
     const Vec3 velocity = CritterProjectile::velocity(damage, shot);
@@ -47,10 +47,10 @@ TEST_CASE("critter ballistic projectiles reach the target at fixed horizontal sp
 
 TEST_CASE("critter straight shots honor facing precedence yaw pitch and spread",
           "[game][boss-projectiles]") {
-    CritterDamage damage;
+    AttackDefinition damage;
     damage.speed = damage.maxSpeed = 10;
     damage.behaviorFlags = CritterProjectile::kStraight | CritterProjectile::kAimAtPlayer;
-    CritterShot shot;
+    CombatShot shot;
     shot.target = Vec3{10, 0, 0};
     REQUIRE(CritterProjectile::velocity(damage, shot) == Vec3{10, 0, 0});
     damage.behaviorFlags |= CritterProjectile::kBodyForward;
@@ -77,7 +77,7 @@ TEST_CASE("critter projectile sweeps intersect the cylinder at first entry not c
 
 TEST_CASE("critter projectile windows survive skipped frames and do not repeat held frames",
           "[game][boss-projectiles]") {
-    CritterMove move;
+    MoveDefinition move;
     move.type = 132;
     move.frameStart = 14;
     REQUIRE(move.projectileTriggers(12, 16) == 1);

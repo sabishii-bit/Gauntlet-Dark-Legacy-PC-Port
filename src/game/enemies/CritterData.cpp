@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cmath>
 #include <exception>
 #include <utility>
 
@@ -23,8 +22,8 @@ Vec3 vecOf(const Json& json, const char* key) {
     return values.size() >= 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f, 0.0f, 0.0f};
 }
 
-CritterTarget targetOf(const Json& json) {
-    CritterTarget target;
+TargetCriteria targetOf(const Json& json) {
+    TargetCriteria target;
     if (const auto t = json.find("target"); t != json.end() && t->is_object()) {
         target.minDistance = t->value("minDistance", 0.0f);
         target.maxDistance = t->value("maxDistance", 0.0f);
@@ -47,48 +46,6 @@ std::string lower(std::string_view text) {
 }
 
 } // namespace
-
-bool CritterTarget::allows(f32 distance, f32 bearing, f32 vertical) const {
-    if (distance < minDistance) {
-        return false;
-    }
-    if (maxDistance > 0.0f && distance > maxDistance) {
-        return false;
-    }
-    if (std::cos(bearing - yaw) < minDot) {
-        return false;
-    }
-    return maxVertical <= 0.0f || std::abs(vertical) <= maxVertical;
-}
-
-bool CritterTarget::allowsPhase(f32 rateScale, f32 homeDistance) const {
-    return rateScale >= minRateScale &&
-           (maxRateScale <= minRateScale || rateScale < maxRateScale) &&
-           (maxHomeDistance <= 0.0f || homeDistance <= maxHomeDistance);
-}
-
-bool CritterMove::interrupts(const CritterMove& current) const {
-    switch (current.interrupt) {
-    case 0: return false;
-    case 20: return (priority & ~0xFF) > (current.priority & ~0xFF);
-    case 60: return priority >= current.priority;
-    case 80: return priority > 0;
-    case 90: return true;
-    default: return priority > current.priority;
-    }
-}
-
-/** The body's way turned by the record's yaw, then tipped by its pitch (under nought, up),
- * at its speed. */
-Vec3 CritterDamage::spewVelocity(f32 bodyYaw) const {
-    const f32 heading = bodyYaw + yaw;
-    const f32 level = std::cos(-pitch);
-    return Vec3{std::sin(heading) * level, std::sin(-pitch), std::cos(heading) * level} * speed;
-}
-
-f32 CritterDamage::spewHalfAngle() const {
-    return std::acos(std::clamp(minDot, -1.0f, 1.0f));
-}
 
 bool CritterData::load(const std::filesystem::path& file) {
     *this = CritterData{};
@@ -138,8 +95,8 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_meter.advance = type.value("meterAdvance", 0);
         m_meter.leftInset = type.value("meterLeftInset", 0);
         m_meter.rightInset = type.value("meterRightInset", 0);
-        m_meter.shown = (typeFlags & CritterMeter::kShown) != 0 && m_meter.pieces > 0;
-        m_meter.backed = (typeFlags & CritterMeter::kBacked) != 0;
+        m_meter.shown = (typeFlags & HealthMeterDefinition::kShown) != 0 && m_meter.pieces > 0;
+        m_meter.backed = (typeFlags & HealthMeterDefinition::kBacked) != 0;
         m_meter.barOffset = vecOf(type, "healthBarOffset");
         const s32 moveIndex = type.value("moveIndex", 0);
         const s32 moveCount = type.value("moveCount", 0);
@@ -150,7 +107,7 @@ bool CritterData::load(const std::filesystem::path& file) {
                 break;
             }
             const Json& m = moves[at];
-            CritterMove move;
+            MoveDefinition move;
             move.type = m.value("type", 0);
             move.flags = m.value("flags", 0U);
             move.priority = m.value("priority", 0);
@@ -194,7 +151,7 @@ bool CritterData::load(const std::filesystem::path& file) {
                 break;
             }
             const Json& p = patterns[static_cast<usize>(at)];
-            CritterPattern pattern;
+            AttackPattern pattern;
             pattern.flags = p.value("flags", 0U);
             pattern.cooldown = p.value("cooldown", 0.0f);
             pattern.target = targetOf(p);
@@ -212,7 +169,7 @@ bool CritterData::load(const std::filesystem::path& file) {
             m_patterns.push_back(std::move(pattern));
         }
         for (const Json& d : root.value("damages", Json::array())) {
-            CritterDamage damage;
+            AttackDefinition damage;
             damage.type = static_cast<s16>(d.value("type", 0));
             damage.behaviorFlags = static_cast<u16>(d.value("behaviorFlags", 0));
             damage.flags = d.value("flags", 0U);
@@ -236,7 +193,7 @@ bool CritterData::load(const std::filesystem::path& file) {
             m_damages.push_back(damage);
         }
         for (const Json& s : root.value("sounds", Json::array())) {
-            CritterSound sound;
+            CombatEffectDefinition sound;
             sound.tree = s.value("name", "");
             sound.soundFormat = s.value("levelFormat", "");
             sound.flags = s.value("flags", 0U);
@@ -274,41 +231,13 @@ bool CritterData::load(const std::filesystem::path& file) {
     }
 }
 
-s32 CritterMove::projectileTriggers(s32 previous, s32 current, bool second) const {
-    const s32 first = second ? frameStart2 : frameStart;
-    if (first < 0 || current < first || current <= previous) {
-        return 0;
-    }
-    constexpr s32 kRepeatedProjectile = 133;
-    if (type != kRepeatedProjectile) {
-        return previous < first ? 1 : 0;
-    }
-    const s32 last = second ? frameEnd2 : frameEnd;
-    s32 count = 0;
-    for (s32 frame = std::max(first, previous + 1); frame <= std::min(last, current); ++frame) {
-        if (framePeriod <= 0.0f ||
-            static_cast<s32>(std::fmod(static_cast<f32>(frame - first), framePeriod)) == 0) {
-            ++count;
-        }
-    }
-    return count;
-}
-
-std::string CritterSound::soundFor(char letter) const {
-    std::string name = soundFormat;
-    if (const auto at = name.find("%c"); at != std::string::npos) {
-        name.replace(at, 2, 1, letter);
-    }
-    return name;
-}
-
-const CritterSound* CritterData::sound(s32 index) const {
+const CombatEffectDefinition* CritterData::sound(s32 index) const {
     return index >= 0 && static_cast<usize>(index) < m_sounds.size()
                ? &m_sounds[static_cast<usize>(index)]
                : nullptr;
 }
 
-const CritterDamage* CritterData::damage(s32 index) const {
+const AttackDefinition* CritterData::damage(s32 index) const {
     return index >= 0 && static_cast<usize>(index) < m_damages.size()
                ? &m_damages[static_cast<usize>(index)]
                : nullptr;

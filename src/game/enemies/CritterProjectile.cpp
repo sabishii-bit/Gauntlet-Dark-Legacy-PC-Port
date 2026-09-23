@@ -6,12 +6,12 @@
 #include "engine/core/Types.h"
 
 namespace gdl::game {
-f32 CritterProjectile::speed(const CritterDamage& damage, f32 rate) {
+f32 CritterProjectile::speed(const AttackDefinition& damage, f32 rate) {
     return damage.speed +
            0.75f * (std::clamp(rate, 0.5f, 1.5f) - 0.5f) * (damage.maxSpeed - damage.speed);
 }
 
-Vec3 CritterProjectile::velocity(const CritterDamage& damage, const CritterShot& shot,
+Vec3 CritterProjectile::velocity(const AttackDefinition& damage, const CombatShot& shot,
                                  f32 spreadSample) {
     const f32 pace = speed(damage, shot.rate);
     if (damage.speed <= 0.0f || pace <= 0.0f) {

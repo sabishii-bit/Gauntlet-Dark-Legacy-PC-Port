@@ -77,7 +77,7 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE(bosses.targets().size() == 1);
     // Its meter is two strips with backgrounds, capped 44 on the left and 53 on the right,
     // drawn from its own archive.
-    const CritterMeter* meter = bosses.meter();
+    const HealthMeterDefinition* meter = bosses.meter();
     REQUIRE(meter != nullptr);
     REQUIRE(meter->shown);
     REQUIRE(meter->backed);
@@ -100,7 +100,7 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     const std::vector<EnemyView> near{playerAt(Vec3{0.0f, 0.0f, 18.0f})};
     bosses.update(kTicks, kStep, near);
     REQUIRE(bosses.view().awake);
-    std::vector<CritterBlow> blows;
+    std::vector<CombatBlow> blows;
     for (s32 i = 0; i < 1500 && blows.empty(); ++i) {
         bosses.update(kTicks, kStep, near);
         auto taken = bosses.takeBlows();
@@ -111,11 +111,11 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE(bosses.position()->z > 5.0f);
     // Sounds and visuals start together at sfxFrame; the glow's own sequence contains
     // the wind-up. Root-attached effects follow the full transform, not just translation.
-    const std::vector<CritterCue> cues = bosses.takeCues();
+    const std::vector<CombatCue> cues = bosses.takeCues();
     bool entrance = false;
     bool swingSound = false;
     bool swingGlow = false;
-    for (const CritterCue& cue : cues) {
+    for (const CombatCue& cue : cues) {
         entrance = entrance || (cue.tree == "GENFX" && cue.sound == "S_LICHENT");
         if (cue.sound.starts_with("S_LICHATK")) {
             swingSound = true;
@@ -221,7 +221,7 @@ TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its
     REQUIRE(bosses.legend().stage() == LegendRite::Stage::Over);
     REQUIRE_FALSE(bosses.legend().running());
     // Then it fights.
-    std::vector<CritterBlow> blows;
+    std::vector<CombatBlow> blows;
     for (s32 i = 0; i < 1500 && blows.empty(); ++i) {
         bosses.update(kTicks, kStep, near);
         auto taken = bosses.takeBlows();
@@ -243,16 +243,16 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
     REQUIRE(bosses.cameraBase() == Vec3{0, 7, 0});
     REQUIRE(bosses.cameraOffset() == Vec3{0, 17, 0});
     const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 40})};
-    std::vector<CritterShot> shots;
+    std::vector<CombatShot> shots;
     for (s32 frame = 0; frame < 900 && shots.empty(); ++frame) {
         bosses.update(kTicks, kStep, party);
         shots = bosses.takeShots();
     }
     REQUIRE_FALSE(shots.empty());
-    for (const CritterShot& shot : shots) {
+    for (const CombatShot& shot : shots) {
         REQUIRE(shot.data != nullptr);
         REQUIRE(shot.data->name() == "DJINN");
-        REQUIRE(shot.data->damage(shot.damageIndex)->type == CritterDamage::kProjectile);
+        REQUIRE(shot.data->damage(shot.damageIndex)->type == AttackDefinition::kProjectile);
         REQUIRE(shot.realm == 'C');
         REQUIRE(shot.target == Vec3{0, 3, 40});
         REQUIRE(shot.origin.y > 0);
@@ -282,16 +282,17 @@ TEST_CASE("anchored bosses retain local territories and the lich and spider can 
             bool pursues = false;
             bool hasNearAttack = false;
             bool hasRangedAttack = false;
-            for (const CritterMove& move : data.moves()) {
-                if (move.type == CritterMove::kWalk || move.type == 134) {
+            for (const MoveDefinition& move : data.moves()) {
+                if (move.type == MoveDefinition::kWalk || move.type == 134) {
                     pursues = pursues || move.speed > 0;
                 }
                 if (move.attack() && move.harms()) {
                     hasNearAttack = hasNearAttack ||
                                     (move.target.maxDistance > 0 && move.target.maxDistance <= 40);
-                    const CritterDamage* harm = data.damage(move.damage0);
-                    hasRangedAttack = hasRangedAttack ||
-                                      (harm != nullptr && harm->type == CritterDamage::kProjectile);
+                    const AttackDefinition* harm = data.damage(move.damage0);
+                    hasRangedAttack =
+                        hasRangedAttack ||
+                        (harm != nullptr && harm->type == AttackDefinition::kProjectile);
                 }
             }
             REQUIRE(pursues == expected.pursuit);

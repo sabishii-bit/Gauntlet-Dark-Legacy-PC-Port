@@ -17,7 +17,7 @@ using Catch::Approx;
 
 TEST_CASE("breath transforms the offset but normalizes the animated forward basis",
           "[game][enemies][breath]") {
-    CritterDamage damage;
+    AttackDefinition damage;
     damage.maxDistance = 30;
     damage.offset = {0, -4, -3};
     const Mat4 node = glm::scale(glm::translate(Mat4{1}, Vec3{10, 20, 30}), Vec3{2});
@@ -35,7 +35,7 @@ TEST_CASE("breath transforms the offset but normalizes the animated forward basi
 
 TEST_CASE("breath applies authored yaw then pitch, including an inclined node",
           "[game][enemies][breath]") {
-    CritterDamage damage;
+    AttackDefinition damage;
     damage.maxDistance = 10;
     damage.yaw = std::numbers::pi_v<f32> / 2;
     damage.pitch = std::numbers::pi_v<f32> / 6;
@@ -55,7 +55,7 @@ TEST_CASE("breath applies authored yaw then pitch, including an inclined node",
 
 TEST_CASE("breath uses a cylinder and an unexpanded horizontal distance window",
           "[game][enemies][breath]") {
-    CritterDamage damage;
+    AttackDefinition damage;
     damage.radius = 0.5f;
     damage.minDistance = 2;
     damage.maxDistance = 10;

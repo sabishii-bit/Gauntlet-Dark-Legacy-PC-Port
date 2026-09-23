@@ -28,7 +28,7 @@ struct CritterProjectileHit {
 class CritterProjectiles {
 public:
     using PlaySound = std::function<void(std::string_view)>;
-    void launch(const CritterShot& shot, ItemArchive& archive, RenderDevice& device,
+    void launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,
                 EffectTrees& effects, const PlaySound& sound);
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
                 RenderDevice& device, EffectTrees& effects, const PlaySound& sound);
@@ -38,7 +38,7 @@ public:
 
 private:
     struct Flying {
-        CritterShot shot;
+        CombatShot shot;
         ItemArchive* archive = nullptr;
         Vec3 position{0.0f};
         Vec3 velocity{0.0f};

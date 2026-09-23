@@ -2,11 +2,11 @@
 #include "engine/core/Types.h"
 #include "engine/world/AnimationPlayer.h"
 
-#include "game/enemies/Critters.h"
+#include "game/enemies/Combatant.h"
 
 namespace gdl::game {
-void Critters::startArea(Critter& critter, s32 id, const CritterDamage& damage) {
-    const CritterSound* sound = critter.stock->data.sound(damage.sound);
+void Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage) {
+    const CombatEffectDefinition* sound = critter.stock->data.sound(damage.sound);
     if (sound == nullptr) {
         return;
     }
@@ -51,7 +51,7 @@ void Critters::startArea(Critter& critter, s32 id, const CritterDamage& damage) 
     area.secondsLeft = life;
     critter.areas.push_back(area);
 
-    CritterCue cue;
+    CombatCue cue;
     cue.critter = id;
     cue.tree = sound->shows() ? sound->tree : std::string{};
     cue.sound = sound->soundFor(m_realm);
@@ -59,7 +59,7 @@ void Critters::startArea(Critter& critter, s32 id, const CritterDamage& damage) 
     cue.scale = sound->scale;
     cue.life = life;
     cue.follows = true;
-    cue.shakes = (sound->flags & CritterSound::kShakes) != 0;
+    cue.shakes = (sound->flags & CombatEffectDefinition::kShakes) != 0;
     cue.rootAttachment = true;
     cue.nodeOffset = offset;
     cue.pitchYaw = angles;
@@ -69,14 +69,14 @@ void Critters::startArea(Critter& critter, s32 id, const CritterDamage& damage) 
     }
 }
 
-void Critters::updateAreas(Critter& critter, s32 id, std::span<const EnemyView> players) {
+void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> players) {
     const Mat4 parent = modelTransform(critter);
     for (const CritterArea& area : critter.areas) {
         for (const EnemyView& player : players) {
             if (!area.touches(parent, player)) {
                 continue;
             }
-            CritterBlow blow;
+            CombatBlow blow;
             blow.player = player.player;
             blow.critter = id;
             blow.damage = area.damage;

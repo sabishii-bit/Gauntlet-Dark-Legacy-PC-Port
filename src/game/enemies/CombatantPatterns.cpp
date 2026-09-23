@@ -4,15 +4,15 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
-#include "game/enemies/Critters.h"
+#include "game/enemies/Combatant.h"
 
 namespace gdl::game {
 
-f32 Critters::attackRate(const Critter& critter) {
+f32 Combatant::attackRate(const Actor& critter) {
     return 0.5f + 4.5f * (1.0f - critter.health / (1.0f + critter.maxHealth));
 }
 
-s32 Critters::attackTarget(const Critter& critter, const CritterTarget& criteria,
+s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria,
                            std::span<const EnemyView> players) {
     if (critter.blindTicks > 0) {
         return -1;
@@ -37,13 +37,13 @@ s32 Critters::attackTarget(const Critter& critter, const CritterTarget& criteria
     return target;
 }
 
-bool Critters::chooseBossAttack(Critter& critter, std::span<const EnemyView> players) {
+bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> players) {
     const CritterData& data = critter.stock->data;
     const auto available = [&](s32 index) {
         if (index < 0 || static_cast<usize>(index) >= data.moves().size()) {
             return false;
         }
-        const CritterMove& move = data.moves()[static_cast<usize>(index)];
+        const MoveDefinition& move = data.moves()[static_cast<usize>(index)];
         return !curbedMove(critter, move) &&
                critter.stock->tree->findSequence(move.anim).has_value();
     };
@@ -65,7 +65,7 @@ bool Critters::chooseBossAttack(Critter& critter, std::span<const EnemyView> pla
     s32 moveChoice = -1;
     s32 playerChoice = -1;
     for (usize i = 0; i < data.patterns().size(); ++i) {
-        const CritterPattern& pattern = data.patterns()[i];
+        const AttackPattern& pattern = data.patterns()[i];
         constexpr u32 kDisabled = 0x1000;
         if (static_cast<s32>(i) == previousPattern || pattern.moves.empty() ||
             (pattern.flags & kDisabled) != 0 || !available(pattern.moves.front()) ||
@@ -81,7 +81,7 @@ bool Critters::chooseBossAttack(Critter& critter, std::span<const EnemyView> pla
         }
     }
     for (usize i = 0; i < data.moves().size(); ++i) {
-        const CritterMove& move = data.moves()[i];
+        const MoveDefinition& move = data.moves()[i];
         constexpr u32 kLinkedOnly = 4;
         constexpr u32 kRequiresNode = 0x10;
         if (static_cast<s32>(i) == critter.move || !move.attack() ||
@@ -89,7 +89,7 @@ bool Critters::chooseBossAttack(Critter& critter, std::span<const EnemyView> pla
             (move.cooldown > 0.0f && critter.age < critter.moveTimes[i] + move.cooldown)) {
             continue;
         }
-        const auto hasNode = [&](const CritterMove& m) {
+        const auto hasNode = [&](const MoveDefinition& m) {
             return critter.stock->tree->findNode(m.colnode).has_value();
         };
         if ((move.flags & kRequiresNode) != 0 &&

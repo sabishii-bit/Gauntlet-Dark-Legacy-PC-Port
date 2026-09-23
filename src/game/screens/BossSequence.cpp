@@ -172,7 +172,7 @@ bool BossSequence::advanceVictory(s32 ticks, f32 seconds, std::span<const Player
 
 /** As the death throws them out, the boss's coins for the party fly from where it stands
  * and its blast takes the rest of the level's enemies with it. */
-void BossSequence::spewCoins(const CritterSpew& spew, LevelOpponents& opponents,
+void BossSequence::spewCoins(const CombatSpew& spew, LevelOpponents& opponents,
                              std::span<PlayerRuntime> players) {
     if (!m_resources) {
         return;

@@ -37,10 +37,10 @@ f32 CritterMovement::facing(f32 wanted, f32 initialYaw) const {
 Vec3 CritterMovement::direction(s32 moveType, f32 yaw) {
     const Vec3 forward{std::sin(yaw), 0.0f, std::cos(yaw)};
     switch (moveType) {
-    case CritterMove::kStepLeft: return Vec3{-forward.z, 0.0f, forward.x};
-    case CritterMove::kStepRight: return Vec3{forward.z, 0.0f, -forward.x};
-    case CritterMove::kStepBack: return -forward;
-    case CritterMove::kStepToPoint: return Vec3{0.0f};
+    case MoveDefinition::kStepLeft: return Vec3{-forward.z, 0.0f, forward.x};
+    case MoveDefinition::kStepRight: return Vec3{forward.z, 0.0f, -forward.x};
+    case MoveDefinition::kStepBack: return -forward;
+    case MoveDefinition::kStepToPoint: return Vec3{0.0f};
     default: return forward;
     }
 }

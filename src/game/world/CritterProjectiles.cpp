@@ -20,7 +20,7 @@ constexpr u32 kCustomEffect = 0xF000000;
 
 u32 CritterProjectiles::show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
                              const PlaySound& sound, f32 life) {
-    const CritterSound* cue = flying.shot.data->sound(index);
+    const CombatEffectDefinition* cue = flying.shot.data->sound(index);
     if (cue == nullptr) {
         return 0;
     }
@@ -48,14 +48,14 @@ void CritterProjectiles::place(const Flying& flying, EffectTrees& effects) {
     effects.placeAt(flying.effect, transform);
 }
 
-void CritterProjectiles::launch(const CritterShot& shot, ItemArchive& archive, RenderDevice& device,
+void CritterProjectiles::launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,
                                 EffectTrees& effects, const PlaySound& sound) {
-    const CritterDamage* damage =
+    const AttackDefinition* damage =
         shot.data != nullptr ? shot.data->damage(shot.damageIndex) : nullptr;
-    if (damage == nullptr || damage->type != CritterDamage::kProjectile) {
+    if (damage == nullptr || damage->type != AttackDefinition::kProjectile) {
         return;
     }
-    const CritterSound* cue = shot.data->sound(damage->sound);
+    const CombatEffectDefinition* cue = shot.data->sound(damage->sound);
     if (cue == nullptr) {
         return;
     }
@@ -92,7 +92,7 @@ void CritterProjectiles::update(f32 seconds, const WorldCollision* collision,
         return;
     }
     for (Flying& flying : m_flying) {
-        const CritterDamage& damage = *flying.shot.data->damage(flying.shot.damageIndex);
+        const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
         if (!effects.playing(flying.effect)) {
             if (!flying.morphed && damage.morph >= 0) {
                 flying.morphed = true;

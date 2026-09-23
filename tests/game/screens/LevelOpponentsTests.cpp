@@ -51,7 +51,7 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
                 phases.emplace_back("legend");
             },
         .fallen = [](const Vec3&) { FAIL("No boss"); },
-        .spew = [](const CritterSpew&) { FAIL("No boss"); },
+        .spew = [](const CombatSpew&) { FAIL("No boss"); },
         .advanceVictory =
             [&](s32 ticks, f32 seconds) {
                 REQUIRE(ticks == 6);
@@ -116,7 +116,7 @@ TEST_CASE("area contacts share effect immunity but not the breath timer",
         REQUIRE(directed);
         ++contacts;
     };
-    CritterBlow blow;
+    CombatBlow blow;
     blow.player = 3;
     blow.damage = 50;
     blow.area = true;
@@ -165,7 +165,7 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
         hurt.push_back(index);
         kinds.push_back(kind);
     };
-    CritterBlow fire;
+    CombatBlow fire;
     fire.player = 3;
     fire.damage = 40;
     fire.flags = PlayerImpact::kKnockDown;
@@ -228,7 +228,7 @@ TEST_CASE("breath blocked by arena cover neither damages nor consumes the breath
         REQUIRE(to.z == 20);
         return blocked;
     };
-    CritterBlow fire;
+    CombatBlow fire;
     fire.player = 0;
     fire.damage = 40;
     fire.breath = true;
@@ -276,7 +276,7 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     events.legend = [](const LegendEvent&) {};
     events.advanceLegend = [](f32) {};
     events.fallen = [](const Vec3&) {};
-    events.spew = [](const CritterSpew&) {};
+    events.spew = [](const CombatSpew&) {};
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};

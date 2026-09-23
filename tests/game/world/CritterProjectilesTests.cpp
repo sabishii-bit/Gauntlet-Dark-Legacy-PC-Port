@@ -11,7 +11,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "formats/CritterWad.h"
-#include "game/enemies/Critters.h"
+#include "game/enemies/BossDefinition.h"
 #include "game/world/CritterProjectiles.h"
 
 namespace {
@@ -47,7 +47,7 @@ struct Fixture {
         REQUIRE(data.load(root / "critter.json"));
     }
     void launch() {
-        CritterShot shot;
+        CombatShot shot;
         shot.data = &data;
         shot.damageIndex = 0;
         shot.origin = {0, 3, 0};
@@ -141,8 +141,8 @@ TEST_CASE("retail boss projectile records retain physics and effect transitions"
             CritterProjectiles projectiles;
             usize launched = 0;
             for (usize index = 0; index < data.damages().size(); ++index) {
-                const CritterDamage& damage = data.damages()[index];
-                if (damage.type != CritterDamage::kProjectile || damage.sound < 0) {
+                const AttackDefinition& damage = data.damages()[index];
+                if (damage.type != AttackDefinition::kProjectile || damage.sound < 0) {
                     continue;
                 }
                 CAPTURE(name, index);
@@ -153,7 +153,7 @@ TEST_CASE("retail boss projectile records retain physics and effect transitions"
                 REQUIRE(damage.morphEnd == raw.damages[index].morphEnd);
                 REQUIRE(damage.morphLife == raw.damages[index].morphLife);
                 REQUIRE(damage.yawSpread == raw.damages[index].yawSpread);
-                CritterShot shot;
+                CombatShot shot;
                 shot.data = &data;
                 shot.damageIndex = static_cast<s32>(index);
                 shot.origin = {0, 30, 0};

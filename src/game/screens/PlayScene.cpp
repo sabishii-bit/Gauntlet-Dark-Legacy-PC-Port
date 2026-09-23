@@ -525,7 +525,7 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
                  m_bossSequence.fallen(position, m_opponents.bosses(), m_players);
              },
          .spew =
-             [this](const CritterSpew& spew) {
+             [this](const CombatSpew& spew) {
                  m_bossSequence.spewCoins(spew, m_opponents, m_players);
              },
          .advanceVictory = [this](s32 elapsed, f32 duration) { updateVictory(elapsed, duration); },

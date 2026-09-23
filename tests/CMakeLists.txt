@@ -120,6 +120,7 @@ add_executable(tests
     game/enemies/EnemiesTests.cpp
     game/enemies/GeneratorsTests.cpp
     game/enemies/CrittersTests.cpp
+    game/enemies/CombatantTests.cpp
     game/enemies/CritterAttackSelectionTests.cpp
     game/enemies/CritterAreaTests.cpp
     game/enemies/CritterMovementTests.cpp

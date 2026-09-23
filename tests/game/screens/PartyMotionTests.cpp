@@ -131,7 +131,7 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
         REQUIRE(index == 0); // input id 3 is not party index 3
         health.hurt(f.players[index], damage, kind, directed, false, 1, healthEvents, impact);
     };
-    CritterBlow blow;
+    CombatBlow blow;
     blow.player = 3;
     blow.damage = 10;
     blow.flags = PlayerImpact::kKnockDown;

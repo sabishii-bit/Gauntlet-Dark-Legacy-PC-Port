@@ -43,12 +43,12 @@ TEST_CASE("boss turning respects the initial facing and wraparound", "[game][bos
 
 TEST_CASE("pursuing critters advance retreat and sidestep in distinct directions",
           "[game][boss-movement]") {
-    REQUIRE(CritterMovement::direction(CritterMove::kWalk, 0) == Vec3{0, 0, 1});
-    REQUIRE(CritterMovement::direction(CritterMove::kStepBack, 0) == Vec3{0, 0, -1});
-    REQUIRE(CritterMovement::direction(CritterMove::kStepLeft, 0) == Vec3{-1, 0, 0});
-    REQUIRE(CritterMovement::direction(CritterMove::kStepRight, 0) == Vec3{1, 0, 0});
+    REQUIRE(CritterMovement::direction(MoveDefinition::kWalk, 0) == Vec3{0, 0, 1});
+    REQUIRE(CritterMovement::direction(MoveDefinition::kStepBack, 0) == Vec3{0, 0, -1});
+    REQUIRE(CritterMovement::direction(MoveDefinition::kStepLeft, 0) == Vec3{-1, 0, 0});
+    REQUIRE(CritterMovement::direction(MoveDefinition::kStepRight, 0) == Vec3{1, 0, 0});
     REQUIRE(CritterMovement::direction(134, kPi / 2).x == Approx(1)); // authored charge
-    REQUIRE(CritterMovement::direction(CritterMove::kStepToPoint, 0) == Vec3{0});
+    REQUIRE(CritterMovement::direction(MoveDefinition::kStepToPoint, 0) == Vec3{0});
 }
 
 TEST_CASE("movement manifests read the home sentinel limits and legacy radius key",

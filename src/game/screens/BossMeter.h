@@ -31,7 +31,7 @@ public:
 
     /** Lays it out for a boss of `meter` at `left`, drawing from `textures`; false when the
      * boss has no meter to show. */
-    bool bind(const CritterMeter& meter, TextureSet* textures, s32 left = 0);
+    bool bind(const HealthMeterDefinition& meter, TextureSet* textures, s32 left = 0);
     void clear();
     bool bound() const { return m_pieces > 0; }
 
