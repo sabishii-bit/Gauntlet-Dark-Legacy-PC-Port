@@ -4,6 +4,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
+#include "engine/core/Types.h"
 namespace gdl::game {
 CombatantAssets::~CombatantAssets() {
     clear();
@@ -19,6 +20,12 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     clear();
     definition = family;
     if (definition.name.empty() || !data.load(root / "critter" / (definition.name + ".json"))) {
+        return false;
+    }
+    if (definition.kind == CombatantKind::Unknown || data.kind() != definition.kind) {
+        log::warn("combatant {}: descriptor family {} does not match requested family {}",
+                  definition.name, static_cast<s32>(data.kind()),
+                  static_cast<s32>(definition.kind));
         return false;
     }
     const auto directory =

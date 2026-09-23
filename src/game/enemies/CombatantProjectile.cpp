@@ -1,4 +1,4 @@
-#include "game/enemies/CritterProjectile.h"
+#include "game/enemies/CombatantProjectile.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,12 +6,12 @@
 #include "engine/core/Types.h"
 
 namespace gdl::game {
-f32 CritterProjectile::speed(const AttackDefinition& damage, f32 rate) {
+f32 CombatantProjectile::speed(const AttackDefinition& damage, f32 rate) {
     return damage.speed +
            0.75f * (std::clamp(rate, 0.5f, 1.5f) - 0.5f) * (damage.maxSpeed - damage.speed);
 }
 
-Vec3 CritterProjectile::velocity(const AttackDefinition& damage, const CombatShot& shot,
+Vec3 CombatantProjectile::velocity(const AttackDefinition& damage, const CombatShot& shot,
                                  f32 spreadSample) {
     const f32 pace = speed(damage, shot.rate);
     if (damage.speed <= 0.0f || pace <= 0.0f) {
@@ -51,7 +51,7 @@ Vec3 CritterProjectile::velocity(const AttackDefinition& damage, const CombatSho
     return direction * pace;
 }
 
-std::optional<f32> CritterProjectile::contact(const Vec3& from, const Vec3& to, f32 radius,
+std::optional<f32> CombatantProjectile::contact(const Vec3& from, const Vec3& to, f32 radius,
                                               const Vec3& feet, f32 playerRadius, f32 height) {
     const Vec3 relative = from - feet;
     const Vec3 step = to - from;

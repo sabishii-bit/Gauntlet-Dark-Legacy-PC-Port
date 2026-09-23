@@ -46,7 +46,7 @@ std::filesystem::path familyAssets() {
           "sequences":[{"name":"STEP","frames":3}]}]})");
         const std::string header = R"({"descriptors":[{"prefix":"BODY","name":")" +
                                    definition.name + R"(","type":)" +
-                                   std::to_string(definition.kind) + "}],";
+                                   std::to_string(static_cast<s32>(definition.kind)) + "}],";
         writeTextFile(root / "critter" / (definition.name + ".json"), header + R"(
           "types":[{"moveCount":5,"maxHealth":100,"radius":1,"expValue":50}],
           "moves":[{"name":"READY","anim":"STEP","type":32},
@@ -67,6 +67,14 @@ TEST_CASE("creature families supply distinct policies without duplicating move e
     const auto boss = bossDefinition("lich");
     REQUIRE(golem.name == "GOLEM");
     REQUIRE(general.name == "GENERAL");
+    REQUIRE(golem.kind == CombatantKind::Golem);
+    REQUIRE(general.kind == CombatantKind::General);
+    REQUIRE(gargoyle.kind == CombatantKind::Gargoyle);
+    REQUIRE(boss.kind == CombatantKind::Boss);
+    REQUIRE(static_cast<s32>(golem.kind) == 3);
+    REQUIRE(static_cast<s32>(boss.kind) == 4);
+    REQUIRE(static_cast<s32>(gargoyle.kind) == 7);
+    REQUIRE(static_cast<s32>(general.kind) == 8);
     REQUIRE(golem.realmCostume);
     REQUIRE(general.realmCostume);
     REQUIRE(golem.knockbackReduction == 5);
@@ -117,6 +125,35 @@ TEST_CASE("one combatant rejects absent assets and owns independent state and ev
     actors[1].clear();
 }
 
+TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
+          "[game][combatant]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    for (const auto& definition : {Golem::definition(), General::definition(),
+                                   Gargoyle::definition(), bossDefinition("DJINN")}) {
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        REQUIRE(assets.data.kind() == definition.kind);
+        auto wrong = definition;
+        wrong.kind =
+            definition.kind == CombatantKind::Boss ? CombatantKind::Golem : CombatantKind::Boss;
+        REQUIRE_FALSE(assets.load(device, root, wrong, 'G'));
+        REQUIRE(assets.tree == nullptr);
+        REQUIRE_FALSE(assets.archive.loaded());
+        Combatant actor;
+        REQUIRE_FALSE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        REQUIRE_FALSE(actor.present());
+    }
+    auto unknown = Golem::definition();
+    unknown.kind = CombatantKind::Unknown;
+    REQUIRE_FALSE(assets.load(device, root, unknown, 'G'));
+    Critters population;
+    population.open(device, root, nullptr, {}, 'G');
+    REQUIRE_FALSE(population.spawn(CombatantKind::Unknown, {}, 0).has_value());
+    REQUIRE(population.kindOf(-1) == CombatantKind::Unknown);
+    REQUIRE(population.kindOf(0) == CombatantKind::Unknown);
+}
+
 TEST_CASE("golem knockback resistance remains a family rule not a shared actor special case",
           "[game][combatant]") {
     const auto root = familyAssets();
@@ -151,7 +188,7 @@ TEST_CASE("mixed families preserve the shared capacity while boss ownership is i
         REQUIRE(population.spawnGeneral({static_cast<f32>(i) * 10, 0, 0}, 0) == i);
     }
     REQUIRE_FALSE(population.spawnGolem({}, 0).has_value());
-    REQUIRE_FALSE(population.spawn(kBossCritter, {}, 0, "DJINN").has_value());
+    REQUIRE_FALSE(population.spawn(CombatantKind::Boss, {}, 0, "DJINN").has_value());
     Bosses boss;
     boss.open(device, root, nullptr, {}, 'G');
     REQUIRE(boss.spawn(36, {100, 0, 100}, 0));
@@ -165,7 +202,7 @@ TEST_CASE("mixed families preserve the shared capacity while boss ownership is i
     REQUIRE(loss.size() == 2);
     REQUIRE(loss[1].killed);
     REQUIRE(loss[1].form == "EAGL");
-    REQUIRE(loss[1].kind == kGargoyleCritter);
+    REQUIRE(loss[1].kind == CombatantKind::Gargoyle);
     for (s32 frame = 0; frame < 90; ++frame) {
         population.update(2, 1.0f / 30, {});
     }

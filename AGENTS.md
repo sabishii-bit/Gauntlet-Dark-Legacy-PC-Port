@@ -599,6 +599,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   serialized records are unchanged. Execution is divided into CombatantMoves,
   Patterns, Motion, Attacks, Areas and View, with no per-kind id checks in those
   modules. Family definitions select policies instead of duplicating combat code.
+  `CombatantBreath` and `CombatantProjectile` provide shared attack geometry and
+  launch math; `world/CombatantProjectiles` owns the launched effects for both
+  ordinary creatures and bosses, independently of their source actor's lifetime.
+  `CombatantKind` names descriptor families (Golem 3, Boss 4, Gargoyle 7,
+  General 8), distinct from level boss ids 34..44. Family definitions declare
+  the expected kind; asset loading rejects a mismatched or unspecified family
+  before binding models. Kind dispatch belongs at spawning/loading boundaries,
+  not in shared attack execution. Keep raw serialized descriptor numbers intact.
   `Golem` owns realm-costume selection and five-unit knockback resistance;
   `General` owns its realm-costumed priority-move definition; `Gargoyle` owns
   form-specific assets and the defeated form used for key drops. These definitions
@@ -638,18 +646,18 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   too) its damage record strikes: a blow (0) whoever is within the part's
   radius plus its reach of the named node's posed position, a ring (3, the
   stomp) whoever is within reach of the feet, each player once a move.
-  Breath (4) instead uses `enemies/CritterBreath`: an animated-node segment,
+  Breath (4) instead uses `enemies/CombatantBreath`: an animated-node segment,
   authored offset/yaw/pitch and min/max horizontal distance, tested against
   the player's expanded cylinder. Repeated contacts are routed by
   `LevelOpponents` through the recipient's shared quarter-second `breathGap`,
   for `damage` at the level's enemy damage scale.
   Projectile damage (1) is queued as `CombatShot` at the authored launch
   frame; move 133 repeats at `framePeriod`, including triggers crossed by a
-  coarse update without re-firing a held frame. `CritterProjectile` owns the
+  coarse update without re-firing a held frame. `CombatantProjectile` owns the
   retail launch math (0x8003d0a4 / 0x80030ae8): rate clamped to 0.5..1.5,
   speed interpolation factor 0.75, fixed-horizontal-speed ballistic aiming
   or normalized straight aiming, body/target selection, yaw spread and pitch.
-  `world/CritterProjectiles` owns moving effects, swept player contacts,
+  `world/CombatantProjectiles` owns moving effects, swept player contacts,
   world collisions, impact sound/visual and birth-to-loop-to-end transitions.
   Clear it before releasing the borrowed critter archives/tables. Launch
   policy (`behaviorFlags`, DAMG +2) is separate from player harm flags (+4);

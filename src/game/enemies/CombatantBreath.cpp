@@ -1,4 +1,4 @@
-#include "game/enemies/CritterBreath.h"
+#include "game/enemies/CombatantBreath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,7 +6,7 @@
 #include "engine/core/Types.h"
 
 namespace gdl::game {
-CritterBreath CritterBreath::fromNode(const Mat4& node, const AttackDefinition& damage) {
+CombatantBreath CombatantBreath::fromNode(const Mat4& node, const AttackDefinition& damage) {
     Vec3 forward{node[2]};
     const f32 length = glm::length(forward);
     if (length > 0.0f) {
@@ -26,7 +26,7 @@ CritterBreath CritterBreath::fromNode(const Mat4& node, const AttackDefinition& 
     return {origin, origin + direction * damage.maxDistance};
 }
 
-bool CritterBreath::touches(const AttackDefinition& damage, const Vec3& centre, f32 radius,
+bool CombatantBreath::touches(const AttackDefinition& damage, const Vec3& centre, f32 radius,
                             f32 halfHeight) const {
     const Vec3 fromOrigin = centre - origin;
     const f32 distance = glm::length(Vec2{fromOrigin.x, fromOrigin.z});

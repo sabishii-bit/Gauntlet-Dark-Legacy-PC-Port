@@ -12,11 +12,6 @@
 #include "game/enemies/Combatant.h"
 
 namespace gdl::game {
-inline constexpr s32 kGolemCritter = 3;
-inline constexpr s32 kGargoyleCritter = 7;
-inline constexpr s32 kGeneralCritter = 8;
-inline constexpr s32 kBossCritter = 4;
-
 /** Stable-id population of great creatures. Owns shared family assets and preserves
  * cross-family collision/update order; individual combat belongs to Combatant. */
 class Critters {
@@ -45,7 +40,8 @@ public:
     /** Stands one of `kind` (a golem, a general, or a gargoyle by its form: "GAR_EAGL")
      * at `position` facing `yaw`. Bosses use their own encounter owner. Nullopt when its data or
      * archive is missing or there is no room. */
-    std::optional<s32> spawn(s32 kind, const Vec3& position, f32 yaw, std::string_view form = "");
+    std::optional<s32> spawn(CombatantKind kind, const Vec3& position, f32 yaw,
+                             std::string_view form = "");
 
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
     std::vector<CombatBlow> takeBlows();
@@ -81,7 +77,7 @@ public:
     usize count() const;
     bool alive(s32 id) const;
     bool dying(s32 id) const;
-    s32 kindOf(s32 id) const;
+    CombatantKind kindOf(s32 id) const;
     f32 healthOf(s32 id) const;
     f32 maxHealthOf(s32 id) const;
     /** Floor anchor, not the animation root (which includes the type's floorOffset). */

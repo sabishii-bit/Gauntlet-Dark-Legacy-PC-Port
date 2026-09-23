@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/enemies/CombatantKind.h"
 #include "game/enemies/CritterMovement.h"
 #include "game/enemies/MoveDefinition.h" // IWYU pragma: export
 
@@ -26,7 +27,7 @@ public:
     std::string_view folder() const { return m_folder; }     ///< "golem": the archive's
     std::string_view prefix() const { return m_prefix; }     ///< "GOLEM"
     std::string tree() const { return m_prefix + m_suffix; } ///< "GOLEM1"
-    s32 kind() const { return m_kind; } ///< 3 a golem, 7 a gargoyle, 8 a general
+    CombatantKind kind() const { return m_kind; } ///< descriptor family, not a boss encounter id
     f32 radius() const { return m_radius; }
     f32 wallRadius() const { return m_wallRadius; }
     const CritterMovement& movement() const { return m_movement; }
@@ -59,7 +60,7 @@ private:
     std::string m_folder;
     std::string m_prefix;
     std::string m_suffix;
-    s32 m_kind = 0;
+    CombatantKind m_kind = CombatantKind::Unknown;
     f32 m_radius = 1.0f;
     f32 m_wallRadius = 1.0f;
     CritterMovement m_movement;

@@ -14,8 +14,8 @@
 
 #include "game/enemies/CombatEvents.h"
 #include "game/enemies/CombatantAssets.h"
+#include "game/enemies/CombatantProjectile.h"
 #include "game/enemies/CritterArea.h"
-#include "game/enemies/CritterProjectile.h"
 #include "game/enemies/Enemies.h"
 
 namespace gdl::game {
@@ -51,7 +51,9 @@ public:
     bool alive() const { return m_actor.state == State::Active; }
     bool dying() const { return m_actor.state == State::Dying; }
     s32 id() const { return m_id; }
-    s32 kind() const { return data() != nullptr ? data()->kind() : 0; }
+    CombatantKind kind() const {
+        return data() != nullptr ? data()->kind() : CombatantKind::Unknown;
+    }
     f32 health() const { return m_actor.health; }
     f32 maxHealth() const { return m_actor.maxHealth; }
     const Vec3& position() const { return m_actor.position; }

@@ -14,8 +14,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "formats/CritterWad.h"
+#include "game/enemies/CombatantBreath.h"
 #include "game/enemies/CombatantFixture.h"
-#include "game/enemies/CritterBreath.h"
 #include "game/enemies/CritterData.h"
 #include "game/enemies/Critters.h"
 
@@ -104,7 +104,7 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     CritterData golem;
     REQUIRE(golem.load(root / "critter/GOLEM.json"));
     REQUIRE(golem.loaded());
-    REQUIRE(golem.kind() == kGolemCritter);
+    REQUIRE(golem.kind() == CombatantKind::Golem);
     REQUIRE(golem.folder() == "golem");
     REQUIRE(golem.tree() == "GOLEM1");
     REQUIRE(golem.maxHealth() == 400.0f);
@@ -161,7 +161,7 @@ TEST_CASE("critter data reads a creature's table, clearing the packing tool's le
     REQUIRE(golem.sound(99) == nullptr);
     CritterData general;
     REQUIRE(general.load(root / "critter/GENERAL.json"));
-    REQUIRE(general.kind() == kGeneralCritter);
+    REQUIRE(general.kind() == CombatantKind::General);
     REQUIRE(general.tree() == "GENERAL1");
     REQUIRE(general.sight().maxDistance == 30.0f);
     CritterData missing;
@@ -329,7 +329,7 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
         pose.evaluate(tree, *sequence, clock.frame());
         const Mat4 model = glm::translate(Mat4{1}, Vec3{0, data.floorOffset(), 0});
         const Mat4 parent = model * pose.matrices()[*node];
-        const auto breath = CritterBreath::fromNode(parent, *data.damage(move->damage0));
+        const auto breath = CombatantBreath::fromNode(parent, *data.damage(move->damage0));
         // A second player follows the damaging segment, independently of move targeting.
         players[1].position = (breath.origin + breath.end) * 0.5f - Vec3{0, 3, 0};
         fixture.update(1, 1.0f / 60, players);
@@ -409,11 +409,11 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     EnemyScales scales;
     scales.health = 0.75f;
     critters.open(device, root, &collision, scales, 'G');
-    const auto id = critters.spawn(kGolemCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    const auto id = critters.spawn(CombatantKind::Golem, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
     REQUIRE(id.has_value());
     REQUIRE(critters.count() == 1);
     REQUIRE(critters.alive(*id));
-    REQUIRE(critters.kindOf(*id) == kGolemCritter);
+    REQUIRE(critters.kindOf(*id) == CombatantKind::Golem);
     REQUIRE(critters.maxHealthOf(*id) == 300.0f);
     REQUIRE(critters.healthOf(*id) == 300.0f);
     REQUIRE(critters.radiusOf(*id) == 4.0f);
@@ -521,7 +521,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     EnemyScales place;
     place.playerLevel = 20.0f;
     seasoned.open(device, root, &collision, place, 'G');
-    const auto other = seasoned.spawn(kGolemCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    const auto other = seasoned.spawn(CombatantKind::Golem, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
     REQUIRE(other.has_value());
     EnemyHit weak = hit;
     weak.level = 10;
@@ -559,9 +559,10 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     test::FakeRenderDevice device;
     Critters critters;
     critters.open(device, root, nullptr, EnemyScales{}, 'G');
-    const auto general = critters.spawn(kGeneralCritter, Vec3{10.0f, 0.0f, 0.0f}, kPi / 2.0f);
+    const auto general =
+        critters.spawn(CombatantKind::General, Vec3{10.0f, 0.0f, 0.0f}, kPi / 2.0f);
     REQUIRE(general.has_value());
-    REQUIRE(critters.kindOf(*general) == kGeneralCritter);
+    REQUIRE(critters.kindOf(*general) == CombatantKind::General);
     REQUIRE(critters.maxHealthOf(*general) == 200.0f);
     REQUIRE(critters.radiusOf(*general) == 3.5f);
     REQUIRE(critters.targets().size() == 1);
@@ -578,7 +579,7 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     // A gargoyle comes by its form, and falling is worth the key named by it.
     test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
     const auto gargoyle =
-        critters.spawn(kGargoyleCritter, Vec3{-20.0f, 0.0f, 0.0f}, 0.0f, "GAR_EAGL");
+        critters.spawn(CombatantKind::Gargoyle, Vec3{-20.0f, 0.0f, 0.0f}, 0.0f, "GAR_EAGL");
     REQUIRE(gargoyle.has_value());
     REQUIRE(critters.formOf(*gargoyle) == "EAGL");
     REQUIRE(critters.formOf(*general).empty());
@@ -593,9 +594,10 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     REQUIRE(losses[1].form == "EAGL");
     REQUIRE(losses[1].experience == 100.0f);
     // A kind without data, or a form without an archive, is refused.
-    REQUIRE_FALSE(critters.spawn(99, Vec3{0.0f, 0.0f, 0.0f}, 0.0f).has_value());
     REQUIRE_FALSE(
-        critters.spawn(kGargoyleCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, "GAR_NONE").has_value());
+        critters.spawn(static_cast<CombatantKind>(99), Vec3{0.0f, 0.0f, 0.0f}, 0.0f).has_value());
+    REQUIRE_FALSE(critters.spawn(CombatantKind::Gargoyle, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, "GAR_NONE")
+                      .has_value());
 }
 
 TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, loses its "
@@ -608,7 +610,7 @@ TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, los
     collision.build(floor());
     Critters critters;
     critters.open(device, root, &collision, EnemyScales{}, 'G');
-    const auto id = critters.spawn(kGolemCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    const auto id = critters.spawn(CombatantKind::Golem, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
     REQUIRE(id.has_value());
     const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, -25.0f})};
     // Held, it never leaves its stance for the player it sees.

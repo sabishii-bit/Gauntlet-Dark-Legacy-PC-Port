@@ -5,7 +5,7 @@
 
 #include "engine/core/Types.h"
 
-#include "game/enemies/CritterProjectile.h"
+#include "game/enemies/CombatantProjectile.h"
 
 namespace {
 using namespace gdl;
@@ -17,11 +17,11 @@ TEST_CASE("critter projectiles interpolate the retail speed range without extrap
     AttackDefinition damage;
     damage.speed = 40;
     damage.maxSpeed = 80;
-    REQUIRE(CritterProjectile::speed(damage, -1) == 40);
-    REQUIRE(CritterProjectile::speed(damage, 0.5f) == 40);
-    REQUIRE(CritterProjectile::speed(damage, 1) == 55);
-    REQUIRE(CritterProjectile::speed(damage, 1.5f) == 70);
-    REQUIRE(CritterProjectile::speed(damage, 20) == 70);
+    REQUIRE(CombatantProjectile::speed(damage, -1) == 40);
+    REQUIRE(CombatantProjectile::speed(damage, 0.5f) == 40);
+    REQUIRE(CombatantProjectile::speed(damage, 1) == 55);
+    REQUIRE(CombatantProjectile::speed(damage, 1.5f) == 70);
+    REQUIRE(CombatantProjectile::speed(damage, 20) == 70);
 }
 
 TEST_CASE("critter ballistic projectiles reach the target at fixed horizontal speed",
@@ -29,50 +29,50 @@ TEST_CASE("critter ballistic projectiles reach the target at fixed horizontal sp
     AttackDefinition damage;
     damage.speed = damage.maxSpeed = 20;
     damage.gravity = 10;
-    damage.behaviorFlags = CritterProjectile::kAimAtPlayer;
+    damage.behaviorFlags = CombatantProjectile::kAimAtPlayer;
     CombatShot shot;
     shot.origin = {10, 7, 10};
     shot.target = Vec3{40, 3, 50};
-    const Vec3 velocity = CritterProjectile::velocity(damage, shot);
+    const Vec3 velocity = CombatantProjectile::velocity(damage, shot);
     const f32 flight = 2.5f;
     const Vec3 end =
         shot.origin + velocity * flight - Vec3{0, 0.5f * damage.gravity * flight * flight, 0};
     REQUIRE(glm::length(end - *shot.target) < 0.001f);
     REQUIRE(glm::length(Vec2{velocity.x, velocity.z}) == Approx(20));
     damage.pitch = 1; // ballistic aiming does not apply the straight-shot pitch
-    REQUIRE(CritterProjectile::velocity(damage, shot) == velocity);
+    REQUIRE(CombatantProjectile::velocity(damage, shot) == velocity);
     damage.speed = 0;
-    REQUIRE(CritterProjectile::velocity(damage, shot) == Vec3{0});
+    REQUIRE(CombatantProjectile::velocity(damage, shot) == Vec3{0});
 }
 
 TEST_CASE("critter straight shots honor facing precedence yaw pitch and spread",
           "[game][boss-projectiles]") {
     AttackDefinition damage;
     damage.speed = damage.maxSpeed = 10;
-    damage.behaviorFlags = CritterProjectile::kStraight | CritterProjectile::kAimAtPlayer;
+    damage.behaviorFlags = CombatantProjectile::kStraight | CombatantProjectile::kAimAtPlayer;
     CombatShot shot;
     shot.target = Vec3{10, 0, 0};
-    REQUIRE(CritterProjectile::velocity(damage, shot) == Vec3{10, 0, 0});
-    damage.behaviorFlags |= CritterProjectile::kBodyForward;
-    REQUIRE(CritterProjectile::velocity(damage, shot) == Vec3{0, 0, 10});
+    REQUIRE(CombatantProjectile::velocity(damage, shot) == Vec3{10, 0, 0});
+    damage.behaviorFlags |= CombatantProjectile::kBodyForward;
+    REQUIRE(CombatantProjectile::velocity(damage, shot) == Vec3{0, 0, 10});
     damage.yawSpread = std::numbers::pi_v<f32>;
-    REQUIRE(CritterProjectile::velocity(damage, shot, 1).x == Approx(-10));
-    REQUIRE(CritterProjectile::velocity(damage, shot, -1).x == Approx(10));
+    REQUIRE(CombatantProjectile::velocity(damage, shot, 1).x == Approx(-10));
+    REQUIRE(CombatantProjectile::velocity(damage, shot, -1).x == Approx(10));
     damage.yawSpread = 0;
     damage.pitch = -std::numbers::pi_v<f32> / 2;
-    REQUIRE(CritterProjectile::velocity(damage, shot).y == Approx(10));
+    REQUIRE(CombatantProjectile::velocity(damage, shot).y == Approx(10));
     shot.forward = Vec3{0};
-    REQUIRE(glm::length(CritterProjectile::velocity(damage, shot)) == 0);
+    REQUIRE(glm::length(CombatantProjectile::velocity(damage, shot)) == 0);
 }
 
 TEST_CASE("critter projectile sweeps intersect the cylinder at first entry not closest centre",
           "[game][boss-projectiles]") {
-    REQUIRE(CritterProjectile::contact({0, 3, -10}, {0, 3, 10}, 1, Vec3{0}, 1, 6) == Approx(0.4f));
-    REQUIRE_FALSE(CritterProjectile::contact({5, 3, -10}, {5, 3, 10}, 1, Vec3{0}, 1, 6));
-    REQUIRE_FALSE(CritterProjectile::contact({0, 9, -10}, {0, 9, 10}, 1, Vec3{0}, 1, 6));
-    REQUIRE(CritterProjectile::contact({0, 10, 0}, {0, 0, 0}, 1, Vec3{0}, 1, 6) == Approx(0.3f));
-    REQUIRE(CritterProjectile::contact({0, 3, 0}, {0, 3, 0}, 1, Vec3{0}, 1, 6) == 0);
-    REQUIRE_FALSE(CritterProjectile::contact({0, 3, 10}, {0, 3, 20}, 1, Vec3{0}, 1, 6));
+    REQUIRE(CombatantProjectile::contact({0, 3, -10}, {0, 3, 10}, 1, Vec3{0}, 1, 6) == Approx(0.4f));
+    REQUIRE_FALSE(CombatantProjectile::contact({5, 3, -10}, {5, 3, 10}, 1, Vec3{0}, 1, 6));
+    REQUIRE_FALSE(CombatantProjectile::contact({0, 9, -10}, {0, 9, 10}, 1, Vec3{0}, 1, 6));
+    REQUIRE(CombatantProjectile::contact({0, 10, 0}, {0, 0, 0}, 1, Vec3{0}, 1, 6) == Approx(0.3f));
+    REQUIRE(CombatantProjectile::contact({0, 3, 0}, {0, 3, 0}, 1, Vec3{0}, 1, 6) == 0);
+    REQUIRE_FALSE(CombatantProjectile::contact({0, 3, 10}, {0, 3, 20}, 1, Vec3{0}, 1, 6));
 }
 
 TEST_CASE("critter projectile windows survive skipped frames and do not repeat held frames",

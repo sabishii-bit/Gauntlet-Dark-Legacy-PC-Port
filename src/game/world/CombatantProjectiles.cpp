@@ -1,4 +1,4 @@
-#include "game/world/CritterProjectiles.h"
+#include "game/world/CombatantProjectiles.h"
 
 #include <algorithm>
 #include <cmath>
@@ -18,7 +18,7 @@ constexpr u32 kSpin = 8;
 constexpr u32 kCustomEffect = 0xF000000;
 } // namespace
 
-u32 CritterProjectiles::show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
+u32 CombatantProjectiles::show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
                              const PlaySound& sound, f32 life) {
     const CombatEffectDefinition* cue = flying.shot.data->sound(index);
     if (cue == nullptr) {
@@ -40,7 +40,7 @@ u32 CritterProjectiles::show(Flying& flying, s32 index, RenderDevice& device, Ef
     return effects.startSet(device, *flying.archive, cue->tree, flying.position, setting);
 }
 
-void CritterProjectiles::place(const Flying& flying, EffectTrees& effects) {
+void CombatantProjectiles::place(const Flying& flying, EffectTrees& effects) {
     Mat4 transform = glm::translate(Mat4{1.0f}, flying.position);
     transform = glm::rotate(transform, flying.rotation.y, Vec3{0, 1, 0});
     transform = glm::rotate(transform, flying.rotation.x, Vec3{1, 0, 0});
@@ -48,7 +48,7 @@ void CritterProjectiles::place(const Flying& flying, EffectTrees& effects) {
     effects.placeAt(flying.effect, transform);
 }
 
-void CritterProjectiles::launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,
+void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,
                                 EffectTrees& effects, const PlaySound& sound) {
     const AttackDefinition* damage =
         shot.data != nullptr ? shot.data->damage(shot.damageIndex) : nullptr;
@@ -60,7 +60,7 @@ void CritterProjectiles::launch(const CombatShot& shot, ItemArchive& archive, Re
         return;
     }
     if ((cue->flags & kCustomEffect) != 0) {
-        log::warn("critter {}: custom projectile effect {} is not implemented", shot.data->name(),
+        log::warn("combatant {}: custom projectile effect {} is not implemented", shot.data->name(),
                   cue->tree);
         return;
     }
@@ -71,7 +71,7 @@ void CritterProjectiles::launch(const CombatShot& shot, ItemArchive& archive, Re
     flying.shot.origin += cue->offset * shot.scale;
     flying.archive = &archive;
     flying.position = flying.shot.origin;
-    flying.velocity = CritterProjectile::velocity(*damage, flying.shot, spread(m_random));
+    flying.velocity = CombatantProjectile::velocity(*damage, flying.shot, spread(m_random));
     flying.rotation.y = std::atan2(flying.velocity.x, flying.velocity.z);
     if ((cue->flags & kSpin) != 0) {
         constexpr f32 kSpinRate = std::numbers::pi_v<f32> / 2.0f;
@@ -85,7 +85,7 @@ void CritterProjectiles::launch(const CombatShot& shot, ItemArchive& archive, Re
     }
 }
 
-void CritterProjectiles::update(f32 seconds, const WorldCollision* collision,
+void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                                 std::span<const EnemyView> players, RenderDevice& device,
                                 EffectTrees& effects, const PlaySound& sound) {
     if (seconds <= 0.0f) {
@@ -109,7 +109,7 @@ void CritterProjectiles::update(f32 seconds, const WorldCollision* collision,
             continue;
         }
         if (!flying.morphed && damage.morph >= 0 &&
-            (damage.behaviorFlags & CritterProjectile::kWaitForMorph) != 0) {
+            (damage.behaviorFlags & CombatantProjectile::kWaitForMorph) != 0) {
             place(flying, effects);
             continue;
         }
@@ -129,7 +129,7 @@ void CritterProjectiles::update(f32 seconds, const WorldCollision* collision,
             bool wall = false;
             Vec3 destination = to;
             if (collision != nullptr &&
-                (damage.behaviorFlags & CritterProjectile::kIgnoreWorld) == 0) {
+                (damage.behaviorFlags & CombatantProjectile::kIgnoreWorld) == 0) {
                 const Vec3 pushed =
                     collision->resolveWalls(to, radius, to.y - radius, to.y + radius);
                 wall = glm::length(pushed - to) > kWallTolerance;
@@ -142,12 +142,12 @@ void CritterProjectiles::update(f32 seconds, const WorldCollision* collision,
             }
             f32 nearest = 1.0f;
             const EnemyView* victim = nullptr;
-            if ((damage.behaviorFlags & CritterProjectile::kNoPlayerDamage) == 0) {
+            if ((damage.behaviorFlags & CombatantProjectile::kNoPlayerDamage) == 0) {
                 for (const EnemyView& player : players) {
                     if (player.hidden) {
                         continue;
                     }
-                    const auto at = CritterProjectile::contact(from, to, radius, player.position,
+                    const auto at = CombatantProjectile::contact(from, to, radius, player.position,
                                                                player.radius, player.height);
                     if (at.has_value() &&
                         (*at < nearest || (victim == nullptr && *at == nearest))) {
@@ -179,7 +179,7 @@ void CritterProjectiles::update(f32 seconds, const WorldCollision* collision,
     std::erase_if(m_flying, [](const Flying& flying) { return flying.effect == 0; });
 }
 
-void CritterProjectiles::clear(EffectTrees& effects) {
+void CombatantProjectiles::clear(EffectTrees& effects) {
     for (const Flying& flying : m_flying) {
         effects.stop(flying.effect);
     }
@@ -187,7 +187,7 @@ void CritterProjectiles::clear(EffectTrees& effects) {
     m_hits.clear();
 }
 
-std::vector<CritterProjectileHit> CritterProjectiles::takeHits() {
+std::vector<CombatantProjectileHit> CombatantProjectiles::takeHits() {
     return std::exchange(m_hits, {});
 }
 } // namespace gdl::game

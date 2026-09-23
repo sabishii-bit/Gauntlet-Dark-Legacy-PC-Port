@@ -10,12 +10,12 @@
 #include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
-#include "game/enemies/CritterProjectile.h"
+#include "game/enemies/CombatantProjectile.h"
 #include "game/enemies/Enemies.h"
 #include "game/world/EffectTrees.h"
 
 namespace gdl::game {
-struct CritterProjectileHit {
+struct CombatantProjectileHit {
     s32 player = -1;
     f32 damage = 0.0f;
     u32 flags = 0;
@@ -25,7 +25,7 @@ struct CritterProjectileHit {
 /** Moving attack effects, independent of the creature's animation after launch.
  * Archives and attack tables are borrowed until clear(). Effects must outlive this object.
  * Stage generators and grab/attached-area attacks are separate from this projectile path. */
-class CritterProjectiles {
+class CombatantProjectiles {
 public:
     using PlaySound = std::function<void(std::string_view)>;
     void launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,
@@ -33,7 +33,7 @@ public:
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
                 RenderDevice& device, EffectTrees& effects, const PlaySound& sound);
     void clear(EffectTrees& effects);
-    std::vector<CritterProjectileHit> takeHits();
+    std::vector<CombatantProjectileHit> takeHits();
     usize count() const { return m_flying.size(); }
 
 private:
@@ -51,7 +51,7 @@ private:
                     const PlaySound& sound, f32 life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
     std::vector<Flying> m_flying;
-    std::vector<CritterProjectileHit> m_hits;
+    std::vector<CombatantProjectileHit> m_hits;
     std::mt19937 m_random;
 };
 } // namespace gdl::game

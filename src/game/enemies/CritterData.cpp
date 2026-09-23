@@ -63,7 +63,7 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_name = root.value("name", "");
         m_folder = lower(desc.value("name", ""));
         m_prefix = desc.value("prefix", "");
-        m_kind = desc.value("type", 0);
+        m_kind = static_cast<CombatantKind>(desc.value("type", 0));
         m_suffix = type.value("suffix", "");
         m_radius = type.value("radius", 1.0f);
         m_wallRadius = type.value("wallRadius", 1.0f);
