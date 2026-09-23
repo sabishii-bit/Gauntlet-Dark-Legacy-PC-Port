@@ -1143,6 +1143,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   onto it. The scenario files are test data and live in `tests/scenarios/`.
   Use them, with a capture script, to verify a moment in play instead of
   driving through the title and select screens.
+  `python scripts/scenario.py genie` launches a full name, unique suffix or
+  JSON path in the existing Release build. `--list` lists scenarios, `--build`
+  builds first through build.py, `--preset` selects a build, and `--frames`
+  bounds a smoke run. Additional game arguments follow `--`.
 * Lighting: `engine/world/WorldLighting` is the original's vertex shade, a grey
   ambient plus one directional light where a surface faces it, clamped per
   channel; `WorldLighting::forLevel` takes a level's record (the light

@@ -82,6 +82,22 @@ gauntlet [--assets <dir>] [--unpacked <dir>] [--data <dir>] [--title] [--movie <
 `--title` skips the intro movies, `--movie <name>` plays one movie and quits,
 `--frames <n>` quits after that many frames, and `--scenario <file>` opens the
 tower straight onto a described party and place (see `tests/scenarios/`).
+
+For a shorter scenario command:
+
+```sh
+python scripts/scenario.py genie                 # launch the existing Release build
+python scripts/scenario.py --list                # show every scenario
+python scripts/scenario.py dragon --build        # build first, then launch
+python scripts/scenario.py genie --frames 600    # bounded smoke test
+```
+
+Use a full scenario name, a unique suffix (`genie`, `dragon`, `lich`), or a
+JSON file path. Ambiguous shortcuts list the choices. `--preset <name>` selects
+another build, and additional game options go after `--`, for example
+`python scripts/scenario.py genie -- --no-vsync`. The launcher runs the game
+from the repository root; paths in those additional options are relative to it.
+
 Settings live in `data/config.json`, with per-user overrides in
 `%APPDATA%\GauntletDarkLegacy\settings.json` or
 `~/.config/GauntletDarkLegacy/settings.json`; every string the player sees
@@ -142,7 +158,7 @@ tools/        vqdump (movie to PNG and WAV) and gdlunpack (console assets to sta
 tests/        Catch2 tests mirroring src/, plus tests/scenarios/ for launching the game onto a moment
 shaders/      GLSL sources, compiled at build time to bin/shaders/*.spv
 data/         shipped settings defaults and text tables
-scripts/      Python helpers: setup, devenv, configure, build, lint, clangd-check
+scripts/      Python helpers: setup, devenv, configure, build, scenario, lint, clangd-check
 ```
 
 [AGENTS.md](AGENTS.md) has the working rules for contributors and coding agents.
