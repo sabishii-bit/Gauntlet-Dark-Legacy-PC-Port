@@ -131,6 +131,57 @@ TEST_CASE("animation trees decode each node's keys, plain or compressed", "[form
     REQUIRE_THROWS_AS(AnimationFile::parse(bad), FormatError);
 }
 
+TEST_CASE("zero-duration sequences retain initial-only pose keys", "[formats][animation]") {
+    std::vector<u8> bytes = sampleFile();
+    bytes[kTreeAt + kSequencesAt + 32] = 0;
+    const usize entry = kTreeAt + kKeysAt + kEntriesAt;
+    // Retain the compressed flag too: an initial-only record still contains floats.
+    bytes[entry + 1] = 0x60;
+    bytes[entry + 4] = 4; // bypass the sample's bitmap, point directly at its first pose
+    const AnimationFile file = AnimationFile::parse(bytes);
+    const TreeSequence& sequence = file.trees[0].sequences[0];
+    REQUIRE(sequence.frameCount == 0);
+    REQUIRE(sequence.tracks.size() == 1); // the other node has no initial-only record
+    REQUIRE(sequence.tracks[0].node == 0);
+    REQUIRE(sequence.tracks[0].frames == std::vector<u16>{0});
+    REQUIRE(sequence.tracks[0].values == std::vector<f32>{0.5f, 1.0f});
+
+    SECTION("static records still reject a short stride") {
+        bytes[entry + 2] = 1;
+        REQUIRE_THROWS_AS(AnimationFile::parse(bytes), FormatError);
+    }
+    SECTION("static records still reject truncated values") {
+        bytes.resize(kTreeAt + kKeysAt + kBlocksAt + 8);
+        REQUIRE_THROWS_AS(AnimationFile::parse(bytes), FormatError);
+    }
+}
+
+TEST_CASE("Wraith's static entrance includes its lowered pose and tiny portal scale",
+          "[formats][animation][wraith][assets]") {
+    const AnimationFile file =
+        AnimationFile::parse(readFile(test::assetOrSkip("MONSTERS/WRAITH/ANIM.PS2")));
+    const auto body = file.find("WRAITH");
+    const auto portal = file.find("INITFX");
+    REQUIRE(body.has_value());
+    REQUIRE(portal.has_value());
+    const TreeSequence& init = file.trees[*body].sequences[0];
+    REQUIRE(init.name == "INIT");
+    REQUIRE(init.frameCount == 0);
+    REQUIRE(init.tracks.size() == 34);
+    const auto root = std::ranges::find(init.tracks, 1U, &NodeTrack::node);
+    REQUIRE(root != init.tracks.end());
+    REQUIRE(root->flags == (NodeTrack::kPositionX | NodeTrack::kPositionY));
+    REQUIRE(root->values[1] == Approx(-24.920017f));
+    const TreeSequence& fx = file.trees[*portal].sequences[0];
+    REQUIRE(fx.frameCount == 0);
+    REQUIRE(fx.tracks.size() == 1);
+    REQUIRE(fx.tracks[0].node == 1);
+    REQUIRE(fx.tracks[0].values.size() == 6);
+    for (usize i = 3; i < 6; ++i) {
+        REQUIRE(fx.tracks[0].values[i] == Approx(0.001f));
+    }
+}
+
 /** A level's file: no trees, two texture animations in the header's list. */
 std::vector<u8> sampleLevelFile() {
     ByteWriter w;

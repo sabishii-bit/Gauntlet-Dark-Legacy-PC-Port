@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <filesystem>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/ItemArchive.h"
@@ -28,6 +29,32 @@ TEST_CASE("effect transforms retain pitch roll and scale from a full attachment"
     REQUIRE(effect.transform() == expected);
     effect.yaw = 1; // full attachment replaces the world-yaw path
     REQUIRE(effect.transform() == expected);
+}
+
+TEST_CASE("Wraith's waiting portal retains its authored static scale throughout its hold",
+          "[game][world][effects][wraith][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/WRAITH/animations.json").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.seconds = 100;
+    REQUIRE(effects.startSet(device, archive, "INITFX", Vec3{0}, setting) != 0);
+    for (const f32 elapsed : {0.0f, 0.5f, 2.0f}) {
+        effects.update(elapsed);
+        REQUIRE(effects.count() == 1);
+        const auto& effect = effects.effect(0);
+        REQUIRE(effect.pose.poses().size() == 5);
+        const Vec3 scale = effect.pose.poses()[1].scale;
+        REQUIRE(scale.x == Catch::Approx(0.001f));
+        REQUIRE(scale.y == Catch::Approx(0.001f));
+        REQUIRE(scale.z == Catch::Approx(0.001f));
+        REQUIRE(glm::length(Vec3{effect.pose.matrices()[2][0]}) == Catch::Approx(0.001f));
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, {});
+        REQUIRE_FALSE(device.draws.empty());
+    }
 }
 
 TEST_CASE("Yeti stomp geometry draws through the floor using its authored depth policy",
