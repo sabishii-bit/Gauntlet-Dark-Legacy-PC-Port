@@ -1,5 +1,6 @@
 #include "game/world/LevelSoundscape.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <exception>
 #include <format>
@@ -7,6 +8,7 @@
 #include <utility>
 
 #include "engine/audio/AdsStream.h"
+#include "engine/audio/StreamPlaylist.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
@@ -43,6 +45,11 @@ void LevelSoundscape::open(const std::filesystem::path& root, SoundPlayer* outpu
     if (info != nullptr) {
         m_level.load(root / "audio" / info->bank);
         m_stream = info->stream;
+        // Only the initial music area is selected here.
+        if (!m_stream.empty() && info->areas > 1) {
+            m_stream += 'a';
+        }
+        m_streamParts = std::max(info->parts[0], 1);
     }
     m_ambient.load(root / "audio/TOWAMB");
     m_narrator.load(root / "audio/VOICE1");
@@ -74,17 +81,30 @@ void LevelSoundscape::startMusic(const AssetLocator* assets, f32 volume) {
     if (m_output == nullptr || assets == nullptr || m_stream.empty()) {
         return;
     }
-    const auto file = assets->find(std::format("STREAMS/{}.ads", m_stream));
-    if (!file.has_value()) {
-        log::warn("Tower: music stream {} is not among the game's files", m_stream);
-        return;
+    std::vector<std::unique_ptr<StreamSource>> parts;
+    for (s32 i = 0; i < m_streamParts; ++i) {
+        const std::string name =
+            m_streamParts > 1 ? std::format("{}_{}", m_stream, i + 1) : m_stream;
+        const auto file = assets->find(std::format("STREAMS/{}.ads", name));
+        if (!file.has_value()) {
+            log::warn("Level music stream {} is not among the game's files", name);
+            return;
+        }
+        auto part = std::make_unique<AdsStream>();
+        if (!part->open(*file)) {
+            return;
+        }
+        parts.push_back(std::move(part));
     }
-    auto stream = std::make_shared<AdsStream>();
-    if (!stream->open(*file)) {
+    std::shared_ptr<StreamPlaylist> stream;
+    try {
+        stream = std::make_shared<StreamPlaylist>(std::move(parts));
+    } catch (const std::exception& e) {
+        log::warn("Level music {}: {}", m_stream, e.what());
         return;
     }
     stop(m_music);
-    m_music = m_output->playStream(std::move(stream), true, volume, SoundCategory::Music);
+    m_music = m_output->playStream(std::move(stream), false, volume, SoundCategory::Music);
 }
 
 void LevelSoundscape::stop(SoundHandle handle) {
@@ -126,6 +146,7 @@ void LevelSoundscape::close() {
     m_steps.fill(std::nullopt);
     m_pickup.reset();
     m_stream.clear();
+    m_streamParts = 1;
     m_output = nullptr;
 }
 

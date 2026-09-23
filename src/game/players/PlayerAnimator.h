@@ -189,8 +189,13 @@ public:
     bool released() const { return m_released; }
     /** How long the attack had been going when the weapon was let go. */
     f32 attackSeconds() const { return m_attackSeconds; }
+    /** The arrival is pending or still playing; player input must wait. */
+    bool entering() const { return !m_entered || m_current == Action::Start; }
     /** How much of its pace the current action leaves the body. */
     f32 moveScale() const {
+        if (entering()) {
+            return 0.0f;
+        }
         if (shoving()) {
             return kChargePace; // the charge rushes on, faster than a run
         }

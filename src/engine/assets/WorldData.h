@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <numbers>
 #include <optional>
@@ -116,6 +117,8 @@ struct LevelAudioInfo {
     s32 enterSound = -1;
     s32 hitSound = -1;
     s32 nameSound = -1;
+    s32 areas = 1;
+    std::array<s32, 8> parts{};
 };
 
 /** A realm's unpacked data (`wdata/<REALM>.json`): its levels and the records they share. */

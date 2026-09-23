@@ -105,11 +105,14 @@ Mat4 CameraFrame::face(const Mat4& placement, u32 mode) const {
     }
     Mat4 faced = placement;
     const Vec3 at{placement[3]};
+    // Facing replaces orientation, not the authored growth of a billboard effect.
+    const Vec3 scale{glm::length(Vec3{placement[0]}), glm::length(Vec3{placement[1]}),
+                     glm::length(Vec3{placement[2]})};
     if (mode == kFacingFull) {
         // A proper rotation whose z points back at the camera.
-        faced[0] = Vec4{-right, 0.0f};
-        faced[1] = Vec4{up, 0.0f};
-        faced[2] = Vec4{-forward, 0.0f};
+        faced[0] = Vec4{-right * scale.x, 0.0f};
+        faced[1] = Vec4{up * scale.y, 0.0f};
+        faced[2] = Vec4{-forward * scale.z, 0.0f};
         return faced;
     }
     const Vec3 toCamera = position - at;
@@ -119,9 +122,9 @@ Mat4 CameraFrame::face(const Mat4& placement, u32 mode) const {
     const f32 yaw = std::atan2(toCamera.x, toCamera.z);
     const f32 c = std::cos(yaw);
     const f32 s = std::sin(yaw);
-    faced[0] = Vec4{c, 0.0f, -s, 0.0f};
-    faced[1] = Vec4{0.0f, 1.0f, 0.0f, 0.0f};
-    faced[2] = Vec4{s, 0.0f, c, 0.0f};
+    faced[0] = Vec4{c * scale.x, 0.0f, -s * scale.x, 0.0f};
+    faced[1] = Vec4{0.0f, scale.y, 0.0f, 0.0f};
+    faced[2] = Vec4{s * scale.z, 0.0f, c * scale.z, 0.0f};
     return faced;
 }
 

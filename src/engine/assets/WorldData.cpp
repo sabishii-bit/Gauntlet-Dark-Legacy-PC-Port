@@ -116,6 +116,8 @@ LevelAudioInfo parseAudio(const nlohmann::json& json) {
     audio.enterSound = json.value("enterSound", -1);
     audio.hitSound = json.value("hitSound", -1);
     audio.nameSound = json.value("nameSound", -1);
+    audio.areas = json.value("areas", 1);
+    audio.parts = json.value("parts", std::array<s32, 8>{});
     return audio;
 }
 

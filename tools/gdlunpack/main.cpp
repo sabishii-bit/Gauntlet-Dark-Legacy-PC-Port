@@ -1273,6 +1273,11 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
         json.key("nameSound").value(audio.nameSound);
         json.key("areas").value(static_cast<int>(audio.areas));
         json.key("stereo").value(static_cast<int>(audio.stereo));
+        json.key("parts").beginArray();
+        for (const s16 parts : audio.parts) {
+            json.value(static_cast<int>(parts));
+        }
+        json.endArray();
         json.endObject();
     }
     json.endArray();

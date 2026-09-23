@@ -57,6 +57,33 @@ TEST_CASE("Wraith's waiting portal retains its authored static scale throughout 
     }
 }
 
+TEST_CASE("Wraith emergence smoke preserves its growing geometry when facing the camera",
+          "[game][world][effects][wraith][unpacked]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(test::unpackedOrSkip("MONSTERS/WRAITH/animations.json").parent_path()));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    REQUIRE(effects.start(device, archive, "GENFX2", Vec3{0}));
+    effects.update(2.0f);
+    REQUIRE(effects.effect(0).pose.poses()[0].scale.y > 1.0f);
+    effects.draw(device, Mat4{1}, {});
+    const auto ordinary = device.draws;
+    REQUIRE_FALSE(ordinary.empty());
+    device.draws.clear();
+    const CameraFrame camera = CameraFrame::at({0, 10, -20});
+    effects.draw(device, Mat4{1}, {}, &camera);
+    REQUIRE(device.draws.size() == ordinary.size());
+    for (usize i = 0; i < ordinary.size(); ++i) {
+        const auto& before = ordinary[i].vertices;
+        const auto& after = device.draws[i].vertices;
+        REQUIRE(before.size() >= 3);
+        REQUIRE(after.size() == before.size());
+        const f32 original = glm::length(before[1].position - before[0].position);
+        REQUIRE(original > 0);
+        REQUIRE(glm::length(after[1].position - after[0].position) == Catch::Approx(original));
+    }
+}
+
 TEST_CASE("Yeti stomp geometry draws through the floor using its authored depth policy",
           "[game][world][effects][yeti][unpacked]") {
     const auto root = test::unpackedOrSkip("MONSTERS/YETI/animations.json").parent_path();

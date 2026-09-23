@@ -18,6 +18,20 @@ bool near(const Vec3& a, const Vec3& b, f32 tolerance = 1e-4f) {
     return near(a.x, b.x, tolerance) && near(a.y, b.y, tolerance) && near(a.z, b.z, tolerance);
 }
 
+TEST_CASE("billboards retain animated size while replacing orientation", "[world][camera]") {
+    const CameraFrame camera = CameraFrame::at({5, 10, -20});
+    for (const u32 mode : {1U, CameraFrame::kFacingFull}) {
+        for (const Vec3 scale : {Vec3{0.001f}, Vec3{3, 7, 2}, Vec3{0}}) {
+            const Mat4 model = glm::scale(glm::translate(Mat4{1}, Vec3{1, 2, 3}), scale);
+            const Mat4 faced = camera.face(model, mode);
+            REQUIRE(faced[3] == model[3]);
+            for (s32 axis = 0; axis < 3; ++axis) {
+                REQUIRE(near(glm::length(Vec3{faced[axis]}), scale[axis]));
+            }
+        }
+    }
+}
+
 TEST_CASE("an unturned camera looks along positive z in a left-handed frame", "[world][camera]") {
     const WorldCamera camera;
     REQUIRE(near(camera.forward(), Vec3{0.0f, 0.0f, 1.0f}));

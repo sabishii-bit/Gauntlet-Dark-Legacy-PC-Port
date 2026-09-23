@@ -84,12 +84,27 @@ TEST_CASE("world data names a realm's levels and the records they point at", "[a
     REQUIRE(audio->bank == "WIZTOWER");
     REQUIRE(audio->stream == "tower");
     REQUIRE(audio->hitSound == 1);
+    REQUIRE(audio->areas == 1);
+    REQUIRE(audio->parts[0] == 0); // legacy manifests without part metadata remain usable
     // The second level points past the records it has.
     const LevelInfo* second = data.level("L2");
     REQUIRE(second != nullptr);
     REQUIRE(second->ambient == 1.0f); // the default when unspecified
     REQUIRE(data.camera(second->cameraIndex) == nullptr);
     REQUIRE(data.audio(second->audioIndex) == nullptr);
+}
+
+TEST_CASE("Wraith music metadata names a two-part single-area stream",
+          "[assets][world][unpacked][wraith]") {
+    WorldData data;
+    REQUIRE(data.load(test::unpackedOrSkip("wdata/DREAM.json")));
+    const auto* level = data.level("J5");
+    REQUIRE(level != nullptr);
+    const auto* audio = data.audio(level->audioIndex);
+    REQUIRE(audio != nullptr);
+    REQUIRE(audio->stream == "dream5");
+    REQUIRE(audio->areas == 1);
+    REQUIRE(audio->parts[0] == 2);
 }
 
 TEST_CASE("missing or malformed world data fails to load", "[assets][world]") {

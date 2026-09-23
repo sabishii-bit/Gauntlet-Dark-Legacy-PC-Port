@@ -930,6 +930,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   waiting effect. START and START2 use INIT; START3 plays the rising animation.
   Existing exports need regeneration with the rebuilt gdlunpack:
   `gdlunpack assets/GUNE5D/Gauntlet/MONSTERS assets/unpacked/MONSTERS --only WRAITH`.
+  GENFX2's camera-facing smoke must preserve animated axis scales when billboarded;
+  unit-length replacement axes erase its growth. WDATA audio exports include per-area
+  part counts: J5's dream5 has two parts, plays DREAM5_1 once, then loops DREAM5_2.
+  Regenerate older realm manifests with `gdlunpack <assets> <out> --only WDATA`.
+  LevelSoundscape resolves first-area names and parts; changing music areas mid-level
+  remains separate work. Player arrival blocks movement, turning and buttons until
+  START ends, independently of the camera ride and materialisation-effect lifetime.
   Projectile DMG_SUPER passes through players, with the shared player effect-gap
   gating repeat damage. DMG_SUPER+DMG_REFLECT spends its pass-through on contact
   and leaves an impact; ordinary snakes retain it through SNAKEFX -> SNAKELOOP.

@@ -78,6 +78,7 @@ private:
     std::array<std::optional<u32>, 2> m_steps{};
     std::optional<u32> m_pickup;
     std::string m_stream;
+    s32 m_streamParts = 1;
     SoundHandle m_music = kNoSound;
     SoundHandle m_voice = kNoSound;
     std::vector<Opening> m_openings;
