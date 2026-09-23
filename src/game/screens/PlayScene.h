@@ -35,6 +35,7 @@
 #include "game/screens/LevelOpponents.h"
 #include "game/screens/PartyHud.h"
 #include "game/screens/PartyMotion.h"
+#include "game/screens/PlayerAttacks.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/screens/SumnerVisit.h"
 #include "game/screens/TransitionScreen.h"
@@ -43,7 +44,6 @@
 #include "game/world/ExitPortals.h"
 #include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
-#include "game/world/MoveStrikes.h"
 #include "game/world/PlayerArsenal.h"
 #include "game/world/PlayerFigure.h"
 #include "game/world/StartCamera.h"
@@ -189,7 +189,7 @@ public:
                    : std::nullopt;
     }
     const HelpMessages& help() const { return m_hud.help(); }
-    const MoveStrikes& strikes() const { return m_strikes; }
+    const MoveStrikes& strikes() const { return m_attacks.strikes(); }
     const AmbientDimmer& dimmer() const { return m_dimmer; }
     /** Gives `player`'s character experience won in play, which also feeds its turbo meter
      * (unless it is in the middle of a turbo move), as a kill does in the original. */
@@ -250,21 +250,14 @@ private:
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     LevelFixtures::Events fixtureEvents();
+    PlayerAttacks::Targets attackTargets();
     void hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage);
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false);
-    void strikeBarrel(usize barrel, f32 power, s32 byPlayer);
-    void strikeSafeRock(usize index, f32 power);
     void updateEnemies(s32 ticks, f32 seconds);
     void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer);
     void strikeGenerator(s32 id, f32 power, s32 byPlayer);
     void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
                        std::optional<Vec3> where = std::nullopt, bool close = false);
-    /** Missile targets: the barrels by their own ids, the enemies and generators past these. */
-    static constexpr s32 kEnemyTargetBase = 1000;
-    static constexpr s32 kGeneratorTargetBase = 2000;
-    static constexpr s32 kCritterTargetBase = 3000;
-    static constexpr s32 kBossTargetBase = 4000;
-    static constexpr s32 kSafeRockTargetBase = 5000;
     /** The blast a boss's death lets off, which nothing of the swarm survives. */
     static constexpr f32 kBossDeathBlast = 1000.0f;
     static constexpr f32 kBossDeathBlastRadius = 1000.0f;
@@ -280,18 +273,8 @@ private:
      * the message, the costume of a new tier, and the class's word at a milestone. */
     void updateLevels();
     static constexpr f32 kLevelUpHealth = 100.0f;
-    void cry(usize index, std::string_view which);
     void sayWithName(usize index, std::string_view line);
-    void ramBarrels(usize index);
-    void fireStrike(usize index, s32 strike);
     void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
-    void showBlock(usize index, f32 taken, f32 left);
-    void shieldPotion(usize index);
-    void updateShields(f32 seconds);
-    void updateStrikes(f32 seconds);
-    ItemArchive* moveEffectsOf(usize index);
-    f32 ownDamageOf(usize index) const;
-    void updateTurbo(usize index, s32 ticks, f32 seconds);
     bool isDown(usize index) const {
         return index < m_players.size() && m_players[index].life != PlayerLife::Standing;
     }
@@ -330,31 +313,7 @@ private:
     PlayerHealth m_health;
     std::mt19937 m_coinRandom{0xC01Eu}; ///< how fast each coin a boss spews flies
     AmbientDimmer m_dimmer;
-    MoveStrikes m_strikes;
-    /** The effect that goes along with a strike that flies. */
-    struct StrikeEffect {
-        u32 strike = 0;
-        u32 effect = 0;
-    };
-    std::vector<StrikeEffect> m_strikeEffects;
-    /** Whose strike a number is, and which of their class's, for what it shows on a hit. */
-    struct StrikeSource {
-        u32 strike = 0;
-        usize actor = 0;
-        s32 row = -1;
-    };
-    std::vector<StrikeSource> m_strikeSources;
-    /** A potion's magic ringing a character: it goes about with them and harms what it
-     * touches, every so often, until it is spent. */
-    struct PotionShield {
-        usize actor = 0;
-        u32 effect = 0;
-        f32 radius = 0.0f;
-        f32 damage = 0.0f;
-        f32 secondsLeft = 0.0f;
-        f32 harmIn = 0.0f;
-    };
-    std::vector<PotionShield> m_shields;
+    PlayerAttacks m_attacks;
     LevelFixtures m_fixtures;
     LevelOpponents m_opponents;
     BossVictoryPresentation m_victory;

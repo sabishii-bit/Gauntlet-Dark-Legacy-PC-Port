@@ -141,6 +141,7 @@ add_executable(tests
     game/screens/LevelFixturesTests.cpp
     game/screens/LevelOpponentsTests.cpp
     game/screens/PlayerHealthTests.cpp
+    game/screens/PlayerAttacksTests.cpp
     game/menu/NameEntryTests.cpp
     game/screens/SelectLaneTests.cpp
     game/screens/PlayerSelectSceneTests.cpp

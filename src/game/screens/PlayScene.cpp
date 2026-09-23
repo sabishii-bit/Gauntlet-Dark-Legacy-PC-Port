@@ -44,27 +44,11 @@ constexpr std::string_view kBossKeyTree = "BOSSKEY"; ///< the key that rises whe
 constexpr std::string_view kBossKeyLaterTree = "BOSSKEY2";
 constexpr f32 kBossKeySeconds = 30.0f;
 constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY"; ///< then the level's letter
-constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
-constexpr std::array<std::string_view, 5> kShieldTrees{"MS_FIRE", "MS_FIRE", "MS_ELEC", "MS_LIGHT",
-                                                       "MS_ACID"};
-constexpr std::array<std::string_view, 5> kShieldSounds{"S_SHIELD2", "S_SHIELD2", "S_SHIELD1",
-                                                        "S_SHIELD3", "S_SHIELD4"};
-constexpr f32 kShieldSeconds = 3.0f;   ///< how long a potion's ring lasts
-constexpr f32 kShieldRadius = 25.0f;   ///< at full size; it is sized by the magic, as a burst is
-constexpr f32 kShieldPotency = 0.25f;  ///< of the character's magic power, its harm
-constexpr f32 kShieldHarmEvery = 0.5f; ///< seconds between its harming what it touches
 constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
 constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
-constexpr std::string_view kBlockEffect = "BLOCKFX";
-constexpr f32 kBlockWorth = 2.0f;      ///< what a guard must take off a hurt for it to show
-constexpr f32 kBlockPerDamage = 0.01f; ///< seconds it shows for each point left
-constexpr f32 kBlockLeast = 0.333f;
-constexpr f32 kBlockMost = 1.0f;
-constexpr f32 kRamDamage = 3.0f;     ///< what a charge does to what it runs into
-constexpr f32 kRamReach = 0.3f;      ///< how near counts as run into
-constexpr s32 kSpecialPowerup = 9;   ///< the pickup subtype of the specials
-constexpr u32 kTurboFlag = 0x80000;  ///< of them, the one that fills the turbo meter
-constexpr f32 kFallenSeconds = 3.0f; ///< from the last death to the tower
+constexpr s32 kSpecialPowerup = 9;      ///< the pickup subtype of the specials
+constexpr u32 kTurboFlag = 0x80000;     ///< of them, the one that fills the turbo meter
+constexpr f32 kFallenSeconds = 3.0f;    ///< from the last death to the tower
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
@@ -165,6 +149,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     beginSpawn(device, !options.position.has_value() && atEntrance);
     m_arsenal.bind(
         {device, m_classes, m_weapons, world.collision(), m_effects, m_audio, context.sounds});
+    m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
+                    m_arsenal, m_dimmer});
     m_legend = std::make_unique<LegendPresentation>(
         m_effects, LegendPresentation::Assets{device, world.items(), m_weapons, m_staticTextures},
         LegendPresentation::Audio{[this](std::string_view name) { return m_audio.playNamed(name); },
@@ -188,6 +174,7 @@ void PlayScene::close() {
     m_fixtures.clear();
     m_transition.release();
     m_leaving = false;
+    m_attacks.clear();
     m_arsenal.clear(); // before the figures whose models they fly
     m_legend.reset();
     m_effects.clear(); // and before the archive whose trees they play
@@ -197,10 +184,6 @@ void PlayScene::close() {
     m_hud.clear(); // before the static texture borrowed for selector glow
     m_staticTextures.releaseTextures();
     m_intro = Intro::None;
-    m_strikes.clear();
-    m_strikeEffects.clear();
-    m_strikeSources.clear();
-    m_shields.clear();
     m_dimmer.reset();
     if (m_world != nullptr) {
         m_world->setAmbientOffset(0.0f);
@@ -404,209 +387,6 @@ const TurboMeter* PlayScene::turboMeter(s32 player) const {
     return nullptr;
 }
 
-/** What a charge runs into is struck, once each charge. */
-void PlayScene::ramBarrels(usize index) {
-    const PlayerActor& actor = m_players[index].actor;
-    std::vector<usize>& rammed = m_players[index].rammed;
-    for (usize barrel = 0; barrel < m_fixtures.barrels().size(); ++barrel) {
-        if (!m_fixtures.barrels().standing(barrel) ||
-            std::ranges::find(rammed, barrel) != rammed.end() ||
-            !m_fixtures.barrels().barrel(barrel).box.touchedBy(actor.position(), actor.radius(),
-                                                               kRamReach)) {
-            continue;
-        }
-        rammed.push_back(barrel);
-        strikeBarrel(barrel, kRamDamage, actor.player());
-    }
-    for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
-        // Keep the shared per-charge hit ledger disjoint from barrel indices.
-        const usize key = rock + static_cast<usize>(kSafeRockTargetBase);
-        if (m_fixtures.safeRocks().standing(rock) &&
-            std::ranges::find(rammed, key) == rammed.end() &&
-            m_fixtures.safeRocks().rock(rock).obstacle.touchedBy(actor.position(), actor.radius(),
-                                                                 kRamReach)) {
-            rammed.push_back(key);
-            strikeSafeRock(rock, kRamDamage);
-        }
-    }
-    settleBlasts();
-}
-
-/** The costume colour's effects, which hold the trees a class's moves show; loaded when
- * first wanted. */
-ItemArchive* PlayScene::moveEffectsOf(usize index) {
-    PlayerFigure* figure = index < m_players.size() ? m_players[index].figure.get() : nullptr;
-    return figure != nullptr ? figure->effects() : nullptr;
-}
-
-/** What a character's own blows do, which a strike with a negative amount multiplies. */
-f32 PlayScene::ownDamageOf(usize index) const {
-    const CharacterSave& save = m_players[index].actor.save();
-    const ClassStats* stats = m_classes.stats(save.character);
-    if (stats == nullptr) {
-        return PlayerMissiles::kLeastDamage;
-    }
-    const StatBlock block =
-        displayStats(*stats, experienceLevel(save.experience()), save.progress());
-    return PlayerMissiles::damageFor(MissileSpec::byMagic(save.character) ? block.magic()
-                                                                          : block.strength());
-}
-
-/** One strike of a move: its effects show and sound where the character stands, the meter
- * pays what the move still owes if the strike does harm, and the harm is set going. */
-void PlayScene::fireStrike(usize index, s32 strikeIndex) {
-    const ClassStats* stats = m_classes.stats(m_players[index].actor.save().character);
-    if (stats == nullptr || strikeIndex < 0 ||
-        static_cast<usize>(strikeIndex) >= stats->moveStrikes.size()) {
-        return;
-    }
-    const MoveStrike& strike = stats->moveStrikes[static_cast<usize>(strikeIndex)];
-    const PlayerActor& actor = m_players[index].actor;
-    const Vec3 facing = actor.facing();
-    // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
-    u32 id = 0;
-    if (strike.harms()) {
-        id = m_strikes.start(strike, actor.player(), actor.position(), facing, ownDamageOf(index));
-        m_strikeSources.push_back(StrikeSource{id, index, strikeIndex});
-    }
-    const Vec3 origin = MoveStrikes::originOf(strike, actor.position(), facing);
-    const MoveStrikes::Strike* started = m_strikes.find(id);
-    ItemArchive* archive = moveEffectsOf(index);
-    // An effect may bring another with it.
-    usize followed = 0;
-    for (s32 at = strike.effect; at >= 0 && static_cast<usize>(at) < stats->moveEffects.size() &&
-                                 followed < stats->moveEffects.size();
-         at = stats->moveEffects[static_cast<usize>(at)].next, ++followed) {
-        const MoveEffect& effect = stats->moveEffects[static_cast<usize>(at)];
-        if (!effect.sound.empty()) {
-            if (const auto sound = m_players[index].figure->voice().find(effect.sound);
-                sound.has_value() && m_context.sounds != nullptr) {
-                m_context.sounds->play(m_players[index].figure->voice().sequence(*sound), 1.0f,
-                                       SoundCategory::Effects);
-            } else {
-                m_audio.playNamed(effect.sound);
-            }
-        }
-        if (effect.tree.empty() || effect.tree == kNoEffectTree || archive == nullptr ||
-            m_device == nullptr || !archive->trees.find(effect.tree).has_value()) {
-            continue;
-        }
-        EffectTrees::Setting setting;
-        setting.scale = effect.scale;
-        setting.yaw = std::atan2(facing.x, facing.z);
-        if (started != nullptr && started->flies) {
-            setting.velocity = facing * started->speed;
-            setting.seconds = started->secondsLeft;
-            // What flies launches once, then its looping tree carries it on.
-            if (at == strike.effect && strike.loopEffect >= 0 &&
-                static_cast<usize>(strike.loopEffect) < stats->moveEffects.size()) {
-                setting.then = stats->moveEffects[static_cast<usize>(strike.loopEffect)].tree;
-            }
-        }
-        const Vec3 side{facing.z, 0.0f, -facing.x};
-        const Vec3 at3 = origin + side * effect.offset.x + Vec3{0.0f, effect.offset.y, 0.0f} +
-                         facing * effect.offset.z;
-        const u32 shown = m_effects.startSet(*m_device, *archive, effect.tree, at3, setting);
-        if (shown != 0 && started != nullptr && started->flies) {
-            m_strikeEffects.push_back(StrikeEffect{id, shown});
-        }
-    }
-}
-
-/** The strikes under way harm what they reach: the barrels, for now. What flies takes its
- * effect along, and the effect ends with it. */
-void PlayScene::updateStrikes(f32 seconds) {
-    for (const StrikeHit& hit : m_strikes.update(seconds, &m_world->collision())) {
-        const auto source = std::ranges::find(m_strikeSources, hit.strike, &StrikeSource::strike);
-        // The swarm and the generators in its reach take it, with the row's damage type.
-        u32 flags = 0;
-        if (source != m_strikeSources.end() && source->actor < m_players.size()) {
-            const ClassStats* stats =
-                m_classes.stats(m_players[source->actor].actor.save().character);
-            if (stats != nullptr && source->row >= 0 &&
-                static_cast<usize>(source->row) < stats->moveStrikes.size()) {
-                flags = static_cast<u32>(
-                    stats->moveStrikes[static_cast<usize>(source->row)].damageType);
-            }
-        }
-        for (const s32 enemy :
-             m_opponents.enemies().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
-            const Vec3 direction = m_opponents.enemies().positionOf(enemy) - hit.centre;
-            strikeEnemy(enemy, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner);
-        }
-        for (const s32 generator : m_opponents.generators().within(hit.centre, hit.radius)) {
-            strikeGenerator(generator, hit.damage, hit.owner);
-        }
-        if (m_opponents.bosses().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
-            EnemyHit struck;
-            struck.damage = hit.damage;
-            struck.flags = flags;
-            struck.player = hit.owner;
-            struck.close = true;
-            if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
-                struck.direction = Vec3{at->x - hit.centre.x, 0.0f, at->z - hit.centre.z};
-                struck.where = hit.centre + glm::normalize(struck.direction) * hit.radius;
-            }
-            m_opponents.bosses().hurt(struck);
-        }
-        for (const s32 critter :
-             m_opponents.critters().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
-            const Vec3 direction = m_opponents.critters().positionOf(critter) - hit.centre;
-            strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z},
-                          hit.owner, std::nullopt, true);
-        }
-        for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
-            const auto& cover = m_fixtures.safeRocks().rock(rock).obstacle;
-            if (m_fixtures.safeRocks().standing(rock) &&
-                hit.reaches(cover.centre, cover.cylinderRadius, cover.height)) {
-                strikeSafeRock(rock, hit.damage);
-            }
-        }
-        for (usize barrel = 0; barrel < m_fixtures.barrels().size(); ++barrel) {
-            if (!m_fixtures.barrels().standing(barrel)) {
-                continue;
-            }
-            const Breakables::Barrel& cask = m_fixtures.barrels().barrel(barrel);
-            if (!hit.reaches(cask.figure.position(), cask.radius, cask.height)) {
-                continue;
-            }
-            strikeBarrel(barrel, hit.damage, hit.owner);
-            // What it harms shows the strike's own mark, when its class gives it one.
-            if (source == m_strikeSources.end() || source->actor >= m_players.size()) {
-                continue;
-            }
-            const ClassStats* stats =
-                m_classes.stats(m_players[source->actor].actor.save().character);
-            ItemArchive* archive = moveEffectsOf(source->actor);
-            if (stats == nullptr || archive == nullptr || m_device == nullptr) {
-                continue;
-            }
-            const s32 mark = stats->moveStrikes[static_cast<usize>(source->row)].hitEffect;
-            if (mark >= 0 && static_cast<usize>(mark) < stats->moveEffects.size()) {
-                const MoveEffect& effect = stats->moveEffects[static_cast<usize>(mark)];
-                if (!effect.tree.empty() && archive->trees.find(effect.tree).has_value()) {
-                    m_effects.start(*m_device, *archive, effect.tree, cask.figure.position(),
-                                    effect.scale);
-                }
-                if (!effect.sound.empty()) {
-                    m_audio.playNamed(effect.sound);
-                }
-            }
-        }
-    }
-    settleBlasts();
-    std::erase_if(m_strikeSources, [this](const StrikeSource& source) {
-        return m_strikes.find(source.strike) == nullptr;
-    });
-    std::erase_if(m_strikeEffects, [this](const StrikeEffect& pair) {
-        if (m_strikes.find(pair.strike) != nullptr) {
-            return false;
-        }
-        m_effects.stop(pair.effect);
-        return true;
-    });
-}
-
 /** Experience won, as the original awards it: scaled by the level (its own scale, less the
  * further the character is past the level the place is meant for); what a kill wins also
  * feeds the turbo meter, unless the character is in the middle of a turbo move. */
@@ -638,136 +418,15 @@ void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
     }
 }
 
-/** A potion spent on a shield: its magic rings the character for a few seconds, going about
- * with them, to the potion's shield sound. */
-void PlayScene::shieldPotion(usize index) {
-    PlayerActor& actor = m_players[index].actor;
-    const s32 kind = actor.save().progress().inventory.takePotion();
-    if (kind == 0) {
-        return;
-    }
-    const auto look = static_cast<usize>(std::clamp(kind, 0, 4));
-    const f32 power = m_arsenal.magicPowerOf(actor);
-    const f32 size = std::min(PlayerArsenal::kBurstPerPower * power, 1.0f);
-    PotionShield shield;
-    shield.actor = index;
-    shield.radius = kShieldRadius * size;
-    shield.damage = kShieldPotency * power;
-    shield.secondsLeft = kShieldSeconds;
-    if (m_device != nullptr && m_weapons.loaded() &&
-        m_weapons.trees.find(kShieldTrees[look]).has_value()) {
-        EffectTrees::Setting setting;
-        setting.scale = size;
-        setting.seconds = kShieldSeconds;
-        shield.effect =
-            m_effects.startSet(*m_device, m_weapons, kShieldTrees[look], actor.position(), setting);
-    }
-    m_audio.playNamed(kShieldSounds[look]);
-    m_shields.push_back(shield);
-}
-
-/** The rings go about with their characters and harm the barrels they touch. */
-void PlayScene::updateShields(f32 seconds) {
-    for (PotionShield& shield : m_shields) {
-        shield.secondsLeft -= seconds;
-        if (shield.actor >= m_players.size() || isDown(shield.actor)) {
-            shield.secondsLeft = 0.0f;
-            continue;
-        }
-        const Vec3 at = m_players[shield.actor].actor.position();
-        m_effects.moveTo(shield.effect, at);
-        shield.harmIn -= seconds;
-        if (shield.harmIn > 0.0f) {
-            continue;
-        }
-        shield.harmIn = kShieldHarmEvery;
-        for (const usize barrel : m_fixtures.barrels().within(at, shield.radius)) {
-            strikeBarrel(barrel, shield.damage, m_players[shield.actor].actor.player());
-        }
-        for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
-            if (m_fixtures.safeRocks().rock(rock).obstacle.touchedBy(at, shield.radius, 0.0f)) {
-                strikeSafeRock(rock, shield.damage);
-            }
-        }
-    }
-    settleBlasts();
-    std::erase_if(m_shields, [this](const PotionShield& shield) {
-        if (shield.secondsLeft > 0.0f) {
-            return false;
-        }
-        m_effects.stop(shield.effect);
-        return true;
-    });
-}
-
-/** A guard that took enough off a hurt shows it: the block effect about the character, for
- * longer the more got through, and not again until that is over. */
-void PlayScene::showBlock(usize index, f32 taken, f32 left) {
-    if (index >= m_players.size() || m_players[index].blockLeft > 0.0f || taken <= kBlockWorth) {
-        return;
-    }
-    const f32 shown = std::clamp(kBlockPerDamage * left, kBlockLeast, kBlockMost);
-    m_players[index].blockLeft = shown;
-    if (m_device != nullptr && m_weapons.loaded() &&
-        m_weapons.trees.find(kBlockEffect).has_value()) {
-        EffectTrees::Setting setting;
-        setting.seconds = shown;
-        m_effects.startSet(*m_device, m_weapons, kBlockEffect, m_players[index].actor.followPoint(),
-                           setting);
-    }
-}
-
-/** Runs a character's meter: a turbo attack is paid for as it first does harm, a shove runs
- * it down while it lasts, and otherwise it climbs while the character is free to act, the
- * narrator saying so when it comes full. */
-void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
-    if (index >= m_players.size() || m_players[index].figure == nullptr) {
-        return;
-    }
-    TurboMeter& meter = m_players[index].turbo;
-    const PlayerAnimator& body = m_players[index].figure->animator();
-    TurboMove& move = m_players[index].move;
-    const ClassStats* stats = m_classes.stats(m_players[index].actor.save().character);
-    if (body.turboBegan()) {
-        if (const std::string_view voice = move.begin(body.action(), stats, meter);
-            !voice.empty()) {
-            cry(index, voice);
-        }
-    }
-    move.advance(
-        body.action(), body.player().frame(), m_players[index].actor.facing(), stats, meter,
-        {.announce = [this, index](s32 help) { postHelp(help, index); },
-         .dim = [this](f32 amount) { m_dimmer.ask(amount); },
-         .volley = [this,
-                    index](const Vec3& direction) { launchWeapon(index, direction, 1.0f, false); },
-         .strike = [this, index](s32 row) { fireStrike(index, row); }});
-    if (body.action() == PlayerAnimator::Action::Shove) {
-        meter.drain(seconds);
-    } else if (!isDown(index) && !body.turboing() && meter.fill(seconds)) {
-        postHelp(HelpMessages::kUseTurbo, index);
-    }
-    meter.step(ticks);
-}
-
-/** One of a character's own cries, `which` being what follows its class in the name. */
-void PlayScene::cry(usize index, std::string_view which) {
-    PlayerFigure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
-    if (body == nullptr || m_context.sounds == nullptr) {
-        return;
-    }
-    const std::string_view voice =
-        classCode(m_players[index].actor.save().character % kStartingClassCount);
-    if (const auto sound = body->voice().find(std::format("S_{}{}", voice, which));
-        sound.has_value()) {
-        m_context.sounds->play(body->voice().sequence(*sound), 1.0f, SoundCategory::Effects);
-    }
-}
-
 /** Puts a help message up over a character, the narrator saying it, unless the party has
  * seen it. */
 
 bool PlayScene::postHelp(s32 id, usize index, s32 number) {
     return m_hud.postHelp(id, index, m_players, m_audio, number);
+}
+
+PlayerAttacks::Targets PlayScene::attackTargets() {
+    return {m_opponents, m_fixtures, fixtureEvents()};
 }
 
 LevelFixtures::Events PlayScene::fixtureEvents() {
@@ -781,12 +440,6 @@ LevelFixtures::Events PlayScene::fixtureEvents() {
 }
 void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
     m_fixtures.update(ticks, seconds, m_players, fixtureEvents());
-}
-void PlayScene::strikeSafeRock(usize index, f32 power) {
-    m_fixtures.strikeSafeRock(index, power);
-}
-void PlayScene::strikeBarrel(usize barrel, f32 power, s32 byPlayer) {
-    m_fixtures.strikeBarrel(barrel, power, byPlayer, m_players, fixtureEvents());
 }
 void PlayScene::blast(const Vec3& position, f32 radius, f32 damage) {
     m_fixtures.blast(position, radius, damage, m_players, fixtureEvents());
@@ -1044,12 +697,14 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
         return;
     }
     const LevelInfo* level = m_world->level();
-    m_health.hurt(m_players[index], damage, kind, directed, m_world->isTower(),
-                  level != nullptr ? level->tuning.damage : 1.0f,
-                  {.block = [this, index](f32 taken, f32 left) { showBlock(index, taken, left); },
-                   .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
-                   .cry = [this, index](std::string_view voice) { cry(index, voice); },
-                   .named = [this, index](std::string_view line) { sayWithName(index, line); }});
+    m_health.hurt(
+        m_players[index], damage, kind, directed, m_world->isTower(),
+        level != nullptr ? level->tuning.damage : 1.0f,
+        {.block = [this, index](f32 taken,
+                                f32 left) { m_attacks.showBlock(index, taken, left, m_players); },
+         .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
+         .cry = [this, index](std::string_view voice) { m_attacks.cry(index, voice, m_players); },
+         .named = [this, index](std::string_view line) { sayWithName(index, line); }});
 }
 
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says
@@ -1428,12 +1083,14 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             [this](usize i, PartyMotion::Action action) {
                 switch (action) {
                 case PartyMotion::Action::NoPotion: postHelp(HelpMessages::kNoPotion, i); break;
-                case PartyMotion::Action::Ram: ramBarrels(i); break;
+                case PartyMotion::Action::Ram:
+                    m_attacks.ramBarrels(i, m_players, attackTargets());
+                    break;
                 case PartyMotion::Action::ThrowWeapon: throwWeapon(m_players[i].actor); break;
                 case PartyMotion::Action::StrongThrow:
                     launchWeapon(i, m_players[i].actor.facing(), kStrongThrowScale, true);
                     break;
-                case PartyMotion::Action::ShieldPotion: shieldPotion(i); break;
+                case PartyMotion::Action::ShieldPotion: m_attacks.shieldPotion(i, m_players); break;
                 case PartyMotion::Action::UsePotion: m_arsenal.usePotion(m_players[i].actor); break;
                 case PartyMotion::Action::ThrowPotion:
                     m_arsenal.throwPotion(m_players[i].actor);
@@ -1446,8 +1103,11 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             [this](usize i, const SelectorInput& input, s32 elapsed) {
                 m_hud.stepSelector(m_players[i].actor, input, elapsed, m_audio);
             },
-        .advanceTurbo = [this](usize i, s32 elapsed,
-                               f32 duration) { updateTurbo(i, elapsed, duration); }};
+        .advanceTurbo =
+            [this](usize i, s32 elapsed, f32 duration) {
+                m_attacks.updateTurbo(i, elapsed, duration, m_players,
+                                      [this](s32 id, usize index) { postHelp(id, index); });
+            }};
     const std::vector<CameraSubject> subjects =
         PartyMotion::step(m_players, inputs, held, m_camera.yaw(), ticks, seconds,
                           m_world->collision(), movementEvents);
@@ -1455,96 +1115,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_hud.help().update(ticks);
     updateFixtures(ticks, seconds);
     updateEnemies(ticks, seconds);
-    std::vector<MissileTarget> targets;
-    for (usize barrel = 0; barrel < m_fixtures.barrels().size(); ++barrel) {
-        if (m_fixtures.barrels().standing(barrel)) {
-            const Breakables::Barrel& cask = m_fixtures.barrels().barrel(barrel);
-            targets.push_back(MissileTarget{static_cast<s32>(barrel), cask.figure.position(),
-                                            cask.radius, cask.height});
-        }
-    }
-    for (MissileTarget target : m_opponents.enemies().targets()) {
-        target.id += kEnemyTargetBase;
-        targets.push_back(target);
-    }
-    for (MissileTarget target : m_opponents.critters().targets()) {
-        target.id += kCritterTargetBase;
-        targets.push_back(target);
-    }
-    for (MissileTarget target : m_opponents.bosses().targets()) {
-        target.id += kBossTargetBase;
-        targets.push_back(target);
-    }
-    for (usize g = 0; g < m_opponents.generators().count(); ++g) {
-        if (m_opponents.generators().standing(static_cast<s32>(g))) {
-            const Obstacle& box = m_opponents.generators().boxOf(static_cast<s32>(g));
-            targets.push_back(
-                MissileTarget{static_cast<s32>(g) + kGeneratorTargetBase,
-                              m_opponents.generators().positionOf(static_cast<s32>(g)),
-                              std::max(box.halfAcross, box.halfAlong), box.height});
-        }
-    }
-    for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
-        if (m_fixtures.safeRocks().standing(rock)) {
-            const Obstacle& cover = m_fixtures.safeRocks().rock(rock).obstacle;
-            targets.push_back(MissileTarget{static_cast<s32>(rock) + kSafeRockTargetBase,
-                                            cover.centre, cover.cylinderRadius, cover.height});
-        }
-    }
-    m_arsenal.missiles().update(seconds, &m_world->collision(), targets);
-    for (const MissileImpact& impact : m_arsenal.missiles().takeImpacts()) {
-        if (impact.potion != 0) {
-            m_arsenal.burstPotion(impact.potion, impact.position,
-                                  impact.potency); // weapons leave no mark yet
-        }
-        if (impact.target >= kSafeRockTargetBase) {
-            strikeSafeRock(static_cast<usize>(impact.target - kSafeRockTargetBase), impact.damage);
-        } else if (impact.target >= kBossTargetBase) {
-            EnemyHit hit;
-            hit.damage = impact.damage;
-            hit.player = impact.owner;
-            hit.where = impact.position;
-            for (const PlayerRuntime& runtime : m_players) {
-                const PlayerActor& actor = runtime.actor;
-                if (actor.player() == impact.owner) {
-                    hit.direction = impact.position - actor.position();
-                    hit.direction.y = 0.0f;
-                    hit.level = experienceLevel(actor.save().experience());
-                }
-            }
-            m_opponents.bosses().hurt(hit);
-        } else if (impact.target >= kCritterTargetBase) {
-            Vec3 direction{0.0f, 0.0f, 1.0f};
-            for (const PlayerRuntime& runtime : m_players) {
-                const PlayerActor& actor = runtime.actor;
-                if (actor.player() == impact.owner) {
-                    direction = impact.position - actor.position();
-                    direction.y = 0.0f;
-                }
-            }
-            strikeCritter(impact.target - kCritterTargetBase, impact.damage, 0, direction,
-                          impact.owner, impact.position);
-        } else if (impact.target >= kGeneratorTargetBase) {
-            strikeGenerator(impact.target - kGeneratorTargetBase, impact.damage, impact.owner);
-        } else if (impact.target >= kEnemyTargetBase) {
-            // The hit travels the way the weapon flew: out from whoever threw it.
-            Vec3 direction{0.0f, 0.0f, 1.0f};
-            for (const PlayerRuntime& runtime : m_players) {
-                const PlayerActor& actor = runtime.actor;
-                if (actor.player() == impact.owner) {
-                    direction = impact.position - actor.position();
-                    direction.y = 0.0f;
-                }
-            }
-            strikeEnemy(impact.target - kEnemyTargetBase, impact.damage, 0, direction,
-                        impact.owner);
-        } else if (impact.target >= 0) {
-            strikeBarrel(static_cast<usize>(impact.target), impact.damage, impact.owner);
-            settleBlasts();
-        }
-    }
-    updateStrikes(seconds);
-    updateShields(seconds);
+    m_attacks.updateProjectiles(seconds, m_players, attackTargets());
+    m_attacks.updateStrikes(seconds, m_players, attackTargets());
+    m_attacks.updateShields(seconds, m_players, attackTargets());
     // The level goes dark for the legend item's rite, as for a great move.
     if (m_opponents.bosses().legend().darkens()) {
         m_dimmer.ask(LegendRite::kDarkening);
