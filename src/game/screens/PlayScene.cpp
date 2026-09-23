@@ -47,7 +47,6 @@ constexpr std::string_view kScrollTextFile = "text/scroll_e.json";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
 constexpr std::string_view kPromptText = "scroll.pressButton";
-constexpr std::string_view kHintTextFile = "text/hints_e.json";
 /** A potion by its kind (0 and 1 red, 2 blue, 3 yellow, 4 green): the bottle as it flies, the
  * magic it bursts into (fire, lightning, light, acid) and the sound of it. */
 struct PotionLook {
@@ -141,21 +140,9 @@ const PotionLook& potionLook(s32 kind) {
                         ? static_cast<usize>(kind)
                         : 0];
 }
-constexpr std::string_view kArrowTree = "ICON_ARROW";
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
 constexpr std::string_view kMenuSelectSound = "S_OPTMENUSEL";
 constexpr std::string_view kMenuExitSound = "S_OPTMENUEXIT";
-/** Sumner's topics: the text id of each and the code the original's menu gives it. */
-struct HintTopicEntry {
-    std::string_view text;
-    s32 code;
-    HintTopic topic;
-};
-constexpr std::array<HintTopicEntry, 4> kHintTopics{
-    {{"hints.general", 39, HintTopic::General},
-     {"hints.guardians", 40, HintTopic::Guardians},
-     {"hints.legends", 41, HintTopic::Legends},
-     {"hints.runestones", 42, HintTopic::Runestones}}};
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 constexpr s32 kMinTicks = 1; ///< a frame advances the clock by at least one tick
 constexpr s32 kMaxTicks = 4; ///< and, however late, by at most four
@@ -179,7 +166,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     loadIntroArt(device);
     // Sumner, his hints and his welcome belong to the tower alone.
     if (world.isTower()) {
-        loadHintArt(device);
+        m_glowSheet = m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(),
+                                         m_context.unpackedRoot, m_context.strings);
         m_sumner.load(device, world.items(), world.layout());
     }
     if (context.levels != nullptr) {
@@ -281,12 +269,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 void PlayScene::close() {
     m_audio.stopCues();
     m_scroll.close();
-    m_hintMenu.close();
-    m_hintMenu.setArt(HintMenuArt{});
-    m_hintArrow = ModelSprite{};
-    m_hintPlayer = -1;
-    m_greetingLeft = -1.0f;
-    m_hintsGiven = false;
+    m_sumnerVisit.clear();
     if (m_world != nullptr) {
         m_world->setPlayerCount(0);
     }
@@ -2394,65 +2377,6 @@ void PlayScene::loadIntroArt(RenderDevice& device) {
     m_scroll.setArt(std::move(art));
 }
 
-/** What Sumner's scroll of hints draws with: the menu sheets and the scroll from the static
- * archive, the selection arrow from the powerups, and his hints' texts. */
-void PlayScene::loadHintArt(RenderDevice& device) {
-    HintMenuArt art;
-    if (!m_staticTextures.loaded() || !m_hints.load(m_context.unpackedRoot / kHintTextFile)) {
-        log::warn("Tower: Sumner's hints are not unpacked; he has nothing to say");
-        m_hintMenu.setArt(std::move(art));
-        return;
-    }
-    if (m_context.strings != nullptr) {
-        m_hints.translate(*m_context.strings);
-    }
-    const auto texture = [&](std::string_view name) -> const Texture* {
-        const auto index = m_staticTextures.find(name);
-        try {
-            return index.has_value() ? &m_staticTextures.texture(device, *index) : nullptr;
-        } catch (const std::exception& e) {
-            log::warn("Tower: texture {}: {}", name, e.what());
-            return nullptr;
-        }
-    };
-    art.textures.font = texture(kFontTexture);
-    art.textures.glow = texture("FONT32_GLOW");
-    m_glowSheet = art.textures.glow;
-    art.textures.parchment = texture("FONT32_PARCH");
-    art.textures.arrows = texture("ARROWS");
-    for (usize i = 0; i < art.textures.garamond.size(); ++i) {
-        art.textures.garamond[i] = texture(std::format("FONT32GAR{}", i));
-    }
-    art.textures.backdrop = texture(kScrollTexture);
-    ItemArchive& powerups = m_world->powerups();
-    if (const auto tree = powerups.trees.find(kArrowTree);
-        powerups.loaded() && tree.has_value() &&
-        m_hintArrow.bind(powerups.trees.tree(*tree), powerups.models, powerups.textures, device)) {
-        art.textures.icon = &m_hintArrow;
-    }
-    const auto scroll = m_staticTextures.find(kScrollTexture);
-    const auto ring = m_staticTextures.find(kFireRingTexture);
-    const auto mask = m_staticTextures.find(kFireMaskTexture);
-    if (scroll.has_value() && ring.has_value() && mask.has_value()) {
-        const u32 firstRing = *ring;
-        const u32 firstMask = *mask;
-        try {
-            art.scroll = &m_staticTextures.image(*scroll);
-            const auto frames = static_cast<u32>(BurnDialogueScroll::kFrameCount);
-            for (u32 i = 1; i <= frames && firstRing + i < m_staticTextures.size(); ++i) {
-                art.burnRing.push_back(&m_staticTextures.texture(device, firstRing + i));
-            }
-            for (u32 i = 1; i <= frames && firstMask + i < m_staticTextures.size(); ++i) {
-                art.burnMasks.push_back(&m_staticTextures.image(firstMask + i));
-            }
-        } catch (const std::exception& e) {
-            log::warn("Tower: burn frames: {}", e.what());
-            art.scroll = nullptr;
-        }
-    }
-    m_hintMenu.setArt(std::move(art));
-}
-
 /** The first of the party standing in the spot before Sumner, or null. */
 const PlayerActor* PlayScene::visitorOfSumner() const {
     const LevelTriggers& triggers = m_world->triggers();
@@ -2474,97 +2398,40 @@ const PlayerActor* PlayScene::visitorOfSumner() const {
     return nullptr;
 }
 
-/** A player stepping up to Sumner is greeted at once and handed his scroll of hints two
- * seconds on, once a visit; stepping away and back is a new visit. */
 void PlayScene::updateSumnerVisit(f32 seconds) {
-    if (m_greetingLeft > 0.0f) {
-        m_greetingLeft = std::max(m_greetingLeft - seconds, 0.0f);
-    }
     const PlayerActor* visitor = visitorOfSumner();
-    if (visitor == nullptr) {
-        m_hintsGiven = false;
-        return;
-    }
-    if (m_hintsGiven || !m_hints.loaded() || !m_sumner.loaded()) {
-        return;
-    }
-    if (m_greetingLeft < 0.0f) {
+    const std::optional<s32> player =
+        visitor != nullptr ? std::optional<s32>{visitor->player()} : std::nullopt;
+    if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_text, m_context.config,
+                            m_context.strings)) {
         m_sumner.play(SumnerFigure::kWelcomeIndex);
-        m_greetingLeft = kGreetingSeconds;
-    } else if (m_greetingLeft == 0.0f) {
-        m_greetingLeft = -1.0f;
-        m_hintsGiven = true;
-        openHints(visitor->player());
     }
 }
 
-void PlayScene::openHints(s32 player) {
-    if (m_context.strings == nullptr || m_context.config == nullptr) {
-        return;
-    }
-    const StringTable& strings = *m_context.strings;
-    HintMenuLabels labels;
-    labels.title = std::string(strings.get("hints.title"));
-    for (const HintTopicEntry& topic : kHintTopics) {
-        labels.topics.push_back(MenuItem{std::string(strings.get(topic.text)), topic.code});
-    }
-    labels.back = std::string(strings.get("menu.back"));
-    labels.select = std::string(strings.get("menu.select"));
-    labels.player = std::string(strings.get("menu.player"));
-    if (const auto slot = labels.player.find("{}"); slot != std::string::npos) {
-        labels.player.replace(slot, 2, std::to_string(player + 1));
-    }
-    MenuScreen screen;
-    screen.width = static_cast<s32>(m_context.config->display.virtualWidth);
-    screen.height = static_cast<s32>(m_context.config->display.virtualHeight);
-    screen.horizontalFov = m_context.config->horizontalFovRadians();
-    m_hints.beginVisit();
-    if (m_hintMenu.open(m_text, screen, std::move(labels))) {
-        m_hintPlayer = player;
-    }
-}
-
-/** Steps the scroll of hints with its player's input; backing out of it burns it and has
- * Sumner wave the player off. */
+/** The scene routes the scroll owner's input and applies its sound/gesture cues. */
 void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
-    const auto player = static_cast<usize>(std::max(m_hintPlayer, 0));
+    const auto player = static_cast<usize>(std::max(m_sumnerVisit.owner(), 0));
     const MenuInput input = player < inputs.size() ? inputs[player].menu : MenuInput{};
-    const HintMenuEvent event = m_hintMenu.update(*m_device, input, ticks);
+    const HintMenuEvent event = m_sumnerVisit.update(*m_device, input, ticks);
     switch (event.kind) {
     case HintMenuEvent::Kind::Moved: m_audio.playNamed(kMenuMoveSound); break;
-    case HintMenuEvent::Kind::Asked:
+    case HintMenuEvent::Kind::Asked: {
         m_audio.playNamed(kMenuSelectSound);
-        answerHint(event.topic);
+        std::vector<ClassProgress> party;
+        party.reserve(m_players.size());
+        for (const PlayerRuntime& runtime : m_players) {
+            party.push_back(runtime.actor.save().progress());
+        }
+        m_sumnerVisit.answer(event.topic, m_text, m_context.strings, HintKnowledge::ofParty(party));
         break;
+    }
     case HintMenuEvent::Kind::Returned: m_audio.playNamed(kMenuExitSound); break;
     case HintMenuEvent::Kind::Left:
-        m_audio.playNamed(m_hintMenu.burning() ? kScrollBurnSound : kMenuExitSound);
+        m_audio.playNamed(m_sumnerVisit.menu().burning() ? kScrollBurnSound : kMenuExitSound);
         m_sumner.play(SumnerFigure::kGoAwayIndex);
         break;
     case HintMenuEvent::Kind::None: break;
     }
-    if (!m_hintMenu.active()) {
-        m_hintPlayer = -1;
-    }
-}
-
-void PlayScene::answerHint(s32 topic) {
-    // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
-    // NOLINTNEXTLINE(readability-qualified-auto)
-    const auto entry = std::ranges::find(kHintTopics, topic, &HintTopicEntry::code);
-    if (entry == kHintTopics.end() || m_context.strings == nullptr) {
-        return;
-    }
-    std::vector<ClassProgress> party;
-    party.reserve(m_players.size());
-    for (const PlayerRuntime& runtime : m_players) {
-        const PlayerActor& actor = runtime.actor;
-        party.push_back(actor.save().progress());
-    }
-    HintPage page = m_hints.next(entry->topic, HintKnowledge::ofParty(party),
-                                 m_context.strings->get("hints.generalTitle"));
-    m_hintMenu.read(m_text, std::move(page.title), std::move(page.passages), page.scale,
-                    page.centred, page.gap);
 }
 
 /** A party is new to the tower while no class of any of its characters has experience. */
@@ -2705,7 +2572,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         return m_transition.covering() ? PlayOutcome::Travel : PlayOutcome::Running;
     }
     // Sumner's scroll of hints holds play the same way, while he goes on moving behind it.
-    if (m_hintMenu.active()) {
+    if (m_sumnerVisit.active()) {
         updateHints(inputs, ticks);
         m_sumner.update(seconds);
         return PlayOutcome::Running;
@@ -3033,7 +2900,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     const GameConfig& config = *m_context.config;
     m_scroll.prepare(device);
-    m_hintMenu.prepare(device);
+    m_sumnerVisit.prepare(device);
     const Mat4 clip = viewCamera().clipTransform(config.horizontalFovRadians(), frameWidth,
                                                  frameHeight, frameProjection);
     m_world->draw(device, clip, viewCamera());
@@ -3097,7 +2964,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         drawHelp(clip, width, height);
     }
     m_scroll.draw(m_canvas);
-    m_hintMenu.draw(m_canvas, m_text);
+    m_sumnerVisit.draw(m_canvas, m_text);
     m_canvas.end();
 }
 

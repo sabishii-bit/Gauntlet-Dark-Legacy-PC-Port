@@ -18,7 +18,6 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
-#include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
 #include "engine/world/AmbientDimmer.h"
 #include "engine/world/TreeModel.h"
@@ -29,7 +28,6 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/enemies/Generators.h"
-#include "game/menu/HintMenu.h"
 #include "game/menu/MenuInput.h"
 #include "game/menu/ScrollBox.h"
 #include "game/players/CharacterSave.h"
@@ -50,6 +48,7 @@
 #include "game/screens/PickupHud.h"
 #include "game/screens/PowerupSelector.h"
 #include "game/screens/StatusBox.h"
+#include "game/screens/SumnerVisit.h"
 #include "game/screens/TransitionScreen.h"
 #include "game/world/BossCamera.h"
 #include "game/world/Breakables.h"
@@ -65,7 +64,6 @@
 #include "game/world/SafeRocks.h"
 #include "game/world/StartCamera.h"
 #include "game/world/SumnerFigure.h"
-#include "game/world/SumnerHints.h"
 #include "game/world/TowerCamera.h"
 #include "game/world/Traps.h"
 
@@ -158,10 +156,10 @@ public:
     static constexpr std::array<std::string_view, 9> kUnlockVoices{
         "",           "S_CRYS4TWN", "S_CRYS4MNT", "S_CRYS4CST", "S_CRYS4SKY",
         "S_CRYS4FOR", "S_CRYS4DES", "S_CRYS4ICE", "S_CRYS4DRM"};
-    static constexpr s32 kBeamFadeTicks = 180;    ///< and how long it takes to come up or go
-    static constexpr s32 kCrystalTicks = 300;     ///< fifty frames of six ticks
-    static constexpr s32 kSumnerSpot = 240;       ///< the id of the trigger before him
-    static constexpr f32 kGreetingSeconds = 2.0f; ///< from his greeting to his scroll
+    static constexpr s32 kBeamFadeTicks = 180; ///< and how long it takes to come up or go
+    static constexpr s32 kCrystalTicks = 300;  ///< fifty frames of six ticks
+    static constexpr s32 kSumnerSpot = 240;    ///< the id of the trigger before him
+    static constexpr f32 kGreetingSeconds = SumnerVisit::kGreetingSeconds;
     using Inputs = std::array<PlayInput, kPlayerCount>;
 
     /** Where a new party's welcome has got to. */
@@ -200,7 +198,7 @@ public:
     SoundHandle fieldSound() const { return m_audio.fieldSound(); }
     Intro intro() const { return m_intro; }
     const ScrollBox& scroll() const { return m_scroll; }
-    const HintMenu& hints() const { return m_hintMenu; }
+    const HintMenu& hints() const { return m_sumnerVisit.menu(); }
     const PlayerMissiles& missiles() const { return m_missiles; }
     const ExitPortals& portals() const { return m_portals; }
     const Chests& chests() const { return m_chests; }
@@ -262,7 +260,7 @@ public:
     }
     /** How large a character is drawn: an ogre, one grown by a powerup, one of level 99. */
     static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
-    const SumnerHints& hintTexts() const { return m_hints; }
+    const SumnerHints& hintTexts() const { return m_sumnerVisit.texts(); }
     const PickupHud& pickups() const { return m_pickups; }
     const AmbientSounds& ambience() const { return m_audio.ambience(); }
     /** How far Sumner's beam of light has come up, 0 to 1. */
@@ -405,12 +403,9 @@ private:
     bool openMessage(std::string_view name, usize page);
     void announceUnlock(s32 realm);
     void handleTriggerEvents();
-    void loadHintArt(RenderDevice& device);
     const PlayerActor* visitorOfSumner() const;
     void updateSumnerVisit(f32 seconds);
-    void openHints(s32 player);
     void updateHints(const Inputs& inputs, s32 ticks);
-    void answerHint(s32 topic);
     StatusBoxView statusOf(s32 player) const;
     CameraView cameraView() const;
 
@@ -502,7 +497,6 @@ private:
     LockedGates m_gates;
     Traps m_traps;
     TransitionScreen m_transition;
-    bool m_leaving = false;
     LevelRef m_destination;
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
@@ -512,13 +506,7 @@ private:
     const Texture* m_glowSheet = nullptr; ///< the glow a worn powerup's name is written in
     f32 m_playSeconds = 0.0f;
     f32 m_fallenSeconds = 0.0f; ///< since the last of the party fell
-    SumnerHints m_hints;
-    HintMenu m_hintMenu;
-    ModelSprite m_hintArrow;
-    s32 m_hintPlayer = -1;      ///< whose scroll of hints is out
-    f32 m_greetingLeft = -1.0f; ///< seconds from his greeting to his scroll; negative: none
-    bool m_hintsGiven = false;  ///< this visit has had its scroll; leaving him clears it
-    Intro m_intro = Intro::None;
+    SumnerVisit m_sumnerVisit;
     WorldCamera m_cutCamera;
     s32 m_cutTicks = 0;
     s32 m_beam = -1; ///< the level object that is Sumner's beam of light
@@ -527,6 +515,8 @@ private:
     ItemArchive m_weapons;              ///< shared weapon and effect assets
     LevelArrivalPresentation m_arrival; ///< borrows the weapons archive
     bool m_welcomePending = false;
+    bool m_leaving = false;
+    Intro m_intro = Intro::None;
 };
 
 } // namespace gdl::game

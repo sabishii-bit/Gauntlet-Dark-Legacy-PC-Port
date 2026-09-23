@@ -8,6 +8,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/StringTable.h"
 #include "engine/assets/WorldLayout.h"
@@ -20,11 +21,11 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/config/GameConfig.h"
+#include "game/enemies/Enemies.h"
+#include "game/menu/ScrollBox.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/Progression.h"
-#include "game/menu/ScrollBox.h"
 #include "game/screens/GameContext.h"
-#include "game/enemies/Enemies.h"
 #include "game/screens/PlayScene.h"
 #include "game/world/LevelWorld.h"
 
@@ -348,7 +349,8 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     }
 }
 
-TEST_CASE("a scenario's options place the party and skip the welcome", "[game][screens][unpacked]") {
+TEST_CASE("a scenario's options place the party and skip the welcome",
+          "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -778,8 +780,7 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
         outcome = scene.update(1.0 / 60.0, still);
     }
     REQUIRE(outcome == PlayOutcome::Travel);
-    const bool nextUnpacked =
-        LevelCatalog::unpacked(root, *levels.byTag("g2"));
+    const bool nextUnpacked = LevelCatalog::unpacked(root, *levels.byTag("g2"));
     REQUIRE(scene.destination().name == (nextUnpacked ? "G2" : "L1"));
     scene.close();
     REQUIRE(world.load(device, root)); // and the tower loads again after it
@@ -819,7 +820,7 @@ TEST_CASE("in the fields a key opens a chest, which gives up what it held",
     for (int i = 0; i < 400 && carried.potions.empty(); ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    REQUIRE(carried.keys == 0);          // spent on the lock
+    REQUIRE(carried.keys == 0);           // spent on the lock
     REQUIRE(carried.potions.size() == 1); // what the chest held, reached by touching it
     // Emptied, that chest has gone; the others stand in the way, nobody inside their boxes.
     bool opened = false;
@@ -1208,7 +1209,7 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     PlayOptions options;
     options.welcome = false;
     options.position = Vec3{13.8f, 0.2f, 1.2f}; // four units from the barrel by the start
-    options.yaw = kPi;                           // and facing it
+    options.yaw = kPi;                          // and facing it
     PlayScene scene;
     const std::vector<PartyMember> party{member};
     REQUIRE(scene.open(device, context, world, party, options));
@@ -1404,7 +1405,7 @@ TEST_CASE("the archer's lesser turbo attack lets fly volleys of her own arrows",
         most = std::max(most, scene.missiles().count());
         emptyHanded = emptyHanded || !scene.weaponHeld(0);
     }
-    REQUIRE(most >= 6); // two streams, a shot every two and a quarter frames for ten
+    REQUIRE(most >= 6);   // two streams, a shot every two and a quarter frames for ten
     REQUIRE(emptyHanded); // the move hides what she holds for most of its length
     REQUIRE(scene.weaponHeld(0));
     scene.close();
@@ -1642,7 +1643,8 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
     scene.close();
 }
 
-TEST_CASE("the fields' zombies are bred from their generators, chase the party, strike it and are shot down",
+TEST_CASE("the fields' zombies are bred from their generators, chase the party, strike it and are "
+          "shot down",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
     test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
@@ -1681,7 +1683,8 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     s32 nearest = -1;
     for (usize g = 0; g < scene.generators().count(); ++g) {
         const auto id = static_cast<s32>(g);
-        if (glm::distance(scene.generators().positionOf(id), Vec3{111.25f, 10.13f, -72.5f}) < 1.0f) {
+        if (glm::distance(scene.generators().positionOf(id), Vec3{111.25f, 10.13f, -72.5f}) <
+            1.0f) {
             nearest = id;
         }
     }
@@ -1862,8 +1865,8 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(gestured);
     REQUIRE(landed);
     REQUIRE_FALSE(showing(LegendShow::kHeldTree));
-    REQUIRE(glm::distance(find(LegendShow::kProjectileTree)->position,
-                          *scene.bosses().position()) < 1.0f);
+    REQUIRE(glm::distance(find(LegendShow::kProjectileTree)->position, *scene.bosses().position()) <
+            1.0f);
     REQUIRE(scene.actor(0)->save().progress().inventory.potions.empty()); // none spent
     // Burnt through, the book gives way to its fire for the lich's five seconds.
     for (int i = 0; i < 60 && !showing(LegendShow::kBurstTree); ++i) {
@@ -2365,8 +2368,7 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
     REQUIRE(axe.model != nullptr);
     REQUIRE(axe.model->bound());
     const Vec3 facing = scene.actor(0)->facing();
-    REQUIRE(glm::dot(glm::normalize(Vec3{axe.velocity.x, 0.0f, axe.velocity.z}), facing) >
-            0.999f);
+    REQUIRE(glm::dot(glm::normalize(Vec3{axe.velocity.x, 0.0f, axe.velocity.z}), facing) > 0.999f);
     REQUIRE(glm::distance(axe.position, scene.actor(0)->followPoint()) < 6.0f);
     // Held, another follows within a second; let go, the throws stop and the body walks on.
     for (int i = 0; i < 60; ++i) {
@@ -2385,6 +2387,8 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
 
 TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll of hints",
           "[game][screens][unpacked]") {
+    const s32 player = GENERATE(0, 2);
+    const auto slot = static_cast<usize>(player);
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -2402,7 +2406,7 @@ TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll 
     options.welcome = false;
     options.position = Vec3{3.3f, 2.1f, -49.0f}; // in the spot before him
     PlayScene scene;
-    const std::vector<PartyMember> party{PartyMember{0, save}};
+    const std::vector<PartyMember> party{PartyMember{player, save}};
     REQUIRE(scene.open(device, context, world, party, options));
     const PlayScene::Inputs still{};
     for (int i = 0; i < PlayScene::kSpawnTicks + 2 && scene.spawning(); ++i) {
@@ -2423,20 +2427,31 @@ TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll 
     REQUIRE(scene.hints().active());
     REQUIRE(scene.hints().topics().definition().title == "How Can I Help You?");
     REQUIRE(scene.hints().topics().definition().items.size() == 4);
-    REQUIRE(scene.hints().topics().definition().playerLabel == "Player 1");
+    REQUIRE(scene.hints().topics().definition().playerLabel ==
+            std::format("Player {}", player + 1));
 
     // The scroll holds play: the stick moves nobody.
-    const Vec3 stood = scene.actor(0)->position();
+    const Vec3 stood = scene.actor(player)->position();
     PlayScene::Inputs walk{};
-    walk[0].move = MoveInput{Vec2{1.0f, 0.0f}, 1.0f};
+    walk[slot].move = MoveInput{Vec2{1.0f, 0.0f}, 1.0f};
     scene.update(1.0 / 60.0, walk);
-    REQUIRE(scene.actor(0)->position() == stood);
+    REQUIRE(scene.actor(player)->position() == stood);
+
+    // Other controller lanes cannot navigate or dismiss this player's scroll.
+    PlayScene::Inputs other{};
+    other[(slot + 1) % other.size()].menu.select = true;
+    other[(slot + 1) % other.size()].menu.down = true;
+    other[(slot + 1) % other.size()].menu.back = true;
+    scene.update(1.0 / 60.0, other);
+    REQUIRE_FALSE(scene.hints().reading());
+    REQUIRE(scene.hints().topics().selection() == 0);
+    REQUIRE(scene.hints().active());
 
     // The first topic answers with the first general hint; Back returns to the topics.
     PlayScene::Inputs select{};
-    select[0].menu.select = true;
+    select[slot].menu.select = true;
     PlayScene::Inputs back{};
-    back[0].menu.back = true;
+    back[slot].menu.back = true;
     scene.update(1.0 / 60.0, select);
     REQUIRE(scene.hints().reading());
     REQUIRE(scene.hints().page().definition().title == "A Hint for You");
@@ -2446,7 +2461,7 @@ TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll 
     REQUIRE_FALSE(scene.hints().reading());
     // The guardians' page is titled after the guardian it speaks of.
     PlayScene::Inputs down{};
-    down[0].menu.down = true;
+    down[slot].menu.down = true;
     scene.update(1.0 / 60.0, down);
     scene.update(1.0 / 60.0, select);
     REQUIRE(scene.hints().page().definition().title == "The Lich");

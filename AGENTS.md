@@ -922,6 +922,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   The throw sound is `S_<FAMILY>THROW` from the class family's bank. Melee,
   damage, targets, aim assist, streaks, spread shots and impact effects are
   still to come.
+* `screens/SumnerVisit` owns hint artwork, greeting/visit timing, the scroll's
+  input owner and localized hint answers. It borrows artwork and the text
+  painter; clear it before their owners release them. It cannot move because
+  its menu points at its own arrow sprite. PlayScene retains proximity checks,
+  owner-input routing, audio and Sumner's gestures. The greeting countdown
+  continues while the spot is empty; its current visitor receives the scroll.
 * Sumner's hints: a player inside the trigger before him (id 240,
   `PlayScene::kSumnerSpot`) is greeted at once (`SumnerFigure::play`, the
   original's sequence indices: 3 WELCOME, 4 GOAWAY, 6 GESTRIGHT) and handed
