@@ -36,6 +36,7 @@
 #include "game/screens/GameContext.h"
 #include "game/screens/LegendPresentation.h"
 #include "game/screens/LevelArrivalPresentation.h"
+#include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelMessages.h"
 #include "game/screens/PartyHud.h"
 #include "game/screens/PartyMotion.h"
@@ -43,21 +44,16 @@
 #include "game/screens/SumnerVisit.h"
 #include "game/screens/TransitionScreen.h"
 #include "game/world/BossCamera.h"
-#include "game/world/Breakables.h"
-#include "game/world/Chests.h"
 #include "game/world/EffectTrees.h"
 #include "game/world/ExitPortals.h"
 #include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
-#include "game/world/LockedGates.h"
 #include "game/world/MoveStrikes.h"
 #include "game/world/PlayerArsenal.h"
 #include "game/world/PlayerFigure.h"
-#include "game/world/SafeRocks.h"
 #include "game/world/StartCamera.h"
 #include "game/world/SumnerFigure.h"
 #include "game/world/TowerCamera.h"
-#include "game/world/Traps.h"
 
 namespace gdl::game {
 
@@ -169,11 +165,11 @@ public:
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
     const PlayerMissiles& missiles() const { return m_arsenal.missiles(); }
     const ExitPortals& portals() const { return m_portals; }
-    const Chests& chests() const { return m_chests; }
-    const LockedGates& gates() const { return m_gates; }
-    const Traps& traps() const { return m_traps; }
-    const Breakables& barrels() const { return m_barrels; }
-    const SafeRocks& safeRocks() const { return m_safeRocks; }
+    const Chests& chests() const { return m_fixtures.chests(); }
+    const LockedGates& gates() const { return m_fixtures.gates(); }
+    const Traps& traps() const { return m_fixtures.traps(); }
+    const Breakables& barrels() const { return m_fixtures.barrels(); }
+    const SafeRocks& safeRocks() const { return m_fixtures.safeRocks(); }
     const Enemies& enemies() const { return m_enemies; }
     Enemies& enemies() { return m_enemies; }
     const Generators& generators() const { return m_generators; }
@@ -257,9 +253,9 @@ private:
     void collectItems();
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
-    void playGateSound(s32 subtype);
+    LevelFixtures::Events fixtureEvents();
+    void hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage);
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false);
-    f32 guarded(usize index, f32 damage, bool directed) const;
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer);
     void strikeSafeRock(usize index, f32 power);
     void bindEnemies(RenderDevice& device, LevelWorld& world, const GameContext& context);
@@ -289,7 +285,6 @@ private:
     void bossFallen(const Vec3& where);
     void updateVictory(s32 ticks, f32 seconds);
     void settleBlasts();
-    void updateClouds(f32 seconds);
     bool postHelp(s32 id, usize index, s32 number = -1);
     /** Answers the party's levels gained since last looked: the fanfare, a hundred health,
      * the message, the costume of a new tier, and the class's word at a milestone. */
@@ -313,7 +308,6 @@ private:
     }
     /** Where the level finds a character: nowhere once it has fallen. */
     Vec3 presenceOf(usize index) const;
-    f32 trapDamageScale() const;
     std::optional<s32> takePickup(const Pickup& pickup);
     void shareRune(s32 rune);
     void updateAmbience();
@@ -372,22 +366,7 @@ private:
         f32 harmIn = 0.0f;
     };
     std::vector<PotionShield> m_shields;
-    /** Gas a poison barrel left hanging. */
-    struct GasCloud {
-        Vec3 position{0.0f, 0.0f, 0.0f};
-        f32 damage = 0.0f;
-        f32 secondsLeft = 0.0f;
-    };
-    std::vector<GasCloud> m_clouds;
-    /** A blast yet to be felt: one barrel's sets off the next, in turn. */
-    struct Blast {
-        Vec3 position{0.0f, 0.0f, 0.0f};
-        f32 radius = 0.0f;
-        f32 damage = 0.0f;
-    };
-    std::vector<Blast> m_blasts;
-    Breakables m_barrels;
-    SafeRocks m_safeRocks;
+    LevelFixtures m_fixtures;
     Enemies m_enemies;
     Generators m_generators;
     Critters m_critters;
@@ -405,9 +384,6 @@ private:
     EnemyMissiles m_enemyMissiles;
     LevelWatch m_levels;
     std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid
-    Chests m_chests;
-    LockedGates m_gates;
-    Traps m_traps;
     TransitionScreen m_transition;
     LevelRef m_destination;
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice

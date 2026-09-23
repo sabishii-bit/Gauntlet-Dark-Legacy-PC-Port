@@ -140,6 +140,7 @@ add_library(game STATIC
     screens/PlayScene.h
     screens/PartyMotion.cpp
     screens/PartyHud.cpp
+    screens/LevelFixtures.cpp
     screens/PlayerHealth.cpp
     screens/PlayScene.cpp)
 
