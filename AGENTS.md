@@ -302,6 +302,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   delegate health/help/cards and opponent damage to the scene. Players are
   resolved before breakables and opponents for each blast; preserve that order.
   Clear fixtures before releasing their borrowed world/effect archives.
+  `screens/LevelOpponents` owns enemy populations, generators, enemy missiles,
+  boss meter, fractional reward accounts and following enemy effects. Its phase
+  hooks retain the interleaving of blasts, legend rites, boss victories and
+  player level changes. Clear shared effects before closing the opponent
+  archives; the meter and missiles are released before their borrowed assets.
   Blasts hurt
   whoever is within their radius and strike the barrels in it (queued, so a
   barrel that blows up sets off its neighbours without recursion): a trapped

@@ -128,7 +128,9 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     world.setPlayerCount(static_cast<s32>(m_players.size()));
     m_fixtures.setPlayerCount(static_cast<s32>(m_players.size()));
-    bindEnemies(device, world, context);
+    m_opponents.open({device, world, m_weapons, m_effects, m_audio, context.unpackedRoot,
+                      context.config != nullptr ? context.config->difficulty.gain() : 1.0f},
+                     m_players);
     // The levels the party comes in at: what is gained from here is news.
     m_levels.clear();
     for (const PlayerRuntime& runtime : m_players) {
@@ -187,16 +189,10 @@ void PlayScene::close() {
     m_transition.release();
     m_leaving = false;
     m_arsenal.clear(); // before the figures whose models they fly
-    m_critterEffects.clear();
     m_legend.reset();
     m_effects.clear(); // and before the archive whose trees they play
-    m_generators.clear();
-    m_enemyMissiles.clear(); // before the archives whose trees they fly
-    m_critters.close();
-    m_bossMeter.clear(); // before the archive whose textures it draws
     m_victory.clear();
-    m_bosses.close();
-    m_enemies.close();
+    m_opponents.close();
     m_playSeconds = 0.0f;
     m_hud.clear(); // before the static texture borrowed for selector glow
     m_staticTextures.releaseTextures();
@@ -399,13 +395,6 @@ void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed)
  * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
  * nowhere in particular (a trap underfoot); a shove halves either. */
 
-/** A sound of the realm's bank, whose names end in the realm's letter. */
-SoundHandle PlayScene::playRealmSound(std::string_view stem) {
-    const std::string& level = m_world->ref().name;
-    const char letter = level.empty() ? 'G' : level.front();
-    return m_audio.playNamed(std::format("{}{}", stem, letter));
-}
-
 const TurboMeter* PlayScene::turboMeter(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player) {
@@ -540,28 +529,29 @@ void PlayScene::updateStrikes(f32 seconds) {
                     stats->moveStrikes[static_cast<usize>(source->row)].damageType);
             }
         }
-        for (const s32 enemy : m_enemies.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
-            const Vec3 direction = m_enemies.positionOf(enemy) - hit.centre;
+        for (const s32 enemy :
+             m_opponents.enemies().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
+            const Vec3 direction = m_opponents.enemies().positionOf(enemy) - hit.centre;
             strikeEnemy(enemy, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z}, hit.owner);
         }
-        for (const s32 generator : m_generators.within(hit.centre, hit.radius)) {
+        for (const s32 generator : m_opponents.generators().within(hit.centre, hit.radius)) {
             strikeGenerator(generator, hit.damage, hit.owner);
         }
-        if (m_bosses.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
+        if (m_opponents.bosses().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
             EnemyHit struck;
             struck.damage = hit.damage;
             struck.flags = flags;
             struck.player = hit.owner;
             struck.close = true;
-            if (const Vec3* at = m_bosses.position(); at != nullptr) {
+            if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
                 struck.direction = Vec3{at->x - hit.centre.x, 0.0f, at->z - hit.centre.z};
                 struck.where = hit.centre + glm::normalize(struck.direction) * hit.radius;
             }
-            m_bosses.hurt(struck);
+            m_opponents.bosses().hurt(struck);
         }
         for (const s32 critter :
-             m_critters.reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
-            const Vec3 direction = m_critters.positionOf(critter) - hit.centre;
+             m_opponents.critters().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
+            const Vec3 direction = m_opponents.critters().positionOf(critter) - hit.centre;
             strikeCritter(critter, hit.damage, flags, Vec3{direction.x, 0.0f, direction.z},
                           hit.owner, std::nullopt, true);
         }
@@ -805,24 +795,24 @@ void PlayScene::settleBlasts() {
     m_fixtures.settleBlasts(m_players, fixtureEvents());
 }
 void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage) {
-    for (const s32 enemy : m_enemies.within(position, radius)) {
-        const Vec3 away = m_enemies.positionOf(enemy) - position;
+    for (const s32 enemy : m_opponents.enemies().within(position, radius)) {
+        const Vec3 away = m_opponents.enemies().positionOf(enemy) - position;
         strikeEnemy(enemy, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
-    for (const s32 generator : m_generators.within(position, radius)) {
+    for (const s32 generator : m_opponents.generators().within(position, radius)) {
         strikeGenerator(generator, damage, -1);
     }
-    if (m_bosses.within(position, radius)) {
+    if (m_opponents.bosses().within(position, radius)) {
         EnemyHit struck;
         struck.damage = damage;
         struck.flags = EnemyHit::kKnockDown;
-        if (const Vec3* at = m_bosses.position(); at != nullptr) {
+        if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
             struck.direction = Vec3{at->x - position.x, 0.0f, at->z - position.z};
         }
-        m_bosses.hurt(struck);
+        m_opponents.bosses().hurt(struck);
     }
-    for (const s32 critter : m_critters.within(position, radius)) {
-        const Vec3 away = m_critters.positionOf(critter) - position;
+    for (const s32 critter : m_opponents.critters().within(position, radius)) {
+        const Vec3 away = m_opponents.critters().positionOf(critter) - position;
         strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
 }
@@ -865,72 +855,6 @@ void PlayScene::updateLevels() {
     }
 }
 
-/** A hit on one of the great ones. */
-void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                              std::optional<Vec3> where, bool close) {
-    EnemyHit hit;
-    hit.damage = power;
-    hit.flags = flags;
-    hit.direction = direction;
-    hit.player = byPlayer;
-    hit.where = where;
-    hit.close = close;
-    for (const PlayerRuntime& runtime : m_players) {
-        const PlayerActor& actor = runtime.actor;
-        if (actor.player() == byPlayer) {
-            hit.level = experienceLevel(actor.save().experience());
-        }
-    }
-    m_critters.hurt(id, hit);
-}
-
-/** Plays what one of the great ones (the boss with `ofBoss`) has set off: its tree from its
- * own archive (or the weapons', which holds the common marks of a hit) where it happened,
- * riding along with it when it follows, and its sound. */
-void PlayScene::showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss) {
-    if (archive == nullptr || !archive->trees.find(cue.tree).has_value()) {
-        archive =
-            m_weapons.loaded() && m_weapons.trees.find(cue.tree).has_value() ? &m_weapons : nullptr;
-    }
-    if (!cue.tree.empty() && archive != nullptr && m_device != nullptr) {
-        EffectTrees::Setting setting;
-        setting.scale = cue.scale;
-        setting.yaw = cue.yaw;
-        setting.seconds = cue.life;
-        if (const u32 effect =
-                m_effects.startSet(*m_device, *archive, cue.tree, cue.position, setting);
-            effect != 0 && cue.follows) {
-            const Vec3* at = ofBoss ? m_bosses.position() : &m_critters.positionOf(cue.critter);
-            m_critterEffects.push_back(
-                CritterEffect{effect, cue.critter, ofBoss,
-                              at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}});
-        }
-    }
-    if (!cue.sound.empty()) {
-        m_audio.playNamed(cue.sound);
-    }
-}
-
-/** Effects riding on the great ones go where they go, and are let go of when they end. */
-void PlayScene::followCritterEffects() {
-    for (usize i = 0; i < m_critterEffects.size();) {
-        const CritterEffect& riding = m_critterEffects[i];
-        const bool alive =
-            riding.ofBoss ? m_bosses.present()
-                          : m_critters.alive(riding.critter) || m_critters.dying(riding.critter);
-        if (!m_effects.playing(riding.effect) || !alive) {
-            m_critterEffects.erase(m_critterEffects.begin() + static_cast<std::ptrdiff_t>(i));
-            continue;
-        }
-        const Vec3* at =
-            riding.ofBoss ? m_bosses.position() : &m_critters.positionOf(riding.critter);
-        if (at != nullptr) {
-            m_effects.moveTo(riding.effect, *at + riding.offset);
-        }
-        ++i;
-    }
-}
-
 /** Translate scene-owned poses into the presentation's small, read-only snapshot. */
 std::optional<LegendPresentation::Bearer> PlayScene::legendBearer(s32 player, s32 kind) const {
     for (usize i = 0; i < m_players.size(); ++i) {
@@ -963,7 +887,7 @@ std::optional<LegendPresentation::Bearer> PlayScene::legendBearer(s32 player, s3
 
 void PlayScene::showLegendEvent(const LegendEvent& event) {
     if (m_legend != nullptr) {
-        const s32 kind = m_bosses.view().kind;
+        const s32 kind = m_opponents.bosses().view().kind;
         m_legend->show(event.cue, event.player, event.realm, kind,
                        legendBearer(event.player, kind));
     }
@@ -974,8 +898,8 @@ void PlayScene::updateLegend(f32 seconds) {
         return;
     }
     std::optional<LegendPresentation::Target> target;
-    if (const Vec3* at = m_bosses.position(); at != nullptr) {
-        target = LegendPresentation::Target{*at, m_bosses.height()};
+    if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
+        target = LegendPresentation::Target{*at, m_opponents.bosses().height()};
     }
     const LegendPresentation::Update result =
         m_legend->update(seconds, legendBearer(m_legend->player(), m_legend->kind()), target);
@@ -987,7 +911,7 @@ void PlayScene::updateLegend(f32 seconds) {
         }
     }
     if (result.landed) {
-        m_bosses.landLegend();
+        m_opponents.bosses().landLegend();
     }
 }
 
@@ -1027,7 +951,7 @@ void PlayScene::bossFallen(const Vec3& where) {
                 standing.push_back(m_players[i].actor.position());
             }
         }
-        const Vec3* boss = m_bosses.position();
+        const Vec3* boss = m_opponents.bosses().position();
         m_victory.bindWizard(*m_device, m_world->items(), boss != nullptr ? *boss : Vec3{0.0f},
                              standing);
     }
@@ -1064,11 +988,12 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
 /** As the death throws them out, the boss's coins for the party fly from where it stands
  * and its blast takes the rest of the level's enemies with it. */
 void PlayScene::spewBossCoins(const CritterSpew& spew) {
-    for (const s32 enemy : m_enemies.within(spew.origin, kBossDeathBlastRadius)) {
-        const Vec3 away = m_enemies.positionOf(enemy) - spew.origin;
+    for (const s32 enemy : m_opponents.enemies().within(spew.origin, kBossDeathBlastRadius)) {
+        const Vec3 away = m_opponents.enemies().positionOf(enemy) - spew.origin;
         strikeEnemy(enemy, kBossDeathBlast, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
-    for (const s32 generator : m_generators.within(spew.origin, kBossDeathBlastRadius)) {
+    for (const s32 generator :
+         m_opponents.generators().within(spew.origin, kBossDeathBlastRadius)) {
         strikeGenerator(generator, kBossDeathBlast, -1);
     }
     if (m_device == nullptr) {
@@ -1082,335 +1007,38 @@ void PlayScene::spewBossCoins(const CritterSpew& spew) {
     }
 }
 
-/** The boss's worth goes the great ones' way: shares to the hitter, a kill's to everyone. */
-void PlayScene::awardBossLosses() {
-    for (const CritterSpew& spew : m_bosses.takeSpews()) {
-        spewBossCoins(spew);
-    }
-    for (const CritterLoss& loss : m_bosses.takeLosses()) {
-        if (loss.killed) {
-            bossFallen(loss.position);
-        }
-        for (const PlayerRuntime& runtime : m_players) {
-            const PlayerActor& actor = runtime.actor;
-            const s32 player = actor.player();
-            if ((loss.player >= 0 && loss.player != player) || player < 0 ||
-                static_cast<usize>(player) >= m_critterExperienceOwed.size()) {
-                continue;
-            }
-            f32& owed = m_critterExperienceOwed[static_cast<usize>(player)];
-            owed += loss.experience;
-            const auto whole = static_cast<s32>(std::floor(owed));
-            if (whole > 0) {
-                owed -= static_cast<f32>(whole);
-                awardExperience(player, whole, loss.killed);
-            }
-        }
-    }
-}
-
-/** What the great ones are worth: a share to whoever hurt one, whole points as they add
- * up, and a kill's share to everyone. */
-void PlayScene::awardCritterLosses() {
-    for (const CritterLoss& loss : m_critters.takeLosses()) {
-        // A gargoyle slain leaves the key its form is named by where it fell.
-        if (loss.killed && loss.kind == kGargoyleCritter && !loss.form.empty() &&
-            m_device != nullptr) {
-            m_world->placeItem(*m_device, "GARG" + loss.form, loss.position);
-        }
-        for (const PlayerRuntime& runtime : m_players) {
-            const PlayerActor& actor = runtime.actor;
-            const s32 player = actor.player();
-            if (loss.player >= 0 && loss.player != player) {
-                continue;
-            }
-            if (player < 0 || static_cast<usize>(player) >= m_critterExperienceOwed.size()) {
-                continue;
-            }
-            f32& owed = m_critterExperienceOwed[static_cast<usize>(player)];
-            owed += loss.experience;
-            const auto whole = static_cast<s32>(std::floor(owed));
-            if (whole > 0) {
-                owed -= static_cast<f32>(whole);
-                awardExperience(player, whole, loss.killed);
-            }
-        }
-    }
-}
-
-/** The level's swarm and the generators that breed it, at the level's scales: what they can
- * take and deal is the level's own, how fast they go and see and how a generator breeds grow
- * with the difficulty setting. Placements of ordinary strength stand where the level puts
- * them, asleep when of no strength; the archer, bomber and suicide variants wait for their
- * missiles. */
-void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameContext& context) {
-    const LevelInfo* level = world.level();
-    const f32 gain = context.config != nullptr ? context.config->difficulty.gain() : 1.0f;
-    EnemyScales scales;
-    GeneratorScales breeding;
-    s32 most = Enemies::kMost;
-    if (level != nullptr) {
-        scales.health = level->tuning.enemyHealth;
-        scales.speed = level->tuning.enemySpeedScale(gain);
-        scales.sight = level->tuning.enemySightScale(gain);
-        scales.damage = level->tuning.enemyDamage;
-        scales.playerLevel = level->tuning.playerLevel;
-        breeding.health = level->tuning.generatorHealth;
-        breeding.rate = level->tuning.generatorRateScale(gain);
-        breeding.most = level->tuning.generatorMostScale(gain);
-        most = level->maxEnemies;
-    }
-    const auto seed = static_cast<u32>(std::hash<std::string>{}(world.ref().name));
-    m_enemies.open(device, context.unpackedRoot, &world.collision(), most, scales, seed);
-    const std::string& levelName = world.ref().name;
-    m_critters.open(device, context.unpackedRoot, &world.collision(), scales,
-                    levelName.empty() ? 'G' : levelName.front());
-    m_bosses.open(device, context.unpackedRoot, &world.collision(), scales,
-                  levelName.empty() ? 'G' : levelName.front());
-    m_critterExperienceOwed.fill(0.0f);
-    const auto players = static_cast<s32>(m_players.size());
-    const std::span<const LevelEnemy> roster = level != nullptr
-                                                   ? std::span<const LevelEnemy>(level->enemies)
-                                                   : std::span<const LevelEnemy>{};
-    m_generators.bind(device, world.layout(), m_enemies, &world.collision(), breeding, players,
-                      roster);
-    // The level's boss, at its boss mark.
-    if (level != nullptr && !bossNameOf(level->bossType).empty()) {
-        if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss);
-            mark != nullptr) {
-            m_bosses.spawn(level->bossType, mark->position, mark->rotation.y);
-            if (const CritterMeter* meter = m_bosses.meter(); meter != nullptr) {
-                ItemArchive* archive = m_bosses.archive();
-                m_bossMeter.bind(*meter, archive != nullptr ? &archive->textures : nullptr);
-                const BossView boss = m_bosses.view();
-                m_bossMeter.update(0, boss.health, boss.maxHealth, boss.alive, false);
-            }
-            // The first of the party carrying its legend item brings it to the fight.
-            for (const PlayerRuntime& runtime : m_players) {
-                const PlayerActor& actor = runtime.actor;
-                if (actor.save().progress().relics.hasLegend(m_bosses.legendRealm()) &&
-                    m_bosses.bringLegend(actor.player())) {
-                    log::info("Level {}: player {} brings the {} its legend item", levelName,
-                              actor.player() + 1, bossNameOf(level->bossType));
-                    break;
-                }
-            }
-        }
-    }
-    const std::vector<ItemInfo>& infos = world.layout().itemInfos();
-    for (const ItemInstance& instance : world.layout().itemInstances()) {
-        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
-            continue;
-        }
-        const ItemInfo& info = infos[static_cast<usize>(instance.info)];
-        if (info.type != ItemInfo::kPlacedEnemy || !shownToParty(instance.minPlayers, players)) {
-            continue;
-        }
-        const auto named = enemyKindOf(info.name);
-        const s32 strength = Generators::paramOf(instance, 0);
-        if (!named.has_value()) {
-            continue;
-        }
-        const std::optional<s32> kind = levelKindOf(roster, *named, strength);
-        // The great ones stand where they are put, facing as placed.
-        const Mat4 stood = itemPlacement(instance.position, instance.rotation);
-        const f32 facing = std::atan2(stood[2][0], stood[2][2]);
-        if (*kind == kGolemEnemyKind) {
-            m_critters.spawn(kGolemCritter, instance.position, facing);
-            continue;
-        }
-        if (*kind == kGeneralEnemyKind) {
-            m_critters.spawn(kGeneralCritter, instance.position, facing);
-            continue;
-        }
-        if (*kind == kGargoyleEnemyKind) {
-            m_critters.spawn(kGargoyleCritter, instance.position, facing);
-            continue;
-        }
-        if (*kind >= kSwarmKindCount || !m_enemies.loadKind(*kind)) {
-            continue;
-        }
-        EnemySpawn spawn;
-        spawn.kind = *kind;
-        spawn.tier = std::max(strength, 1);
-        spawn.algorithm = Generators::paramOf(instance, 1);
-        if (const s32 interval = Generators::paramOf(instance, 3); interval > 0) {
-            spawn.idleTicks = interval;
-        }
-        spawn.position = instance.position;
-        const Mat4 placement = itemPlacement(instance.position, instance.rotation);
-        spawn.direction = Vec3{placement[2][0], 0.0f, placement[2][2]};
-        spawn.placed = true;
-        spawn.asleep = strength == 0;
-        m_enemies.spawn(spawn, {}, m_generators.obstacles());
-    }
-}
-
-/** The party as the swarm sees it: where each stands, how big, how seasoned; the fallen and
- * those in the tower are not seen. */
-std::vector<EnemyView> PlayScene::enemyViews() const {
-    std::vector<EnemyView> views;
-    views.reserve(m_players.size());
-    for (usize i = 0; i < m_players.size(); ++i) {
-        const PlayerActor& actor = m_players[i].actor;
-        EnemyView view;
-        view.player = actor.player();
-        view.position = actor.position();
-        view.radius = actor.radius();
-        view.height = actor.height();
-        view.level = experienceLevel(actor.save().experience());
-        view.hidden = isDown(i);
-        views.push_back(view);
-    }
-    return views;
-}
-
-/** The generators breed, the swarm goes about its business, and what it lands on the party
- * is taken: a power blow from a tall one is a knock that makes its victim flinch. What the
- * party has done to it is paid in experience. */
-void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
-    const std::vector<EnemyView> views = enemyViews();
-    std::vector<Obstacle> boxes = m_generators.obstacles();
-    const std::vector<Obstacle> chests = m_fixtures.chests().obstacles();
-    boxes.insert(boxes.end(), chests.begin(), chests.end());
-    const std::vector<Obstacle> barred = m_fixtures.gates().obstacles();
-    boxes.insert(boxes.end(), barred.begin(), barred.end());
-    const std::vector<Obstacle> casks = m_fixtures.barrels().obstacles();
-    boxes.insert(boxes.end(), casks.begin(), casks.end());
-    const LevelInfo* level = m_world->level();
-    const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
-    const auto cover = m_fixtures.safeRocks().obstacles();
-    boxes.insert(boxes.end(), cover.begin(), cover.end());
-    m_generators.update(ticks, m_enemies, views, boxes);
-    m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed);
-    m_enemyMissiles.update(seconds, &m_world->collision(), views);
-    // What the throwers let fly lands on the party, or bursts where it fell; what blows
-    // itself up blasts everything about it.
-    for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
-        for (usize i = 0; i < m_players.size(); ++i) {
-            if (hit.player >= 0 && m_players[i].actor.player() == hit.player && !isDown(i)) {
-                const bool guarding =
-                    m_players[i].figure != nullptr && m_players[i].figure->animator().guarding();
-                if ((hit.flags & EnemyMissileKind::kKnockBack) != 0 && !guarding &&
-                    m_players[i].reaction == PlayerDeed::None) {
-                    m_players[i].reaction = PlayerDeed::Flinch;
-                }
-                hurt(i, hit.damage, HurtKind::Pierce, true);
-            }
-        }
-        if (hit.burstRadius > 0.0f) {
-            blast(hit.position, hit.burstRadius, hit.damage);
-        }
-    }
-    for (const EnemyBurst& burst : m_enemies.takeBursts()) {
-        blast(burst.position, LevelFixtures::kBlastRadius, burst.damage);
-    }
-    settleBlasts();
-    m_critters.update(ticks, seconds, views);
-    m_bosses.update(ticks, seconds, views);
-    if (m_bossMeter.bound()) {
-        const BossView boss = m_bosses.view();
-        m_bossMeter.update(ticks, boss.health, boss.maxHealth, m_bosses.present() && boss.alive,
-                           m_bosses.frozen());
-    }
-    // The legend item held up is the bearer's no more; the rite is shown as it goes.
-    for (const LegendEvent& event : m_bosses.takeLegendEvents()) {
-        if (event.cue == LegendCue::Brandished) {
-            for (PlayerRuntime& runtime : m_players) {
-                PlayerActor& actor = runtime.actor;
-                if (actor.player() == event.player) {
-                    actor.save().progress().relics.spendLegend(event.realm);
-                }
-            }
-        }
-        showLegendEvent(event);
-    }
-    updateLegend(seconds);
-    for (const CritterBlow& blow : m_bosses.takeBlows()) {
-        for (usize i = 0; i < m_players.size(); ++i) {
-            if (m_players[i].actor.player() == blow.player && !isDown(i)) {
-                hurt(i, blow.damage, HurtKind::Blow, true);
-            }
-        }
-    }
-    awardBossLosses();
-    updateVictory(ticks, seconds);
-    // The great ones' effects and sounds: a move's, a strike's, a hit's.
-    for (const CritterCue& cue : m_bosses.takeCues()) {
-        showCritterCue(cue, m_bosses.archive(), true);
-    }
-    for (const CritterCue& cue : m_critters.takeCues()) {
-        showCritterCue(cue, m_critters.archiveOf(cue.critter), false);
-    }
-    followCritterEffects();
-    for (const CritterBlow& blow : m_critters.takeBlows()) {
-        for (usize i = 0; i < m_players.size(); ++i) {
-            if (m_players[i].actor.player() == blow.player && !isDown(i)) {
-                hurt(i, blow.damage, HurtKind::Blow, true);
-            }
-        }
-    }
-    awardCritterLosses();
-    updateLevels();
-    for (const EnemyBlow& blow : m_enemies.takeBlows()) {
-        for (usize i = 0; i < m_players.size(); ++i) {
-            if (m_players[i].actor.player() != blow.player || isDown(i)) {
-                continue;
-            }
-            const bool guarding =
-                m_players[i].figure != nullptr && m_players[i].figure->animator().guarding();
-            if (blow.knocksDown && !guarding && m_players[i].reaction == PlayerDeed::None) {
-                m_players[i].reaction = PlayerDeed::Flinch;
-            }
-            hurt(i, blow.damage, HurtKind::Blow, true);
-        }
-    }
-    for (const EnemyLoss& loss : m_enemies.takeLosses()) {
-        awardExperience(loss.player, loss.experience, loss.killed);
-    }
-}
-
-/** A hit on one of the swarm, from a player or the world. */
-void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
-    EnemyHit hit;
-    hit.damage = power;
-    hit.flags = flags;
-    hit.direction = direction;
-    hit.player = byPlayer;
-    for (const PlayerRuntime& runtime : m_players) {
-        const PlayerActor& actor = runtime.actor;
-        if (actor.player() == byPlayer) {
-            hit.level = experienceLevel(actor.save().experience());
-        }
-    }
-    m_enemies.hurt(id, hit);
-}
-
-/** A hit on a generator: as it crumbles a state its kind's hit or death effect plays over
- * it to the realm's own sound (`S_GENDAMG`, `S_GENKILLG`), and, gone, its brood is freed of
- * it. */
-void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
-    const auto event = m_generators.strike(id, power, byPlayer);
-    if (!event.has_value()) {
-        return;
-    }
-    if (ItemArchive* archive = m_enemies.archive(event->kind);
-        archive != nullptr && m_device != nullptr) {
-        const std::string_view tree = event->destroyed ? "GENDIE" : "GENHIT";
-        if (archive->trees.find(tree).has_value()) {
-            m_effects.start(*m_device, *archive, tree, event->position);
-        }
-    }
-    playRealmSound(event->destroyed ? "S_GENKILL" : "S_GENDAM");
-    if (event->destroyed) {
-        m_enemies.generatorGone(id);
-    }
-}
-
 /** Takes health from a character the way the original does: harm over a point is scaled by
  * the level's damage, the cry depends on what did it, and with under a point of health left
  * the character dies, to the dying sound and its own last cry. Nobody is hurt in the tower,
  * nor once they have fallen. */
+void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
+    m_opponents.update(
+        ticks, seconds, m_players, m_fixtures.obstacles(),
+        {.hurt = [this](usize i, f32 damage, HurtKind kind,
+                        bool directed) { hurt(i, damage, kind, directed); },
+         .blast = [this](const Vec3& position, f32 radius,
+                         f32 damage) { blast(position, radius, damage); },
+         .settleBlasts = [this] { settleBlasts(); },
+         .legend = [this](const LegendEvent& event) { showLegendEvent(event); },
+         .advanceLegend = [this](f32 duration) { updateLegend(duration); },
+         .fallen = [this](const Vec3& position) { bossFallen(position); },
+         .spew = [this](const CritterSpew& spew) { spewBossCoins(spew); },
+         .advanceVictory = [this](s32 elapsed, f32 duration) { updateVictory(elapsed, duration); },
+         .levels = [this] { updateLevels(); },
+         .award = [this](s32 player, s32 amount,
+                         bool kill) { awardExperience(player, amount, kill); }});
+}
+void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
+    m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);
+}
+void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
+                              std::optional<Vec3> where, bool close) {
+    m_opponents.strikeCritter(id, power, flags, direction, byPlayer, where, close, m_players);
+}
+void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
+    m_opponents.strikeGenerator(id, power, byPlayer);
+}
+
 void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
     if (index >= m_players.size()) {
         return;
@@ -1690,23 +1318,23 @@ const WorldCamera& PlayScene::viewCamera() const {
 bool PlayScene::bossCameraOn() const {
     const LevelInfo* level = m_world != nullptr ? m_world->level() : nullptr;
     return level != nullptr && level->bossCamera.has_value() &&
-           (m_bosses.present() || m_victory.state().running());
+           (m_opponents.bosses().present() || m_victory.state().running());
 }
 
 /** The boss as the camera sees it; once it has fallen, the wizard in its place. */
 BossCameraSubject PlayScene::bossSubject() const {
     BossCameraSubject subject;
-    if (m_victory.state().running() && !m_bosses.present()) {
+    if (m_victory.state().running() && !m_opponents.bosses().present()) {
         return m_victory.wizardSubject();
     }
-    if (const Vec3* at = m_bosses.position(); at != nullptr) {
+    if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
         subject.position = *at;
     }
-    subject.facing = m_bosses.facing();
-    subject.radius = m_bosses.radius();
-    subject.height = m_bosses.height();
-    subject.attentionOffset = m_bosses.cameraOffset();
-    subject.awake = m_bosses.view().awake;
+    subject.facing = m_opponents.bosses().facing();
+    subject.radius = m_opponents.bosses().radius();
+    subject.height = m_opponents.bosses().height();
+    subject.attentionOffset = m_opponents.bosses().cameraOffset();
+    subject.awake = m_opponents.bosses().view().awake;
     return subject;
 }
 
@@ -1835,24 +1463,25 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                                             cask.radius, cask.height});
         }
     }
-    for (MissileTarget target : m_enemies.targets()) {
+    for (MissileTarget target : m_opponents.enemies().targets()) {
         target.id += kEnemyTargetBase;
         targets.push_back(target);
     }
-    for (MissileTarget target : m_critters.targets()) {
+    for (MissileTarget target : m_opponents.critters().targets()) {
         target.id += kCritterTargetBase;
         targets.push_back(target);
     }
-    for (MissileTarget target : m_bosses.targets()) {
+    for (MissileTarget target : m_opponents.bosses().targets()) {
         target.id += kBossTargetBase;
         targets.push_back(target);
     }
-    for (usize g = 0; g < m_generators.count(); ++g) {
-        if (m_generators.standing(static_cast<s32>(g))) {
-            const Obstacle& box = m_generators.boxOf(static_cast<s32>(g));
-            targets.push_back(MissileTarget{static_cast<s32>(g) + kGeneratorTargetBase,
-                                            m_generators.positionOf(static_cast<s32>(g)),
-                                            std::max(box.halfAcross, box.halfAlong), box.height});
+    for (usize g = 0; g < m_opponents.generators().count(); ++g) {
+        if (m_opponents.generators().standing(static_cast<s32>(g))) {
+            const Obstacle& box = m_opponents.generators().boxOf(static_cast<s32>(g));
+            targets.push_back(
+                MissileTarget{static_cast<s32>(g) + kGeneratorTargetBase,
+                              m_opponents.generators().positionOf(static_cast<s32>(g)),
+                              std::max(box.halfAcross, box.halfAlong), box.height});
         }
     }
     for (usize rock = 0; rock < m_fixtures.safeRocks().size(); ++rock) {
@@ -1883,7 +1512,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     hit.level = experienceLevel(actor.save().experience());
                 }
             }
-            m_bosses.hurt(hit);
+            m_opponents.bosses().hurt(hit);
         } else if (impact.target >= kCritterTargetBase) {
             Vec3 direction{0.0f, 0.0f, 1.0f};
             for (const PlayerRuntime& runtime : m_players) {
@@ -1917,7 +1546,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     updateStrikes(seconds);
     updateShields(seconds);
     // The level goes dark for the legend item's rite, as for a great move.
-    if (m_bosses.legend().darkens()) {
+    if (m_opponents.bosses().legend().darkens()) {
         m_dimmer.ask(LegendRite::kDarkening);
     }
     m_dimmer.update(seconds);
@@ -2031,15 +1660,16 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     m_portals.draw(device, clip, m_world->lighting());
     m_fixtures.draw(device, clip, m_world->lighting());
-    m_generators.draw(device, clip, m_world->lighting());
-    m_enemies.draw(device, clip, m_world->lighting());
-    m_critters.draw(device, clip, m_world->lighting());
+    m_opponents.generators().draw(device, clip, m_world->lighting());
+    m_opponents.enemies().draw(device, clip, m_world->lighting());
+    m_opponents.critters().draw(device, clip, m_world->lighting());
     // The boss stands out in the level's own light while the rite darkens the rest.
-    m_bosses.draw(device, clip,
-                  m_bosses.legend().darkens() ? m_world->fullLighting() : m_world->lighting(),
-                  m_legend != nullptr ? m_legend->frozenTexture() : nullptr);
+    m_opponents.bosses().draw(device, clip,
+                              m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
+                                                                      : m_world->lighting(),
+                              m_legend != nullptr ? m_legend->frozenTexture() : nullptr);
     m_victory.drawWizard(device, clip, m_world->lighting());
-    m_enemyMissiles.draw(device, clip, m_world->lighting());
+    m_opponents.missiles().draw(device, clip, m_world->lighting());
     m_arsenal.missiles().draw(device, clip, m_world->lighting());
     const CameraFrame effectCamera = CameraFrame::of(viewCamera());
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
@@ -2054,7 +1684,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
-        m_bossMeter.draw(m_canvas, device);
+        m_opponents.meter().draw(m_canvas, device);
         m_victory.drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width, height);
     }
     if (const LevelInfo* level = m_world->level(); level != nullptr) {

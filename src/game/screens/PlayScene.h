@@ -18,11 +18,6 @@
 #include "engine/world/AmbientDimmer.h"
 #include "engine/world/WorldCamera.h"
 
-#include "game/enemies/Bosses.h"
-#include "game/enemies/Critters.h"
-#include "game/enemies/Enemies.h"
-#include "game/enemies/EnemyMissiles.h"
-#include "game/enemies/Generators.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
 #include "game/players/LevelWatch.h"
@@ -31,13 +26,13 @@
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/TurboMeter.h"
-#include "game/screens/BossMeter.h"
 #include "game/screens/BossVictoryPresentation.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/LegendPresentation.h"
 #include "game/screens/LevelArrivalPresentation.h"
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelMessages.h"
+#include "game/screens/LevelOpponents.h"
 #include "game/screens/PartyHud.h"
 #include "game/screens/PartyMotion.h"
 #include "game/screens/PlayerHealth.h"
@@ -170,20 +165,21 @@ public:
     const Traps& traps() const { return m_fixtures.traps(); }
     const Breakables& barrels() const { return m_fixtures.barrels(); }
     const SafeRocks& safeRocks() const { return m_fixtures.safeRocks(); }
-    const Enemies& enemies() const { return m_enemies; }
-    Enemies& enemies() { return m_enemies; }
-    const Generators& generators() const { return m_generators; }
-    Generators& generators() { return m_generators; }
-    const Critters& critters() const { return m_critters; }
-    Critters& critters() { return m_critters; }
-    const EnemyMissiles& enemyMissiles() const { return m_enemyMissiles; }
-    const Bosses& bosses() const { return m_bosses; }
-    Bosses& bosses() { return m_bosses; }
+    const Enemies& enemies() const { return m_opponents.enemies(); }
+    Enemies& enemies() { return m_opponents.enemies(); }
+    const Generators& generators() const { return m_opponents.generators(); }
+    Generators& generators() { return m_opponents.generators(); }
+    const Critters& critters() const { return m_opponents.critters(); }
+    Critters& critters() { return m_opponents.critters(); }
+    const EnemyMissiles& enemyMissiles() const { return m_opponents.missiles(); }
+    const Bosses& bosses() const { return m_opponents.bosses(); }
+    Bosses& bosses() { return m_opponents.bosses(); }
     /** The boss's meter, when the level has one: its name and health for the HUD. */
     std::optional<BossView> bossView() const {
-        return m_bosses.present() ? std::optional<BossView>(m_bosses.view()) : std::nullopt;
+        return m_opponents.bosses().present() ? std::optional<BossView>(m_opponents.bosses().view())
+                                              : std::nullopt;
     }
-    const BossMeter& bossMeter() const { return m_bossMeter; }
+    const BossMeter& bossMeter() const { return m_opponents.meter(); }
     /** The wizard's visit once the boss has fallen. */
     const BossVictory& victory() const { return m_victory.state(); }
     /** The archive folder a character's figure was loaded from, for tests. */
@@ -258,27 +254,21 @@ private:
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false);
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer);
     void strikeSafeRock(usize index, f32 power);
-    void bindEnemies(RenderDevice& device, LevelWorld& world, const GameContext& context);
-    std::vector<EnemyView> enemyViews() const;
     void updateEnemies(s32 ticks, f32 seconds);
     void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer);
     void strikeGenerator(s32 id, f32 power, s32 byPlayer);
     void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
                        std::optional<Vec3> where = std::nullopt, bool close = false);
-    void awardCritterLosses();
     /** Missile targets: the barrels by their own ids, the enemies and generators past these. */
     static constexpr s32 kEnemyTargetBase = 1000;
     static constexpr s32 kGeneratorTargetBase = 2000;
     static constexpr s32 kCritterTargetBase = 3000;
     static constexpr s32 kBossTargetBase = 4000;
     static constexpr s32 kSafeRockTargetBase = 5000;
-    void awardBossLosses();
     /** The blast a boss's death lets off, which nothing of the swarm survives. */
     static constexpr f32 kBossDeathBlast = 1000.0f;
     static constexpr f32 kBossDeathBlastRadius = 1000.0f;
     void spewBossCoins(const CritterSpew& spew);
-    void showCritterCue(const CritterCue& cue, ItemArchive* archive, bool ofBoss);
-    void followCritterEffects();
     void showLegendEvent(const LegendEvent& event);
     void updateLegend(f32 seconds);
     std::optional<LegendPresentation::Bearer> legendBearer(s32 player, s32 kind) const;
@@ -290,7 +280,6 @@ private:
      * the message, the costume of a new tier, and the class's word at a milestone. */
     void updateLevels();
     static constexpr f32 kLevelUpHealth = 100.0f;
-    SoundHandle playRealmSound(std::string_view stem);
     void cry(usize index, std::string_view which);
     void sayWithName(usize index, std::string_view line);
     void ramBarrels(usize index);
@@ -367,23 +356,9 @@ private:
     };
     std::vector<PotionShield> m_shields;
     LevelFixtures m_fixtures;
-    Enemies m_enemies;
-    Generators m_generators;
-    Critters m_critters;
-    Bosses m_bosses;
-    BossMeter m_bossMeter;
-    /** An effect riding on one of the great ones. */
-    struct CritterEffect {
-        u32 effect = 0;
-        s32 critter = -1;
-        bool ofBoss = false;
-        Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
-    };
-    std::vector<CritterEffect> m_critterEffects;
+    LevelOpponents m_opponents;
     BossVictoryPresentation m_victory;
-    EnemyMissiles m_enemyMissiles;
     LevelWatch m_levels;
-    std::array<f32, 4> m_critterExperienceOwed{}; ///< per player, fractions not yet paid
     TransitionScreen m_transition;
     LevelRef m_destination;
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice

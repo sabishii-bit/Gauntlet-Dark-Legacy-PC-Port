@@ -62,6 +62,14 @@ void LevelFixtures::setPlayerCount(s32 count) {
     m_barrels.setPlayerCount(count);
     m_safeRocks.setPlayerCount(count);
 }
+std::vector<Obstacle> LevelFixtures::obstacles() const {
+    std::vector<Obstacle> result = m_chests.obstacles();
+    for (const auto& group :
+         {m_gates.obstacles(), m_barrels.obstacles(), m_safeRocks.obstacles()}) {
+        result.insert(result.end(), group.begin(), group.end());
+    }
+    return result;
+}
 void LevelFixtures::draw(RenderDevice& device, const Mat4& clip,
                          const WorldLighting& lighting) const {
     m_chests.draw(device, clip, lighting);
