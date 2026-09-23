@@ -18,7 +18,6 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
 #include "engine/world/AmbientDimmer.h"
-#include "engine/world/TreeModel.h"
 #include "engine/world/WorldCamera.h"
 
 #include "game/enemies/Bosses.h"
@@ -57,8 +56,8 @@
 #include "game/world/LevelWorld.h"
 #include "game/world/LockedGates.h"
 #include "game/world/MoveStrikes.h"
+#include "game/world/PlayerArsenal.h"
 #include "game/world/PlayerFigure.h"
-#include "game/world/PlayerMissiles.h"
 #include "game/world/SafeRocks.h"
 #include "game/world/StartCamera.h"
 #include "game/world/SumnerFigure.h"
@@ -173,7 +172,7 @@ public:
     Intro intro() const { return m_intro; }
     const ScrollBox& scroll() const { return m_messages.scroll(); }
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
-    const PlayerMissiles& missiles() const { return m_missiles; }
+    const PlayerMissiles& missiles() const { return m_arsenal.missiles(); }
     const ExitPortals& portals() const { return m_portals; }
     const Chests& chests() const { return m_chests; }
     const LockedGates& gates() const { return m_gates; }
@@ -257,11 +256,6 @@ public:
 private:
     void spawnParty(std::span<const PartyMember> party, const PlayOptions& options);
     void throwWeapon(const PlayerActor& actor);
-    void loadPotionModels(RenderDevice& device);
-    void usePotion(PlayerActor& actor);
-    void throwPotion(PlayerActor& actor);
-    void burstPotion(s32 kind, const Vec3& position, f32 power);
-    f32 magicPowerOf(const PlayerActor& actor) const;
     void stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks);
     void drawSelectors();
     static bool freshParty(std::span<const PartyMember> party);
@@ -360,7 +354,7 @@ private:
     SumnerFigure m_sumner;
     TextureSet m_staticTextures;
     LevelMessages m_messages;
-    PlayerMissiles m_missiles;
+    PlayerArsenal m_arsenal;
     ExitPortals m_portals;
     PlayerHealth m_health;
     std::mt19937 m_coinRandom{0xC01Eu}; ///< how fast each coin a boss spews flies
@@ -433,7 +427,6 @@ private:
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
     std::unique_ptr<LegendPresentation> m_legend; ///< destroyed before its borrowed effect store
-    std::array<TreeModel, 5> m_potionModels;      ///< a thrown potion, by its kind
     std::array<PowerupSelector, kPlayerCount> m_selectors;
     const Texture* m_glowSheet = nullptr; ///< the glow a worn powerup's name is written in
     f32 m_playSeconds = 0.0f;

@@ -84,6 +84,7 @@ add_library(game STATIC
     world/PlayerMissiles.h
     world/PlayerMissiles.cpp
     world/PlayerFigure.cpp
+    world/PlayerArsenal.cpp
     world/LevelSoundscape.cpp
     world/EffectTrees.h
     world/EffectTrees.cpp

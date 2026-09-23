@@ -39,22 +39,6 @@ constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
 /** A potion by its kind (0 and 1 red, 2 blue, 3 yellow, 4 green): the bottle as it flies, the
  * magic it bursts into (fire, lightning, light, acid) and the sound of it. */
-struct PotionLook {
-    std::string_view bottle;
-    std::string_view burst;
-    std::string_view sound;
-};
-constexpr std::array<PotionLook, 5> kPotions{{{"POT_RED_TW", "MP_FIRE", "S_POTION2"},
-                                              {"POT_RED_TW", "MP_FIRE", "S_POTION2"},
-                                              {"POT_BLU_TW", "MP_ELEC", "S_POTION1"},
-                                              {"POT_YEL_TW", "MP_LIGHT", "S_POTION3"},
-                                              {"POT_GRE_TW", "MP_ACID", "S_POTION4"}}};
-constexpr f32 kPotionToss = 5.0f;        ///< how hard a potion is thrown
-constexpr f32 kBurstPerPower = 0.03125f; ///< a burst's size for each point of magic power
-constexpr f32 kThrownShare = 0.75f;      ///< of that power a thrown potion keeps
-constexpr f32 kPotionLoft = 0.707f;      ///< as much up as forwards
-constexpr f32 kPotionHandHeight = 4.0f;  ///< over the feet, where it leaves
-constexpr f32 kPotionHandReach = 2.0f;   ///< and ahead of them
 constexpr s32 kOgre = 12;
 constexpr f32 kOgreScale = 1.6f;
 constexpr f32 kMasterScale = 1.2f; ///< at level 99
@@ -111,11 +95,6 @@ constexpr s32 kFireTrap = 1;
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 constexpr std::string_view kChestBlast = "EXPCHEST"; ///< a trapped chest going up
 
-const PotionLook& potionLook(s32 kind) {
-    return kPotions[kind >= 0 && static_cast<usize>(kind) < kPotions.size()
-                        ? static_cast<usize>(kind)
-                        : 0];
-}
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
 constexpr std::string_view kMenuSelectSound = "S_OPTMENUSEL";
 constexpr std::string_view kMenuExitSound = "S_OPTMENUEXIT";
@@ -230,7 +209,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     // materialises with the follow camera already on it.
     const bool atEntrance = world.arrivalPoint(options.arrivalWorld) == world.startPoint(0);
     beginSpawn(device, !options.position.has_value() && atEntrance);
-    loadPotionModels(device);
+    m_arsenal.bind(
+        {device, m_classes, m_weapons, world.collision(), m_effects, m_audio, context.sounds});
     m_legend = std::make_unique<LegendPresentation>(
         m_effects, LegendPresentation::Assets{device, world.items(), m_weapons, m_staticTextures},
         LegendPresentation::Audio{[this](std::string_view name) { return m_audio.playNamed(name); },
@@ -256,7 +236,7 @@ void PlayScene::close() {
     m_traps.clear();
     m_transition.release();
     m_leaving = false;
-    m_missiles.clear(); // before the figures whose models they fly
+    m_arsenal.clear(); // before the figures whose models they fly
     m_critterEffects.clear();
     m_legend.reset();
     m_effects.clear(); // and before the archive whose trees they play
@@ -267,9 +247,6 @@ void PlayScene::close() {
     m_victory.clear();
     m_bosses.close();
     m_enemies.close();
-    for (TreeModel& bottle : m_potionModels) {
-        bottle.clear();
-    }
     for (PowerupSelector& selector : m_selectors) {
         selector.close();
     }
@@ -355,57 +332,10 @@ void PlayScene::throwWeapon(const PlayerActor& actor) {
     }
 }
 
-/** Sends the character's weapon off along `direction`, `scale` times its size and its harm;
- * with `spreads`, as many of them as a three or five way shot worn makes it. */
 void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads) {
-    if (index >= m_players.size() || m_players[index].figure == nullptr) {
-        return;
-    }
-    const PlayerActor& actor = m_players[index].actor;
-    PlayerFigure& figure = *m_players[index].figure;
-    const Vec3 facing = direction;
-    const CharacterSave& save = actor.save();
-    const ClassStats* stats = m_classes.stats(save.character);
-    s32 stat = 0;
-    Vec3 hand{0.0f, 0.0f, 0.0f};
-    if (stats != nullptr) {
-        const StatBlock block =
-            displayStats(*stats, experienceLevel(save.experience()), save.progress());
-        stat = MissileSpec::byMagic(save.character) ? block.magic() : block.strength();
-        hand = stats->weaponOffset;
-    }
-    const Vec3 side{facing.z, 0.0f, -facing.x};
-    MissileLaunch launch;
-    launch.owner = actor.player();
-    launch.scale = scale;
-    launch.direction = facing;
-    launch.position = actor.followPoint() + side * hand.x + Vec3{0.0f, hand.y, 0.0f} +
-                      facing * (hand.z + PlayerMissiles::kMuzzle);
-    launch.speed = PlayerMissiles::speedFor(stat);
-    launch.damage = PlayerMissiles::damageFor(stat) * scale;
-    launch.reach = PlayerMissiles::reachFor(figure.animator().attackSeconds());
-    launch.spec = &MissileSpec::of(save.character);
-    launch.model = &figure.missile();
-    // Thrown into a wall at arm's length, nothing flies.
-    const f32 radius = launch.spec->radius;
-    const Vec3 clear = m_world->collision().resolveWalls(launch.position, radius,
-                                                         launch.position.y - radius * 0.5f,
-                                                         launch.position.y + radius * 0.5f);
-    if (glm::distance(clear, launch.position) > 1e-4f) {
-        return;
-    }
-    // A three or five way shot worn spreads the throw, fifteen degrees apart.
-    const s32 shots = spreads ? PowerupEffects::of(save.progress().inventory).shots() : 1;
-    for (const Vec3& way : PlayerMissiles::spread(facing, shots)) {
-        launch.direction = way;
-        m_missiles.launch(launch);
-    }
-    if (const auto sound = figure.throwSound(); m_context.sounds != nullptr && sound.has_value()) {
-        try {
-            m_context.sounds->play(figure.voice().sequence(*sound), 1.0f, SoundCategory::Effects);
-        } catch (const std::exception& e) {
-            log::warn("Tower: throw sound: {}", e.what());
-        }
+    if (index < m_players.size()) {
+        m_arsenal.launchWeapon(m_players[index].actor, m_players[index].figure.get(), direction,
+                               scale, spreads);
     }
 }
 
@@ -899,8 +829,8 @@ void PlayScene::shieldPotion(usize index) {
         return;
     }
     const auto look = static_cast<usize>(std::clamp(kind, 0, 4));
-    const f32 power = magicPowerOf(actor);
-    const f32 size = std::min(kBurstPerPower * power, 1.0f);
+    const f32 power = m_arsenal.magicPowerOf(actor);
+    const f32 size = std::min(PlayerArsenal::kBurstPerPower * power, 1.0f);
     PotionShield shield;
     shield.actor = index;
     shield.radius = kShieldRadius * size;
@@ -1853,68 +1783,6 @@ std::vector<PartyMember> PlayScene::party() const {
 }
 
 /** The bottles potions fly as, from the weapons archive the spawn effect came from. */
-void PlayScene::loadPotionModels(RenderDevice& device) {
-    if (!m_weapons.loaded()) {
-        return;
-    }
-    for (usize kind = 0; kind < m_potionModels.size(); ++kind) {
-        if (const auto tree = m_weapons.trees.find(kPotions[kind].bottle); tree.has_value()) {
-            m_potionModels[kind].bind(m_weapons.trees.tree(*tree), m_weapons.models,
-                                      m_weapons.textures, device);
-        }
-    }
-}
-
-/** A potion's magic going off at `position`: its burst, as large as the magic power behind
- * it makes it (full size at thirty-two), and its sound. */
-void PlayScene::burstPotion(s32 kind, const Vec3& position, f32 power) {
-    const PotionLook& look = potionLook(kind);
-    if (m_device != nullptr && m_weapons.loaded()) {
-        m_effects.start(*m_device, m_weapons, look.burst, position,
-                        std::min(kBurstPerPower * power, 1.0f));
-    }
-    m_audio.playNamed(look.sound);
-}
-
-f32 PlayScene::magicPowerOf(const PlayerActor& actor) const {
-    const CharacterSave& save = actor.save();
-    const ClassStats* stats = m_classes.stats(save.character);
-    const s32 magic =
-        stats != nullptr
-            ? displayStats(*stats, experienceLevel(save.experience()), save.progress()).magic()
-            : 0;
-    return PowerupEffects::of(save.progress().inventory).magicPower(magic);
-}
-
-/** The next potion carried goes off about the character. */
-void PlayScene::usePotion(PlayerActor& actor) {
-    if (const s32 kind = actor.save().progress().inventory.takePotion(); kind != 0) {
-        burstPotion(kind, actor.position(), magicPowerOf(actor));
-    }
-}
-
-/** The next potion carried is tossed ahead, as much up as forwards, to burst where it
- * lands. */
-void PlayScene::throwPotion(PlayerActor& actor) {
-    const s32 kind = actor.save().progress().inventory.takePotion();
-    if (kind == 0) {
-        return;
-    }
-    const Vec3 facing = actor.facing();
-    MissileLaunch launch;
-    launch.owner = actor.player();
-    launch.direction = facing;
-    launch.position =
-        actor.position() + facing * kPotionHandReach + Vec3{0.0f, kPotionHandHeight, 0.0f};
-    launch.velocity =
-        Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} * kPotionToss;
-    launch.potion = kind;
-    launch.potency = kThrownShare * magicPowerOf(actor);
-    launch.spec = &MissileSpec::potion();
-    launch.model = &m_potionModels[static_cast<usize>(
-        std::clamp(kind, 0, static_cast<s32>(m_potionModels.size()) - 1))];
-    m_missiles.launch(launch);
-}
 
 f32 PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
     if (save.character == kOgre) {
@@ -2286,8 +2154,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     launchWeapon(i, m_players[i].actor.facing(), kStrongThrowScale, true);
                     break;
                 case PartyMotion::Action::ShieldPotion: shieldPotion(i); break;
-                case PartyMotion::Action::UsePotion: usePotion(m_players[i].actor); break;
-                case PartyMotion::Action::ThrowPotion: throwPotion(m_players[i].actor); break;
+                case PartyMotion::Action::UsePotion: m_arsenal.usePotion(m_players[i].actor); break;
+                case PartyMotion::Action::ThrowPotion:
+                    m_arsenal.throwPotion(m_players[i].actor);
+                    break;
                 case PartyMotion::Action::FirstFoot: m_audio.playFootstep(false); break;
                 case PartyMotion::Action::SecondFoot: m_audio.playFootstep(true); break;
                 }
@@ -2338,11 +2208,11 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                                             cover.centre, cover.cylinderRadius, cover.height});
         }
     }
-    m_missiles.update(seconds, &m_world->collision(), targets);
-    for (const MissileImpact& impact : m_missiles.takeImpacts()) {
+    m_arsenal.missiles().update(seconds, &m_world->collision(), targets);
+    for (const MissileImpact& impact : m_arsenal.missiles().takeImpacts()) {
         if (impact.potion != 0) {
-            burstPotion(impact.potion, impact.position,
-                        impact.potency); // weapons leave no mark yet
+            m_arsenal.burstPotion(impact.potion, impact.position,
+                                  impact.potency); // weapons leave no mark yet
         }
         if (impact.target >= kSafeRockTargetBase) {
             strikeSafeRock(static_cast<usize>(impact.target - kSafeRockTargetBase), impact.damage);
@@ -2520,7 +2390,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                   m_legend != nullptr ? m_legend->frozenTexture() : nullptr);
     m_victory.drawWizard(device, clip, m_world->lighting());
     m_enemyMissiles.draw(device, clip, m_world->lighting());
-    m_missiles.draw(device, clip, m_world->lighting());
+    m_arsenal.missiles().draw(device, clip, m_world->lighting());
     const CameraFrame effectCamera = CameraFrame::of(viewCamera());
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
     m_arrival.drawEffects(device, clip, m_world->lighting());
