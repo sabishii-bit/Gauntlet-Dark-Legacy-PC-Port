@@ -964,8 +964,12 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.key("minSpeed").value(static_cast<double>(d.minSpeed));
         json.key("maxSpeed").value(static_cast<double>(d.maxSpeed));
         json.key("gravity").value(static_cast<double>(d.gravity));
+        json.key("morphLife").value(static_cast<double>(d.morphLife));
         json.key("sfxIndex").value(static_cast<int>(d.sfxIndex));
         json.key("sfx").value(static_cast<int>(d.sfx));
+        json.key("morph").value(static_cast<int>(d.morph));
+        json.key("morphEnd").value(static_cast<int>(d.morphEnd));
+        json.key("yawSpread").value(static_cast<double>(d.yawSpread));
         json.endObject();
     }
     json.endArray();

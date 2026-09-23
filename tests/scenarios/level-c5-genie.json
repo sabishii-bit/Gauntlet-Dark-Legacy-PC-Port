@@ -1,0 +1,17 @@
+{
+    "screen": "tower",
+    "level": "C5",
+    "party": [
+        {
+            "player": 0,
+            "class": "WAR",
+            "color": "BLU",
+            "name": "TEST",
+            "level": 20,
+            "health": 2000
+        }
+    ],
+    "position": [47.203125, 10, -1.203125],
+    "yaw": -1.5707963,
+    "welcome": false
+}

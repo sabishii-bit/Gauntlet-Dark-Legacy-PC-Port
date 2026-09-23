@@ -29,8 +29,8 @@ struct CritterTarget {
 /** How a move harms: a blow about a part of the body, a breath, or a ring about the feet. */
 struct CritterDamage {
     static constexpr std::int16_t kBlow = 0;
-    static constexpr std::int16_t kBurst = 1; ///< the death's
-    static constexpr std::int16_t kRing = 3;  ///< a stomp's, over its reach
+    static constexpr std::int16_t kProjectile = 1;
+    static constexpr std::int16_t kRing = 3; ///< a stomp's, over its reach
     static constexpr std::int16_t kBreath = 4;
     static constexpr std::int16_t kGrab = 7;
     static constexpr std::int16_t kSpew = 9; ///< a boss's death throwing its coins out
@@ -38,6 +38,7 @@ struct CritterDamage {
         0x4000; ///< a legend item's weakness takes this from it
 
     std::int16_t type = 0;
+    std::uint16_t behaviorFlags = 0; ///< launch/attachment policy, distinct from player harm flags
     std::uint32_t flags = 0;
     float radius = 0.0f;
     float maxDistance = 0.0f;
@@ -47,8 +48,15 @@ struct CritterDamage {
     float pitch = 0.0f;       ///< a spew's way, tipped (under nought: up)
     Vec3 offset{0.0f, 0.0f, 0.0f};
     float damage = 0.0f;
-    float speed = 0.0f;      ///< a spew's, in units a second
+    float speed = 0.0f; ///< a spew's, in units a second
+    float maxSpeed = 0.0f;
+    float gravity = 0.0f;
+    float morphLife = 0.0f;
+    float yawSpread = 0.0f;
     std::int32_t sound = -1; ///< the sound record started where it strikes, or -1
+    std::int32_t hitSound = -1;
+    std::int32_t morph = -1;
+    std::int32_t morphEnd = -1;
 
     /** The way a spew goes from a body facing `yaw` (radians about the upright), and how
      * fast; half its arc each side of that is `acos(minDot)`. */
@@ -103,6 +111,7 @@ struct CritterMove {
     std::int32_t frameEnd = -1;
     std::int32_t frameStart2 = -1;
     std::int32_t frameEnd2 = -1;
+    float framePeriod = 0.0f; ///< repeat spacing for move type 133
     std::int32_t damage0 = -1;
     std::int32_t damage1 = -1;
     std::int32_t link = -1;
@@ -119,6 +128,9 @@ struct CritterMove {
 
     bool attack() const { return type >= kAttackFrom; }
     bool harms() const { return damage0 >= 0 || damage1 >= 0; }
+    /** Projectile triggers crossed between integer animation frames; -1 precedes frame zero. */
+    std::int32_t projectileTriggers(std::int32_t previous, std::int32_t current,
+                                    bool second = false) const;
 };
 
 /** A part of the body that can be struck. */

@@ -76,6 +76,7 @@ public:
     std::vector<CritterBlow> takeBlows();
     std::vector<CritterLoss> takeLosses();
     std::vector<CritterCue> takeCues() { return m_fighter.takeCues(); }
+    std::vector<CritterShot> takeShots() { return m_fighter.takeShots(); }
     /** What its death threw out: the coins it spews. */
     std::vector<CritterSpew> takeSpews() { return m_fighter.takeSpews(); }
     std::vector<LegendEvent> takeLegendEvents();

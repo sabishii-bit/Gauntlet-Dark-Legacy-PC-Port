@@ -106,8 +106,12 @@ CritterFile parseCritterWad(std::span<const std::uint8_t> bytes) {
             damage.minSpeed = readWadF32(bytes, at + 0x30, kWhat);
             damage.maxSpeed = readWadF32(bytes, at + 0x34, kWhat);
             damage.gravity = readWadF32(bytes, at + 0x38, kWhat);
+            damage.morphLife = readWadF32(bytes, at + 0x3C, kWhat);
             damage.sfxIndex = readS16(bytes, at + 0x40);
             damage.sfx = readS16(bytes, at + 0x42);
+            damage.morph = readS16(bytes, at + 0x44);
+            damage.morphEnd = readS16(bytes, at + 0x46);
+            damage.yawSpread = readWadF32(bytes, at + 0x48, kWhat);
             return damage;
         });
     file.descriptors = readRecords<CritterDescriptorRecord>(

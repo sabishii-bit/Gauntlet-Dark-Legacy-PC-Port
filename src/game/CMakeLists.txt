@@ -58,6 +58,8 @@ add_library(game STATIC
     enemies/Generators.cpp
     enemies/CritterData.cpp
     enemies/CritterBreath.cpp
+    enemies/CritterProjectile.cpp
+    world/CritterProjectiles.cpp
     enemies/Critters.cpp
     enemies/BossCoins.cpp
     enemies/Bosses.cpp

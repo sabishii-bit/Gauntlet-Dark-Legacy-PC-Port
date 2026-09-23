@@ -65,8 +65,12 @@ struct CritterDamageRecord {
     float minSpeed = 0.0f; ///< what it throws (type 9's coins) leaves at least this fast
     float maxSpeed = 0.0f;
     float gravity = 0.0f;
+    float morphLife = 0.0f; ///< duration after the launch animation changes to its loop
     std::int16_t sfxIndex = -1;
-    std::int16_t sfx = -1;
+    std::int16_t sfx = -1; ///< impact effect
+    std::int16_t morph = -1;
+    std::int16_t morphEnd = -1;
+    float yawSpread = 0.0f;
 };
 
 /** A part of the body that can be struck, and what striking it does. */

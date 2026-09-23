@@ -230,4 +230,63 @@ TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its
     REQUIRE(bosses.legend().stage() == LegendRite::Stage::None);
 }
 
+TEST_CASE("the genie selects projectile attacks and launches them from its animated body",
+          "[game][boss-projectiles][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/DJINN.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DJINN/animations.json");
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'C');
+    REQUIRE(bosses.spawn(36, Vec3{0}, 0, 100));
+    const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 40})};
+    std::vector<CritterShot> shots;
+    for (int frame = 0; frame < 900 && shots.empty(); ++frame) {
+        bosses.update(kTicks, kStep, party);
+        shots = bosses.takeShots();
+    }
+    REQUIRE_FALSE(shots.empty());
+    for (const CritterShot& shot : shots) {
+        REQUIRE(shot.data != nullptr);
+        REQUIRE(shot.data->name() == "DJINN");
+        REQUIRE(shot.data->damage(shot.damageIndex)->type == CritterDamage::kProjectile);
+        REQUIRE(shot.realm == 'C');
+        REQUIRE(shot.target == Vec3{0, 3, 40});
+        REQUIRE(shot.origin.y > 0);
+    }
+    bosses.close();
+    REQUIRE(bosses.takeShots().empty());
+}
+
+TEST_CASE("every retail boss can enter animate draw take damage and die",
+          "[game][boss-roster][unpacked]") {
+    for (std::int32_t kind = 34; kind <= 44; ++kind) {
+        const std::string name{bossNameOf(kind)};
+        DYNAMIC_SECTION(name) {
+            const auto root =
+                test::unpackedOrSkip("critter/" + name + ".json").parent_path().parent_path();
+            test::unpackedOrSkip("MONSTERS/" + name + "/animations.json");
+            test::FakeRenderDevice device;
+            Bosses bosses;
+            bosses.open(device, root, nullptr, {}, 'G');
+            REQUIRE(bosses.spawn(kind, Vec3{0}, 0, 100));
+            REQUIRE(bosses.view().alive);
+            REQUIRE(bosses.view().maxHealth > 0);
+            const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 20})};
+            for (int tick = 0; tick < 180; ++tick) {
+                bosses.update(kTicks, kStep, party);
+            }
+            REQUIRE(bosses.view().awake);
+            REQUIRE_FALSE(bosses.moveName().empty());
+            bosses.draw(device, Mat4{1}, {});
+            REQUIRE_FALSE(device.draws.empty());
+            EnemyHit hit;
+            hit.player = 0;
+            hit.damage = bosses.view().maxHealth * 2;
+            bosses.hurt(hit);
+            REQUIRE_FALSE(bosses.view().alive);
+            REQUIRE_FALSE(bosses.takeLosses().empty());
+        }
+    }
+}
+
 } // namespace
