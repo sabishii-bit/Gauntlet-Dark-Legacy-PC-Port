@@ -36,6 +36,7 @@
 #include "game/screens/PlayerAttacks.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/screens/SumnerVisit.h"
+#include "game/screens/TowerPromotion.h"
 #include "game/screens/TransitionScreen.h"
 #include "game/world/BossCamera.h"
 #include "game/world/CameraShake.h"
@@ -236,6 +237,8 @@ public:
     static std::filesystem::path costumeDirectory(const std::filesystem::path& unpackedRoot,
                                                   const CharacterSave& save);
     const SumnerFigure& sumner() const { return m_sumner; }
+    const TowerPromotion& promotion() const { return m_promotion; }
+    s32 familiarTier(s32 player) const;
 
 private:
     void spawnParty(std::span<const PartyMember> party, const PlayOptions& options);
@@ -261,9 +264,10 @@ private:
     void updateVictory(s32 ticks, f32 seconds);
     void settleBlasts();
     bool postHelp(s32 id, usize index, s32 number = -1);
-    /** Answers the party's levels gained since last looked: the fanfare, a hundred health,
-     * the message, the costume of a new tier, and the class's word at a milestone. */
+    /** Answers levels gained with immediate health, effects and narration.
+     * Appearance upgrades and title ceremonies wait for a tower return. */
     void updateLevels();
+    void updatePromotion(s32 ticks, f32 seconds);
     static constexpr f32 kLevelUpHealth = 100.0f;
     void sayWithName(usize index, std::string_view line);
     void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
@@ -316,6 +320,10 @@ private:
     f32 m_playSeconds = 0.0f;
     f32 m_fallenSeconds = 0.0f; ///< since the last of the party fell
     SumnerVisit m_sumnerVisit;
+    TowerPromotion m_promotion;
+    SoundHandle m_promotionVoice = kNoSound;
+    std::vector<std::unique_ptr<PlayerFigure>>
+        m_promotionFigures; ///< retain borrowed voice/effect clips until close
     WorldCamera m_cutCamera;
     CameraShake m_shake;
     s32 m_cutTicks = 0;

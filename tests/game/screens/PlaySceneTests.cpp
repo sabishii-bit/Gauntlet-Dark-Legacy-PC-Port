@@ -1497,7 +1497,7 @@ TEST_CASE("the strong attack is a strong throw; experience is scaled and a kill 
 }
 
 TEST_CASE("a level gained is announced with its number and a hundred health, and a tenth "
-          "level changes the costume",
+          "level defers its costume until the tower",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
     test::unpackedOrSkip("text/english.json");
@@ -1531,8 +1531,7 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(experienceLevel(scene.actor(0)->save().experience()) == 9);
-    // Enough for the tenth: the message says so, the health rises by a hundred, and the
-    // figure is the tier's.
+    // Enough for the tenth: health and narration are immediate; the costume waits.
     const s32 health = scene.actor(0)->save().health();
     const auto before = scene.figureDirectory(0);
     // (The fields pay experience at their own scale, so the gain may be more than one.)
@@ -1546,8 +1545,8 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     if (before.has_value()) {
         const auto after = scene.figureDirectory(0);
         REQUIRE(after.has_value());
-        REQUIRE(after->filename().string() != before->filename().string());
-        REQUIRE(after->filename().string().ends_with("10"));
+        REQUIRE(after == before);
+        REQUIRE(scene.actor(0)->save().progress().promotionPending());
     }
     // Another level, no tier: the message again, the costume kept.
     for (s32 i = 0; i < 700; ++i) {
@@ -1562,6 +1561,76 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     if (next / 10 == gained / 10) {
         REQUIRE(scene.figureDirectory(0) == tiered);
     }
+    scene.close();
+}
+
+TEST_CASE("tower returns award permanent familiars with locked controls and persist the result",
+          "[game][screens][promotion][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
+    test::unpackedOrSkip("PLAYERS/VAL/SFXBLU/animations.json");
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("L1")));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave first;
+    first.progress().experience = levelExperience(30);
+    first.progress().promotedLevel = 29;
+    CharacterSave second;
+    second.character = 1;
+    second.color = 1;
+    second.progress().experience = levelExperience(80);
+    second.progress().promotedLevel = 79;
+    const std::vector<PartyMember> party{PartyMember{3, first}, PartyMember{1, second}};
+    PlayOptions options;
+    options.welcome = false;
+    options.arrivalWorld = 7;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.promotion().active());
+    REQUIRE(scene.familiarTier(3) == 0);
+    REQUIRE(scene.familiarTier(1) == 1);
+    PlayScene::Inputs moving{};
+    moving[3].move = MoveInput{Vec2{1, 0}, 1};
+    for (s32 frame = 0; frame < 500 && awaitingEntrance(scene); ++frame) {
+        scene.update(1.0 / 60.0, moving);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    const Vec3 start = scene.actor(3)->position();
+    const auto costume = scene.figureDirectory(s32{3});
+    for (s32 frame = 0; frame < 359; ++frame) {
+        scene.update(1.0 / 60.0, moving);
+    }
+    REQUIRE(scene.figureDirectory(s32{3}) == costume);
+    REQUIRE(scene.familiarTier(3) == 0);
+    scene.update(1.0 / 60.0, moving);
+    REQUIRE(scene.familiarTier(3) == 1);
+    REQUIRE(scene.actor(3)->save().progress().appearanceLevel() == 30);
+    REQUIRE_FALSE(scene.animator(3)->entering());
+    for (s32 frame = 0; frame < 1500 && scene.promotion().active(); ++frame) {
+        scene.update(1.0 / 60.0, moving);
+        REQUIRE(scene.actor(3)->position() == start);
+    }
+    REQUIRE_FALSE(scene.promotion().active());
+    REQUIRE(scene.familiarTier(1) == 2);
+    auto carried = scene.party();
+    carried[0].save = CharacterSave::fromJson(carried[0].save.toJson());
+    carried[1].save = CharacterSave::fromJson(carried[1].save.toJson());
+    scene.close();
+    REQUIRE(scene.open(device, context, world, carried, options));
+    REQUIRE_FALSE(scene.promotion().active());
+    REQUIRE(scene.familiarTier(3) == 1);
+    REQUIRE(scene.familiarTier(1) == 2);
     scene.close();
 }
 

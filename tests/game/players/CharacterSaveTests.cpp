@@ -69,6 +69,27 @@ TEST_CASE("a character round-trips through JSON", "[game][players][save]") {
     REQUIRE(old.classes[1].inventory == Inventory{});
 }
 
+TEST_CASE("pending and awarded promotions survive saves independently per class",
+          "[game][players][save][promotion]") {
+    CharacterSave save;
+    save.progress().experience = levelExperience(30);
+    save.progress().promotedLevel = 29;
+    save.classes[1].experience = levelExperience(80);
+    save.classes[1].promotedLevel = 80;
+    const auto loaded = CharacterSave::fromJson(save.toJson());
+    REQUIRE(loaded.progress().appearanceLevel() == 29);
+    REQUIRE(loaded.progress().promotionPending());
+    REQUIRE(loaded.classes[1].appearanceLevel() == 80);
+    REQUIRE_FALSE(loaded.classes[1].promotionPending());
+    save.progress().promotedLevel = 30;
+    REQUIRE_FALSE(CharacterSave::fromJson(save.toJson()).progress().promotionPending());
+    // Legacy characters retain their existing appearance rather than replaying old awards.
+    const auto old = CharacterSave::fromJson(
+        R"({"version":1,"name":"OLD","character":0,"classes":{"WAR":{"experience":165200}}})");
+    REQUIRE(old.progress().appearanceLevel() == 60);
+    REQUIRE_FALSE(old.progress().promotionPending());
+}
+
 TEST_CASE("broken characters are rejected", "[game][players][save]") {
     REQUIRE_THROWS_AS(CharacterSave::fromJson("{nope"), FormatError);
     REQUIRE_THROWS_AS(CharacterSave::fromJson(R"({"name": "X"})"), FormatError);

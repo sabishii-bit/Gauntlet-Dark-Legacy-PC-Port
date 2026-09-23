@@ -1056,6 +1056,11 @@ void unpackClassData(const std::filesystem::path& file, const std::filesystem::p
         json.value(static_cast<f64>(axis));
     }
     json.endArray();
+    json.key("familiarOffset").beginArray();
+    for (const f32 axis : record.familiarOffset) {
+        json.value(static_cast<f64>(axis));
+    }
+    json.endArray();
     json.key("moves").beginObject();
     for (usize move = 0; move < record.moves.size(); ++move) {
         json.key(PlayerClassRecord::kMoveNames[move]).value(static_cast<int>(record.moves[move]));

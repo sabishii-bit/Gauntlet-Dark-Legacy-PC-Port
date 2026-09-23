@@ -215,7 +215,7 @@ f32 TowerCamera::fitDistance(const Vec3& point, std::span<const CameraSubject> s
     if (required <= current - kFarGap) {
         return current;
     }
-    return required + kFarGap;
+    return std::min(required + kFarGap, range.radiusMax);
 }
 
 void TowerCamera::place() {

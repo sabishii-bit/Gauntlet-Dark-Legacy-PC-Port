@@ -12,6 +12,7 @@
 
 #include "game/players/ItemPickup.h"
 #include "game/players/Progression.h"
+#include "game/world/CameraMovementLimit.h"
 
 namespace gdl::game {
 
@@ -148,6 +149,10 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_bossSequence.bind(
         {device, world, m_weapons, m_staticTextures, m_effects, m_audio, context.levels});
     m_open = true;
+    if (world.isTower()) {
+        m_promotion.begin(m_players, m_hud.strings());
+        m_promotion.bind(device, world.items(), world.layout(), m_players);
+    }
     log::info("Tower: {} in the party", m_players.size());
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
               m_portals.size());
@@ -158,6 +163,8 @@ void PlayScene::close() {
     m_shake.clear();
     m_audio.stopCues();
     m_sumnerVisit.clear();
+    m_promotion.clear();
+    m_promotionVoice = kNoSound;
     m_messages.clear();
     if (m_world != nullptr) {
         m_world->setPlayerCount(0);
@@ -182,6 +189,7 @@ void PlayScene::close() {
     }
     m_fallenSeconds = 0.0f;
     m_audio.close(); // before the figures whose class voices it can play
+    m_promotionFigures.clear();
     m_players.clear();
     m_arrival.clear();
     m_weapons.release(); // its textures must go before the device does
@@ -215,6 +223,8 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
         const Vec3 position = origin + sideways * (first + static_cast<f32>(i) * kSpawnSpacing);
         runtime.actor.spawn(member.player, member.save, m_classes.stats(member.save.character),
                             position, yaw);
+        auto& progress = runtime.actor.save().progress();
+        progress.promotedLevel = progress.appearanceLevel();
         runtime.actor.settle(m_world->collision());
         runtime.slot = member.slot;
         // Someone who fell stands again in the tower; elsewhere they wait there still.
@@ -463,9 +473,7 @@ void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damag
     }
 }
 
-/** As the original's AddExp has it: a level gained posts "LEVEL n", plays the class's
- * fanfare about the character and heals a hundred; a tenth level besides changes the costume
- * and has the class say its piece (`S_EXP10WAR`, up to `S_EXP99`). */
+/** A level gained heals and announces immediately; tower promotions award the new appearance. */
 void PlayScene::updateLevels() {
     for (usize i = 0; i < m_players.size(); ++i) {
         CharacterSave& save = m_players[i].actor.save();
@@ -485,20 +493,6 @@ void PlayScene::updateLevels() {
                 m_effects.moveTo(effect, m_players[i].actor.position());
             }
         }
-        if (change->milestone() && m_device != nullptr) {
-            const s32 tier = std::min(change->to / LevelChange::kLevelsPerTier, 9);
-            const std::string_view cls = classCode(save.character);
-            if (m_audio.playNamed(std::format("S_EXP{}0{}", tier, cls.substr(0, 3))) == kNoSound) {
-                m_audio.playNamed("S_EXP99ALL");
-            }
-            // The costume of the new tier, weapon and all, where the character stands.
-            if (auto figure = PlayerFigure::load(*m_device, m_context.unpackedRoot, save);
-                figure != nullptr) {
-                m_players[i].figure = std::move(figure);
-            }
-        }
-        // The name borrows clips from the figure's voice bank. Start it after
-        // replacing a milestone costume, not from the figure being destroyed.
         postHelp(HelpMessages::kLevelUp, i, change->to);
     }
 }
@@ -837,6 +831,9 @@ WorldCamera PlayScene::viewCamera() const {
     if (m_intro == Intro::Crystal) {
         return m_cutCamera;
     }
+    if (!spawning() && m_promotion.active() && m_promotion.camera().has_value()) {
+        return *m_promotion.camera();
+    }
     return bossCameraOn() ? m_shake.apply(m_bossCamera.camera(), m_bossCamera.attention())
                           : m_shake.apply(m_camera.camera(), m_camera.attention());
 }
@@ -940,6 +937,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
         return PlayOutcome::Running;
     }
+    if (m_promotion.active() && m_intro != Intro::Crystal) {
+        updatePromotion(ticks, seconds);
+        return PlayOutcome::Running;
+    }
     const bool held = m_intro == Intro::Crystal;
     if (held) {
         m_cutTicks -= ticks;
@@ -986,6 +987,22 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             [this](usize i) {
                 const PlayerActor& actor = m_players[i].actor;
                 return m_attacks.aim(actor, actor.facing(), attackTargets());
+            },
+        .allowMovement =
+            [this](const Vec3& before, const Vec3& after) {
+                // A lone player's follow camera can travel with them. The shared
+                // view must constrain separation; fixed boss views also need bounds.
+                if (!bossCameraOn() &&
+                    std::ranges::count_if(m_players, [](const PlayerRuntime& player) {
+                        return player.life == PlayerLife::Standing;
+                    }) <= 1) {
+                    return true;
+                }
+                // Use the unshaken gameplay camera, never the promotion/victory cut.
+                const auto& camera = bossCameraOn() ? m_bossCamera.camera() : m_camera.camera();
+                const auto& attention =
+                    bossCameraOn() ? m_bossCamera.attention() : m_camera.attention();
+                return CameraMovementLimit::allows(before, after, attention, camera, cameraView());
             }};
     const std::vector<CameraSubject> subjects = PartyMotion::step(
         m_players, inputs, held, bossCameraOn() ? m_bossCamera.yaw() : m_camera.yaw(), ticks,
@@ -1100,6 +1117,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                                  frameHeight, frameProjection);
     m_world->draw(device, clip, viewCamera());
     m_sumner.draw(device, clip, m_world->lighting());
+    if (!spawning()) {
+        m_promotion.draw(device, clip, m_world->lighting());
+    }
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower) {
             const PlayerFigure& figure = *runtime.figure;
@@ -1134,7 +1154,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                                       frameHeight));
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
     // bars top and bottom, the status boxes hidden beneath the lower one.
-    const bool cut = m_intro == Intro::Crystal;
+    const bool cut = m_intro == Intro::Crystal || (m_promotion.active() && !spawning());
     m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
@@ -1155,6 +1175,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_hud.drawHelp(m_canvas, device, m_staticTextures, m_players, clip, width, height);
     }
     m_messages.draw(m_canvas);
+    if (!spawning()) {
+        m_promotion.drawCaption(m_canvas, m_messages.text(), width, height);
+    }
     m_sumnerVisit.draw(m_canvas, m_messages.text());
     m_canvas.end();
 }

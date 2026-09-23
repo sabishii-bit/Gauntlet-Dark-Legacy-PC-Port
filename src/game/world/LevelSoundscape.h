@@ -42,6 +42,7 @@ public:
     /** Search level, common, then ambient banks; a broken first match stays silent. */
     SoundHandle playNamed(std::string_view name);
     SoundHandle playFrom(SoundSet& bank, std::string_view name);
+    SoundHandle playPromotion(std::string_view name, SoundHandle after = kNoSound);
     enum class Narrator : u8 { Primary, Either };
     SoundHandle narrate(std::string_view name, Narrator which = Narrator::Either,
                         SoundHandle after = kNoSound);
@@ -74,6 +75,7 @@ private:
     SoundSet m_ambient;
     SoundSet m_narrator;
     SoundSet m_narratorSecond;
+    SoundSet m_promotions;
     AmbientSounds m_ambience; ///< cleared before its borrowed banks
     std::array<std::optional<u32>, 2> m_steps{};
     std::optional<u32> m_pickup;

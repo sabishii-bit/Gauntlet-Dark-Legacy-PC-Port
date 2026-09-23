@@ -52,6 +52,7 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.colorCode = entry.value("color", member.colorCode);
         member.name = entry.value("name", member.name);
         member.level = entry.value("level", 1);
+        member.promotedLevel = entry.value("promotedLevel", -1);
         member.crystals = entry.value("crystals", std::vector<s32>{});
         member.gold = entry.value("gold", 0);
         member.health = entry.value("health", 0);
@@ -73,6 +74,8 @@ Scenario Scenario::fromJson(std::string_view text) {
         }
         if (member.player < 0 || member.player >= PlayScene::kPlayerCount || member.name.empty() ||
             member.name.size() > kCharacterNameLength || member.level < 1 ||
+            member.promotedLevel < -1 || member.promotedLevel == 0 ||
+            member.promotedLevel > std::min(member.level, kMaxLevel) ||
             member.crystals.size() > kRealmCount || member.gold < 0 || member.health < 0 ||
             member.keys < 0 || member.keys > Inventory::kMostKeys ||
             member.potions.size() > static_cast<usize>(Inventory::kMostPotions) ||
@@ -93,6 +96,7 @@ Scenario Scenario::fromJson(std::string_view text) {
         scenario.tower.welcome = root.at("welcome").get<bool>();
     }
     scenario.level = root.value("level", std::string{});
+    scenario.tower.arrivalWorld = root.value("arrivalWorld", 0U);
     for (const Json& entry : root.value("items", Json::array())) {
         DroppedItem item;
         item.name = entry.value("name", std::string{});
@@ -118,6 +122,7 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         save.color = colorIndexOf(member.colorCode).value_or(0);
         ClassProgress& progress = save.progress();
         progress.experience = levelExperience(member.level);
+        progress.promotedLevel = member.promotedLevel;
         for (usize realm = 0; realm < member.crystals.size(); ++realm) {
             progress.crystals[realm] = member.crystals[realm];
         }

@@ -37,7 +37,8 @@ struct Fixture {
             },
         .advanceTurbo = [](usize, s32, f32) { FAIL("No figure, no animation events"); },
         .thrownImpact = {},
-        .aim = {}};
+        .aim = {},
+        .allowMovement = {}};
 
     Fixture() {
         CollisionTriangle first;
@@ -70,6 +71,22 @@ TEST_CASE("stationary attacks face assisted targets without overriding movement 
     f.inputs[3].strafe = true;
     f.step();
     REQUIRE(f.players[0].actor.yaw() == Approx(-std::numbers::pi_v<f32> / 2));
+}
+
+TEST_CASE("party motion consults the shared-view limit before reporting moved subjects",
+          "[game][party-motion][camera-limit]") {
+    Fixture f;
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.events.allowMovement = [](const Vec3& before, const Vec3& after) {
+        return after.z <= before.z;
+    };
+    const auto before = f.players[0].actor.position();
+    const auto subjects = f.step();
+    REQUIRE(f.players[0].actor.position().z == before.z);
+    REQUIRE(subjects[0].feet == f.players[0].actor.position());
+    f.inputs[3].move.direction.y = -1;
+    f.step();
+    REQUIRE(f.players[0].actor.position().z < before.z);
 }
 
 TEST_CASE("party motion routes sparse input ids and snapshots after movement",

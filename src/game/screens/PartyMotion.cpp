@@ -140,8 +140,12 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
                         : StrafeWay::None);
         }
+        const Vec3 before = actor.position();
         actor.update(charging ? chargeInput(actor, move, cameraYaw) : move, cameraYaw, seconds,
                      &collision, pace, strafes);
+        if (events.allowMovement && !events.allowMovement(before, actor.position())) {
+            actor.place(Vec3{before.x, actor.position().y, before.z});
+        }
         // Stationary normal attacks face the assisted target. The stick, strafe,
         // charging and authored turbo movement retain control of their heading.
         if (!move.any() && !charging && player < inputs.size() && !inputs[player].strafe &&

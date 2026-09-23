@@ -64,6 +64,8 @@ add_executable(tests
     game/world/PlayerMissilesTests.cpp
     game/world/TargetAssistTests.cpp
     game/world/PlayerFigureTests.cpp
+    game/world/PlayerFamiliarTests.cpp
+    game/world/CameraMovementLimitTests.cpp
     game/world/PlayerArsenalTests.cpp
     game/world/LevelSoundscapeTests.cpp
     game/menu/HintMenuTests.cpp
@@ -150,6 +152,7 @@ add_executable(tests
     game/screens/LevelArrivalPresentationTests.cpp
     game/screens/LevelMessagesTests.cpp
     game/screens/SumnerVisitTests.cpp
+    game/screens/TowerPromotionTests.cpp
     game/screens/LegendPresentationTests.cpp
     game/screens/PlaySceneTests.cpp
     game/screens/PartyMotionTests.cpp

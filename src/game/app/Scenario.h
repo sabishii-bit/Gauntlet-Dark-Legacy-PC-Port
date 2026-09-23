@@ -18,6 +18,7 @@ struct ScenarioMember {
     std::string colorCode = "YEL";
     std::string name = "TEST";
     s32 level = 1;
+    s32 promotedLevel = -1;    ///< an earlier award stages a tower-return promotion
     std::vector<s32> crystals; ///< per realm, as many as given
     s32 gold = 0;
     s32 health = 0; ///< none leaves it full

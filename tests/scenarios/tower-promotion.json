@@ -1,0 +1,9 @@
+{
+  "screen": "tower",
+  "welcome": false,
+  "arrivalWorld": 7,
+  "party": [
+    {"player": 0, "class": "WAR", "color": "YEL", "name": "THIRTY", "level": 30, "promotedLevel": 29},
+    {"player": 1, "class": "VAL", "color": "BLU", "name": "EIGHTY", "level": 80, "promotedLevel": 79}
+  ]
+}

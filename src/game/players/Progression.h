@@ -26,6 +26,8 @@ inline constexpr usize kRealmCount = 14;
 
 struct ClassProgress {
     s32 experience = 0;
+    s32 promotedLevel =
+        -1; ///< last tower award; -1 imports an existing character at its earned tier
     s32 health = 0;
     f32 fightAdd = 0.0f;
     f32 armorAdd = 0.0f;
@@ -35,6 +37,8 @@ struct ClassProgress {
     u32 unlocked = 0;                        ///< a bit per realm whose gate's opening was announced
     Inventory inventory; ///< the keys, potions and powerups carried as this class
     Relics relics;       ///< the runestones, legend items and gargoyle pieces gathered
+    s32 appearanceLevel() const;
+    bool promotionPending() const;
 };
 
 /** Stats as the select screen shows them, in its row order. */

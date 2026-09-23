@@ -110,6 +110,10 @@ add_library(game STATIC
     world/PlayerMissiles.cpp
     world/TargetAssist.cpp
     world/PlayerFigure.cpp
+    world/PlayerFamiliar.cpp
+    world/CameraMovementLimit.cpp
+    screens/TowerPromotion.cpp
+    screens/PlayScenePromotion.cpp
     world/PlayerArsenal.cpp
     world/LevelSoundscape.cpp
     world/EffectTrees.h

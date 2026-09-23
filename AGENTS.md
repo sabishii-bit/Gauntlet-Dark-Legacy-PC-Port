@@ -1137,10 +1137,35 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   original's `AddExp` does: help 34, "LEVEL %d" (the number filled in by
   `HelpMessages::post`'s `number`; `HelpRepeat::Always`, news not a lesson),
   to `S_GAINEDLEVEL`; the `LEVELUP_<COL>` tree of the weapons archive about
-  the character for three seconds; a hundred health. A tenth level besides
-  says the class's piece (`S_EXP10WAR` ... `S_EXP90WAR`, `S_EXP99ALL`
-  failing one) and reloads the figure in the tier's costume (`BLU10`) where
-  it stands. The watch is primed at open with the party's levels.
+  the character for three seconds; a hundred health. The watch is primed at
+  open with the party's levels. Decade appearances wait for a tower return.
+* Tower promotions (`screens/TowerPromotion`, `PlayScenePromotion`): each
+  class saves `promotedLevel` independently from earned experience. On a
+  tower return, a newly attained decade (or level 99) queues one ceremony
+  per eligible character. Legacy saves import their earned appearance; new
+  characters freeze the award baseline before earning experience. The
+  nearest event marker places `WIZARD` and camera 240 + marker id frames it.
+  After a two-second lead-in, the character's name precedes the WIZTOWER
+  speech; 99 uses VOICE1's `S_EXP99ALL`. Captions use `NEWLEVEL`, the class
+  rank pages (one every twenty levels) and `LEGEND`. At four seconds the
+  costume/weapon tier changes with LEVELUP effects; a matching-colour gem
+  effect follows half a second later. Controls stay held for at least six
+  seconds and until the voice and caption finish, then the next player.
+  Replaced figures remain alive until scene teardown for borrowed audio.
+  `world/PlayerFamiliar` draws the permanent FAMILIAR1 at award level 30,
+  FAMILIAR2 at 80, using the colour-specific SFX archive and class PDAT's
+  `familiarOffset` at 0x164. Re-run gdlunpack `--only PDATA` after updating.
+  `python scripts/scenario.py tower-promotion` stages both awards.
+  Old LEVELL exports without WIZARD's OANIM `objectFrames` render only the
+  rigid body pieces; refresh with `--only LEVELL` (not `ITEMS/LEVELL`).
+  Promotion captions start at fixed canvas y=312, scale 0.667; centre the
+  full line while revealing characters, not the changing partial string.
+* Shared-camera movement (`world/CameraMovementLimit`, `PartyMotion`):
+  voluntary steps out through the safe screen window are blocked, inward
+  recovery remains possible, and the follow camera cannot exceed the level's
+  maximum range. Use the unshaken gameplay camera rather than a cutscene
+  camera. Captures and authored displacements are not player input and are
+  not cancelled by this gate. Opposing-player tests cover sustained spread.
 * A bitmap an archive flags 0x100 has no picture of its own (an animated
   texture's slot, such as the magic users' `<COL>_HANDGLOW`, filled in the
   original from frames kept elsewhere): `TextureSet` draws it clear

@@ -18,6 +18,7 @@
 #include "game/players/CharacterSave.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
+#include "game/world/PlayerFamiliar.h"
 
 namespace gdl::game {
 
@@ -36,8 +37,9 @@ public:
     ~PlayerFigure() = default;
 
     /** Null if the costume cannot be built; missing optional weapons/actions are tolerated. */
-    static std::unique_ptr<PlayerFigure>
-    load(RenderDevice& device, const std::filesystem::path& root, const CharacterSave& save);
+    static std::unique_ptr<PlayerFigure> load(RenderDevice& device,
+                                              const std::filesystem::path& root,
+                                              const CharacterSave& save, bool enter = true);
     static std::filesystem::path costumeDirectory(const std::filesystem::path& root,
                                                   const CharacterSave& save);
     void animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed = PlayerDeed::None);
@@ -46,6 +48,7 @@ public:
     /** A posed hand, if available; callers choose their own fallback attachment. */
     std::optional<Vec3> handPosition(const Mat4& body) const;
     bool heldWeaponBound() const { return m_handNode >= 0 && m_weapon.bound(); }
+    s32 familiarTier() const { return m_familiar.tier(); }
     const std::filesystem::path& directory() const { return m_directory; }
     void setStrafe(StrafeWay way) { m_animator.setStrafe(way); }
     const PlayerAnimator& animator() const { return m_animator; }
@@ -63,7 +66,7 @@ private:
     void loadWeapon(const CharacterSave& save, RenderDevice& device);
     void loadMissile(const std::filesystem::path& root, const CharacterSave& save,
                      RenderDevice& device);
-    void loadActions(const std::filesystem::path& root, const CharacterSave& save);
+    void loadActions(const std::filesystem::path& root, const CharacterSave& save, bool enter);
 
     ModelSet m_models;
     TextureSet m_textures;
@@ -79,6 +82,7 @@ private:
     std::vector<s32> m_classNodeOfNode;
     std::vector<Mat4> m_transforms;
     ItemArchive m_effects;
+    PlayerFamiliar m_familiar;
     TreeModel m_missile;
     SoundSet m_voice;
     std::optional<u32> m_throwSound;
