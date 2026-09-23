@@ -43,6 +43,120 @@ std::filesystem::path unpackedRoot() {
         .parent_path();
 }
 
+TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
+    PlayScene scene;
+    for (const s32 player : {-1, 0, 1, 2, 3, 4}) {
+        REQUIRE(scene.actor(player) == nullptr);
+        REQUIRE(scene.animator(player) == nullptr);
+        REQUIRE(scene.turboMeter(player) == nullptr);
+        REQUIRE_FALSE(scene.fallen(player));
+        REQUIRE_FALSE(scene.weaponHeld(player));
+        REQUIRE_FALSE(scene.figureDirectory(player).has_value());
+    }
+    REQUIRE_FALSE(scene.figureDirectory(usize{0}).has_value());
+    REQUIRE(scene.party().empty());
+    scene.close();
+    scene.close();
+    REQUIRE(scene.actorCount() == 0);
+}
+
+TEST_CASE("sparse party ids keep their state together across harm and scene reopening",
+          "[game][screens][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto level = levels.byName("G1");
+    REQUIRE(level.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.level() != nullptr);
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave first;
+    first.name = "THREE";
+    first.color = 1;
+    first.progress().health = 300;
+    first.gold = 40;
+    CharacterSave second = first;
+    second.name = "ONE";
+    second.progress().health = 700;
+    second.gold = 90;
+    const std::vector<PartyMember> party{PartyMember{3, first, 7, false, 80.0f, {9, 4}},
+                                         PartyMember{1, second, 2, false, 20.0f, {6}}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{13.2f, 10.2f, -59.0f};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.actorCount() == 2);
+    REQUIRE(scene.actor(0) == nullptr);
+    REQUIRE(scene.actor(2) == nullptr);
+    REQUIRE(scene.actor(3) != nullptr);
+    REQUIRE(scene.actor(1) != nullptr);
+    REQUIRE(scene.actor(3)->save().name == "THREE");
+    REQUIRE(scene.actor(1)->save().name == "ONE");
+    REQUIRE(scene.turboMeter(3)->held() == Approx(80.0f));
+    REQUIRE(scene.turboMeter(1)->held() == Approx(20.0f));
+    REQUIRE(scene.figureDirectory(usize{0}) == scene.figureDirectory(s32{3}));
+    REQUIRE(scene.figureDirectory(usize{1}) == scene.figureDirectory(s32{1}));
+
+    scene.hurtPlayer(3, 100.0f, HurtKind::Blow);
+    REQUIRE(scene.actor(3)->save().health() == 200);
+    REQUIRE(scene.actor(1)->save().health() == 700);
+    REQUIRE_FALSE(scene.fallen(1));
+    const auto expectedExperience =
+        second.experience() + static_cast<s32>(250.0f * world.level()->tuning.experienceScale(
+                                                            experienceLevel(second.experience())));
+    scene.awardExperience(1, 250);
+    REQUIRE(scene.actor(1)->save().experience() == expectedExperience);
+    REQUIRE(scene.actor(3)->save().experience() == first.experience());
+    scene.hurtPlayer(3, 1000.0f, HurtKind::Burn);
+    REQUIRE(scene.fallen(3));
+    REQUIRE_FALSE(scene.fallen(1));
+    REQUIRE(scene.turboMeter(3)->held() == 0.0f);
+    REQUIRE(scene.turboMeter(1)->held() > 20.0f);
+    const auto carried = scene.party();
+    REQUIRE(carried.size() == 2);
+    REQUIRE(carried[0].player == 3);
+    REQUIRE(carried[0].slot == std::optional<usize>{7});
+    REQUIRE(carried[0].fallen);
+    REQUIRE(carried[0].save.health() == 300); // death carries the entry save, not the wounded one
+    REQUIRE(carried[0].save.gold == 40);
+    REQUIRE(carried[0].helpHeard == std::vector<s32>{4, 9});
+    REQUIRE(carried[1].player == 1);
+    REQUIRE(carried[1].slot == std::optional<usize>{2});
+    REQUIRE_FALSE(carried[1].fallen);
+    REQUIRE(carried[1].save.experience() == expectedExperience);
+    REQUIRE(carried[1].helpHeard == std::vector<s32>{6});
+
+    // Reopening implicitly closes the old scene. No death, reaction, slot or turbo leaks.
+    CharacterSave replacement = first;
+    replacement.name = "ZERO";
+    replacement.progress().health = 400;
+    const std::vector<PartyMember> next{PartyMember{0, replacement, std::nullopt, false, 5.0f, {}}};
+    REQUIRE(scene.open(device, context, world, next, options));
+    REQUIRE(scene.actorCount() == 1);
+    REQUIRE(scene.actor(3) == nullptr);
+    REQUIRE(scene.actor(1) == nullptr);
+    REQUIRE(scene.animator(3) == nullptr);
+    REQUIRE(scene.turboMeter(3) == nullptr);
+    REQUIRE(scene.actor(0)->save().name == "ZERO");
+    REQUIRE(scene.actor(0)->save().health() == 400);
+    REQUIRE_FALSE(scene.fallen(0));
+    REQUIRE(scene.turboMeter(0)->held() == 5.0f);
+    REQUIRE_FALSE(scene.party()[0].slot.has_value());
+    REQUIRE(scene.party()[0].helpHeard.empty());
+    scene.close();
+    REQUIRE(scene.actorCount() == 0);
+    REQUIRE(scene.party().empty());
+}
+
 TEST_CASE("the party enters the tower at its entrance and walks under control",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();

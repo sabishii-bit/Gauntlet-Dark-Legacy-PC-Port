@@ -182,7 +182,7 @@ public:
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
                 f32 frameHeight);
 
-    usize actorCount() const { return m_actors.size(); }
+    usize actorCount() const { return m_players.size(); }
     /** The character driven by `player`, or null when that player is not in the party. */
     const PlayerActor* actor(s32 player) const;
     /** The body animation of `player`'s character, or null without a figure for it. */
@@ -233,8 +233,8 @@ public:
     const BossVictory& victory() const { return m_victory; }
     /** The archive folder a character's figure was loaded from, for tests. */
     std::optional<std::filesystem::path> figureDirectory(usize index) const {
-        return index < m_figures.size() && m_figures[index] != nullptr
-                   ? std::optional<std::filesystem::path>(m_figures[index]->directory)
+        return index < m_players.size() && m_players[index].figure != nullptr
+                   ? std::optional<std::filesystem::path>(m_players[index].figure->directory)
                    : std::nullopt;
     }
     const HelpMessages& help() const { return m_help; }
@@ -312,6 +312,36 @@ private:
 
         void animate(f32 stickMagnitude, s32 ticks, f32 seconds,
                      PlayerDeed deed = PlayerDeed::None);
+    };
+
+    enum class PlayerLife : u8 { Standing, Dying, InTower };
+
+    /** A turbo move under way: the strikes it has yet to make and what it has yet to pay. */
+    struct MoveProgress {
+        std::vector<s32> pending;
+        std::vector<s32> all; ///< every strike of it, which may keep the level dark
+        f32 owed = 0.0f;
+        bool named = false;           ///< its name has been announced
+        bool weaponHidden = false;    ///< one of its strikes empties the hand for now
+        std::vector<s32> volleysShot; ///< per strike of `all`, how many shots it has let fly
+    };
+    /** Everything that belongs to one participant for this level. The player id may
+     * differ from this record's position in the party; figures may be unavailable. */
+    struct PlayerRuntime {
+        PlayerActor actor;
+        std::unique_ptr<Figure> figure; ///< null when character assets are unavailable
+        std::optional<usize> slot;      ///< persistent save slot, not the input player id
+        CharacterSave entrySave;        ///< restored when a fallen character leaves the level
+        PlayerLife life = PlayerLife::Standing;
+        f32 painOwed = 0.0f;                    ///< accumulated damage not yet answered by a cry
+        s32 hitSoundGap = 0;                    ///< ticks before another impact sound
+        PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
+        TurboMeter turbo;
+        std::vector<s32> helpHeard; ///< since the character was loaded, distinct from saved help
+        MoveProgress move;
+        std::vector<usize> rammed; ///< barrels already hit by the current charge
+        f32 blockLeft = 0.0f;      ///< seconds before another block effect
+        f32 cloudGap = 0.0f;       ///< seconds before gas can harm this participant again
     };
 
     void spawnParty(std::span<const PartyMember> party, const PlayOptions& options);
@@ -406,7 +436,9 @@ private:
     std::string_view actionsClassOf(s32 character) const;
     f32 ownDamageOf(usize index) const;
     void updateTurbo(usize index, s32 ticks, f32 seconds);
-    bool isDown(usize index) const { return index < m_down.size() && m_down[index] != kUp; }
+    bool isDown(usize index) const {
+        return index < m_players.size() && m_players[index].life != PlayerLife::Standing;
+    }
     /** Where the level finds a character: nowhere once it has fallen. */
     Vec3 presenceOf(usize index) const;
     f32 trapDamageScale() const;
@@ -448,9 +480,7 @@ private:
     Canvas m_canvas;
     TowerCamera m_camera;
     BossCamera m_bossCamera;
-    std::vector<PlayerActor> m_actors;
-    std::vector<std::unique_ptr<Figure>> m_figures; ///< one per actor, null when unavailable
-    std::vector<CameraSubject> m_subjects; ///< one per actor, refreshed every frame
+    std::vector<PlayerRuntime> m_players;
     SoundSet m_commonSounds;
     SoundSet m_levelBank;   ///< the realm's bank for the level
     SoundSet m_ambientBank; ///< the tower's ambience
@@ -473,32 +503,10 @@ private:
     ScrollBox m_scroll;
     PlayerMissiles m_missiles;
     ExitPortals m_portals;
-    std::vector<std::optional<usize>> m_slots; ///< each actor's save slot, when it has one
-    static constexpr u8 kUp = 0;
-    static constexpr u8 kDying = 1;
-    static constexpr u8 kInTower = 2;
-    std::vector<u8> m_down;                  ///< per actor
-    std::vector<CharacterSave> m_entrySaves; ///< per actor, as it came into the level
-    std::vector<f32> m_painOwed;             ///< per actor, harm not yet cried out over
-    std::vector<s32> m_hitSoundGaps;         ///< per actor, ticks before a blow sounds again
     std::mt19937 m_painRandom{0x5A17u};      ///< which cry of pain comes
     std::mt19937 m_coinRandom{0xC01Eu};      ///< how fast each coin a boss spews flies
     u32 m_lowHealthTurn = 0;                 ///< the last-health lines take turns
-    std::vector<PlayerDeed> m_struck;        ///< per actor, the reaction a hit this tick asks
-    std::vector<TurboMeter> m_turbo;         ///< per actor
-    std::vector<std::vector<s32>> m_helpHeard; ///< per actor, since the character was loaded
-    /** A turbo move under way: the strikes it has yet to make and what it has yet to pay. */
-    struct MoveProgress {
-        std::vector<s32> pending;
-        std::vector<s32> all; ///< every strike of it, which may keep the level dark
-        f32 owed = 0.0f;
-        bool named = false;   ///< its name has been announced
-        bool weaponHidden = false; ///< one of its strikes empties the hand for now
-        std::vector<s32> volleysShot; ///< per strike of `all`, how many shots it has let fly
-    };
     AmbientDimmer m_dimmer;
-    std::vector<MoveProgress> m_moves;       ///< per actor
-    std::vector<std::vector<usize>> m_rammed; ///< per actor, the barrels this charge has hit
     MoveStrikes m_strikes;
     /** The effect that goes along with a strike that flies. */
     struct StrikeEffect {
@@ -513,7 +521,6 @@ private:
         s32 row = -1;
     };
     std::vector<StrikeSource> m_strikeSources;
-    std::vector<f32> m_blockLeft; ///< per actor, seconds before another block shows
     /** A potion's magic ringing a character: it goes about with them and harms what it
      * touches, every so often, until it is spent. */
     struct PotionShield {
@@ -539,7 +546,6 @@ private:
         f32 damage = 0.0f;
     };
     std::vector<Blast> m_blasts;
-    std::vector<f32> m_cloudGaps; ///< per actor, seconds before gas hurts them again
     Breakables m_barrels;
     SafeRocks m_safeRocks;
     Enemies m_enemies;

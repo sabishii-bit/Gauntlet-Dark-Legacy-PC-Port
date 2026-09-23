@@ -271,28 +271,31 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     for (const DroppedItem& item : options.items) {
         world.placeItem(device, item.name, item.position);
     }
-    world.setPlayerCount(static_cast<s32>(m_actors.size()));
-    m_chests.setPlayerCount(static_cast<s32>(m_actors.size()));
-    m_gates.setPlayerCount(static_cast<s32>(m_actors.size()));
-    m_traps.setPlayerCount(static_cast<s32>(m_actors.size()));
-    m_barrels.setPlayerCount(static_cast<s32>(m_actors.size()));
-    m_safeRocks.setPlayerCount(static_cast<s32>(m_actors.size()));
+    world.setPlayerCount(static_cast<s32>(m_players.size()));
+    m_chests.setPlayerCount(static_cast<s32>(m_players.size()));
+    m_gates.setPlayerCount(static_cast<s32>(m_players.size()));
+    m_traps.setPlayerCount(static_cast<s32>(m_players.size()));
+    m_barrels.setPlayerCount(static_cast<s32>(m_players.size()));
+    m_safeRocks.setPlayerCount(static_cast<s32>(m_players.size()));
     bindEnemies(device, world, context);
     // The levels the party comes in at: what is gained from here is news.
     m_levels.clear();
-    for (const PlayerActor& actor : m_actors) {
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         m_levels.observe(actor.player(), experienceLevel(actor.save().experience()));
     }
     world.startTriggers(visitors());
     const std::array<SoundSet*, 2> banks{&m_ambientBank, &m_levelBank};
     m_ambience.bind(world.layout(), banks);
-    for (const PlayerActor& actor : m_actors) {
-        m_figures.push_back(loadFigure(device, actor.save()));
-        m_subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
+    std::vector<CameraSubject> subjects;
+    subjects.reserve(m_players.size());
+    for (PlayerRuntime& runtime : m_players) {
+        runtime.figure = loadFigure(device, runtime.actor.save());
+        subjects.push_back(CameraSubject{runtime.actor.position(), runtime.actor.followPoint()});
     }
-    m_camera.reset(m_subjects, world.cameraMarkers(), world.cameraRange(), cameraView());
+    m_camera.reset(subjects, world.cameraMarkers(), world.cameraRange(), cameraView());
     if (bossCameraOn()) {
-        m_bossCamera.reset(bossSubject(), m_subjects, *world.level()->bossCamera, cameraView());
+        m_bossCamera.reset(bossSubject(), subjects, *world.level()->bossCamera, cameraView());
     }
     startMusic();
     m_intro = Intro::None;
@@ -317,7 +320,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                                       }
                                   }});
     m_open = true;
-    log::info("Tower: {} in the party", m_actors.size());
+    log::info("Tower: {} in the party", m_players.size());
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
               m_portals.size());
     return true;
@@ -372,21 +375,9 @@ void PlayScene::close() {
     m_text.setFont(nullptr, nullptr);
     m_staticTextures.releaseTextures();
     m_intro = Intro::None;
-    m_actors.clear();
-    m_slots.clear();
-    m_down.clear();
-    m_entrySaves.clear();
-    m_painOwed.clear();
-    m_hitSoundGaps.clear();
-    m_struck.clear();
-    m_turbo.clear();
-    m_helpHeard.clear();
-    m_moves.clear();
-    m_rammed.clear();
     m_strikes.clear();
     m_strikeEffects.clear();
     m_strikeSources.clear();
-    m_blockLeft.clear();
     m_shields.clear();
     m_dimmer.reset();
     if (m_world != nullptr) {
@@ -394,13 +385,11 @@ void PlayScene::close() {
     }
     m_clouds.clear();
     m_blasts.clear();
-    m_cloudGaps.clear();
     m_fallenSeconds = 0.0f;
     m_barrels.clear();
     m_safeRocks.clear();
     m_help.clear();
-    m_figures.clear();
-    m_subjects.clear();
+    m_players.clear();
     if (m_context.sounds != nullptr) {
         m_ambience.stop(*m_context.sounds);
     }
@@ -436,29 +425,23 @@ void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions
     yaw = options.yaw.value_or(yaw);
     const Vec3 sideways{std::cos(yaw), 0.0f, -std::sin(yaw)};
     const f32 first = -0.5f * static_cast<f32>(party.size() - 1) * kSpawnSpacing;
+    m_players.reserve(party.size());
     for (usize i = 0; i < party.size(); ++i) {
         const PartyMember& member = party[i];
-        PlayerActor actor;
+        PlayerRuntime runtime;
         const Vec3 position = origin + sideways * (first + static_cast<f32>(i) * kSpawnSpacing);
-        actor.spawn(member.player, member.save, m_classes.stats(member.save.character), position,
-                    yaw);
-        actor.settle(m_world->collision());
-        m_actors.push_back(std::move(actor));
-        m_slots.push_back(member.slot);
+        runtime.actor.spawn(member.player, member.save, m_classes.stats(member.save.character),
+                            position, yaw);
+        runtime.actor.settle(m_world->collision());
+        runtime.slot = member.slot;
         // Someone who fell stands again in the tower; elsewhere they wait there still.
-        m_down.push_back(member.fallen && !m_world->isTower() ? kInTower : kUp);
-        m_entrySaves.push_back(member.save);
-        m_painOwed.push_back(0.0f);
-        m_hitSoundGaps.push_back(0);
-        m_struck.push_back(PlayerDeed::None);
-        m_turbo.emplace_back();
-        m_turbo.back().add(member.turbo);
-        m_helpHeard.push_back(member.helpHeard);
-        std::ranges::sort(m_helpHeard.back());
-        m_moves.emplace_back();
-        m_rammed.emplace_back();
-        m_blockLeft.push_back(0.0f);
-        m_cloudGaps.push_back(0.0f);
+        runtime.life =
+            member.fallen && !m_world->isTower() ? PlayerLife::InTower : PlayerLife::Standing;
+        runtime.entrySave = member.save;
+        runtime.turbo.add(member.turbo);
+        runtime.helpHeard = member.helpHeard;
+        std::ranges::sort(runtime.helpHeard);
+        m_players.push_back(std::move(runtime));
     }
 }
 
@@ -531,8 +514,8 @@ void PlayScene::loadMissile(Figure& figure, const CharacterSave& save, RenderDev
 /** Lets the weapon go: from the body's centre, out by the class's hand and a little ahead,
  * along the facing, as fast as the character's strength (or magic) throws. */
 void PlayScene::throwWeapon(const PlayerActor& actor, Figure& /*figure*/) {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (&m_actors[i] == &actor) {
+    for (usize i = 0; i < m_players.size(); ++i) {
+        if (&m_players[i].actor == &actor) {
             launchWeapon(i, actor.facing(), 1.0f, true);
         }
     }
@@ -541,11 +524,11 @@ void PlayScene::throwWeapon(const PlayerActor& actor, Figure& /*figure*/) {
 /** Sends the character's weapon off along `direction`, `scale` times its size and its harm;
  * with `spreads`, as many of them as a three or five way shot worn makes it. */
 void PlayScene::launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads) {
-    if (index >= m_actors.size() || m_figures[index] == nullptr) {
+    if (index >= m_players.size() || m_players[index].figure == nullptr) {
         return;
     }
-    const PlayerActor& actor = m_actors[index];
-    Figure& figure = *m_figures[index];
+    const PlayerActor& actor = m_players[index].actor;
+    Figure& figure = *m_players[index].figure;
     const Vec3 facing = direction;
     const CharacterSave& save = actor.save();
     const ClassStats* stats = m_classes.stats(save.character);
@@ -635,20 +618,20 @@ void PlayScene::loadWeapon(Figure& figure, const CharacterSave& save, RenderDevi
 }
 
 std::optional<std::filesystem::path> PlayScene::figureDirectory(s32 player) const {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_actors[i].player() == player && m_figures[i] != nullptr) {
-            return m_figures[i]->directory;
+    for (const PlayerRuntime& runtime : m_players) {
+        if (runtime.actor.player() == player && runtime.figure != nullptr) {
+            return runtime.figure->directory;
         }
     }
     return std::nullopt;
 }
 
 bool PlayScene::weaponHeld(s32 player) const {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_actors[i].player() == player && m_figures[i] != nullptr) {
+    for (const PlayerRuntime& runtime : m_players) {
+        if (runtime.actor.player() == player && runtime.figure != nullptr) {
             // A move may empty the hand for a while.
-            const bool hidden = i < m_moves.size() && m_moves[i].weaponHidden;
-            return m_figures[i]->handNode >= 0 && m_figures[i]->weapon.bound() && !hidden;
+            const bool hidden = runtime.move.weaponHidden;
+            return runtime.figure->handNode >= 0 && runtime.figure->weapon.bound() && !hidden;
         }
     }
     return false;
@@ -661,7 +644,8 @@ void PlayScene::updateBeam(s32 ticks) {
         return;
     }
     bool near = false;
-    for (const PlayerActor& actor : m_actors) {
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         near = near || glm::distance(actor.position(), m_sumner.position()) <= kBeamRadius;
     }
     const f32 step = static_cast<f32>(ticks) / static_cast<f32>(kBeamFadeTicks);
@@ -740,8 +724,9 @@ void PlayScene::collectItems() {
         return;
     }
     std::vector<Collector> collectors;
-    collectors.reserve(m_actors.size());
-    for (const PlayerActor& actor : m_actors) {
+    collectors.reserve(m_players.size());
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         // Against an open chest, a character reaches what lies in it.
         const Vec3 here = presenceOf(collectors.size());
         const s32 chest = m_chests.holdingTouchedBy(ChestVisitor{here, actor.radius()});
@@ -764,7 +749,8 @@ void PlayScene::collectItems() {
         if (pickup.realm > 0 && static_cast<usize>(pickup.realm) < kRealmCount) {
             const s32 wanted = LevelTriggers::crystalsNeeded(pickup.realm);
             bool enough = wanted > 0;
-            for (PlayerActor& actor : m_actors) {
+            for (PlayerRuntime& runtime : m_players) {
+                PlayerActor& actor = runtime.actor;
                 s32& count = actor.save().progress().crystals[static_cast<usize>(pickup.realm)];
                 if (wanted <= 0 || count < wanted) {
                     ++count;
@@ -773,8 +759,9 @@ void PlayScene::collectItems() {
                 m_pickups.showCount(actor.player(), PickupHud::crystalIcon(pickup.realm), count,
                                     wanted);
             }
-            if (pickup.collector < m_actors.size()) {
-                m_pickups.addCard(m_actors[pickup.collector].player(), PickupHud::kCrystalCard);
+            if (pickup.collector < m_players.size()) {
+                m_pickups.addCard(m_players[pickup.collector].actor.player(),
+                                  PickupHud::kCrystalCard);
             }
             if (enough) {
                 announceUnlock(pickup.realm);
@@ -799,10 +786,10 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
     boxes.insert(boxes.end(), cover.begin(), cover.end());
     std::vector<ChestVisitor> visitors;
     std::vector<TrapVictim> victims;
-    visitors.reserve(m_actors.size());
-    victims.reserve(m_actors.size());
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        PlayerActor& actor = m_actors[i];
+    visitors.reserve(m_players.size());
+    victims.reserve(m_players.size());
+    for (usize i = 0; i < m_players.size(); ++i) {
+        PlayerActor& actor = m_players[i].actor;
         if (isDown(i)) {
             visitors.push_back(ChestVisitor{kNowhere, actor.radius(), 0});
             victims.push_back(TrapVictim{kNowhere, actor.radius()});
@@ -818,10 +805,10 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
         victims.push_back(TrapVictim{position, actor.radius()});
     }
     for (const ChestEvent& event : m_chests.update(seconds, visitors)) {
-        if (event.visitor >= m_actors.size()) {
+        if (event.visitor >= m_players.size()) {
             continue;
         }
-        PlayerActor& actor = m_actors[event.visitor];
+        PlayerActor& actor = m_players[event.visitor].actor;
         switch (event.kind) {
         case ChestEvent::Kind::Unlocked:
             if (m_chests.chest(event.chest).locked) {
@@ -859,18 +846,18 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
         }
     }
     for (const GateEvent& event : m_gates.update(ticks, seconds, visitors)) {
-        if (event.visitor >= m_actors.size()) {
+        if (event.visitor >= m_players.size()) {
             continue;
         }
         if (event.kind == GateEvent::Kind::Unlocked) {
-            m_actors[event.visitor].save().progress().inventory.spendKey();
+            m_players[event.visitor].actor.save().progress().inventory.spendKey();
             playGateSound(0);
         } else if (event.kind == GateEvent::Kind::Refused) {
             postHelp(HelpMessages::kDoorNeedsKey, event.visitor);
         }
     }
     for (const TrapHit& hit : m_traps.update(ticks, seconds, victims)) {
-        if (hit.victim >= m_actors.size()) {
+        if (hit.victim >= m_players.size()) {
             continue;
         }
         if (hit.subtype == kFireTrap) {
@@ -878,14 +865,14 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
         }
         // Every trap stuns: spikes and blades make their victim flinch, the rest reel.
         if (guarded(hit.victim, hit.damage, false) > 1.0f && !isDown(hit.victim)) {
-            m_struck[hit.victim] = hit.pierces ? PlayerDeed::Flinch : PlayerDeed::Reel;
+            m_players[hit.victim].reaction = hit.pierces ? PlayerDeed::Flinch : PlayerDeed::Reel;
         }
         hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn);
         postHelp(HelpMessages::kTrapsHurt, hit.victim);
     }
     updateClouds(seconds);
-    for (s32& gap : m_hitSoundGaps) {
-        gap = std::max(gap - ticks, 0);
+    for (PlayerRuntime& runtime : m_players) {
+        runtime.hitSoundGap = std::max(runtime.hitSoundGap - ticks, 0);
     }
 }
 
@@ -899,12 +886,13 @@ f32 PlayScene::trapDamageScale() const {
 }
 
 Vec3 PlayScene::presenceOf(usize index) const {
-    return index < m_actors.size() && !isDown(index) ? m_actors[index].position() : kNowhere;
+    return index < m_players.size() && !isDown(index) ? m_players[index].actor.position()
+                                                      : kNowhere;
 }
 
 bool PlayScene::fallen(s32 player) const {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_actors[i].player() == player) {
+    for (usize i = 0; i < m_players.size(); ++i) {
+        if (m_players[i].actor.player() == player) {
             return isDown(i);
         }
     }
@@ -912,8 +900,8 @@ bool PlayScene::fallen(s32 player) const {
 }
 
 void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed) {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_actors[i].player() == player) {
+    for (usize i = 0; i < m_players.size(); ++i) {
+        if (m_players[i].actor.player() == player) {
             hurt(i, damage, kind, directed);
         }
     }
@@ -923,7 +911,7 @@ void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed)
  * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
  * nowhere in particular (a trap underfoot); a shove halves either. */
 f32 PlayScene::guarded(usize index, f32 damage, bool directed) const {
-    const Figure* figure = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    const Figure* figure = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (figure == nullptr || damage <= 1.0f) {
         return damage;
     }
@@ -941,9 +929,9 @@ SoundHandle PlayScene::playRealmSound(std::string_view stem) {
 }
 
 const TurboMeter* PlayScene::turboMeter(s32 player) const {
-    for (usize i = 0; i < m_actors.size() && i < m_turbo.size(); ++i) {
-        if (m_actors[i].player() == player) {
-            return &m_turbo[i];
+    for (const PlayerRuntime& runtime : m_players) {
+        if (runtime.actor.player() == player) {
+            return &runtime.turbo;
         }
     }
     return nullptr;
@@ -954,10 +942,10 @@ const TurboMeter* PlayScene::turboMeter(s32 player) const {
  * of it, else nothing (the attack is then an ordinary one); the charge button going down, a
  * shove, which wants a twentieth. Nothing when the body is in the middle of something. */
 PlayerDeed PlayScene::turboDeed(usize index, const PlayInput& in) const {
-    if (index >= m_turbo.size() || m_figures[index] == nullptr) {
+    if (index >= m_players.size() || m_players[index].figure == nullptr) {
         return PlayerDeed::None;
     }
-    const TurboMeter& meter = m_turbo[index];
+    const TurboMeter& meter = m_players[index].turbo;
     PlayerDeed deed = PlayerDeed::None;
     if (in.turbo && in.attackPressed) {
         if (meter.held() >= TurboMeter::kFullCost) {
@@ -968,7 +956,7 @@ PlayerDeed PlayScene::turboDeed(usize index, const PlayInput& in) const {
     } else if (in.chargePressed && meter.held() >= TurboMeter::kShoveFrom) {
         deed = PlayerDeed::Shove;
     }
-    return m_figures[index]->animator.canBegin(deed) ? deed : PlayerDeed::None;
+    return m_players[index].figure->animator.canBegin(deed) ? deed : PlayerDeed::None;
 }
 
 /** A charge goes flat out the way the stick is pushed, or straight ahead when it is not. */
@@ -979,7 +967,7 @@ MoveInput PlayScene::chargeInput(usize index, const MoveInput& stick, f32 camera
         rush.direction = stick.direction;
         return rush;
     }
-    const Vec3 facing = m_actors[index].facing();
+    const Vec3 facing = m_players[index].actor.facing();
     const f32 ahead = std::atan2(facing.x, facing.z) - cameraYaw;
     rush.direction = Vec2{std::sin(ahead), std::cos(ahead)};
     return rush;
@@ -987,8 +975,8 @@ MoveInput PlayScene::chargeInput(usize index, const MoveInput& stick, f32 camera
 
 /** What a charge runs into is struck, once each charge. */
 void PlayScene::ramBarrels(usize index) {
-    const PlayerActor& actor = m_actors[index];
-    std::vector<usize>& rammed = m_rammed[index];
+    const PlayerActor& actor = m_players[index].actor;
+    std::vector<usize>& rammed = m_players[index].rammed;
     for (usize barrel = 0; barrel < m_barrels.size(); ++barrel) {
         if (!m_barrels.standing(barrel) || std::ranges::find(rammed, barrel) != rammed.end() ||
             !m_barrels.barrel(barrel).box.touchedBy(actor.position(), actor.radius(), kRamReach)) {
@@ -1014,16 +1002,16 @@ void PlayScene::ramBarrels(usize index) {
  * costs is owed until the first of them that does harm is made. A class whose data has none
  * pays at once and cries out, so the move is never free. */
 void PlayScene::beginMove(usize index) {
-    MoveProgress& move = m_moves[index];
+    MoveProgress& move = m_players[index].move;
     move.pending.clear();
     move.all.clear();
     move.owed = 0.0f;
     move.named = false;
-    const PlayerAnimator::Action action = m_figures[index]->animator.action();
+    const PlayerAnimator::Action action = m_players[index].figure->animator.action();
     const bool full = action == PlayerAnimator::Action::TurboFull;
     move.weaponHidden = false;
     move.volleysShot.clear();
-    const ClassStats* known = m_classes.stats(m_actors[index].save().character);
+    const ClassStats* known = m_classes.stats(m_players[index].actor.save().character);
     if (action == PlayerAnimator::Action::StrongThrow) {
         // The strong throw costs nothing; its strikes are only what it shows and sounds.
         if (known != nullptr) {
@@ -1049,7 +1037,7 @@ void PlayScene::beginMove(usize index) {
     move.all = move.pending;
     move.volleysShot.assign(move.all.size(), 0);
     if (move.pending.empty()) {
-        m_turbo[index].spend(move.owed);
+        m_players[index].turbo.spend(move.owed);
         move.owed = 0.0f;
         cry(index, full ? "TURBOC" : "TURBOB");
     }
@@ -1058,8 +1046,8 @@ void PlayScene::beginMove(usize index) {
 /** Makes the strikes of the move under way whose frames have come; a move cut short makes
  * no more of them, and what it still owed is never paid. */
 void PlayScene::runMove(usize index) {
-    MoveProgress& move = m_moves[index];
-    const PlayerAnimator& body = m_figures[index]->animator;
+    MoveProgress& move = m_players[index].move;
+    const PlayerAnimator& body = m_players[index].figure->animator;
     const bool attacking = body.action() == PlayerAnimator::Action::TurboFull ||
                            body.action() == PlayerAnimator::Action::TurboStrong ||
                            body.action() == PlayerAnimator::Action::StrongThrow;
@@ -1070,7 +1058,7 @@ void PlayScene::runMove(usize index) {
         move.weaponHidden = false;
         return;
     }
-    const ClassStats* stats = m_classes.stats(m_actors[index].save().character);
+    const ClassStats* stats = m_classes.stats(m_players[index].actor.save().character);
     if (stats == nullptr) {
         return;
     }
@@ -1120,14 +1108,14 @@ void PlayScene::runMove(usize index) {
 /** The costume colour's effects, which hold the trees a class's moves show; loaded when
  * first wanted. */
 ItemArchive* PlayScene::moveEffectsOf(usize index) {
-    Figure* figure = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    Figure* figure = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (figure == nullptr) {
         return nullptr;
     }
     if (!figure->effects.loaded()) {
         // An unlockable class has none of its own: its moves show the trees of the class it
         // shadows.
-        const CharacterSave& save = m_actors[index].save();
+        const CharacterSave& save = m_players[index].actor.save();
         figure->effects.load(
             classFolder(save.character, std::format("SFX{}", colorCode(save.color))));
     }
@@ -1136,7 +1124,7 @@ ItemArchive* PlayScene::moveEffectsOf(usize index) {
 
 /** What a character's own blows do, which a strike with a negative amount multiplies. */
 f32 PlayScene::ownDamageOf(usize index) const {
-    const CharacterSave& save = m_actors[index].save();
+    const CharacterSave& save = m_players[index].actor.save();
     const ClassStats* stats = m_classes.stats(save.character);
     if (stats == nullptr) {
         return PlayerMissiles::kLeastDamage;
@@ -1150,17 +1138,17 @@ f32 PlayScene::ownDamageOf(usize index) const {
 /** One strike of a move: its effects show and sound where the character stands, the meter
  * pays what the move still owes if the strike does harm, and the harm is set going. */
 void PlayScene::fireStrike(usize index, s32 strikeIndex) {
-    const ClassStats* stats = m_classes.stats(m_actors[index].save().character);
+    const ClassStats* stats = m_classes.stats(m_players[index].actor.save().character);
     if (stats == nullptr || strikeIndex < 0 ||
         static_cast<usize>(strikeIndex) >= stats->moveStrikes.size()) {
         return;
     }
     const MoveStrike& strike = stats->moveStrikes[static_cast<usize>(strikeIndex)];
-    const PlayerActor& actor = m_actors[index];
+    const PlayerActor& actor = m_players[index].actor;
     const Vec3 facing = actor.facing();
-    MoveProgress& move = m_moves[index];
+    MoveProgress& move = m_players[index].move;
     if (strike.amount != 0.0f && move.owed > 0.0f) {
-        m_turbo[index].spend(move.owed);
+        m_players[index].turbo.spend(move.owed);
         move.owed = 0.0f;
     }
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
@@ -1180,9 +1168,9 @@ void PlayScene::fireStrike(usize index, s32 strikeIndex) {
          at = stats->moveEffects[static_cast<usize>(at)].next, ++followed) {
         const MoveEffect& effect = stats->moveEffects[static_cast<usize>(at)];
         if (!effect.sound.empty()) {
-            if (const auto sound = m_figures[index]->voice.find(effect.sound);
+            if (const auto sound = m_players[index].figure->voice.find(effect.sound);
                 sound.has_value() && m_context.sounds != nullptr) {
-                m_context.sounds->play(m_figures[index]->voice.sequence(*sound), 1.0f,
+                m_context.sounds->play(m_players[index].figure->voice.sequence(*sound), 1.0f,
                                        SoundCategory::Effects);
             } else {
                 playNamed(effect.sound);
@@ -1221,8 +1209,9 @@ void PlayScene::updateStrikes(f32 seconds) {
         const auto source = std::ranges::find(m_strikeSources, hit.strike, &StrikeSource::strike);
         // The swarm and the generators in its reach take it, with the row's damage type.
         u32 flags = 0;
-        if (source != m_strikeSources.end() && source->actor < m_actors.size()) {
-            const ClassStats* stats = m_classes.stats(m_actors[source->actor].save().character);
+        if (source != m_strikeSources.end() && source->actor < m_players.size()) {
+            const ClassStats* stats =
+                m_classes.stats(m_players[source->actor].actor.save().character);
             if (stats != nullptr && source->row >= 0 &&
                 static_cast<usize>(source->row) < stats->moveStrikes.size()) {
                 flags = static_cast<u32>(stats->moveStrikes[static_cast<usize>(source->row)].damageType);
@@ -1269,10 +1258,11 @@ void PlayScene::updateStrikes(f32 seconds) {
             }
             strikeBarrel(barrel, hit.damage, hit.owner);
             // What it harms shows the strike's own mark, when its class gives it one.
-            if (source == m_strikeSources.end() || source->actor >= m_actors.size()) {
+            if (source == m_strikeSources.end() || source->actor >= m_players.size()) {
                 continue;
             }
-            const ClassStats* stats = m_classes.stats(m_actors[source->actor].save().character);
+            const ClassStats* stats =
+                m_classes.stats(m_players[source->actor].actor.save().character);
             ItemArchive* archive = moveEffectsOf(source->actor);
             if (stats == nullptr || archive == nullptr || m_device == nullptr) {
                 continue;
@@ -1307,28 +1297,29 @@ void PlayScene::updateStrikes(f32 seconds) {
  * further the character is past the level the place is meant for); what a kill wins also
  * feeds the turbo meter, unless the character is in the middle of a turbo move. */
 void PlayScene::harm(s32 player, f32 damage, HurtKind kind) {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_actors[i].player() == player) {
+    for (usize i = 0; i < m_players.size(); ++i) {
+        if (m_players[i].actor.player() == player) {
             hurt(i, damage, kind);
         }
     }
 }
 
 void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_actors[i].player() != player || isDown(i) || amount <= 0) {
+    for (usize i = 0; i < m_players.size(); ++i) {
+        if (m_players[i].actor.player() != player || isDown(i) || amount <= 0) {
             continue;
         }
-        CharacterSave& save = m_actors[i].save();
+        CharacterSave& save = m_players[i].actor.save();
         const LevelInfo* level = m_world->level();
         const f32 scale = level != nullptr
                               ? level->tuning.experienceScale(experienceLevel(save.experience()))
                               : 1.0f;
         const auto won = static_cast<s32>(static_cast<f32>(amount) * scale);
         save.progress().experience += won;
-        const bool busy = m_figures[i] != nullptr && m_figures[i]->animator.turboing();
+        const bool busy =
+            m_players[i].figure != nullptr && m_players[i].figure->animator.turboing();
         if (kill && !busy) {
-            m_turbo[i].add(TurboMeter::kPerExperience * static_cast<f32>(won));
+            m_players[i].turbo.add(TurboMeter::kPerExperience * static_cast<f32>(won));
         }
     }
 }
@@ -1337,7 +1328,7 @@ void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
  * lasts, off the facing by its angle, which closes to nothing (or opens from it) across the
  * span when it sweeps. */
 void PlayScene::runVolley(usize index, usize slot, const MoveStrike& strike, f32 frame) {
-    MoveProgress& move = m_moves[index];
+    MoveProgress& move = m_players[index].move;
     if (slot >= move.volleysShot.size()) {
         return;
     }
@@ -1355,7 +1346,7 @@ void PlayScene::runVolley(usize index, usize slot, const MoveStrike& strike, f32
             }
             angle *= through;
         }
-        const Vec3 facing = m_actors[index].facing();
+        const Vec3 facing = m_players[index].actor.facing();
         const f32 heading = std::atan2(facing.x, facing.z) + angle;
         launchWeapon(index, Vec3{std::sin(heading), 0.0f, std::cos(heading)}, 1.0f, false);
         ++move.volleysShot[slot];
@@ -1379,7 +1370,7 @@ StrafeWay PlayScene::strafeWayOf(f32 heading, f32 facing) {
 /** A potion spent on a shield: its magic rings the character for a few seconds, going about
  * with them, to the potion's shield sound. */
 void PlayScene::shieldPotion(usize index) {
-    PlayerActor& actor = m_actors[index];
+    PlayerActor& actor = m_players[index].actor;
     const s32 kind = actor.save().progress().inventory.takePotion();
     if (kind == 0) {
         return;
@@ -1408,11 +1399,11 @@ void PlayScene::shieldPotion(usize index) {
 void PlayScene::updateShields(f32 seconds) {
     for (PotionShield& shield : m_shields) {
         shield.secondsLeft -= seconds;
-        if (shield.actor >= m_actors.size() || isDown(shield.actor)) {
+        if (shield.actor >= m_players.size() || isDown(shield.actor)) {
             shield.secondsLeft = 0.0f;
             continue;
         }
-        const Vec3 at = m_actors[shield.actor].position();
+        const Vec3 at = m_players[shield.actor].actor.position();
         m_effects.moveTo(shield.effect, at);
         shield.harmIn -= seconds;
         if (shield.harmIn > 0.0f) {
@@ -1420,7 +1411,7 @@ void PlayScene::updateShields(f32 seconds) {
         }
         shield.harmIn = kShieldHarmEvery;
         for (const usize barrel : m_barrels.within(at, shield.radius)) {
-            strikeBarrel(barrel, shield.damage, m_actors[shield.actor].player());
+            strikeBarrel(barrel, shield.damage, m_players[shield.actor].actor.player());
         }
         for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
             if (m_safeRocks.rock(rock).obstacle.touchedBy(at, shield.radius, 0.0f)) {
@@ -1441,16 +1432,16 @@ void PlayScene::updateShields(f32 seconds) {
 /** A guard that took enough off a hurt shows it: the block effect about the character, for
  * longer the more got through, and not again until that is over. */
 void PlayScene::showBlock(usize index, f32 taken, f32 left) {
-    if (index >= m_blockLeft.size() || m_blockLeft[index] > 0.0f || taken <= kBlockWorth) {
+    if (index >= m_players.size() || m_players[index].blockLeft > 0.0f || taken <= kBlockWorth) {
         return;
     }
     const f32 shown = std::clamp(kBlockPerDamage * left, kBlockLeast, kBlockMost);
-    m_blockLeft[index] = shown;
+    m_players[index].blockLeft = shown;
     if (m_device != nullptr && m_weapons.loaded() &&
         m_weapons.trees.find(kBlockEffect).has_value()) {
         EffectTrees::Setting setting;
         setting.seconds = shown;
-        m_effects.startSet(*m_device, m_weapons, kBlockEffect, m_actors[index].followPoint(),
+        m_effects.startSet(*m_device, m_weapons, kBlockEffect, m_players[index].actor.followPoint(),
                            setting);
     }
 }
@@ -1459,11 +1450,11 @@ void PlayScene::showBlock(usize index, f32 taken, f32 left) {
  * it down while it lasts, and otherwise it climbs while the character is free to act, the
  * narrator saying so when it comes full. */
 void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
-    if (index >= m_turbo.size() || m_figures[index] == nullptr) {
+    if (index >= m_players.size() || m_players[index].figure == nullptr) {
         return;
     }
-    TurboMeter& meter = m_turbo[index];
-    const PlayerAnimator& body = m_figures[index]->animator;
+    TurboMeter& meter = m_players[index].turbo;
+    const PlayerAnimator& body = m_players[index].figure->animator;
     if (body.turboBegan()) {
         beginMove(index);
     }
@@ -1478,12 +1469,12 @@ void PlayScene::updateTurbo(usize index, s32 ticks, f32 seconds) {
 
 /** One of a character's own cries, `which` being what follows its class in the name. */
 void PlayScene::cry(usize index, std::string_view which) {
-    Figure* body = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    Figure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (body == nullptr || m_context.sounds == nullptr) {
         return;
     }
     const std::string_view voice =
-        classCode(m_actors[index].save().character % kStartingClassCount);
+        classCode(m_players[index].actor.save().character % kStartingClassCount);
     if (const auto sound = body->voice.find(std::format("S_{}{}", voice, which));
         sound.has_value()) {
         m_context.sounds->play(body->voice.sequence(*sound), 1.0f, SoundCategory::Effects);
@@ -1493,17 +1484,18 @@ void PlayScene::cry(usize index, std::string_view which) {
 /** Puts a help message up over a character, the narrator saying it, unless the party has
  * seen it. */
 bool PlayScene::postHelp(s32 id, usize index, s32 number) {
-    if (index >= m_actors.size()) {
+    if (index >= m_players.size()) {
         return false;
     }
     std::vector<HelpReader> readers;
-    for (usize i = 0; i < m_actors.size(); ++i) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         if (!isDown(i)) {
-            readers.push_back(HelpReader{m_actors[i].player(), &m_actors[i].save().helpSeen,
-                                         i < m_helpHeard.size() ? &m_helpHeard[i] : nullptr});
+            readers.push_back(HelpReader{m_players[i].actor.player(),
+                                         &m_players[i].actor.save().helpSeen,
+                                         &m_players[i].helpHeard});
         }
     }
-    const HelpMessageSpec* spec = m_help.post(id, m_actors[index].player(), readers, number);
+    const HelpMessageSpec* spec = m_help.post(id, m_players[index].actor.player(), readers, number);
     if (spec == nullptr) {
         return false;
     }
@@ -1511,8 +1503,8 @@ bool PlayScene::postHelp(s32 id, usize index, s32 number) {
         // A turbo attack's name is called from the character's own class's bank; the
         // narrator's lines are in either of its banks.
         std::vector<SoundSet*> banks{&m_narrator, &m_narratorSecond};
-        if (spec->classVoice && index < m_figures.size() && m_figures[index] != nullptr) {
-            banks = {&m_figures[index]->voice};
+        if (spec->classVoice && index < m_players.size() && m_players[index].figure != nullptr) {
+            banks = {&m_players[index].figure->voice};
         }
         for (SoundSet* bank : banks) {
             if (const auto line = bank->find(spec->voice); line.has_value()) {
@@ -1554,8 +1546,8 @@ void PlayScene::strikeBarrel(usize barrel, f32 power, s32 byPlayer) {
         if (struck->contents >= 0 && m_device != nullptr &&
             m_world->placeItemRecord(*m_device, struck->contents, struck->position,
                                      struck->count)) {
-            for (usize i = 0; i < m_actors.size(); ++i) {
-                if (m_actors[i].player() == byPlayer) {
+            for (usize i = 0; i < m_players.size(); ++i) {
+                if (m_players[i].actor.player() == byPlayer) {
                     postHelp(HelpMessages::kBarrelsHold, i);
                 }
             }
@@ -1588,24 +1580,25 @@ void PlayScene::settleBlasts() {
     while (!m_blasts.empty()) {
         const Blast felt = m_blasts.back();
         m_blasts.pop_back();
-        for (usize i = 0; i < m_actors.size(); ++i) {
+        for (usize i = 0; i < m_players.size(); ++i) {
             if (isDown(i)) {
                 continue;
             }
-            const PlayerActor& actor = m_actors[i];
+            const PlayerActor& actor = m_players[i].actor;
             const Vec3 offset = actor.followPoint() - felt.position;
             if (std::hypot(offset.x, offset.z) <= felt.radius + actor.radius() &&
                 std::abs(offset.y) <= actor.height() * 0.5f + felt.radius) {
                 // A blast that gets through knocks its victim off their feet: onto their face
                 // when it came from behind them, onto their back otherwise.
-                const bool guarding = m_figures[i] != nullptr && m_figures[i]->animator.guarding();
+                const bool guarding =
+                    m_players[i].figure != nullptr && m_players[i].figure->animator.guarding();
                 if (guarded(i, felt.damage, true) > kKnockdownFrom && !guarding &&
                     !m_world->isTower()) {
                     const Vec3 push = actor.position() - felt.position;
                     f32 round = std::atan2(push.x, push.z) - actor.yaw();
                     round = std::remainder(round, 2.0f * kBehind * 2.0f);
-                    m_struck[i] = std::abs(round) > kBehind ? PlayerDeed::FallBack
-                                                            : PlayerDeed::FallForward;
+                    m_players[i].reaction =
+                        std::abs(round) > kBehind ? PlayerDeed::FallBack : PlayerDeed::FallForward;
                 }
                 hurt(i, felt.damage, HurtKind::Blow, true);
             }
@@ -1645,9 +1638,10 @@ void PlayScene::settleBlasts() {
  * fanfare about the character and heals a hundred; a tenth level besides changes the costume
  * and has the class say its piece (`S_EXP10WAR`, up to `S_EXP99`). */
 void PlayScene::updateLevels() {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        CharacterSave& save = m_actors[i].save();
-        const auto change = m_levels.observe(m_actors[i].player(), experienceLevel(save.experience()));
+    for (usize i = 0; i < m_players.size(); ++i) {
+        CharacterSave& save = m_players[i].actor.save();
+        const auto change =
+            m_levels.observe(m_players[i].actor.player(), experienceLevel(save.experience()));
         if (!change.has_value() || !change->gained()) {
             continue;
         }
@@ -1658,8 +1652,9 @@ void PlayScene::updateLevels() {
             if (m_weapons.trees.find(tree).has_value()) {
                 EffectTrees::Setting setting;
                 setting.seconds = kLevelUpEffectSeconds;
-                const u32 effect = m_effects.startSet(*m_device, m_weapons, tree, m_actors[i].position(), setting);
-                m_effects.moveTo(effect, m_actors[i].position());
+                const u32 effect = m_effects.startSet(*m_device, m_weapons, tree,
+                                                      m_players[i].actor.position(), setting);
+                m_effects.moveTo(effect, m_players[i].actor.position());
             }
         }
         if (change->milestone() && m_device != nullptr) {
@@ -1670,7 +1665,7 @@ void PlayScene::updateLevels() {
             }
             // The costume of the new tier, weapon and all, where the character stands.
             if (auto figure = loadFigure(*m_device, save); figure != nullptr) {
-                m_figures[i] = std::move(figure);
+                m_players[i].figure = std::move(figure);
             }
         }
     }
@@ -1686,7 +1681,8 @@ void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& directio
     hit.player = byPlayer;
     hit.where = where;
     hit.close = close;
-    for (const PlayerActor& actor : m_actors) {
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         if (actor.player() == byPlayer) {
             hit.level = experienceLevel(actor.save().experience());
         }
@@ -1738,12 +1734,12 @@ void PlayScene::followCritterEffects() {
 
 /** Translate scene-owned poses into the presentation's small, read-only snapshot. */
 std::optional<LegendPresentation::Bearer> PlayScene::legendBearer(s32 player, s32 kind) const {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        const PlayerActor& actor = m_actors[i];
+    for (usize i = 0; i < m_players.size(); ++i) {
+        const PlayerActor& actor = m_players[i].actor;
         if (actor.player() != player) {
             continue;
         }
-        const Figure* figure = i < m_figures.size() ? m_figures[i].get() : nullptr;
+        const Figure* figure = i < m_players.size() ? m_players[i].figure.get() : nullptr;
         LegendPresentation::Bearer bearer;
         bearer.player = player;
         bearer.color = actor.save().color;
@@ -1786,9 +1782,9 @@ void PlayScene::updateLegend(f32 seconds) {
     const LegendPresentation::Update result =
         m_legend->update(seconds, legendBearer(m_legend->player(), m_legend->kind()), target);
     if (result.gesture != PlayerDeed::None) {
-        for (usize i = 0; i < m_actors.size(); ++i) {
-            if (m_actors[i].player() == m_legend->player()) {
-                m_struck[i] = result.gesture;
+        for (PlayerRuntime& runtime : m_players) {
+            if (runtime.actor.player() == m_legend->player()) {
+                runtime.reaction = result.gesture;
             }
         }
     }
@@ -1806,7 +1802,8 @@ void PlayScene::bossFallen(const Vec3& where) {
     }
     const s32 order = LevelRef::orderOf(m_world->ref().realmId);
     u16 found = 0;
-    for (PlayerActor& actor : m_actors) {
+    for (PlayerRuntime& runtime : m_players) {
+        PlayerActor& actor = runtime.actor;
         actor.save().progress().relics.addShard(order);
         found |= actor.save().progress().relics.runes;
     }
@@ -1853,10 +1850,10 @@ void PlayScene::loadWizard(RenderDevice& device) {
     Vec3 centre = m_bosses.position() != nullptr ? *m_bosses.position() : Vec3{0.0f, 0.0f, 0.0f};
     f32 count = 1.0f;
     Vec3 party{0.0f, 0.0f, 0.0f};
-    for (usize i = 0; i < m_actors.size(); ++i) {
+    for (usize i = 0; i < m_players.size(); ++i) {
         if (!isDown(i)) {
-            centre += m_actors[i].position();
-            party += m_actors[i].position();
+            centre += m_players[i].actor.position();
+            party += m_players[i].actor.position();
             count += 1.0f;
         }
     }
@@ -1891,9 +1888,10 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
     if (m_victory.sparkling() && !m_sparkled) {
         m_sparkled = true;
         if (m_device != nullptr && m_weapons.loaded()) {
-            for (usize i = 0; i < m_actors.size(); ++i) {
+            for (usize i = 0; i < m_players.size(); ++i) {
                 if (!isDown(i)) {
-                    m_effects.start(*m_device, m_weapons, kSpawnEffect, m_actors[i].position());
+                    m_effects.start(*m_device, m_weapons, kSpawnEffect,
+                                    m_players[i].actor.position());
                 }
             }
         }
@@ -1949,7 +1947,7 @@ void PlayScene::spewBossCoins(const CritterSpew& spew) {
     if (m_device == nullptr) {
         return;
     }
-    const auto players = static_cast<s32>(m_actors.size());
+    const auto players = static_cast<s32>(m_players.size());
     for (const SpewedCoin& coin : BossCoins::spray(m_world->ref().realmId, players, spew.velocity,
                                                   spew.halfAngle, m_coinRandom)) {
         m_world->throwItem(*m_device, coin.name, spew.origin, coin.velocity,
@@ -1966,7 +1964,8 @@ void PlayScene::awardBossLosses() {
         if (loss.killed) {
             bossFallen(loss.position);
         }
-        for (const PlayerActor& actor : m_actors) {
+        for (const PlayerRuntime& runtime : m_players) {
+            const PlayerActor& actor = runtime.actor;
             const s32 player = actor.player();
             if ((loss.player >= 0 && loss.player != player) || player < 0 ||
                 static_cast<usize>(player) >= m_critterExperienceOwed.size()) {
@@ -1991,7 +1990,8 @@ void PlayScene::awardCritterLosses() {
         if (loss.killed && loss.kind == kGargoyleCritter && !loss.form.empty() && m_device != nullptr) {
             m_world->placeItem(*m_device, "GARG" + loss.form, loss.position);
         }
-        for (const PlayerActor& actor : m_actors) {
+        for (const PlayerRuntime& runtime : m_players) {
+            const PlayerActor& actor = runtime.actor;
             const s32 player = actor.player();
             if (loss.player >= 0 && loss.player != player) {
                 continue;
@@ -2040,7 +2040,7 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
     m_bosses.open(device, context.unpackedRoot, &world.collision(), scales,
                   levelName.empty() ? 'G' : levelName.front());
     m_critterExperienceOwed.fill(0.0f);
-    const auto players = static_cast<s32>(m_actors.size());
+    const auto players = static_cast<s32>(m_players.size());
     const std::span<const LevelEnemy> roster =
         level != nullptr ? std::span<const LevelEnemy>(level->enemies) : std::span<const LevelEnemy>{};
     m_generators.bind(device, world.layout(), m_enemies, &world.collision(), breeding, players,
@@ -2056,7 +2056,8 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
                 m_bossMeter.update(0, boss.health, boss.maxHealth, boss.alive, false);
             }
             // The first of the party carrying its legend item brings it to the fight.
-            for (const PlayerActor& actor : m_actors) {
+            for (const PlayerRuntime& runtime : m_players) {
+                const PlayerActor& actor = runtime.actor;
                 if (actor.save().progress().relics.hasLegend(m_bosses.legendRealm()) &&
                     m_bosses.bringLegend(actor.player())) {
                     log::info("Level {}: player {} brings the {} its legend item", levelName,
@@ -2119,9 +2120,9 @@ void PlayScene::bindEnemies(RenderDevice& device, LevelWorld& world, const GameC
  * those in the tower are not seen. */
 std::vector<EnemyView> PlayScene::enemyViews() const {
     std::vector<EnemyView> views;
-    views.reserve(m_actors.size());
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        const PlayerActor& actor = m_actors[i];
+    views.reserve(m_players.size());
+    for (usize i = 0; i < m_players.size(); ++i) {
+        const PlayerActor& actor = m_players[i].actor;
         EnemyView view;
         view.player = actor.player();
         view.position = actor.position();
@@ -2156,12 +2157,13 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     // What the throwers let fly lands on the party, or bursts where it fell; what blows
     // itself up blasts everything about it.
     for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
-        for (usize i = 0; i < m_actors.size(); ++i) {
-            if (hit.player >= 0 && m_actors[i].player() == hit.player && !isDown(i)) {
-                const bool guarding = m_figures[i] != nullptr && m_figures[i]->animator.guarding();
+        for (usize i = 0; i < m_players.size(); ++i) {
+            if (hit.player >= 0 && m_players[i].actor.player() == hit.player && !isDown(i)) {
+                const bool guarding =
+                    m_players[i].figure != nullptr && m_players[i].figure->animator.guarding();
                 if ((hit.flags & EnemyMissileKind::kKnockBack) != 0 && !guarding &&
-                    m_struck[i] == PlayerDeed::None) {
-                    m_struck[i] = PlayerDeed::Flinch;
+                    m_players[i].reaction == PlayerDeed::None) {
+                    m_players[i].reaction = PlayerDeed::Flinch;
                 }
                 hurt(i, hit.damage, HurtKind::Pierce, true);
             }
@@ -2184,7 +2186,8 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     // The legend item held up is the bearer's no more; the rite is shown as it goes.
     for (const LegendEvent& event : m_bosses.takeLegendEvents()) {
         if (event.cue == LegendCue::Brandished) {
-            for (PlayerActor& actor : m_actors) {
+            for (PlayerRuntime& runtime : m_players) {
+                PlayerActor& actor = runtime.actor;
                 if (actor.player() == event.player) {
                     actor.save().progress().relics.spendLegend(event.realm);
                 }
@@ -2194,8 +2197,8 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     }
     updateLegend(seconds);
     for (const CritterBlow& blow : m_bosses.takeBlows()) {
-        for (usize i = 0; i < m_actors.size(); ++i) {
-            if (m_actors[i].player() == blow.player && !isDown(i)) {
+        for (usize i = 0; i < m_players.size(); ++i) {
+            if (m_players[i].actor.player() == blow.player && !isDown(i)) {
                 hurt(i, blow.damage, HurtKind::Blow, true);
             }
         }
@@ -2211,8 +2214,8 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     }
     followCritterEffects();
     for (const CritterBlow& blow : m_critters.takeBlows()) {
-        for (usize i = 0; i < m_actors.size(); ++i) {
-            if (m_actors[i].player() == blow.player && !isDown(i)) {
+        for (usize i = 0; i < m_players.size(); ++i) {
+            if (m_players[i].actor.player() == blow.player && !isDown(i)) {
                 hurt(i, blow.damage, HurtKind::Blow, true);
             }
         }
@@ -2220,13 +2223,14 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     awardCritterLosses();
     updateLevels();
     for (const EnemyBlow& blow : m_enemies.takeBlows()) {
-        for (usize i = 0; i < m_actors.size(); ++i) {
-            if (m_actors[i].player() != blow.player || isDown(i)) {
+        for (usize i = 0; i < m_players.size(); ++i) {
+            if (m_players[i].actor.player() != blow.player || isDown(i)) {
                 continue;
             }
-            const bool guarding = m_figures[i] != nullptr && m_figures[i]->animator.guarding();
-            if (blow.knocksDown && !guarding && m_struck[i] == PlayerDeed::None) {
-                m_struck[i] = PlayerDeed::Flinch;
+            const bool guarding =
+                m_players[i].figure != nullptr && m_players[i].figure->animator.guarding();
+            if (blow.knocksDown && !guarding && m_players[i].reaction == PlayerDeed::None) {
+                m_players[i].reaction = PlayerDeed::Flinch;
             }
             hurt(i, blow.damage, HurtKind::Blow, true);
         }
@@ -2243,7 +2247,8 @@ void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction,
     hit.flags = flags;
     hit.direction = direction;
     hit.player = byPlayer;
-    for (const PlayerActor& actor : m_actors) {
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         if (actor.player() == byPlayer) {
             hit.level = experienceLevel(actor.save().experience());
         }
@@ -2273,19 +2278,19 @@ void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
 
 /** Gas hangs for a while and hurts whoever stands in it, every half second. */
 void PlayScene::updateClouds(f32 seconds) {
-    for (f32& gap : m_cloudGaps) {
-        gap = std::max(gap - seconds, 0.0f);
+    for (PlayerRuntime& runtime : m_players) {
+        runtime.cloudGap = std::max(runtime.cloudGap - seconds, 0.0f);
     }
     for (GasCloud& cloud : m_clouds) {
         cloud.secondsLeft -= seconds;
-        for (usize i = 0; i < m_actors.size() && i < m_cloudGaps.size(); ++i) {
-            if (isDown(i) || m_cloudGaps[i] > 0.0f) {
+        for (usize i = 0; i < m_players.size(); ++i) {
+            if (isDown(i) || m_players[i].cloudGap > 0.0f) {
                 continue;
             }
-            const Vec3 offset = m_actors[i].followPoint() - cloud.position;
-            if (std::hypot(offset.x, offset.z) <= kGasRadius + m_actors[i].radius() &&
-                std::abs(offset.y) <= m_actors[i].height() * 0.5f + kGasRadius) {
-                m_cloudGaps[i] = kGasGapSeconds;
+            const Vec3 offset = m_players[i].actor.followPoint() - cloud.position;
+            if (std::hypot(offset.x, offset.z) <= kGasRadius + m_players[i].actor.radius() &&
+                std::abs(offset.y) <= m_players[i].actor.height() * 0.5f + kGasRadius) {
+                m_players[i].cloudGap = kGasGapSeconds;
                 hurt(i, cloud.damage, HurtKind::Gas, true);
             }
         }
@@ -2311,12 +2316,12 @@ void PlayScene::playGateSound(s32 /*subtype*/) {
  * the character dies, to the dying sound and its own last cry. Nobody is hurt in the tower,
  * nor once they have fallen. */
 void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
-    if (index >= m_actors.size() || isDown(index) || m_world->isTower() || damage <= 0.0f) {
+    if (index >= m_players.size() || isDown(index) || m_world->isTower() || damage <= 0.0f) {
         return;
     }
     const f32 unguarded = damage;
     damage = guarded(index, damage, directed);
-    if (m_figures[index] != nullptr && m_figures[index]->animator.defending()) {
+    if (m_players[index].figure != nullptr && m_players[index].figure->animator.defending()) {
         showBlock(index, unguarded - damage, damage);
     }
     if (damage <= 0.0f) {
@@ -2326,17 +2331,17 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
     if (damage > 1.0f && level != nullptr) {
         damage *= level->tuning.damage;
     }
-    CharacterSave& save = m_actors[index].save();
+    CharacterSave& save = m_players[index].actor.save();
     const s32 left = save.health() - static_cast<s32>(std::lround(damage));
     if (left < 1) {
         // Health of nought would read as a class never played: the fallen keep a point that
         // the status box does not show.
         save.progress().health = 1;
-        m_down[index] = kDying;
-        m_turbo[index].reset();
+        m_players[index].life = PlayerLife::Dying;
+        m_players[index].turbo.reset();
         playNamed(kDeathSound);
         cry(index, "DIE2");
-        log::info("Player {} has fallen", m_actors[index].player() + 1);
+        log::info("Player {} has fallen", m_players[index].actor.player() + 1);
         return;
     }
     const s32 before = save.health();
@@ -2353,23 +2358,23 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed) {
     switch (kind) {
     case HurtKind::Burn:
         cryPain(index);
-        m_painOwed[index] = 0.0f;
+        m_players[index].painOwed = 0.0f;
         break;
     case HurtKind::Pierce: cry(index, "DIE1"); break;
     case HurtKind::Gas: cry(index, "POISON"); break;
     case HurtKind::Blow:
         // A heavy blow gets a cry at once; lesser ones add up to one, and land with the
         // sound of the hit itself now and then.
-        m_painOwed[index] += damage;
+        m_players[index].painOwed += damage;
         if (before - left > kHeavyBlow) {
-            m_painOwed[index] = 0.0f;
+            m_players[index].painOwed = 0.0f;
             cryPain(index);
-        } else if (m_painOwed[index] >= kPainEvery) {
-            m_painOwed[index] -= kPainEvery;
+        } else if (m_players[index].painOwed >= kPainEvery) {
+            m_players[index].painOwed -= kPainEvery;
             cryPain(index);
-        } else if (m_hitSoundGaps[index] <= 0) {
+        } else if (m_players[index].hitSoundGap <= 0) {
             playNamed(kHitSound);
-            m_hitSoundGaps[index] = kHitSoundGapTicks;
+            m_players[index].hitSoundGap = kHitSoundGapTicks;
         }
         break;
     }
@@ -2384,11 +2389,11 @@ void PlayScene::cryPain(usize index) {
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says
  * `line` after: what the original's announcements by name do. */
 void PlayScene::sayWithName(usize index, std::string_view line) {
-    Figure* body = index < m_figures.size() ? m_figures[index].get() : nullptr;
+    Figure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (body == nullptr || m_context.sounds == nullptr) {
         return;
     }
-    const CharacterSave& save = m_actors[index].save();
+    const CharacterSave& save = m_players[index].actor.save();
     const std::string name =
         std::format("S_{}{}2", colorCode(save.color), classCode(save.character % kStartingClassCount));
     SoundHandle spoken = kNoSound;
@@ -2432,17 +2437,16 @@ bool PlayScene::leaveBy(usize portal) {
 
 std::vector<PartyMember> PlayScene::party() const {
     std::vector<PartyMember> members;
-    members.reserve(m_actors.size());
+    members.reserve(m_players.size());
     // The fallen go on as they came into the level, less what it gave them (but what they
     // were taught stays taught).
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        const bool down = isDown(i) && i < m_entrySaves.size();
-        PartyMember member{m_actors[i].player(), down ? m_entrySaves[i] : m_actors[i].save(),
-                           i < m_slots.size() ? m_slots[i] : std::nullopt, down};
-        member.save.helpSeen = m_actors[i].save().helpSeen;
-        if (i < m_helpHeard.size()) {
-            member.helpHeard = m_helpHeard[i];
-        }
+    for (usize i = 0; i < m_players.size(); ++i) {
+        const PlayerRuntime& runtime = m_players[i];
+        const bool down = isDown(i);
+        PartyMember member{runtime.actor.player(), down ? runtime.entrySave : runtime.actor.save(),
+                           runtime.slot, down};
+        member.save.helpSeen = runtime.actor.save().helpSeen;
+        member.helpHeard = runtime.helpHeard;
         members.push_back(std::move(member));
     }
     return members;
@@ -2542,7 +2546,8 @@ void PlayScene::drawSelectors() {
     if (!m_text.ready() || m_context.strings == nullptr) {
         return;
     }
-    for (const PlayerActor& actor : m_actors) {
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         const PowerupSelector& selector = this->selector(actor.player());
         const s32 chosen = selector.selection();
         if (!selector.showing() || chosen < 0) {
@@ -2574,10 +2579,10 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     if (pickup.realm > 0) {
         return 0;
     }
-    if (pickup.collector >= m_actors.size()) {
+    if (pickup.collector >= m_players.size()) {
         return std::nullopt;
     }
-    PlayerActor& actor = m_actors[pickup.collector];
+    PlayerActor& actor = m_players[pickup.collector].actor;
     const ClassStats* stats = m_classes.stats(actor.save().character);
     const ItemTaking taking =
         takeItem(actor.save(), ItemOffer{pickup.subtype, pickup.amount, pickup.flags,
@@ -2594,7 +2599,7 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
         return std::nullopt;
     }
     if (pickup.subtype == kSpecialPowerup && (static_cast<u32>(pickup.flags) & kTurboFlag) != 0) {
-        m_turbo[pickup.collector].add(TurboMeter::kFull);
+        m_players[pickup.collector].turbo.add(TurboMeter::kFull);
     }
     switch (static_cast<ItemKind>(pickup.subtype)) {
     case ItemKind::Runestone: shareRune(pickup.amount); break;
@@ -2614,7 +2619,7 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     }
     if (!taking.sound.empty()) {
         playNamed(taking.sound);
-    } else if (Figure* figure = m_figures[pickup.collector].get();
+    } else if (Figure* figure = m_players[pickup.collector].figure.get();
                figure != nullptr && m_context.sounds != nullptr) {
         const std::string_view voice = classCode(actor.save().character % kStartingClassCount);
         const auto sound = figure->voice.find(
@@ -2630,7 +2635,8 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
  * what the party holds. */
 void PlayScene::shareRune(s32 rune) {
     u16 held = 0;
-    for (PlayerActor& actor : m_actors) {
+    for (PlayerRuntime& runtime : m_players) {
+        PlayerActor& actor = runtime.actor;
         Relics& relics = actor.save().progress().relics;
         relics.addRune(rune);
         held |= relics.runes;
@@ -2804,7 +2810,8 @@ const PlayerActor* PlayScene::visitorOfSumner() const {
         if (spot.id != kSumnerSpot) {
             continue;
         }
-        for (const PlayerActor& actor : m_actors) {
+        for (const PlayerRuntime& runtime : m_players) {
+            const PlayerActor& actor = runtime.actor;
             const Vec3 away = actor.position() - spot.spot;
             const f32 reach = spot.radius + actor.radius();
             if (away.x * away.x + away.z * away.z <= reach * reach &&
@@ -2903,8 +2910,9 @@ void PlayScene::answerHint(s32 topic) {
         return;
     }
     std::vector<ClassProgress> party;
-    party.reserve(m_actors.size());
-    for (const PlayerActor& actor : m_actors) {
+    party.reserve(m_players.size());
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         party.push_back(actor.save().progress());
     }
     HintPage page = m_hints.next(entry->topic, HintKnowledge::ofParty(party),
@@ -2959,7 +2967,8 @@ void PlayScene::startCrystalCut() {
 /** A bit per party member whose player pressed their button this frame. */
 u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
     u32 accepted = 0;
-    for (const PlayerActor& actor : m_actors) {
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         const auto player = static_cast<usize>(actor.player());
         if (player < inputs.size() && inputs[player].menu.select) {
             accepted |= 1U << player;
@@ -3008,7 +3017,8 @@ BossCameraSubject PlayScene::bossSubject() const {
 
 /** Whether any party member's player pressed a button this frame. */
 bool PlayScene::anyButton(const Inputs& inputs) const {
-    return std::ranges::any_of(m_actors, [&inputs](const PlayerActor& actor) {
+    return std::ranges::any_of(m_players, [&inputs](const PlayerRuntime& runtime) {
+        const PlayerActor& actor = runtime.actor;
         const auto player = static_cast<usize>(actor.player());
         return player < inputs.size() && (inputs[player].menu.select ||
                                           inputs[player].menu.back || inputs[player].menu.start);
@@ -3078,7 +3088,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     // ride, when it sits.
     if (spawning()) {
         updateSpawn(ticks, seconds);
-        for (const std::unique_ptr<Figure>& figure : m_figures) {
+        for (const PlayerRuntime& runtime : m_players) {
+            const std::unique_ptr<Figure>& figure = runtime.figure;
             if (figure != nullptr) {
                 figure->animate(0.0f, ticks, seconds);
             }
@@ -3111,22 +3122,26 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_pickups.step(ticks, seconds);
     m_sumner.update(seconds);
     const f32 cameraYaw = m_camera.yaw();
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        PlayerActor& actor = m_actors[i];
+    // Snapshot after movement, before fixture collision, preserving the camera's frame phase.
+    std::vector<CameraSubject> subjects;
+    subjects.reserve(m_players.size());
+    for (usize i = 0; i < m_players.size(); ++i) {
+        PlayerActor& actor = m_players[i].actor;
         const auto player = static_cast<usize>(actor.player());
         const bool down = isDown(i);
         // Reeling from a hit, a character neither moves nor does anything.
-        const bool reeling = m_struck[i] != PlayerDeed::None ||
-                             (m_figures[i] != nullptr && m_figures[i]->animator.reacting());
+        const bool reeling =
+            m_players[i].reaction != PlayerDeed::None ||
+            (m_players[i].figure != nullptr && m_players[i].figure->animator.reacting());
         const MoveInput& move = !held && !down && !reeling && player < inputs.size()
                                     ? inputs[player].move
                                     : MoveInput{};
         // What the buttons ask: a potion first, when one is carried, then the attack.
         PlayerDeed deed = down ? PlayerDeed::Die : PlayerDeed::None;
-        if (!down && m_struck[i] != PlayerDeed::None) {
-            deed = m_struck[i];
+        if (!down && m_players[i].reaction != PlayerDeed::None) {
+            deed = m_players[i].reaction;
         }
-        m_struck[i] = PlayerDeed::None;
+        m_players[i].reaction = PlayerDeed::None;
         if (!held && !down && !reeling && player < inputs.size()) {
             const PlayInput& in = inputs[player];
             const bool carrying = !actor.save().progress().inventory.potions.empty();
@@ -3145,7 +3160,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
             } else if (in.strongAttack &&
-                       m_figures[i]->animator.canBegin(PlayerDeed::StrongAttack)) {
+                       m_players[i].figure->animator.canBegin(PlayerDeed::StrongAttack)) {
                 deed = PlayerDeed::StrongAttack; // nothing is ever in reach yet: the strong throw
             } else if (in.turbo) {
                 deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
@@ -3156,13 +3171,15 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
         actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
         // A body in a throw keeps its feet where they are, turning to the stick.
-        const f32 pace = m_figures[i] != nullptr ? m_figures[i]->animator.moveScale() : 1.0f;
-        const bool charging = m_figures[i] != nullptr && m_figures[i]->animator.shoving();
+        const f32 pace =
+            m_players[i].figure != nullptr ? m_players[i].figure->animator.moveScale() : 1.0f;
+        const bool charging =
+            m_players[i].figure != nullptr && m_players[i].figure->animator.shoving();
         // Strafing, the character steps the way the stick is pushed without turning to it.
         const bool strafes = !held && !down && !charging && player < inputs.size() &&
                              inputs[player].strafe && move.any();
-        if (m_figures[i] != nullptr) {
-            m_figures[i]->animator.setStrafe(
+        if (m_players[i].figure != nullptr) {
+            m_players[i].figure->animator.setStrafe(
                 strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
                         : StrafeWay::None);
         }
@@ -3171,38 +3188,38 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         if (charging) {
             ramBarrels(i);
         } else {
-            m_rammed[i].clear();
+            m_players[i].rammed.clear();
         }
-        if (m_figures[i] != nullptr) {
-            m_figures[i]->animate(move.magnitude, ticks, seconds, deed);
+        if (m_players[i].figure != nullptr) {
+            m_players[i].figure->animate(move.magnitude, ticks, seconds, deed);
             updateTurbo(i, ticks, seconds);
-            if (m_down[i] == kDying && m_figures[i]->animator.dead()) {
-                m_down[i] = kInTower; // the body goes; its box says where
+            if (m_players[i].life == PlayerLife::Dying && m_players[i].figure->animator.dead()) {
+                m_players[i].life = PlayerLife::InTower; // the body goes; its box says where
             }
-            if (m_figures[i]->animator.released()) {
-                throwWeapon(actor, *m_figures[i]);
+            if (m_players[i].figure->animator.released()) {
+                throwWeapon(actor, *m_players[i].figure);
             }
-            if (m_figures[i]->animator.strongReleased()) {
+            if (m_players[i].figure->animator.strongReleased()) {
                 launchWeapon(i, actor.facing(), kStrongThrowScale, true);
             }
-            m_blockLeft[i] = std::max(m_blockLeft[i] - seconds, 0.0f);
-            if (m_figures[i]->animator.potionShielded()) {
+            m_players[i].blockLeft = std::max(m_players[i].blockLeft - seconds, 0.0f);
+            if (m_players[i].figure->animator.potionShielded()) {
                 shieldPotion(i);
             }
-            if (m_figures[i]->animator.potionUsed()) {
+            if (m_players[i].figure->animator.potionUsed()) {
                 usePotion(actor);
-            } else if (m_figures[i]->animator.potionThrown()) {
+            } else if (m_players[i].figure->animator.potionThrown()) {
                 throwPotion(actor);
             }
-            if (const PlayerAnimator::Foot foot = m_figures[i]->animator.footfall();
+            if (const PlayerAnimator::Foot foot = m_players[i].figure->animator.footfall();
                 foot != PlayerAnimator::Foot::None) {
                 playStep(foot);
             }
         }
-        if (m_figures[i] == nullptr && m_down[i] == kDying) {
-            m_down[i] = kInTower; // nothing to play: gone at once
+        if (m_players[i].figure == nullptr && m_players[i].life == PlayerLife::Dying) {
+            m_players[i].life = PlayerLife::InTower; // nothing to play: gone at once
         }
-        m_subjects[i] = CameraSubject{actor.position(), actor.followPoint()};
+        subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
     }
     m_playSeconds += seconds;
     m_help.update(ticks);
@@ -3255,7 +3272,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             hit.damage = impact.damage;
             hit.player = impact.owner;
             hit.where = impact.position;
-            for (const PlayerActor& actor : m_actors) {
+            for (const PlayerRuntime& runtime : m_players) {
+                const PlayerActor& actor = runtime.actor;
                 if (actor.player() == impact.owner) {
                     hit.direction = impact.position - actor.position();
                     hit.direction.y = 0.0f;
@@ -3265,7 +3283,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             m_bosses.hurt(hit);
         } else if (impact.target >= kCritterTargetBase) {
             Vec3 direction{0.0f, 0.0f, 1.0f};
-            for (const PlayerActor& actor : m_actors) {
+            for (const PlayerRuntime& runtime : m_players) {
+                const PlayerActor& actor = runtime.actor;
                 if (actor.player() == impact.owner) {
                     direction = impact.position - actor.position();
                     direction.y = 0.0f;
@@ -3278,7 +3297,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         } else if (impact.target >= kEnemyTargetBase) {
             // The hit travels the way the weapon flew: out from whoever threw it.
             Vec3 direction{0.0f, 0.0f, 1.0f};
-            for (const PlayerActor& actor : m_actors) {
+            for (const PlayerRuntime& runtime : m_players) {
+                const PlayerActor& actor = runtime.actor;
                 if (actor.player() == impact.owner) {
                     direction = impact.position - actor.position();
                     direction.y = 0.0f;
@@ -3309,15 +3329,18 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     if (!held) {
         // A portal waits for everyone still on their feet.
         std::vector<PortalVisitor> standing;
-        standing.reserve(m_actors.size());
-        for (usize i = 0; i < m_actors.size(); ++i) {
+        standing.reserve(m_players.size());
+        for (usize i = 0; i < m_players.size(); ++i) {
             if (!isDown(i)) {
-                standing.push_back(PortalVisitor{m_actors[i].position(), m_actors[i].radius()});
+                standing.push_back(
+                    PortalVisitor{m_players[i].actor.position(), m_players[i].actor.radius()});
             }
         }
         // With nobody left, and the last of them done falling, the party is taken back.
-        const bool falling = std::ranges::find(m_down, kDying) != m_down.end();
-        if (standing.empty() && !m_actors.empty() && !falling) {
+        const bool falling = std::ranges::any_of(m_players, [](const PlayerRuntime& runtime) {
+            return runtime.life == PlayerLife::Dying;
+        });
+        if (standing.empty() && !m_players.empty() && !falling) {
             m_fallenSeconds += seconds;
             if (m_fallenSeconds >= kFallenSeconds) {
                 return PlayOutcome::Fallen;
@@ -3331,16 +3354,16 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     }
     // The camera keeps to those still standing, while anyone is.
     std::vector<CameraSubject> followed;
-    for (usize i = 0; i < m_subjects.size(); ++i) {
+    for (usize i = 0; i < subjects.size(); ++i) {
         if (!isDown(i)) {
-            followed.push_back(m_subjects[i]);
+            followed.push_back(subjects[i]);
         }
     }
     if (bossCameraOn()) {
-        m_bossCamera.update(bossSubject(), followed.empty() ? m_subjects : followed,
+        m_bossCamera.update(bossSubject(), followed.empty() ? subjects : followed,
                             *m_world->level()->bossCamera, cameraView(), seconds);
     } else {
-        m_camera.update(followed.empty() ? m_subjects : followed, m_world->cameraMarkers(),
+        m_camera.update(followed.empty() ? subjects : followed, m_world->cameraMarkers(),
                         m_world->cameraRange(), cameraView(), seconds);
     }
     updateAmbience();
@@ -3353,8 +3376,9 @@ void PlayScene::updateAmbience() {
         return;
     }
     std::vector<Vec3> listeners;
-    listeners.reserve(m_actors.size());
-    for (const PlayerActor& actor : m_actors) {
+    listeners.reserve(m_players.size());
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         listeners.push_back(actor.position());
     }
     const CameraFrame frame = CameraFrame::of(viewCamera());
@@ -3366,8 +3390,8 @@ void PlayScene::updateAmbience() {
 /** The party as the level's triggers see it. */
 std::vector<TriggerVisitor> PlayScene::visitors() const {
     std::vector<TriggerVisitor> out;
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        const PlayerActor& actor = m_actors[i];
+    for (usize i = 0; i < m_players.size(); ++i) {
+        const PlayerActor& actor = m_players[i].actor;
         TriggerVisitor visitor;
         visitor.position = presenceOf(i);
         visitor.radius = actor.radius();
@@ -3389,13 +3413,13 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                                  frameHeight, frameProjection);
     m_world->draw(device, clip, viewCamera());
     m_sumner.draw(device, clip, m_world->lighting());
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_figures[i] != nullptr && (i >= m_down.size() || m_down[i] != kInTower)) {
-            const Figure& figure = *m_figures[i];
+    for (const PlayerRuntime& runtime : m_players) {
+        if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower) {
+            const Figure& figure = *runtime.figure;
             const PowerupEffects worn =
-                PowerupEffects::of(m_actors[i].save().progress().inventory);
-            const f32 size = bodyScale(m_actors[i].save(), worn);
-            const Mat4 body = glm::scale(m_actors[i].transform(), Vec3{size, size, size});
+                PowerupEffects::of(runtime.actor.save().progress().inventory);
+            const f32 size = bodyScale(runtime.actor.save(), worn);
+            const Mat4 body = glm::scale(runtime.actor.transform(), Vec3{size, size, size});
             figure.model.draw(device, clip, body, m_world->lighting(), figure.transforms, nullptr,
                               worn.bodyAlpha(m_playSeconds));
             // The hand is empty while a throw is recovered from, unless what flies is not
@@ -3403,9 +3427,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             const bool thrown = figure.animator.recovering() ||
                                 figure.animator.action() ==
                                     PlayerAnimator::Action::StrongThrowRecover;
-            const bool hidden = i < m_moves.size() && m_moves[i].weaponHidden;
+            const bool hidden = runtime.move.weaponHidden;
             const bool inHand =
-                !hidden && (!thrown || MissileSpec::of(m_actors[i].save().character).staysInHand);
+                !hidden && (!thrown || MissileSpec::of(runtime.actor.save().character).staysInHand);
             if (figure.handNode >= 0 && figure.weapon.bound() && inHand) {
                 const auto hand = static_cast<usize>(figure.handNode);
                 const Mat4 wrist = hand < figure.transforms.size()
@@ -3474,7 +3498,8 @@ void PlayScene::drawHelp(const Mat4& clip, f32 width, f32 height) {
         return;
     }
     Vec2 head{width * 0.5f, height * 0.5f};
-    for (const PlayerActor& actor : m_actors) {
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         if (actor.player() != m_help.player()) {
             continue;
         }
@@ -3508,7 +3533,8 @@ CameraView PlayScene::cameraView() const {
 }
 
 const PlayerActor* PlayScene::actor(s32 player) const {
-    for (const PlayerActor& actor : m_actors) {
+    for (const PlayerRuntime& runtime : m_players) {
+        const PlayerActor& actor = runtime.actor;
         if (actor.player() == player) {
             return &actor;
         }
@@ -3517,10 +3543,10 @@ const PlayerActor* PlayScene::actor(s32 player) const {
 }
 
 const PlayerAnimator* PlayScene::animator(s32 player) const {
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_actors[i].player() == player) {
-            return m_figures[i] != nullptr && m_figures[i]->animator.bound()
-                       ? &m_figures[i]->animator
+    for (const PlayerRuntime& runtime : m_players) {
+        if (runtime.actor.player() == player) {
+            return runtime.figure != nullptr && runtime.figure->animator.bound()
+                       ? &runtime.figure->animator
                        : nullptr;
         }
     }
@@ -3541,9 +3567,9 @@ StatusBoxView PlayScene::statusOf(s32 player) const {
     view.name = save.name;
     view.level = experienceLevel(save.experience());
     view.gold = save.gold;
-    for (usize i = 0; i < m_actors.size(); ++i) {
-        if (m_actors[i].player() == player && isDown(i)) {
-            view.inTower = m_down[i] == kInTower;
+    for (usize i = 0; i < m_players.size(); ++i) {
+        if (m_players[i].actor.player() == player && isDown(i)) {
+            view.inTower = m_players[i].life == PlayerLife::InTower;
             view.health = 0;
             return view;
         }
@@ -3570,11 +3596,12 @@ void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
     m_titleSlide = kTitleSlideStart;
     if (const auto marker = m_world->entranceCamera(); ride && marker.has_value()) {
         Vec3 centre{0.0f, 0.0f, 0.0f};
-        for (const PlayerActor& actor : m_actors) {
+        for (const PlayerRuntime& runtime : m_players) {
+            const PlayerActor& actor = runtime.actor;
             centre += actor.position();
         }
-        if (!m_actors.empty()) {
-            centre /= static_cast<f32>(m_actors.size());
+        if (!m_players.empty()) {
+            centre /= static_cast<f32>(m_players.size());
         }
         m_startCamera.start(*marker, centre);
     } else if (ride) {
@@ -3589,7 +3616,8 @@ void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
                   kWeaponsArchive);
     } else {
         const TreeInfo& effect = m_weapons.trees.tree(*tree);
-        for (const PlayerActor& actor : m_actors) {
+        for (const PlayerRuntime& runtime : m_players) {
+            const PlayerActor& actor = runtime.actor;
             Spawn spawn;
             spawn.position = actor.position();
             spawn.tree = &effect;
@@ -3715,7 +3743,8 @@ void PlayScene::announceUnlock(s32 realm) {
     }
     const u32 bit = 1U << static_cast<u32>(realm);
     bool fresh = false;
-    for (PlayerActor& actor : m_actors) {
+    for (PlayerRuntime& runtime : m_players) {
+        PlayerActor& actor = runtime.actor;
         ClassProgress& progress = actor.save().progress();
         fresh = fresh || (progress.unlocked & bit) == 0;
         progress.unlocked |= bit;

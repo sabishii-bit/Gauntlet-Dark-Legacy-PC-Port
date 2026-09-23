@@ -83,6 +83,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   global Escape quit stands down while a lane is typing. It ends when every
   joined player is locked in and nothing is animating, or when the last
   player backs out.
+* `screens/PlayScene::PlayerRuntime` owns each participant's actor, optional
+  figure, entry save/slot, life state, turbo move, reactions and cooldowns.
+  Keep per-player state in that record, not in parallel index-aligned vectors.
+  Party indices, player input ids and save slots are distinct identifiers.
+  Camera subjects are frame-local snapshots taken after player movement and
+  before fixture collision; changing that phase changes camera behaviour.
 * The tower (`screens/PlayScene`) takes the locked-in lanes as `PartyMember`s
   into the shared `world/LevelWorld` that `GameContext::tower` carries (the
   select screen looks into the same one). `engine/world/WorldCollision` holds
