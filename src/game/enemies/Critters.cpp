@@ -60,11 +60,12 @@ std::optional<s32> Critters::spawnGeneral(const Vec3& position, f32 yaw) {
 std::optional<s32> Critters::spawnGargoyle(const Vec3& position, f32 yaw, std::string_view form) {
     return spawn(Gargoyle::definition(form), position, yaw);
 }
-std::optional<s32> Critters::spawn(s32 kind, const Vec3& position, f32 yaw, std::string_view form) {
+std::optional<s32> Critters::spawn(CombatantKind kind, const Vec3& position, f32 yaw,
+                                   std::string_view form) {
     switch (kind) {
-    case kGolemCritter: return spawnGolem(position, yaw);
-    case kGeneralCritter: return spawnGeneral(position, yaw);
-    case kGargoyleCritter: return spawnGargoyle(position, yaw, form);
+    case CombatantKind::Golem: return spawnGolem(position, yaw);
+    case CombatantKind::General: return spawnGeneral(position, yaw);
+    case CombatantKind::Gargoyle: return spawnGargoyle(position, yaw, form);
     default: return std::nullopt;
     }
 }
@@ -176,8 +177,9 @@ bool Critters::alive(s32 id) const {
 bool Critters::dying(s32 id) const {
     return id >= 0 && id < kMost ? m_critters[static_cast<usize>(id)].dying() : false;
 }
-s32 Critters::kindOf(s32 id) const {
-    return id >= 0 && id < kMost ? m_critters[static_cast<usize>(id)].kind() : 0;
+CombatantKind Critters::kindOf(s32 id) const {
+    return id >= 0 && id < kMost ? m_critters[static_cast<usize>(id)].kind()
+                                 : CombatantKind::Unknown;
 }
 f32 Critters::healthOf(s32 id) const {
     return id >= 0 && id < kMost ? m_critters[static_cast<usize>(id)].health() : 0;

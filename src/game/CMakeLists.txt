@@ -60,9 +60,9 @@ add_library(game STATIC
     enemies/Generators.cpp
     enemies/CritterData.cpp
     enemies/CritterMovement.cpp
-    enemies/CritterBreath.cpp
-    enemies/CritterProjectile.cpp
-    world/CritterProjectiles.cpp
+    enemies/CombatantBreath.cpp
+    enemies/CombatantProjectile.cpp
+    world/CombatantProjectiles.cpp
     enemies/Critters.cpp
     enemies/Combatant.cpp
     enemies/MoveDefinition.cpp

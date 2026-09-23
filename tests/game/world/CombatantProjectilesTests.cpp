@@ -12,7 +12,7 @@
 #include "TestSupport.h"
 #include "formats/CritterWad.h"
 #include "game/enemies/BossDefinition.h"
-#include "game/world/CritterProjectiles.h"
+#include "game/world/CombatantProjectiles.h"
 
 namespace {
 using namespace gdl;
@@ -24,9 +24,9 @@ struct Fixture {
     ItemArchive archive;
     CritterData data;
     EffectTrees effects;
-    CritterProjectiles projectiles;
+    CombatantProjectiles projectiles;
     std::vector<std::string> sounds;
-    CritterProjectiles::PlaySound sound = [&](std::string_view name) { sounds.emplace_back(name); };
+    CombatantProjectiles::PlaySound sound = [&](std::string_view name) { sounds.emplace_back(name); };
     Fixture() {
         const auto root = test::scratchDirectory("critter-projectiles");
         writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
@@ -138,7 +138,7 @@ TEST_CASE("retail boss projectile records retain physics and effect transitions"
             REQUIRE(archive.load(root / "MONSTERS" / name));
             test::FakeRenderDevice device;
             EffectTrees effects;
-            CritterProjectiles projectiles;
+            CombatantProjectiles projectiles;
             usize launched = 0;
             for (usize index = 0; index < data.damages().size(); ++index) {
                 const AttackDefinition& damage = data.damages()[index];

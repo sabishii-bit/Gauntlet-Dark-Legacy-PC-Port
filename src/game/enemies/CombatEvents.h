@@ -4,6 +4,8 @@
 
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+
+#include "game/enemies/CombatantKind.h"
 namespace gdl::game {
 /** A contact a critter has made. Breath contacts repeat while touching; the
  * recipient's shared breath timer decides when they may damage it again. */
@@ -51,7 +53,7 @@ struct CombatSpew {
  * a fifth of it to everyone (`player` -1) when it falls. */
 struct CombatLoss {
     s32 critter = -1;
-    s32 kind = 0;
+    CombatantKind kind = CombatantKind::Unknown;
     std::string form; ///< a gargoyle's ("EAGL"): the key it drops is named by it
     s32 player = -1;
     f32 experience = 0.0f;

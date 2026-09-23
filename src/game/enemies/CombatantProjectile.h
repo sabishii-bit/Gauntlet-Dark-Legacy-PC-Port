@@ -23,9 +23,9 @@ struct CombatShot {
     char realm = 'G';
 };
 
-/** Launch math shared by the boss projectile attacks (retail 0x8003d0a4 / 0x80030ae8).
+/** Launch math shared by combatant projectile attacks.
  * The ballistic branch fixes horizontal speed, not the magnitude of the 3D velocity. */
-struct CritterProjectile {
+struct CombatantProjectile {
     static constexpr u16 kAimAtPlayer = 1;
     static constexpr u16 kBodyForward = 4;
     static constexpr u16 kStraight = 8;

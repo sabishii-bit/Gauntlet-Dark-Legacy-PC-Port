@@ -5,7 +5,7 @@
 #include "engine/core/Types.h"
 
 #include "game/enemies/Combatant.h"
-#include "game/enemies/CritterBreath.h"
+#include "game/enemies/CombatantBreath.h"
 namespace gdl::game {
 namespace {
 f32 flatDistance(const Vec3& a, const Vec3& b) {
@@ -23,7 +23,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     }
     Vec3 centre;
     f32 reach = 0.0f;
-    std::optional<CritterBreath> breath;
+    std::optional<CombatantBreath> breath;
     switch (damage->type) {
     case AttackDefinition::kBlow:
         centre = partPosition(critter, move.colnode) + damage->offset;
@@ -41,7 +41,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         reach = damage->maxDistance;
         break;
     case AttackDefinition::kBreath:
-        breath = CritterBreath::fromNode(partTransform(critter, move.colnode), *damage);
+        breath = CombatantBreath::fromNode(partTransform(critter, move.colnode), *damage);
         centre = breath->origin;
         break;
     default: return;

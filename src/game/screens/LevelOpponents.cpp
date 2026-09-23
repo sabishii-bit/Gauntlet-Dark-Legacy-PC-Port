@@ -14,7 +14,7 @@
 namespace gdl::game {
 void LevelOpponents::close() {
     if (m_resources.has_value()) {
-        m_critterProjectiles.clear(m_resources->effects);
+        m_combatantProjectiles.clear(m_resources->effects);
         for (const CritterEffect& cue : m_critterEffects) {
             m_resources->effects.stop(cue.effect);
         }
@@ -232,19 +232,19 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     const auto shotSound = [&](std::string_view name) { m_resources->audio.playNamed(name); };
     for (const CombatShot& shot : m_bosses.takeShots()) {
         if (ItemArchive* archive = m_bosses.archive(); archive != nullptr) {
-            m_critterProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
-                                        shotSound);
+            m_combatantProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
+                                          shotSound);
         }
     }
     for (const CombatShot& shot : m_critters.takeShots()) {
         if (ItemArchive* archive = m_critters.archiveOf(shot.critter); archive != nullptr) {
-            m_critterProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
-                                        shotSound);
+            m_combatantProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
+                                          shotSound);
         }
     }
-    m_critterProjectiles.update(seconds, &m_resources->world.collision(), views,
-                                m_resources->device, m_resources->effects, shotSound);
-    for (const CritterProjectileHit& hit : m_critterProjectiles.takeHits()) {
+    m_combatantProjectiles.update(seconds, &m_resources->world.collision(), views,
+                                  m_resources->device, m_resources->effects, shotSound);
+    for (const CombatantProjectileHit& hit : m_combatantProjectiles.takeHits()) {
         for (usize player = 0; player < players.size(); ++player) {
             if (players[player].actor.player() == hit.player &&
                 players[player].life == PlayerLife::Standing) {
@@ -487,7 +487,7 @@ void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
     }
     for (const CombatLoss& loss : m_critters.takeLosses()) {
         // A gargoyle slain leaves the key its form is named by where it fell.
-        if (loss.killed && loss.kind == kGargoyleCritter && !loss.form.empty()) {
+        if (loss.killed && loss.kind == CombatantKind::Gargoyle && !loss.form.empty()) {
             m_resources->world.placeItem(m_resources->device, "GARG" + loss.form, loss.position);
         }
         for (const PlayerRuntime& runtime : players) {

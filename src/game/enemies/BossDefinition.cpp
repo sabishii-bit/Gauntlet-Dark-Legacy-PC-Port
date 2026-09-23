@@ -22,7 +22,7 @@ std::string_view bossNameOf(s32 kind) {
 CombatantDefinition bossDefinition(std::string_view name) {
     CombatantDefinition out;
     out.name = normalizeAssetName(name);
-    out.kind = 4;
+    out.kind = CombatantKind::Boss;
     out.selection = CombatantDefinition::Selection::Patterns;
     out.boundsToHome = true;
     return out;

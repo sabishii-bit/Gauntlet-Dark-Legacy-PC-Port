@@ -3,7 +3,7 @@ namespace gdl::game {
 CombatantDefinition General::definition() {
     CombatantDefinition out;
     out.name = "GENERAL";
-    out.kind = 8;
+    out.kind = CombatantKind::General;
     out.realmCostume = true;
 
     return out;
