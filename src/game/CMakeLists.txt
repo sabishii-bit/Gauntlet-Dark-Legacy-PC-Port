@@ -65,6 +65,8 @@ add_library(game STATIC
     world/CritterProjectiles.cpp
     enemies/Critters.cpp
     enemies/CritterAttackSelection.cpp
+    enemies/CritterArea.cpp
+    enemies/CritterAreaAttacks.cpp
     enemies/BossCoins.cpp
     enemies/Bosses.cpp
     enemies/LegendItems.cpp

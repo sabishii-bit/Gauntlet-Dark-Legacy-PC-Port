@@ -166,7 +166,7 @@ void LevelOpponents::applyCritterBlow(const CritterBlow& blow, std::span<PlayerR
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
         if (player.actor.player() != blow.player || player.life != PlayerLife::Standing ||
-            (blow.breath && player.breathGap > 0.0f)) {
+            (blow.breath && player.breathGap > 0.0f) || (blow.area && player.effectGap > 0.0f)) {
             continue;
         }
         if (blow.breath) {
@@ -175,6 +175,15 @@ void LevelOpponents::applyCritterBlow(const CritterBlow& blow, std::span<PlayerR
                 continue;
             }
             player.breathGap = 0.25f;
+        }
+        if (blow.area) {
+            const Vec3 centre = player.actor.position() + Vec3{0, player.actor.height() * 0.5f, 0};
+            const Vec3 delta = centre - blow.origin;
+            if (glm::length(Vec2{delta.x, delta.z}) > 10.0f && events.blocksArea &&
+                events.blocksArea(blow.origin, centre)) {
+                continue;
+            }
+            player.effectGap = blow.repeatGap;
         }
         events.hurt(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true,
                     {blow.flags, blow.direction});
@@ -191,6 +200,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     for (PlayerRuntime& player : players) {
         player.breathGap = std::max(0.0f, player.breathGap - std::max(seconds, 0.0f));
+        player.effectGap = std::max(0.0f, player.effectGap - std::max(seconds, 0.0f));
     }
     const std::vector<EnemyView> views = enemyViews(players);
     std::vector<Obstacle> boxes = m_generators.obstacles();
@@ -379,6 +389,7 @@ void LevelOpponents::showCritterCue(const CritterCue& cue, ItemArchive* archive,
         setting.scale = cue.scale;
         setting.yaw = cue.yaw;
         setting.seconds = cue.life;
+        setting.loop = cue.loop;
         if (const u32 effect = m_resources->effects.startSet(m_resources->device, *archive,
                                                              cue.tree, cue.position, setting);
             effect != 0 && cue.follows) {
@@ -386,7 +397,7 @@ void LevelOpponents::showCritterCue(const CritterCue& cue, ItemArchive* archive,
             m_critterEffects.push_back(
                 CritterEffect{effect, cue.critter, ofBoss,
                               at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}, cue.node,
-                              cue.nodeOffset, cue.rootAttachment});
+                              cue.nodeOffset, cue.rootAttachment, cue.pitchYaw});
         }
     }
     if (!cue.sound.empty()) {
@@ -417,16 +428,18 @@ void LevelOpponents::followCritterEffects() {
             const auto parent = riding.ofBoss ? m_bosses.rootTransform()
                                               : m_critters.rootTransformOf(riding.critter);
             if (parent.has_value()) {
-                m_resources->effects.placeAt(riding.effect,
-                                             glm::translate(*parent, riding.nodeOffset));
+                m_resources->effects.placeAt(
+                    riding.effect,
+                    CritterArea::placement(*parent, riding.nodeOffset, riding.pitchYaw));
             }
         } else if (riding.node.has_value()) {
             const auto parent = riding.ofBoss
                                     ? m_bosses.nodeTransform(*riding.node)
                                     : m_critters.nodeTransformOf(riding.critter, *riding.node);
             if (parent.has_value()) {
-                m_resources->effects.placeAt(riding.effect,
-                                             glm::translate(*parent, riding.nodeOffset));
+                m_resources->effects.placeAt(
+                    riding.effect,
+                    CritterArea::placement(*parent, riding.nodeOffset, riding.pitchYaw));
             }
         } else if (at != nullptr) {
             m_resources->effects.moveTo(riding.effect, *at + riding.offset);

@@ -50,6 +50,8 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
     REQUIRE(rocks.obstacles().size() == 1);
     REQUIRE(rocks.rock(0).obstacle.cylinderRadius == Approx(2.3f));
     REQUIRE(rocks.blocksBreath(Vec3{7, 32, -10}, Vec3{7, 32, 10}));
+    REQUIRE(rocks.blocksSegment(Vec3{9.6f, 32, -10}, Vec3{9.6f, 32, 10}, 0.5f));
+    REQUIRE_FALSE(rocks.blocksSegment(Vec3{9.6f, 32, -10}, Vec3{9.6f, 32, 10}, 0.1f));
     REQUIRE_FALSE(rocks.blocksBreath(Vec3{20, 32, -10}, Vec3{20, 32, 10}));
 
     REQUIRE_FALSE(rocks.strike(0, 50)); // 40 after armour, exactly the tier boundary

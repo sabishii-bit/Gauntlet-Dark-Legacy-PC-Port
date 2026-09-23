@@ -535,6 +535,11 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
          .blocksBreath =
              [this](const Vec3& from, const Vec3& to) {
                  return m_fixtures.safeRocks().blocksBreath(from, to);
+             },
+         .blocksArea =
+             [this](const Vec3& from, const Vec3& to) {
+                 constexpr f32 kAreaProbeRadius = 0.1f;
+                 return m_fixtures.safeRocks().blocksSegment(from, to, kAreaProbeRadius);
              }});
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {

@@ -647,7 +647,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   whole mesh or add a separate guessed beam lifetime.
   This is not complete boss fidelity: damaging impact areas/status effects,
   linked custom SFXX callbacks (including Dragon's fireball trail), generated
-  stage hazards/minions, attached damage areas (2), grabs (7), attack patterns
+  stage hazards/minions, grabs (7), full attack interruptions
   and Chimera child-head control still need reconstruction.
   A hit takes the armour off (a point always through for a character), a
   block lets a quarter through and shrugs off the throw, and is worth
@@ -854,6 +854,30 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   effect-spawned BOSSGEN instances, effect-owned impact damage/trails, SFXX camera
   shakes and the Lich's arena-dirt visibility cue. Playing a move or its visual
   is not evidence these gameplay paths are implemented.
+* Spider Queen and Wraith's type-2 attacks use `CritterArea` and
+  `CritterAreaAttacks`: constant-radius root-attached sectors, independent of
+  the move's remaining frames and of whether their SFXX has visible artwork.
+  Eight DRIDER and three WRAITH damage records use this path. `NULLFX` is an
+  intentional invisible damage carrier, not an absent attack. SFXX.life wins;
+  otherwise use its sequence duration, with NULLFX's zero-frame/rate-30 sequence
+  lasting one second (the original StartFXTree fallback). DAMG and SFXX offsets
+  compose before local yaw/pitch. Radius comes from maxDistance, scaled once by
+  the creature; neither DAMG.radius nor the body's targeting-origin offset is
+  the damage sector's extent/origin. ProcessEffects (0x80094be0) uses a horizontal
+  cone with an 85% dot threshold inside 30% of the combined radius and checks
+  height separately. Contacts share `PlayerRuntime::effectGap`, capped to one
+  second or the effect's remaining lifetime, not a once-per-move hit list.
+  Safe-rock obstruction is queried only beyond ten units, with a 0.1-unit probe.
+  This covers the shipped stationary root policies, not arbitrary moving/morphing
+  areas, expanding rings, webs, or all effect/projectile cooldown interactions.
+  Unsupported area parenting/motion policies warn rather than becoming guessed
+  radial damage. `[boss-areas]` covers synthetic physics/lifetimes, all eleven
+  exported records and both actual encounters. The new `spider` and `wraith`
+  scenarios require LEVELD5/LEVELJ5 and their own item archives to be unpacked.
+  Unpack realm items LEVELD/LEVELJ too: `LevelWorld` lends boss-specific textures
+  first, then realm textures, to world geometry, texture animations and particles.
+  LEVELD5's torch particles reference LEVELD's P_TORCH, absent from its own item
+  archive; `[boss-arena]` verifies the borrowed texture rather than a white fallback.
 * The boss's health meter (`screens/BossMeter`, bound in `bindEnemies` from
   `Bosses::meter()` and the boss's own archive, drawn over the status boxes)
   is the original's HUD meter (`HealthMeterStart/Update`, boss.c 471-585):

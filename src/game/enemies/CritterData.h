@@ -43,6 +43,7 @@ struct CritterPattern {
 struct CritterDamage {
     static constexpr s16 kBlow = 0;
     static constexpr s16 kProjectile = 1;
+    static constexpr s16 kAttachedArea = 2;
     static constexpr s16 kRing = 3; ///< a stomp's, over its reach
     static constexpr s16 kBreath = 4;
     static constexpr s16 kGrab = 7;
