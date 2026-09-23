@@ -272,9 +272,10 @@ TEST_CASE("anchored bosses retain local territories and the lich and spider can 
           Expected{"PBOSS", 6, false}, Expected{"YETI", 5, false}, Expected{"WRAITH", 3, false},
           Expected{"LICH", 25, true}, Expected{"DRIDER", 22, true}}) {
         DYNAMIC_SECTION(expected.name) {
+            const auto path =
+                test::unpackedOrSkip(std::string("critter/") + expected.name + ".json");
             CritterData data;
-            REQUIRE(
-                data.load(test::unpackedOrSkip(std::string("critter/") + expected.name + ".json")));
+            REQUIRE(data.load(path));
             REQUIRE(data.movement().roamRadius == expected.radius);
             bool pursues = false;
             bool hasNearAttack = false;
