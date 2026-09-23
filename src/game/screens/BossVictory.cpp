@@ -81,6 +81,7 @@ void BossVictory::begin(s32 kind, char realm, u16 runesInRealm, u16 runesFound, 
     m_kind = kind;
     m_realm = realm;
     m_quality = qualityOf(runesInRealm, runesFound);
+    m_allTempleRunes = (runesFound & 0x0fffU) == 0x0fffU;
     m_goldLeft = goldLeft;
     m_ticksLeft = kind == kDemon || kind == kGarm ? kLongWaitTicks : kWaitTicks;
 }
@@ -91,6 +92,7 @@ void BossVictory::clear() {
     m_realm = 'G';
     m_quality = 0;
     m_goldLeft = false;
+    m_allTempleRunes = false;
     m_ticksLeft = 0;
     m_alpha = 0.0f;
     m_caption.reset();
@@ -181,14 +183,23 @@ std::vector<VictoryVoice> BossVictory::update(s32 ticks, std::span<const usize> 
         m_alpha = std::min(m_alpha + static_cast<f32>(kFadeStep * ticks) / 255.0f, 1.0f);
         if (m_alpha >= 1.0f) {
             m_stage = Stage::Defeat;
-            say(defeatMessageOf(m_kind), kAfterDefeatTicks, defeatVoiceOf(m_kind, m_realm), voices);
+            // Temple Skorne's voice is one recording spanning both caption sets.
+            // DoGoodWizard selects its variant before the first page, using the
+            // party's union of the first twelve runes (hide_rune_stones).
+            const std::string voice =
+                m_kind == kDemon && m_allTempleRunes ? "S_E2VOXB" : defeatVoiceOf(m_kind, m_realm);
+            say(defeatMessageOf(m_kind), kAfterDefeatTicks, voice, voices);
         }
         break;
     case Stage::Defeat:
         if (type(ticks, pageLengths)) {
             const std::string voice = runeVoiceOf(m_kind, m_realm, m_quality);
-            if (m_kind >= kDemon) {
-                // The demon's and the garm's have no rune line of the realm's.
+            if (m_kind == kDemon) {
+                m_stage = Stage::Runes;
+                say(m_allTempleRunes ? "SKORNE1_RUNE_YES" : "SKORNE1_RUNE_NO", kAfterRunesTicks, {},
+                    voices);
+            } else if (m_kind > kDemon) {
+                // Underworld Skorne and Garm have no rune follow-up.
                 leave();
             } else {
                 m_stage = Stage::Runes;

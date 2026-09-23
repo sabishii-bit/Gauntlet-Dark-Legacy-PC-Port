@@ -25,6 +25,7 @@
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
 #include "game/world/PlacedItems.h"
+#include "game/world/SkorneArena.h"
 #include "game/world/TowerCamera.h"
 
 namespace gdl::game {
@@ -74,6 +75,8 @@ public:
     /** Hides/shows a separately controlled stage mesh without changing its collision.
      * False when absent or baked into static geometry. */
     bool setObjectVisible(std::string_view name, bool visible);
+    void bossArenaCue(const Vec3& boss) { m_skorneArena.cue(boss); }
+    const SkorneArena& skorneArena() const { return m_skorneArena; }
     /** Hides the crystals until revealCrystals() brings them in. */
     void hideCrystals() { m_placedItems.hideCrystals(); }
     void revealCrystals(f32 seconds) { m_placedItems.reveal(seconds); }
@@ -95,10 +98,11 @@ public:
     /** Throws one of the level's items by its record's name from `position`, as a boss
      * spews its coins; it lands on the floor and cannot be taken for `noGrabSeconds`. */
     bool throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
-                   const Vec3& velocity, f32 noGrabSeconds) {
+                   const Vec3& velocity, f32 noGrabSeconds,
+                   std::optional<f32> strength = std::nullopt) {
         return m_placedItems.throwItem(device, name, position, velocity,
-                                       m_collision.loaded() ? &m_collision : nullptr,
-                                       noGrabSeconds);
+                                       m_collision.loaded() ? &m_collision : nullptr, noGrabSeconds,
+                                       strength);
     }
     /** Whether any gold lies untaken. */
     bool goldLeft() const { return m_placedItems.goldLeft(); }
@@ -152,6 +156,7 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
         const CameraFrame frame = CameraFrame::of(camera);
         m_scene.draw(device, clip, frame);
+        m_skorneArena.draw(device, clip, m_litNow);
         m_placedItems.draw(device, clip, m_litNow, &frame);
         m_particles.draw(device, clip, frame.right, frame.up);
     }
@@ -168,6 +173,7 @@ private:
     ItemArchive m_realmItems;
     ItemArchive m_powerups;
     PlacedItems m_placedItems;
+    SkorneArena m_skorneArena;
     WorldLayout m_layout;
     WorldScene m_scene;
     WorldAnimator m_worldAnimator;

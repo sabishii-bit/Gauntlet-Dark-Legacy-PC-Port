@@ -199,12 +199,15 @@ bool PlacedItems::placeRecord(RenderDevice& device, s32 record, const Vec3& posi
  * stays where it is thrown. */
 bool PlacedItems::throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
                             const Vec3& velocity, const WorldCollision* collision,
-                            f32 noGrabSeconds) {
+                            f32 noGrabSeconds, std::optional<f32> strength) {
     if (!place(device, name, position, collision)) {
         return false;
     }
     Item& item = m_items.back();
     item.noGrabSeconds = noGrabSeconds;
+    if (strength.has_value()) {
+        item.strength = *strength;
+    }
     if (collision != nullptr) {
         item.position = position;
         item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});

@@ -124,8 +124,8 @@ TEST_CASE("expanding damage starts near the source then fades before the effect 
     REQUIRE(area.currentDamage() == 0);
 }
 
-std::filesystem::path areaArchive(bool expanding = false, bool arena = false,
-                                  bool eruption = false) {
+std::filesystem::path areaArchive(bool expanding = false, bool arena = false, bool eruption = false,
+                                  bool detached = false) {
     const auto root = test::scratchDirectory("boss-area-attacks");
     const auto archive = root / "MONSTERS/DJINN";
     std::filesystem::create_directories(root / "critter");
@@ -148,7 +148,10 @@ std::filesystem::path areaArchive(bool expanding = false, bool arena = false,
     if (eruption) {
         type = "6";
     }
-    const std::string flags = expanding ? "0" : "1";
+    std::string flags = expanding ? "0" : "1";
+    if (detached) {
+        flags = "64";
+    }
     writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
       "types":[{"moveCount":2,"maxHealth":100,"originOffset":[0,50,0]}],
       "moves":[{"name":"READY","anim":"STEP","type":32},
@@ -219,6 +222,33 @@ TEST_CASE("type three damage waits for expansion and survives the move while fro
     REQUIRE(hits[0].origin == Vec3{0, 5, 0});
     fixture.update(12, 0.2f, players);
     REQUIRE(actor.takeBlows().empty()); // final visual tail is harmless
+}
+
+TEST_CASE("detached slam damage keeps its captured world placement as the boss grows",
+          "[game][boss-areas][skorne]") {
+    const auto root = areaArchive(true, false, false, true);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'E');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, std::numbers::pi_v<f32> / 2));
+    auto& actor = fixture.actor;
+    const std::array players{playerAt({8, 0, 0})};
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.moveName() == "WHIP");
+    REQUIRE(actor.takeBlows().empty());
+    actor.freeze(120);
+    actor.resize(3); // Attached offsets would move from y=5 to y=15.
+    fixture.update(6, 0.1f, players);
+    REQUIRE(actor.takeBlows().empty());
+    fixture.update(6, 0.1f, players);
+    const auto hits = actor.takeBlows();
+    REQUIRE(hits.size() == 1);
+    REQUIRE(hits[0].area);
+    REQUIRE(glm::length(hits[0].origin - Vec3{0, 5, 0}) < 0.0001f);
+    REQUIRE(hits[0].damage == Approx(16.2f));
+    fixture.update(12, 0.2f, players);
+    REQUIRE(actor.takeBlows().empty());
 }
 
 TEST_CASE("Spider Queen and Wraith authored areas use supported root policies",

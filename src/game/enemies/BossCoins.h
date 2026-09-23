@@ -23,8 +23,8 @@ struct SpewedCoin {
  * kind fanned evenly across the death's arc about the way it throws, a little slower than
  * the throw and a little unevenly (bronze at 0.85 to 0.95 of it, silver 0.8 to 0.9, gold
  * 0.75 to 0.85). The coins are thrown as the level's items (`PlacedItems::throwItem`), and
- * cannot be taken for their first two seconds. The underworld's demon throws its four
- * relics instead, which is not done yet; the tower and the battlefield throw nothing.
+ * cannot be taken for their first two seconds. Temple Skorne throws four relics instead
+ * (SkorneRelics); the tower and the battlefield throw nothing.
  */
 class BossCoins {
 public:

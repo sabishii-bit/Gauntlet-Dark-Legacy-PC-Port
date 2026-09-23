@@ -445,6 +445,9 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
         return;
     }
     if (cue.arena && m_bosses.present()) {
+        if (ofBoss && m_bosses.view().kind == 42 && m_bosses.position() != nullptr) {
+            m_resources->world.bossArenaCue(*m_bosses.position());
+        }
         const std::string_view object = bossArenaObject(m_bosses.view().kind);
         if (!object.empty()) {
             m_resources->world.setObjectVisible(object, false);

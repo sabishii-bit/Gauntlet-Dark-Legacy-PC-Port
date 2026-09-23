@@ -824,10 +824,28 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   dispatches them, and `LevelWorld` keeps this stage mesh separately
   controllable rather than baking it into shared geometry. Garm's matching
   callback hides `H4NSFFXL_PURPLE`. Visibility leaves alpha, transforms and
-  collision unchanged and resets on level load. The Skorne1 callback's
-  counter at 0x80344958 still needs its consuming behavior reconstructed;
-  do not treat it as a hide/animation request or claim all callbacks complete.
+  collision unchanged and resets on level load. Temple Skorne's callback
+  increments 0x80344958. `SkorneArena` implements its subtype-51 consumer
+  (0x800606fc): 22 loose E2 meshes, two upward jolts followed by an outward
+  scatter, 30 Hz gravity/spin and retirement below the world floor sentinel.
+  These are level-model items, not static world nodes or animation sequences.
+  Its three cues arrive across START and START2; do not collapse them to one.
   Scenarios: `level-g1-general.json`.
+* Temple Skorne (`SKORNE1`, kind 42, E2) is available with
+  `python scripts/scenario.py skorne`. `[skorne]` tests exercise all eight
+  authored attack families across range/health windows, scene-routed entrance
+  cues, detached hand-slam expansion, death drops and the victory visit.
+  SFXX 0x40 ground waves snapshot world placement instead of following the
+  withdrawing hand; they keep their authored lifetime and expanding damage.
+  `SkorneRelics` uses the four-row table at 0x80118a88, without player-count
+  multiplication or coin speed randomization. The drops override the level's
+  default strength with 240 and retain the two-second pickup delay.
+  `BossVictory` checks the party's first twelve runes for the Temple follow-up;
+  S_E2VOXA/B is selected once before the first caption, not replayed per page.
+  Both Skorne victory wizards use fixed position (0,-12,6), not the ordinary
+  boss/party midpoint. This pass does not certify visual parity or complete
+  the separate Underworld (`SKORNE2`) encounter. General SFXX floor-alignment,
+  camera shakes and custom callbacks still need their own retail validation.
 * Boss locomotion has two encounter roles; neither role implies melee-only
   attacks. Dragon, Plague Fiend, Yeti, Wraith, Chimera and Genie are anchored;
   Lich and Spider Queen pursue the player. Preserve the actual TYPE/MOVE data

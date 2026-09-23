@@ -121,7 +121,7 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     REQUIRE_FALSE(visit.wizardShown());
     visit.clear();
     REQUIRE(visit.stage() == Stage::None);
-    // The demon and the garm keep the party ten seconds, and have no rune line.
+    // Temple Skorne waits ten seconds and has his own twelve-rune follow-up.
     BossVictory demon;
     demon.begin(42, 'E', 0, 0, true);
     for (s32 i = 0; i < BossVictory::kLongWaitTicks - 1; ++i) {
@@ -136,9 +136,29 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     REQUIRE(demon.stage() == Stage::Defeat);
     demon.update(BossVictory::kPagePauseTicks * 2, std::array<usize, 1>{0});
     demon.update(BossVictory::kAfterDefeatTicks, {});
-    REQUIRE(demon.stage() == Stage::Leaving); // no rune line; the gold left keeps them
+    REQUIRE(demon.stage() == Stage::Runes);
+    REQUIRE(demon.caption()->message == "SKORNE1_RUNE_NO");
+    demon.update(BossVictory::kAfterRunesTicks, {});
+    REQUIRE(demon.stage() == Stage::Leaving);
     demon.update(BossVictory::kExitTicks, {});
     REQUIRE(demon.stage() == Stage::Leaving);
 }
 
+TEST_CASE("Skorne uses one combined voice and the first twelve runes for his follow-up",
+          "[skorne][victory]") {
+    for (const u16 runes : {u16{0}, u16{0x1000}, u16{0x0ffe}, u16{0x0fff}, u16{0x1fff}}) {
+        BossVictory visit;
+        visit.begin(42, 'E', 0, runes, false);
+        visit.update(BossVictory::kLongWaitTicks, {});
+        const auto voices = visit.update(64, {});
+        const bool complete = (runes & 0x0fffU) == 0x0fffU;
+        REQUIRE(voices.size() == 1);
+        REQUIRE(voices.front().sound == (complete ? "S_E2VOXB" : "S_E2VOXA"));
+        REQUIRE(visit.update(BossVictory::kAfterDefeatTicks, {}).empty());
+        REQUIRE(visit.stage() == Stage::Runes);
+        REQUIRE(visit.caption()->message == (complete ? "SKORNE1_RUNE_YES" : "SKORNE1_RUNE_NO"));
+        REQUIRE(visit.update(BossVictory::kAfterRunesTicks, {}).empty());
+        REQUIRE(visit.stage() == Stage::Leaving);
+    }
+}
 } // namespace

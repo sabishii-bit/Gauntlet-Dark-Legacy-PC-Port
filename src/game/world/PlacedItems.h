@@ -161,7 +161,8 @@ public:
      * falling where there is none), and cannot be taken for `noGrabSeconds`. False as for
      * `place`. */
     bool throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
-                   const Vec3& velocity, const WorldCollision* collision, f32 noGrabSeconds);
+                   const Vec3& velocity, const WorldCollision* collision, f32 noGrabSeconds,
+                   std::optional<f32> strength = std::nullopt);
     /** Whether any gold lies untaken. */
     bool goldLeft() const;
     /** Turns the figures, flies what was thrown and plays the bursts on by `seconds`. */

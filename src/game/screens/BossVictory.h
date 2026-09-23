@@ -59,6 +59,7 @@ public:
     std::vector<VictoryVoice> update(s32 ticks, std::span<const usize> pageLengths);
 
     Stage stage() const { return m_stage; }
+    s32 kind() const { return m_kind; }
     bool running() const { return m_stage != Stage::None && m_stage != Stage::Done; }
     bool finished() const { return m_stage == Stage::Done; }
     /** The wizard's opacity, none until he comes. */
@@ -93,6 +94,7 @@ private:
     char m_realm = 'G';
     s32 m_quality = 0;
     bool m_goldLeft = false;
+    bool m_allTempleRunes = false;
     s32 m_ticksLeft = 0;
     f32 m_alpha = 0.0f;
     std::optional<VictoryCaption> m_caption;
