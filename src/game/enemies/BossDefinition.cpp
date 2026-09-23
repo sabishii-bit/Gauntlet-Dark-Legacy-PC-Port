@@ -27,4 +27,14 @@ CombatantDefinition bossDefinition(std::string_view name) {
     out.boundsToHome = true;
     return out;
 }
+
+std::string_view bossArenaObject(s32 kind) {
+    // Retail arena callback 0x80063c58 sets tree flag 1 on this node only.
+    // The renderer (0x800c7a70) skips its mesh but still visits its children.
+    switch (kind) {
+    case 41: return "G5BIGDIRT";
+    case 44: return "H4NSFFXL_PURPLE";
+    default: return {};
+    }
+}
 } // namespace gdl::game

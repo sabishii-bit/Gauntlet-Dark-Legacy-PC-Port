@@ -131,6 +131,7 @@ void Combatant::cue(const Actor& critter, s32 id, s32 index, const Vec3& positio
         out.life = record->life;
         out.follows = record->follows();
         out.shakes = (record->flags & CombatEffectDefinition::kShakes) != 0;
+        out.arena = (record->flags & CombatEffectDefinition::kArenaCue) != 0;
         // Without a root/entity/global parenting override, a move effect uses its
         // active animated node. Hit marks have no requested attachment.
         constexpr u32 kAlternateParent = 0x2000U | 0x800U | 0x80U | 0x40U | 1U;
@@ -163,7 +164,7 @@ void Combatant::cue(const Actor& critter, s32 id, s32 index, const Vec3& positio
             out.follows = false;
             out.yaw = 0;
         }
-        if (!out.tree.empty() || !out.sound.empty()) {
+        if (!out.tree.empty() || !out.sound.empty() || out.shakes || out.arena) {
             m_cues.push_back(std::move(out));
         }
         at = record->link;

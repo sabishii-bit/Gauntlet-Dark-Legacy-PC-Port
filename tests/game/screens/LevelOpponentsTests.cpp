@@ -313,4 +313,63 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     opponents.close();
     REQUIRE_FALSE(effects.playing(effectId));
 }
+TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
+          "[game][screens][level-opponents][boss-effects][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELG5/world.json");
+    test::unpackedOrSkip("wdata/TOWN.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G5");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const auto& objects = world.layout().objects();
+    const auto mound = std::ranges::find(objects, "G5BIGDIRT", &WorldObject::name);
+    REQUIRE(mound != objects.end());
+    const auto index = static_cast<usize>(std::distance(objects.begin(), mound));
+    REQUIRE_FALSE(world.scene().moving(index));
+    REQUIRE(world.scene().objectVisible(index));
+    const usize triangles = world.collision().triangleCount();
+    const Mat4 transform = world.scene().worldTransform(index);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, {});
+    REQUIRE(opponents.bosses().view().kind == 41);
+    REQUIRE(opponents.bosses().position() != nullptr);
+    players[0].actor.spawn(0, {}, nullptr, *opponents.bosses().position(), 0);
+    LevelOpponents::Events events;
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.blast = [](const Vec3&, f32, f32) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    opponents.update(2, 1.0f / 30, {}, {}, events);
+    REQUIRE(world.scene().objectVisible(index)); // asleep: no callback yet
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    REQUIRE_FALSE(world.scene().objectVisible(index));
+    REQUIRE(world.scene().worldTransform(index) == transform);
+    REQUIRE(world.collision().triangleCount() == triangles);
+    REQUIRE(world.objectAlpha(index) == 1);
+    bool gravel = false;
+    for (usize i = 0; i < effects.count(); ++i) {
+        gravel |= effects.effect(i).name == "GENFX";
+    }
+    REQUIRE(gravel);
+    REQUIRE_FALSE(world.setObjectVisible("MISSING", false));
+    opponents.close();
+    effects.clear();
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.scene().objectVisible(index));
+}
 } // namespace

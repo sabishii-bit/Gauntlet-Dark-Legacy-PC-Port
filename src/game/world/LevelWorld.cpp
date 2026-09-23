@@ -8,6 +8,8 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/enemies/BossDefinition.h"
+
 namespace gdl::game {
 
 bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpackedRoot,
@@ -51,7 +53,19 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         lenders.push_back(&m_realmItems.textures);
     }
     const std::span<TextureSet* const> lent{lenders};
-    if (!m_scene.build(m_layout, m_models, m_textures, device, m_lighting, lent)) {
+    std::vector<usize> controlledObjects;
+    const std::string_view arenaObject =
+        bossArenaObject(m_level != nullptr ? m_level->bossType : -1);
+    if (!arenaObject.empty()) {
+        for (usize i = 0; i < m_layout.objects().size(); ++i) {
+            if (m_layout.objects()[i].name == arenaObject) {
+                controlledObjects.push_back(i);
+                break;
+            }
+        }
+    }
+    if (!m_scene.build(m_layout, m_models, m_textures, device, m_lighting, lent,
+                       controlledObjects)) {
         clear();
         return false;
     }
@@ -105,6 +119,15 @@ void LevelWorld::syncCollision() {
     for (const s32 object : m_movingObjects) {
         m_collision.setObjectTransform(object, m_scene.worldTransform(static_cast<usize>(object)));
     }
+}
+
+bool LevelWorld::setObjectVisible(std::string_view name, bool visible) {
+    for (usize i = 0; i < m_layout.objects().size(); ++i) {
+        if (m_layout.objects()[i].name == name) {
+            return m_scene.setObjectVisible(i, visible);
+        }
+    }
+    return false;
 }
 
 void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {

@@ -378,6 +378,12 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     if (!m_resources.has_value()) {
         return;
     }
+    if (cue.arena && m_bosses.present()) {
+        const std::string_view object = bossArenaObject(m_bosses.view().kind);
+        if (!object.empty()) {
+            m_resources->world.setObjectVisible(object, false);
+        }
+    }
     if (archive == nullptr || !archive->trees.find(cue.tree).has_value()) {
         archive =
             m_resources->weapons.loaded() && m_resources->weapons.trees.find(cue.tree).has_value()
