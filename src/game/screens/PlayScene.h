@@ -321,11 +321,8 @@ private:
     void cry(usize index, std::string_view which);
     void cryPain(usize index);
     void sayWithName(usize index, std::string_view line);
-    void beginMove(usize index);
     void ramBarrels(usize index);
-    void runMove(usize index);
     void fireStrike(usize index, s32 strike);
-    void runVolley(usize index, usize slot, const MoveStrike& strike, f32 frame);
     void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
     void showBlock(usize index, f32 taken, f32 left);
     void shieldPotion(usize index);
