@@ -136,6 +136,7 @@ add_library(game STATIC
     screens/LegendPresentation.h
     screens/LegendPresentation.cpp
     screens/PlayScene.h
+    screens/PartyMotion.cpp
     screens/PlayScene.cpp)
 
 add_library(gdl::game ALIAS game)

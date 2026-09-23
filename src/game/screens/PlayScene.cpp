@@ -87,7 +87,6 @@ constexpr f32 kBlockWorth = 2.0f;      ///< what a guard must take off a hurt fo
 constexpr f32 kBlockPerDamage = 0.01f; ///< seconds it shows for each point left
 constexpr f32 kBlockLeast = 0.333f;
 constexpr f32 kBlockMost = 1.0f;
-constexpr f32 kChargeStick = 0.25f; ///< the least push of the stick that steers a charge
 constexpr f32 kRamDamage = 3.0f;    ///< what a charge does to what it runs into
 constexpr f32 kRamReach = 0.3f;     ///< how near counts as run into
 constexpr s32 kSpecialPowerup = 9;  ///< the pickup subtype of the specials
@@ -679,42 +678,6 @@ const TurboMeter* PlayScene::turboMeter(s32 player) const {
     return nullptr;
 }
 
-/** What the turbo and charge buttons ask, by the original's rules: turbo held as the attack
- * button goes down, the greater turbo attack with the meter full, the lesser with two fifths
- * of it, else nothing (the attack is then an ordinary one); the charge button going down, a
- * shove, which wants a twentieth. Nothing when the body is in the middle of something. */
-PlayerDeed PlayScene::turboDeed(usize index, const PlayInput& in) const {
-    if (index >= m_players.size() || m_players[index].figure == nullptr) {
-        return PlayerDeed::None;
-    }
-    const TurboMeter& meter = m_players[index].turbo;
-    PlayerDeed deed = PlayerDeed::None;
-    if (in.turbo && in.attackPressed) {
-        if (meter.held() >= TurboMeter::kFullCost) {
-            deed = PlayerDeed::TurboFull;
-        } else if (meter.held() >= TurboMeter::kStrongCost) {
-            deed = PlayerDeed::TurboStrong;
-        }
-    } else if (in.chargePressed && meter.held() >= TurboMeter::kShoveFrom) {
-        deed = PlayerDeed::Shove;
-    }
-    return m_players[index].figure->animator().canBegin(deed) ? deed : PlayerDeed::None;
-}
-
-/** A charge goes flat out the way the stick is pushed, or straight ahead when it is not. */
-MoveInput PlayScene::chargeInput(usize index, const MoveInput& stick, f32 cameraYaw) const {
-    MoveInput rush;
-    rush.magnitude = 1.0f;
-    if (stick.magnitude >= kChargeStick) {
-        rush.direction = stick.direction;
-        return rush;
-    }
-    const Vec3 facing = m_players[index].actor.facing();
-    const f32 ahead = std::atan2(facing.x, facing.z) - cameraYaw;
-    rush.direction = Vec2{std::sin(ahead), std::cos(ahead)};
-    return rush;
-}
-
 /** What a charge runs into is struck, once each charge. */
 void PlayScene::ramBarrels(usize index) {
     const PlayerActor& actor = m_players[index].actor;
@@ -1084,20 +1047,6 @@ void PlayScene::runVolley(usize index, usize slot, const MoveStrike& strike, f32
         launchWeapon(index, Vec3{std::sin(heading), 0.0f, std::cos(heading)}, 1.0f, false);
         ++move.volleysShot[slot];
     }
-}
-
-/** Which way a step along `heading` is for a character facing `facing`: within an eighth of a
- * turn of ahead or behind it is that, else to the side it lies on. */
-StrafeWay PlayScene::strafeWayOf(f32 heading, f32 facing) {
-    constexpr f32 kEighth = 0.7853982f;
-    const f32 off = std::remainder(heading - facing, 8.0f * kEighth);
-    if (std::abs(off) > 3.0f * kEighth) {
-        return StrafeWay::Back;
-    }
-    if (off > kEighth) {
-        return StrafeWay::Right; // the original's sense of a positive turn
-    }
-    return off < -kEighth ? StrafeWay::Left : StrafeWay::Forward;
 }
 
 /** A potion spent on a shield: its magic rings the character for a few seconds, going about
@@ -2532,106 +2481,30 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_world->revealCrystals(seconds);
     m_pickups.step(ticks, seconds);
     m_sumner.update(seconds);
-    const f32 cameraYaw = m_camera.yaw();
-    // Snapshot after movement, before fixture collision, preserving the camera's frame phase.
-    std::vector<CameraSubject> subjects;
-    subjects.reserve(m_players.size());
-    for (usize i = 0; i < m_players.size(); ++i) {
-        PlayerActor& actor = m_players[i].actor;
-        const auto player = static_cast<usize>(actor.player());
-        const bool down = isDown(i);
-        // Reeling from a hit, a character neither moves nor does anything.
-        const bool reeling =
-            m_players[i].reaction != PlayerDeed::None ||
-            (m_players[i].figure != nullptr && m_players[i].figure->animator().reacting());
-        const MoveInput& move = !held && !down && !reeling && player < inputs.size()
-                                    ? inputs[player].move
-                                    : MoveInput{};
-        // What the buttons ask: a potion first, when one is carried, then the attack.
-        PlayerDeed deed = down ? PlayerDeed::Die : PlayerDeed::None;
-        if (!down && m_players[i].reaction != PlayerDeed::None) {
-            deed = m_players[i].reaction;
-        }
-        m_players[i].reaction = PlayerDeed::None;
-        if (!held && !down && !reeling && player < inputs.size()) {
-            const PlayInput& in = inputs[player];
-            const bool carrying = !actor.save().progress().inventory.potions.empty();
-            if ((in.usePotion || in.throwPotion) && !carrying) {
-                postHelp(HelpMessages::kNoPotion, i);
-            }
-            if ((in.shieldPotion) && !carrying) {
-                postHelp(HelpMessages::kNoPotion, i);
-            }
-            if (const PlayerDeed turbo = turboDeed(i, in); turbo != PlayerDeed::None) {
-                deed = turbo;
-            } else if (in.shieldPotion && carrying) {
-                deed = PlayerDeed::ShieldPotion;
-            } else if (in.usePotion && carrying) {
-                deed = PlayerDeed::UsePotion;
-            } else if (in.throwPotion && carrying) {
-                deed = PlayerDeed::ThrowPotion;
-            } else if (in.strongAttack &&
-                       m_players[i].figure->animator().canBegin(PlayerDeed::StrongAttack)) {
-                deed = PlayerDeed::StrongAttack; // nothing is ever in reach yet: the strong throw
-            } else if (in.turbo) {
-                deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
-            } else if (in.attack) {
-                deed = PlayerDeed::Attack;
-            }
-            stepSelector(actor, in.selector, ticks);
-        }
-        actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
-        // A body in a throw keeps its feet where they are, turning to the stick.
-        const f32 pace =
-            m_players[i].figure != nullptr ? m_players[i].figure->animator().moveScale() : 1.0f;
-        const bool charging =
-            m_players[i].figure != nullptr && m_players[i].figure->animator().shoving();
-        // Strafing, the character steps the way the stick is pushed without turning to it.
-        const bool strafes = !held && !down && !charging && player < inputs.size() &&
-                             inputs[player].strafe && move.any();
-        if (m_players[i].figure != nullptr) {
-            m_players[i].figure->setStrafe(
-                strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
-                        : StrafeWay::None);
-        }
-        actor.update(charging ? chargeInput(i, move, cameraYaw) : move, cameraYaw, seconds,
-                     &m_world->collision(), pace, strafes);
-        if (charging) {
-            ramBarrels(i);
-        } else {
-            m_players[i].rammed.clear();
-        }
-        if (m_players[i].figure != nullptr) {
-            m_players[i].figure->animate(move.magnitude, ticks, seconds, deed);
-            updateTurbo(i, ticks, seconds);
-            if (m_players[i].life == PlayerLife::Dying && m_players[i].figure->animator().dead()) {
-                m_players[i].life = PlayerLife::InTower; // the body goes; its box says where
-            }
-            if (m_players[i].figure->animator().released()) {
-                throwWeapon(actor);
-            }
-            if (m_players[i].figure->animator().strongReleased()) {
-                launchWeapon(i, actor.facing(), kStrongThrowScale, true);
-            }
-            m_players[i].blockLeft = std::max(m_players[i].blockLeft - seconds, 0.0f);
-            if (m_players[i].figure->animator().potionShielded()) {
-                shieldPotion(i);
-            }
-            if (m_players[i].figure->animator().potionUsed()) {
-                usePotion(actor);
-            } else if (m_players[i].figure->animator().potionThrown()) {
-                throwPotion(actor);
-            }
-            if (const PlayerAnimator::Foot foot = m_players[i].figure->animator().footfall();
-                foot != PlayerAnimator::Foot::None) {
-                m_audio.playFootstep(foot == PlayerAnimator::Foot::Second);
-            }
-        }
-        if (m_players[i].figure == nullptr && m_players[i].life == PlayerLife::Dying) {
-            m_players[i].life = PlayerLife::InTower; // nothing to play: gone at once
-        }
-        subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
-    }
+    const PartyMotion::Events movementEvents{
+        .perform =
+            [this](usize i, PartyMotion::Action action) {
+                switch (action) {
+                case PartyMotion::Action::NoPotion: postHelp(HelpMessages::kNoPotion, i); break;
+                case PartyMotion::Action::Ram: ramBarrels(i); break;
+                case PartyMotion::Action::ThrowWeapon: throwWeapon(m_players[i].actor); break;
+                case PartyMotion::Action::StrongThrow:
+                    launchWeapon(i, m_players[i].actor.facing(), kStrongThrowScale, true);
+                    break;
+                case PartyMotion::Action::ShieldPotion: shieldPotion(i); break;
+                case PartyMotion::Action::UsePotion: usePotion(m_players[i].actor); break;
+                case PartyMotion::Action::ThrowPotion: throwPotion(m_players[i].actor); break;
+                case PartyMotion::Action::FirstFoot: m_audio.playFootstep(false); break;
+                case PartyMotion::Action::SecondFoot: m_audio.playFootstep(true); break;
+                }
+            },
+        .select = [this](usize i, const SelectorInput& input,
+                         s32 elapsed) { stepSelector(m_players[i].actor, input, elapsed); },
+        .advanceTurbo = [this](usize i, s32 elapsed,
+                               f32 duration) { updateTurbo(i, elapsed, duration); }};
+    const std::vector<CameraSubject> subjects =
+        PartyMotion::step(m_players, inputs, held, m_camera.yaw(), ticks, seconds,
+                          m_world->collision(), movementEvents);
     m_playSeconds += seconds;
     m_help.update(ticks);
     updateFixtures(ticks, seconds);

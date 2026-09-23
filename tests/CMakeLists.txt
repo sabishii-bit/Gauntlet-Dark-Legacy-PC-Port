@@ -134,6 +134,7 @@ add_executable(tests
     game/screens/SumnerVisitTests.cpp
     game/screens/LegendPresentationTests.cpp
     game/screens/PlaySceneTests.cpp
+    game/screens/PartyMotionTests.cpp
     game/menu/NameEntryTests.cpp
     game/screens/SelectLaneTests.cpp
     game/screens/PlayerSelectSceneTests.cpp
