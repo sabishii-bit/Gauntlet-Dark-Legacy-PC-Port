@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/platform/Paths.h"
 
 namespace gdl {
@@ -15,7 +16,7 @@ Application::Application(ApplicationDesc desc) : m_desc(std::move(desc)) {}
 
 Application::~Application() = default;
 
-int Application::run() {
+s32 Application::run() {
     try {
         log::info("Starting {}", m_desc.window.title);
         m_window = createGlfwWindow(m_desc.window);
@@ -43,7 +44,7 @@ int Application::run() {
             }
 
             if (m_desc.maxFrameRate != 0) {
-                const auto frameTime = std::chrono::duration<double>(1.0 / m_desc.maxFrameRate);
+                const auto frameTime = std::chrono::duration<f64>(1.0 / m_desc.maxFrameRate);
                 std::this_thread::sleep_until(
                     frameStart +
                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(frameTime));

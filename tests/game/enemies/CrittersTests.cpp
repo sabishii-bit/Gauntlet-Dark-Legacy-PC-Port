@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <filesystem>
 #include <numbers>
 #include <string>
@@ -7,6 +6,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
 
@@ -23,15 +23,15 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr int kTicks = 2;
-constexpr float kStep = 1.0f / 30.0f;
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr s32 kTicks = 2;
+constexpr f32 kStep = 1.0f / 30.0f;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 std::filesystem::path unpackedRoot() {
     return test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();
 }
 
-EnemyView playerAt(const Vec3& position, int player = 0) {
+EnemyView playerAt(const Vec3& position, s32 player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;
@@ -208,10 +208,10 @@ TEST_CASE("the dragon's animated root sits above its floor anchor, including hit
     device.draws.clear();
     critters.draw(device, Mat4{1.0f}, {});
     REQUIRE(device.draws.size() == local.size());
-    float error = 0.0f;
-    for (std::size_t draw = 0; draw < local.size(); ++draw) {
+    f32 error = 0.0f;
+    for (usize draw = 0; draw < local.size(); ++draw) {
         REQUIRE(device.draws[draw].vertices.size() == local[draw].vertices.size());
-        for (std::size_t vertex = 0; vertex < local[draw].vertices.size(); ++vertex) {
+        for (usize vertex = 0; vertex < local[draw].vertices.size(); ++vertex) {
             const Vec3 expected = local[draw].vertices[vertex].position + Vec3{0.0f, 18.5f, 0.0f};
             error = std::max(error,
                              glm::length(device.draws[draw].vertices[vertex].position - expected));
@@ -294,7 +294,7 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
     const auto& tree = archive->trees.tree(*treeIndex);
     std::vector<EnemyView> players{playerAt({0, 0, 25}), playerAt({0, 0, 25}, 1)};
     const CritterMove* move = nullptr;
-    for (int tick = 0; tick < 2400; ++tick) {
+    for (s32 tick = 0; tick < 2400; ++tick) {
         critters.update(1, 1.0f / 60, players);
         const auto index = data.moveNamed(critters.moveOf(*id));
         REQUIRE(index.has_value());
@@ -317,7 +317,7 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
     const auto node = tree.findNode(move->colnode);
     REQUIRE(node.has_value());
     bool fire = false;
-    int contacts = 0;
+    s32 contacts = 0;
     while (!clock.finished()) {
         clock.advance(1.0f / 60, false);
         TreePose pose;
@@ -335,9 +335,9 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
             }
             REQUIRE_FALSE(fire);
             fire = true;
-            REQUIRE(clock.frame() >= static_cast<float>(move->soundFrame));
-            REQUIRE(clock.frame() < static_cast<float>(move->soundFrame + 1));
-            REQUIRE(clock.frame() < static_cast<float>(move->frameStart));
+            REQUIRE(clock.frame() >= static_cast<f32>(move->soundFrame));
+            REQUIRE(clock.frame() < static_cast<f32>(move->soundFrame + 1));
+            REQUIRE(clock.frame() < static_cast<f32>(move->frameStart));
             REQUIRE(cue.node == move->colnode);
             REQUIRE(cue.follows);
             REQUIRE(cue.sound == "S_DRGBREEZ");
@@ -348,8 +348,8 @@ TEST_CASE("dragon breath starts its node effect before harm and keeps contacting
                 continue;
             }
             REQUIRE(blow.breath);
-            REQUIRE(clock.frame() >= static_cast<float>(move->frameStart));
-            REQUIRE(clock.frame() < static_cast<float>(move->frameEnd + 1));
+            REQUIRE(clock.frame() >= static_cast<f32>(move->frameStart));
+            REQUIRE(clock.frame() < static_cast<f32>(move->frameEnd + 1));
             REQUIRE(glm::distance(blow.direction, glm::normalize(breath.end - breath.origin)) <
                     0.001f);
             ++contacts;
@@ -416,20 +416,20 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(critters.dataOf(*id) != nullptr);
     // Nobody about: the entrance plays out into the stance.
     const std::vector<EnemyView> nobody;
-    for (int i = 0; i < 300; ++i) {
+    for (s32 i = 0; i < 300; ++i) {
         critters.update(kTicks, kStep, nobody);
     }
     REQUIRE(critters.moveOf(*id) == "READY");
     REQUIRE(critters.positionOf(*id) == Vec3{0.0f, 0.0f, 0.0f});
     // A player twenty-five off, behind it: it turns and walks at them at five a second.
     const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, -25.0f})};
-    for (int i = 0; i < 600 && critters.moveOf(*id) != "WALK"; ++i) {
+    for (s32 i = 0; i < 600 && critters.moveOf(*id) != "WALK"; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.moveOf(*id) == "WALK");
     REQUIRE(critters.targetOf(*id) == 0);
     const Vec3 from = critters.positionOf(*id);
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.positionOf(*id).z < from.z - 3.0f);
@@ -438,7 +438,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     // Within seven it attacks, and the blows land on the player.
     std::vector<CritterBlow> blows;
     bool attacked = false;
-    for (int i = 0; i < 1200 && blows.empty(); ++i) {
+    for (s32 i = 0; i < 1200 && blows.empty(); ++i) {
         critters.update(kTicks, kStep, party);
         attacked = attacked || critters.moveOf(*id).starts_with("ATTACK");
         auto taken = critters.takeBlows();
@@ -454,9 +454,9 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     // Its walk sounded its steps as it came (the fields' own, by the realm's letter), and
     // its attack its swish, or its stomp's ring where the heel came down; each once a move.
     const std::vector<CritterCue> cues = critters.takeCues();
-    std::size_t steps = 0;
-    std::size_t swishes = 0;
-    std::size_t rings = 0;
+    usize steps = 0;
+    usize swishes = 0;
+    usize rings = 0;
     for (const CritterCue& cue : cues) {
         REQUIRE(cue.critter == *id);
         steps += cue.sound == "S_GENGSTEP1" || cue.sound == "S_GENGSTEP2" ? 1U : 0U;
@@ -492,7 +492,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(losses[0].experience == Approx(17.0f / 301.0f * 250.0f));
     hit.close = true;
     hit.where.reset();
-    for (int i = 0; i < 3; ++i) {
+    for (s32 i = 0; i < 3; ++i) {
         critters.hurt(*id, hit);
     }
     marks = critters.takeCues();
@@ -501,7 +501,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(marks[0].position == critters.positionOf(*id) + critters.dataOf(*id)->originOffset());
     hit.close = false;
     bool roared = false;
-    for (int i = 0; i < 60; ++i) {
+    for (s32 i = 0; i < 60; ++i) {
         critters.update(kTicks, kStep, party);
         roared = roared || critters.moveOf(*id) == "ROAR";
     }
@@ -538,7 +538,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(critters.targets().empty());
     critters.update(kTicks, kStep, party);
     REQUIRE(critters.moveOf(*id) == "DEATH");
-    int gone = 0;
+    s32 gone = 0;
     while (critters.count() > 0 && gone < 600) {
         critters.update(kTicks, kStep, party);
         ++gone;
@@ -608,7 +608,7 @@ TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, los
     const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, -25.0f})};
     // Held, it never leaves its stance for the player it sees.
     critters.hold(*id, true);
-    for (int i = 0; i < 600; ++i) {
+    for (s32 i = 0; i < 600; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.moveOf(*id) == "READY");
@@ -618,35 +618,35 @@ TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, los
     // Asked to roar, it does as soon as its stance is over, and then holds again.
     critters.roar(*id);
     bool roared = false;
-    for (int i = 0; i < 600 && !roared; ++i) {
+    for (s32 i = 0; i < 600 && !roared; ++i) {
         critters.update(kTicks, kStep, party);
         roared = critters.moveTypeOf(*id) == CritterMove::kRoar;
     }
     REQUIRE(roared);
-    for (int i = 0; i < 600; ++i) {
+    for (s32 i = 0; i < 600; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.moveOf(*id) == "READY");
     // Let go, it comes; frozen, it stops as it is, animation and all, and is not gone
     // after the freeze.
     critters.hold(*id, false);
-    for (int i = 0; i < 600 && critters.moveOf(*id) != "WALK"; ++i) {
+    for (s32 i = 0; i < 600 && critters.moveOf(*id) != "WALK"; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.moveOf(*id) == "WALK");
     const Vec3 stopped = critters.positionOf(*id);
     critters.freeze(*id, 120);
     REQUIRE(critters.frozen(*id));
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.frozen(*id));
     REQUIRE(critters.positionOf(*id) == stopped);
-    for (int i = 0; i < 40; ++i) {
+    for (s32 i = 0; i < 40; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE_FALSE(critters.frozen(*id));
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE(critters.positionOf(*id) != stopped);
@@ -655,7 +655,7 @@ TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, los
     REQUIRE(critters.blinded(*id));
     critters.update(kTicks, kStep, party);
     REQUIRE(critters.targetOf(*id) == -1);
-    for (int i = 0; i < 40; ++i) {
+    for (s32 i = 0; i < 40; ++i) {
         critters.update(kTicks, kStep, party);
     }
     REQUIRE_FALSE(critters.blinded(*id));
@@ -735,7 +735,7 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
     const auto id = critters.spawn(kBossCritter, Vec3{4, 0, 6}, kPi / 2, "DJINN");
     REQUIRE(id.has_value());
     critters.resize(*id, 2);
-    float step = 1.0f / 60;
+    f32 step = 1.0f / 60;
     SECTION("ordinary frames") {}
     SECTION("coarse frames still emit each cue once") {
         step = 0.25f;
@@ -743,7 +743,7 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
     const std::vector<EnemyView> party{playerAt(Vec3{20, 0, 6})};
     critters.update(1, 1.0f / 30, party); // finish the one-frame READY before starting the clock
     REQUIRE(critters.moveOf(*id) == "READY");
-    int cueCount = 0;
+    s32 cueCount = 0;
     AnimationPlayer clock;
     const auto& tree = critters.archiveOf(*id)->trees.tree(0);
     clock.start(tree.sequences[1], 1);
@@ -786,7 +786,7 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
 TEST_CASE("anchored bosses hold their ground while pursuing bosses close for melee",
           "[game][boss-movement]") {
     const auto root = targetedCritter();
-    float radius = 0;
+    f32 radius = 0;
     Vec3 target{0, 0, 40};
     bool expectMelee = false;
     SECTION("anchored boss cannot follow an out-of-range player") {}
@@ -819,7 +819,7 @@ TEST_CASE("anchored bosses hold their ground while pursuing bosses close for mel
     REQUIRE(id.has_value());
     const std::vector<EnemyView> party{playerAt(target)};
     bool melee = false;
-    for (int i = 0; i < 300; ++i) {
+    for (s32 i = 0; i < 300; ++i) {
         critters.update(kTicks, kStep, party);
         REQUIRE(glm::length(critters.positionOf(*id)) <= radius + 0.001f);
         melee = melee || !critters.takeBlows().empty();
@@ -841,7 +841,7 @@ TEST_CASE("targeted rocks snapshot the player and keep the impact there after a 
     REQUIRE(id.has_value());
     std::vector<EnemyView> party{playerAt(Vec3{5, 0, 10})};
     std::vector<CritterCue> cues;
-    for (int i = 0; i < 5 && cues.empty(); ++i) {
+    for (s32 i = 0; i < 5 && cues.empty(); ++i) {
         critters.update(kTicks, kStep, party);
         cues = critters.takeCues();
     }
@@ -856,9 +856,9 @@ TEST_CASE("targeted rocks snapshot the player and keep the impact there after a 
         party[0].position = Vec3{-30, 0, 10};
     }
     SECTION("standing under the rock takes one impact") {}
-    int hits = 0;
+    s32 hits = 0;
     std::vector<CritterCue> impacts;
-    for (int i = 0; i < 28; ++i) {
+    for (s32 i = 0; i < 28; ++i) {
         critters.update(kTicks, kStep, party);
         for (const CritterBlow& blow : critters.takeBlows()) {
             REQUIRE(blow.damage == 100);
@@ -896,7 +896,7 @@ TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",
     REQUIRE(sawBlank);
     const auto& pixels = dynamic_cast<const test::FakeTexture&>(*blank).pixels;
     REQUIRE_FALSE(pixels.empty());
-    for (std::size_t i = 3; i < pixels.size(); i += 4) {
+    for (usize i = 3; i < pixels.size(); i += 4) {
         REQUIRE(pixels[i] == 0);
     }
     const TreeInfo& tree = archive->trees.tree(*archive->trees.find("DJINN"));
@@ -918,13 +918,13 @@ TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",
     REQUIRE(sawBeam);
     const auto& beamPixels = dynamic_cast<const test::FakeTexture&>(*beam).pixels;
     bool visible = false;
-    for (std::size_t i = 3; i < beamPixels.size(); i += 4) {
+    for (usize i = 3; i < beamPixels.size(); i += 4) {
         visible = visible || beamPixels[i] != 0;
     }
     REQUIRE(visible);
     const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 20})};
     bool droppedRock = false;
-    for (int frame = 0; frame < 1200 && !droppedRock; ++frame) {
+    for (s32 frame = 0; frame < 1200 && !droppedRock; ++frame) {
         critters.update(kTicks, kStep, party);
         for (const CritterCue& cue : critters.takeCues()) {
             if (cue.tree == "ROARFX") {

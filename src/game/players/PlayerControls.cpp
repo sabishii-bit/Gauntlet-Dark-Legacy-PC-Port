@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <span>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 namespace {
@@ -11,27 +13,27 @@ bool anyKeyDown(const Input& input, std::span<const Key> keys) {
     return std::ranges::any_of(keys, [&](Key key) { return input.isKeyDown(key); });
 }
 
-bool anyButtonDown(const Input& input, int pad, std::span<const PadButton> buttons) {
+bool anyButtonDown(const Input& input, s32 pad, std::span<const PadButton> buttons) {
     return std::ranges::any_of(
         buttons, [&](PadButton button) { return input.isPadButtonDown(pad, button); });
 }
 
 /** The stick's deflection beyond the dead zone, rescaled so full tilt stays 1. */
-Vec2 stick(const Input& input, int pad, float deadZone) {
+Vec2 stick(const Input& input, s32 pad, f32 deadZone) {
     // The pad's y axis grows downwards; forward is up.
     const Vec2 raw{input.padAxis(pad, PadAxis::LeftX), -input.padAxis(pad, PadAxis::LeftY)};
-    const float length = glm::length(raw);
+    const f32 length = glm::length(raw);
     if (length <= deadZone || length <= 0.0f) {
         return Vec2{0.0f, 0.0f};
     }
-    const float usable = std::clamp(deadZone, 0.0f, 0.99f);
-    const float scaled = std::min(1.0f, (length - usable) / (1.0f - usable));
+    const f32 usable = std::clamp(deadZone, 0.0f, 0.99f);
+    const f32 scaled = std::min(1.0f, (length - usable) / (1.0f - usable));
     return raw / length * scaled;
 }
 
 } // namespace
 
-MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad) {
+MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool keyboard, s32 pad) {
     Vec2 sum{0.0f, 0.0f};
     if (keyboard) {
         sum.x += anyKeyDown(input, bindings.right) ? 1.0f : 0.0f;
@@ -39,15 +41,15 @@ MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool k
         sum.y += anyKeyDown(input, bindings.up) ? 1.0f : 0.0f;
         sum.y -= anyKeyDown(input, bindings.down) ? 1.0f : 0.0f;
     }
-    int first = pad;
-    int last = pad;
+    s32 first = pad;
+    s32 last = pad;
     if (pad == kAllPads) {
         first = 0;
         last = Input::kMaxPads - 1;
     } else if (pad == kNoPad) {
         last = first - 1;
     }
-    for (int index = first; index <= last; ++index) {
+    for (s32 index = first; index <= last; ++index) {
         if (!input.isPadConnected(index)) {
             continue;
         }
@@ -58,7 +60,7 @@ MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool k
         sum.y -= anyButtonDown(input, index, bindings.padDown) ? 1.0f : 0.0f;
     }
     MoveInput out;
-    const float length = glm::length(sum);
+    const f32 length = glm::length(sum);
     if (length > 0.0f) {
         out.direction = sum / length;
         out.magnitude = std::min(1.0f, length);
@@ -71,21 +73,21 @@ namespace {
 /** Whether any of the keys (with the keyboard) or of the buttons on the player's pads is
  * down, or with `edge` went down this frame. */
 bool bound(const Input& input, std::span<const Key> keys, std::span<const PadButton> buttons,
-           bool keyboard, int pad, bool edge) {
+           bool keyboard, s32 pad, bool edge) {
     if (keyboard && std::ranges::any_of(keys, [&](Key key) {
             return edge ? input.wasKeyPressed(key) : input.isKeyDown(key);
         })) {
         return true;
     }
-    int first = pad;
-    int last = pad;
+    s32 first = pad;
+    s32 last = pad;
     if (pad == kAllPads) {
         first = 0;
         last = Input::kMaxPads - 1;
     } else if (pad == kNoPad) {
         last = first - 1;
     }
-    for (int index = first; index <= last; ++index) {
+    for (s32 index = first; index <= last; ++index) {
         if (input.isPadConnected(index) && std::ranges::any_of(buttons, [&](PadButton button) {
                 return edge ? input.wasPadButtonPressed(index, button)
                             : input.isPadButtonDown(index, button);
@@ -98,11 +100,11 @@ bool bound(const Input& input, std::span<const Key> keys, std::span<const PadBut
 
 } // namespace
 
-bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad) {
+bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyboard, s32 pad) {
     return bound(input, bindings.attack, bindings.padAttack, keyboard, pad, false);
 }
 
-PlayButtons readPlayButtons(const Input& input, const PlayBindings& b, bool keyboard, int pad) {
+PlayButtons readPlayButtons(const Input& input, const PlayBindings& b, bool keyboard, s32 pad) {
     PlayButtons out;
     out.attack = bound(input, b.attack, b.padAttack, keyboard, pad, false);
     out.usePotion = bound(input, b.usePotion, b.padUsePotion, keyboard, pad, false);

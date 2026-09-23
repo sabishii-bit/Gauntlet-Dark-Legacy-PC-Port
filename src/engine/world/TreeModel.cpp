@@ -2,14 +2,13 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <format>
 #include <stdexcept>
 #include <string_view>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
@@ -48,7 +47,7 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                      RenderDevice& device) {
     clear();
     bool first = true;
-    for (std::size_t i = 0; i < tree.nodes.size(); ++i) {
+    for (usize i = 0; i < tree.nodes.size(); ++i) {
         const TreeNodeInfo& info = tree.nodes[i];
         const bool flips = std::ranges::any_of(info.objectFrames,
                                                [](const auto& run) { return !run.object.empty(); });
@@ -81,13 +80,11 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                     if (!model.has_value()) {
                         throw std::runtime_error(std::format("object {} is missing", run.object));
                     }
-                    const unsigned int firstModel = *model;
-                    for (int f = 0; f < run.frames &&
-                                    firstModel + static_cast<unsigned int>(f) < models.size();
-                         ++f) {
-                        frames.shapes.push_back(
-                            makeShape(models.mesh(firstModel + static_cast<unsigned int>(f)),
-                                      textures, device));
+                    const u32 firstModel = *model;
+                    for (s32 f = 0;
+                         f < run.frames && firstModel + static_cast<u32>(f) < models.size(); ++f) {
+                        frames.shapes.push_back(makeShape(
+                            models.mesh(firstModel + static_cast<u32>(f)), textures, device));
                         include(frames.shapes.back(), node.offset, first);
                     }
                 }
@@ -103,7 +100,7 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
     return !m_nodes.empty();
 }
 
-void TreeModel::setFrame(unsigned int sequence, int frame) {
+void TreeModel::setFrame(u32 sequence, s32 frame) {
     for (Node& node : m_nodes) {
         if (node.runs.empty()) {
             continue;
@@ -113,10 +110,10 @@ void TreeModel::setFrame(unsigned int sequence, int frame) {
             continue;
         }
         const FrameRun& run = node.runs[sequence];
-        const auto count = static_cast<int>(run.shapes.size());
-        const int at = frame - run.start;
+        const auto count = static_cast<s32>(run.shapes.size());
+        const s32 at = frame - run.start;
         if (at >= 0 && at < count) {
-            node.shape = run.shapes[static_cast<std::size_t>(at)];
+            node.shape = run.shapes[static_cast<usize>(at)];
         } else if (count == 1) {
             node.shape = run.shapes[0];
         }
@@ -125,7 +122,7 @@ void TreeModel::setFrame(unsigned int sequence, int frame) {
 
 void TreeModel::draw(RenderDevice& device, const Mat4& clip, const Mat4& model,
                      const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
-                     const CameraFrame* camera, float alpha) const {
+                     const CameraFrame* camera, f32 alpha) const {
     if (alpha <= 0.0f) {
         return;
     }
@@ -135,7 +132,7 @@ void TreeModel::draw(RenderDevice& device, const Mat4& clip, const Mat4& model,
 
 void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& model,
                           const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
-                          const CameraFrame* camera, float alpha, bool translucent) const {
+                          const CameraFrame* camera, f32 alpha, bool translucent) const {
     const bool fading = alpha < 1.0f;
     for (const Node& node : m_nodes) {
         if (node.shape.mesh == nullptr) {
@@ -148,7 +145,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
         }
         const Mat3 normalMatrix{placement};
         const Shape& shape = node.shape;
-        for (std::size_t p = 0; p < shape.mesh->parts.size(); ++p) {
+        for (usize p = 0; p < shape.mesh->parts.size(); ++p) {
             // A fading figure blends its solid parts too, so the whole of it thins together.
             const bool blended = shape.translucent[p] || node.additive || fading;
             if (blended != translucent) {
@@ -157,7 +154,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             const MeshPart& part = shape.mesh->parts[p];
             m_batch.clear();
             m_batch.begin(PrimitiveTopology::TriangleList);
-            for (const unsigned int index : part.indices) {
+            for (const u32 index : part.indices) {
                 const MeshVertex& v = shape.mesh->vertices[index];
                 const Vec3 normal = glm::normalize(normalMatrix * v.normal);
                 const Vec2 uv =
@@ -165,14 +162,11 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 const Vec4 placed = placement * Vec4{v.position, 1.0f};
                 // Glows add their whole texture; the original never lights them.
                 Color color = node.additive || m_unlit ? Color::white() : lighting.shade(normal);
-                color.r =
-                    static_cast<std::uint8_t>(static_cast<unsigned int>(color.r) * m_tint.r / 255);
-                color.g =
-                    static_cast<std::uint8_t>(static_cast<unsigned int>(color.g) * m_tint.g / 255);
-                color.b =
-                    static_cast<std::uint8_t>(static_cast<unsigned int>(color.b) * m_tint.b / 255);
+                color.r = static_cast<u8>(static_cast<u32>(color.r) * m_tint.r / 255);
+                color.g = static_cast<u8>(static_cast<u32>(color.g) * m_tint.g / 255);
+                color.b = static_cast<u8>(static_cast<u32>(color.b) * m_tint.b / 255);
                 if (fading) {
-                    color.a = static_cast<std::uint8_t>(static_cast<float>(color.a) * alpha);
+                    color.a = static_cast<u8>(static_cast<f32>(color.a) * alpha);
                 }
                 m_batch.vertex(Vec3{placed}, color, uv);
             }
@@ -199,14 +193,14 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
     }
 }
 
-void TreeModel::setTextureFrame(unsigned int slot, const Texture* frame) {
+void TreeModel::setTextureFrame(u32 slot, const Texture* frame) {
     std::erase_if(m_frames, [slot](const auto& shown) { return shown.first == slot; });
     if (frame != nullptr) {
         m_frames.emplace_back(slot, frame);
     }
 }
 
-void TreeModel::setTextureOffset(unsigned int slot, const Vec2& offset, const Vec2& scale) {
+void TreeModel::setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale) {
     for (Slide& slide : m_offsets) {
         if (slide.slot == slot) {
             slide.offset = offset;
@@ -223,7 +217,7 @@ void TreeModel::resetTextures() {
     m_offsets.clear();
 }
 
-Vec2 TreeModel::textureOffset(unsigned int slot) const {
+Vec2 TreeModel::textureOffset(u32 slot) const {
     for (const Slide& slide : m_offsets) {
         if (slide.slot == slot) {
             return slide.offset;
@@ -232,7 +226,7 @@ Vec2 TreeModel::textureOffset(unsigned int slot) const {
     return Vec2{0.0f, 0.0f};
 }
 
-Vec2 TreeModel::textureScale(unsigned int slot) const {
+Vec2 TreeModel::textureScale(u32 slot) const {
     for (const Slide& slide : m_offsets) {
         if (slide.slot == slot) {
             return slide.scale;

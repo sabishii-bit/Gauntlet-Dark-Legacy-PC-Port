@@ -1,13 +1,13 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 #include <random>
 #include <span>
 #include <string>
 #include <vector>
 
 #include "engine/assets/ParticleTemplate.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"
 
@@ -16,13 +16,13 @@ namespace gdl {
 /** A value over a particle's time: from its birth to its life's end, then over its fade to
  * its death. */
 struct ParticleEnvelope {
-    float lifeStart = 0.0f;
-    float lifeEnd = 0.0f;
-    float fadeStart = 0.0f;
-    float fadeEnd = 0.0f;
+    f32 lifeStart = 0.0f;
+    f32 lifeEnd = 0.0f;
+    f32 fadeStart = 0.0f;
+    f32 fadeEnd = 0.0f;
 
     /** The value at `age` frames of a particle living `life` frames and fading `fade` more. */
-    float at(float age, float life, float fade) const;
+    f32 at(f32 age, f32 life, f32 fade) const;
 };
 
 /**
@@ -31,32 +31,32 @@ struct ParticleEnvelope {
  * frames, rates particles a frame, speeds units a frame and colours 0 to 255.
  */
 struct ParticleDescriptor {
-    static constexpr float kFrameRate = 30.0f;
-    static constexpr float kSphere = -1.0f;          ///< the angle of directions spread every way
-    static constexpr unsigned int kEndless = 0xFFFF; ///< a phase that never ends
-    static constexpr unsigned int kMostParticles = 300;
-    static constexpr float kDefaultGravity = -32.0f / 900.0f;
-    static constexpr float kLeastWidth = 1.0f / 450.0f;
+    static constexpr f32 kFrameRate = 30.0f;
+    static constexpr f32 kSphere = -1.0f;   ///< the angle of directions spread every way
+    static constexpr u32 kEndless = 0xFFFF; ///< a phase that never ends
+    static constexpr u32 kMostParticles = 300;
+    static constexpr f32 kDefaultGravity = -32.0f / 900.0f;
+    static constexpr f32 kLeastWidth = 1.0f / 450.0f;
 
-    unsigned int delay = 0;
-    unsigned int emitFrames = 1; ///< the emitting phase, kEndless to stay in it
-    unsigned int fadeFrames = 0; ///< the fading phase after it, kEndless to stay in it
-    bool forever = false;        ///< emitting starts over after fading
-    bool oneShot = false;        ///< every particle at once
-    bool dynamic = false;        ///< positions and directions follow the marker each frame
-    float angle = 0.0f;          ///< the cone's half angle in radians; 0 for the direction alone
+    u32 delay = 0;
+    u32 emitFrames = 1;   ///< the emitting phase, kEndless to stay in it
+    u32 fadeFrames = 0;   ///< the fading phase after it, kEndless to stay in it
+    bool forever = false; ///< emitting starts over after fading
+    bool oneShot = false; ///< every particle at once
+    bool dynamic = false; ///< positions and directions follow the marker each frame
+    f32 angle = 0.0f;     ///< the cone's half angle in radians; 0 for the direction alone
     Vec3 direction{0.0f, 1.0f, 0.0f};
     Vec3 volume{0.0f, 0.0f, 0.0f};
-    std::array<float, 4> rate{0.0f, 0.0f, 0.0f, 0.0f}; ///< at the start and end of each phase
-    float rateRandom = 0.0f;
-    float gravity = 0.0f; ///< added to the height each frame squared; up when positive
-    float drag = 0.0f;
-    float speed = 0.0f;
-    unsigned int maxParticles = 0; ///< 0 leaves it to the rates and lives
-    unsigned int maxDirections = 0;
-    unsigned int maxPositions = 0;
-    unsigned int particleLife = 1;
-    unsigned int particleFade = 0;
+    std::array<f32, 4> rate{0.0f, 0.0f, 0.0f, 0.0f}; ///< at the start and end of each phase
+    f32 rateRandom = 0.0f;
+    f32 gravity = 0.0f; ///< added to the height each frame squared; up when positive
+    f32 drag = 0.0f;
+    f32 speed = 0.0f;
+    u32 maxParticles = 0; ///< 0 leaves it to the rates and lives
+    u32 maxDirections = 0;
+    u32 maxPositions = 0;
+    u32 particleLife = 1;
+    u32 particleFade = 0;
     ParticleEnvelope red;
     ParticleEnvelope green;
     ParticleEnvelope blue;
@@ -74,7 +74,7 @@ struct ParticleDescriptor {
     /** Lays a template's filled fields and decided flags over this. */
     void apply(const ParticleTemplate& source);
     /** How many particles can live at once. */
-    unsigned int capacity() const;
+    u32 capacity() const;
 };
 
 /** The console's built-in presets, found by their `preset` number. */
@@ -84,7 +84,7 @@ std::span<const ParticleTemplate> particlePresets();
 struct Particle {
     Vec3 origin{0.0f, 0.0f, 0.0f};
     Vec3 velocity{0.0f, 0.0f, 0.0f};
-    float age = 0.0f;
+    f32 age = 0.0f;
 };
 
 /**
@@ -95,43 +95,43 @@ struct Particle {
  */
 class ParticleEmitter {
 public:
-    enum class Phase : std::uint8_t { Delay, Emitting, Fading, Done };
-    static constexpr unsigned int kMostFramesAtOnce = 15; ///< a longer gap counts as one frame
+    enum class Phase : u8 { Delay, Emitting, Fading, Done };
+    static constexpr u32 kMostFramesAtOnce = 15; ///< a longer gap counts as one frame
 
-    void start(const ParticleDescriptor& descriptor, const Mat4& node, unsigned int seed = 1);
+    void start(const ParticleDescriptor& descriptor, const Mat4& node, u32 seed = 1);
     /** Moves the marker; new particles leave from there. */
     void setNode(const Mat4& node) { m_node = node; }
     const Mat4& node() const { return m_node; }
     /** Ends the emission; the particles live out their time. */
     void finish() { m_phase = Phase::Done; }
     /** Ages the particles `frames` on, dropping the dead, then emits the frame's share. */
-    void step(unsigned int frames);
+    void step(u32 frames);
 
     bool active() const { return m_phase != Phase::Done || !m_particles.empty(); }
     Phase phase() const { return m_phase; }
-    unsigned int age() const { return m_age; }
+    u32 age() const { return m_age; }
     const ParticleDescriptor& descriptor() const { return m_descriptor; }
     std::span<const Particle> particles() const { return m_particles; }
     Vec3 positionOf(const Particle& particle) const;
     Color colorOf(const Particle& particle) const;
-    float widthOf(const Particle& particle) const;
+    f32 widthOf(const Particle& particle) const;
 
     /** Appends a camera-facing square per particle, `right` and `up` being the camera's. */
     void draw(ImmediateBatch& batch, const Vec3& right, const Vec3& up) const;
 
 private:
-    float rateNow();
-    void emit(float age);
+    f32 rateNow();
+    void emit(f32 age);
     Vec3 newOrigin();
     Vec3 newVelocity();
-    float random01();
+    f32 random01();
 
     ParticleDescriptor m_descriptor;
     Mat4 m_node{1.0f};
     std::vector<Particle> m_particles;
     Phase m_phase = Phase::Done;
-    unsigned int m_age = 0;
-    float m_saved = 0.0f; ///< the fraction of a particle owed from the last frame
+    u32 m_age = 0;
+    f32 m_saved = 0.0f; ///< the fraction of a particle owed from the last frame
     std::minstd_rand m_random;
 };
 

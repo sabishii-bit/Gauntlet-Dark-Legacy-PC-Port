@@ -8,6 +8,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -202,11 +203,11 @@ TEST_CASE("victory presentation reports voices and one sparkle then resets for a
     MessageTable strings;
     loadCaptions(strings);
     BossVictoryPresentation presentation;
-    for (int visit = 0; visit < 2; ++visit) {
+    for (s32 visit = 0; visit < 2; ++visit) {
         presentation.begin(41, 'G', 0, 0, true);
         std::vector<std::string> voices;
-        int sparkles = 0;
-        int tick = 0;
+        s32 sparkles = 0;
+        s32 tick = 0;
         while (presentation.state().stage() != Stage::Leaving && tick++ < 1000) {
             const auto result = presentation.update(1, 0.0f, true, strings);
             for (const auto& voice : result.voices) {

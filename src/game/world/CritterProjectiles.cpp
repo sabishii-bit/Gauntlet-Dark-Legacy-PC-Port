@@ -6,19 +6,20 @@
 #include <utility>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 namespace {
-constexpr float kMorphLife = 15.0f;
-constexpr float kSimulationStep = 1.0f / 120.0f;
-constexpr float kWallTolerance = 0.001f;
-constexpr float kFloorClearance = 0.1f;
-constexpr unsigned int kSpin = 8;
-constexpr unsigned int kCustomEffect = 0xF000000;
+constexpr f32 kMorphLife = 15.0f;
+constexpr f32 kSimulationStep = 1.0f / 120.0f;
+constexpr f32 kWallTolerance = 0.001f;
+constexpr f32 kFloorClearance = 0.1f;
+constexpr u32 kSpin = 8;
+constexpr u32 kCustomEffect = 0xF000000;
 } // namespace
 
-unsigned int CritterProjectiles::show(Flying& flying, int index, RenderDevice& device,
-                                      EffectTrees& effects, const PlaySound& sound, float life) {
+u32 CritterProjectiles::show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
+                             const PlaySound& sound, f32 life) {
     const CritterSound* cue = flying.shot.data->sound(index);
     if (cue == nullptr) {
         return 0;
@@ -63,7 +64,7 @@ void CritterProjectiles::launch(const CritterShot& shot, ItemArchive& archive, R
                   cue->tree);
         return;
     }
-    std::uniform_real_distribution<float> spread{-1.0f, 1.0f};
+    std::uniform_real_distribution<f32> spread{-1.0f, 1.0f};
     Flying flying;
     flying.shot = shot;
     // Unattached SFXX offsets are world-axis offsets, scaled by the creature.
@@ -73,8 +74,8 @@ void CritterProjectiles::launch(const CritterShot& shot, ItemArchive& archive, R
     flying.velocity = CritterProjectile::velocity(*damage, flying.shot, spread(m_random));
     flying.rotation.y = std::atan2(flying.velocity.x, flying.velocity.z);
     if ((cue->flags & kSpin) != 0) {
-        constexpr float kSpinRate = std::numbers::pi_v<float> / 2.0f;
-        std::uniform_real_distribution<float> spin{0.0f, kSpinRate};
+        constexpr f32 kSpinRate = std::numbers::pi_v<f32> / 2.0f;
+        std::uniform_real_distribution<f32> spin{0.0f, kSpinRate};
         flying.spin = Vec3{spin(m_random), 0.0f, spin(m_random)};
     }
     flying.effect = show(flying, damage->sound, device, effects, sound, shot.birthLife);
@@ -84,7 +85,7 @@ void CritterProjectiles::launch(const CritterShot& shot, ItemArchive& archive, R
     }
 }
 
-void CritterProjectiles::update(float seconds, const WorldCollision* collision,
+void CritterProjectiles::update(f32 seconds, const WorldCollision* collision,
                                 std::span<const EnemyView> players, RenderDevice& device,
                                 EffectTrees& effects, const PlaySound& sound) {
     if (seconds <= 0.0f) {
@@ -112,14 +113,14 @@ void CritterProjectiles::update(float seconds, const WorldCollision* collision,
             place(flying, effects);
             continue;
         }
-        const float radius = std::max(0.0f, damage.radius * flying.shot.scale);
+        const f32 radius = std::max(0.0f, damage.radius * flying.shot.scale);
         // Small steps also cover thin walls with the world's overlap-based collider.
-        const float spatialStep =
+        const f32 spatialStep =
             std::max(radius * 0.5f, kFloorClearance) / std::max(glm::length(flying.velocity), 1.0f);
         const auto steps =
-            static_cast<int>(std::ceil(seconds / std::min(kSimulationStep, spatialStep)));
-        const float dt = seconds / static_cast<float>(steps);
-        for (int step = 0; step < steps; ++step) {
+            static_cast<s32>(std::ceil(seconds / std::min(kSimulationStep, spatialStep)));
+        const f32 dt = seconds / static_cast<f32>(steps);
+        for (s32 step = 0; step < steps; ++step) {
             const Vec3 from = flying.position;
             const Vec3 acceleration{0.0f, -damage.gravity, 0.0f};
             const Vec3 to = from + flying.velocity * dt + acceleration * (0.5f * dt * dt);
@@ -139,7 +140,7 @@ void CritterProjectiles::update(float seconds, const WorldCollision* collision,
                     destination.y = floor->y + radius;
                 }
             }
-            float nearest = 1.0f;
+            f32 nearest = 1.0f;
             const EnemyView* victim = nullptr;
             if ((damage.behaviorFlags & CritterProjectile::kNoPlayerDamage) == 0) {
                 for (const EnemyView& player : players) {

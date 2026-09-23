@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <filesystem>
 #include <span>
 #include <vector>
@@ -9,6 +8,7 @@
 #include "engine/assets/AnimationSet.h"
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
@@ -266,7 +266,7 @@ TEST_CASE("the spawn effect's flame column comes and goes with its frames",
     // The floor's six sparkle polygons alone until the frame is set; then the column too, for
     // the run's thirteen frames.
     effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
-    const std::size_t floorOnly = device.draws.size();
+    const usize floorOnly = device.draws.size();
     REQUIRE(floorOnly == 6);
     effect.setFrame(0, 0);
     effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
@@ -464,7 +464,7 @@ TEST_CASE("tree texture overrides follow each sequence and reset between shared 
     REQUIRE(model.bind(tree, models, textures, device));
     TextureAnimator animator;
     animator.bind(animations, textures, device);
-    const auto drawn = [&](unsigned int sequence, int frame) {
+    const auto drawn = [&](u32 sequence, s32 frame) {
         device.draws.clear();
         animator.apply(model, tree, sequence, frame);
         model.draw(device, Mat4{1}, Mat4{1});

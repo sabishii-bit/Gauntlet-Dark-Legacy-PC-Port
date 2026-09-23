@@ -6,6 +6,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/BitmapFont.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -92,7 +93,7 @@ TEST_CASE("arrival camera frames the party and outlasts the spawn effects",
     REQUIRE(device.draws.empty());
     arrival.advance(1, true, follow, attention);
     REQUIRE(arrival.camera().phase() == StartCamera::Phase::Ride);
-    for (int ticks = 0; ticks < 300 && arrival.active(); ++ticks) {
+    for (s32 ticks = 0; ticks < 300 && arrival.active(); ++ticks) {
         arrival.advance(1, false, follow, attention);
     }
     REQUIRE_FALSE(arrival.active());

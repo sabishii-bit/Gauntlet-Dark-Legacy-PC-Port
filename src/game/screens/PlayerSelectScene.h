@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string_view>
@@ -12,6 +10,7 @@
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
@@ -28,7 +27,7 @@
 
 namespace gdl::game {
 
-enum class SelectOutcome : std::uint8_t { Running, Cancelled, Done };
+enum class SelectOutcome : u8 { Running, Cancelled, Done };
 
 /**
  * The player select screen: four lanes, one per player, where each joins with Start and
@@ -37,24 +36,23 @@ enum class SelectOutcome : std::uint8_t { Running, Cancelled, Done };
  */
 class PlayerSelectScene {
 public:
-    static constexpr int kLaneCount = 4;
-    static constexpr int kIdleFrames = 8;
+    static constexpr s32 kLaneCount = 4;
+    static constexpr s32 kIdleFrames = 8;
     using Inputs = std::array<MenuInput, kLaneCount>;
 
     /** Loads the unpacked select assets; `startingPlayer` joins at once. False when absent. */
-    bool open(RenderDevice& device, const GameContext& context, int startingPlayer);
+    bool open(RenderDevice& device, const GameContext& context, s32 startingPlayer);
     void close();
     bool isOpen() const { return m_open; }
 
-    SelectOutcome update(double deltaSeconds, const Inputs& inputs);
+    SelectOutcome update(f64 deltaSeconds, const Inputs& inputs);
 
     /** Steps the screen by whole ticks; update() calls this from wall-clock time. */
-    SelectOutcome step(int ticks, const Inputs& inputs);
+    SelectOutcome step(s32 ticks, const Inputs& inputs);
 
-    void render(RenderDevice& device, const Mat4& frameProjection, float frameWidth,
-                float frameHeight);
+    void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);
 
-    const SelectLane& lane(int index) const { return m_lanes[static_cast<std::size_t>(index)]; }
+    const SelectLane& lane(s32 index) const { return m_lanes[static_cast<usize>(index)]; }
     /** Whether any lane is taking a name, so the keyboard's escape belongs to it. */
     bool typing() const {
         return std::ranges::any_of(m_lanes, [](const SelectLane& lane) { return lane.typing(); });
@@ -62,8 +60,8 @@ public:
 
     /** The devices lane `index` reads this frame: its player's, typing while it takes a
      * name. */
-    MenuInputSource inputSource(int index) const;
-    int time() const { return m_time; }
+    MenuInputSource inputSource(s32 index) const;
+    s32 time() const { return m_time; }
     bool musicPlaying() const;
 
     /** Whether Sumner is still greeting a locked-in character. */
@@ -89,7 +87,7 @@ private:
     RenderDevice* m_device = nullptr;
     GameContext m_context;
     MenuScreen m_screen;
-    int m_tickRate = 60;
+    s32 m_tickRate = 60;
     TextureSet m_selectTextures;
     TextureSet m_staticTextures;
     BitmapFont m_font32;
@@ -110,9 +108,9 @@ private:
     SaveSlots m_saves;
     LaneServices m_services;
     std::array<SelectLane, kLaneCount> m_lanes{};
-    double m_tickRemainder = 0.0;
-    int m_time = 0;
-    int m_idleFrames = 0;
+    f64 m_tickRemainder = 0.0;
+    s32 m_time = 0;
+    s32 m_idleFrames = 0;
 };
 
 } // namespace gdl::game

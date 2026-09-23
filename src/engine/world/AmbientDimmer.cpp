@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/core/Types.h"
+
 namespace gdl {
 
-void AmbientDimmer::ask(float amount) {
+void AmbientDimmer::ask(f32 amount) {
     m_wanted = amount;
     m_holdLeft = kHoldSeconds;
 }
@@ -17,7 +19,7 @@ void AmbientDimmer::reset() {
     m_frames = 0.0f;
 }
 
-void AmbientDimmer::update(float seconds) {
+void AmbientDimmer::update(f32 seconds) {
     m_holdLeft = std::max(m_holdLeft - seconds, 0.0f);
     m_frames += seconds / kFrameSeconds;
     while (m_frames >= 1.0f) {
@@ -29,12 +31,12 @@ void AmbientDimmer::update(float seconds) {
                 m_wanted = 0.0f;
             }
         }
-        const float gap = m_wanted - m_current;
+        const f32 gap = m_wanted - m_current;
         m_current += std::clamp(gap, -kDarkenStep, kBrightenStep);
     }
 }
 
-float AmbientDimmer::applied(float ambient) const {
+f32 AmbientDimmer::applied(f32 ambient) const {
     return std::clamp(ambient + m_current, 0.0f, 1.0f);
 }
 

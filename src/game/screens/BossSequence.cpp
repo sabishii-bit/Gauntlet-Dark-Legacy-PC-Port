@@ -1,7 +1,8 @@
 #include "game/screens/BossSequence.h"
 
-#include <cstdint>
 #include <format>
+
+#include "engine/core/Types.h"
 
 #include "game/enemies/BossCoins.h"
 #include "game/players/PowerupEffects.h"
@@ -11,11 +12,11 @@ namespace gdl::game {
 namespace {
 constexpr std::string_view kBossKeyTree = "BOSSKEY";
 constexpr std::string_view kBossKeyLaterTree = "BOSSKEY2";
-constexpr float kBossKeySeconds = 30.0f;
+constexpr f32 kBossKeySeconds = 30.0f;
 constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY";
 constexpr std::string_view kSpawnEffect = "STARTFX";
-constexpr float kBossDeathBlast = 1000.0f;
-constexpr float kBossDeathBlastRadius = 1000.0f;
+constexpr f32 kBossDeathBlast = 1000.0f;
+constexpr f32 kBossDeathBlastRadius = 1000.0f;
 } // namespace
 
 void BossSequence::bind(Resources resources) {
@@ -37,7 +38,7 @@ void BossSequence::clear() {
 
 /** Translate scene-owned poses into the presentation's small, read-only snapshot. */
 std::optional<LegendPresentation::Bearer>
-BossSequence::bearer(int player, int kind, std::span<const PlayerRuntime> players) {
+BossSequence::bearer(s32 player, s32 kind, std::span<const PlayerRuntime> players) {
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         if (actor.player() != player) {
@@ -54,7 +55,7 @@ BossSequence::bearer(int player, int kind, std::span<const PlayerRuntime> player
         bearer.casting = figure != nullptr && figure->animator().castingLegend();
         bearer.released = figure != nullptr && figure->animator().legendReleased();
         if (LegendShow::heldInHand(kind) && figure != nullptr) {
-            const float size = PlayerFigure::bodyScale(
+            const f32 size = PlayerFigure::bodyScale(
                 actor.save(), PowerupEffects::of(actor.save().progress().inventory));
             const Mat4 body = glm::scale(actor.transform(), Vec3{size, size, size});
             if (const auto hand = figure->handPosition(body); hand.has_value()) {
@@ -69,13 +70,13 @@ BossSequence::bearer(int player, int kind, std::span<const PlayerRuntime> player
 void BossSequence::showLegend(const LegendEvent& event, const Bosses& bosses,
                               std::span<const PlayerRuntime> players) {
     if (m_legend != nullptr) {
-        const int kind = bosses.view().kind;
+        const s32 kind = bosses.view().kind;
         m_legend->show(event.cue, event.player, event.realm, kind,
                        bearer(event.player, kind, players));
     }
 }
 
-void BossSequence::advanceLegend(float seconds, Bosses& bosses, std::span<PlayerRuntime> players) {
+void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRuntime> players) {
     if (m_legend == nullptr) {
         return;
     }
@@ -109,19 +110,19 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
     if (level == nullptr || m_victory.state().running() || m_victory.state().finished()) {
         return;
     }
-    const int order = LevelRef::orderOf(r.world.ref().realmId);
-    std::uint16_t found = 0;
+    const s32 order = LevelRef::orderOf(r.world.ref().realmId);
+    u16 found = 0;
     for (PlayerRuntime& runtime : players) {
         PlayerActor& actor = runtime.actor;
         actor.save().progress().relics.addShard(order);
         found |= actor.save().progress().relics.runes;
     }
     // The realm's runestones are those its levels' records number, from one.
-    std::uint16_t inRealm = 0;
+    u16 inRealm = 0;
     if (r.levels != nullptr) {
-        for (const int rune : r.levels->runesOf(r.world.ref().realm)) {
+        for (const s32 rune : r.levels->runesOf(r.world.ref().realm)) {
             if (rune > 0 && rune <= Relics::kRuneCount) {
-                inRealm |= static_cast<std::uint16_t>(1U << static_cast<unsigned int>(rune - 1));
+                inRealm |= static_cast<u16>(1U << static_cast<u32>(rune - 1));
             }
         }
     }
@@ -147,7 +148,7 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
 
 /** The wizard's visit runs on: he fades in, says his piece (typed out under the view, his
  * lines from the level's bank), then the party sparkles and is taken to the tower. */
-bool BossSequence::advanceVictory(int ticks, float seconds, std::span<const PlayerRuntime> players,
+bool BossSequence::advanceVictory(s32 ticks, f32 seconds, std::span<const PlayerRuntime> players,
                                   const MessageTable& strings) {
     if (!m_resources || !m_victory.state().running()) {
         return false;
@@ -177,15 +178,15 @@ void BossSequence::spewCoins(const CritterSpew& spew, LevelOpponents& opponents,
         return;
     }
     auto& r = *m_resources;
-    for (const int enemy : opponents.enemies().within(spew.origin, kBossDeathBlastRadius)) {
+    for (const s32 enemy : opponents.enemies().within(spew.origin, kBossDeathBlastRadius)) {
         const Vec3 away = opponents.enemies().positionOf(enemy) - spew.origin;
         opponents.strikeEnemy(enemy, kBossDeathBlast, EnemyHit::kKnockDown,
                               Vec3{away.x, 0.0f, away.z}, -1, players);
     }
-    for (const int generator : opponents.generators().within(spew.origin, kBossDeathBlastRadius)) {
+    for (const s32 generator : opponents.generators().within(spew.origin, kBossDeathBlastRadius)) {
         opponents.strikeGenerator(generator, kBossDeathBlast, -1);
     }
-    const auto count = static_cast<int>(players.size());
+    const auto count = static_cast<s32>(players.size());
     for (const SpewedCoin& coin : BossCoins::spray(r.world.ref().realmId, count, spew.velocity,
                                                    spew.halfAngle, m_coinRandom)) {
         r.world.throwItem(r.device, coin.name, spew.origin, coin.velocity,

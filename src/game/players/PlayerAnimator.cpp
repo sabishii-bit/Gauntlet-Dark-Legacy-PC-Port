@@ -1,13 +1,13 @@
 #include "game/players/PlayerAnimator.h"
 
-#include <cstddef>
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr std::size_t index(PlayerAnimator::Action action) {
-    return static_cast<std::size_t>(action);
+constexpr usize index(PlayerAnimator::Action action) {
+    return static_cast<usize>(action);
 }
 
 /** Whether the deed is a legend item's gesture. */
@@ -20,16 +20,16 @@ constexpr bool isLegend(PlayerDeed deed) {
 
 bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
     unbind();
-    for (std::size_t a = 0; a < kActionCount; ++a) {
+    for (usize a = 0; a < kActionCount; ++a) {
         const auto sequence = tree.findSequence(kSequenceNames[a]);
-        m_sequences[a] = sequence.has_value() ? static_cast<int>(*sequence) : -1;
+        m_sequences[a] = sequence.has_value() ? static_cast<s32>(*sequence) : -1;
     }
     if (m_sequences[index(Action::Ready)] < 0) {
         return false;
     }
     m_tree = &tree;
     m_entered = !enter;
-    const unsigned int stance = sequenceOf(Action::Ready);
+    const u32 stance = sequenceOf(Action::Ready);
     m_player.start(tree.sequences[stance], stance);
     m_pose.evaluate(tree, stance, 0.0f);
     m_previous = m_pose;
@@ -60,19 +60,19 @@ void PlayerAnimator::unbind() {
 }
 
 PlayerAnimator::Action PlayerAnimator::strafeStep(StrafeWay way, bool shooting) {
-    const std::size_t base = index(shooting ? Action::StrafeShootForward1 : Action::StrafeForward1);
-    const std::size_t steps = way == StrafeWay::None ? 0 : static_cast<std::size_t>(way) - 1;
+    const usize base = index(shooting ? Action::StrafeShootForward1 : Action::StrafeForward1);
+    const usize steps = way == StrafeWay::None ? 0 : static_cast<usize>(way) - 1;
     return static_cast<Action>(base + steps * 2);
 }
 
 PlayerAnimator::Action PlayerAnimator::firstHalfOf(Action step) {
-    const std::size_t base = index(Action::StrafeForward1);
+    const usize base = index(Action::StrafeForward1);
     return static_cast<Action>(base + (index(step) - base) / 2 * 2);
 }
 
 PlayerAnimator::Action PlayerAnimator::otherHalfOf(Action step) {
-    const std::size_t base = index(Action::StrafeForward1);
-    const std::size_t offset = index(step) - base;
+    const usize base = index(Action::StrafeForward1);
+    const usize offset = index(step) - base;
     return static_cast<Action>(base + (offset % 2 == 0 ? offset + 1 : offset - 1));
 }
 
@@ -98,20 +98,20 @@ bool PlayerAnimator::canBegin(PlayerDeed deed) const {
            !reacting() && !turboing() && !dying();
 }
 
-PlayerMotion PlayerAnimator::motionFor(float stickMagnitude) {
+PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
     if (stickMagnitude > kRunMagnitude) {
         return PlayerMotion::Run;
     }
     return stickMagnitude > 0.0f ? PlayerMotion::Walk : PlayerMotion::Stand;
 }
 
-unsigned int PlayerAnimator::sequenceOf(Action action) const {
-    const int sequence = m_sequences[index(action)];
-    return sequence >= 0 ? static_cast<unsigned int>(sequence)
-                         : static_cast<unsigned int>(m_sequences[index(Action::Ready)]);
+u32 PlayerAnimator::sequenceOf(Action action) const {
+    const s32 sequence = m_sequences[index(action)];
+    return sequence >= 0 ? static_cast<u32>(sequence)
+                         : static_cast<u32>(m_sequences[index(Action::Ready)]);
 }
 
-void PlayerAnimator::update(PlayerMotion motion, int ticks, float seconds, PlayerDeed deed) {
+void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed) {
     if (!bound()) {
         return;
     }
@@ -406,8 +406,8 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     return d;
 }
 
-void PlayerAnimator::play(const Decision& decision, float seconds) {
-    const unsigned int target = sequenceOf(decision.action);
+void PlayerAnimator::play(const Decision& decision, f32 seconds) {
+    const u32 target = sequenceOf(decision.action);
     m_player.advance(seconds, decision.repeat);
     const bool done = m_player.finished();
     const bool different = !m_player.playing() || m_player.sequence() != target;

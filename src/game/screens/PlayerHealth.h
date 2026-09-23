@@ -1,13 +1,14 @@
 #pragma once
-#include <cstdint>
 #include <functional>
 #include <random>
 #include <string_view>
 
+#include "engine/core/Types.h"
+
 #include "game/screens/PlayerRuntime.h"
 namespace gdl::game {
 /** What hurt a character, which picks how it cries out. */
-enum class HurtKind : std::uint8_t {
+enum class HurtKind : u8 {
     Blow,   ///< cries out once enough has been taken
     Burn,   ///< always cries out
     Pierce, ///< groans
@@ -20,18 +21,18 @@ enum class HurtKind : std::uint8_t {
 class PlayerHealth {
 public:
     struct Events {
-        std::function<void(float, float)> block;
+        std::function<void(f32, f32)> block;
         std::function<void(std::string_view)> sound;
         std::function<void(std::string_view)> cry;
         std::function<void(std::string_view)> named;
     };
-    void hurt(PlayerRuntime& runtime, float damage, HurtKind kind, bool directed, bool inTower,
-              float damageScale, const Events& events);
-    static float guarded(const PlayerRuntime& runtime, float damage, bool directed);
+    void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed, bool inTower,
+              f32 damageScale, const Events& events);
+    static f32 guarded(const PlayerRuntime& runtime, f32 damage, bool directed);
 
 private:
     void cryPain(const Events& events);
     std::mt19937 m_painRandom{0x5A17u};
-    unsigned int m_lowHealthTurn = 0;
+    u32 m_lowHealthTurn = 0;
 };
 } // namespace gdl::game

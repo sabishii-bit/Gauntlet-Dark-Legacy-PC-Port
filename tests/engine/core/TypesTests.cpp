@@ -5,8 +5,23 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/SpecialMembers.h"
+#include "engine/core/Types.h"
 
 namespace {
+
+TEST_CASE("numeric aliases retain standard type identities", "[core][types]") {
+    STATIC_REQUIRE(std::is_same_v<gdl::u8, std::uint8_t>);
+    STATIC_REQUIRE(std::is_same_v<gdl::u16, std::uint16_t>);
+    STATIC_REQUIRE(std::is_same_v<gdl::u32, std::uint32_t>);
+    STATIC_REQUIRE(std::is_same_v<gdl::u64, std::uint64_t>);
+    STATIC_REQUIRE(std::is_same_v<gdl::s8, std::int8_t>);
+    STATIC_REQUIRE(std::is_same_v<gdl::s16, std::int16_t>);
+    STATIC_REQUIRE(std::is_same_v<gdl::s32, std::int32_t>);
+    STATIC_REQUIRE(std::is_same_v<gdl::s64, std::int64_t>);
+    STATIC_REQUIRE(std::is_same_v<gdl::f32, float>);
+    STATIC_REQUIRE(std::is_same_v<gdl::f64, double>);
+    STATIC_REQUIRE(std::is_same_v<gdl::usize, std::size_t>);
+}
 
 TEST_CASE("ordinary integers interoperate with fixed-width interfaces on supported platforms",
           "[core][types]") {

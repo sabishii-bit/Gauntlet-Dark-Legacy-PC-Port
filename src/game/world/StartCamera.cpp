@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 void StartCamera::start(const WorldCamera& marker, const Vec3& party) {
@@ -13,7 +15,7 @@ void StartCamera::start(const WorldCamera& marker, const Vec3& party) {
     m_phase = Phase::Hold;
 }
 
-bool StartCamera::update(int ticks, bool skip, const Vec3& position, const Vec3& attention) {
+bool StartCamera::update(s32 ticks, bool skip, const Vec3& position, const Vec3& attention) {
     switch (m_phase) {
     case Phase::Off: return false;
     case Phase::Hold:
@@ -39,21 +41,21 @@ bool StartCamera::update(int ticks, bool skip, const Vec3& position, const Vec3&
     return false;
 }
 
-bool StartCamera::approach(Vec3& point, const Vec3& target, float reach, int ticks) {
+bool StartCamera::approach(Vec3& point, const Vec3& target, f32 reach, s32 ticks) {
     const Vec3 gap = target - point;
-    const float distance = glm::length(gap);
+    const f32 distance = glm::length(gap);
     if (distance < kArrival) {
         return true;
     }
-    const float share =
-        std::min(static_cast<float>(ticks) * kUnitsPerTick / std::min(distance, reach), 1.0f);
+    const f32 share =
+        std::min(static_cast<f32>(ticks) * kUnitsPerTick / std::min(distance, reach), 1.0f);
     point += gap * share;
     return false;
 }
 
 void StartCamera::look() {
     const Vec3 ahead = m_attention - m_camera.position;
-    const float flat = std::sqrt(ahead.x * ahead.x + ahead.z * ahead.z);
+    const f32 flat = std::sqrt(ahead.x * ahead.x + ahead.z * ahead.z);
     if (flat < 1.0e-6f && std::abs(ahead.y) < 1.0e-6f) {
         return;
     }

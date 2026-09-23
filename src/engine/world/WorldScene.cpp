@@ -1,20 +1,19 @@
 #include "engine/world/WorldScene.h"
 
 #include <algorithm>
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <ranges>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
 namespace {
 
-constexpr unsigned int kLightmapShift = 20U;
-constexpr std::uint64_t kAdditiveKey = std::uint64_t{1} << 40U;
-constexpr std::uint64_t kNoDepthKey = std::uint64_t{1} << 41U;
+constexpr u32 kLightmapShift = 20U;
+constexpr u64 kAdditiveKey = u64{1} << 40U;
+constexpr u64 kNoDepthKey = u64{1} << 41U;
 
 /** The coordinates a chromed surface samples: its normal's x and y folded into the map. */
 Vec2 chromeUv(const Vec3& normal) {
@@ -23,8 +22,8 @@ Vec2 chromeUv(const Vec3& normal) {
 
 } // namespace
 
-WorldScene::Slot& WorldScene::slotFor(unsigned int index, TextureSet& textures,
-                                      RenderDevice& device, std::span<TextureSet* const> lenders) {
+WorldScene::Slot& WorldScene::slotFor(u32 index, TextureSet& textures, RenderDevice& device,
+                                      std::span<TextureSet* const> lenders) {
     if (const auto found = m_slots.find(index); found != m_slots.end()) {
         return found->second;
     }
@@ -72,19 +71,18 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
     m_lighting = lighting;
     const std::vector<WorldObject>& objects = layout.objects();
     m_placements.resize(objects.size());
-    std::vector<std::uint8_t> animated(objects.size(), 0);
+    std::vector<u8> animated(objects.size(), 0);
     for (const WorldAnimation& animation : layout.animations()) {
-        if (animation.object >= 0 && static_cast<std::size_t>(animation.object) < objects.size()) {
-            animated[static_cast<std::size_t>(animation.object)] = 1;
+        if (animation.object >= 0 && static_cast<usize>(animation.object) < objects.size()) {
+            animated[static_cast<usize>(animation.object)] = 1;
         }
     }
-    for (std::size_t i = 0; i < objects.size(); ++i) {
+    for (usize i = 0; i < objects.size(); ++i) {
         Placement& placement = m_placements[i];
         placement.local = glm::translate(Mat4{1.0f}, objects[i].position);
         placement.parent = objects[i].parent;
-        for (auto at = static_cast<int>(i); at >= 0;
-             at = objects[static_cast<std::size_t>(at)].parent) {
-            if (animated[static_cast<std::size_t>(at)] != 0) {
+        for (auto at = static_cast<s32>(i); at >= 0; at = objects[static_cast<usize>(at)].parent) {
+            if (animated[static_cast<usize>(at)] != 0) {
                 placement.moving = true;
                 break;
             }
@@ -93,12 +91,10 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
 
     // Still geometry is keyed by texture and lightmap, the glows and the objects that keep
     // depth unwritten apart from the rest.
-    std::unordered_map<std::uint64_t, std::size_t> batchByKey;
-    const auto batchFor = [&](unsigned int slot, unsigned int lightmap, bool additive,
-                              bool depthWrite) -> Batch& {
-        const std::uint64_t key = std::uint64_t{slot} |
-                                  (std::uint64_t{lightmap} << kLightmapShift) |
-                                  (additive ? kAdditiveKey : 0) | (depthWrite ? 0 : kNoDepthKey);
+    std::unordered_map<u64, usize> batchByKey;
+    const auto batchFor = [&](u32 slot, u32 lightmap, bool additive, bool depthWrite) -> Batch& {
+        const u64 key = u64{slot} | (u64{lightmap} << kLightmapShift) |
+                        (additive ? kAdditiveKey : 0) | (depthWrite ? 0 : kNoDepthKey);
         if (const auto found = batchByKey.find(key); found != batchByKey.end()) {
             return m_batches[found->second];
         }
@@ -107,8 +103,8 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         if (lightmap != 0 && lightmap < textures.size()) {
             const TextureSetEntry& map = textures.entry(lightmap);
             batch.lightmap = &textures.texture(device, lightmap);
-            batch.lightmapScale = Vec2{1.0f / static_cast<float>(std::max(map.width, 1U)),
-                                       1.0f / static_cast<float>(std::max(map.height, 1U))};
+            batch.lightmapScale = Vec2{1.0f / static_cast<f32>(std::max(map.width, 1U)),
+                                       1.0f / static_cast<f32>(std::max(map.height, 1U))};
         }
         batch.translucent = m_slots[slot].translucent;
         batch.additive = additive;
@@ -119,7 +115,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         return m_batches.back();
     };
 
-    for (std::size_t i = 0; i < objects.size(); ++i) {
+    for (usize i = 0; i < objects.size(); ++i) {
         const WorldObject& object = objects[i];
         // A particle system's marker is where its effect plays, not something to draw.
         if (object.particles()) {
@@ -140,7 +136,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         const bool additive = object.additive();
         const bool prelit = object.prelit() && mesh->prelit;
         const bool depthWrite = (object.objectFlags & WorldObject::kNoDepthWrite) == 0;
-        const unsigned int facing = CameraFrame::facingOf(object.objectFlags);
+        const u32 facing = CameraFrame::facingOf(object.objectFlags);
         const bool unit = m_placements[i].moving || object.sorted() || facing != 0;
         Unit placedUnit;
         placedUnit.object = i;
@@ -171,15 +167,15 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
                         const TextureSetEntry& map = textures.entry(part.lightmap);
                         unitPart.lightmap = &textures.texture(device, part.lightmap);
                         unitPart.lightmapScale =
-                            Vec2{1.0f / static_cast<float>(std::max(map.width, 1U)),
-                                 1.0f / static_cast<float>(std::max(map.height, 1U))};
+                            Vec2{1.0f / static_cast<f32>(std::max(map.width, 1U)),
+                                 1.0f / static_cast<f32>(std::max(map.height, 1U))};
                     }
                     unitPart.translucent = slot.translucent;
                     unitPart.additive = additive;
                     placedUnit.parts.push_back(unitPart);
                 } else {
                     Batch& batch = batchFor(part.texture, part.lightmap, additive, depthWrite);
-                    for (const unsigned int index : part.indices) {
+                    for (const u32 index : part.indices) {
                         const MeshVertex& v = mesh->vertices[index];
                         batch.geometry.vertex(
                             v.position + offset, shadeOf(additive, prelit, v, v.normal, lighting),
@@ -235,18 +231,18 @@ void WorldScene::clear() {
     m_triangles = 0;
 }
 
-bool WorldScene::moving(std::size_t object) const {
+bool WorldScene::moving(usize object) const {
     return object < m_placements.size() && m_placements[object].moving;
 }
 
-void WorldScene::setObjectTransform(std::size_t object, const Mat4& local) {
+void WorldScene::setObjectTransform(usize object, const Mat4& local) {
     if (moving(object)) {
         m_placements[object].local = local;
-        std::fill(m_worldValid.begin(), m_worldValid.end(), std::uint8_t{0});
+        std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
     }
 }
 
-const Mat4& WorldScene::worldTransform(std::size_t object) const {
+const Mat4& WorldScene::worldTransform(usize object) const {
     static const Mat4 kIdentity{1.0f};
     if (object >= m_placements.size()) {
         return kIdentity;
@@ -254,7 +250,7 @@ const Mat4& WorldScene::worldTransform(std::size_t object) const {
     return worldOf(object);
 }
 
-WorldScene::Unit* WorldScene::unitOf(std::size_t object) {
+WorldScene::Unit* WorldScene::unitOf(usize object) {
     for (Unit& unit : m_units) {
         if (unit.object == object) {
             return &unit;
@@ -263,7 +259,7 @@ WorldScene::Unit* WorldScene::unitOf(std::size_t object) {
     return nullptr;
 }
 
-const WorldScene::Unit* WorldScene::unitOf(std::size_t object) const {
+const WorldScene::Unit* WorldScene::unitOf(usize object) const {
     for (const Unit& unit : m_units) {
         if (unit.object == object) {
             return &unit;
@@ -272,52 +268,51 @@ const WorldScene::Unit* WorldScene::unitOf(std::size_t object) const {
     return nullptr;
 }
 
-void WorldScene::setObjectAlpha(std::size_t object, float alpha) {
+void WorldScene::setObjectAlpha(usize object, f32 alpha) {
     if (Unit* unit = unitOf(object); unit != nullptr) {
         unit->alpha = std::clamp(alpha, 0.0f, 1.0f);
     }
 }
 
-float WorldScene::objectAlpha(std::size_t object) const {
+f32 WorldScene::objectAlpha(usize object) const {
     const Unit* unit = unitOf(object);
     return unit != nullptr ? unit->alpha : 1.0f;
 }
 
-void WorldScene::setTextureFrame(unsigned int slot, const Texture* texture) {
+void WorldScene::setTextureFrame(u32 slot, const Texture* texture) {
     if (const auto found = m_slots.find(slot); found != m_slots.end()) {
         found->second.frame = texture;
     }
 }
 
-void WorldScene::setTextureOffset(unsigned int slot, const Vec2& offset) {
+void WorldScene::setTextureOffset(u32 slot, const Vec2& offset) {
     if (const auto found = m_slots.find(slot); found != m_slots.end()) {
         found->second.offset = offset;
     }
 }
 
-const Texture* WorldScene::textureOf(unsigned int slot) const {
+const Texture* WorldScene::textureOf(u32 slot) const {
     const auto found = m_slots.find(slot);
     return found != m_slots.end() && found->second.usable ? found->second.current() : nullptr;
 }
 
-Vec2 WorldScene::textureOffset(unsigned int slot) const {
+Vec2 WorldScene::textureOffset(u32 slot) const {
     const auto found = m_slots.find(slot);
     return found != m_slots.end() ? found->second.offset : Vec2{0.0f, 0.0f};
 }
 
 /** An object's placement composed with every ancestor's, for the frame being drawn: the
  * chain up to the nearest ancestor already composed, then composed back down. */
-const Mat4& WorldScene::worldOf(std::size_t object) const {
+const Mat4& WorldScene::worldOf(usize object) const {
     m_chain.clear();
-    for (auto at = static_cast<int>(object);
-         at >= 0 && m_worldValid[static_cast<std::size_t>(at)] == 0;
-         at = m_placements[static_cast<std::size_t>(at)].parent) {
-        m_chain.push_back(static_cast<std::size_t>(at));
+    for (auto at = static_cast<s32>(object); at >= 0 && m_worldValid[static_cast<usize>(at)] == 0;
+         at = m_placements[static_cast<usize>(at)].parent) {
+        m_chain.push_back(static_cast<usize>(at));
     }
-    for (const std::size_t index : m_chain | std::views::reverse) {
+    for (const usize index : m_chain | std::views::reverse) {
         const Placement& placement = m_placements[index];
         m_world[index] = placement.parent >= 0
-                             ? m_world[static_cast<std::size_t>(placement.parent)] * placement.local
+                             ? m_world[static_cast<usize>(placement.parent)] * placement.local
                              : placement.local;
         m_worldValid[index] = 1;
     }
@@ -363,13 +358,13 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
         const Slot& slot = m_slots.at(part.slot);
         m_scratch.clear();
         m_scratch.begin(PrimitiveTopology::TriangleList);
-        for (const unsigned int index : part.part->indices) {
+        for (const u32 index : part.part->indices) {
             const MeshVertex& v = unit.mesh->vertices[index];
             const Vec3 normal = glm::normalize(normalMatrix * v.normal);
             const Vec4 placed = world * Vec4{v.position, 1.0f};
             Color color = shadeOf(part.additive, unit.prelit, v, normal, m_lighting);
             if (unit.alpha < 1.0f) {
-                color.a = static_cast<std::uint8_t>(static_cast<float>(color.a) * unit.alpha);
+                color.a = static_cast<u8>(static_cast<f32>(color.a) * unit.alpha);
             }
             m_scratch.vertex(Vec3{placed}, color, unit.chrome ? chromeUv(normal) : v.uv,
                              v.lightmapUv * part.lightmapScale);
@@ -389,8 +384,8 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
 
 void WorldScene::draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const {
     const Vec3& eye = camera.position;
-    std::fill(m_worldValid.begin(), m_worldValid.end(), std::uint8_t{0});
-    std::size_t next = 0;
+    std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
+    usize next = 0;
     while (next < m_batches.size() && !m_batches[next].translucent && !m_batches[next].additive) {
         drawBatch(device, m_batches[next++], clip);
     }
@@ -406,15 +401,15 @@ void WorldScene::draw(RenderDevice& device, const Mat4& clip, const CameraFrame&
     // Farthest first, like the original's sorted objects: their key is the depth away from
     // the eye, and the biases push the flagged ones behind everything else.
     m_order.resize(m_units.size());
-    std::vector<float> keys(m_units.size());
-    for (std::size_t i = 0; i < m_units.size(); ++i) {
+    std::vector<f32> keys(m_units.size());
+    for (usize i = 0; i < m_units.size(); ++i) {
         m_order[i] = i;
         const Vec3 origin{worldOf(m_units[i].object)[3]};
         keys[i] = -glm::distance(eye, origin) + m_units[i].sortBias;
     }
     std::stable_sort(m_order.begin(), m_order.end(),
-                     [&](std::size_t a, std::size_t b) { return keys[a] < keys[b]; });
-    for (const std::size_t i : m_order) {
+                     [&](usize a, usize b) { return keys[a] < keys[b]; });
+    for (const usize i : m_order) {
         const Unit& unit = m_units[i];
         drawUnit(device, unit, clip, camera, unit.sorted, true);
     }

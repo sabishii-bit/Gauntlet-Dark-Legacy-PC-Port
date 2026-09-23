@@ -5,6 +5,7 @@
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/world/WorldLighting.h"
 
 #include "FakeRenderDevice.h"
@@ -17,7 +18,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kStep = 1.0f / 30.0f;
+constexpr f32 kStep = 1.0f / 30.0f;
 
 TEST_CASE("Sumner stands at his lookout, cycles his idles and gestures on request",
           "[game][world][unpacked]") {
@@ -44,12 +45,12 @@ TEST_CASE("Sumner stands at his lookout, cycles his idles and gestures on reques
 
     // The stance loops once (ninety frames), and as it wraps the cycle asks for the reading,
     // which starts when the stance next ends.
-    for (int i = 0; i < 90; ++i) {
+    for (s32 i = 0; i < 90; ++i) {
         sumner.update(kStep);
     }
     REQUIRE(sumner.index() == 1);
     REQUIRE(sumner.sequence() == 0);
-    for (int i = 0; i < 90; ++i) {
+    for (s32 i = 0; i < 90; ++i) {
         sumner.update(kStep);
     }
     REQUIRE(sumner.sequence() == 1);
@@ -64,7 +65,7 @@ TEST_CASE("Sumner stands at his lookout, cycles his idles and gestures on reques
     REQUIRE(sumner.gesturing());
     REQUIRE(sumner.sequence() == 6);
     REQUIRE(sumner.index() == 0);
-    int steps = 0;
+    s32 steps = 0;
     while (sumner.gesturing() && steps < 130) {
         sumner.update(kStep);
         ++steps;

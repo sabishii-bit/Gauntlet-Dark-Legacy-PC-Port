@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/world/AmbientDimmer.h"
 
 namespace {
@@ -14,7 +15,7 @@ TEST_CASE("the light falls fast while the dark is asked for and comes back slowl
     REQUIRE(dimmer.offset() == 0.0f);
     REQUIRE(dimmer.applied(0.7f) == Approx(0.7f));
     // Asked for every frame, it falls a quarter a frame to what is asked and stays.
-    const float frame = AmbientDimmer::kFrameSeconds;
+    const f32 frame = AmbientDimmer::kFrameSeconds;
     dimmer.ask(-0.6f);
     dimmer.update(frame);
     REQUIRE(dimmer.offset() == Approx(-0.25f));
@@ -25,14 +26,14 @@ TEST_CASE("the light falls fast while the dark is asked for and comes back slowl
     REQUIRE(dimmer.offset() == Approx(-0.6f));
     REQUIRE(dimmer.applied(0.7f) == Approx(0.1f));
     REQUIRE(dimmer.applied(0.3f) == 0.0f); // never under none
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         dimmer.ask(-0.6f);
         dimmer.update(frame);
     }
     REQUIRE(dimmer.offset() == Approx(-0.6f));
     // Left alone, what was asked fades and the light climbs back a twentieth a frame.
     dimmer.update(3.0f * frame);
-    const float rising = dimmer.offset();
+    const f32 rising = dimmer.offset();
     REQUIRE(rising > -0.6f);
     REQUIRE(rising < -0.4f);
     dimmer.update(1.0f);

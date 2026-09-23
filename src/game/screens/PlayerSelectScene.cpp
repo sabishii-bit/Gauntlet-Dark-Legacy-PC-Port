@@ -2,12 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <exception>
 #include <format>
 
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 #include "game/players/Progression.h"
 
@@ -24,12 +24,12 @@ constexpr std::string_view kInitialsFile = "fonts/initials.json";
 constexpr std::string_view kCommonSounds = "audio/COMMON";
 constexpr std::string_view kSelectSounds = "audio/SELECT";
 constexpr std::string_view kSoundMusic = "S_SELECTMUS";
-constexpr int kFont32SpaceWidth = 16;
-constexpr int kFont8SpaceWidth = 8;
-constexpr int kInitialsSpaceWidth = 12;
-constexpr int kMaxTicksPerFrame = 6;
-constexpr int kPanelTopHeight = 256;
-constexpr int kPanelBottomHeight = 64;
+constexpr s32 kFont32SpaceWidth = 16;
+constexpr s32 kFont8SpaceWidth = 8;
+constexpr s32 kInitialsSpaceWidth = 12;
+constexpr s32 kMaxTicksPerFrame = 6;
+constexpr s32 kPanelTopHeight = 256;
+constexpr s32 kPanelBottomHeight = 64;
 constexpr Color kBackdrop = Color::rgba(8, 6, 12);
 
 std::string_view soundName(SelectSound sound) {
@@ -52,15 +52,15 @@ std::string_view PlayerSelectScene::text(std::string_view id) const {
     return m_context.strings != nullptr ? m_context.strings->get(id) : id;
 }
 
-bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, int startingPlayer) {
+bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s32 startingPlayer) {
     close();
     m_context = context;
     m_screen = MenuScreen{};
     if (m_context.config != nullptr) {
-        m_screen.width = static_cast<int>(m_context.config->display.virtualWidth);
-        m_screen.height = static_cast<int>(m_context.config->display.virtualHeight);
+        m_screen.width = static_cast<s32>(m_context.config->display.virtualWidth);
+        m_screen.height = static_cast<s32>(m_context.config->display.virtualHeight);
         m_screen.horizontalFov = m_context.config->horizontalFovRadians();
-        m_tickRate = static_cast<int>(m_context.config->timing.tickRate);
+        m_tickRate = static_cast<s32>(m_context.config->timing.tickRate);
     }
     try {
         if (!loadResources(device, m_context.unpackedRoot)) {
@@ -87,7 +87,7 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, i
         log::warn("Player select: class stats are unavailable (run gdlunpack)");
     }
     if (m_context.config != nullptr) {
-        const std::size_t slots = m_context.config->save.slots;
+        const usize slots = m_context.config->save.slots;
         if (!m_saves.open(m_context.config->saveDirectory(), slots)) {
             log::warn("Player select: saving is unavailable");
         }
@@ -111,11 +111,11 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, i
     m_services.keyboardLane = MenuInputSource::kKeyboardPlayer;
     m_services.menuTextures.font = staticTexture("FONT32");
     m_services.menuTextures.glow = m_services.glowSheet;
-    for (int i = 0; i < kLaneCount; ++i) {
-        m_lanes[static_cast<std::size_t>(i)].reset(i, &m_services);
+    for (s32 i = 0; i < kLaneCount; ++i) {
+        m_lanes[static_cast<usize>(i)].reset(i, &m_services);
     }
     if (startingPlayer >= 0 && startingPlayer < kLaneCount) {
-        m_lanes[static_cast<std::size_t>(startingPlayer)].activate();
+        m_lanes[static_cast<usize>(startingPlayer)].activate();
     }
     startMusic();
     return true;
@@ -126,8 +126,8 @@ void PlayerSelectScene::close() {
         m_context.sounds->stop(m_music);
     }
     m_music = kNoSound;
-    for (int i = 0; i < kLaneCount; ++i) {
-        m_lanes[static_cast<std::size_t>(i)].reset(i, nullptr);
+    for (s32 i = 0; i < kLaneCount; ++i) {
+        m_lanes[static_cast<usize>(i)].reset(i, nullptr);
     }
     m_camera.reset();
     m_tower = nullptr;
@@ -165,7 +165,7 @@ bool PlayerSelectScene::loadResources(RenderDevice& device,
     m_large.setFont(&m_font32, font32);
     m_small.setFont(&m_font8, font8);
     m_initials.setFont(&m_fontInitials, initials);
-    for (int i = 0; i < kLaneCount; ++i) {
+    for (s32 i = 0; i < kLaneCount; ++i) {
         if (selectTexture(std::format("S1_PLYR{}", i + 1)) == nullptr ||
             selectTexture(std::format("S2_PLYR{}", i + 1)) == nullptr) {
             log::warn("Player select: lane panels are missing");
@@ -312,52 +312,52 @@ bool PlayerSelectScene::musicPlaying() const {
            m_context.sounds->isPlaying(m_music);
 }
 
-MenuInputSource PlayerSelectScene::inputSource(int index) const {
+MenuInputSource PlayerSelectScene::inputSource(s32 index) const {
     MenuInputSource source = MenuInputSource::forPlayer(index);
     source.text = lane(index).typing();
     return source;
 }
 
-SelectOutcome PlayerSelectScene::update(double deltaSeconds, const Inputs& inputs) {
+SelectOutcome PlayerSelectScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_tickRemainder += deltaSeconds * m_tickRate;
-    auto ticks = static_cast<int>(std::floor(m_tickRemainder));
+    auto ticks = static_cast<s32>(std::floor(m_tickRemainder));
     m_tickRemainder -= ticks;
     ticks = std::clamp(ticks, 0, kMaxTicksPerFrame);
     return step(ticks, inputs);
 }
 
-SelectOutcome PlayerSelectScene::step(int ticks, const Inputs& inputs) {
+SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
     if (!m_open) {
         return SelectOutcome::Running;
     }
     m_time += ticks;
     if (m_tower != nullptr && m_tower->built()) {
-        m_tower->update(static_cast<float>(ticks) / static_cast<float>(m_tickRate));
+        m_tower->update(static_cast<f32>(ticks) / static_cast<f32>(m_tickRate));
     }
 
-    for (int i = 0; i < kLaneCount; ++i) {
-        SelectLane& lane = m_lanes[static_cast<std::size_t>(i)];
-        if (!lane.active() && inputs[static_cast<std::size_t>(i)].start) {
+    for (s32 i = 0; i < kLaneCount; ++i) {
+        SelectLane& lane = m_lanes[static_cast<usize>(i)];
+        if (!lane.active() && inputs[static_cast<usize>(i)].start) {
             lane.activate();
         }
     }
 
     bool leave = false;
-    for (int i = 0; i < kLaneCount; ++i) {
+    for (s32 i = 0; i < kLaneCount; ++i) {
         SelectLane::Frame frame;
-        for (int j = 0; j < kLaneCount; ++j) {
+        for (s32 j = 0; j < kLaneCount; ++j) {
             if (j == i) {
                 continue;
             }
-            const SelectLane& other = m_lanes[static_cast<std::size_t>(j)];
+            const SelectLane& other = m_lanes[static_cast<usize>(j)];
             frame.othersActive = frame.othersActive || other.active();
             frame.othersSelecting = frame.othersSelecting || other.selecting();
             if (other.slotInUse().has_value()) {
                 frame.slotsInUse |= 1U << *other.slotInUse();
             }
         }
-        const SelectLane::Result result = m_lanes[static_cast<std::size_t>(i)].update(
-            inputs[static_cast<std::size_t>(i)], ticks, frame);
+        const SelectLane::Result result =
+            m_lanes[static_cast<usize>(i)].update(inputs[static_cast<usize>(i)], ticks, frame);
         if (result == SelectLane::Result::Leave) {
             leave = true;
         }
@@ -376,13 +376,13 @@ SelectOutcome PlayerSelectScene::step(int ticks, const Inputs& inputs) {
     return m_idleFrames > kIdleFrames ? SelectOutcome::Done : SelectOutcome::Running;
 }
 
-void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection, float frameWidth,
-                               float frameHeight) {
+void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
+                               f32 frameHeight) {
     if (!m_open) {
         return;
     }
-    const auto width = static_cast<float>(m_screen.width);
-    const auto height = static_cast<float>(m_screen.height);
+    const auto width = static_cast<f32>(m_screen.width);
+    const auto height = static_cast<f32>(m_screen.height);
     if (towerVisible()) {
         GDL_VERIFY(m_camera.has_value(), "A visible tower requires its camera");
         const WorldCamera& camera = *m_camera;
@@ -397,28 +397,27 @@ void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection
         m_canvas.fill(Rect{0.0f, 0.0f, width, height}, kBackdrop);
     }
 
-    const auto laneWidth = static_cast<float>(SelectLane::kWidth);
+    const auto laneWidth = static_cast<f32>(SelectLane::kWidth);
     for (const SelectLane& lane : m_lanes) {
         drawStatusBox(lane);
     }
-    for (int i = 0; i < kLaneCount; ++i) {
-        const SelectLane& lane = m_lanes[static_cast<std::size_t>(i)];
-        const auto left = static_cast<float>(lane.x());
+    for (s32 i = 0; i < kLaneCount; ++i) {
+        const SelectLane& lane = m_lanes[static_cast<usize>(i)];
+        const auto left = static_cast<f32>(lane.x());
         if (const Texture* top = selectTexture(std::format("S1_PLYR{}", i + 1))) {
-            m_canvas.draw(*top, Rect{left, 0.0f, laneWidth, static_cast<float>(kPanelTopHeight)});
+            m_canvas.draw(*top, Rect{left, 0.0f, laneWidth, static_cast<f32>(kPanelTopHeight)});
         }
         if (const Texture* bottom = selectTexture(std::format("S2_PLYR{}", i + 1))) {
-            m_canvas.draw(*bottom, Rect{left, static_cast<float>(kPanelTopHeight), laneWidth,
-                                        static_cast<float>(kPanelBottomHeight)});
+            m_canvas.draw(*bottom, Rect{left, static_cast<f32>(kPanelTopHeight), laneWidth,
+                                        static_cast<f32>(kPanelBottomHeight)});
         }
         lane.drawImages(m_canvas);
         if (const Texture* border = selectTexture("S1_BORDER")) {
-            m_canvas.draw(*border,
-                          Rect{left, 0.0f, laneWidth, static_cast<float>(kPanelTopHeight)});
+            m_canvas.draw(*border, Rect{left, 0.0f, laneWidth, static_cast<f32>(kPanelTopHeight)});
         }
         if (const Texture* border = selectTexture("S2_BORDER")) {
-            m_canvas.draw(*border, Rect{left, static_cast<float>(kPanelTopHeight), laneWidth,
-                                        static_cast<float>(kPanelBottomHeight)});
+            m_canvas.draw(*border, Rect{left, static_cast<f32>(kPanelTopHeight), laneWidth,
+                                        static_cast<f32>(kPanelBottomHeight)});
         }
     }
     for (const SelectLane& lane : m_lanes) {

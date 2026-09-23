@@ -1,5 +1,7 @@
 #pragma once
 
+#include "engine/core/Types.h"
+
 namespace gdl {
 
 /**
@@ -11,27 +13,27 @@ namespace gdl {
  */
 class AmbientDimmer {
 public:
-    static constexpr float kFrameSeconds = 1.0f / 30.0f; ///< the original's frame, which paces it
-    static constexpr float kHoldSeconds = 2.0f / 30.0f;  ///< how long one asking lasts
-    static constexpr float kDarkenStep = 0.25f;
-    static constexpr float kBrightenStep = 0.05f;
-    static constexpr float kDecay = 0.6f;
+    static constexpr f32 kFrameSeconds = 1.0f / 30.0f; ///< the original's frame, which paces it
+    static constexpr f32 kHoldSeconds = 2.0f / 30.0f;  ///< how long one asking lasts
+    static constexpr f32 kDarkenStep = 0.25f;
+    static constexpr f32 kBrightenStep = 0.05f;
+    static constexpr f32 kDecay = 0.6f;
 
     /** Asks for `amount` (negative darkens) to be added to the ambient light for now. */
-    void ask(float amount);
-    void update(float seconds);
+    void ask(f32 amount);
+    void update(f32 seconds);
     void reset();
 
     /** What is added to the ambient light at the moment. */
-    float offset() const { return m_current; }
+    f32 offset() const { return m_current; }
     /** An ambient level with it applied, kept between none and full. */
-    float applied(float ambient) const;
+    f32 applied(f32 ambient) const;
 
 private:
-    float m_wanted = 0.0f;
-    float m_current = 0.0f;
-    float m_holdLeft = 0.0f;
-    float m_frames = 0.0f;
+    f32 m_wanted = 0.0f;
+    f32 m_current = 0.0f;
+    f32 m_holdLeft = 0.0f;
+    f32 m_frames = 0.0f;
 };
 
 } // namespace gdl

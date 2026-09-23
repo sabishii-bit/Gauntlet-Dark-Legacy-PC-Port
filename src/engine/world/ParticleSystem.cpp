@@ -2,39 +2,38 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 
 #include "engine/core/Strings.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
 namespace {
 
-constexpr float kColorScale = 255.0f; ///< colour lanes keep their byte values
-constexpr float kMostWidth = 100000.0f;
+constexpr f32 kColorScale = 255.0f; ///< colour lanes keep their byte values
+constexpr f32 kMostWidth = 100000.0f;
 
-float lerp(float a, float b, float t) {
+f32 lerp(f32 a, f32 b, f32 t) {
     return a + (b - a) * t;
 }
 
-float clampFrames(float seconds, float least, float most) {
+f32 clampFrames(f32 seconds, f32 least, f32 most) {
     return std::clamp(seconds * ParticleDescriptor::kFrameRate, least, most);
 }
 
 /** One lane of the packed colours as an envelope. */
-ParticleEnvelope laneOf(const std::array<unsigned int, 4>& rgba, unsigned int shift) {
-    const auto lane = [&](std::size_t i) {
-        return std::clamp(static_cast<float>((rgba[i] >> shift) & 0xFFU), 0.0f, kColorScale);
+ParticleEnvelope laneOf(const std::array<u32, 4>& rgba, u32 shift) {
+    const auto lane = [&](usize i) {
+        return std::clamp(static_cast<f32>((rgba[i] >> shift) & 0xFFU), 0.0f, kColorScale);
     };
     return ParticleEnvelope{lane(0), lane(1), lane(2), lane(3)};
 }
 
 /** A template of the console's table: `preset` numbers it; only its filled fields count. */
-ParticleTemplate preset(unsigned int number, unsigned int flags, unsigned int enables,
-                        std::array<float, 2> emitterLife, std::array<float, 2> particleLife,
-                        float angle, std::array<float, 4> rate, float rateRandom, float gravity,
-                        float speed, std::array<unsigned int, 4> rgba, std::array<float, 4> width) {
+ParticleTemplate preset(u32 number, u32 flags, u32 enables, std::array<f32, 2> emitterLife,
+                        std::array<f32, 2> particleLife, f32 angle, std::array<f32, 4> rate,
+                        f32 rateRandom, f32 gravity, f32 speed, std::array<u32, 4> rgba,
+                        std::array<f32, 4> width) {
     ParticleTemplate t;
     t.preset = number;
     t.flags = flags;
@@ -86,7 +85,7 @@ void orthogonalPair(const Vec3& direction, Vec3& a, Vec3& b) {
 
 } // namespace
 
-float ParticleEnvelope::at(float age, float life, float fade) const {
+f32 ParticleEnvelope::at(f32 age, f32 life, f32 fade) const {
     if (age < life) {
         return lerp(lifeStart, lifeEnd, life > 0.0f ? age / life : 1.0f);
     }
@@ -117,7 +116,7 @@ ParticleDescriptor ParticleDescriptor::fromTemplate(const ParticleTemplate& sour
 void ParticleDescriptor::apply(const ParticleTemplate& source) {
     using T = ParticleTemplate;
     if (source.sets(T::kMaxParticles)) {
-        maxParticles = static_cast<unsigned int>(std::max(source.maxParticles, 0));
+        maxParticles = static_cast<u32>(std::max(source.maxParticles, 0));
     }
     if (source.sets(T::kMaxDirections)) {
         maxDirections = source.maxDirections;
@@ -126,8 +125,8 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
         maxPositions = source.maxPositions;
     }
     if (source.sets(T::kEmitterLife)) {
-        emitFrames = static_cast<unsigned int>(clampFrames(source.emitterLife[0], 1.0f, 65535.0f));
-        fadeFrames = static_cast<unsigned int>(clampFrames(source.emitterLife[1], 0.0f, 65535.0f));
+        emitFrames = static_cast<u32>(clampFrames(source.emitterLife[0], 1.0f, 65535.0f));
+        fadeFrames = static_cast<u32>(clampFrames(source.emitterLife[1], 0.0f, 65535.0f));
         if (source.emitterLife[0] < 0.0f) {
             emitFrames = kEndless;
             forever = true;
@@ -137,11 +136,11 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
         }
     }
     if (source.sets(T::kParticleLife)) {
-        particleLife = static_cast<unsigned int>(clampFrames(source.particleLife[0], 1.0f, 255.0f));
-        particleFade = static_cast<unsigned int>(clampFrames(source.particleLife[1], 0.0f, 255.0f));
+        particleLife = static_cast<u32>(clampFrames(source.particleLife[0], 1.0f, 255.0f));
+        particleFade = static_cast<u32>(clampFrames(source.particleLife[1], 0.0f, 255.0f));
     }
     if (source.sets(T::kAngle)) {
-        const float degrees = source.angle;
+        const f32 degrees = source.angle;
         if (degrees < 0.0f || degrees >= 359.0f) {
             angle = kSphere;
         } else if (degrees < 1.0f) {
@@ -151,7 +150,7 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
         }
     }
     if (source.sets(T::kDelay)) {
-        delay = static_cast<unsigned int>(std::max(source.delay * kFrameRate, 0.0f));
+        delay = static_cast<u32>(std::max(source.delay * kFrameRate, 0.0f));
     }
     if (source.sets(T::kDirection)) {
         direction = source.direction;
@@ -160,7 +159,7 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
         volume = source.volume;
     }
     if (source.sets(T::kRate)) {
-        for (std::size_t i = 0; i < rate.size(); ++i) {
+        for (usize i = 0; i < rate.size(); ++i) {
             rate[i] = source.rate[i] / kFrameRate;
         }
     }
@@ -185,7 +184,7 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
         alpha = laneOf(source.rgba, 24U);
     }
     if (source.sets(T::kWidth)) {
-        const auto lane = [&](std::size_t i) {
+        const auto lane = [&](usize i) {
             return std::clamp(source.width[i], kLeastWidth, kMostWidth);
         };
         width = ParticleEnvelope{lane(0), lane(1), lane(2), lane(3)};
@@ -225,21 +224,19 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
     }
 }
 
-unsigned int ParticleDescriptor::capacity() const {
+u32 ParticleDescriptor::capacity() const {
     if (oneShot || maxParticles != 0) {
-        const unsigned int count =
-            maxParticles != 0 ? maxParticles : static_cast<unsigned int>(rate[0] * kFrameRate);
+        const u32 count = maxParticles != 0 ? maxParticles : static_cast<u32>(rate[0] * kFrameRate);
         return std::max(count, 1U);
     }
     // Enough for the fastest rate to fill a whole life, as the original estimates it.
-    const float fastest = *std::max_element(rate.begin(), rate.end());
-    const auto life = static_cast<float>(particleLife + particleFade);
-    const auto needed = static_cast<unsigned int>(std::ceil(fastest * life));
+    const f32 fastest = *std::max_element(rate.begin(), rate.end());
+    const auto life = static_cast<f32>(particleLife + particleFade);
+    const auto needed = static_cast<u32>(std::ceil(fastest * life));
     return std::clamp(needed, 1U, kMostParticles);
 }
 
-void ParticleEmitter::start(const ParticleDescriptor& descriptor, const Mat4& node,
-                            unsigned int seed) {
+void ParticleEmitter::start(const ParticleDescriptor& descriptor, const Mat4& node, u32 seed) {
     m_descriptor = descriptor;
     m_node = node;
     m_particles.clear();
@@ -250,25 +247,25 @@ void ParticleEmitter::start(const ParticleDescriptor& descriptor, const Mat4& no
     m_random.seed(seed);
 }
 
-float ParticleEmitter::random01() {
-    return static_cast<float>(m_random() - std::minstd_rand::min()) /
-           static_cast<float>(std::minstd_rand::max() - std::minstd_rand::min());
+f32 ParticleEmitter::random01() {
+    return static_cast<f32>(m_random() - std::minstd_rand::min()) /
+           static_cast<f32>(std::minstd_rand::max() - std::minstd_rand::min());
 }
 
 /** The emission rate this frame, moving the phases on as the age demands. */
-float ParticleEmitter::rateNow() {
+f32 ParticleEmitter::rateNow() {
     const ParticleDescriptor& d = m_descriptor;
     if (m_phase == Phase::Emitting) {
         if (d.oneShot) {
             m_phase = Phase::Done;
-            return static_cast<float>(d.capacity());
+            return static_cast<f32>(d.capacity());
         }
         if (d.emitFrames == ParticleDescriptor::kEndless) {
             return d.rate[0];
         }
         if (m_age <= d.emitFrames) {
             return lerp(d.rate[0], d.rate[1],
-                        static_cast<float>(m_age) / static_cast<float>(d.emitFrames));
+                        static_cast<f32>(m_age) / static_cast<f32>(d.emitFrames));
         }
         m_phase = Phase::Fading;
     }
@@ -277,9 +274,9 @@ float ParticleEmitter::rateNow() {
             return d.rate[2];
         }
         if (m_age <= d.emitFrames + d.fadeFrames) {
-            const auto into = static_cast<float>(m_age - d.emitFrames);
+            const auto into = static_cast<f32>(m_age - d.emitFrames);
             return lerp(d.rate[2], d.rate[3],
-                        d.fadeFrames > 0 ? into / static_cast<float>(d.fadeFrames) : 1.0f);
+                        d.fadeFrames > 0 ? into / static_cast<f32>(d.fadeFrames) : 1.0f);
         }
         if (d.forever) {
             m_phase = Phase::Emitting;
@@ -291,19 +288,19 @@ float ParticleEmitter::rateNow() {
     return 0.0f;
 }
 
-void ParticleEmitter::step(unsigned int frames) {
+void ParticleEmitter::step(u32 frames) {
     if (frames == 0) {
         return;
     }
-    const unsigned int dt = frames > kMostFramesAtOnce ? 1U : frames;
+    const u32 dt = frames > kMostFramesAtOnce ? 1U : frames;
     const ParticleDescriptor& d = m_descriptor;
-    const auto span = static_cast<float>(d.particleLife + d.particleFade);
+    const auto span = static_cast<f32>(d.particleLife + d.particleFade);
     for (Particle& particle : m_particles) {
-        particle.age += static_cast<float>(dt);
+        particle.age += static_cast<f32>(dt);
     }
     std::erase_if(m_particles, [&](const Particle& p) { return p.age >= span; });
 
-    unsigned int elapsed = dt;
+    u32 elapsed = dt;
     if (m_phase == Phase::Delay) {
         m_age += dt;
         if (m_age <= d.delay) {
@@ -315,19 +312,19 @@ void ParticleEmitter::step(unsigned int frames) {
     } else if (m_phase != Phase::Done) {
         m_age += dt;
     }
-    float rate = rateNow();
+    f32 rate = rateNow();
     if (rate > 0.0f && d.rateRandom > 0.0f) {
         rate *= 1.0f + d.rateRandom * (2.0f * random01() - 1.0f);
     }
     // Whole particles come out of the frame's share plus what the last one owed; a partial
     // one is owed again.
-    float budget = rate * static_cast<float>(elapsed) + m_saved;
-    const unsigned int capacity = d.capacity();
-    unsigned int count = 0;
+    f32 budget = rate * static_cast<f32>(elapsed) + m_saved;
+    const u32 capacity = d.capacity();
+    u32 count = 0;
     while (budget > 0.0f && m_particles.size() < capacity) {
-        const float age =
-            rate > 0.0f ? std::min(static_cast<float>(count) / rate, static_cast<float>(elapsed))
-                        : 0.0f;
+        const f32 age = rate > 0.0f
+                            ? std::min(static_cast<f32>(count) / rate, static_cast<f32>(elapsed))
+                            : 0.0f;
         emit(age);
         budget -= 1.0f;
         ++count;
@@ -335,7 +332,7 @@ void ParticleEmitter::step(unsigned int frames) {
     m_saved = budget > 0.0f ? 0.0f : budget;
 }
 
-void ParticleEmitter::emit(float age) {
+void ParticleEmitter::emit(f32 age) {
     Particle particle;
     particle.origin = newOrigin();
     particle.velocity = newVelocity();
@@ -359,11 +356,11 @@ Vec3 ParticleEmitter::newVelocity() {
     const ParticleDescriptor& d = m_descriptor;
     if (d.angle == ParticleDescriptor::kSphere) {
         const Vec3 random{random01() - 0.5f, random01() - 0.5f, random01() - 0.5f};
-        const float length = glm::length(random);
+        const f32 length = glm::length(random);
         return (length > 0.0f ? random / length : Vec3{0.0f, 1.0f, 0.0f}) * d.speed;
     }
     Vec3 forward = Mat3{m_node} * d.direction;
-    const float squared = glm::dot(forward, forward);
+    const f32 squared = glm::dot(forward, forward);
     if (squared < 0.7f || squared > 1.3f) {
         forward = squared > 0.0f ? forward / std::sqrt(squared) : Vec3{0.0f, 1.0f, 0.0f};
     }
@@ -374,14 +371,14 @@ Vec3 ParticleEmitter::newVelocity() {
     Vec3 a;
     Vec3 b;
     orthogonalPair(glm::normalize(forward), a, b);
-    const float tilt = d.angle * random01();
-    const float turn = kPi * random01();
-    const float side = (m_random() & 4U) != 0 ? -std::cos(turn) : std::cos(turn);
+    const f32 tilt = d.angle * random01();
+    const f32 turn = kPi * random01();
+    const f32 side = (m_random() & 4U) != 0 ? -std::cos(turn) : std::cos(turn);
     return forward * std::cos(tilt) + (a * std::sin(turn) + b * side) * (std::sin(tilt) * d.speed);
 }
 
 Vec3 ParticleEmitter::positionOf(const Particle& particle) const {
-    const float t = particle.age;
+    const f32 t = particle.age;
     Vec3 position = particle.origin + particle.velocity * t;
     position.y += m_descriptor.gravity * t * t;
     return position;
@@ -389,26 +386,25 @@ Vec3 ParticleEmitter::positionOf(const Particle& particle) const {
 
 Color ParticleEmitter::colorOf(const Particle& particle) const {
     const ParticleDescriptor& d = m_descriptor;
-    const auto life = static_cast<float>(d.particleLife);
-    const auto fade = static_cast<float>(d.particleFade);
+    const auto life = static_cast<f32>(d.particleLife);
+    const auto fade = static_cast<f32>(d.particleFade);
     const auto lane = [&](const ParticleEnvelope& envelope) {
-        return static_cast<std::uint8_t>(
-            std::clamp(envelope.at(particle.age, life, fade), 0.0f, 255.0f));
+        return static_cast<u8>(std::clamp(envelope.at(particle.age, life, fade), 0.0f, 255.0f));
     };
     return Color::rgba(lane(d.red), lane(d.green), lane(d.blue), lane(d.alpha));
 }
 
-float ParticleEmitter::widthOf(const Particle& particle) const {
+f32 ParticleEmitter::widthOf(const Particle& particle) const {
     const ParticleDescriptor& d = m_descriptor;
-    return d.width.at(particle.age, static_cast<float>(d.particleLife),
-                      static_cast<float>(d.particleFade));
+    return d.width.at(particle.age, static_cast<f32>(d.particleLife),
+                      static_cast<f32>(d.particleFade));
 }
 
 void ParticleEmitter::draw(ImmediateBatch& batch, const Vec3& right, const Vec3& up) const {
     for (const Particle& particle : m_particles) {
         const Vec3 centre = positionOf(particle);
         const Color color = colorOf(particle);
-        const float half = 0.5f * widthOf(particle);
+        const f32 half = 0.5f * widthOf(particle);
         const Vec3 dx = right * half;
         const Vec3 dy = up * half;
         const Vec3 topLeft = centre - dx + dy;

@@ -1,45 +1,44 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <vector>
+
+#include "engine/core/Types.h"
 
 namespace gdl {
 
 /** One character cell: its code and where it sits in the font texture; height is the font's. */
 struct BitmapGlyph {
-    std::int32_t code = 0;
-    std::int32_t width = 0;
-    std::int32_t x = 0;
-    std::int32_t y = 0;
+    s32 code = 0;
+    s32 width = 0;
+    s32 x = 0;
+    s32 y = 0;
 };
 
 /** The cell table of one bitmap font; characters without a cell take up no space except ' '. */
 class BitmapFont {
 public:
-    static BitmapFont fromGlyphs(std::int32_t height, std::int32_t spaceWidth,
-                                 std::vector<BitmapGlyph> glyphs);
+    static BitmapFont fromGlyphs(s32 height, s32 spaceWidth, std::vector<BitmapGlyph> glyphs);
 
     /** Reads an unpacked font manifest; false (with a warning) when missing or malformed. */
-    bool load(const std::filesystem::path& file, std::int32_t spaceWidth);
+    bool load(const std::filesystem::path& file, s32 spaceWidth);
 
     bool loaded() const { return m_height > 0; }
-    std::int32_t height() const { return m_height; }
-    std::int32_t spaceWidth() const { return m_spaceWidth; }
-    std::size_t glyphCount() const { return m_glyphs.size(); }
+    s32 height() const { return m_height; }
+    s32 spaceWidth() const { return m_spaceWidth; }
+    usize glyphCount() const { return m_glyphs.size(); }
 
     /** The cell for a character code, or nullptr when the font has none. */
-    const BitmapGlyph* glyph(std::uint8_t code) const;
+    const BitmapGlyph* glyph(u8 code) const;
 
 private:
     void index();
 
-    std::int32_t m_height = 0;
-    std::int32_t m_spaceWidth = 0;
+    s32 m_height = 0;
+    s32 m_spaceWidth = 0;
     std::vector<BitmapGlyph> m_glyphs;
-    std::array<std::int16_t, 256> m_lookup{};
+    std::array<s16, 256> m_lookup{};
 };
 
 } // namespace gdl

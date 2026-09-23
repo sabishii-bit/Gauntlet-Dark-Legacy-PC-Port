@@ -1,8 +1,8 @@
-#include <cstddef>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -51,7 +51,7 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE(members[0].save.gold == 120);
     REQUIRE(members[0].save.health() == 250);
     REQUIRE(members[0].save.progress().inventory.keys == 2);
-    REQUIRE(members[0].slot == std::optional<std::size_t>{5}); // kept in a slot when it names one
+    REQUIRE(members[0].slot == std::optional<usize>{5}); // kept in a slot when it names one
     REQUIRE(members[0].turbo == 45.0f);
     REQUIRE(members[1].turbo == 0.0f);
     REQUIRE(members[0].save.progress().inventory.nextPotion() == 4);

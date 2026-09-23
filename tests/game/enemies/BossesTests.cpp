@@ -4,6 +4,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/enemies/Bosses.h"
@@ -14,10 +16,10 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr int kTicks = 2;
-constexpr float kStep = 1.0f / 30.0f;
+constexpr s32 kTicks = 2;
+constexpr f32 kStep = 1.0f / 30.0f;
 
-EnemyView playerAt(const Vec3& position, int player = 0) {
+EnemyView playerAt(const Vec3& position, s32 player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;
@@ -88,7 +90,7 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE(bosses.archive()->textures.find("METER_FG1").has_value());
     // Beyond its threshold it sleeps: nothing moves.
     const std::vector<EnemyView> far{playerAt(Vec3{0.0f, 0.0f, 40.0f})};
-    for (int i = 0; i < 120; ++i) {
+    for (s32 i = 0; i < 120; ++i) {
         bosses.update(kTicks, kStep, far);
     }
     REQUIRE_FALSE(bosses.view().awake);
@@ -99,7 +101,7 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     bosses.update(kTicks, kStep, near);
     REQUIRE(bosses.view().awake);
     std::vector<CritterBlow> blows;
-    for (int i = 0; i < 1500 && blows.empty(); ++i) {
+    for (s32 i = 0; i < 1500 && blows.empty(); ++i) {
         bosses.update(kTicks, kStep, near);
         auto taken = bosses.takeBlows();
         blows.insert(blows.end(), taken.begin(), taken.end());
@@ -151,7 +153,7 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE(losses[1].experience == Approx(0.2f * 3860.0f));
     REQUIRE_FALSE(bosses.view().alive);
     REQUIRE(bosses.view().fraction() == 0.0f);
-    int gone = 0;
+    s32 gone = 0;
     while (bosses.present() && gone < 900) {
         bosses.update(kTicks, kStep, near);
         ++gone;
@@ -179,7 +181,7 @@ TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its
     REQUIRE(bosses.legend().stage() == LegendRite::Stage::Carried);
     // Asleep, nothing happens.
     const std::vector<EnemyView> far{playerAt(Vec3{0.0f, 0.0f, 40.0f})};
-    for (int i = 0; i < 60; ++i) {
+    for (s32 i = 0; i < 60; ++i) {
         bosses.update(kTicks, kStep, far);
     }
     REQUIRE(bosses.takeLegendEvents().empty());
@@ -188,7 +190,7 @@ TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its
     // health goes at once, less its armour of one, paid as a hit to the bearer.
     const std::vector<EnemyView> near{playerAt(Vec3{0.0f, 0.0f, 18.0f})};
     std::vector<LegendEvent> events;
-    int waited = 0;
+    s32 waited = 0;
     while (!bosses.legend().thrown() && waited < 3000) {
         bosses.update(kTicks, kStep, near);
         auto taken = bosses.takeLegendEvents();
@@ -209,7 +211,7 @@ TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its
     REQUIRE_FALSE(bosses.curbed());
     // It roars at that, and the rite is over: the book's toll is paid once.
     bool roared = false;
-    for (int i = 0; i < 600 && !roared; ++i) {
+    for (s32 i = 0; i < 600 && !roared; ++i) {
         bosses.update(kTicks, kStep, near);
         for (const LegendEvent& event : bosses.takeLegendEvents()) {
             roared = roared || event.cue == LegendCue::Roared;
@@ -220,7 +222,7 @@ TEST_CASE("a legend item brought to the boss is thrown as it rises and takes its
     REQUIRE_FALSE(bosses.legend().running());
     // Then it fights.
     std::vector<CritterBlow> blows;
-    for (int i = 0; i < 1500 && blows.empty(); ++i) {
+    for (s32 i = 0; i < 1500 && blows.empty(); ++i) {
         bosses.update(kTicks, kStep, near);
         auto taken = bosses.takeBlows();
         blows.insert(blows.end(), taken.begin(), taken.end());
@@ -242,7 +244,7 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
     REQUIRE(bosses.cameraOffset() == Vec3{0, 17, 0});
     const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 40})};
     std::vector<CritterShot> shots;
-    for (int frame = 0; frame < 900 && shots.empty(); ++frame) {
+    for (s32 frame = 0; frame < 900 && shots.empty(); ++frame) {
         bosses.update(kTicks, kStep, party);
         shots = bosses.takeShots();
     }
@@ -264,7 +266,7 @@ TEST_CASE("anchored bosses retain local territories and the lich and spider can 
           "[game][boss-movement][unpacked]") {
     struct Expected {
         const char* name;
-        float radius;
+        f32 radius;
         bool pursuit;
     };
     for (const auto& expected :
@@ -304,7 +306,7 @@ TEST_CASE("anchored bosses retain local territories and the lich and spider can 
 
 TEST_CASE("every retail boss can enter animate draw take damage and die",
           "[game][boss-roster][unpacked]") {
-    for (int kind = 34; kind <= 44; ++kind) {
+    for (s32 kind = 34; kind <= 44; ++kind) {
         const std::string name{bossNameOf(kind)};
         DYNAMIC_SECTION(name) {
             const auto root =
@@ -317,7 +319,7 @@ TEST_CASE("every retail boss can enter animate draw take damage and die",
             REQUIRE(bosses.view().alive);
             REQUIRE(bosses.view().maxHealth > 0);
             const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 20})};
-            for (int tick = 0; tick < 180; ++tick) {
+            for (s32 tick = 0; tick < 180; ++tick) {
                 bosses.update(kTicks, kStep, party);
             }
             REQUIRE(bosses.view().awake);

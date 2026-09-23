@@ -1,6 +1,5 @@
 #include "engine/assets/TextureSet.h"
 
-#include <cstdint>
 #include <exception>
 #include <string>
 
@@ -10,6 +9,7 @@
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -17,7 +17,7 @@ namespace gdl {
 namespace {
 
 /** The archive's mark on a bitmap that has no picture of its own. */
-constexpr std::uint32_t kNoPictureFlag = 0x100;
+constexpr u32 kNoPictureFlag = 0x100;
 
 constexpr std::string_view kManifestName = "textures.json";
 
@@ -31,7 +31,7 @@ bool TextureSet::load(const std::filesystem::path& directory) {
     m_directory = directory;
 
     const std::filesystem::path manifest = directory / kManifestName;
-    std::vector<std::uint8_t> bytes;
+    std::vector<u8> bytes;
     try {
         bytes = readFile(manifest);
     } catch (const std::exception& e) {
@@ -44,8 +44,8 @@ bool TextureSet::load(const std::filesystem::path& directory) {
         for (const nlohmann::json& bitmap : root.at("bitmaps")) {
             TextureSetEntry entry;
             entry.name = normalizeAssetName(bitmap.at("name").get<std::string>());
-            entry.width = bitmap.at("width").get<std::uint32_t>();
-            entry.height = bitmap.at("height").get<std::uint32_t>();
+            entry.width = bitmap.at("width").get<u32>();
+            entry.height = bitmap.at("height").get<u32>();
             entry.flags = bitmap.value("flags", 0U);
             entry.frames = bitmap.value("frames", 0U);
             entry.noPicture = (bitmap.value("flags", 0U) & kNoPictureFlag) != 0;
@@ -55,12 +55,12 @@ bool TextureSet::load(const std::filesystem::path& directory) {
             entry.file = directory / bitmap.at("file").get<std::string>();
             m_entries.push_back(std::move(entry));
         }
-        for (std::uint32_t i = 0; i < m_entries.size(); ++i) {
+        for (u32 i = 0; i < m_entries.size(); ++i) {
             m_byName.try_emplace(m_entries[i].name, i);
         }
         if (root.contains("defs")) {
             for (const nlohmann::json& def : root.at("defs")) {
-                const auto index = def.at("index").get<std::uint32_t>();
+                const auto index = def.at("index").get<u32>();
                 if (index < m_entries.size()) {
                     m_byName[normalizeAssetName(def.at("name").get<std::string>())] = index;
                 }
@@ -78,12 +78,12 @@ bool TextureSet::load(const std::filesystem::path& directory) {
     return !m_entries.empty();
 }
 
-const TextureSetEntry& TextureSet::entry(std::uint32_t index) const {
+const TextureSetEntry& TextureSet::entry(u32 index) const {
     GDL_VERIFY(index < m_entries.size(), "texture index out of range");
     return m_entries[index];
 }
 
-std::optional<std::uint32_t> TextureSet::find(std::string_view name) const {
+std::optional<u32> TextureSet::find(std::string_view name) const {
     const auto it = m_byName.find(normalizeAssetName(name));
     if (it == m_byName.end()) {
         return std::nullopt;
@@ -91,7 +91,7 @@ std::optional<std::uint32_t> TextureSet::find(std::string_view name) const {
     return it->second;
 }
 
-const Image& TextureSet::image(std::uint32_t index) {
+const Image& TextureSet::image(u32 index) {
     GDL_VERIFY(index < m_entries.size(), "texture index out of range");
     Image& image = m_images[index];
     if (image.pixels.empty()) {
@@ -109,7 +109,7 @@ const Image& TextureSet::image(std::uint32_t index) {
     return image;
 }
 
-const Texture& TextureSet::texture(RenderDevice& device, std::uint32_t index) {
+const Texture& TextureSet::texture(RenderDevice& device, u32 index) {
     GDL_VERIFY(index < m_entries.size(), "texture index out of range");
     std::unique_ptr<Texture>& texture = m_textures[index];
     if (!texture) {

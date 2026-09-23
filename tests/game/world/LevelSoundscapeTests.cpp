@@ -1,7 +1,5 @@
 #include <array>
 #include <bit>
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <string>
@@ -10,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AudioMixer.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -22,14 +21,14 @@ using namespace gdl::game;
 
 /** Tiny looping banks keep timing and ownership tests independent of retail assets. */
 void writeBank(const std::filesystem::path& root, std::string_view bank,
-               std::initializer_list<std::string_view> names, std::int16_t sample = 8192,
+               std::initializer_list<std::string_view> names, s16 sample = 8192,
                bool broken = false) {
     const auto directory = root / "audio" / bank;
     std::filesystem::create_directories(directory);
-    const std::array<std::int16_t, 4> pcm{sample, sample, sample, sample};
+    const std::array<s16, 4> pcm{sample, sample, sample, sample};
     writeFile(directory / "sample.wav", formats::encodeWav(pcm, 48000, 1));
     std::string sounds;
-    std::size_t index = 0;
+    usize index = 0;
     for (const auto name : names) {
         if (index != 0) {
             sounds += ',';
@@ -56,7 +55,7 @@ TEST_CASE("level sound lookup preserves bank precedence and broken first matches
     LevelSoundscape soundscape;
     const LevelAudioInfo info{.bank = "LEVEL", .stream = {}};
     soundscape.open(root, &player, &info);
-    std::array<float, 128> output{};
+    std::array<f32, 128> output{};
     SECTION("level overrides common and ambient") {
         REQUIRE(soundscape.playNamed("SHARED") != kNoSound);
         mixer.mix(output);
@@ -93,7 +92,7 @@ TEST_CASE("level narration selects its bank and queues after the character name"
     soundscape.open(root, &player, nullptr);
     SECTION("the primary bank wins duplicate names") {
         REQUIRE(soundscape.narrate("BOTH") != kNoSound);
-        std::array<float, 128> output{};
+        std::array<f32, 128> output{};
         mixer.mix(output);
         REQUIRE(output.back() > 0.0f);
     }
@@ -112,7 +111,7 @@ TEST_CASE("level narration selects its bank and queues after the character name"
         soundscape.close();
         REQUIRE_FALSE(player.isPlaying(first));
         REQUIRE_FALSE(player.isPlaying(waiting));
-        std::array<float, 512> output{};
+        std::array<f32, 512> output{};
         mixer.mix(output);
         player.update();
         REQUIRE(player.voiceCount() == 0);
@@ -196,7 +195,7 @@ TEST_CASE("opening sounds stop by target and play the settled cue", "[game][worl
     soundscape.stopCues();
     REQUIRE_FALSE(player.isPlaying(other));
     REQUIRE(soundscape.fieldSound() == kNoSound);
-    const std::size_t voices = player.voiceCount();
+    const usize voices = player.voiceCount();
     soundscape.settled(TriggerOpening{.target = 3, .atOnce = true, .sound = 0});
     REQUIRE(player.voiceCount() == voices + 1); // a settled cue needs no preceding loop
     soundscape.close();
@@ -225,7 +224,7 @@ TEST_CASE("reopening a level clears bank and common sound identities",
     soundscape.playFootstep(false);
     soundscape.playFootstep(true);
     REQUIRE(player.voiceCount() == 4);
-    std::array<float, 512> output{};
+    std::array<f32, 512> output{};
     mixer.mix(output); // drain stopped voices, then exercise updates after banks were freed
     player.update();
     REQUIRE(player.voiceCount() == 0);
@@ -255,7 +254,7 @@ TEST_CASE("level ambience outlives early cue teardown but not close or rebind",
     soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
     const SoundHandle first = soundscape.ambience().emitter(0).handle;
     REQUIRE(player.isPlaying(first));
-    std::array<float, 128> output{};
+    std::array<f32, 128> output{};
     mixer.mix(output);
     REQUIRE(output.back() > 0.0f); // ambient items prefer TOWAMB, unlike named effects
     soundscape.stopCues();
@@ -305,13 +304,13 @@ TEST_CASE("level music loops in its own category and stops on replacement and te
     // A single mono DSP frame with zero predictors and positive residuals.
     test::ByteWriter stream;
     stream.putFourcc("dhSS");
-    for (const unsigned int value : {24U, 32U, 48000U, 1U, 8U, 0xFFFFFFFFU, 0U}) {
+    for (const u32 value : {24U, 32U, 48000U, 1U, 8U, 0xFFFFFFFFU, 0U}) {
         stream.putU32(std::byteswap(value));
     }
     stream.putFourcc("dbSS").putU32(std::byteswap(8U));
-    std::array<std::uint8_t, 96> channel{};
+    std::array<u8, 96> channel{};
     channel[3] = 14;
-    const std::array<std::uint8_t, 8> frame{0, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
+    const std::array<u8, 8> frame{0, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
     stream.putBytes(channel).putBytes(frame);
     writeFile(root / "STREAMS/test.ads", stream.bytes());
     AudioMixer mixer(48000);
@@ -324,7 +323,7 @@ TEST_CASE("level music loops in its own category and stops on replacement and te
     const SoundHandle first = soundscape.music();
     REQUIRE(player.isPlaying(first));
     // 256 stereo frames also let the mixer's five-millisecond gain ramp settle.
-    std::array<float, 512> output{};
+    std::array<f32, 512> output{};
     mixer.mix(output);
     REQUIRE(output.back() > 0.0f); // beyond the single frame: the stream loops
     player.setCategoryVolume(SoundCategory::Music, 0.0f);

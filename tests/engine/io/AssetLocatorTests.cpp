@@ -1,10 +1,10 @@
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
@@ -17,8 +17,8 @@ using namespace gdl;
 std::filesystem::path makeTree() {
     const auto root = test::scratchDirectory("asset-locator");
     std::filesystem::create_directories(root / "VQMOVIES");
-    writeFile(root / "VQMOVIES" / "OPENING.avi", std::vector<std::uint8_t>{1});
-    writeFile(root / "VQMOVIES" / "midway.avi", std::vector<std::uint8_t>{2});
+    writeFile(root / "VQMOVIES" / "OPENING.avi", std::vector<u8>{1});
+    writeFile(root / "VQMOVIES" / "midway.avi", std::vector<u8>{2});
     return root;
 }
 

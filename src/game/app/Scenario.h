@@ -5,26 +5,28 @@
 #include <string_view>
 #include <vector>
 
+#include "engine/core/Types.h"
+
 #include "game/screens/PlayScene.h"
 
 namespace gdl::game {
 
 /** One character of a scenario's party, named by the asset codes a save would carry. */
 struct ScenarioMember {
-    int player = 0;
+    s32 player = 0;
     std::string classCode = "WAR";
     std::string colorCode = "YEL";
     std::string name = "TEST";
-    int level = 1;
-    std::vector<int> crystals; ///< per realm, as many as given
-    int gold = 0;
-    int health = 0; ///< none leaves it full
-    int keys = 0;
-    int slot = -1;            ///< the save slot the character is kept in; none when negative
-    float turbo = 0.0f;       ///< what its turbo meter starts with
-    std::vector<int> potions; ///< the kind of each carried
+    s32 level = 1;
+    std::vector<s32> crystals; ///< per realm, as many as given
+    s32 gold = 0;
+    s32 health = 0; ///< none leaves it full
+    s32 keys = 0;
+    s32 slot = -1;            ///< the save slot the character is kept in; none when negative
+    f32 turbo = 0.0f;         ///< what its turbo meter starts with
+    std::vector<s32> potions; ///< the kind of each carried
     std::vector<PowerupSlot> powerups; ///< carried and worn
-    std::vector<int> legends;          ///< the legend items carried, by the realm of their boss
+    std::vector<s32> legends;          ///< the legend items carried, by the realm of their boss
 };
 
 /**

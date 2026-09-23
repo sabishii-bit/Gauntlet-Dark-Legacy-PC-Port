@@ -1,9 +1,9 @@
-#include <cstddef>
 #include <filesystem>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -115,33 +115,33 @@ TEST_CASE("the dragon's lair renders all six safe rocks and every retail damage 
     rocks.setPlayerCount(1);
     REQUIRE(rocks.size() == 6);
     REQUIRE(rocks.obstacles().size() == 6);
-    for (std::size_t i = 0; i < rocks.size(); ++i) {
+    for (usize i = 0; i < rocks.size(); ++i) {
         const auto& rock = rocks.rock(i);
         REQUIRE(rock.health == 120);
         REQUIRE(rock.armor == 10);
         REQUIRE(rock.obstacle.cylinderRadius == Approx(2.3f));
         REQUIRE(rock.position ==
-                layout.itemInstances()[static_cast<std::size_t>(rock.instance)].position);
+                layout.itemInstances()[static_cast<usize>(rock.instance)].position);
         for (const auto& model : rock.models) {
             REQUIRE(model.bound());
         }
     }
     rocks.draw(device, Mat4{1.0f}, {});
     REQUIRE(device.draws.size() >= 6);
-    std::size_t intactVertices = 0;
+    usize intactVertices = 0;
     for (const auto& draw : device.draws) {
         REQUIRE(draw.texture != nullptr);
         intactVertices += draw.vertices.size();
     }
     REQUIRE(intactVertices > 0);
-    for (std::size_t i = 0; i < rocks.size(); ++i) {
+    for (usize i = 0; i < rocks.size(); ++i) {
         REQUIRE(rocks.strike(i, 1000));
     }
     REQUIRE(rocks.obstacles().empty());
     device.draws.clear();
     rocks.draw(device, Mat4{1.0f}, {});
     REQUIRE_FALSE(device.draws.empty()); // tier zero is a real rubble mesh, not deletion
-    std::size_t ruinVertices = 0;
+    usize ruinVertices = 0;
     for (const auto& draw : device.draws) {
         ruinVertices += draw.vertices.size();
     }

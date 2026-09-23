@@ -4,6 +4,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/enemies/EnemyMind.h"
 
 namespace {
@@ -12,10 +14,10 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 /** A sense of standing at the origin facing +z with a player straight ahead, all clear. */
-MindSense senseAhead(float distance = 20.0f) {
+MindSense senseAhead(f32 distance = 20.0f) {
     MindSense sense;
     sense.yaw = 0.0f;
     sense.ticks = 2;
@@ -74,7 +76,7 @@ TEST_CASE("the chase goes straight for its player, and round a corner the nearer
     REQUIRE(memory.collided == 1);
     REQUIRE(memory.deadEnd == 10 - 2);
     REQUIRE(intent.heading == Approx(kPi / 4.0f)); // held
-    for (int i = 0; i < 5; ++i) {
+    for (s32 i = 0; i < 5; ++i) {
         intent = chase.think(memory, senseAhead());
     }
     REQUIRE(memory.deadEnd <= 0);
@@ -91,13 +93,13 @@ TEST_CASE("the chase goes straight for its player, and round a corner the nearer
     // probe ends nearer), a sixteenth of a turn further from straight until a step is open.
     sense = senseAhead();
     sense.yaw = -0.3f;
-    sense.open = [](float heading) { return heading > 0.5f; };
+    sense.open = [](f32 heading) { return heading > 0.5f; };
     intent = chase.think(memory, sense);
     REQUIRE(memory.route == 1);
     REQUIRE(memory.skirting);
     REQUIRE(intent.heading == Approx(kPi / 4.0f)); // the first open sixteenth past 0.5
     // Only the other side open: it takes that, and the route with it.
-    sense.open = [](float heading) { return heading < -1.0f; };
+    sense.open = [](f32 heading) { return heading < -1.0f; };
     intent = chase.think(memory, sense);
     REQUIRE(memory.route == -1);
     REQUIRE(intent.heading == Approx(-3.0f * kPi / 8.0f));
@@ -111,9 +113,9 @@ TEST_CASE("the chase goes straight for its player, and round a corner the nearer
     sense.blocked = true;
     memory.route = 1;
     memory.collided = 0;
-    for (int b = 0; b < 7; ++b) {
+    for (s32 b = 0; b < 7; ++b) {
         chase.think(memory, sense);
-        for (int i = 0; i < 6; ++i) {
+        for (s32 i = 0; i < 6; ++i) {
             chase.think(memory, senseAhead());
         }
     }
@@ -134,7 +136,7 @@ TEST_CASE("the chase refuses headings that lead into things or straight back, an
     const EnemyMind& chase = enemyMindOf(kChaseWay);
     MindMemory memory;
     MindSense sense = senseAhead();
-    sense.clear = [](float) { return false; };
+    sense.clear = [](f32) { return false; };
     MindIntent intent = chase.think(memory, sense);
     REQUIRE(memory.stuck == 1);
     REQUIRE(intent.heading == 0.0f);
@@ -149,12 +151,12 @@ TEST_CASE("the chase refuses headings that lead into things or straight back, an
     MindMemory walled;
     walled.heading = 1.0f;
     MindSense shut = senseAhead();
-    shut.open = [](float) { return false; };
+    shut.open = [](f32) { return false; };
     intent = chase.think(walled, shut);
     REQUIRE(walled.stuck == 1);
     REQUIRE(walled.heading == 1.0f);
     REQUIRE(intent.heading == 0.0f);
-    for (int i = 0; i < 10; ++i) {
+    for (s32 i = 0; i < 10; ++i) {
         chase.think(memory, sense);
     }
     REQUIRE(memory.stuck > 10);
@@ -177,15 +179,15 @@ TEST_CASE("the seek tries a sixteenth either side of straight, the prowler pounc
     MindMemory memory;
     MindSense sense = senseAhead();
     // Straight is blocked, right is clear: a sixteenth right is taken.
-    sense.clear = [](float heading) { return heading > 0.1f; };
+    sense.clear = [](f32 heading) { return heading > 0.1f; };
     MindIntent intent = seek.think(memory, sense);
     REQUIRE(intent.heading == Approx(kPi / 8.0f));
     // Only the left is clear, and only well round.
-    sense.clear = [](float heading) { return heading < -1.0f; };
+    sense.clear = [](f32 heading) { return heading < -1.0f; };
     intent = seek.think(memory, sense);
     REQUIRE(intent.heading == Approx(-3.0f * kPi / 8.0f));
     // Nothing clear: straight anyway.
-    sense.clear = [](float) { return false; };
+    sense.clear = [](f32) { return false; };
     intent = seek.think(memory, sense);
     REQUIRE(intent.heading == 0.0f);
     // The prowler wanders until a player is within eight, then seeks for good.
@@ -242,7 +244,7 @@ TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer
     REQUIRE(intent.pace > 1.0f);
     REQUIRE(intent.action == EnemyAction::Run);
     MindSense cornered = senseAhead();
-    cornered.clear = [](float heading) { return std::abs(heading) < 2.0f; };
+    cornered.clear = [](f32 heading) { return std::abs(heading) < 2.0f; };
     intent = flee.think(fleeing, cornered);
     REQUIRE(std::abs(intent.heading) < 2.0f);
     MindSense alone;

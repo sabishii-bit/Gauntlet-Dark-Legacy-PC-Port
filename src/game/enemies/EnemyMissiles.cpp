@@ -3,15 +3,17 @@
 #include <cmath>
 #include <utility>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 namespace {
 
-constexpr float kFootClearance = 0.1f;
+constexpr f32 kFootClearance = 0.1f;
 
-float flatDistance(const Vec3& a, const Vec3& b) {
-    const float dx = a.x - b.x;
-    const float dz = a.z - b.z;
+f32 flatDistance(const Vec3& a, const Vec3& b) {
+    const f32 dx = a.x - b.x;
+    const f32 dz = a.z - b.z;
     return std::sqrt(dx * dx + dz * dz);
 }
 
@@ -38,8 +40,7 @@ EnemyMissileKind EnemyMissileKind::bomb() {
     return kind;
 }
 
-EnemyMissileKind EnemyMissileKind::bolt(float damage, float speed, float radius,
-                                        unsigned int flags) {
+EnemyMissileKind EnemyMissileKind::bolt(f32 damage, f32 speed, f32 radius, u32 flags) {
     EnemyMissileKind kind;
     kind.flags = flags;
     kind.damage = damage;
@@ -49,7 +50,7 @@ EnemyMissileKind EnemyMissileKind::bolt(float damage, float speed, float radius,
     return kind;
 }
 
-std::optional<EnemyMissileKind> enemyMissileOf(int kind, int slot) {
+std::optional<EnemyMissileKind> enemyMissileOf(s32 kind, s32 slot) {
     // The original's table (0x80119128): the medium kinds share the arrow and the bomb, and
     // a few have a bolt of their own; the worm has three of its own.
     const bool medium = kind == 1 || kind == 4 || kind == 7 || kind == 10 || kind == 13 ||
@@ -86,7 +87,7 @@ std::optional<EnemyMissileKind> enemyMissileOf(int kind, int slot) {
     return std::nullopt;
 }
 
-int missileSlotOfWay(int way) {
+s32 missileSlotOfWay(s32 way) {
     switch (way) {
     case 16:
     case 23: return EnemyMissileKind::kArrow;
@@ -96,34 +97,34 @@ int missileSlotOfWay(int way) {
     }
 }
 
-Vec3 EnemyMissiles::lobVelocity(const Vec3& from, const Vec3& to, float speed) {
-    const float across = flatDistance(from, to);
-    const float flight = std::max(across / std::max(speed, 0.001f), kLeastFlight);
+Vec3 EnemyMissiles::lobVelocity(const Vec3& from, const Vec3& to, f32 speed) {
+    const f32 across = flatDistance(from, to);
+    const f32 flight = std::max(across / std::max(speed, 0.001f), kLeastFlight);
     Vec3 velocity{(to.x - from.x) / flight, 0.0f, (to.z - from.z) / flight};
     velocity.y = (to.y - from.y) / flight + 0.5f * kGravity * flight;
     return velocity;
 }
 
 void EnemyMissiles::launch(const EnemyMissileKind& kind, const Vec3& from, const Vec3& aim,
-                           float speedScale, const TreeModel* model, int shooter) {
+                           f32 speedScale, const TreeModel* model, s32 shooter) {
     EnemyMissile missile;
     missile.kind = kind;
     missile.position = from;
     missile.model = model;
     missile.shooter = shooter;
     missile.secondsLeft = kLife;
-    const float speed = kind.speed * std::max(speedScale, 0.01f);
+    const f32 speed = kind.speed * std::max(speedScale, 0.01f);
     if (kind.burstRadius > 0.0f) {
         missile.velocity = lobVelocity(from, aim, speed);
     } else {
         const Vec3 way = aim - from;
-        const float length = glm::length(way);
+        const f32 length = glm::length(way);
         missile.velocity = length > 0.001f ? way * (speed / length) : Vec3{0.0f, 0.0f, speed};
     }
     m_missiles.push_back(missile);
 }
 
-void EnemyMissiles::update(float seconds, const WorldCollision* collision,
+void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                            std::span<const EnemyView> players) {
     for (EnemyMissile& missile : m_missiles) {
         if (missile.kind.burstRadius > 0.0f) {
@@ -141,8 +142,8 @@ void EnemyMissiles::update(float seconds, const WorldCollision* collision,
             }
             const Vec3 centre = view.position + Vec3{0.0f, 0.5f * view.height, 0.0f};
             const Vec3 sweep = to - from;
-            const float length = glm::length(sweep);
-            const float t =
+            const f32 length = glm::length(sweep);
+            const f32 t =
                 length > 0.001f
                     ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f)
                     : 0.0f;
@@ -208,8 +209,8 @@ void EnemyMissiles::draw(RenderDevice& device, const Mat4& clip,
             continue;
         }
         // Pointed the way it flies, spinning as its kind does.
-        const float yaw = std::atan2(missile.velocity.x, missile.velocity.z);
-        const float pitch =
+        const f32 yaw = std::atan2(missile.velocity.x, missile.velocity.z);
+        const f32 pitch =
             -std::atan2(missile.velocity.y, flatDistance(Vec3{0.0f, 0.0f, 0.0f}, missile.velocity));
         Mat4 model = glm::translate(Mat4{1.0f}, missile.position);
         model = glm::rotate(model, yaw, Vec3{0.0f, 1.0f, 0.0f});

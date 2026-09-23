@@ -1,11 +1,11 @@
 #pragma once
 
-#include <cstdint>
 #include <span>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/MessageTable.h"
+#include "engine/core/Types.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
 #include "engine/world/AnimationPlayer.h"
@@ -33,16 +33,15 @@ public:
         bool sparkle = false; ///< one request per visit, even if the caller lacks effects
     };
 
-    void begin(int kind, char realm, std::uint16_t runesInRealm, std::uint16_t runesFound,
-               bool goldLeft);
+    void begin(s32 kind, char realm, u16 runesInRealm, u16 runesFound, bool goldLeft);
     /** Borrows the wizard tree and resources; party contains only standing participants. */
     void bindWizard(RenderDevice& device, ItemArchive& items, const Vec3& boss,
                     std::span<const Vec3> party);
     void clear();
-    Update update(int ticks, float seconds, bool goldLeft, const MessageTable& strings);
+    Update update(s32 ticks, f32 seconds, bool goldLeft, const MessageTable& strings);
     void drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, const MessageTable& strings,
-                     float width, float height) const;
+                     f32 width, f32 height) const;
 
     const BossVictory& state() const { return m_visit; }
     BossCameraSubject wizardSubject() const;
@@ -54,7 +53,7 @@ private:
     AnimationPlayer m_player;
     TreePose m_pose;
     Vec3 m_position{0.0f};
-    float m_yaw = 0.0f;
+    f32 m_yaw = 0.0f;
     bool m_sparkled = false;
 };
 

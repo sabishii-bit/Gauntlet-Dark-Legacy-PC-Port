@@ -3,13 +3,12 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 
 #include <nlohmann/json.hpp>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl::game {
@@ -19,7 +18,7 @@ namespace {
 using Json = nlohmann::json;
 
 Vec3 vecOf(const Json& json, const char* key) {
-    const auto values = json.value(key, std::vector<float>{});
+    const auto values = json.value(key, std::vector<f32>{});
     return values.size() >= 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f, 0.0f, 0.0f};
 }
 
@@ -45,7 +44,7 @@ std::string lower(std::string_view text) {
 
 } // namespace
 
-bool CritterTarget::allows(float distance, float bearing, float vertical) const {
+bool CritterTarget::allows(f32 distance, f32 bearing, f32 vertical) const {
     if (distance < minDistance) {
         return false;
     }
@@ -60,13 +59,13 @@ bool CritterTarget::allows(float distance, float bearing, float vertical) const 
 
 /** The body's way turned by the record's yaw, then tipped by its pitch (under nought, up),
  * at its speed. */
-Vec3 CritterDamage::spewVelocity(float bodyYaw) const {
-    const float heading = bodyYaw + yaw;
-    const float level = std::cos(-pitch);
+Vec3 CritterDamage::spewVelocity(f32 bodyYaw) const {
+    const f32 heading = bodyYaw + yaw;
+    const f32 level = std::cos(-pitch);
     return Vec3{std::sin(heading) * level, std::sin(-pitch), std::cos(heading) * level} * speed;
 }
 
-float CritterDamage::spewHalfAngle() const {
+f32 CritterDamage::spewHalfAngle() const {
     return std::acos(std::clamp(minDot, -1.0f, 1.0f));
 }
 
@@ -80,7 +79,7 @@ bool CritterData::load(const std::filesystem::path& file) {
         }
         // The first type is the creature; children (chimera heads) come after it.
         const Json& type = types.front();
-        const auto descriptor = static_cast<std::size_t>(std::max(type.value("descriptor", 0), 0));
+        const auto descriptor = static_cast<usize>(std::max(type.value("descriptor", 0), 0));
         const Json& desc = descriptors[std::min(descriptor, descriptors.size() - 1)];
         m_name = root.value("name", "");
         m_folder = lower(desc.value("name", ""));
@@ -97,7 +96,7 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_floorOffset = type.value("floorOffset", 0.0f);
         m_originOffset = vecOf(type, "originOffset");
         m_sight = targetOf(type);
-        const unsigned int typeFlags = type.value("typeFlags", 0U);
+        const u32 typeFlags = type.value("typeFlags", 0U);
         m_movement = CritterMovement{};
         // Older unpacked manifests mislabeled TYPE +0xAC as speed. MOVE +0x84 is
         // the actual pace; this value limits the boss's displacement from home.
@@ -120,11 +119,11 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_meter.shown = (typeFlags & CritterMeter::kShown) != 0 && m_meter.pieces > 0;
         m_meter.backed = (typeFlags & CritterMeter::kBacked) != 0;
         m_meter.barOffset = vecOf(type, "healthBarOffset");
-        const int moveIndex = type.value("moveIndex", 0);
-        const int moveCount = type.value("moveCount", 0);
+        const s32 moveIndex = type.value("moveIndex", 0);
+        const s32 moveCount = type.value("moveCount", 0);
         const auto moves = root.value("moves", Json::array());
-        for (int i = 0; i < moveCount; ++i) {
-            const auto at = static_cast<std::size_t>(moveIndex) + static_cast<std::size_t>(i);
+        for (s32 i = 0; i < moveCount; ++i) {
+            const auto at = static_cast<usize>(moveIndex) + static_cast<usize>(i);
             if (at >= moves.size()) {
                 break;
             }
@@ -163,8 +162,8 @@ bool CritterData::load(const std::filesystem::path& file) {
         }
         for (const Json& d : root.value("damages", Json::array())) {
             CritterDamage damage;
-            damage.type = static_cast<std::int16_t>(d.value("type", 0));
-            damage.behaviorFlags = static_cast<std::uint16_t>(d.value("behaviorFlags", 0));
+            damage.type = static_cast<s16>(d.value("type", 0));
+            damage.behaviorFlags = static_cast<u16>(d.value("behaviorFlags", 0));
             damage.flags = d.value("flags", 0U);
             damage.radius = d.value("radius", 0.0f);
             damage.maxDistance = d.value("maxDistance", 0.0f);
@@ -201,11 +200,11 @@ bool CritterData::load(const std::filesystem::path& file) {
         }
         m_hitSoundFar = type.value("hitSoundFar", -1);
         m_hitSoundClose = type.value("hitSoundClose", -1);
-        const int colBase = type.value("colBase", 0);
-        const int colCount = type.value("colCount", 0);
+        const s32 colBase = type.value("colBase", 0);
+        const s32 colCount = type.value("colCount", 0);
         const auto nodes = root.value("nodes", Json::array());
-        for (int i = 0; i < colCount; ++i) {
-            const auto at = static_cast<std::size_t>(colBase) + static_cast<std::size_t>(i);
+        for (s32 i = 0; i < colCount; ++i) {
+            const auto at = static_cast<usize>(colBase) + static_cast<usize>(i);
             if (at >= nodes.size()) {
                 break;
             }
@@ -224,20 +223,20 @@ bool CritterData::load(const std::filesystem::path& file) {
     }
 }
 
-int CritterMove::projectileTriggers(int previous, int current, bool second) const {
-    const int first = second ? frameStart2 : frameStart;
+s32 CritterMove::projectileTriggers(s32 previous, s32 current, bool second) const {
+    const s32 first = second ? frameStart2 : frameStart;
     if (first < 0 || current < first || current <= previous) {
         return 0;
     }
-    constexpr int kRepeatedProjectile = 133;
+    constexpr s32 kRepeatedProjectile = 133;
     if (type != kRepeatedProjectile) {
         return previous < first ? 1 : 0;
     }
-    const int last = second ? frameEnd2 : frameEnd;
-    int count = 0;
-    for (int frame = std::max(first, previous + 1); frame <= std::min(last, current); ++frame) {
+    const s32 last = second ? frameEnd2 : frameEnd;
+    s32 count = 0;
+    for (s32 frame = std::max(first, previous + 1); frame <= std::min(last, current); ++frame) {
         if (framePeriod <= 0.0f ||
-            static_cast<int>(std::fmod(static_cast<float>(frame - first), framePeriod)) == 0) {
+            static_cast<s32>(std::fmod(static_cast<f32>(frame - first), framePeriod)) == 0) {
             ++count;
         }
     }
@@ -252,20 +251,20 @@ std::string CritterSound::soundFor(char letter) const {
     return name;
 }
 
-const CritterSound* CritterData::sound(int index) const {
-    return index >= 0 && static_cast<std::size_t>(index) < m_sounds.size()
-               ? &m_sounds[static_cast<std::size_t>(index)]
+const CritterSound* CritterData::sound(s32 index) const {
+    return index >= 0 && static_cast<usize>(index) < m_sounds.size()
+               ? &m_sounds[static_cast<usize>(index)]
                : nullptr;
 }
 
-const CritterDamage* CritterData::damage(int index) const {
-    return index >= 0 && static_cast<std::size_t>(index) < m_damages.size()
-               ? &m_damages[static_cast<std::size_t>(index)]
+const CritterDamage* CritterData::damage(s32 index) const {
+    return index >= 0 && static_cast<usize>(index) < m_damages.size()
+               ? &m_damages[static_cast<usize>(index)]
                : nullptr;
 }
 
-std::optional<std::size_t> CritterData::moveOfType(int type) const {
-    for (std::size_t i = 0; i < m_moves.size(); ++i) {
+std::optional<usize> CritterData::moveOfType(s32 type) const {
+    for (usize i = 0; i < m_moves.size(); ++i) {
         if (m_moves[i].type == type) {
             return i;
         }
@@ -273,8 +272,8 @@ std::optional<std::size_t> CritterData::moveOfType(int type) const {
     return std::nullopt;
 }
 
-std::optional<std::size_t> CritterData::moveNamed(std::string_view name) const {
-    for (std::size_t i = 0; i < m_moves.size(); ++i) {
+std::optional<usize> CritterData::moveNamed(std::string_view name) const {
+    for (usize i = 0; i < m_moves.size(); ++i) {
         if (m_moves[i].name == name) {
             return i;
         }

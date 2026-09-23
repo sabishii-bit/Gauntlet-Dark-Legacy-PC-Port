@@ -1,8 +1,7 @@
 #include "engine/render/ImmediateBatch.h"
 
-#include <cstddef>
-
 #include "engine/core/Assert.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
@@ -39,7 +38,7 @@ void ImmediateBatch::end() {
     m_open = false;
 }
 
-void ImmediateBatch::rect(const Rect& area, float depth, Color color, const Rect& uv) {
+void ImmediateBatch::rect(const Rect& area, f32 depth, Color color, const Rect& uv) {
     begin(PrimitiveTopology::QuadList);
     vertex(Vec3{area.x, area.y, depth}, color, Vec2{uv.x, uv.y});
     vertex(Vec3{area.right(), area.y, depth}, color, Vec2{uv.right(), uv.y});
@@ -50,11 +49,11 @@ void ImmediateBatch::rect(const Rect& area, float depth, Color color, const Rect
 
 void ImmediateBatch::flushPrimitive() {
     const auto& v = m_pending;
-    const std::size_t n = v.size();
+    const usize n = v.size();
 
     switch (m_topology) {
     case PrimitiveTopology::TriangleList:
-        for (std::size_t i = 0; i + 2 < n; i += 3) {
+        for (usize i = 0; i + 2 < n; i += 3) {
             m_triangles.push_back(v[i]);
             m_triangles.push_back(v[i + 1]);
             m_triangles.push_back(v[i + 2]);
@@ -62,7 +61,7 @@ void ImmediateBatch::flushPrimitive() {
         break;
 
     case PrimitiveTopology::TriangleStrip:
-        for (std::size_t i = 2; i < n; ++i) {
+        for (usize i = 2; i < n; ++i) {
             if ((i & 1U) == 0) {
                 m_triangles.push_back(v[i - 2]);
                 m_triangles.push_back(v[i - 1]);
@@ -75,7 +74,7 @@ void ImmediateBatch::flushPrimitive() {
         break;
 
     case PrimitiveTopology::TriangleFan:
-        for (std::size_t i = 2; i < n; ++i) {
+        for (usize i = 2; i < n; ++i) {
             m_triangles.push_back(v[0]);
             m_triangles.push_back(v[i - 1]);
             m_triangles.push_back(v[i]);
@@ -83,7 +82,7 @@ void ImmediateBatch::flushPrimitive() {
         break;
 
     case PrimitiveTopology::QuadList:
-        for (std::size_t i = 0; i + 3 < n; i += 4) {
+        for (usize i = 0; i + 3 < n; i += 4) {
             m_triangles.push_back(v[i]);
             m_triangles.push_back(v[i + 1]);
             m_triangles.push_back(v[i + 2]);

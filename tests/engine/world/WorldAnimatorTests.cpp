@@ -6,6 +6,7 @@
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/WorldAnimator.h"
 #include "engine/world/WorldScene.h"
@@ -19,7 +20,7 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
-constexpr float kStep = 1.0f / 30.0f;
+constexpr f32 kStep = 1.0f / 30.0f;
 
 struct Fixture {
     test::FakeRenderDevice device;
@@ -46,7 +47,7 @@ struct Fixture {
 };
 
 /** A layout of one keyed object with the given level flags. */
-WorldLayout layoutWithFlags(std::string_view name, unsigned int flags) {
+WorldLayout layoutWithFlags(std::string_view name, u32 flags) {
     const auto dir = test::scratchDirectory(name);
     writeTextFile(dir / "world.json", R"({
   "objects": [{"name": "SPIN", "position": [0, 0, 0], "flags": )" +
@@ -93,7 +94,7 @@ TEST_CASE("one-shot animations stop at their last frame, backwards ones at their
     WorldAnimator animator;
     animator.bind(layoutWithFlags("world-animator-once", WorldObject::kOnce));
     REQUIRE(animator.size() == 1);
-    for (int i = 0; i < 10; ++i) {
+    for (s32 i = 0; i < 10; ++i) {
         animator.step(kStep, scene);
     }
     REQUIRE(animator.frame(0) == 3.0f);
@@ -103,7 +104,7 @@ TEST_CASE("one-shot animations stop at their last frame, backwards ones at their
     REQUIRE(animator.frame(0) == 3.0f);
     animator.step(kStep, scene);
     REQUIRE(animator.frame(0) == Approx(2.0f));
-    for (int i = 0; i < 10; ++i) {
+    for (s32 i = 0; i < 10; ++i) {
         animator.step(kStep, scene);
     }
     REQUIRE(animator.frame(0) == 0.0f);

@@ -5,6 +5,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "engine/codec/MoviePlayback.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 #include "TestSupport.h"
@@ -37,9 +38,9 @@ TEST_CASE("the Midway logo movie plays through", "[codec][movie][assets]") {
     REQUIRE(info.audioChannels == 2);
     REQUIRE(info.audioSampleRate == 48042);
 
-    std::vector<float> audio;
+    std::vector<f32> audio;
     bool sawColour = false;
-    int updates = 0;
+    s32 updates = 0;
     while (playback.update(1.0 / 30.0) && updates < 1000) {
         ++updates;
         playback.takeAudio(audio);

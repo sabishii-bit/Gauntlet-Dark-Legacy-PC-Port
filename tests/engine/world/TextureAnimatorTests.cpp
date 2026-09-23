@@ -1,5 +1,4 @@
 #include <array>
-#include <cstddef>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -9,6 +8,7 @@
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/world/TextureAnimator.h"
 #include "engine/world/WorldScene.h"
 
@@ -20,8 +20,8 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
-TextureAnimationInfo cycle(std::string_view name, int texture, int source, int frames, int start,
-                           int rate, std::string_view frameName = "") {
+TextureAnimationInfo cycle(std::string_view name, s32 texture, s32 source, s32 frames, s32 start,
+                           s32 rate, std::string_view frameName = "") {
     TextureAnimationInfo info;
     info.name = std::string(name);
     info.frameName = std::string(frameName);
@@ -94,7 +94,7 @@ TEST_CASE("texture animations cycle frames and slide coordinates once a game fra
     REQUIRE(f.animator.motion(0).frame == &f.lender.texture(f.device, 1));
     REQUIRE(f.animator.motion(0).offset == Vec2{0.0f, 0.0f});
     bool scrolled = false;
-    for (std::size_t i = 0; i < f.animator.size(); ++i) {
+    for (usize i = 0; i < f.animator.size(); ++i) {
         const TextureMotion motion = f.animator.motion(i);
         if (motion.slot == 1) {
             scrolled = true;

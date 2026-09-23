@@ -1,7 +1,6 @@
 #include "game/app/Gauntlet.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <filesystem>
 #include <format>
 #include <span>
@@ -11,6 +10,7 @@
 #include "engine/assets/PngImage.h"
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
 
@@ -24,7 +24,7 @@ namespace {
 
 constexpr std::string_view kMovieDirectory = "VQMOVIES";
 constexpr std::string_view kTextDirectory = "text";
-constexpr double kFpsReportInterval = 2.0;
+constexpr f64 kFpsReportInterval = 2.0;
 constexpr std::string_view kWindowIcon = "carddemo/icon0.png"; ///< unpacked memory-card icon
 
 } // namespace
@@ -117,7 +117,7 @@ GameContext Gauntlet::context() {
     return context;
 }
 
-void Gauntlet::onUpdate(double deltaSeconds) {
+void Gauntlet::onUpdate(f64 deltaSeconds) {
     // Escape quits, except while a name is being typed, where it leaves the name instead.
     if (readMenuInput(input(), m_config.menu).escape && !(m_select.isOpen() && m_select.typing())) {
         requestQuit();
@@ -142,13 +142,13 @@ void Gauntlet::onUpdate(double deltaSeconds) {
     m_fpsAccumulator += deltaSeconds;
     ++m_fpsFrames;
     if (m_fpsAccumulator >= kFpsReportInterval) {
-        log::trace("{:.1f} fps", static_cast<double>(m_fpsFrames) / m_fpsAccumulator);
+        log::trace("{:.1f} fps", static_cast<f64>(m_fpsFrames) / m_fpsAccumulator);
         m_fpsAccumulator = 0.0;
         m_fpsFrames = 0;
     }
 }
 
-void Gauntlet::updateMovie(double deltaSeconds) {
+void Gauntlet::updateMovie(f64 deltaSeconds) {
     const MenuInput menu = readMenuInput(input(), m_config.menu);
     const bool toTitle = m_options.playMovie.empty() && menu.start;
     const bool playing = !toTitle && !menu.select && m_movie.update(deltaSeconds);
@@ -164,7 +164,7 @@ void Gauntlet::updateMovie(double deltaSeconds) {
     }
 }
 
-void Gauntlet::updateTitle(double deltaSeconds) {
+void Gauntlet::updateTitle(f64 deltaSeconds) {
     const TitleOutcome outcome =
         m_title.update(deltaSeconds, readMenuInput(input(), m_config.menu));
     if (outcome == TitleOutcome::Running) {
@@ -178,8 +178,8 @@ void Gauntlet::updateTitle(double deltaSeconds) {
 }
 
 /** The player whose Start or Select is down this frame; the first when none is. */
-int Gauntlet::playerPressingStart() const {
-    for (int player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+s32 Gauntlet::playerPressingStart() const {
+    for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         const MenuInput menu =
             readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
         if (menu.start || menu.select) {
@@ -189,7 +189,7 @@ int Gauntlet::playerPressingStart() const {
     return 0;
 }
 
-bool Gauntlet::startPlayerSelect(int startingPlayer) {
+bool Gauntlet::startPlayerSelect(s32 startingPlayer) {
     if (m_select.open(renderDevice(), context(), startingPlayer)) {
         return true;
     }
@@ -198,10 +198,10 @@ bool Gauntlet::startPlayerSelect(int startingPlayer) {
     return false;
 }
 
-void Gauntlet::updateSelect(double deltaSeconds) {
+void Gauntlet::updateSelect(f64 deltaSeconds) {
     PlayerSelectScene::Inputs inputs;
-    for (int player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
-        inputs[static_cast<std::size_t>(player)] =
+    for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+        inputs[static_cast<usize>(player)] =
             readMenuInput(input(), m_config.menu, m_select.inputSource(player));
     }
     const SelectOutcome outcome = m_select.update(deltaSeconds, inputs);
@@ -209,7 +209,7 @@ void Gauntlet::updateSelect(double deltaSeconds) {
         return;
     }
     std::vector<PartyMember> party;
-    for (int player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
+    for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         const SelectLane& lane = m_select.lane(player);
         if (lane.lockedIn()) {
             party.push_back(PartyMember{player, lane.save(), lane.slotInUse()});
@@ -259,11 +259,11 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
     return false;
 }
 
-void Gauntlet::updateTower(double deltaSeconds) {
+void Gauntlet::updateTower(f64 deltaSeconds) {
     PlayScene::Inputs inputs;
-    for (int player = 0; player < PlayScene::kPlayerCount; ++player) {
+    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
         const MenuInputSource source = MenuInputSource::forPlayer(player);
-        PlayInput& in = inputs[static_cast<std::size_t>(player)];
+        PlayInput& in = inputs[static_cast<usize>(player)];
         in.move = readMoveInput(input(), m_config.play, source.keyboard, source.pad);
         const PlayButtons buttons =
             readPlayButtons(input(), m_config.play, source.keyboard, source.pad);
@@ -290,8 +290,7 @@ void Gauntlet::updateTower(double deltaSeconds) {
         journey.party = m_tower.party();
         journey.options.welcome = false;
         journey.options.arriving = true;
-        journey.options.arrivalWorld =
-            static_cast<unsigned int>(std::max(m_towerWorld.ref().realmId, 0));
+        journey.options.arrivalWorld = static_cast<u32>(std::max(m_towerWorld.ref().realmId, 0));
         m_tower.close();
         m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
         m_loadingPicture.cover();
@@ -306,8 +305,7 @@ void Gauntlet::updateTower(double deltaSeconds) {
         journey.party = m_tower.party();
         journey.options.welcome = false;
         journey.options.arriving = true;
-        journey.options.arrivalWorld =
-            static_cast<unsigned int>(std::max(m_towerWorld.ref().realmId, 0));
+        journey.options.arrivalWorld = static_cast<u32>(std::max(m_towerWorld.ref().realmId, 0));
         m_tower.close();
         m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
         m_loadingPicture.cover();
@@ -337,14 +335,14 @@ void Gauntlet::finishJourney() {
 
 void Gauntlet::onRender(RenderDevice& device) {
     const Extent2D framebuffer = device.framebufferExtent();
-    const auto frameWidth = static_cast<float>(m_config.display.frameWidth);
-    const auto frameHeight = static_cast<float>(m_config.display.frameHeight);
+    const auto frameWidth = static_cast<f32>(m_config.display.frameWidth);
+    const auto frameHeight = static_cast<f32>(m_config.display.frameHeight);
     const Mat4 projection =
-        makeLetterboxProjection(frameWidth, frameHeight, static_cast<float>(framebuffer.width),
-                                static_cast<float>(framebuffer.height));
+        makeLetterboxProjection(frameWidth, frameHeight, static_cast<f32>(framebuffer.width),
+                                static_cast<f32>(framebuffer.height));
     if (m_journey.has_value()) {
-        const auto width = static_cast<float>(m_config.display.virtualWidth);
-        const auto height = static_cast<float>(m_config.display.virtualHeight);
+        const auto width = static_cast<f32>(m_config.display.virtualWidth);
+        const auto height = static_cast<f32>(m_config.display.virtualHeight);
         m_canvas.begin(
             device, makeVirtualScreenTransform(projection, width, height, frameWidth, frameHeight));
         m_loadingPicture.draw(m_canvas, width);
@@ -368,7 +366,7 @@ void Gauntlet::onRender(RenderDevice& device) {
         m_tower.render(device, projection, frameWidth, frameHeight);
         return;
     }
-    m_smokeTest.render(device, projection, static_cast<float>(clock().totalSeconds()));
+    m_smokeTest.render(device, projection, static_cast<f32>(clock().totalSeconds()));
 }
 
 /** The party's characters go back into the slots they came from (or were first saved to),
@@ -383,7 +381,7 @@ void Gauntlet::keepParty() {
     if (!anySlot || !m_saves.open(m_config.saveDirectory(), m_config.save.slots)) {
         return;
     }
-    const std::size_t written = saveParty(m_saves, party);
+    const usize written = saveParty(m_saves, party);
     log::info("Saved {} of the party to {}", written, m_config.saveDirectory().string());
 }
 
@@ -429,7 +427,7 @@ bool Gauntlet::startTitleScreen() {
 }
 
 void Gauntlet::startNextAttractScreen() {
-    for (std::size_t attempts = 0; attempts < AttractSequencer::kScreenTable.size(); ++attempts) {
+    for (usize attempts = 0; attempts < AttractSequencer::kScreenTable.size(); ++attempts) {
         const AttractStep step = m_attract.next();
         if (step.screen == AttractScreen::TitleScreen) {
             if (startTitleScreen()) {

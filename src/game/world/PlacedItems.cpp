@@ -2,17 +2,16 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <unordered_map>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 #include "game/world/ItemFigure.h"
 
 namespace gdl::game {
 
-bool PlacedItems::Item::shownTo(int players) const {
+bool PlacedItems::Item::shownTo(s32 players) const {
     if (minPlayers > kExactPlayersMark) {
         return players == minPlayers - kExactPlayersMark;
     }
@@ -23,19 +22,19 @@ bool PlacedItems::Item::shownTo(int players) const {
  * down. */
 bool PlacedItems::Item::touchedBy(const Collector& collector) const {
     const Vec3 away = collector.position - position;
-    const float reach = radius + collector.radius;
+    const f32 reach = radius + collector.radius;
     if (away.x * away.x + away.z * away.z > reach * reach) {
         return false;
     }
     return std::abs(away.y) <= height + collector.height;
 }
 
-int PlacedItems::Item::realm() const {
+s32 PlacedItems::Item::realm() const {
     if (subtype != ItemInfo::kCrystal || value < 0 ||
-        static_cast<std::size_t>(value) >= kCrystalRealms.size()) {
+        static_cast<usize>(value) >= kCrystalRealms.size()) {
         return -1;
     }
-    return kCrystalRealms[static_cast<std::size_t>(value)];
+    return kCrystalRealms[static_cast<usize>(value)];
 }
 
 bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
@@ -55,27 +54,27 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     m_infos = infos;
     const std::vector<ItemInstance>& instances = layout.itemInstances();
-    for (std::size_t index = 0; index < instances.size(); ++index) {
+    for (usize index = 0; index < instances.size(); ++index) {
         const ItemInstance& instance = instances[index];
-        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= infos.size()) {
+        if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
             continue;
         }
-        const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
+        const ItemInfo& info = infos[static_cast<usize>(instance.info)];
         if (info.type != ItemInfo::kPowerup) {
             continue;
         }
         Item item;
         item.name = instance.name.empty() ? info.name : instance.name;
-        item.instance = static_cast<int>(index);
+        item.instance = static_cast<s32>(index);
         item.info = instance.info;
         item.subtype = info.subtype;
         item.value = info.value;
         if (info.subtype == ItemInfo::kScroll) {
             // A scroll's page is the instance's, from one.
-            item.value = static_cast<std::int16_t>(instance.params[0] | (instance.params[1] << 8));
+            item.value = static_cast<s16>(instance.params[0] | (instance.params[1] << 8));
         }
         item.flags = info.properties;
-        item.strength = static_cast<float>(info.activeOn);
+        item.strength = static_cast<f32>(info.activeOn);
         item.minPlayers = instance.minPlayers;
         item.radius = info.radius;
         item.height = info.height;
@@ -111,15 +110,15 @@ void PlacedItems::clear() {
     m_revealing = false;
 }
 
-std::size_t PlacedItems::visibleCount() const {
-    std::size_t count = 0;
+usize PlacedItems::visibleCount() const {
+    usize count = 0;
     for (const Item& item : m_items) {
         count += item.visible ? 1 : 0;
     }
     return count;
 }
 
-void PlacedItems::setPlayerCount(int players) {
+void PlacedItems::setPlayerCount(s32 players) {
     m_players = players;
     for (Item& item : m_items) {
         item.visible = !item.taken && item.shownTo(players);
@@ -161,23 +160,23 @@ bool PlacedItems::place(RenderDevice& device, std::string_view name, const Vec3&
         log::warn("Placed items: the level has no item record named {}", name);
         return false;
     }
-    return placeRecord(device, static_cast<int>(info - m_infos.begin()), position, collision);
+    return placeRecord(device, static_cast<s32>(info - m_infos.begin()), position, collision);
 }
 
-bool PlacedItems::placeRecord(RenderDevice& device, int record, const Vec3& position,
-                              const WorldCollision* collision, int amount) {
-    if (record < 0 || static_cast<std::size_t>(record) >= m_infos.size() ||
-        m_infos[static_cast<std::size_t>(record)].type != ItemInfo::kPowerup) {
+bool PlacedItems::placeRecord(RenderDevice& device, s32 record, const Vec3& position,
+                              const WorldCollision* collision, s32 amount) {
+    if (record < 0 || static_cast<usize>(record) >= m_infos.size() ||
+        m_infos[static_cast<usize>(record)].type != ItemInfo::kPowerup) {
         return false;
     }
-    const ItemInfo* info = &m_infos[static_cast<std::size_t>(record)];
+    const ItemInfo* info = &m_infos[static_cast<usize>(record)];
     Item item;
     item.name = info->name;
     item.info = record;
     item.subtype = info->subtype;
     item.value = amount > 0 ? amount : info->value;
     item.flags = info->properties;
-    item.strength = static_cast<float>(info->activeOn);
+    item.strength = static_cast<f32>(info->activeOn);
     item.radius = info->radius;
     item.height = info->height;
     if (!makeFigure(device, item)) {
@@ -201,7 +200,7 @@ bool PlacedItems::placeRecord(RenderDevice& device, int record, const Vec3& posi
  * stays where it is thrown. */
 bool PlacedItems::throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
                             const Vec3& velocity, const WorldCollision* collision,
-                            float noGrabSeconds) {
+                            f32 noGrabSeconds) {
     if (!place(device, name, position, collision)) {
         return false;
     }
@@ -227,13 +226,13 @@ std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
                                          std::span<const Collector> collectors,
                                          const PickupJudge& judge) {
     std::vector<Pickup> pickups;
-    for (std::size_t i = 0; i < m_items.size(); ++i) {
+    for (usize i = 0; i < m_items.size(); ++i) {
         Item& item = m_items[i];
         if (!item.takeable()) {
             continue;
         }
-        std::size_t taker = collectors.size();
-        for (std::size_t c = 0; c < collectors.size() && taker == collectors.size(); ++c) {
+        usize taker = collectors.size();
+        for (usize c = 0; c < collectors.size() && taker == collectors.size(); ++c) {
             if (item.touchedBy(collectors[c])) {
                 taker = c;
             }
@@ -251,7 +250,7 @@ std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
         pickup.strength = item.strength;
         pickup.position = item.position;
         if (judge) {
-            const std::optional<int> left = judge(pickup);
+            const std::optional<s32> left = judge(pickup);
             if (!left.has_value()) {
                 continue; // left lying
             }
@@ -263,8 +262,8 @@ std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
         }
         item.taken = true;
         item.visible = false;
-        if (pickup.realm > 0 && static_cast<std::size_t>(pickup.realm) < kGemEffects.size()) {
-            startEffect(device, kGemEffects[static_cast<std::size_t>(pickup.realm)], item.position);
+        if (pickup.realm > 0 && static_cast<usize>(pickup.realm) < kGemEffects.size()) {
+            startEffect(device, kGemEffects[static_cast<usize>(pickup.realm)], item.position);
         } else if (item.subtype == ItemInfo::kRunestone) {
             startEffect(device, kRuneEffect, item.position);
         } else if (item.subtype == ItemInfo::kGargoyleKey) {
@@ -299,16 +298,15 @@ void PlacedItems::startEffect(RenderDevice& device, std::string_view tree, const
             effect.pose.evaluate(figure, 0, 0.0f);
         }
         const Mat4 base = glm::translate(Mat4{1.0f}, position);
-        for (std::size_t n = 0; n < figure.nodes.size(); ++n) {
+        for (usize n = 0; n < figure.nodes.size(); ++n) {
             const TreeNodeInfo& node = figure.nodes[n];
-            if (node.particle < 0 || static_cast<std::size_t>(node.particle) >= templates.size()) {
+            if (node.particle < 0 || static_cast<usize>(node.particle) >= templates.size()) {
                 continue;
             }
-            ParticleDescriptor descriptor = ParticleDescriptor::fromTemplate(
-                templates[static_cast<std::size_t>(node.particle)]);
+            ParticleDescriptor descriptor =
+                ParticleDescriptor::fromTemplate(templates[static_cast<usize>(node.particle)]);
             // A node's own direction stands in when the template names none.
-            if (!templates[static_cast<std::size_t>(node.particle)].sets(
-                    ParticleTemplate::kDirection) &&
+            if (!templates[static_cast<usize>(node.particle)].sets(ParticleTemplate::kDirection) &&
                 node.direction != Vec3{0.0f, 0.0f, 0.0f}) {
                 descriptor.direction = node.direction;
             }
@@ -326,7 +324,7 @@ void PlacedItems::startEffect(RenderDevice& device, std::string_view tree, const
             effect.emitters.emplace_back(
                 n, m_bursts.start(descriptor, at,
                                   texture != nullptr ? texture : &device.whiteTexture(),
-                                  static_cast<unsigned int>(m_effects.size() * 8 + n + 1)));
+                                  static_cast<u32>(m_effects.size() * 8 + n + 1)));
         }
         if (!effect.emitters.empty()) {
             m_effects.push_back(std::move(effect));
@@ -347,8 +345,8 @@ void PlacedItems::applyTextureMotion() {
             if (motion.archive != item.archive) {
                 continue;
             }
-            std::unordered_map<unsigned int, Vec2> offsets;
-            for (std::size_t i = 0; i < motion.animator.size(); ++i) {
+            std::unordered_map<u32, Vec2> offsets;
+            for (usize i = 0; i < motion.animator.size(); ++i) {
                 const TextureMotion shown = motion.animator.motion(i);
                 if (shown.frame != nullptr) {
                     item.model.setTextureFrame(shown.slot, shown.frame);
@@ -368,10 +366,10 @@ void PlacedItems::applyTextureMotion() {
  * until a bounce would not clear the touching-down height, when it stays down; sideways it
  * slows a little in the air and much more on touching down, and stops once it has all but
  * stopped. */
-void PlacedItems::fly(Item& item, float seconds) {
+void PlacedItems::fly(Item& item, f32 seconds) {
     item.position += item.velocity * seconds;
-    float over = kThrownFloorReach;
-    float drag = kAirDrag * seconds;
+    f32 over = kThrownFloorReach;
+    f32 drag = kAirDrag * seconds;
     if (item.velocity.y <= 0.0f && m_collision != nullptr) {
         const auto floor = m_collision->floorAt(item.position, kFloorReachAbove, kThrownFloorReach);
         if (!floor.has_value()) {
@@ -381,7 +379,7 @@ void PlacedItems::fly(Item& item, float seconds) {
             item.thrown = false;
             return;
         }
-        const float rest = floor->y + kFloorLift;
+        const f32 rest = floor->y + kFloorLift;
         over = item.position.y - rest;
         if (over < kRestHeight) {
             item.velocity.y = -kBounce * item.velocity.y;
@@ -395,7 +393,7 @@ void PlacedItems::fly(Item& item, float seconds) {
     if (over >= kRestHeight) {
         item.velocity.y -= kGravity * seconds;
     }
-    const auto slow = [drag](float& v) { v = std::abs(v) > drag ? v - drag * v : 0.0f; };
+    const auto slow = [drag](f32& v) { v = std::abs(v) > drag ? v - drag * v : 0.0f; };
     slow(item.velocity.x);
     slow(item.velocity.z);
     item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
@@ -404,14 +402,14 @@ void PlacedItems::fly(Item& item, float seconds) {
     }
 }
 
-void PlacedItems::update(float seconds) {
+void PlacedItems::update(f32 seconds) {
     // The archives' texture animations step once a game frame: the sheen on the crystals.
     m_frameRemainder += seconds * kFrameRate;
-    const float whole = std::floor(m_frameRemainder);
+    const f32 whole = std::floor(m_frameRemainder);
     m_frameRemainder -= whole;
     if (whole > 0.0f) {
         for (ArchiveMotion& motion : m_motions) {
-            motion.animator.step(static_cast<unsigned int>(whole));
+            motion.animator.step(static_cast<u32>(whole));
         }
         applyTextureMotion();
     }
@@ -420,7 +418,7 @@ void PlacedItems::update(float seconds) {
         if (item.visible && item.figure != nullptr && item.player.playing()) {
             item.player.advance(seconds, true);
             item.pose.evaluate(*item.figure, item.player.sequence(), item.player.frame());
-            item.model.setFrame(item.player.sequence(), static_cast<int>(item.player.frame()));
+            item.model.setFrame(item.player.sequence(), static_cast<s32>(item.player.frame()));
         }
         item.noGrabSeconds = std::max(item.noGrabSeconds - seconds, 0.0f);
         if (item.thrown) {
@@ -457,10 +455,9 @@ void PlacedItems::update(float seconds) {
     m_bursts.step(seconds);
     // A burst is over once nothing of it is left to show; then the field forgets them all.
     std::erase_if(m_effects, [&](const Effect& effect) {
-        return std::ranges::none_of(effect.emitters,
-                                    [&](const std::pair<std::size_t, std::size_t>& ride) {
-                                        return m_bursts.active(ride.second);
-                                    });
+        return std::ranges::none_of(effect.emitters, [&](const std::pair<usize, usize>& ride) {
+            return m_bursts.active(ride.second);
+        });
     });
     if (m_effects.empty()) {
         m_bursts.prune();
@@ -492,19 +489,19 @@ void PlacedItems::hideCrystals() {
 
 /** The reveal spreads from the world's origin at its pace; a crystal it has reached gains a
  * step of alpha a frame until it is whole. */
-void PlacedItems::reveal(float seconds) {
+void PlacedItems::reveal(f32 seconds) {
     if (!m_revealing) {
         return;
     }
     m_revealTime += seconds;
-    const float reach = kRevealSpread * (kRevealLead + m_revealTime);
-    const float gain = seconds * kFrameRate * kRevealStep;
+    const f32 reach = kRevealSpread * (kRevealLead + m_revealTime);
+    const f32 gain = seconds * kFrameRate * kRevealStep;
     bool left = false;
     for (Item& item : m_items) {
         if (item.subtype != ItemInfo::kCrystal || item.alpha >= 1.0f) {
             continue;
         }
-        const float away =
+        const f32 away =
             std::sqrt(item.position.x * item.position.x + item.position.z * item.position.z);
         if (away <= reach) {
             item.alpha = std::min(item.alpha + gain, 1.0f);

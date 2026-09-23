@@ -5,6 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -17,8 +18,8 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr int kTicks = 2;
-constexpr float kStep = 1.0f / 30.0f;
+constexpr s32 kTicks = 2;
+constexpr f32 kStep = 1.0f / 30.0f;
 
 std::filesystem::path unpackedRoot() {
     return test::unpackedOrSkip("MONSTERS/GRU/animations.json")
@@ -27,7 +28,7 @@ std::filesystem::path unpackedRoot() {
         .parent_path();
 }
 
-EnemyView playerAt(const Vec3& position, int player = 0) {
+EnemyView playerAt(const Vec3& position, s32 player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;
@@ -60,8 +61,8 @@ std::vector<CollisionTriangle> yard() {
     };
 }
 
-int stepsUntil(Enemies& enemies, std::span<const EnemyView> players, const auto& done, int limit) {
-    int steps = 0;
+s32 stepsUntil(Enemies& enemies, std::span<const EnemyView> players, const auto& done, s32 limit) {
+    s32 steps = 0;
     while (!done() && steps < limit) {
         enemies.update(kTicks, kStep, players);
         ++steps;
@@ -109,7 +110,7 @@ TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and
     REQUIRE(enemies.animatorOf(*id) != nullptr);
     REQUIRE(enemies.animatorOf(*id)->entering());
     // Nobody about: it walks in and wanders, seeing no one.
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         enemies.update(kTicks, kStep, nobody);
     }
     REQUIRE(enemies.targetOf(*id) < 0);
@@ -119,7 +120,7 @@ TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and
     const Vec3 from = enemies.positionOf(*id);
     enemies.update(kTicks, kStep, party);
     REQUIRE(enemies.targetOf(*id) == 0);
-    const int closing = stepsUntil(
+    const s32 closing = stepsUntil(
         enemies, party,
         [&] { return glm::distance(enemies.positionOf(*id), party[0].position) < 3.5f; }, 600);
     REQUIRE(closing < 600);
@@ -129,7 +130,7 @@ TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and
     // for: two thirds of the grunt's fifteen, its second tier's health being just under
     // two thirds of its kind's, as the original has it.
     std::vector<EnemyBlow> blows;
-    const int swinging = stepsUntil(
+    const s32 swinging = stepsUntil(
         enemies, party,
         [&] {
             auto taken = enemies.takeBlows();
@@ -146,7 +147,7 @@ TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and
     REQUIRE((blows[0].direction.z > 0.0f || blows[0].direction.x > 0.0f));
     // It keeps at it; every eighth blow is the power one, half as strong again and, from a
     // tall body, knocking the player down.
-    for (int i = 0; i < 2000 && blows.size() < 8; ++i) {
+    for (s32 i = 0; i < 2000 && blows.size() < 8; ++i) {
         enemies.update(kTicks, kStep, party);
         auto taken = enemies.takeBlows();
         blows.insert(blows.end(), taken.begin(), taken.end());
@@ -162,7 +163,7 @@ TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and
         view.hidden = true;
         return view;
     }()};
-    for (int i = 0; i < 120; ++i) {
+    for (s32 i = 0; i < 120; ++i) {
         enemies.update(kTicks, kStep, hidden);
     }
     REQUIRE(enemies.takeBlows().empty());
@@ -185,7 +186,7 @@ TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its
     REQUIRE((enemies.positionOf(*id) == Vec3{0.0f, 0.0f, 0.0f}));
     REQUIRE(enemies.healthOf(*id) == Approx(29.97f));
     const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 25.0f})};
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         enemies.update(kTicks, kStep, party);
     }
     // A hit is worth two, its damage under a point counting as one, and a flinch.
@@ -210,7 +211,7 @@ TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its
     knock.flags = EnemyHit::kKnockDown;
     knock.player = 0;
     knock.direction = Vec3{0.0f, 0.0f, -1.0f};
-    for (int i = 0; i < 20; ++i) {
+    for (s32 i = 0; i < 20; ++i) {
         enemies.update(kTicks, kStep, party);
     }
     const Vec3 before = enemies.positionOf(*id);
@@ -219,7 +220,7 @@ TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its
     enemies.update(kTicks, kStep, party);
     REQUIRE(enemies.animatorOf(*id)->action() == EnemyAction::HitReact2);
     REQUIRE(enemies.pushCountOf(*id) == 1);
-    for (int i = 0; i < 10; ++i) {
+    for (s32 i = 0; i < 10; ++i) {
         enemies.update(kTicks, kStep, party);
     }
     REQUIRE(enemies.positionOf(*id).z < before.z - 0.5f);
@@ -258,7 +259,7 @@ TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its
     REQUIRE(enemies.targets().empty()); // no longer to be shot
     enemies.hurt(*id, slay);            // nor hurt
     REQUIRE(enemies.takeLosses().empty());
-    const int falling = stepsUntil(enemies, party, [&] { return enemies.count() == 0; }, 200);
+    const s32 falling = stepsUntil(enemies, party, [&] { return enemies.count() == 0; }, 200);
     REQUIRE(falling < 200);
     REQUIRE(falling > 3);
 }
@@ -284,8 +285,8 @@ TEST_CASE("a grunt gets round a wall between it and its player, stops at a ledge
     const auto id = enemies.spawn(spawn, party);
     REQUIRE(id.has_value());
     bool bumped = false;
-    float furthestAside = 0.0f;
-    const int steps = stepsUntil(
+    f32 furthestAside = 0.0f;
+    const s32 steps = stepsUntil(
         enemies, party,
         [&] {
             furthestAside = std::max(furthestAside, std::abs(enemies.positionOf(*id).x));
@@ -306,7 +307,7 @@ TEST_CASE("a grunt gets round a wall between it and its player, stops at a ledge
                 1200) < 1200);
     // Beyond x thirty there is no floor: a player over the edge is not followed off it.
     const std::vector<EnemyView> beyond{playerAt(Vec3{36.0f, 0.0f, 30.0f})};
-    for (int i = 0; i < 900; ++i) {
+    for (s32 i = 0; i < 900; ++i) {
         enemies.update(kTicks, kStep, beyond);
     }
     REQUIRE(enemies.positionOf(*id).x <= 30.5f);
@@ -322,7 +323,7 @@ TEST_CASE("a grunt gets round a wall between it and its player, stops at a ledge
     REQUIRE(front.has_value());
     REQUIRE(behind.has_value());
     const std::vector<EnemyView> north{playerAt(Vec3{-30.0f, 0.0f, 0.0f})};
-    for (int i = 0; i < 60; ++i) {
+    for (s32 i = 0; i < 60; ++i) {
         queue.update(kTicks, kStep, north);
         REQUIRE(glm::distance(queue.positionOf(*front), queue.positionOf(*behind)) >= 2.9f);
     }
@@ -338,7 +339,7 @@ TEST_CASE("a grunt gets round a wall between it and its player, stops at a ledge
     const auto shoved = pair.spawn(spawn, {});
     REQUIRE(struck.has_value());
     REQUIRE(shoved.has_value());
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         pair.update(kTicks, kStep, north);
     }
     REQUIRE(pair.positionOf(*shoved).z == Approx(-6.5f));
@@ -348,7 +349,7 @@ TEST_CASE("a grunt gets round a wall between it and its player, stops at a ledge
     knock.direction = Vec3{0.0f, 0.0f, -1.0f};
     knock.player = 0;
     pair.hurt(*struck, knock);
-    for (int i = 0; i < 20; ++i) {
+    for (s32 i = 0; i < 20; ++i) {
         pair.update(kTicks, kStep, north);
     }
     REQUIRE(pair.positionOf(*shoved).z < -6.6f);
@@ -384,18 +385,18 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     REQUIRE(enemies.within(Vec3{0.0f, 3.0f, 0.0f}, 12.0f).size() == 2);
     REQUIRE(enemies.within(Vec3{0.0f, 3.0f, 0.0f}, 5.0f).empty());
     REQUIRE((enemies.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{0.0f, 0.0f, 1.0f}) ==
-             std::vector<int>{*first}));
+             std::vector<s32>{*first}));
     REQUIRE(enemies.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 3.2f, Vec3{0.0f, 0.0f, 1.0f}).size() ==
             2);
     // The sleeper does not stir for a player; woken, it does.
     const std::vector<EnemyView> party{playerAt(Vec3{10.0f, 0.0f, 20.0f})};
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         enemies.update(kTicks, kStep, party);
     }
     REQUIRE((enemies.positionOf(*second) == Vec3{10.0f, 0.0f, 0.0f}));
     REQUIRE(enemies.targetOf(*first) == 0);
     enemies.wake(*second);
-    for (int i = 0; i < 60; ++i) {
+    for (s32 i = 0; i < 60; ++i) {
         enemies.update(kTicks, kStep, party);
     }
     REQUIRE((enemies.positionOf(*second) != Vec3{10.0f, 0.0f, 0.0f}));
@@ -436,7 +437,7 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     REQUIRE(vermin.has_value());
     REQUIRE(bred.algorithmOf(*vermin) == 2);
     const std::vector<EnemyView> near{playerAt(Vec3{0.0f, 0.0f, 5.0f})};
-    for (int i = 0; i < 20; ++i) {
+    for (s32 i = 0; i < 20; ++i) {
         bred.update(kTicks, kStep, near);
     }
     REQUIRE(bred.algorithmOf(*vermin) == 0);

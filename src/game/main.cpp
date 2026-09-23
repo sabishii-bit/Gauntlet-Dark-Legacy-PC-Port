@@ -1,4 +1,3 @@
-#include <cstddef>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -9,6 +8,7 @@
 
 #include "engine/app/Application.h"
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 #include "game/app/CommandLine.h"
 #include "game/app/Gauntlet.h"
@@ -73,7 +73,7 @@ int runGauntlet(std::span<char*> rawArgs) {
 
 int main(int argc, char* argv[]) {
     try {
-        return runGauntlet(std::span<char*>(argv, static_cast<std::size_t>(argc)));
+        return runGauntlet(std::span<char*>(argv, static_cast<gdl::usize>(argc)));
     } catch (const std::exception& e) {
         std::fputs(e.what(), stderr);
         std::fputs("\n", stderr);

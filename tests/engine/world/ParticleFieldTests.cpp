@@ -1,10 +1,10 @@
 #include <array>
-#include <cstddef>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/ParticleField.h"
 
@@ -67,7 +67,7 @@ TEST_CASE("an emitter can be started on its own, stopped and pruned", "[world][p
     t.particleLife = {0.1f, 0.0f}; // three frames
     t.rate = {30.0f, 30.0f, 30.0f, 30.0f};
     const ParticleDescriptor d = ParticleDescriptor::fromTemplate(t);
-    const std::size_t spark =
+    const usize spark =
         field.start(d, glm::translate(Mat4{1.0f}, Vec3{1.0f, 2.0f, 3.0f}), &device.whiteTexture());
     REQUIRE(field.size() == 1);
     REQUIRE(field.active(spark));

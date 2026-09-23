@@ -3,19 +3,21 @@
 #include <optional>
 #include <vector>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 /** A level gained (or lost): from what, to what, and whether it crossed a tier. */
 struct LevelChange {
-    int player = -1;
-    int from = 1;
-    int to = 1;
+    s32 player = -1;
+    s32 from = 1;
+    s32 to = 1;
     /** Whether the change crossed a milestone: every tenth level, when the costume changes
      * and the class has something to say. */
     bool milestone() const { return to / kLevelsPerTier != from / kLevelsPerTier; }
     bool gained() const { return to > from; }
 
-    static constexpr int kLevelsPerTier = 10;
+    static constexpr s32 kLevelsPerTier = 10;
 };
 
 /**
@@ -27,16 +29,16 @@ struct LevelChange {
 class LevelWatch {
 public:
     /** Notes `level` for `player`; the first sighting sets the mark and reports nothing. */
-    std::optional<LevelChange> observe(int player, int level);
+    std::optional<LevelChange> observe(s32 player, s32 level);
     /** Forgets a player, or everyone. */
-    void forget(int player);
+    void forget(s32 player);
     void clear() { m_marks.clear(); }
-    std::optional<int> markOf(int player) const;
+    std::optional<s32> markOf(s32 player) const;
 
 private:
     struct Mark {
-        int player = -1;
-        int level = 1;
+        s32 player = -1;
+        s32 level = 1;
     };
     std::vector<Mark> m_marks;
 };

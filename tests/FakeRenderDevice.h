@@ -1,10 +1,10 @@
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
@@ -14,16 +14,16 @@ namespace gdl::test {
 
 class FakeTexture final : public Texture {
 public:
-    FakeTexture(std::uint32_t width, std::uint32_t height) : m_width(width), m_height(height) {}
+    FakeTexture(u32 width, u32 height) : m_width(width), m_height(height) {}
 
-    std::uint32_t width() const override { return m_width; }
-    std::uint32_t height() const override { return m_height; }
+    u32 width() const override { return m_width; }
+    u32 height() const override { return m_height; }
 
-    std::vector<std::uint8_t> pixels;
+    std::vector<u8> pixels;
 
 private:
-    std::uint32_t m_width;
-    std::uint32_t m_height;
+    u32 m_width;
+    u32 m_height;
 };
 
 struct RecordedDraw {
@@ -48,7 +48,7 @@ public:
     Extent2D framebufferExtent() const override { return Extent2D{640, 448}; }
 
     std::unique_ptr<Texture> createTexture(const TextureDesc& desc,
-                                           std::span<const std::uint8_t> rgba8Pixels) override {
+                                           std::span<const u8> rgba8Pixels) override {
         ++texturesCreated;
         lastTextureDesc = desc;
         auto texture = std::make_unique<FakeTexture>(desc.width, desc.height);
@@ -56,8 +56,7 @@ public:
         return texture;
     }
 
-    void updateTexture(Texture& /*texture*/,
-                       std::span<const std::uint8_t> /*rgba8Pixels*/) override {
+    void updateTexture(Texture& /*texture*/, std::span<const u8> /*rgba8Pixels*/) override {
         ++textureUpdates;
     }
 
@@ -76,9 +75,9 @@ public:
     void waitIdle() override {}
 
     std::vector<RecordedDraw> draws;
-    std::uint32_t frames = 0;
-    std::uint32_t texturesCreated = 0;
-    std::uint32_t textureUpdates = 0;
+    u32 frames = 0;
+    u32 texturesCreated = 0;
+    u32 textureUpdates = 0;
     TextureDesc lastTextureDesc;
 
 private:

@@ -1,10 +1,10 @@
 #include "game/world/PlayerArsenal.h"
 
 #include <algorithm>
-#include <cstddef>
 #include <exception>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
@@ -20,15 +20,15 @@ constexpr std::array<PotionLook, 5> kPotions{{{"POT_RED_TW", "MP_FIRE", "S_POTIO
                                               {"POT_BLU_TW", "MP_ELEC", "S_POTION1"},
                                               {"POT_YEL_TW", "MP_LIGHT", "S_POTION3"},
                                               {"POT_GRE_TW", "MP_ACID", "S_POTION4"}}};
-constexpr float kPotionToss = 5.0f;       ///< how hard a potion is thrown
-constexpr float kThrownShare = 0.75f;     ///< of that power a thrown potion keeps
-constexpr float kPotionLoft = 0.707f;     ///< as much up as forwards
-constexpr float kPotionHandHeight = 4.0f; ///< over the feet, where it leaves
-constexpr float kPotionHandReach = 2.0f;  ///< and ahead of them
+constexpr f32 kPotionToss = 5.0f;       ///< how hard a potion is thrown
+constexpr f32 kThrownShare = 0.75f;     ///< of that power a thrown potion keeps
+constexpr f32 kPotionLoft = 0.707f;     ///< as much up as forwards
+constexpr f32 kPotionHandHeight = 4.0f; ///< over the feet, where it leaves
+constexpr f32 kPotionHandReach = 2.0f;  ///< and ahead of them
 
-const PotionLook& potionLook(int kind) {
-    return kPotions[kind >= 0 && static_cast<std::size_t>(kind) < kPotions.size()
-                        ? static_cast<std::size_t>(kind)
+const PotionLook& potionLook(s32 kind) {
+    return kPotions[kind >= 0 && static_cast<usize>(kind) < kPotions.size()
+                        ? static_cast<usize>(kind)
                         : 0];
 }
 
@@ -46,7 +46,7 @@ void PlayerArsenal::clear() {
     m_resources.reset();
 }
 void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
-                                 const Vec3& direction, float scale, bool spreads) {
+                                 const Vec3& direction, f32 scale, bool spreads) {
     if (!m_resources.has_value() || body == nullptr) {
         return;
     }
@@ -54,7 +54,7 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     const Vec3 facing = direction;
     const CharacterSave& save = actor.save();
     const ClassStats* stats = m_resources->classes.stats(save.character);
-    int stat = 0;
+    s32 stat = 0;
     Vec3 hand{0.0f, 0.0f, 0.0f};
     if (stats != nullptr) {
         const StatBlock block =
@@ -75,7 +75,7 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     launch.spec = &MissileSpec::of(save.character);
     launch.model = &figure.missile();
     // Thrown into a wall at arm's length, nothing flies.
-    const float radius = launch.spec->radius;
+    const f32 radius = launch.spec->radius;
     const Vec3 clear = m_resources->collision.resolveWalls(launch.position, radius,
                                                            launch.position.y - radius * 0.5f,
                                                            launch.position.y + radius * 0.5f);
@@ -83,7 +83,7 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
         return;
     }
     // A three or five way shot worn spreads the throw, fifteen degrees apart.
-    const int shots = spreads ? PowerupEffects::of(save.progress().inventory).shots() : 1;
+    const s32 shots = spreads ? PowerupEffects::of(save.progress().inventory).shots() : 1;
     for (const Vec3& way : PlayerMissiles::spread(facing, shots)) {
         launch.direction = way;
         m_missiles.launch(launch);
@@ -103,7 +103,7 @@ void PlayerArsenal::loadPotionModels() {
     if (!m_resources.has_value() || !m_resources->weapons.loaded()) {
         return;
     }
-    for (std::size_t kind = 0; kind < m_potionModels.size(); ++kind) {
+    for (usize kind = 0; kind < m_potionModels.size(); ++kind) {
         if (const auto tree = m_resources->weapons.trees.find(kPotions[kind].bottle);
             tree.has_value()) {
             m_potionModels[kind].bind(m_resources->weapons.trees.tree(*tree),
@@ -113,7 +113,7 @@ void PlayerArsenal::loadPotionModels() {
     }
 }
 
-void PlayerArsenal::burstPotion(int kind, const Vec3& position, float power) {
+void PlayerArsenal::burstPotion(s32 kind, const Vec3& position, f32 power) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -125,11 +125,11 @@ void PlayerArsenal::burstPotion(int kind, const Vec3& position, float power) {
     m_resources->audio.playNamed(look.sound);
 }
 
-float PlayerArsenal::magicPowerOf(const PlayerActor& actor) const {
+f32 PlayerArsenal::magicPowerOf(const PlayerActor& actor) const {
     const CharacterSave& save = actor.save();
     const ClassStats* stats =
         m_resources.has_value() ? m_resources->classes.stats(save.character) : nullptr;
-    const int magic =
+    const s32 magic =
         stats != nullptr
             ? displayStats(*stats, experienceLevel(save.experience()), save.progress()).magic()
             : 0;
@@ -140,7 +140,7 @@ void PlayerArsenal::usePotion(PlayerActor& actor) {
     if (!m_resources.has_value()) {
         return;
     }
-    if (const int kind = actor.save().progress().inventory.takePotion(); kind != 0) {
+    if (const s32 kind = actor.save().progress().inventory.takePotion(); kind != 0) {
         burstPotion(kind, actor.position(), magicPowerOf(actor));
     }
 }
@@ -149,7 +149,7 @@ void PlayerArsenal::throwPotion(PlayerActor& actor) {
     if (!m_resources.has_value()) {
         return;
     }
-    const int kind = actor.save().progress().inventory.takePotion();
+    const s32 kind = actor.save().progress().inventory.takePotion();
     if (kind == 0) {
         return;
     }
@@ -164,8 +164,8 @@ void PlayerArsenal::throwPotion(PlayerActor& actor) {
     launch.potion = kind;
     launch.potency = kThrownShare * magicPowerOf(actor);
     launch.spec = &MissileSpec::potion();
-    launch.model = &m_potionModels[static_cast<std::size_t>(
-        std::clamp(kind, 0, static_cast<int>(m_potionModels.size()) - 1))];
+    launch.model = &m_potionModels[static_cast<usize>(
+        std::clamp(kind, 0, static_cast<s32>(m_potionModels.size()) - 1))];
     m_missiles.launch(launch);
 }
 } // namespace gdl::game

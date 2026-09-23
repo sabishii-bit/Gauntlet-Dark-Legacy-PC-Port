@@ -4,6 +4,7 @@
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/TextureSet.h"
+#include "engine/core/Types.h"
 #include "engine/ui/ModelSprite.h"
 
 #include "game/config/GameConfig.h"
@@ -17,7 +18,7 @@ namespace gdl::game {
  * The scene chooses visitors and applies sound/gesture cues, but no scene is retained. */
 class SumnerVisit {
 public:
-    static constexpr float kGreetingSeconds = 2.0f;
+    static constexpr f32 kGreetingSeconds = 2.0f;
 
     SumnerVisit() = default;
     ~SumnerVisit() = default;
@@ -36,30 +37,30 @@ public:
 
     /** True requests Sumner's welcome gesture. A completed delay opens the current
      * visitor's scroll. The delay keeps running while nobody occupies the spot. */
-    bool visit(float seconds, std::optional<int> visitor, bool sumnerReady, const TextPainter& text,
+    bool visit(f32 seconds, std::optional<s32> visitor, bool sumnerReady, const TextPainter& text,
                const GameConfig* config, const StringTable* strings);
     /** The caller routes only owner()'s menu input. Returns sound/gesture cues. */
-    HintMenuEvent update(RenderDevice& device, const MenuInput& input, int ticks);
+    HintMenuEvent update(RenderDevice& device, const MenuInput& input, s32 ticks);
     /** Responds to Asked with a fresh party snapshot; no party scan is needed otherwise. */
-    void answer(int topic, const TextPainter& text, const StringTable* strings,
+    void answer(s32 topic, const TextPainter& text, const StringTable* strings,
                 const HintKnowledge& knowledge);
     void prepare(RenderDevice& device) { m_menu.prepare(device); }
     void draw(Canvas& canvas, const TextPainter& text) const { m_menu.draw(canvas, text); }
 
     bool active() const { return m_menu.active(); }
-    int owner() const { return m_owner; }
+    s32 owner() const { return m_owner; }
     const HintMenu& menu() const { return m_menu; }
     const SumnerHints& texts() const { return m_hints; }
 
 private:
-    void open(int player, const TextPainter& text, const GameConfig* config,
+    void open(s32 player, const TextPainter& text, const GameConfig* config,
               const StringTable* strings);
 
     SumnerHints m_hints;
     HintMenu m_menu;
     ModelSprite m_arrow; ///< menu art points here; this owner must not move
-    int m_owner = -1;
-    float m_greetingLeft = -1.0f;
+    s32 m_owner = -1;
+    f32 m_greetingLeft = -1.0f;
     bool m_hintsGiven = false;
 };
 

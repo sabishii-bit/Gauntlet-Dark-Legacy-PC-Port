@@ -1,10 +1,10 @@
 #include "formats/JsonWriter.h"
 
 #include <cmath>
-#include <cstddef>
-#include <cstdint>
 #include <format>
 #include <utility>
+
+#include "engine/core/Types.h"
 
 namespace gdl::formats {
 
@@ -106,19 +106,19 @@ JsonWriter& JsonWriter::value(bool flag) {
     return *this;
 }
 
-JsonWriter& JsonWriter::value(std::int64_t number) {
+JsonWriter& JsonWriter::value(s64 number) {
     beforeValue();
     m_text += std::to_string(number);
     return *this;
 }
 
-JsonWriter& JsonWriter::value(std::uint64_t number) {
+JsonWriter& JsonWriter::value(u64 number) {
     beforeValue();
     m_text += std::to_string(number);
     return *this;
 }
 
-JsonWriter& JsonWriter::value(double number) {
+JsonWriter& JsonWriter::value(f64 number) {
     beforeValue();
     if (std::isfinite(number)) {
         m_text += std::format("{}", number);
@@ -128,7 +128,7 @@ JsonWriter& JsonWriter::value(double number) {
     return *this;
 }
 
-JsonWriter& JsonWriter::value(float number) {
+JsonWriter& JsonWriter::value(f32 number) {
     beforeValue();
     if (std::isfinite(number)) {
         m_text += std::format("{}", number);
@@ -138,10 +138,10 @@ JsonWriter& JsonWriter::value(float number) {
     return *this;
 }
 
-JsonWriter& JsonWriter::numbers(std::span<const float> values) {
+JsonWriter& JsonWriter::numbers(std::span<const f32> values) {
     beforeValue();
     m_text.push_back('[');
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (usize i = 0; i < values.size(); ++i) {
         if (i > 0) {
             m_text += ", ";
         }
@@ -151,10 +151,10 @@ JsonWriter& JsonWriter::numbers(std::span<const float> values) {
     return *this;
 }
 
-JsonWriter& JsonWriter::numbers(std::span<const std::uint16_t> values) {
+JsonWriter& JsonWriter::numbers(std::span<const u16> values) {
     beforeValue();
     m_text.push_back('[');
-    for (std::size_t i = 0; i < values.size(); ++i) {
+    for (usize i = 0; i < values.size(); ++i) {
         if (i > 0) {
             m_text += ", ";
         }

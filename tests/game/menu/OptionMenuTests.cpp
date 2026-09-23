@@ -7,6 +7,7 @@
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/ModelSprite.h"
@@ -25,7 +26,7 @@ using namespace gdl::game;
 /** Every upper-case letter is 8 pixels wide on a 10 pixel line. */
 BitmapFont wideFont() {
     std::vector<BitmapGlyph> glyphs;
-    for (int c = 'A'; c <= 'Z'; ++c) {
+    for (s32 c = 'A'; c <= 'Z'; ++c) {
         glyphs.push_back({c, 8, 0, 0});
     }
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
@@ -135,8 +136,8 @@ TEST_CASE("fading menus close over thirty ticks and others at once", "[game][men
 TEST_CASE("the selection icon glides between items", "[game][menu]") {
     Fixture f;
     f.menu.open(threeItems(), f.painter, MenuScreen{});
-    const int first = f.menu.itemY(0) + 5;
-    const int second = f.menu.itemY(1) + 5;
+    const s32 first = f.menu.itemY(0) + 5;
+    const s32 second = f.menu.itemY(1) + 5;
     REQUIRE(f.menu.iconY() == first);
     f.menu.update(pressed(false, true, false, false), 1);
     REQUIRE(f.menu.iconY() == first);
@@ -145,7 +146,7 @@ TEST_CASE("the selection icon glides between items", "[game][menu]") {
     f.menu.update(MenuInput{}, 1);
     REQUIRE(f.menu.iconY() > first);
     REQUIRE(f.menu.iconY() < second);
-    for (int i = 0; i < 20; ++i) {
+    for (s32 i = 0; i < 20; ++i) {
         f.menu.update(MenuInput{}, 1);
     }
     REQUIRE(f.menu.iconY() == second);
@@ -221,8 +222,8 @@ TEST_CASE("a menu writes its body in ink and centres a lone prompt", "[game][men
     canvas.end();
     // Body glyphs in ink: "AB" centred on the screen at the top, "D" two lines and a gap on.
     std::vector<Vec3> ink;
-    float promptLeft = 1000.0f;
-    float promptRight = 0.0f;
+    f32 promptLeft = 1000.0f;
+    f32 promptRight = 0.0f;
     for (const test::RecordedDraw& draw : device.draws) {
         for (const ImmediateVertex& vertex : draw.vertices) {
             if (vertex.color.r == 92 && vertex.color.g == 26) {
@@ -234,8 +235,8 @@ TEST_CASE("a menu writes its body in ink and centres a lone prompt", "[game][men
         }
     }
     REQUIRE_FALSE(ink.empty());
-    float top = 1000.0f;
-    float bottom = 0.0f;
+    f32 top = 1000.0f;
+    f32 bottom = 0.0f;
     for (const Vec3& position : ink) {
         top = std::min(top, position.y);
         bottom = std::max(bottom, position.y);

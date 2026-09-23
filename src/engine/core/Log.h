@@ -1,13 +1,14 @@
 #pragma once
 
-#include <cstdint>
 #include <format>
 #include <string_view>
 #include <utility>
 
+#include "engine/core/Types.h"
+
 namespace gdl::log {
 
-enum class Level : std::uint8_t { Trace, Info, Warn, Error };
+enum class Level : u8 { Trace, Info, Warn, Error };
 
 /** Writes one formatted line to the console and, on Windows, the debugger output. */
 void write(Level level, std::string_view message);

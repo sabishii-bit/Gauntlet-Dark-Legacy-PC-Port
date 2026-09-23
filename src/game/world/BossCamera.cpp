@@ -4,27 +4,29 @@
 #include <cmath>
 #include <numbers>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 namespace {
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 Vec3 middleOf(std::span<const CameraSubject> party) {
     Vec3 sum{0.0f, 0.0f, 0.0f};
     for (const CameraSubject& subject : party) {
         sum += subject.follow;
     }
-    return party.empty() ? sum : sum / static_cast<float>(party.size());
+    return party.empty() ? sum : sum / static_cast<f32>(party.size());
 }
 
-float flatLength(const Vec3& v) {
+f32 flatLength(const Vec3& v) {
     return std::sqrt(v.x * v.x + v.z * v.z);
 }
 
 } // namespace
 
-float BossCamera::wrapAngle(float angle) {
+f32 BossCamera::wrapAngle(f32 angle) {
     while (angle > kPi) {
         angle -= 2.0f * kPi;
     }
@@ -41,8 +43,8 @@ Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const Camera
     if (!boss.awake) {
         return middleOf(party);
     }
-    const float range = record.maxDistance - record.minDistance;
-    const float t =
+    const f32 range = record.maxDistance - record.minDistance;
+    const f32 t =
         range > 0.01f ? std::clamp((m_distance - record.minDistance) / range, 0.0f, 1.0f) : 1.0f;
     // BCAM bit 0 selects the live elevated anchor; otherwise retail uses the base
     // position initialized with the creature's geometry. Bit 4 tracks the party.
@@ -58,8 +60,8 @@ Vec3 BossCamera::lookPoint(const BossCameraSubject& boss, std::span<const Camera
 /** The way the camera looks: along the party's line to the boss, or, when the party is
  * too far round the boss from where it faces, the boss's facing swung the record's most
  * toward them. */
-float BossCamera::wantedYaw(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-                            const BossCameraInfo& record) const {
+f32 BossCamera::wantedYaw(const BossCameraSubject& boss, std::span<const CameraSubject> party,
+                          const BossCameraInfo& record) const {
     if (!boss.awake) {
         return m_camera.yaw;
     }
@@ -69,13 +71,13 @@ float BossCamera::wantedYaw(const BossCameraSubject& boss, std::span<const Camer
     }
     const Vec3 side{toParty.x / flatLength(toParty), 0.0f, toParty.z / flatLength(toParty)};
     const Vec3 facing{std::sin(boss.facing), 0.0f, std::cos(boss.facing)};
-    const float dot = side.x * facing.x + side.z * facing.z;
+    const f32 dot = side.x * facing.x + side.z * facing.z;
     // The camera looks the opposite way to the party's side: from them toward the boss.
     // BossCameraStart recomputes this cache. The Dragon's file contains cos(45 degrees),
     // although its authored maxYaw is 18 degrees.
     if (dot < std::cos(record.maxYaw) && record.maxYaw < kPi) {
-        const float cross = facing.z * side.x - facing.x * side.z;
-        const float swung = boss.facing + (cross >= 0.0f ? record.maxYaw : -record.maxYaw);
+        const f32 cross = facing.z * side.x - facing.x * side.z;
+        const f32 swung = boss.facing + (cross >= 0.0f ? record.maxYaw : -record.maxYaw);
         return wrapAngle(swung + kPi);
     }
     return wrapAngle(std::atan2(side.x, side.z) + kPi);
@@ -83,21 +85,21 @@ float BossCamera::wantedYaw(const BossCameraSubject& boss, std::span<const Camer
 
 /** How far inside the view's edges the boss (to its radius) and every player stand: the
  * least of the distances to the four side planes; under nought something is cut off. */
-float BossCamera::viewMargin(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-                             const CameraView& view) const {
+f32 BossCamera::viewMargin(const BossCameraSubject& boss, std::span<const CameraSubject> party,
+                           const CameraView& view) const {
     const Vec3 forward = m_camera.forward();
     const Vec3 right = m_camera.right();
     const Vec3 up = m_camera.up();
-    const float tanX = std::tan(view.horizontalFov * 0.5f);
-    const float tanY = tanX / view.aspect;
-    const float normX = std::sqrt(1.0f + tanX * tanX);
-    const float normY = std::sqrt(1.0f + tanY * tanY);
-    float least = 1000.0f;
-    const auto consider = [&](const Vec3& spot, float radius) {
+    const f32 tanX = std::tan(view.horizontalFov * 0.5f);
+    const f32 tanY = tanX / view.aspect;
+    const f32 normX = std::sqrt(1.0f + tanX * tanX);
+    const f32 normY = std::sqrt(1.0f + tanY * tanY);
+    f32 least = 1000.0f;
+    const auto consider = [&](const Vec3& spot, f32 radius) {
         const Vec3 relative = spot - m_camera.position;
-        const float x = glm::dot(relative, right);
-        const float y = glm::dot(relative, up);
-        const float z = glm::dot(relative, forward);
+        const f32 x = glm::dot(relative, right);
+        const f32 y = glm::dot(relative, up);
+        const f32 z = glm::dot(relative, forward);
         least = std::min(least, (z * tanX - std::abs(x)) / normX - radius);
         least = std::min(least, (z * tanY - std::abs(y)) / normY - radius);
     };
@@ -127,8 +129,8 @@ void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubj
     m_attention = lookPoint(boss, party, record);
     place();
     // Then it settles: backed off until everyone is in view.
-    for (int i = 0; i < 200; ++i) {
-        const float before = m_distance;
+    for (s32 i = 0; i < 200; ++i) {
+        const f32 before = m_distance;
         update(boss, party, record, view, 1.0f / kFrameRate);
         if (std::abs(m_distance - before) < 0.01f) {
             break;
@@ -137,21 +139,21 @@ void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubj
 }
 
 void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-                        const BossCameraInfo& record, const CameraView& view, float seconds) {
+                        const BossCameraInfo& record, const CameraView& view, f32 seconds) {
     if (seconds <= 0.0f) {
         return;
     }
     // The look point follows, and the yaw swings at its rate toward the party's line.
-    const float ease = 1.0f - std::exp(-kEase * seconds);
+    const f32 ease = 1.0f - std::exp(-kEase * seconds);
     m_attention += (lookPoint(boss, party, record) - m_attention) * ease;
-    const float turn = wrapAngle(wantedYaw(boss, party, record) - m_camera.yaw);
-    const float most = kTurnRate * seconds;
+    const f32 turn = wrapAngle(wantedYaw(boss, party, record) - m_camera.yaw);
+    const f32 most = kTurnRate * seconds;
     m_camera.yaw = wrapAngle(m_camera.yaw + std::clamp(turn, -most, most));
     // Steeper the closer it stands.
-    const float nearest = boss.awake ? record.minDistance : record.minPlayerDistance;
-    const float farthest = boss.awake ? record.maxDistance : record.maxPlayerDistance;
-    const float range = farthest - nearest;
-    const float t = range > 0.01f ? std::clamp((m_distance - nearest) / range, 0.0f, 1.0f) : 1.0f;
+    const f32 nearest = boss.awake ? record.minDistance : record.minPlayerDistance;
+    const f32 farthest = boss.awake ? record.maxDistance : record.maxPlayerDistance;
+    const f32 range = farthest - nearest;
+    const f32 t = range > 0.01f ? std::clamp((m_distance - nearest) / range, 0.0f, 1.0f) : 1.0f;
     m_camera.pitch = record.minPitch + (record.maxPitch - record.minPitch) * t;
     place();
     // Frame by frame, as the original steps: out fast when something is cut off, out a
@@ -160,7 +162,7 @@ void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSub
     while (m_stepOwed >= 1.0f / kFrameRate) {
         m_stepOwed -= 1.0f / kFrameRate;
         m_margin = viewMargin(boss, party, view);
-        float wanted = m_distance;
+        f32 wanted = m_distance;
         if (m_margin < 0.0f) {
             wanted += kOutStep;
         } else if (m_margin < kTightMargin && m_distance < farthest) {

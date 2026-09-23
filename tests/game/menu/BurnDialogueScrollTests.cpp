@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/render/Image.h"
 #include "engine/ui/Canvas.h"
 
@@ -17,7 +18,7 @@ constexpr Color kOpaque = Color::rgba(200, 150, 100, 255);
 constexpr Color kClear = Color::rgba(0, 0, 0, 0);
 
 /** A 2x2 mask that keeps every texel except the listed holes. */
-Image maskWithHoles(const std::vector<std::pair<unsigned int, unsigned int>>& holes) {
+Image maskWithHoles(const std::vector<std::pair<u32, u32>>& holes) {
     Image mask = Image::filled(2, 2, Color::rgba(255, 255, 255, 255));
     for (const auto& [x, y] : holes) {
         mask.setPixel(x, y, kClear);

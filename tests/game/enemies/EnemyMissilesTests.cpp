@@ -1,10 +1,10 @@
-#include <cstddef>
 #include <filesystem>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -19,10 +19,10 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr int kTicks = 2;
-constexpr float kStep = 1.0f / 30.0f;
+constexpr s32 kTicks = 2;
+constexpr f32 kStep = 1.0f / 30.0f;
 
-EnemyView playerAt(const Vec3& position, int player = 0) {
+EnemyView playerAt(const Vec3& position, s32 player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;
@@ -58,7 +58,7 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     REQUIRE(missiles.count() == 1);
     REQUIRE(glm::length(missiles.missile(0).velocity) == Approx(25.0f));
     REQUIRE(missiles.missile(0).velocity.z > 24.0f);
-    int flying = 0;
+    s32 flying = 0;
     std::vector<EnemyMissileHit> hits;
     while (hits.empty() && flying < 120) {
         missiles.update(kStep, nullptr, party);
@@ -82,7 +82,7 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
                     nullptr, 3);
     REQUIRE(missiles.missile(0).velocity.y > 10.0f);
     REQUIRE(missiles.missile(0).kind.spin.y == 1.0f);
-    float highest = 0.0f;
+    f32 highest = 0.0f;
     hits.clear();
     flying = 0;
     while (hits.empty() && flying < 200) {
@@ -103,7 +103,7 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     // A shot with nothing in its way ends after its life.
     missiles.launch(EnemyMissileKind::arrow(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 4.0f, 100.0f},
                     1.0f, nullptr, 0);
-    for (int i = 0; i < 200; ++i) {
+    for (s32 i = 0; i < 200; ++i) {
         missiles.update(kStep, nullptr, nobody);
     }
     REQUIRE(missiles.count() == 0);
@@ -164,7 +164,7 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
     intent = thrower.think(memory, sense);
     sense.threw = false;
     REQUIRE(memory.fuse == 100);
-    int waited = 0;
+    s32 waited = 0;
     while (!thrower.think(memory, sense).throwing && waited < 100) {
         ++waited;
     }
@@ -209,7 +209,7 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
     intent = suicide.think(bomber, sense);
     REQUIRE(bomber.mode == 1);
     REQUIRE(bomber.fuse == 60);
-    for (int i = 0; i < 29; ++i) {
+    for (s32 i = 0; i < 29; ++i) {
         intent = suicide.think(bomber, sense);
     }
     REQUIRE(bomber.mode == 1);
@@ -226,7 +226,7 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
     sense.contact = 0;
     REQUIRE(suicide.think(bomber, sense).explode);
     sense.contact = -1;
-    for (int i = 0; i < 118; ++i) {
+    for (s32 i = 0; i < 118; ++i) {
         intent = suicide.think(bomber, sense);
     }
     REQUIRE(intent.explode); // four seconds of running
@@ -263,7 +263,7 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(enemies.healthOf(*archer) == Approx(30.0f * 0.333f * 2.0f));
     REQUIRE(enemies.animatorOf(*archer)->has(EnemyAction::Throw));
     const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 25.0f})};
-    int until = 0;
+    s32 until = 0;
     while (missiles.count() == 0 && until < 300) {
         enemies.update(kTicks, kStep, party, {}, &missiles, 1.0f);
         ++until;
@@ -274,7 +274,7 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(missiles.missile(0).velocity.z > 20.0f);
     REQUIRE(enemies.positionOf(*archer) == Vec3{0.0f, 0.0f, 0.0f}); // it stood to shoot
     std::vector<EnemyMissileHit> hits;
-    for (int i = 0; i < 120 && hits.empty(); ++i) {
+    for (s32 i = 0; i < 120 && hits.empty(); ++i) {
         missiles.update(kStep, &collision, party);
         hits = missiles.takeHits();
     }
@@ -282,7 +282,7 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(hits[0].player == 0);
     // A player close by is backed away from, the archer still facing them.
     const std::vector<EnemyView> close{playerAt(Vec3{0.0f, 0.0f, 10.0f})};
-    for (int i = 0; i < 60; ++i) {
+    for (s32 i = 0; i < 60; ++i) {
         enemies.update(kTicks, kStep, close, {}, &missiles, 1.0f);
     }
     REQUIRE(enemies.positionOf(*archer).z < -1.0f);
@@ -295,11 +295,11 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(enemies.algorithmOf(*bomber) == kBombWay);
     missiles.clear();
     const std::vector<EnemyView> afar{playerAt(Vec3{30.0f, 0.0f, 25.0f})};
-    for (int i = 0; i < 300 && missiles.count() == 0; ++i) {
+    for (s32 i = 0; i < 300 && missiles.count() == 0; ++i) {
         enemies.update(kTicks, kStep, afar, {}, &missiles, 1.0f);
     }
     bool lobbed = false;
-    for (std::size_t m = 0; m < missiles.count(); ++m) {
+    for (usize m = 0; m < missiles.count(); ++m) {
         lobbed = lobbed || (missiles.missile(m).shooter == *bomber &&
                             missiles.missile(m).kind.burstRadius > 0.0f);
     }
@@ -314,7 +314,7 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(enemies.algorithmOf(*suicide) == kSuicideWay);
     const std::vector<EnemyView> near{playerAt(Vec3{-30.0f, 0.0f, 12.0f})};
     std::vector<EnemyBurst> bursts;
-    for (int i = 0; i < 600 && bursts.empty(); ++i) {
+    for (s32 i = 0; i < 600 && bursts.empty(); ++i) {
         enemies.update(kTicks, kStep, near, {}, &missiles, 1.0f);
         bursts = enemies.takeBursts();
     }

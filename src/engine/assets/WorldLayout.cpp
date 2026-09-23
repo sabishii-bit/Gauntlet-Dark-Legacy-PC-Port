@@ -1,8 +1,6 @@
 #include "engine/assets/WorldLayout.h"
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <stdexcept>
 
@@ -12,6 +10,7 @@
 #include "engine/core/Error.h"
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -20,7 +19,7 @@ namespace {
 
 using Json = nlohmann::json;
 
-constexpr std::array<std::string_view, static_cast<std::size_t>(LocatorKind::Count)> kKindNames{
+constexpr std::array<std::string_view, static_cast<usize>(LocatorKind::Count)> kKindNames{
     "none", "cameraStart", "cameraGame", "cameraAttractStart", "cameraAttract", "milestone",
     "boss", "start",       "sentry",     "triggerCamera",      "event"};
 
@@ -28,18 +27,18 @@ Vec3 readVec3(const Json& array) {
     if (!array.is_array() || array.size() != 3) {
         throw FormatError("world layout: expected three numbers");
     }
-    return Vec3{array.at(0).get<float>(), array.at(1).get<float>(), array.at(2).get<float>()};
+    return Vec3{array.at(0).get<f32>(), array.at(1).get<f32>(), array.at(2).get<f32>()};
 }
 
 } // namespace
 
 std::string_view locatorKindName(LocatorKind kind) {
-    const auto index = static_cast<std::size_t>(kind);
+    const auto index = static_cast<usize>(kind);
     return index < kKindNames.size() ? kKindNames[index] : std::string_view{};
 }
 
 std::optional<LocatorKind> locatorKindFromName(std::string_view name) {
-    for (std::size_t i = 0; i < kKindNames.size(); ++i) {
+    for (usize i = 0; i < kKindNames.size(); ++i) {
         if (kKindNames[i] == name) {
             return static_cast<LocatorKind>(i);
         }
@@ -57,7 +56,7 @@ ItemInfo readItemInfo(const Json& entry) {
     info.xSize = entry.value("xSize", 0.0f);
     info.zSize = entry.value("zSize", 0.0f);
     info.collisionType = entry.value("collisionType", 0);
-    info.choices = entry.value("choices", std::vector<std::int32_t>{});
+    info.choices = entry.value("choices", std::vector<s32>{});
     if (entry.contains("collisionOffset")) {
         info.collisionOffset = readVec3(entry.at("collisionOffset"));
     }
@@ -82,9 +81,9 @@ ItemInstance readItemInstance(const Json& entry) {
     if (entry.contains("rotation")) {
         instance.rotation = readVec3(entry.at("rotation"));
     }
-    const auto params = entry.value("params", std::vector<std::uint32_t>{});
-    for (std::size_t i = 0; i < instance.params.size() && i < params.size(); ++i) {
-        instance.params[i] = static_cast<std::uint8_t>(params[i]);
+    const auto params = entry.value("params", std::vector<u32>{});
+    for (usize i = 0; i < instance.params.size() && i < params.size(); ++i) {
+        instance.params[i] = static_cast<u8>(params[i]);
     }
     return instance;
 }
@@ -123,11 +122,11 @@ bool WorldLayout::load(const std::filesystem::path& directory) {
                 animation.state = entry.value("state", 0U);
                 animation.start = entry.value("start", 0.0f);
                 const Json& track = entry.at("track");
-                animation.track.flags = static_cast<std::uint16_t>(track.value("flags", 0U));
-                animation.track.frames = track.value("frames", std::vector<std::uint16_t>{});
-                animation.track.values = track.value("values", std::vector<float>{});
+                animation.track.flags = static_cast<u16>(track.value("flags", 0U));
+                animation.track.frames = track.value("frames", std::vector<u16>{});
+                animation.track.values = track.value("values", std::vector<f32>{});
                 if (animation.object < 0 ||
-                    static_cast<std::size_t>(animation.object) >= m_objects.size() ||
+                    static_cast<usize>(animation.object) >= m_objects.size() ||
                     animation.track.frames.empty() ||
                     animation.track.values.size() !=
                         animation.track.frames.size() * animation.track.channelCount()) {
@@ -188,11 +187,11 @@ const ParticleTemplate* WorldLayout::findParticleTemplate(char id) const {
 
 /** Every object's children are the sibling list its `child` starts. */
 void WorldLayout::resolveParents() {
-    const auto count = static_cast<std::int32_t>(m_objects.size());
-    for (std::int32_t i = 0; i < count; ++i) {
-        std::int32_t child = m_objects[static_cast<std::size_t>(i)].child;
-        for (std::int32_t guard = 0; child >= 0 && child < count && guard < count; ++guard) {
-            WorldObject& object = m_objects[static_cast<std::size_t>(child)];
+    const auto count = static_cast<s32>(m_objects.size());
+    for (s32 i = 0; i < count; ++i) {
+        s32 child = m_objects[static_cast<usize>(i)].child;
+        for (s32 guard = 0; child >= 0 && child < count && guard < count; ++guard) {
+            WorldObject& object = m_objects[static_cast<usize>(child)];
             if (object.parent >= 0) {
                 break; // already claimed: a malformed list
             }
@@ -202,7 +201,7 @@ void WorldLayout::resolveParents() {
     }
 }
 
-const WorldLocator* WorldLayout::findLocator(LocatorKind kind, std::uint32_t next) const {
+const WorldLocator* WorldLayout::findLocator(LocatorKind kind, u32 next) const {
     for (const WorldLocator& locator : m_locators) {
         if (locator.kind == kind && locator.next == next) {
             return &locator;
@@ -211,14 +210,13 @@ const WorldLocator* WorldLayout::findLocator(LocatorKind kind, std::uint32_t nex
     return nullptr;
 }
 
-Vec3 WorldLayout::worldPosition(std::size_t index) const {
+Vec3 WorldLayout::worldPosition(usize index) const {
     Vec3 position{0.0f, 0.0f, 0.0f};
-    auto current = static_cast<std::int32_t>(index);
-    for (std::size_t guard = 0;
-         current >= 0 && static_cast<std::size_t>(current) < m_objects.size() &&
-         guard < m_objects.size();
+    auto current = static_cast<s32>(index);
+    for (usize guard = 0;
+         current >= 0 && static_cast<usize>(current) < m_objects.size() && guard < m_objects.size();
          ++guard) {
-        const WorldObject& object = m_objects[static_cast<std::size_t>(current)];
+        const WorldObject& object = m_objects[static_cast<usize>(current)];
         position += object.position;
         current = object.parent;
     }

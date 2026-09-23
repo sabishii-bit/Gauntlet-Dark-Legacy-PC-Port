@@ -1,6 +1,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/players/ItemPickup.h"
 #include "game/players/Progression.h"
 
@@ -10,8 +12,8 @@ using namespace gdl;
 using namespace gdl::game;
 using Outcome = ItemTaking::Outcome;
 
-ItemOffer offer(ItemKind kind, int amount, unsigned int flags = 0, float strength = 0.0f) {
-    return ItemOffer{static_cast<int>(kind), amount, flags, strength};
+ItemOffer offer(ItemKind kind, s32 amount, u32 flags = 0, f32 strength = 0.0f) {
+    return ItemOffer{static_cast<s32>(kind), amount, flags, strength};
 }
 
 TEST_CASE("gold adds up to its limit and shows as treasure or junk", "[game][players][items]") {
@@ -137,7 +139,7 @@ TEST_CASE("a runestone is kept once, a legend item by its realm, and gargoyle pi
     REQUIRE(taking.outcome == Outcome::Taken);
     REQUIRE(taking.card == "GOLDNICON");
     REQUIRE(taking.count == 1);
-    for (int i = 0; i < 30; ++i) {
+    for (s32 i = 0; i < 30; ++i) {
         takeItem(save, offer(ItemKind::GargoyleKey, 1));
     }
     REQUIRE(relics.gargoylePieces[1] == Relics::kGargoyleNeeded[1]);

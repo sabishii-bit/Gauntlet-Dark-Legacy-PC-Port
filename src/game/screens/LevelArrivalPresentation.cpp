@@ -2,19 +2,19 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <utility>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 namespace {
 constexpr std::string_view kSpawnEffect = "STARTFX";
-constexpr int kTitleY = 48;
-constexpr int kTitleLift = 16;
-constexpr float kTitleSlideStart = 0.025f;
-constexpr float kTitleSlideRate = 0.025f;
-constexpr float kTitleSlideEnd = 2.0f;
+constexpr s32 kTitleY = 48;
+constexpr s32 kTitleLift = 16;
+constexpr f32 kTitleSlideStart = 0.025f;
+constexpr f32 kTitleSlideRate = 0.025f;
+constexpr f32 kTitleSlideEnd = 2.0f;
 } // namespace
 
 void LevelArrivalPresentation::clear() {
@@ -38,7 +38,7 @@ void LevelArrivalPresentation::begin(RenderDevice& device, ItemArchive& weapons,
             centre += position;
         }
         if (!positions.empty()) {
-            centre /= static_cast<float>(positions.size());
+            centre /= static_cast<f32>(positions.size());
         }
         m_camera.start(*marker, centre);
     }
@@ -67,23 +67,23 @@ void LevelArrivalPresentation::begin(RenderDevice& device, ItemArchive& weapons,
     m_textures.bind(weapons.trees.textureAnimations(), weapons.textures, device);
 }
 
-void LevelArrivalPresentation::animate(float seconds) {
+void LevelArrivalPresentation::animate(f32 seconds) {
     if (!active()) {
         return;
     }
     m_frames += seconds * AnimationPlayer::kDefaultRate;
-    const float whole = std::floor(m_frames);
+    const f32 whole = std::floor(m_frames);
     m_frames -= whole;
     if (whole > 0.0f) {
-        m_textures.step(static_cast<unsigned int>(whole));
+        m_textures.step(static_cast<u32>(whole));
     }
     for (Spawn& spawn : m_spawns) {
         if (spawn.player.playing() && !spawn.player.finished()) {
             spawn.player.advance(seconds, false);
             spawn.pose.evaluate(*spawn.tree, spawn.player.sequence(), spawn.player.frame());
-            spawn.model.setFrame(spawn.player.sequence(), static_cast<int>(spawn.player.frame()));
+            spawn.model.setFrame(spawn.player.sequence(), static_cast<s32>(spawn.player.frame()));
         }
-        for (std::size_t i = 0; i < m_textures.size(); ++i) {
+        for (usize i = 0; i < m_textures.size(); ++i) {
             const TextureMotion motion = m_textures.motion(i);
             if (motion.frame != nullptr) {
                 spawn.model.setTextureFrame(motion.slot, motion.frame);
@@ -94,14 +94,14 @@ void LevelArrivalPresentation::animate(float seconds) {
     }
 }
 
-void LevelArrivalPresentation::advance(int ticks, bool skip, const Vec3& followPosition,
+void LevelArrivalPresentation::advance(s32 ticks, bool skip, const Vec3& followPosition,
                                        const Vec3& followAttention) {
     if (!active()) {
         return;
     }
     m_ticks = std::max(m_ticks - ticks, 0);
     m_camera.update(ticks, skip, followPosition, followAttention);
-    m_titleSlide += kTitleSlideRate * static_cast<float>(ticks);
+    m_titleSlide += kTitleSlideRate * static_cast<f32>(ticks);
     if (m_camera.phase() != StartCamera::Phase::Hold || m_titleSlide > kTitleSlideEnd) {
         m_titleSlide = kTitleSlideEnd;
     }
@@ -119,13 +119,13 @@ void LevelArrivalPresentation::drawEffects(RenderDevice& device, const Mat4& cli
 }
 
 void LevelArrivalPresentation::drawTitle(Canvas& canvas, const TextPainter& text,
-                                         std::string_view title, float width) const {
+                                         std::string_view title, f32 width) const {
     if (!active() || title.empty() || !text.ready()) {
         return;
     }
     const TextStyle style;
-    const int y = kTitleY - static_cast<int>(static_cast<float>(kTitleLift) * m_titleSlide);
-    text.draw(canvas, -static_cast<int>(width / 2.0f), y, title, style);
+    const s32 y = kTitleY - static_cast<s32>(static_cast<f32>(kTitleLift) * m_titleSlide);
+    text.draw(canvas, -static_cast<s32>(width / 2.0f), y, title, style);
 }
 
 } // namespace gdl::game

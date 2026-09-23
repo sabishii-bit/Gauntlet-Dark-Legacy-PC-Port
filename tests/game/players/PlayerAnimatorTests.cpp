@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/core/Types.h"
 
 #include "game/players/PlayerAnimator.h"
 
@@ -14,8 +15,8 @@ using namespace gdl::game;
 using Catch::Approx;
 using Action = PlayerAnimator::Action;
 
-constexpr int kTicks = 2; ///< per frame at thirty frames a second
-constexpr float kStep = 1.0f / 30.0f;
+constexpr s32 kTicks = 2; ///< per frame at thirty frames a second
+constexpr f32 kStep = 1.0f / 30.0f;
 
 /** The class sequences with their real lengths, each sliding the one node along x by its
  * own index so the pose tells which is playing. */
@@ -28,8 +29,8 @@ TreeInfo classTree() {
     tree.nodes.push_back(root);
     struct Entry {
         const char* name;
-        int frames;
-        int rate;
+        s32 frames;
+        s32 rate;
         bool repeats;
     };
     const std::array<Entry, 22> entries{
@@ -41,7 +42,7 @@ TreeInfo classTree() {
          {"MAGICS", 11, 30, false},      {"MAGICR", 15, 30, false}, {"THROWPOTIONS", 11, 30, false},
          {"THROWPOTIONR", 9, 30, false}, {"DEATH", 20, 30, false},  {"HITREACT", 11, 30, false},
          {"STUN1", 15, 30, false}}};
-    unsigned int index = 0;
+    u32 index = 0;
     for (const Entry& entry : entries) {
         TreeSequenceInfo sequence;
         sequence.name = entry.name;
@@ -52,7 +53,7 @@ TreeInfo classTree() {
         track.node = 0;
         track.flags = TrackInfo::channelBit(3);
         track.frames = {0};
-        track.values = {static_cast<float>(index)};
+        track.values = {static_cast<f32>(index)};
         sequence.tracks.push_back(track);
         sequence.trackOfNode = {0};
         tree.sequences.push_back(sequence);
@@ -61,12 +62,12 @@ TreeInfo classTree() {
     return tree;
 }
 
-float playingIndex(const PlayerAnimator& animator) {
+f32 playingIndex(const PlayerAnimator& animator) {
     return animator.pose().matrices()[0][3].x;
 }
 
-int stepsUntil(PlayerAnimator& animator, PlayerMotion motion, Action wanted, int limit) {
-    int steps = 0;
+s32 stepsUntil(PlayerAnimator& animator, PlayerMotion motion, Action wanted, s32 limit) {
+    s32 steps = 0;
     while (animator.action() != wanted && steps < limit) {
         animator.update(motion, kTicks, kStep);
         ++steps;
@@ -74,8 +75,8 @@ int stepsUntil(PlayerAnimator& animator, PlayerMotion motion, Action wanted, int
     return steps;
 }
 
-int stepsUntilAttack(PlayerAnimator& animator, Action wanted, int limit) {
-    int steps = 0;
+s32 stepsUntilAttack(PlayerAnimator& animator, Action wanted, s32 limit) {
+    s32 steps = 0;
     while (animator.action() != wanted && steps < limit) {
         animator.update(PlayerMotion::Stand, kTicks, kStep, true);
         ++steps;
@@ -97,7 +98,7 @@ TEST_CASE("a held attack winds up, lets go and recovers, over and over",
     REQUIRE(animator.moveScale() == 0.0f);
     REQUIRE_FALSE(animator.released());
     // From its second frame (at twenty-four a second) the wind-up gives way to the release.
-    int steps = 0;
+    s32 steps = 0;
     while (animator.action() == Action::Throw && steps < 20) {
         animator.update(PlayerMotion::Stand, kTicks, kStep, true);
         ++steps;
@@ -106,7 +107,7 @@ TEST_CASE("a held attack winds up, lets go and recovers, over and over",
     REQUIRE(steps >= 3);
     REQUIRE(steps <= 4);
     // The release runs out its three frames; its end is the moment the weapon flies, once.
-    int releases = 0;
+    s32 releases = 0;
     steps = 0;
     while (animator.action() == Action::ThrowRelease && steps < 20) {
         animator.update(PlayerMotion::Stand, kTicks, kStep, true);
@@ -143,8 +144,8 @@ TEST_CASE("a potion is raised, then released once, however long its button is he
     REQUIRE(animator.action() == Action::UsePotion);
     REQUIRE(animator.conjuring());
     REQUIRE(animator.moveScale() == 0.0f);
-    int used = 0;
-    int steps = 0;
+    s32 used = 0;
+    s32 steps = 0;
     while (animator.conjuring() && steps < 120) {
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::UsePotion);
         used += animator.potionUsed() ? 1 : 0;
@@ -158,7 +159,7 @@ TEST_CASE("a potion is raised, then released once, however long its button is he
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::None);
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ThrowPotion);
     REQUIRE(animator.action() == Action::ThrowPotion);
-    int thrown = 0;
+    s32 thrown = 0;
     steps = 0;
     while (animator.conjuring() && steps < 120) {
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::None);
@@ -178,7 +179,7 @@ TEST_CASE("an attack from the first half of a walk or run takes the moving wind-
     REQUIRE(animator.action() == Action::Run1);
     animator.update(PlayerMotion::Run, kTicks, kStep, true);
     REQUIRE(animator.action() == Action::ThrowMoving);
-    int steps = 0;
+    s32 steps = 0;
     while (animator.action() != Action::ThrowMovingRecover && steps < 40) {
         animator.update(PlayerMotion::Run, kTicks, kStep, true);
         ++steps;
@@ -216,7 +217,7 @@ TEST_CASE("a character plays its entrance, settles into its stance and walks in 
     animator.update(PlayerMotion::Walk, kTicks, kStep);
     REQUIRE(animator.action() == Action::Start);
     REQUIRE(playingIndex(animator) == 4.0f);
-    const int untilWalk = stepsUntil(animator, PlayerMotion::Walk, Action::Walk1, 200);
+    const s32 untilWalk = stepsUntil(animator, PlayerMotion::Walk, Action::Walk1, 200);
     REQUIRE(untilWalk == 60);
     REQUIRE(playingIndex(animator) == 5.0f);
 
@@ -258,7 +259,7 @@ TEST_CASE("standing still long enough brings the fidgets and moving ends them",
     animator.update(PlayerMotion::Stand, kTicks, kStep);
     REQUIRE(animator.action() == Action::Ready);
     // A minute of standing (1800 ticks), then the fidget waits for the stance loop to end.
-    for (int i = 0; i < 900; ++i) {
+    for (s32 i = 0; i < 900; ++i) {
         animator.update(PlayerMotion::Stand, kTicks, kStep);
     }
     REQUIRE(animator.action() == Action::Ready);
@@ -270,12 +271,12 @@ TEST_CASE("standing still long enough brings the fidgets and moving ends them",
     REQUIRE(animator.stillTicks() == 0);
     REQUIRE(animator.fidgetTicks() >= 1);
     // Twenty seconds later the second fidget comes, and loops.
-    for (int i = 0; i < 300; ++i) {
+    for (s32 i = 0; i < 300; ++i) {
         animator.update(PlayerMotion::Stand, kTicks, kStep);
     }
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Idle2, 61) <= 60);
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Idle2Loop, 100) == 71);
-    for (int i = 0; i < 200; ++i) {
+    for (s32 i = 0; i < 200; ++i) {
         animator.update(PlayerMotion::Stand, kTicks, kStep);
     }
     REQUIRE(animator.action() == Action::Idle2Loop);
@@ -308,7 +309,7 @@ TEST_CASE("a character that dies falls once and stays down, whatever is asked of
     REQUIRE(animator.dying());
     REQUIRE_FALSE(animator.dead());
     REQUIRE_FALSE(animator.released());
-    int steps = 0;
+    s32 steps = 0;
     while (!animator.dead() && steps < 400) {
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
         REQUIRE(animator.action() == Action::Death);
@@ -336,7 +337,7 @@ TEST_CASE("struck, a character flinches or reels where it stands and then carrie
     REQUIRE(animator.reacting());
     REQUIRE(animator.moveScale() == 0.0f);
     // Struck again meanwhile it is not set reeling anew, and nothing else is heeded.
-    const float frame = animator.player().frame();
+    const f32 frame = animator.player().frame();
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Reel);
     REQUIRE(animator.action() == Action::HitReact);
     REQUIRE(animator.player().frame() > frame);
@@ -358,7 +359,7 @@ TEST_CASE("struck, a character flinches or reels where it stands and then carrie
 TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it begins",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, int frames) {
+    const auto add = [&tree](const char* name, s32 frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -403,7 +404,7 @@ TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it beg
 TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and is let down",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, int frames) {
+    const auto add = [&tree](const char* name, s32 frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -421,13 +422,13 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
     REQUIRE(animator.guarding());
     REQUIRE_FALSE(animator.defending()); // not yet
     REQUIRE(animator.moveScale() == 0.0f);
-    int steps = 0;
+    s32 steps = 0;
     while (animator.action() != Action::Defend && steps < 60) {
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Defend);
         ++steps;
     }
     REQUIRE(animator.defending());
-    for (int i = 0; i < 200; ++i) { // held, it stays up
+    for (s32 i = 0; i < 200; ++i) { // held, it stays up
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Defend);
         REQUIRE(animator.defending());
     }
@@ -459,7 +460,7 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
 TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recovers",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, int frames) {
+    const auto add = [&tree](const char* name, s32 frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -475,8 +476,8 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
     REQUIRE(animator.turboBegan());
     REQUIRE(animator.strongThrowing());
     REQUIRE(animator.moveScale() == PlayerAnimator::kStrongThrowPace);
-    int releases = 0;
-    int steps = 0;
+    s32 releases = 0;
+    s32 steps = 0;
     while (animator.strongThrowing() && steps < 200) {
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
         if (animator.strongReleased()) {
@@ -498,7 +499,7 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
 TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and falls can floor it",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, int frames) {
+    const auto add = [&tree](const char* name, s32 frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -527,8 +528,8 @@ TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and 
     animator.setStrafe(StrafeWay::Back);
     REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::StrafeBack1, 60) < 60);
     // An attack asked of it is made as it goes, one let fly as each half begins.
-    int shots = 0;
-    for (int i = 0; i < 120; ++i) {
+    s32 shots = 0;
+    for (s32 i = 0; i < 120; ++i) {
         animator.update(PlayerMotion::Walk, kTicks, kStep, true);
         shots += animator.released() ? 1 : 0;
         REQUIRE_FALSE(animator.throwing()); // its feet are never planted for it
@@ -561,7 +562,7 @@ TEST_CASE("a shield potion is raised with the gesture of a potion used, and told
     REQUIRE(animator.bind(tree, false));
     bool shielded = false;
     bool used = false;
-    for (int i = 0; i < 200; ++i) {
+    for (s32 i = 0; i < 200; ++i) {
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ShieldPotion);
         shielded = shielded || animator.potionShielded();
         used = used || animator.potionUsed();
@@ -569,8 +570,8 @@ TEST_CASE("a shield potion is raised with the gesture of a potion used, and told
     REQUIRE(shielded);
     REQUIRE_FALSE(used);
     // One a press, as with any potion.
-    int again = 0;
-    for (int i = 0; i < 200; ++i) {
+    s32 again = 0;
+    for (s32 i = 0; i < 200; ++i) {
         animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ShieldPotion);
         again += animator.potionShielded() ? 1 : 0;
     }
@@ -581,7 +582,7 @@ TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the
           "shot's gesture, and nothing else leaves the hand",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, int frames) {
+    const auto add = [&tree](const char* name, s32 frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -610,8 +611,8 @@ TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the
         REQUIRE(animator.action() == gesture.windUp);
         REQUIRE(animator.castingLegend());
         REQUIRE_FALSE(animator.turboBegan()); // the meter pays nothing
-        int releases = 0;
-        int steps = 0;
+        s32 releases = 0;
+        s32 steps = 0;
         while (animator.castingLegend() && steps < 200) {
             animator.update(PlayerMotion::Run, kTicks, kStep);
             REQUIRE_FALSE(animator.potionUsed());

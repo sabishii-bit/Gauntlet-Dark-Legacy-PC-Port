@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/BitmapFont.h"
+#include "engine/core/Types.h"
 #include "engine/render/Image.h"
 #include "engine/ui/Canvas.h"
 #include "engine/ui/TextPainter.h"
@@ -124,7 +125,7 @@ TEST_CASE("the words go before the scroll burns", "[game][menu][scroll]") {
         REQUIRE(draw.texture != &sheet);
         REQUIRE(draw.texture != &backdrop);
     }
-    for (int i = 0; i < 200 && box.burning(); ++i) {
+    for (s32 i = 0; i < 200 && box.burning(); ++i) {
         box.step(1, 0);
     }
     REQUIRE_FALSE(box.burning());

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/Image.h"
 #include "engine/render/RenderDevice.h"
@@ -19,8 +19,8 @@ namespace gdl::game {
  */
 class BurnDialogueScroll {
 public:
-    static constexpr int kFrameCount = 21;
-    static constexpr int kTicksPerFrame = 2;
+    static constexpr s32 kFrameCount = 21;
+    static constexpr s32 kTicksPerFrame = 2;
 
     /**
      * Starts burning `scroll` over `area`. `masks` are the burn frames (alpha zero is burnt),
@@ -32,10 +32,10 @@ public:
 
     void reset();
     bool active() const { return m_active; }
-    int frame() const { return m_timer / kTicksPerFrame; }
+    s32 frame() const { return m_timer / kTicksPerFrame; }
 
     /** Advances the effect; it ends once the last frame has played. */
-    void step(int ticks);
+    void step(s32 ticks);
 
     /** Uploads the current frame's cut-out scroll; call after beginFrame and before drawing. */
     void prepare(RenderDevice& device);
@@ -43,13 +43,11 @@ public:
     void draw(Canvas& canvas) const;
 
     /** Alpha of the composited scroll at a texel, for tests. */
-    std::uint8_t compositeAlpha(unsigned int x, unsigned int y) const {
-        return m_composite.pixel(x, y).a;
-    }
+    u8 compositeAlpha(u32 x, u32 y) const { return m_composite.pixel(x, y).a; }
 
 private:
-    void cutOut(int frame);
-    float maskAlpha(const Image& mask, unsigned int x, unsigned int y) const;
+    void cutOut(s32 frame);
+    f32 maskAlpha(const Image& mask, u32 x, u32 y) const;
 
     bool m_active = false;
     Rect m_area;
@@ -58,11 +56,11 @@ private:
     std::unique_ptr<Texture> m_texture;
     std::vector<const Image*> m_masks;
     std::vector<const Texture*> m_ring;
-    unsigned int m_maskWidth = 0;
-    unsigned int m_maskHeight = 0;
-    int m_timer = 0;
-    int m_cutFrame = -1;
-    int m_uploadedFrame = -1;
+    u32 m_maskWidth = 0;
+    u32 m_maskHeight = 0;
+    s32 m_timer = 0;
+    s32 m_cutFrame = -1;
+    s32 m_uploadedFrame = -1;
 };
 
 } // namespace gdl::game

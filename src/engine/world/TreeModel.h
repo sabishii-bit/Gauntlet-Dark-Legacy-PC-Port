@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <span>
 #include <utility>
 #include <vector>
@@ -8,6 +7,7 @@
 #include "engine/assets/AnimationSet.h"
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/Mesh.h"
@@ -35,7 +35,7 @@ public:
         setAppearance(false);
     }
     bool bound() const { return !m_nodes.empty(); }
-    std::size_t nodeCount() const { return m_nodes.size(); }
+    usize nodeCount() const { return m_nodes.size(); }
 
     /** The rest pose's extent in model space. */
     const Vec3& minBounds() const { return m_min; }
@@ -43,9 +43,8 @@ public:
 
     /** Shows `frame` wherever the parts use texture `slot` of the set (null: the set's own),
      * or slides their coordinates by `offset`, the way texture animations move. */
-    void setTextureFrame(unsigned int slot, const Texture* frame);
-    void setTextureOffset(unsigned int slot, const Vec2& offset,
-                          const Vec2& scale = Vec2{1.0f, 1.0f});
+    void setTextureFrame(u32 slot, const Texture* frame);
+    void setTextureOffset(u32 slot, const Vec2& offset, const Vec2& scale = Vec2{1.0f, 1.0f});
     void resetTextures();
     /** Applies an alternate appearance without making solid skin translucent or filling
      * its cutouts. Cleared by resetTextures(). */
@@ -56,13 +55,13 @@ public:
         m_tint = tint;
         m_depthWrite = depthWrite;
     }
-    Vec2 textureOffset(unsigned int slot) const;
+    Vec2 textureOffset(u32 slot) const;
     /** How a slot's coordinates are stretched, one and one when they are not. */
-    Vec2 textureScale(unsigned int slot) const;
+    Vec2 textureScale(u32 slot) const;
 
     /** Shows the object nodes' meshes for `frame` of `sequence`: the run's mesh for the
      * frame, the only mesh of a one-frame run, else none. */
-    void setFrame(unsigned int sequence, int frame);
+    void setFrame(u32 sequence, s32 frame);
 
     /** Draws with `model` placing model space in the world and `clip` mapping the world to
      * clip space; opaque parts first, then translucent ones. `nodeTransforms`, one matrix per
@@ -70,7 +69,7 @@ public:
      * one blends every part that much (writing no depth); at zero nothing is drawn. */
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& model,
               const WorldLighting& lighting = {}, std::span<const Mat4> nodeTransforms = {},
-              const CameraFrame* camera = nullptr, float alpha = 1.0f) const;
+              const CameraFrame* camera = nullptr, f32 alpha = 1.0f) const;
 
 private:
     /** A mesh and how its parts draw. */
@@ -78,22 +77,22 @@ private:
         const Mesh* mesh = nullptr;
         std::vector<const Texture*> textures; ///< one per mesh part
         std::vector<bool> translucent;        ///< one per mesh part
-        std::vector<unsigned int> slots;      ///< the set's texture index, one per part
+        std::vector<u32> slots;               ///< the set's texture index, one per part
     };
     /** An object node's meshes for one sequence: the one shown at `start` and each frame
      * after, in order; none for a sequence it shows nothing in. */
     struct FrameRun {
-        int start = 0;
+        s32 start = 0;
         std::vector<Shape> shapes;
     };
     struct Node {
-        Shape shape;           ///< what the node draws now; without a mesh, nothing
-        std::size_t index = 0; ///< the tree node this mesh hangs from
+        Shape shape;     ///< what the node draws now; without a mesh, nothing
+        usize index = 0; ///< the tree node this mesh hangs from
         Vec3 offset{0.0f, 0.0f, 0.0f};
         bool chrome = false;
         bool additive = false; ///< added onto the frame, after the opaque
         bool depthWrite = true;
-        unsigned int facing = 0;    ///< turned to the camera this way, when given one
+        u32 facing = 0;             ///< turned to the camera this way, when given one
         std::vector<FrameRun> runs; ///< an object node's, one per sequence
     };
 
@@ -103,17 +102,17 @@ private:
 
     void drawParts(RenderDevice& device, const Mat4& clip, const Mat4& model,
                    const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
-                   const CameraFrame* camera, float alpha, bool translucent) const;
+                   const CameraFrame* camera, f32 alpha, bool translucent) const;
 
     std::vector<Node> m_nodes;
     const Texture* m_maskedTexture = nullptr;
     bool m_unlit = false;
     bool m_depthWrite = true;
     Color m_tint = Color::white();
-    std::vector<std::pair<unsigned int, const Texture*>> m_frames; ///< slot, frame shown
+    std::vector<std::pair<u32, const Texture*>> m_frames; ///< slot, frame shown
     /** A slot's coordinates slid and stretched. */
     struct Slide {
-        unsigned int slot = 0;
+        u32 slot = 0;
         Vec2 offset{0.0f, 0.0f};
         Vec2 scale{1.0f, 1.0f};
     };

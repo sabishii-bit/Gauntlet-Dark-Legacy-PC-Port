@@ -1,11 +1,11 @@
 #include <array>
-#include <cstddef>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -55,8 +55,8 @@ struct Fixture {
     }
 
     /** Steps until a portal is left by or `frames` have gone; the portal, if any. */
-    std::optional<std::size_t> run(std::span<const PortalVisitor> party, int frames) {
-        for (int i = 0; i < frames; ++i) {
+    std::optional<usize> run(std::span<const PortalVisitor> party, s32 frames) {
+        for (s32 i = 0; i < frames; ++i) {
             if (const auto left = portals.update(2, 1.0f / 30.0f, party); left.has_value()) {
                 return left;
             }

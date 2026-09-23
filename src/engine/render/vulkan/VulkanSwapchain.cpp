@@ -1,11 +1,11 @@
 #include "engine/render/vulkan/VulkanSwapchain.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <limits>
 
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/render/vulkan/VulkanContext.h"
 
 namespace gdl {
@@ -40,7 +40,7 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     VkSurfaceCapabilitiesKHR capabilities{};
     GDL_VK_CHECK(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities));
 
-    std::uint32_t formatCount = 0;
+    u32 formatCount = 0;
     GDL_VK_CHECK(
         vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr));
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
@@ -57,7 +57,7 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     m_colorFormat = chosenFormat.format;
     m_colorSpace = chosenFormat.colorSpace;
 
-    std::uint32_t modeCount = 0;
+    u32 modeCount = 0;
     GDL_VK_CHECK(
         vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &modeCount, nullptr));
     std::vector<VkPresentModeKHR> modes(modeCount);
@@ -73,7 +73,7 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
         }
     }
 
-    if (capabilities.currentExtent.width != std::numeric_limits<std::uint32_t>::max()) {
+    if (capabilities.currentExtent.width != std::numeric_limits<u32>::max()) {
         m_extent = capabilities.currentExtent;
     } else {
         m_extent.width = std::clamp(windowExtent.width, capabilities.minImageExtent.width,
@@ -83,7 +83,7 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     }
     GDL_VERIFY(m_extent.width > 0 && m_extent.height > 0, "Swapchain extent must be non-zero");
 
-    std::uint32_t imageCount = capabilities.minImageCount + 1;
+    u32 imageCount = capabilities.minImageCount + 1;
     if (capabilities.maxImageCount > 0) {
         imageCount = std::min(imageCount, capabilities.maxImageCount);
     }
@@ -106,13 +106,13 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
 
     GDL_VK_CHECK(vkCreateSwapchainKHR(device, &createInfo, nullptr, &m_swapchain));
 
-    std::uint32_t actualCount = 0;
+    u32 actualCount = 0;
     GDL_VK_CHECK(vkGetSwapchainImagesKHR(device, m_swapchain, &actualCount, nullptr));
     m_images.resize(actualCount);
     GDL_VK_CHECK(vkGetSwapchainImagesKHR(device, m_swapchain, &actualCount, m_images.data()));
 
     m_imageViews.resize(actualCount);
-    for (std::uint32_t i = 0; i < actualCount; ++i) {
+    for (u32 i = 0; i < actualCount; ++i) {
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = m_images[i];
@@ -154,7 +154,7 @@ void VulkanSwapchain::create(Extent2D windowExtent, VkSwapchainKHR oldSwapchain)
     GDL_VK_CHECK(vkCreateImageView(device, &depthView, nullptr, &m_depthImageView));
 
     log::info("Swapchain: {}x{}, {} images, format {}, {}", m_extent.width, m_extent.height,
-              actualCount, static_cast<int>(m_colorFormat),
+              actualCount, static_cast<s32>(m_colorFormat),
               presentMode == VK_PRESENT_MODE_FIFO_KHR ? "vsync" : "no vsync");
 }
 
@@ -176,13 +176,12 @@ void VulkanSwapchain::destroyImageResources() {
     m_images.clear();
 }
 
-VkResult VulkanSwapchain::acquireNextImage(VkSemaphore signalSemaphore, std::uint32_t* imageIndex) {
-    return vkAcquireNextImageKHR(m_context.device(), m_swapchain,
-                                 std::numeric_limits<std::uint64_t>::max(), signalSemaphore,
-                                 VK_NULL_HANDLE, imageIndex);
+VkResult VulkanSwapchain::acquireNextImage(VkSemaphore signalSemaphore, u32* imageIndex) {
+    return vkAcquireNextImageKHR(m_context.device(), m_swapchain, std::numeric_limits<u64>::max(),
+                                 signalSemaphore, VK_NULL_HANDLE, imageIndex);
 }
 
-VkResult VulkanSwapchain::present(VkSemaphore waitSemaphore, std::uint32_t imageIndex) {
+VkResult VulkanSwapchain::present(VkSemaphore waitSemaphore, u32 imageIndex) {
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;

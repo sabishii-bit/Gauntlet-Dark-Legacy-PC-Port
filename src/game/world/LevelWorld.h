@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <string_view>
@@ -12,6 +11,7 @@
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldData.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/ParticleField.h"
@@ -52,11 +52,11 @@ public:
 
     /** Moves the level's animated objects (and the collision that rides on them) and steps
      * its texture animations by `seconds`. */
-    void update(float seconds);
+    void update(f32 seconds);
     /** Opens at once the gates a party already qualifies for, as the level starts. */
     void startTriggers(std::span<const TriggerVisitor> visitors);
     /** Fires the triggers the visitors stand in and carries the fields' fades on. */
-    void updateTriggers(float seconds, std::span<const TriggerVisitor> visitors);
+    void updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors);
     const LevelTriggers& triggers() const { return m_triggers; }
 
     const WorldLayout& layout() const { return m_layout; }
@@ -67,13 +67,13 @@ public:
     /** The pickups the level places: the crystals Sumner keeps for a new party. */
     const PlacedItems& placedItems() const { return m_placedItems; }
     /** Shows the pickups a party of `players` sees; none for the select screen's empty one. */
-    void setPlayerCount(int players) { m_placedItems.setPlayerCount(players); }
+    void setPlayerCount(s32 players) { m_placedItems.setPlayerCount(players); }
     /** Fades one of the level's objects (a unit); see WorldScene::setObjectAlpha. */
-    void setObjectAlpha(std::size_t object, float alpha) { m_scene.setObjectAlpha(object, alpha); }
-    float objectAlpha(std::size_t object) const { return m_scene.objectAlpha(object); }
+    void setObjectAlpha(usize object, f32 alpha) { m_scene.setObjectAlpha(object, alpha); }
+    f32 objectAlpha(usize object) const { return m_scene.objectAlpha(object); }
     /** Hides the crystals until revealCrystals() brings them in. */
     void hideCrystals() { m_placedItems.hideCrystals(); }
-    void revealCrystals(float seconds) { m_placedItems.reveal(seconds); }
+    void revealCrystals(f32 seconds) { m_placedItems.reveal(seconds); }
     /** Takes what the collectors touch, starting the bursts. */
     std::vector<Pickup> collect(RenderDevice& device, std::span<const Collector> collectors,
                                 const PickupJudge& judge = {}) {
@@ -85,14 +85,14 @@ public:
                                    m_collision.loaded() ? &m_collision : nullptr);
     }
     /** Drops the item of one of the level's records (what a chest held) at `position`. */
-    bool placeItemRecord(RenderDevice& device, int record, const Vec3& position, int amount = 0) {
+    bool placeItemRecord(RenderDevice& device, s32 record, const Vec3& position, s32 amount = 0) {
         return m_placedItems.placeRecord(device, record, position,
                                          m_collision.loaded() ? &m_collision : nullptr, amount);
     }
     /** Throws one of the level's items by its record's name from `position`, as a boss
      * spews its coins; it lands on the floor and cannot be taken for `noGrabSeconds`. */
     bool throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
-                   const Vec3& velocity, float noGrabSeconds) {
+                   const Vec3& velocity, f32 noGrabSeconds) {
         return m_placedItems.throwItem(device, name, position, velocity,
                                        m_collision.loaded() ? &m_collision : nullptr,
                                        noGrabSeconds);
@@ -115,8 +115,8 @@ public:
     const WorldLighting& fullLighting() const { return m_lighting; }
     /** Darkens everything lit by `offset` (-0.6 leaves two fifths of the light), the way the
      * original's ambient special darkens the picture. */
-    void setAmbientOffset(float offset);
-    float ambientOffset() const { return m_ambientOffset; }
+    void setAmbientOffset(f32 offset);
+    f32 ambientOffset() const { return m_ambientOffset; }
     /** What the follow camera takes from the level. */
     const CameraRange& cameraRange() const { return m_cameraRange; }
     /** The level's record, and its sound bank and music stream; null without the realm's
@@ -133,13 +133,13 @@ public:
     std::optional<WorldCamera> entranceCamera() const;
 
     /** The level's start marker number `index` (0 is its entrance). */
-    const WorldLocator* startPoint(unsigned int index) const;
+    const WorldLocator* startPoint(u32 index) const;
     /** Which of the tower's start markers a party back from realm `realm` stands at: the one
      * among that realm's portals, by the original's table; the entrance for any other. */
-    static unsigned int towerMarkerOf(unsigned int realm);
+    static u32 towerMarkerOf(u32 realm);
     /** Where a party arriving from realm `realm` stands: in the tower among that realm's
      * portals, anywhere else at the level's entrance. */
-    const WorldLocator* arrivalPoint(unsigned int realm) const;
+    const WorldLocator* arrivalPoint(u32 realm) const;
 
     /** The game camera markers the follow camera takes its angles from. */
     const std::vector<WorldLocator>& cameraMarkers() const { return m_markers; }
@@ -171,13 +171,13 @@ private:
     TextureAnimator m_textureAnimator;
     ParticleField m_particles;
     LevelTriggers m_triggers;
-    std::vector<int> m_movingObjects; ///< objects whose collision follows their animation
-    float m_frameRemainder = 0.0f;    ///< game frames owed to the texture animations
+    std::vector<s32> m_movingObjects; ///< objects whose collision follows their animation
+    f32 m_frameRemainder = 0.0f;      ///< game frames owed to the texture animations
     WorldCollision m_collision;
     WorldData m_worldData;
     WorldLighting m_lighting;
     WorldLighting m_litNow; ///< m_lighting with the ambient offset
-    float m_ambientOffset = 0.0f;
+    f32 m_ambientOffset = 0.0f;
     CameraRange m_cameraRange;
     const LevelInfo* m_level = nullptr;
     const LevelAudioInfo* m_audio = nullptr;

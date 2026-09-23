@@ -1,10 +1,10 @@
 #include <array>
-#include <cstdint>
 #include <cstring>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 namespace {
@@ -12,7 +12,7 @@ namespace {
 using namespace gdl;
 using Catch::Matchers::WithinAbs;
 
-constexpr double kEpsilon = 1e-5;
+constexpr f64 kEpsilon = 1e-5;
 
 TEST_CASE("angle conversions round-trip", "[math]") {
     CHECK_THAT(degreesToRadians(180.0f), WithinAbs(kPi, kEpsilon));
@@ -30,9 +30,9 @@ TEST_CASE("Rect edges derive from origin and size", "[math]") {
 
 TEST_CASE("Color is stored as R, G, B, A bytes", "[math][color]") {
     const Color color = Color::rgba(1, 2, 3, 4);
-    std::array<std::uint8_t, 4> bytes{};
+    std::array<u8, 4> bytes{};
     std::memcpy(bytes.data(), &color, sizeof(color));
-    REQUIRE(bytes == std::array<std::uint8_t, 4>{1, 2, 3, 4});
+    REQUIRE(bytes == std::array<u8, 4>{1, 2, 3, 4});
 }
 
 TEST_CASE("Color::fromFloats rounds and clamps", "[math][color]") {

@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -114,7 +115,7 @@ TEST_CASE("a character keeps the help it has been shown, in order", "[game][play
     CharacterSave save = sampleSave();
     save.helpSeen = {21, 2, 133};
     const CharacterSave loaded = CharacterSave::fromJson(save.toJson());
-    REQUIRE(loaded.helpSeen == std::vector<int>{2, 21, 133});
+    REQUIRE(loaded.helpSeen == std::vector<s32>{2, 21, 133});
     REQUIRE(CharacterSave::fromJson(sampleSave().toJson()).helpSeen.empty());
 }
 

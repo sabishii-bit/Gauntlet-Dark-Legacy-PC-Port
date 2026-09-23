@@ -1,8 +1,6 @@
 #include "engine/assets/ObjModel.h"
 
 #include <charconv>
-#include <cstddef>
-#include <cstdint>
 #include <format>
 #include <map>
 #include <optional>
@@ -10,6 +8,7 @@
 #include <vector>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -18,12 +17,12 @@ namespace {
 
 std::vector<std::string_view> splitWords(std::string_view line) {
     std::vector<std::string_view> words;
-    std::size_t at = 0;
+    usize at = 0;
     while (at < line.size()) {
         while (at < line.size() && (line[at] == ' ' || line[at] == '\t' || line[at] == '\r')) {
             ++at;
         }
-        const std::size_t start = at;
+        const usize start = at;
         while (at < line.size() && line[at] != ' ' && line[at] != '\t' && line[at] != '\r') {
             ++at;
         }
@@ -34,8 +33,8 @@ std::vector<std::string_view> splitWords(std::string_view line) {
     return words;
 }
 
-float parseFloat(std::string_view text, std::size_t lineNumber) {
-    float value = 0.0f;
+f32 parseFloat(std::string_view text, usize lineNumber) {
+    f32 value = 0.0f;
     const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
     if (error != std::errc{} || end != text.data() + text.size()) {
         throw FormatError(std::format("OBJ line {}: '{}' is not a number", lineNumber, text));
@@ -44,34 +43,34 @@ float parseFloat(std::string_view text, std::size_t lineNumber) {
 }
 
 /** A 1-based OBJ index (negative counts from the end), converted to 0-based; -1 when absent. */
-std::int64_t parseIndex(std::string_view text, std::size_t count, std::size_t lineNumber) {
+s64 parseIndex(std::string_view text, usize count, usize lineNumber) {
     if (text.empty()) {
         return -1;
     }
-    std::int64_t value = 0;
+    s64 value = 0;
     const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
     if (error != std::errc{} || end != text.data() + text.size() || value == 0) {
         throw FormatError(std::format("OBJ line {}: bad index '{}'", lineNumber, text));
     }
-    const std::int64_t zeroBased = value > 0 ? value - 1 : static_cast<std::int64_t>(count) + value;
-    if (zeroBased < 0 || zeroBased >= static_cast<std::int64_t>(count)) {
+    const s64 zeroBased = value > 0 ? value - 1 : static_cast<s64>(count) + value;
+    if (zeroBased < 0 || zeroBased >= static_cast<s64>(count)) {
         throw FormatError(std::format("OBJ line {}: index {} out of range", lineNumber, value));
     }
     return zeroBased;
 }
 
 struct Corner {
-    std::int64_t position = -1;
-    std::int64_t texcoord = -1;
-    std::int64_t normal = -1;
+    s64 position = -1;
+    s64 texcoord = -1;
+    s64 normal = -1;
     auto operator<=>(const Corner&) const = default;
 };
 
 } // namespace
 
 /** The number a material name carries after `tex` or `_lm`, or nothing when it is not one. */
-std::optional<std::uint32_t> materialIndex(std::string_view digits) {
-    std::uint32_t value = 0;
+std::optional<u32> materialIndex(std::string_view digits) {
+    u32 value = 0;
     const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value);
     if (error != std::errc{} || end != digits.data() + digits.size()) {
         return std::nullopt;
@@ -88,7 +87,7 @@ Mesh parseObj(std::string_view text) {
     Mesh mesh;
     MeshPart part;
     bool partOpen = false;
-    std::map<Corner, std::uint32_t> corners;
+    std::map<Corner, u32> corners;
 
     const auto vertexFor = [&](const Corner& corner) {
         const auto found = corners.find(corner);
@@ -96,20 +95,20 @@ Mesh parseObj(std::string_view text) {
             return found->second;
         }
         MeshVertex v;
-        v.position = positions[static_cast<std::size_t>(corner.position)];
-        if (static_cast<std::size_t>(corner.position) < colors.size()) {
-            v.color = colors[static_cast<std::size_t>(corner.position)];
+        v.position = positions[static_cast<usize>(corner.position)];
+        if (static_cast<usize>(corner.position) < colors.size()) {
+            v.color = colors[static_cast<usize>(corner.position)];
         }
         if (corner.texcoord >= 0) {
-            v.uv = texcoords[static_cast<std::size_t>(corner.texcoord)];
-            if (static_cast<std::size_t>(corner.texcoord) < lightmapCoords.size()) {
-                v.lightmapUv = lightmapCoords[static_cast<std::size_t>(corner.texcoord)];
+            v.uv = texcoords[static_cast<usize>(corner.texcoord)];
+            if (static_cast<usize>(corner.texcoord) < lightmapCoords.size()) {
+                v.lightmapUv = lightmapCoords[static_cast<usize>(corner.texcoord)];
             }
         }
         if (corner.normal >= 0) {
-            v.normal = normals[static_cast<std::size_t>(corner.normal)];
+            v.normal = normals[static_cast<usize>(corner.normal)];
         }
-        const auto index = static_cast<std::uint32_t>(mesh.vertices.size());
+        const auto index = static_cast<u32>(mesh.vertices.size());
         mesh.vertices.push_back(v);
         corners.emplace(corner, index);
         return index;
@@ -122,10 +121,10 @@ Mesh parseObj(std::string_view text) {
         partOpen = false;
     };
 
-    std::size_t lineNumber = 0;
-    std::size_t at = 0;
+    usize lineNumber = 0;
+    usize at = 0;
     while (at <= text.size()) {
-        const std::size_t lineEnd = text.find('\n', at);
+        const usize lineEnd = text.find('\n', at);
         const std::string_view line =
             text.substr(at, (lineEnd == std::string_view::npos ? text.size() : lineEnd) - at);
         at = lineEnd == std::string_view::npos ? text.size() + 1 : lineEnd + 1;
@@ -159,7 +158,7 @@ Mesh parseObj(std::string_view text) {
             const std::string_view material = words[1];
             if (material.starts_with("tex")) {
                 const std::string_view rest = material.substr(3);
-                const std::size_t lightmapAt = rest.find("_lm");
+                const usize lightmapAt = rest.find("_lm");
                 part.texture = materialIndex(rest.substr(0, lightmapAt)).value_or(0);
                 if (lightmapAt != std::string_view::npos) {
                     part.lightmap = materialIndex(rest.substr(lightmapAt + 3)).value_or(0);
@@ -169,17 +168,17 @@ Mesh parseObj(std::string_view text) {
             if (!partOpen) {
                 partOpen = true;
             }
-            std::vector<std::uint32_t> polygon;
-            for (std::size_t w = 1; w < words.size(); ++w) {
+            std::vector<u32> polygon;
+            for (usize w = 1; w < words.size(); ++w) {
                 const std::string_view corner = words[w];
-                const std::size_t firstSlash = corner.find('/');
-                const std::size_t secondSlash = firstSlash == std::string_view::npos
-                                                    ? std::string_view::npos
-                                                    : corner.find('/', firstSlash + 1);
+                const usize firstSlash = corner.find('/');
+                const usize secondSlash = firstSlash == std::string_view::npos
+                                              ? std::string_view::npos
+                                              : corner.find('/', firstSlash + 1);
                 Corner c;
                 c.position = parseIndex(corner.substr(0, firstSlash), positions.size(), lineNumber);
                 if (firstSlash != std::string_view::npos) {
-                    const std::size_t texEnd =
+                    const usize texEnd =
                         secondSlash == std::string_view::npos ? corner.size() : secondSlash;
                     c.texcoord = parseIndex(corner.substr(firstSlash + 1, texEnd - firstSlash - 1),
                                             texcoords.size(), lineNumber);
@@ -190,7 +189,7 @@ Mesh parseObj(std::string_view text) {
                 }
                 polygon.push_back(vertexFor(c));
             }
-            for (std::size_t k = 1; k + 1 < polygon.size(); ++k) {
+            for (usize k = 1; k + 1 < polygon.size(); ++k) {
                 part.indices.insert(part.indices.end(), {polygon[0], polygon[k], polygon[k + 1]});
             }
         }
@@ -201,7 +200,7 @@ Mesh parseObj(std::string_view text) {
 }
 
 Mesh loadObj(const std::filesystem::path& path) {
-    const std::vector<std::uint8_t> bytes = readFile(path);
+    const std::vector<u8> bytes = readFile(path);
     return parseObj(std::string(bytes.begin(), bytes.end()));
 }
 

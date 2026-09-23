@@ -7,6 +7,7 @@
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/world/WorldAnimator.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldScene.h"
@@ -21,7 +22,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kStep = 1.0f / 30.0f;
+constexpr f32 kStep = 1.0f / 30.0f;
 
 struct Fixture {
     test::FakeRenderDevice device;
@@ -50,7 +51,7 @@ struct Fixture {
         triggers.bind(layout, animator, &collision);
     }
 
-    static TriggerVisitor visitor(const Vec3& position, int crystals) {
+    static TriggerVisitor visitor(const Vec3& position, s32 crystals) {
         TriggerVisitor out;
         out.position = position;
         out.crystals[1] = crystals;
@@ -105,7 +106,7 @@ TEST_CASE("a visitor sets off a trigger, opening its chain, once", "[game][world
     REQUIRE(f.triggers.opened(8));
     REQUIRE_FALSE(f.animator.held(0));
     // The gate plays its turn once and stays open.
-    for (int i = 0; i < 10; ++i) {
+    for (s32 i = 0; i < 10; ++i) {
         f.animator.step(kStep, f.scene);
     }
     REQUIRE(f.animator.frame(0) == 3.0f);
@@ -126,7 +127,7 @@ TEST_CASE("a trigger the party starts inside waits for them to leave it and come
     std::vector<TriggerVisitor> party{Fixture::visitor(Vec3{10.0f, 0.0f, 52.0f}, 0)};
     f.triggers.openMet(party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.trigger(1).occupied);
-    for (int i = 0; i < 10; ++i) {
+    for (s32 i = 0; i < 10; ++i) {
         f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     }
     REQUIRE_FALSE(f.triggers.trigger(1).fired);
@@ -186,7 +187,7 @@ TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
     REQUIRE(f.triggers.takeRefusals().empty());
     REQUIRE(f.scene.objectAlpha(6) == Approx(1.0f - LevelTriggers::kFadeRate));
     REQUIRE(f.triggers.takeSettled().empty()); // still thinning
-    for (int i = 0; i < 20; ++i) {
+    for (s32 i = 0; i < 20; ++i) {
         f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     }
     REQUIRE(f.scene.objectAlpha(6) == 0.0f);

@@ -5,6 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
 #include "game/world/PlayerMissiles.h"
@@ -15,7 +16,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kStep = 1.0f / 60.0f;
+constexpr f32 kStep = 1.0f / 60.0f;
 
 MissileLaunch axeFrom(const Vec3& position) {
     MissileLaunch launch;
@@ -92,8 +93,8 @@ TEST_CASE("a missile is lobbed to come down half a unit under its start at its r
     REQUIRE(missiles.missile(0).velocity.z == 30.0f);
     REQUIRE(missiles.missile(0).velocity.y > 0.0f);
     // Half a second at thirty a second is its reach of fifteen.
-    float highest = 0.0f;
-    for (int i = 0; i < 30; ++i) {
+    f32 highest = 0.0f;
+    for (s32 i = 0; i < 30; ++i) {
         missiles.update(kStep, nullptr);
         highest = std::max(highest, missiles.missile(0).position.y);
     }
@@ -108,7 +109,7 @@ TEST_CASE("a missile is lobbed to come down half a unit under its start at its r
     REQUIRE(Vec3(transform[3]) == axe.position);
     REQUIRE(transform[0].x == Approx(1.0f)); // flying along +z, its side stays its side
     // With nothing to stop it, its time runs out.
-    for (int i = 0; i < 200; ++i) {
+    for (s32 i = 0; i < 200; ++i) {
         missiles.update(kStep, nullptr);
     }
     REQUIRE(missiles.count() == 0);
@@ -125,7 +126,7 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
     collision.build({wall});
     PlayerMissiles missiles;
     REQUIRE(missiles.launch(axeFrom(Vec3{0.0f, 3.0f, 0.0f})));
-    for (int i = 0; i < 60 && missiles.count() > 0; ++i) {
+    for (s32 i = 0; i < 60 && missiles.count() > 0; ++i) {
         missiles.update(kStep, &collision);
     }
     REQUIRE(missiles.count() == 0);
@@ -145,7 +146,7 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
     WorldCollision ground;
     ground.build({floor});
     REQUIRE(missiles.launch(axeFrom(Vec3{0.0f, 3.0f, 0.0f})));
-    for (int i = 0; i < 180 && missiles.count() > 0; ++i) {
+    for (s32 i = 0; i < 180 && missiles.count() > 0; ++i) {
         missiles.update(kStep, &ground);
     }
     REQUIRE(missiles.count() == 0);
@@ -160,7 +161,7 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
     toss.potion = 4;
     REQUIRE(missiles.launch(toss));
     REQUIRE(missiles.missile(0).velocity == Vec3{0.0f, 3.5f, 3.5f});
-    for (int i = 0; i < 180 && missiles.count() > 0; ++i) {
+    for (s32 i = 0; i < 180 && missiles.count() > 0; ++i) {
         missiles.update(kStep, &ground);
     }
     const std::vector<MissileImpact> burst = missiles.takeImpacts();
@@ -188,7 +189,7 @@ TEST_CASE("what stands in a missile's way stops it and learns what hit it",
         MissileTarget{4, Vec3{6.0f, 0.0f, 5.0f}, 1.0f, 3.0f},
         MissileTarget{9, Vec3{0.0f, 0.0f, 8.0f}, 1.0f, 3.0f}};
     std::vector<MissileImpact> impacts;
-    for (int i = 0; i < 120 && impacts.empty(); ++i) {
+    for (s32 i = 0; i < 120 && impacts.empty(); ++i) {
         missiles.update(kStep, nullptr, targets);
         impacts = missiles.takeImpacts();
     }
@@ -202,7 +203,7 @@ TEST_CASE("what stands in a missile's way stops it and learns what hit it",
     // Thrown over a target, it flies on.
     launch.position = Vec3{0.0f, 9.0f, 0.0f};
     REQUIRE(missiles.launch(launch));
-    for (int i = 0; i < 20; ++i) {
+    for (s32 i = 0; i < 20; ++i) {
         missiles.update(kStep, nullptr, targets);
     }
     REQUIRE(missiles.takeImpacts().empty());

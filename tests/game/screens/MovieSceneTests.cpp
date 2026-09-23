@@ -5,6 +5,7 @@
 
 #include "engine/app/Application.h"
 #include "engine/audio/AudioMixer.h"
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
@@ -22,13 +23,13 @@ public:
     MovieProbe(ApplicationDesc desc, std::filesystem::path movie)
         : Application(std::move(desc)), m_movie(std::move(movie)) {}
 
-    int renderedFrames() const { return m_renderedFrames; }
+    s32 renderedFrames() const { return m_renderedFrames; }
     bool opened() const { return m_opened; }
 
 protected:
     void onInit() override { m_opened = m_scene.open(renderDevice(), m_mixer, m_movie); }
 
-    void onUpdate(double deltaSeconds) override {
+    void onUpdate(f64 deltaSeconds) override {
         if (m_opened) {
             m_scene.update(deltaSeconds);
         }
@@ -36,8 +37,8 @@ protected:
 
     void onRender(RenderDevice& device) override {
         const Extent2D extent = device.framebufferExtent();
-        const Mat4 projection = makeScreenProjection(static_cast<float>(extent.width),
-                                                     static_cast<float>(extent.height));
+        const Mat4 projection =
+            makeScreenProjection(static_cast<f32>(extent.width), static_cast<f32>(extent.height));
         m_scene.render(device, projection, Rect{0.0f, 0.0f, 320.0f, 240.0f});
         ++m_renderedFrames;
     }
@@ -49,7 +50,7 @@ private:
     AudioMixer m_mixer{48000};
     MovieScene m_scene;
     bool m_opened = false;
-    int m_renderedFrames = 0;
+    s32 m_renderedFrames = 0;
 };
 
 TEST_CASE("the movie scene renders frames of a real movie", "[gpu][assets][movie]") {

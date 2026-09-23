@@ -1,9 +1,9 @@
 #pragma once
-#include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <span>
 #include <vector>
+
+#include "engine/core/Types.h"
 
 #include "game/menu/MenuInput.h"
 #include "game/screens/PlayerRuntime.h"
@@ -32,7 +32,7 @@ struct PlayInput {
  * Callbacks must not resize or replace the supplied party. No scene or callbacks are retained. */
 class PartyMotion {
 public:
-    enum class Action : std::uint8_t {
+    enum class Action : u8 {
         NoPotion,
         Ram,
         ThrowWeapon,
@@ -44,16 +44,16 @@ public:
         SecondFoot
     };
     struct Events {
-        std::function<void(std::size_t, Action)> perform;
-        std::function<void(std::size_t, const SelectorInput&, int)> select;
-        std::function<void(std::size_t, int, float)> advanceTurbo;
+        std::function<void(usize, Action)> perform;
+        std::function<void(usize, const SelectorInput&, s32)> select;
+        std::function<void(usize, s32, f32)> advanceTurbo;
     };
     static std::vector<CameraSubject> step(std::span<PlayerRuntime> players,
                                            std::span<const PlayInput> inputs, bool held,
-                                           float cameraYaw, int ticks, float seconds,
+                                           f32 cameraYaw, s32 ticks, f32 seconds,
                                            const WorldCollision& collision, const Events& events);
-    static StrafeWay strafeWayOf(float heading, float facing);
-    static MoveInput chargeInput(const PlayerActor& actor, const MoveInput& stick, float cameraYaw);
+    static StrafeWay strafeWayOf(f32 heading, f32 facing);
+    static MoveInput chargeInput(const PlayerActor& actor, const MoveInput& stick, f32 cameraYaw);
     static PlayerDeed turboDeed(const PlayerRuntime& runtime, const PlayInput& input);
 };
 } // namespace gdl::game

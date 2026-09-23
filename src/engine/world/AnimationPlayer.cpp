@@ -3,16 +3,17 @@
 #include <algorithm>
 #include <cmath>
 
+#include "engine/core/Types.h"
+
 namespace gdl {
 
-void AnimationPlayer::start(const TreeSequenceInfo& sequence, unsigned int index,
-                            float transitionSeconds, float frame) {
+void AnimationPlayer::start(const TreeSequenceInfo& sequence, u32 index, f32 transitionSeconds,
+                            f32 frame) {
     m_sequence = &sequence;
     m_index = index;
-    const float rate =
-        sequence.frameRate > 0 ? static_cast<float>(sequence.frameRate) : kDefaultRate;
+    const f32 rate = sequence.frameRate > 0 ? static_cast<f32>(sequence.frameRate) : kDefaultRate;
     m_secondsPerFrame = rate * kRateUnit / std::max(m_speed, 1e-6f);
-    m_frame = frame > static_cast<float>(sequence.frames) ? 0.0f : frame;
+    m_frame = frame > static_cast<f32>(sequence.frames) ? 0.0f : frame;
     m_time = m_frame * m_secondsPerFrame;
     m_transitionLength = std::max(transitionSeconds, 0.0f);
     m_transitionTime = 0.0f;
@@ -31,14 +32,14 @@ void AnimationPlayer::stop() {
     m_held = false;
 }
 
-float AnimationPlayer::transition() const {
+f32 AnimationPlayer::transition() const {
     if (m_transitionLength <= 0.0f) {
         return 1.0f;
     }
     return std::clamp(m_transitionTime / m_transitionLength, 0.0f, 1.0f);
 }
 
-bool AnimationPlayer::advance(float seconds, bool repeat) {
+bool AnimationPlayer::advance(f32 seconds, bool repeat) {
     if (m_sequence == nullptr || m_sequence->frames <= 0) {
         m_finished = true;
         return false;
@@ -57,12 +58,12 @@ bool AnimationPlayer::advance(float seconds, bool repeat) {
     }
     m_finished = false;
     m_time += seconds;
-    float t = m_time / m_secondsPerFrame;
-    const float whole = std::floor(0.5f + t);
+    f32 t = m_time / m_secondsPerFrame;
+    const f32 whole = std::floor(0.5f + t);
     if (!m_smooth || std::abs(t - whole) < kSnapWindow || m_secondsPerFrame < kTick) {
         t = whole;
     }
-    const auto last = static_cast<float>(m_sequence->frames - 1);
+    const auto last = static_cast<f32>(m_sequence->frames - 1);
     if (t >= last + 0.5f) {
         m_finished = true;
         if (repeat) {

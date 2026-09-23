@@ -1,12 +1,12 @@
 #include "game/world/PlayerFigure.h"
 
 #include <array>
-#include <cstddef>
 #include <format>
 #include <span>
 #include <string>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 #include "game/players/ClassData.h"
 #include "game/players/Progression.h"
@@ -15,19 +15,19 @@
 namespace gdl::game {
 namespace {
 constexpr std::string_view kPlayersDirectory = "PLAYERS";
-constexpr int kLevelsPerTier = 10;
-constexpr int kWeaponTierTwoLevel = 10;
-constexpr int kWeaponTierThreeLevel = 50;
+constexpr s32 kLevelsPerTier = 10;
+constexpr s32 kWeaponTierTwoLevel = 10;
+constexpr s32 kWeaponTierThreeLevel = 50;
 constexpr std::array<std::string_view, 3> kHandObjects{"R_WRIST", "RIGHTHAN", "RHEND"};
 constexpr std::string_view kHeldWeapon = "WEAP_HOLD";
 constexpr std::string_view kClassAnimations = "ANIM";
 constexpr std::string_view kSoundDirectory = "audio";
-constexpr int kOgre = 12;
-constexpr float kOgreScale = 1.6f;
-constexpr float kMasterScale = 1.2f;
+constexpr s32 kOgre = 12;
+constexpr f32 kOgreScale = 1.6f;
+constexpr f32 kMasterScale = 1.2f;
 } // namespace
 
-float PlayerFigure::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
+f32 PlayerFigure::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
     if (save.character == kOgre) {
         return kOgreScale;
     }
@@ -43,7 +43,7 @@ std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path
     const std::string_view costume = colorCode(save.color);
     const std::filesystem::path base =
         unpackedRoot / kPlayersDirectory / std::string(cls) / std::string(costume);
-    const int tier = experienceLevel(save.progress().experience) / kLevelsPerTier;
+    const s32 tier = experienceLevel(save.progress().experience) / kLevelsPerTier;
     const std::filesystem::path tiered = base.parent_path() / std::format("{}{}0", costume, tier);
     return std::filesystem::exists(tiered / "objects.json") ? tiered : base;
 }
@@ -79,7 +79,7 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
 
 void PlayerFigure::loadMissile(const std::filesystem::path& root, const CharacterSave& save,
                                RenderDevice& device) {
-    const int level = experienceLevel(save.progress().experience);
+    const s32 level = experienceLevel(save.progress().experience);
     bool inCostume = true;
     const std::string name = MissileSpec::treeName(save.character, level, &inCostume);
     bool bound = false;
@@ -104,8 +104,8 @@ void PlayerFigure::loadMissile(const std::filesystem::path& root, const Characte
 }
 
 void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
-    const int level = experienceLevel(save.progress().experience);
-    int tier = 1;
+    const s32 level = experienceLevel(save.progress().experience);
+    s32 tier = 1;
     if (level >= kWeaponTierThreeLevel) {
         tier = 3;
     } else if (level >= kWeaponTierTwoLevel) {
@@ -119,10 +119,10 @@ void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
         log::warn("Tower: no {} in {}", weapon, m_directory.string());
         return;
     }
-    for (std::size_t n = 0; n < m_costume->nodes.size() && m_handNode < 0; ++n) {
+    for (usize n = 0; n < m_costume->nodes.size() && m_handNode < 0; ++n) {
         for (const std::string_view suffix : kHandObjects) {
             if (m_costume->nodes[n].object.ends_with(suffix)) {
-                m_handNode = static_cast<int>(n);
+                m_handNode = static_cast<s32>(n);
                 break;
             }
         }
@@ -141,7 +141,7 @@ void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
     }
 }
 
-std::filesystem::path PlayerFigure::classFolder(const std::filesystem::path& root, int character,
+std::filesystem::path PlayerFigure::classFolder(const std::filesystem::path& root, s32 character,
                                                 std::string_view sub) {
     const std::filesystem::path players = root / kPlayersDirectory;
     std::filesystem::path own = players / classCode(character) / sub;
@@ -151,7 +151,7 @@ std::filesystem::path PlayerFigure::classFolder(const std::filesystem::path& roo
     return players / classCode(character % kStartingClassCount) / sub;
 }
 
-std::string_view PlayerFigure::actionsClassOf(const std::filesystem::path& root, int character) {
+std::string_view PlayerFigure::actionsClassOf(const std::filesystem::path& root, s32 character) {
     const std::filesystem::path own =
         root / kPlayersDirectory / classCode(character) / kClassAnimations;
     return classCode(std::filesystem::exists(own) ? character : character % kStartingClassCount);
@@ -170,22 +170,22 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
     m_classNodeOfNode.clear();
     for (const TreeNodeInfo& node : m_costume->nodes) {
         const auto match = actions.findNode(node.name);
-        m_classNodeOfNode.push_back(match.has_value() ? static_cast<int>(*match) : -1);
+        m_classNodeOfNode.push_back(match.has_value() ? static_cast<s32>(*match) : -1);
     }
     animate(0.0f, 0, 0.0f);
 }
 
-void PlayerFigure::animate(float stickMagnitude, int ticks, float seconds, PlayerDeed deed) {
+void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed) {
     if (!m_animator.bound()) {
         return;
     }
     m_animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed);
     const std::span<const Mat4> matrices = m_animator.pose().matrices();
     m_transforms.resize(m_costume->nodes.size());
-    for (std::size_t n = 0; n < m_transforms.size(); ++n) {
-        const int source = m_classNodeOfNode[n];
-        m_transforms[n] = source >= 0 && static_cast<std::size_t>(source) < matrices.size()
-                              ? matrices[static_cast<std::size_t>(source)]
+    for (usize n = 0; n < m_transforms.size(); ++n) {
+        const s32 source = m_classNodeOfNode[n];
+        m_transforms[n] = source >= 0 && static_cast<usize>(source) < matrices.size()
+                              ? matrices[static_cast<usize>(source)]
                               : glm::translate(Mat4{1.0f}, m_costume->worldPosition(n));
     }
 }
@@ -198,20 +198,19 @@ ItemArchive* PlayerFigure::effects() {
 }
 
 std::optional<Vec3> PlayerFigure::handPosition(const Mat4& body) const {
-    if (m_handNode < 0 || static_cast<std::size_t>(m_handNode) >= m_transforms.size()) {
+    if (m_handNode < 0 || static_cast<usize>(m_handNode) >= m_transforms.size()) {
         return std::nullopt;
     }
-    return Vec3{body * m_transforms[static_cast<std::size_t>(m_handNode)] *
-                Vec4{0.0f, 0.0f, 0.0f, 1.0f}};
+    return Vec3{body * m_transforms[static_cast<usize>(m_handNode)] * Vec4{0.0f, 0.0f, 0.0f, 1.0f}};
 }
 
 void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
-                        const WorldLighting& lighting, float alpha, bool hideWeapon) const {
+                        const WorldLighting& lighting, f32 alpha, bool hideWeapon) const {
     m_model.draw(device, clip, body, lighting, m_transforms, nullptr, alpha);
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;
     if (heldWeaponBound() && !hideWeapon && (!thrown || m_staysInHand)) {
-        const auto hand = static_cast<std::size_t>(m_handNode);
+        const auto hand = static_cast<usize>(m_handNode);
         const Mat4 wrist = hand < m_transforms.size()
                                ? m_transforms[hand]
                                : glm::translate(Mat4{1.0f}, m_costume->worldPosition(hand));

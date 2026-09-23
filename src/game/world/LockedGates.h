@@ -1,13 +1,12 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <span>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
+#include "engine/core/Types.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -19,10 +18,10 @@ namespace gdl::game {
 
 /** What a gate did this update. */
 struct GateEvent {
-    enum class Kind : std::uint8_t { Unlocked, Refused };
+    enum class Kind : u8 { Unlocked, Refused };
     Kind kind = Kind::Unlocked;
-    std::size_t gate = 0;
-    std::size_t visitor = 0;
+    usize gate = 0;
+    usize visitor = 0;
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
 
@@ -33,19 +32,19 @@ struct GateEvent {
  */
 class LockedGates {
 public:
-    static constexpr int kShut = 0; ///< the figure's sequences
-    static constexpr int kOpening = 1;
-    static constexpr int kOpen = 2;
-    static constexpr int kPassableTicks = 30; ///< into its opening, from when it bars no one
-    static constexpr float kRefusalSeconds = 2.5f;
+    static constexpr s32 kShut = 0; ///< the figure's sequences
+    static constexpr s32 kOpening = 1;
+    static constexpr s32 kOpen = 2;
+    static constexpr s32 kPassableTicks = 30; ///< into its opening, from when it bars no one
+    static constexpr f32 kRefusalSeconds = 2.5f;
 
     /** One gate. */
     struct Gate {
-        int instance = -1;
-        int state = kShut;
-        int openingTicks = 0;
-        float refusalLeft = 0.0f;
-        int minPlayers = 0;
+        s32 instance = -1;
+        s32 state = kShut;
+        s32 openingTicks = 0;
+        f32 refusalLeft = 0.0f;
+        s32 minPlayers = 0;
         bool shown = true;
         ItemFigure figure;
         Obstacle box;
@@ -54,11 +53,11 @@ public:
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
               const WorldCollision* collision);
     void clear();
-    std::size_t size() const { return m_gates.size(); }
-    const Gate& gate(std::size_t index) const { return *m_gates[index]; }
-    void setPlayerCount(int players);
+    usize size() const { return m_gates.size(); }
+    const Gate& gate(usize index) const { return *m_gates[index]; }
+    void setPlayerCount(s32 players);
 
-    std::vector<GateEvent> update(int ticks, float seconds, std::span<const ChestVisitor> party);
+    std::vector<GateEvent> update(s32 ticks, f32 seconds, std::span<const ChestVisitor> party);
     /** The boxes of the gates that still bar the way. */
     std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;

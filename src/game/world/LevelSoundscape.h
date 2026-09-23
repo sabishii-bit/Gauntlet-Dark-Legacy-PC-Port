@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -12,6 +11,7 @@
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/WorldData.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 
 #include "game/world/AmbientSounds.h"
@@ -32,8 +32,8 @@ public:
 
     void open(const std::filesystem::path& root, SoundPlayer* output, const LevelAudioInfo* info);
     void bindAmbience(const WorldLayout& layout);
-    void updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear, float volume);
-    void startMusic(const AssetLocator* assets, float volume);
+    void updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear, f32 volume);
+    void startMusic(const AssetLocator* assets, f32 volume);
     /** Stop scene cues early in teardown, leaving ambient loops until close(). */
     void stopCues();
     /** Stops every voice started here before releasing its borrowed clips. */
@@ -42,7 +42,7 @@ public:
     /** Search level, common, then ambient banks; a broken first match stays silent. */
     SoundHandle playNamed(std::string_view name);
     SoundHandle playFrom(SoundSet& bank, std::string_view name);
-    enum class Narrator : std::uint8_t { Primary, Either };
+    enum class Narrator : u8 { Primary, Either };
     SoundHandle narrate(std::string_view name, Narrator which = Narrator::Either,
                         SoundHandle after = kNoSound);
     void playPickup();
@@ -62,10 +62,10 @@ public:
 
 private:
     struct Opening {
-        int target = -1;
+        s32 target = -1;
         SoundHandle handle = kNoSound;
     };
-    void playCommon(std::optional<unsigned int> sound);
+    void playCommon(std::optional<u32> sound);
     SoundHandle track(SoundHandle handle);
 
     SoundPlayer* m_output = nullptr;
@@ -75,8 +75,8 @@ private:
     SoundSet m_narrator;
     SoundSet m_narratorSecond;
     AmbientSounds m_ambience; ///< cleared before its borrowed banks
-    std::array<std::optional<unsigned int>, 2> m_steps{};
-    std::optional<unsigned int> m_pickup;
+    std::array<std::optional<u32>, 2> m_steps{};
+    std::optional<u32> m_pickup;
     std::string m_stream;
     SoundHandle m_music = kNoSound;
     SoundHandle m_voice = kNoSound;

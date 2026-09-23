@@ -2,6 +2,7 @@
 
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl::vk {
 
@@ -34,7 +35,7 @@ const char* resultToString(VkResult result) {
     }
 }
 
-void check(VkResult result, const char* expression, const char* file, int line) {
+void check(VkResult result, const char* expression, const char* file, s32 line) {
     if (result != VK_SUCCESS) {
         log::error("Vulkan call failed: {} returned {} ({}:{})", expression, resultToString(result),
                    file, line);

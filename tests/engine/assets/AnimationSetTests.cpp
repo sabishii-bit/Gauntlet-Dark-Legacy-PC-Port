@@ -1,5 +1,3 @@
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -7,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/AnimationSet.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -72,7 +71,7 @@ TEST_CASE("animation sets expose trees, nodes and world offsets", "[assets][anim
     REQUIRE(track->has(4));
     REQUIRE_FALSE(track->has(1));
     REQUIRE_FALSE(track->pitchYawRoll());
-    REQUIRE(track->frames == std::vector<std::uint16_t>{0, 4, 11});
+    REQUIRE(track->frames == std::vector<u16>{0, 4, 11});
     REQUIRE(track->values[5] == 3.0f);
 }
 
@@ -203,7 +202,7 @@ TEST_CASE("the unpacked lich's effects key their texture nodes to their sequence
     REQUIRE(tree.nodes[0].type == 3);
     REQUIRE(tree.nodes[0].textureAnimation >= 0);
     const TextureAnimationInfo& scroll =
-        set.textureAnimations()[static_cast<std::size_t>(tree.nodes[0].textureAnimation)];
+        set.textureAnimations()[static_cast<usize>(tree.nodes[0].textureAnimation)];
     REQUIRE(scroll.name == "EXECAUSTICSM");
     REQUIRE(scroll.source == TextureAnimationInfo::kScrollU);
     REQUIRE(scroll.offset == 29);
@@ -216,11 +215,11 @@ TEST_CASE("the unpacked lich's effects key their texture nodes to their sequence
     // The stomp's ring: planes cycling the stomp's texture from the thirty-second frame.
     const auto ring = set.find("ATK09FX");
     REQUIRE(ring.has_value());
-    std::size_t keyed = 0;
+    usize keyed = 0;
     for (const TreeNodeInfo& node : set.tree(*ring).nodes) {
         if (node.textureAnimation >= 0) {
             const TextureAnimationInfo& cycle =
-                set.textureAnimations()[static_cast<std::size_t>(node.textureAnimation)];
+                set.textureAnimations()[static_cast<usize>(node.textureAnimation)];
             keyed += cycle.name == "EXEATCK09TEX" && cycle.offset == 32 ? 1U : 0U;
         }
     }

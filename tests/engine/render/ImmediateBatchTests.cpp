@@ -2,28 +2,29 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/render/ImmediateBatch.h"
 
 namespace {
 
 using namespace gdl;
 
-ImmediateVertex vertexAt(float x) {
+ImmediateVertex vertexAt(f32 x) {
     return ImmediateVertex{Vec3{x, 0.0f, 0.0f}, Color::white(), {}};
 }
 
-std::vector<float> xs(const ImmediateBatch& batch) {
-    std::vector<float> result;
+std::vector<f32> xs(const ImmediateBatch& batch) {
+    std::vector<f32> result;
     for (const ImmediateVertex& v : batch.triangles()) {
         result.push_back(v.position.x);
     }
     return result;
 }
 
-void feed(ImmediateBatch& batch, PrimitiveTopology topology, int count) {
+void feed(ImmediateBatch& batch, PrimitiveTopology topology, s32 count) {
     batch.begin(topology);
-    for (int i = 0; i < count; ++i) {
-        batch.vertex(vertexAt(static_cast<float>(i)));
+    for (s32 i = 0; i < count; ++i) {
+        batch.vertex(vertexAt(static_cast<f32>(i)));
     }
     batch.end();
 }
@@ -41,25 +42,25 @@ TEST_CASE("a fresh batch is empty and clear resets it", "[render][batch]") {
 TEST_CASE("triangle lists keep whole triangles only", "[render][batch]") {
     ImmediateBatch batch;
     feed(batch, PrimitiveTopology::TriangleList, 7);
-    REQUIRE(xs(batch) == std::vector<float>{0, 1, 2, 3, 4, 5});
+    REQUIRE(xs(batch) == std::vector<f32>{0, 1, 2, 3, 4, 5});
 }
 
 TEST_CASE("triangle strips alternate winding", "[render][batch]") {
     ImmediateBatch batch;
     feed(batch, PrimitiveTopology::TriangleStrip, 5);
-    REQUIRE(xs(batch) == std::vector<float>{0, 1, 2, 2, 1, 3, 2, 3, 4});
+    REQUIRE(xs(batch) == std::vector<f32>{0, 1, 2, 2, 1, 3, 2, 3, 4});
 }
 
 TEST_CASE("triangle fans pivot on the first vertex", "[render][batch]") {
     ImmediateBatch batch;
     feed(batch, PrimitiveTopology::TriangleFan, 5);
-    REQUIRE(xs(batch) == std::vector<float>{0, 1, 2, 0, 2, 3, 0, 3, 4});
+    REQUIRE(xs(batch) == std::vector<f32>{0, 1, 2, 0, 2, 3, 0, 3, 4});
 }
 
 TEST_CASE("quads become two triangles each", "[render][batch]") {
     ImmediateBatch batch;
     feed(batch, PrimitiveTopology::QuadList, 9);
-    REQUIRE(xs(batch) == std::vector<float>{0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7});
+    REQUIRE(xs(batch) == std::vector<f32>{0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7});
 }
 
 TEST_CASE("degenerate primitives produce nothing", "[render][batch]") {

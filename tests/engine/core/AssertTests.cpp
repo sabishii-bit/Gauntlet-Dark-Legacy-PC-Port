@@ -1,10 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Assert.h"
+#include "engine/core/Types.h"
 
 namespace {
 
-int evaluations = 0;
+gdl::s32 evaluations = 0;
 
 bool countingCheck() {
     ++evaluations;

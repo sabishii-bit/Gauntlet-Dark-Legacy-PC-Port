@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -10,20 +8,21 @@
 #include <vector>
 
 #include "engine/audio/SoundClip.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
 struct SoundSetStep {
-    std::uint32_t sample = 0;
+    u32 sample = 0;
     bool loopStart = false;
     bool loopBack = false;
 };
 
 struct SoundSetEntry {
     std::string name;
-    std::uint32_t id = 0;
-    float volume = 1.0f;   ///< 0..1
-    float duration = 0.0f; ///< seconds; negative when it loops until stopped
+    u32 id = 0;
+    f32 volume = 1.0f;   ///< 0..1
+    f32 duration = 0.0f; ///< seconds; negative when it loops until stopped
     std::vector<SoundSetStep> sequence;
 };
 
@@ -34,15 +33,15 @@ public:
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return !m_entries.empty(); }
-    std::size_t size() const { return m_entries.size(); }
-    const SoundSetEntry& entry(std::uint32_t index) const;
-    std::optional<std::uint32_t> find(std::string_view name) const;
+    usize size() const { return m_entries.size(); }
+    const SoundSetEntry& entry(u32 index) const;
+    std::optional<u32> find(std::string_view name) const;
 
     /** The decoded clip of a sample; throws FileError or FormatError when it cannot be read. */
-    const SoundClip& sample(std::uint32_t index);
+    const SoundClip& sample(u32 index);
 
     /** The sound's clips in playing order, decoding what is missing; throws like sample(). */
-    SoundSequence sequence(std::uint32_t index);
+    SoundSequence sequence(u32 index);
 
 private:
     struct SampleInfo {
@@ -51,7 +50,7 @@ private:
     };
 
     std::vector<SoundSetEntry> m_entries;
-    std::unordered_map<std::string, std::uint32_t> m_byName;
+    std::unordered_map<std::string, u32> m_byName;
     std::vector<SampleInfo> m_samples;
 };
 

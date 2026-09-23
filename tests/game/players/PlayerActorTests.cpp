@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
 #include "game/players/CharacterSave.h"
@@ -16,7 +17,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 CollisionTriangle triangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal) {
     CollisionTriangle out;
@@ -49,7 +50,7 @@ ClassStats warrior() {
     return stats;
 }
 
-MoveInput push(float x, float y, float magnitude = 1.0f) {
+MoveInput push(f32 x, f32 y, f32 magnitude = 1.0f) {
     return MoveInput{glm::normalize(Vec2{x, y}), magnitude};
 }
 
@@ -105,7 +106,7 @@ TEST_CASE("an action that holds the feet still lets the body turn", "[game][play
     REQUIRE(actor.facing().x == Approx(1.0f));
     REQUIRE(actor.facing().z == Approx(0.0f).margin(1e-5f));
     // A speed powerup's bonus adds straight onto the pace.
-    const float plain = actor.speed();
+    const f32 plain = actor.speed();
     actor.setPaceBonus(2.0f);
     REQUIRE(actor.speed() == Approx(plain + 2.0f));
     actor.setPaceBonus(0.0f);
@@ -121,7 +122,7 @@ TEST_CASE("walls stop an actor and missing floors keep it where it stands",
     actor.spawn(0, save, nullptr, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
     REQUIRE(actor.speed() == Approx(PlayerActor::kMinSpeed));
     const WorldCollision collision = room();
-    for (int i = 0; i < 3; ++i) {
+    for (s32 i = 0; i < 3; ++i) {
         actor.update(push(1.0f, 0.0f), 0.0f, 1.0f, &collision);
     }
     REQUIRE(actor.position().x == Approx(5.0f - actor.radius()).margin(0.01f));
@@ -133,7 +134,7 @@ TEST_CASE("walls stop an actor and missing floors keep it where it stands",
     REQUIRE(actor.position().x < -9.5f);
 
     // Without collision the actor is free to go anywhere.
-    const float edge = actor.position().x;
+    const f32 edge = actor.position().x;
     actor.update(push(-1.0f, 0.0f), 0.0f, 1.0f, nullptr);
     REQUIRE(actor.position().x == Approx(edge - 5.0f));
 }

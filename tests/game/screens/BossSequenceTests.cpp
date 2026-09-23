@@ -4,6 +4,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -115,8 +116,8 @@ TEST_CASE("boss victory rewards the entire party once and signals completion onc
     f.sequence.fallen(Vec3{0}, f.bosses, f.players);
     REQUIRE(f.players[0].actor.save().progress().relics.shards == 0);
     REQUIRE(f.sequence.victory().state().stage() == BossVictory::Stage::Appearing);
-    int completions = 0;
-    for (int tick = 0; tick < 2000; ++tick) {
+    s32 completions = 0;
+    for (s32 tick = 0; tick < 2000; ++tick) {
         completions += f.sequence.advanceVictory(2, 1.0f / 30.0f, f.players, f.strings) ? 1 : 0;
     }
     REQUIRE(completions == 1);

@@ -3,17 +3,19 @@
 #include <algorithm>
 #include <span>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 namespace {
 
 /** Pads a read covers: one, or all of them. */
 struct PadRange {
-    int first = 0;
-    int last = -1;
+    s32 first = 0;
+    s32 last = -1;
 };
 
-PadRange padsOf(int pad) {
+PadRange padsOf(s32 pad) {
     if (pad == MenuInputSource::kNoPad) {
         return {};
     }
@@ -44,9 +46,9 @@ bool anyKeyDown(const Input& input, std::span<const Key> keys, const MenuInputSo
         keys, [&](Key key) { return steers(key, source) && input.isKeyDown(key); });
 }
 
-bool anyButtonPressed(const Input& input, std::span<const PadButton> buttons, int pad) {
+bool anyButtonPressed(const Input& input, std::span<const PadButton> buttons, s32 pad) {
     const PadRange range = padsOf(pad);
-    for (int index = range.first; index <= range.last; ++index) {
+    for (s32 index = range.first; index <= range.last; ++index) {
         if (std::ranges::any_of(buttons, [&](PadButton button) {
                 return input.wasPadButtonPressed(index, button);
             })) {
@@ -56,9 +58,9 @@ bool anyButtonPressed(const Input& input, std::span<const PadButton> buttons, in
     return false;
 }
 
-bool anyButtonDown(const Input& input, std::span<const PadButton> buttons, int pad) {
+bool anyButtonDown(const Input& input, std::span<const PadButton> buttons, s32 pad) {
     const PadRange range = padsOf(pad);
-    for (int index = range.first; index <= range.last; ++index) {
+    for (s32 index = range.first; index <= range.last; ++index) {
         if (std::ranges::any_of(
                 buttons, [&](PadButton button) { return input.isPadButtonDown(index, button); })) {
             return true;
@@ -67,8 +69,8 @@ bool anyButtonDown(const Input& input, std::span<const PadButton> buttons, int p
     return false;
 }
 
-constexpr unsigned int kFirstPrintable = 0x20;
-constexpr unsigned int kLastPrintable = 0x7E;
+constexpr u32 kFirstPrintable = 0x20;
+constexpr u32 kLastPrintable = 0x7E;
 
 } // namespace
 
@@ -93,7 +95,7 @@ MenuInput readMenuInput(const Input& input, const MenuBindings& bindings, MenuIn
     out.leftHeld = held(bindings.left, bindings.padLeft);
     out.rightHeld = held(bindings.right, bindings.padRight);
     if (source.keyboard && source.text) {
-        for (const unsigned int codepoint : input.typedText()) {
+        for (const u32 codepoint : input.typedText()) {
             if (codepoint >= kFirstPrintable && codepoint <= kLastPrintable) {
                 out.typed.push_back(static_cast<char>(codepoint));
             }

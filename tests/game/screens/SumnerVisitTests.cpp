@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/BitmapFont.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
@@ -27,7 +28,7 @@ std::filesystem::path sampleHints(std::string_view name) {
 
 BitmapFont font() {
     std::vector<BitmapGlyph> glyphs;
-    for (int c = 33; c < 127; ++c) {
+    for (s32 c = 33; c < 127; ++c) {
         glyphs.push_back({c, 8, 0, 0});
     }
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
@@ -48,11 +49,11 @@ struct Fixture {
         REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     }
 
-    bool approach(float seconds, std::optional<int> player = 0, bool ready = true) {
+    bool approach(f32 seconds, std::optional<s32> player = 0, bool ready = true) {
         return visit.visit(seconds, player, ready, text, &config, &strings);
     }
 
-    HintMenuEvent step(const MenuInput& input = {}, int ticks = 2) {
+    HintMenuEvent step(const MenuInput& input = {}, s32 ticks = 2) {
         const HintMenuEvent event = visit.update(device, input, ticks);
         if (event.kind == HintMenuEvent::Kind::Asked) {
             visit.answer(event.topic, text, &strings, {});
@@ -60,7 +61,7 @@ struct Fixture {
         return event;
     }
 
-    void open(int player = 0) {
+    void open(s32 player = 0) {
         REQUIRE(approach(0.0f, player));
         REQUIRE_FALSE(approach(SumnerVisit::kGreetingSeconds, player));
         REQUIRE(visit.active());
@@ -114,7 +115,7 @@ TEST_CASE("Sumner answers topics and emits navigation and departure cues",
     REQUIRE(f.step(input).kind == HintMenuEvent::Kind::Returned);
     REQUIRE_FALSE(f.visit.menu().reading());
     REQUIRE(f.step(input).kind == HintMenuEvent::Kind::Left);
-    for (int i = 0; i < 100 && f.visit.active(); ++i) {
+    for (s32 i = 0; i < 100 && f.visit.active(); ++i) {
         f.step();
     }
     REQUIRE_FALSE(f.visit.active());

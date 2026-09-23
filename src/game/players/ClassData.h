@@ -1,124 +1,123 @@
 #pragma once
 
 #include <array>
-#include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
 namespace gdl::game {
 
 /** The playable classes: eight to start with, eight unlockable, and the hidden Sumner. */
-inline constexpr int kClassCount = 17;
-inline constexpr int kStartingClassCount = 8;
-inline constexpr int kSumnerClass = 16;
-inline constexpr int kColorCount = 4;
+inline constexpr s32 kClassCount = 17;
+inline constexpr s32 kStartingClassCount = 8;
+inline constexpr s32 kSumnerClass = 16;
+inline constexpr s32 kColorCount = 4;
 
 /** The asset code of a class ("WAR"), as the texture and data names use it. */
-std::string_view classCode(int classIndex);
+std::string_view classCode(s32 classIndex);
 
 /** The asset suffix of a costume colour ("RED"). */
-std::string_view colorCode(int color);
+std::string_view colorCode(s32 color);
 
 /** The index of a class or colour code, in any case; nullopt for an unknown one. */
-std::optional<int> classIndexOf(std::string_view code);
-std::optional<int> colorIndexOf(std::string_view code);
+std::optional<s32> classIndexOf(std::string_view code);
+std::optional<s32> colorIndexOf(std::string_view code);
 
 /** The tint a player's text and marks take from their costume colour. */
-Color playerColor(int color);
+Color playerColor(s32 color);
 
 /** The tint of a player's status box: bright for a joined player, dim for an empty lane. */
-Color boxTint(int color, bool active);
+Color boxTint(s32 color, bool active);
 
 /** Whether a class is available to a save: starting classes always, others once unlocked. */
-bool classUnlocked(int classIndex, std::uint16_t unlockMask);
+bool classUnlocked(s32 classIndex, u16 unlockMask);
 
 /** An effect one of a class's moves shows. */
 struct MoveEffect {
-    int next = -1;    ///< another started with it
+    s32 next = -1;    ///< another started with it
     std::string tree; ///< of the costume colour's effects; none when empty or `NULLFX`
     std::string sound;
     Vec3 offset{0.0f, 0.0f, 0.0f};
-    float scale = 1.0f;
+    f32 scale = 1.0f;
 };
 
 /** One thing a move does at one of its frames. */
 struct MoveStrike {
-    static constexpr int kWindow = 0; ///< harms nothing: it only lasts, as to hide the weapon
-    static constexpr int kFlies = 2;
-    static constexpr int kSpreads = 3; ///< a burst of another kind
-    static constexpr int kBursts = 4;
-    static constexpr int kVolley = 10;         ///< the class's own missiles, let fly as it lasts
-    static constexpr int kHidesWeapon = 0x400; ///< flags: the hand is empty while it lasts
-    static constexpr int kSweepsIn = 0x200;    ///< a volley's angle closes from full to none
-    static constexpr int kSweepsOut = 0x100;   ///< or opens from none to full
+    static constexpr s32 kWindow = 0; ///< harms nothing: it only lasts, as to hide the weapon
+    static constexpr s32 kFlies = 2;
+    static constexpr s32 kSpreads = 3; ///< a burst of another kind
+    static constexpr s32 kBursts = 4;
+    static constexpr s32 kVolley = 10;         ///< the class's own missiles, let fly as it lasts
+    static constexpr s32 kHidesWeapon = 0x400; ///< flags: the hand is empty while it lasts
+    static constexpr s32 kSweepsIn = 0x200;    ///< a volley's angle closes from full to none
+    static constexpr s32 kSweepsOut = 0x100;   ///< or opens from none to full
 
-    int type = kBursts;
-    float hitRadius = 0.0f;
-    float radius = 0.0f;
-    float delay = 0.0f;   ///< seconds from its start to its harm
-    float maxTime = 0.0f; ///< how long what flies lasts
-    float arc = -1.0f;    ///< the least cosine from the facing that is hit; -1 is all round
+    s32 type = kBursts;
+    f32 hitRadius = 0.0f;
+    f32 radius = 0.0f;
+    f32 delay = 0.0f;   ///< seconds from its start to its harm
+    f32 maxTime = 0.0f; ///< how long what flies lasts
+    f32 arc = -1.0f;    ///< the least cosine from the facing that is hit; -1 is all round
     Vec3 offset{0.0f, 0.0f, 0.0f};
-    float amount = 0.0f; ///< harm; negative, that many times the character's own
-    float speed = 0.0f;
-    float angle = 0.0f;          ///< radians off the facing
-    unsigned int damageType = 0; ///< the element and what it does to who it hits; kept for enemies
-    int effect = -1;
-    int hitEffect = -1;  ///< shown where it harms something
-    int loopEffect = -1; ///< what its effect gives way to, repeating, for as long as it flies
-    int next = -1;
-    int startFrame = 0;
-    int endFrame = -1; ///< none: it lasts to the move's end
-    int flags = 0;
-    int help = -1; ///< the help message that names the move
+    f32 amount = 0.0f; ///< harm; negative, that many times the character's own
+    f32 speed = 0.0f;
+    f32 angle = 0.0f;   ///< radians off the facing
+    u32 damageType = 0; ///< the element and what it does to who it hits; kept for enemies
+    s32 effect = -1;
+    s32 hitEffect = -1;  ///< shown where it harms something
+    s32 loopEffect = -1; ///< what its effect gives way to, repeating, for as long as it flies
+    s32 next = -1;
+    s32 startFrame = 0;
+    s32 endFrame = -1; ///< none: it lasts to the move's end
+    s32 flags = 0;
+    s32 help = -1; ///< the help message that names the move
 
     /** What a strike takes off the level's ambient light while it lasts: the greater the
      * move, the deeper the dark. */
-    float dimming() const;
+    f32 dimming() const;
     bool harms() const { return type == kFlies || type == kSpreads || type == kBursts; }
-    bool lasting(float frame) const {
-        return frame >= static_cast<float>(startFrame) &&
-               (endFrame < 0 || frame < static_cast<float>(endFrame));
+    bool lasting(f32 frame) const {
+        return frame >= static_cast<f32>(startFrame) &&
+               (endFrame < 0 || frame < static_cast<f32>(endFrame));
     }
 };
 
 /** The moves a class's data names, each by its first strike (-1 when the class lacks it). */
 struct ClassMoves {
-    int turboAThrow = -1; ///< the strong attack with nothing in reach
-    int turboB = -1;
-    int turboC1 = -1;
-    int turboC2 = -1;
-    int combo1 = -1;
-    int comboHit = -1;
+    s32 turboAThrow = -1; ///< the strong attack with nothing in reach
+    s32 turboB = -1;
+    s32 turboC1 = -1;
+    s32 turboC2 = -1;
+    s32 combo1 = -1;
+    s32 comboHit = -1;
 };
 
 /** A class's stat ranges and body size, from its unpacked data file. */
 struct ClassStats {
-    float fightMin = 0.0f;
-    float fightMax = 0.0f;
-    float speedMin = 0.0f;
-    float speedMax = 0.0f;
-    float armorMin = 0.0f;
-    float armorMax = 0.0f;
-    float magicMin = 0.0f;
-    float magicMax = 0.0f;
-    float height = 0.0f;
-    float width = 0.0f;
-    float collisionY = 0.0f; ///< the body's centre above the feet, which the camera follows
+    f32 fightMin = 0.0f;
+    f32 fightMax = 0.0f;
+    f32 speedMin = 0.0f;
+    f32 speedMax = 0.0f;
+    f32 armorMin = 0.0f;
+    f32 armorMax = 0.0f;
+    f32 magicMin = 0.0f;
+    f32 magicMax = 0.0f;
+    f32 height = 0.0f;
+    f32 width = 0.0f;
+    f32 collisionY = 0.0f; ///< the body's centre above the feet, which the camera follows
     Vec3 weaponOffset{0.0f, 0.0f, 0.0f}; ///< where a thrown weapon leaves, from the centre
-    float powerupTime = 1.0f;            ///< how much longer (or shorter) powerups last this class
+    f32 powerupTime = 1.0f;              ///< how much longer (or shorter) powerups last this class
     ClassMoves moves;
     std::vector<MoveEffect> moveEffects;
     std::vector<MoveStrike> moveStrikes;
 
     /** The strikes a move runs: its first and every one chained to it. */
-    std::vector<int> strikesOf(int first) const;
+    std::vector<s32> strikesOf(s32 first) const;
 };
 
 /** Every class's stats, read from `<directory>/<CODE>.json`. */
@@ -128,14 +127,14 @@ public:
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return m_loadedCount > 0; }
-    std::size_t loadedCount() const { return m_loadedCount; }
+    usize loadedCount() const { return m_loadedCount; }
 
     /** The stats of a class, or nullptr when its file was missing. */
-    const ClassStats* stats(int classIndex) const;
+    const ClassStats* stats(s32 classIndex) const;
 
 private:
     std::array<std::optional<ClassStats>, kClassCount> m_classes{};
-    std::size_t m_loadedCount = 0;
+    usize m_loadedCount = 0;
 };
 
 } // namespace gdl::game

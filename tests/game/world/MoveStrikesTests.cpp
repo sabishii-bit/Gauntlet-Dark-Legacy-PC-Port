@@ -3,6 +3,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/world/MoveStrikes.h"
 
 namespace {
@@ -21,7 +23,7 @@ TEST_CASE("a burst harms what is about it once, its delay after it starts",
     burst.offset = Vec3{1.0f, 0.0f, 2.0f};
     MoveStrikes strikes;
     const Vec3 facing{0.0f, 0.0f, -1.0f};
-    const unsigned int id = strikes.start(burst, 2, Vec3{10.0f, 0.0f, 10.0f}, facing, 8.0f);
+    const u32 id = strikes.start(burst, 2, Vec3{10.0f, 0.0f, 10.0f}, facing, 8.0f);
     REQUIRE(id != 0);
     REQUIRE(strikes.count() == 1);
     // Its offset is in the body's space: two ahead, one to its side.
@@ -69,8 +71,7 @@ TEST_CASE("what a move sends flying goes on ahead, harming as it goes, until its
     wave.amount = 70.0f;
     wave.offset = Vec3{0.0f, 1.0f, 5.0f};
     MoveStrikes strikes;
-    const unsigned int id =
-        strikes.start(wave, 0, Vec3{0.0f, 0.0f, 0.0f}, Vec3{1.0f, 0.0f, 0.0f}, 8.0f);
+    const u32 id = strikes.start(wave, 0, Vec3{0.0f, 0.0f, 0.0f}, Vec3{1.0f, 0.0f, 0.0f}, 8.0f);
     REQUIRE(strikes.find(id) != nullptr);
     REQUIRE(strikes.find(id)->flies);
     REQUIRE(strikes.find(id)->position == Vec3{5.0f, 1.0f, 0.0f});

@@ -1,13 +1,12 @@
 #include "engine/assets/WorldData.h"
 
-#include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <span>
 
 #include <nlohmann/json.hpp>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -18,7 +17,7 @@ Vec3 readVec3(const nlohmann::json& array, const Vec3& fallback) {
     if (!array.is_array() || array.size() < 3) {
         return fallback;
     }
-    return Vec3{array.at(0).get<float>(), array.at(1).get<float>(), array.at(2).get<float>()};
+    return Vec3{array.at(0).get<f32>(), array.at(1).get<f32>(), array.at(2).get<f32>()};
 }
 
 LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> roster) {
@@ -33,25 +32,25 @@ LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> ros
     level.bossType = json.value("bossType", -1);
     level.rune = json.value("rune", 0);
     level.legend = json.value("legend", 0);
-    for (const auto row : json.value("enemyTypes", std::vector<std::int32_t>{})) {
-        if (row >= 0 && static_cast<std::size_t>(row) < roster.size()) {
-            level.enemies.push_back(roster[static_cast<std::size_t>(row)]);
+    for (const auto row : json.value("enemyTypes", std::vector<s32>{})) {
+        if (row >= 0 && static_cast<usize>(row) < roster.size()) {
+            level.enemies.push_back(roster[static_cast<usize>(row)]);
         }
     }
     level.musicVolume = json.value("musicVolume", 1.0f);
     level.soundVolume = json.value("soundVolume", 1.0f);
     if (const auto tuning = json.find("tuning"); tuning != json.end() && tuning->is_object()) {
         // A zero stands for the difficulty, itself one when it is zero.
-        const float difficulty = tuning->value("difficulty", 0.0f);
+        const f32 difficulty = tuning->value("difficulty", 0.0f);
         level.tuning.difficulty = difficulty != 0.0f ? difficulty : 1.0f;
         const auto scaled = [&](const char* key) {
-            const float value = tuning->value(key, 0.0f);
+            const f32 value = tuning->value(key, 0.0f);
             return value != 0.0f ? value : level.tuning.difficulty;
         };
-        const float damage = tuning->value("damage", 0.0f);
+        const f32 damage = tuning->value("damage", 0.0f);
         level.tuning.damage = damage != 0.0f ? damage : 1.0f;
         level.tuning.playerLevel = tuning->value("playerLevel", 0.0f);
-        const float experience = tuning->value("experience", 0.0f);
+        const f32 experience = tuning->value("experience", 0.0f);
         level.tuning.experience = experience != 0.0f ? experience : 1.0f;
         level.tuning.trapRate = scaled("trapRate");
         level.tuning.trapDamage = scaled("trapDamage");
@@ -62,7 +61,7 @@ LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> ros
         level.tuning.generatorHealth = scaled("generatorHealth");
         level.tuning.generatorRate = scaled("generatorRate");
         level.tuning.generatorMost = scaled("generatorMost");
-        const float missileSpeed = tuning->value("enemyMissileSpeed", 0.0f);
+        const f32 missileSpeed = tuning->value("enemyMissileSpeed", 0.0f);
         level.tuning.enemyMissileSpeed = missileSpeed != 0.0f ? missileSpeed : 1.0f;
     }
     level.ambient = json.value("ambient", 1.0f);
@@ -128,7 +127,7 @@ bool WorldData::load(const std::filesystem::path& file) {
     m_audio.clear();
     m_sounds.clear();
     try {
-        const std::vector<std::uint8_t> bytes = readFile(file);
+        const std::vector<u8> bytes = readFile(file);
         const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
         m_realm = root.value("realm", 0U);
         m_prefix = root.value("prefix", std::string{});
@@ -142,9 +141,9 @@ bool WorldData::load(const std::filesystem::path& file) {
         }
         for (const nlohmann::json& level : root.at("levels")) {
             m_levels.push_back(parseLevel(level, roster));
-            const std::int32_t bossCamera = level.value("bossCameraIndex", -1);
-            if (bossCamera >= 0 && static_cast<std::size_t>(bossCamera) < bossCameras.size()) {
-                m_levels.back().bossCamera = bossCameras[static_cast<std::size_t>(bossCamera)];
+            const s32 bossCamera = level.value("bossCameraIndex", -1);
+            if (bossCamera >= 0 && static_cast<usize>(bossCamera) < bossCameras.size()) {
+                m_levels.back().bossCamera = bossCameras[static_cast<usize>(bossCamera)];
             }
         }
         for (const nlohmann::json& camera : root.value("cameras", nlohmann::json::array())) {
@@ -173,35 +172,35 @@ const LevelInfo* WorldData::level(std::string_view name) const {
     return nullptr;
 }
 
-const LevelCameraInfo* WorldData::camera(std::int32_t index) const {
-    return index >= 0 && static_cast<std::size_t>(index) < m_cameras.size()
-               ? &m_cameras[static_cast<std::size_t>(index)]
+const LevelCameraInfo* WorldData::camera(s32 index) const {
+    return index >= 0 && static_cast<usize>(index) < m_cameras.size()
+               ? &m_cameras[static_cast<usize>(index)]
                : nullptr;
 }
 
-const LevelAudioInfo* WorldData::audio(std::int32_t index) const {
-    return index >= 0 && static_cast<std::size_t>(index) < m_audio.size()
-               ? &m_audio[static_cast<std::size_t>(index)]
+const LevelAudioInfo* WorldData::audio(s32 index) const {
+    return index >= 0 && static_cast<usize>(index) < m_audio.size()
+               ? &m_audio[static_cast<usize>(index)]
                : nullptr;
 }
 
-std::string_view WorldData::soundName(std::int32_t index) const {
-    if (index < 0 || static_cast<std::size_t>(index) >= m_sounds.size()) {
+std::string_view WorldData::soundName(s32 index) const {
+    if (index < 0 || static_cast<usize>(index) >= m_sounds.size()) {
         return {};
     }
-    return m_sounds[static_cast<std::size_t>(index)];
+    return m_sounds[static_cast<usize>(index)];
 }
 
-float LevelTuning::experienceScale(std::int32_t level) const {
-    const auto reached = static_cast<float>(level);
+f32 LevelTuning::experienceScale(s32 level) const {
+    const auto reached = static_cast<f32>(level);
     if (playerLevel > 0.0f && reached > playerLevel) {
         return experience / (0.1f * (reached - playerLevel) + 1.0f);
     }
     return experience;
 }
 
-float LevelTuning::trapTimeScale(float gain) const {
-    const float rate = trapRate * gain;
+f32 LevelTuning::trapTimeScale(f32 gain) const {
+    const f32 rate = trapRate * gain;
     return rate > 0.0f ? 1.0f / rate : 1.0f;
 }
 

@@ -1,10 +1,11 @@
 #include <cmath>
-#include <cstddef>
 #include <numbers>
 #include <random>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+
+#include "engine/core/Types.h"
 
 #include "game/enemies/BossCoins.h"
 
@@ -14,27 +15,27 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 TEST_CASE("a boss throws its realm's coins for each player, fanned over the death's arc",
           "[game][enemies]") {
     // The town's lich throws four bronze and one silver a player; the castle's chimera two
     // bronze, one silver and one gold; the tower's and the battlefield's bosses nothing.
-    REQUIRE(BossCoins::countsOf(7) == std::array<int, 3>{4, 1, 0});
-    REQUIRE(BossCoins::countsOf(1) == std::array<int, 3>{2, 1, 1});
-    REQUIRE(BossCoins::countsOf(13) == std::array<int, 3>{0, 0, 0});
-    REQUIRE(BossCoins::countsOf(-1) == std::array<int, 3>{0, 0, 0});
-    REQUIRE(BossCoins::countsOf(99) == std::array<int, 3>{0, 0, 0});
+    REQUIRE(BossCoins::countsOf(7) == std::array<s32, 3>{4, 1, 0});
+    REQUIRE(BossCoins::countsOf(1) == std::array<s32, 3>{2, 1, 1});
+    REQUIRE(BossCoins::countsOf(13) == std::array<s32, 3>{0, 0, 0});
+    REQUIRE(BossCoins::countsOf(-1) == std::array<s32, 3>{0, 0, 0});
+    REQUIRE(BossCoins::countsOf(99) == std::array<s32, 3>{0, 0, 0});
     std::mt19937 random{7};
     const Vec3 throwUp{0.0f, 20.0f, 30.0f};
     // Two players in the town: eight bronze all round and two silver.
     const std::vector<SpewedCoin> coins = BossCoins::spray(7, 2, throwUp, kPi, random);
     REQUIRE(coins.size() == 10);
-    for (std::size_t i = 0; i < 8; ++i) {
+    for (usize i = 0; i < 8; ++i) {
         REQUIRE(coins[i].name == "COIN_BRONZE");
         REQUIRE(coins[i].value == 500);
         // Slower than the throw and never faster than the bronze's share of it.
-        const float pace = glm::length(coins[i].velocity) / glm::length(throwUp);
+        const f32 pace = glm::length(coins[i].velocity) / glm::length(throwUp);
         REQUIRE(pace >= 0.85f);
         REQUIRE(pace <= 0.95f);
         REQUIRE(coins[i].velocity.y == Approx(20.0f * pace));

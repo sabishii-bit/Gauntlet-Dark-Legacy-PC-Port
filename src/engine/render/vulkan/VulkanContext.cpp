@@ -2,13 +2,13 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <span>
 #include <string_view>
 #include <vector>
 
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 #include "engine/platform/Window.h"
 
 namespace gdl {
@@ -98,18 +98,18 @@ void VulkanContext::createInstance(Window& window, bool enableValidation) {
     GDL_VERIFY(volkInitialize() == VK_SUCCESS,
                "Vulkan loader not found. Install a Vulkan-capable graphics driver.");
 
-    const std::uint32_t loaderVersion = volkGetInstanceVersion();
+    const u32 loaderVersion = volkGetInstanceVersion();
     log::info("Vulkan loader: {}.{}.{}", VK_API_VERSION_MAJOR(loaderVersion),
               VK_API_VERSION_MINOR(loaderVersion), VK_API_VERSION_PATCH(loaderVersion));
     GDL_VERIFY(loaderVersion >= VK_API_VERSION_1_3,
                "Vulkan 1.3 or newer is required (update your graphics driver)");
 
-    std::uint32_t layerCount = 0;
+    u32 layerCount = 0;
     GDL_VK_CHECK(vkEnumerateInstanceLayerProperties(&layerCount, nullptr));
     std::vector<VkLayerProperties> layers(layerCount);
     GDL_VK_CHECK(vkEnumerateInstanceLayerProperties(&layerCount, layers.data()));
 
-    std::uint32_t extensionCount = 0;
+    u32 extensionCount = 0;
     GDL_VK_CHECK(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr));
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);
     GDL_VK_CHECK(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
@@ -147,9 +147,9 @@ void VulkanContext::createInstance(Window& window, bool enableValidation) {
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &appInfo;
-    createInfo.enabledLayerCount = static_cast<std::uint32_t>(enabledLayers.size());
+    createInfo.enabledLayerCount = static_cast<u32>(enabledLayers.size());
     createInfo.ppEnabledLayerNames = enabledLayers.data();
-    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(extensions.size());
+    createInfo.enabledExtensionCount = static_cast<u32>(extensions.size());
     createInfo.ppEnabledExtensionNames = extensions.data();
 
     GDL_VK_CHECK(vkCreateInstance(&createInfo, nullptr, &m_instance));
@@ -170,13 +170,13 @@ void VulkanContext::createDebugMessenger() {
 }
 
 void VulkanContext::pickPhysicalDevice() {
-    std::uint32_t deviceCount = 0;
+    u32 deviceCount = 0;
     GDL_VK_CHECK(vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr));
     GDL_VERIFY(deviceCount > 0, "No Vulkan-capable GPU found");
     std::vector<VkPhysicalDevice> devices(deviceCount);
     GDL_VK_CHECK(vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data()));
 
-    int bestScore = -1;
+    s32 bestScore = -1;
     for (VkPhysicalDevice candidate : devices) {
         VkPhysicalDeviceProperties properties{};
         vkGetPhysicalDeviceProperties(candidate, &properties);
@@ -188,13 +188,13 @@ void VulkanContext::pickPhysicalDevice() {
             continue;
         }
 
-        std::uint32_t familyCount = 0;
+        u32 familyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(candidate, &familyCount, nullptr);
         std::vector<VkQueueFamilyProperties> families(familyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(candidate, &familyCount, families.data());
 
-        std::uint32_t graphicsFamily = VK_QUEUE_FAMILY_IGNORED;
-        for (std::uint32_t i = 0; i < familyCount; ++i) {
+        u32 graphicsFamily = VK_QUEUE_FAMILY_IGNORED;
+        for (u32 i = 0; i < familyCount; ++i) {
             if ((families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0) {
                 continue;
             }
@@ -210,7 +210,7 @@ void VulkanContext::pickPhysicalDevice() {
             continue;
         }
 
-        std::uint32_t extensionCount = 0;
+        u32 extensionCount = 0;
         GDL_VK_CHECK(
             vkEnumerateDeviceExtensionProperties(candidate, nullptr, &extensionCount, nullptr));
         std::vector<VkExtensionProperties> extensions(extensionCount);
@@ -234,7 +234,7 @@ void VulkanContext::pickPhysicalDevice() {
             continue;
         }
 
-        int score = 10;
+        s32 score = 10;
         if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             score = 1000;
         } else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
@@ -261,7 +261,7 @@ void VulkanContext::pickPhysicalDevice() {
 }
 
 void VulkanContext::createDevice() {
-    const float priority = 1.0f;
+    const f32 priority = 1.0f;
     VkDeviceQueueCreateInfo queueInfo{};
     queueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
     queueInfo.queueFamilyIndex = m_graphicsQueueFamily;
@@ -282,7 +282,7 @@ void VulkanContext::createDevice() {
     createInfo.pNext = &features2;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueInfo;
-    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(kRequiredDeviceExtensions.size());
+    createInfo.enabledExtensionCount = static_cast<u32>(kRequiredDeviceExtensions.size());
     createInfo.ppEnabledExtensionNames = kRequiredDeviceExtensions.data();
 
     GDL_VK_CHECK(vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device));

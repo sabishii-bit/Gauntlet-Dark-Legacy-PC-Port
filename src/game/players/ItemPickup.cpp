@@ -2,26 +2,28 @@
 
 #include <algorithm>
 
+#include "engine/core/Types.h"
+
 #include "game/players/Progression.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr int kMostGold = 99999;
-constexpr int kBaseHealth = 500;
-constexpr int kHealthPerLevel = 100;
-constexpr int kHealthLimit = 9999;
-constexpr int kFeast = 100;   ///< food from here up is meat, down from its negative bad meat
-constexpr int kRealGold = 10; ///< more than this is treasure, else junk
-constexpr unsigned int kShieldFlag = 0x200000; ///< the armour powerup that is a shield
+constexpr s32 kMostGold = 99999;
+constexpr s32 kBaseHealth = 500;
+constexpr s32 kHealthPerLevel = 100;
+constexpr s32 kHealthLimit = 9999;
+constexpr s32 kFeast = 100;   ///< food from here up is meat, down from its negative bad meat
+constexpr s32 kRealGold = 10; ///< more than this is treasure, else junk
+constexpr u32 kShieldFlag = 0x200000; ///< the armour powerup that is a shield
 constexpr std::string_view kKeySound = "S_PICKUPKEY";
 constexpr std::string_view kMagicSound = "S_PICKUPMAGIC";
 constexpr std::string_view kSpecialSound = "S_PICKUPSPECIAL";
 constexpr std::string_view kShieldSound = "S_PICKUPSHIELD";
 constexpr std::string_view kRuneSound = "S_PICKUPRUNE";
 
-ItemTaking taken(int count, std::string_view card, std::string_view sound) {
+ItemTaking taken(s32 count, std::string_view card, std::string_view sound) {
     ItemTaking taking;
     taking.outcome = ItemTaking::Outcome::Taken;
     taking.count = count;
@@ -30,14 +32,14 @@ ItemTaking taken(int count, std::string_view card, std::string_view sound) {
     return taking;
 }
 
-ItemTaking refused(ItemTaking::Outcome outcome, int left) {
+ItemTaking refused(ItemTaking::Outcome outcome, s32 left) {
     ItemTaking taking;
     taking.outcome = outcome;
     taking.left = left;
     return taking;
 }
 
-std::string_view foodCard(int amount) {
+std::string_view foodCard(s32 amount) {
     if (amount >= kFeast) {
         return "MEAT";
     }
@@ -49,14 +51,14 @@ std::string_view foodCard(int amount) {
 
 } // namespace
 
-int mostHealth(int level) {
+s32 mostHealth(s32 level) {
     return std::min(kHealthPerLevel * (level - 1) + kBaseHealth, kHealthLimit);
 }
 
-ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, float powerupTime) {
+ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime) {
     Inventory& inventory = save.progress().inventory;
     Relics& relics = save.progress().relics;
-    if (offer.kind < 0 || offer.kind > static_cast<int>(ItemKind::GargoyleKey)) {
+    if (offer.kind < 0 || offer.kind > static_cast<s32>(ItemKind::GargoyleKey)) {
         return {};
     }
     switch (static_cast<ItemKind>(offer.kind)) {
@@ -64,7 +66,7 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, float powerupTi
         save.gold = std::min(save.gold + offer.amount, kMostGold);
         return taken(offer.amount, offer.amount > kRealGold ? "GOLD" : "JUNK", kMagicSound);
     case ItemKind::Keys: {
-        const int got = inventory.addKeys(offer.amount);
+        const s32 got = inventory.addKeys(offer.amount);
         if (got == 0) {
             return refused(ItemTaking::Outcome::KeysFull, offer.amount);
         }
@@ -77,15 +79,15 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, float powerupTi
     }
     case ItemKind::Potion: {
         // Every potion of the item goes, or as many as fit: what does not fit is lost.
-        const int got = inventory.addPotions(static_cast<int>(offer.flags), offer.amount);
+        const s32 got = inventory.addPotions(static_cast<s32>(offer.flags), offer.amount);
         if (got == 0) {
             return refused(ItemTaking::Outcome::PotionsFull, offer.amount);
         }
         return taken(0, "MAGIC", kMagicSound);
     }
     case ItemKind::Food: {
-        const int most = mostHealth(experienceLevel(save.experience()));
-        const int health = save.health();
+        const s32 most = mostHealth(experienceLevel(save.experience()));
+        const s32 health = save.health();
         if (offer.amount >= 0 && health >= most) {
             return refused(ItemTaking::Outcome::HealthFull, offer.amount);
         }
@@ -100,10 +102,10 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, float powerupTi
     case ItemKind::SpeedPowerup:
     case ItemKind::MagicPowerup:
     case ItemKind::SpecialPowerup:
-        inventory.addPowerup(offer.kind, offer.flags, static_cast<float>(offer.amount),
+        inventory.addPowerup(offer.kind, offer.flags, static_cast<f32>(offer.amount),
                              offer.strength * powerupTime);
         return taken(0, "SPECIALS",
-                     offer.kind == static_cast<int>(ItemKind::ArmorPowerup) &&
+                     offer.kind == static_cast<s32>(ItemKind::ArmorPowerup) &&
                              (offer.flags & kShieldFlag) != 0
                          ? kShieldSound
                          : kSpecialSound);
@@ -118,7 +120,7 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, float powerupTi
         }
         return taken(offer.amount, "LEGEND", kMagicSound);
     case ItemKind::GargoyleKey: {
-        const int pieces = relics.addGargoylePiece(offer.amount);
+        const s32 pieces = relics.addGargoylePiece(offer.amount);
         if (pieces < 0) {
             return {};
         }

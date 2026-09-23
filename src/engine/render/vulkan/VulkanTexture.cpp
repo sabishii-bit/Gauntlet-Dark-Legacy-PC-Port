@@ -1,16 +1,16 @@
 #include "engine/render/vulkan/VulkanTexture.h"
 
-#include <cstdint>
 #include <cstring>
 
 #include "engine/core/Assert.h"
+#include "engine/core/Types.h"
 #include "engine/render/vulkan/VulkanContext.h"
 
 namespace gdl {
 
 VulkanTexture::VulkanTexture(VulkanContext& context, VkDescriptorPool descriptorPool,
                              VkDescriptorSetLayout setLayout, VkSampler sampler,
-                             const TextureDesc& desc, std::span<const std::uint8_t> rgba8Pixels)
+                             const TextureDesc& desc, std::span<const u8> rgba8Pixels)
     : m_context(context), m_descriptorPool(descriptorPool), m_width(desc.width),
       m_height(desc.height) {
     GDL_VERIFY(desc.width > 0 && desc.height > 0, "Texture dimensions must be non-zero");

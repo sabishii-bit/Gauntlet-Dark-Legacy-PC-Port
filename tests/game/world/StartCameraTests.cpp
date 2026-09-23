@@ -3,6 +3,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
+
 #include "game/world/StartCamera.h"
 
 namespace {
@@ -11,7 +13,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr float kPi = std::numbers::pi_v<float>;
+constexpr f32 kPi = std::numbers::pi_v<f32>;
 
 WorldCamera markerAbove() {
     WorldCamera marker;
@@ -22,7 +24,7 @@ WorldCamera markerAbove() {
     return marker;
 }
 
-void requireNear(const Vec3& actual, const Vec3& expected, float margin = 1e-3f) {
+void requireNear(const Vec3& actual, const Vec3& expected, f32 margin = 1e-3f) {
     REQUIRE(actual.x == Approx(expected.x).margin(margin));
     REQUIRE(actual.y == Approx(expected.y).margin(margin));
     REQUIRE(actual.z == Approx(expected.z).margin(margin));
@@ -82,13 +84,13 @@ TEST_CASE("the start camera holds at the marker, then rides at its pace to the f
 
     // Within a fraction of a unit of both it hands over, the twelve units of the gap covered
     // at its pace.
-    int ticks = 1;
+    s32 ticks = 1;
     while (camera.active() && ticks < 400) {
         camera.update(1, false, followPosition, followAttention);
         ++ticks;
     }
     REQUIRE_FALSE(camera.active());
-    REQUIRE(ticks <= static_cast<int>(12.0f / StartCamera::kUnitsPerTick) + 2);
+    REQUIRE(ticks <= static_cast<s32>(12.0f / StartCamera::kUnitsPerTick) + 2);
     REQUIRE(glm::distance(camera.camera().position, followPosition) < StartCamera::kArrival);
     REQUIRE(glm::distance(camera.attention(), followAttention) < StartCamera::kArrival);
     REQUIRE_FALSE(camera.update(1, false, followPosition, followAttention));
@@ -112,8 +114,8 @@ TEST_CASE(
     // hundred units, the look-at point's over twenty.
     const Vec3 before = camera.camera().position;
     const Vec3 lookedAt = camera.attention();
-    const float positionGap = glm::distance(before, followPosition);
-    const float attentionGap = glm::distance(lookedAt, followAttention);
+    const f32 positionGap = glm::distance(before, followPosition);
+    const f32 attentionGap = glm::distance(lookedAt, followAttention);
     REQUIRE(positionGap > StartCamera::kPositionReach);
     REQUIRE(attentionGap > StartCamera::kAttentionReach);
     REQUIRE(camera.update(1, false, followPosition, followAttention));

@@ -4,21 +4,22 @@
 #include <format>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 namespace gdl::game {
 namespace {
-constexpr float kPainEvery = 30.0f;    ///< harm from blows between cries
-constexpr int kHeavyBlow = 60;         ///< a blow taking more than this is cried over at once
-constexpr unsigned int kPainCries = 4; ///< S_<CLS>PAIN1 to 4
+constexpr f32 kPainEvery = 30.0f; ///< harm from blows between cries
+constexpr s32 kHeavyBlow = 60;    ///< a blow taking more than this is cried over at once
+constexpr u32 kPainCries = 4;     ///< S_<CLS>PAIN1 to 4
 constexpr std::string_view kDeathSound = "S_PLAYERDIES";
 constexpr std::string_view kHitSound = "S_PLYRDMG"; ///< a blow landing, now and then
-constexpr int kHitSoundGapTicks = 30;
-constexpr int kHealthLowMark = 150; ///< down to here: "needs food, badly"
-constexpr int kHealthLastMark = 50; ///< and here: the life force, or about to die
+constexpr s32 kHitSoundGapTicks = 30;
+constexpr s32 kHealthLowMark = 150; ///< down to here: "needs food, badly"
+constexpr s32 kHealthLastMark = 50; ///< and here: the life force, or about to die
 constexpr std::string_view kBadlyLine = "S_BADLY";
 constexpr std::string_view kLifeForceLine = "S_LIFEFORCE";
 constexpr std::string_view kAboutToDieLine = "S_ABOUT";
 } // namespace
-float PlayerHealth::guarded(const PlayerRuntime& runtime, float damage, bool directed) {
+f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directed) {
     const PlayerFigure* figure = runtime.figure.get();
     if (figure == nullptr || damage <= 1.0f) {
         return damage;
@@ -29,12 +30,12 @@ float PlayerHealth::guarded(const PlayerRuntime& runtime, float damage, bool dir
     return figure->animator().shoving() ? damage * 0.5f : damage;
 }
 
-void PlayerHealth::hurt(PlayerRuntime& runtime, float damage, HurtKind kind, bool directed,
-                        bool inTower, float damageScale, const Events& events) {
+void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed,
+                        bool inTower, f32 damageScale, const Events& events) {
     if (runtime.life != PlayerLife::Standing || inTower || damage <= 0.0f) {
         return;
     }
-    const float unguarded = damage;
+    const f32 unguarded = damage;
     damage = guarded(runtime, damage, directed);
     if (runtime.figure != nullptr && runtime.figure->animator().defending()) {
         events.block(unguarded - damage, damage);
@@ -46,7 +47,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, float damage, HurtKind kind, boo
         damage *= damageScale;
     }
     CharacterSave& save = runtime.actor.save();
-    const int left = save.health() - static_cast<int>(std::lround(damage));
+    const s32 left = save.health() - static_cast<s32>(std::lround(damage));
     if (left < 1) {
         // Health of nought would read as a class never played: the fallen keep a point that
         // the status box does not show.
@@ -58,7 +59,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, float damage, HurtKind kind, boo
         log::info("Player {} has fallen", runtime.actor.player() + 1);
         return;
     }
-    const int before = save.health();
+    const s32 before = save.health();
     save.progress().health = left;
     // Crossing into low health is remarked on by name rather than cried over.
     if (before > kHealthLowMark && left <= kHealthLowMark) {
@@ -95,7 +96,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, float damage, HurtKind kind, boo
 }
 
 void PlayerHealth::cryPain(const Events& events) {
-    const int which = 1 + static_cast<int>(m_painRandom() % kPainCries);
+    const s32 which = 1 + static_cast<s32>(m_painRandom() % kPainCries);
     events.cry(std::format("PAIN{}", which));
 }
 } // namespace gdl::game

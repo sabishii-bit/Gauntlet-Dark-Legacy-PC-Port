@@ -1,11 +1,11 @@
 #include "engine/audio/AudioDevice.h"
 
-#include <cstddef>
 #include <span>
 
 #include <miniaudio.h>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl {
 
@@ -17,8 +17,8 @@ namespace {
 
 void dataCallback(ma_device* device, void* output, const void* /*input*/, ma_uint32 frameCount) {
     auto* mixer = static_cast<AudioMixer*>(device->pUserData);
-    mixer->mix(std::span(static_cast<float*>(output),
-                         std::size_t{frameCount} * AudioMixer::kOutputChannels));
+    mixer->mix(
+        std::span(static_cast<f32*>(output), usize{frameCount} * AudioMixer::kOutputChannels));
 }
 
 } // namespace

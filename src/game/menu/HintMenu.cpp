@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "engine/core/Types.h"
+
 namespace gdl::game {
 
 namespace {
@@ -54,7 +56,7 @@ bool HintMenu::open(const TextPainter& painter, const MenuScreen& screen, HintMe
 }
 
 void HintMenu::read(const TextPainter& painter, std::string title,
-                    std::vector<std::string> passages, float scale, bool centred, int gap) {
+                    std::vector<std::string> passages, f32 scale, bool centred, s32 gap) {
     MenuDefinition menu = scrollDefinition(m_labels);
     menu.title = std::move(title);
     menu.titleScale = kPageTitleScale;
@@ -82,7 +84,7 @@ void HintMenu::leave(RenderDevice& device) {
     m_topics.close();
 }
 
-HintMenuEvent HintMenu::update(RenderDevice& device, const MenuInput& input, int ticks) {
+HintMenuEvent HintMenu::update(RenderDevice& device, const MenuInput& input, s32 ticks) {
     // Nothing answers while the scroll burns, as the original blanks the controls.
     const bool burning = m_fire.active();
     m_fire.step(ticks);
@@ -91,7 +93,7 @@ HintMenuEvent HintMenu::update(RenderDevice& device, const MenuInput& input, int
         const MenuEvent event = m_page.update(heard, ticks);
         if (event.action == MenuAction::Back && m_painter != nullptr) {
             // Back to the list where it was left, the scroll staying as it is.
-            const int selection = m_topics.selection();
+            const s32 selection = m_topics.selection();
             m_page = OptionMenu{};
             m_topics.open(topicsDefinition(false), *m_painter, m_screen, selection);
             return HintMenuEvent{HintMenuEvent::Kind::Returned, 0};

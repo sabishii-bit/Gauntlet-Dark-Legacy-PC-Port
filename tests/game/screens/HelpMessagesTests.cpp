@@ -5,6 +5,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/MessageTable.h"
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
@@ -65,8 +66,8 @@ TEST_CASE("a help message goes up once for the party, a second a line and a half
     MessageTable strings;
     loadStrings("help-once", strings);
     HelpMessages help;
-    std::vector<int> first;
-    std::vector<int> second;
+    std::vector<s32> first;
+    std::vector<s32> second;
     const std::array<HelpReader, 2> party{HelpReader{0, &first}, HelpReader{2, &second}};
     // Without its strings it has nothing to say.
     REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 0, party) == nullptr);
@@ -78,7 +79,7 @@ TEST_CASE("a help message goes up once for the party, a second a line and a half
     REQUIRE(help.showing());
     REQUIRE(help.player() == 2);
     REQUIRE(help.lines() == std::vector<std::string>{"USE KEY", "TO OPEN DOORS"});
-    REQUIRE(first == std::vector<int>{HelpMessages::kDoorNeedsKey}); // everyone has seen it
+    REQUIRE(first == std::vector<s32>{HelpMessages::kDoorNeedsKey}); // everyone has seen it
     REQUIRE(second == first);
     // One at a time.
     REQUIRE(help.post(HelpMessages::kChestNeedsKey, 0, party) == nullptr);
@@ -89,10 +90,10 @@ TEST_CASE("a help message goes up once for the party, a second a line and a half
     // Seen, it does not come again; another may at once, the first pause being none.
     REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 0, party) == nullptr);
     REQUIRE(help.post(HelpMessages::kChestNeedsKey, 0, party) != nullptr);
-    REQUIRE(first == std::vector<int>{HelpMessages::kDoorNeedsKey, HelpMessages::kChestNeedsKey});
+    REQUIRE(first == std::vector<s32>{HelpMessages::kDoorNeedsKey, HelpMessages::kChestNeedsKey});
     help.update(1000);
     // After the second, a pause before the next.
-    std::vector<int> fresh;
+    std::vector<s32> fresh;
     const std::array<HelpReader, 1> newcomer{HelpReader{1, &fresh}};
     REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 1, newcomer) == nullptr);
     help.update(HelpMessages::kPauses[1]);
@@ -121,7 +122,7 @@ TEST_CASE("news is told every time, with its number filled in", "[game][help]") 
     loadStrings("help-news", strings);
     HelpMessages help;
     help.setTexts(&strings);
-    std::vector<int> seen;
+    std::vector<s32> seen;
     const std::array<HelpReader, 1> party{HelpReader{0, &seen}};
     const HelpMessageSpec* spec = help.post(HelpMessages::kLevelUp, 0, party, 12);
     REQUIRE(spec != nullptr);
@@ -147,20 +148,20 @@ TEST_CASE("someone new to the party is told what the others already know", "[gam
     loadStrings("help-newcomer", strings);
     HelpMessages help;
     help.setTexts(&strings);
-    std::vector<int> old{HelpMessages::kDoorNeedsKey};
-    std::vector<int> fresh;
+    std::vector<s32> old{HelpMessages::kDoorNeedsKey};
+    std::vector<s32> fresh;
     const std::array<HelpReader, 2> party{HelpReader{0, &old}, HelpReader{1, &fresh}};
     REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 0, party) != nullptr);
-    REQUIRE(fresh == std::vector<int>{HelpMessages::kDoorNeedsKey});
+    REQUIRE(fresh == std::vector<s32>{HelpMessages::kDoorNeedsKey});
     REQUIRE(old.size() == 1);
     help.clear();
     // A player's own message looks only at that player.
-    std::vector<int> mine{HelpMessages::kHealthFull};
-    std::vector<int> theirs;
+    std::vector<s32> mine{HelpMessages::kHealthFull};
+    std::vector<s32> theirs;
     const std::array<HelpReader, 2> pair{HelpReader{0, &mine}, HelpReader{1, &theirs}};
     REQUIRE(help.post(HelpMessages::kHealthFull, 0, pair) == nullptr);
     REQUIRE(help.post(HelpMessages::kHealthFull, 1, pair) != nullptr);
-    REQUIRE(theirs == std::vector<int>{HelpMessages::kHealthFull});
+    REQUIRE(theirs == std::vector<s32>{HelpMessages::kHealthFull});
 }
 
 TEST_CASE("a turbo attack is named once a session, over whatever lesson is up", "[game][help]") {
@@ -168,8 +169,8 @@ TEST_CASE("a turbo attack is named once a session, over whatever lesson is up", 
     loadStrings("help-turbo-names", strings);
     HelpMessages help;
     help.setTexts(&strings);
-    std::vector<int> seen;
-    std::vector<int> heard;
+    std::vector<s32> seen;
+    std::vector<s32> heard;
     const std::array<HelpReader, 1> party{HelpReader{0, &seen, &heard}};
     REQUIRE(help.post(HelpMessages::kDoorNeedsKey, 0, party) != nullptr);
     // The lesser attack's name takes the lesson's place, and shows its own line alone.
@@ -177,7 +178,7 @@ TEST_CASE("a turbo attack is named once a session, over whatever lesson is up", 
     REQUIRE(named != nullptr);
     REQUIRE(help.id() == 57);
     REQUIRE(help.lines() == std::vector<std::string>{"FIRE ARC"});
-    REQUIRE(heard == std::vector<int>{HelpMessages::kDoorNeedsKey, 57});
+    REQUIRE(heard == std::vector<s32>{HelpMessages::kDoorNeedsKey, 57});
     // A lesson does not take a name's place, the greater attack's name does.
     REQUIRE(help.post(HelpMessages::kChestNeedsKey, 0, party) == nullptr);
     REQUIRE(help.post(58, 0, party) != nullptr);
@@ -186,13 +187,13 @@ TEST_CASE("a turbo attack is named once a session, over whatever lesson is up", 
     // Heard this session, it is not said again, whatever pause the lessons are in.
     REQUIRE(help.post(57, 0, party) == nullptr);
     // Loaded afresh (nothing heard, all of it seen before), it is said once more.
-    std::vector<int> fresh;
+    std::vector<s32> fresh;
     const std::array<HelpReader, 1> again{HelpReader{0, &seen, &fresh}};
     REQUIRE(help.post(57, 0, again) != nullptr);
     help.update(1000);
     // With someone in the party who has heard it, it is not said for anyone.
-    std::vector<int> none;
-    std::vector<int> newcomerHeard;
+    std::vector<s32> none;
+    std::vector<s32> newcomerHeard;
     const std::array<HelpReader, 2> pair{HelpReader{0, &seen, &fresh},
                                          HelpReader{1, &none, &newcomerHeard}};
     REQUIRE(help.post(57, 1, pair) == nullptr);

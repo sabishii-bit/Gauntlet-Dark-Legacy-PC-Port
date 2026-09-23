@@ -5,6 +5,8 @@
 #include <mutex>
 #include <string>
 
+#include "engine/core/Types.h"
+
 #ifdef _WIN32
 // NOLINTNEXTLINE(readability-identifier-naming): Win32 API name
 extern "C" __declspec(dllimport) void __stdcall OutputDebugStringA(const char* string);
@@ -35,7 +37,7 @@ std::mutex& outputMutex() {
 
 void write(Level level, std::string_view message) {
     const auto elapsed =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - kStartTime).count();
+        std::chrono::duration<f64>(std::chrono::steady_clock::now() - kStartTime).count();
     const std::string line = std::format("[{:9.3f}] {} {}\n", elapsed, levelTag(level), message);
 
     const std::lock_guard lock(outputMutex());

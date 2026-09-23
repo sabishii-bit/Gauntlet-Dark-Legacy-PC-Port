@@ -1,17 +1,17 @@
 #include "game/screens/TransitionScreen.h"
 
 #include <algorithm>
-#include <cstdint>
 #include <exception>
 
 #include "engine/core/Log.h"
+#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 namespace {
 
 constexpr std::string_view kStaticDirectory = "STATIC";
-constexpr float kFullAlpha = 255.0f;
+constexpr f32 kFullAlpha = 255.0f;
 
 } // namespace
 
@@ -57,7 +57,7 @@ void TransitionScreen::clearAway() {
     }
 }
 
-void TransitionScreen::update(float seconds) {
+void TransitionScreen::update(f32 seconds) {
     if (m_phase == Phase::ComingUp) {
         m_opacity = std::min(m_opacity + seconds / kFadeInSeconds, 1.0f);
         if (m_opacity >= 1.0f) {
@@ -71,13 +71,12 @@ void TransitionScreen::update(float seconds) {
     }
 }
 
-void TransitionScreen::draw(Canvas& canvas, float width) const {
+void TransitionScreen::draw(Canvas& canvas, f32 width) const {
     if (!showing() || m_opacity <= 0.0f) {
         return;
     }
     const Rect view{0.0f, 0.0f, width, kViewHeight};
-    const auto alpha =
-        static_cast<std::uint8_t>(std::clamp(m_opacity * kFullAlpha, 0.0f, kFullAlpha));
+    const auto alpha = static_cast<u8>(std::clamp(m_opacity * kFullAlpha, 0.0f, kFullAlpha));
     if (m_picture != nullptr) {
         canvas.draw(*m_picture, view, Color::white().withAlpha(alpha));
     } else {
