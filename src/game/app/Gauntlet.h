@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <span>
@@ -18,6 +19,7 @@
 #include "game/app/AttractSequencer.h"
 #include "game/app/CommandLine.h"
 #include "game/config/GameConfig.h"
+#include "game/players/PlayerControls.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/MovieScene.h"
 #include "game/screens/PlayScene.h"
@@ -62,6 +64,7 @@ private:
 
     GameOptions m_options;
     GameConfig m_config;
+    std::array<PlayerControlReader, PlayScene::kPlayerCount> m_controls;
     StringTable m_strings;
     std::unique_ptr<AudioDevice> m_audio;
     std::unique_ptr<SoundPlayer> m_sounds;

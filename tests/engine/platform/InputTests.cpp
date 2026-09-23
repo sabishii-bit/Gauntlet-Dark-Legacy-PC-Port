@@ -121,6 +121,38 @@ TEST_CASE("gamepad snapshots are exposed per pad with edge detection", "[platfor
     REQUIRE_FALSE(input.wasPadButtonPressed(1, PadButton::A));
 }
 
+TEST_CASE("trigger bindings use hysteresis and survive disconnects safely", "[platform][input]") {
+    Input input;
+    PadSnapshot pad;
+    pad.connected = true;
+    for (const PadAxis axis : {PadAxis::LeftTrigger, PadAxis::RightTrigger}) {
+        const PadButton button =
+            axis == PadAxis::LeftTrigger ? PadButton::LeftTrigger : PadButton::RightTrigger;
+        pad.axes[static_cast<usize>(axis)] = 0.49f;
+        input.setPad(0, pad);
+        REQUIRE_FALSE(input.isPadButtonDown(0, button));
+        pad.axes[static_cast<usize>(axis)] = 0.5f;
+        input.setPad(0, pad);
+        REQUIRE(input.wasPadButtonPressed(0, button));
+        input.beginPoll();
+        pad.axes[static_cast<usize>(axis)] = 0.45f;
+        input.setPad(0, pad);
+        REQUIRE(input.isPadButtonDown(0, button));
+        REQUIRE_FALSE(input.wasPadButtonPressed(0, button));
+        pad.axes[static_cast<usize>(axis)] = 0.39f;
+        input.setPad(0, pad);
+        REQUIRE_FALSE(input.isPadButtonDown(0, button));
+    }
+    pad.connected = false;
+    pad.axes.fill(1.0f);
+    pad.buttons.fill(true);
+    input.setPad(0, pad);
+    REQUIRE_FALSE(input.isPadButtonDown(0, PadButton::A));
+    REQUIRE_FALSE(input.isPadButtonDown(0, PadButton::LeftTrigger));
+    REQUIRE_FALSE(input.isPadButtonDown(0, PadButton::Count));
+    REQUIRE_FALSE(input.wasPadButtonPressed(0, PadButton::Count));
+}
+
 TEST_CASE("out-of-range pad indices are harmless", "[platform][input]") {
     Input input;
     PadSnapshot snapshot;

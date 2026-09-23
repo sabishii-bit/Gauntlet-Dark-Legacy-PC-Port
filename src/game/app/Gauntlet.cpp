@@ -236,6 +236,9 @@ bool Gauntlet::startLevel(const LevelRef& level, std::span<const PartyMember> pa
         }
     }
     if (m_tower.open(renderDevice(), context(), m_towerWorld, party, options)) {
+        for (auto& controls : m_controls) {
+            controls.reset();
+        }
         log::info("Entering {} ({})", level.name, level.title);
         setMaxFrameRate(m_config.timing.gameplayFrameRate);
         return true;
@@ -251,6 +254,9 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
         return startLevel(LevelRef::tower(), party, options);
     }
     if (m_tower.open(renderDevice(), context(), m_towerWorld, party, options)) {
+        for (auto& controls : m_controls) {
+            controls.reset();
+        }
         log::info("Every player is ready; entering the tower");
         setMaxFrameRate(m_config.timing.gameplayFrameRate);
         return true;
@@ -265,8 +271,8 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         const MenuInputSource source = MenuInputSource::forPlayer(player);
         PlayInput& in = inputs[static_cast<usize>(player)];
         in.move = readMoveInput(input(), m_config.play, source.keyboard, source.pad);
-        const PlayButtons buttons =
-            readPlayButtons(input(), m_config.play, source.keyboard, source.pad);
+        const PlayButtons buttons = m_controls[static_cast<usize>(player)].read(
+            input(), m_config.play, source.keyboard, source.pad, static_cast<f32>(deltaSeconds));
         in.attack = buttons.attack;
         in.usePotion = buttons.usePotion;
         in.throwPotion = buttons.throwPotion;
@@ -276,6 +282,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         in.turbo = buttons.turbo;
         in.chargePressed = buttons.chargePressed;
         in.attackPressed = buttons.attackPressed;
+        in.turboAttackPressed = buttons.turboAttackPressed;
         in.selector = SelectorInput{buttons.selectorUp, buttons.selectorDown, buttons.selectorLeft,
                                     buttons.selectorRight};
         in.menu = readMenuInput(input(), m_config.menu, source);

@@ -44,7 +44,7 @@ TEST_CASE("pad buttons map to menu commands", "[game][menu]") {
     PadSnapshot pad;
     pad.connected = true;
     pad.buttons[static_cast<usize>(PadButton::DpadUp)] = true;
-    pad.buttons[static_cast<usize>(PadButton::B)] = true;
+    pad.buttons[static_cast<usize>(PadButton::Y)] = true;
     input.setPad(2, pad);
     const MenuInput menu = readMenuInput(input, MenuBindings{});
     REQUIRE(menu.up);

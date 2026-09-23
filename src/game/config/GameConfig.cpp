@@ -1,6 +1,7 @@
 #include "game/config/GameConfig.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <exception>
 #include <numbers>
@@ -200,7 +201,16 @@ void GameConfig::mergeJson(std::string_view json) {
                 readButtons(p, "selectorRight", play.padSelectorRight);
             }
             read(moves, "stickDeadZone", play.stickDeadZone);
+            read(moves, "magicHoldSeconds", play.magicHoldSeconds);
+            read(moves, "magicDoubleTapSeconds", play.magicDoubleTapSeconds);
+            read(moves, "padMagicGestures", play.padMagicGestures);
+            read(moves, "actionChords", play.actionChords);
         }
+    }
+    if (!std::isfinite(play.magicHoldSeconds) || play.magicHoldSeconds <= 0.0f ||
+        play.magicHoldSeconds > 2.0f || !std::isfinite(play.magicDoubleTapSeconds) ||
+        play.magicDoubleTapSeconds <= 0.0f || play.magicDoubleTapSeconds > 2.0f) {
+        throw FormatError("magic gesture windows must be in (0, 2] seconds");
     }
     if (save.slots == 0 || timing.tickRate == 0 || display.virtualWidth == 0 ||
         display.virtualHeight == 0 || display.frameWidth == 0 || display.frameHeight == 0 ||
@@ -280,7 +290,11 @@ std::string GameConfig::toJson() const {
                             {"selectorDown", buttonNames(play.padSelectorDown)},
                             {"selectorLeft", buttonNames(play.padSelectorLeft)},
                             {"selectorRight", buttonNames(play.padSelectorRight)}}},
-                          {"stickDeadZone", play.stickDeadZone}}}};
+                          {"stickDeadZone", play.stickDeadZone},
+                          {"magicHoldSeconds", play.magicHoldSeconds},
+                          {"magicDoubleTapSeconds", play.magicDoubleTapSeconds},
+                          {"padMagicGestures", play.padMagicGestures},
+                          {"actionChords", play.actionChords}}}};
     return root.dump(2) + "\n";
 }
 

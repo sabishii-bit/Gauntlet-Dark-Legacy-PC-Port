@@ -96,7 +96,8 @@ constexpr auto kKeyMap = std::to_array<KeyMapping>({
     {GLFW_KEY_F12, Key::F12},
 });
 
-constexpr std::array<s32, static_cast<usize>(PadButton::Count)> kPadButtonMap{
+// Triggers are axes; Input derives their virtual buttons after polling.
+constexpr std::array<s32, static_cast<usize>(PadButton::LeftTrigger)> kPadButtonMap{
     GLFW_GAMEPAD_BUTTON_A,           GLFW_GAMEPAD_BUTTON_B,
     GLFW_GAMEPAD_BUTTON_X,           GLFW_GAMEPAD_BUTTON_Y,
     GLFW_GAMEPAD_BUTTON_LEFT_BUMPER, GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER,
@@ -201,7 +202,7 @@ void GlfwWindow::pollGamepads() {
         if (glfwJoystickIsGamepad(joystick) == GLFW_TRUE &&
             glfwGetGamepadState(joystick, &state) == GLFW_TRUE) {
             snapshot.connected = true;
-            for (usize i = 0; i < snapshot.buttons.size(); ++i) {
+            for (usize i = 0; i < kPadButtonMap.size(); ++i) {
                 snapshot.buttons[i] = state.buttons[kPadButtonMap[i]] == GLFW_PRESS;
             }
             for (usize i = 0; i < snapshot.axes.size(); ++i) {

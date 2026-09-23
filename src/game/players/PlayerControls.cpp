@@ -104,7 +104,10 @@ bool readAttackInput(const Input& input, const PlayBindings& bindings, bool keyb
     return bound(input, bindings.attack, bindings.padAttack, keyboard, pad, false);
 }
 
-PlayButtons readPlayButtons(const Input& input, const PlayBindings& b, bool keyboard, s32 pad) {
+namespace {
+
+// Resolve chords BEFORE merging devices, so one player's buttons cannot complete another's.
+PlayButtons deviceButtons(const Input& input, const PlayBindings& b, bool keyboard, s32 pad) {
     PlayButtons out;
     out.attack = bound(input, b.attack, b.padAttack, keyboard, pad, false);
     out.usePotion = bound(input, b.usePotion, b.padUsePotion, keyboard, pad, false);
@@ -119,7 +122,121 @@ PlayButtons readPlayButtons(const Input& input, const PlayBindings& b, bool keyb
     out.selectorDown = bound(input, b.selectorDown, b.padSelectorDown, keyboard, pad, true);
     out.selectorLeft = bound(input, b.selectorLeft, b.padSelectorLeft, keyboard, pad, true);
     out.selectorRight = bound(input, b.selectorRight, b.padSelectorRight, keyboard, pad, true);
+    if (b.actionChords && out.usePotion && (out.attack || out.turbo)) {
+        out.shieldPotion = out.shieldPotion || out.turbo;
+        out.throwPotion = out.throwPotion || (!out.turbo && out.attack);
+        out.usePotion = false;
+        out.attack = false;
+        out.attackPressed = false;
+        out.strongAttack = false;
+        out.turbo = false;
+    }
+    out.turboAttackPressed = b.actionChords && out.turbo && out.attackPressed;
     return out;
+}
+
+void mergeButtons(PlayButtons& to, const PlayButtons& from) {
+    constexpr auto kFields = std::to_array<bool PlayButtons::*>(
+        {&PlayButtons::attack, &PlayButtons::usePotion, &PlayButtons::throwPotion,
+         &PlayButtons::shieldPotion, &PlayButtons::strafe, &PlayButtons::strongAttack,
+         &PlayButtons::turbo, &PlayButtons::chargePressed, &PlayButtons::attackPressed,
+         &PlayButtons::turboAttackPressed, &PlayButtons::selectorUp, &PlayButtons::selectorDown,
+         &PlayButtons::selectorLeft, &PlayButtons::selectorRight});
+    for (const auto field : kFields) {
+        to.*field = to.*field || from.*field;
+    }
+}
+
+} // namespace
+
+PlayButtons readPlayButtons(const Input& input, const PlayBindings& b, bool keyboard, s32 pad) {
+    PlayButtons out = deviceButtons(input, b, keyboard, kNoPad);
+    for (s32 i = 0; i < Input::kMaxPads; ++i) {
+        if ((pad == i || pad == kAllPads) && input.isPadConnected(i)) {
+            mergeButtons(out, deviceButtons(input, b, false, i));
+        }
+    }
+    return out;
+}
+
+void PlayerControlReader::MagicGesture::apply(PlayButtons& buttons, bool down, bool pressed,
+                                              f32 elapsed, const PlayBindings& bindings) {
+    if (buttons.throwPotion || buttons.shieldPotion) {
+        phase = Phase::Consumed;
+        buttons.usePotion = false;
+        return;
+    }
+    buttons.usePotion = false;
+    seconds += std::max(0.0f, elapsed);
+    switch (phase) {
+    case Phase::Idle:
+        if (pressed) {
+            phase = Phase::Pressed;
+            seconds = 0.0f;
+        }
+        break;
+    case Phase::Pressed:
+        if (!down) {
+            phase = Phase::Released;
+            seconds = 0.0f;
+        } else if (seconds >= bindings.magicHoldSeconds) {
+            phase = Phase::Throw;
+            buttons.throwPotion = true;
+        }
+        break;
+    case Phase::Released:
+        if (pressed && seconds <= bindings.magicDoubleTapSeconds) {
+            phase = Phase::Shield;
+            buttons.shieldPotion = true;
+        } else if (seconds >= bindings.magicDoubleTapSeconds) {
+            buttons.usePotion = true;
+            phase = pressed ? Phase::Pressed : Phase::Idle;
+            seconds = 0.0f;
+        }
+        break;
+    case Phase::Throw:
+        buttons.throwPotion = down;
+        if (!down) {
+            phase = Phase::Idle;
+        }
+        break;
+    case Phase::Shield:
+        buttons.shieldPotion = down;
+        if (!down) {
+            phase = Phase::Idle;
+        }
+        break;
+    case Phase::Consumed:
+        if (!down) {
+            phase = Phase::Idle;
+        }
+        break;
+    }
+}
+
+PlayButtons PlayerControlReader::read(const Input& input, const PlayBindings& b, bool keyboard,
+                                      s32 pad, f32 seconds) {
+    PlayButtons out = deviceButtons(input, b, keyboard, kNoPad);
+    for (s32 i = 0; i < Input::kMaxPads; ++i) {
+        if ((pad != i && pad != kAllPads) || !input.isPadConnected(i)) {
+            m_magic[static_cast<usize>(i)] = {};
+            continue;
+        }
+        PlayButtons buttons = deviceButtons(input, b, false, i);
+        const bool down = bound(input, {}, b.padUsePotion, false, i, false);
+        const bool pressed = bound(input, {}, b.padUsePotion, false, i, true);
+        if (b.padMagicGestures) {
+            m_magic[static_cast<usize>(i)].apply(buttons, down, pressed, seconds, b);
+        } else {
+            m_magic[static_cast<usize>(i)] = {};
+        }
+        mergeButtons(out, buttons);
+    }
+    return out;
+}
+
+void PlayerControlReader::reset() {
+    m_magic = {};
 }
 
 } // namespace gdl::game

@@ -48,7 +48,7 @@
       "left": ["DpadLeft"],
       "right": ["DpadRight"],
       "select": ["A"],
-      "back": ["B"],
+      "back": ["Y"],
       "start": ["Start"]
     },
     "play": {
@@ -76,19 +76,23 @@
         "left": [],
         "right": [],
         "attack": ["A"],
-        "usePotion": ["B"],
-        "throwPotion": ["X"],
-        "shieldPotion": ["RightThumb"],
-        "strafe": ["LeftThumb"],
-        "strongAttack": ["LeftBumper"],
-        "turbo": ["RightBumper"],
-        "charge": ["Y"],
+        "usePotion": ["X"],
+        "throwPotion": [],
+        "shieldPotion": [],
+        "strafe": ["RightTrigger"],
+        "strongAttack": ["Y"],
+        "turbo": ["B"],
+        "charge": ["LeftTrigger"],
         "selectorUp": ["DpadUp"],
         "selectorDown": ["DpadDown"],
         "selectorLeft": ["DpadLeft"],
         "selectorRight": ["DpadRight"]
       },
-      "stickDeadZone": 0.25
+      "stickDeadZone": 0.25,
+      "magicHoldSeconds": 0.25,
+      "magicDoubleTapSeconds": 0.25,
+      "padMagicGestures": true,
+      "actionChords": true
     }
   }
 }
