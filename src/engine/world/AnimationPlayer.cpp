@@ -2,11 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 
 namespace gdl {
 
-void AnimationPlayer::start(const TreeSequenceInfo& sequence, std::uint32_t index,
+void AnimationPlayer::start(const TreeSequenceInfo& sequence, unsigned int index,
                             float transitionSeconds, float frame) {
     m_sequence = &sequence;
     m_index = index;

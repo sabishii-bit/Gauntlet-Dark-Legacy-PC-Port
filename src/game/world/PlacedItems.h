@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
@@ -36,17 +35,17 @@ struct Collector {
 struct Pickup {
     std::size_t item = 0;
     std::size_t collector = 0; ///< which of the collectors touched it
-    std::int32_t subtype = 0;
-    std::int32_t realm = -1; ///< for a crystal, the realm it counts towards
-    std::int32_t amount = 0; ///< how much of it there is: gold, keys, health and so on
-    std::uint32_t flags = 0; ///< its record's properties: a potion's kind, a powerup's which
-    float strength = 0.0f;   ///< a powerup's
+    int subtype = 0;
+    int realm = -1;         ///< for a crystal, the realm it counts towards
+    int amount = 0;         ///< how much of it there is: gold, keys, health and so on
+    unsigned int flags = 0; ///< its record's properties: a potion's kind, a powerup's which
+    float strength = 0.0f;  ///< a powerup's
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
 
 /** What the game makes of a touched item: nothing to leave it lying, else how much of its
  * amount is left there (none takes it away). */
-using PickupJudge = std::function<std::optional<std::int32_t>(const Pickup&)>;
+using PickupJudge = std::function<std::optional<int>(const Pickup&)>;
 
 /**
  * The pickups a level places, as far as the tower needs them: each powerup's figure, found
@@ -62,17 +61,17 @@ using PickupJudge = std::function<std::optional<std::int32_t>(const Pickup&)>;
 class PlacedItems {
 public:
     static constexpr float kFloorLift = 0.1f;
-    static constexpr float kFloorReachAbove = 0.5f;       ///< a floor this far over the instance
-    static constexpr float kFloorReachBelow = 3.0f;       ///< or this far under it
-    static constexpr std::int32_t kExactPlayersMark = 10; ///< a minimum past this means exactly
+    static constexpr float kFloorReachAbove = 0.5f; ///< a floor this far over the instance
+    static constexpr float kFloorReachBelow = 3.0f; ///< or this far under it
+    static constexpr int kExactPlayersMark = 10;    ///< a minimum past this means exactly
     static constexpr float kFrameRate = 30.0f;
     static constexpr float kRevealSpread = 15.0f;        ///< units a second the reveal moves out
     static constexpr float kRevealLead = 1.75f;          ///< seconds' worth it starts out at
     static constexpr float kRevealStep = 8.0f / 255.0f;  ///< alpha gained a frame once reached
     static constexpr float kBurstFallbackSeconds = 1.0f; ///< a burst whose tree has no sequence
     /** The realm each crystal value counts towards, the way the original tables it. */
-    static constexpr std::array<std::int32_t, 14> kCrystalRealms{4, 2,  6, 5, 1, 7,  8,
-                                                                 3, 10, 5, 2, 5, 10, 15};
+    static constexpr std::array<int, 14> kCrystalRealms{4, 2,  6, 5, 1, 7,  8,
+                                                        3, 10, 5, 2, 5, 10, 15};
     /** The gem burst played for each realm's crystal, by realm. */
     static constexpr std::array<std::string_view, 9> kGemEffects{
         "",           "GETGEMORANGE", "GETGEMRED",    "GETGEMPURPLE",
@@ -85,13 +84,13 @@ public:
     /** One placed pickup and its figure. */
     struct Item {
         std::string name;
-        std::int32_t instance = -1; ///< which of the layout's instances it is
-        std::int32_t info = -1;
-        std::int32_t subtype = 0;
-        std::int32_t value = 0; ///< its amount; a part taken leaves the rest
-        std::uint32_t flags = 0;
+        int instance = -1; ///< which of the layout's instances it is
+        int info = -1;
+        int subtype = 0;
+        int value = 0; ///< its amount; a part taken leaves the rest
+        unsigned int flags = 0;
         float strength = 0.0f;
-        std::int32_t minPlayers = 0;
+        int minPlayers = 0;
         float radius = 0.0f; ///< how far out it can be touched
         float height = 0.0f;
         Vec3 position{0.0f, 0.0f, 0.0f};
@@ -109,13 +108,13 @@ public:
         float noGrabSeconds = 0.0f;      ///< over nought, no one can take it yet
 
         /** Whether a party of `players` sees it. */
-        bool shownTo(std::int32_t players) const;
+        bool shownTo(int players) const;
         /** Whether a collector is on it. */
         bool touchedBy(const Collector& collector) const;
         /** Whether it may be taken now. */
         bool takeable() const { return visible && !taken && noGrabSeconds <= 0.0f; }
         /** The realm a crystal counts towards, or -1 for anything else. */
-        std::int32_t realm() const;
+        int realm() const;
     };
 
     /** A burst playing where an item was taken: its tree's sequence, the pose it drives, and
@@ -138,10 +137,10 @@ public:
     std::size_t size() const { return m_items.size(); }
     const Item& item(std::size_t index) const { return m_items[index]; }
     std::size_t visibleCount() const;
-    std::int32_t playerCount() const { return m_players; }
+    int playerCount() const { return m_players; }
 
     /** Shows the items a party of `players` sees. */
-    void setPlayerCount(std::int32_t players);
+    void setPlayerCount(int players);
     /** Takes whatever the collectors touch and starts its burst; the pickups are returned
      * for the game to hand out. With a `judge`, each touched item is its to take, take part
      * of or leave; only those it took from are returned. */
@@ -154,8 +153,8 @@ public:
                const WorldCollision* collision);
     /** Drops the item of record number `record`, holding `amount` when that is over none
      * (a chest's keys) rather than the record's own. */
-    bool placeRecord(RenderDevice& device, std::int32_t record, const Vec3& position,
-                     const WorldCollision* collision, std::int32_t amount = 0);
+    bool placeRecord(RenderDevice& device, int record, const Vec3& position,
+                     const WorldCollision* collision, int amount = 0);
     /** Throws a pickup of the record named `name` from `position` at `velocity`: it sails
      * out, falls, bounces and rolls to a stop on the floor the collision finds (or is lost,
      * falling where there is none), and cannot be taken for `noGrabSeconds`. False as for
@@ -210,7 +209,7 @@ private:
     void fly(Item& item, float seconds);
     std::vector<ArchiveMotion> m_motions;
     const WorldCollision* m_collision = nullptr; ///< the floor thrown items land on
-    std::int32_t m_players = 0;
+    int m_players = 0;
     float m_frameRemainder = 0.0f;
     float m_revealTime = 0.0f;
     bool m_revealing = false;

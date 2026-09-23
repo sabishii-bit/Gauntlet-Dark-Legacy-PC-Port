@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 namespace gdl::game {
 namespace {
 constexpr float kMoveNamedFrame = 1.0f;
@@ -33,7 +32,7 @@ std::string_view TurboMove::begin(PlayerAnimator::Action action, const ClassStat
     if (const ClassStats* stats = known) {
         if (full) {
             m_pending = stats->strikesOf(stats->moves.turboC1);
-            const std::vector<std::int32_t> second = stats->strikesOf(stats->moves.turboC2);
+            const std::vector<int> second = stats->strikesOf(stats->moves.turboC2);
             m_pending.insert(m_pending.end(), second.begin(), second.end());
         } else {
             m_pending = stats->strikesOf(stats->moves.turboB);
@@ -67,8 +66,8 @@ void TurboMove::advance(PlayerAnimator::Action action, float frame, const Vec3& 
     // A frame in, the move is named.
     if (!m_named && frame >= kMoveNamedFrame) {
         m_named = true;
-        for (const std::int32_t strike : m_all) {
-            if (const std::int32_t help = stats->moveStrikes[static_cast<std::size_t>(strike)].help;
+        for (const int strike : m_all) {
+            if (const int help = stats->moveStrikes[static_cast<std::size_t>(strike)].help;
                 help >= 0) {
                 events.announce(help);
                 break;
@@ -93,8 +92,8 @@ void TurboMove::advance(PlayerAnimator::Action action, float frame, const Vec3& 
             volley(slot, row, frame, facing, events);
         }
     }
-    std::vector<std::int32_t> due;
-    std::erase_if(m_pending, [&](std::int32_t strike) {
+    std::vector<int> due;
+    std::erase_if(m_pending, [&](int strike) {
         const bool now =
             frame >=
             static_cast<float>(stats->moveStrikes[static_cast<std::size_t>(strike)].startFrame);
@@ -103,7 +102,7 @@ void TurboMove::advance(PlayerAnimator::Action action, float frame, const Vec3& 
         }
         return now;
     });
-    for (const std::int32_t strike : due) {
+    for (const int strike : due) {
         if (stats->moveStrikes[static_cast<std::size_t>(strike)].amount != 0.0f && m_owed > 0.0f) {
             meter.spend(m_owed);
             m_owed = 0.0f;
@@ -119,8 +118,8 @@ void TurboMove::volley(std::size_t slot, const MoveStrike& strike, float frame, 
     }
     const float since = frame - static_cast<float>(strike.startFrame);
     const float every = strike.delay > 0.0f ? strike.delay : 1.0e6f; // none: one shot only
-    const auto due = static_cast<std::int32_t>(std::floor(since / every)) + 1;
-    const float span = static_cast<float>(strike.endFrame - strike.startFrame);
+    const auto due = static_cast<int>(std::floor(since / every)) + 1;
+    const auto span = static_cast<float>(strike.endFrame - strike.startFrame);
     while (m_volleysShot[slot] < due) {
         const float shotAt = static_cast<float>(m_volleysShot[slot]) * every;
         float angle = strike.angle;

@@ -137,7 +137,7 @@ public:
     float padAxis(int pad, PadAxis axis) const;
 
     /** Characters typed since the last poll, as Unicode code points in order. */
-    std::span<const std::uint32_t> typedText() const { return m_typed; }
+    std::span<const unsigned int> typedText() const { return m_typed; }
 
     /** Platform-layer entry points. */
     void beginPoll();
@@ -145,7 +145,7 @@ public:
     /** Records a press seen since the last poll; it holds the key down until the next. */
     void latchKey(Key key);
     void setPad(int pad, const PadSnapshot& snapshot);
-    void addTypedChar(std::uint32_t codepoint);
+    void addTypedChar(unsigned int codepoint);
 
 private:
     static constexpr std::size_t kKeyCount = static_cast<std::size_t>(Key::Count);
@@ -157,7 +157,7 @@ private:
     std::array<bool, kKeyCount> m_previousKeys{};
     std::array<PadSnapshot, kMaxPads> m_pads{};
     std::array<PadSnapshot, kMaxPads> m_previousPads{};
-    std::vector<std::uint32_t> m_typed;
+    std::vector<unsigned int> m_typed;
 };
 
 } // namespace gdl

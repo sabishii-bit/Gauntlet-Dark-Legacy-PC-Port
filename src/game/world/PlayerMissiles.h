@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -26,20 +25,19 @@ struct MissileSpec {
     bool staysInHand = false; ///< a staff or a bow is not what flies
 
     /** The spec of a class (the unlockable classes fly like the class they shadow). */
-    static const MissileSpec& of(std::int32_t classIndex);
+    static const MissileSpec& of(int classIndex);
     /** The name of the class's throw tree at `level`, and whether the costume's own archive
      * holds it (else the costume colour's effects archive does). */
-    static std::string treeName(std::int32_t classIndex, std::int32_t level,
-                                bool* inCostume = nullptr);
+    static std::string treeName(int classIndex, int level, bool* inCostume = nullptr);
     /** Whether a class throws by its magic rather than its strength. */
-    static bool byMagic(std::int32_t classIndex);
+    static bool byMagic(int classIndex);
     /** How a thrown potion flies. */
     static const MissileSpec& potion();
 };
 
 /** What sets a missile off. */
 struct MissileLaunch {
-    std::int32_t owner = 0;
+    int owner = 0;
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 direction{0.0f, 0.0f, 1.0f}; ///< along the ground, unit length
     float speed = 20.0f;
@@ -47,7 +45,7 @@ struct MissileLaunch {
     const MissileSpec* spec = nullptr;
     const TreeModel* model = nullptr; ///< must outlive the missile
     std::optional<Vec3> velocity;     ///< set, it flies off at this instead of being lobbed
-    std::int32_t potion = 0;          ///< the kind of potion it is, which bursts where it lands
+    int potion = 0;                   ///< the kind of potion it is, which bursts where it lands
     float potency = 0.0f;             ///< the magic power its burst goes off with
     float damage = 0.0f;              ///< what it does to what it hits
     float scale = 1.0f;               ///< how large it is drawn: a strong throw's is doubled
@@ -55,7 +53,7 @@ struct MissileLaunch {
 
 /** Something standing that a missile stops against: an upright cylinder from its base. */
 struct MissileTarget {
-    std::int32_t id = -1;
+    int id = -1;
     Vec3 base{0.0f, 0.0f, 0.0f};
     float radius = 1.0f;
     float height = 1.0f;
@@ -64,12 +62,11 @@ struct MissileTarget {
 /** Where a missile was stopped. */
 struct MissileImpact {
     Vec3 position{0.0f, 0.0f, 0.0f};
-    std::int32_t owner = 0;
-    std::int32_t potion = 0;
+    int owner = 0;
+    int potion = 0;
     float potency = 0.0f;
     float damage = 0.0f;
-    std::int32_t target =
-        -1; ///< the id of the target it stopped against; none for a wall or the floor
+    int target = -1; ///< the id of the target it stopped against; none for a wall or the floor
 };
 
 /**
@@ -95,12 +92,12 @@ public:
 
     /** One weapon in flight. */
     struct Missile {
-        std::int32_t owner = 0;
+        int owner = 0;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Vec3 velocity{0.0f, 0.0f, 0.0f};
         float tumble = 0.0f; ///< how far it has turned over
         float age = 0.0f;
-        std::int32_t potion = 0;
+        int potion = 0;
         float potency = 0.0f;
         float damage = 0.0f;
         float scale = 1.0f;
@@ -109,9 +106,9 @@ public:
     };
 
     /** A missile's pace from the stat that throws it. */
-    static float speedFor(std::int32_t stat);
+    static float speedFor(int stat);
     /** What a missile does to what it hits, by the thrower's strength (or magic). */
-    static float damageFor(std::int32_t stat);
+    static float damageFor(int stat);
     /** How far a throw reaches when the attack had been going `attackSeconds`. */
     static float reachFor(float attackSeconds);
     /** The velocity that sets a missile off along `direction` to come down at its reach. */
@@ -130,7 +127,7 @@ public:
     /** Where missiles were stopped since the last call; each is handed out once. */
     std::vector<MissileImpact> takeImpacts();
     /** The directions of `shots` missiles about `direction`: fifteen degrees apart. */
-    static std::vector<Vec3> spread(const Vec3& direction, std::int32_t shots);
+    static std::vector<Vec3> spread(const Vec3& direction, int shots);
     static constexpr float kSpreadStep = 0.2617994f; ///< fifteen degrees
     /** Model space (flying along +z) to the world, for a missile. */
     static Mat4 transformOf(const Missile& missile);

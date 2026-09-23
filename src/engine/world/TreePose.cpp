@@ -13,7 +13,7 @@ namespace gdl {
 namespace {
 
 /** The pose triple channel 0..8 belongs to. */
-Vec3& channelTarget(NodePose& pose, std::uint32_t channel) {
+Vec3& channelTarget(NodePose& pose, unsigned int channel) {
     if (channel < 3) {
         return pose.rotation;
     }
@@ -24,9 +24,9 @@ Vec3& channelTarget(NodePose& pose, std::uint32_t channel) {
 NodePose keyPose(const TrackInfo& track, std::size_t key) {
     NodePose pose;
     pose.pitchYawRoll = track.pitchYawRoll();
-    const std::uint32_t channels = track.channelCount();
+    const unsigned int channels = track.channelCount();
     std::size_t at = key * channels;
-    for (std::uint32_t c = 0; c < TrackInfo::kChannelCount; ++c) {
+    for (unsigned int c = 0; c < TrackInfo::kChannelCount; ++c) {
         if (!track.has(c)) {
             continue;
         }
@@ -139,7 +139,7 @@ void TreePose::rest(const TreeInfo& tree) {
     compose();
 }
 
-void TreePose::evaluate(const TreeInfo& tree, std::uint32_t sequence, float frame, bool mirror) {
+void TreePose::evaluate(const TreeInfo& tree, unsigned int sequence, float frame, bool mirror) {
     GDL_VERIFY(sequence < tree.sequences.size(), "animation sequence index out of range");
     m_tree = &tree;
     m_poses.assign(tree.nodes.size(), NodePose{});

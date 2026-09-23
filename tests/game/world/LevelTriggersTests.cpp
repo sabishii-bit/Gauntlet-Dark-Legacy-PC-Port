@@ -1,5 +1,4 @@
 #include <array>
-#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -51,7 +50,7 @@ struct Fixture {
         triggers.bind(layout, animator, &collision);
     }
 
-    static TriggerVisitor visitor(const Vec3& position, std::int32_t crystals) {
+    static TriggerVisitor visitor(const Vec3& position, int crystals) {
         TriggerVisitor out;
         out.position = position;
         out.crystals[1] = crystals;

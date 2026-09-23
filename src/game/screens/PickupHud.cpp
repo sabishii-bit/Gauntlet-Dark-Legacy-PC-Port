@@ -2,18 +2,17 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 
 namespace gdl::game {
 
-std::string_view PickupHud::crystalIcon(std::int32_t realm) {
+std::string_view PickupHud::crystalIcon(int realm) {
     if (realm <= 0 || static_cast<std::size_t>(realm) >= kCrystalIcons.size()) {
         return {};
     }
     return kCrystalIcons[static_cast<std::size_t>(realm)];
 }
 
-void PickupHud::addCard(std::int32_t player, std::string_view texture) {
+void PickupHud::addCard(int player, std::string_view texture) {
     if (m_cards.size() >= kMostCards || player < 0 || static_cast<std::size_t>(player) >= kSlots) {
         return;
     }
@@ -24,8 +23,7 @@ void PickupHud::addCard(std::int32_t player, std::string_view texture) {
     m_cards.push_back(std::move(card));
 }
 
-void PickupHud::showCount(std::int32_t player, std::string_view icon, std::int32_t count,
-                          std::int32_t total) {
+void PickupHud::showCount(int player, std::string_view icon, int count, int total) {
     if (player < 0 || static_cast<std::size_t>(player) >= kSlots) {
         return;
     }
@@ -36,7 +34,7 @@ void PickupHud::showCount(std::int32_t player, std::string_view icon, std::int32
     shown.secondsLeft = kCountSeconds;
 }
 
-void PickupHud::step(std::int32_t ticks, float seconds) {
+void PickupHud::step(int ticks, float seconds) {
     for (PickupCard& card : m_cards) {
         switch (card.state) {
         case PickupCard::State::Rising:
@@ -78,14 +76,14 @@ void PickupHud::clear() {
     }
 }
 
-void PickupHud::clearPlayer(std::int32_t player) {
+void PickupHud::clearPlayer(int player) {
     std::erase_if(m_cards, [player](const PickupCard& card) { return card.player == player; });
     if (player >= 0 && static_cast<std::size_t>(player) < kSlots) {
         m_counts[static_cast<std::size_t>(player)] = PickupCount{};
     }
 }
 
-const PickupCount& PickupHud::count(std::int32_t player) const {
+const PickupCount& PickupHud::count(int player) const {
     static const PickupCount kNone;
     if (player < 0 || static_cast<std::size_t>(player) >= kSlots) {
         return kNone;
@@ -100,8 +98,7 @@ void PickupHud::draw(Canvas& canvas, StatusBoxPainter& boxes) const {
     for (std::size_t slot = 0; slot < kSlots; ++slot) {
         const PickupCount& shown = m_counts[slot];
         if (shown.showing()) {
-            boxes.drawCount(canvas, static_cast<std::int32_t>(slot), shown.icon, shown.count,
-                            shown.total);
+            boxes.drawCount(canvas, static_cast<int>(slot), shown.icon, shown.count, shown.total);
         }
     }
 }

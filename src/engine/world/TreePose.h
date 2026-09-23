@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -31,7 +30,7 @@ public:
 
     /** Poses the tree at `frame` of `sequence`; nodes without keys stay at rest. Mirroring
      * flips the pose across the model's x axis. */
-    void evaluate(const TreeInfo& tree, std::uint32_t sequence, float frame, bool mirror = false);
+    void evaluate(const TreeInfo& tree, unsigned int sequence, float frame, bool mirror = false);
     /** Poses the tree at rest. */
     void rest(const TreeInfo& tree);
     /** Blends this pose `t` of the way from `from` (0) to itself (1), angles by the shortest

@@ -1,11 +1,10 @@
 #include "game/players/LevelWatch.h"
 
 #include <algorithm>
-#include <cstdint>
 
 namespace gdl::game {
 
-std::optional<LevelChange> LevelWatch::observe(std::int32_t player, std::int32_t level) {
+std::optional<LevelChange> LevelWatch::observe(int player, int level) {
     const auto mark = std::ranges::find(m_marks, player, &Mark::player);
     if (mark == m_marks.end()) {
         m_marks.push_back(Mark{player, level});
@@ -22,13 +21,13 @@ std::optional<LevelChange> LevelWatch::observe(std::int32_t player, std::int32_t
     return change;
 }
 
-void LevelWatch::forget(std::int32_t player) {
+void LevelWatch::forget(int player) {
     std::erase_if(m_marks, [player](const Mark& mark) { return mark.player == player; });
 }
 
-std::optional<std::int32_t> LevelWatch::markOf(std::int32_t player) const {
+std::optional<int> LevelWatch::markOf(int player) const {
     const auto mark = std::ranges::find(m_marks, player, &Mark::player);
-    return mark == m_marks.end() ? std::nullopt : std::optional<std::int32_t>(mark->level);
+    return mark == m_marks.end() ? std::nullopt : std::optional<int>(mark->level);
 }
 
 } // namespace gdl::game

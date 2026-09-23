@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <string_view>
 #include <vector>
 
@@ -50,18 +49,18 @@ public:
                const ItemInstance& instance, const WorldCollision* collision);
 
     /** Starts the figure's sequence number `index`. */
-    void play(std::int32_t index, bool loop);
+    void play(int index, bool loop);
     void update(float seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
     bool hasFigure() const { return m_tree != nullptr; }
-    std::int32_t sequence() const { return m_index; }
+    int sequence() const { return m_index; }
     /** Whether a sequence played once has reached its end (a missing one has at once). */
     bool finished() const;
     /** How many sequences the figure has. */
     std::size_t sequenceCount() const { return m_tree != nullptr ? m_tree->sequences.size() : 0; }
     /** How long the sequence number `index` lasts, in ticks of a sixtieth. */
-    std::int32_t ticksOf(std::int32_t index) const;
+    int ticksOf(int index) const;
     const Vec3& position() const { return m_position; }
     float yaw() const { return m_yaw; }
     /** The box the item's record gives it, where the figure stands. */
@@ -75,13 +74,13 @@ private:
     Vec3 m_position{0.0f, 0.0f, 0.0f};
     float m_yaw = 0.0f;
     Mat4 m_transform{1.0f};
-    std::int32_t m_index = -1;
+    int m_index = -1;
     bool m_loop = false;
 };
 
 /** Whether a party of `players` sees an item placed for `minPlayers`, by the original's
  * rule: at least that many, or exactly ten less than it when it is over ten. */
-bool shownToParty(std::int32_t minPlayers, std::int32_t players);
+bool shownToParty(int minPlayers, int players);
 
 /** Where an item instance stands: its pitch, yaw and roll as the original stacks them onto
  * its matrix, the yaw outermost (so a half turn of both others is a half turn of yaw). */

@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 
 namespace gdl::game {
 
@@ -35,7 +34,7 @@ char NameEntry::previousLetter(char letter) {
     }
 }
 
-std::string_view NameEntry::randomName(std::uint32_t seed) {
+std::string_view NameEntry::randomName(unsigned int seed) {
     return kRandomNames[seed % kRandomNames.size()];
 }
 
@@ -67,12 +66,12 @@ void NameEntry::begin(std::string_view existing) {
     }
 }
 
-void NameEntry::cycle(std::int32_t direction) {
+void NameEntry::cycle(int direction) {
     m_pending = direction > 0 ? nextLetter(m_pending) : previousLetter(m_pending);
 }
 
-bool NameEntry::repeat(const MenuInput& input, std::int32_t ticks) {
-    std::int32_t held = 0;
+bool NameEntry::repeat(const MenuInput& input, int ticks) {
+    int held = 0;
     if (input.upHeld && !input.downHeld) {
         held = 1;
     } else if (input.downHeld && !input.upHeld) {
@@ -104,14 +103,14 @@ NameEntry::Event NameEntry::removeLast() {
 
 NameEntry::Event NameEntry::finish() {
     if (m_name.empty()) {
-        m_name = randomName(static_cast<std::uint32_t>(m_timer));
+        m_name = randomName(static_cast<unsigned int>(m_timer));
     }
     m_phase = Phase::Flashing;
     m_timer = kFlashTicks;
     return Event::Accepted;
 }
 
-NameEntry::Event NameEntry::update(const MenuInput& input, std::int32_t ticks) {
+NameEntry::Event NameEntry::update(const MenuInput& input, int ticks) {
     if (m_phase == Phase::Flashing) {
         m_timer -= ticks;
         if (m_timer < 0) {

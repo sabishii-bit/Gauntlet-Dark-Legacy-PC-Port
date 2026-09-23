@@ -33,7 +33,7 @@ void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevic
         }
         const Mat4 at =
             i < pose.size() ? root * pose[i] : glm::translate(root, tree.worldPosition(i));
-        m_field.start(descriptor, at, texture, static_cast<std::uint32_t>(i + 1));
+        m_field.start(descriptor, at, texture, static_cast<unsigned int>(i + 1));
         m_nodes.push_back({i, index});
     }
 }
@@ -47,7 +47,7 @@ void TreeParticles::step(float seconds, const Mat4& root, std::span<const Mat4> 
     m_field.step(seconds);
 }
 
-void TreeParticles::setTextureFrame(std::uint32_t slot, const Texture& texture) {
+void TreeParticles::setTextureFrame(unsigned int slot, const Texture& texture) {
     for (std::size_t i = 0; i < m_nodes.size(); ++i) {
         if (m_nodes[i].texture == slot) {
             m_field.setTexture(i, texture);

@@ -13,12 +13,12 @@ constexpr float kMorphLife = 15.0f;
 constexpr float kSimulationStep = 1.0f / 120.0f;
 constexpr float kWallTolerance = 0.001f;
 constexpr float kFloorClearance = 0.1f;
-constexpr std::uint32_t kSpin = 8;
-constexpr std::uint32_t kCustomEffect = 0xF000000;
+constexpr unsigned int kSpin = 8;
+constexpr unsigned int kCustomEffect = 0xF000000;
 } // namespace
 
-std::uint32_t CritterProjectiles::show(Flying& flying, std::int32_t index, RenderDevice& device,
-                                       EffectTrees& effects, const PlaySound& sound, float life) {
+unsigned int CritterProjectiles::show(Flying& flying, int index, RenderDevice& device,
+                                      EffectTrees& effects, const PlaySound& sound, float life) {
     const CritterSound* cue = flying.shot.data->sound(index);
     if (cue == nullptr) {
         return 0;
@@ -117,9 +117,9 @@ void CritterProjectiles::update(float seconds, const WorldCollision* collision,
         const float spatialStep =
             std::max(radius * 0.5f, kFloorClearance) / std::max(glm::length(flying.velocity), 1.0f);
         const auto steps =
-            static_cast<std::int32_t>(std::ceil(seconds / std::min(kSimulationStep, spatialStep)));
+            static_cast<int>(std::ceil(seconds / std::min(kSimulationStep, spatialStep)));
         const float dt = seconds / static_cast<float>(steps);
-        for (std::int32_t step = 0; step < steps; ++step) {
+        for (int step = 0; step < steps; ++step) {
             const Vec3 from = flying.position;
             const Vec3 acceleration{0.0f, -damage.gravity, 0.0f};
             const Vec3 to = from + flying.velocity * dt + acceleration * (0.5f * dt * dt);

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -49,7 +48,7 @@ public:
     /** One effect playing. */
     struct Effect {
         std::string name;
-        std::uint32_t id = 0;
+        unsigned int id = 0;
         Vec3 position{0.0f, 0.0f, 0.0f};
         float scale = 1.0f;
         float yaw = 0.0f;
@@ -79,19 +78,18 @@ public:
     bool start(RenderDevice& device, ItemArchive& archive, std::string_view tree,
                const Vec3& position, float scale = 1.0f);
     /** The same, turned, moving or repeating as `setting` says; its number, or nought. */
-    std::uint32_t startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
-                           const Vec3& position, const Setting& setting);
+    unsigned int startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
+                          const Vec3& position, const Setting& setting);
     /** Ends effect number `id` now. */
-    void stop(std::uint32_t id);
+    void stop(unsigned int id);
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
-    void moveTo(std::uint32_t id, const Vec3& position);
+    void moveTo(unsigned int id, const Vec3& position);
     /** Places an effect on a fully posed attachment. Its own scale still applies. */
-    void placeAt(std::uint32_t id, const Mat4& attachment);
+    void placeAt(unsigned int id, const Mat4& attachment);
     /** Attaches an emitter to the effect root; existing particles remain in world space
      * unless its descriptor explicitly requests dynamic particles. */
-    void attachTrail(std::uint32_t id, const ParticleDescriptor& descriptor,
-                     const Texture& texture);
-    bool playing(std::uint32_t id) const;
+    void attachTrail(unsigned int id, const ParticleDescriptor& descriptor, const Texture& texture);
+    bool playing(unsigned int id) const;
     void update(float seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
@@ -111,7 +109,7 @@ private:
     std::vector<std::unique_ptr<Effect>> m_effects;
     std::vector<std::unique_ptr<Motion>> m_motions;
     float m_frames = 0.0f;
-    std::uint32_t m_nextId = 1;
+    unsigned int m_nextId = 1;
 };
 
 } // namespace gdl::game

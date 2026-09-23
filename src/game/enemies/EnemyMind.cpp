@@ -3,7 +3,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <numbers>
 
 namespace gdl::game {
@@ -12,22 +11,22 @@ namespace {
 
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kHeadingSlack = 0.0349f; ///< two degrees: a heading this close is the same
-constexpr std::int32_t kStuckTurns = 10; ///< probes refused before going straight anyway
-constexpr std::int32_t kCornerTurns = 7; ///< bumps before the route doubles the other way
-constexpr std::int32_t kShortWait = 10;  ///< ticks a heading is held after a bump
-constexpr std::int32_t kLongWait = 60;
-constexpr std::int32_t kShortWaitOther = 15; ///< when the bump was another enemy
-constexpr std::int32_t kLongWaitOther = 50;
+constexpr int kStuckTurns = 10;          ///< probes refused before going straight anyway
+constexpr int kCornerTurns = 7;          ///< bumps before the route doubles the other way
+constexpr int kShortWait = 10;           ///< ticks a heading is held after a bump
+constexpr int kLongWait = 60;
+constexpr int kShortWaitOther = 15; ///< when the bump was another enemy
+constexpr int kLongWaitOther = 50;
 constexpr float kWanderTurn = kPi / 4.0f; ///< a wanderer turns this much at a dead end
-constexpr std::int32_t kWanderWait = 30;
+constexpr int kWanderWait = 30;
 constexpr float kProwlPounce = 8.0f; ///< a prowler goes for a player this close
 constexpr float kLoiterTurn = kPi / 64.0f;
 constexpr float kThrowReach = 10.0f; ///< a thrower's player must be within this above or below
 constexpr float kKeepOffFrom = 0.6f; ///< of its sight, a skirmisher backs off from
 constexpr float kKeepOffTo = 0.8f;   ///< of its sight, and stops at
 constexpr float kKeepOffPace = 0.8f;
-constexpr std::int32_t kFuseTicks = 60;
-constexpr std::int32_t kBurnTicks = 240; ///< a suicide's run before it blows up anyway
+constexpr int kFuseTicks = 60;
+constexpr int kBurnTicks = 240; ///< a suicide's run before it blows up anyway
 constexpr float kSuicidePace = 1.5f;
 
 // The corner-hugging offsets, one more sixteenth of a turn for every bump.
@@ -40,7 +39,7 @@ float yawBetween(const Vec3& from, const Vec3& to) {
 }
 
 /** A hold on the heading, unless one is already running. */
-void hold(MindMemory& memory, std::int32_t ticks) {
+void hold(MindMemory& memory, int ticks) {
     if (memory.deadEnd <= 0) {
         memory.deadEnd = ticks;
     }
@@ -48,7 +47,7 @@ void hold(MindMemory& memory, std::int32_t ticks) {
 
 /** The bookkeeping a bump does for the corner-huggers: a short hold and one more bump on
  * the route, or, on a route already doubled, a long hold and a fresh start. */
-void bumped(MindMemory& memory, std::int32_t shortWait, std::int32_t longWait) {
+void bumped(MindMemory& memory, int shortWait, int longWait) {
     if (std::abs(memory.route) <= 2) {
         ++memory.collided;
         hold(memory, shortWait);
@@ -63,7 +62,7 @@ void bumped(MindMemory& memory, std::int32_t shortWait, std::int32_t longWait) {
     }
 }
 
-void countDown(MindMemory& memory, std::int32_t ticks) {
+void countDown(MindMemory& memory, int ticks) {
     if (memory.deadEnd > 0) {
         memory.deadEnd -= ticks;
     }
@@ -83,8 +82,8 @@ public:
         }
         const float face = sense.faceAngle(memory.heading);
         float heading = face;
-        for (std::int32_t k = 0; k <= 8; ++k) {
-            const std::int32_t turns = (k + 1) / 2; // out from straight, a sixteenth either side
+        for (int k = 0; k <= 8; ++k) {
+            const int turns = (k + 1) / 2; // out from straight, a sixteenth either side
             const float offset =
                 static_cast<float>(turns) * (kPi / 8.0f) * (k % 2 == 0 ? 1.0f : -1.0f);
             const float candidate = wrapAngle(face + offset);
@@ -179,9 +178,9 @@ public:
             if (memory.route == 0) {
                 memory.route = sense.nearerSide();
             }
-            const std::int32_t side = memory.route > 0 ? 1 : -1;
+            const int side = memory.route > 0 ? 1 : -1;
             bool found = false;
-            for (const std::int32_t s : {side, -side}) {
+            for (const int s : {side, -side}) {
                 for (std::size_t k = 1; k < kCornerOffsets.size() && !found; ++k) {
                     const float tried = wrapAngle(face + static_cast<float>(s) * kCornerOffsets[k]);
                     if (sense.openAlong(tried)) {
@@ -356,7 +355,7 @@ public:
         countDown(memory, sense.ticks);
         float away = wrapAngle(sense.faceAngle(memory.heading) + kPi);
         if (!sense.clearAlong(away)) {
-            for (std::int32_t k = 1; k <= 4 && !sense.clearAlong(away); ++k) {
+            for (int k = 1; k <= 4 && !sense.clearAlong(away); ++k) {
                 away = wrapAngle(away + static_cast<float>(k) * (kPi / 4.0f) *
                                             (k % 2 == 0 ? 1.0f : -1.0f));
             }
@@ -436,7 +435,7 @@ float MindSense::faceAngle(float fallback) const {
     return target >= 0 ? yawBetween(position, targetPosition) : fallback;
 }
 
-std::int32_t MindSense::nearerSide() const {
+int MindSense::nearerSide() const {
     if (target < 0) {
         return 1;
     }
@@ -451,7 +450,7 @@ std::int32_t MindSense::nearerSide() const {
     return x2 * x2 + z2 * z2 <= x1 * x1 + z1 * z1 ? -1 : 1;
 }
 
-const EnemyMind& enemyMindOf(std::int32_t algorithm) {
+const EnemyMind& enemyMindOf(int algorithm) {
     switch (algorithm) {
     case kSeekWay: return kSeek;
     case kProwlWay: return kProwl;

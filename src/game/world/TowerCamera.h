@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <span>
 
 #include "engine/assets/WorldLayout.h"
@@ -40,16 +39,16 @@ struct CameraView {
  */
 class TowerCamera {
 public:
-    static constexpr std::int32_t kRing = 9; ///< frames the look-at point and distance average over
-    static constexpr std::int32_t kTurnSteps = 50; ///< steps a turn to a new marker takes
-    static constexpr float kStepRate = 30.0f;      ///< steps per second
+    static constexpr int kRing = 9;       ///< frames the look-at point and distance average over
+    static constexpr int kTurnSteps = 50; ///< steps a turn to a new marker takes
+    static constexpr float kStepRate = 30.0f; ///< steps per second
     static constexpr float kSwitchRatio =
         4.0f / 9.0f; ///< a marker takes over when this much nearer (squared)
     static constexpr float kAloneDistance = 0.8f;    ///< of the shortest range with one player
     static constexpr float kPartyDistance = 0.9375f; ///< of the longest range with more
     static constexpr float kNearGap = 10.0f; ///< slack kept when the fit lets the camera come in
     static constexpr float kFarGap = 4.0f;   ///< slack added when it must go out
-    static constexpr std::int32_t kSettleLimit = 100; ///< updates a fresh start may take to settle
+    static constexpr int kSettleLimit = 100; ///< updates a fresh start may take to settle
 
     /** Stands the camera up for `subjects` and lets it settle, like a level start. */
     void reset(std::span<const CameraSubject> subjects, std::span<const WorldLocator> markers,
@@ -64,7 +63,7 @@ public:
     float pitch() const { return m_camera.pitch; }
     float distance() const { return m_distance; }
     const Vec3& attention() const { return m_attention; }
-    std::int32_t marker() const { return m_marker; }
+    int marker() const { return m_marker; }
     bool turning() const { return m_turnStep < static_cast<float>(kTurnSteps); }
 
     /** The angles a marker asks for: the camera looks the way the marker faces. */
@@ -85,14 +84,14 @@ private:
     WorldCamera m_camera;
     Vec3 m_attention{0.0f, 0.0f, 0.0f};
     float m_distance = 0.0f;
-    std::int32_t m_marker = -1;
-    std::int32_t m_aimedMarker = -1;
+    int m_marker = -1;
+    int m_aimedMarker = -1;
     float m_yawRate = 0.0f;
     float m_pitchRate = 0.0f;
     float m_turnStep = static_cast<float>(kTurnSteps);
     std::array<Vec3, kRing> m_ringPositions{};
     std::array<float, kRing> m_ringDistances{};
-    std::int32_t m_ringIndex = 0;
+    int m_ringIndex = 0;
 };
 
 } // namespace gdl::game

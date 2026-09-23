@@ -1256,11 +1256,18 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 
 ## Language and style
 
-* Use standard C++ numeric types directly: `float`, `double`, `std::size_t`,
-  and `std::intN_t` / `std::uintN_t` where width or signedness is significant.
-  Do not introduce numeric shorthand aliases. Include `<cstddef>` and
+* Prefer ordinary C++ primitives for gameplay and engine logic: `int`,
+  `unsigned int`, `float` and `double`. Keep `std::size_t` for container sizes
+  and `std::intN_t` / `std::uintN_t` for binary data, audio samples, packed
+  colours, GPU interfaces and other explicitly width-sensitive values.
+  Do not introduce numeric shorthand aliases or replace 64-bit fields with
+  `long` (its width differs on Windows and Linux). Include `<cstddef>` and
   `<cstdint>` directly where used; do not rely on a project umbrella header.
   Asset, serialized, audio and GPU field widths must remain unchanged.
+  The core type tests enforce the supported platforms' 32-bit `int` and
+  `unsigned int` interoperability with fixed-width interfaces in both CI builds.
+  When a cast supplies an initializer's type, use `auto` instead of repeating
+  it; CI's clang-tidy checks this as well as the editor.
 
 * C++26: `-std=c++26` on GCC 14+ / Clang 17+; MSVC 14.4x has no `/std:c++26`
   switch, so the root `CMakeLists.txt` asks CMake for 23 there, which it emits

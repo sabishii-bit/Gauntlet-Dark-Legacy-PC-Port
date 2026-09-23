@@ -11,8 +11,8 @@ namespace gdl::game {
 /** A launch from an animated attack node. The owning CritterData outlives the shot. */
 struct CritterShot {
     const CritterData* data = nullptr;
-    std::int32_t critter = -1;
-    std::int32_t damageIndex = -1;
+    int critter = -1;
+    int damageIndex = -1;
     Vec3 origin{0.0f};
     Vec3 forward{0.0f, 0.0f, 1.0f};
     std::optional<Vec3> target;

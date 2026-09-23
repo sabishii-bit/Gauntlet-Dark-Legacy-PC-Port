@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <span>
 #include <string_view>
@@ -26,7 +25,7 @@ namespace gdl::game {
  * weapons archive; clear before releasing it. No players or world are retained. */
 class LevelArrivalPresentation {
 public:
-    static constexpr std::int32_t kSpawnTicks = 60;
+    static constexpr int kSpawnTicks = 60;
 
     /** Starts at fixed party positions; without a marker the follow camera is used. */
     void begin(RenderDevice& device, ItemArchive& weapons, std::span<const Vec3> positions,
@@ -36,8 +35,7 @@ public:
     /** Advance visuals before the world and its listener update. */
     void animate(float seconds);
     /** Advance the hold and camera after the listener update, preserving its frame phase. */
-    void advance(std::int32_t ticks, bool skip, const Vec3& followPosition,
-                 const Vec3& followAttention);
+    void advance(int ticks, bool skip, const Vec3& followPosition, const Vec3& followAttention);
     void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void drawTitle(Canvas& canvas, const TextPainter& text, std::string_view title,
                    float width) const;
@@ -57,7 +55,7 @@ private:
     };
     std::vector<Spawn> m_spawns;
     TextureAnimator m_textures;
-    std::int32_t m_ticks = 0;
+    int m_ticks = 0;
     float m_frames = 0.0f;
     StartCamera m_camera;
     float m_titleSlide = 0.0f;

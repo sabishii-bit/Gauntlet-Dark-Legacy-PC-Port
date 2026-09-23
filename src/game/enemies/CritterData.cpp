@@ -97,7 +97,7 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_floorOffset = type.value("floorOffset", 0.0f);
         m_originOffset = vecOf(type, "originOffset");
         m_sight = targetOf(type);
-        const std::uint32_t typeFlags = type.value("typeFlags", 0U);
+        const unsigned int typeFlags = type.value("typeFlags", 0U);
         m_meter.pieces = type.value("meterPieces", 0);
         m_meter.advance = type.value("meterAdvance", 0);
         m_meter.leftInset = type.value("meterLeftInset", 0);
@@ -105,10 +105,10 @@ bool CritterData::load(const std::filesystem::path& file) {
         m_meter.shown = (typeFlags & CritterMeter::kShown) != 0 && m_meter.pieces > 0;
         m_meter.backed = (typeFlags & CritterMeter::kBacked) != 0;
         m_meter.barOffset = vecOf(type, "healthBarOffset");
-        const std::int32_t moveIndex = type.value("moveIndex", 0);
-        const std::int32_t moveCount = type.value("moveCount", 0);
+        const int moveIndex = type.value("moveIndex", 0);
+        const int moveCount = type.value("moveCount", 0);
         const auto moves = root.value("moves", Json::array());
-        for (std::int32_t i = 0; i < moveCount; ++i) {
+        for (int i = 0; i < moveCount; ++i) {
             const auto at = static_cast<std::size_t>(moveIndex) + static_cast<std::size_t>(i);
             if (at >= moves.size()) {
                 break;
@@ -186,10 +186,10 @@ bool CritterData::load(const std::filesystem::path& file) {
         }
         m_hitSoundFar = type.value("hitSoundFar", -1);
         m_hitSoundClose = type.value("hitSoundClose", -1);
-        const std::int32_t colBase = type.value("colBase", 0);
-        const std::int32_t colCount = type.value("colCount", 0);
+        const int colBase = type.value("colBase", 0);
+        const int colCount = type.value("colCount", 0);
         const auto nodes = root.value("nodes", Json::array());
-        for (std::int32_t i = 0; i < colCount; ++i) {
+        for (int i = 0; i < colCount; ++i) {
             const auto at = static_cast<std::size_t>(colBase) + static_cast<std::size_t>(i);
             if (at >= nodes.size()) {
                 break;
@@ -209,22 +209,20 @@ bool CritterData::load(const std::filesystem::path& file) {
     }
 }
 
-std::int32_t CritterMove::projectileTriggers(std::int32_t previous, std::int32_t current,
-                                             bool second) const {
-    const std::int32_t first = second ? frameStart2 : frameStart;
+int CritterMove::projectileTriggers(int previous, int current, bool second) const {
+    const int first = second ? frameStart2 : frameStart;
     if (first < 0 || current < first || current <= previous) {
         return 0;
     }
-    constexpr std::int32_t kRepeatedProjectile = 133;
+    constexpr int kRepeatedProjectile = 133;
     if (type != kRepeatedProjectile) {
         return previous < first ? 1 : 0;
     }
-    const std::int32_t last = second ? frameEnd2 : frameEnd;
-    std::int32_t count = 0;
-    for (std::int32_t frame = std::max(first, previous + 1); frame <= std::min(last, current);
-         ++frame) {
-        if (framePeriod <= 0.0f || static_cast<std::int32_t>(std::fmod(
-                                       static_cast<float>(frame - first), framePeriod)) == 0) {
+    const int last = second ? frameEnd2 : frameEnd;
+    int count = 0;
+    for (int frame = std::max(first, previous + 1); frame <= std::min(last, current); ++frame) {
+        if (framePeriod <= 0.0f ||
+            static_cast<int>(std::fmod(static_cast<float>(frame - first), framePeriod)) == 0) {
             ++count;
         }
     }
@@ -239,19 +237,19 @@ std::string CritterSound::soundFor(char letter) const {
     return name;
 }
 
-const CritterSound* CritterData::sound(std::int32_t index) const {
+const CritterSound* CritterData::sound(int index) const {
     return index >= 0 && static_cast<std::size_t>(index) < m_sounds.size()
                ? &m_sounds[static_cast<std::size_t>(index)]
                : nullptr;
 }
 
-const CritterDamage* CritterData::damage(std::int32_t index) const {
+const CritterDamage* CritterData::damage(int index) const {
     return index >= 0 && static_cast<std::size_t>(index) < m_damages.size()
                ? &m_damages[static_cast<std::size_t>(index)]
                : nullptr;
 }
 
-std::optional<std::size_t> CritterData::moveOfType(std::int32_t type) const {
+std::optional<std::size_t> CritterData::moveOfType(int type) const {
     for (std::size_t i = 0; i < m_moves.size(); ++i) {
         if (m_moves[i].type == type) {
             return i;

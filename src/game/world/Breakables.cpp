@@ -51,9 +51,9 @@ bool Breakables::bind(RenderDevice& device, const WorldLayout& layout, ItemArchi
             continue;
         }
         auto barrel = std::make_unique<Barrel>();
-        barrel->instance = static_cast<std::int32_t>(index);
+        barrel->instance = static_cast<int>(index);
         barrel->minPlayers = instance.minPlayers;
-        barrel->health = std::max<std::int32_t>(info.hitPoints, 1);
+        barrel->health = std::max<int>(info.hitPoints, 1);
         barrel->armor = info.armor;
         barrel->radius = info.radius > 0.0f ? info.radius : 1.0f;
         barrel->height = info.height > 0.0f ? info.height : 3.0f;
@@ -82,7 +82,7 @@ void Breakables::clear() {
     m_seed = kSeedStart;
 }
 
-void Breakables::setPlayerCount(std::int32_t players) {
+void Breakables::setPlayerCount(int players) {
     for (const std::unique_ptr<Barrel>& barrel : m_barrels) {
         barrel->shown = shownToParty(barrel->minPlayers, players);
     }
@@ -149,7 +149,7 @@ std::optional<BreakableStrike> Breakables::strike(std::size_t index, float power
         if (felt <= 0.0f) {
             felt = 1.0f;
         }
-        barrel.health = std::max(barrel.health - static_cast<std::int32_t>(std::lround(felt)), 0);
+        barrel.health = std::max(barrel.health - static_cast<int>(std::lround(felt)), 0);
     }
     BreakableStrike result;
     result.index = index;

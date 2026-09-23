@@ -1,6 +1,5 @@
 #pragma once
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -41,24 +40,24 @@ public:
         std::function<void(float)> advanceLegend;
         std::function<void(const Vec3&)> fallen;
         std::function<void(const CritterSpew&)> spew;
-        std::function<void(std::int32_t, float)> advanceVictory;
+        std::function<void(int, float)> advanceVictory;
         std::function<void()> levels;
-        std::function<void(std::int32_t, std::int32_t, bool)> award;
+        std::function<void(int, int, bool)> award;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
-    void update(std::int32_t ticks, float seconds, std::span<PlayerRuntime> players,
+    void update(int ticks, float seconds, std::span<PlayerRuntime> players,
                 std::span<const Obstacle> fixtures, const Events& events);
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
     static void applyCritterBlow(const CritterBlow& blow, std::span<PlayerRuntime> players,
                                  const Events& events);
-    void strikeEnemy(std::int32_t id, float power, std::uint32_t flags, const Vec3& direction,
-                     std::int32_t byPlayer, std::span<const PlayerRuntime> players);
-    void strikeCritter(std::int32_t id, float power, std::uint32_t flags, const Vec3& direction,
-                       std::int32_t byPlayer, std::optional<Vec3> where, bool close,
+    void strikeEnemy(int id, float power, unsigned int flags, const Vec3& direction, int byPlayer,
+                     std::span<const PlayerRuntime> players);
+    void strikeCritter(int id, float power, unsigned int flags, const Vec3& direction, int byPlayer,
+                       std::optional<Vec3> where, bool close,
                        std::span<const PlayerRuntime> players);
-    void strikeGenerator(std::int32_t id, float power, std::int32_t byPlayer);
+    void strikeGenerator(int id, float power, int byPlayer);
     Enemies& enemies() { return m_enemies; }
     const Enemies& enemies() const { return m_enemies; }
     Generators& generators() { return m_generators; }
@@ -86,8 +85,8 @@ private:
     CritterProjectiles m_critterProjectiles;
     /** An effect riding on one of the great ones. */
     struct CritterEffect {
-        std::uint32_t effect = 0;
-        std::int32_t critter = -1;
+        unsigned int effect = 0;
+        int critter = -1;
         bool ofBoss = false;
         Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
         std::optional<std::string> node;

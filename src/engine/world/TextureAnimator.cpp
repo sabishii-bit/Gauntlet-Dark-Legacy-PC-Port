@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <optional>
@@ -16,7 +15,7 @@ namespace {
 /** The set holding a texture of this name, and the index there. */
 struct Found {
     TextureSet* set = nullptr;
-    std::uint32_t index = 0;
+    unsigned int index = 0;
 };
 
 std::optional<Found> findFrame(std::string_view name, TextureSet& textures,
@@ -48,7 +47,7 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations, Tex
             continue;
         }
         Entry entry;
-        entry.slot = static_cast<std::uint32_t>(animation.texture);
+        entry.slot = static_cast<unsigned int>(animation.texture);
         entry.period = std::abs(animation.frames);
         entry.rate = animation.rate;
         entry.counter = animation.start;
@@ -58,13 +57,13 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations, Tex
             const float sign = animation.frames < 0 ? -1.0f : 1.0f;
             entry.direction = animation.source == TextureAnimationInfo::kScrollU ? Vec2{sign, 0.0f}
                                                                                  : Vec2{0.0f, sign};
-            m_entryOfInfo[i] = static_cast<std::int32_t>(m_entries.size());
+            m_entryOfInfo[i] = static_cast<int>(m_entries.size());
             m_entries.push_back(std::move(entry));
             continue;
         }
         std::optional<Found> first;
         if (animation.source >= 0) {
-            first = Found{&textures, static_cast<std::uint32_t>(animation.source)};
+            first = Found{&textures, static_cast<unsigned int>(animation.source)};
         } else {
             first = findFrame(animation.frameName, textures, lenders);
         }
@@ -79,8 +78,8 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations, Tex
             continue;
         }
         // The cycle ends early where the set ends or a frame cannot be read.
-        for (std::int32_t f = 0; f < entry.period; ++f) {
-            const std::uint32_t index = found.index + static_cast<std::uint32_t>(f);
+        for (int f = 0; f < entry.period; ++f) {
+            const unsigned int index = found.index + static_cast<unsigned int>(f);
             if (index >= found.set->size()) {
                 break;
             }
@@ -94,9 +93,9 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations, Tex
         if (entry.frames.empty()) {
             continue;
         }
-        entry.period = static_cast<std::int32_t>(entry.frames.size());
+        entry.period = static_cast<int>(entry.frames.size());
         entry.counter %= entry.period;
-        m_entryOfInfo[i] = static_cast<std::int32_t>(m_entries.size());
+        m_entryOfInfo[i] = static_cast<int>(m_entries.size());
         m_entries.push_back(std::move(entry));
     }
 }
@@ -107,14 +106,13 @@ void TextureAnimator::clear() {
     m_frame = 0;
 }
 
-float TextureAnimator::scrollAt(std::int32_t sinceStart, std::int32_t rate, std::int32_t frames) {
+float TextureAnimator::scrollAt(int sinceStart, int rate, int frames) {
     return scrollStateAt(sinceStart, rate, frames).along;
 }
 
 /** The original's CalcTexScroll: the slide, and the stretch that is what it reaches less
  * the slide. */
-ScrollState TextureAnimator::scrollStateAt(std::int32_t sinceStart, std::int32_t rate,
-                                           std::int32_t frames) {
+ScrollState TextureAnimator::scrollStateAt(int sinceStart, int rate, int frames) {
     const auto t = static_cast<float>(sinceStart);
     const auto lo = static_cast<float>(std::min(rate, frames));
     const auto hi = static_cast<float>(frames);
@@ -153,8 +151,7 @@ ScrollState TextureAnimator::scrollStateAt(std::int32_t sinceStart, std::int32_t
     return state;
 }
 
-std::optional<TextureMotion> TextureAnimator::motionAt(std::int32_t info,
-                                                       std::int32_t frame) const {
+std::optional<TextureMotion> TextureAnimator::motionAt(int info, int frame) const {
     if (info < 0 || static_cast<std::size_t>(info) >= m_entryOfInfo.size() ||
         m_entryOfInfo[static_cast<std::size_t>(info)] < 0) {
         return std::nullopt;
@@ -163,7 +160,7 @@ std::optional<TextureMotion> TextureAnimator::motionAt(std::int32_t info,
         m_entries[static_cast<std::size_t>(m_entryOfInfo[static_cast<std::size_t>(info)])];
     TextureMotion motion;
     motion.slot = entry.slot;
-    const std::int32_t since = frame - entry.offset;
+    const int since = frame - entry.offset;
     if (entry.frames.empty()) {
         const ScrollState scroll = scrollStateAt(since, entry.rate, entry.period);
         motion.offset = entry.direction * scroll.along;
@@ -172,7 +169,7 @@ std::optional<TextureMotion> TextureAnimator::motionAt(std::int32_t info,
                             entry.direction.y != 0.0f ? scroll.scale : 1.0f};
         return motion;
     }
-    std::int32_t f = std::max(since, 0);
+    int f = std::max(since, 0);
     if (entry.rate > 0) {
         f /= entry.rate;
     }
@@ -205,12 +202,12 @@ void TextureAnimator::show(const Entry& entry, WorldScene& scene) {
     scene.setTextureFrame(entry.slot, entry.frames[static_cast<std::size_t>(entry.counter)]);
 }
 
-void TextureAnimator::step(std::uint32_t ticks) {
-    for (std::uint32_t t = 0; t < ticks; ++t) {
+void TextureAnimator::step(unsigned int ticks) {
+    for (unsigned int t = 0; t < ticks; ++t) {
         ++m_frame;
         for (Entry& entry : m_entries) {
             if (entry.keyed ||
-                (entry.rate > 1 && m_frame % static_cast<std::uint32_t>(entry.rate) != 0)) {
+                (entry.rate > 1 && m_frame % static_cast<unsigned int>(entry.rate) != 0)) {
                 continue;
             }
             entry.counter = (entry.counter + 1) % entry.period;
@@ -226,12 +223,12 @@ void TextureAnimator::apply(WorldScene& scene) const {
     }
 }
 
-void TextureAnimator::step(WorldScene& scene, std::uint32_t ticks) {
-    for (std::uint32_t t = 0; t < ticks; ++t) {
+void TextureAnimator::step(WorldScene& scene, unsigned int ticks) {
+    for (unsigned int t = 0; t < ticks; ++t) {
         ++m_frame;
         for (Entry& entry : m_entries) {
             if (entry.keyed ||
-                (entry.rate > 1 && m_frame % static_cast<std::uint32_t>(entry.rate) != 0)) {
+                (entry.rate > 1 && m_frame % static_cast<unsigned int>(entry.rate) != 0)) {
                 continue;
             }
             entry.counter = (entry.counter + 1) % entry.period;

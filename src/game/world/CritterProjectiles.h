@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <random>
 #include <span>
@@ -17,9 +16,9 @@
 
 namespace gdl::game {
 struct CritterProjectileHit {
-    std::int32_t player = -1;
+    int player = -1;
     float damage = 0.0f;
-    std::uint32_t flags = 0;
+    unsigned int flags = 0;
 };
 
 /** Moving attack effects, independent of the creature's animation after launch.
@@ -44,11 +43,11 @@ private:
         Vec3 velocity{0.0f};
         Vec3 spin{0.0f};
         Vec3 rotation{0.0f};
-        std::uint32_t effect = 0;
+        unsigned int effect = 0;
         bool morphed = false;
     };
-    static std::uint32_t show(Flying& flying, std::int32_t index, RenderDevice& device,
-                              EffectTrees& effects, const PlaySound& sound, float life = 0.0f);
+    static unsigned int show(Flying& flying, int index, RenderDevice& device, EffectTrees& effects,
+                             const PlaySound& sound, float life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
     std::vector<Flying> m_flying;
     std::vector<CritterProjectileHit> m_hits;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string_view>
@@ -68,7 +67,7 @@ public:
     /** The pickups the level places: the crystals Sumner keeps for a new party. */
     const PlacedItems& placedItems() const { return m_placedItems; }
     /** Shows the pickups a party of `players` sees; none for the select screen's empty one. */
-    void setPlayerCount(std::int32_t players) { m_placedItems.setPlayerCount(players); }
+    void setPlayerCount(int players) { m_placedItems.setPlayerCount(players); }
     /** Fades one of the level's objects (a unit); see WorldScene::setObjectAlpha. */
     void setObjectAlpha(std::size_t object, float alpha) { m_scene.setObjectAlpha(object, alpha); }
     float objectAlpha(std::size_t object) const { return m_scene.objectAlpha(object); }
@@ -86,8 +85,7 @@ public:
                                    m_collision.loaded() ? &m_collision : nullptr);
     }
     /** Drops the item of one of the level's records (what a chest held) at `position`. */
-    bool placeItemRecord(RenderDevice& device, std::int32_t record, const Vec3& position,
-                         std::int32_t amount = 0) {
+    bool placeItemRecord(RenderDevice& device, int record, const Vec3& position, int amount = 0) {
         return m_placedItems.placeRecord(device, record, position,
                                          m_collision.loaded() ? &m_collision : nullptr, amount);
     }
@@ -133,13 +131,13 @@ public:
     std::optional<WorldCamera> entranceCamera() const;
 
     /** The level's start marker number `index` (0 is its entrance). */
-    const WorldLocator* startPoint(std::uint32_t index) const;
+    const WorldLocator* startPoint(unsigned int index) const;
     /** Which of the tower's start markers a party back from realm `realm` stands at: the one
      * among that realm's portals, by the original's table; the entrance for any other. */
-    static std::uint32_t towerMarkerOf(std::uint32_t realm);
+    static unsigned int towerMarkerOf(unsigned int realm);
     /** Where a party arriving from realm `realm` stands: in the tower among that realm's
      * portals, anywhere else at the level's entrance. */
-    const WorldLocator* arrivalPoint(std::uint32_t realm) const;
+    const WorldLocator* arrivalPoint(unsigned int realm) const;
 
     /** The game camera markers the follow camera takes its angles from. */
     const std::vector<WorldLocator>& cameraMarkers() const { return m_markers; }
@@ -170,8 +168,8 @@ private:
     TextureAnimator m_textureAnimator;
     ParticleField m_particles;
     LevelTriggers m_triggers;
-    std::vector<std::int32_t> m_movingObjects; ///< objects whose collision follows their animation
-    float m_frameRemainder = 0.0f;             ///< game frames owed to the texture animations
+    std::vector<int> m_movingObjects; ///< objects whose collision follows their animation
+    float m_frameRemainder = 0.0f;    ///< game frames owed to the texture animations
     WorldCollision m_collision;
     WorldData m_worldData;
     WorldLighting m_lighting;

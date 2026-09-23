@@ -27,27 +27,27 @@ enum class SelectorCue : std::uint8_t { None, Opened, Closed, Moved, Switched };
 class PowerupSelector {
 public:
     enum class State : std::uint8_t { Closed, SlidingIn, Open, SlidingOut };
-    static constexpr std::int32_t kSlide = 128; ///< how far the label rides up
-    static constexpr std::int32_t kSlidePerTick = 4;
-    static constexpr std::int32_t kLabelX = 12;    ///< from the box's left
-    static constexpr std::int32_t kLabelRise = 25; ///< its resting height over the box's top
+    static constexpr int kSlide = 128; ///< how far the label rides up
+    static constexpr int kSlidePerTick = 4;
+    static constexpr int kLabelX = 12;    ///< from the box's left
+    static constexpr int kLabelRise = 25; ///< its resting height over the box's top
     static constexpr float kLabelScale = 0.45f;
 
-    SelectorCue step(const SelectorInput& input, Inventory& inventory, std::int32_t ticks);
+    SelectorCue step(const SelectorInput& input, Inventory& inventory, int ticks);
     void close();
 
     State state() const { return m_state; }
     bool showing() const { return m_state == State::Open; }
     /** The slot named, or -1. */
-    std::int32_t selection() const { return m_selection; }
-    std::int32_t slide() const { return m_slide; }
+    int selection() const { return m_selection; }
+    int slide() const { return m_slide; }
     /** The label's top on a box whose top is `boxY`. */
-    std::int32_t labelY(std::int32_t boxY) const { return boxY - kLabelRise + kSlide - m_slide; }
+    int labelY(int boxY) const { return boxY - kLabelRise + kSlide - m_slide; }
 
 private:
     State m_state = State::Closed;
-    std::int32_t m_selection = -1;
-    std::int32_t m_slide = 0;
+    int m_selection = -1;
+    int m_slide = 0;
 };
 
 } // namespace gdl::game

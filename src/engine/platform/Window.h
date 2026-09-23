@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
@@ -16,8 +15,8 @@ namespace gdl {
 
 struct WindowDesc {
     std::string title = "Gauntlet Dark Legacy";
-    std::uint32_t width = 1280;
-    std::uint32_t height = 896;
+    unsigned int width = 1280;
+    unsigned int height = 896;
     bool resizable = true;
 };
 

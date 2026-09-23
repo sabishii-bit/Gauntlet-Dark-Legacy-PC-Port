@@ -2,7 +2,6 @@
 
 #include <cctype>
 #include <cstddef>
-#include <cstdint>
 #include <string_view>
 
 namespace gdl {
@@ -136,7 +135,7 @@ void Input::setPad(int pad, const PadSnapshot& snapshot) {
     }
 }
 
-void Input::addTypedChar(std::uint32_t codepoint) {
+void Input::addTypedChar(unsigned int codepoint) {
     m_typed.push_back(codepoint);
 }
 

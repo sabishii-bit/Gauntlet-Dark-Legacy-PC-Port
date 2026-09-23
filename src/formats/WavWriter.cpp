@@ -36,7 +36,7 @@ std::vector<std::uint8_t> encodeWav(std::span<const std::int16_t> samples, std::
                                     std::uint32_t channels) {
     GDL_VERIFY(channels > 0 && sampleRate > 0, "encodeWav needs a channel count and a rate");
     const auto dataBytes = static_cast<std::uint32_t>(samples.size() * sizeof(std::int16_t));
-    const std::uint16_t blockAlign = static_cast<std::uint16_t>(channels * (kBitsPerSample / 8));
+    const auto blockAlign = static_cast<std::uint16_t>(channels * (kBitsPerSample / 8));
     std::vector<std::uint8_t> out;
     out.reserve(44 + dataBytes);
     putTag(out, "RIFF");

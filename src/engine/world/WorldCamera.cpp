@@ -1,7 +1,6 @@
 #include "engine/world/WorldCamera.h"
 
 #include <cmath>
-#include <cstdint>
 
 namespace gdl {
 
@@ -98,7 +97,7 @@ CameraFrame CameraFrame::at(const Vec3& eye) {
     return frame;
 }
 
-Mat4 CameraFrame::face(const Mat4& placement, std::uint32_t mode) const {
+Mat4 CameraFrame::face(const Mat4& placement, unsigned int mode) const {
     if (mode == 0) {
         return placement;
     }

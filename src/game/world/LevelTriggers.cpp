@@ -11,10 +11,10 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::uint32_t kTriggerKind = 24; ///< the item subtype the tower's triggers use
-constexpr std::uint32_t kBridgeKind = 20;
-constexpr std::uint32_t kBridgeFlags = 0x10;
-constexpr std::uint32_t kDefaultFlags = 0x8;
+constexpr unsigned int kTriggerKind = 24; ///< the item subtype the tower's triggers use
+constexpr unsigned int kBridgeKind = 20;
+constexpr unsigned int kBridgeFlags = 0x10;
+constexpr unsigned int kDefaultFlags = 0x8;
 constexpr std::uint8_t kTinyRadius = 0xFF;
 
 std::int16_t paramS16(const ItemInstance& instance, std::size_t at) {
@@ -25,7 +25,7 @@ std::int16_t paramS16(const ItemInstance& instance, std::size_t at) {
 
 } // namespace
 
-std::int32_t LevelTriggers::crystalsNeeded(std::int32_t realm) {
+int LevelTriggers::crystalsNeeded(int realm) {
     if (realm < 0 || static_cast<std::size_t>(realm) >= kCrystalsToOpen.size()) {
         return 0;
     }
@@ -45,17 +45,17 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         }
         const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
         LevelTrigger trigger;
-        trigger.instance = static_cast<std::int32_t>(i);
+        trigger.instance = static_cast<int>(i);
         trigger.spot = instance.position;
         const std::int16_t object = paramS16(instance, 0);
         trigger.target =
             object >= 0 && static_cast<std::size_t>(object) < layout.objects().size() ? object : -1;
         // The trigger's flags: the kind's own, then whatever the instance adds.
-        std::uint32_t flags =
-            static_cast<std::uint32_t>(info.subtype) == kBridgeKind ? kBridgeFlags : kDefaultFlags;
-        if (static_cast<std::uint32_t>(info.subtype) == kTriggerKind ||
-            static_cast<std::uint32_t>(info.subtype) > kTriggerKind) {
-            flags = static_cast<std::uint32_t>(static_cast<std::uint16_t>(paramS16(instance, 2))) |
+        unsigned int flags =
+            static_cast<unsigned int>(info.subtype) == kBridgeKind ? kBridgeFlags : kDefaultFlags;
+        if (static_cast<unsigned int>(info.subtype) == kTriggerKind ||
+            static_cast<unsigned int>(info.subtype) > kTriggerKind) {
+            flags = static_cast<unsigned int>(static_cast<std::uint16_t>(paramS16(instance, 2))) |
                     kDefaultFlags;
         }
         trigger.flags = flags;
@@ -70,7 +70,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         trigger.nextId = instance.params[7];
         // The slot is a signed byte in the data: 255 (and anything high) means none.
         const std::uint8_t slot = instance.params[5];
-        trigger.sound = slot >= 0x80 ? -1 : static_cast<std::int32_t>(slot);
+        trigger.sound = slot >= 0x80 ? -1 : static_cast<int>(slot);
         m_triggers.push_back(trigger);
         if (trigger.target >= 0 && targetOf(trigger.target) == nullptr) {
             Target target;
@@ -93,7 +93,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
             const LevelTrigger& other = m_triggers[j];
             if (&other != &trigger && other.id == trigger.nextId &&
                 (other.flags & LevelTrigger::kRequirement) == 0) {
-                trigger.next = static_cast<std::int32_t>(j);
+                trigger.next = static_cast<int>(j);
                 m_triggers[j].chained = true;
                 break;
             }
@@ -127,7 +127,7 @@ TriggerOpening LevelTriggers::openingOf(const Target& target, bool atOnce) {
                           atOnce, target.sound};
 }
 
-LevelTriggers::Target* LevelTriggers::targetOf(std::int32_t object) {
+LevelTriggers::Target* LevelTriggers::targetOf(int object) {
     for (Target& target : m_targets) {
         if (target.object == object) {
             return &target;
@@ -136,7 +136,7 @@ LevelTriggers::Target* LevelTriggers::targetOf(std::int32_t object) {
     return nullptr;
 }
 
-const LevelTriggers::Target* LevelTriggers::targetOf(std::int32_t object) const {
+const LevelTriggers::Target* LevelTriggers::targetOf(int object) const {
     for (const Target& target : m_targets) {
         if (target.object == object) {
             return &target;
@@ -145,12 +145,12 @@ const LevelTriggers::Target* LevelTriggers::targetOf(std::int32_t object) const 
     return nullptr;
 }
 
-bool LevelTriggers::opened(std::int32_t object) const {
+bool LevelTriggers::opened(int object) const {
     const Target* target = targetOf(object);
     return target != nullptr && target->open;
 }
 
-float LevelTriggers::alphaOf(std::int32_t object) const {
+float LevelTriggers::alphaOf(int object) const {
     const Target* target = targetOf(object);
     return target != nullptr ? target->alpha : 1.0f;
 }
@@ -164,7 +164,7 @@ bool LevelTriggers::qualifies(const LevelTrigger& trigger,
     if (!trigger.needsCrystals()) {
         return true;
     }
-    const std::int32_t needed = crystalsNeeded(trigger.id);
+    const int needed = crystalsNeeded(trigger.id);
     const auto realm = static_cast<std::size_t>(trigger.id);
     if (realm >= kRealmCount) {
         return false;
@@ -199,7 +199,7 @@ bool LevelTriggers::openTarget(Target& target, bool atOnce, WorldAnimator& anima
 
 void LevelTriggers::fire(std::size_t index, bool atOnce, WorldAnimator& animator, WorldScene& scene,
                          WorldCollision* collision) {
-    for (std::int32_t at = static_cast<std::int32_t>(index); at >= 0;
+    for (auto at = static_cast<int>(index); at >= 0;
          at = m_triggers[static_cast<std::size_t>(at)].next) {
         LevelTrigger& trigger = m_triggers[static_cast<std::size_t>(at)];
         if (trigger.fired) {
@@ -265,7 +265,7 @@ void LevelTriggers::update(float seconds, std::span<const TriggerVisitor> visito
                    trigger.refusalCooldown <= 0.0f) {
             // Told once what the spot wants, then not again for a while.
             m_refusals.push_back(
-                TriggerRefusal{static_cast<std::int32_t>(i), trigger.id, trigger.needsCrystals()});
+                TriggerRefusal{static_cast<int>(i), trigger.id, trigger.needsCrystals()});
             trigger.refusalCooldown = kRefusalCooldown;
         }
     }

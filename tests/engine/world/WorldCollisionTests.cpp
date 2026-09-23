@@ -1,6 +1,5 @@
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -19,7 +18,7 @@ using namespace gdl;
 using Catch::Approx;
 
 CollisionTriangle triangle(const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& normal,
-                           std::int32_t object = 0) {
+                           int object = 0) {
     CollisionTriangle out;
     out.vertices = {a, b, c};
     out.normal = normal;
@@ -88,7 +87,7 @@ TEST_CASE("a moving object's triangles stay in its own space and follow its tran
     triangles.push_back(triangle({-1, 0.5f, 1}, {-1, 3, 1}, {1, 3, 1}, south, 3));
     triangles.push_back(triangle({-1, 0.5f, 1}, {1, 3, 1}, {1, 0.5f, 1}, south, 3));
     collision.build(triangles);
-    const std::array<std::int32_t, 1> movers{3};
+    const std::array<int, 1> movers{3};
     collision.setMovingObjects(movers);
     REQUIRE(collision.moving(3));
     REQUIRE_FALSE(collision.moving(1));

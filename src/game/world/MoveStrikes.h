@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <vector>
 
 #include "engine/math/Math.h"
@@ -14,8 +13,8 @@ namespace gdl::game {
 /** Harm a strike does this update: to whatever is within `radius` of `centre` and, when the
  * arc is not all round, no further from `facing` than it allows. */
 struct StrikeHit {
-    std::uint32_t strike = 0; ///< which strike it is, the same for every hit of one that flies
-    std::int32_t owner = 0;
+    unsigned int strike = 0; ///< which strike it is, the same for every hit of one that flies
+    int owner = 0;
     Vec3 centre{0.0f, 0.0f, 0.0f};
     float radius = 0.0f;
     float arc = -1.0f;
@@ -36,8 +35,8 @@ class MoveStrikes {
 public:
     /** One strike under way. */
     struct Strike {
-        std::uint32_t id = 0;
-        std::int32_t owner = 0;
+        unsigned int id = 0;
+        int owner = 0;
         bool flies = false;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Vec3 facing{0.0f, 0.0f, 1.0f};
@@ -56,19 +55,19 @@ public:
 
     /** Starts `strike` for `owner` standing at `position` and facing `facing` (level, unit
      * length); its number, which its hits carry. */
-    std::uint32_t start(const MoveStrike& strike, std::int32_t owner, const Vec3& position,
-                        const Vec3& facing, float ownDamage);
+    unsigned int start(const MoveStrike& strike, int owner, const Vec3& position,
+                       const Vec3& facing, float ownDamage);
     std::vector<StrikeHit> update(float seconds, const WorldCollision* collision);
     void clear();
 
     std::size_t count() const { return m_strikes.size(); }
     const Strike& strike(std::size_t index) const { return m_strikes[index]; }
     /** The strike numbered `id`, or null once it is over. */
-    const Strike* find(std::uint32_t id) const;
+    const Strike* find(unsigned int id) const;
 
 private:
     std::vector<Strike> m_strikes;
-    std::uint32_t m_next = 1;
+    unsigned int m_next = 1;
 };
 
 } // namespace gdl::game

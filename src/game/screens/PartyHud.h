@@ -2,7 +2,6 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <span>
 
 #include "engine/assets/MessageTable.h"
@@ -19,7 +18,7 @@ namespace gdl::game {
  * Canvas lifetime and screen overlay ordering belong to the caller, not this HUD. */
 class PartyHud {
 public:
-    static constexpr std::int32_t kPlayerCount = 4;
+    static constexpr int kPlayerCount = 4;
     PartyHud() = default;
     ~PartyHud() = default;
     PartyHud(const PartyHud&) = delete;
@@ -29,18 +28,18 @@ public:
     bool load(RenderDevice& device, const std::filesystem::path& root, const StringTable* strings);
     void clear();
     void setGlow(const Texture* texture) { m_glowSheet = texture; }
-    void stepSelector(PlayerActor& actor, const SelectorInput& input, std::int32_t ticks,
+    void stepSelector(PlayerActor& actor, const SelectorInput& input, int ticks,
                       LevelSoundscape& audio);
-    bool postHelp(std::int32_t id, std::size_t index, std::span<PlayerRuntime> players,
-                  LevelSoundscape& audio, std::int32_t number = -1);
-    static StatusBoxView status(std::int32_t player, std::span<const PlayerRuntime> players);
+    bool postHelp(int id, std::size_t index, std::span<PlayerRuntime> players,
+                  LevelSoundscape& audio, int number = -1);
+    static StatusBoxView status(int player, std::span<const PlayerRuntime> players);
     void drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players);
     void drawSelectors(Canvas& canvas, const TextPainter& text, const StringTable* strings,
                        std::span<const PlayerRuntime> players) const;
     void drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
                   std::span<const PlayerRuntime> players, const Mat4& clip, float width,
                   float height) const;
-    const PowerupSelector& selector(std::int32_t player) const {
+    const PowerupSelector& selector(int player) const {
         return m_selectors[static_cast<std::size_t>(std::clamp(player, 0, kPlayerCount - 1))];
     }
     PickupHud& pickups() { return m_pickups; }

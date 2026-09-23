@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <numbers>
 #include <string>
@@ -24,7 +23,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr std::int32_t kTicks = 2;
+constexpr int kTicks = 2;
 constexpr float kStep = 1.0f / 30.0f;
 constexpr float kPi = std::numbers::pi_v<float>;
 
@@ -32,7 +31,7 @@ std::filesystem::path unpackedRoot() {
     return test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();
 }
 
-EnemyView playerAt(const Vec3& position, std::int32_t player = 0) {
+EnemyView playerAt(const Vec3& position, int player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;

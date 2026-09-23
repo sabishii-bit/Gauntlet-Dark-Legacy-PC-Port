@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <optional>
 
 #include "engine/assets/ItemArchive.h"
@@ -37,29 +36,29 @@ public:
 
     /** True requests Sumner's welcome gesture. A completed delay opens the current
      * visitor's scroll. The delay keeps running while nobody occupies the spot. */
-    bool visit(float seconds, std::optional<std::int32_t> visitor, bool sumnerReady,
-               const TextPainter& text, const GameConfig* config, const StringTable* strings);
+    bool visit(float seconds, std::optional<int> visitor, bool sumnerReady, const TextPainter& text,
+               const GameConfig* config, const StringTable* strings);
     /** The caller routes only owner()'s menu input. Returns sound/gesture cues. */
-    HintMenuEvent update(RenderDevice& device, const MenuInput& input, std::int32_t ticks);
+    HintMenuEvent update(RenderDevice& device, const MenuInput& input, int ticks);
     /** Responds to Asked with a fresh party snapshot; no party scan is needed otherwise. */
-    void answer(std::int32_t topic, const TextPainter& text, const StringTable* strings,
+    void answer(int topic, const TextPainter& text, const StringTable* strings,
                 const HintKnowledge& knowledge);
     void prepare(RenderDevice& device) { m_menu.prepare(device); }
     void draw(Canvas& canvas, const TextPainter& text) const { m_menu.draw(canvas, text); }
 
     bool active() const { return m_menu.active(); }
-    std::int32_t owner() const { return m_owner; }
+    int owner() const { return m_owner; }
     const HintMenu& menu() const { return m_menu; }
     const SumnerHints& texts() const { return m_hints; }
 
 private:
-    void open(std::int32_t player, const TextPainter& text, const GameConfig* config,
+    void open(int player, const TextPainter& text, const GameConfig* config,
               const StringTable* strings);
 
     SumnerHints m_hints;
     HintMenu m_menu;
     ModelSprite m_arrow; ///< menu art points here; this owner must not move
-    std::int32_t m_owner = -1;
+    int m_owner = -1;
     float m_greetingLeft = -1.0f;
     bool m_hintsGiven = false;
 };

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <format>
 
@@ -16,7 +15,7 @@ constexpr std::string_view kBackground = "METER_BG";
 constexpr std::string_view kFill = "METER_FG";
 
 const Texture* textureOf(TextureSet* textures, RenderDevice& device, std::string_view stem,
-                         std::int32_t piece) {
+                         int piece) {
     if (textures == nullptr) {
         return nullptr;
     }
@@ -35,7 +34,7 @@ const Texture* textureOf(TextureSet* textures, RenderDevice& device, std::string
 
 } // namespace
 
-bool BossMeter::bind(const CritterMeter& meter, TextureSet* textures, std::int32_t left) {
+bool BossMeter::bind(const CritterMeter& meter, TextureSet* textures, int left) {
     clear();
     if (!meter.shown || meter.pieces <= 0) {
         return false;
@@ -63,7 +62,7 @@ void BossMeter::clear() {
     m_frozen = false;
 }
 
-void BossMeter::update(std::int32_t ticks, float health, float maxHealth, bool alive, bool frozen) {
+void BossMeter::update(int ticks, float health, float maxHealth, bool alive, bool frozen) {
     if (!bound()) {
         return;
     }
@@ -87,24 +86,23 @@ void BossMeter::update(std::int32_t ticks, float health, float maxHealth, bool a
 /** The original's arithmetic: two strips share the health, the first's fill running from
  * its cap to its end over the first half, the second's from its start to its tail over the
  * rest; one strip runs the whole width less both. */
-std::array<std::int32_t, BossMeter::kMostPieces> BossMeter::fillWidths() const {
-    std::array<std::int32_t, kMostPieces> widths{};
+std::array<int, BossMeter::kMostPieces> BossMeter::fillWidths() const {
+    std::array<int, kMostPieces> widths{};
     if (!bound()) {
         return widths;
     }
     const float fraction = std::clamp(m_shown / m_max, 0.0f, 1.0f);
     if (m_pieces >= 2) {
         const float share = 2.0f * fraction;
-        widths[0] =
-            share >= 1.0f
-                ? kPieceWidth
-                : static_cast<std::int32_t>(share * static_cast<float>(kPieceWidth - m_leftInset) +
-                                            static_cast<float>(m_leftInset));
-        widths[1] = static_cast<std::int32_t>(std::max(share - 1.0f, 0.0f) *
-                                              static_cast<float>(kPieceWidth - m_rightInset));
+        widths[0] = share >= 1.0f
+                        ? kPieceWidth
+                        : static_cast<int>(share * static_cast<float>(kPieceWidth - m_leftInset) +
+                                           static_cast<float>(m_leftInset));
+        widths[1] = static_cast<int>(std::max(share - 1.0f, 0.0f) *
+                                     static_cast<float>(kPieceWidth - m_rightInset));
     } else {
-        widths[0] = static_cast<std::int32_t>(
-            fraction * static_cast<float>(kPieceWidth - m_leftInset - m_rightInset));
+        widths[0] = static_cast<int>(fraction *
+                                     static_cast<float>(kPieceWidth - m_leftInset - m_rightInset));
     }
     return widths;
 }
@@ -113,9 +111,9 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
     if (!showing()) {
         return;
     }
-    const std::array<std::int32_t, kMostPieces> widths = fillWidths();
+    const std::array<int, kMostPieces> widths = fillWidths();
     const Color plain = Color::rgba(255, 255, 255, kAlpha);
-    for (std::int32_t piece = 0; piece < m_pieces; ++piece) {
+    for (int piece = 0; piece < m_pieces; ++piece) {
         const auto x = static_cast<float>(m_left + piece * kPieceWidth);
         if (m_backed) {
             if (const Texture* back = textureOf(m_textures, device, kBackground, piece)) {
@@ -125,7 +123,7 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
                             m_frozen ? kFrozenTint : plain);
             }
         }
-        const std::int32_t width = widths[static_cast<std::size_t>(piece)];
+        const int width = widths[static_cast<std::size_t>(piece)];
         if (width <= 0) {
             continue;
         }

@@ -1,7 +1,6 @@
 #include "game/players/PlayerAnimator.h"
 
 #include <cstddef>
-#include <cstdint>
 
 namespace gdl::game {
 
@@ -23,14 +22,14 @@ bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
     unbind();
     for (std::size_t a = 0; a < kActionCount; ++a) {
         const auto sequence = tree.findSequence(kSequenceNames[a]);
-        m_sequences[a] = sequence.has_value() ? static_cast<std::int32_t>(*sequence) : -1;
+        m_sequences[a] = sequence.has_value() ? static_cast<int>(*sequence) : -1;
     }
     if (m_sequences[index(Action::Ready)] < 0) {
         return false;
     }
     m_tree = &tree;
     m_entered = !enter;
-    const std::uint32_t stance = sequenceOf(Action::Ready);
+    const unsigned int stance = sequenceOf(Action::Ready);
     m_player.start(tree.sequences[stance], stance);
     m_pose.evaluate(tree, stance, 0.0f);
     m_previous = m_pose;
@@ -106,14 +105,13 @@ PlayerMotion PlayerAnimator::motionFor(float stickMagnitude) {
     return stickMagnitude > 0.0f ? PlayerMotion::Walk : PlayerMotion::Stand;
 }
 
-std::uint32_t PlayerAnimator::sequenceOf(Action action) const {
-    const std::int32_t sequence = m_sequences[index(action)];
-    return sequence >= 0 ? static_cast<std::uint32_t>(sequence)
-                         : static_cast<std::uint32_t>(m_sequences[index(Action::Ready)]);
+unsigned int PlayerAnimator::sequenceOf(Action action) const {
+    const int sequence = m_sequences[index(action)];
+    return sequence >= 0 ? static_cast<unsigned int>(sequence)
+                         : static_cast<unsigned int>(m_sequences[index(Action::Ready)]);
 }
 
-void PlayerAnimator::update(PlayerMotion motion, std::int32_t ticks, float seconds,
-                            PlayerDeed deed) {
+void PlayerAnimator::update(PlayerMotion motion, int ticks, float seconds, PlayerDeed deed) {
     if (!bound()) {
         return;
     }
@@ -409,7 +407,7 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
 }
 
 void PlayerAnimator::play(const Decision& decision, float seconds) {
-    const std::uint32_t target = sequenceOf(decision.action);
+    const unsigned int target = sequenceOf(decision.action);
     m_player.advance(seconds, decision.repeat);
     const bool done = m_player.finished();
     const bool different = !m_player.playing() || m_player.sequence() != target;

@@ -14,34 +14,34 @@
 namespace gdl::game {
 
 /** The playable classes: eight to start with, eight unlockable, and the hidden Sumner. */
-inline constexpr std::int32_t kClassCount = 17;
-inline constexpr std::int32_t kStartingClassCount = 8;
-inline constexpr std::int32_t kSumnerClass = 16;
-inline constexpr std::int32_t kColorCount = 4;
+inline constexpr int kClassCount = 17;
+inline constexpr int kStartingClassCount = 8;
+inline constexpr int kSumnerClass = 16;
+inline constexpr int kColorCount = 4;
 
 /** The asset code of a class ("WAR"), as the texture and data names use it. */
-std::string_view classCode(std::int32_t classIndex);
+std::string_view classCode(int classIndex);
 
 /** The asset suffix of a costume colour ("RED"). */
-std::string_view colorCode(std::int32_t color);
+std::string_view colorCode(int color);
 
 /** The index of a class or colour code, in any case; nullopt for an unknown one. */
-std::optional<std::int32_t> classIndexOf(std::string_view code);
-std::optional<std::int32_t> colorIndexOf(std::string_view code);
+std::optional<int> classIndexOf(std::string_view code);
+std::optional<int> colorIndexOf(std::string_view code);
 
 /** The tint a player's text and marks take from their costume colour. */
-Color playerColor(std::int32_t color);
+Color playerColor(int color);
 
 /** The tint of a player's status box: bright for a joined player, dim for an empty lane. */
-Color boxTint(std::int32_t color, bool active);
+Color boxTint(int color, bool active);
 
 /** Whether a class is available to a save: starting classes always, others once unlocked. */
-bool classUnlocked(std::int32_t classIndex, std::uint16_t unlockMask);
+bool classUnlocked(int classIndex, std::uint16_t unlockMask);
 
 /** An effect one of a class's moves shows. */
 struct MoveEffect {
-    std::int32_t next = -1; ///< another started with it
-    std::string tree;       ///< of the costume colour's effects; none when empty or `NULLFX`
+    int next = -1;    ///< another started with it
+    std::string tree; ///< of the costume colour's effects; none when empty or `NULLFX`
     std::string sound;
     Vec3 offset{0.0f, 0.0f, 0.0f};
     float scale = 1.0f;
@@ -49,17 +49,16 @@ struct MoveEffect {
 
 /** One thing a move does at one of its frames. */
 struct MoveStrike {
-    static constexpr std::int32_t kWindow =
-        0; ///< harms nothing: it only lasts, as to hide the weapon
-    static constexpr std::int32_t kFlies = 2;
-    static constexpr std::int32_t kSpreads = 3; ///< a burst of another kind
-    static constexpr std::int32_t kBursts = 4;
-    static constexpr std::int32_t kVolley = 10; ///< the class's own missiles, let fly as it lasts
-    static constexpr std::int32_t kHidesWeapon = 0x400; ///< flags: the hand is empty while it lasts
-    static constexpr std::int32_t kSweepsIn = 0x200;  ///< a volley's angle closes from full to none
-    static constexpr std::int32_t kSweepsOut = 0x100; ///< or opens from none to full
+    static constexpr int kWindow = 0; ///< harms nothing: it only lasts, as to hide the weapon
+    static constexpr int kFlies = 2;
+    static constexpr int kSpreads = 3; ///< a burst of another kind
+    static constexpr int kBursts = 4;
+    static constexpr int kVolley = 10;         ///< the class's own missiles, let fly as it lasts
+    static constexpr int kHidesWeapon = 0x400; ///< flags: the hand is empty while it lasts
+    static constexpr int kSweepsIn = 0x200;    ///< a volley's angle closes from full to none
+    static constexpr int kSweepsOut = 0x100;   ///< or opens from none to full
 
-    std::int32_t type = kBursts;
+    int type = kBursts;
     float hitRadius = 0.0f;
     float radius = 0.0f;
     float delay = 0.0f;   ///< seconds from its start to its harm
@@ -68,17 +67,16 @@ struct MoveStrike {
     Vec3 offset{0.0f, 0.0f, 0.0f};
     float amount = 0.0f; ///< harm; negative, that many times the character's own
     float speed = 0.0f;
-    float angle = 0.0f;           ///< radians off the facing
-    std::uint32_t damageType = 0; ///< the element and what it does to who it hits; kept for enemies
-    std::int32_t effect = -1;
-    std::int32_t hitEffect = -1; ///< shown where it harms something
-    std::int32_t loopEffect =
-        -1; ///< what its effect gives way to, repeating, for as long as it flies
-    std::int32_t next = -1;
-    std::int32_t startFrame = 0;
-    std::int32_t endFrame = -1; ///< none: it lasts to the move's end
-    std::int32_t flags = 0;
-    std::int32_t help = -1; ///< the help message that names the move
+    float angle = 0.0f;          ///< radians off the facing
+    unsigned int damageType = 0; ///< the element and what it does to who it hits; kept for enemies
+    int effect = -1;
+    int hitEffect = -1;  ///< shown where it harms something
+    int loopEffect = -1; ///< what its effect gives way to, repeating, for as long as it flies
+    int next = -1;
+    int startFrame = 0;
+    int endFrame = -1; ///< none: it lasts to the move's end
+    int flags = 0;
+    int help = -1; ///< the help message that names the move
 
     /** What a strike takes off the level's ambient light while it lasts: the greater the
      * move, the deeper the dark. */
@@ -92,12 +90,12 @@ struct MoveStrike {
 
 /** The moves a class's data names, each by its first strike (-1 when the class lacks it). */
 struct ClassMoves {
-    std::int32_t turboAThrow = -1; ///< the strong attack with nothing in reach
-    std::int32_t turboB = -1;
-    std::int32_t turboC1 = -1;
-    std::int32_t turboC2 = -1;
-    std::int32_t combo1 = -1;
-    std::int32_t comboHit = -1;
+    int turboAThrow = -1; ///< the strong attack with nothing in reach
+    int turboB = -1;
+    int turboC1 = -1;
+    int turboC2 = -1;
+    int combo1 = -1;
+    int comboHit = -1;
 };
 
 /** A class's stat ranges and body size, from its unpacked data file. */
@@ -120,7 +118,7 @@ struct ClassStats {
     std::vector<MoveStrike> moveStrikes;
 
     /** The strikes a move runs: its first and every one chained to it. */
-    std::vector<std::int32_t> strikesOf(std::int32_t first) const;
+    std::vector<int> strikesOf(int first) const;
 };
 
 /** Every class's stats, read from `<directory>/<CODE>.json`. */
@@ -133,7 +131,7 @@ public:
     std::size_t loadedCount() const { return m_loadedCount; }
 
     /** The stats of a class, or nullptr when its file was missing. */
-    const ClassStats* stats(std::int32_t classIndex) const;
+    const ClassStats* stats(int classIndex) const;
 
 private:
     std::array<std::optional<ClassStats>, kClassCount> m_classes{};

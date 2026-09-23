@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -69,10 +68,10 @@ std::filesystem::path sampleHints(std::string_view name) {
     return dir / "hints.json";
 }
 
-std::uint32_t worlds(std::initializer_list<int> ids) {
-    std::uint32_t bits = 0;
+unsigned int worlds(std::initializer_list<int> ids) {
+    unsigned int bits = 0;
     for (const int id : ids) {
-        bits |= 1U << static_cast<std::uint32_t>(id);
+        bits |= 1U << static_cast<unsigned int>(id);
     }
     return bits;
 }

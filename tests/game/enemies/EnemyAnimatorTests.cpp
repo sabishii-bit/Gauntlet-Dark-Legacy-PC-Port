@@ -1,5 +1,4 @@
 #include <array>
-#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -14,7 +13,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Action = EnemyAction;
 
-constexpr std::int32_t kTicks = 2;
+constexpr int kTicks = 2;
 constexpr float kStep = 1.0f / 30.0f;
 
 /** A grunt's sequences: no DEATH, no ATTACK2, a ready-to-walk in and out. */
@@ -27,7 +26,7 @@ TreeInfo gruntTree() {
     tree.nodes.push_back(root);
     struct Entry {
         const char* name;
-        std::int32_t frames;
+        int frames;
         bool repeats;
     };
     const std::array<Entry, 12> entries{{{"READY", 20, true},

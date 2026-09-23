@@ -69,7 +69,7 @@ public:
         "HIT3",    "GETUP",    "DEATH"};
 
     /** How loudly each action asks: a request is refused by a pending one at least as loud. */
-    static constexpr std::array<std::int32_t, kEnemyActionCount> kPriorities{
+    static constexpr std::array<int, kEnemyActionCount> kPriorities{
         100, 900, 900, 200, 200, 200, 200, 200, 200, 200, 200, 200, 300, 300, 300, 300, 300,
         300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 150, 400, 450, 460, 900, 999};
 
@@ -85,7 +85,7 @@ public:
     /** Steps `ticks` of the game clock (`seconds` long), answering the tick's requests, which
      * are then forgotten. `contact` says a player is against the body, which some attacks
      * chain on. */
-    void update(std::int32_t ticks, float seconds, bool contact = false);
+    void update(int ticks, float seconds, bool contact = false);
 
     Action action() const { return m_current; }
     Action requested() const { return m_requested; }
@@ -110,7 +110,7 @@ public:
     float idleSeconds() const { return m_idleSeconds; }
     bool has(Action action) const { return m_sequences[static_cast<std::size_t>(action)] >= 0; }
     /** The sequence an action plays, falling back to the stance when the tree lacks it. */
-    std::uint32_t sequenceOf(Action action) const;
+    unsigned int sequenceOf(Action action) const;
     const TreePose& pose() const { return m_pose; }
     const AnimationPlayer& player() const { return m_player; }
 
@@ -128,7 +128,7 @@ private:
     void play(Decision decision, float seconds);
 
     const TreeInfo* m_tree = nullptr;
-    std::array<std::int32_t, kEnemyActionCount> m_sequences{};
+    std::array<int, kEnemyActionCount> m_sequences{};
     Action m_current = Action::Ready;
     Action m_requested = Action::Ready;
     bool m_walksIn = false;

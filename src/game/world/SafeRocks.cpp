@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <format>
 
 #include "engine/core/Log.h"
@@ -12,12 +11,11 @@ namespace gdl::game {
 
 namespace {
 
-std::int32_t parameter(const ItemInstance& instance, std::size_t offset) {
+int parameter(const ItemInstance& instance, std::size_t offset) {
     // The unpacked manifest keeps the original little-endian parameter bytes.
-    const std::uint32_t value = static_cast<std::uint32_t>(instance.params[offset]) |
-                                (static_cast<std::uint32_t>(instance.params[offset + 1]) << 8);
-    return value < 0x8000U ? static_cast<std::int32_t>(value)
-                           : static_cast<std::int32_t>(value) - 0x10000;
+    const unsigned int value = static_cast<unsigned int>(instance.params[offset]) |
+                               (static_cast<unsigned int>(instance.params[offset + 1]) << 8);
+    return value < 0x8000U ? static_cast<int>(value) : static_cast<int>(value) - 0x10000;
 }
 
 } // namespace
@@ -32,12 +30,12 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
             continue;
         }
         const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
-        const std::int32_t override = parameter(instance, 0);
+        const int override = parameter(instance, 0);
         if (info.type != kItemType || (override > 0 ? override : info.subtype) != kSubtype) {
             continue;
         }
         auto rock = std::make_unique<Rock>();
-        rock->instance = static_cast<std::int32_t>(i);
+        rock->instance = static_cast<int>(i);
         rock->baseHealth = std::max(info.hitPoints, 0);
         rock->tier = std::clamp(parameter(instance, 2), 0, kWhole);
         rock->health = rock->tier * rock->baseHealth;
@@ -53,7 +51,7 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
         if (info.collisionType == 1) {
             rock->obstacle.cylinderRadius = info.radius;
         }
-        for (std::int32_t tier = 0; tier <= kWhole; ++tier) {
+        for (int tier = 0; tier <= kWhole; ++tier) {
             const std::string base = std::format("{}{}", info.name, tier);
             bool found = false;
             for (const char* suffix : {"", "L1", "L1ROOT"}) {
@@ -85,7 +83,7 @@ void SafeRocks::clear() {
     m_rocks.clear();
 }
 
-void SafeRocks::setPlayerCount(std::int32_t players) {
+void SafeRocks::setPlayerCount(int players) {
     for (const auto& rock : m_rocks) {
         rock->shown = shownToParty(rock->minPlayers, players);
     }
@@ -103,7 +101,7 @@ bool SafeRocks::strike(std::size_t index, float power) {
     Rock& rock = *m_rocks[index];
     const float damage =
         std::clamp(power - static_cast<float>(rock.armor), 1.0f, static_cast<float>(rock.health));
-    rock.health -= static_cast<std::int32_t>(std::lround(damage));
+    rock.health -= static_cast<int>(std::lround(damage));
     if (rock.health == 0) {
         rock.tier = 0;
     } else if (rock.health <= rock.baseHealth) {

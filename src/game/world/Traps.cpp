@@ -10,7 +10,7 @@
 namespace gdl::game {
 
 bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-                 const WorldCollision* collision, std::uint32_t seed, float timeScale,
+                 const WorldCollision* collision, unsigned int seed, float timeScale,
                  float damageScale) {
     clear();
     m_random.seed(seed);
@@ -25,7 +25,7 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
         }
         const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
         auto trap = std::make_unique<Trap>();
-        trap->instance = static_cast<std::int32_t>(index);
+        trap->instance = static_cast<int>(index);
         trap->minPlayers = instance.minPlayers;
         // An instance may set its own damage and its own rest.
         std::int16_t ownDamage = 0;
@@ -52,7 +52,7 @@ void Traps::clear() {
     m_gaps.clear();
 }
 
-void Traps::setPlayerCount(std::int32_t players) {
+void Traps::setPlayerCount(int players) {
     for (const std::unique_ptr<Trap>& trap : m_traps) {
         trap->shown = shownToParty(trap->minPlayers, players);
     }
@@ -60,17 +60,16 @@ void Traps::setPlayerCount(std::int32_t players) {
 
 /** How long a trap rests this round: its off time, or when that is negative somewhere at
  * random from half of it to one and a half. */
-std::int32_t Traps::restTicks(const Trap& trap) {
-    std::int32_t time = trap.offTime * kTicksPerTimeUnit;
+int Traps::restTicks(const Trap& trap) {
+    int time = trap.offTime * kTicksPerTimeUnit;
     if (time < 0) {
-        const std::int32_t span = -time;
-        time = static_cast<std::int32_t>(m_random() % static_cast<std::uint32_t>(span)) + span / 2;
+        const int span = -time;
+        time = static_cast<int>(m_random() % static_cast<unsigned int>(span)) + span / 2;
     }
-    return static_cast<std::int32_t>(static_cast<float>(time) * m_timeScale);
+    return static_cast<int>(static_cast<float>(time) * m_timeScale);
 }
 
-std::vector<TrapHit> Traps::update(std::int32_t ticks, float seconds,
-                                   std::span<const TrapVictim> party) {
+std::vector<TrapHit> Traps::update(int ticks, float seconds, std::span<const TrapVictim> party) {
     std::vector<TrapHit> hits;
     m_gaps.resize(party.size(), 0.0f);
     for (float& gap : m_gaps) {
@@ -86,7 +85,7 @@ std::vector<TrapHit> Traps::update(std::int32_t ticks, float seconds,
         if (trap.ticksLeft <= 0) {
             // On to the next sequence, and from the last back to the rest.
             const auto count =
-                static_cast<std::int32_t>(std::max<std::size_t>(trap.figure.sequenceCount(), 2));
+                static_cast<int>(std::max<std::size_t>(trap.figure.sequenceCount(), 2));
             trap.action = trap.action + 1 >= count ? kResting : trap.action + 1;
             trap.figure.play(trap.action, trap.action == kResting);
             trap.ticksLeft = trap.action == kResting

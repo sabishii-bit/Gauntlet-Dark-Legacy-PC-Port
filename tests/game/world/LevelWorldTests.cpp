@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 
@@ -98,7 +97,7 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     REQUIRE(tower.textureAnimator().size() >= 50);
     REQUIRE(tower.scene().unitCount() > 500);
     // The torch flames are the item archive's, not white, and change every second frame.
-    constexpr std::uint32_t kTorchSlot = 423;
+    constexpr unsigned int kTorchSlot = 423;
     const Texture* torch = tower.scene().textureOf(kTorchSlot);
     REQUIRE(torch != nullptr);
     REQUIRE(torch != &device.whiteTexture());
@@ -125,8 +124,8 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
         }
     }
     REQUIRE(field.has_value());
-    REQUIRE(tower.collision().moving(static_cast<std::int32_t>(*field)));
-    REQUIRE(tower.collision().solid(static_cast<std::int32_t>(*field)));
+    REQUIRE(tower.collision().moving(static_cast<int>(*field)));
+    REQUIRE(tower.collision().solid(static_cast<int>(*field)));
     const Vec3 gate = tower.layout().worldPosition(*field);
     REQUIRE(tower.collision().resolveWalls(gate, 0.75f, gate.y - 1.0f, gate.y + 1.0f) != gate);
     // Every particle marker names one of the level's templates; the braziers burn with the
@@ -172,7 +171,7 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     // The force field across the first realm's gate: its two triangles added onto the frame
     // with the field texture (animated, so whichever frame the slot shows), at full
     // brightness whichever way it faces.
-    constexpr std::uint32_t kFieldSlot = 141;
+    constexpr unsigned int kFieldSlot = 141;
     const Texture* fieldTexture = tower.scene().textureOf(kFieldSlot);
     REQUIRE(fieldTexture != nullptr);
     bool fieldDrawn = false;

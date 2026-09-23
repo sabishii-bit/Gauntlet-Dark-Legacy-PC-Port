@@ -7,7 +7,7 @@
 
 namespace gdl::game {
 
-bool Relics::addRune(std::int32_t rune) {
+bool Relics::addRune(int rune) {
     if (!inRange(rune, kRuneCount) || hasRune(rune)) {
         return false;
     }
@@ -15,11 +15,11 @@ bool Relics::addRune(std::int32_t rune) {
     return true;
 }
 
-std::int32_t Relics::runeCount() const {
+int Relics::runeCount() const {
     return std::popcount(runes);
 }
 
-bool Relics::addLegend(std::int32_t realm) {
+bool Relics::addLegend(int realm) {
     if (!inRange(realm, kRealmCount)) {
         return false;
     }
@@ -27,7 +27,7 @@ bool Relics::addLegend(std::int32_t realm) {
     return true;
 }
 
-bool Relics::spendLegend(std::int32_t realm) {
+bool Relics::spendLegend(int realm) {
     if (!hasLegend(realm)) {
         return false;
     }
@@ -35,7 +35,7 @@ bool Relics::spendLegend(std::int32_t realm) {
     return true;
 }
 
-bool Relics::addShard(std::int32_t order) {
+bool Relics::addShard(int order) {
     if (!inRange(order, kRealmCount) || hasShard(order)) {
         return false;
     }
@@ -43,11 +43,11 @@ bool Relics::addShard(std::int32_t order) {
     return true;
 }
 
-std::int32_t Relics::addGargoylePiece(std::int32_t kind) {
-    if (!inRange(kind, static_cast<std::int32_t>(kGargoyleKinds))) {
+int Relics::addGargoylePiece(int kind) {
+    if (!inRange(kind, static_cast<int>(kGargoyleKinds))) {
         return -1;
     }
-    std::int32_t& count = gargoylePieces[static_cast<std::size_t>(kind)];
+    int& count = gargoylePieces[static_cast<std::size_t>(kind)];
     count = std::min(count + 1, kGargoyleNeeded[static_cast<std::size_t>(kind)]);
     return count;
 }

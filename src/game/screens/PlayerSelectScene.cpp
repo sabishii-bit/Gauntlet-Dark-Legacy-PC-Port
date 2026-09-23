@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <format>
 
@@ -25,12 +24,12 @@ constexpr std::string_view kInitialsFile = "fonts/initials.json";
 constexpr std::string_view kCommonSounds = "audio/COMMON";
 constexpr std::string_view kSelectSounds = "audio/SELECT";
 constexpr std::string_view kSoundMusic = "S_SELECTMUS";
-constexpr std::int32_t kFont32SpaceWidth = 16;
-constexpr std::int32_t kFont8SpaceWidth = 8;
-constexpr std::int32_t kInitialsSpaceWidth = 12;
-constexpr std::int32_t kMaxTicksPerFrame = 6;
-constexpr std::int32_t kPanelTopHeight = 256;
-constexpr std::int32_t kPanelBottomHeight = 64;
+constexpr int kFont32SpaceWidth = 16;
+constexpr int kFont8SpaceWidth = 8;
+constexpr int kInitialsSpaceWidth = 12;
+constexpr int kMaxTicksPerFrame = 6;
+constexpr int kPanelTopHeight = 256;
+constexpr int kPanelBottomHeight = 64;
 constexpr Color kBackdrop = Color::rgba(8, 6, 12);
 
 std::string_view soundName(SelectSound sound) {
@@ -53,16 +52,15 @@ std::string_view PlayerSelectScene::text(std::string_view id) const {
     return m_context.strings != nullptr ? m_context.strings->get(id) : id;
 }
 
-bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context,
-                             std::int32_t startingPlayer) {
+bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, int startingPlayer) {
     close();
     m_context = context;
     m_screen = MenuScreen{};
     if (m_context.config != nullptr) {
-        m_screen.width = static_cast<std::int32_t>(m_context.config->display.virtualWidth);
-        m_screen.height = static_cast<std::int32_t>(m_context.config->display.virtualHeight);
+        m_screen.width = static_cast<int>(m_context.config->display.virtualWidth);
+        m_screen.height = static_cast<int>(m_context.config->display.virtualHeight);
         m_screen.horizontalFov = m_context.config->horizontalFovRadians();
-        m_tickRate = static_cast<std::int32_t>(m_context.config->timing.tickRate);
+        m_tickRate = static_cast<int>(m_context.config->timing.tickRate);
     }
     try {
         if (!loadResources(device, m_context.unpackedRoot)) {
@@ -113,7 +111,7 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context,
     m_services.keyboardLane = MenuInputSource::kKeyboardPlayer;
     m_services.menuTextures.font = staticTexture("FONT32");
     m_services.menuTextures.glow = m_services.glowSheet;
-    for (std::int32_t i = 0; i < kLaneCount; ++i) {
+    for (int i = 0; i < kLaneCount; ++i) {
         m_lanes[static_cast<std::size_t>(i)].reset(i, &m_services);
     }
     if (startingPlayer >= 0 && startingPlayer < kLaneCount) {
@@ -128,7 +126,7 @@ void PlayerSelectScene::close() {
         m_context.sounds->stop(m_music);
     }
     m_music = kNoSound;
-    for (std::int32_t i = 0; i < kLaneCount; ++i) {
+    for (int i = 0; i < kLaneCount; ++i) {
         m_lanes[static_cast<std::size_t>(i)].reset(i, nullptr);
     }
     m_camera.reset();
@@ -167,7 +165,7 @@ bool PlayerSelectScene::loadResources(RenderDevice& device,
     m_large.setFont(&m_font32, font32);
     m_small.setFont(&m_font8, font8);
     m_initials.setFont(&m_fontInitials, initials);
-    for (std::int32_t i = 0; i < kLaneCount; ++i) {
+    for (int i = 0; i < kLaneCount; ++i) {
         if (selectTexture(std::format("S1_PLYR{}", i + 1)) == nullptr ||
             selectTexture(std::format("S2_PLYR{}", i + 1)) == nullptr) {
             log::warn("Player select: lane panels are missing");
@@ -314,7 +312,7 @@ bool PlayerSelectScene::musicPlaying() const {
            m_context.sounds->isPlaying(m_music);
 }
 
-MenuInputSource PlayerSelectScene::inputSource(std::int32_t index) const {
+MenuInputSource PlayerSelectScene::inputSource(int index) const {
     MenuInputSource source = MenuInputSource::forPlayer(index);
     source.text = lane(index).typing();
     return source;
@@ -322,13 +320,13 @@ MenuInputSource PlayerSelectScene::inputSource(std::int32_t index) const {
 
 SelectOutcome PlayerSelectScene::update(double deltaSeconds, const Inputs& inputs) {
     m_tickRemainder += deltaSeconds * m_tickRate;
-    auto ticks = static_cast<std::int32_t>(std::floor(m_tickRemainder));
+    auto ticks = static_cast<int>(std::floor(m_tickRemainder));
     m_tickRemainder -= ticks;
     ticks = std::clamp(ticks, 0, kMaxTicksPerFrame);
     return step(ticks, inputs);
 }
 
-SelectOutcome PlayerSelectScene::step(std::int32_t ticks, const Inputs& inputs) {
+SelectOutcome PlayerSelectScene::step(int ticks, const Inputs& inputs) {
     if (!m_open) {
         return SelectOutcome::Running;
     }
@@ -337,7 +335,7 @@ SelectOutcome PlayerSelectScene::step(std::int32_t ticks, const Inputs& inputs) 
         m_tower->update(static_cast<float>(ticks) / static_cast<float>(m_tickRate));
     }
 
-    for (std::int32_t i = 0; i < kLaneCount; ++i) {
+    for (int i = 0; i < kLaneCount; ++i) {
         SelectLane& lane = m_lanes[static_cast<std::size_t>(i)];
         if (!lane.active() && inputs[static_cast<std::size_t>(i)].start) {
             lane.activate();
@@ -345,9 +343,9 @@ SelectOutcome PlayerSelectScene::step(std::int32_t ticks, const Inputs& inputs) 
     }
 
     bool leave = false;
-    for (std::int32_t i = 0; i < kLaneCount; ++i) {
+    for (int i = 0; i < kLaneCount; ++i) {
         SelectLane::Frame frame;
-        for (std::int32_t j = 0; j < kLaneCount; ++j) {
+        for (int j = 0; j < kLaneCount; ++j) {
             if (j == i) {
                 continue;
             }
@@ -403,7 +401,7 @@ void PlayerSelectScene::render(RenderDevice& device, const Mat4& frameProjection
     for (const SelectLane& lane : m_lanes) {
         drawStatusBox(lane);
     }
-    for (std::int32_t i = 0; i < kLaneCount; ++i) {
+    for (int i = 0; i < kLaneCount; ++i) {
         const SelectLane& lane = m_lanes[static_cast<std::size_t>(i)];
         const auto left = static_cast<float>(lane.x());
         if (const Texture* top = selectTexture(std::format("S1_PLYR{}", i + 1))) {

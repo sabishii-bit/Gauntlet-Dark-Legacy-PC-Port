@@ -1,7 +1,6 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -12,20 +11,20 @@
 namespace gdl::game {
 
 struct DisplayConfig {
-    std::uint32_t virtualWidth = 512; ///< the 2D layer's coordinate space
-    std::uint32_t virtualHeight = 384;
-    std::uint32_t frameWidth = 640; ///< the frame the game composes, letterboxed onto the window
-    std::uint32_t frameHeight = 448;
-    std::uint32_t windowWidth = 1280;
-    std::uint32_t windowHeight = 896;
+    unsigned int virtualWidth = 512; ///< the 2D layer's coordinate space
+    unsigned int virtualHeight = 384;
+    unsigned int frameWidth = 640; ///< the frame the game composes, letterboxed onto the window
+    unsigned int frameHeight = 448;
+    unsigned int windowWidth = 1280;
+    unsigned int windowHeight = 896;
     bool vsync = true;
-    std::uint32_t maxFrameRate =
+    unsigned int maxFrameRate =
         60; ///< frames per second outside play (the menus); 0 leaves it to vsync
 };
 
 struct TimingConfig {
-    std::uint32_t tickRate = 60; ///< logic ticks per second; the original counts 60 Hz retraces
-    std::uint32_t gameplayFrameRate = 30; ///< the rate gameplay was tuned for: two ticks per frame
+    unsigned int tickRate = 60; ///< logic ticks per second; the original counts 60 Hz retraces
+    unsigned int gameplayFrameRate = 30; ///< the rate gameplay was tuned for: two ticks per frame
 };
 
 struct CameraConfig {
@@ -57,7 +56,7 @@ struct DifficultyConfig {
  * empty, the directory itself when it is absolute, else that directory beside the game. */
 struct SaveConfig {
     std::string directory;
-    std::uint32_t slots = 8;
+    unsigned int slots = 8;
 };
 
 /** Keys and pad buttons that drive the menus. */

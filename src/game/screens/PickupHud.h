@@ -17,19 +17,19 @@ namespace gdl::game {
 struct PickupCard {
     enum class State : std::uint8_t { Rising, Holding, Falling, Done };
 
-    std::int32_t player = 0;
+    int player = 0;
     std::string texture; ///< the STATIC card, such as CRYSTAL
-    std::int32_t y = 0;  ///< the strip's top; the card hangs under it
+    int y = 0;           ///< the strip's top; the card hangs under it
     State state = State::Rising;
-    std::int32_t holdTicks = 0;
+    int holdTicks = 0;
 };
 
 /** The count shown above a player's box after a collection: what they have of what they
  * need, beside an icon, for a while. */
 struct PickupCount {
     std::string icon; ///< the STATIC icon
-    std::int32_t count = 0;
-    std::int32_t total = 0;
+    int count = 0;
+    int total = 0;
     float secondsLeft = 0.0f;
 
     bool showing() const { return secondsLeft > 0.0f; }
@@ -45,10 +45,10 @@ class PickupHud {
 public:
     static constexpr std::size_t kSlots = 4;
     static constexpr std::size_t kMostCards = 24;
-    static constexpr std::int32_t kCardStartY = 384; ///< the strip starts just under the screen
-    static constexpr std::int32_t kCardRestY = 304;  ///< and stops on the bar over the box
-    static constexpr std::int32_t kCardEndY = 400;   ///< fallen past this it is gone
-    static constexpr std::int32_t kCardHoldTicks = 90;
+    static constexpr int kCardStartY = 384; ///< the strip starts just under the screen
+    static constexpr int kCardRestY = 304;  ///< and stops on the bar over the box
+    static constexpr int kCardEndY = 400;   ///< fallen past this it is gone
+    static constexpr int kCardHoldTicks = 90;
     static constexpr float kCountSeconds = 3.0f;
     static constexpr std::string_view kCrystalCard = "CRYSTAL";
     /** The ticker's icon for each realm's crystal, by realm. */
@@ -63,21 +63,20 @@ public:
                                                                    "SM_CRYSTAL_BLA"};
 
     /** The icon for a realm's crystal; empty for no realm. */
-    static std::string_view crystalIcon(std::int32_t realm);
+    static std::string_view crystalIcon(int realm);
 
     /** Starts a card for `player`; ignored when every card is in use. */
-    void addCard(std::int32_t player, std::string_view texture);
+    void addCard(int player, std::string_view texture);
     /** Shows `player` `count` of `total` beside `icon` for the ticker's time. */
-    void showCount(std::int32_t player, std::string_view icon, std::int32_t count,
-                   std::int32_t total);
+    void showCount(int player, std::string_view icon, int count, int total);
     /** Moves the cards `ticks` on and the tickers `seconds`. */
-    void step(std::int32_t ticks, float seconds);
+    void step(int ticks, float seconds);
     void clear();
     /** Drops whatever `player` has up. */
-    void clearPlayer(std::int32_t player);
+    void clearPlayer(int player);
 
     const std::vector<PickupCard>& cards() const { return m_cards; }
-    const PickupCount& count(std::int32_t player) const;
+    const PickupCount& count(int player) const;
 
     /** Draws the cards over the boxes and the tickers above them. */
     void draw(Canvas& canvas, StatusBoxPainter& boxes) const;

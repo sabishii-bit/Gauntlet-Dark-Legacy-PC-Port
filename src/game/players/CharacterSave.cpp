@@ -19,7 +19,7 @@ namespace {
 
 using Json = nlohmann::json;
 
-constexpr std::int32_t kSaveFormatVersion = 1;
+constexpr int kSaveFormatVersion = 1;
 
 /** What is carried; only the powerup slots that hold something are written. */
 Json inventoryJson(const Inventory& inventory) {
@@ -39,7 +39,7 @@ Json inventoryJson(const Inventory& inventory) {
 Inventory inventoryFromJson(const Json& object) {
     Inventory inventory;
     inventory.keys = std::clamp(object.value("keys", 0), 0, Inventory::kMostKeys);
-    inventory.potions = object.value("potions", std::vector<std::int32_t>{});
+    inventory.potions = object.value("potions", std::vector<int>{});
     inventory.potions.resize(
         std::min(inventory.potions.size(), static_cast<std::size_t>(Inventory::kMostPotions)));
     std::size_t slot = 0;
@@ -66,7 +66,7 @@ Relics relicsFromJson(const Json& object) {
     relics.runes = static_cast<std::uint16_t>(object.value("runes", 0U));
     relics.legends = static_cast<std::uint16_t>(object.value("legends", 0U));
     relics.shards = static_cast<std::uint16_t>(object.value("shards", 0U));
-    const auto pieces = object.value("gargoylePieces", std::vector<std::int32_t>{});
+    const auto pieces = object.value("gargoylePieces", std::vector<int>{});
     for (std::size_t kind = 0; kind < relics.gargoylePieces.size() && kind < pieces.size();
          ++kind) {
         relics.gargoylePieces[kind] = pieces[kind];
@@ -102,7 +102,7 @@ ClassProgress progressFromJson(const Json& object) {
     if (object.contains("relics")) {
         progress.relics = relicsFromJson(object.at("relics"));
     }
-    const auto crystals = object.value("crystals", std::vector<std::int32_t>{});
+    const auto crystals = object.value("crystals", std::vector<int>{});
     for (std::size_t realm = 0; realm < progress.crystals.size() && realm < crystals.size();
          ++realm) {
         progress.crystals[realm] = crystals[realm];
@@ -123,7 +123,7 @@ std::string CharacterSave::toJson() const {
     root["helpSeen"] = helpSeen;
     root["levelTotal"] = levelTotal;
     Json progress = Json::object();
-    for (std::int32_t i = 0; i < kClassCount; ++i) {
+    for (int i = 0; i < kClassCount; ++i) {
         progress[std::string(classCode(i))] = progressJson(classes[static_cast<std::size_t>(i)]);
     }
     root["classes"] = progress;
@@ -142,11 +142,11 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     }
     CharacterSave save;
     save.name = root.at("name").get<std::string>();
-    save.character = root.at("character").get<std::int32_t>();
+    save.character = root.at("character").get<int>();
     save.color = root.value("color", 0);
     save.classUnlock = static_cast<std::uint16_t>(root.value("classUnlock", 0));
     save.gold = root.value("gold", 0);
-    save.helpSeen = root.value("helpSeen", std::vector<std::int32_t>{});
+    save.helpSeen = root.value("helpSeen", std::vector<int>{});
     std::ranges::sort(save.helpSeen);
     save.levelTotal = root.value("levelTotal", 0);
     if (save.character < 0 || save.character >= kClassCount || save.color < 0 ||
@@ -155,7 +155,7 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     }
     if (root.contains("classes")) {
         const Json& progress = root.at("classes");
-        for (std::int32_t i = 0; i < kClassCount; ++i) {
+        for (int i = 0; i < kClassCount; ++i) {
             const std::string code(classCode(i));
             if (progress.contains(code)) {
                 save.classes[static_cast<std::size_t>(i)] = progressFromJson(progress.at(code));

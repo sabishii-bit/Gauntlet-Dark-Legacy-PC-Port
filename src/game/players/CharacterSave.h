@@ -18,22 +18,20 @@ inline constexpr std::size_t kCharacterNameLength = 6;
 /** One saved character: a name, its current class and costume, and progress with each class. */
 struct CharacterSave {
     std::string name;
-    std::int32_t character = 0; ///< class index
-    std::int32_t color = 0;
+    int character = 0; ///< class index
+    int color = 0;
     std::uint16_t classUnlock = 0; ///< one bit per unlockable class, from the ninth
-    std::int32_t gold = 0;
-    std::int32_t levelTotal = 0;
-    std::vector<std::int32_t> helpSeen; ///< the help messages already shown to it, in order
+    int gold = 0;
+    int levelTotal = 0;
+    std::vector<int> helpSeen; ///< the help messages already shown to it, in order
     std::array<ClassProgress, kClassCount> classes{};
 
     const ClassProgress& progress() const { return classes[static_cast<std::size_t>(character)]; }
     ClassProgress& progress() { return classes[static_cast<std::size_t>(character)]; }
-    std::int32_t experience() const { return progress().experience; }
+    int experience() const { return progress().experience; }
 
     /** The current class's health, full for a class never played. */
-    std::int32_t health() const {
-        return progress().health > 0 ? progress().health : kStartingHealth;
-    }
+    int health() const { return progress().health > 0 ? progress().health : kStartingHealth; }
 
     std::string toJson() const;
 
@@ -45,8 +43,8 @@ struct CharacterSave {
 struct SaveSlotInfo {
     bool exists = false;
     std::string name;
-    std::int32_t character = 0;
-    std::int32_t color = 0;
+    int character = 0;
+    int color = 0;
 };
 
 /**

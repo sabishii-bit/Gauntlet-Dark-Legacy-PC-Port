@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -38,26 +37,26 @@ struct PortalVisitor {
  */
 class ExitPortals {
 public:
-    static constexpr std::int32_t kExitItem = 9;
+    static constexpr int kExitItem = 9;
     static constexpr std::string_view kFigure = "EXIT_PORTAL";
     static constexpr std::array<std::string_view, 5> kSequences{"IDLE", "READY", "ACTIVE1",
                                                                 "ACTIVE2", "ACTIVE3"};
-    static constexpr std::int32_t kWaiting = 3; ///< the sequence a portal holds at for stragglers
-    static constexpr std::int32_t kLast = 4;
-    static constexpr std::int32_t kWaitingTicks = 45; ///< how long the waiting sequence holds
-    static constexpr float kReach = 3.0f;             ///< how far over or under a portal one counts
+    static constexpr int kWaiting = 3; ///< the sequence a portal holds at for stragglers
+    static constexpr int kLast = 4;
+    static constexpr int kWaitingTicks = 45; ///< how long the waiting sequence holds
+    static constexpr float kReach = 3.0f;    ///< how far over or under a portal one counts
     static constexpr float kFloorLift = 0.1f;
 
     /** One portal. */
     struct Portal {
-        std::int32_t instance = -1;
+        int instance = -1;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Mat4 transform{1.0f};
         float radius = 3.0f;
         std::string tag;                     ///< "g1"
         std::optional<LevelRef> destination; ///< none for a tag naming no level
-        std::int32_t action = 0;             ///< which of kSequences it plays
-        std::int32_t ticksLeft = 0;          ///< before it may move on
+        int action = 0;                      ///< which of kSequences it plays
+        int ticksLeft = 0;                   ///< before it may move on
         TreeModel model;
         TreePose pose;
         AnimationPlayer player;
@@ -73,7 +72,7 @@ public:
 
     /** Steps every portal by `ticks` (`seconds` long) under the party; the portal the whole
      * party has just left by, if any. */
-    std::optional<std::size_t> update(std::int32_t ticks, float seconds,
+    std::optional<std::size_t> update(int ticks, float seconds,
                                       std::span<const PortalVisitor> party);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
@@ -81,11 +80,11 @@ public:
     static std::string tagOf(const ItemInstance& instance);
 
 private:
-    void advance(Portal& portal, std::int32_t action);
+    void advance(Portal& portal, int action);
     static bool standsOn(const Portal& portal, const PortalVisitor& visitor, float extra);
 
     const TreeInfo* m_tree = nullptr;
-    std::array<std::int32_t, kSequences.size()> m_sequences{-1, -1, -1, -1, -1};
+    std::array<int, kSequences.size()> m_sequences{-1, -1, -1, -1, -1};
     std::vector<Portal> m_portals;
 };
 

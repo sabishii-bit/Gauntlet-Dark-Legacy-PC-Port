@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -28,7 +27,7 @@ public:
     /** Starts an emitter per marker; textures are found by name in the level's set, then
      * in `lenders`. Markers naming no template are skipped with a warning. */
     void bind(const WorldLayout& layout, TextureSet& textures, RenderDevice& device,
-              std::span<TextureSet* const> lenders = {}, std::uint32_t seed = 1);
+              std::span<TextureSet* const> lenders = {}, unsigned int seed = 1);
     void clear();
     std::size_t size() const { return m_entries.size(); }
     const ParticleEmitter& emitter(std::size_t index) const { return m_entries[index].emitter; }
@@ -38,7 +37,7 @@ public:
     /** Starts an emitter of its own at `node`, apart from any layout; the index addresses
      * it until prune() drops it. */
     std::size_t start(const ParticleDescriptor& descriptor, const Mat4& node,
-                      const Texture* texture, std::uint32_t seed = 1);
+                      const Texture* texture, unsigned int seed = 1);
     /** Moves an emitter's marker; new particles leave from there. */
     void setNode(std::size_t index, const Mat4& node);
     /** Replaces a sprite frame without restarting its emitter or live particles. */

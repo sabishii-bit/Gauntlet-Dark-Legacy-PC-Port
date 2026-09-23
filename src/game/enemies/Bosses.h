@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -21,14 +20,14 @@ namespace gdl::game {
 /** A step of a legend item's rite the game shows: which, and whose item it is. */
 struct LegendEvent {
     LegendCue cue = LegendCue::Brandished;
-    std::int32_t player = -1;
-    std::int32_t realm = 0;
+    int player = -1;
+    int realm = 0;
 };
 
 /** The boss a realm keeps: which, and how it stands. */
 struct BossView {
-    std::int32_t kind = -1; ///< the original's kind, 34 the dragon to 44 the garm
-    std::string name;       ///< "LICH"
+    int kind = -1;    ///< the original's kind, 34 the dragon to 44 the garm
+    std::string name; ///< "LICH"
     float health = 0.0f;
     float maxHealth = 1.0f;
     bool awake = false;
@@ -60,19 +59,19 @@ public:
 
     /** Stands the boss of `kind` (`bossNameOf` it) at `position` facing `yaw`, asleep until
      * the party comes within `wakeDistance` (its table's threshold when nought). */
-    bool spawn(std::int32_t kind, const Vec3& position, float yaw, float wakeDistance = 0.0f);
+    bool spawn(int kind, const Vec3& position, float yaw, float wakeDistance = 0.0f);
 
     /** The realm of the legend item that weakens this boss, or nought. */
-    std::int32_t legendRealm() const { return legendRealmOf(m_kind); }
+    int legendRealm() const { return legendRealmOf(m_kind); }
     /** Begins the rite of the boss's legend item, carried by `player`; false when the boss
      * has none, or it is already begun. */
-    bool bringLegend(std::int32_t player);
+    bool bringLegend(int player);
     /** The Dragon's ice axe acts on impact, not on the request to throw it.
      * Repeated impacts are ignored. Appearance is supplied separately at draw time. */
     void landLegend();
     const LegendRite& legend() const { return m_rite; }
 
-    void update(std::int32_t ticks, float seconds, std::span<const EnemyView> players);
+    void update(int ticks, float seconds, std::span<const EnemyView> players);
     std::vector<CritterBlow> takeBlows();
     std::vector<CritterLoss> takeLosses();
     std::vector<CritterCue> takeCues() { return m_fighter.takeCues(); }
@@ -86,7 +85,7 @@ public:
     bool curbed() const;
 
     std::vector<MissileTarget> targets() const;
-    std::optional<std::int32_t> struckBy(const Vec3& from, const Vec3& to, float radius) const;
+    std::optional<int> struckBy(const Vec3& from, const Vec3& to, float radius) const;
     bool within(const Vec3& centre, float radius) const;
     bool reachedBy(const Vec3& centre, float radius, float arc, const Vec3& facing) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
@@ -109,15 +108,15 @@ public:
     Vec3 cameraOffset() const;
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */
-    static constexpr std::int32_t kTargetId = 0;
+    static constexpr int kTargetId = 0;
 
 private:
-    void stageLegend(std::int32_t ticks);
+    void stageLegend(int ticks);
     void strikeWithLegend();
 
     Critters m_fighter; ///< holds the one boss
-    std::optional<std::int32_t> m_id;
-    std::int32_t m_kind = -1;
+    std::optional<int> m_id;
+    int m_kind = -1;
     std::string m_name;
     bool m_awake = false;
     float m_wakeDistance = 0.0f;

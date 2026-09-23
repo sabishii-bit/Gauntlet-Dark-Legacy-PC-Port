@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -18,7 +17,7 @@ using namespace gdl::game;
 
 BitmapFont wideFont() {
     std::vector<BitmapGlyph> glyphs;
-    for (std::int32_t c = 'A'; c <= 'Z'; ++c) {
+    for (int c = 'A'; c <= 'Z'; ++c) {
         glyphs.push_back({c, 8, 0, 0});
     }
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
@@ -104,7 +103,7 @@ TEST_CASE("the hint scroll lists its topics, answers one with a page and returns
 
     // A lone centred passage sits about the middle of the screen.
     f.menu.read(f.painter, "A HINT", {"ONE\nTWO"}, 1.0f, true, 0);
-    const std::int32_t lineHeight = f.painter.lineHeight(HintMenu::kPageScale);
+    const int lineHeight = f.painter.lineHeight(HintMenu::kPageScale);
     REQUIRE(f.menu.page().bodyTop() == 192 - lineHeight);
 }
 

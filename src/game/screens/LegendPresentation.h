@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <functional>
 #include <optional>
 #include <string_view>
@@ -33,8 +32,8 @@ public:
     };
     /** Current pose supplied by the scene, independent of its actor/figure storage. */
     struct Bearer {
-        std::int32_t player = -1;
-        std::int32_t color = 0;
+        int player = -1;
+        int color = 0;
         Vec3 position{0.0f};
         Vec3 facing{0.0f, 0.0f, 1.0f};
         Vec3 holdPoint{0.0f};
@@ -58,14 +57,13 @@ public:
     LegendPresentation(LegendPresentation&&) = delete;
     LegendPresentation& operator=(LegendPresentation&&) = delete;
 
-    void show(LegendCue cue, std::int32_t player, std::int32_t realm, std::int32_t kind,
-              const std::optional<Bearer>& bearer);
+    void show(LegendCue cue, int player, int realm, int kind, const std::optional<Bearer>& bearer);
     Update update(float seconds, const std::optional<Bearer>& bearer,
                   const std::optional<Target>& target);
     /** Stops only this presentation's effects and loop, leaving unrelated effects alone. */
     void clear();
-    std::int32_t player() const { return m_player; }
-    std::int32_t kind() const { return m_kind; }
+    int player() const { return m_player; }
+    int kind() const { return m_kind; }
     /** Borrowed ice skin for the draw call, not part of the boss's gameplay state. */
     const Texture* frozenTexture() const { return m_frozenTexture; }
 
@@ -75,18 +73,18 @@ private:
     void land(const std::optional<Target>& target);
     void playSound(LegendShow::Sound sound, bool looping = false);
     void stopLoop();
-    std::uint32_t start(ItemArchive& archive, std::string_view tree, const Vec3& position,
-                        const EffectTrees::Setting& setting);
+    unsigned int start(ItemArchive& archive, std::string_view tree, const Vec3& position,
+                       const EffectTrees::Setting& setting);
 
     EffectTrees& m_effects;
     Assets m_assets;
     Audio m_audio;
-    std::vector<std::uint32_t> m_ownedEffects;
-    std::int32_t m_player = -1;
-    std::int32_t m_kind = -1;
+    std::vector<unsigned int> m_ownedEffects;
+    int m_player = -1;
+    int m_kind = -1;
     char m_realm = 'A';
-    std::uint32_t m_held = 0;
-    std::uint32_t m_flying = 0;
+    unsigned int m_held = 0;
+    unsigned int m_flying = 0;
     bool m_gestureOwed = false;
     bool m_released = false;
     float m_flightLeft = 0.0f;

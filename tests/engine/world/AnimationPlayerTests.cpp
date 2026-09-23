@@ -1,4 +1,3 @@
-#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -13,7 +12,7 @@ using Catch::Approx;
 
 constexpr float kStep = 1.0f / 30.0f;
 
-TreeSequenceInfo sequence(std::int32_t frames, std::int32_t rate) {
+TreeSequenceInfo sequence(int frames, int rate) {
     TreeSequenceInfo info;
     info.name = "TEST";
     info.frames = frames;

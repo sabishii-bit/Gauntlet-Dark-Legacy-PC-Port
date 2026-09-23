@@ -1,5 +1,4 @@
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -21,7 +20,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr std::int32_t kTicks = 2;
+constexpr int kTicks = 2;
 constexpr float kStep = 1.0f / 30.0f;
 
 /** A field with one grunt generator of strength two at the origin facing +z, one of strength
@@ -87,7 +86,7 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     REQUIRE(wider.count() == 117);
     // Each stands whole, boxed as its record says, and is found by a sweep.
     for (std::size_t g = 0; g < generators.count(); ++g) {
-        const auto id = static_cast<std::int32_t>(g);
+        const auto id = static_cast<int>(g);
         REQUIRE(generators.standing(id));
         REQUIRE(generators.stateOf(id) == 3);
         REQUIRE(generators.tierOf(id) >= 1);
@@ -130,7 +129,7 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE(enemies.kindLoaded(kRatKind));
     // Strength two: two tiers of health at the level's three quarters, three out at once
     // (five at three quarters, made whole), a countdown of thirty (twenty at one and a half).
-    const std::int32_t chosen = 0;
+    const int chosen = 0;
     REQUIRE(generators.kindOf(chosen) == kGruntKind);
     REQUIRE(generators.tierOf(chosen) == 2);
     REQUIRE(generators.mostOf(chosen) == 3);
@@ -156,8 +155,8 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE(generators.bredOf(chosen) == 1);
     REQUIRE(generators.bredOf(1) == 0);             // too far off
     REQUIRE(generators.countdownOf(chosen) == 180); // six ticks a unit of interval
-    std::vector<std::int32_t> mine;
-    for (std::int32_t id = 0; id < Enemies::kMost; ++id) {
+    std::vector<int> mine;
+    for (int id = 0; id < Enemies::kMost; ++id) {
         if (enemies.alive(id) && enemies.generatorOf(id) == chosen) {
             mine.push_back(id);
         }
@@ -217,7 +216,7 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE_FALSE(generators.standing(chosen));
     REQUIRE(generators.obstacles().size() == 1);
     REQUIRE_FALSE(generators.strike(chosen, 50.0f, 0).has_value());
-    for (std::int32_t id = 0; id < Enemies::kMost; ++id) {
+    for (int id = 0; id < Enemies::kMost; ++id) {
         if (enemies.alive(id)) {
             enemies.hurt(id, slay);
         }

@@ -54,7 +54,7 @@ float TurboMeter::zoneFraction(float amount) {
     return 1.0f;
 }
 
-void TurboMeter::step(std::int32_t ticks) {
+void TurboMeter::step(int ticks) {
     const Zone before = zoneOf(m_shown);
     const auto moved = static_cast<float>(ticks);
     if (m_shown < m_held) {
@@ -96,11 +96,11 @@ TurboMeterLook TurboMeter::look() const {
         look.front = Color::rgba(255, 0, 0);
         look.back = look.front;
         // Bright, out, and bright again over one pulse.
-        const std::int32_t phase = m_flashTicks * 512 / kGlowTicks;
-        const std::int32_t faded = phase <= 255 ? phase : std::max(511 - phase, 0);
+        const int phase = m_flashTicks * 512 / kGlowTicks;
+        const int faded = phase <= 255 ? phase : std::max(511 - phase, 0);
         look.glow = static_cast<std::uint8_t>(255 - std::min(faded, 255));
     } else if (m_flash == Flash::Gleam) {
-        const std::int32_t step = m_flashTicks / kGleamTicksPerFrame;
+        const int step = m_flashTicks / kGleamTicksPerFrame;
         look.gleam = step < kGleamFrames ? step : std::max(2 * kGleamFrames - 1 - step, 0);
     }
     return look;

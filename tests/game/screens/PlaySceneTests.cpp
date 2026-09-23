@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <numbers>
@@ -48,7 +47,7 @@ std::filesystem::path unpackedRoot() {
 
 TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
     PlayScene scene;
-    for (const std::int32_t player : {-1, 0, 1, 2, 3, 4}) {
+    for (const int player : {-1, 0, 1, 2, 3, 4}) {
         REQUIRE(scene.actor(player) == nullptr);
         REQUIRE(scene.animator(player) == nullptr);
         REQUIRE(scene.turboMeter(player) == nullptr);
@@ -106,17 +105,16 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     REQUIRE(scene.actor(1)->save().name == "ONE");
     REQUIRE(scene.turboMeter(3)->held() == Approx(80.0f));
     REQUIRE(scene.turboMeter(1)->held() == Approx(20.0f));
-    REQUIRE(scene.figureDirectory(std::size_t{0}) == scene.figureDirectory(std::int32_t{3}));
-    REQUIRE(scene.figureDirectory(std::size_t{1}) == scene.figureDirectory(std::int32_t{1}));
+    REQUIRE(scene.figureDirectory(std::size_t{0}) == scene.figureDirectory(int{3}));
+    REQUIRE(scene.figureDirectory(std::size_t{1}) == scene.figureDirectory(int{1}));
 
     scene.hurtPlayer(3, 100.0f, HurtKind::Blow);
     REQUIRE(scene.actor(3)->save().health() == 200);
     REQUIRE(scene.actor(1)->save().health() == 700);
     REQUIRE_FALSE(scene.fallen(1));
     const auto expectedExperience =
-        second.experience() +
-        static_cast<std::int32_t>(
-            250.0f * world.level()->tuning.experienceScale(experienceLevel(second.experience())));
+        second.experience() + static_cast<int>(250.0f * world.level()->tuning.experienceScale(
+                                                            experienceLevel(second.experience())));
     scene.awardExperience(1, 250);
     REQUIRE(scene.actor(1)->save().experience() == expectedExperience);
     REQUIRE(scene.actor(3)->save().experience() == first.experience());
@@ -132,12 +130,12 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     REQUIRE(carried[0].fallen);
     REQUIRE(carried[0].save.health() == 300); // death carries the entry save, not the wounded one
     REQUIRE(carried[0].save.gold == 40);
-    REQUIRE(carried[0].helpHeard == std::vector<std::int32_t>{4, 9});
+    REQUIRE(carried[0].helpHeard == std::vector<int>{4, 9});
     REQUIRE(carried[1].player == 1);
     REQUIRE(carried[1].slot == std::optional<std::size_t>{2});
     REQUIRE_FALSE(carried[1].fallen);
     REQUIRE(carried[1].save.experience() == expectedExperience);
-    REQUIRE(carried[1].helpHeard == std::vector<std::int32_t>{6});
+    REQUIRE(carried[1].helpHeard == std::vector<int>{6});
 
     // Reopening implicitly closes the old scene. No death, reaction, slot or turbo leaks.
     CharacterSave replacement = first;
@@ -569,11 +567,11 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
             words += line + " ";
         }
         REQUIRE(words.find("28 Golden Lion Claws") != std::string::npos);
-        std::int32_t statue = -1;
+        int statue = -1;
         const std::vector<WorldObject>& objects = world.layout().objects();
         for (std::size_t i = 0; i < objects.size(); ++i) {
             if (objects[i].name == "L1GROUP276") {
-                statue = static_cast<std::int32_t>(i);
+                statue = static_cast<int>(i);
             }
         }
         REQUIRE(statue >= 0);
@@ -679,11 +677,11 @@ TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder'
     REQUIRE(mine.gargoylePieces[1] + theirs.gargoylePieces[1] == 1);
     REQUIRE_FALSE(scene.scroll().active());
     // Its scroll's third page, dropped underfoot, opens over the party and is gone.
-    std::int32_t record = -1;
+    int record = -1;
     const std::vector<ItemInfo>& infos = world.layout().itemInfos();
     for (std::size_t i = 0; i < infos.size(); ++i) {
         if (infos[i].name == "SCROLL") {
-            record = static_cast<std::int32_t>(i);
+            record = static_cast<int>(i);
         }
     }
     REQUIRE(record >= 0);
@@ -913,8 +911,7 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     REQUIRE(scene.help().showing());
     REQUIRE(scene.help().id() == HelpMessages::kChestNeedsKey);
     REQUIRE(scene.help().lines().size() == 2);
-    REQUIRE(scene.actor(0)->save().helpSeen ==
-            std::vector<std::int32_t>{HelpMessages::kChestNeedsKey});
+    REQUIRE(scene.actor(0)->save().helpSeen == std::vector<int>{HelpMessages::kChestNeedsKey});
 
     // A blast breaks the barrels about it; the one by the first field gives up its key.
     std::size_t holder = scene.barrels().size();
@@ -952,7 +949,7 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     REQUIRE(after[0].fallen);
     REQUIRE(after[0].slot == std::optional<std::size_t>{3});
     REQUIRE(after[0].save.health() == 300); // as it came in
-    REQUIRE(after[0].save.helpSeen == std::vector<std::int32_t>{HelpMessages::kChestNeedsKey});
+    REQUIRE(after[0].save.helpSeen == std::vector<int>{HelpMessages::kChestNeedsKey});
     scene.close();
 }
 
@@ -1251,7 +1248,7 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     // it is not said again next level.
     REQUIRE(scene.help().id() == 57);
     REQUIRE(scene.help().lines() == std::vector<std::string>{"FIRE ARC"});
-    REQUIRE(scene.party()[0].helpHeard == std::vector<std::int32_t>{57});
+    REQUIRE(scene.party()[0].helpHeard == std::vector<int>{57});
     REQUIRE(darkest < -0.39f); // the level goes dark while the move comes out
     REQUIRE(darkest > -0.41f);
     REQUIRE(world.lighting().ambient.x < world.level()->ambient);
@@ -1274,7 +1271,7 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
         scene.update(1.0 / 60.0, still);
     }
     const Vec3 from = scene.actor(0)->position();
-    const std::int32_t whole = scene.barrels().barrel(barrel).health;
+    const int whole = scene.barrels().barrel(barrel).health;
     PlayScene::Inputs tap{};
     tap[0].chargePressed = true;
     scene.update(1.0 / 60.0, tap);
@@ -1301,7 +1298,7 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
         scene.update(1.0 / 60.0, guard);
     }
     REQUIRE(scene.animator(0)->defending());
-    const std::int32_t guardedFrom = scene.actor(0)->save().health();
+    const int guardedFrom = scene.actor(0)->save().health();
     for (int i = 0; i < 600; ++i) {
         scene.update(1.0 / 60.0, guard);
     }
@@ -1334,7 +1331,7 @@ TEST_CASE("every class has its turbo attacks: they show, strike and are paid for
     strike[0].turbo = true;
     strike[0].attack = true;
     strike[0].attackPressed = true;
-    for (std::int32_t character = 0; character < 16; ++character) {
+    for (int character = 0; character < 16; ++character) {
         for (const bool full : {false, true}) {
             CAPTURE(classCode(character), full);
             CharacterSave save;
@@ -1510,12 +1507,12 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     REQUIRE(experienceLevel(scene.actor(0)->save().experience()) == 9);
     // Enough for the tenth: the message says so, the health rises by a hundred, and the
     // figure is the tier's.
-    const std::int32_t health = scene.actor(0)->save().health();
+    const int health = scene.actor(0)->save().health();
     const auto before = scene.figureDirectory(0);
     // (The fields pay experience at their own scale, so the gain may be more than one.)
     scene.awardExperience(0, levelExperience(10) - levelExperience(9) + 1, false);
     scene.update(1.0 / 60.0, still);
-    const std::int32_t gained = experienceLevel(scene.actor(0)->save().experience());
+    const int gained = experienceLevel(scene.actor(0)->save().experience());
     REQUIRE(gained >= 10);
     REQUIRE(scene.actor(0)->save().health() == health + 100);
     REQUIRE(scene.help().showing());
@@ -1533,7 +1530,7 @@ TEST_CASE("a level gained is announced with its number and a hundred health, and
     const auto tiered = scene.figureDirectory(0);
     scene.awardExperience(0, levelExperience(gained + 1) - levelExperience(gained) + 1, false);
     scene.update(1.0 / 60.0, still);
-    const std::int32_t next = experienceLevel(scene.actor(0)->save().experience());
+    const int next = experienceLevel(scene.actor(0)->save().experience());
     REQUIRE(next > gained);
     REQUIRE(scene.help().lines().front() == std::format("LEVEL {}", next));
     if (next / 10 == gained / 10) {
@@ -1684,9 +1681,9 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     REQUIRE(scene.generators().count() == 47);
     REQUIRE(scene.enemies().kindLoaded(13));
     REQUIRE_FALSE(scene.enemies().kindLoaded(kGruntKind));
-    std::int32_t nearest = -1;
+    int nearest = -1;
     for (std::size_t g = 0; g < scene.generators().count(); ++g) {
-        const auto id = static_cast<std::int32_t>(g);
+        const auto id = static_cast<int>(g);
         if (glm::distance(scene.generators().positionOf(id), Vec3{111.25f, 10.13f, -72.5f}) <
             1.0f) {
             nearest = id;
@@ -1697,7 +1694,7 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     REQUIRE(scene.generators().mostOf(nearest) == 3); // five, at the level's three quarters
     REQUIRE(scene.generators().healthOf(nearest) == Approx(15.0f));
     // Grunts are bred for the party near them, come round to it and strike it.
-    const std::int32_t health = scene.actor(0)->save().health();
+    const int health = scene.actor(0)->save().health();
     std::size_t most = 0;
     int bitten = -1;
     for (int i = 0; i < 900; ++i) {
@@ -1716,7 +1713,7 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     // one takes it takes from what it deals.
     PlayScene::Inputs throwing{};
     throwing[0].attack = true;
-    const std::int32_t experience = scene.actor(0)->save().experience();
+    const int experience = scene.actor(0)->save().experience();
     std::size_t fewest = most;
     for (int i = 0; i < 900; ++i) {
         scene.update(1.0 / 60.0, throwing);
@@ -2173,7 +2170,7 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     sounds.stopAll();
     // A light blow is felt (the hit sounds) but not cried over; enough of them are: once
     // thirty of health has gone (the level scales what a blow takes).
-    const std::int32_t whole = scene.actor(0)->save().health();
+    const int whole = scene.actor(0)->save().health();
     scene.harm(0, 5.0f, HurtKind::Blow);
     REQUIRE(live() == 1);
     sounds.stopAll();
@@ -2199,7 +2196,7 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     REQUIRE(live() == 1);
     sounds.stopAll();
     // Down past a hundred and fifty the narrator names the character instead.
-    const std::int32_t health = scene.actor(0)->save().health();
+    const int health = scene.actor(0)->save().health();
     REQUIRE(health > 150);
     scene.harm(0, static_cast<float>(health - 140), HurtKind::Burn);
     REQUIRE(scene.actor(0)->save().health() == 140);
@@ -2262,7 +2259,7 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     // A warrior's little magic makes it a small one.
     REQUIRE(scene.effects().effect(0).scale > 0.25f);
     REQUIRE(scene.effects().effect(0).scale < 0.5f);
-    REQUIRE(now.potions == std::vector<std::int32_t>{1});
+    REQUIRE(now.potions == std::vector<int>{1});
     // Held on, no second potion goes; released and thrown, the red one flies and bursts.
     for (int i = 0; i < 200; ++i) {
         scene.update(1.0 / 60.0, use);
@@ -2392,7 +2389,7 @@ TEST_CASE("holding the attack throws the character's weapon again and again",
 
 TEST_CASE("Sumner greets a player who steps up to him and hands them his scroll of hints",
           "[game][screens][unpacked]") {
-    const std::int32_t player = GENERATE(0, 2);
+    const int player = GENERATE(0, 2);
     const auto slot = static_cast<std::size_t>(player);
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;

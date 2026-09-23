@@ -1,6 +1,5 @@
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <numbers>
 #include <random>
 
@@ -21,11 +20,11 @@ TEST_CASE("a boss throws its realm's coins for each player, fanned over the deat
           "[game][enemies]") {
     // The town's lich throws four bronze and one silver a player; the castle's chimera two
     // bronze, one silver and one gold; the tower's and the battlefield's bosses nothing.
-    REQUIRE(BossCoins::countsOf(7) == std::array<std::int32_t, 3>{4, 1, 0});
-    REQUIRE(BossCoins::countsOf(1) == std::array<std::int32_t, 3>{2, 1, 1});
-    REQUIRE(BossCoins::countsOf(13) == std::array<std::int32_t, 3>{0, 0, 0});
-    REQUIRE(BossCoins::countsOf(-1) == std::array<std::int32_t, 3>{0, 0, 0});
-    REQUIRE(BossCoins::countsOf(99) == std::array<std::int32_t, 3>{0, 0, 0});
+    REQUIRE(BossCoins::countsOf(7) == std::array<int, 3>{4, 1, 0});
+    REQUIRE(BossCoins::countsOf(1) == std::array<int, 3>{2, 1, 1});
+    REQUIRE(BossCoins::countsOf(13) == std::array<int, 3>{0, 0, 0});
+    REQUIRE(BossCoins::countsOf(-1) == std::array<int, 3>{0, 0, 0});
+    REQUIRE(BossCoins::countsOf(99) == std::array<int, 3>{0, 0, 0});
     std::mt19937 random{7};
     const Vec3 throwUp{0.0f, 20.0f, 30.0f};
     // Two players in the town: eight bronze all round and two silver.

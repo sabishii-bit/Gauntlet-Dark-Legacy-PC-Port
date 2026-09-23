@@ -1,6 +1,5 @@
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -54,8 +53,8 @@ PlayerSelectScene::Inputs nobody() {
     return {};
 }
 
-PlayerSelectScene::Inputs player(std::int32_t index, bool select, bool back = false,
-                                 bool start = false, bool right = false) {
+PlayerSelectScene::Inputs player(int index, bool select, bool back = false, bool start = false,
+                                 bool right = false) {
     PlayerSelectScene::Inputs inputs{};
     inputs[static_cast<std::size_t>(index)].select = select;
     inputs[static_cast<std::size_t>(index)].back = back;

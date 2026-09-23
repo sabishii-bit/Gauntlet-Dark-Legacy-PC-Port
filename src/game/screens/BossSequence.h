@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <random>
@@ -47,14 +46,14 @@ public:
     void spewCoins(const CritterSpew& spew, LevelOpponents& opponents,
                    std::span<PlayerRuntime> players);
     /** True only on the update that completes the visit; the caller chooses how to travel. */
-    bool advanceVictory(std::int32_t ticks, float seconds, std::span<const PlayerRuntime> players,
+    bool advanceVictory(int ticks, float seconds, std::span<const PlayerRuntime> players,
                         const MessageTable& strings);
     const BossVictoryPresentation& victory() const { return m_victory; }
     const Texture* frozenTexture() const {
         return m_legend != nullptr ? m_legend->frozenTexture() : nullptr;
     }
     /** Player ids need not be contiguous; missing figures still supply fallback hold points. */
-    static std::optional<LegendPresentation::Bearer> bearer(std::int32_t player, std::int32_t kind,
+    static std::optional<LegendPresentation::Bearer> bearer(int player, int kind,
                                                             std::span<const PlayerRuntime> players);
 
 private:

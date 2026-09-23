@@ -1,6 +1,5 @@
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <numbers>
 #include <vector>
@@ -133,11 +132,11 @@ TEST_CASE("a box pushes a body out by its nearest side and knows what is against
 TEST_CASE("a chest's contents are its record, or the pick from a list by the item's place",
           "[game][world][fixtures]") {
     const Fixture f("fixtures-contents");
-    std::uint32_t seed = 0;
+    unsigned int seed = 0;
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 5, 0, seed) == 5);
     REQUIRE(seed == 0U);
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 0, seed) == 1); // (0 + 0) % 2
-    REQUIRE(seed == static_cast<std::uint32_t>(Chests::kSeedStep));
+    REQUIRE(seed == static_cast<unsigned int>(Chests::kSeedStep));
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 1, seed) == 1); // (13 + 1) % 2
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 0, seed) == 2); // (27 + 0) % 2
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), -1, 0, seed) == -1);

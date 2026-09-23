@@ -1,4 +1,3 @@
-#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -15,10 +14,10 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr std::int32_t kTicks = 2;
+constexpr int kTicks = 2;
 constexpr float kStep = 1.0f / 30.0f;
 
-EnemyView playerAt(const Vec3& position, std::int32_t player = 0) {
+EnemyView playerAt(const Vec3& position, int player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;
@@ -259,7 +258,7 @@ TEST_CASE("the genie selects projectile attacks and launches them from its anima
 
 TEST_CASE("every retail boss can enter animate draw take damage and die",
           "[game][boss-roster][unpacked]") {
-    for (std::int32_t kind = 34; kind <= 44; ++kind) {
+    for (int kind = 34; kind <= 44; ++kind) {
         const std::string name{bossNameOf(kind)};
         DYNAMIC_SECTION(name) {
             const auto root =

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 
 #include "engine/world/TreePose.h"
 
@@ -30,7 +29,7 @@ void WorldAnimator::bind(const WorldLayout& layout) {
         track.origin = object.position;
         track.reverse = reverse;
         track.once = once;
-        const float last = static_cast<float>(animation.frames - 1);
+        const auto last = static_cast<float>(animation.frames - 1);
         track.frame = reverse ? last : std::clamp(animation.start, 0.0f, last);
         m_tracks.push_back(std::move(track));
     }
@@ -40,7 +39,7 @@ void WorldAnimator::clear() {
     m_tracks.clear();
 }
 
-std::optional<std::size_t> WorldAnimator::trackOf(std::int32_t object) const {
+std::optional<std::size_t> WorldAnimator::trackOf(int object) const {
     for (std::size_t i = 0; i < m_tracks.size(); ++i) {
         if (m_tracks[i].object == object) {
             return i;
@@ -49,7 +48,7 @@ std::optional<std::size_t> WorldAnimator::trackOf(std::int32_t object) const {
     return std::nullopt;
 }
 
-void WorldAnimator::hold(std::int32_t object) {
+void WorldAnimator::hold(int object) {
     const auto index = trackOf(object);
     if (!index.has_value()) {
         return;
@@ -62,13 +61,13 @@ void WorldAnimator::hold(std::int32_t object) {
     track.finished = true;
 }
 
-void WorldAnimator::fire(std::int32_t object, bool open, bool atOnce) {
+void WorldAnimator::fire(int object, bool open, bool atOnce) {
     const auto index = trackOf(object);
     if (!index.has_value()) {
         return;
     }
     Track& track = m_tracks[*index];
-    const float last = static_cast<float>(track.frames - 1);
+    const auto last = static_cast<float>(track.frames - 1);
     track.held = false;
     track.once = true;
     track.reverse = !open;
@@ -98,7 +97,7 @@ void WorldAnimator::step(float seconds, WorldScene& scene) {
         if (track.finished) {
             continue;
         }
-        const float last = static_cast<float>(track.frames - 1);
+        const auto last = static_cast<float>(track.frames - 1);
         if (track.reverse) {
             track.frame -= advance;
             if (track.frame <= 0.0f) {

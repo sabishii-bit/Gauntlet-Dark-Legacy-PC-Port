@@ -23,12 +23,12 @@ namespace gdl::game {
  * javelin. The underworld's and the battlefield's bosses have none.
  */
 struct LegendWeakness {
-    std::int32_t boss = -1;       ///< the boss kind, 34 the dragon to 44 the garm
-    std::int32_t realm = 0;       ///< the item, by the realm whose boss this is
-    float healthShare = 0.0f;     ///< of its health now, taken at once
-    float damage = 0.0f;          ///< or this much, taken at once
-    std::int32_t frozenTicks = 0; ///< it stands frozen this long
-    std::int32_t blindTicks = 0;  ///< it loses its targets and turns at a tenth this long
+    int boss = -1;            ///< the boss kind, 34 the dragon to 44 the garm
+    int realm = 0;            ///< the item, by the realm whose boss this is
+    float healthShare = 0.0f; ///< of its health now, taken at once
+    float damage = 0.0f;      ///< or this much, taken at once
+    int frozenTicks = 0;      ///< it stands frozen this long
+    int blindTicks = 0;       ///< it loses its targets and turns at a tenth this long
     float curbSeconds = 0.0f; ///< over nought its curbed attacks are refused, bursts cut to this
     float curbLasts = 0.0f;   ///< seconds the curb lasts, from its roar; for good when nought
     float scale = 1.0f;       ///< how big it stands afterwards
@@ -39,9 +39,9 @@ struct LegendWeakness {
 };
 
 /** The weakness of the boss `kind`, or null for one no item touches. */
-const LegendWeakness* legendWeaknessOf(std::int32_t kind);
+const LegendWeakness* legendWeaknessOf(int kind);
 /** The realm of the legend item that weakens the boss `kind`, or nought. */
-std::int32_t legendRealmOf(std::int32_t kind);
+int legendRealmOf(int kind);
 
 /** Something the rite did that the game shows. */
 enum class LegendCue : std::uint8_t {
@@ -62,24 +62,24 @@ class LegendRite {
 public:
     enum class Stage : std::uint8_t { None, Carried, Woken, Struck, Over };
 
-    static constexpr std::int32_t kBrandishTicks = 60;
-    static constexpr std::int32_t kShortRoarWait = 60;
-    static constexpr std::int32_t kLongRoarWait = 180;
+    static constexpr int kBrandishTicks = 60;
+    static constexpr int kShortRoarWait = 60;
+    static constexpr int kLongRoarWait = 180;
 
     /** Begins for `player`, who carries the item of `weakness`. */
-    void begin(std::int32_t player, const LegendWeakness& weakness);
+    void begin(int player, const LegendWeakness& weakness);
     void clear();
 
     /** Moves the rite `ticks` on, told whether the boss has finished rising and whether it
      * has finished roaring; the cues to show come back. */
-    std::vector<LegendCue> update(std::int32_t ticks, bool bossRisen, bool bossRoarDone);
+    std::vector<LegendCue> update(int ticks, bool bossRisen, bool bossRoarDone);
     /** The Dragon's projectile hit advances retail state 2/3 to 4 without waiting for a
      * roar; its twenty-second freeze is independent of the presentation's darkness. */
     bool finishOnImpact();
 
     Stage stage() const { return m_stage; }
     bool running() const { return m_stage != Stage::None && m_stage != Stage::Over; }
-    std::int32_t player() const { return m_player; }
+    int player() const { return m_player; }
     const LegendWeakness* weakness() const {
         return m_stage != Stage::None ? &m_weakness : nullptr;
     }
@@ -100,8 +100,8 @@ public:
 private:
     Stage m_stage = Stage::None;
     LegendWeakness m_weakness;
-    std::int32_t m_player = -1;
-    std::int32_t m_ticks = 0; ///< since the boss rose
+    int m_player = -1;
+    int m_ticks = 0; ///< since the boss rose
     bool m_roarDue = false;
     bool m_roared = false;
     bool m_brandished = false;
@@ -144,23 +144,23 @@ struct LegendShow {
     static constexpr float kBurstPlaybackRate = 1.0f / 0.333f;
 
     /** The coloured charge-up burst and sphere tint selected by costume colour. */
-    static std::string_view chargeTree(std::int32_t color);
-    static Color chargeTint(std::int32_t color);
+    static std::string_view chargeTree(int color);
+    static Color chargeTint(int color);
     /** The code-created trail on the dragon's axe, chimera's scimitar and plague vial;
      * an empty texture means the item has no such trail. */
-    static ParticleDescriptor trailOf(std::int32_t kind);
+    static ParticleDescriptor trailOf(int kind);
 
     /** Whether the held item is in the bearer's hand, not over their head. */
-    static bool heldInHand(std::int32_t kind);
-    static PlayerDeed gestureOf(std::int32_t kind);
-    static Flight flightOf(std::int32_t kind);
+    static bool heldInHand(int kind);
+    static PlayerDeed gestureOf(int kind);
+    static Flight flightOf(int kind);
     /** The tree the item is set on the boss as, or rides ahead of the bearer as. */
-    static std::string_view restingTreeOf(std::int32_t kind);
+    static std::string_view restingTreeOf(int kind);
     /** The tree that takes over once the item has played, and how long it lasts. */
-    static std::string_view burstTreeOf(std::int32_t kind);
-    static float burstSecondsOf(std::int32_t kind);
+    static std::string_view burstTreeOf(int kind);
+    static float burstSecondsOf(int kind);
     /** Where on the boss the item is set. */
-    static Vec3 bossOffsetOf(std::int32_t kind);
+    static Vec3 bossOffsetOf(int kind);
     /** The names the realm's sound for the moment may go by, first the likeliest. */
     static std::vector<std::string> soundNamesOf(Sound sound, char realm);
 };

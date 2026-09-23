@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 
 #include <nlohmann/json.hpp>
@@ -48,19 +47,19 @@ Scenario Scenario::fromJson(std::string_view text) {
     }
     for (const Json& entry : root.at("party")) {
         ScenarioMember member;
-        member.player = entry.value("player", static_cast<std::int32_t>(scenario.party.size()));
+        member.player = entry.value("player", static_cast<int>(scenario.party.size()));
         member.classCode = entry.value("class", member.classCode);
         member.colorCode = entry.value("color", member.colorCode);
         member.name = entry.value("name", member.name);
         member.level = entry.value("level", 1);
-        member.crystals = entry.value("crystals", std::vector<std::int32_t>{});
+        member.crystals = entry.value("crystals", std::vector<int>{});
         member.gold = entry.value("gold", 0);
         member.health = entry.value("health", 0);
         member.keys = entry.value("keys", 0);
         member.slot = entry.value("slot", -1);
         member.turbo = entry.value("turbo", 0.0f);
-        member.potions = entry.value("potions", std::vector<std::int32_t>{});
-        member.legends = entry.value("legends", std::vector<std::int32_t>{});
+        member.potions = entry.value("potions", std::vector<int>{});
+        member.legends = entry.value("legends", std::vector<int>{});
         for (const Json& powerup : entry.value("powerups", Json::array())) {
             member.powerups.push_back(
                 PowerupSlot{powerup.value("strength", 30.0f), powerup.value("kind", 0),
@@ -77,7 +76,7 @@ Scenario Scenario::fromJson(std::string_view text) {
             member.crystals.size() > kRealmCount || member.gold < 0 || member.health < 0 ||
             member.keys < 0 || member.keys > Inventory::kMostKeys ||
             member.potions.size() > static_cast<std::size_t>(Inventory::kMostPotions) ||
-            std::ranges::any_of(member.legends, [](std::int32_t realm) {
+            std::ranges::any_of(member.legends, [](int realm) {
                 return realm < 1 || realm >= Relics::kRealmCount;
             })) {
             throw FormatError("scenario: a party member is out of range");
@@ -126,7 +125,7 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         progress.health = member.health;
         progress.inventory.keys = member.keys;
         progress.inventory.potions = member.potions;
-        for (const std::int32_t realm : member.legends) {
+        for (const int realm : member.legends) {
             progress.relics.addLegend(realm);
         }
         for (const PowerupSlot& slot : member.powerups) {

@@ -33,20 +33,19 @@ struct GateEvent {
  */
 class LockedGates {
 public:
-    static constexpr std::int32_t kShut = 0; ///< the figure's sequences
-    static constexpr std::int32_t kOpening = 1;
-    static constexpr std::int32_t kOpen = 2;
-    static constexpr std::int32_t kPassableTicks =
-        30; ///< into its opening, from when it bars no one
+    static constexpr int kShut = 0; ///< the figure's sequences
+    static constexpr int kOpening = 1;
+    static constexpr int kOpen = 2;
+    static constexpr int kPassableTicks = 30; ///< into its opening, from when it bars no one
     static constexpr float kRefusalSeconds = 2.5f;
 
     /** One gate. */
     struct Gate {
-        std::int32_t instance = -1;
-        std::int32_t state = kShut;
-        std::int32_t openingTicks = 0;
+        int instance = -1;
+        int state = kShut;
+        int openingTicks = 0;
         float refusalLeft = 0.0f;
-        std::int32_t minPlayers = 0;
+        int minPlayers = 0;
         bool shown = true;
         ItemFigure figure;
         Obstacle box;
@@ -57,10 +56,9 @@ public:
     void clear();
     std::size_t size() const { return m_gates.size(); }
     const Gate& gate(std::size_t index) const { return *m_gates[index]; }
-    void setPlayerCount(std::int32_t players);
+    void setPlayerCount(int players);
 
-    std::vector<GateEvent> update(std::int32_t ticks, float seconds,
-                                  std::span<const ChestVisitor> party);
+    std::vector<GateEvent> update(int ticks, float seconds, std::span<const ChestVisitor> party);
     /** The boxes of the gates that still bar the way. */
     std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;

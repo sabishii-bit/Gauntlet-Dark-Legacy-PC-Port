@@ -122,7 +122,7 @@ TEST_CASE("critter projectiles cannot damage players through a world wall",
 TEST_CASE("retail boss projectile records retain physics and effect transitions",
           "[game][boss-projectiles][assets][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/DRIDER.json").parent_path().parent_path();
-    for (std::int32_t kind = 34; kind <= 44; ++kind) {
+    for (int kind = 34; kind <= 44; ++kind) {
         const std::string name{bossNameOf(kind)};
         DYNAMIC_SECTION(name) {
             const auto wad = test::assetOrSkip("CRITTER/" + name + ".WAD");
@@ -153,7 +153,7 @@ TEST_CASE("retail boss projectile records retain physics and effect transitions"
                 REQUIRE(damage.yawSpread == raw.damages[index].yawSpread);
                 CritterShot shot;
                 shot.data = &data;
-                shot.damageIndex = static_cast<std::int32_t>(index);
+                shot.damageIndex = static_cast<int>(index);
                 shot.origin = {0, 30, 0};
                 shot.target = Vec3{0, 5, 60};
                 projectiles.launch(shot, archive, device, effects, {});

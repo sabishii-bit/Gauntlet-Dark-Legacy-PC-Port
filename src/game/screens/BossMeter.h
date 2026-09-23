@@ -22,35 +22,35 @@ namespace gdl::game {
  */
 class BossMeter {
 public:
-    static constexpr std::int32_t kY = 8;
-    static constexpr std::int32_t kPieceWidth = 256;
-    static constexpr std::int32_t kMostPieces = 2;
+    static constexpr int kY = 8;
+    static constexpr int kPieceWidth = 256;
+    static constexpr int kMostPieces = 2;
     static constexpr float kEasePerTick = 3.0f;
     static constexpr std::uint8_t kAlpha = 143; ///< the original's blit alpha of 112, inverted
     static constexpr Color kFrozenTint = Color::rgba(0x80, 0x80, 0xFF, kAlpha);
 
     /** Lays it out for a boss of `meter` at `left`, drawing from `textures`; false when the
      * boss has no meter to show. */
-    bool bind(const CritterMeter& meter, TextureSet* textures, std::int32_t left = 0);
+    bool bind(const CritterMeter& meter, TextureSet* textures, int left = 0);
     void clear();
     bool bound() const { return m_pieces > 0; }
 
     /** Eases the health shown toward `health` of `max` over `ticks`; `alive` false takes the
      * meter down, `frozen` tints it. */
-    void update(std::int32_t ticks, float health, float maxHealth, bool alive, bool frozen);
+    void update(int ticks, float health, float maxHealth, bool alive, bool frozen);
     float shown() const { return m_shown; }
     bool showing() const { return bound() && m_alive; }
     /** How wide each strip's fill is drawn, in pixels of the virtual screen. */
-    std::array<std::int32_t, kMostPieces> fillWidths() const;
+    std::array<int, kMostPieces> fillWidths() const;
 
     void draw(Canvas& canvas, RenderDevice& device) const;
 
 private:
     TextureSet* m_textures = nullptr;
-    std::int32_t m_pieces = 0;
-    std::int32_t m_left = 0;
-    std::int32_t m_leftInset = 0;
-    std::int32_t m_rightInset = 0;
+    int m_pieces = 0;
+    int m_left = 0;
+    int m_leftInset = 0;
+    int m_rightInset = 0;
     bool m_backed = false;
     float m_max = 1.0f;
     float m_shown = 0.0f;

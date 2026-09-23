@@ -99,7 +99,7 @@ void indexTracks(TreeInfo& tree) {
 
 Vec3 TreeInfo::worldPosition(std::size_t node) const {
     Vec3 position{0.0f, 0.0f, 0.0f};
-    std::int64_t current = static_cast<std::int64_t>(node);
+    auto current = static_cast<std::int64_t>(node);
     std::size_t guard = 0;
     while (current >= 0 && static_cast<std::size_t>(current) < nodes.size() &&
            guard++ < nodes.size()) {

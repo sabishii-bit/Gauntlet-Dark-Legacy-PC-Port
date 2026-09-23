@@ -81,13 +81,12 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
                     if (!model.has_value()) {
                         throw std::runtime_error(std::format("object {} is missing", run.object));
                     }
-                    const std::uint32_t firstModel = *model;
-                    for (std::int32_t f = 0;
-                         f < run.frames &&
-                         firstModel + static_cast<std::uint32_t>(f) < models.size();
+                    const unsigned int firstModel = *model;
+                    for (int f = 0; f < run.frames &&
+                                    firstModel + static_cast<unsigned int>(f) < models.size();
                          ++f) {
                         frames.shapes.push_back(
-                            makeShape(models.mesh(firstModel + static_cast<std::uint32_t>(f)),
+                            makeShape(models.mesh(firstModel + static_cast<unsigned int>(f)),
                                       textures, device));
                         include(frames.shapes.back(), node.offset, first);
                     }
@@ -104,7 +103,7 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
     return !m_nodes.empty();
 }
 
-void TreeModel::setFrame(std::uint32_t sequence, std::int32_t frame) {
+void TreeModel::setFrame(unsigned int sequence, int frame) {
     for (Node& node : m_nodes) {
         if (node.runs.empty()) {
             continue;
@@ -114,8 +113,8 @@ void TreeModel::setFrame(std::uint32_t sequence, std::int32_t frame) {
             continue;
         }
         const FrameRun& run = node.runs[sequence];
-        const auto count = static_cast<std::int32_t>(run.shapes.size());
-        const std::int32_t at = frame - run.start;
+        const auto count = static_cast<int>(run.shapes.size());
+        const int at = frame - run.start;
         if (at >= 0 && at < count) {
             node.shape = run.shapes[static_cast<std::size_t>(at)];
         } else if (count == 1) {
@@ -158,7 +157,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             const MeshPart& part = shape.mesh->parts[p];
             m_batch.clear();
             m_batch.begin(PrimitiveTopology::TriangleList);
-            for (const std::uint32_t index : part.indices) {
+            for (const unsigned int index : part.indices) {
                 const MeshVertex& v = shape.mesh->vertices[index];
                 const Vec3 normal = glm::normalize(normalMatrix * v.normal);
                 const Vec2 uv =
@@ -167,11 +166,11 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 // Glows add their whole texture; the original never lights them.
                 Color color = node.additive || m_unlit ? Color::white() : lighting.shade(normal);
                 color.r =
-                    static_cast<std::uint8_t>(static_cast<std::uint32_t>(color.r) * m_tint.r / 255);
+                    static_cast<std::uint8_t>(static_cast<unsigned int>(color.r) * m_tint.r / 255);
                 color.g =
-                    static_cast<std::uint8_t>(static_cast<std::uint32_t>(color.g) * m_tint.g / 255);
+                    static_cast<std::uint8_t>(static_cast<unsigned int>(color.g) * m_tint.g / 255);
                 color.b =
-                    static_cast<std::uint8_t>(static_cast<std::uint32_t>(color.b) * m_tint.b / 255);
+                    static_cast<std::uint8_t>(static_cast<unsigned int>(color.b) * m_tint.b / 255);
                 if (fading) {
                     color.a = static_cast<std::uint8_t>(static_cast<float>(color.a) * alpha);
                 }
@@ -200,14 +199,14 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
     }
 }
 
-void TreeModel::setTextureFrame(std::uint32_t slot, const Texture* frame) {
+void TreeModel::setTextureFrame(unsigned int slot, const Texture* frame) {
     std::erase_if(m_frames, [slot](const auto& shown) { return shown.first == slot; });
     if (frame != nullptr) {
         m_frames.emplace_back(slot, frame);
     }
 }
 
-void TreeModel::setTextureOffset(std::uint32_t slot, const Vec2& offset, const Vec2& scale) {
+void TreeModel::setTextureOffset(unsigned int slot, const Vec2& offset, const Vec2& scale) {
     for (Slide& slide : m_offsets) {
         if (slide.slot == slot) {
             slide.offset = offset;
@@ -224,7 +223,7 @@ void TreeModel::resetTextures() {
     m_offsets.clear();
 }
 
-Vec2 TreeModel::textureOffset(std::uint32_t slot) const {
+Vec2 TreeModel::textureOffset(unsigned int slot) const {
     for (const Slide& slide : m_offsets) {
         if (slide.slot == slot) {
             return slide.offset;
@@ -233,7 +232,7 @@ Vec2 TreeModel::textureOffset(std::uint32_t slot) const {
     return Vec2{0.0f, 0.0f};
 }
 
-Vec2 TreeModel::textureScale(std::uint32_t slot) const {
+Vec2 TreeModel::textureScale(unsigned int slot) const {
     for (const Slide& slide : m_offsets) {
         if (slide.slot == slot) {
             return slide.scale;

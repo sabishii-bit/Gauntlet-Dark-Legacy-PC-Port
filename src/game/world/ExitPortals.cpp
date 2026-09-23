@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 
 #include "engine/core/Log.h"
 
@@ -36,7 +35,7 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         m_tree = &items.trees.tree(*tree);
         for (std::size_t i = 0; i < kSequences.size(); ++i) {
             const auto sequence = m_tree->findSequence(kSequences[i]);
-            m_sequences[i] = sequence.has_value() ? static_cast<std::int32_t>(*sequence) : -1;
+            m_sequences[i] = sequence.has_value() ? static_cast<int>(*sequence) : -1;
         }
     }
     const std::vector<ItemInfo>& infos = layout.itemInfos();
@@ -49,7 +48,7 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         }
         const ItemInfo& info = infos[static_cast<std::size_t>(instance.info)];
         Portal portal;
-        portal.instance = static_cast<std::int32_t>(index);
+        portal.instance = static_cast<int>(index);
         portal.radius = info.radius;
         portal.tag = tagOf(instance);
         portal.destination = catalog.byTag(portal.tag);
@@ -87,23 +86,23 @@ void ExitPortals::clear() {
 
 /** Starts a portal's sequence; it may not move on until the sequence has played (the waiting
  * one holds its own time). */
-void ExitPortals::advance(Portal& portal, std::int32_t action) {
+void ExitPortals::advance(Portal& portal, int action) {
     portal.action = std::clamp(action, 0, kLast);
     portal.ticksLeft = 0;
-    const std::int32_t sequence = m_sequences[static_cast<std::size_t>(portal.action)];
+    const int sequence = m_sequences[static_cast<std::size_t>(portal.action)];
     if (m_tree == nullptr || sequence < 0) {
         return;
     }
     const TreeSequenceInfo& info = m_tree->sequences[static_cast<std::size_t>(sequence)];
-    portal.player.start(info, static_cast<std::uint32_t>(sequence));
-    portal.pose.evaluate(*m_tree, static_cast<std::uint32_t>(sequence), 0.0f);
-    portal.model.setFrame(static_cast<std::uint32_t>(sequence), 0);
+    portal.player.start(info, static_cast<unsigned int>(sequence));
+    portal.pose.evaluate(*m_tree, static_cast<unsigned int>(sequence), 0.0f);
+    portal.model.setFrame(static_cast<unsigned int>(sequence), 0);
     const float rate =
         info.frameRate > 0 ? static_cast<float>(info.frameRate) : AnimationPlayer::kDefaultRate;
     const float seconds = static_cast<float>(info.frames) * rate * AnimationPlayer::kRateUnit;
     portal.ticksLeft = portal.action == kWaiting
                            ? kWaitingTicks
-                           : static_cast<std::int32_t>(std::ceil(seconds * kTicksPerSecond));
+                           : static_cast<int>(std::ceil(seconds * kTicksPerSecond));
 }
 
 bool ExitPortals::standsOn(const Portal& portal, const PortalVisitor& visitor, float extra) {
@@ -112,7 +111,7 @@ bool ExitPortals::standsOn(const Portal& portal, const PortalVisitor& visitor, f
     return away.x * away.x + away.z * away.z <= reach * reach && std::abs(away.y) <= kReach;
 }
 
-std::optional<std::size_t> ExitPortals::update(std::int32_t ticks, float seconds,
+std::optional<std::size_t> ExitPortals::update(int ticks, float seconds,
                                                std::span<const PortalVisitor> party) {
     std::optional<std::size_t> left;
     // A larger party is given a wider portal: a unit more for each member past the first.
@@ -149,7 +148,7 @@ std::optional<std::size_t> ExitPortals::update(std::int32_t ticks, float seconds
             portal.player.advance(seconds, loops);
             portal.pose.evaluate(*m_tree, portal.player.sequence(), portal.player.frame());
             portal.model.setFrame(portal.player.sequence(),
-                                  static_cast<std::int32_t>(portal.player.frame()));
+                                  static_cast<int>(portal.player.frame()));
         }
     }
     return left;

@@ -425,7 +425,7 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     }
 
     FrameResources& frame = m_frames[m_frameIndex];
-    const std::uint32_t count = static_cast<std::uint32_t>(triangles.size());
+    const auto count = static_cast<std::uint32_t>(triangles.size());
     if (frame.vertexCursor + count > kMaxVerticesPerFrame) {
         if (!m_vertexOverflowReported) {
             log::warn("Immediate vertex buffer overflow ({} vertices per frame); draw skipped",

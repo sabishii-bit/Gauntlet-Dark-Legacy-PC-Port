@@ -4,7 +4,6 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <format>
 #include <utility>
 
@@ -18,8 +17,8 @@ constexpr std::string_view kStaffTiers = "1112223333";
 constexpr std::string_view kBombTiers = "1111112233";
 constexpr std::string_view kFirstTiers = "1111111111";
 constexpr std::size_t kFamilyCount = 8;
-constexpr std::int32_t kSumner = 16;
-constexpr std::int32_t kWizard = 2;
+constexpr int kSumner = 16;
+constexpr int kWizard = 2;
 
 /** The sixteen classes' throws: the eight to start with, then the eight that shadow them. */
 constexpr std::array<MissileSpec, 16> kSpecs{{
@@ -41,21 +40,20 @@ constexpr std::array<MissileSpec, 16> kSpecs{{
     {"BOM", kBombTiers, 0.7f, 0.0f, 8.0f, false},
 }};
 
-std::size_t specIndex(std::int32_t classIndex) {
+std::size_t specIndex(int classIndex) {
     if (classIndex == kSumner) {
         return kWizard;
     }
-    return static_cast<std::size_t>(
-        std::clamp(classIndex, 0, static_cast<std::int32_t>(kSpecs.size()) - 1));
+    return static_cast<std::size_t>(std::clamp(classIndex, 0, static_cast<int>(kSpecs.size()) - 1));
 }
 
 } // namespace
 
-const MissileSpec& MissileSpec::of(std::int32_t classIndex) {
+const MissileSpec& MissileSpec::of(int classIndex) {
     return kSpecs[specIndex(classIndex)];
 }
 
-std::string MissileSpec::treeName(std::int32_t classIndex, std::int32_t level, bool* inCostume) {
+std::string MissileSpec::treeName(int classIndex, int level, bool* inCostume) {
     const MissileSpec& spec = of(classIndex);
     const auto tier = static_cast<std::size_t>(std::clamp(level / 10, 0, 9));
     const char mark = spec.tiers[tier];
@@ -70,12 +68,12 @@ const MissileSpec& MissileSpec::potion() {
     return kPotion;
 }
 
-bool MissileSpec::byMagic(std::int32_t classIndex) {
+bool MissileSpec::byMagic(int classIndex) {
     const std::size_t family = specIndex(classIndex) % kFamilyCount;
     return family == 2 || family == 6;
 }
 
-float PlayerMissiles::speedFor(std::int32_t stat) {
+float PlayerMissiles::speedFor(int stat) {
     return kSlowest +
            kStatScale * static_cast<float>(std::clamp(stat, 0, 1000)) * (kFastest - kSlowest);
 }
@@ -109,7 +107,7 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     return true;
 }
 
-float PlayerMissiles::damageFor(std::int32_t stat) {
+float PlayerMissiles::damageFor(int stat) {
     return std::clamp(kLeastDamage +
                           kStatScale * static_cast<float>(stat) * (kMostDamage - kLeastDamage),
                       kLeastDamage, kMostDamage);
@@ -121,10 +119,9 @@ void PlayerMissiles::update(float seconds, const WorldCollision* collision,
         // Steps no longer than half its size, so no wall is flown clean through.
         const float radius = missile.spec->radius;
         const float travel = glm::length(missile.velocity) * seconds;
-        const auto steps =
-            std::max(1, static_cast<std::int32_t>(std::ceil(travel / (radius * 0.5f))));
+        const auto steps = std::max(1, static_cast<int>(std::ceil(travel / (radius * 0.5f))));
         const float step = seconds / static_cast<float>(steps);
-        for (std::int32_t i = 0; i < steps && missile.age < kLifeSeconds; ++i) {
+        for (int i = 0; i < steps && missile.age < kLifeSeconds; ++i) {
             missile.velocity.y -= missile.spec->weight * step;
             missile.position += missile.velocity * step;
             missile.tumble += missile.spec->spin * step;
@@ -193,12 +190,11 @@ std::vector<MissileImpact> PlayerMissiles::takeImpacts() {
     return std::exchange(m_impacts, {});
 }
 
-std::vector<Vec3> PlayerMissiles::spread(const Vec3& direction, std::int32_t shots) {
+std::vector<Vec3> PlayerMissiles::spread(const Vec3& direction, int shots) {
     // The original's order: straight on first, then a pair to each side, the nearer first.
     constexpr std::array<float, 5> kTurns{0.0f, 1.0f, -1.0f, 2.0f, -2.0f};
     std::vector<Vec3> out;
-    for (std::int32_t i = 0; i < std::clamp(shots, 1, static_cast<std::int32_t>(kTurns.size()));
-         ++i) {
+    for (int i = 0; i < std::clamp(shots, 1, static_cast<int>(kTurns.size())); ++i) {
         const float angle = kTurns[static_cast<std::size_t>(i)] * kSpreadStep;
         const float c = std::cos(angle);
         const float s = std::sin(angle);

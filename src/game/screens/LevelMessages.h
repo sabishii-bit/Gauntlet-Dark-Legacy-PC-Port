@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <optional>
 
 #include "engine/assets/BitmapFont.h"
@@ -36,7 +35,7 @@ public:
     bool open(RenderDevice& device, std::string_view name, const StringTable* strings,
               std::optional<std::size_t> page = std::nullopt);
     /** Requests audio at the start/end of dismissal, never on ordinary page turns. */
-    Cues step(std::int32_t ticks, std::uint32_t accepted);
+    Cues step(int ticks, unsigned int accepted);
     void prepare(RenderDevice& device) { m_scroll.prepare(device); }
     void draw(Canvas& canvas) const { m_scroll.draw(canvas); }
 

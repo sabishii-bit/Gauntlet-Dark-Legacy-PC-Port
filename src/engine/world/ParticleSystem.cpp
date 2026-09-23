@@ -23,7 +23,7 @@ float clampFrames(float seconds, float least, float most) {
 }
 
 /** One lane of the packed colours as an envelope. */
-ParticleEnvelope laneOf(const std::array<std::uint32_t, 4>& rgba, std::uint32_t shift) {
+ParticleEnvelope laneOf(const std::array<unsigned int, 4>& rgba, unsigned int shift) {
     const auto lane = [&](std::size_t i) {
         return std::clamp(static_cast<float>((rgba[i] >> shift) & 0xFFU), 0.0f, kColorScale);
     };
@@ -31,11 +31,10 @@ ParticleEnvelope laneOf(const std::array<std::uint32_t, 4>& rgba, std::uint32_t 
 }
 
 /** A template of the console's table: `preset` numbers it; only its filled fields count. */
-ParticleTemplate preset(std::uint32_t number, std::uint32_t flags, std::uint32_t enables,
+ParticleTemplate preset(unsigned int number, unsigned int flags, unsigned int enables,
                         std::array<float, 2> emitterLife, std::array<float, 2> particleLife,
                         float angle, std::array<float, 4> rate, float rateRandom, float gravity,
-                        float speed, std::array<std::uint32_t, 4> rgba,
-                        std::array<float, 4> width) {
+                        float speed, std::array<unsigned int, 4> rgba, std::array<float, 4> width) {
     ParticleTemplate t;
     t.preset = number;
     t.flags = flags;
@@ -118,7 +117,7 @@ ParticleDescriptor ParticleDescriptor::fromTemplate(const ParticleTemplate& sour
 void ParticleDescriptor::apply(const ParticleTemplate& source) {
     using T = ParticleTemplate;
     if (source.sets(T::kMaxParticles)) {
-        maxParticles = static_cast<std::uint32_t>(std::max(source.maxParticles, 0));
+        maxParticles = static_cast<unsigned int>(std::max(source.maxParticles, 0));
     }
     if (source.sets(T::kMaxDirections)) {
         maxDirections = source.maxDirections;
@@ -127,8 +126,8 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
         maxPositions = source.maxPositions;
     }
     if (source.sets(T::kEmitterLife)) {
-        emitFrames = static_cast<std::uint32_t>(clampFrames(source.emitterLife[0], 1.0f, 65535.0f));
-        fadeFrames = static_cast<std::uint32_t>(clampFrames(source.emitterLife[1], 0.0f, 65535.0f));
+        emitFrames = static_cast<unsigned int>(clampFrames(source.emitterLife[0], 1.0f, 65535.0f));
+        fadeFrames = static_cast<unsigned int>(clampFrames(source.emitterLife[1], 0.0f, 65535.0f));
         if (source.emitterLife[0] < 0.0f) {
             emitFrames = kEndless;
             forever = true;
@@ -138,10 +137,8 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
         }
     }
     if (source.sets(T::kParticleLife)) {
-        particleLife =
-            static_cast<std::uint32_t>(clampFrames(source.particleLife[0], 1.0f, 255.0f));
-        particleFade =
-            static_cast<std::uint32_t>(clampFrames(source.particleLife[1], 0.0f, 255.0f));
+        particleLife = static_cast<unsigned int>(clampFrames(source.particleLife[0], 1.0f, 255.0f));
+        particleFade = static_cast<unsigned int>(clampFrames(source.particleLife[1], 0.0f, 255.0f));
     }
     if (source.sets(T::kAngle)) {
         const float degrees = source.angle;
@@ -154,7 +151,7 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
         }
     }
     if (source.sets(T::kDelay)) {
-        delay = static_cast<std::uint32_t>(std::max(source.delay * kFrameRate, 0.0f));
+        delay = static_cast<unsigned int>(std::max(source.delay * kFrameRate, 0.0f));
     }
     if (source.sets(T::kDirection)) {
         direction = source.direction;
@@ -228,21 +225,21 @@ void ParticleDescriptor::apply(const ParticleTemplate& source) {
     }
 }
 
-std::uint32_t ParticleDescriptor::capacity() const {
+unsigned int ParticleDescriptor::capacity() const {
     if (oneShot || maxParticles != 0) {
-        const std::uint32_t count =
-            maxParticles != 0 ? maxParticles : static_cast<std::uint32_t>(rate[0] * kFrameRate);
+        const unsigned int count =
+            maxParticles != 0 ? maxParticles : static_cast<unsigned int>(rate[0] * kFrameRate);
         return std::max(count, 1U);
     }
     // Enough for the fastest rate to fill a whole life, as the original estimates it.
     const float fastest = *std::max_element(rate.begin(), rate.end());
     const auto life = static_cast<float>(particleLife + particleFade);
-    const auto needed = static_cast<std::uint32_t>(std::ceil(fastest * life));
+    const auto needed = static_cast<unsigned int>(std::ceil(fastest * life));
     return std::clamp(needed, 1U, kMostParticles);
 }
 
 void ParticleEmitter::start(const ParticleDescriptor& descriptor, const Mat4& node,
-                            std::uint32_t seed) {
+                            unsigned int seed) {
     m_descriptor = descriptor;
     m_node = node;
     m_particles.clear();
@@ -280,7 +277,7 @@ float ParticleEmitter::rateNow() {
             return d.rate[2];
         }
         if (m_age <= d.emitFrames + d.fadeFrames) {
-            const float into = static_cast<float>(m_age - d.emitFrames);
+            const auto into = static_cast<float>(m_age - d.emitFrames);
             return lerp(d.rate[2], d.rate[3],
                         d.fadeFrames > 0 ? into / static_cast<float>(d.fadeFrames) : 1.0f);
         }
@@ -294,11 +291,11 @@ float ParticleEmitter::rateNow() {
     return 0.0f;
 }
 
-void ParticleEmitter::step(std::uint32_t frames) {
+void ParticleEmitter::step(unsigned int frames) {
     if (frames == 0) {
         return;
     }
-    const std::uint32_t dt = frames > kMostFramesAtOnce ? 1U : frames;
+    const unsigned int dt = frames > kMostFramesAtOnce ? 1U : frames;
     const ParticleDescriptor& d = m_descriptor;
     const auto span = static_cast<float>(d.particleLife + d.particleFade);
     for (Particle& particle : m_particles) {
@@ -306,7 +303,7 @@ void ParticleEmitter::step(std::uint32_t frames) {
     }
     std::erase_if(m_particles, [&](const Particle& p) { return p.age >= span; });
 
-    std::uint32_t elapsed = dt;
+    unsigned int elapsed = dt;
     if (m_phase == Phase::Delay) {
         m_age += dt;
         if (m_age <= d.delay) {
@@ -325,8 +322,8 @@ void ParticleEmitter::step(std::uint32_t frames) {
     // Whole particles come out of the frame's share plus what the last one owed; a partial
     // one is owed again.
     float budget = rate * static_cast<float>(elapsed) + m_saved;
-    const std::uint32_t capacity = d.capacity();
-    std::uint32_t count = 0;
+    const unsigned int capacity = d.capacity();
+    unsigned int count = 0;
     while (budget > 0.0f && m_particles.size() < capacity) {
         const float age =
             rate > 0.0f ? std::min(static_cast<float>(count) / rate, static_cast<float>(elapsed))

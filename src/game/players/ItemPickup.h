@@ -27,10 +27,10 @@ enum class ItemKind : std::uint8_t {
 
 /** An item as it lies: what it is, how much of it there is, and what its record adds. */
 struct ItemOffer {
-    std::int32_t kind = 0;
-    std::int32_t amount = 0; ///< gold, keys, potions, health (bad food takes it), or a charge
-    std::uint32_t flags = 0; ///< a potion's kind, a powerup's which
-    float strength = 0.0f;   ///< a powerup's
+    int kind = 0;
+    int amount = 0;         ///< gold, keys, potions, health (bad food takes it), or a charge
+    unsigned int flags = 0; ///< a potion's kind, a powerup's which
+    float strength = 0.0f;  ///< a powerup's
 };
 
 /** What came of touching an item. */
@@ -47,8 +47,8 @@ struct ItemTaking {
     };
 
     Outcome outcome = Outcome::NotCarried;
-    std::int32_t left = 0;  ///< of the item's amount, when part was taken
-    std::int32_t count = 0; ///< what the card shows was got; a scroll's page, a legend's realm
+    int left = 0;           ///< of the item's amount, when part was taken
+    int count = 0;          ///< what the card shows was got; a scroll's page, a legend's realm
     std::string_view card;  ///< the STATIC texture of the card that slides up
     std::string_view sound; ///< from the common bank; empty when the class's voice answers
     bool ate = false;       ///< the class's eating sound plays
@@ -61,7 +61,7 @@ struct ItemTaking {
 };
 
 /** The most health a character of `level` holds. */
-std::int32_t mostHealth(std::int32_t level);
+int mostHealth(int level);
 
 /**
  * Gives a touched item to a character the way the original does: gold up to 99999, keys and

@@ -45,12 +45,12 @@ public:
     };
     struct Events {
         std::function<void(std::size_t, Action)> perform;
-        std::function<void(std::size_t, const SelectorInput&, std::int32_t)> select;
-        std::function<void(std::size_t, std::int32_t, float)> advanceTurbo;
+        std::function<void(std::size_t, const SelectorInput&, int)> select;
+        std::function<void(std::size_t, int, float)> advanceTurbo;
     };
     static std::vector<CameraSubject> step(std::span<PlayerRuntime> players,
                                            std::span<const PlayInput> inputs, bool held,
-                                           float cameraYaw, std::int32_t ticks, float seconds,
+                                           float cameraYaw, int ticks, float seconds,
                                            const WorldCollision& collision, const Events& events);
     static StrafeWay strafeWayOf(float heading, float facing);
     static MoveInput chargeInput(const PlayerActor& actor, const MoveInput& stick, float cameraYaw);

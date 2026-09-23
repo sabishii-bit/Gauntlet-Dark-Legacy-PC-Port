@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <format>
 
 #include "game/players/ItemPickup.h"
@@ -27,7 +26,7 @@ constexpr float kGasDamage = 10.0f;
 constexpr float kGasRadius = 6.5f;
 constexpr float kGasSeconds = 4.0f;
 constexpr float kGasGapSeconds = 0.5f;
-constexpr std::int32_t kFireTrap = 1;
+constexpr int kFireTrap = 1;
 constexpr std::string_view kChestBlast = "EXPCHEST"; ///< a trapped chest going up
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
@@ -57,7 +56,7 @@ void LevelFixtures::clear() {
     m_blasts.clear();
     m_resources.reset();
 }
-void LevelFixtures::setPlayerCount(std::int32_t count) {
+void LevelFixtures::setPlayerCount(int count) {
     m_chests.setPlayerCount(count);
     m_gates.setPlayerCount(count);
     m_traps.setPlayerCount(count);
@@ -101,7 +100,7 @@ void LevelFixtures::playRealmSound(std::string_view stem) {
  * gate that is shut; against one, a key carried is spent and it opens (a chest's sound is
  * the common one, a gate's its realm's); an opened chest drops what it held, pays its gold
  * to its opener or blows up; a trap that is out hurts whoever is in it. */
-void LevelFixtures::update(std::int32_t ticks, float seconds, std::span<PlayerRuntime> players,
+void LevelFixtures::update(int ticks, float seconds, std::span<PlayerRuntime> players,
                            const Events& events) {
     if (!m_resources.has_value()) {
         return;
@@ -158,18 +157,16 @@ void LevelFixtures::update(std::int32_t ticks, float seconds, std::span<PlayerRu
                 blast(event.position, kBlastRadius, kChestBlastDamage * trapDamageScale(), players,
                       events);
             } else if (event.gold > 0) {
-                takeItem(actor.save(),
-                         ItemOffer{static_cast<std::int32_t>(ItemKind::Gold), event.gold});
+                takeItem(actor.save(), ItemOffer{static_cast<int>(ItemKind::Gold), event.gold});
                 events.card(actor.player(), "GOLD");
                 m_resources->audio.playNamed(kPickupSound);
             } else if (event.contents >= 0) {
                 // It lies in the open chest, for whoever touches the chest next.
-                const std::int32_t count = m_chests.chest(event.chest).count;
+                const int count = m_chests.chest(event.chest).count;
                 if (m_resources->world.placeItemRecord(m_resources->device, event.contents,
                                                        event.position, count)) {
-                    m_chests.hold(
-                        event.chest,
-                        static_cast<std::int32_t>(m_resources->world.placedItems().size()) - 1);
+                    m_chests.hold(event.chest,
+                                  static_cast<int>(m_resources->world.placedItems().size()) - 1);
                 }
             } else {
                 m_chests.remove(event.chest);
@@ -224,7 +221,7 @@ void LevelFixtures::strikeSafeRock(std::size_t index, float power) {
 
 /** A blow on a barrel: wood sounds under it until it breaks, when what it held is left
  * lying, or it blows up, or its gas hangs where it stood. */
-void LevelFixtures::strikeBarrel(std::size_t barrel, float power, std::int32_t byPlayer,
+void LevelFixtures::strikeBarrel(std::size_t barrel, float power, int byPlayer,
                                  std::span<PlayerRuntime> players, const Events& events) {
     if (!m_resources.has_value()) {
         return;
@@ -350,7 +347,7 @@ void LevelFixtures::updateClouds(float seconds, std::span<PlayerRuntime> players
 }
 
 /** A gate's opening sounds from the realm's own bank, named after the level's letter. */
-void LevelFixtures::playGateSound(std::int32_t /*subtype*/) {
+void LevelFixtures::playGateSound(int /*subtype*/) {
     if (!m_resources.has_value()) {
         return;
     }

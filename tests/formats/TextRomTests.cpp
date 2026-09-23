@@ -34,27 +34,27 @@ std::vector<std::uint8_t> sampleRom() {
     body.putText("small").putZeros(11).putU32(0);
     body.putText("big").putZeros(13).putU32(1);
 
-    const std::uint32_t textAt = static_cast<std::uint32_t>(body.size());
+    const auto textAt = static_cast<std::uint32_t>(body.size());
     body.putText("Hello").putU8(0).putText("World").putU8(0).putText("Bye").putU8(0);
     body.putZeros(2);
-    const std::uint32_t toffAt = static_cast<std::uint32_t>(body.size());
+    const auto toffAt = static_cast<std::uint32_t>(body.size());
     body.putU32(0).putU32(6).putU32(12);
-    const std::uint32_t strsAt = static_cast<std::uint32_t>(body.size());
+    const auto strsAt = static_cast<std::uint32_t>(body.size());
     body.putS32(2).putS32(0).putS32(1).putU32(0x3F800000).putU32(0x3F000000);
     body.putS32(1).putS32(2).putS32(0).putU32(0x40000000).putU32(0x3F800000);
-    const std::uint32_t loffAt = static_cast<std::uint32_t>(body.size());
+    const auto loffAt = static_cast<std::uint32_t>(body.size());
     body.putU32(1).putU32(0);
-    const std::uint32_t listAt = static_cast<std::uint32_t>(body.size());
+    const auto listAt = static_cast<std::uint32_t>(body.size());
     body.putS32(2).putS32(0);
-    const std::uint32_t defsAt = static_cast<std::uint32_t>(body.size());
+    const auto defsAt = static_cast<std::uint32_t>(body.size());
     body.putText("greeting").putU8(0).putText("farewell").putU8(0).putText("all").putU8(0);
     body.putZeros(1);
-    const std::uint32_t sdefAt = static_cast<std::uint32_t>(body.size());
+    const auto sdefAt = static_cast<std::uint32_t>(body.size());
     body.putU32(0).putU32(9);
-    const std::uint32_t ldefAt = static_cast<std::uint32_t>(body.size());
+    const auto ldefAt = static_cast<std::uint32_t>(body.size());
     body.putU32(18);
 
-    const std::uint32_t tableAt = static_cast<std::uint32_t>(body.size());
+    const auto tableAt = static_cast<std::uint32_t>(body.size());
     const auto lump = [&body](std::string_view id, std::uint32_t at, std::uint32_t count) {
         body.putU32(lumpId(id)).putU32(at).putU32(count).putU32(0);
     };

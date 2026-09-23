@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 
 namespace gdl::game {
 
@@ -12,10 +11,9 @@ void PowerupSelector::close() {
     m_slide = 0;
 }
 
-SelectorCue PowerupSelector::step(const SelectorInput& input, Inventory& inventory,
-                                  std::int32_t ticks) {
+SelectorCue PowerupSelector::step(const SelectorInput& input, Inventory& inventory, int ticks) {
     SelectorCue cue = SelectorCue::None;
-    const auto held = [&](std::int32_t slot) {
+    const auto held = [&](int slot) {
         return slot >= 0 && static_cast<std::size_t>(slot) < inventory.powerups.size() &&
                inventory.powerups[static_cast<std::size_t>(slot)].held();
     };

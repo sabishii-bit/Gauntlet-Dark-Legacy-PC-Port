@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 
 #include "engine/core/Log.h"
 
@@ -15,7 +14,7 @@ Mat4 EffectTrees::Effect::transform() const {
     return glm::scale(basis, Vec3{scale});
 }
 
-void EffectTrees::placeAt(std::uint32_t id, const Mat4& attachment) {
+void EffectTrees::placeAt(unsigned int id, const Mat4& attachment) {
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         if (effect->id == id) {
             effect->attachment = attachment;
@@ -49,12 +48,12 @@ bool EffectTrees::bindVisuals(Effect& effect) {
     return mesh || effect.particles.field().size() > 0;
 }
 
-void EffectTrees::stop(std::uint32_t id) {
+void EffectTrees::stop(unsigned int id) {
     std::erase_if(m_effects,
                   [id](const std::unique_ptr<Effect>& effect) { return effect->id == id; });
 }
 
-void EffectTrees::moveTo(std::uint32_t id, const Vec3& position) {
+void EffectTrees::moveTo(unsigned int id, const Vec3& position) {
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         if (effect->id == id) {
             effect->position = position;
@@ -62,12 +61,12 @@ void EffectTrees::moveTo(std::uint32_t id, const Vec3& position) {
     }
 }
 
-bool EffectTrees::playing(std::uint32_t id) const {
+bool EffectTrees::playing(unsigned int id) const {
     return std::ranges::any_of(
         m_effects, [id](const std::unique_ptr<Effect>& effect) { return effect->id == id; });
 }
 
-void EffectTrees::attachTrail(std::uint32_t id, const ParticleDescriptor& descriptor,
+void EffectTrees::attachTrail(unsigned int id, const ParticleDescriptor& descriptor,
                               const Texture& texture) {
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         if (effect->id == id) {
@@ -81,9 +80,9 @@ void EffectTrees::attachTrail(std::uint32_t id, const ParticleDescriptor& descri
     }
 }
 
-std::uint32_t EffectTrees::startSet(RenderDevice& device, ItemArchive& archive,
-                                    std::string_view tree, const Vec3& position,
-                                    const Setting& setting) {
+unsigned int EffectTrees::startSet(RenderDevice& device, ItemArchive& archive,
+                                   std::string_view tree, const Vec3& position,
+                                   const Setting& setting) {
     const auto index = archive.loaded() ? archive.trees.find(tree) : std::nullopt;
     if (!index.has_value()) {
         log::warn("Effects: no tree {} to play", tree);
@@ -131,7 +130,7 @@ std::uint32_t EffectTrees::startSet(RenderDevice& device, ItemArchive& archive,
         motion->animator.bind(archive.trees.textureAnimations(), archive.textures, device);
         m_motions.push_back(std::move(motion));
     }
-    const std::uint32_t id = effect->id;
+    const unsigned int id = effect->id;
     m_effects.push_back(std::move(effect));
     return id;
 }
@@ -142,7 +141,7 @@ void EffectTrees::update(float seconds) {
     m_frames -= whole;
     for (const std::unique_ptr<Motion>& motion : m_motions) {
         if (whole > 0.0f) {
-            motion->animator.step(static_cast<std::uint32_t>(whole));
+            motion->animator.step(static_cast<unsigned int>(whole));
         }
     }
     for (const std::unique_ptr<Effect>& effect : m_effects) {
@@ -182,7 +181,7 @@ void EffectTrees::update(float seconds) {
             effect->player.advance(seconds * effect->playbackRate, effect->repeats);
             effect->pose.evaluate(*effect->tree, effect->player.sequence(), effect->player.frame());
             effect->model.setFrame(effect->player.sequence(),
-                                   static_cast<std::int32_t>(effect->player.frame()));
+                                   static_cast<int>(effect->player.frame()));
         }
         effect->particles.step(seconds, effect->transform(), effect->pose.matrices());
         for (const std::unique_ptr<Motion>& motion : m_motions) {
@@ -205,10 +204,10 @@ void EffectTrees::update(float seconds) {
                 }
             }
             if (!effect->tree->sequences.empty()) {
-                const auto frame = static_cast<std::int32_t>(effect->player.frame());
+                const auto frame = static_cast<int>(effect->player.frame());
                 const TreeSequenceInfo& sequence =
                     effect->tree->sequences[effect->player.sequence()];
-                for (std::int32_t i = 0; i < sequence.textureAnimationCount; ++i) {
+                for (int i = 0; i < sequence.textureAnimationCount; ++i) {
                     if (const auto moved =
                             motion->animator.motionAt(sequence.textureAnimationStart + i, frame)) {
                         show(*moved);

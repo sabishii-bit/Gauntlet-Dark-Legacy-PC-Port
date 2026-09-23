@@ -19,8 +19,8 @@ namespace gdl::game {
  */
 class BurnDialogueScroll {
 public:
-    static constexpr std::int32_t kFrameCount = 21;
-    static constexpr std::int32_t kTicksPerFrame = 2;
+    static constexpr int kFrameCount = 21;
+    static constexpr int kTicksPerFrame = 2;
 
     /**
      * Starts burning `scroll` over `area`. `masks` are the burn frames (alpha zero is burnt),
@@ -32,10 +32,10 @@ public:
 
     void reset();
     bool active() const { return m_active; }
-    std::int32_t frame() const { return m_timer / kTicksPerFrame; }
+    int frame() const { return m_timer / kTicksPerFrame; }
 
     /** Advances the effect; it ends once the last frame has played. */
-    void step(std::int32_t ticks);
+    void step(int ticks);
 
     /** Uploads the current frame's cut-out scroll; call after beginFrame and before drawing. */
     void prepare(RenderDevice& device);
@@ -43,13 +43,13 @@ public:
     void draw(Canvas& canvas) const;
 
     /** Alpha of the composited scroll at a texel, for tests. */
-    std::uint8_t compositeAlpha(std::uint32_t x, std::uint32_t y) const {
+    std::uint8_t compositeAlpha(unsigned int x, unsigned int y) const {
         return m_composite.pixel(x, y).a;
     }
 
 private:
-    void cutOut(std::int32_t frame);
-    float maskAlpha(const Image& mask, std::uint32_t x, std::uint32_t y) const;
+    void cutOut(int frame);
+    float maskAlpha(const Image& mask, unsigned int x, unsigned int y) const;
 
     bool m_active = false;
     Rect m_area;
@@ -58,11 +58,11 @@ private:
     std::unique_ptr<Texture> m_texture;
     std::vector<const Image*> m_masks;
     std::vector<const Texture*> m_ring;
-    std::uint32_t m_maskWidth = 0;
-    std::uint32_t m_maskHeight = 0;
-    std::int32_t m_timer = 0;
-    std::int32_t m_cutFrame = -1;
-    std::int32_t m_uploadedFrame = -1;
+    unsigned int m_maskWidth = 0;
+    unsigned int m_maskHeight = 0;
+    int m_timer = 0;
+    int m_cutFrame = -1;
+    int m_uploadedFrame = -1;
 };
 
 } // namespace gdl::game

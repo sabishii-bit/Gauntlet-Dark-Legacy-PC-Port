@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 
 #include "engine/core/Log.h"
 
@@ -36,7 +35,7 @@ bool SumnerFigure::load(RenderDevice& device, ItemArchive& items, const WorldLay
     m_tree = &items.trees.tree(*tree);
     for (std::size_t i = 0; i < kSequences.size(); ++i) {
         const auto sequence = m_tree->findSequence(kSequences[i]);
-        m_sequences[i] = sequence.has_value() ? static_cast<std::int32_t>(*sequence) : -1;
+        m_sequences[i] = sequence.has_value() ? static_cast<int>(*sequence) : -1;
     }
     // Like the start markers, the lookout's heading points the way he came: a half turn
     // round faces him at the party.
@@ -46,7 +45,7 @@ bool SumnerFigure::load(RenderDevice& device, ItemArchive& items, const WorldLay
         glm::rotate(glm::translate(Mat4{1.0f}, m_position), m_yaw, Vec3{0.0f, 1.0f, 0.0f});
     m_index = 0;
     m_cutIn = false;
-    const std::uint32_t first = sequenceFor(0);
+    const unsigned int first = sequenceFor(0);
     m_player.start(m_tree->sequences[first], first);
     m_pose.evaluate(*m_tree, first, 0.0f);
     return true;
@@ -62,18 +61,18 @@ void SumnerFigure::clear() {
 }
 
 /** The sequence an index asks for, the stance standing in for any the tree lacks. */
-std::uint32_t SumnerFigure::sequenceFor(std::int32_t index) const {
-    std::int32_t sequence = -1;
+unsigned int SumnerFigure::sequenceFor(int index) const {
+    int sequence = -1;
     if (index >= 0 && static_cast<std::size_t>(index) < m_sequences.size()) {
         sequence = m_sequences[static_cast<std::size_t>(index)];
     }
     if (sequence < 0) {
         sequence = std::max(m_sequences[0], 0);
     }
-    return static_cast<std::uint32_t>(sequence);
+    return static_cast<unsigned int>(sequence);
 }
 
-void SumnerFigure::play(std::int32_t index) {
+void SumnerFigure::play(int index) {
     if (!loaded()) {
         return;
     }
@@ -89,7 +88,7 @@ void SumnerFigure::update(float seconds) {
     // the gesture) and, whenever one ends or changes, asks for the next of the cycle.
     m_player.advance(seconds, m_tree->sequences[m_player.sequence()].repeats);
     const bool done = m_player.finished();
-    const std::uint32_t wanted = sequenceFor(m_index);
+    const unsigned int wanted = sequenceFor(m_index);
     const bool different = wanted != m_player.sequence();
     bool restarted = false;
     if (m_cutIn ? (done || different) : (done && different)) {

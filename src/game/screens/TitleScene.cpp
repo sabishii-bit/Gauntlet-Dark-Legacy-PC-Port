@@ -28,37 +28,37 @@ constexpr std::string_view kSoundMusic = "S_SELECTMUS";
 constexpr std::string_view kFireRingTexture = "GREENCIRCTRANS";
 constexpr std::string_view kFireMaskTexture = "GREENCIRCTRANSM";
 constexpr std::string_view kScrollTexture = "SCROLL_A";
-constexpr std::int32_t kMaxTicksPerFrame = 6;
-constexpr std::int32_t kTextY = 320;
-constexpr std::int32_t kTextCenterX = -256;
-constexpr std::int32_t kGlowX = 192;
-constexpr std::int32_t kGlowSize = 128;
-constexpr std::int32_t kGlowTextRadius = 40;
-constexpr std::int32_t kGlowTextHold = 5;
-constexpr std::int32_t kFullAlpha = 255;
-constexpr std::int32_t kGlowHideThreshold = 8;
-constexpr std::int32_t kLoadingFadeSlope = 2;
-constexpr std::int32_t kMenuStart = 11;
-constexpr std::int32_t kMenuOptions = 12;
-constexpr std::int32_t kMenuAudio = 17;
-constexpr std::int32_t kMenuGameOptions = 16;
-constexpr std::int32_t kMenuCompass = 20;
-constexpr std::int32_t kMenuControls = 21;
-constexpr std::int32_t kTitleMenuY = 304;
-constexpr std::int32_t kOptionsMenuX = 128;
-constexpr std::int32_t kOptionsPromptY = 304;
-constexpr std::int32_t kOptionsBackdropY = 8;
-constexpr std::int32_t kOptionsBackdropWidth = 480;
-constexpr std::int32_t kOptionsBackdropHeight = 360;
+constexpr int kMaxTicksPerFrame = 6;
+constexpr int kTextY = 320;
+constexpr int kTextCenterX = -256;
+constexpr int kGlowX = 192;
+constexpr int kGlowSize = 128;
+constexpr int kGlowTextRadius = 40;
+constexpr int kGlowTextHold = 5;
+constexpr int kFullAlpha = 255;
+constexpr int kGlowHideThreshold = 8;
+constexpr int kLoadingFadeSlope = 2;
+constexpr int kMenuStart = 11;
+constexpr int kMenuOptions = 12;
+constexpr int kMenuAudio = 17;
+constexpr int kMenuGameOptions = 16;
+constexpr int kMenuCompass = 20;
+constexpr int kMenuControls = 21;
+constexpr int kTitleMenuY = 304;
+constexpr int kOptionsMenuX = 128;
+constexpr int kOptionsPromptY = 304;
+constexpr int kOptionsBackdropY = 8;
+constexpr int kOptionsBackdropWidth = 480;
+constexpr int kOptionsBackdropHeight = 360;
 constexpr Rect kOptionsBurnArea{290.0f, 142.0f, 224.0f, 172.0f};
 constexpr Color kGlowColor = Color::rgba(130, 0, 234);
 constexpr Color kOptionsOffColor = Color::rgba(92, 26, 3);
 
-constexpr std::array<std::pair<std::int32_t, std::int32_t>, 4> kBackdropPositions{
+constexpr std::array<std::pair<int, int>, 4> kBackdropPositions{
     {{0, 0}, {256, 0}, {0, 256}, {256, 256}}};
 
 /** Fills the first "{}" in a text-table entry, e.g. "Player {}" with the player number. */
-std::string fillPlaceholder(std::string_view pattern, std::int32_t value) {
+std::string fillPlaceholder(std::string_view pattern, int value) {
     std::string out(pattern);
     const auto slot = out.find("{}");
     if (slot != std::string::npos) {
@@ -78,10 +78,10 @@ bool TitleScene::open(RenderDevice& device, const GameContext& context) {
     m_context = context;
     m_screen = MenuScreen{};
     if (m_context.config != nullptr) {
-        m_screen.width = static_cast<std::int32_t>(m_context.config->display.virtualWidth);
-        m_screen.height = static_cast<std::int32_t>(m_context.config->display.virtualHeight);
+        m_screen.width = static_cast<int>(m_context.config->display.virtualWidth);
+        m_screen.height = static_cast<int>(m_context.config->display.virtualHeight);
         m_screen.horizontalFov = m_context.config->horizontalFovRadians();
-        m_tickRate = static_cast<std::int32_t>(m_context.config->timing.tickRate);
+        m_tickRate = static_cast<int>(m_context.config->timing.tickRate);
     }
     try {
         if (!loadResources(device, m_context.unpackedRoot)) {
@@ -154,8 +154,8 @@ bool TitleScene::loadResources(RenderDevice& device, const std::filesystem::path
         return false;
     }
     m_glowBase = *glow;
-    for (std::int32_t frame = 0; frame < kGlowFrames; ++frame) {
-        m_titleTextures.texture(device, m_glowBase + static_cast<std::uint32_t>(frame));
+    for (int frame = 0; frame < kGlowFrames; ++frame) {
+        m_titleTextures.texture(device, m_glowBase + static_cast<unsigned int>(frame));
     }
 
     m_device = &device;
@@ -172,7 +172,7 @@ bool TitleScene::loadResources(RenderDevice& device, const std::filesystem::path
     }
     m_menuTextures.backdrop = staticTexture(kScrollTexture);
     for (std::size_t i = 0; i < m_menuTextures.burn.size(); ++i) {
-        m_menuTextures.burn[i] = staticTexture("LOGO_BURN1", static_cast<std::uint32_t>(i));
+        m_menuTextures.burn[i] = staticTexture("LOGO_BURN1", static_cast<unsigned int>(i));
     }
     m_text.setFont(&m_font32, m_menuTextures.font);
     return true;
@@ -216,12 +216,12 @@ void TitleScene::loadFireFrames(RenderDevice& device) {
         log::warn("Title screen: burn effect textures are missing");
         return;
     }
-    const auto frames = static_cast<std::uint32_t>(BurnDialogueScroll::kFrameCount);
+    const auto frames = static_cast<unsigned int>(BurnDialogueScroll::kFrameCount);
     try {
-        for (std::uint32_t i = 1; i <= frames && *ring + i < m_staticTextures.size(); ++i) {
+        for (unsigned int i = 1; i <= frames && *ring + i < m_staticTextures.size(); ++i) {
             m_fireRing.push_back(&m_staticTextures.texture(device, *ring + i));
         }
-        for (std::uint32_t i = 1; i <= frames && *mask + i < m_staticTextures.size(); ++i) {
+        for (unsigned int i = 1; i <= frames && *mask + i < m_staticTextures.size(); ++i) {
             m_fireMasks.push_back(&m_staticTextures.image(*mask + i));
         }
         m_scrollImage = &m_staticTextures.image(*scroll);
@@ -233,7 +233,7 @@ void TitleScene::loadFireFrames(RenderDevice& device) {
     }
 }
 
-const Texture* TitleScene::staticTexture(std::string_view name, std::uint32_t frame) {
+const Texture* TitleScene::staticTexture(std::string_view name, unsigned int frame) {
     const auto index = m_staticTextures.find(name);
     if (!index.has_value() || *index + frame >= m_staticTextures.size()) {
         return nullptr;
@@ -279,13 +279,13 @@ bool TitleScene::musicPlaying() const {
 
 TitleOutcome TitleScene::update(double deltaSeconds, const MenuInput& input) {
     m_tickRemainder += deltaSeconds * m_tickRate;
-    auto ticks = static_cast<std::int32_t>(std::floor(m_tickRemainder));
+    auto ticks = static_cast<int>(std::floor(m_tickRemainder));
     m_tickRemainder -= ticks;
     ticks = std::clamp(ticks, 0, kMaxTicksPerFrame);
     return step(ticks, input);
 }
 
-TitleOutcome TitleScene::step(std::int32_t ticks, const MenuInput& rawInput) {
+TitleOutcome TitleScene::step(int ticks, const MenuInput& rawInput) {
     if (!m_open) {
         return TitleOutcome::Running;
     }
@@ -409,7 +409,7 @@ void TitleScene::closeOptionsMenu() {
     m_optionsMenu.close();
 }
 
-void TitleScene::drawGlowText(std::int32_t x, std::int32_t y, std::string_view label) {
+void TitleScene::drawGlowText(int x, int y, std::string_view label) {
     TextStyle glow;
     glow.color = kGlowColor.withAlpha(pulseOpacity(m_time, kGlowTextRadius, kGlowTextHold));
     glow.texture = m_menuTextures.glow != nullptr ? m_menuTextures.glow : m_menuTextures.font;
@@ -435,7 +435,7 @@ void TitleScene::render(RenderDevice& device, const Mat4& frameProjection, float
         m_canvas.draw(m_titleTextures.texture(device, m_backdrops[i]), area);
     }
     if (!m_glowHidden && m_glowOpacity > 0) {
-        const auto frame = static_cast<std::uint32_t>((m_time >> 2) % kGlowFrames);
+        const auto frame = static_cast<unsigned int>((m_time >> 2) % kGlowFrames);
         m_canvas.draw(m_titleTextures.texture(device, m_glowBase + frame),
                       Rect{static_cast<float>(kGlowX), 0.0f, static_cast<float>(kGlowSize),
                            static_cast<float>(kGlowSize)},

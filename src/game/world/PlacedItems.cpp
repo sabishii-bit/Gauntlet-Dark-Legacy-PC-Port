@@ -12,7 +12,7 @@
 
 namespace gdl::game {
 
-bool PlacedItems::Item::shownTo(std::int32_t players) const {
+bool PlacedItems::Item::shownTo(int players) const {
     if (minPlayers > kExactPlayersMark) {
         return players == minPlayers - kExactPlayersMark;
     }
@@ -30,7 +30,7 @@ bool PlacedItems::Item::touchedBy(const Collector& collector) const {
     return std::abs(away.y) <= height + collector.height;
 }
 
-std::int32_t PlacedItems::Item::realm() const {
+int PlacedItems::Item::realm() const {
     if (subtype != ItemInfo::kCrystal || value < 0 ||
         static_cast<std::size_t>(value) >= kCrystalRealms.size()) {
         return -1;
@@ -66,7 +66,7 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
         }
         Item item;
         item.name = instance.name.empty() ? info.name : instance.name;
-        item.instance = static_cast<std::int32_t>(index);
+        item.instance = static_cast<int>(index);
         item.info = instance.info;
         item.subtype = info.subtype;
         item.value = info.value;
@@ -119,7 +119,7 @@ std::size_t PlacedItems::visibleCount() const {
     return count;
 }
 
-void PlacedItems::setPlayerCount(std::int32_t players) {
+void PlacedItems::setPlayerCount(int players) {
     m_players = players;
     for (Item& item : m_items) {
         item.visible = !item.taken && item.shownTo(players);
@@ -161,12 +161,11 @@ bool PlacedItems::place(RenderDevice& device, std::string_view name, const Vec3&
         log::warn("Placed items: the level has no item record named {}", name);
         return false;
     }
-    return placeRecord(device, static_cast<std::int32_t>(info - m_infos.begin()), position,
-                       collision);
+    return placeRecord(device, static_cast<int>(info - m_infos.begin()), position, collision);
 }
 
-bool PlacedItems::placeRecord(RenderDevice& device, std::int32_t record, const Vec3& position,
-                              const WorldCollision* collision, std::int32_t amount) {
+bool PlacedItems::placeRecord(RenderDevice& device, int record, const Vec3& position,
+                              const WorldCollision* collision, int amount) {
     if (record < 0 || static_cast<std::size_t>(record) >= m_infos.size() ||
         m_infos[static_cast<std::size_t>(record)].type != ItemInfo::kPowerup) {
         return false;
@@ -252,7 +251,7 @@ std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
         pickup.strength = item.strength;
         pickup.position = item.position;
         if (judge) {
-            const std::optional<std::int32_t> left = judge(pickup);
+            const std::optional<int> left = judge(pickup);
             if (!left.has_value()) {
                 continue; // left lying
             }
@@ -327,7 +326,7 @@ void PlacedItems::startEffect(RenderDevice& device, std::string_view tree, const
             effect.emitters.emplace_back(
                 n, m_bursts.start(descriptor, at,
                                   texture != nullptr ? texture : &device.whiteTexture(),
-                                  static_cast<std::uint32_t>(m_effects.size() * 8 + n + 1)));
+                                  static_cast<unsigned int>(m_effects.size() * 8 + n + 1)));
         }
         if (!effect.emitters.empty()) {
             m_effects.push_back(std::move(effect));
@@ -348,7 +347,7 @@ void PlacedItems::applyTextureMotion() {
             if (motion.archive != item.archive) {
                 continue;
             }
-            std::unordered_map<std::uint32_t, Vec2> offsets;
+            std::unordered_map<unsigned int, Vec2> offsets;
             for (std::size_t i = 0; i < motion.animator.size(); ++i) {
                 const TextureMotion shown = motion.animator.motion(i);
                 if (shown.frame != nullptr) {
@@ -412,7 +411,7 @@ void PlacedItems::update(float seconds) {
     m_frameRemainder -= whole;
     if (whole > 0.0f) {
         for (ArchiveMotion& motion : m_motions) {
-            motion.animator.step(static_cast<std::uint32_t>(whole));
+            motion.animator.step(static_cast<unsigned int>(whole));
         }
         applyTextureMotion();
     }
@@ -421,8 +420,7 @@ void PlacedItems::update(float seconds) {
         if (item.visible && item.figure != nullptr && item.player.playing()) {
             item.player.advance(seconds, true);
             item.pose.evaluate(*item.figure, item.player.sequence(), item.player.frame());
-            item.model.setFrame(item.player.sequence(),
-                                static_cast<std::int32_t>(item.player.frame()));
+            item.model.setFrame(item.player.sequence(), static_cast<int>(item.player.frame()));
         }
         item.noGrabSeconds = std::max(item.noGrabSeconds - seconds, 0.0f);
         if (item.thrown) {

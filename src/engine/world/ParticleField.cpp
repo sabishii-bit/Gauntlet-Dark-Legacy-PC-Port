@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstdint>
 #include <exception>
 #include <string>
 
@@ -50,7 +49,7 @@ const Texture* findTexture(std::string_view name, TextureSet& textures, RenderDe
 } // namespace
 
 void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, RenderDevice& device,
-                         std::span<TextureSet* const> lenders, std::uint32_t seed) {
+                         std::span<TextureSet* const> lenders, unsigned int seed) {
     clear();
     const std::vector<WorldObject>& objects = layout.objects();
     for (std::size_t i = 0; i < objects.size(); ++i) {
@@ -73,7 +72,7 @@ void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, Render
         Entry entry;
         const ParticleDescriptor descriptor = ParticleDescriptor::fromTemplate(*source);
         entry.emitter.start(descriptor, glm::translate(Mat4{1.0f}, layout.worldPosition(i)),
-                            seed + static_cast<std::uint32_t>(i));
+                            seed + static_cast<unsigned int>(i));
         entry.texture = findTexture(descriptor.texture, textures, device, lenders);
         if (entry.texture == nullptr) {
             log::warn("Particle marker {}: texture {} not found; drawn white", object.name,
@@ -97,7 +96,7 @@ void ParticleField::clear() {
 }
 
 std::size_t ParticleField::start(const ParticleDescriptor& descriptor, const Mat4& node,
-                                 const Texture* texture, std::uint32_t seed) {
+                                 const Texture* texture, unsigned int seed) {
     Entry entry;
     entry.emitter.start(descriptor, node, seed);
     entry.texture = texture;
@@ -142,7 +141,7 @@ void ParticleField::step(float seconds) {
     m_frameRemainder += seconds * kFrameRate;
     const float whole = std::floor(m_frameRemainder);
     m_frameRemainder -= whole;
-    const auto frames = static_cast<std::uint32_t>(whole);
+    const auto frames = static_cast<unsigned int>(whole);
     if (frames == 0) {
         return;
     }

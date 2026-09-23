@@ -1,7 +1,6 @@
 #include "game/enemies/EnemyMissiles.h"
 
 #include <cmath>
-#include <cstdint>
 #include <utility>
 
 namespace gdl::game {
@@ -40,7 +39,7 @@ EnemyMissileKind EnemyMissileKind::bomb() {
 }
 
 EnemyMissileKind EnemyMissileKind::bolt(float damage, float speed, float radius,
-                                        std::uint32_t flags) {
+                                        unsigned int flags) {
     EnemyMissileKind kind;
     kind.flags = flags;
     kind.damage = damage;
@@ -50,7 +49,7 @@ EnemyMissileKind EnemyMissileKind::bolt(float damage, float speed, float radius,
     return kind;
 }
 
-std::optional<EnemyMissileKind> enemyMissileOf(std::int32_t kind, std::int32_t slot) {
+std::optional<EnemyMissileKind> enemyMissileOf(int kind, int slot) {
     // The original's table (0x80119128): the medium kinds share the arrow and the bomb, and
     // a few have a bolt of their own; the worm has three of its own.
     const bool medium = kind == 1 || kind == 4 || kind == 7 || kind == 10 || kind == 13 ||
@@ -87,7 +86,7 @@ std::optional<EnemyMissileKind> enemyMissileOf(std::int32_t kind, std::int32_t s
     return std::nullopt;
 }
 
-std::int32_t missileSlotOfWay(std::int32_t way) {
+int missileSlotOfWay(int way) {
     switch (way) {
     case 16:
     case 23: return EnemyMissileKind::kArrow;
@@ -106,7 +105,7 @@ Vec3 EnemyMissiles::lobVelocity(const Vec3& from, const Vec3& to, float speed) {
 }
 
 void EnemyMissiles::launch(const EnemyMissileKind& kind, const Vec3& from, const Vec3& aim,
-                           float speedScale, const TreeModel* model, std::int32_t shooter) {
+                           float speedScale, const TreeModel* model, int shooter) {
     EnemyMissile missile;
     missile.kind = kind;
     missile.position = from;

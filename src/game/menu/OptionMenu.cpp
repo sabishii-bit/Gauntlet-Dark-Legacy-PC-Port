@@ -9,34 +9,34 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::int32_t kGaramondFrames = 6;
-constexpr std::int32_t kGaramondDelay = 10;
-constexpr std::int32_t kBurnFrames = 5;
-constexpr std::int32_t kPlayerTagX = 106;
-constexpr std::int32_t kArrowGlyphX = 2;
-constexpr std::int32_t kArrowGlyphY = 12;
-constexpr std::int32_t kArrowGlyphWidth = 11;
-constexpr std::int32_t kArrowGlyphHeight = 10;
-constexpr std::int32_t kArrowSheetSize = 32;
-constexpr std::int32_t kArrowDrawScale = 2;
-constexpr std::int32_t kFullAlpha = 255;
-constexpr std::int32_t kDisabledAlpha = 128;
+constexpr int kGaramondFrames = 6;
+constexpr int kGaramondDelay = 10;
+constexpr int kBurnFrames = 5;
+constexpr int kPlayerTagX = 106;
+constexpr int kArrowGlyphX = 2;
+constexpr int kArrowGlyphY = 12;
+constexpr int kArrowGlyphWidth = 11;
+constexpr int kArrowGlyphHeight = 10;
+constexpr int kArrowSheetSize = 32;
+constexpr int kArrowDrawScale = 2;
+constexpr int kFullAlpha = 255;
+constexpr int kDisabledAlpha = 128;
 
-std::uint8_t clampByte(std::int32_t value) {
+std::uint8_t clampByte(int value) {
     return static_cast<std::uint8_t>(std::clamp(value, 0, kFullAlpha));
 }
 
 /** Opacity after the original's font-alpha convention, where 0 is opaque and 255 invisible. */
-std::uint8_t opacityFromFontAlpha(std::int32_t fontAlpha) {
+std::uint8_t opacityFromFontAlpha(int fontAlpha) {
     return clampByte(kFullAlpha - fontAlpha);
 }
 
 /** How many lines a passage runs to. */
-std::int32_t lineCount(std::string_view passage) {
+int lineCount(std::string_view passage) {
     if (passage.empty()) {
         return 0;
     }
-    auto lines = static_cast<std::int32_t>(std::ranges::count(passage, '\n'));
+    auto lines = static_cast<int>(std::ranges::count(passage, '\n'));
     if (passage.back() != '\n') {
         ++lines;
     }
@@ -44,8 +44,8 @@ std::int32_t lineCount(std::string_view passage) {
 }
 
 /** One line of menu text in a fixed colour and glyph sheet. */
-void drawLabel(Canvas& canvas, const TextPainter& painter, std::int32_t x, std::int32_t y,
-               std::string_view text, float scale, Color color, const Texture* sheet) {
+void drawLabel(Canvas& canvas, const TextPainter& painter, int x, int y, std::string_view text,
+               float scale, Color color, const Texture* sheet) {
     TextStyle style;
     style.scale = scale;
     style.color = color;
@@ -55,15 +55,15 @@ void drawLabel(Canvas& canvas, const TextPainter& painter, std::int32_t x, std::
 
 } // namespace
 
-std::uint8_t pulseOpacity(std::int32_t time, std::int32_t radius, std::int32_t hold) {
-    const std::int32_t span = radius * 2;
-    std::int32_t phase = time % (span + hold);
+std::uint8_t pulseOpacity(int time, int radius, int hold) {
+    const int span = radius * 2;
+    int phase = time % (span + hold);
     if (phase > span) {
         phase = 0;
     } else if (phase > radius) {
         phase = span - phase;
     }
-    const std::int32_t ramp = (radius + phase * kFullAlpha - 1) / radius;
+    const int ramp = (radius + phase * kFullAlpha - 1) / radius;
     return opacityFromFontAlpha(kDisabledAlpha - 1 - ramp / 2);
 }
 
@@ -76,7 +76,7 @@ float OptionMenu::iconPixelsPerUnit(const MenuScreen& screen) {
 }
 
 void OptionMenu::open(const MenuDefinition& definition, const TextPainter& painter,
-                      const MenuScreen& screen, std::int32_t selection) {
+                      const MenuScreen& screen, int selection) {
     m_definition = definition;
     m_screen = screen;
     m_open = true;
@@ -87,7 +87,7 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     m_iconTimer = kIconGlideTicks;
     m_iconDrawY = 0;
     m_iconScale = iconPixelsPerUnit(screen);
-    const auto count = static_cast<std::int32_t>(m_definition.items.size());
+    const auto count = static_cast<int>(m_definition.items.size());
     m_selection = count == 0 ? 0 : std::clamp(selection, 0, count - 1);
     if (count > 0 && !m_definition.items[static_cast<std::size_t>(m_selection)].enabled) {
         m_selection = nextEnabled(m_selection, 1);
@@ -110,25 +110,24 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     }
     m_columnX = m_definition.x < 0 ? -(m_definition.x + m_columnWidth / 2) : m_definition.x;
 
-    const std::int32_t width = m_definition.backdropWidth < 0 ? m_columnWidth + kBackdropMargin * 2
-                                                              : m_definition.backdropWidth;
-    const std::int32_t height = m_definition.backdropHeight < 0
-                                    ? m_columnHeight + kBackdropMargin * 2
-                                    : m_definition.backdropHeight;
-    const std::int32_t x =
+    const int width = m_definition.backdropWidth < 0 ? m_columnWidth + kBackdropMargin * 2
+                                                     : m_definition.backdropWidth;
+    const int height = m_definition.backdropHeight < 0 ? m_columnHeight + kBackdropMargin * 2
+                                                       : m_definition.backdropHeight;
+    const int x =
         m_definition.backdropX < 0 ? screen.width / 2 - width / 2 : m_definition.backdropX;
-    const std::int32_t y =
+    const int y =
         m_definition.backdropY < 0 ? screen.height / 2 - height / 2 : m_definition.backdropY;
     m_backdrop = Rect{static_cast<float>(x), static_cast<float>(y), static_cast<float>(width),
                       static_cast<float>(height)};
     // A lone passage sits about the column's middle; several run down from where they start.
     m_bodyTop = m_definition.bodyY;
     if (m_definition.bodyY < 0) {
-        std::int32_t lines = 0;
+        int lines = 0;
         for (const std::string& passage : m_definition.body) {
             lines += lineCount(passage);
         }
-        const std::int32_t bodyHeight = lines * painter.lineHeight(m_definition.bodyScale);
+        const int bodyHeight = lines * painter.lineHeight(m_definition.bodyScale);
         m_bodyTop = m_columnY + m_columnHeight / 2 - bodyHeight / 2;
     }
     glideIcon(0);
@@ -145,7 +144,7 @@ void OptionMenu::close() {
     }
 }
 
-MenuEvent OptionMenu::update(const MenuInput& input, std::int32_t ticks) {
+MenuEvent OptionMenu::update(const MenuInput& input, int ticks) {
     if (!m_open) {
         return {};
     }
@@ -161,7 +160,7 @@ MenuEvent OptionMenu::update(const MenuInput& input, std::int32_t ticks) {
     m_time += ticks;
     glideIcon(ticks);
 
-    const auto count = static_cast<std::int32_t>(m_definition.items.size());
+    const auto count = static_cast<int>(m_definition.items.size());
     if (count == 0) {
         return input.back ? MenuEvent{MenuAction::Back, 0} : MenuEvent{};
     }
@@ -184,10 +183,10 @@ MenuEvent OptionMenu::update(const MenuInput& input, std::int32_t ticks) {
 }
 
 /** The next enabled item from `from` in direction `step`, wrapping; `from` when none. */
-std::int32_t OptionMenu::nextEnabled(std::int32_t from, std::int32_t step) const {
-    const auto count = static_cast<std::int32_t>(m_definition.items.size());
-    std::int32_t index = from;
-    for (std::int32_t tries = 0; tries < count; ++tries) {
+int OptionMenu::nextEnabled(int from, int step) const {
+    const auto count = static_cast<int>(m_definition.items.size());
+    int index = from;
+    for (int tries = 0; tries < count; ++tries) {
         index = (index + step + count) % count;
         if (m_definition.items[static_cast<std::size_t>(index)].enabled) {
             return index;
@@ -196,8 +195,8 @@ std::int32_t OptionMenu::nextEnabled(std::int32_t from, std::int32_t step) const
     return from;
 }
 
-std::int32_t OptionMenu::itemY(std::size_t index) const {
-    std::int32_t y = m_columnY;
+int OptionMenu::itemY(std::size_t index) const {
+    int y = m_columnY;
     for (std::size_t i = 0; i < index && i < m_definition.items.size(); ++i) {
         y += m_lineHeight + m_definition.items[i].extraSpacing;
     }
@@ -208,7 +207,7 @@ std::uint8_t OptionMenu::fadeOpacity() const {
     if (!m_definition.fades) {
         return kFullAlpha;
     }
-    std::int32_t fade = 0;
+    int fade = 0;
     if (m_finishTimer > 0) {
         fade = m_finishTimer * kFullAlpha / kFadeTicks;
     } else if (m_time < kFadeTicks) {
@@ -225,11 +224,11 @@ float OptionMenu::iconAngle() const {
     return angle;
 }
 
-void OptionMenu::glideIcon(std::int32_t ticks) {
+void OptionMenu::glideIcon(int ticks) {
     if (m_definition.items.empty()) {
         return;
     }
-    const std::int32_t target = itemY(static_cast<std::size_t>(m_selection)) + m_lineHeight / 2;
+    const int target = itemY(static_cast<std::size_t>(m_selection)) + m_lineHeight / 2;
     if (m_iconTimer == 0) {
         m_iconDrawY = m_iconY;
         if (target != m_iconY) {
@@ -247,8 +246,8 @@ void OptionMenu::glideIcon(std::int32_t ticks) {
 
 const Texture* OptionMenu::itemSheet(const MenuTextures& textures, bool selected) const {
     if (m_definition.garamondIntro && textures.garamond[0] != nullptr) {
-        const std::int32_t frame =
-            m_finishTimer > 0 ? kGaramondFrames - m_finishTimer * kGaramondFrames / kFadeTicks
+        const int frame = m_finishTimer > 0
+                              ? kGaramondFrames - m_finishTimer * kGaramondFrames / kFadeTicks
                               : (m_time - kGaramondDelay) / 2;
         if (frame < 0) {
             return textures.garamond[0];
@@ -288,14 +287,13 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
     }
     if (hasBackdrop) {
         if (!m_definition.title.empty()) {
-            const std::int32_t x =
-                -static_cast<std::int32_t>(m_backdrop.x + m_backdrop.width / 2.0f);
-            const std::int32_t y = static_cast<std::int32_t>(m_backdrop.y) + kTitleMargin;
+            const int x = -static_cast<int>(m_backdrop.x + m_backdrop.width / 2.0f);
+            const int y = static_cast<int>(m_backdrop.y) + kTitleMargin;
             drawLabel(canvas, painter, x, y, m_definition.title, m_definition.titleScale, white,
                       labelSheet);
         }
         if (!m_definition.playerLabel.empty()) {
-            const std::int32_t y = static_cast<std::int32_t>(m_backdrop.y) + kPlayerTagMargin;
+            const int y = static_cast<int>(m_backdrop.y) + kPlayerTagMargin;
             drawLabel(canvas, painter, -kPlayerTagX, y, m_definition.playerLabel, kPromptScale,
                       white, labelSheet);
         }
@@ -305,11 +303,11 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
                                 itemSheet(textures, false) != labelSheet;
     for (std::size_t i = 0; i < m_definition.items.size(); ++i) {
         const MenuItem& item = m_definition.items[i];
-        const std::int32_t y = itemY(i);
-        const bool selected = static_cast<std::int32_t>(i) == m_selection;
+        const int y = itemY(i);
+        const bool selected = static_cast<int>(i) == m_selection;
         if (selected) {
             const std::uint8_t pulse = pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks);
-            const auto glowAlpha = static_cast<std::uint8_t>(std::min<std::int32_t>(fade, pulse));
+            const auto glowAlpha = static_cast<std::uint8_t>(std::min<int>(fade, pulse));
             TextStyle glow;
             glow.scale = m_definition.scale;
             glow.color = m_definition.colors.hi.withAlpha(glowAlpha);
@@ -352,9 +350,9 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
     }
 
     if (!m_definition.body.empty() && hasBackdrop) {
-        const std::int32_t lineHeight = painter.lineHeight(m_definition.bodyScale);
+        const int lineHeight = painter.lineHeight(m_definition.bodyScale);
         const Color ink = m_definition.colors.off.withAlpha(fade);
-        std::int32_t y = m_bodyTop;
+        int y = m_bodyTop;
         for (const std::string& passage : m_definition.body) {
             std::size_t from = 0;
             while (from < passage.size()) {
@@ -371,10 +369,10 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
 
     if (m_definition.prompts && m_finishTimer == 0) {
         // The prompts share the row evenly: one alone sits in the middle.
-        const std::int32_t count =
+        const int count =
             (m_definition.backLabel.empty() ? 0 : 1) + (m_definition.selectLabel.empty() ? 0 : 1);
-        const std::int32_t slot = m_screen.width / (count + 1);
-        std::int32_t x = 0;
+        const int slot = m_screen.width / (count + 1);
+        int x = 0;
         for (const std::string* label : {&m_definition.backLabel, &m_definition.selectLabel}) {
             if (!label->empty()) {
                 x += slot;

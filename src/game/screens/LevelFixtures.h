@@ -1,6 +1,5 @@
 #pragma once
 #include <cstddef>
-#include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
@@ -32,19 +31,18 @@ public:
     };
     struct Events {
         std::function<void(std::size_t, float, HurtKind, bool)> hurt;
-        std::function<void(std::int32_t, std::size_t)> help;
-        std::function<void(std::int32_t, std::string_view)> card;
+        std::function<void(int, std::size_t)> help;
+        std::function<void(int, std::string_view)> card;
         std::function<void(const Vec3&, float, float)> opponents;
     };
     void bind(const Resources& resources);
     void clear();
-    void setPlayerCount(std::int32_t count);
+    void setPlayerCount(int count);
     std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
-    void update(std::int32_t ticks, float seconds, std::span<PlayerRuntime> players,
-                const Events& events);
+    void update(int ticks, float seconds, std::span<PlayerRuntime> players, const Events& events);
     void strikeSafeRock(std::size_t index, float power);
-    void strikeBarrel(std::size_t barrel, float power, std::int32_t byPlayer,
+    void strikeBarrel(std::size_t barrel, float power, int byPlayer,
                       std::span<PlayerRuntime> players, const Events& events);
     void blast(const Vec3& position, float radius, float damage, std::span<PlayerRuntime> players,
                const Events& events);
@@ -59,7 +57,7 @@ public:
 
 private:
     void updateClouds(float seconds, std::span<PlayerRuntime> players, const Events& events);
-    void playGateSound(std::int32_t subtype);
+    void playGateSound(int subtype);
     void playRealmSound(std::string_view stem);
     float trapDamageScale() const;
     std::optional<Resources> m_resources;

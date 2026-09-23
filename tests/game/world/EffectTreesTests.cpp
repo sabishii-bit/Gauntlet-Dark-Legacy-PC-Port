@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -77,7 +76,7 @@ TEST_CASE("legend effects carry a world-space trail and draw its sprites facing 
     setting.velocity = Vec3{20.0f, 0.0f, 0.0f};
     setting.unlit = true;
     setting.depthWrite = false;
-    const std::uint32_t id = effects.startSet(device, items, "LEGENDPRJ", Vec3{0.0f}, setting);
+    const unsigned int id = effects.startSet(device, items, "LEGENDPRJ", Vec3{0.0f}, setting);
     REQUIRE(id != 0);
     effects.attachTrail(id, LegendShow::trailOf(34), particleTexture);
     effects.update(1.0f / 30.0f);
@@ -201,7 +200,7 @@ TEST_CASE("a fast legend charge holds its final pose for the unscaled effect lif
     setting.seconds = 1.0f;
     setting.loop = false;
     setting.playbackRate = LegendShow::kBurstPlaybackRate;
-    const std::uint32_t id = effects.startSet(device, weapons, "COMBO_BLU", Vec3{0.0f}, setting);
+    const unsigned int id = effects.startSet(device, weapons, "COMBO_BLU", Vec3{0.0f}, setting);
     REQUIRE(id != 0);
     for (int i = 0; i < 30; ++i) {
         effects.update(1.0f / 60.0f);
@@ -230,7 +229,7 @@ TEST_CASE("an effect can be turned, carried along and kept repeating until it is
     setting.velocity = Vec3{10.0f, 0.0f, 0.0f};
     setting.seconds = 30.0f; // far longer than the tree's one playing
     REQUIRE(effects.startSet(device, weapons, "NO_SUCH_TREE", Vec3{0.0f}, setting) == 0);
-    const std::uint32_t id =
+    const unsigned int id =
         effects.startSet(device, weapons, "MP_FIRE", Vec3{0.0f, 1.0f, 0.0f}, setting);
     REQUIRE(id != 0);
     for (int i = 0; i < 600; ++i) {
@@ -309,7 +308,7 @@ TEST_CASE("the classes' turbo effects play through, flip-books that start late a
         ItemArchive archive;
         REQUIRE(archive.load(root / "PLAYERS" / cls / "SFXBLU"));
         for (std::size_t t = 0; t < archive.trees.size(); ++t) {
-            const std::string name = archive.trees.tree(static_cast<std::uint32_t>(t)).name;
+            const std::string name = archive.trees.tree(static_cast<unsigned int>(t)).name;
             CAPTURE(cls, name);
             EffectTrees effects;
             if (!effects.start(device, archive, name, Vec3{0.0f})) {

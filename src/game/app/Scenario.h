@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -12,20 +11,20 @@ namespace gdl::game {
 
 /** One character of a scenario's party, named by the asset codes a save would carry. */
 struct ScenarioMember {
-    std::int32_t player = 0;
+    int player = 0;
     std::string classCode = "WAR";
     std::string colorCode = "YEL";
     std::string name = "TEST";
-    std::int32_t level = 1;
-    std::vector<std::int32_t> crystals; ///< per realm, as many as given
-    std::int32_t gold = 0;
-    std::int32_t health = 0; ///< none leaves it full
-    std::int32_t keys = 0;
-    std::int32_t slot = -1; ///< the save slot the character is kept in; none when negative
-    float turbo = 0.0f;     ///< what its turbo meter starts with
-    std::vector<std::int32_t> potions; ///< the kind of each carried
+    int level = 1;
+    std::vector<int> crystals; ///< per realm, as many as given
+    int gold = 0;
+    int health = 0; ///< none leaves it full
+    int keys = 0;
+    int slot = -1;            ///< the save slot the character is kept in; none when negative
+    float turbo = 0.0f;       ///< what its turbo meter starts with
+    std::vector<int> potions; ///< the kind of each carried
     std::vector<PowerupSlot> powerups; ///< carried and worn
-    std::vector<std::int32_t> legends; ///< the legend items carried, by the realm of their boss
+    std::vector<int> legends;          ///< the legend items carried, by the realm of their boss
 };
 
 /**

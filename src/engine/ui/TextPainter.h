@@ -14,7 +14,7 @@ struct TextStyle {
     float scale = 1.0f;
     Color color = Color::white();
     const Texture* texture = nullptr; ///< glyph sheet to sample; the painter's own when null
-    std::int32_t expand = 0;          ///< pixels added on every side of each glyph
+    int expand = 0;                   ///< pixels added on every side of each glyph
 };
 
 /**
@@ -32,18 +32,17 @@ public:
     const BitmapFont* font() const { return m_font; }
     bool ready() const { return m_font != nullptr && m_texture != nullptr; }
 
-    std::int32_t measure(std::string_view text, float scale = 1.0f) const;
-    std::int32_t lineHeight(float scale = 1.0f) const;
+    int measure(std::string_view text, float scale = 1.0f) const;
+    int lineHeight(float scale = 1.0f) const;
 
     /** Resolves a possibly-negative x to the line's left edge. */
-    std::int32_t leftEdge(std::int32_t x, std::string_view text, float scale) const;
+    int leftEdge(int x, std::string_view text, float scale) const;
 
     /** Draws one line and returns the x just past its last glyph. */
-    std::int32_t draw(Canvas& canvas, std::int32_t x, std::int32_t y, std::string_view text,
-                      const TextStyle& style) const;
+    int draw(Canvas& canvas, int x, int y, std::string_view text, const TextStyle& style) const;
 
 private:
-    std::int32_t advance(std::uint8_t code, float scale) const;
+    int advance(std::uint8_t code, float scale) const;
 
     const BitmapFont* m_font = nullptr;
     const Texture* m_texture = nullptr;

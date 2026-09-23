@@ -1,6 +1,5 @@
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -29,8 +28,8 @@ struct Fixture {
                 REQUIRE(directed);
                 calls.push_back("player" + std::to_string(i));
             },
-        .help = [](std::int32_t, std::size_t) { FAIL("Empty scenery has no help event"); },
-        .card = [](std::int32_t, std::string_view) { FAIL("Empty scenery has no pickup card"); },
+        .help = [](int, std::size_t) { FAIL("Empty scenery has no help event"); },
+        .card = [](int, std::string_view) { FAIL("Empty scenery has no pickup card"); },
         .opponents =
             [this](const Vec3&, float radius, float damage) {
                 REQUIRE(radius == 2);

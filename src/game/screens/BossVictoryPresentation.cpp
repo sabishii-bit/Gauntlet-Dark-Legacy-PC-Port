@@ -16,11 +16,11 @@ namespace {
 constexpr std::string_view kWizardTree = "WIZARD";
 constexpr float kWizardLift = 3.0f;
 constexpr float kCaptionScale = 0.75f;
-constexpr std::int32_t kCaptionBottom = 96;
-constexpr std::int32_t kCaptionLineHeight = 18;
+constexpr int kCaptionBottom = 96;
+constexpr int kCaptionLineHeight = 18;
 } // namespace
 
-void BossVictoryPresentation::begin(std::int32_t kind, char realm, std::uint16_t runesInRealm,
+void BossVictoryPresentation::begin(int kind, char realm, std::uint16_t runesInRealm,
                                     std::uint16_t runesFound, bool goldLeft) {
     clear();
     m_visit.begin(kind, realm, runesInRealm, runesFound, goldLeft);
@@ -71,7 +71,7 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
     m_yaw = std::atan2(toParty.x, toParty.z);
 }
 
-BossVictoryPresentation::Update BossVictoryPresentation::update(std::int32_t ticks, float seconds,
+BossVictoryPresentation::Update BossVictoryPresentation::update(int ticks, float seconds,
                                                                 bool goldLeft,
                                                                 const MessageTable& strings) {
     Update result;
@@ -134,10 +134,10 @@ void BossVictoryPresentation::drawCaption(Canvas& canvas, const TextPainter& tex
     const std::vector<std::string> lines = ScrollBox::splitLines(shown);
     TextStyle style;
     style.scale = kCaptionScale;
-    std::int32_t y = static_cast<std::int32_t>(height) - kCaptionBottom -
-                     static_cast<std::int32_t>(lines.size()) * kCaptionLineHeight;
+    int y = static_cast<int>(height) - kCaptionBottom -
+            static_cast<int>(lines.size()) * kCaptionLineHeight;
     for (const std::string& line : lines) {
-        text.draw(canvas, -static_cast<std::int32_t>(width / 2.0f), y, line, style);
+        text.draw(canvas, -static_cast<int>(width / 2.0f), y, line, style);
         y += kCaptionLineHeight;
     }
 }

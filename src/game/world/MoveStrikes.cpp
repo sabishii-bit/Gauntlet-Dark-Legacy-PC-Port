@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 
 namespace gdl::game {
 
@@ -29,8 +28,8 @@ Vec3 MoveStrikes::originOf(const MoveStrike& strike, const Vec3& position, const
            facing * strike.offset.z;
 }
 
-std::uint32_t MoveStrikes::start(const MoveStrike& strike, std::int32_t owner, const Vec3& position,
-                                 const Vec3& facing, float ownDamage) {
+unsigned int MoveStrikes::start(const MoveStrike& strike, int owner, const Vec3& position,
+                                const Vec3& facing, float ownDamage) {
     Strike started;
     started.id = m_next++;
     started.owner = owner;
@@ -88,7 +87,7 @@ void MoveStrikes::clear() {
     m_next = 1;
 }
 
-const MoveStrikes::Strike* MoveStrikes::find(std::uint32_t id) const {
+const MoveStrikes::Strike* MoveStrikes::find(unsigned int id) const {
     const auto found = std::ranges::find(m_strikes, id, &Strike::id);
     return found != m_strikes.end() ? &*found : nullptr;
 }

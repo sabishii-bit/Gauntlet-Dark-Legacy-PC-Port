@@ -28,7 +28,7 @@ constexpr float kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares o
 constexpr std::string_view kNeedCrystals = "NEEDCRYSTALS";
 constexpr std::string_view kNeedIcons = "NEEDGARGITEMS";
 constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
-constexpr std::int32_t kIconTierBase = 101; ///< a gargoyle gate's trigger id less this is its tier
+constexpr int kIconTierBase = 101; ///< a gargoyle gate's trigger id less this is its tier
 
 constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
@@ -38,17 +38,17 @@ constexpr std::string_view kRuneVoicePrefix = "S_RUNE";    ///< then S_RUNE2 to 
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
 constexpr float kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
 constexpr float kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
-constexpr std::int32_t kSpecialPowerup = 9;   ///< the pickup subtype of the specials
-constexpr std::uint32_t kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
-constexpr float kFallenSeconds = 3.0f;        ///< from the last death to the tower
+constexpr int kSpecialPowerup = 9;        ///< the pickup subtype of the specials
+constexpr unsigned int kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
+constexpr float kFallenSeconds = 3.0f;       ///< from the last death to the tower
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
 constexpr std::string_view kMenuSelectSound = "S_OPTMENUSEL";
 constexpr std::string_view kMenuExitSound = "S_OPTMENUEXIT";
 constexpr float kPi = std::numbers::pi_v<float>;
-constexpr std::int32_t kMinTicks = 1; ///< a frame advances the clock by at least one tick
-constexpr std::int32_t kMaxTicks = 4; ///< and, however late, by at most four
+constexpr int kMinTicks = 1; ///< a frame advances the clock by at least one tick
+constexpr int kMaxTicks = 4; ///< and, however late, by at most four
 
 } // namespace
 
@@ -92,7 +92,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     for (std::size_t i = 0; i < world.layout().objects().size(); ++i) {
         const std::string& name = world.layout().objects()[i].name;
         if (name == kBeamObject) {
-            m_beam = static_cast<std::int32_t>(i);
+            m_beam = static_cast<int>(i);
             world.setObjectAlpha(i, 0.0f);
         } else if (std::ranges::find(kTempleLights, name) != kTempleLights.end()) {
             world.setObjectAlpha(i, 0.0f);
@@ -102,8 +102,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     for (const DroppedItem& item : options.items) {
         world.placeItem(device, item.name, item.position);
     }
-    world.setPlayerCount(static_cast<std::int32_t>(m_players.size()));
-    m_fixtures.setPlayerCount(static_cast<std::int32_t>(m_players.size()));
+    world.setPlayerCount(static_cast<int>(m_players.size()));
+    m_fixtures.setPlayerCount(static_cast<int>(m_players.size()));
     m_opponents.open({device, world, m_weapons, m_effects, m_audio, context.unpackedRoot,
                       context.config != nullptr ? context.config->difficulty.gain() : 1.0f},
                      m_players);
@@ -247,7 +247,7 @@ void PlayScene::launchWeapon(std::size_t index, const Vec3& direction, float sca
     }
 }
 
-std::optional<std::filesystem::path> PlayScene::figureDirectory(std::int32_t player) const {
+std::optional<std::filesystem::path> PlayScene::figureDirectory(int player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player && runtime.figure != nullptr) {
             return runtime.figure->directory();
@@ -256,7 +256,7 @@ std::optional<std::filesystem::path> PlayScene::figureDirectory(std::int32_t pla
     return std::nullopt;
 }
 
-bool PlayScene::weaponHeld(std::int32_t player) const {
+bool PlayScene::weaponHeld(int player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player && runtime.figure != nullptr) {
             // A move may empty the hand for a while.
@@ -269,7 +269,7 @@ bool PlayScene::weaponHeld(std::int32_t player) const {
 
 /** Sumner's beam comes up over three seconds while a player is near him and goes again once
  * they leave. */
-void PlayScene::updateBeam(std::int32_t ticks) {
+void PlayScene::updateBeam(int ticks) {
     if (m_beam < 0) {
         return;
     }
@@ -298,8 +298,7 @@ void PlayScene::collectItems() {
         const PlayerActor& actor = runtime.actor;
         // Against an open chest, a character reaches what lies in it.
         const Vec3 here = presenceOf(collectors.size());
-        const std::int32_t chest =
-            m_fixtures.chests().holdingTouchedBy(ChestVisitor{here, actor.radius()});
+        const int chest = m_fixtures.chests().holdingTouchedBy(ChestVisitor{here, actor.radius()});
         const Vec3 from =
             chest >= 0
                 ? m_fixtures.chests().chest(static_cast<std::size_t>(chest)).figure.position()
@@ -309,7 +308,7 @@ void PlayScene::collectItems() {
     const std::vector<Pickup> pickups = m_world->collect(
         *m_device, collectors, [this](const Pickup& pickup) { return takePickup(pickup); });
     for (std::size_t chest = 0; chest < m_fixtures.chests().size(); ++chest) {
-        const std::int32_t held = m_fixtures.chests().chest(chest).held;
+        const int held = m_fixtures.chests().chest(chest).held;
         if (held >= 0 && m_world->placedItems().item(static_cast<std::size_t>(held)).taken) {
             m_fixtures.chests().remove(chest);
         }
@@ -319,11 +318,11 @@ void PlayScene::collectItems() {
             continue; // handed over as it was judged
         }
         if (pickup.realm > 0 && static_cast<std::size_t>(pickup.realm) < kRealmCount) {
-            const std::int32_t wanted = LevelTriggers::crystalsNeeded(pickup.realm);
+            const int wanted = LevelTriggers::crystalsNeeded(pickup.realm);
             bool enough = wanted > 0;
             for (PlayerRuntime& runtime : m_players) {
                 PlayerActor& actor = runtime.actor;
-                std::int32_t& count =
+                int& count =
                     actor.save().progress().crystals[static_cast<std::size_t>(pickup.realm)];
                 if (wanted <= 0 || count < wanted) {
                     ++count;
@@ -349,7 +348,7 @@ Vec3 PlayScene::presenceOf(std::size_t index) const {
                                                       : kNowhere;
 }
 
-bool PlayScene::fallen(std::int32_t player) const {
+bool PlayScene::fallen(int player) const {
     for (std::size_t i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() == player) {
             return isDown(i);
@@ -358,7 +357,7 @@ bool PlayScene::fallen(std::int32_t player) const {
     return false;
 }
 
-void PlayScene::hurtPlayer(std::int32_t player, float damage, HurtKind kind, bool directed) {
+void PlayScene::hurtPlayer(int player, float damage, HurtKind kind, bool directed) {
     for (std::size_t i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() == player) {
             hurt(i, damage, kind, directed);
@@ -370,7 +369,7 @@ void PlayScene::hurtPlayer(std::int32_t player, float damage, HurtKind kind, boo
  * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
  * nowhere in particular (a trap underfoot); a shove halves either. */
 
-const TurboMeter* PlayScene::turboMeter(std::int32_t player) const {
+const TurboMeter* PlayScene::turboMeter(int player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player) {
             return &runtime.turbo;
@@ -382,7 +381,7 @@ const TurboMeter* PlayScene::turboMeter(std::int32_t player) const {
 /** Experience won, as the original awards it: scaled by the level (its own scale, less the
  * further the character is past the level the place is meant for); what a kill wins also
  * feeds the turbo meter, unless the character is in the middle of a turbo move. */
-void PlayScene::harm(std::int32_t player, float damage, HurtKind kind) {
+void PlayScene::harm(int player, float damage, HurtKind kind) {
     for (std::size_t i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() == player) {
             hurt(i, damage, kind);
@@ -390,7 +389,7 @@ void PlayScene::harm(std::int32_t player, float damage, HurtKind kind) {
     }
 }
 
-void PlayScene::awardExperience(std::int32_t player, std::int32_t amount, bool kill) {
+void PlayScene::awardExperience(int player, int amount, bool kill) {
     for (std::size_t i = 0; i < m_players.size(); ++i) {
         if (m_players[i].actor.player() != player || isDown(i) || amount <= 0) {
             continue;
@@ -400,7 +399,7 @@ void PlayScene::awardExperience(std::int32_t player, std::int32_t amount, bool k
         const float scale = level != nullptr
                                 ? level->tuning.experienceScale(experienceLevel(save.experience()))
                                 : 1.0f;
-        const auto won = static_cast<std::int32_t>(static_cast<float>(amount) * scale);
+        const auto won = static_cast<int>(static_cast<float>(amount) * scale);
         save.progress().experience += won;
         const bool busy =
             m_players[i].figure != nullptr && m_players[i].figure->animator().turboing();
@@ -413,7 +412,7 @@ void PlayScene::awardExperience(std::int32_t player, std::int32_t amount, bool k
 /** Puts a help message up over a character, the narrator saying it, unless the party has
  * seen it. */
 
-bool PlayScene::postHelp(std::int32_t id, std::size_t index, std::int32_t number) {
+bool PlayScene::postHelp(int id, std::size_t index, int number) {
     return m_hud.postHelp(id, index, m_players, m_audio, number);
 }
 
@@ -424,13 +423,13 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
 LevelFixtures::Events PlayScene::fixtureEvents() {
     return {.hurt = [this](std::size_t i, float damage, HurtKind kind,
                            bool directed) { hurt(i, damage, kind, directed); },
-            .help = [this](std::int32_t id, std::size_t i) { postHelp(id, i); },
-            .card = [this](std::int32_t player,
+            .help = [this](int id, std::size_t i) { postHelp(id, i); },
+            .card = [this](int player,
                            std::string_view name) { m_hud.pickups().addCard(player, name); },
             .opponents = [this](const Vec3& position, float radius,
                                 float damage) { hurtOpponentsByBlast(position, radius, damage); }};
 }
-void PlayScene::updateFixtures(std::int32_t ticks, float seconds) {
+void PlayScene::updateFixtures(int ticks, float seconds) {
     m_fixtures.update(ticks, seconds, m_players, fixtureEvents());
 }
 void PlayScene::blast(const Vec3& position, float radius, float damage) {
@@ -440,11 +439,11 @@ void PlayScene::settleBlasts() {
     m_fixtures.settleBlasts(m_players, fixtureEvents());
 }
 void PlayScene::hurtOpponentsByBlast(const Vec3& position, float radius, float damage) {
-    for (const std::int32_t enemy : m_opponents.enemies().within(position, radius)) {
+    for (const int enemy : m_opponents.enemies().within(position, radius)) {
         const Vec3 away = m_opponents.enemies().positionOf(enemy) - position;
         strikeEnemy(enemy, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
-    for (const std::int32_t generator : m_opponents.generators().within(position, radius)) {
+    for (const int generator : m_opponents.generators().within(position, radius)) {
         strikeGenerator(generator, damage, -1);
     }
     if (m_opponents.bosses().within(position, radius)) {
@@ -456,7 +455,7 @@ void PlayScene::hurtOpponentsByBlast(const Vec3& position, float radius, float d
         }
         m_opponents.bosses().hurt(struck);
     }
-    for (const std::int32_t critter : m_opponents.critters().within(position, radius)) {
+    for (const int critter : m_opponents.critters().within(position, radius)) {
         const Vec3 away = m_opponents.critters().positionOf(critter) - position;
         strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
@@ -474,19 +473,19 @@ void PlayScene::updateLevels() {
             continue;
         }
         postHelp(HelpMessages::kLevelUp, i, change->to);
-        save.progress().health += static_cast<std::int32_t>(kLevelUpHealth);
+        save.progress().health += static_cast<int>(kLevelUpHealth);
         if (m_device != nullptr && m_weapons.loaded()) {
             const std::string tree = std::format("LEVELUP_{}", colorCode(save.color));
             if (m_weapons.trees.find(tree).has_value()) {
                 EffectTrees::Setting setting;
                 setting.seconds = kLevelUpEffectSeconds;
-                const std::uint32_t effect = m_effects.startSet(
+                const unsigned int effect = m_effects.startSet(
                     *m_device, m_weapons, tree, m_players[i].actor.position(), setting);
                 m_effects.moveTo(effect, m_players[i].actor.position());
             }
         }
         if (change->milestone() && m_device != nullptr) {
-            const std::int32_t tier = std::min(change->to / LevelChange::kLevelsPerTier, 9);
+            const int tier = std::min(change->to / LevelChange::kLevelsPerTier, 9);
             const std::string_view cls = classCode(save.character);
             if (m_audio.playNamed(std::format("S_EXP{}0{}", tier, cls.substr(0, 3))) == kNoSound) {
                 m_audio.playNamed("S_EXP99ALL");
@@ -500,7 +499,7 @@ void PlayScene::updateLevels() {
     }
 }
 
-void PlayScene::updateVictory(std::int32_t ticks, float seconds) {
+void PlayScene::updateVictory(int ticks, float seconds) {
     if (m_bossSequence.advanceVictory(ticks, seconds, m_players, m_hud.strings()) && !m_leaving) {
         m_destination = LevelRef::tower();
         m_leaving = true;
@@ -508,7 +507,7 @@ void PlayScene::updateVictory(std::int32_t ticks, float seconds) {
     }
 }
 
-void PlayScene::updateEnemies(std::int32_t ticks, float seconds) {
+void PlayScene::updateEnemies(int ticks, float seconds) {
     m_opponents.update(
         ticks, seconds, m_players, m_fixtures.obstacles(),
         {.hurt = [this](std::size_t i, float damage, HurtKind kind,
@@ -532,22 +531,21 @@ void PlayScene::updateEnemies(std::int32_t ticks, float seconds) {
              [this](const CritterSpew& spew) {
                  m_bossSequence.spewCoins(spew, m_opponents, m_players);
              },
-         .advanceVictory = [this](std::int32_t elapsed,
+         .advanceVictory = [this](int elapsed,
                                   float duration) { updateVictory(elapsed, duration); },
          .levels = [this] { updateLevels(); },
-         .award = [this](std::int32_t player, std::int32_t amount,
+         .award = [this](int player, int amount,
                          bool kill) { awardExperience(player, amount, kill); }});
 }
-void PlayScene::strikeEnemy(std::int32_t id, float power, std::uint32_t flags,
-                            const Vec3& direction, std::int32_t byPlayer) {
+void PlayScene::strikeEnemy(int id, float power, unsigned int flags, const Vec3& direction,
+                            int byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);
 }
-void PlayScene::strikeCritter(std::int32_t id, float power, std::uint32_t flags,
-                              const Vec3& direction, std::int32_t byPlayer,
-                              std::optional<Vec3> where, bool close) {
+void PlayScene::strikeCritter(int id, float power, unsigned int flags, const Vec3& direction,
+                              int byPlayer, std::optional<Vec3> where, bool close) {
     m_opponents.strikeCritter(id, power, flags, direction, byPlayer, where, close, m_players);
 }
-void PlayScene::strikeGenerator(std::int32_t id, float power, std::int32_t byPlayer) {
+void PlayScene::strikeGenerator(int id, float power, int byPlayer) {
     m_opponents.strikeGenerator(id, power, byPlayer);
 }
 
@@ -597,8 +595,8 @@ bool PlayScene::leaveBy(std::size_t portal) {
         log::info("Portal {}: its level is not unpacked; back to the tower", exit.tag);
         return true;
     }
-    if (m_refusedPortal != static_cast<std::int32_t>(portal)) {
-        m_refusedPortal = static_cast<std::int32_t>(portal);
+    if (m_refusedPortal != static_cast<int>(portal)) {
+        m_refusedPortal = static_cast<int>(portal);
         log::warn("Portal {}: its level is not unpacked; unpack it with gdlunpack --only "
                   "<level> (and its realm's items)",
                   exit.tag);
@@ -630,7 +628,7 @@ float PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effe
 /** Hands a touched item to whoever touched it, by the original's rules: their card slides
  * up, the item's sound (or their own eating) plays, and what they cannot carry stays lying
  * where it is. Crystals are the party's and are dealt with once taken. */
-std::optional<std::int32_t> PlayScene::takePickup(const Pickup& pickup) {
+std::optional<int> PlayScene::takePickup(const Pickup& pickup) {
     if (pickup.realm > 0) {
         return 0;
     }
@@ -653,7 +651,7 @@ std::optional<std::int32_t> PlayScene::takePickup(const Pickup& pickup) {
         return std::nullopt;
     }
     if (pickup.subtype == kSpecialPowerup &&
-        (static_cast<std::uint32_t>(pickup.flags) & kTurboFlag) != 0) {
+        (static_cast<unsigned int>(pickup.flags) & kTurboFlag) != 0) {
         m_players[pickup.collector].turbo.add(TurboMeter::kFull);
     }
     switch (static_cast<ItemKind>(pickup.subtype)) {
@@ -688,7 +686,7 @@ std::optional<std::int32_t> PlayScene::takePickup(const Pickup& pickup) {
 
 /** A runestone found is everyone's: each character in play gets it, and the narrator counts
  * what the party holds. */
-void PlayScene::shareRune(std::int32_t rune) {
+void PlayScene::shareRune(int rune) {
     std::uint16_t held = 0;
     for (PlayerRuntime& runtime : m_players) {
         PlayerActor& actor = runtime.actor;
@@ -696,7 +694,7 @@ void PlayScene::shareRune(std::int32_t rune) {
         relics.addRune(rune);
         held |= relics.runes;
     }
-    const std::int32_t count = std::popcount(held);
+    const int count = std::popcount(held);
     if (count <= 0) {
         return;
     }
@@ -728,8 +726,8 @@ const PlayerActor* PlayScene::visitorOfSumner() const {
 
 void PlayScene::updateSumnerVisit(float seconds) {
     const PlayerActor* visitor = visitorOfSumner();
-    const std::optional<std::int32_t> player =
-        visitor != nullptr ? std::optional<std::int32_t>{visitor->player()} : std::nullopt;
+    const std::optional<int> player =
+        visitor != nullptr ? std::optional<int>{visitor->player()} : std::nullopt;
     if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_messages.text(), m_context.config,
                             m_context.strings)) {
         m_sumner.play(SumnerFigure::kWelcomeIndex);
@@ -737,7 +735,7 @@ void PlayScene::updateSumnerVisit(float seconds) {
 }
 
 /** The scene routes the scroll owner's input and applies its sound/gesture cues. */
-void PlayScene::updateHints(const Inputs& inputs, std::int32_t ticks) {
+void PlayScene::updateHints(const Inputs& inputs, int ticks) {
     const auto player = static_cast<std::size_t>(std::max(m_sumnerVisit.owner(), 0));
     const MenuInput input = player < inputs.size() ? inputs[player].menu : MenuInput{};
     const HintMenuEvent event = m_sumnerVisit.update(*m_device, input, ticks);
@@ -801,8 +799,8 @@ void PlayScene::startCrystalCut() {
 }
 
 /** A bit per party member whose player pressed their button this frame. */
-std::uint32_t PlayScene::acceptedPlayers(const Inputs& inputs) const {
-    std::uint32_t accepted = 0;
+unsigned int PlayScene::acceptedPlayers(const Inputs& inputs) const {
+    unsigned int accepted = 0;
     for (const PlayerRuntime& runtime : m_players) {
         const PlayerActor& actor = runtime.actor;
         const auto player = static_cast<std::size_t>(actor.player());
@@ -865,8 +863,8 @@ PlayOutcome PlayScene::update(double deltaSeconds, const Inputs& inputs) {
     // runs at, so a late frame moves everything further rather than smoother.
     const float tickRate =
         m_context.config != nullptr ? static_cast<float>(m_context.config->timing.tickRate) : 60.0f;
-    const auto ticks = std::clamp(static_cast<std::int32_t>(std::lround(deltaSeconds * tickRate)),
-                                  kMinTicks, kMaxTicks);
+    const auto ticks =
+        std::clamp(static_cast<int>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
     const float seconds = static_cast<float>(ticks) / tickRate;
     // A scroll holds everything else still until it has burnt away; the welcome's leads on
     // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
@@ -954,14 +952,13 @@ PlayOutcome PlayScene::update(double deltaSeconds, const Inputs& inputs) {
                 }
             },
         .select =
-            [this](std::size_t i, const SelectorInput& input, std::int32_t elapsed) {
+            [this](std::size_t i, const SelectorInput& input, int elapsed) {
                 m_hud.stepSelector(m_players[i].actor, input, elapsed, m_audio);
             },
         .advanceTurbo =
-            [this](std::size_t i, std::int32_t elapsed, float duration) {
-                m_attacks.updateTurbo(
-                    i, elapsed, duration, m_players,
-                    [this](std::int32_t id, std::size_t index) { postHelp(id, index); });
+            [this](std::size_t i, int elapsed, float duration) {
+                m_attacks.updateTurbo(i, elapsed, duration, m_players,
+                                      [this](int id, std::size_t index) { postHelp(id, index); });
             }};
     const std::vector<CameraSubject> subjects =
         PartyMotion::step(m_players, inputs, held, m_camera.yaw(), ticks, seconds,
@@ -1143,7 +1140,7 @@ CameraView PlayScene::cameraView() const {
     return view;
 }
 
-const PlayerActor* PlayScene::actor(std::int32_t player) const {
+const PlayerActor* PlayScene::actor(int player) const {
     for (const PlayerRuntime& runtime : m_players) {
         const PlayerActor& actor = runtime.actor;
         if (actor.player() == player) {
@@ -1153,7 +1150,7 @@ const PlayerActor* PlayScene::actor(std::int32_t player) const {
     return nullptr;
 }
 
-const PlayerAnimator* PlayScene::animator(std::int32_t player) const {
+const PlayerAnimator* PlayScene::animator(int player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player) {
             return runtime.figure != nullptr && runtime.figure->animator().bound()
@@ -1190,11 +1187,11 @@ bool PlayScene::openMessage(std::string_view name, std::size_t page) {
 
 /** Congratulates the party once its crystals open a realm's gate: the scroll for the realm,
  * its announcing voice, and the save remembers so it is not said twice. */
-void PlayScene::announceUnlock(std::int32_t realm) {
+void PlayScene::announceUnlock(int realm) {
     if (realm <= 0 || static_cast<std::size_t>(realm) >= kRealmCount) {
         return;
     }
-    const std::uint32_t bit = 1U << static_cast<std::uint32_t>(realm);
+    const unsigned int bit = 1U << static_cast<unsigned int>(realm);
     bool fresh = false;
     for (PlayerRuntime& runtime : m_players) {
         PlayerActor& actor = runtime.actor;
@@ -1220,7 +1217,7 @@ void PlayScene::handleTriggerEvents() {
         const TriggerRefusal& refusal = refusals.front();
         if (refusal.crystals) {
             openMessage(kNeedCrystals, static_cast<std::size_t>(refusal.id));
-        } else if (const std::int32_t tier = refusal.id - kIconTierBase; tier >= 0) {
+        } else if (const int tier = refusal.id - kIconTierBase; tier >= 0) {
             openMessage(kNeedIcons, static_cast<std::size_t>(tier));
         }
     }

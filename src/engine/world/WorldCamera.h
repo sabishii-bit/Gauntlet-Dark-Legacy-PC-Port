@@ -1,7 +1,5 @@
 #pragma once
 
-#include <cstdint>
-
 #include "engine/math/Math.h"
 
 namespace gdl {
@@ -52,16 +50,16 @@ struct CameraFrame {
     static CameraFrame at(const Vec3& eye);
 
     /** The facing modes an object's flags ask for, in their top nibble. */
-    static constexpr std::uint32_t kFacingShift = 24U;
-    static constexpr std::uint32_t kFacingMask = 0xFU;
-    static constexpr std::uint32_t kFacingFull = 4; ///< the whole rotation follows the camera
-    static std::uint32_t facingOf(std::uint32_t objectFlags) {
+    static constexpr unsigned int kFacingShift = 24U;
+    static constexpr unsigned int kFacingMask = 0xFU;
+    static constexpr unsigned int kFacingFull = 4; ///< the whole rotation follows the camera
+    static unsigned int facingOf(unsigned int objectFlags) {
         return (objectFlags >> kFacingShift) & kFacingMask;
     }
 
     /** `placement` with its rotation turned to face this camera: fully for kFacingFull,
      * else about the vertical so its z axis points at the camera. */
-    Mat4 face(const Mat4& placement, std::uint32_t mode) const;
+    Mat4 face(const Mat4& placement, unsigned int mode) const;
 };
 
 } // namespace gdl
