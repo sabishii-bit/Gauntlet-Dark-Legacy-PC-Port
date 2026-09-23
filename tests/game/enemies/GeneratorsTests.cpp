@@ -1,14 +1,17 @@
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "FakeRenderDevice.h"
-#include "TestSupport.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
+
+#include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 
@@ -18,8 +21,8 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr s32 kTicks = 2;
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr std::int32_t kTicks = 2;
+constexpr float kStep = 1.0f / 30.0f;
 
 /** A field with one grunt generator of strength two at the origin facing +z, one of strength
  * three at x 60 for a party of two, and a rats' one at x 120. */
@@ -50,7 +53,8 @@ std::filesystem::path sampleLevel(std::string_view name) {
 
 TEST_CASE("the fields place forty-seven generators for a party of one, of grunts and rats",
           "[game][enemies][unpacked]") {
-    const std::filesystem::path level = test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path();
+    const std::filesystem::path level =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path();
     const std::filesystem::path root = level.parent_path().parent_path();
     test::unpackedOrSkip("MONSTERS/GRU/animations.json");
     test::FakeRenderDevice device;
@@ -82,8 +86,8 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     REQUIRE(wider.bind(device, layout, enemies, &collision, GeneratorScales{}, 4));
     REQUIRE(wider.count() == 117);
     // Each stands whole, boxed as its record says, and is found by a sweep.
-    for (usize g = 0; g < generators.count(); ++g) {
-        const auto id = static_cast<s32>(g);
+    for (std::size_t g = 0; g < generators.count(); ++g) {
+        const auto id = static_cast<std::int32_t>(g);
         REQUIRE(generators.standing(id));
         REQUIRE(generators.stateOf(id) == 3);
         REQUIRE(generators.tierOf(id) >= 1);
@@ -93,15 +97,20 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     }
     REQUIRE(generators.obstacles().size() == 47);
     const Vec3 at = generators.positionOf(0);
-    REQUIRE((generators.struckBy(at + Vec3{-8.0f, 2.0f, 0.0f}, at + Vec3{8.0f, 2.0f, 0.0f}, 0.5f) == 0));
+    REQUIRE((generators.struckBy(at + Vec3{-8.0f, 2.0f, 0.0f}, at + Vec3{8.0f, 2.0f, 0.0f}, 0.5f) ==
+             0));
     REQUIRE_FALSE(generators.within(at + Vec3{0.0f, 2.0f, 0.0f}, 1.0f).empty());
-    REQUIRE_FALSE(generators.struckBy(at + Vec3{-8.0f, 40.0f, 0.0f}, at + Vec3{8.0f, 40.0f, 0.0f}, 0.5f).has_value());
+    REQUIRE_FALSE(
+        generators.struckBy(at + Vec3{-8.0f, 40.0f, 0.0f}, at + Vec3{8.0f, 40.0f, 0.0f}, 0.5f)
+            .has_value());
 }
 
 TEST_CASE("a generator breeds grunts for a party near it up to its count, and crumbles when struck",
           "[game][enemies][unpacked]") {
-    const std::filesystem::path root =
-        test::unpackedOrSkip("MONSTERS/GRU/animations.json").parent_path().parent_path().parent_path();
+    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
+                                           .parent_path()
+                                           .parent_path()
+                                           .parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(sampleLevel("generators-field")));
@@ -121,7 +130,7 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE(enemies.kindLoaded(kRatKind));
     // Strength two: two tiers of health at the level's three quarters, three out at once
     // (five at three quarters, made whole), a countdown of thirty (twenty at one and a half).
-    const s32 chosen = 0;
+    const std::int32_t chosen = 0;
     REQUIRE(generators.kindOf(chosen) == kGruntKind);
     REQUIRE(generators.tierOf(chosen) == 2);
     REQUIRE(generators.mostOf(chosen) == 3);
@@ -145,10 +154,10 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     const std::vector<EnemyView> party{near};
     generators.update(kTicks, enemies, party);
     REQUIRE(generators.bredOf(chosen) == 1);
-    REQUIRE(generators.bredOf(1) == 0); // too far off
+    REQUIRE(generators.bredOf(1) == 0);             // too far off
     REQUIRE(generators.countdownOf(chosen) == 180); // six ticks a unit of interval
-    std::vector<s32> mine;
-    for (s32 id = 0; id < Enemies::kMost; ++id) {
+    std::vector<std::int32_t> mine;
+    for (std::int32_t id = 0; id < Enemies::kMost; ++id) {
         if (enemies.alive(id) && enemies.generatorOf(id) == chosen) {
             mine.push_back(id);
         }
@@ -208,7 +217,7 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE_FALSE(generators.standing(chosen));
     REQUIRE(generators.obstacles().size() == 1);
     REQUIRE_FALSE(generators.strike(chosen, 50.0f, 0).has_value());
-    for (s32 id = 0; id < Enemies::kMost; ++id) {
+    for (std::int32_t id = 0; id < Enemies::kMost; ++id) {
         if (enemies.alive(id)) {
             enemies.hurt(id, slay);
         }

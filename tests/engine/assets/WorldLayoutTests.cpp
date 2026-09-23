@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -90,7 +91,7 @@ TEST_CASE("a layout carries its animations and tells its objects' roles", "[asse
     REQUIRE(turn.frames == 4);
     REQUIRE(turn.state == 0x101);
     REQUIRE(turn.track.has(2));
-    REQUIRE(turn.track.frames == std::vector<u16>{0, 3});
+    REQUIRE(turn.track.frames == std::vector<std::uint16_t>{0, 3});
     REQUIRE(turn.track.values[1] == 1.5f);
     const WorldObject& torch = layout.objects()[3];
     REQUIRE(torch.particles());
@@ -120,7 +121,7 @@ TEST_CASE("a layout carries its animations and tells its objects' roles", "[asse
     REQUIRE(layout.itemInfos()[1].collisionType == 3);
     REQUIRE(layout.itemInfos()[1].choices.empty());
     REQUIRE(layout.itemInfos()[2].type == ItemInfo::kChoiceList);
-    REQUIRE(layout.itemInfos()[2].choices == std::vector<s32>{0, 1});
+    REQUIRE(layout.itemInfos()[2].choices == std::vector<std::int32_t>{0, 1});
     REQUIRE(layout.itemInfos()[0].type == ItemInfo::kPowerup);
     REQUIRE(layout.itemInfos()[0].subtype == ItemInfo::kCrystal);
     REQUIRE(layout.itemInfos()[0].name == "GEMORANGE");

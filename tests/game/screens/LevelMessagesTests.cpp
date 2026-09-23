@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <cstdint>
 #include <format>
 
 #include <catch2/catch_test_macros.hpp>
@@ -25,7 +27,7 @@ std::filesystem::path sampleRoot(std::string_view name, bool burn) {
                                    "GREENCIRCTRANSM+1"});
     }
     std::string manifest = R"({"bitmaps": [)";
-    for (usize i = 0; i < names.size(); ++i) {
+    for (std::size_t i = 0; i < names.size(); ++i) {
         if (i != 0) {
             manifest += ',';
         }
@@ -113,8 +115,8 @@ TEST_CASE("level scroll dismissal reports audio cues only at its boundaries",
         if (burn) {
             REQUIRE(f.messages.scroll().burning());
             f.messages.prepare(f.device);
-            s32 endings = 0;
-            for (s32 i = 0; i < 300 && f.messages.active(); ++i) {
+            std::int32_t endings = 0;
+            for (std::int32_t i = 0; i < 300 && f.messages.active(); ++i) {
                 const auto cue = f.messages.step(1, 1);
                 REQUIRE_FALSE(cue.burnSound);
                 if (cue.stopVoice) {

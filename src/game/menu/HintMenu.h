@@ -1,9 +1,9 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
-#include "engine/core/Types.h"
 #include "engine/render/Image.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/ui/Canvas.h"
@@ -34,9 +34,9 @@ struct HintMenuLabels {
 
 /** What a step of the scroll did, for the sounds and the answer it wants. */
 struct HintMenuEvent {
-    enum class Kind : u8 { None, Moved, Asked, Returned, Left };
+    enum class Kind : std::uint8_t { None, Moved, Asked, Returned, Left };
     Kind kind = Kind::None;
-    s32 topic = 0; ///< the asked topic's code
+    std::int32_t topic = 0; ///< the asked topic's code
 };
 
 /**
@@ -47,15 +47,16 @@ struct HintMenuEvent {
  */
 class HintMenu {
 public:
-    static constexpr s32 kTopicsX = 128;
-    static constexpr s32 kBackdropY = 8;
-    static constexpr s32 kBackdropWidth = 480;
-    static constexpr s32 kBackdropHeight = 360;
-    static constexpr s32 kPromptY = 304;
-    static constexpr f32 kTitleScale = 1.2f;
-    static constexpr f32 kPageTitleScale = 0.8f;
-    static constexpr f32 kPageScale = 0.667f;
-    static constexpr s32 kPageTop = 112; ///< where a page's passages start when not centred
+    static constexpr std::int32_t kTopicsX = 128;
+    static constexpr std::int32_t kBackdropY = 8;
+    static constexpr std::int32_t kBackdropWidth = 480;
+    static constexpr std::int32_t kBackdropHeight = 360;
+    static constexpr std::int32_t kPromptY = 304;
+    static constexpr float kTitleScale = 1.2f;
+    static constexpr float kPageTitleScale = 0.8f;
+    static constexpr float kPageScale = 0.667f;
+    static constexpr std::int32_t kPageTop =
+        112; ///< where a page's passages start when not centred
     static constexpr Color kInk = Color::rgba(92, 26, 3);
 
     void setArt(HintMenuArt art) { m_art = std::move(art); }
@@ -64,7 +65,7 @@ public:
     bool open(const TextPainter& painter, const MenuScreen& screen, HintMenuLabels labels);
     /** Shows the answer to the topic just asked. */
     void read(const TextPainter& painter, std::string title, std::vector<std::string> passages,
-              f32 scale, bool centred, s32 gap);
+              float scale, bool centred, std::int32_t gap);
     /** Drops everything at once. */
     void close();
 
@@ -76,7 +77,7 @@ public:
     const OptionMenu& page() const { return m_page; }
 
     /** Steps the scroll with its player's input. */
-    HintMenuEvent update(RenderDevice& device, const MenuInput& input, s32 ticks);
+    HintMenuEvent update(RenderDevice& device, const MenuInput& input, std::int32_t ticks);
 
     /** Uploads the burn frame when the scroll is burning; call after beginFrame. */
     void prepare(RenderDevice& device);

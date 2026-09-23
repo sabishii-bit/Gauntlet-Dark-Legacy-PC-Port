@@ -1,8 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <span>
 
-#include "engine/core/Types.h"
 #include "engine/render/Mesh.h"
 
 namespace gdl::formats {
@@ -15,7 +15,8 @@ namespace gdl::formats {
  * width; the four-value coordinate format carries the lightmap's pair as well, in texels of
  * the lightmap. Throws FormatError on a malformed stream.
  */
-void decodeGeometryStream(std::span<const u8> stream, u32 texture, u32 lightmap, Mesh& mesh);
-void decodeGeometryStream(std::span<const u8> stream, u32 texture, Mesh& mesh);
+void decodeGeometryStream(std::span<const std::uint8_t> stream, std::uint32_t texture,
+                          std::uint32_t lightmap, Mesh& mesh);
+void decodeGeometryStream(std::span<const std::uint8_t> stream, std::uint32_t texture, Mesh& mesh);
 
 } // namespace gdl::formats

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <random>
 #include <span>
@@ -7,7 +9,6 @@
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
-#include "engine/core/Types.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -19,16 +20,16 @@ namespace gdl::game {
 /** Someone a trap can hurt. */
 struct TrapVictim {
     Vec3 position{0.0f, 0.0f, 0.0f};
-    f32 radius = 0.75f;
+    float radius = 0.75f;
 };
 
 /** A trap caught someone this update. */
 struct TrapHit {
-    usize trap = 0;
-    usize victim = 0;
-    f32 damage = 0.0f;
-    s32 subtype = 0; ///< which picks the trap's sound
-    bool pierces = false; ///< spikes and blades, which a victim groans at
+    std::size_t trap = 0;
+    std::size_t victim = 0;
+    float damage = 0.0f;
+    std::int32_t subtype = 0; ///< which picks the trap's sound
+    bool pierces = false;     ///< spikes and blades, which a victim groans at
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
 
@@ -43,22 +44,22 @@ struct TrapHit {
  */
 class Traps {
 public:
-    static constexpr s32 kResting = 0;
-    static constexpr f32 kSecondsPerTickLeft = 1.0f / 30.0f; ///< a victim's respite
-    static constexpr s32 kSpikes = 0;   ///< the subtypes that pierce
-    static constexpr s32 kBlade = 3;
-    static constexpr s32 kBlades = 4;
-    static constexpr s32 kTicksPerTimeUnit = 2; ///< the record's times are in half ticks
+    static constexpr std::int32_t kResting = 0;
+    static constexpr float kSecondsPerTickLeft = 1.0f / 30.0f; ///< a victim's respite
+    static constexpr std::int32_t kSpikes = 0;                 ///< the subtypes that pierce
+    static constexpr std::int32_t kBlade = 3;
+    static constexpr std::int32_t kBlades = 4;
+    static constexpr std::int32_t kTicksPerTimeUnit = 2; ///< the record's times are in half ticks
 
     /** One trap. */
     struct Trap {
-        s32 instance = -1;
-        f32 damage = 0.0f;
-        s32 offTime = 0;   ///< the record's, in its own units
-        s32 subtype = 0;
-        s32 action = kResting;
-        s32 ticksLeft = 0;
-        s32 minPlayers = 0;
+        std::int32_t instance = -1;
+        float damage = 0.0f;
+        std::int32_t offTime = 0; ///< the record's, in its own units
+        std::int32_t subtype = 0;
+        std::int32_t action = kResting;
+        std::int32_t ticksLeft = 0;
+        std::int32_t minPlayers = 0;
         bool shown = true;
         ItemFigure figure;
         Obstacle box;
@@ -66,25 +67,26 @@ public:
 
     /** `timeScale` stretches every rest and `damageScale` every hurt, as the level says. */
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-              const WorldCollision* collision, u32 seed = 1, f32 timeScale = 1.0f,
-              f32 damageScale = 1.0f);
+              const WorldCollision* collision, std::uint32_t seed = 1, float timeScale = 1.0f,
+              float damageScale = 1.0f);
     void clear();
-    usize size() const { return m_traps.size(); }
-    const Trap& trap(usize index) const { return *m_traps[index]; }
-    void setPlayerCount(s32 players);
+    std::size_t size() const { return m_traps.size(); }
+    const Trap& trap(std::size_t index) const { return *m_traps[index]; }
+    void setPlayerCount(std::int32_t players);
     /** Whether a trap is out of its rest, and hurts. */
-    bool armed(usize index) const { return m_traps[index]->action != kResting; }
+    bool armed(std::size_t index) const { return m_traps[index]->action != kResting; }
 
-    std::vector<TrapHit> update(s32 ticks, f32 seconds, std::span<const TrapVictim> party);
+    std::vector<TrapHit> update(std::int32_t ticks, float seconds,
+                                std::span<const TrapVictim> party);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:
-    s32 restTicks(const Trap& trap);
+    std::int32_t restTicks(const Trap& trap);
 
     std::vector<std::unique_ptr<Trap>> m_traps;
-    std::vector<f32> m_gaps; ///< per victim, seconds before they can be hurt again
+    std::vector<float> m_gaps; ///< per victim, seconds before they can be hurt again
     std::minstd_rand m_random{1};
-    f32 m_timeScale = 1.0f;
+    float m_timeScale = 1.0f;
 };
 
 } // namespace gdl::game

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <random>
@@ -41,19 +42,19 @@ public:
     void clear();
     void showLegend(const LegendEvent& event, const Bosses& bosses,
                     std::span<const PlayerRuntime> players);
-    void advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRuntime> players);
+    void advanceLegend(float seconds, Bosses& bosses, std::span<PlayerRuntime> players);
     void fallen(const Vec3& where, const Bosses& bosses, std::span<PlayerRuntime> players);
     void spewCoins(const CritterSpew& spew, LevelOpponents& opponents,
                    std::span<PlayerRuntime> players);
     /** True only on the update that completes the visit; the caller chooses how to travel. */
-    bool advanceVictory(s32 ticks, f32 seconds, std::span<const PlayerRuntime> players,
+    bool advanceVictory(std::int32_t ticks, float seconds, std::span<const PlayerRuntime> players,
                         const MessageTable& strings);
     const BossVictoryPresentation& victory() const { return m_victory; }
     const Texture* frozenTexture() const {
         return m_legend != nullptr ? m_legend->frozenTexture() : nullptr;
     }
     /** Player ids need not be contiguous; missing figures still supply fallback hold points. */
-    static std::optional<LegendPresentation::Bearer> bearer(s32 player, s32 kind,
+    static std::optional<LegendPresentation::Bearer> bearer(std::int32_t player, std::int32_t kind,
                                                             std::span<const PlayerRuntime> players);
 
 private:

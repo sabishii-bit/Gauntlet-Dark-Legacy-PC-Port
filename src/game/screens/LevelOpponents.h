@@ -1,4 +1,6 @@
 #pragma once
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -28,31 +30,31 @@ public:
         EffectTrees& effects;
         LevelSoundscape& audio;
         std::filesystem::path root;
-        f32 difficultyGain = 1;
+        float difficultyGain = 1;
     };
     struct Events {
-        std::function<void(usize, f32, HurtKind, bool)> hurt;
-        std::function<void(const Vec3&, f32, f32)> blast;
+        std::function<void(std::size_t, float, HurtKind, bool)> hurt;
+        std::function<void(const Vec3&, float, float)> blast;
         std::function<void()> settleBlasts;
         std::function<void(const LegendEvent&)> legend;
-        std::function<void(f32)> advanceLegend;
+        std::function<void(float)> advanceLegend;
         std::function<void(const Vec3&)> fallen;
         std::function<void(const CritterSpew&)> spew;
-        std::function<void(s32, f32)> advanceVictory;
+        std::function<void(std::int32_t, float)> advanceVictory;
         std::function<void()> levels;
-        std::function<void(s32, s32, bool)> award;
+        std::function<void(std::int32_t, std::int32_t, bool)> award;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
-    void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
+    void update(std::int32_t ticks, float seconds, std::span<PlayerRuntime> players,
                 std::span<const Obstacle> fixtures, const Events& events);
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
-    void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                     std::span<const PlayerRuntime> players);
-    void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                       std::optional<Vec3> where, bool close,
+    void strikeEnemy(std::int32_t id, float power, std::uint32_t flags, const Vec3& direction,
+                     std::int32_t byPlayer, std::span<const PlayerRuntime> players);
+    void strikeCritter(std::int32_t id, float power, std::uint32_t flags, const Vec3& direction,
+                       std::int32_t byPlayer, std::optional<Vec3> where, bool close,
                        std::span<const PlayerRuntime> players);
-    void strikeGenerator(s32 id, f32 power, s32 byPlayer);
+    void strikeGenerator(std::int32_t id, float power, std::int32_t byPlayer);
     Enemies& enemies() { return m_enemies; }
     const Enemies& enemies() const { return m_enemies; }
     Generators& generators() { return m_generators; }
@@ -79,13 +81,13 @@ private:
     EnemyMissiles m_enemyMissiles;
     /** An effect riding on one of the great ones. */
     struct CritterEffect {
-        u32 effect = 0;
-        s32 critter = -1;
+        std::uint32_t effect = 0;
+        std::int32_t critter = -1;
         bool ofBoss = false;
         Vec3 offset{0.0f, 0.0f, 0.0f}; ///< from the body
     };
     std::vector<CritterEffect> m_critterEffects;
 
-    std::array<f32, 4> m_critterExperienceOwed{};
+    std::array<float, 4> m_critterExperienceOwed{};
 };
 } // namespace gdl::game

@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 
@@ -73,7 +75,7 @@ TEST_CASE("the tower takes its light, camera range and sounds from the realm's d
     REQUIRE(tower.audio()->stream == "tower");
     // The lit level draws its lightmapped batches with their lightmaps.
     tower.draw(device, Mat4{1.0f}, WorldCamera{});
-    usize lightmapped = 0;
+    std::size_t lightmapped = 0;
     for (const auto& draw : device.draws) {
         lightmapped += draw.lightmap() != nullptr ? 1 : 0;
     }
@@ -96,7 +98,7 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     REQUIRE(tower.textureAnimator().size() >= 50);
     REQUIRE(tower.scene().unitCount() > 500);
     // The torch flames are the item archive's, not white, and change every second frame.
-    constexpr u32 kTorchSlot = 423;
+    constexpr std::uint32_t kTorchSlot = 423;
     const Texture* torch = tower.scene().textureOf(kTorchSlot);
     REQUIRE(torch != nullptr);
     REQUIRE(torch != &device.whiteTexture());
@@ -105,8 +107,8 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     // The crossing bridge waits for its trigger; the goldfish swim on.
     REQUIRE(tower.worldAnimator().held(0));
     REQUIRE(tower.worldAnimator().frame(0) == 0.0f);
-    usize swimming = 0;
-    for (usize i = 0; i < tower.worldAnimator().size(); ++i) {
+    std::size_t swimming = 0;
+    for (std::size_t i = 0; i < tower.worldAnimator().size(); ++i) {
         if (!tower.worldAnimator().held(i) && tower.worldAnimator().frame(i) == Approx(2.0f)) {
             ++swimming;
         }
@@ -116,15 +118,15 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     REQUIRE(tower.collision().movingObjectCount() > 100);
     // The first realm's force field stands across its gate, solid, its own two triangles
     // placed where the level puts the object.
-    std::optional<usize> field;
-    for (usize i = 0; i < tower.layout().objects().size(); ++i) {
+    std::optional<std::size_t> field;
+    for (std::size_t i = 0; i < tower.layout().objects().size(); ++i) {
         if (tower.layout().objects()[i].name == "L1XPTRAPWG") {
             field = i;
         }
     }
     REQUIRE(field.has_value());
-    REQUIRE(tower.collision().moving(static_cast<s32>(*field)));
-    REQUIRE(tower.collision().solid(static_cast<s32>(*field)));
+    REQUIRE(tower.collision().moving(static_cast<std::int32_t>(*field)));
+    REQUIRE(tower.collision().solid(static_cast<std::int32_t>(*field)));
     const Vec3 gate = tower.layout().worldPosition(*field);
     REQUIRE(tower.collision().resolveWalls(gate, 0.75f, gate.y - 1.0f, gate.y + 1.0f) != gate);
     // Every particle marker names one of the level's templates; the braziers burn with the
@@ -135,8 +137,8 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     REQUIRE(tower.placedItems().size() >= 15);
     REQUIRE(tower.placedItems().visibleCount() == 0);
     tower.setPlayerCount(1);
-    usize gems = 0;
-    for (usize i = 0; i < tower.placedItems().size(); ++i) {
+    std::size_t gems = 0;
+    for (std::size_t i = 0; i < tower.placedItems().size(); ++i) {
         const PlacedItems::Item& item = tower.placedItems().item(i);
         if (item.name == "GEMORANGE") {
             ++gems;
@@ -150,7 +152,7 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     const auto torchTexture = tower.items().textures.find("P_TORCH");
     REQUIRE(torchTexture.has_value());
     bool flames = false;
-    for (usize i = 0; i < tower.particles().size(); ++i) {
+    for (std::size_t i = 0; i < tower.particles().size(); ++i) {
         flames = flames || tower.particles().textureOf(i) ==
                                &tower.items().textures.texture(device, *torchTexture);
     }
@@ -163,14 +165,14 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     const Texture* flame = &tower.items().textures.texture(device, *torchTexture);
     bool flamesDrawn = false;
     for (const auto& draw : device.draws) {
-        flamesDrawn = flamesDrawn ||
-                      (draw.texture == flame && draw.state.blend == BlendMode::Additive);
+        flamesDrawn =
+            flamesDrawn || (draw.texture == flame && draw.state.blend == BlendMode::Additive);
     }
     REQUIRE(flamesDrawn);
     // The force field across the first realm's gate: its two triangles added onto the frame
     // with the field texture (animated, so whichever frame the slot shows), at full
     // brightness whichever way it faces.
-    constexpr u32 kFieldSlot = 141;
+    constexpr std::uint32_t kFieldSlot = 141;
     const Texture* fieldTexture = tower.scene().textureOf(kFieldSlot);
     REQUIRE(fieldTexture != nullptr);
     bool fieldDrawn = false;

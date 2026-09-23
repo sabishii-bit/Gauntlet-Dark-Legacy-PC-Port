@@ -43,7 +43,7 @@ int Application::run() {
             }
 
             if (m_desc.maxFrameRate != 0) {
-                const auto frameTime = std::chrono::duration<f64>(1.0 / m_desc.maxFrameRate);
+                const auto frameTime = std::chrono::duration<double>(1.0 / m_desc.maxFrameRate);
                 std::this_thread::sleep_until(
                     frameStart +
                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(frameTime));

@@ -1,6 +1,7 @@
 #include "game/screens/LegendPresentation.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -18,7 +19,7 @@ LegendPresentation::~LegendPresentation() {
 
 void LegendPresentation::clear() {
     stopLoop();
-    for (const u32 id : m_ownedEffects) {
+    for (const std::uint32_t id : m_ownedEffects) {
         m_effects.stop(id);
     }
     m_ownedEffects.clear();
@@ -33,17 +34,17 @@ void LegendPresentation::clear() {
     m_frozenTexture = nullptr;
 }
 
-u32 LegendPresentation::start(ItemArchive& archive, std::string_view tree, const Vec3& position,
-                              const EffectTrees::Setting& setting) {
-    const u32 id = m_effects.startSet(m_assets.device, archive, tree, position, setting);
+std::uint32_t LegendPresentation::start(ItemArchive& archive, std::string_view tree,
+                                        const Vec3& position, const EffectTrees::Setting& setting) {
+    const std::uint32_t id = m_effects.startSet(m_assets.device, archive, tree, position, setting);
     if (id != 0) {
         m_ownedEffects.push_back(id);
     }
     return id;
 }
 
-void LegendPresentation::show(LegendCue cue, s32 player, s32 realm, s32 kind,
-                              const std::optional<Bearer>& bearer) {
+void LegendPresentation::show(LegendCue cue, std::int32_t player, std::int32_t realm,
+                              std::int32_t kind, const std::optional<Bearer>& bearer) {
     if (cue == LegendCue::Brandished) {
         clear();
         m_kind = kind;
@@ -100,19 +101,19 @@ void LegendPresentation::brandish(const Bearer& bearer) {
         const TreeInfo& tree = m_assets.weapons.trees.tree(*burst);
         if (!tree.sequences.empty()) {
             const TreeSequenceInfo& sequence = tree.sequences.front();
-            charge.seconds =
-                static_cast<f32>(sequence.frames * sequence.frameRate) * AnimationPlayer::kRateUnit;
+            charge.seconds = static_cast<float>(sequence.frames * sequence.frameRate) *
+                             AnimationPlayer::kRateUnit;
             charge.loop = false;
         }
         start(m_assets.weapons, tree.name, bearer.position, charge);
     }
 }
 
-LegendPresentation::Update LegendPresentation::update(f32 seconds,
+LegendPresentation::Update LegendPresentation::update(float seconds,
                                                       const std::optional<Bearer>& bearer,
                                                       const std::optional<Target>& target) {
     Update result;
-    std::erase_if(m_ownedEffects, [this](u32 id) { return !m_effects.playing(id); });
+    std::erase_if(m_ownedEffects, [this](std::uint32_t id) { return !m_effects.playing(id); });
     if (!bearer.has_value() || m_player < 0 || bearer->player != m_player) {
         return result;
     }
@@ -168,7 +169,7 @@ void LegendPresentation::release(const Bearer& bearer, const std::optional<Targe
     case LegendShow::Flight::Flies: {
         const Vec3 from = bearer.position + bearer.facing + Vec3{0.0f, LegendShow::kLift, 0.0f};
         const Vec3 to = target->position + Vec3{0.0f, target->height * 0.5f, 0.0f};
-        const f32 distance = glm::length(to - from);
+        const float distance = glm::length(to - from);
         m_flightLeft = std::min(distance / LegendShow::kSpeed, LegendShow::kFlightSeconds);
         if (distance > 0.0f) {
             setting.velocity = (to - from) * (LegendShow::kSpeed / distance);

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 
 #include "game/players/ItemPickup.h"
@@ -9,8 +11,8 @@
 namespace gdl::game {
 namespace {
 constexpr std::string_view kChestSound = "S_CHEST";
-constexpr f32 kKnockdownFrom = 1.0f; ///< a blast must do more than this to floor anyone
-constexpr f32 kBehind = 1.5707964f;  ///< a blow from further round than this is from behind
+constexpr float kKnockdownFrom = 1.0f; ///< a blast must do more than this to floor anyone
+constexpr float kBehind = 1.5707964f;  ///< a blow from further round than this is from behind
 constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
 constexpr std::string_view kBarrelBreakSound = "S_BARREL_WOOD"; ///< with the realm's letter
 constexpr std::string_view kBarrelBlastSound = "S_BARREL_EXPLO";
@@ -19,13 +21,13 @@ constexpr std::string_view kFireTrapSound = "S_FIREHOLE";
 constexpr std::string_view kBarrelBlast = "EXPLOSION";
 constexpr std::string_view kBarrelGas = "POISONEXP1";
 constexpr std::string_view kBarrelSmoke = "DESTSMOKE";
-constexpr f32 kChestBlastDamage = 50.0f; ///< each times the level's trap damage
-constexpr f32 kBarrelBlastDamage = 30.0f;
-constexpr f32 kGasDamage = 10.0f;
-constexpr f32 kGasRadius = 6.5f;
-constexpr f32 kGasSeconds = 4.0f;
-constexpr f32 kGasGapSeconds = 0.5f;
-constexpr s32 kFireTrap = 1;
+constexpr float kChestBlastDamage = 50.0f; ///< each times the level's trap damage
+constexpr float kBarrelBlastDamage = 30.0f;
+constexpr float kGasDamage = 10.0f;
+constexpr float kGasRadius = 6.5f;
+constexpr float kGasSeconds = 4.0f;
+constexpr float kGasGapSeconds = 0.5f;
+constexpr std::int32_t kFireTrap = 1;
 constexpr std::string_view kChestBlast = "EXPCHEST"; ///< a trapped chest going up
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
@@ -55,7 +57,7 @@ void LevelFixtures::clear() {
     m_blasts.clear();
     m_resources.reset();
 }
-void LevelFixtures::setPlayerCount(s32 count) {
+void LevelFixtures::setPlayerCount(std::int32_t count) {
     m_chests.setPlayerCount(count);
     m_gates.setPlayerCount(count);
     m_traps.setPlayerCount(count);
@@ -80,7 +82,7 @@ void LevelFixtures::draw(RenderDevice& device, const Mat4& clip,
 }
 /** What the level's traps and blasts are scaled by: its own trap damage and the
  * difficulty's gain. */
-f32 LevelFixtures::trapDamageScale() const {
+float LevelFixtures::trapDamageScale() const {
     if (!m_resources.has_value()) {
         return 1;
     }
@@ -99,7 +101,7 @@ void LevelFixtures::playRealmSound(std::string_view stem) {
  * gate that is shut; against one, a key carried is spent and it opens (a chest's sound is
  * the common one, a gate's its realm's); an opened chest drops what it held, pays its gold
  * to its opener or blows up; a trap that is out hurts whoever is in it. */
-void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
+void LevelFixtures::update(std::int32_t ticks, float seconds, std::span<PlayerRuntime> players,
                            const Events& events) {
     if (!m_resources.has_value()) {
         return;
@@ -156,16 +158,18 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
                 blast(event.position, kBlastRadius, kChestBlastDamage * trapDamageScale(), players,
                       events);
             } else if (event.gold > 0) {
-                takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
+                takeItem(actor.save(),
+                         ItemOffer{static_cast<std::int32_t>(ItemKind::Gold), event.gold});
                 events.card(actor.player(), "GOLD");
                 m_resources->audio.playNamed(kPickupSound);
             } else if (event.contents >= 0) {
                 // It lies in the open chest, for whoever touches the chest next.
-                const s32 count = m_chests.chest(event.chest).count;
+                const std::int32_t count = m_chests.chest(event.chest).count;
                 if (m_resources->world.placeItemRecord(m_resources->device, event.contents,
                                                        event.position, count)) {
-                    m_chests.hold(event.chest,
-                                  static_cast<s32>(m_resources->world.placedItems().size()) - 1);
+                    m_chests.hold(
+                        event.chest,
+                        static_cast<std::int32_t>(m_resources->world.placedItems().size()) - 1);
                 }
             } else {
                 m_chests.remove(event.chest);
@@ -208,7 +212,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     }
 }
 
-void LevelFixtures::strikeSafeRock(usize index, f32 power) {
+void LevelFixtures::strikeSafeRock(std::size_t index, float power) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -220,7 +224,7 @@ void LevelFixtures::strikeSafeRock(usize index, f32 power) {
 
 /** A blow on a barrel: wood sounds under it until it breaks, when what it held is left
  * lying, or it blows up, or its gas hangs where it stood. */
-void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
+void LevelFixtures::strikeBarrel(std::size_t barrel, float power, std::int32_t byPlayer,
                                  std::span<PlayerRuntime> players, const Events& events) {
     if (!m_resources.has_value()) {
         return;
@@ -247,7 +251,7 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
         if (struck->contents >= 0 &&
             m_resources->world.placeItemRecord(m_resources->device, struck->contents,
                                                struck->position, struck->count)) {
-            for (usize i = 0; i < players.size(); ++i) {
+            for (std::size_t i = 0; i < players.size(); ++i) {
                 if (players[i].actor.player() == byPlayer) {
                     events.help(HelpMessages::kBarrelsHold, i);
                 }
@@ -270,7 +274,7 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
 
 /** Whoever is within a blast is hurt by it, and the barrels within it are struck by it (so
  * one that blows up sets off its neighbours). */
-void LevelFixtures::blast(const Vec3& position, f32 radius, f32 damage,
+void LevelFixtures::blast(const Vec3& position, float radius, float damage,
                           std::span<PlayerRuntime> players, const Events& events) {
     if (!m_resources.has_value()) {
         return;
@@ -287,7 +291,7 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
     while (!m_blasts.empty()) {
         const Blast felt = m_blasts.back();
         m_blasts.pop_back();
-        for (usize i = 0; i < players.size(); ++i) {
+        for (std::size_t i = 0; i < players.size(); ++i) {
             if (players[i].life != PlayerLife::Standing) {
                 continue;
             }
@@ -302,7 +306,7 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
                 if (PlayerHealth::guarded(players[i], felt.damage, true) > kKnockdownFrom &&
                     !guarding && !m_resources->world.isTower()) {
                     const Vec3 push = actor.position() - felt.position;
-                    f32 round = std::atan2(push.x, push.z) - actor.yaw();
+                    float round = std::atan2(push.x, push.z) - actor.yaw();
                     round = std::remainder(round, 2.0f * kBehind * 2.0f);
                     players[i].reaction =
                         std::abs(round) > kBehind ? PlayerDeed::FallBack : PlayerDeed::FallForward;
@@ -310,10 +314,10 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
                 events.hurt(i, felt.damage, HurtKind::Blow, true);
             }
         }
-        for (const usize barrel : m_barrels.within(felt.position, felt.radius)) {
+        for (const std::size_t barrel : m_barrels.within(felt.position, felt.radius)) {
             strikeBarrel(barrel, felt.damage, -1, players, events);
         }
-        for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
+        for (std::size_t rock = 0; rock < m_safeRocks.size(); ++rock) {
             if (m_safeRocks.rock(rock).obstacle.touchedBy(felt.position, felt.radius, 0.0f)) {
                 strikeSafeRock(rock, felt.damage);
             }
@@ -323,14 +327,14 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
 }
 
 /** Gas hangs for a while and hurts whoever stands in it, every half second. */
-void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
+void LevelFixtures::updateClouds(float seconds, std::span<PlayerRuntime> players,
                                  const Events& events) {
     for (PlayerRuntime& runtime : players) {
         runtime.cloudGap = std::max(runtime.cloudGap - seconds, 0.0f);
     }
     for (GasCloud& cloud : m_clouds) {
         cloud.secondsLeft -= seconds;
-        for (usize i = 0; i < players.size(); ++i) {
+        for (std::size_t i = 0; i < players.size(); ++i) {
             if ((players[i].life != PlayerLife::Standing) || players[i].cloudGap > 0.0f) {
                 continue;
             }
@@ -346,7 +350,7 @@ void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
 }
 
 /** A gate's opening sounds from the realm's own bank, named after the level's letter. */
-void LevelFixtures::playGateSound(s32 /*subtype*/) {
+void LevelFixtures::playGateSound(std::int32_t /*subtype*/) {
     if (!m_resources.has_value()) {
         return;
     }

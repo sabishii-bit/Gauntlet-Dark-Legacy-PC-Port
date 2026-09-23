@@ -1,5 +1,7 @@
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 
 #include <catch2/catch_approx.hpp>
@@ -22,9 +24,8 @@ using Catch::Approx;
 
 TEST_CASE("the tower's crystals stand on the floor for a party large enough",
           "[game][world][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("POWERUPS/animations.json")
-                                           .parent_path()
-                                           .parent_path();
+    const std::filesystem::path root =
+        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
     test::unpackedOrSkip("LEVELS/LEVELL1/collision.json");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
@@ -39,8 +40,8 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
     REQUIRE(items.size() >= 15);
     REQUIRE(items.visibleCount() == 0); // nobody in the party yet
 
-    usize gems = 0;
-    for (usize i = 0; i < items.size(); ++i) {
+    std::size_t gems = 0;
+    for (std::size_t i = 0; i < items.size(); ++i) {
         const PlacedItems::Item& item = items.item(i);
         if (item.name != "GEMORANGE") {
             continue;
@@ -50,7 +51,8 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
         REQUIRE(item.minPlayers == 1);
         REQUIRE(item.model.bound());
         // Lifted onto the floor near where the level put it.
-        const ItemInstance& source = layout.itemInstances()[static_cast<usize>(item.instance)];
+        const ItemInstance& source =
+            layout.itemInstances()[static_cast<std::size_t>(item.instance)];
         REQUIRE(item.position.x == source.position.x);
         REQUIRE(std::abs(item.position.y - source.position.y) <=
                 PlacedItems::kFloorReachAbove + PlacedItems::kFloorLift);
@@ -61,7 +63,7 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
     items.setPlayerCount(1);
     REQUIRE(items.visibleCount() >= 15);
     // The crystals turn: their tree's sequence loops, moving the gem's node.
-    usize firstGem = 0;
+    std::size_t firstGem = 0;
     while (items.item(firstGem).name != "GEMORANGE") {
         ++firstGem;
     }
@@ -76,10 +78,10 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
     REQUIRE(std::abs(Vec3{turned[1]}.z) < 1e-4f);
     REQUIRE(Vec3{turned[3]} == Vec3{0.0f, 0.0f, 0.0f});
     // The sheen slides over the crystal: the archive's scroll on its texture has moved.
-    constexpr u32 kSheenTexture = 181;
+    constexpr std::uint32_t kSheenTexture = 181;
     REQUIRE(items.item(firstGem).model.textureOffset(kSheenTexture) != Vec2{0.0f, 0.0f});
     items.draw(device, Mat4{1.0f}, WorldLighting{});
-    REQUIRE(device.draws.size() >= usize{60}); // a shadow, the crystal, its shine and glow
+    REQUIRE(device.draws.size() >= std::size_t{60}); // a shadow, the crystal, its shine and glow
     bool glowing = false;
     for (const auto& draw : device.draws) {
         glowing = glowing || draw.state.blend == BlendMode::Additive;
@@ -95,9 +97,8 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
 }
 
 TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("POWERUPS/animations.json")
-                                           .parent_path()
-                                           .parent_path();
+    const std::filesystem::path root =
+        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
     test::unpackedOrSkip("LEVELS/LEVELL1/collision.json");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
@@ -108,9 +109,9 @@ TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world
     const std::array<ItemArchive*, 1> archives{&powerups};
     REQUIRE(items.bind(device, layout, nullptr, archives));
     items.setPlayerCount(1);
-    const usize shown = items.visibleCount();
-    usize gem = 0;
-    for (usize i = 0; i < items.size(); ++i) {
+    const std::size_t shown = items.visibleCount();
+    std::size_t gem = 0;
+    for (std::size_t i = 0; i < items.size(); ++i) {
         if (items.item(i).name == "GEMORANGE") {
             gem = i;
             break;
@@ -158,8 +159,8 @@ TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world
     items.draw(device, Mat4{1.0f}, WorldLighting{});
     bool sparks = false;
     for (const auto& draw : device.draws) {
-        sparks = sparks || (draw.texture == &powerups.textures.texture(
-                                                 device, *powerups.textures.find("ORAN03")));
+        sparks = sparks || (draw.texture ==
+                            &powerups.textures.texture(device, *powerups.textures.find("ORAN03")));
     }
     REQUIRE(sparks);
     items.update(1.0f);
@@ -176,9 +177,8 @@ TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world
 
 TEST_CASE("items can be dropped by their record's name and left lying or part taken",
           "[game][world][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("POWERUPS/animations.json")
-                                           .parent_path()
-                                           .parent_path();
+    const std::filesystem::path root =
+        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
     test::unpackedOrSkip("LEVELS/LEVELL1/world.json");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
@@ -189,7 +189,7 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
     const std::array<ItemArchive*, 1> archives{&powerups};
     REQUIRE(items.bind(device, layout, nullptr, archives));
     items.setPlayerCount(1);
-    const usize before = items.size();
+    const std::size_t before = items.size();
     REQUIRE_FALSE(items.place(device, "NO_SUCH_THING", Vec3{0.0f}, nullptr));
     REQUIRE(items.place(device, "KEYRING", Vec3{500.0f, 0.0f, 500.0f}, nullptr));
     REQUIRE(items.place(device, "POT_GRE", Vec3{520.0f, 0.0f, 500.0f}, nullptr));
@@ -200,7 +200,7 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
     REQUIRE(ring.value == 3);
     REQUIRE(items.item(before + 1).flags == 4); // the green potion's kind
     // By its record's number too, as a chest drops what it held, holding as many as said.
-    const s32 keyRecord = items.item(before).info;
+    const std::int32_t keyRecord = items.item(before).info;
     REQUIRE_FALSE(items.placeRecord(device, -1, Vec3{0.0f}, nullptr));
     REQUIRE_FALSE(items.placeRecord(device, 9999, Vec3{0.0f}, nullptr));
     REQUIRE(items.placeRecord(device, keyRecord, Vec3{540.0f, 0.0f, 500.0f}, nullptr, 5));
@@ -212,22 +212,24 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
     const std::array<Collector, 1> party{on};
     // Refused, it stays; part taken, it stays with what is left; taken, it goes.
     int asked = 0;
-    REQUIRE(items.collect(device, party, [&](const Pickup& pickup) -> std::optional<s32> {
-                     ++asked;
-                     REQUIRE(pickup.amount == 3);
-                     REQUIRE(pickup.subtype == 2);
-                     return std::nullopt;
-                 })
+    REQUIRE(items
+                .collect(device, party,
+                         [&](const Pickup& pickup) -> std::optional<std::int32_t> {
+                             ++asked;
+                             REQUIRE(pickup.amount == 3);
+                             REQUIRE(pickup.subtype == 2);
+                             return std::nullopt;
+                         })
                 .empty());
     REQUIRE(asked == 1);
     REQUIRE(items.item(before).visible);
     std::vector<Pickup> got = items.collect(
-        device, party, [](const Pickup&) -> std::optional<s32> { return 1; });
+        device, party, [](const Pickup&) -> std::optional<std::int32_t> { return 1; });
     REQUIRE(got.size() == 1);
     REQUIRE(got[0].amount == 3);
     REQUIRE(items.item(before).visible);
     REQUIRE(items.item(before).value == 1);
-    got = items.collect(device, party, [](const Pickup& pickup) -> std::optional<s32> {
+    got = items.collect(device, party, [](const Pickup& pickup) -> std::optional<std::int32_t> {
         REQUIRE(pickup.amount == 1);
         return 0;
     });
@@ -238,9 +240,8 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
 
 TEST_CASE("the crystals can start unseen and be revealed from the origin outward",
           "[game][world][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("POWERUPS/animations.json")
-                                           .parent_path()
-                                           .parent_path();
+    const std::filesystem::path root =
+        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
     ItemArchive powerups;
@@ -256,8 +257,8 @@ TEST_CASE("the crystals can start unseen and be revealed from the origin outward
     items.draw(device, Mat4{1.0f}, WorldLighting{});
     REQUIRE(device.draws.empty()); // unseen
     const auto fading = [&]() {
-        usize count = 0;
-        for (usize i = 0; i < items.size(); ++i) {
+        std::size_t count = 0;
+        for (std::size_t i = 0; i < items.size(); ++i) {
             const PlacedItems::Item& item = items.item(i);
             count += item.subtype == ItemInfo::kCrystal && item.alpha > 0.0f ? 1 : 0;
         }
@@ -269,7 +270,7 @@ TEST_CASE("the crystals can start unseen and be revealed from the origin outward
     // A second on it reaches 41: that gem alone fades, nearly whole within the second.
     items.reveal(1.0f);
     REQUIRE(fading() == 1);
-    for (usize i = 0; i < items.size(); ++i) {
+    for (std::size_t i = 0; i < items.size(); ++i) {
         const PlacedItems::Item& item = items.item(i);
         if (item.alpha > 0.0f) {
             REQUIRE(item.alpha > 0.9f);
@@ -282,7 +283,7 @@ TEST_CASE("the crystals can start unseen and be revealed from the origin outward
     // Four seconds more reach past the farthest, and every gem is whole.
     items.reveal(4.0f);
     REQUIRE_FALSE(items.revealing());
-    for (usize i = 0; i < items.size(); ++i) {
+    for (std::size_t i = 0; i < items.size(); ++i) {
         if (items.item(i).subtype == ItemInfo::kCrystal) {
             REQUIRE(items.item(i).alpha == 1.0f);
         }
@@ -294,8 +295,10 @@ TEST_CASE("the crystals can start unseen and be revealed from the origin outward
 TEST_CASE("a thrown item sails out, bounces to rest on the floor and can be taken only after "
           "a while",
           "[game][world][unpacked]") {
-    const std::filesystem::path root =
-        test::unpackedOrSkip("ITEMS/LEVELG5/animations.json").parent_path().parent_path().parent_path();
+    const std::filesystem::path root = test::unpackedOrSkip("ITEMS/LEVELG5/animations.json")
+                                           .parent_path()
+                                           .parent_path()
+                                           .parent_path();
     test::unpackedOrSkip("LEVELS/LEVELG5/collision.json");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELG5"));
@@ -309,7 +312,7 @@ TEST_CASE("a thrown item sails out, bounces to rest on the floor and can be take
     items.bind(device, layout, &collision, archives);
     items.setPlayerCount(1);
     REQUIRE_FALSE(items.goldLeft());
-    const usize index = items.size();
+    const std::size_t index = items.size();
     // From three up over the boss's mark, thrown up and toward where the party comes in.
     REQUIRE(items.throwItem(device, "COIN_GOLD", Vec3{0.0f, 3.0f, 0.0f}, Vec3{0.0f, 20.0f, 10.0f},
                             &collision, 2.0f));
@@ -320,9 +323,9 @@ TEST_CASE("a thrown item sails out, bounces to rest on the floor and can be take
     REQUIRE(coin.position == Vec3{0.0f, 3.0f, 0.0f}); // not on the floor yet
     REQUIRE_FALSE(coin.takeable());
     // It rises first, then falls and bounces.
-    f32 highest = 0.0f;
+    float highest = 0.0f;
     int bounces = 0;
-    f32 lastVy = coin.velocity.y;
+    float lastVy = coin.velocity.y;
     for (int i = 0; i < 300; ++i) {
         items.update(1.0f / 60.0f);
         highest = std::max(highest, coin.position.y);

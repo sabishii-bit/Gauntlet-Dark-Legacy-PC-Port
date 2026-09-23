@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cstdint>
 #include <optional>
 
 #include "game/players/PlayerActor.h"
@@ -13,7 +14,7 @@ namespace gdl::game {
  * Models/missiles retain addresses inside this owner, so it must not move. */
 class PlayerArsenal {
 public:
-    static constexpr f32 kBurstPerPower = 0.03125f;
+    static constexpr float kBurstPerPower = 0.03125f;
     struct Resources {
         RenderDevice& device;
         const ClassDataSet& classes;
@@ -32,11 +33,11 @@ public:
     void bind(const Resources& resources);
     void clear();
     void launchWeapon(const PlayerActor& actor, PlayerFigure* body, const Vec3& direction,
-                      f32 scale, bool spreads);
+                      float scale, bool spreads);
     void usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor);
-    void burstPotion(s32 kind, const Vec3& position, f32 power);
-    f32 magicPowerOf(const PlayerActor& actor) const;
+    void burstPotion(std::int32_t kind, const Vec3& position, float power);
+    float magicPowerOf(const PlayerActor& actor) const;
     PlayerMissiles& missiles() { return m_missiles; }
     const PlayerMissiles& missiles() const { return m_missiles; }
 

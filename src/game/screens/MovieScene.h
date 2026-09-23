@@ -7,7 +7,6 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/AudioStream.h"
 #include "engine/codec/MoviePlayback.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
@@ -24,7 +23,7 @@ public:
     bool isOpen() const { return m_playback.isOpen(); }
 
     /** Advances playback; returns false when the movie has finished. */
-    bool update(f64 deltaSeconds);
+    bool update(double deltaSeconds);
 
     /** Draws the current frame stretched over `frame`. Must be the frame's first draw. */
     void render(RenderDevice& device, const Mat4& projection, const Rect& frame);
@@ -34,7 +33,7 @@ private:
     std::unique_ptr<Texture> m_texture;
     AudioMixer* m_mixer = nullptr;
     std::shared_ptr<AudioStream> m_audio;
-    std::vector<f32> m_audioScratch;
+    std::vector<float> m_audioScratch;
     ImmediateBatch m_batch;
     bool m_textureDirty = false;
 };

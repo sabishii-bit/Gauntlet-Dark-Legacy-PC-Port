@@ -1230,6 +1230,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 
 ## Language and style
 
+* Use standard C++ numeric types directly: `float`, `double`, `std::size_t`,
+  and `std::intN_t` / `std::uintN_t` where width or signedness is significant.
+  Do not introduce numeric shorthand aliases. Include `<cstddef>` and
+  `<cstdint>` directly where used; do not rely on a project umbrella header.
+  Asset, serialized, audio and GPU field widths must remain unchanged.
+
 * C++26: `-std=c++26` on GCC 14+ / Clang 17+; MSVC 14.4x has no `/std:c++26`
   switch, so the root `CMakeLists.txt` asks CMake for 23 there, which it emits
   as `/std:c++latest` (the C++26 preview). Use only features all three support.

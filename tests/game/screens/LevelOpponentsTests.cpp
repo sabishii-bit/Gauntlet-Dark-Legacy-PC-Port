@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -38,25 +40,25 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
     const auto root = test::scratchDirectory("level-opponents-empty");
     std::vector<std::string> phases;
     const LevelOpponents::Events events{
-        .hurt = [](usize, f32, HurtKind, bool) { FAIL("No combatants"); },
-        .blast = [](const Vec3&, f32, f32) { FAIL("No combatants"); },
+        .hurt = [](std::size_t, float, HurtKind, bool) { FAIL("No combatants"); },
+        .blast = [](const Vec3&, float, float) { FAIL("No combatants"); },
         .settleBlasts = [&] { phases.emplace_back("blast"); },
         .legend = [](const LegendEvent&) { FAIL("No boss"); },
         .advanceLegend =
-            [&](f32 seconds) {
+            [&](float seconds) {
                 REQUIRE(seconds == 0.1f);
                 phases.emplace_back("legend");
             },
         .fallen = [](const Vec3&) { FAIL("No boss"); },
         .spew = [](const CritterSpew&) { FAIL("No boss"); },
         .advanceVictory =
-            [&](s32 ticks, f32 seconds) {
+            [&](std::int32_t ticks, float seconds) {
                 REQUIRE(ticks == 6);
                 REQUIRE(seconds == 0.1f);
                 phases.emplace_back("victory");
             },
         .levels = [&] { phases.emplace_back("levels"); },
-        .award = [](s32, s32, bool) { FAIL("No kills"); }};
+        .award = [](std::int32_t, std::int32_t, bool) { FAIL("No kills"); }};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});

@@ -1,5 +1,7 @@
 #include "game/screens/LevelMessages.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <utility>
 
@@ -9,7 +11,7 @@ namespace gdl::game {
 namespace {
 constexpr std::string_view kStaticDirectory = "STATIC";
 constexpr std::string_view kFontFile = "fonts/font32.json";
-constexpr s32 kFont32SpaceWidth = 16;
+constexpr std::int32_t kFont32SpaceWidth = 16;
 constexpr std::string_view kFontTexture = "FONT32";
 constexpr std::string_view kGlowTexture = "FONT32_GLOW";
 constexpr std::string_view kScrollTexture = "SCROLL_A";
@@ -35,7 +37,7 @@ void LevelMessages::load(RenderDevice& device, TextureSet& textures,
     if (strings != nullptr) {
         m_scrollText.translate(*strings, kScrollTextPrefix);
     }
-    const auto texture = [&](std::string_view name, u32 frame = 0) -> const Texture* {
+    const auto texture = [&](std::string_view name, std::uint32_t frame = 0) -> const Texture* {
         const auto index = textures.find(name);
         if (!index.has_value() || *index + frame >= textures.size()) {
             return nullptr;
@@ -58,15 +60,15 @@ void LevelMessages::load(RenderDevice& device, TextureSet& textures,
     const auto ring = textures.find(kFireRingTexture);
     const auto mask = textures.find(kFireMaskTexture);
     if (scroll.has_value() && ring.has_value() && mask.has_value()) {
-        const u32 firstRing = *ring;
-        const u32 firstMask = *mask;
+        const std::uint32_t firstRing = *ring;
+        const std::uint32_t firstMask = *mask;
         try {
             art.backdropImage = &textures.image(*scroll);
-            const auto frames = static_cast<u32>(BurnDialogueScroll::kFrameCount);
-            for (u32 i = 1; i <= frames && firstRing + i < textures.size(); ++i) {
+            const auto frames = static_cast<std::uint32_t>(BurnDialogueScroll::kFrameCount);
+            for (std::uint32_t i = 1; i <= frames && firstRing + i < textures.size(); ++i) {
                 art.burnRing.push_back(&textures.texture(device, firstRing + i));
             }
-            for (u32 i = 1; i <= frames && firstMask + i < textures.size(); ++i) {
+            for (std::uint32_t i = 1; i <= frames && firstMask + i < textures.size(); ++i) {
                 art.burnMasks.push_back(&textures.image(firstMask + i));
             }
         } catch (const std::exception& e) {
@@ -88,7 +90,7 @@ void LevelMessages::clear() {
 }
 
 bool LevelMessages::open(RenderDevice& device, std::string_view name, const StringTable* strings,
-                         std::optional<usize> page) {
+                         std::optional<std::size_t> page) {
     if (!m_scrollText.loaded()) {
         return false;
     }
@@ -110,7 +112,7 @@ bool LevelMessages::open(RenderDevice& device, std::string_view name, const Stri
         message.scale, prompt);
 }
 
-LevelMessages::Cues LevelMessages::step(s32 ticks, u32 accepted) {
+LevelMessages::Cues LevelMessages::step(std::int32_t ticks, std::uint32_t accepted) {
     if (!m_scroll.active()) {
         return {};
     }

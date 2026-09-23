@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -7,7 +8,6 @@
 #include <string_view>
 #include <vector>
 
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/WorldCollision.h"
@@ -21,19 +21,19 @@ namespace gdl::game {
 /** A step of a legend item's rite the game shows: which, and whose item it is. */
 struct LegendEvent {
     LegendCue cue = LegendCue::Brandished;
-    s32 player = -1;
-    s32 realm = 0;
+    std::int32_t player = -1;
+    std::int32_t realm = 0;
 };
 
 /** The boss a realm keeps: which, and how it stands. */
 struct BossView {
-    s32 kind = -1;    ///< the original's kind, 34 the dragon to 44 the garm
-    std::string name; ///< "LICH"
-    f32 health = 0.0f;
-    f32 maxHealth = 1.0f;
+    std::int32_t kind = -1; ///< the original's kind, 34 the dragon to 44 the garm
+    std::string name;       ///< "LICH"
+    float health = 0.0f;
+    float maxHealth = 1.0f;
     bool awake = false;
     bool alive = false;
-    f32 fraction() const { return maxHealth > 0.0f ? std::max(health, 0.0f) / maxHealth : 0.0f; }
+    float fraction() const { return maxHealth > 0.0f ? std::max(health, 0.0f) / maxHealth : 0.0f; }
 };
 
 /**
@@ -60,19 +60,19 @@ public:
 
     /** Stands the boss of `kind` (`bossNameOf` it) at `position` facing `yaw`, asleep until
      * the party comes within `wakeDistance` (its table's threshold when nought). */
-    bool spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance = 0.0f);
+    bool spawn(std::int32_t kind, const Vec3& position, float yaw, float wakeDistance = 0.0f);
 
     /** The realm of the legend item that weakens this boss, or nought. */
-    s32 legendRealm() const { return legendRealmOf(m_kind); }
+    std::int32_t legendRealm() const { return legendRealmOf(m_kind); }
     /** Begins the rite of the boss's legend item, carried by `player`; false when the boss
      * has none, or it is already begun. */
-    bool bringLegend(s32 player);
+    bool bringLegend(std::int32_t player);
     /** The Dragon's ice axe acts on impact, not on the request to throw it.
      * Repeated impacts are ignored. Appearance is supplied separately at draw time. */
     void landLegend();
     const LegendRite& legend() const { return m_rite; }
 
-    void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
+    void update(std::int32_t ticks, float seconds, std::span<const EnemyView> players);
     std::vector<CritterBlow> takeBlows();
     std::vector<CritterLoss> takeLosses();
     std::vector<CritterCue> takeCues() { return m_fighter.takeCues(); }
@@ -85,9 +85,9 @@ public:
     bool curbed() const;
 
     std::vector<MissileTarget> targets() const;
-    std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
-    bool within(const Vec3& centre, f32 radius) const;
-    bool reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
+    std::optional<std::int32_t> struckBy(const Vec3& from, const Vec3& to, float radius) const;
+    bool within(const Vec3& centre, float radius) const;
+    bool reachedBy(const Vec3& centre, float radius, float arc, const Vec3& facing) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr) const;
 
@@ -99,26 +99,26 @@ public:
     ItemArchive* archive();
     const Vec3* position() const;
     /** The way it faces, and how big it stands; nought without a boss. */
-    f32 facing() const;
-    f32 radius() const;
+    float facing() const;
+    float radius() const;
     /** How high its body's centre stands, which the fight's camera keeps in view. */
-    f32 height() const;
+    float height() const;
     /** Camera attention uses the model root plus vertical drift, not the floor. */
     Vec3 cameraOffset() const;
     std::string_view moveName() const;
     /** The id targets and sweeps name the boss by. */
-    static constexpr s32 kTargetId = 0;
+    static constexpr std::int32_t kTargetId = 0;
 
 private:
-    void stageLegend(s32 ticks);
+    void stageLegend(std::int32_t ticks);
     void strikeWithLegend();
 
     Critters m_fighter; ///< holds the one boss
-    std::optional<s32> m_id;
-    s32 m_kind = -1;
+    std::optional<std::int32_t> m_id;
+    std::int32_t m_kind = -1;
     std::string m_name;
     bool m_awake = false;
-    f32 m_wakeDistance = 0.0f;
+    float m_wakeDistance = 0.0f;
     LegendRite m_rite;
     bool m_roarAsked = false;
     std::vector<LegendEvent> m_legendEvents;

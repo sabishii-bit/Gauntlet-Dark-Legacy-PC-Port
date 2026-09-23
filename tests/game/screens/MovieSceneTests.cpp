@@ -5,7 +5,6 @@
 
 #include "engine/app/Application.h"
 #include "engine/audio/AudioMixer.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
@@ -29,7 +28,7 @@ public:
 protected:
     void onInit() override { m_opened = m_scene.open(renderDevice(), m_mixer, m_movie); }
 
-    void onUpdate(f64 deltaSeconds) override {
+    void onUpdate(double deltaSeconds) override {
         if (m_opened) {
             m_scene.update(deltaSeconds);
         }
@@ -37,8 +36,8 @@ protected:
 
     void onRender(RenderDevice& device) override {
         const Extent2D extent = device.framebufferExtent();
-        const Mat4 projection =
-            makeScreenProjection(static_cast<f32>(extent.width), static_cast<f32>(extent.height));
+        const Mat4 projection = makeScreenProjection(static_cast<float>(extent.width),
+                                                     static_cast<float>(extent.height));
         m_scene.render(device, projection, Rect{0.0f, 0.0f, 320.0f, 240.0f});
         ++m_renderedFrames;
     }

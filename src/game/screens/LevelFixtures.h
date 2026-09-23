@@ -1,4 +1,6 @@
 #pragma once
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <span>
@@ -19,31 +21,32 @@ namespace gdl::game {
  * No player span or callback is retained. Clear before world/archive/device teardown. */
 class LevelFixtures {
 public:
-    static constexpr f32 kBlastRadius = 12.0f;
+    static constexpr float kBlastRadius = 12.0f;
     struct Resources {
         RenderDevice& device;
         LevelWorld& world;
         ItemArchive& weapons;
         EffectTrees& effects;
         LevelSoundscape& audio;
-        f32 difficultyGain = 1;
+        float difficultyGain = 1;
     };
     struct Events {
-        std::function<void(usize, f32, HurtKind, bool)> hurt;
-        std::function<void(s32, usize)> help;
-        std::function<void(s32, std::string_view)> card;
-        std::function<void(const Vec3&, f32, f32)> opponents;
+        std::function<void(std::size_t, float, HurtKind, bool)> hurt;
+        std::function<void(std::int32_t, std::size_t)> help;
+        std::function<void(std::int32_t, std::string_view)> card;
+        std::function<void(const Vec3&, float, float)> opponents;
     };
     void bind(const Resources& resources);
     void clear();
-    void setPlayerCount(s32 count);
+    void setPlayerCount(std::int32_t count);
     std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
-    void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
-    void strikeSafeRock(usize index, f32 power);
-    void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
-                      const Events& events);
-    void blast(const Vec3& position, f32 radius, f32 damage, std::span<PlayerRuntime> players,
+    void update(std::int32_t ticks, float seconds, std::span<PlayerRuntime> players,
+                const Events& events);
+    void strikeSafeRock(std::size_t index, float power);
+    void strikeBarrel(std::size_t barrel, float power, std::int32_t byPlayer,
+                      std::span<PlayerRuntime> players, const Events& events);
+    void blast(const Vec3& position, float radius, float damage, std::span<PlayerRuntime> players,
                const Events& events);
     void settleBlasts(std::span<PlayerRuntime> players, const Events& events);
     Chests& chests() { return m_chests; }
@@ -55,23 +58,23 @@ public:
     const SafeRocks& safeRocks() const { return m_safeRocks; }
 
 private:
-    void updateClouds(f32 seconds, std::span<PlayerRuntime> players, const Events& events);
-    void playGateSound(s32 subtype);
+    void updateClouds(float seconds, std::span<PlayerRuntime> players, const Events& events);
+    void playGateSound(std::int32_t subtype);
     void playRealmSound(std::string_view stem);
-    f32 trapDamageScale() const;
+    float trapDamageScale() const;
     std::optional<Resources> m_resources;
     /** Gas a poison barrel left hanging. */
     struct GasCloud {
         Vec3 position{0.0f, 0.0f, 0.0f};
-        f32 damage = 0.0f;
-        f32 secondsLeft = 0.0f;
+        float damage = 0.0f;
+        float secondsLeft = 0.0f;
     };
     std::vector<GasCloud> m_clouds;
     /** A blast yet to be felt: one barrel's sets off the next, in turn. */
     struct Blast {
         Vec3 position{0.0f, 0.0f, 0.0f};
-        f32 radius = 0.0f;
-        f32 damage = 0.0f;
+        float radius = 0.0f;
+        float damage = 0.0f;
     };
     std::vector<Blast> m_blasts;
 

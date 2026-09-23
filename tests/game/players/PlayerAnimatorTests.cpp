@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdint>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -14,8 +15,8 @@ using namespace gdl::game;
 using Catch::Approx;
 using Action = PlayerAnimator::Action;
 
-constexpr s32 kTicks = 2; ///< per frame at thirty frames a second
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr std::int32_t kTicks = 2; ///< per frame at thirty frames a second
+constexpr float kStep = 1.0f / 30.0f;
 
 /** The class sequences with their real lengths, each sliding the one node along x by its
  * own index so the pose tells which is playing. */
@@ -28,33 +29,20 @@ TreeInfo classTree() {
     tree.nodes.push_back(root);
     struct Entry {
         const char* name;
-        s32 frames;
-        s32 rate;
+        std::int32_t frames;
+        std::int32_t rate;
         bool repeats;
     };
-    const std::array<Entry, 22> entries{{{"READY", 60, 30, true},
-                                        {"IDLE1", 150, 45, false},
-                                        {"IDLE2", 71, 30, false},
-                                        {"IDLE2_LOOP", 69, 30, true},
-                                        {"START", 60, 30, false},
-                                        {"WALK1", 12, 30, false},
-                                        {"WALK2", 11, 30, false},
-                                        {"RUN1", 10, 30, false},
-                                        {"RUN2", 10, 30, false},
-                                        {"THROW1S", 10, 24, false},
-                                        {"THROW1", 3, 24, false},
-                                        {"THROW1R", 10, 24, false},
-                                        {"THROW2S", 10, 24, false},
-                                        {"THROW2", 2, 24, false},
-                                        {"THROW2R", 10, 24, false},
-                                        {"MAGICS", 11, 30, false},
-                                        {"MAGICR", 15, 30, false},
-                                        {"THROWPOTIONS", 11, 30, false},
-                                        {"THROWPOTIONR", 9, 30, false},
-                                        {"DEATH", 20, 30, false},
-                                        {"HITREACT", 11, 30, false},
-                                        {"STUN1", 15, 30, false}}};
-    u32 index = 0;
+    const std::array<Entry, 22> entries{
+        {{"READY", 60, 30, true},        {"IDLE1", 150, 45, false}, {"IDLE2", 71, 30, false},
+         {"IDLE2_LOOP", 69, 30, true},   {"START", 60, 30, false},  {"WALK1", 12, 30, false},
+         {"WALK2", 11, 30, false},       {"RUN1", 10, 30, false},   {"RUN2", 10, 30, false},
+         {"THROW1S", 10, 24, false},     {"THROW1", 3, 24, false},  {"THROW1R", 10, 24, false},
+         {"THROW2S", 10, 24, false},     {"THROW2", 2, 24, false},  {"THROW2R", 10, 24, false},
+         {"MAGICS", 11, 30, false},      {"MAGICR", 15, 30, false}, {"THROWPOTIONS", 11, 30, false},
+         {"THROWPOTIONR", 9, 30, false}, {"DEATH", 20, 30, false},  {"HITREACT", 11, 30, false},
+         {"STUN1", 15, 30, false}}};
+    std::uint32_t index = 0;
     for (const Entry& entry : entries) {
         TreeSequenceInfo sequence;
         sequence.name = entry.name;
@@ -65,7 +53,7 @@ TreeInfo classTree() {
         track.node = 0;
         track.flags = TrackInfo::channelBit(3);
         track.frames = {0};
-        track.values = {static_cast<f32>(index)};
+        track.values = {static_cast<float>(index)};
         sequence.tracks.push_back(track);
         sequence.trackOfNode = {0};
         tree.sequences.push_back(sequence);
@@ -74,7 +62,7 @@ TreeInfo classTree() {
     return tree;
 }
 
-f32 playingIndex(const PlayerAnimator& animator) {
+float playingIndex(const PlayerAnimator& animator) {
     return animator.pose().matrices()[0][3].x;
 }
 
@@ -207,7 +195,8 @@ TEST_CASE("an attack from the first half of a walk or run takes the moving wind-
     REQUIRE(plain.action() == Action::Ready);
 }
 
-TEST_CASE("the stick's magnitude picks standing, walking or running", "[game][players][animation]") {
+TEST_CASE("the stick's magnitude picks standing, walking or running",
+          "[game][players][animation]") {
     REQUIRE(PlayerAnimator::motionFor(0.0f) == PlayerMotion::Stand);
     REQUIRE(PlayerAnimator::motionFor(0.3f) == PlayerMotion::Walk);
     REQUIRE(PlayerAnimator::motionFor(0.75f) == PlayerMotion::Walk);
@@ -348,7 +337,7 @@ TEST_CASE("struck, a character flinches or reels where it stands and then carrie
     REQUIRE(animator.reacting());
     REQUIRE(animator.moveScale() == 0.0f);
     // Struck again meanwhile it is not set reeling anew, and nothing else is heeded.
-    const f32 frame = animator.player().frame();
+    const float frame = animator.player().frame();
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Reel);
     REQUIRE(animator.action() == Action::HitReact);
     REQUIRE(animator.player().frame() > frame);
@@ -370,7 +359,7 @@ TEST_CASE("struck, a character flinches or reels where it stands and then carrie
 TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it begins",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, s32 frames) {
+    const auto add = [&tree](const char* name, std::int32_t frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -415,7 +404,7 @@ TEST_CASE("a turbo move cuts in, plays through unheeding, and is known as it beg
 TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and is let down",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, s32 frames) {
+    const auto add = [&tree](const char* name, std::int32_t frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -471,7 +460,7 @@ TEST_CASE("the guard comes up while it is asked for, blocks once it is up, and i
 TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recovers",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, s32 frames) {
+    const auto add = [&tree](const char* name, std::int32_t frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -510,7 +499,7 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
 TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and falls can floor it",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, s32 frames) {
+    const auto add = [&tree](const char* name, std::int32_t frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;
@@ -593,7 +582,7 @@ TEST_CASE("a legend item is let go of with a potion's, the strong throw's or the
           "shot's gesture, and nothing else leaves the hand",
           "[game][players][animation]") {
     TreeInfo tree = classTree();
-    const auto add = [&tree](const char* name, s32 frames) {
+    const auto add = [&tree](const char* name, std::int32_t frames) {
         TreeSequenceInfo sequence = tree.sequences.front();
         sequence.name = name;
         sequence.frames = frames;

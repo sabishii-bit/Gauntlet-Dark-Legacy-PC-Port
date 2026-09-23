@@ -1,20 +1,20 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "engine/core/Types.h"
-
 namespace gdl::game {
 
 /** What the wizard says, page by page: the message it is in and the page. */
 struct VictoryCaption {
     std::string message;
-    usize page = 0;
-    usize shown = 0; ///< characters of the page shown so far, the way the original types them
+    std::size_t page = 0;
+    std::size_t shown = 0; ///< characters of the page shown so far, the way the original types them
 };
 
 /** A line the wizard speaks, from the level's bank. */
@@ -32,23 +32,33 @@ struct VictoryVoice {
  */
 class BossVictory {
 public:
-    enum class Stage : u8 { None, Waiting, Appearing, Defeat, Runes, Leaving, Gone, Done };
+    enum class Stage : std::uint8_t {
+        None,
+        Waiting,
+        Appearing,
+        Defeat,
+        Runes,
+        Leaving,
+        Gone,
+        Done
+    };
 
-    static constexpr s32 kWaitTicks = 300;      ///< five seconds after the fall
-    static constexpr s32 kLongWaitTicks = 600;  ///< ten for the demon and the garm
-    static constexpr s32 kFadeStep = 4;         ///< of 255, a tick, as the wizard comes
-    static constexpr s32 kTicksPerCharacter = 2;
-    static constexpr s32 kPagePauseTicks = 60;
-    static constexpr s32 kAfterDefeatTicks = 15; ///< half a second before the rune line
-    static constexpr s32 kAfterRunesTicks = 30;  ///< a second before he sees them off
-    static constexpr s32 kExitTicks = 120;       ///< then the party is taken out
-    static constexpr s32 kExitLongTicks = 600;   ///< or later, with gold still lying about
-    static constexpr s32 kExitSparkleTicks = 35; ///< the teleport shows this long before
+    static constexpr std::int32_t kWaitTicks = 300;     ///< five seconds after the fall
+    static constexpr std::int32_t kLongWaitTicks = 600; ///< ten for the demon and the garm
+    static constexpr std::int32_t kFadeStep = 4;        ///< of 255, a tick, as the wizard comes
+    static constexpr std::int32_t kTicksPerCharacter = 2;
+    static constexpr std::int32_t kPagePauseTicks = 60;
+    static constexpr std::int32_t kAfterDefeatTicks = 15; ///< half a second before the rune line
+    static constexpr std::int32_t kAfterRunesTicks = 30;  ///< a second before he sees them off
+    static constexpr std::int32_t kExitTicks = 120;       ///< then the party is taken out
+    static constexpr std::int32_t kExitLongTicks = 600;   ///< or later, with gold still lying about
+    static constexpr std::int32_t kExitSparkleTicks = 35; ///< the teleport shows this long before
 
     /** Begins for the boss `kind` in the realm whose levels' letter is `realm`, the party
      * having found `runesFound` of the realm's `runesInRealm` (bit masks of the runestones,
      * the way the level records number them), with `goldLeft` lying about. */
-    void begin(s32 kind, char realm, u16 runesInRealm, u16 runesFound, bool goldLeft);
+    void begin(std::int32_t kind, char realm, std::uint16_t runesInRealm, std::uint16_t runesFound,
+               bool goldLeft);
     /** Tells it whether gold still lies about: the wizard waits the long wait for it to be
      * gathered, and no longer than the short one once it is. */
     void setGoldLeft(bool left);
@@ -56,49 +66,49 @@ public:
 
     /** Moves it `ticks` on, told how long each page of the caption up is (none without
      * one). Returns the voices to start. */
-    std::vector<VictoryVoice> update(s32 ticks, std::span<const usize> pageLengths);
+    std::vector<VictoryVoice> update(std::int32_t ticks, std::span<const std::size_t> pageLengths);
 
     Stage stage() const { return m_stage; }
     bool running() const { return m_stage != Stage::None && m_stage != Stage::Done; }
     bool finished() const { return m_stage == Stage::Done; }
     /** The wizard's opacity, none until he comes. */
-    f32 wizardAlpha() const { return m_alpha; }
+    float wizardAlpha() const { return m_alpha; }
     bool wizardShown() const { return m_stage >= Stage::Appearing && m_stage <= Stage::Gone; }
     /** The caption up, if any. */
     const std::optional<VictoryCaption>& caption() const { return m_caption; }
     /** Whether the teleport's sparkle is on the party. */
     bool sparkling() const { return m_sparkling; }
     /** How the realm's runestones went: 0 none found, 1 some, 2 the one, 3 both. */
-    s32 runeQuality() const { return m_quality; }
+    std::int32_t runeQuality() const { return m_quality; }
 
     /** The defeat message of a boss kind (e.g. `LICH_SPEECH`), empty for one with none. */
-    static std::string_view defeatMessageOf(s32 kind);
+    static std::string_view defeatMessageOf(std::int32_t kind);
     /** The rune message for a quality. */
-    static std::string_view runeMessageOf(s32 quality);
+    static std::string_view runeMessageOf(std::int32_t quality);
     /** The voice of a boss's defeat and of its rune line. */
-    static std::string defeatVoiceOf(s32 kind, char realm);
-    static std::string runeVoiceOf(s32 kind, char realm, s32 quality);
+    static std::string defeatVoiceOf(std::int32_t kind, char realm);
+    static std::string runeVoiceOf(std::int32_t kind, char realm, std::int32_t quality);
     /** The quality of `found` against a realm's `all`. */
-    static s32 qualityOf(u16 all, u16 found);
+    static std::int32_t qualityOf(std::uint16_t all, std::uint16_t found);
 
 private:
-    void say(std::string_view message, s32 pauseAfter, const std::string& voice,
+    void say(std::string_view message, std::int32_t pauseAfter, const std::string& voice,
              std::vector<VictoryVoice>& voices);
     /** Types the caption on; true once every page has been read and the pause is over. */
-    bool type(s32 ticks, std::span<const usize> pageLengths);
+    bool type(std::int32_t ticks, std::span<const std::size_t> pageLengths);
     void leave();
 
     Stage m_stage = Stage::None;
-    s32 m_kind = -1;
+    std::int32_t m_kind = -1;
     char m_realm = 'G';
-    s32 m_quality = 0;
+    std::int32_t m_quality = 0;
     bool m_goldLeft = false;
-    s32 m_ticksLeft = 0;
-    f32 m_alpha = 0.0f;
+    std::int32_t m_ticksLeft = 0;
+    float m_alpha = 0.0f;
     std::optional<VictoryCaption> m_caption;
-    s32 m_typeTicks = 0;
-    s32 m_pauseTicks = 0;
-    s32 m_pauseAfter = 0;
+    std::int32_t m_typeTicks = 0;
+    std::int32_t m_pauseTicks = 0;
+    std::int32_t m_pauseAfter = 0;
     bool m_pageDone = false;
     bool m_pagesOver = false;
     bool m_sparkling = false;

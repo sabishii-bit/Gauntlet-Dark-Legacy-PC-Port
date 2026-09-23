@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -21,16 +23,16 @@ struct Fixture {
     std::vector<std::string> calls;
     LevelFixtures::Events events{
         .hurt =
-            [this](usize i, f32 damage, HurtKind kind, bool directed) {
+            [this](std::size_t i, float damage, HurtKind kind, bool directed) {
                 REQUIRE(damage == 5);
                 REQUIRE(kind == HurtKind::Blow);
                 REQUIRE(directed);
                 calls.push_back("player" + std::to_string(i));
             },
-        .help = [](s32, usize) { FAIL("Empty scenery has no help event"); },
-        .card = [](s32, std::string_view) { FAIL("Empty scenery has no pickup card"); },
+        .help = [](std::int32_t, std::size_t) { FAIL("Empty scenery has no help event"); },
+        .card = [](std::int32_t, std::string_view) { FAIL("Empty scenery has no pickup card"); },
         .opponents =
-            [this](const Vec3&, f32 radius, f32 damage) {
+            [this](const Vec3&, float radius, float damage) {
                 REQUIRE(radius == 2);
                 REQUIRE(damage == 5);
                 calls.emplace_back("opponents");

@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,12 +12,12 @@ using namespace gdl;
 using Catch::Approx;
 
 /** A track keying one channel with the given values at the given frames. */
-TrackInfo track(u32 node, u16 channel, std::vector<u16> frames, std::vector<f32> values,
-                bool pitchYawRoll = false) {
+TrackInfo track(std::uint32_t node, std::uint16_t channel, std::vector<std::uint16_t> frames,
+                std::vector<float> values, bool pitchYawRoll = false) {
     TrackInfo t;
     t.node = node;
-    t.flags = static_cast<u16>(TrackInfo::channelBit(channel) |
-                               (pitchYawRoll ? TrackInfo::kPitchYawRoll : 0));
+    t.flags = static_cast<std::uint16_t>(TrackInfo::channelBit(channel) |
+                                         (pitchYawRoll ? TrackInfo::kPitchYawRoll : 0));
     t.frames = std::move(frames);
     t.values = std::move(values);
     return t;

@@ -37,7 +37,7 @@ TEST_CASE("the Midway logo movie plays through", "[codec][movie][assets]") {
     REQUIRE(info.audioChannels == 2);
     REQUIRE(info.audioSampleRate == 48042);
 
-    std::vector<f32> audio;
+    std::vector<float> audio;
     bool sawColour = false;
     int updates = 0;
     while (playback.update(1.0 / 30.0) && updates < 1000) {

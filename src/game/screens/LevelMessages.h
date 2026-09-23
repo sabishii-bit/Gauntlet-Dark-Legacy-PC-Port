@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 
 #include "engine/assets/BitmapFont.h"
@@ -32,9 +34,9 @@ public:
     void clear();
     /** With no page, shows the whole message (the welcome); otherwise just that page. */
     bool open(RenderDevice& device, std::string_view name, const StringTable* strings,
-              std::optional<usize> page = std::nullopt);
+              std::optional<std::size_t> page = std::nullopt);
     /** Requests audio at the start/end of dismissal, never on ordinary page turns. */
-    Cues step(s32 ticks, u32 accepted);
+    Cues step(std::int32_t ticks, std::uint32_t accepted);
     void prepare(RenderDevice& device) { m_scroll.prepare(device); }
     void draw(Canvas& canvas) const { m_scroll.draw(canvas); }
 

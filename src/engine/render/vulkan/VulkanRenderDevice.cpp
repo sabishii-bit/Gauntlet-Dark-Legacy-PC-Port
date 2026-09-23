@@ -1,7 +1,9 @@
 #include "engine/render/vulkan/VulkanRenderDevice.h"
 
-#include <array>
 #include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 
@@ -57,7 +59,7 @@ VulkanRenderDevice::VulkanRenderDevice(Window& window, const RenderDeviceDesc& d
     createFrameResources();
     createPresentSemaphores();
 
-    constexpr std::array<u8, 4> kWhitePixel{255, 255, 255, 255};
+    constexpr std::array<std::uint8_t, 4> kWhitePixel{255, 255, 255, 255};
     m_whiteTexture = std::make_unique<VulkanTexture>(
         *m_context, descriptorPoolForTexture(), m_textureSetLayout,
         samplerFor(TextureDesc{1, 1, TextureFilter::Nearest}), TextureDesc{1, 1}, kWhitePixel);
@@ -268,8 +270,8 @@ bool VulkanRenderDevice::beginFrame() {
     const VkDevice device = m_context->device();
     FrameResources& frame = m_frames[m_frameIndex];
 
-    GDL_VK_CHECK(
-        vkWaitForFences(device, 1, &frame.inFlight, VK_TRUE, std::numeric_limits<u64>::max()));
+    GDL_VK_CHECK(vkWaitForFences(device, 1, &frame.inFlight, VK_TRUE,
+                                 std::numeric_limits<std::uint64_t>::max()));
 
     const VkResult acquire = m_swapchain->acquireNextImage(frame.imageAvailable, &m_imageIndex);
     if (acquire == VK_ERROR_OUT_OF_DATE_KHR) {
@@ -342,8 +344,8 @@ void VulkanRenderDevice::beginRendering() {
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
-    viewport.width = static_cast<f32>(extent.width);
-    viewport.height = static_cast<f32>(extent.height);
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -359,7 +361,8 @@ void VulkanRenderDevice::beginRendering() {
     m_renderingStarted = true;
 }
 
-void VulkanRenderDevice::updateTexture(Texture& texture, std::span<const u8> rgba8Pixels) {
+void VulkanRenderDevice::updateTexture(Texture& texture,
+                                       std::span<const std::uint8_t> rgba8Pixels) {
     GDL_VERIFY(m_frameOpen && !m_renderingStarted,
                "updateTexture must be called after beginFrame and before the frame's first draw");
     auto& vulkanTexture = dynamic_cast<VulkanTexture&>(texture);
@@ -371,9 +374,9 @@ void VulkanRenderDevice::updateTexture(Texture& texture, std::span<const u8> rgb
     const VkDeviceSize offset =
         (frame.uploadCursor + kUploadAlignment - 1) & ~(kUploadAlignment - 1);
     reserveUploadBuffer(frame, offset + bytes);
-    const std::span<u8> mapped(static_cast<u8*>(frame.uploadMapped),
-                               static_cast<usize>(frame.uploadCapacity));
-    std::memcpy(mapped.subspan(static_cast<usize>(offset), rgba8Pixels.size()).data(),
+    const std::span<std::uint8_t> mapped(static_cast<std::uint8_t*>(frame.uploadMapped),
+                                         static_cast<std::size_t>(frame.uploadCapacity));
+    std::memcpy(mapped.subspan(static_cast<std::size_t>(offset), rgba8Pixels.size()).data(),
                 rgba8Pixels.data(), rgba8Pixels.size());
     GDL_VK_CHECK(vmaFlushAllocation(m_context->allocator(), frame.uploadAllocation, offset, bytes));
     frame.uploadCursor = offset + bytes;
@@ -422,7 +425,7 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
     }
 
     FrameResources& frame = m_frames[m_frameIndex];
-    const u32 count = static_cast<u32>(triangles.size());
+    const std::uint32_t count = static_cast<std::uint32_t>(triangles.size());
     if (frame.vertexCursor + count > kMaxVerticesPerFrame) {
         if (!m_vertexOverflowReported) {
             log::warn("Immediate vertex buffer overflow ({} vertices per frame); draw skipped",
@@ -450,7 +453,7 @@ void VulkanRenderDevice::draw(const ImmediateBatch& batch, const Texture& textur
         dynamic_cast<const VulkanTexture&>(texture).descriptorSet(),
         dynamic_cast<const VulkanTexture&>(*second).descriptorSet()};
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(), 0,
-                            static_cast<u32>(sets.size()), sets.data(), 0, nullptr);
+                            static_cast<std::uint32_t>(sets.size()), sets.data(), 0, nullptr);
     const VulkanPipeline::PushConstants constants{
         transform, Vec4{state.uvOffset.x, state.uvOffset.y, state.alphaTest, state.darken},
         Vec4{state.uvScale.x, state.uvScale.y, state.maskedTexture != nullptr ? 1.0f : 0.0f, 0.0f}};
@@ -546,11 +549,11 @@ VkDescriptorPool VulkanRenderDevice::descriptorPoolForTexture() {
     return m_descriptorPools.back();
 }
 
-std::unique_ptr<Texture> VulkanRenderDevice::createTexture(const TextureDesc& desc,
-                                                           std::span<const u8> rgba8Pixels) {
+std::unique_ptr<Texture>
+VulkanRenderDevice::createTexture(const TextureDesc& desc,
+                                  std::span<const std::uint8_t> rgba8Pixels) {
     return std::make_unique<VulkanTexture>(*m_context, descriptorPoolForTexture(),
-                                           m_textureSetLayout, samplerFor(desc), desc,
-                                           rgba8Pixels);
+                                           m_textureSetLayout, samplerFor(desc), desc, rgba8Pixels);
 }
 
 const Texture& VulkanRenderDevice::whiteTexture() const {

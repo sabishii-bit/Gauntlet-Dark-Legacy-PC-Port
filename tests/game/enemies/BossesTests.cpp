@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 
@@ -14,10 +15,10 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr s32 kTicks = 2;
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr std::int32_t kTicks = 2;
+constexpr float kStep = 1.0f / 30.0f;
 
-EnemyView playerAt(const Vec3& position, s32 player = 0) {
+EnemyView playerAt(const Vec3& position, std::int32_t player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;

@@ -10,7 +10,7 @@ namespace gdl::game {
 /** One frame of movement: a unit direction (x right, y forward, as on a stick) and how hard. */
 struct MoveInput {
     Vec2 direction{0.0f, 0.0f};
-    f32 magnitude = 0.0f;
+    float magnitude = 0.0f;
 
     bool any() const { return magnitude > 0.0f; }
 };
@@ -33,7 +33,7 @@ struct PlayButtons {
     bool turbo = false;         ///< held
     bool chargePressed = false; ///< true only the frame it goes down
     bool attackPressed = false; ///< likewise
-    bool selectorUp = false; ///< these four true only the frame they go down
+    bool selectorUp = false;    ///< these four true only the frame they go down
     bool selectorDown = false;
     bool selectorLeft = false;
     bool selectorRight = false;

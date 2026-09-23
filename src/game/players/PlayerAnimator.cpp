@@ -1,11 +1,14 @@
 #include "game/players/PlayerAnimator.h"
 
+#include <cstddef>
+#include <cstdint>
+
 namespace gdl::game {
 
 namespace {
 
-constexpr usize index(PlayerAnimator::Action action) {
-    return static_cast<usize>(action);
+constexpr std::size_t index(PlayerAnimator::Action action) {
+    return static_cast<std::size_t>(action);
 }
 
 /** Whether the deed is a legend item's gesture. */
@@ -18,16 +21,16 @@ constexpr bool isLegend(PlayerDeed deed) {
 
 bool PlayerAnimator::bind(const TreeInfo& tree, bool enter) {
     unbind();
-    for (usize a = 0; a < kActionCount; ++a) {
+    for (std::size_t a = 0; a < kActionCount; ++a) {
         const auto sequence = tree.findSequence(kSequenceNames[a]);
-        m_sequences[a] = sequence.has_value() ? static_cast<s32>(*sequence) : -1;
+        m_sequences[a] = sequence.has_value() ? static_cast<std::int32_t>(*sequence) : -1;
     }
     if (m_sequences[index(Action::Ready)] < 0) {
         return false;
     }
     m_tree = &tree;
     m_entered = !enter;
-    const u32 stance = sequenceOf(Action::Ready);
+    const std::uint32_t stance = sequenceOf(Action::Ready);
     m_player.start(tree.sequences[stance], stance);
     m_pose.evaluate(tree, stance, 0.0f);
     m_previous = m_pose;
@@ -58,19 +61,19 @@ void PlayerAnimator::unbind() {
 }
 
 PlayerAnimator::Action PlayerAnimator::strafeStep(StrafeWay way, bool shooting) {
-    const usize base = index(shooting ? Action::StrafeShootForward1 : Action::StrafeForward1);
-    const usize steps = way == StrafeWay::None ? 0 : static_cast<usize>(way) - 1;
+    const std::size_t base = index(shooting ? Action::StrafeShootForward1 : Action::StrafeForward1);
+    const std::size_t steps = way == StrafeWay::None ? 0 : static_cast<std::size_t>(way) - 1;
     return static_cast<Action>(base + steps * 2);
 }
 
 PlayerAnimator::Action PlayerAnimator::firstHalfOf(Action step) {
-    const usize base = index(Action::StrafeForward1);
+    const std::size_t base = index(Action::StrafeForward1);
     return static_cast<Action>(base + (index(step) - base) / 2 * 2);
 }
 
 PlayerAnimator::Action PlayerAnimator::otherHalfOf(Action step) {
-    const usize base = index(Action::StrafeForward1);
-    const usize offset = index(step) - base;
+    const std::size_t base = index(Action::StrafeForward1);
+    const std::size_t offset = index(step) - base;
     return static_cast<Action>(base + (offset % 2 == 0 ? offset + 1 : offset - 1));
 }
 
@@ -92,24 +95,25 @@ bool PlayerAnimator::canBegin(PlayerDeed deed) const {
     if (action == Action::Ready) {
         return false;
     }
-    return bound() && m_sequences[index(action)] >= 0 && m_entered && !throwing() &&
-           !conjuring() && !reacting() && !turboing() && !dying();
+    return bound() && m_sequences[index(action)] >= 0 && m_entered && !throwing() && !conjuring() &&
+           !reacting() && !turboing() && !dying();
 }
 
-PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
+PlayerMotion PlayerAnimator::motionFor(float stickMagnitude) {
     if (stickMagnitude > kRunMagnitude) {
         return PlayerMotion::Run;
     }
     return stickMagnitude > 0.0f ? PlayerMotion::Walk : PlayerMotion::Stand;
 }
 
-u32 PlayerAnimator::sequenceOf(Action action) const {
-    const s32 sequence = m_sequences[index(action)];
-    return sequence >= 0 ? static_cast<u32>(sequence)
-                         : static_cast<u32>(m_sequences[index(Action::Ready)]);
+std::uint32_t PlayerAnimator::sequenceOf(Action action) const {
+    const std::int32_t sequence = m_sequences[index(action)];
+    return sequence >= 0 ? static_cast<std::uint32_t>(sequence)
+                         : static_cast<std::uint32_t>(m_sequences[index(Action::Ready)]);
 }
 
-void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed) {
+void PlayerAnimator::update(PlayerMotion motion, std::int32_t ticks, float seconds,
+                            PlayerDeed deed) {
     if (!bound()) {
         return;
     }
@@ -177,13 +181,13 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     // The guard: up at once when asked for, held for as long as it is, then let down. A
     // class without the sequences does not guard.
     const bool free = m_entered && !throwing() && !conjuring() && !reacting() && !turboing();
-    const bool asked = deed == PlayerDeed::Defend && free &&
-                       m_sequences[index(Action::Defend)] >= 0;
+    const bool asked =
+        deed == PlayerDeed::Defend && free && m_sequences[index(Action::Defend)] >= 0;
     if (asked || guarding()) {
         Decision guard;
         if (asked && (!guarding() || m_current == Action::DefendLower)) {
-            guard.action = m_sequences[index(Action::DefendRaise)] >= 0 ? Action::DefendRaise
-                                                                        : Action::Defend;
+            guard.action =
+                m_sequences[index(Action::DefendRaise)] >= 0 ? Action::DefendRaise : Action::Defend;
             guard.cut = Cut::Now;
         } else if (asked) {
             guard.action = Action::Defend;
@@ -232,8 +236,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // A class without the throw's sequences does not throw.
     attack = attack && m_sequences[index(Action::Throw)] >= 0;
-    const bool stepping = m_strafe != StrafeWay::None && motion != PlayerMotion::Stand &&
-                          !throwing() && !conjuring();
+    const bool stepping =
+        m_strafe != StrafeWay::None && motion != PlayerMotion::Stand && !throwing() && !conjuring();
     if (stepping && attack && m_sequences[index(strafeStep(m_strafe, true))] >= 0) {
         play(decide(strafeStep(m_strafe, true)), seconds);
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
@@ -341,29 +345,19 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
             d.action = Action::Run1;
         }
         break;
-    case Action::Start:
-        break;
+    case Action::Start: break;
     case Action::Throw:
     case Action::ThrowMoving:
         // The wind-up gives way to the release at its end, or at once from its second frame.
         d.action = m_current == Action::Throw ? Action::ThrowRelease : Action::ThrowMovingRelease;
         d.cut = m_player.frame() >= kReleaseFrame ? Cut::IfDifferent : Cut::WhenDoneIfDifferent;
         break;
-    case Action::ThrowRelease:
-        d.action = Action::ThrowRecover;
-        break;
-    case Action::ThrowMovingRelease:
-        d.action = Action::ThrowMovingRecover;
-        break;
+    case Action::ThrowRelease: d.action = Action::ThrowRecover; break;
+    case Action::ThrowMovingRelease: d.action = Action::ThrowMovingRecover; break;
     case Action::ThrowRecover:
-    case Action::ThrowMovingRecover:
-        break; // whatever is asked next, once recovered
-    case Action::UsePotion:
-        d.action = Action::UsePotionRelease;
-        break;
-    case Action::ThrowPotion:
-        d.action = Action::ThrowPotionRelease;
-        break;
+    case Action::ThrowMovingRecover: break; // whatever is asked next, once recovered
+    case Action::UsePotion: d.action = Action::UsePotionRelease; break;
+    case Action::ThrowPotion: d.action = Action::ThrowPotionRelease; break;
     case Action::UsePotionRelease:
     case Action::ThrowPotionRelease:
     case Action::Death:
@@ -375,25 +369,16 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::DefendRaise:
     case Action::Defend:
     case Action::DefendLower:
-    case Action::StrongThrowRecover:
-        break; // whatever is asked next, once let go
+    case Action::StrongThrowRecover: break; // whatever is asked next, once let go
     case Action::StrongThrow:
         d.action = Action::StrongThrowRecover; // the weapon leaves as the wind-up ends
         break;
-    case Action::SpecialShot:
-        d.action = Action::SpecialShotRecover;
-        break;
-    case Action::SpecialShotRecover:
-        break;
-    case Action::FallBack:
-        d.action = Action::GetUpBack;
-        break;
-    case Action::FallForward:
-        d.action = Action::GetUpForward;
-        break;
+    case Action::SpecialShot: d.action = Action::SpecialShotRecover; break;
+    case Action::SpecialShotRecover: break;
+    case Action::FallBack: d.action = Action::GetUpBack; break;
+    case Action::FallForward: d.action = Action::GetUpForward; break;
     case Action::GetUpBack:
-    case Action::GetUpForward:
-        break;
+    case Action::GetUpForward: break;
     default:
         // A strafing step gives way to its other half while the same way is kept.
         if (strafing() && requested == firstHalfOf(m_current)) {
@@ -423,8 +408,8 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     return d;
 }
 
-void PlayerAnimator::play(const Decision& decision, f32 seconds) {
-    const u32 target = sequenceOf(decision.action);
+void PlayerAnimator::play(const Decision& decision, float seconds) {
+    const std::uint32_t target = sequenceOf(decision.action);
     m_player.advance(seconds, decision.repeat);
     const bool done = m_player.finished();
     const bool different = !m_player.playing() || m_player.sequence() != target;

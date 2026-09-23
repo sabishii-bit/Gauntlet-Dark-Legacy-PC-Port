@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdint>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -17,7 +18,7 @@ using namespace gdl;
 std::filesystem::path sampleSet(std::string_view name) {
     const auto dir = test::scratchDirectory(name);
     std::filesystem::create_directories(dir / "samples");
-    const std::array<s16, 4> kBlip{0, 16384, -16384, 0};
+    const std::array<std::int16_t, 4> kBlip{0, 16384, -16384, 0};
     writeFile(dir / "samples/000.wav", formats::encodeWav(kBlip, 12000, 1));
     writeFile(dir / "samples/001.wav", formats::encodeWav(kBlip, 24000, 1));
     writeTextFile(dir / "sounds.json", R"({

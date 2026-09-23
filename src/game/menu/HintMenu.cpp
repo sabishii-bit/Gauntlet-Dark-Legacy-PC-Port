@@ -1,5 +1,6 @@
 #include "game/menu/HintMenu.h"
 
+#include <cstdint>
 #include <utility>
 
 namespace gdl::game {
@@ -41,8 +42,7 @@ MenuDefinition HintMenu::topicsDefinition(bool fadeBackdrop) const {
     return menu;
 }
 
-bool HintMenu::open(const TextPainter& painter, const MenuScreen& screen,
-                    HintMenuLabels labels) {
+bool HintMenu::open(const TextPainter& painter, const MenuScreen& screen, HintMenuLabels labels) {
     close();
     if (!painter.ready() || labels.topics.empty()) {
         return false;
@@ -55,7 +55,8 @@ bool HintMenu::open(const TextPainter& painter, const MenuScreen& screen,
 }
 
 void HintMenu::read(const TextPainter& painter, std::string title,
-                    std::vector<std::string> passages, f32 scale, bool centred, s32 gap) {
+                    std::vector<std::string> passages, float scale, bool centred,
+                    std::int32_t gap) {
     MenuDefinition menu = scrollDefinition(m_labels);
     menu.title = std::move(title);
     menu.titleScale = kPageTitleScale;
@@ -83,7 +84,7 @@ void HintMenu::leave(RenderDevice& device) {
     m_topics.close();
 }
 
-HintMenuEvent HintMenu::update(RenderDevice& device, const MenuInput& input, s32 ticks) {
+HintMenuEvent HintMenu::update(RenderDevice& device, const MenuInput& input, std::int32_t ticks) {
     // Nothing answers while the scroll burns, as the original blanks the controls.
     const bool burning = m_fire.active();
     m_fire.step(ticks);
@@ -92,7 +93,7 @@ HintMenuEvent HintMenu::update(RenderDevice& device, const MenuInput& input, s32
         const MenuEvent event = m_page.update(heard, ticks);
         if (event.action == MenuAction::Back && m_painter != nullptr) {
             // Back to the list where it was left, the scroll staying as it is.
-            const s32 selection = m_topics.selection();
+            const std::int32_t selection = m_topics.selection();
             m_page = OptionMenu{};
             m_topics.open(topicsDefinition(false), *m_painter, m_screen, selection);
             return HintMenuEvent{HintMenuEvent::Kind::Returned, 0};
@@ -104,15 +105,10 @@ HintMenuEvent HintMenu::update(RenderDevice& device, const MenuInput& input, s32
     }
     const MenuEvent event = m_topics.update(heard, ticks);
     switch (event.action) {
-    case MenuAction::Moved:
-        return HintMenuEvent{HintMenuEvent::Kind::Moved, 0};
-    case MenuAction::Choice:
-        return HintMenuEvent{HintMenuEvent::Kind::Asked, event.code};
-    case MenuAction::Back:
-        leave(device);
-        return HintMenuEvent{HintMenuEvent::Kind::Left, 0};
-    default:
-        return {};
+    case MenuAction::Moved: return HintMenuEvent{HintMenuEvent::Kind::Moved, 0};
+    case MenuAction::Choice: return HintMenuEvent{HintMenuEvent::Kind::Asked, event.code};
+    case MenuAction::Back: leave(device); return HintMenuEvent{HintMenuEvent::Kind::Left, 0};
+    default: return {};
     }
 }
 

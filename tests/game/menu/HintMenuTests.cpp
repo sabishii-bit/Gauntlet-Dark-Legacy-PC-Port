@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -17,7 +18,7 @@ using namespace gdl::game;
 
 BitmapFont wideFont() {
     std::vector<BitmapGlyph> glyphs;
-    for (s32 c = 'A'; c <= 'Z'; ++c) {
+    for (std::int32_t c = 'A'; c <= 'Z'; ++c) {
         glyphs.push_back({c, 8, 0, 0});
     }
     return BitmapFont::fromGlyphs(10, 4, std::move(glyphs));
@@ -103,7 +104,7 @@ TEST_CASE("the hint scroll lists its topics, answers one with a page and returns
 
     // A lone centred passage sits about the middle of the screen.
     f.menu.read(f.painter, "A HINT", {"ONE\nTWO"}, 1.0f, true, 0);
-    const s32 lineHeight = f.painter.lineHeight(HintMenu::kPageScale);
+    const std::int32_t lineHeight = f.painter.lineHeight(HintMenu::kPageScale);
     REQUIRE(f.menu.page().bodyTop() == 192 - lineHeight);
 }
 
@@ -125,15 +126,13 @@ TEST_CASE("backing out of the topics burns the scroll away", "[game][menu][hints
     // Without the burn frames it simply fades.
     HintMenu plain;
     REQUIRE(plain.open(f.painter, MenuScreen{}, labels()));
-    REQUIRE(plain.update(f.device, press(false, false, true), 2).kind ==
-            HintMenuEvent::Kind::Left);
+    REQUIRE(plain.update(f.device, press(false, false, true), 2).kind == HintMenuEvent::Kind::Left);
     REQUIRE_FALSE(plain.burning());
     plain.close();
     REQUIRE_FALSE(plain.active());
 }
 
-TEST_CASE("the hint scroll draws its page's passages in ink on the scroll",
-          "[game][menu][hints]") {
+TEST_CASE("the hint scroll draws its page's passages in ink on the scroll", "[game][menu][hints]") {
     Fixture f;
     REQUIRE(f.menu.open(f.painter, MenuScreen{}, labels()));
     f.menu.update(f.device, press(false, true, false), 2);
@@ -147,8 +146,8 @@ TEST_CASE("the hint scroll draws its page's passages in ink on the scroll",
     bool ink = false;
     for (const test::RecordedDraw& draw : f.device.draws) {
         for (const ImmediateVertex& vertex : draw.vertices) {
-            ink = ink || (vertex.color.r == HintMenu::kInk.r && vertex.color.g == HintMenu::kInk.g &&
-                          vertex.color.b == HintMenu::kInk.b);
+            ink = ink || (vertex.color.r == HintMenu::kInk.r &&
+                          vertex.color.g == HintMenu::kInk.g && vertex.color.b == HintMenu::kInk.b);
         }
     }
     REQUIRE(ink);

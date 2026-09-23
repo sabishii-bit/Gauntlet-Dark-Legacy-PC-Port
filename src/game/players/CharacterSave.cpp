@@ -1,6 +1,8 @@
 #include "game/players/CharacterSave.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <format>
 #include <system_error>
@@ -17,7 +19,7 @@ namespace {
 
 using Json = nlohmann::json;
 
-constexpr s32 kSaveFormatVersion = 1;
+constexpr std::int32_t kSaveFormatVersion = 1;
 
 /** What is carried; only the powerup slots that hold something are written. */
 Json inventoryJson(const Inventory& inventory) {
@@ -37,18 +39,17 @@ Json inventoryJson(const Inventory& inventory) {
 Inventory inventoryFromJson(const Json& object) {
     Inventory inventory;
     inventory.keys = std::clamp(object.value("keys", 0), 0, Inventory::kMostKeys);
-    inventory.potions = object.value("potions", std::vector<s32>{});
+    inventory.potions = object.value("potions", std::vector<std::int32_t>{});
     inventory.potions.resize(
-        std::min(inventory.potions.size(), static_cast<usize>(Inventory::kMostPotions)));
-    usize slot = 0;
+        std::min(inventory.potions.size(), static_cast<std::size_t>(Inventory::kMostPotions)));
+    std::size_t slot = 0;
     for (const Json& entry : object.value("powerups", Json::array())) {
         if (slot >= inventory.powerups.size()) {
             break;
         }
-        inventory.powerups[slot++] =
-            PowerupSlot{entry.value("strength", 0.0f), entry.value("kind", 0),
-                        entry.value("charge", 0.0f), entry.value("flags", 0U),
-                        entry.value("on", true)};
+        inventory.powerups[slot++] = PowerupSlot{
+            entry.value("strength", 0.0f), entry.value("kind", 0), entry.value("charge", 0.0f),
+            entry.value("flags", 0U), entry.value("on", true)};
     }
     return inventory;
 }
@@ -62,21 +63,26 @@ Json relicsJson(const Relics& relics) {
 
 Relics relicsFromJson(const Json& object) {
     Relics relics;
-    relics.runes = static_cast<u16>(object.value("runes", 0U));
-    relics.legends = static_cast<u16>(object.value("legends", 0U));
-    relics.shards = static_cast<u16>(object.value("shards", 0U));
-    const auto pieces = object.value("gargoylePieces", std::vector<s32>{});
-    for (usize kind = 0; kind < relics.gargoylePieces.size() && kind < pieces.size(); ++kind) {
+    relics.runes = static_cast<std::uint16_t>(object.value("runes", 0U));
+    relics.legends = static_cast<std::uint16_t>(object.value("legends", 0U));
+    relics.shards = static_cast<std::uint16_t>(object.value("shards", 0U));
+    const auto pieces = object.value("gargoylePieces", std::vector<std::int32_t>{});
+    for (std::size_t kind = 0; kind < relics.gargoylePieces.size() && kind < pieces.size();
+         ++kind) {
         relics.gargoylePieces[kind] = pieces[kind];
     }
     return relics;
 }
 
 Json progressJson(const ClassProgress& progress) {
-    return Json{{"experience", progress.experience}, {"health", progress.health},
-                {"fightAdd", progress.fightAdd},     {"armorAdd", progress.armorAdd},
-                {"magicAdd", progress.magicAdd},     {"speedAdd", progress.speedAdd},
-                {"crystals", progress.crystals},     {"unlocked", progress.unlocked},
+    return Json{{"experience", progress.experience},
+                {"health", progress.health},
+                {"fightAdd", progress.fightAdd},
+                {"armorAdd", progress.armorAdd},
+                {"magicAdd", progress.magicAdd},
+                {"speedAdd", progress.speedAdd},
+                {"crystals", progress.crystals},
+                {"unlocked", progress.unlocked},
                 {"inventory", inventoryJson(progress.inventory)},
                 {"relics", relicsJson(progress.relics)}};
 }
@@ -96,8 +102,9 @@ ClassProgress progressFromJson(const Json& object) {
     if (object.contains("relics")) {
         progress.relics = relicsFromJson(object.at("relics"));
     }
-    const auto crystals = object.value("crystals", std::vector<s32>{});
-    for (usize realm = 0; realm < progress.crystals.size() && realm < crystals.size(); ++realm) {
+    const auto crystals = object.value("crystals", std::vector<std::int32_t>{});
+    for (std::size_t realm = 0; realm < progress.crystals.size() && realm < crystals.size();
+         ++realm) {
         progress.crystals[realm] = crystals[realm];
     }
     return progress;
@@ -116,8 +123,8 @@ std::string CharacterSave::toJson() const {
     root["helpSeen"] = helpSeen;
     root["levelTotal"] = levelTotal;
     Json progress = Json::object();
-    for (s32 i = 0; i < kClassCount; ++i) {
-        progress[std::string(classCode(i))] = progressJson(classes[static_cast<usize>(i)]);
+    for (std::int32_t i = 0; i < kClassCount; ++i) {
+        progress[std::string(classCode(i))] = progressJson(classes[static_cast<std::size_t>(i)]);
     }
     root["classes"] = progress;
     return root.dump(2) + "\n";
@@ -135,11 +142,11 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     }
     CharacterSave save;
     save.name = root.at("name").get<std::string>();
-    save.character = root.at("character").get<s32>();
+    save.character = root.at("character").get<std::int32_t>();
     save.color = root.value("color", 0);
-    save.classUnlock = static_cast<u16>(root.value("classUnlock", 0));
+    save.classUnlock = static_cast<std::uint16_t>(root.value("classUnlock", 0));
     save.gold = root.value("gold", 0);
-    save.helpSeen = root.value("helpSeen", std::vector<s32>{});
+    save.helpSeen = root.value("helpSeen", std::vector<std::int32_t>{});
     std::ranges::sort(save.helpSeen);
     save.levelTotal = root.value("levelTotal", 0);
     if (save.character < 0 || save.character >= kClassCount || save.color < 0 ||
@@ -148,17 +155,17 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     }
     if (root.contains("classes")) {
         const Json& progress = root.at("classes");
-        for (s32 i = 0; i < kClassCount; ++i) {
+        for (std::int32_t i = 0; i < kClassCount; ++i) {
             const std::string code(classCode(i));
             if (progress.contains(code)) {
-                save.classes[static_cast<usize>(i)] = progressFromJson(progress.at(code));
+                save.classes[static_cast<std::size_t>(i)] = progressFromJson(progress.at(code));
             }
         }
     }
     return save;
 }
 
-bool SaveSlots::open(const std::filesystem::path& directory, usize count) {
+bool SaveSlots::open(const std::filesystem::path& directory, std::size_t count) {
     std::error_code error;
     std::filesystem::create_directories(directory, error);
     if (error) {
@@ -173,12 +180,12 @@ bool SaveSlots::open(const std::filesystem::path& directory, usize count) {
     return true;
 }
 
-std::filesystem::path SaveSlots::path(usize index) const {
+std::filesystem::path SaveSlots::path(std::size_t index) const {
     return m_directory / std::format("slot{}.json", index + 1);
 }
 
 void SaveSlots::refresh() {
-    for (usize i = 0; i < m_slots.size(); ++i) {
+    for (std::size_t i = 0; i < m_slots.size(); ++i) {
         SaveSlotInfo& info = m_slots[i];
         info = SaveSlotInfo{};
         const std::filesystem::path file = path(i);
@@ -201,7 +208,7 @@ bool SaveSlots::anySaved() const {
     return std::ranges::any_of(m_slots, [](const SaveSlotInfo& info) { return info.exists; });
 }
 
-bool SaveSlots::load(usize index, CharacterSave& out) const {
+bool SaveSlots::load(std::size_t index, CharacterSave& out) const {
     if (index >= m_slots.size() || !m_slots[index].exists) {
         return false;
     }
@@ -214,7 +221,7 @@ bool SaveSlots::load(usize index, CharacterSave& out) const {
     }
 }
 
-bool SaveSlots::write(usize index, const CharacterSave& save) {
+bool SaveSlots::write(std::size_t index, const CharacterSave& save) {
     if (index >= m_slots.size()) {
         return false;
     }

@@ -1,15 +1,15 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
-
-#include "engine/core/Types.h"
 
 namespace gdl::game {
 
 /** The screens of the pre-game attract loop, in the order the original cycles them. */
-enum class AttractScreen : u8 {
+enum class AttractScreen : std::uint8_t {
     Credits = 0,
     TitleMovie = 1,
     Movie = 2,
@@ -24,7 +24,7 @@ enum class AttractScreen : u8 {
 
 struct AttractEntry {
     AttractScreen screen;
-    s32 variant; ///< movie table row, or a screen-specific style
+    std::int32_t variant; ///< movie table row, or a screen-specific style
 };
 
 struct AttractStep {
@@ -35,7 +35,7 @@ struct AttractStep {
 /** Walks the attract screen table; the "wave" advances each time the table wraps. */
 class AttractSequencer {
 public:
-    static constexpr u32 kWaveCount = 4;
+    static constexpr std::uint32_t kWaveCount = 4;
     static constexpr std::array<AttractEntry, 12> kScreenTable{{
         {AttractScreen::TitleMovie, 0},
         {AttractScreen::Movie, 1},
@@ -55,15 +55,15 @@ public:
     AttractStep next();
 
     void reset();
-    u32 wave() const { return m_wave; }
-    usize position() const { return m_position; }
+    std::uint32_t wave() const { return m_wave; }
+    std::size_t position() const { return m_position; }
 
     /** Movie played for a movie table row in a given wave. */
-    static std::string_view movieName(s32 variant, u32 wave);
+    static std::string_view movieName(std::int32_t variant, std::uint32_t wave);
 
 private:
-    usize m_position = 0;
-    u32 m_wave = 0;
+    std::size_t m_position = 0;
+    std::uint32_t m_wave = 0;
 };
 
 } // namespace gdl::game

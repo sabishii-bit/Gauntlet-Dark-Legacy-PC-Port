@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -55,7 +57,7 @@ TEST_CASE("a message table's lists name messages in their own order", "[assets][
     REQUIRE(table.findList("NOPE") == nullptr);
     const MessageList* greetings = table.findList("GREETINGS");
     REQUIRE(greetings != nullptr);
-    REQUIRE(greetings->messages == std::vector<s32>{1, 0, 9});
+    REQUIRE(greetings->messages == std::vector<std::int32_t>{1, 0, 9});
     REQUIRE(table.listed(*greetings, 1) == &table.message(0));
     REQUIRE(table.listed(*greetings, 2) == nullptr); // names no message of the table
     REQUIRE(table.listed(*greetings, 3) == nullptr); // past the list's end
@@ -127,12 +129,12 @@ TEST_CASE("the shipped English has every scroll, hint and help message, word for
         REQUIRE(original.load(path));
         MessageTable translated;
         REQUIRE(translated.load(path));
-        const usize taken = translated.translate(strings, rom.prefix);
+        const std::size_t taken = translated.translate(strings, rom.prefix);
         REQUIRE(taken > 0);
         if (rom.whole) {
             REQUIRE(taken == original.size());
         }
-        for (u32 i = 0; i < original.size(); ++i) {
+        for (std::uint32_t i = 0; i < original.size(); ++i) {
             REQUIRE(translated.message(i).pages == original.message(i).pages);
         }
     }

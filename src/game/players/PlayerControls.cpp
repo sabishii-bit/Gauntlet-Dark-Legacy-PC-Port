@@ -17,22 +17,21 @@ bool anyButtonDown(const Input& input, int pad, std::span<const PadButton> butto
 }
 
 /** The stick's deflection beyond the dead zone, rescaled so full tilt stays 1. */
-Vec2 stick(const Input& input, int pad, f32 deadZone) {
+Vec2 stick(const Input& input, int pad, float deadZone) {
     // The pad's y axis grows downwards; forward is up.
     const Vec2 raw{input.padAxis(pad, PadAxis::LeftX), -input.padAxis(pad, PadAxis::LeftY)};
-    const f32 length = glm::length(raw);
+    const float length = glm::length(raw);
     if (length <= deadZone || length <= 0.0f) {
         return Vec2{0.0f, 0.0f};
     }
-    const f32 usable = std::clamp(deadZone, 0.0f, 0.99f);
-    const f32 scaled = std::min(1.0f, (length - usable) / (1.0f - usable));
+    const float usable = std::clamp(deadZone, 0.0f, 0.99f);
+    const float scaled = std::min(1.0f, (length - usable) / (1.0f - usable));
     return raw / length * scaled;
 }
 
 } // namespace
 
-MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool keyboard,
-                        int pad) {
+MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool keyboard, int pad) {
     Vec2 sum{0.0f, 0.0f};
     if (keyboard) {
         sum.x += anyKeyDown(input, bindings.right) ? 1.0f : 0.0f;
@@ -59,7 +58,7 @@ MoveInput readMoveInput(const Input& input, const PlayBindings& bindings, bool k
         sum.y -= anyButtonDown(input, index, bindings.padDown) ? 1.0f : 0.0f;
     }
     MoveInput out;
-    const f32 length = glm::length(sum);
+    const float length = glm::length(sum);
     if (length > 0.0f) {
         out.direction = sum / length;
         out.magnitude = std::min(1.0f, length);
@@ -87,8 +86,7 @@ bool bound(const Input& input, std::span<const Key> keys, std::span<const PadBut
         last = first - 1;
     }
     for (int index = first; index <= last; ++index) {
-        if (input.isPadConnected(index) &&
-            std::ranges::any_of(buttons, [&](PadButton button) {
+        if (input.isPadConnected(index) && std::ranges::any_of(buttons, [&](PadButton button) {
                 return edge ? input.wasPadButtonPressed(index, button)
                             : input.isPadButtonDown(index, button);
             })) {

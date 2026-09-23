@@ -1,6 +1,8 @@
 #include "game/app/CommandLine.h"
 
 #include <charconv>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <system_error>
 #include <utility>
@@ -26,7 +28,7 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
     result.options = std::move(defaultOptions);
     ApplicationDesc& desc = result.desc;
 
-    for (usize i = 0; i < args.size(); ++i) {
+    for (std::size_t i = 0; i < args.size(); ++i) {
         const std::string_view arg = args[i];
         const bool hasValue = i + 1 < args.size();
 
@@ -68,7 +70,7 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
                 return fail(std::move(desc), "--frames requires a number");
             }
             const std::string_view value = args[++i];
-            u64 frames = 0;
+            std::uint64_t frames = 0;
             const auto [end, error] =
                 std::from_chars(value.data(), value.data() + value.size(), frames);
             if (error != std::errc{} || end != value.data() + value.size()) {

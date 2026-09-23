@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 
 namespace gdl::game {
@@ -9,8 +10,8 @@ namespace gdl::game {
 namespace {
 
 struct PowerupName {
-    s32 kind;
-    u32 flags;
+    std::int32_t kind;
+    std::uint32_t flags;
     std::string_view text;
 };
 
@@ -113,28 +114,28 @@ PowerupEffects PowerupEffects::of(const Inventory& inventory) {
     return effects;
 }
 
-f32 PowerupEffects::magicPower(s32 magicStat) const {
-    constexpr f32 kStatScale = 0.001f;
+float PowerupEffects::magicPower(std::int32_t magicStat) const {
+    constexpr float kStatScale = 0.001f;
     return kLeastMagicPower +
-           kStatScale * static_cast<f32>(magicStat) * (kMostMagicPower - kLeastMagicPower) +
+           kStatScale * static_cast<float>(magicStat) * (kMostMagicPower - kLeastMagicPower) +
            magicAdd;
 }
 
-s32 PowerupEffects::shots() const {
+std::int32_t PowerupEffects::shots() const {
     if ((weapon & powerup::kFiveWayShot) != 0) {
         return 5;
     }
     return (weapon & powerup::kThreeWayShot) != 0 ? 3 : 1;
 }
 
-f32 PowerupEffects::bodyAlpha(f32 seconds) const {
+float PowerupEffects::bodyAlpha(float seconds) const {
     if (!invisible()) {
         return 1.0f;
     }
-    return kInvisibleAlpha - kInvisibleWaver * std::sin(2.0f * std::numbers::pi_v<f32> * seconds);
+    return kInvisibleAlpha - kInvisibleWaver * std::sin(2.0f * std::numbers::pi_v<float> * seconds);
 }
 
-std::string_view powerupTextId(s32 kind, u32 flags) {
+std::string_view powerupTextId(std::int32_t kind, std::uint32_t flags) {
     for (const PowerupName& name : kNames) {
         if (name.kind == kind && (name.flags == 0 || (name.flags & flags) == name.flags)) {
             return name.text;

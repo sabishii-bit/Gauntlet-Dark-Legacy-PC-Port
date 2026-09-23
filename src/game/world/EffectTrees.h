@@ -1,12 +1,13 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/AnimationPlayer.h"
@@ -26,70 +27,71 @@ namespace gdl::game {
  */
 class EffectTrees {
 public:
-    static constexpr f32 kStillSeconds = 1.0f; ///< how long a tree without a sequence shows
+    static constexpr float kStillSeconds = 1.0f; ///< how long a tree without a sequence shows
 
     /** How an effect is set going, beyond where. */
     struct Setting {
-        f32 scale = 1.0f;
-        f32 yaw = 0.0f;                   ///< turned about the upright
-        Vec3 velocity{0.0f, 0.0f, 0.0f};  ///< carried along, as what a move sends flying is
-        f32 seconds = 0.0f; ///< over nought, it repeats for this long instead of playing once
-        bool loop = true;   ///< with seconds, false holds the final pose until the lifetime ends
+        float scale = 1.0f;
+        float yaw = 0.0f;                ///< turned about the upright
+        Vec3 velocity{0.0f, 0.0f, 0.0f}; ///< carried along, as what a move sends flying is
+        float seconds = 0.0f; ///< over nought, it repeats for this long instead of playing once
+        bool loop = true;     ///< with seconds, false holds the final pose until the lifetime ends
         /** With `seconds`: the tree plays once and this one then repeats in its place. */
         std::string then;
         bool unlit = false;
         bool depthWrite = true;
         Color tint = Color::white();
-        f32 playbackRate = 1.0f; ///< animation speed, independent of motion and particle clocks
+        float playbackRate = 1.0f; ///< animation speed, independent of motion and particle clocks
     };
 
     /** One effect playing. */
     struct Effect {
         std::string name;
-        u32 id = 0;
+        std::uint32_t id = 0;
         Vec3 position{0.0f, 0.0f, 0.0f};
-        f32 scale = 1.0f;
-        f32 yaw = 0.0f;
+        float scale = 1.0f;
+        float yaw = 0.0f;
         Vec3 velocity{0.0f, 0.0f, 0.0f};
         bool repeats = false;
-        bool timed = false;        ///< lifetime is separate from animation speed or completion
-        std::string then;          ///< the tree that takes over once this has played
+        bool timed = false; ///< lifetime is separate from animation speed or completion
+        std::string then;   ///< the tree that takes over once this has played
         RenderDevice* device = nullptr;
         const TreeInfo* tree = nullptr;
         ItemArchive* archive = nullptr;
         TreeModel model;
         TreePose pose;
         AnimationPlayer player;
-        f32 secondsLeft = 0.0f; ///< for a tree without a sequence
+        float secondsLeft = 0.0f; ///< for a tree without a sequence
         bool unlit = false;
         bool depthWrite = true;
         Color tint = Color::white();
-        f32 playbackRate = 1.0f;
+        float playbackRate = 1.0f;
         ParticleField trails; ///< code-created emitters following the effect's root
     };
 
     /** Starts `tree` of `archive` (which must outlive the effect) at `position`; false, with
      * a warning, when the archive lacks it. */
     bool start(RenderDevice& device, ItemArchive& archive, std::string_view tree,
-               const Vec3& position, f32 scale = 1.0f);
+               const Vec3& position, float scale = 1.0f);
     /** The same, turned, moving or repeating as `setting` says; its number, or nought. */
-    u32 startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
-                 const Vec3& position, const Setting& setting);
+    std::uint32_t startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
+                           const Vec3& position, const Setting& setting);
     /** Ends effect number `id` now. */
-    void stop(u32 id);
+    void stop(std::uint32_t id);
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
-    void moveTo(u32 id, const Vec3& position);
+    void moveTo(std::uint32_t id, const Vec3& position);
     /** Attaches an emitter to the effect root; existing particles remain in world space
      * unless its descriptor explicitly requests dynamic particles. */
-    void attachTrail(u32 id, const ParticleDescriptor& descriptor, const Texture& texture);
-    bool playing(u32 id) const;
-    void update(f32 seconds);
+    void attachTrail(std::uint32_t id, const ParticleDescriptor& descriptor,
+                     const Texture& texture);
+    bool playing(std::uint32_t id) const;
+    void update(float seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
     void clear();
 
-    usize count() const { return m_effects.size(); }
-    const Effect& effect(usize index) const { return *m_effects[index]; }
+    std::size_t count() const { return m_effects.size(); }
+    const Effect& effect(std::size_t index) const { return *m_effects[index]; }
 
 private:
     /** An archive's texture animations, shared by its effects. */
@@ -100,8 +102,8 @@ private:
 
     std::vector<std::unique_ptr<Effect>> m_effects;
     std::vector<std::unique_ptr<Motion>> m_motions;
-    f32 m_frames = 0.0f;
-    u32 m_nextId = 1;
+    float m_frames = 0.0f;
+    std::uint32_t m_nextId = 1;
 };
 
 } // namespace gdl::game

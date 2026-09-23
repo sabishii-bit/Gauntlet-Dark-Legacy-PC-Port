@@ -2,6 +2,8 @@
 
 #include <array>
 #include <cctype>
+#include <cstddef>
+#include <cstdint>
 
 #include "engine/core/Error.h"
 #include "engine/io/ByteReader.h"
@@ -10,30 +12,30 @@ namespace gdl {
 
 namespace {
 
-constexpr u32 kRiff = fourcc("RIFF");
-constexpr u32 kAvi = fourcc("AVI ");
-constexpr u32 kList = fourcc("LIST");
-constexpr u32 kHeaderList = fourcc("hdrl");
-constexpr u32 kMovieList = fourcc("movi");
-constexpr u32 kMainHeader = fourcc("avih");
-constexpr u32 kStreamList = fourcc("strl");
-constexpr u32 kStreamHeader = fourcc("strh");
-constexpr u32 kStreamFormat = fourcc("strf");
-constexpr u32 kJunk = fourcc("JUNK");
-constexpr u32 kVideoStream = fourcc("vids");
-constexpr u32 kAudioStream = fourcc("auds");
-constexpr usize kChunkHeaderSize = 8;
+constexpr std::uint32_t kRiff = fourcc("RIFF");
+constexpr std::uint32_t kAvi = fourcc("AVI ");
+constexpr std::uint32_t kList = fourcc("LIST");
+constexpr std::uint32_t kHeaderList = fourcc("hdrl");
+constexpr std::uint32_t kMovieList = fourcc("movi");
+constexpr std::uint32_t kMainHeader = fourcc("avih");
+constexpr std::uint32_t kStreamList = fourcc("strl");
+constexpr std::uint32_t kStreamHeader = fourcc("strh");
+constexpr std::uint32_t kStreamFormat = fourcc("strf");
+constexpr std::uint32_t kJunk = fourcc("JUNK");
+constexpr std::uint32_t kVideoStream = fourcc("vids");
+constexpr std::uint32_t kAudioStream = fourcc("auds");
+constexpr std::size_t kChunkHeaderSize = 8;
 
-usize padded(u32 size) {
-    return usize{size} + (size & 1U);
+std::size_t padded(std::uint32_t size) {
+    return std::size_t{size} + (size & 1U);
 }
 
-AviStream parseStreamList(std::span<const u8> list) {
+AviStream parseStreamList(std::span<const std::uint8_t> list) {
     AviStream stream;
     ByteReader reader(list);
     while (reader.remaining() >= kChunkHeaderSize) {
-        const u32 id = reader.readU32();
-        const u32 size = reader.readU32();
+        const std::uint32_t id = reader.readU32();
+        const std::uint32_t size = reader.readU32();
         const auto body = reader.readBytes(std::min(padded(size), reader.remaining()));
         if (id == kStreamHeader && body.size() >= 0x30) {
             stream.type = readU32LE(body, 0x00);
@@ -57,7 +59,7 @@ AviStream parseStreamList(std::span<const u8> list) {
 }
 
 /** Parses "01wb" style chunk ids into a stream index and kind. */
-bool classifyChunk(u32 id, AviChunkKind& kind, u32& stream) {
+bool classifyChunk(std::uint32_t id, AviChunkKind& kind, std::uint32_t& stream) {
     const auto d0 = static_cast<unsigned char>(id & 0xFFU);
     const auto d1 = static_cast<unsigned char>((id >> 8U) & 0xFFU);
     const auto t0 = static_cast<unsigned char>((id >> 16U) & 0xFFU);
@@ -65,7 +67,7 @@ bool classifyChunk(u32 id, AviChunkKind& kind, u32& stream) {
     if (std::isdigit(d0) == 0 || std::isdigit(d1) == 0) {
         return false;
     }
-    stream = (u32{d0} - '0') * 10 + (u32{d1} - '0');
+    stream = (std::uint32_t{d0} - '0') * 10 + (std::uint32_t{d1} - '0');
     if (t0 == 'd' && (t1 == 'b' || t1 == 'c')) {
         kind = AviChunkKind::Video;
     } else if (t0 == 'w' && t1 == 'b') {
@@ -83,21 +85,22 @@ AviReader::AviReader(const std::filesystem::path& path) : m_file(path) {
     if (readU32LE(riff, 0) != kRiff || readU32LE(riff, 8) != kAvi) {
         throw FormatError("not a RIFF AVI file");
     }
-    const u64 riffEnd = std::min<u64>(kChunkHeaderSize + readU32LE(riff, 4), m_file.size());
+    const std::uint64_t riffEnd =
+        std::min<std::uint64_t>(kChunkHeaderSize + readU32LE(riff, 4), m_file.size());
 
-    u64 position = 12;
+    std::uint64_t position = 12;
     bool foundMovie = false;
     while (position + kChunkHeaderSize <= riffEnd) {
         m_file.seek(position);
         const auto head = m_file.readExact(kChunkHeaderSize);
-        const u32 id = readU32LE(head, 0);
-        const u32 size = readU32LE(head, 4);
+        const std::uint32_t id = readU32LE(head, 0);
+        const std::uint32_t size = readU32LE(head, 4);
         if (id == kList && size >= 4) {
-            const u32 type = readU32LE(m_file.readExact(4), 0);
+            const std::uint32_t type = readU32LE(m_file.readExact(4), 0);
             if (type == kHeaderList) {
                 parseHeaderList(m_file.readExact(size - 4));
             } else if (type == kMovieList) {
-                m_moviEnd = std::min<u64>(position + kChunkHeaderSize + size, riffEnd);
+                m_moviEnd = std::min<std::uint64_t>(position + kChunkHeaderSize + size, riffEnd);
                 m_file.seek(position + kChunkHeaderSize + 4);
                 foundMovie = true;
                 break;
@@ -110,11 +113,11 @@ AviReader::AviReader(const std::filesystem::path& path) : m_file(path) {
     }
 }
 
-void AviReader::parseHeaderList(std::span<const u8> list) {
+void AviReader::parseHeaderList(std::span<const std::uint8_t> list) {
     ByteReader reader(list);
     while (reader.remaining() >= kChunkHeaderSize) {
-        const u32 id = reader.readU32();
-        const u32 size = reader.readU32();
+        const std::uint32_t id = reader.readU32();
+        const std::uint32_t size = reader.readU32();
         const auto body = reader.readBytes(std::min(padded(size), reader.remaining()));
         if (id == kMainHeader && body.size() >= 0x28) {
             m_header.microSecondsPerFrame = readU32LE(body, 0x00);
@@ -128,18 +131,18 @@ void AviReader::parseHeaderList(std::span<const u8> list) {
 }
 
 std::optional<AviChunk> AviReader::next() {
-    std::array<u8, kChunkHeaderSize> head{};
+    std::array<std::uint8_t, kChunkHeaderSize> head{};
     while (m_file.position() + kChunkHeaderSize <= m_moviEnd) {
         if (m_file.read(head) != head.size()) {
             return std::nullopt;
         }
-        const u32 id = readU32LE(head, 0);
-        const u32 size = readU32LE(head, 4);
+        const std::uint32_t id = readU32LE(head, 0);
+        const std::uint32_t size = readU32LE(head, 4);
         if (id == kList) {
             m_file.seek(m_file.position() + 4);
             continue;
         }
-        const u64 nextChunk = m_file.position() + padded(size);
+        const std::uint64_t nextChunk = m_file.position() + padded(size);
         AviChunk chunk;
         if (id == kJunk || !classifyChunk(id, chunk.kind, chunk.stream)) {
             m_file.seek(std::min(nextChunk, m_moviEnd));

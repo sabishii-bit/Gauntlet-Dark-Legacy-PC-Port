@@ -1,12 +1,15 @@
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/world/WorldCollision.h"
+
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "engine/world/WorldCollision.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
@@ -17,10 +20,10 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr s32 kTicks = 2;
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr std::int32_t kTicks = 2;
+constexpr float kStep = 1.0f / 30.0f;
 
-EnemyView playerAt(const Vec3& position, s32 player = 0) {
+EnemyView playerAt(const Vec3& position, std::int32_t player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;
@@ -51,7 +54,8 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     EnemyMissiles missiles;
     const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 20.0f})};
     // The shot: from four up, at the player's middle, at twenty-five a second.
-    missiles.launch(EnemyMissileKind::arrow(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 3.0f, 20.0f}, 1.0f, nullptr, 2);
+    missiles.launch(EnemyMissileKind::arrow(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 3.0f, 20.0f},
+                    1.0f, nullptr, 2);
     REQUIRE(missiles.count() == 1);
     REQUIRE(glm::length(missiles.missile(0).velocity) == Approx(25.0f));
     REQUIRE(missiles.missile(0).velocity.z > 24.0f);
@@ -75,10 +79,11 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     WorldCollision collision;
     collision.build(floor());
     const std::vector<EnemyView> nobody;
-    missiles.launch(EnemyMissileKind::bomb(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 0.0f, 20.0f}, 1.0f, nullptr, 3);
+    missiles.launch(EnemyMissileKind::bomb(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 0.0f, 20.0f}, 1.0f,
+                    nullptr, 3);
     REQUIRE(missiles.missile(0).velocity.y > 10.0f);
     REQUIRE(missiles.missile(0).kind.spin.y == 1.0f);
-    f32 highest = 0.0f;
+    float highest = 0.0f;
     hits.clear();
     flying = 0;
     while (hits.empty() && flying < 200) {
@@ -97,14 +102,16 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     REQUIRE(hits[0].position.z == Approx(20.0f).margin(1.5f));
     REQUIRE(hits[0].position.y < 0.5f);
     // A shot with nothing in its way ends after its life.
-    missiles.launch(EnemyMissileKind::arrow(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 4.0f, 100.0f}, 1.0f, nullptr, 0);
+    missiles.launch(EnemyMissileKind::arrow(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 4.0f, 100.0f},
+                    1.0f, nullptr, 0);
     for (int i = 0; i < 200; ++i) {
         missiles.update(kStep, nullptr, nobody);
     }
     REQUIRE(missiles.count() == 0);
     REQUIRE(missiles.takeHits().size() == 1);
     // The lob's leaving velocity lands it in the flight its pace gives.
-    const Vec3 leave = EnemyMissiles::lobVelocity(Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 40.0f}, 20.0f);
+    const Vec3 leave =
+        EnemyMissiles::lobVelocity(Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 40.0f}, 20.0f);
     REQUIRE(leave.z == Approx(20.0f));
     REQUIRE(leave.y == Approx(0.5f * EnemyMissiles::kGravity * 2.0f));
 }
@@ -229,8 +236,10 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
 TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suicide blows up "
           "against them",
           "[game][enemies][unpacked]") {
-    const std::filesystem::path root =
-        test::unpackedOrSkip("MONSTERS/ZOM/animations.json").parent_path().parent_path().parent_path();
+    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
+                                           .parent_path()
+                                           .parent_path()
+                                           .parent_path();
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build(floor());
@@ -291,8 +300,9 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
         enemies.update(kTicks, kStep, afar, {}, &missiles, 1.0f);
     }
     bool lobbed = false;
-    for (usize m = 0; m < missiles.count(); ++m) {
-        lobbed = lobbed || (missiles.missile(m).shooter == *bomber && missiles.missile(m).kind.burstRadius > 0.0f);
+    for (std::size_t m = 0; m < missiles.count(); ++m) {
+        lobbed = lobbed || (missiles.missile(m).shooter == *bomber &&
+                            missiles.missile(m).kind.burstRadius > 0.0f);
     }
     REQUIRE(lobbed);
     // The suicide: a first-tier body, a fuse, a run, and a blast of fifty at the level's

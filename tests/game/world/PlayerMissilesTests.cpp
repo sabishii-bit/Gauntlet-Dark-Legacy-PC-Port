@@ -1,7 +1,6 @@
+#include <array>
 #include <cmath>
 #include <vector>
-
-#include <array>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -16,7 +15,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr f32 kStep = 1.0f / 60.0f;
+constexpr float kStep = 1.0f / 60.0f;
 
 MissileLaunch axeFrom(const Vec3& position) {
     MissileLaunch launch;
@@ -29,8 +28,7 @@ MissileLaunch axeFrom(const Vec3& position) {
     return launch;
 }
 
-TEST_CASE("each class throws its own weapon, the tier its level earns",
-          "[game][world][missiles]") {
+TEST_CASE("each class throws its own weapon, the tier its level earns", "[game][world][missiles]") {
     REQUIRE(MissileSpec::of(0).model == "AXE");
     REQUIRE(MissileSpec::of(0).weight == 12.0f);
     REQUIRE(MissileSpec::of(0).spin > 18.0f);
@@ -94,7 +92,7 @@ TEST_CASE("a missile is lobbed to come down half a unit under its start at its r
     REQUIRE(missiles.missile(0).velocity.z == 30.0f);
     REQUIRE(missiles.missile(0).velocity.y > 0.0f);
     // Half a second at thirty a second is its reach of fifteen.
-    f32 highest = 0.0f;
+    float highest = 0.0f;
     for (int i = 0; i < 30; ++i) {
         missiles.update(kStep, nullptr);
         highest = std::max(highest, missiles.missile(0).position.y);

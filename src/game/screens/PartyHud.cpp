@@ -1,6 +1,8 @@
 #include "game/screens/PartyHud.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 
 #include "game/menu/OptionMenu.h"
@@ -40,13 +42,13 @@ void PartyHud::clear() {
     m_boxes.release();
 }
 void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players) {
-    for (s32 player = 0; player < kPlayerCount; ++player) {
+    for (std::int32_t player = 0; player < kPlayerCount; ++player) {
         m_boxes.draw(canvas, player, status(player, players), true);
     }
     m_pickups.draw(canvas, m_boxes);
 }
-bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
-                        LevelSoundscape& audio, s32 number) {
+bool PartyHud::postHelp(std::int32_t id, std::size_t index, std::span<PlayerRuntime> players,
+                        LevelSoundscape& audio, std::int32_t number) {
     if (index >= players.size()) {
         return false;
     }
@@ -73,9 +75,9 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
     return true;
 }
 
-void PartyHud::stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks,
+void PartyHud::stepSelector(PlayerActor& actor, const SelectorInput& input, std::int32_t ticks,
                             LevelSoundscape& audio) {
-    const auto slot = static_cast<usize>(std::clamp(actor.player(), 0, kPlayerCount - 1));
+    const auto slot = static_cast<std::size_t>(std::clamp(actor.player(), 0, kPlayerCount - 1));
     switch (m_selectors[slot].step(input, actor.save().progress().inventory, ticks)) {
     case SelectorCue::Opened:
     case SelectorCue::Closed: audio.playNamed(kMenuMoveSound); break;
@@ -85,7 +87,7 @@ void PartyHud::stepSelector(PlayerActor& actor, const SelectorInput& input, s32 
     }
 }
 
-StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> players) {
+StatusBoxView PartyHud::status(std::int32_t player, std::span<const PlayerRuntime> players) {
     StatusBoxView view;
     const auto found = std::ranges::find_if(players, [player](const PlayerRuntime& runtime) {
         return runtime.actor.player() == player;
@@ -110,7 +112,7 @@ StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> player
     view.health = save.health();
     view.turbo = found->turbo.look();
     view.keys = save.progress().inventory.keys;
-    view.potions = static_cast<s32>(save.progress().inventory.potions.size());
+    view.potions = static_cast<std::int32_t>(save.progress().inventory.potions.size());
     view.potionKind = save.progress().inventory.nextPotion();
     return view;
 }
@@ -123,15 +125,15 @@ void PartyHud::drawSelectors(Canvas& canvas, const TextPainter& text, const Stri
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         const PowerupSelector& selector = this->selector(actor.player());
-        const s32 chosen = selector.selection();
+        const std::int32_t chosen = selector.selection();
         if (!selector.showing() || chosen < 0) {
             continue;
         }
         const PowerupSlot& slot =
-            actor.save().progress().inventory.powerups[static_cast<usize>(chosen)];
+            actor.save().progress().inventory.powerups[static_cast<std::size_t>(chosen)];
         const std::string_view label = strings->get(powerupTextId(slot.kind, slot.flags));
-        const s32 x = actor.player() * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
-        const s32 y = selector.labelY(StatusBoxPainter::kY);
+        const std::int32_t x = actor.player() * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
+        const std::int32_t y = selector.labelY(StatusBoxPainter::kY);
         TextStyle style;
         style.scale = PowerupSelector::kLabelScale;
         if (slot.on && m_glowSheet != nullptr) {
@@ -146,8 +148,8 @@ void PartyHud::drawSelectors(Canvas& canvas, const TextPainter& text, const Stri
 }
 
 void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
-                        std::span<const PlayerRuntime> players, const Mat4& clip, f32 width,
-                        f32 height) const {
+                        std::span<const PlayerRuntime> players, const Mat4& clip, float width,
+                        float height) const {
     if (!m_help.showing()) {
         return;
     }

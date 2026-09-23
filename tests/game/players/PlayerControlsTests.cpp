@@ -1,3 +1,5 @@
+#include <cstddef>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -53,8 +55,8 @@ TEST_CASE("the potion buttons are held and the selector's are presses",
     // On a pad the directional buttons are the selector's and no longer walk.
     PadSnapshot pad;
     pad.connected = true;
-    pad.buttons[static_cast<usize>(PadButton::DpadLeft)] = true;
-    pad.buttons[static_cast<usize>(PadButton::X)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::DpadLeft)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::X)] = true;
     input.setPad(0, pad);
     buttons = readPlayButtons(input, PlayBindings{}, false, 0);
     REQUIRE(buttons.selectorLeft);
@@ -72,7 +74,7 @@ TEST_CASE("the attack is held by its key or its pad button", "[game][players][co
     input.setKey(Key::Space, false);
     PadSnapshot pad;
     pad.connected = true;
-    pad.buttons[static_cast<usize>(PadButton::A)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::A)] = true;
     input.setPad(1, pad);
     REQUIRE(readAttackInput(input, PlayBindings{}, false, 1));
     REQUIRE(readAttackInput(input, PlayBindings{}, false, kAllPads));
@@ -88,32 +90,32 @@ TEST_CASE("the stick moves past its dead zone and the pad buttons add to it",
     input.beginPoll();
     PadSnapshot pad;
     pad.connected = true;
-    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 0.1f;
+    pad.axes[static_cast<std::size_t>(PadAxis::LeftX)] = 0.1f;
     input.setPad(1, pad);
     REQUIRE_FALSE(readMoveInput(input, PlayBindings{}, false, 1).any());
 
-    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 0.0f;
-    pad.axes[static_cast<usize>(PadAxis::LeftY)] = -1.0f; // the pad's up is negative
+    pad.axes[static_cast<std::size_t>(PadAxis::LeftX)] = 0.0f;
+    pad.axes[static_cast<std::size_t>(PadAxis::LeftY)] = -1.0f; // the pad's up is negative
     input.setPad(1, pad);
     MoveInput move = readMoveInput(input, PlayBindings{}, false, 1);
     REQUIRE(move.direction == Vec2{0.0f, 1.0f});
     REQUIRE(move.magnitude == 1.0f);
 
-    pad.axes[static_cast<usize>(PadAxis::LeftY)] = -0.625f;
+    pad.axes[static_cast<std::size_t>(PadAxis::LeftY)] = -0.625f;
     input.setPad(1, pad);
     move = readMoveInput(input, PlayBindings{}, false, 1);
     REQUIRE(move.magnitude == Approx(0.5f)); // half way through the live range
 
-    pad.axes[static_cast<usize>(PadAxis::LeftY)] = 0.0f;
+    pad.axes[static_cast<std::size_t>(PadAxis::LeftY)] = 0.0f;
     // A pad's directional buttons walk only when bound to; by default they are the selector's.
-    pad.buttons[static_cast<usize>(PadButton::DpadRight)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::DpadRight)] = true;
     input.setPad(1, pad);
     REQUIRE_FALSE(readMoveInput(input, PlayBindings{}, false, 1).any());
     PlayBindings walking;
     walking.padRight = {PadButton::DpadRight};
     move = readMoveInput(input, walking, false, 1);
     REQUIRE(move.direction == Vec2{1.0f, 0.0f});
-    pad.axes[static_cast<usize>(PadAxis::LeftX)] = 1.0f;
+    pad.axes[static_cast<std::size_t>(PadAxis::LeftX)] = 1.0f;
     input.setPad(1, pad);
 
     // Another pad, or none, does not see it; every pad does.
@@ -151,8 +153,8 @@ TEST_CASE("turbo is held; the charge and the attack are known the frame they go 
     REQUIRE_FALSE(buttons.attackPressed);
     PadSnapshot pad;
     pad.connected = true;
-    pad.buttons[static_cast<usize>(PadButton::RightBumper)] = true;
-    pad.buttons[static_cast<usize>(PadButton::Y)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::RightBumper)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::Y)] = true;
     input.setPad(0, pad);
     REQUIRE(readPlayButtons(input, PlayBindings{}, false, 0).turbo);
     REQUIRE(readPlayButtons(input, PlayBindings{}, false, 0).chargePressed);

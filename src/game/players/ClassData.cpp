@@ -1,7 +1,7 @@
 #include "game/players/ClassData.h"
 
-#include "engine/core/Strings.h"
-
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <string>
 #include <vector>
@@ -10,6 +10,7 @@
 
 #include "engine/core/Error.h"
 #include "engine/core/Log.h"
+#include "engine/core/Strings.h"
 #include "engine/io/File.h"
 
 namespace gdl::game {
@@ -32,12 +33,12 @@ constexpr std::array<Color, kColorCount> kIdleBoxTints{
 
 using Json = nlohmann::json;
 
-void readRange(const Json& object, const char* key, f32& low, f32& high) {
+void readRange(const Json& object, const char* key, float& low, float& high) {
     if (!object.contains(key) || !object.at(key).is_array() || object.at(key).size() != 2) {
         throw FormatError(std::string("class data: missing range ") + key);
     }
-    low = object.at(key).at(0).get<f32>();
-    high = object.at(key).at(1).get<f32>();
+    low = object.at(key).at(0).get<float>();
+    high = object.at(key).at(1).get<float>();
 }
 
 ClassStats parseClassStats(std::string_view text) {
@@ -51,11 +52,11 @@ ClassStats parseClassStats(std::string_view text) {
     stats.width = root.value("width", 0.0f);
     stats.collisionY = root.value("collisionY", 0.0f);
     stats.powerupTime = root.value("powerupTime", 1.0f);
-    if (const auto offset = root.value("weaponOffset", std::vector<f32>{}); offset.size() == 3) {
+    if (const auto offset = root.value("weaponOffset", std::vector<float>{}); offset.size() == 3) {
         stats.weaponOffset = Vec3{offset[0], offset[1], offset[2]};
     }
     const auto vec3 = [](const Json& object, const char* key) {
-        const auto values = object.value(key, std::vector<f32>{});
+        const auto values = object.value(key, std::vector<float>{});
         return values.size() == 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f};
     };
     if (const auto moves = root.find("moves"); moves != root.end() && moves->is_object()) {
@@ -86,7 +87,7 @@ ClassStats parseClassStats(std::string_view text) {
         strike.offset = vec3(entry, "offset");
         strike.amount = entry.value("amount", 0.0f);
         // The original flies it half way between its least speed and its most.
-        const f32 least = entry.value("speedMin", 0.0f);
+        const float least = entry.value("speedMin", 0.0f);
         strike.speed = least + 0.5f * (entry.value("speedMax", least) - least);
         strike.angle = entry.value("angle", 0.0f);
         strike.damageType = entry.value("damageType", 0U);
@@ -105,10 +106,10 @@ ClassStats parseClassStats(std::string_view text) {
 
 } // namespace
 
-f32 MoveStrike::dimming() const {
-    constexpr s32 kCombo = 0x2000;
-    constexpr s32 kGreater = 0x20;
-    constexpr s32 kLesser = 0x10;
+float MoveStrike::dimming() const {
+    constexpr std::int32_t kCombo = 0x2000;
+    constexpr std::int32_t kGreater = 0x20;
+    constexpr std::int32_t kLesser = 0x10;
     if ((flags & kCombo) != 0) {
         return -0.8f;
     }
@@ -118,66 +119,67 @@ f32 MoveStrike::dimming() const {
     return (flags & kLesser) != 0 ? -0.4f : 0.0f;
 }
 
-std::vector<s32> ClassStats::strikesOf(s32 first) const {
-    std::vector<s32> chain;
+std::vector<std::int32_t> ClassStats::strikesOf(std::int32_t first) const {
+    std::vector<std::int32_t> chain;
     // A chain is followed once round at most.
-    for (s32 at = first; at >= 0 && static_cast<usize>(at) < moveStrikes.size() &&
-                         chain.size() < moveStrikes.size();
-         at = moveStrikes[static_cast<usize>(at)].next) {
+    for (std::int32_t at = first; at >= 0 && static_cast<std::size_t>(at) < moveStrikes.size() &&
+                                  chain.size() < moveStrikes.size();
+         at = moveStrikes[static_cast<std::size_t>(at)].next) {
         chain.push_back(at);
     }
     return chain;
 }
 
-std::string_view classCode(s32 classIndex) {
+std::string_view classCode(std::int32_t classIndex) {
     if (classIndex < 0 || classIndex >= kClassCount) {
         return {};
     }
-    return kClassCodes[static_cast<usize>(classIndex)];
+    return kClassCodes[static_cast<std::size_t>(classIndex)];
 }
 
-std::string_view colorCode(s32 color) {
+std::string_view colorCode(std::int32_t color) {
     if (color < 0 || color >= kColorCount) {
         return {};
     }
-    return kColorCodes[static_cast<usize>(color)];
+    return kColorCodes[static_cast<std::size_t>(color)];
 }
 
-std::optional<s32> classIndexOf(std::string_view code) {
+std::optional<std::int32_t> classIndexOf(std::string_view code) {
     const std::string wanted = normalizeAssetName(code);
-    for (s32 i = 0; i < kClassCount; ++i) {
-        if (kClassCodes[static_cast<usize>(i)] == wanted) {
+    for (std::int32_t i = 0; i < kClassCount; ++i) {
+        if (kClassCodes[static_cast<std::size_t>(i)] == wanted) {
             return i;
         }
     }
     return std::nullopt;
 }
 
-std::optional<s32> colorIndexOf(std::string_view code) {
+std::optional<std::int32_t> colorIndexOf(std::string_view code) {
     const std::string wanted = normalizeAssetName(code);
-    for (s32 i = 0; i < kColorCount; ++i) {
-        if (kColorCodes[static_cast<usize>(i)] == wanted) {
+    for (std::int32_t i = 0; i < kColorCount; ++i) {
+        if (kColorCodes[static_cast<std::size_t>(i)] == wanted) {
             return i;
         }
     }
     return std::nullopt;
 }
 
-Color playerColor(s32 color) {
+Color playerColor(std::int32_t color) {
     if (color < 0 || color >= kColorCount) {
         return Color::white();
     }
-    return kPlayerColors[static_cast<usize>(color)];
+    return kPlayerColors[static_cast<std::size_t>(color)];
 }
 
-Color boxTint(s32 color, bool active) {
+Color boxTint(std::int32_t color, bool active) {
     if (color < 0 || color >= kColorCount) {
         return Color::white();
     }
-    return active ? kBoxTints[static_cast<usize>(color)] : kIdleBoxTints[static_cast<usize>(color)];
+    return active ? kBoxTints[static_cast<std::size_t>(color)]
+                  : kIdleBoxTints[static_cast<std::size_t>(color)];
 }
 
-bool classUnlocked(s32 classIndex, u16 unlockMask) {
+bool classUnlocked(std::int32_t classIndex, std::uint16_t unlockMask) {
     if (classIndex < 0 || classIndex >= kClassCount) {
         return false;
     }
@@ -190,13 +192,13 @@ bool classUnlocked(s32 classIndex, u16 unlockMask) {
 bool ClassDataSet::load(const std::filesystem::path& directory) {
     m_classes = {};
     m_loadedCount = 0;
-    for (s32 i = 0; i < kClassCount; ++i) {
+    for (std::int32_t i = 0; i < kClassCount; ++i) {
         const std::filesystem::path file = directory / (std::string(classCode(i)) + ".json");
         if (!std::filesystem::exists(file)) {
             continue;
         }
         try {
-            m_classes[static_cast<usize>(i)] = parseClassStats(readTextFile(file));
+            m_classes[static_cast<std::size_t>(i)] = parseClassStats(readTextFile(file));
             ++m_loadedCount;
         } catch (const std::exception& e) {
             log::warn("Class data: {}: {}", file.string(), e.what());
@@ -208,11 +210,11 @@ bool ClassDataSet::load(const std::filesystem::path& directory) {
     return m_loadedCount > 0;
 }
 
-const ClassStats* ClassDataSet::stats(s32 classIndex) const {
+const ClassStats* ClassDataSet::stats(std::int32_t classIndex) const {
     if (classIndex < 0 || classIndex >= kClassCount) {
         return nullptr;
     }
-    const auto& entry = m_classes[static_cast<usize>(classIndex)];
+    const auto& entry = m_classes[static_cast<std::size_t>(classIndex)];
     return entry.has_value() ? &*entry : nullptr;
 }
 

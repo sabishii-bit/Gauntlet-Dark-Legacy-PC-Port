@@ -1,10 +1,11 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
 
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/Image.h"
 #include "engine/render/RenderDevice.h"
@@ -34,20 +35,20 @@ struct ScrollBoxArt {
  */
 class ScrollBox {
 public:
-    static constexpr s32 kCentreX = 256;
-    static constexpr s32 kCentreY = 160;
-    static constexpr s32 kMargin = 96;      ///< scroll beyond the text, both ways
-    static constexpr s32 kTextInset = 32;   ///< the text's top below the scroll's
-    static constexpr s32 kPromptExtra = 32; ///< the narrowest scroll beyond the prompt
-    static constexpr s32 kMaxWidth = 512;
-    static constexpr s32 kLineSpacing = 4;
-    static constexpr s32 kPromptGap = 8;
-    static constexpr s32 kButtonX = 190;
-    static constexpr s32 kButtonSize = 20;
-    static constexpr s32 kHoldTicks = 15; ///< before a page takes a button
-    static constexpr f32 kPromptScale = 0.5f;
-    static constexpr s32 kGlowPulseTicks = 40;
-    static constexpr s32 kGlowHoldTicks = 5;
+    static constexpr std::int32_t kCentreX = 256;
+    static constexpr std::int32_t kCentreY = 160;
+    static constexpr std::int32_t kMargin = 96;      ///< scroll beyond the text, both ways
+    static constexpr std::int32_t kTextInset = 32;   ///< the text's top below the scroll's
+    static constexpr std::int32_t kPromptExtra = 32; ///< the narrowest scroll beyond the prompt
+    static constexpr std::int32_t kMaxWidth = 512;
+    static constexpr std::int32_t kLineSpacing = 4;
+    static constexpr std::int32_t kPromptGap = 8;
+    static constexpr std::int32_t kButtonX = 190;
+    static constexpr std::int32_t kButtonSize = 20;
+    static constexpr std::int32_t kHoldTicks = 15; ///< before a page takes a button
+    static constexpr float kPromptScale = 0.5f;
+    static constexpr std::int32_t kGlowPulseTicks = 40;
+    static constexpr std::int32_t kGlowHoldTicks = 5;
     static constexpr Color kGlowColor = Color::rgba(130, 0, 234);
     static constexpr Color kTextColor = Color::rgba(22, 12, 3); ///< ink on the parchment
 
@@ -56,17 +57,17 @@ public:
 
     /** Unrolls over `pages`, drawn at `scale`, with `prompt` under each; false without text
      * to draw with or a page to show. */
-    bool open(RenderDevice& device, std::vector<std::string> pages, f32 scale,
+    bool open(RenderDevice& device, std::vector<std::string> pages, float scale,
               std::string prompt);
     void close();
 
     /** Steps the box; `accepted` has a bit per player who pressed their button this tick. */
-    void step(s32 ticks, u32 accepted);
+    void step(std::int32_t ticks, std::uint32_t accepted);
 
     bool active() const { return m_active; }
     bool burning() const { return m_fire.active(); }
-    usize page() const { return m_page; }
-    usize pageCount() const { return m_pages.size(); }
+    std::size_t page() const { return m_page; }
+    std::size_t pageCount() const { return m_pages.size(); }
     /** The scroll's rectangle for the current page. */
     const Rect& area() const { return m_area; }
     /** The lines of the current page. */
@@ -80,7 +81,7 @@ public:
     static std::vector<std::string> splitLines(std::string_view page);
 
 private:
-    void showPage(usize page);
+    void showPage(std::size_t page);
     void finish();
 
     ScrollBoxArt m_art;
@@ -89,13 +90,13 @@ private:
     std::vector<std::string> m_pages;
     std::vector<std::string> m_lines;
     std::string m_prompt;
-    f32 m_scale = 1.0f;
-    usize m_page = 0;
+    float m_scale = 1.0f;
+    std::size_t m_page = 0;
     Rect m_area;
-    s32 m_textTop = 0;
-    s32 m_promptY = 0;
-    s32 m_hold = 0;
-    s32 m_time = 0;
+    std::int32_t m_textTop = 0;
+    std::int32_t m_promptY = 0;
+    std::int32_t m_hold = 0;
+    std::int32_t m_time = 0;
     bool m_active = false;
     BurnDialogueScroll m_fire;
 };

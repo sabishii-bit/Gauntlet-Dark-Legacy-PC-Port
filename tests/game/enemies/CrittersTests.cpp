@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <numbers>
 #include <string>
@@ -6,10 +8,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include "FakeRenderDevice.h"
-#include "TestSupport.h"
 #include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
+
+#include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "formats/CritterWad.h"
 #include "game/enemies/CritterData.h"
 #include "game/enemies/Critters.h"
@@ -20,15 +23,15 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr s32 kTicks = 2;
-constexpr f32 kStep = 1.0f / 30.0f;
-constexpr f32 kPi = std::numbers::pi_v<f32>;
+constexpr std::int32_t kTicks = 2;
+constexpr float kStep = 1.0f / 30.0f;
+constexpr float kPi = std::numbers::pi_v<float>;
 
 std::filesystem::path unpackedRoot() {
     return test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();
 }
 
-EnemyView playerAt(const Vec3& position, s32 player = 0) {
+EnemyView playerAt(const Vec3& position, std::int32_t player = 0) {
     EnemyView view;
     view.player = player;
     view.position = position;
@@ -205,10 +208,10 @@ TEST_CASE("the dragon's animated root sits above its floor anchor, including hit
     device.draws.clear();
     critters.draw(device, Mat4{1.0f}, {});
     REQUIRE(device.draws.size() == local.size());
-    f32 error = 0.0f;
-    for (usize draw = 0; draw < local.size(); ++draw) {
+    float error = 0.0f;
+    for (std::size_t draw = 0; draw < local.size(); ++draw) {
         REQUIRE(device.draws[draw].vertices.size() == local[draw].vertices.size());
-        for (usize vertex = 0; vertex < local[draw].vertices.size(); ++vertex) {
+        for (std::size_t vertex = 0; vertex < local[draw].vertices.size(); ++vertex) {
             const Vec3 expected = local[draw].vertices[vertex].position + Vec3{0.0f, 18.5f, 0.0f};
             error = std::max(error,
                              glm::length(device.draws[draw].vertices[vertex].position - expected));
@@ -367,9 +370,9 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     // Its walk sounded its steps as it came (the fields' own, by the realm's letter), and
     // its attack its swish, or its stomp's ring where the heel came down; each once a move.
     const std::vector<CritterCue> cues = critters.takeCues();
-    usize steps = 0;
-    usize swishes = 0;
-    usize rings = 0;
+    std::size_t steps = 0;
+    std::size_t swishes = 0;
+    std::size_t rings = 0;
     for (const CritterCue& cue : cues) {
         REQUIRE(cue.critter == *id);
         steps += cue.sound == "S_GENGSTEP1" || cue.sound == "S_GENGSTEP2" ? 1U : 0U;
@@ -475,13 +478,18 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     REQUIRE(critters.targets().size() == 1);
     REQUIRE(critters.targets()[0].radius == 3.5f);
     REQUIRE((critters.struckBy(Vec3{-5.0f, 4.0f, 0.0f}, Vec3{30.0f, 4.0f, 0.0f}, 0.5f) == general));
-    REQUIRE_FALSE(critters.struckBy(Vec3{-5.0f, 4.0f, 10.0f}, Vec3{30.0f, 4.0f, 10.0f}, 0.5f).has_value());
+    REQUIRE_FALSE(
+        critters.struckBy(Vec3{-5.0f, 4.0f, 10.0f}, Vec3{30.0f, 4.0f, 10.0f}, 0.5f).has_value());
     REQUIRE(critters.within(Vec3{10.0f, 4.0f, 0.0f}, 1.0f).size() == 1);
-    REQUIRE(critters.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{1.0f, 0.0f, 0.0f}).size() == 1);
-    REQUIRE(critters.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{-1.0f, 0.0f, 0.0f}).empty());
+    REQUIRE(
+        critters.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{1.0f, 0.0f, 0.0f}).size() ==
+        1);
+    REQUIRE(
+        critters.reachedBy(Vec3{0.0f, 0.0f, 0.0f}, 12.0f, 0.5f, Vec3{-1.0f, 0.0f, 0.0f}).empty());
     // A gargoyle comes by its form, and falling is worth the key named by it.
     test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
-    const auto gargoyle = critters.spawn(kGargoyleCritter, Vec3{-20.0f, 0.0f, 0.0f}, 0.0f, "GAR_EAGL");
+    const auto gargoyle =
+        critters.spawn(kGargoyleCritter, Vec3{-20.0f, 0.0f, 0.0f}, 0.0f, "GAR_EAGL");
     REQUIRE(gargoyle.has_value());
     REQUIRE(critters.formOf(*gargoyle) == "EAGL");
     REQUIRE(critters.formOf(*general).empty());
@@ -497,7 +505,8 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     REQUIRE(losses[1].experience == 100.0f);
     // A kind without data, or a form without an archive, is refused.
     REQUIRE_FALSE(critters.spawn(99, Vec3{0.0f, 0.0f, 0.0f}, 0.0f).has_value());
-    REQUIRE_FALSE(critters.spawn(kGargoyleCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, "GAR_NONE").has_value());
+    REQUIRE_FALSE(
+        critters.spawn(kGargoyleCritter, Vec3{0.0f, 0.0f, 0.0f}, 0.0f, "GAR_NONE").has_value());
 }
 
 TEST_CASE("a critter held keeps its stance, roars when asked, stands frozen, loses its "

@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <numbers>
 #include <vector>
@@ -24,7 +26,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr f32 kPi = std::numbers::pi_v<f32>;
+constexpr float kPi = std::numbers::pi_v<float>;
 
 /** A level with a locked chest of potions-or-keys at the origin, a chest of gold at x 20, a
  * trapped one at x 40, a barrel at x 60, a gate across x 80 and spikes at x 100. */
@@ -131,11 +133,11 @@ TEST_CASE("a box pushes a body out by its nearest side and knows what is against
 TEST_CASE("a chest's contents are its record, or the pick from a list by the item's place",
           "[game][world][fixtures]") {
     const Fixture f("fixtures-contents");
-    u32 seed = 0;
+    std::uint32_t seed = 0;
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 5, 0, seed) == 5);
     REQUIRE(seed == 0U);
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 0, seed) == 1); // (0 + 0) % 2
-    REQUIRE(seed == static_cast<u32>(Chests::kSeedStep));
+    REQUIRE(seed == static_cast<std::uint32_t>(Chests::kSeedStep));
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 1, seed) == 1); // (13 + 1) % 2
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), 3, 0, seed) == 2); // (27 + 0) % 2
     REQUIRE(Chests::resolveContents(f.layout.itemInfos(), -1, 0, seed) == -1);
@@ -295,16 +297,16 @@ TEST_CASE("barrels stand in the way until blows break them, each after its kind"
     REQUIRE(barrels.barrel(3).kind == BreakableStrike::Kind::Plain);
     REQUIRE_FALSE(barrels.standing(3)); // for three players
     REQUIRE(barrels.obstacles().size() == 3);
-    REQUIRE(barrels.within(Vec3{201.0f, 0.0f, 0.0f}, 3.0f) == std::vector<usize>{1, 2});
+    REQUIRE(barrels.within(Vec3{201.0f, 0.0f, 0.0f}, 3.0f) == std::vector<std::size_t>{1, 2});
     REQUIRE(barrels.within(Vec3{201.0f, 40.0f, 0.0f}, 3.0f).empty());
 
     // A missile's path meets the nearer barrel first, and none when it flies over.
     REQUIRE(barrels.struckBy(Vec3{210.0f, 1.0f, 0.0f}, Vec3{190.0f, 1.0f, 0.0f}, 0.5f) ==
-            std::optional<usize>{2});
+            std::optional<std::size_t>{2});
     REQUIRE(barrels.struckBy(Vec3{190.0f, 1.0f, 0.0f}, Vec3{210.0f, 1.0f, 0.0f}, 0.5f) ==
-            std::optional<usize>{1});
-    REQUIRE_FALSE(barrels.struckBy(Vec3{210.0f, 9.0f, 0.0f}, Vec3{190.0f, 9.0f, 0.0f}, 0.5f)
-                      .has_value());
+            std::optional<std::size_t>{1});
+    REQUIRE_FALSE(
+        barrels.struckBy(Vec3{210.0f, 9.0f, 0.0f}, Vec3{190.0f, 9.0f, 0.0f}, 0.5f).has_value());
 
     // Five hit points under an armour of one: a blow of three takes two, a feeble one one.
     std::optional<BreakableStrike> blow = barrels.strike(0, 3.0f);

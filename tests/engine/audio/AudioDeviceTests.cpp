@@ -15,7 +15,7 @@ TEST_CASE("the audio device opens or degrades to silence", "[audio][device]") {
     REQUIRE(device.mixer().outputRate() == AudioDevice::kSampleRate);
 
     auto stream = device.mixer().createStream(AudioStreamDesc{8000, 1});
-    const std::array<f32, 800> kSilence{};
+    const std::array<float, 800> kSilence{};
     stream->push(kSilence);
     stream->finish();
     if (device.available()) {

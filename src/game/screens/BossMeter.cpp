@@ -1,6 +1,8 @@
 #include "game/screens/BossMeter.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <format>
 
@@ -14,7 +16,7 @@ constexpr std::string_view kBackground = "METER_BG";
 constexpr std::string_view kFill = "METER_FG";
 
 const Texture* textureOf(TextureSet* textures, RenderDevice& device, std::string_view stem,
-                         s32 piece) {
+                         std::int32_t piece) {
     if (textures == nullptr) {
         return nullptr;
     }
@@ -33,7 +35,7 @@ const Texture* textureOf(TextureSet* textures, RenderDevice& device, std::string
 
 } // namespace
 
-bool BossMeter::bind(const CritterMeter& meter, TextureSet* textures, s32 left) {
+bool BossMeter::bind(const CritterMeter& meter, TextureSet* textures, std::int32_t left) {
     clear();
     if (!meter.shown || meter.pieces <= 0) {
         return false;
@@ -61,20 +63,20 @@ void BossMeter::clear() {
     m_frozen = false;
 }
 
-void BossMeter::update(s32 ticks, f32 health, f32 maxHealth, bool alive, bool frozen) {
+void BossMeter::update(std::int32_t ticks, float health, float maxHealth, bool alive, bool frozen) {
     if (!bound()) {
         return;
     }
     m_max = std::max(maxHealth, 1.0f);
     m_alive = alive;
     m_frozen = frozen;
-    const f32 target = std::max(health, 0.0f);
+    const float target = std::max(health, 0.0f);
     if (m_fresh) {
         m_fresh = false; // first sight: as it is
         m_shown = target;
         return;
     }
-    const f32 step = kEasePerTick * static_cast<f32>(std::max(ticks, 0));
+    const float step = kEasePerTick * static_cast<float>(std::max(ticks, 0));
     if (m_shown > target) {
         m_shown = std::max(m_shown - step, target);
     } else if (m_shown < target) {
@@ -85,23 +87,24 @@ void BossMeter::update(s32 ticks, f32 health, f32 maxHealth, bool alive, bool fr
 /** The original's arithmetic: two strips share the health, the first's fill running from
  * its cap to its end over the first half, the second's from its start to its tail over the
  * rest; one strip runs the whole width less both. */
-std::array<s32, BossMeter::kMostPieces> BossMeter::fillWidths() const {
-    std::array<s32, kMostPieces> widths{};
+std::array<std::int32_t, BossMeter::kMostPieces> BossMeter::fillWidths() const {
+    std::array<std::int32_t, kMostPieces> widths{};
     if (!bound()) {
         return widths;
     }
-    const f32 fraction = std::clamp(m_shown / m_max, 0.0f, 1.0f);
+    const float fraction = std::clamp(m_shown / m_max, 0.0f, 1.0f);
     if (m_pieces >= 2) {
-        const f32 share = 2.0f * fraction;
-        widths[0] = share >= 1.0f
-                        ? kPieceWidth
-                        : static_cast<s32>(share * static_cast<f32>(kPieceWidth - m_leftInset) +
-                                           static_cast<f32>(m_leftInset));
-        widths[1] = static_cast<s32>(std::max(share - 1.0f, 0.0f) *
-                                     static_cast<f32>(kPieceWidth - m_rightInset));
+        const float share = 2.0f * fraction;
+        widths[0] =
+            share >= 1.0f
+                ? kPieceWidth
+                : static_cast<std::int32_t>(share * static_cast<float>(kPieceWidth - m_leftInset) +
+                                            static_cast<float>(m_leftInset));
+        widths[1] = static_cast<std::int32_t>(std::max(share - 1.0f, 0.0f) *
+                                              static_cast<float>(kPieceWidth - m_rightInset));
     } else {
-        widths[0] = static_cast<s32>(fraction *
-                                     static_cast<f32>(kPieceWidth - m_leftInset - m_rightInset));
+        widths[0] = static_cast<std::int32_t>(
+            fraction * static_cast<float>(kPieceWidth - m_leftInset - m_rightInset));
     }
     return widths;
 }
@@ -110,27 +113,28 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
     if (!showing()) {
         return;
     }
-    const std::array<s32, kMostPieces> widths = fillWidths();
+    const std::array<std::int32_t, kMostPieces> widths = fillWidths();
     const Color plain = Color::rgba(255, 255, 255, kAlpha);
-    for (s32 piece = 0; piece < m_pieces; ++piece) {
-        const auto x = static_cast<f32>(m_left + piece * kPieceWidth);
+    for (std::int32_t piece = 0; piece < m_pieces; ++piece) {
+        const auto x = static_cast<float>(m_left + piece * kPieceWidth);
         if (m_backed) {
             if (const Texture* back = textureOf(m_textures, device, kBackground, piece)) {
-                canvas.draw(*back, Rect{x, static_cast<f32>(kY), static_cast<f32>(kPieceWidth),
-                                        static_cast<f32>(back->height())},
+                canvas.draw(*back,
+                            Rect{x, static_cast<float>(kY), static_cast<float>(kPieceWidth),
+                                 static_cast<float>(back->height())},
                             m_frozen ? kFrozenTint : plain);
             }
         }
-        const s32 width = widths[static_cast<usize>(piece)];
+        const std::int32_t width = widths[static_cast<std::size_t>(piece)];
         if (width <= 0) {
             continue;
         }
         if (const Texture* fill = textureOf(m_textures, device, kFill, piece)) {
             // Cropped, not squeezed: the fill's left `width` pixels.
-            const f32 across = static_cast<f32>(width) / static_cast<f32>(kPieceWidth);
+            const float across = static_cast<float>(width) / static_cast<float>(kPieceWidth);
             canvas.draw(*fill,
-                        Rect{x, static_cast<f32>(kY), static_cast<f32>(width),
-                             static_cast<f32>(fill->height())},
+                        Rect{x, static_cast<float>(kY), static_cast<float>(width),
+                             static_cast<float>(fill->height())},
                         Rect{0.0f, 0.0f, across, 1.0f}, plain);
         }
     }

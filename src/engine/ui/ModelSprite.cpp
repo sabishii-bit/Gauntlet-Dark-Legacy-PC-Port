@@ -1,6 +1,8 @@
 #include "engine/ui/ModelSprite.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 
 #include "engine/core/Log.h"
@@ -9,8 +11,8 @@ namespace gdl {
 
 namespace {
 
-constexpr f32 kAmbient = 0.55f;
-constexpr f32 kDiffuse = 0.75f;
+constexpr float kAmbient = 0.55f;
+constexpr float kDiffuse = 0.75f;
 const Vec3 kLightDirection = glm::normalize(Vec3{0.3f, 0.6f, 1.0f});
 
 } // namespace
@@ -18,7 +20,7 @@ const Vec3 kLightDirection = glm::normalize(Vec3{0.3f, 0.6f, 1.0f});
 bool ModelSprite::bind(const TreeInfo& tree, ModelSet& models, TextureSet& textures,
                        RenderDevice& device) {
     m_nodes.clear();
-    for (usize i = 0; i < tree.nodes.size(); ++i) {
+    for (std::size_t i = 0; i < tree.nodes.size(); ++i) {
         const TreeNodeInfo& info = tree.nodes[i];
         if (info.object.empty()) {
             continue;
@@ -50,7 +52,7 @@ bool ModelSprite::bind(const TreeInfo& tree, ModelSet& models, TextureSet& textu
     return !m_nodes.empty();
 }
 
-void ModelSprite::draw(Canvas& canvas, Vec2 position, f32 scale, f32 pitch,
+void ModelSprite::draw(Canvas& canvas, Vec2 position, float scale, float pitch,
                        const Mat4& orientation) const {
     const Mat4 rotation = glm::rotate(Mat4{1.0f}, pitch, Vec3{1.0f, 0.0f, 0.0f}) * orientation;
     const Mat3 normalRotation{rotation};
@@ -60,14 +62,14 @@ void ModelSprite::draw(Canvas& canvas, Vec2 position, f32 scale, f32 pitch,
     const Mat4 local = placement * rotation;
 
     for (const Node& node : m_nodes) {
-        for (usize p = 0; p < node.mesh->parts.size(); ++p) {
+        for (std::size_t p = 0; p < node.mesh->parts.size(); ++p) {
             const MeshPart& part = node.mesh->parts[p];
             m_batch.clear();
             m_batch.begin(PrimitiveTopology::TriangleList);
-            for (const u32 index : part.indices) {
+            for (const std::uint32_t index : part.indices) {
                 const MeshVertex& v = node.mesh->vertices[index];
                 const Vec3 normal = glm::normalize(normalRotation * v.normal);
-                const f32 light =
+                const float light =
                     std::clamp(kAmbient + kDiffuse * glm::dot(normal, kLightDirection), 0.0f, 1.0f);
                 // Chrome samples the sheet by the view-space normal, mirrored as the original does.
                 const Vec2 uv =

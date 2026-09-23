@@ -5,7 +5,7 @@
 
 namespace gdl {
 
-void AmbientDimmer::ask(f32 amount) {
+void AmbientDimmer::ask(float amount) {
     m_wanted = amount;
     m_holdLeft = kHoldSeconds;
 }
@@ -17,7 +17,7 @@ void AmbientDimmer::reset() {
     m_frames = 0.0f;
 }
 
-void AmbientDimmer::update(f32 seconds) {
+void AmbientDimmer::update(float seconds) {
     m_holdLeft = std::max(m_holdLeft - seconds, 0.0f);
     m_frames += seconds / kFrameSeconds;
     while (m_frames >= 1.0f) {
@@ -29,12 +29,12 @@ void AmbientDimmer::update(f32 seconds) {
                 m_wanted = 0.0f;
             }
         }
-        const f32 gap = m_wanted - m_current;
+        const float gap = m_wanted - m_current;
         m_current += std::clamp(gap, -kDarkenStep, kBrightenStep);
     }
 }
 
-f32 AmbientDimmer::applied(f32 ambient) const {
+float AmbientDimmer::applied(float ambient) const {
     return std::clamp(ambient + m_current, 0.0f, 1.0f);
 }
 

@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
@@ -41,7 +43,7 @@ TEST_CASE("glyphs are drawn as cells of the sheet in one batch", "[ui][text]") {
     painter.setFont(&font, &sheet);
     Canvas canvas;
     canvas.begin(device, Mat4{1.0f});
-    const s32 end = painter.draw(canvas, 10, 20, "A B", TextStyle{});
+    const std::int32_t end = painter.draw(canvas, 10, 20, "A B", TextStyle{});
     canvas.end();
     REQUIRE(end == 28);
     REQUIRE(device.draws.size() == 1);

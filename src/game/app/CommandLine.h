@@ -1,16 +1,16 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include "engine/app/Application.h"
-#include "engine/core/Types.h"
 
 namespace gdl::game {
 
-enum class CommandLineAction : u8 { Run, ShowHelp, Fail };
+enum class CommandLineAction : std::uint8_t { Run, ShowHelp, Fail };
 
 struct GameOptions {
     std::string playMovie; ///< play this VQ movie (name without extension) and quit

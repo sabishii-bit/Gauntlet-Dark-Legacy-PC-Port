@@ -1,3 +1,5 @@
+#include <cstdint>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/assets/ItemArchive.h"
@@ -28,7 +30,7 @@ TEST_CASE("a boss meter fills its two strips by the original's arithmetic and ea
           "[game][screens][hud]") {
     BossMeter meter;
     REQUIRE_FALSE(meter.bound());
-    REQUIRE(meter.fillWidths() == std::array<s32, 2>{0, 0});
+    REQUIRE(meter.fillWidths() == std::array<std::int32_t, 2>{0, 0});
     const CritterMeter none;
     REQUIRE_FALSE(meter.bind(none, nullptr));
     REQUIRE(meter.bind(lichMeter(), nullptr));
@@ -37,19 +39,19 @@ TEST_CASE("a boss meter fills its two strips by the original's arithmetic and ea
     meter.update(2, 3000.0f, 3000.0f, true, false);
     REQUIRE(meter.shown() == 3000.0f);
     REQUIRE(meter.showing());
-    REQUIRE(meter.fillWidths() == std::array<s32, 2>{256, 256 - 53});
+    REQUIRE(meter.fillWidths() == std::array<std::int32_t, 2>{256, 256 - 53});
     // Half: the first strip whole, the second empty.
     meter.update(0, 1500.0f, 3000.0f, true, false);
     for (int i = 0; i < 300; ++i) {
         meter.update(2, 1500.0f, 3000.0f, true, false);
     }
     REQUIRE(meter.shown() == 1500.0f);
-    REQUIRE(meter.fillWidths() == std::array<s32, 2>{256, 0});
+    REQUIRE(meter.fillWidths() == std::array<std::int32_t, 2>{256, 0});
     // A quarter: the first strip half of what lies past its cap of 44.
     for (int i = 0; i < 300; ++i) {
         meter.update(2, 750.0f, 3000.0f, true, false);
     }
-    REQUIRE(meter.fillWidths() == std::array<s32, 2>{44 + (256 - 44) / 2, 0});
+    REQUIRE(meter.fillWidths() == std::array<std::int32_t, 2>{44 + (256 - 44) / 2, 0});
     // A blow shows at three a tick, not at once; healing climbs the same way.
     meter.update(2, 150.0f, 3000.0f, true, false);
     REQUIRE(meter.shown() == 744.0f);
@@ -60,7 +62,7 @@ TEST_CASE("a boss meter fills its two strips by the original's arithmetic and ea
         meter.update(2, -50.0f, 3000.0f, true, false);
     }
     REQUIRE(meter.shown() == 0.0f);
-    REQUIRE(meter.fillWidths() == std::array<s32, 2>{44, 0}); // the cap is not fill
+    REQUIRE(meter.fillWidths() == std::array<std::int32_t, 2>{44, 0}); // the cap is not fill
     meter.update(2, 0.0f, 3000.0f, false, false);
     REQUIRE_FALSE(meter.showing());
     meter.clear();
@@ -70,7 +72,7 @@ TEST_CASE("a boss meter fills its two strips by the original's arithmetic and ea
     single.pieces = 1;
     REQUIRE(meter.bind(single, nullptr));
     meter.update(2, 3000.0f, 3000.0f, true, false);
-    REQUIRE(meter.fillWidths() == std::array<s32, 2>{256 - 44 - 53, 0});
+    REQUIRE(meter.fillWidths() == std::array<std::int32_t, 2>{256 - 44 - 53, 0});
 }
 
 TEST_CASE("a boss meter is drawn from the boss's own archive across the top of the screen",

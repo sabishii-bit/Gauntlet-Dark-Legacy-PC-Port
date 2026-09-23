@@ -1,12 +1,13 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <span>
 #include <vector>
 
 #include "engine/audio/AudioStream.h"
-#include "engine/core/Types.h"
 
 namespace gdl {
 
@@ -17,28 +18,28 @@ namespace gdl {
  */
 class AudioMixer {
 public:
-    static constexpr u32 kOutputChannels = 2;
-    static constexpr f32 kCeiling = 1.0f;  ///< the loudest the mix is let reach
-    static constexpr f32 kRelease = 0.05f; ///< seconds the mix takes to come back up
+    static constexpr std::uint32_t kOutputChannels = 2;
+    static constexpr float kCeiling = 1.0f;  ///< the loudest the mix is let reach
+    static constexpr float kRelease = 0.05f; ///< seconds the mix takes to come back up
 
-    explicit AudioMixer(u32 outputRate);
+    explicit AudioMixer(std::uint32_t outputRate);
 
-    u32 outputRate() const { return m_outputRate; }
+    std::uint32_t outputRate() const { return m_outputRate; }
 
     std::shared_ptr<AudioStream> createStream(const AudioStreamDesc& desc);
 
     /** Overwrites `stereoOut` with the mix of all streams and drops the ones that finished. */
-    void mix(std::span<f32> stereoOut);
+    void mix(std::span<float> stereoOut);
 
-    usize streamCount() const;
+    std::size_t streamCount() const;
 
 private:
     /** Turns the mix down wherever it would pass the ceiling. */
-    void limit(std::span<f32> stereoOut);
+    void limit(std::span<float> stereoOut);
 
-    u32 m_outputRate;
-    f32 m_releaseStep; ///< how far the limiter's gain rises per frame
-    f32 m_limiterGain = 1.0f;
+    std::uint32_t m_outputRate;
+    float m_releaseStep; ///< how far the limiter's gain rises per frame
+    float m_limiterGain = 1.0f;
     mutable std::mutex m_mutex;
     std::vector<std::shared_ptr<AudioStream>> m_streams;
 };

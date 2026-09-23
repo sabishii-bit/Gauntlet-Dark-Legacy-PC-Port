@@ -1,40 +1,41 @@
 #pragma once
 
-#include <filesystem>
 #include <array>
-#include <string_view>
+#include <cstdint>
+#include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
-#include "engine/core/Types.h"
 #include "engine/platform/Input.h"
 
 namespace gdl::game {
 
 struct DisplayConfig {
-    u32 virtualWidth = 512; ///< the 2D layer's coordinate space
-    u32 virtualHeight = 384;
-    u32 frameWidth = 640; ///< the frame the game composes, letterboxed onto the window
-    u32 frameHeight = 448;
-    u32 windowWidth = 1280;
-    u32 windowHeight = 896;
+    std::uint32_t virtualWidth = 512; ///< the 2D layer's coordinate space
+    std::uint32_t virtualHeight = 384;
+    std::uint32_t frameWidth = 640; ///< the frame the game composes, letterboxed onto the window
+    std::uint32_t frameHeight = 448;
+    std::uint32_t windowWidth = 1280;
+    std::uint32_t windowHeight = 896;
     bool vsync = true;
-    u32 maxFrameRate = 60; ///< frames per second outside play (the menus); 0 leaves it to vsync
+    std::uint32_t maxFrameRate =
+        60; ///< frames per second outside play (the menus); 0 leaves it to vsync
 };
 
 struct TimingConfig {
-    u32 tickRate = 60;          ///< logic ticks per second; the original counts 60 Hz retraces
-    u32 gameplayFrameRate = 30; ///< the rate gameplay was tuned for: two ticks per frame
+    std::uint32_t tickRate = 60; ///< logic ticks per second; the original counts 60 Hz retraces
+    std::uint32_t gameplayFrameRate = 30; ///< the rate gameplay was tuned for: two ticks per frame
 };
 
 struct CameraConfig {
-    f32 horizontalFovDegrees = 60.0f;
+    float horizontalFovDegrees = 60.0f;
 };
 
 struct AudioConfig {
-    f32 masterVolume = 1.0f;
-    f32 musicVolume = 0.7f;
-    f32 effectsVolume = 1.0f;
+    float masterVolume = 1.0f;
+    float musicVolume = 0.7f;
+    float effectsVolume = 1.0f;
 };
 
 struct TextConfig {
@@ -44,19 +45,19 @@ struct TextConfig {
 /** How hard the game is: easy, normal or hard, which scales the levels' own tuning. */
 struct DifficultyConfig {
     static constexpr std::array<std::string_view, 3> kNames{"easy", "normal", "hard"};
-    static constexpr std::array<f32, 3> kGains{0.667f, 1.0f, 1.5f};
+    static constexpr std::array<float, 3> kGains{0.667f, 1.0f, 1.5f};
 
     std::string level = "normal";
 
     /** What the level's scales are multiplied by; normal's for a name it does not know. */
-    f32 gain() const;
+    float gain() const;
 };
 
 /** Where characters are saved: a `saves` folder beside the game when the directory is
  * empty, the directory itself when it is absolute, else that directory beside the game. */
 struct SaveConfig {
     std::string directory;
-    u32 slots = 8;
+    std::uint32_t slots = 8;
 };
 
 /** Keys and pad buttons that drive the menus. */
@@ -96,15 +97,16 @@ struct PlayBindings {
     std::vector<PadButton> padUsePotion{PadButton::B};
     std::vector<Key> throwPotion{Key::Q};
     std::vector<PadButton> padThrowPotion{PadButton::X};
-    std::vector<Key> shieldPotion{Key::C};  ///< a potion spent on a ring of its magic
+    std::vector<Key> shieldPotion{Key::C}; ///< a potion spent on a ring of its magic
     std::vector<PadButton> padShieldPotion{PadButton::RightThumb};
     std::vector<Key> strafe{Key::LeftControl}; ///< held: steps keep the facing
     std::vector<PadButton> padStrafe{PadButton::LeftThumb};
-    std::vector<Key> strongAttack{Key::R};  ///< the slow attack: with nothing in reach, a strong throw
+    std::vector<Key> strongAttack{
+        Key::R}; ///< the slow attack: with nothing in reach, a strong throw
     std::vector<PadButton> padStrongAttack{PadButton::LeftBumper};
     std::vector<Key> turbo{Key::LeftShift}; ///< held with the attack for a turbo attack
     std::vector<PadButton> padTurbo{PadButton::RightBumper};
-    std::vector<Key> charge{Key::F};        ///< the shove that runs the turbo meter down
+    std::vector<Key> charge{Key::F}; ///< the shove that runs the turbo meter down
     std::vector<PadButton> padCharge{PadButton::Y};
     std::vector<Key> selectorUp{Key::I};
     std::vector<Key> selectorDown{Key::K};
@@ -114,7 +116,7 @@ struct PlayBindings {
     std::vector<PadButton> padSelectorDown{PadButton::DpadDown};
     std::vector<PadButton> padSelectorLeft{PadButton::DpadLeft};
     std::vector<PadButton> padSelectorRight{PadButton::DpadRight};
-    f32 stickDeadZone = 0.25f; ///< stick deflection ignored as rest
+    float stickDeadZone = 0.25f; ///< stick deflection ignored as rest
 };
 
 /**
@@ -142,7 +144,7 @@ struct GameConfig {
     void saveFile(const std::filesystem::path& file) const;
     std::string toJson() const;
 
-    f32 horizontalFovRadians() const;
+    float horizontalFovRadians() const;
 
     /** The save directory, resolved from the settings or the user's configuration folder. */
     std::filesystem::path saveDirectory() const;

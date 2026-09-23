@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <filesystem>
 #include <string_view>
 #include <vector>
@@ -16,22 +17,25 @@ namespace {
 using namespace gdl;
 using test::ByteWriter;
 
-std::vector<u8> chunk(std::string_view id, std::span<const u8> body) {
+std::vector<std::uint8_t> chunk(std::string_view id, std::span<const std::uint8_t> body) {
     ByteWriter w;
-    w.putFourcc(id).putU32(static_cast<u32>(body.size())).putBytes(body);
+    w.putFourcc(id).putU32(static_cast<std::uint32_t>(body.size())).putBytes(body);
     if (body.size() % 2 != 0) {
         w.putU8(0);
     }
     return w.bytes();
 }
 
-std::vector<u8> list(std::string_view type, std::span<const u8> body) {
+std::vector<std::uint8_t> list(std::string_view type, std::span<const std::uint8_t> body) {
     ByteWriter w;
-    w.putFourcc("LIST").putU32(static_cast<u32>(body.size() + 4)).putFourcc(type).putBytes(body);
+    w.putFourcc("LIST")
+        .putU32(static_cast<std::uint32_t>(body.size() + 4))
+        .putFourcc(type)
+        .putBytes(body);
     return w.bytes();
 }
 
-std::vector<u8> videoStreamList() {
+std::vector<std::uint8_t> videoStreamList() {
     ByteWriter strh;
     strh.putFourcc("vids").putFourcc("MVDV").putU32(0).putU16(0).putU16(0).putU32(0);
     strh.putU32(1).putU32(30).putU32(0).putU32(3).putU32(0).putU32(0).putU32(0).putZeros(8);
@@ -43,7 +47,7 @@ std::vector<u8> videoStreamList() {
     return list("strl", body.bytes());
 }
 
-std::vector<u8> audioStreamList() {
+std::vector<std::uint8_t> audioStreamList() {
     ByteWriter strh;
     strh.putFourcc("auds").putU32(0).putU32(0).putU16(0).putU16(0).putU32(0);
     strh.putU32(1).putU32(8000).putU32(0).putU32(16).putU32(0).putU32(0).putU32(1).putZeros(8);
@@ -64,24 +68,26 @@ std::filesystem::path writeSampleAvi() {
     header.putBytes(videoStreamList());
     header.putBytes(audioStreamList());
 
-    const std::vector<u8> audio{128, 129, 130, 131};
-    const std::vector<u8> inner{7, 8};
+    const std::vector<std::uint8_t> audio{128, 129, 130, 131};
+    const std::vector<std::uint8_t> inner{7, 8};
     ByteWriter movie;
-    movie.putBytes(chunk("00dc", std::vector<u8>{'a', 'b', 'c'}));
+    movie.putBytes(chunk("00dc", std::vector<std::uint8_t>{'a', 'b', 'c'}));
     movie.putBytes(chunk("01wb", audio));
     movie.putBytes(list("rec ", chunk("00db", inner)));
-    movie.putBytes(chunk("JUNK", std::vector<u8>{0, 0}));
-    movie.putBytes(chunk("00dc", std::vector<u8>{'z'}));
+    movie.putBytes(chunk("JUNK", std::vector<std::uint8_t>{0, 0}));
+    movie.putBytes(chunk("00dc", std::vector<std::uint8_t>{'z'}));
 
     ByteWriter riffBody;
     riffBody.putFourcc("AVI ");
     riffBody.putBytes(list("hdrl", header.bytes()));
-    riffBody.putBytes(chunk("JUNK", std::vector<u8>{0, 0, 0, 0}));
+    riffBody.putBytes(chunk("JUNK", std::vector<std::uint8_t>{0, 0, 0, 0}));
     riffBody.putBytes(list("movi", movie.bytes()));
-    riffBody.putBytes(chunk("idx1", std::vector<u8>{1, 2, 3, 4}));
+    riffBody.putBytes(chunk("idx1", std::vector<std::uint8_t>{1, 2, 3, 4}));
 
     ByteWriter file;
-    file.putFourcc("RIFF").putU32(static_cast<u32>(riffBody.size())).putBytes(riffBody.bytes());
+    file.putFourcc("RIFF")
+        .putU32(static_cast<std::uint32_t>(riffBody.size()))
+        .putBytes(riffBody.bytes());
 
     const auto dir = test::scratchDirectory("avi-reader");
     writeFile(dir / "sample.avi", file.bytes());
@@ -129,7 +135,7 @@ TEST_CASE("movie chunks stream in order, descending into rec lists and skipping 
     REQUIRE(first.has_value());
     REQUIRE(first->kind == AviChunkKind::Video);
     REQUIRE(first->stream == 0);
-    REQUIRE(first->data == std::vector<u8>{'a', 'b', 'c'});
+    REQUIRE(first->data == std::vector<std::uint8_t>{'a', 'b', 'c'});
 
     auto second = reader.next();
     REQUIRE(second.has_value());
@@ -140,11 +146,11 @@ TEST_CASE("movie chunks stream in order, descending into rec lists and skipping 
     auto third = reader.next();
     REQUIRE(third.has_value());
     REQUIRE(third->kind == AviChunkKind::Video);
-    REQUIRE(third->data == std::vector<u8>{7, 8});
+    REQUIRE(third->data == std::vector<std::uint8_t>{7, 8});
 
     auto fourth = reader.next();
     REQUIRE(fourth.has_value());
-    REQUIRE(fourth->data == std::vector<u8>{'z'});
+    REQUIRE(fourth->data == std::vector<std::uint8_t>{'z'});
 
     REQUIRE_FALSE(reader.next().has_value());
     REQUIRE_FALSE(reader.next().has_value());
@@ -152,7 +158,8 @@ TEST_CASE("movie chunks stream in order, descending into rec lists and skipping 
 
 TEST_CASE("files that are not AVI are rejected", "[codec][avi]") {
     const auto dir = test::scratchDirectory("avi-bad");
-    writeFile(dir / "bad.avi", std::vector<u8>{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'A', 'V', 'E'});
+    writeFile(dir / "bad.avi",
+              std::vector<std::uint8_t>{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'A', 'V', 'E'});
     REQUIRE_THROWS_AS(AviReader(dir / "bad.avi"), FormatError);
     REQUIRE_THROWS_AS(AviReader(dir / "missing.avi"), FileError);
 }

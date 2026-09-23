@@ -3,45 +3,48 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 #include <numbers>
 #include <utility>
 
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
+
 #include "game/enemies/EnemyMind.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr f32 kPi = std::numbers::pi_v<f32>;
-constexpr f32 kStepUp = 2.0f;
-constexpr f32 kDrop = 6.0f;
-constexpr f32 kFootClearance = 0.1f;
-constexpr f32 kPushDecay = 0.8f;
-constexpr f32 kMostPush = 40.0f;
-constexpr f32 kGravity = 100.0f;
-constexpr f32 kKnockScale = 20.0f;
-constexpr f32 kGolemKnockLoss = 5.0f; ///< a golem is that much harder to throw
-constexpr f32 kDeathFade = 1.0f;      ///< seconds the fallen fades over after its death
-constexpr f32 kBlindTurnShare = 0.1f; ///< of its turn rate while blinded
-constexpr s32 kThawBlinkTicks = 180;
-constexpr s32 kThawBlinkBit = 8;
+constexpr float kPi = std::numbers::pi_v<float>;
+constexpr float kStepUp = 2.0f;
+constexpr float kDrop = 6.0f;
+constexpr float kFootClearance = 0.1f;
+constexpr float kPushDecay = 0.8f;
+constexpr float kMostPush = 40.0f;
+constexpr float kGravity = 100.0f;
+constexpr float kKnockScale = 20.0f;
+constexpr float kGolemKnockLoss = 5.0f; ///< a golem is that much harder to throw
+constexpr float kDeathFade = 1.0f;      ///< seconds the fallen fades over after its death
+constexpr float kBlindTurnShare = 0.1f; ///< of its turn rate while blinded
+constexpr std::int32_t kThawBlinkTicks = 180;
+constexpr std::int32_t kThawBlinkBit = 8;
 
-f32 flatDistance(const Vec3& a, const Vec3& b) {
-    const f32 dx = a.x - b.x;
-    const f32 dz = a.z - b.z;
+float flatDistance(const Vec3& a, const Vec3& b) {
+    const float dx = a.x - b.x;
+    const float dz = a.z - b.z;
     return std::sqrt(dx * dx + dz * dz);
 }
 
-f32 yawBetween(const Vec3& from, const Vec3& to) {
+float yawBetween(const Vec3& from, const Vec3& to) {
     return std::atan2(to.x - from.x, to.z - from.z);
 }
 
 } // namespace
 
-std::string_view bossNameOf(s32 kind) {
+std::string_view bossNameOf(std::int32_t kind) {
     switch (kind) {
     case 34: return "DRAGON";
     case 35: return "CHIMERA";
@@ -87,7 +90,7 @@ void Critters::close() {
     m_collision = nullptr;
 }
 
-const EnemyView* Critters::viewOf(std::span<const EnemyView> players, s32 player) {
+const EnemyView* Critters::viewOf(std::span<const EnemyView> players, std::int32_t player) {
     for (const EnemyView& view : players) {
         if (view.player == player) {
             return &view;
@@ -98,7 +101,7 @@ const EnemyView* Critters::viewOf(std::span<const EnemyView> players, s32 player
 
 /** The data and archive of a kind, loaded on first asking: the golem's and general's costume
  * is the realm's (`MONSTERS/GOLEM/LEVELG`), a gargoyle's its form's (`MONSTERS/GAR_EAGL`). */
-Critters::Stock* Critters::stockFor(s32 kind, std::string_view form) {
+Critters::Stock* Critters::stockFor(std::int32_t kind, std::string_view form) {
     std::string name;
     switch (kind) {
     case kGolemCritter: name = "GOLEM"; break;
@@ -125,10 +128,11 @@ Critters::Stock* Critters::stockFor(s32 kind, std::string_view form) {
     if (!stock->data.load(m_root / "critter" / (name + ".json"))) {
         return nullptr;
     }
-    const std::filesystem::path archive =
-        kind == kGargoyleCritter || kind == kBossCritter ? m_root / "MONSTERS" / name
-                                 : m_root / "MONSTERS" / normalizeAssetName(stock->data.folder()) /
-                                       std::format("LEVEL{}", m_realm);
+    const std::filesystem::path archive = kind == kGargoyleCritter || kind == kBossCritter
+                                              ? m_root / "MONSTERS" / name
+                                              : m_root / "MONSTERS" /
+                                                    normalizeAssetName(stock->data.folder()) /
+                                                    std::format("LEVEL{}", m_realm);
     if (!stock->archive.load(archive)) {
         return nullptr;
     }
@@ -138,20 +142,22 @@ Critters::Stock* Critters::stockFor(s32 kind, std::string_view form) {
         return nullptr;
     }
     stock->tree = &stock->archive.trees.tree(*tree);
-    if (!stock->body.bind(*stock->tree, stock->archive.models, stock->archive.textures, *m_device)) {
+    if (!stock->body.bind(*stock->tree, stock->archive.models, stock->archive.textures,
+                          *m_device)) {
         return nullptr;
     }
     m_stocks.push_back(std::move(stock));
     return m_stocks.back().get();
 }
 
-std::optional<s32> Critters::spawn(s32 kind, const Vec3& position, f32 yaw, std::string_view form) {
+std::optional<std::int32_t> Critters::spawn(std::int32_t kind, const Vec3& position, float yaw,
+                                            std::string_view form) {
     Stock* stock = stockFor(kind, form);
     if (stock == nullptr) {
         return std::nullopt;
     }
-    for (s32 i = 0; i < kMost; ++i) {
-        Critter& critter = m_critters[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < kMost; ++i) {
+        Critter& critter = m_critters[static_cast<std::size_t>(i)];
         if (critter.state != State::Inactive) {
             continue;
         }
@@ -181,7 +187,7 @@ std::optional<s32> Critters::spawn(s32 kind, const Vec3& position, f32 yaw, std:
     return std::nullopt;
 }
 
-bool Critters::startMove(Critter& critter, usize index) {
+bool Critters::startMove(Critter& critter, std::size_t index) {
     const CritterData& data = critter.stock->data;
     if (index >= data.moves().size()) {
         return false;
@@ -191,7 +197,7 @@ bool Critters::startMove(Critter& critter, usize index) {
     if (!sequence.has_value()) {
         return false;
     }
-    critter.move = static_cast<s32>(index);
+    critter.move = static_cast<std::int32_t>(index);
     critter.moveDone = false;
     critter.struckThisMove.clear();
     critter.soundsGiven = 0;
@@ -208,7 +214,7 @@ void Critters::chooseTarget(Critter& critter, std::span<const EnemyView> players
         if (view.hidden) {
             continue;
         }
-        const f32 distance = flatDistance(view.position, critter.position);
+        const float distance = flatDistance(view.position, critter.position);
         if (!sight.allows(distance, 0.0f, view.position.y - critter.position.y)) {
             continue;
         }
@@ -220,20 +226,21 @@ void Critters::chooseTarget(Critter& critter, std::span<const EnemyView> players
 }
 
 /** The loudest move whose target rule and cooldown allow it now. */
-std::optional<usize> Critters::bestMove(const Critter& critter, std::span<const EnemyView> players) {
+std::optional<std::size_t> Critters::bestMove(const Critter& critter,
+                                              std::span<const EnemyView> players) {
     const CritterData& data = critter.stock->data;
     const EnemyView* view = viewOf(players, critter.target);
-    f32 distance = 100000.0f;
-    f32 bearing = kPi;
-    f32 vertical = 0.0f;
+    float distance = 100000.0f;
+    float bearing = kPi;
+    float vertical = 0.0f;
     if (view != nullptr) {
         distance = critter.targetDistance;
         bearing = wrapAngle(yawBetween(critter.position, view->position) - critter.yaw);
         vertical = view->position.y - critter.position.y;
     }
-    std::optional<usize> best;
-    s32 bestPriority = -1;
-    for (usize i = 0; i < data.moves().size(); ++i) {
+    std::optional<std::size_t> best;
+    std::int32_t bestPriority = -1;
+    for (std::size_t i = 0; i < data.moves().size(); ++i) {
         const CritterMove& move = data.moves()[i];
         // Attacks, the steps (walks, turns and back-steps, types 48 to 63), the stance and
         // the taunt.
@@ -263,7 +270,7 @@ bool Critters::curbedMove(const Critter& critter, const CritterMove& move) {
     if (critter.curbSeconds <= 0.0f || !move.attack()) {
         return false;
     }
-    return std::ranges::any_of(std::array{move.damage0, move.damage1}, [&](s32 index) {
+    return std::ranges::any_of(std::array{move.damage0, move.damage1}, [&](std::int32_t index) {
         const CritterDamage* damage = critter.stock->data.damage(index);
         return damage != nullptr && (damage->flags & CritterDamage::kCurbed) != 0 &&
                damage->type != CritterDamage::kBurst;
@@ -272,9 +279,10 @@ bool Critters::curbedMove(const Critter& critter, const CritterMove& move) {
 
 void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) {
     const CritterData& data = critter.stock->data;
-    const CritterMove* current = critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
+    const CritterMove* current =
+        critter.move >= 0 ? &data.moves()[static_cast<std::size_t>(critter.move)] : nullptr;
     // What is loudest cuts in: the death, a roar after enough taken, a hit's reaction.
-    const auto cutIn = [&](std::optional<usize> index) {
+    const auto cutIn = [&](std::optional<std::size_t> index) {
         if (!index.has_value() || (current != nullptr && !critter.moveDone &&
                                    data.moves()[*index].priority <= current->priority)) {
             return false;
@@ -295,14 +303,15 @@ void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) 
     }
     if (critter.hurtPending >= 1.0f) {
         const bool floors = (critter.hurtFlags & EnemyHit::kFloors) != 0;
-        const auto reaction = data.moveOfType(floors ? CritterMove::kKnockDown : CritterMove::kKnockBack);
+        const auto reaction =
+            data.moveOfType(floors ? CritterMove::kKnockDown : CritterMove::kKnockBack);
         if (cutIn(reaction.has_value() ? reaction : data.moveOfType(CritterMove::kKnockBack))) {
-            f32 scale = floors ? kKnockScale : 0.0f;
+            float scale = floors ? kKnockScale : 0.0f;
             if (data.kind() == kGolemCritter) {
                 scale = std::max(scale - kGolemKnockLoss, 0.0f);
             }
             critter.push += critter.hurtDirection * scale;
-            if (const f32 magnitude = glm::length(critter.push); magnitude > kMostPush) {
+            if (const float magnitude = glm::length(critter.push); magnitude > kMostPush) {
                 critter.push *= kMostPush / magnitude;
             }
         }
@@ -316,7 +325,8 @@ void Critters::chooseMove(Critter& critter, std::span<const EnemyView> players) 
     if (current != nullptr && !critter.moveDone) {
         return;
     }
-    if (current != nullptr && current->link >= 0 && startMove(critter, static_cast<usize>(current->link))) {
+    if (current != nullptr && current->link >= 0 &&
+        startMove(critter, static_cast<std::size_t>(current->link))) {
         return;
     }
     // Asked to roar, it does so before anything else; held, it keeps to its stance.
@@ -369,14 +379,14 @@ Vec3 Critters::partPosition(const Critter& critter, std::string_view node) {
 
 /** The harm a move does over its active frames: a blow reaches whoever is within the
  * part's radius, a ring whoever is within its reach of the feet; each player once a move. */
-void Critters::strikeWith(Critter& critter, s32 id, const CritterMove& move, s32 damageIndex,
-                          std::span<const EnemyView> players) {
+void Critters::strikeWith(Critter& critter, std::int32_t id, const CritterMove& move,
+                          std::int32_t damageIndex, std::span<const EnemyView> players) {
     const CritterDamage* damage = critter.stock->data.damage(damageIndex);
     if (damage == nullptr || damage->damage <= 0.0f) {
         return;
     }
     Vec3 centre;
-    f32 reach = 0.0f;
+    float reach = 0.0f;
     switch (damage->type) {
     case CritterDamage::kBlow:
         centre = partPosition(critter, move.colnode) + damage->offset;
@@ -387,11 +397,11 @@ void Critters::strikeWith(Critter& critter, s32 id, const CritterMove& move, s32
         centre = critter.position;
         reach = damage->maxDistance;
         break;
-    default:
-        return;
+    default: return;
     }
     for (const EnemyView& view : players) {
-        if (view.hidden || std::ranges::find(critter.struckThisMove, view.player) != critter.struckThisMove.end()) {
+        if (view.hidden || std::ranges::find(critter.struckThisMove, view.player) !=
+                               critter.struckThisMove.end()) {
             continue;
         }
         const Vec3 feet = view.position;
@@ -402,7 +412,8 @@ void Critters::strikeWith(Critter& critter, s32 id, const CritterMove& move, s32
             continue;
         }
         if (damage->type == CritterDamage::kBreath &&
-            std::cos(wrapAngle(yawBetween(critter.position, feet) - critter.yaw)) < damage->minDot) {
+            std::cos(wrapAngle(yawBetween(critter.position, feet) - critter.yaw)) <
+                damage->minDot) {
             continue;
         }
         CritterBlow blow;
@@ -410,7 +421,7 @@ void Critters::strikeWith(Critter& critter, s32 id, const CritterMove& move, s32
         blow.critter = id;
         blow.damage = damage->damage * m_scales.damage;
         const Vec3 away = feet - critter.position;
-        const f32 length = flatDistance(feet, critter.position);
+        const float length = flatDistance(feet, critter.position);
         blow.direction = length > 0.001f ? Vec3{away.x / length, 0.0f, away.z / length}
                                          : Vec3{std::sin(critter.yaw), 0.0f, std::cos(critter.yaw)};
         m_blows.push_back(blow);
@@ -419,18 +430,21 @@ void Critters::strikeWith(Critter& critter, s32 id, const CritterMove& move, s32
 }
 
 /** The move carries the body: at its pace toward the player, turning at its rate. */
-void Critters::carry(Critter& critter, f32 seconds, const CritterMove* move, std::span<const EnemyView> players) {
+void Critters::carry(Critter& critter, float seconds, const CritterMove* move,
+                     std::span<const EnemyView> players) {
     const EnemyView* view = viewOf(players, critter.target);
     if (move != nullptr && move->turnRate > 0.0f && view != nullptr) {
-        const f32 wanted = yawBetween(critter.position, view->position);
-        const f32 d = wrapAngle(wanted - critter.yaw);
+        const float wanted = yawBetween(critter.position, view->position);
+        const float d = wrapAngle(wanted - critter.yaw);
         // Blinded, it turns at a tenth of its rate.
-        const f32 step = move->turnRate * seconds * (critter.blindTicks > 0 ? kBlindTurnShare : 1.0f);
-        critter.yaw = wrapAngle(std::abs(d) <= step ? wanted : critter.yaw + (d > 0.0f ? step : -step));
+        const float step =
+            move->turnRate * seconds * (critter.blindTicks > 0 ? kBlindTurnShare : 1.0f);
+        critter.yaw =
+            wrapAngle(std::abs(d) <= step ? wanted : critter.yaw + (d > 0.0f ? step : -step));
     }
     Vec3 translation = critter.push * seconds;
     if (move != nullptr && move->speed > 0.0f && critter.state == State::Active) {
-        const f32 pace = move->speed * m_scales.speed * seconds;
+        const float pace = move->speed * m_scales.speed * seconds;
         translation += Vec3{std::sin(critter.yaw), 0.0f, std::cos(critter.yaw)} * pace;
     }
     if (glm::length(translation) <= 0.0f) {
@@ -439,12 +453,13 @@ void Critters::carry(Critter& critter, f32 seconds, const CritterMove* move, std
     Vec3 to = critter.position + translation;
     // Never onto a player: it stops against them.
     for (const EnemyView& other : players) {
-        if (!other.hidden && flatDistance(other.position, to) < other.radius + critter.stock->data.radius()) {
+        if (!other.hidden &&
+            flatDistance(other.position, to) < other.radius + critter.stock->data.radius()) {
             return;
         }
     }
     if (m_collision != nullptr) {
-        const f32 wallRadius = critter.stock->data.wallRadius();
+        const float wallRadius = critter.stock->data.wallRadius();
         to = m_collision->resolveWalls(to, wallRadius, to.y + kFootClearance, to.y + 8.0f);
         const auto floor = m_collision->floorAt(to, kStepUp, kDrop);
         if (!floor.has_value()) {
@@ -452,29 +467,30 @@ void Critters::carry(Critter& critter, f32 seconds, const CritterMove* move, std
         }
         to.y = floor->y;
     }
-    for (s32 i = 0; i < kMost; ++i) {
-        const Critter& other = m_critters[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < kMost; ++i) {
+        const Critter& other = m_critters[static_cast<std::size_t>(i)];
         if (&other == &critter || other.state == State::Inactive) {
             continue;
         }
-        if (flatDistance(other.position, to) < other.stock->data.radius() + critter.stock->data.radius()) {
+        if (flatDistance(other.position, to) <
+            other.stock->data.radius() + critter.stock->data.radius()) {
             return;
         }
     }
     critter.position = to;
 }
 
-void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) {
+void Critters::update(std::int32_t ticks, float seconds, std::span<const EnemyView> players) {
     if (ticks <= 0) {
         return;
     }
-    for (s32 i = 0; i < kMost; ++i) {
-        Critter& critter = m_critters[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < kMost; ++i) {
+        Critter& critter = m_critters[static_cast<std::size_t>(i)];
         if (critter.state == State::Inactive) {
             continue;
         }
         const CritterData& data = critter.stock->data;
-        for (f32& cooldown : critter.cooldowns) {
+        for (float& cooldown : critter.cooldowns) {
             cooldown = std::max(cooldown - seconds, 0.0f);
         }
         // Frozen, it stands as it is: no move, no step, no one in its sights.
@@ -490,22 +506,25 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
             }
         }
         chooseMove(critter, players);
-        const CritterMove* move = critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
+        const CritterMove* move =
+            critter.move >= 0 ? &data.moves()[static_cast<std::size_t>(critter.move)] : nullptr;
         // The move plays; over its harmful frames its part strikes.
         if (move != nullptr && critter.player.playing()) {
-            const f32 before = critter.player.frame();
+            const float before = critter.player.frame();
             critter.player.advance(seconds, false);
             critter.moveDone = critter.player.finished();
-            critter.pose.evaluate(*critter.stock->tree, critter.player.sequence(), critter.player.frame());
-            const auto frame = static_cast<s32>(std::floor(critter.player.frame()));
-            const auto active = [&](s32 start, s32 end) {
-                const s32 last = end < start ? start : end;
+            critter.pose.evaluate(*critter.stock->tree, critter.player.sequence(),
+                                  critter.player.frame());
+            const auto frame = static_cast<std::int32_t>(std::floor(critter.player.frame()));
+            const auto active = [&](std::int32_t start, std::int32_t end) {
+                const std::int32_t last = end < start ? start : end;
                 return start >= 0 && frame >= start && frame <= last;
             };
             // The move's effects and sounds go off as it passes their frames, once each. An
             // attack's sound comes at its frame, but its effect (a swing's glow, a stomp's
             // ring) waits for the frame the blow lands on.
-            const auto giveOnce = [&](u32 bit, s32 sound, const Vec3& where, CueParts parts) {
+            const auto giveOnce = [&](std::uint32_t bit, std::int32_t sound, const Vec3& where,
+                                      CueParts parts) {
                 if (sound >= 0 && (critter.soundsGiven & bit) == 0) {
                     critter.soundsGiven |= bit;
                     cue(critter, i, sound, where, parts);
@@ -513,7 +532,8 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
             };
             const bool lands = move->attack() && move->frameStart > move->soundFrame;
             if (frame >= move->soundFrame) {
-                giveOnce(1U, move->sound, critter.position, lands ? CueParts::Sound : CueParts::Both);
+                giveOnce(1U, move->sound, critter.position,
+                         lands ? CueParts::Sound : CueParts::Both);
             }
             if (lands && frame >= move->frameStart) {
                 giveOnce(16U, move->sound, critter.position, CueParts::Effect);
@@ -524,14 +544,16 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
             if (critter.state == State::Active) {
                 if (active(move->frameStart, move->frameEnd) && move->damage0 >= 0) {
                     if (const CritterDamage* harm = data.damage(move->damage0); harm != nullptr) {
-                        giveOnce(4U, harm->sound, partPosition(critter, move->colnode) + harm->offset,
+                        giveOnce(4U, harm->sound,
+                                 partPosition(critter, move->colnode) + harm->offset,
                                  CueParts::Both);
                     }
                     strikeWith(critter, i, *move, move->damage0, players);
                 }
                 if (active(move->frameStart2, move->frameEnd2) && move->damage1 >= 0) {
                     if (const CritterDamage* harm = data.damage(move->damage1); harm != nullptr) {
-                        giveOnce(8U, harm->sound, partPosition(critter, move->colnode) + harm->offset,
+                        giveOnce(8U, harm->sound,
+                                 partPosition(critter, move->colnode) + harm->offset,
                                  CueParts::Both);
                     }
                     strikeWith(critter, i, *move, move->damage1, players);
@@ -553,13 +575,14 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
             critter.moveDone = true;
         }
         carry(critter, seconds, move, players);
-        critter.push *= std::pow(kPushDecay, static_cast<f32>(ticks));
+        critter.push *= std::pow(kPushDecay, static_cast<float>(ticks));
         critter.push.y = std::max(critter.push.y - kGravity * seconds, 0.0f);
         if (glm::length(critter.push) < 0.01f) {
             critter.push = Vec3{0.0f, 0.0f, 0.0f};
         }
         // The fallen fades once its death has played out, and is gone.
-        if (critter.state == State::Dying && (move == nullptr || move->type != CritterMove::kDeath || critter.moveDone)) {
+        if (critter.state == State::Dying &&
+            (move == nullptr || move->type != CritterMove::kDeath || critter.moveDone)) {
             critter.alpha -= seconds / kDeathFade;
             if (critter.alpha <= 0.0f) {
                 critter = Critter{};
@@ -568,19 +591,20 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
     }
 }
 
-void Critters::hurt(s32 id, const EnemyHit& hit) {
+void Critters::hurt(std::int32_t id, const EnemyHit& hit) {
     if (id < 0 || id >= kMost) {
         return;
     }
-    Critter& critter = m_critters[static_cast<usize>(id)];
+    Critter& critter = m_critters[static_cast<std::size_t>(id)];
     if (critter.state != State::Active) {
         return;
     }
     const CritterData& data = critter.stock->data;
-    f32 amount = hit.damage;
+    float amount = hit.damage;
     // A block lets a quarter through and shrugs off the throw.
-    u32 flags = hit.flags;
-    if (critter.move >= 0 && data.moves()[static_cast<usize>(critter.move)].type == CritterMove::kBlock) {
+    std::uint32_t flags = hit.flags;
+    if (critter.move >= 0 &&
+        data.moves()[static_cast<std::size_t>(critter.move)].type == CritterMove::kBlock) {
         amount *= kBlockShare;
         flags &= ~(EnemyHit::kFloors | EnemyHit::kKnockBack);
     }
@@ -592,18 +616,19 @@ void Critters::hurt(s32 id, const EnemyHit& hit) {
     critter.hurtPending += amount;
     critter.hurtFlags |= flags;
     critter.roarOwed += amount;
-    if (const f32 length = glm::length(hit.direction); length > 0.001f) {
+    if (const float length = glm::length(hit.direction); length > 0.001f) {
         critter.hurtDirection = hit.direction / length;
     }
     // Where it was struck, its own mark of a hit: a blow's or a missile's.
-    const s32 mark = hit.close && data.hitSoundClose() >= 0 ? data.hitSoundClose() : data.hitSoundFar();
+    const std::int32_t mark =
+        hit.close && data.hitSoundClose() >= 0 ? data.hitSoundClose() : data.hitSoundFar();
     cue(critter, id, mark, hit.where.value_or(partPosition(critter, {})));
     // Every hit is worth its share of the creature's value to the one who dealt it, less a
     // fiftieth a level under the level the place is meant for.
     if (hit.player >= 0) {
-        f32 share = amount / (1.0f + critter.maxHealth) * data.experience();
-        if (m_scales.playerLevel > 0.0f && static_cast<f32>(hit.level) < m_scales.playerLevel) {
-            const f32 under = m_scales.playerLevel - static_cast<f32>(hit.level);
+        float share = amount / (1.0f + critter.maxHealth) * data.experience();
+        if (m_scales.playerLevel > 0.0f && static_cast<float>(hit.level) < m_scales.playerLevel) {
+            const float under = m_scales.playerLevel - static_cast<float>(hit.level);
             share *= std::max(1.0f - kUnderLevelLoss * under, 0.1f);
         }
         CritterLoss loss;
@@ -631,10 +656,10 @@ void Critters::hurt(s32 id, const EnemyHit& hit) {
 /** A sound record and what it links to become cues: the tree at `position` (offset the
  * record's way, turned with the body), riding the body when the record says so, and the
  * sound named for the level. */
-void Critters::cue(const Critter& critter, s32 id, s32 index, const Vec3& position,
-                   CueParts parts) {
+void Critters::cue(const Critter& critter, std::int32_t id, std::int32_t index,
+                   const Vec3& position, CueParts parts) {
     const CritterData& data = critter.stock->data;
-    for (s32 at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
+    for (std::int32_t at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
         const CritterSound* record = data.sound(at);
         if (record == nullptr) {
             break;
@@ -647,8 +672,8 @@ void Critters::cue(const Critter& critter, s32 id, s32 index, const Vec3& positi
         if (parts != CueParts::Effect) {
             out.sound = record->soundFor(m_realm);
         }
-        const f32 sy = std::sin(critter.yaw);
-        const f32 cy = std::cos(critter.yaw);
+        const float sy = std::sin(critter.yaw);
+        const float cy = std::cos(critter.yaw);
         const Vec3 turned{record->offset.x * cy + record->offset.z * sy, record->offset.y,
                           record->offset.z * cy - record->offset.x * sy};
         out.position = position + turned;
@@ -682,8 +707,8 @@ std::vector<CritterSpew> Critters::takeSpews() {
 
 std::vector<MissileTarget> Critters::targets() const {
     std::vector<MissileTarget> out;
-    for (s32 i = 0; i < kMost; ++i) {
-        const Critter& critter = m_critters[static_cast<usize>(i)];
+    for (std::int32_t i = 0; i < kMost; ++i) {
+        const Critter& critter = m_critters[static_cast<std::size_t>(i)];
         if (critter.state == State::Active) {
             out.push_back(MissileTarget{i, critter.position, critter.stock->data.radius(), 8.0f});
         }
@@ -691,22 +716,26 @@ std::vector<MissileTarget> Critters::targets() const {
     return out;
 }
 
-std::optional<s32> Critters::struckBy(const Vec3& from, const Vec3& to, f32 radius) const {
-    std::optional<s32> best;
-    f32 bestDistance = 0.0f;
+std::optional<std::int32_t> Critters::struckBy(const Vec3& from, const Vec3& to,
+                                               float radius) const {
+    std::optional<std::int32_t> best;
+    float bestDistance = 0.0f;
     const Vec3 sweep = to - from;
-    const f32 length = glm::length(sweep);
-    for (s32 i = 0; i < kMost; ++i) {
-        const Critter& critter = m_critters[static_cast<usize>(i)];
+    const float length = glm::length(sweep);
+    for (std::int32_t i = 0; i < kMost; ++i) {
+        const Critter& critter = m_critters[static_cast<std::size_t>(i)];
         if (critter.state != State::Active) {
             continue;
         }
         const Vec3 centre = critter.position + Vec3{0.0f, 4.0f, 0.0f};
-        const f32 t = length > 0.001f ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f) : 0.0f;
+        const float t =
+            length > 0.001f
+                ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f)
+                : 0.0f;
         const Vec3 nearest = from + sweep * t;
         if (flatDistance(nearest, centre) <= radius + critter.stock->data.radius() &&
             std::abs(nearest.y - centre.y) <= radius + 4.0f) {
-            const f32 distance = glm::length(nearest - from);
+            const float distance = glm::length(nearest - from);
             if (!best.has_value() || distance < bestDistance) {
                 best = i;
                 bestDistance = distance;
@@ -716,32 +745,35 @@ std::optional<s32> Critters::struckBy(const Vec3& from, const Vec3& to, f32 radi
     return best;
 }
 
-std::vector<s32> Critters::within(const Vec3& centre, f32 radius) const {
-    std::vector<s32> out;
-    for (s32 i = 0; i < kMost; ++i) {
-        const Critter& critter = m_critters[static_cast<usize>(i)];
+std::vector<std::int32_t> Critters::within(const Vec3& centre, float radius) const {
+    std::vector<std::int32_t> out;
+    for (std::int32_t i = 0; i < kMost; ++i) {
+        const Critter& critter = m_critters[static_cast<std::size_t>(i)];
         if (critter.state == State::Active &&
-            glm::length(critter.position + Vec3{0.0f, 4.0f, 0.0f} - centre) <= radius + critter.stock->data.radius()) {
+            glm::length(critter.position + Vec3{0.0f, 4.0f, 0.0f} - centre) <=
+                radius + critter.stock->data.radius()) {
             out.push_back(i);
         }
     }
     return out;
 }
 
-std::vector<s32> Critters::reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const {
-    std::vector<s32> out;
-    for (s32 i = 0; i < kMost; ++i) {
-        const Critter& critter = m_critters[static_cast<usize>(i)];
+std::vector<std::int32_t> Critters::reachedBy(const Vec3& centre, float radius, float arc,
+                                              const Vec3& facing) const {
+    std::vector<std::int32_t> out;
+    for (std::int32_t i = 0; i < kMost; ++i) {
+        const Critter& critter = m_critters[static_cast<std::size_t>(i)];
         if (critter.state != State::Active) {
             continue;
         }
-        const f32 distance = flatDistance(critter.position, centre);
+        const float distance = flatDistance(critter.position, centre);
         if (distance > radius + critter.stock->data.radius()) {
             continue;
         }
         if (arc < kPi && distance > 0.001f) {
             const Vec3 toward = critter.position - centre;
-            const f32 angle = std::acos(std::clamp((toward.x * facing.x + toward.z * facing.z) / distance, -1.0f, 1.0f));
+            const float angle = std::acos(
+                std::clamp((toward.x * facing.x + toward.z * facing.z) / distance, -1.0f, 1.0f));
             if (angle > arc) {
                 continue;
             }
@@ -760,7 +792,7 @@ void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting&
         // The model is shared by this species, but object-frame selection belongs to the
         // individual. Set it for every draw, including the first and frozen frames.
         critter.stock->body.setFrame(critter.player.sequence(),
-                                     static_cast<s32>(critter.player.frame()));
+                                     static_cast<std::int32_t>(critter.player.frame()));
         critter.stock->body.resetTextures();
         // Retail flashes the normal skin on bit 3 in the final 180 frozen ticks.
         if (frozenTexture != nullptr && critter.frozenTicks > 0 &&
@@ -773,98 +805,123 @@ void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting&
     }
 }
 
-Critters::Critter* Critters::critterAt(s32 id) {
-    if (id < 0 || id >= kMost || m_critters[static_cast<usize>(id)].state == State::Inactive) {
+Critters::Critter* Critters::critterAt(std::int32_t id) {
+    if (id < 0 || id >= kMost ||
+        m_critters[static_cast<std::size_t>(id)].state == State::Inactive) {
         return nullptr;
     }
-    return &m_critters[static_cast<usize>(id)];
+    return &m_critters[static_cast<std::size_t>(id)];
 }
 
-void Critters::freeze(s32 id, s32 ticks) {
+void Critters::freeze(std::int32_t id, std::int32_t ticks) {
     if (Critter* critter = critterAt(id); critter != nullptr) {
         critter->frozenTicks = std::max(ticks, 0);
         critter->roarWanted = false;
     }
 }
 
-void Critters::blind(s32 id, s32 ticks) {
+void Critters::blind(std::int32_t id, std::int32_t ticks) {
     if (Critter* critter = critterAt(id); critter != nullptr) {
         critter->blindTicks = std::max(ticks, 0);
         critter->target = -1;
     }
 }
 
-void Critters::curb(s32 id, f32 seconds) {
+void Critters::curb(std::int32_t id, float seconds) {
     if (Critter* critter = critterAt(id); critter != nullptr) {
         critter->curbSeconds = std::max(seconds, 0.0f);
     }
 }
 
-void Critters::resize(s32 id, f32 scale) {
+void Critters::resize(std::int32_t id, float scale) {
     if (Critter* critter = critterAt(id); critter != nullptr && scale > 0.0f) {
         critter->scale = scale;
     }
 }
 
-void Critters::hold(s32 id, bool held) {
+void Critters::hold(std::int32_t id, bool held) {
     if (Critter* critter = critterAt(id); critter != nullptr) {
         critter->held = held;
     }
 }
 
-void Critters::roar(s32 id) {
+void Critters::roar(std::int32_t id) {
     if (Critter* critter = critterAt(id); critter != nullptr) {
         critter->roarWanted = true;
     }
 }
 
-s32 Critters::moveTypeOf(s32 id) const {
-    const Critter& critter = m_critters[static_cast<usize>(id)];
+std::int32_t Critters::moveTypeOf(std::int32_t id) const {
+    const Critter& critter = m_critters[static_cast<std::size_t>(id)];
     return critter.move >= 0 && critter.stock != nullptr
-               ? critter.stock->data.moves()[static_cast<usize>(critter.move)].type
+               ? critter.stock->data.moves()[static_cast<std::size_t>(critter.move)].type
                : -1;
 }
 
-bool Critters::moveDoneOf(s32 id) const { return m_critters[static_cast<usize>(id)].moveDone; }
-bool Critters::frozen(s32 id) const { return m_critters[static_cast<usize>(id)].frozenTicks > 0; }
-bool Critters::blinded(s32 id) const { return m_critters[static_cast<usize>(id)].blindTicks > 0; }
-bool Critters::curbed(s32 id) const { return m_critters[static_cast<usize>(id)].curbSeconds > 0.0f; }
-f32 Critters::scaleOf(s32 id) const { return m_critters[static_cast<usize>(id)].scale; }
+bool Critters::moveDoneOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].moveDone;
+}
+bool Critters::frozen(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].frozenTicks > 0;
+}
+bool Critters::blinded(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].blindTicks > 0;
+}
+bool Critters::curbed(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].curbSeconds > 0.0f;
+}
+float Critters::scaleOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].scale;
+}
 
-usize Critters::count() const {
-    usize n = 0;
+std::size_t Critters::count() const {
+    std::size_t n = 0;
     for (const Critter& critter : m_critters) {
         n += critter.state != State::Inactive ? 1 : 0;
     }
     return n;
 }
 
-bool Critters::alive(s32 id) const {
-    return id >= 0 && id < kMost && m_critters[static_cast<usize>(id)].state == State::Active;
+bool Critters::alive(std::int32_t id) const {
+    return id >= 0 && id < kMost && m_critters[static_cast<std::size_t>(id)].state == State::Active;
 }
 
-bool Critters::dying(s32 id) const {
-    return id >= 0 && id < kMost && m_critters[static_cast<usize>(id)].state == State::Dying;
+bool Critters::dying(std::int32_t id) const {
+    return id >= 0 && id < kMost && m_critters[static_cast<std::size_t>(id)].state == State::Dying;
 }
 
-s32 Critters::kindOf(s32 id) const { return m_critters[static_cast<usize>(id)].stock->data.kind(); }
-f32 Critters::healthOf(s32 id) const { return m_critters[static_cast<usize>(id)].health; }
-f32 Critters::maxHealthOf(s32 id) const { return m_critters[static_cast<usize>(id)].maxHealth; }
-const Vec3& Critters::positionOf(s32 id) const { return m_critters[static_cast<usize>(id)].position; }
-f32 Critters::yawOf(s32 id) const { return m_critters[static_cast<usize>(id)].yaw; }
-f32 Critters::radiusOf(s32 id) const { return m_critters[static_cast<usize>(id)].stock->data.radius(); }
-s32 Critters::targetOf(s32 id) const { return m_critters[static_cast<usize>(id)].target; }
+std::int32_t Critters::kindOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].stock->data.kind();
+}
+float Critters::healthOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].health;
+}
+float Critters::maxHealthOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].maxHealth;
+}
+const Vec3& Critters::positionOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].position;
+}
+float Critters::yawOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].yaw;
+}
+float Critters::radiusOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].stock->data.radius();
+}
+std::int32_t Critters::targetOf(std::int32_t id) const {
+    return m_critters[static_cast<std::size_t>(id)].target;
+}
 
-std::string_view Critters::moveOf(s32 id) const {
-    const Critter& critter = m_critters[static_cast<usize>(id)];
+std::string_view Critters::moveOf(std::int32_t id) const {
+    const Critter& critter = m_critters[static_cast<std::size_t>(id)];
     if (critter.stock == nullptr || critter.move < 0) {
         return "";
     }
-    return critter.stock->data.moves()[static_cast<usize>(critter.move)].name;
+    return critter.stock->data.moves()[static_cast<std::size_t>(critter.move)].name;
 }
 
-std::string Critters::formOf(s32 id) const {
-    const Critter& critter = m_critters[static_cast<usize>(id)];
+std::string Critters::formOf(std::int32_t id) const {
+    const Critter& critter = m_critters[static_cast<std::size_t>(id)];
     if (critter.stock == nullptr || critter.stock->data.kind() != kGargoyleCritter) {
         return "";
     }
@@ -873,12 +930,12 @@ std::string Critters::formOf(s32 id) const {
     return underscore == std::string::npos ? name : name.substr(underscore + 1);
 }
 
-const CritterData* Critters::dataOf(s32 id) const {
-    const Critter& critter = m_critters[static_cast<usize>(id)];
+const CritterData* Critters::dataOf(std::int32_t id) const {
+    const Critter& critter = m_critters[static_cast<std::size_t>(id)];
     return critter.stock != nullptr ? &critter.stock->data : nullptr;
 }
 
-ItemArchive* Critters::archiveOf(s32 id) {
+ItemArchive* Critters::archiveOf(std::int32_t id) {
     Critter* critter = critterAt(id);
     return critter != nullptr ? &critter->stock->archive : nullptr;
 }

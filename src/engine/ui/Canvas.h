@@ -1,6 +1,5 @@
 #pragma once
 
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/ImmediateBatch.h"
 #include "engine/render/RenderDevice.h"
@@ -9,8 +8,8 @@
 namespace gdl {
 
 /** Maps a virtual pixel space onto a frame that `frameProjection` already maps to clip space. */
-Mat4 makeVirtualScreenTransform(const Mat4& frameProjection, f32 virtualWidth, f32 virtualHeight,
-                                f32 frameWidth, f32 frameHeight);
+Mat4 makeVirtualScreenTransform(const Mat4& frameProjection, float virtualWidth,
+                                float virtualHeight, float frameWidth, float frameHeight);
 
 /** Textured rectangles in a virtual pixel space, drawn in call order and batched by texture. */
 class Canvas {

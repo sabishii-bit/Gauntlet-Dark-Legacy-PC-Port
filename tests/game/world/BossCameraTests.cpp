@@ -13,7 +13,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr f32 kPi = std::numbers::pi_v<f32>;
+constexpr float kPi = std::numbers::pi_v<float>;
 
 /** The town's record: the lich's crypt. */
 BossCameraInfo cryptRecord() {
@@ -76,7 +76,7 @@ TEST_CASE("the boss camera looks at the boss from behind the party, flatter than
     // rate, to look along their new line.
     const std::vector<CameraSubject> beside{standing(Vec3{30.0f, 0.0f, 0.0f})};
     camera.update(lich, beside, record, view, 1.0f / 60.0f);
-    const f32 turned = std::abs(BossCamera::wrapAngle(camera.yaw() - kPi));
+    const float turned = std::abs(BossCamera::wrapAngle(camera.yaw() - kPi));
     REQUIRE(turned > 0.0f);
     REQUIRE(turned <= BossCamera::kTurnRate / 60.0f + 0.001f);
     for (int i = 0; i < 600; ++i) {
@@ -86,7 +86,7 @@ TEST_CASE("the boss camera looks at the boss from behind the party, flatter than
     REQUIRE(camera.camera().position.x > 30.0f);
     REQUIRE(camera.margin() >= 0.0f);
     // Two players far apart need a longer view than one.
-    const f32 alone = camera.distance();
+    const float alone = camera.distance();
     const std::vector<CameraSubject> spread{standing(Vec3{40.0f, 0.0f, 20.0f}),
                                             standing(Vec3{40.0f, 0.0f, -20.0f})};
     for (int i = 0; i < 600; ++i) {
@@ -114,7 +114,7 @@ TEST_CASE("the boss camera keeps within the boss's facing when the record limits
     for (int i = 0; i < 600; ++i) {
         camera.update(boss, behind, record, view, 1.0f / 60.0f);
     }
-    const f32 off = std::abs(BossCamera::wrapAngle(camera.yaw() - (boss.facing + kPi)));
+    const float off = std::abs(BossCamera::wrapAngle(camera.yaw() - (boss.facing + kPi)));
     REQUIRE(off == Approx(kPi / 4.0f).margin(0.02f));
 }
 
@@ -129,8 +129,8 @@ TEST_CASE("the dragon camera uses its authored yaw limit and elevated attention 
     boss.awake = true;
     boss.attentionOffset = Vec3{0.0f, 18.5f, 0.0f};
     const CameraView view;
-    for (const f32 side : {-1.0f, 1.0f}) {
-        const f32 angle = side * kPi / 6.0f; // 30 degrees: outside 18, inside stale 45
+    for (const float side : {-1.0f, 1.0f}) {
+        const float angle = side * kPi / 6.0f; // 30 degrees: outside 18, inside stale 45
         const std::vector<CameraSubject> party{
             standing(Vec3{30.0f * std::sin(angle), 0.0f, 30.0f * std::cos(angle)})};
         BossCamera camera;

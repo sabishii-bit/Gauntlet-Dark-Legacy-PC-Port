@@ -1,6 +1,8 @@
 #include "formats/AnimationTree.h"
 
 #include <bit>
+#include <cstddef>
+#include <cstdint>
 #include <format>
 
 #include "engine/core/Error.h"
@@ -11,103 +13,104 @@ namespace gdl::formats {
 
 namespace {
 
-constexpr usize kFileHeaderSize = 8;
-constexpr usize kListHeaderSize = 16; ///< the header once it names its texture animations
-constexpr usize kTreeInfoSize = 36;
-constexpr usize kTreeHeaderSize = 56;
-constexpr usize kSequenceSize = 48;
-constexpr usize kNodeSize = 60;
-constexpr usize kTreeNameSize = 32;
-constexpr usize kNodeNameSize = 32;
-constexpr usize kPrefixSize = 30;
-constexpr usize kTextureAnimationSize = 0x58;
-constexpr u16 kNoObjectFlag = 1;
-constexpr usize kListHeaderWithParticles = 24; ///< the header once it lists particle templates
-constexpr u16 kParticleListVersion = 8;         ///< files older than this hold no such list
-constexpr u16 kParticleNodeType = 4;
-constexpr u16 kTextureNodeType = 3;
-constexpr u16 kObjectNodeType = 2;
-constexpr usize kObjectFramesSize = 40; ///< one sequence's run: name, object, frames, start
+constexpr std::size_t kFileHeaderSize = 8;
+constexpr std::size_t kListHeaderSize = 16; ///< the header once it names its texture animations
+constexpr std::size_t kTreeInfoSize = 36;
+constexpr std::size_t kTreeHeaderSize = 56;
+constexpr std::size_t kSequenceSize = 48;
+constexpr std::size_t kNodeSize = 60;
+constexpr std::size_t kTreeNameSize = 32;
+constexpr std::size_t kNodeNameSize = 32;
+constexpr std::size_t kPrefixSize = 30;
+constexpr std::size_t kTextureAnimationSize = 0x58;
+constexpr std::uint16_t kNoObjectFlag = 1;
+constexpr std::size_t kListHeaderWithParticles =
+    24;                                           ///< the header once it lists particle templates
+constexpr std::uint16_t kParticleListVersion = 8; ///< files older than this hold no such list
+constexpr std::uint16_t kParticleNodeType = 4;
+constexpr std::uint16_t kTextureNodeType = 3;
+constexpr std::uint16_t kObjectNodeType = 2;
+constexpr std::size_t kObjectFramesSize = 40; ///< one sequence's run: name, object, frames, start
 
-std::string readString(std::span<const u8> file, usize at, usize width) {
+std::string readString(std::span<const std::uint8_t> file, std::size_t at, std::size_t width) {
     if (at > file.size() || width > file.size() - at) {
         throw FormatError("animation file string lies outside the file");
     }
     std::string text;
-    for (usize i = 0; i < width && file[at + i] != 0; ++i) {
+    for (std::size_t i = 0; i < width && file[at + i] != 0; ++i) {
         text.push_back(static_cast<char>(file[at + i]));
     }
     return text;
 }
 
-void require(std::span<const u8> file, usize at, usize size, std::string_view what) {
+void require(std::span<const std::uint8_t> file, std::size_t at, std::size_t size,
+             std::string_view what) {
     if (at > file.size() || size > file.size() - at) {
         throw FormatError(std::format("animation file {} lies outside the file", what));
     }
 }
 
-f32 readF32(std::span<const u8> file, usize at) {
-    return std::bit_cast<f32>(readU32LE(file, at));
+float readF32(std::span<const std::uint8_t> file, std::size_t at) {
+    return std::bit_cast<float>(readU32LE(file, at));
 }
 
 /** Reads every skeletal node's tracks for every sequence of the tree at `base`. */
-void readTracks(std::span<const u8> file, usize base, u32 keyHeaderAt, usize nodesAt,
-                TreeDefinition& tree) {
+void readTracks(std::span<const std::uint8_t> file, std::size_t base, std::uint32_t keyHeaderAt,
+                std::size_t nodesAt, TreeDefinition& tree) {
     if (keyHeaderAt == 0) {
         return;
     }
-    const KeyHeader header =
-        readKeyHeader(file, base + keyHeaderAt, std::format("animation tree {} key header", tree.name));
-    const usize sequenceCount = tree.sequences.size();
-    for (usize n = 0; n < tree.nodes.size(); ++n) {
+    const KeyHeader header = readKeyHeader(file, base + keyHeaderAt,
+                                           std::format("animation tree {} key header", tree.name));
+    const std::size_t sequenceCount = tree.sequences.size();
+    for (std::size_t n = 0; n < tree.nodes.size(); ++n) {
         if (tree.nodes[n].type != TreeNodeType::Skeletal) {
             continue;
         }
-        const s32 infoOffset = readS32LE(file, nodesAt + n * kNodeSize + 52);
+        const std::int32_t infoOffset = readS32LE(file, nodesAt + n * kNodeSize + 52);
         if (infoOffset < 0) {
             continue;
         }
-        const usize infos = base + keyHeaderAt + static_cast<usize>(infoOffset);
+        const std::size_t infos = base + keyHeaderAt + static_cast<std::size_t>(infoOffset);
         require(file, infos, sequenceCount * KeyHeader::kEntrySize, "track table");
-        for (usize s = 0; s < sequenceCount; ++s) {
+        for (std::size_t s = 0; s < sequenceCount; ++s) {
             TreeSequence& sequence = tree.sequences[s];
-            const usize info = infos + s * KeyHeader::kEntrySize;
+            const std::size_t info = infos + s * KeyHeader::kEntrySize;
             if ((readU16LE(file, info) & NodeTrack::kChannels) == 0 || sequence.frameCount <= 0) {
                 continue;
             }
-            NodeTrack track =
-                readKeyTrack(file, info, header, sequence.frameCount,
-                             std::format("animation {} {} {}", tree.name, sequence.name,
-                                         tree.nodes[n].name));
-            track.node = static_cast<u32>(n);
+            NodeTrack track = readKeyTrack(
+                file, info, header, sequence.frameCount,
+                std::format("animation {} {} {}", tree.name, sequence.name, tree.nodes[n].name));
+            track.node = static_cast<std::uint32_t>(n);
             sequence.tracks.push_back(std::move(track));
         }
     }
 }
 
 /** The texture animations the file's header lists, when it has any. */
-std::vector<TextureAnimation> readTextureAnimations(std::span<const u8> file) {
+std::vector<TextureAnimation> readTextureAnimations(std::span<const std::uint8_t> file) {
     std::vector<TextureAnimation> out;
     if (file.size() < kListHeaderSize) {
         return out;
     }
-    const u32 count = readU32LE(file, 8);
-    const u32 at = readU32LE(file, 12);
+    const std::uint32_t count = readU32LE(file, 8);
+    const std::uint32_t at = readU32LE(file, 12);
     if (count == 0 || at == 0 || at > file.size() ||
         count > (file.size() - at) / kTextureAnimationSize) {
         return out;
     }
-    for (u32 i = 0; i < count; ++i) {
-        const usize record = at + usize{i} * kTextureAnimationSize;
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const std::size_t record = at + std::size_t{i} * kTextureAnimationSize;
         TextureAnimation animation;
-        animation.flag = static_cast<s16>(readU16LE(file, record));
-        animation.scrollIndex = static_cast<s16>(readU16LE(file, record + 2));
+        animation.flag = static_cast<std::int16_t>(readU16LE(file, record));
+        animation.scrollIndex = static_cast<std::int16_t>(readU16LE(file, record + 2));
         animation.name = readString(file, record + 4, 32);
         animation.frameName = readString(file, record + 0x24, 32);
         animation.texture = readS32LE(file, record + 0x44);
         animation.source = readS32LE(file, record + 0x48);
-        animation.frames = static_cast<s16>(readU16LE(file, record + 0x4C));
-        animation.offset = static_cast<s16>(readU16LE(file, record + 0x4E));
+        animation.frames = static_cast<std::int16_t>(readU16LE(file, record + 0x4C));
+        animation.offset = static_cast<std::int16_t>(readU16LE(file, record + 0x4E));
         animation.rate = readS32LE(file, record + 0x50);
         animation.start = readS32LE(file, record + 0x54);
         out.push_back(std::move(animation));
@@ -116,123 +119,128 @@ std::vector<TextureAnimation> readTextureAnimations(std::span<const u8> file) {
 }
 
 /** The particle templates the file's header lists, from version 8 on. */
-std::vector<ParticleTemplateRecord> readParticleTemplates(std::span<const u8> file) {
+std::vector<ParticleTemplateRecord> readParticleTemplates(std::span<const std::uint8_t> file) {
     std::vector<ParticleTemplateRecord> out;
     if (file.size() < kListHeaderWithParticles || readU16LE(file, 2) < kParticleListVersion) {
         return out;
     }
-    const u32 count = readU32LE(file, 16);
-    const u32 at = readU32LE(file, 20);
+    const std::uint32_t count = readU32LE(file, 16);
+    const std::uint32_t at = readU32LE(file, 20);
     if (count == 0 || at == 0 || at > file.size() ||
         count > (file.size() - at) / ParticleTemplateRecord::kSize) {
         return out;
     }
-    for (u32 i = 0; i < count; ++i) {
-        out.push_back(readParticleTemplate(
-            file.subspan(at + usize{i} * ParticleTemplateRecord::kSize, ParticleTemplateRecord::kSize)));
+    for (std::uint32_t i = 0; i < count; ++i) {
+        out.push_back(readParticleTemplate(file.subspan(
+            at + std::size_t{i} * ParticleTemplateRecord::kSize, ParticleTemplateRecord::kSize)));
     }
     return out;
 }
 
 /** Which template a particle node's offset (past the tree header) names, or -1. */
-s32 particleIndexOf(std::span<const u8> file, usize base, s32 offset, usize count) {
+std::int32_t particleIndexOf(std::span<const std::uint8_t> file, std::size_t base,
+                             std::int32_t offset, std::size_t count) {
     if (count == 0 || file.size() < kListHeaderWithParticles) {
         return -1;
     }
-    const auto listAt = static_cast<s64>(readU32LE(file, 20));
-    const s64 at = static_cast<s64>(base) + static_cast<s64>(kTreeHeaderSize) + offset - listAt;
-    if (at < 0 || at % static_cast<s64>(ParticleTemplateRecord::kSize) != 0) {
+    const auto listAt = static_cast<std::int64_t>(readU32LE(file, 20));
+    const std::int64_t at = static_cast<std::int64_t>(base) +
+                            static_cast<std::int64_t>(kTreeHeaderSize) + offset - listAt;
+    if (at < 0 || at % static_cast<std::int64_t>(ParticleTemplateRecord::kSize) != 0) {
         return -1;
     }
-    const s64 index = at / static_cast<s64>(ParticleTemplateRecord::kSize);
-    return index < static_cast<s64>(count) ? static_cast<s32>(index) : -1;
+    const std::int64_t index = at / static_cast<std::int64_t>(ParticleTemplateRecord::kSize);
+    return index < static_cast<std::int64_t>(count) ? static_cast<std::int32_t>(index) : -1;
 }
 
 /** Which of the file's texture animations lies `offset` bytes past `from`, or -1: the way a
  * texture node's data offset (from the tree's sequence table) and a sequence's own list name
  * them. */
-s32 textureAnimationIndexOf(std::span<const u8> file, s64 from, s64 offset) {
+std::int32_t textureAnimationIndexOf(std::span<const std::uint8_t> file, std::int64_t from,
+                                     std::int64_t offset) {
     if (file.size() < kListHeaderSize) {
         return -1;
     }
-    const s64 count = readU32LE(file, 8);
-    const s64 listAt = readU32LE(file, 12);
-    const s64 at = from + offset - listAt;
+    const std::int64_t count = readU32LE(file, 8);
+    const std::int64_t listAt = readU32LE(file, 12);
+    const std::int64_t at = from + offset - listAt;
     if (count == 0 || listAt == 0 || at < 0 ||
-        at % static_cast<s64>(kTextureAnimationSize) != 0) {
+        at % static_cast<std::int64_t>(kTextureAnimationSize) != 0) {
         return -1;
     }
-    const s64 index = at / static_cast<s64>(kTextureAnimationSize);
-    return index < count ? static_cast<s32>(index) : -1;
+    const std::int64_t index = at / static_cast<std::int64_t>(kTextureAnimationSize);
+    return index < count ? static_cast<std::int32_t>(index) : -1;
 }
 
 } // namespace
 
 /** An object node's frame runs, one per sequence, from the tree's object frame table (the
  * third header field), where the node's data offset points at its first run. */
-void readObjectFrames(std::span<const u8> file, usize base, s32 dataOffset,
+void readObjectFrames(std::span<const std::uint8_t> file, std::size_t base, std::int32_t dataOffset,
                       const TreeDefinition& tree, TreeNode& node) {
     if (dataOffset < 0) {
         return;
     }
-    const usize runsAt = base + readU32LE(file, base + 8) + static_cast<usize>(dataOffset);
+    const std::size_t runsAt =
+        base + readU32LE(file, base + 8) + static_cast<std::size_t>(dataOffset);
     require(file, runsAt, tree.sequences.size() * kObjectFramesSize, "object frame table");
-    for (usize s = 0; s < tree.sequences.size(); ++s) {
-        const usize at = runsAt + s * kObjectFramesSize;
+    for (std::size_t s = 0; s < tree.sequences.size(); ++s) {
+        const std::size_t at = runsAt + s * kObjectFramesSize;
         TreeNode::ObjectFrames run;
         std::string object = readString(file, at, kTreeNameSize);
         if (object.size() > AnimationFile::kObjectNameLength) {
             object.resize(AnimationFile::kObjectNameLength);
         }
         run.object = normalizeAssetName(object);
-        run.frames = static_cast<s16>(readU16LE(file, at + 36));
-        run.start = static_cast<s16>(readU16LE(file, at + 38));
+        run.frames = static_cast<std::int16_t>(readU16LE(file, at + 36));
+        run.start = static_cast<std::int16_t>(readU16LE(file, at + 38));
         node.objectFrames.push_back(std::move(run));
     }
 }
 
-AnimationFile AnimationFile::parse(std::span<const u8> file) {
+AnimationFile AnimationFile::parse(std::span<const std::uint8_t> file) {
     if (file.size() < kFileHeaderSize) {
         throw FormatError("animation file is too small for its header");
     }
-    const u16 treeCount = readU16LE(file, 0);
-    const u32 infosAt = readU32LE(file, 4);
-    require(file, infosAt, usize{treeCount} * kTreeInfoSize, "tree table");
+    const std::uint16_t treeCount = readU16LE(file, 0);
+    const std::uint32_t infosAt = readU32LE(file, 4);
+    require(file, infosAt, std::size_t{treeCount} * kTreeInfoSize, "tree table");
 
     AnimationFile out;
     out.textureAnimations = readTextureAnimations(file);
     out.particles = readParticleTemplates(file);
-    for (u16 i = 0; i < treeCount; ++i) {
-        const usize info = infosAt + usize{i} * kTreeInfoSize;
+    for (std::uint16_t i = 0; i < treeCount; ++i) {
+        const std::size_t info = infosAt + std::size_t{i} * kTreeInfoSize;
         TreeDefinition tree;
         tree.name = readString(file, info, kTreeNameSize);
-        const u32 base = readU32LE(file, info + 32);
+        const std::uint32_t base = readU32LE(file, info + 32);
         require(file, base, kTreeHeaderSize, "tree header");
-        const u32 sequencesAt = readU32LE(file, base);
-        const u32 keyHeaderAt = readU32LE(file, base + 4);
-        const u32 nodesAt = readU32LE(file, base + 12);
-        const auto nodeCount = static_cast<s32>(readU32LE(file, base + 16));
-        const auto sequenceCount = static_cast<s32>(readU32LE(file, base + 20));
+        const std::uint32_t sequencesAt = readU32LE(file, base);
+        const std::uint32_t keyHeaderAt = readU32LE(file, base + 4);
+        const std::uint32_t nodesAt = readU32LE(file, base + 12);
+        const auto nodeCount = static_cast<std::int32_t>(readU32LE(file, base + 16));
+        const auto sequenceCount = static_cast<std::int32_t>(readU32LE(file, base + 20));
         tree.prefix = readString(file, base + 24, kPrefixSize);
         if (nodeCount < 0 || sequenceCount < 0) {
             throw FormatError(std::format("animation tree {} has negative counts", tree.name));
         }
 
-        require(file, usize{base} + sequencesAt, static_cast<usize>(sequenceCount) * kSequenceSize,
-                "sequence table");
-        for (s32 s = 0; s < sequenceCount; ++s) {
-            const usize at = usize{base} + sequencesAt + static_cast<usize>(s) * kSequenceSize;
+        require(file, std::size_t{base} + sequencesAt,
+                static_cast<std::size_t>(sequenceCount) * kSequenceSize, "sequence table");
+        for (std::int32_t s = 0; s < sequenceCount; ++s) {
+            const std::size_t at =
+                std::size_t{base} + sequencesAt + static_cast<std::size_t>(s) * kSequenceSize;
             TreeSequence sequence;
             sequence.name = readString(file, at, kTreeNameSize);
-            sequence.frameCount = static_cast<s16>(readU16LE(file, at + 32));
-            sequence.frameRate = static_cast<s16>(readU16LE(file, at + 34));
+            sequence.frameCount = static_cast<std::int16_t>(readU16LE(file, at + 32));
+            sequence.frameRate = static_cast<std::int16_t>(readU16LE(file, at + 34));
             sequence.repeats = readU16LE(file, at + 36) != 0;
             sequence.fixesPosition = (readU16LE(file, at + 38) & 1U) != 0;
             sequence.flags = readU16LE(file, at + 42);
             // Its own texture animations: a count and the index of the first in the list.
-            const auto texmods = static_cast<s16>(readU16LE(file, at + 40));
-            const s32 first = readS32LE(file, at + 44);
-            const s32 listed = static_cast<s32>(out.textureAnimations.size());
+            const auto texmods = static_cast<std::int16_t>(readU16LE(file, at + 40));
+            const std::int32_t first = readS32LE(file, at + 44);
+            const std::int32_t listed = static_cast<std::int32_t>(out.textureAnimations.size());
             if (texmods > 0 && first >= 0 && first + texmods <= listed) {
                 sequence.textureAnimationStart = first;
                 sequence.textureAnimationCount = texmods;
@@ -240,10 +248,11 @@ AnimationFile AnimationFile::parse(std::span<const u8> file) {
             tree.sequences.push_back(std::move(sequence));
         }
 
-        require(file, usize{base} + nodesAt, static_cast<usize>(nodeCount) * kNodeSize,
+        require(file, std::size_t{base} + nodesAt, static_cast<std::size_t>(nodeCount) * kNodeSize,
                 "node table");
-        for (s32 n = 0; n < nodeCount; ++n) {
-            const usize at = usize{base} + nodesAt + static_cast<usize>(n) * kNodeSize;
+        for (std::int32_t n = 0; n < nodeCount; ++n) {
+            const std::size_t at =
+                std::size_t{base} + nodesAt + static_cast<std::size_t>(n) * kNodeSize;
             TreeNode node;
             node.name = readString(file, at, kNodeNameSize);
             node.position =
@@ -251,11 +260,11 @@ AnimationFile AnimationFile::parse(std::span<const u8> file) {
             node.type = static_cast<TreeNodeType>(readU16LE(file, at + 44) & 0xFFU);
             node.flags = readU16LE(file, at + 46);
             node.objectFlags = readU32LE(file, at + 48);
-            node.parent = static_cast<s32>(readU32LE(file, at + 56));
+            node.parent = static_cast<std::int32_t>(readU32LE(file, at + 56));
             if ((readU16LE(file, at + 44) & 0xFFU) == kParticleNodeType) {
                 // A particle node's name holds the way it emits after twenty characters.
-                node.particle = particleIndexOf(file, base, readS32LE(file, at + 52),
-                                                out.particles.size());
+                node.particle =
+                    particleIndexOf(file, base, readS32LE(file, at + 52), out.particles.size());
                 node.direction =
                     Vec3{readF32(file, at + 20), readF32(file, at + 24), readF32(file, at + 28)};
             }
@@ -266,7 +275,7 @@ AnimationFile AnimationFile::parse(std::span<const u8> file) {
                 // A texture node's data lies in the file's animation list, reached from the
                 // tree's sequence table.
                 node.textureAnimation = textureAnimationIndexOf(
-                    file, static_cast<s64>(base) + sequencesAt, readS32LE(file, at + 52));
+                    file, static_cast<std::int64_t>(base) + sequencesAt, readS32LE(file, at + 52));
             }
             if (node.parent >= n) {
                 throw FormatError(
@@ -281,15 +290,15 @@ AnimationFile AnimationFile::parse(std::span<const u8> file) {
             }
             tree.nodes.push_back(std::move(node));
         }
-        readTracks(file, base, keyHeaderAt, usize{base} + nodesAt, tree);
+        readTracks(file, base, keyHeaderAt, std::size_t{base} + nodesAt, tree);
         out.trees.push_back(std::move(tree));
     }
     return out;
 }
 
-std::optional<u32> AnimationFile::find(std::string_view name) const {
+std::optional<std::uint32_t> AnimationFile::find(std::string_view name) const {
     const std::string wanted = normalizeAssetName(name);
-    for (u32 i = 0; i < trees.size(); ++i) {
+    for (std::uint32_t i = 0; i < trees.size(); ++i) {
         if (normalizeAssetName(trees[i].name) == wanted) {
             return i;
         }

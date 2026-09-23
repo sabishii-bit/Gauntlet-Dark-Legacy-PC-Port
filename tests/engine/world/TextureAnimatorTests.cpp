@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -19,8 +21,9 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
-TextureAnimationInfo cycle(std::string_view name, s32 texture, s32 source, s32 frames, s32 start,
-                           s32 rate, std::string_view frameName = "") {
+TextureAnimationInfo cycle(std::string_view name, std::int32_t texture, std::int32_t source,
+                           std::int32_t frames, std::int32_t start, std::int32_t rate,
+                           std::string_view frameName = "") {
     TextureAnimationInfo info;
     info.name = std::string(name);
     info.frameName = std::string(frameName);
@@ -93,7 +96,7 @@ TEST_CASE("texture animations cycle frames and slide coordinates once a game fra
     REQUIRE(f.animator.motion(0).frame == &f.lender.texture(f.device, 1));
     REQUIRE(f.animator.motion(0).offset == Vec2{0.0f, 0.0f});
     bool scrolled = false;
-    for (usize i = 0; i < f.animator.size(); ++i) {
+    for (std::size_t i = 0; i < f.animator.size(); ++i) {
         const TextureMotion motion = f.animator.motion(i);
         if (motion.slot == 1) {
             scrolled = true;

@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <filesystem>
 #include <span>
 #include <vector>
@@ -142,8 +143,7 @@ TEST_CASE(
     REQUIRE(device.draws[0].state.depthWrite);
 }
 
-TEST_CASE("a faded tree model blends every part, and draws nothing once unseen",
-          "[world][model]") {
+TEST_CASE("a faded tree model blends every part, and draws nothing once unseen", "[world][model]") {
     const auto dir = sampleFigure("tree-model-fade");
     ModelSet models;
     TextureSet textures;
@@ -194,8 +194,7 @@ TEST_CASE("a tree model follows a pose's node matrices", "[world][model]") {
     REQUIRE(device.draws[3].vertices[0].position == Vec3{6.0f, 2.0f, -2.0f});
 }
 
-TEST_CASE("an object node shows the mesh of its run that the frame calls for",
-          "[world][model]") {
+TEST_CASE("an object node shows the mesh of its run that the frame calls for", "[world][model]") {
     const auto dir = sampleFigure("tree-model-frames");
     // The node's run starts at the body and goes on to the banner, from frame one.
     writeTextFile(dir / "animations.json", R"({"trees": [
@@ -266,7 +265,7 @@ TEST_CASE("the spawn effect's flame column comes and goes with its frames",
     // The floor's six sparkle polygons alone until the frame is set; then the column too, for
     // the run's thirteen frames.
     effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
-    const usize floorOnly = device.draws.size();
+    const std::size_t floorOnly = device.draws.size();
     REQUIRE(floorOnly == 6);
     effect.setFrame(0, 0);
     effect.draw(device, Mat4{1.0f}, Mat4{1.0f});
@@ -334,7 +333,7 @@ TEST_CASE("a tree model shows texture frames and slides coordinates it is given"
     REQUIRE(device.draws.size() == 2);
     REQUIRE(device.draws[0].state.uvOffset == Vec2{0.25f, 0.0f}); // the body, texture 0
     REQUIRE(device.draws[0].state.uvScale == Vec2{2.0f, 1.0f});
-    REQUIRE(device.draws[1].texture == &frame);                   // the banner, texture 1
+    REQUIRE(device.draws[1].texture == &frame); // the banner, texture 1
     REQUIRE(device.draws[1].state.uvOffset == Vec2{0.0f, 0.0f});
     REQUIRE(device.draws[1].state.uvScale == Vec2{1.0f, 1.0f});
     // Slid again without a stretch, the stretch is gone.
@@ -433,6 +432,5 @@ TEST_CASE("a tree model refuses a figure with a missing mesh", "[world][model]")
     REQUIRE_FALSE(figure.bind(trees.tree(0), models, textures, device));
     REQUIRE_FALSE(figure.bound());
 }
-
 
 } // namespace

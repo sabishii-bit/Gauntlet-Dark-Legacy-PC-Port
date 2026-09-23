@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -92,7 +93,7 @@ TEST_CASE("arrival camera frames the party and outlasts the spawn effects",
     REQUIRE(device.draws.empty());
     arrival.advance(1, true, follow, attention);
     REQUIRE(arrival.camera().phase() == StartCamera::Phase::Ride);
-    for (s32 ticks = 0; ticks < 300 && arrival.active(); ++ticks) {
+    for (std::int32_t ticks = 0; ticks < 300 && arrival.active(); ++ticks) {
         arrival.advance(1, false, follow, attention);
     }
     REQUIRE_FALSE(arrival.active());

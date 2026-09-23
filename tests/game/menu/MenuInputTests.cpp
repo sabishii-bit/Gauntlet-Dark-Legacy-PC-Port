@@ -1,3 +1,5 @@
+#include <cstddef>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/platform/Input.h"
@@ -8,8 +10,8 @@ namespace {
 
 using namespace gdl;
 using gdl::game::MenuBindings;
-using gdl::game::MenuInputSource;
 using gdl::game::MenuInput;
+using gdl::game::MenuInputSource;
 using gdl::game::readMenuInput;
 
 TEST_CASE("keyboard presses map to menu commands", "[game][menu]") {
@@ -41,8 +43,8 @@ TEST_CASE("pad buttons map to menu commands", "[game][menu]") {
     input.beginPoll();
     PadSnapshot pad;
     pad.connected = true;
-    pad.buttons[static_cast<usize>(PadButton::DpadUp)] = true;
-    pad.buttons[static_cast<usize>(PadButton::B)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::DpadUp)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::B)] = true;
     input.setPad(2, pad);
     const MenuInput menu = readMenuInput(input, MenuBindings{});
     REQUIRE(menu.up);
@@ -50,7 +52,7 @@ TEST_CASE("pad buttons map to menu commands", "[game][menu]") {
     REQUIRE_FALSE(menu.start);
 
     input.beginPoll();
-    pad.buttons[static_cast<usize>(PadButton::Start)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::Start)] = true;
     input.setPad(2, pad);
     const MenuInput next = readMenuInput(input, MenuBindings{});
     REQUIRE(next.start);
@@ -74,7 +76,7 @@ TEST_CASE("bindings decide which keys and buttons count", "[game][menu]") {
     input.beginPoll();
     PadSnapshot pad;
     pad.connected = true;
-    pad.buttons[static_cast<usize>(PadButton::Y)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::Y)] = true;
     input.setPad(0, pad);
     REQUIRE(readMenuInput(input, bindings).select);
 }
@@ -95,7 +97,7 @@ TEST_CASE("held directions are reported alongside presses", "[game][menu]") {
     input.setKey(Key::Up, false);
     PadSnapshot pad;
     pad.connected = true;
-    pad.buttons[static_cast<usize>(PadButton::DpadLeft)] = true;
+    pad.buttons[static_cast<std::size_t>(PadButton::DpadLeft)] = true;
     input.setPad(1, pad);
     menu = readMenuInput(input, MenuBindings{}, MenuInputSource::forPlayer(1));
     REQUIRE(menu.left);

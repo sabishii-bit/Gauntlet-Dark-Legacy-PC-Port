@@ -1,11 +1,10 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-
-#include "engine/core/Types.h"
 
 namespace gdl {
 
@@ -21,7 +20,7 @@ public:
               std::string_view fallback = "en");
 
     bool loaded() const { return !m_entries.empty(); }
-    usize size() const { return m_entries.size(); }
+    std::size_t size() const { return m_entries.size(); }
     const std::string& language() const { return m_language; }
 
     /** The text for an identifier, or the identifier itself when it is unknown. */

@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -20,16 +22,17 @@ struct Fixture {
     std::vector<std::string> calls;
     PartyMotion::Events events{
         .perform =
-            [this](usize i, PartyMotion::Action action) {
+            [this](std::size_t i, PartyMotion::Action action) {
                 REQUIRE(action == PartyMotion::Action::NoPotion);
                 calls.push_back("help" + std::to_string(i));
             },
         .select =
-            [this](usize i, const SelectorInput&, s32 ticks) {
+            [this](std::size_t i, const SelectorInput&, std::int32_t ticks) {
                 REQUIRE(ticks == 2);
                 calls.push_back("select" + std::to_string(i));
             },
-        .advanceTurbo = [](usize, s32, f32) { FAIL("No figure, no animation events"); }};
+        .advanceTurbo = [](std::size_t, std::int32_t,
+                           float) { FAIL("No figure, no animation events"); }};
 
     Fixture() {
         CollisionTriangle first;
@@ -98,14 +101,14 @@ TEST_CASE("party motion ignores invalid player ids", "[game][screens][party-moti
 TEST_CASE("charge steering and strafe directions remain camera relative",
           "[game][screens][party-motion]") {
     PlayerActor actor;
-    actor.spawn(0, {}, nullptr, Vec3{0}, std::numbers::pi_v<f32> / 2);
+    actor.spawn(0, {}, nullptr, Vec3{0}, std::numbers::pi_v<float> / 2);
     const auto straight = PartyMotion::chargeInput(actor, {}, 0);
     REQUIRE(straight.magnitude == 1);
     REQUIRE(straight.direction.x == Approx(1));
     const MoveInput pushed{Vec2{-1, 0}, 0.25f};
     REQUIRE(PartyMotion::chargeInput(actor, pushed, 0).direction == pushed.direction);
     REQUIRE(PartyMotion::strafeWayOf(0, 0) == StrafeWay::Forward);
-    REQUIRE(PartyMotion::strafeWayOf(std::numbers::pi_v<f32>, 0) == StrafeWay::Back);
+    REQUIRE(PartyMotion::strafeWayOf(std::numbers::pi_v<float>, 0) == StrafeWay::Back);
     REQUIRE(PartyMotion::strafeWayOf(1.0f, 0) == StrafeWay::Right);
     REQUIRE(PartyMotion::strafeWayOf(-1.0f, 0) == StrafeWay::Left);
 }

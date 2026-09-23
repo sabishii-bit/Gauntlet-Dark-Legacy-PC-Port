@@ -1,4 +1,5 @@
 #include <array>
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -11,8 +12,8 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldScene.h"
 
-#include "FakeRenderDevice.h"
 #include "../../engine/world/SampleLevel.h"
+#include "FakeRenderDevice.h"
 #include "game/world/LevelTriggers.h"
 
 namespace {
@@ -21,7 +22,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr f32 kStep = 1.0f / 30.0f;
+constexpr float kStep = 1.0f / 30.0f;
 
 struct Fixture {
     test::FakeRenderDevice device;
@@ -44,12 +45,13 @@ struct Fixture {
         CollisionTriangle wall;
         wall.object = 6;
         wall.normal = Vec3{0.0f, 0.0f, -1.0f};
-        wall.vertices = {Vec3{0.0f, 0.0f, 30.0f}, Vec3{20.0f, 0.0f, 30.0f}, Vec3{20.0f, 5.0f, 30.0f}};
+        wall.vertices = {Vec3{0.0f, 0.0f, 30.0f}, Vec3{20.0f, 0.0f, 30.0f},
+                         Vec3{20.0f, 5.0f, 30.0f}};
         collision.build({wall});
         triggers.bind(layout, animator, &collision);
     }
 
-    static TriggerVisitor visitor(const Vec3& position, s32 crystals) {
+    static TriggerVisitor visitor(const Vec3& position, std::int32_t crystals) {
         TriggerVisitor out;
         out.position = position;
         out.crystals[1] = crystals;

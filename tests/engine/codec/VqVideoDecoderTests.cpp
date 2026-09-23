@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -15,45 +17,45 @@ using namespace gdl;
 using test::ByteWriter;
 
 /** A codebook entry whose four pixels share one YCbCr value. */
-void putEntry(ByteWriter& w, u8 luma, u8 cb, u8 cr) {
+void putEntry(ByteWriter& w, std::uint8_t luma, std::uint8_t cb, std::uint8_t cr) {
     for (int i = 0; i < 4; ++i) {
         w.putU8(luma).putU8(cb).putU8(cr);
     }
 }
 
-std::vector<u8> stored(std::span<const u8> body) {
+std::vector<std::uint8_t> stored(std::span<const std::uint8_t> body) {
     ByteWriter w;
     w.putU32(1).putBytes(body);
     return w.bytes();
 }
 
 /** Keyframe for a 4x4 image: `count` grey-ramp entries and one index per 2x2 block. */
-std::vector<u8> keyframe(u32 count, std::span<const u32> indices) {
+std::vector<std::uint8_t> keyframe(std::uint32_t count, std::span<const std::uint32_t> indices) {
     ByteWriter w;
-    w.putU16(static_cast<u16>(count)).putU16(1);
-    for (u32 i = 0; i < count; ++i) {
-        putEntry(w, static_cast<u8>(i), 128, 128);
+    w.putU16(static_cast<std::uint16_t>(count)).putU16(1);
+    for (std::uint32_t i = 0; i < count; ++i) {
+        putEntry(w, static_cast<std::uint8_t>(i), 128, 128);
     }
     if (count > 256) {
-        u8 bits = 0;
-        for (usize i = 0; i < indices.size(); ++i) {
-            bits |= static_cast<u8>(((indices[i] >> 8U) & 1U) << i);
+        std::uint8_t bits = 0;
+        for (std::size_t i = 0; i < indices.size(); ++i) {
+            bits |= static_cast<std::uint8_t>(((indices[i] >> 8U) & 1U) << i);
         }
         w.putU8(bits);
     }
-    for (const u32 index : indices) {
-        w.putU8(static_cast<u8>(index & 0xFFU));
+    for (const std::uint32_t index : indices) {
+        w.putU8(static_cast<std::uint8_t>(index & 0xFFU));
     }
     return stored(w.bytes());
 }
 
 TEST_CASE("neutral chroma decodes to grey", "[codec][vq]") {
     VqVideoDecoder decoder(4, 4);
-    const std::array<u32, 4> kIndices{128, 128, 128, 128};
+    const std::array<std::uint32_t, 4> kIndices{128, 128, 128, 128};
     decoder.decode(keyframe(129, kIndices));
     REQUIRE(decoder.decodedFrames() == 1);
-    for (u32 y = 0; y < 4; ++y) {
-        for (u32 x = 0; x < 4; ++x) {
+    for (std::uint32_t y = 0; y < 4; ++y) {
+        for (std::uint32_t x = 0; x < 4; ++x) {
             REQUIRE(decoder.frame().pixel(x, y) == Color::rgba(128, 128, 128));
         }
     }
@@ -61,7 +63,7 @@ TEST_CASE("neutral chroma decodes to grey", "[codec][vq]") {
 
 TEST_CASE("keyframe blocks are laid out bottom-up, two pixels per entry row", "[codec][vq]") {
     VqVideoDecoder decoder(4, 4);
-    const std::array<u32, 4> kIndices{10, 20, 30, 40};
+    const std::array<std::uint32_t, 4> kIndices{10, 20, 30, 40};
     decoder.decode(keyframe(41, kIndices));
     const Image& frame = decoder.frame();
     REQUIRE(frame.pixel(0, 3) == Color::rgba(10, 10, 10));
@@ -91,7 +93,7 @@ TEST_CASE("chroma converts with BT.601 weights and clamps", "[codec][vq]") {
 
 TEST_CASE("delta frames update only the masked cells", "[codec][vq]") {
     VqVideoDecoder decoder(8, 4);
-    std::vector<u32> base(8, 0);
+    std::vector<std::uint32_t> base(8, 0);
     decoder.decode(keyframe(1, base));
     REQUIRE(decoder.frame().pixel(0, 0) == Color::rgba(0, 0, 0));
 
@@ -114,7 +116,7 @@ TEST_CASE("delta frames update only the masked cells", "[codec][vq]") {
 
 TEST_CASE("codebooks beyond 256 entries use the ninth-bit stream", "[codec][vq]") {
     VqVideoDecoder decoder(4, 4);
-    const std::array<u32, 4> kIndices{300, 5, 256, 511};
+    const std::array<std::uint32_t, 4> kIndices{300, 5, 256, 511};
     decoder.decode(keyframe(512, kIndices));
     const Image& frame = decoder.frame();
     REQUIRE(frame.pixel(0, 3) == Color::rgba(44, 44, 44)); // 300 & 0xFF
@@ -124,10 +126,10 @@ TEST_CASE("codebooks beyond 256 entries use the ninth-bit stream", "[codec][vq]"
 }
 
 TEST_CASE("a length prefix before the packed block is honoured", "[codec][vq]") {
-    const std::array<u32, 4> kIndices{7, 7, 7, 7};
-    const std::vector<u8> block = keyframe(8, kIndices);
+    const std::array<std::uint32_t, 4> kIndices{7, 7, 7, 7};
+    const std::vector<std::uint8_t> block = keyframe(8, kIndices);
     ByteWriter w;
-    w.putU32(static_cast<u32>(block.size())).putU32(0).putBytes(block).putU8(0xEE);
+    w.putU32(static_cast<std::uint32_t>(block.size())).putU32(0).putBytes(block).putU8(0xEE);
     VqVideoDecoder decoder(4, 4);
     decoder.decode(w.bytes());
     REQUIRE(decoder.frame().pixel(1, 1) == Color::rgba(7, 7, 7));
@@ -137,11 +139,11 @@ TEST_CASE("a length prefix before the packed block is honoured", "[codec][vq]") 
 TEST_CASE("malformed frames throw FormatError", "[codec][vq]") {
     VqVideoDecoder decoder(4, 4);
     REQUIRE_THROWS_AS(VqVideoDecoder(3, 4), FormatError);
-    const std::array<u32, 4> kIndices{9, 0, 0, 0};
+    const std::array<std::uint32_t, 4> kIndices{9, 0, 0, 0};
     REQUIRE_THROWS_AS(decoder.decode(keyframe(2, kIndices)), FormatError);
-    const std::array<u32, 2> kShort{0, 0};
+    const std::array<std::uint32_t, 2> kShort{0, 0};
     REQUIRE_THROWS_AS(decoder.decode(keyframe(1, kShort)), FormatError);
-    REQUIRE_THROWS_AS(decoder.decode(std::vector<u8>{1, 0, 0, 0, 1}), FormatError);
+    REQUIRE_THROWS_AS(decoder.decode(std::vector<std::uint8_t>{1, 0, 0, 0, 1}), FormatError);
 }
 
 } // namespace

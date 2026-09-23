@@ -1,20 +1,22 @@
 #include "engine/platform/Input.h"
 
 #include <cctype>
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 
 namespace gdl {
 
 namespace {
 
-constexpr usize index(Key key) {
-    return static_cast<usize>(key);
+constexpr std::size_t index(Key key) {
+    return static_cast<std::size_t>(key);
 }
-constexpr usize index(PadButton button) {
-    return static_cast<usize>(button);
+constexpr std::size_t index(PadButton button) {
+    return static_cast<std::size_t>(button);
 }
-constexpr usize index(PadAxis axis) {
-    return static_cast<usize>(axis);
+constexpr std::size_t index(PadAxis axis) {
+    return static_cast<std::size_t>(axis);
 }
 
 constexpr bool validKey(Key key) {
@@ -24,7 +26,7 @@ constexpr bool validPad(int pad) {
     return pad >= 0 && pad < Input::kMaxPads;
 }
 
-constexpr std::array<std::string_view, static_cast<usize>(Key::Count)> kKeyNames{
+constexpr std::array<std::string_view, static_cast<std::size_t>(Key::Count)> kKeyNames{
     "",      "Escape",    "Enter",       "Space",   "Tab", "Backspace", "Up", "Down", "Left",
     "Right", "LeftShift", "LeftControl", "LeftAlt", "A",   "B",         "C",  "D",    "E",
     "F",     "G",         "H",           "I",       "J",   "K",         "L",  "M",    "N",
@@ -33,7 +35,7 @@ constexpr std::array<std::string_view, static_cast<usize>(Key::Count)> kKeyNames
     "6",     "7",         "8",           "9",       "F1",  "F2",        "F3", "F4",   "F5",
     "F6",    "F7",        "F8",          "F9",      "F10", "F11",       "F12"};
 
-constexpr std::array<std::string_view, static_cast<usize>(PadButton::Count)> kPadButtonNames{
+constexpr std::array<std::string_view, static_cast<std::size_t>(PadButton::Count)> kPadButtonNames{
     "A",     "B",         "X",          "Y",      "LeftBumper", "RightBumper", "Back",    "Start",
     "Guide", "LeftThumb", "RightThumb", "DpadUp", "DpadRight",  "DpadDown",    "DpadLeft"};
 
@@ -41,7 +43,7 @@ bool sameIgnoringCase(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) {
         return false;
     }
-    for (usize i = 0; i < a.size(); ++i) {
+    for (std::size_t i = 0; i < a.size(); ++i) {
         if (std::tolower(static_cast<unsigned char>(a[i])) !=
             std::tolower(static_cast<unsigned char>(b[i]))) {
             return false;
@@ -57,7 +59,7 @@ std::string_view keyName(Key key) {
 }
 
 std::optional<Key> keyFromName(std::string_view name) {
-    for (usize i = 1; i < kKeyNames.size(); ++i) {
+    for (std::size_t i = 1; i < kKeyNames.size(); ++i) {
         if (sameIgnoringCase(kKeyNames[i], name)) {
             return static_cast<Key>(i);
         }
@@ -70,7 +72,7 @@ std::string_view padButtonName(PadButton button) {
 }
 
 std::optional<PadButton> padButtonFromName(std::string_view name) {
-    for (usize i = 0; i < kPadButtonNames.size(); ++i) {
+    for (std::size_t i = 0; i < kPadButtonNames.size(); ++i) {
         if (sameIgnoringCase(kPadButtonNames[i], name)) {
             return static_cast<PadButton>(i);
         }
@@ -103,12 +105,12 @@ bool Input::wasPadButtonPressed(int pad, PadButton button) const {
            !m_previousPads[pad].buttons[index(button)];
 }
 
-f32 Input::padAxis(int pad, PadAxis axis) const {
+float Input::padAxis(int pad, PadAxis axis) const {
     return validPad(pad) ? m_pads[pad].axes[index(axis)] : 0.0f;
 }
 
 void Input::beginPoll() {
-    for (usize key = 0; key < kKeyCount; ++key) {
+    for (std::size_t key = 0; key < kKeyCount; ++key) {
         m_previousKeys[key] = keyDown(key);
     }
     m_latchedKeys.fill(false);
@@ -134,7 +136,7 @@ void Input::setPad(int pad, const PadSnapshot& snapshot) {
     }
 }
 
-void Input::addTypedChar(u32 codepoint) {
+void Input::addTypedChar(std::uint32_t codepoint) {
     m_typed.push_back(codepoint);
 }
 

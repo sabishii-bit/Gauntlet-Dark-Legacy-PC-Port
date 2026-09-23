@@ -1,11 +1,12 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
-#include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/AnimationPlayer.h"
@@ -19,18 +20,18 @@ namespace gdl::game {
 /** Something solid a level's item puts in the way: a box or an upright cylinder. */
 struct Obstacle {
     Vec3 centre{0.0f, 0.0f, 0.0f};
-    f32 yaw = 0.0f;
-    f32 halfAcross = 0.0f; ///< along its own x
-    f32 halfAlong = 0.0f;  ///< along its own z
-    f32 height = 0.0f;
+    float yaw = 0.0f;
+    float halfAcross = 0.0f; ///< along its own x
+    float halfAlong = 0.0f;  ///< along its own z
+    float height = 0.0f;
     bool solid = true;
-    f32 cylinderRadius = 0.0f; ///< positive selects a cylinder instead of the box
+    float cylinderRadius = 0.0f; ///< positive selects a cylinder instead of the box
 
     /** Where a body of `radius` standing at `position` is pushed to so as not to be in the
      * box; `position` itself when it is clear of it, over it or under it. */
-    Vec3 pushOut(const Vec3& position, f32 radius) const;
+    Vec3 pushOut(const Vec3& position, float radius) const;
     /** Whether a body of `radius` at `position` is against the box, within `margin`. */
-    bool touchedBy(const Vec3& position, f32 radius, f32 margin = 0.3f) const;
+    bool touchedBy(const Vec3& position, float radius, float margin = 0.3f) const;
 };
 
 /**
@@ -40,7 +41,7 @@ struct Obstacle {
  */
 class ItemFigure {
 public:
-    static constexpr f32 kFloorLift = 0.1f;
+    static constexpr float kFloorLift = 0.1f;
 
     /** Stands the figure `name` of `items` (which must outlive it) where `instance` is, on
      * the floor the collision finds; false when the archive has no such figure, in which
@@ -49,20 +50,20 @@ public:
                const ItemInstance& instance, const WorldCollision* collision);
 
     /** Starts the figure's sequence number `index`. */
-    void play(s32 index, bool loop);
-    void update(f32 seconds);
+    void play(std::int32_t index, bool loop);
+    void update(float seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
     bool hasFigure() const { return m_tree != nullptr; }
-    s32 sequence() const { return m_index; }
+    std::int32_t sequence() const { return m_index; }
     /** Whether a sequence played once has reached its end (a missing one has at once). */
     bool finished() const;
     /** How many sequences the figure has. */
-    usize sequenceCount() const { return m_tree != nullptr ? m_tree->sequences.size() : 0; }
+    std::size_t sequenceCount() const { return m_tree != nullptr ? m_tree->sequences.size() : 0; }
     /** How long the sequence number `index` lasts, in ticks of a sixtieth. */
-    s32 ticksOf(s32 index) const;
+    std::int32_t ticksOf(std::int32_t index) const;
     const Vec3& position() const { return m_position; }
-    f32 yaw() const { return m_yaw; }
+    float yaw() const { return m_yaw; }
     /** The box the item's record gives it, where the figure stands. */
     Obstacle obstacle(const ItemInfo& info) const;
 
@@ -72,15 +73,15 @@ private:
     TreePose m_pose;
     AnimationPlayer m_player;
     Vec3 m_position{0.0f, 0.0f, 0.0f};
-    f32 m_yaw = 0.0f;
+    float m_yaw = 0.0f;
     Mat4 m_transform{1.0f};
-    s32 m_index = -1;
+    std::int32_t m_index = -1;
     bool m_loop = false;
 };
 
 /** Whether a party of `players` sees an item placed for `minPlayers`, by the original's
  * rule: at least that many, or exactly ten less than it when it is over ten. */
-bool shownToParty(s32 minPlayers, s32 players);
+bool shownToParty(std::int32_t minPlayers, std::int32_t players);
 
 /** Where an item instance stands: its pitch, yaw and roll as the original stacks them onto
  * its matrix, the yaw outermost (so a half turn of both others is a half turn of yaw). */

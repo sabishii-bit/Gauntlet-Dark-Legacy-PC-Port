@@ -11,7 +11,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-constexpr f32 kPi = std::numbers::pi_v<f32>;
+constexpr float kPi = std::numbers::pi_v<float>;
 
 WorldCamera markerAbove() {
     WorldCamera marker;
@@ -22,7 +22,7 @@ WorldCamera markerAbove() {
     return marker;
 }
 
-void requireNear(const Vec3& actual, const Vec3& expected, f32 margin = 1e-3f) {
+void requireNear(const Vec3& actual, const Vec3& expected, float margin = 1e-3f) {
     REQUIRE(actual.x == Approx(expected.x).margin(margin));
     REQUIRE(actual.y == Approx(expected.y).margin(margin));
     REQUIRE(actual.z == Approx(expected.z).margin(margin));
@@ -94,8 +94,9 @@ TEST_CASE("the start camera holds at the marker, then rides at its pace to the f
     REQUIRE_FALSE(camera.update(1, false, followPosition, followAttention));
 }
 
-TEST_CASE("the start camera's hold runs its course without a button and it rides faster from far off",
-          "[game][world][camera]") {
+TEST_CASE(
+    "the start camera's hold runs its course without a button and it rides faster from far off",
+    "[game][world][camera]") {
     const WorldCamera marker = markerAbove();
     const Vec3 followPosition{0.0f, 14.0f, -300.0f};
     const Vec3 followAttention{0.0f, 2.5f, -320.0f};
@@ -111,8 +112,8 @@ TEST_CASE("the start camera's hold runs its course without a button and it rides
     // hundred units, the look-at point's over twenty.
     const Vec3 before = camera.camera().position;
     const Vec3 lookedAt = camera.attention();
-    const f32 positionGap = glm::distance(before, followPosition);
-    const f32 attentionGap = glm::distance(lookedAt, followAttention);
+    const float positionGap = glm::distance(before, followPosition);
+    const float attentionGap = glm::distance(lookedAt, followAttention);
     REQUIRE(positionGap > StartCamera::kPositionReach);
     REQUIRE(attentionGap > StartCamera::kAttentionReach);
     REQUIRE(camera.update(1, false, followPosition, followAttention));

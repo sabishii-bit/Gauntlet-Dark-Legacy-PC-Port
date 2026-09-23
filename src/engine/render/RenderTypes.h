@@ -1,21 +1,22 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 
-#include "engine/core/Types.h"
+#include "engine/core/SpecialMembers.h"
 #include "engine/math/Math.h"
 
 namespace gdl {
 
 struct Extent2D {
-    u32 width = 0;
-    u32 height = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
 
     constexpr bool isZero() const { return width == 0 || height == 0; }
     bool operator==(const Extent2D&) const = default;
 };
 
-enum class PrimitiveTopology : u8 {
+enum class PrimitiveTopology : std::uint8_t {
     TriangleList,
     TriangleStrip,
     TriangleFan,
@@ -34,12 +35,12 @@ struct ImmediateVertex {
 
 static_assert(sizeof(ImmediateVertex) == 32);
 
-enum class TextureFilter : u8 { Nearest, Linear };
-enum class TextureWrap : u8 { Repeat, ClampToEdge };
+enum class TextureFilter : std::uint8_t { Nearest, Linear };
+enum class TextureWrap : std::uint8_t { Repeat, ClampToEdge };
 
 struct TextureDesc {
-    u32 width = 0;
-    u32 height = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
     TextureFilter filter = TextureFilter::Linear;
     TextureWrap wrap = TextureWrap::Repeat;          ///< across (u), and down too unless wrapV says
     std::optional<TextureWrap> wrapV = std::nullopt; ///< down (v), when it differs from across
@@ -54,8 +55,8 @@ public:
 
     GDL_NON_COPYABLE_NON_MOVABLE(Texture);
 
-    virtual u32 width() const = 0;
-    virtual u32 height() const = 0;
+    virtual std::uint32_t width() const = 0;
+    virtual std::uint32_t height() const = 0;
 
 protected:
     Texture() = default;

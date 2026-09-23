@@ -1,6 +1,8 @@
 #include "game/world/Chests.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
 
 #include "engine/core/Log.h"
@@ -9,31 +11,31 @@ namespace gdl::game {
 
 namespace {
 
-s16 paramS16(const ItemInstance& instance, usize at) {
-    s16 value = 0;
+std::int16_t paramS16(const ItemInstance& instance, std::size_t at) {
+    std::int16_t value = 0;
     std::memcpy(&value, &instance.params[at], sizeof(value));
     return value;
 }
 
 } // namespace
 
-s32 Chests::resolveContents(std::span<const ItemInfo> infos, s32 record, usize itemIndex,
-                            u32& seed) {
+std::int32_t Chests::resolveContents(std::span<const ItemInfo> infos, std::int32_t record,
+                                     std::size_t itemIndex, std::uint32_t& seed) {
     // A list may name a list; each pick moves the seed on.
-    for (s32 hops = 0; hops < 8; ++hops) {
-        if (record < 0 || static_cast<usize>(record) >= infos.size()) {
+    for (std::int32_t hops = 0; hops < 8; ++hops) {
+        if (record < 0 || static_cast<std::size_t>(record) >= infos.size()) {
             return -1;
         }
-        const ItemInfo& info = infos[static_cast<usize>(record)];
+        const ItemInfo& info = infos[static_cast<std::size_t>(record)];
         if (info.type != ItemInfo::kChoiceList) {
             return record;
         }
         if (info.choices.empty()) {
             return -1;
         }
-        const auto pick =
-            ((seed >> 5U) + static_cast<u32>(itemIndex)) % static_cast<u32>(info.choices.size());
-        seed += static_cast<u32>(kSeedStep);
+        const auto pick = ((seed >> 5U) + static_cast<std::uint32_t>(itemIndex)) %
+                          static_cast<std::uint32_t>(info.choices.size());
+        seed += static_cast<std::uint32_t>(kSeedStep);
         record = info.choices[pick];
     }
     return -1;
@@ -44,23 +46,23 @@ bool Chests::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& 
     clear();
     m_infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
-    for (usize index = 0; index < instances.size(); ++index) {
+    for (std::size_t index = 0; index < instances.size(); ++index) {
         const ItemInstance& instance = instances[index];
-        if (instance.info < 0 || static_cast<usize>(instance.info) >= m_infos.size()) {
+        if (instance.info < 0 || static_cast<std::size_t>(instance.info) >= m_infos.size()) {
             continue;
         }
-        const ItemInfo& info = m_infos[static_cast<usize>(instance.info)];
+        const ItemInfo& info = m_infos[static_cast<std::size_t>(instance.info)];
         if (info.type != ItemInfo::kContainer || info.subtype == kBarrel) {
             continue;
         }
         auto chest = std::make_unique<Chest>();
-        chest->instance = static_cast<s32>(index);
+        chest->instance = static_cast<std::int32_t>(index);
         chest->info = instance.info;
         chest->subtype = info.subtype;
         chest->contents = paramS16(instance, 0);
         chest->count = paramS16(instance, 4);
         chest->minPlayers = instance.minPlayers;
-        chest->locked = (static_cast<u32>(info.activeType) & kLocked) != 0;
+        chest->locked = (static_cast<std::uint32_t>(info.activeType) & kLocked) != 0;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
         if (!chest->figure.place(device, items, name, instance, collision)) {
             log::warn("Chests: no figure {} in the item archive", name);
@@ -77,15 +79,15 @@ void Chests::clear() {
     m_seed = 0;
 }
 
-void Chests::setPlayerCount(s32 players) {
+void Chests::setPlayerCount(std::int32_t players) {
     for (const std::unique_ptr<Chest>& chest : m_chests) {
         chest->shown = shownToParty(chest->minPlayers, players);
     }
 }
 
-std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor> party) {
+std::vector<ChestEvent> Chests::update(float seconds, std::span<const ChestVisitor> party) {
     std::vector<ChestEvent> events;
-    for (usize index = 0; index < m_chests.size(); ++index) {
+    for (std::size_t index = 0; index < m_chests.size(); ++index) {
         Chest& chest = *m_chests[index];
         if (!chest.shown || chest.gone) {
             continue;
@@ -93,7 +95,7 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
         chest.figure.update(seconds);
         chest.refusalLeft = std::max(chest.refusalLeft - seconds, 0.0f);
         if (chest.state == kShut) {
-            for (usize v = 0; v < party.size(); ++v) {
+            for (std::size_t v = 0; v < party.size(); ++v) {
                 if (!chest.box.touchedBy(party[v].position, party[v].radius)) {
                     continue;
                 }
@@ -110,7 +112,7 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
                     continue;
                 }
                 chest.state = kOpening;
-                chest.opener = static_cast<s32>(v);
+                chest.opener = static_cast<std::int32_t>(v);
                 chest.figure.play(kOpening, false);
                 event.kind = ChestEvent::Kind::Unlocked;
                 events.push_back(event);
@@ -122,13 +124,13 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
             ChestEvent event;
             event.kind = ChestEvent::Kind::Opened;
             event.chest = index;
-            event.visitor = static_cast<usize>(std::max(chest.opener, 0));
+            event.visitor = static_cast<std::size_t>(std::max(chest.opener, 0));
             event.position = chest.figure.position();
             event.explodes = chest.subtype == kTrappedChest;
-            const s32 inside =
-                resolveContents(m_infos, chest.contents, static_cast<usize>(chest.instance), m_seed);
+            const std::int32_t inside = resolveContents(
+                m_infos, chest.contents, static_cast<std::size_t>(chest.instance), m_seed);
             if (!event.explodes && inside >= 0) {
-                const ItemInfo& record = m_infos[static_cast<usize>(inside)];
+                const ItemInfo& record = m_infos[static_cast<std::size_t>(inside)];
                 if (chest.subtype == kGoldChest) {
                     event.gold = record.value;
                 } else {
@@ -141,24 +143,24 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
     return events;
 }
 
-void Chests::hold(usize chest, s32 item) {
+void Chests::hold(std::size_t chest, std::int32_t item) {
     if (chest < m_chests.size()) {
         m_chests[chest]->held = item;
     }
 }
 
-s32 Chests::holdingTouchedBy(const ChestVisitor& visitor) const {
-    for (usize index = 0; index < m_chests.size(); ++index) {
+std::int32_t Chests::holdingTouchedBy(const ChestVisitor& visitor) const {
+    for (std::size_t index = 0; index < m_chests.size(); ++index) {
         const Chest& chest = *m_chests[index];
         if (chest.shown && !chest.gone && chest.state == kOpen && chest.held >= 0 &&
             chest.box.touchedBy(visitor.position, visitor.radius)) {
-            return static_cast<s32>(index);
+            return static_cast<std::int32_t>(index);
         }
     }
     return -1;
 }
 
-void Chests::remove(usize chest) {
+void Chests::remove(std::size_t chest) {
     if (chest < m_chests.size()) {
         m_chests[chest]->gone = true;
         m_chests[chest]->held = -1;

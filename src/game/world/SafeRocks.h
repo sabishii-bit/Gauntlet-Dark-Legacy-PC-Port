@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -12,17 +14,17 @@ namespace gdl::game {
  * trees: name + health tier, with the original L1 / L1ROOT lookup fallbacks. */
 class SafeRocks {
 public:
-    static constexpr s32 kItemType = 10;
-    static constexpr s32 kSubtype = 41;
-    static constexpr s32 kWhole = 3;
+    static constexpr std::int32_t kItemType = 10;
+    static constexpr std::int32_t kSubtype = 41;
+    static constexpr std::int32_t kWhole = 3;
 
     struct Rock {
-        s32 instance = -1;
-        s32 health = 0;
-        s32 baseHealth = 0;
-        s32 armor = 0;
-        s32 tier = 0;
-        s32 minPlayers = 0;
+        std::int32_t instance = -1;
+        std::int32_t health = 0;
+        std::int32_t baseHealth = 0;
+        std::int32_t armor = 0;
+        std::int32_t tier = 0;
+        std::int32_t minPlayers = 0;
         bool shown = true;
         Vec3 position{0.0f};
         Obstacle obstacle;
@@ -32,14 +34,14 @@ public:
 
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items);
     void clear();
-    void setPlayerCount(s32 players);
-    usize size() const { return m_rocks.size(); }
-    const Rock& rock(usize index) const { return *m_rocks[index]; }
-    bool standing(usize index) const;
+    void setPlayerCount(std::int32_t players);
+    std::size_t size() const { return m_rocks.size(); }
+    const Rock& rock(std::size_t index) const { return *m_rocks[index]; }
+    bool standing(std::size_t index) const;
     /** Armour reduces damage, with a minimum of one. True only on the destroying blow. */
-    bool strike(usize index, f32 power);
+    bool strike(std::size_t index, float power);
     /** Restore all three health tiers, as the boss's reactivation does. */
-    void activate(usize index);
+    void activate(std::size_t index);
     std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 

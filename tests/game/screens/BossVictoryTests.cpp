@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -20,12 +22,12 @@ TEST_CASE("the wizard's words and voices go by the boss and the realm's runeston
     REQUIRE(BossVictory::defeatVoiceOf(41, 'G') == "S_DEFEATVOXG");
     REQUIRE(BossVictory::defeatVoiceOf(42, 'E') == "S_E2VOXA");
     // The town has two runestones (the eighth and ninth): none, one, both.
-    const u16 town = (1U << 7) | (1U << 8);
+    const std::uint16_t town = (1U << 7) | (1U << 8);
     REQUIRE(BossVictory::qualityOf(town, 0) == 0);
     REQUIRE(BossVictory::qualityOf(town, 1U << 7) == 1);
     REQUIRE(BossVictory::qualityOf(town, town | 1U) == 3);
     // The castle has one: none, or the one.
-    const u16 castle = 1U << 0;
+    const std::uint16_t castle = 1U << 0;
     REQUIRE(BossVictory::qualityOf(castle, 0) == 0);
     REQUIRE(BossVictory::qualityOf(castle, castle) == 2);
     REQUIRE(BossVictory::qualityOf(0, 0xFFF) == 0);
@@ -79,7 +81,7 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     REQUIRE(visit.caption()->message == "LICH_SPEECH");
     REQUIRE(visit.caption()->page == 0);
     REQUIRE(visit.caption()->shown == 0);
-    const std::array<usize, 2> pages{10, 4};
+    const std::array<std::size_t, 2> pages{10, 4};
     visit.update(2, pages);
     REQUIRE(visit.caption()->shown == 1);
     visit.update(18, pages);
@@ -102,7 +104,7 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     REQUIRE(visit.caption()->message == "RUNE_PHRASE1");
     // Its one page read, a second's pause, and he sees them off: two seconds, the sparkle
     // over the last thirty-five ticks, then it is done.
-    const std::array<usize, 1> page{6};
+    const std::array<std::size_t, 1> page{6};
     visit.update(12, page);
     visit.update(BossVictory::kPagePauseTicks, page);
     REQUIRE_FALSE(visit.caption().has_value());
@@ -132,7 +134,7 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
         demon.update(1, {});
     }
     REQUIRE(demon.stage() == Stage::Defeat);
-    demon.update(BossVictory::kPagePauseTicks * 2, std::array<usize, 1>{0});
+    demon.update(BossVictory::kPagePauseTicks * 2, std::array<std::size_t, 1>{0});
     demon.update(BossVictory::kAfterDefeatTicks, {});
     REQUIRE(demon.stage() == Stage::Leaving); // no rune line; the gold left keeps them
     demon.update(BossVictory::kExitTicks, {});

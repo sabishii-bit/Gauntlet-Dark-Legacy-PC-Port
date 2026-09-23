@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <numbers>
 #include <vector>
@@ -15,7 +17,7 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
-SoundClip tone(u32 rate, usize frames, f32 value) {
+SoundClip tone(std::uint32_t rate, std::size_t frames, float value) {
     SoundClip clip;
     clip.sampleRate = rate;
     clip.channels = 1;
@@ -23,11 +25,11 @@ SoundClip tone(u32 rate, usize frames, f32 value) {
     return clip;
 }
 
-constexpr usize kRampFrames = 250; ///< more than a gain ramp at 48 kHz
+constexpr std::size_t kRampFrames = 250; ///< more than a gain ramp at 48 kHz
 
 /** Pulls `frames` stereo frames through the mixer and returns them. */
-std::vector<f32> pull(AudioMixer& mixer, usize frames) {
-    std::vector<f32> out(frames * 2, 0.0f);
+std::vector<float> pull(AudioMixer& mixer, std::size_t frames) {
+    std::vector<float> out(frames * 2, 0.0f);
     mixer.mix(out);
     return out;
 }
@@ -43,7 +45,7 @@ TEST_CASE("one-shot sounds play once and are dropped when drained", "[audio][pla
     REQUIRE(player.isPlaying(handle));
     REQUIRE(player.voiceCount() == 1);
 
-    std::vector<f32> out = pull(mixer, 100);
+    std::vector<float> out = pull(mixer, 100);
     REQUIRE(out[0] == 0.5f);
     REQUIRE(out[199] == 0.5f);
     player.update();
@@ -61,7 +63,7 @@ TEST_CASE("a voice's own volume and pan can change while it plays", "[audio][pla
     SoundSequence sequence;
     sequence.steps.push_back(SoundSequenceStep{&clip, false, false});
     const SoundHandle handle = player.play(sequence, 1.0f);
-    std::vector<f32> out = pull(mixer, 1);
+    std::vector<float> out = pull(mixer, 1);
     REQUIRE(out[0] == 0.5f);
     // Each change has slid into place by the end of a ramp.
     player.setVolume(handle, 0.5f);
@@ -69,12 +71,12 @@ TEST_CASE("a voice's own volume and pan can change while it plays", "[audio][pla
     REQUIRE(out[out.size() - 2] == Approx(0.25f));
     player.setPan(handle, -1.0f);
     out = pull(mixer, kRampFrames);
-    REQUIRE(out[out.size() - 2] == Approx(0.25f * std::numbers::sqrt2_v<f32>).margin(1e-4f));
+    REQUIRE(out[out.size() - 2] == Approx(0.25f * std::numbers::sqrt2_v<float>).margin(1e-4f));
     REQUIRE(out[out.size() - 1] == Approx(0.0f).margin(1e-4f));
     player.setVolume(99, 0.1f); // unknown handles are ignored
     player.setPan(99, 1.0f);
     out = pull(mixer, kRampFrames);
-    REQUIRE(out[out.size() - 2] == Approx(0.25f * std::numbers::sqrt2_v<f32>).margin(1e-4f));
+    REQUIRE(out[out.size() - 2] == Approx(0.25f * std::numbers::sqrt2_v<float>).margin(1e-4f));
 }
 
 TEST_CASE("a chained sound starts when the one before it ends", "[audio][player]") {
@@ -93,7 +95,7 @@ TEST_CASE("a chained sound starts when the one before it ends", "[audio][player]
     REQUIRE(player.isPlaying(two));
     REQUIRE(player.voiceCount() == 1);
 
-    std::vector<f32> out = pull(mixer, 100);
+    std::vector<float> out = pull(mixer, 100);
     REQUIRE(out[0] == 0.5f);
     player.update();
     out = pull(mixer, 10);
@@ -128,7 +130,7 @@ TEST_CASE("category and master volumes scale voices, live and on start", "[audio
     REQUIRE(player.categoryVolume(SoundCategory::Effects) == 1.0f);
 
     player.play(sequence, 0.5f, SoundCategory::Music);
-    std::vector<f32> out = pull(mixer, 10);
+    std::vector<float> out = pull(mixer, 10);
     REQUIRE(out[0] == 0.25f);
 
     player.setMasterVolume(0.5f);
@@ -152,13 +154,13 @@ TEST_CASE("looping sequences keep feeding and stop on request", "[audio][player]
     const SoundHandle handle = player.play(sequence, 1.0f);
     REQUIRE(sequence.loops());
 
-    std::vector<f32> out = pull(mixer, 48000);
+    std::vector<float> out = pull(mixer, 48000);
     REQUIRE(out[0] == 0.25f);
     for (int second = 0; second < 5; ++second) {
         player.update();
         out = pull(mixer, 48000);
         REQUIRE(out[0] == 0.75f);
-        REQUIRE(out[usize{2} * 47999] == 0.75f);
+        REQUIRE(out[std::size_t{2} * 47999] == 0.75f);
     }
     REQUIRE(player.isPlaying(handle));
     player.stop(handle);
@@ -168,7 +170,7 @@ TEST_CASE("looping sequences keep feeding and stop on request", "[audio][player]
     out = pull(mixer, 1000);
     REQUIRE(out[0] < 0.75f);
     REQUIRE(out[0] > 0.7f);
-    REQUIRE(out[usize{2} * 999] == 0.0f);
+    REQUIRE(out[std::size_t{2} * 999] == 0.0f);
     player.update();
     REQUIRE(player.voiceCount() == 0);
 }
@@ -176,13 +178,13 @@ TEST_CASE("looping sequences keep feeding and stop on request", "[audio][player]
 /** A source of `total` frames of one value, counting how often it starts over. */
 class ToneSource final : public StreamSource {
 public:
-    ToneSource(usize total, f32 value) : m_total(total), m_value(value) {}
+    ToneSource(std::size_t total, float value) : m_total(total), m_value(value) {}
     AudioStreamDesc desc() const override { return AudioStreamDesc{48000, 1}; }
-    bool read(std::vector<f32>& out, usize frames) override {
+    bool read(std::vector<float>& out, std::size_t frames) override {
         if (m_read >= m_total) {
             return false;
         }
-        const usize count = std::min(frames, m_total - m_read);
+        const std::size_t count = std::min(frames, m_total - m_read);
         out.insert(out.end(), count, m_value);
         m_read += count;
         return true;
@@ -194,9 +196,9 @@ public:
     int rewinds = 0;
 
 private:
-    usize m_total;
-    f32 m_value;
-    usize m_read = 0;
+    std::size_t m_total;
+    float m_value;
+    std::size_t m_read = 0;
 };
 
 TEST_CASE("stream sources play ahead of the mixer, looping or ending", "[audio][player]") {
@@ -209,11 +211,11 @@ TEST_CASE("stream sources play ahead of the mixer, looping or ending", "[audio][
     const SoundHandle single = player.playStream(once, false, 1.0f, SoundCategory::Music);
     REQUIRE(single != kNoSound);
     REQUIRE(player.voiceCount() == 1);
-    std::vector<f32> out = pull(mixer, 24000);
+    std::vector<float> out = pull(mixer, 24000);
     REQUIRE(out[0] == 0.5f);
     player.update();
     out = pull(mixer, 24000);
-    REQUIRE(out[usize{2} * 23999] == 0.5f);
+    REQUIRE(out[std::size_t{2} * 23999] == 0.5f);
     player.update();
     out = pull(mixer, 100);
     REQUIRE(out[0] == 0.0f);
@@ -228,7 +230,7 @@ TEST_CASE("stream sources play ahead of the mixer, looping or ending", "[audio][
         player.update();
         out = pull(mixer, 48000);
         REQUIRE(out[0] == 0.5f);
-        REQUIRE(out[usize{2} * 47999] == 0.5f);
+        REQUIRE(out[std::size_t{2} * 47999] == 0.5f);
     }
     REQUIRE(loop->rewinds >= 3);
     player.setCategoryVolume(SoundCategory::Music, 0.5f);
@@ -250,11 +252,11 @@ TEST_CASE("clips at another rate are resampled into the voice", "[audio][player]
     sequence.steps.push_back(SoundSequenceStep{&first, false, false});
     sequence.steps.push_back(SoundSequenceStep{&second, false, false});
     REQUIRE(player.play(sequence, 0.5f) != kNoSound);
-    std::vector<f32> out = pull(mixer, 480 + 480);
+    std::vector<float> out = pull(mixer, 480 + 480);
     REQUIRE(out[0] == 0.25f);
-    REQUIRE(out[usize{2} * 470] == 0.25f);
-    REQUIRE(out[usize{2} * 500] == 0.5f);
-    REQUIRE(out[usize{2} * 950] == 0.5f);
+    REQUIRE(out[std::size_t{2} * 470] == 0.25f);
+    REQUIRE(out[std::size_t{2} * 500] == 0.5f);
+    REQUIRE(out[std::size_t{2} * 950] == 0.5f);
 
     const SoundSequence empty;
     REQUIRE(player.play(empty, 1.0f) == kNoSound);

@@ -1,4 +1,6 @@
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -21,21 +23,23 @@ using Catch::Approx;
 /** Lays a stream out word by word, so vertex data can be placed at exact word offsets. */
 class StreamBuilder {
 public:
-    void word(usize index, u32 value) {
+    void word(std::size_t index, std::uint32_t value) {
         ensure(index + 1);
         m_words[index] = value;
     }
-    void shortAt(usize wordIndex, usize byteOffset, s16 value) {
+    void shortAt(std::size_t wordIndex, std::size_t byteOffset, std::int16_t value) {
         ensure(wordIndex + byteOffset / 4 + 1);
-        m_bytes[wordIndex * 4 + byteOffset] = static_cast<u8>(static_cast<u16>(value) & 0xFFU);
-        m_bytes[wordIndex * 4 + byteOffset + 1] = static_cast<u8>(static_cast<u16>(value) >> 8U);
+        m_bytes[wordIndex * 4 + byteOffset] =
+            static_cast<std::uint8_t>(static_cast<std::uint16_t>(value) & 0xFFU);
+        m_bytes[wordIndex * 4 + byteOffset + 1] =
+            static_cast<std::uint8_t>(static_cast<std::uint16_t>(value) >> 8U);
     }
-    std::vector<u8> finish(usize totalWords) {
+    std::vector<std::uint8_t> finish(std::size_t totalWords) {
         ensure(totalWords);
-        for (usize i = 0; i < m_words.size(); ++i) {
+        for (std::size_t i = 0; i < m_words.size(); ++i) {
             if (m_words[i] != 0) {
-                for (usize b = 0; b < 4; ++b) {
-                    m_bytes[i * 4 + b] = static_cast<u8>((m_words[i] >> (8 * b)) & 0xFFU);
+                for (std::size_t b = 0; b < 4; ++b) {
+                    m_bytes[i * 4 + b] = static_cast<std::uint8_t>((m_words[i] >> (8 * b)) & 0xFFU);
                 }
             }
         }
@@ -43,50 +47,51 @@ public:
     }
 
 private:
-    void ensure(usize words) {
+    void ensure(std::size_t words) {
         if (m_words.size() < words) {
             m_words.resize(words, 0);
             m_bytes.resize(words * 4, 0);
         }
     }
-    std::vector<u32> m_words;
-    std::vector<u8> m_bytes;
+    std::vector<std::uint32_t> m_words;
+    std::vector<std::uint8_t> m_bytes;
 };
 
-u16 packNormal(int x, int y, int z, bool kick) {
-    return static_cast<u16>((x + 15) | ((y + 15) << 5) | ((z + 15) << 10) | (kick ? 0x8000 : 0));
+std::uint16_t packNormal(int x, int y, int z, bool kick) {
+    return static_cast<std::uint16_t>((x + 15) | ((y + 15) << 5) | ((z + 15) << 10) |
+                                      (kick ? 0x8000 : 0));
 }
 
 /** One packet of five short-position vertices whose fourth vertex restarts the strip;
  * `lightmapped` gives each vertex four texture values, the lightmap's pair after its own,
  * and `flat` sets the flag that starts the packet's strips wound the other way. */
-std::vector<u8> samplePacket(bool lightmapped = false, bool flat = true) {
+std::vector<std::uint8_t> samplePacket(bool lightmapped = false, bool flat = true) {
     StreamBuilder b;
     b.word(0, lightmapped ? 8 : 7); // quadwords in total, header included
     b.word(2, 0x6C018000);
     b.word(3, 5);
     b.word(5, flat ? 0x3F800000 : 0);
     b.word(7, 0x69000000);
-    const std::array<std::array<s16, 3>, 5> kPositions{
+    const std::array<std::array<std::int16_t, 3>, 5> kPositions{
         {{128, 0, 0}, {0, 128, 0}, {0, 0, 128}, {256, 0, 0}, {0, 256, 0}}};
-    for (usize v = 0; v < 5; ++v) {
-        for (usize k = 0; k < 3; ++k) {
+    for (std::size_t v = 0; v < 5; ++v) {
+        for (std::size_t k = 0; k < 3; ++k) {
             b.shortAt(8, v * 6 + k * 2, kPositions[v][k]);
         }
     }
     b.word(17, 0x6F058002);
-    const std::array<u16, 5> kNormals{packNormal(0, 0, 15, false), packNormal(15, 0, 0, false),
-                                      packNormal(0, -15, 0, false), packNormal(0, 0, 15, true),
-                                      packNormal(0, 0, 15, false)};
-    for (usize v = 0; v < 5; ++v) {
-        b.shortAt(18, v * 2, static_cast<s16>(kNormals[v]));
+    const std::array<std::uint16_t, 5> kNormals{
+        packNormal(0, 0, 15, false), packNormal(15, 0, 0, false), packNormal(0, -15, 0, false),
+        packNormal(0, 0, 15, true), packNormal(0, 0, 15, false)};
+    for (std::size_t v = 0; v < 5; ++v) {
+        b.shortAt(18, v * 2, static_cast<std::int16_t>(kNormals[v]));
     }
     if (lightmapped) {
         b.word(21, 0x6D000000);
-        for (usize v = 0; v < 5; ++v) {
-            b.shortAt(22, v * 8, static_cast<s16>(64 * v));
+        for (std::size_t v = 0; v < 5; ++v) {
+            b.shortAt(22, v * 8, static_cast<std::int16_t>(64 * v));
             b.shortAt(22, v * 8 + 2, 128);
-            b.shortAt(22, v * 8 + 4, static_cast<s16>(32 * v));
+            b.shortAt(22, v * 8 + 4, static_cast<std::int16_t>(32 * v));
             b.shortAt(22, v * 8 + 6, 256);
         }
         b.word(32, 0x17000000);
@@ -94,8 +99,8 @@ std::vector<u8> samplePacket(bool lightmapped = false, bool flat = true) {
         return b.finish(36);
     }
     b.word(21, 0x65000000);
-    for (usize v = 0; v < 5; ++v) {
-        b.shortAt(22, v * 4, static_cast<s16>(64 * v));
+    for (std::size_t v = 0; v < 5; ++v) {
+        b.shortAt(22, v * 4, static_cast<std::int16_t>(64 * v));
         b.shortAt(22, v * 4 + 2, 128);
     }
     b.word(27, 0x17000000);
@@ -112,10 +117,10 @@ TEST_CASE("packets decode into strips split at kick vertices", "[formats][geomet
     REQUIRE(mesh.triangleCount() == 2);
     // The flag is set and both strips start on even vertices, so both are turned; without
     // it they keep their order.
-    REQUIRE(mesh.parts[0].indices == std::vector<u32>{1, 0, 2, 4, 3, 5});
+    REQUIRE(mesh.parts[0].indices == std::vector<std::uint32_t>{1, 0, 2, 4, 3, 5});
     Mesh plain;
     decodeGeometryStream(samplePacket(false, false), 42, plain);
-    REQUIRE(plain.parts[0].indices == std::vector<u32>{0, 1, 2, 3, 4, 5});
+    REQUIRE(plain.parts[0].indices == std::vector<std::uint32_t>{0, 1, 2, 3, 4, 5});
 
     REQUIRE(mesh.vertices[0].position == Vec3{1.0f, 0.0f, 0.0f});
     REQUIRE(mesh.vertices[1].position == Vec3{0.0f, 1.0f, 0.0f});
@@ -154,25 +159,25 @@ TEST_CASE("a colour block gives every vertex the lighting baked into it", "[form
     b.word(3, 5);
     b.word(5, 0x3F800000);
     b.word(7, 0x69000000);
-    const std::array<std::array<s16, 3>, 5> kPositions{
+    const std::array<std::array<std::int16_t, 3>, 5> kPositions{
         {{128, 0, 0}, {0, 128, 0}, {0, 0, 128}, {256, 0, 0}, {0, 256, 0}}};
-    for (usize v = 0; v < 5; ++v) {
-        for (usize k = 0; k < 3; ++k) {
+    for (std::size_t v = 0; v < 5; ++v) {
+        for (std::size_t k = 0; k < 3; ++k) {
             b.shortAt(8, v * 6 + k * 2, kPositions[v][k]);
         }
     }
     b.word(17, 0x6F058002);
-    for (usize v = 0; v < 5; ++v) {
-        b.shortAt(18, v * 2, static_cast<s16>(packNormal(0, 0, 15, false)));
+    for (std::size_t v = 0; v < 5; ++v) {
+        b.shortAt(18, v * 2, static_cast<std::int16_t>(packNormal(0, 0, 15, false)));
     }
     b.word(21, 3);
-    const std::array<u16, 5> kColors{0x001F, 0x03E0, 0x7C00, 0x4210, 0x0000};
-    for (usize v = 0; v < 5; ++v) {
-        b.shortAt(22, v * 2, static_cast<s16>(kColors[v]));
+    const std::array<std::uint16_t, 5> kColors{0x001F, 0x03E0, 0x7C00, 0x4210, 0x0000};
+    for (std::size_t v = 0; v < 5; ++v) {
+        b.shortAt(22, v * 2, static_cast<std::int16_t>(kColors[v]));
     }
     b.word(25, 0x65000000);
-    for (usize v = 0; v < 5; ++v) {
-        b.shortAt(26, v * 4, static_cast<s16>(64 * v));
+    for (std::size_t v = 0; v < 5; ++v) {
+        b.shortAt(26, v * 4, static_cast<std::int16_t>(64 * v));
         b.shortAt(26, v * 4 + 2, 128);
     }
     b.word(31, 0x17000000);
@@ -196,11 +201,11 @@ TEST_CASE("a colour block gives every vertex the lighting baked into it", "[form
 
 TEST_CASE("broken streams are rejected", "[formats][geometry]") {
     Mesh mesh;
-    REQUIRE_THROWS_AS(decodeGeometryStream(std::vector<u8>(4, 0), 0, mesh), FormatError);
-    std::vector<u8> tooShort = samplePacket();
+    REQUIRE_THROWS_AS(decodeGeometryStream(std::vector<std::uint8_t>(4, 0), 0, mesh), FormatError);
+    std::vector<std::uint8_t> tooShort = samplePacket();
     tooShort.resize(64);
     REQUIRE_THROWS_AS(decodeGeometryStream(tooShort, 0, mesh), FormatError);
-    std::vector<u8> claimsMore = samplePacket();
+    std::vector<std::uint8_t> claimsMore = samplePacket();
     claimsMore[0] = 20;
     REQUIRE_THROWS_AS(decodeGeometryStream(claimsMore, 0, mesh), FormatError);
 }

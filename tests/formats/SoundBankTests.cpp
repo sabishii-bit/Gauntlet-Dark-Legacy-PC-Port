@@ -1,3 +1,5 @@
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -15,47 +17,47 @@ using namespace gdl::formats;
 
 class BigEndianWriter {
 public:
-    BigEndianWriter& put16(u16 value) {
-        m_bytes.push_back(static_cast<u8>(value >> 8U));
-        m_bytes.push_back(static_cast<u8>(value & 0xFFU));
+    BigEndianWriter& put16(std::uint16_t value) {
+        m_bytes.push_back(static_cast<std::uint8_t>(value >> 8U));
+        m_bytes.push_back(static_cast<std::uint8_t>(value & 0xFFU));
         return *this;
     }
-    BigEndianWriter& put32(u32 value) {
-        put16(static_cast<u16>(value >> 16U));
-        return put16(static_cast<u16>(value & 0xFFFFU));
+    BigEndianWriter& put32(std::uint32_t value) {
+        put16(static_cast<std::uint16_t>(value >> 16U));
+        return put16(static_cast<std::uint16_t>(value & 0xFFFFU));
     }
-    BigEndianWriter& text(std::string_view s, usize width) {
-        for (usize i = 0; i < width; ++i) {
-            m_bytes.push_back(i < s.size() ? static_cast<u8>(s[i]) : u8{0});
+    BigEndianWriter& text(std::string_view s, std::size_t width) {
+        for (std::size_t i = 0; i < width; ++i) {
+            m_bytes.push_back(i < s.size() ? static_cast<std::uint8_t>(s[i]) : std::uint8_t{0});
         }
         return *this;
     }
-    BigEndianWriter& zeros(usize count) {
-        m_bytes.insert(m_bytes.end(), count, u8{0});
+    BigEndianWriter& zeros(std::size_t count) {
+        m_bytes.insert(m_bytes.end(), count, std::uint8_t{0});
         return *this;
     }
-    BigEndianWriter& bytes(std::span<const u8> data) {
+    BigEndianWriter& bytes(std::span<const std::uint8_t> data) {
         m_bytes.insert(m_bytes.end(), data.begin(), data.end());
         return *this;
     }
-    const std::vector<u8>& get() const { return m_bytes; }
+    const std::vector<std::uint8_t>& get() const { return m_bytes; }
 
 private:
-    std::vector<u8> m_bytes;
+    std::vector<std::uint8_t> m_bytes;
 };
 
 /** One silent 8-byte ADPCM frame with coefficient pair 0 and scale 0. */
-constexpr std::array<u8, 8> kSilentFrame{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+constexpr std::array<std::uint8_t, 8> kSilentFrame{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
 /** Two calls (one with a looping two-sample sequence) and one sample. */
-std::vector<u8> sampleBank() {
+std::vector<std::uint8_t> sampleBank() {
     BigEndianWriter calls;
     calls.put16(0x8000).put16(0x7F).put16(0).put16(0x8001); // call 0: sample 0, vol 127
     calls.put16(0x4001).put16(0x0000).put16(0xA001).put16(0x6E).put16(3).put16(
         0x0009); // call 1: loop
     BigEndianWriter w;
     w.put32(0x4B4E4256)
-        .put32(static_cast<u32>(calls.get().size()))
+        .put32(static_cast<std::uint32_t>(calls.get().size()))
         .put32(0x01070106)
         .put32(2)
         .put32(1);
@@ -64,8 +66,8 @@ std::vector<u8> sampleBank() {
     w.zeros(12).text("blip", 16);
     // DSP header: samples, nibbles, rate, loop flag, format, loop start, loop end, ca, coefs...
     w.put32(28).put32(32).put32(12000).put16(1).put16(0).put32(2).put32(28).put32(2);
-    for (s16 i = 0; i < 16; ++i) {
-        w.put16(static_cast<u16>(i * 100));
+    for (std::int16_t i = 0; i < 16; ++i) {
+        w.put16(static_cast<std::uint16_t>(i * 100));
     }
     w.zeros(96 - 28 - 32);
     w.bytes(kSilentFrame).bytes(kSilentFrame);
@@ -104,17 +106,17 @@ TEST_CASE("a sound bank parses calls with their sequences and parameters", "[for
     REQUIRE(sample.coefficients[1] == 100);
     REQUIRE(sample.adpcm.size() == 16);
 
-    const std::vector<s16> pcm = decodeBankSample(sample);
+    const std::vector<std::int16_t> pcm = decodeBankSample(sample);
     REQUIRE(pcm.size() == 28);
     REQUIRE(pcm[0] == 0);
 }
 
 TEST_CASE("damaged sound banks are rejected", "[formats][sound]") {
-    REQUIRE_THROWS_AS(SoundBank::parse(std::vector<u8>(8, 0)), FormatError);
-    std::vector<u8> wrongMagic = sampleBank();
+    REQUIRE_THROWS_AS(SoundBank::parse(std::vector<std::uint8_t>(8, 0)), FormatError);
+    std::vector<std::uint8_t> wrongMagic = sampleBank();
     wrongMagic[0] = 'X';
     REQUIRE_THROWS_AS(SoundBank::parse(wrongMagic), FormatError);
-    std::vector<u8> truncated = sampleBank();
+    std::vector<std::uint8_t> truncated = sampleBank();
     truncated.resize(truncated.size() - 4);
     REQUIRE_THROWS_AS(SoundBank::parse(truncated), FormatError);
 }
@@ -129,7 +131,7 @@ TEST_CASE("the shipped common bank holds the menu blips", "[formats][sound][asse
     REQUIRE(move.volume <= SoundBank::kMaxVolume);
     const BankSample& sample = bank.samples[move.steps[0].sample];
     REQUIRE(sample.sampleRate > 0);
-    const std::vector<s16> pcm = decodeBankSample(sample);
+    const std::vector<std::int16_t> pcm = decodeBankSample(sample);
     REQUIRE(pcm.size() == sample.sampleCount);
     REQUIRE(pcm.size() > 100);
 }
