@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
-#include <exception>
 #include <format>
 #include <numbers>
 
@@ -34,15 +33,11 @@ constexpr s32 kIconTierBase = 101; ///< a gargoyle gate's trigger id less this i
 
 constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
-constexpr std::string_view kScrollTexture = "SCROLL_A";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
-/** A potion by its kind (0 and 1 red, 2 blue, 3 yellow, 4 green): the bottle as it flies, the
- * magic it bursts into (fire, lightning, light, acid) and the sound of it. */
 constexpr s32 kOgre = 12;
 constexpr f32 kOgreScale = 1.6f;
 constexpr f32 kMasterScale = 1.2f; ///< at level 99
-constexpr std::string_view kSelectorMoveSound = "S_OPTMENUMOVHRZ";
 constexpr std::string_view kChestSound = "S_CHEST";
 constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
 constexpr std::string_view kRuneVoicePrefix = "S_RUNE";    ///< then S_RUNE2 to S_RUNE12
@@ -51,7 +46,6 @@ constexpr std::string_view kBossKeyTree = "BOSSKEY"; ///< the key that rises whe
 constexpr std::string_view kBossKeyLaterTree = "BOSSKEY2";
 constexpr f32 kBossKeySeconds = 30.0f;
 constexpr std::string_view kBossKeySoundPrefix = "S_BOSSKEY"; ///< then the level's letter
-constexpr std::string_view kHelpTextPrefix = "help";
 constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
 constexpr std::array<std::string_view, 5> kShieldTrees{"MS_FIRE", "MS_FIRE", "MS_ELEC", "MS_LIGHT",
                                                        "MS_ACID"};
@@ -74,7 +68,6 @@ constexpr f32 kRamDamage = 3.0f;    ///< what a charge does to what it runs into
 constexpr f32 kRamReach = 0.3f;     ///< how near counts as run into
 constexpr s32 kSpecialPowerup = 9;  ///< the pickup subtype of the specials
 constexpr u32 kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
-constexpr std::string_view kStringsFile = "text/english.json";
 constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
 constexpr std::string_view kBarrelBreakSound = "S_BARREL_WOOD"; ///< with the realm's letter
 constexpr std::string_view kBarrelBlastSound = "S_BARREL_EXPLO";
@@ -113,7 +106,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     if (!world.built() && !world.load(device, context.unpackedRoot)) {
         return false;
     }
-    if (!m_boxes.load(device, context.unpackedRoot, context.strings)) {
+    if (!m_hud.load(device, context.unpackedRoot, context.strings)) {
         return false;
     }
     m_classes.load(context.unpackedRoot / kClassDataDirectory);
@@ -121,8 +114,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
     // Sumner, his hints and his welcome belong to the tower alone.
     if (world.isTower()) {
-        m_glowSheet = m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(),
-                                         m_context.unpackedRoot, m_context.strings);
+        m_hud.setGlow(m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(),
+                                         m_context.unpackedRoot, m_context.strings));
         m_sumner.load(device, world.items(), world.layout());
     }
     if (context.levels != nullptr) {
@@ -139,13 +132,6 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     m_barrels.bind(device, world.layout(), world.items(), &world.collision());
     m_safeRocks.bind(device, world.layout(), world.items());
-    m_strings.load(context.unpackedRoot / kStringsFile);
-    // What the player reads is the string table's, so that it can be in any language.
-    if (context.strings != nullptr) {
-        m_strings.translate(*context.strings, kHelpTextPrefix);
-    }
-    m_help.clear();
-    m_help.setTexts(&m_strings);
     m_refusedPortal = -1;
     m_leaving = false;
     m_transition.load(device, context.unpackedRoot);
@@ -247,11 +233,8 @@ void PlayScene::close() {
     m_victory.clear();
     m_bosses.close();
     m_enemies.close();
-    for (PowerupSelector& selector : m_selectors) {
-        selector.close();
-    }
-    m_glowSheet = nullptr;
     m_playSeconds = 0.0f;
+    m_hud.clear(); // before the static texture borrowed for selector glow
     m_staticTextures.releaseTextures();
     m_intro = Intro::None;
     m_strikes.clear();
@@ -267,14 +250,11 @@ void PlayScene::close() {
     m_fallenSeconds = 0.0f;
     m_barrels.clear();
     m_safeRocks.clear();
-    m_help.clear();
     m_audio.close(); // before the figures whose class voices it can play
     m_players.clear();
     m_arrival.clear();
     m_weapons.release(); // its textures must go before the device does
     m_welcomePending = false;
-    m_pickups.clear();
-    m_boxes.release();
     m_world = nullptr;
     m_device = nullptr;
     m_open = false;
@@ -417,12 +397,12 @@ void PlayScene::collectItems() {
                     ++count;
                 }
                 enough = enough && count >= wanted;
-                m_pickups.showCount(actor.player(), PickupHud::crystalIcon(pickup.realm), count,
-                                    wanted);
+                m_hud.pickups().showCount(actor.player(), PickupHud::crystalIcon(pickup.realm),
+                                          count, wanted);
             }
             if (pickup.collector < m_players.size()) {
-                m_pickups.addCard(m_players[pickup.collector].actor.player(),
-                                  PickupHud::kCrystalCard);
+                m_hud.pickups().addCard(m_players[pickup.collector].actor.player(),
+                                        PickupHud::kCrystalCard);
             }
             if (enough) {
                 announceUnlock(pickup.realm);
@@ -488,7 +468,7 @@ void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
                 blast(event.position, kBlastRadius, kChestBlastDamage * trapDamageScale());
             } else if (event.gold > 0) {
                 takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
-                m_pickups.addCard(actor.player(), "GOLD");
+                m_hud.pickups().addCard(actor.player(), "GOLD");
                 m_audio.playNamed(kPickupSound);
             } else if (event.contents >= 0 && m_device != nullptr) {
                 // It lies in the open chest, for whoever touches the chest next.
@@ -947,32 +927,9 @@ void PlayScene::cry(usize index, std::string_view which) {
 
 /** Puts a help message up over a character, the narrator saying it, unless the party has
  * seen it. */
+
 bool PlayScene::postHelp(s32 id, usize index, s32 number) {
-    if (index >= m_players.size()) {
-        return false;
-    }
-    std::vector<HelpReader> readers;
-    for (usize i = 0; i < m_players.size(); ++i) {
-        if (!isDown(i)) {
-            readers.push_back(HelpReader{m_players[i].actor.player(),
-                                         &m_players[i].actor.save().helpSeen,
-                                         &m_players[i].helpHeard});
-        }
-    }
-    const HelpMessageSpec* spec = m_help.post(id, m_players[index].actor.player(), readers, number);
-    if (spec == nullptr) {
-        return false;
-    }
-    if (m_context.sounds != nullptr) {
-        // A turbo attack's name is called from the character's own class's bank; the
-        // narrator's lines are in either of its banks.
-        if (spec->classVoice && index < m_players.size() && m_players[index].figure != nullptr) {
-            m_audio.playFrom(m_players[index].figure->voice(), spec->voice);
-        } else {
-            m_audio.narrate(spec->voice);
-        }
-    }
-    return true;
+    return m_hud.postHelp(id, index, m_players, m_audio, number);
 }
 
 void PlayScene::strikeSafeRock(usize index, f32 power) {
@@ -1306,7 +1263,7 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
     if (!m_victory.state().running()) {
         return;
     }
-    const auto result = m_victory.update(ticks, seconds, m_world->goldLeft(), m_strings);
+    const auto result = m_victory.update(ticks, seconds, m_world->goldLeft(), m_hud.strings());
     for (const VictoryVoice& voice : result.voices) {
         m_audio.playNamed(voice.sound);
     }
@@ -1782,8 +1739,6 @@ std::vector<PartyMember> PlayScene::party() const {
     return members;
 }
 
-/** The bottles potions fly as, from the weapons archive the spawn effect came from. */
-
 f32 PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
     if (save.character == kOgre) {
         return kOgreScale;
@@ -1792,51 +1747,6 @@ f32 PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effect
         return PowerupEffects::kGrowthScale;
     }
     return experienceLevel(save.experience()) >= kMaxLevel ? kMasterScale : 1.0f;
-}
-
-/** Works a player's powerup selector with this frame's presses, sounding as the original's
- * does: the menu's up-and-down note for opening and closing, its sideways note for going
- * round, its select for taking one off or putting it on. */
-void PlayScene::stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks) {
-    const auto slot = static_cast<usize>(std::clamp(actor.player(), 0, kPlayerCount - 1));
-    switch (m_selectors[slot].step(input, actor.save().progress().inventory, ticks)) {
-    case SelectorCue::Opened:
-    case SelectorCue::Closed: m_audio.playNamed(kMenuMoveSound); break;
-    case SelectorCue::Moved: m_audio.playNamed(kSelectorMoveSound); break;
-    case SelectorCue::Switched: m_audio.playNamed(kMenuSelectSound); break;
-    case SelectorCue::None: break;
-    }
-}
-
-/** The name of the powerup each open selector has come to, over its player's box: glowing
- * while the powerup is worn, plain once taken off. */
-void PlayScene::drawSelectors() {
-    if (!m_messages.text().ready() || m_context.strings == nullptr) {
-        return;
-    }
-    for (const PlayerRuntime& runtime : m_players) {
-        const PlayerActor& actor = runtime.actor;
-        const PowerupSelector& selector = this->selector(actor.player());
-        const s32 chosen = selector.selection();
-        if (!selector.showing() || chosen < 0) {
-            continue;
-        }
-        const PowerupSlot& slot =
-            actor.save().progress().inventory.powerups[static_cast<usize>(chosen)];
-        const std::string_view label = m_context.strings->get(powerupTextId(slot.kind, slot.flags));
-        const s32 x = actor.player() * StatusBoxPainter::kWidth + PowerupSelector::kLabelX;
-        const s32 y = selector.labelY(StatusBoxPainter::kY);
-        TextStyle style;
-        style.scale = PowerupSelector::kLabelScale;
-        if (slot.on && m_glowSheet != nullptr) {
-            TextStyle glow = style;
-            glow.texture = m_glowSheet;
-            glow.color = ScrollBox::kGlowColor;
-            glow.expand = OptionMenu::kGlowExpand;
-            m_messages.text().draw(m_canvas, x, y, label, glow);
-        }
-        m_messages.text().draw(m_canvas, x, y, label, style);
-    }
 }
 
 /** Hands a touched item to whoever touched it, by the original's rules: their card slides
@@ -1881,7 +1791,7 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     default: break;
     }
     if (!taking.card.empty()) {
-        m_pickups.addCard(actor.player(), taking.card);
+        m_hud.pickups().addCard(actor.player(), taking.card);
     }
     if (!taking.sound.empty()) {
         m_audio.playNamed(taking.sound);
@@ -2141,7 +2051,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     }
     m_world->update(seconds);
     m_world->revealCrystals(seconds);
-    m_pickups.step(ticks, seconds);
+    m_hud.pickups().step(ticks, seconds);
     m_sumner.update(seconds);
     const PartyMotion::Events movementEvents{
         .perform =
@@ -2162,15 +2072,17 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 case PartyMotion::Action::SecondFoot: m_audio.playFootstep(true); break;
                 }
             },
-        .select = [this](usize i, const SelectorInput& input,
-                         s32 elapsed) { stepSelector(m_players[i].actor, input, elapsed); },
+        .select =
+            [this](usize i, const SelectorInput& input, s32 elapsed) {
+                m_hud.stepSelector(m_players[i].actor, input, elapsed, m_audio);
+            },
         .advanceTurbo = [this](usize i, s32 elapsed,
                                f32 duration) { updateTurbo(i, elapsed, duration); }};
     const std::vector<CameraSubject> subjects =
         PartyMotion::step(m_players, inputs, held, m_camera.yaw(), ticks, seconds,
                           m_world->collision(), movementEvents);
     m_playSeconds += seconds;
-    m_help.update(ticks);
+    m_hud.help().update(ticks);
     updateFixtures(ticks, seconds);
     updateEnemies(ticks, seconds);
     std::vector<MissileTarget> targets;
@@ -2403,12 +2315,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const bool cut = m_intro == Intro::Crystal;
     m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
-        for (s32 player = 0; player < kPlayerCount; ++player) {
-            m_boxes.draw(m_canvas, player, statusOf(player), true);
-        }
-        m_pickups.draw(m_canvas, m_boxes);
+        m_hud.drawStatus(m_canvas, m_players);
         m_bossMeter.draw(m_canvas, device);
-        m_victory.drawCaption(m_canvas, m_messages.text(), m_strings, width, height);
+        m_victory.drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width, height);
     }
     if (const LevelInfo* level = m_world->level(); level != nullptr) {
         m_arrival.drawTitle(m_canvas, m_messages.text(), level->title, width);
@@ -2419,42 +2328,12 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                       Color::black());
     }
     if (!cut) {
-        drawSelectors();
-        drawHelp(clip, width, height);
+        m_hud.drawSelectors(m_canvas, m_messages.text(), m_context.strings, m_players);
+        m_hud.drawHelp(m_canvas, device, m_staticTextures, m_players, clip, width, height);
     }
     m_messages.draw(m_canvas);
     m_sumnerVisit.draw(m_canvas, m_messages.text());
     m_canvas.end();
-}
-
-/** The help message, over the head of the character it is for. */
-void PlayScene::drawHelp(const Mat4& clip, f32 width, f32 height) {
-    if (!m_help.showing()) {
-        return;
-    }
-    Vec2 head{width * 0.5f, height * 0.5f};
-    for (const PlayerRuntime& runtime : m_players) {
-        const PlayerActor& actor = runtime.actor;
-        if (actor.player() != m_help.player()) {
-            continue;
-        }
-        const Vec4 point = clip * Vec4{actor.followPoint(), 1.0f};
-        if (point.w > 1e-4f) {
-            head = Vec2{(point.x / point.w * 0.5f + 0.5f) * width,
-                        (0.5f - point.y / point.w * 0.5f) * height};
-        }
-    }
-    const auto sheet =
-        m_staticTextures.loaded() ? m_staticTextures.find(kScrollTexture) : std::nullopt;
-    const Texture* scroll = nullptr;
-    if (sheet.has_value() && m_device != nullptr) {
-        try {
-            scroll = &m_staticTextures.texture(*m_device, *sheet);
-        } catch (const std::exception&) {
-            scroll = nullptr;
-        }
-    }
-    m_help.draw(m_canvas, m_boxes.smallCaps(), scroll, head); // the strings' own font
 }
 
 CameraView PlayScene::cameraView() const {
@@ -2486,37 +2365,6 @@ const PlayerAnimator* PlayScene::animator(s32 player) const {
         }
     }
     return nullptr;
-}
-
-StatusBoxView PlayScene::statusOf(s32 player) const {
-    StatusBoxView view;
-    const PlayerActor* actor = this->actor(player);
-    if (actor == nullptr) {
-        return view;
-    }
-    const CharacterSave& save = actor->save();
-    view.mode = StatusBoxView::Mode::Status;
-    view.active = true;
-    view.classIndex = save.character;
-    view.color = save.color;
-    view.name = save.name;
-    view.level = experienceLevel(save.experience());
-    view.gold = save.gold;
-    for (usize i = 0; i < m_players.size(); ++i) {
-        if (m_players[i].actor.player() == player && isDown(i)) {
-            view.inTower = m_players[i].life == PlayerLife::InTower;
-            view.health = 0;
-            return view;
-        }
-    }
-    view.health = save.health();
-    if (const TurboMeter* meter = turboMeter(player); meter != nullptr) {
-        view.turbo = meter->look();
-    }
-    view.keys = save.progress().inventory.keys;
-    view.potions = static_cast<s32>(save.progress().inventory.potions.size());
-    view.potionKind = save.progress().inventory.nextPotion();
-    return view;
 }
 
 /** Stands the materialising effect at every character's feet and, with `ride`, the start

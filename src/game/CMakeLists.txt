@@ -139,6 +139,7 @@ add_library(game STATIC
     screens/LegendPresentation.cpp
     screens/PlayScene.h
     screens/PartyMotion.cpp
+    screens/PartyHud.cpp
     screens/PlayerHealth.cpp
     screens/PlayScene.cpp)
 
