@@ -160,8 +160,10 @@ void CritterProjectiles::update(f32 seconds, const WorldCollision* collision,
             if (wall || victim != nullptr) {
                 flying.position = wall ? destination : glm::mix(from, to, nearest);
                 if (!wall) {
-                    m_hits.push_back(
-                        {victim->player, damage.damage * flying.shot.damageScale, damage.flags});
+                    const f32 speed = glm::length(flying.velocity);
+                    m_hits.push_back({victim->player, damage.damage * flying.shot.damageScale,
+                                      damage.flags,
+                                      speed > 0.0f ? flying.velocity / speed : Vec3{0.0f}});
                 }
                 effects.stop(flying.effect);
                 show(flying, damage.hitSound, device, effects, sound);

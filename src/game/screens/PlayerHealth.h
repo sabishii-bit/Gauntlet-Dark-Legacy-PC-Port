@@ -5,6 +5,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/PlayerImpact.h"
 #include "game/screens/PlayerRuntime.h"
 namespace gdl::game {
 /** What hurt a character, which picks how it cries out. */
@@ -27,7 +28,7 @@ public:
         std::function<void(std::string_view)> named;
     };
     void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed, bool inTower,
-              f32 damageScale, const Events& events);
+              f32 damageScale, const Events& events, const PlayerImpact& impact = {});
     static f32 guarded(const PlayerRuntime& runtime, f32 damage, bool directed);
 
 private:

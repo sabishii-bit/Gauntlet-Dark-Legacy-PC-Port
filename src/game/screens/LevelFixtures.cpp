@@ -199,7 +199,8 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         // Every trap stuns: spikes and blades make their victim flinch, the rest reel.
         if (PlayerHealth::guarded(players[hit.victim], hit.damage, false) > 1.0f &&
             players[hit.victim].life == PlayerLife::Standing) {
-            players[hit.victim].reaction = hit.pierces ? PlayerDeed::Flinch : PlayerDeed::Reel;
+            players[hit.victim].reaction = PlayerImpact::combine(
+                players[hit.victim].reaction, hit.pierces ? PlayerDeed::Spike : PlayerDeed::Reel);
         }
         events.hurt(hit.victim, hit.damage, hit.pierces ? HurtKind::Pierce : HurtKind::Burn, false);
         events.help(HelpMessages::kTrapsHurt, hit.victim);

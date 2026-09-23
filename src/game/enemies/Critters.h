@@ -42,6 +42,7 @@ struct CritterBlow {
     f32 damage = 0.0f;
     Vec3 direction{0.0f, 0.0f, 1.0f};
     bool breath = false;
+    u32 flags = 0; ///< authored player damage modifiers, not the attack's behavior flags
 };
 
 /** An effect and a sound a critter has set off: a move's, a strike's or a hit's, where it

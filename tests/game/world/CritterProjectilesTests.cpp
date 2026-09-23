@@ -40,7 +40,7 @@ struct Fixture {
             {"name":"HIT","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}]}]})");
         writeTextFile(root / "critter.json",
                       R"({"name":"TEST","types":[{"moveCount":1}],"descriptors":[{}],"moves":[{}],
-            "damages":[{"type":1,"behaviorFlags":9,"radius":0.5,"damage":12,"minSpeed":30,"maxSpeed":30,
+            "damages":[{"type":1,"flags":32,"behaviorFlags":9,"radius":0.5,"damage":12,"minSpeed":30,"maxSpeed":30,
                 "sfxIndex":0,"sfx":2,"morph":1,"morphEnd":2,"morphLife":0.5}],
             "sounds":[{"name":"SHOT","levelFormat":"S_%cSHOT"},{"name":"LOOP"},{"name":"HIT","levelFormat":"S_%cHIT"}]})");
         REQUIRE(archive.load(root));
@@ -97,6 +97,8 @@ TEST_CASE("critter projectiles choose the nearest visible victim regardless of p
     REQUIRE(hits.size() == 1);
     REQUIRE(hits[0].player == 3);
     REQUIRE(hits[0].damage == 24);
+    REQUIRE(hits[0].flags == 0x20);
+    REQUIRE(hits[0].direction == Vec3(0, 0, 1));
     REQUIRE(f.projectiles.count() == 0);
     REQUIRE(f.effects.effect(0).name == "HIT");
     REQUIRE(f.effects.effect(0).position.z == Approx(1.5f));

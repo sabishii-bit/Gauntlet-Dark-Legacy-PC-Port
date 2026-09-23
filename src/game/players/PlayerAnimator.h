@@ -20,7 +20,8 @@ enum class PlayerDeed : u8 {
     UsePotion,
     ThrowPotion,
     Die,
-    Flinch,      ///< struck by spikes or a blade
+    Flinch,      ///< knocked back by a blow
+    Spike,       ///< struck by spikes or a blade
     Reel,        ///< stunned, as by a fire trap
     TurboStrong, ///< the lesser turbo attack
     TurboFull,   ///< the greater
@@ -76,7 +77,7 @@ public:
         ThrowPotion,
         ThrowPotionRelease,
         Death,    ///< falls and stays down
-        HitReact, ///< flinches from spikes or a blade
+        HitReact, ///< recoils from a blow
         Stun,     ///< reels, stunned
         TurboStrong,
         TurboFull,
@@ -108,11 +109,12 @@ public:
         FallForward, ///< onto its face
         GetUpForward,
         SpecialShot, ///< the special shot's wind-up, at whose end the legend item leaves
-        SpecialShotRecover
+        SpecialShotRecover,
+        SpikeHit
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 52;
+    static constexpr usize kActionCount = 53;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -124,7 +126,7 @@ public:
         "STRAFE_WLKL2", "STRAFE_WLKR1", "STRAFE_WLKR2", "STRAFE_ATKF1", "STRAFE_ATKF2",
         "STRAFE_ATKB1", "STRAFE_ATKB2", "STRAFE_ATKL1", "STRAFE_ATKL2", "STRAFE_ATKR1",
         "STRAFE_ATKR2", "FALLDOWN",     "GETUP",        "FALLFRNT",     "GETUP2",
-        "SSHOT1",       "SSHOTR"};
+        "SSHOT1",       "SSHOTR",       "SPIKEHIT"};
     static constexpr f32 kReleaseFrame = 2.0f;        ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -237,7 +239,8 @@ public:
     /** Whether the body is flinching or reeling from a hit: it stands where it was struck,
      * does nothing else, and is not set reeling again until it is over. */
     bool reacting() const {
-        return m_current == Action::HitReact || m_current == Action::Stun || floored();
+        return m_current == Action::HitReact || m_current == Action::Stun ||
+               m_current == Action::SpikeHit || floored();
     }
     /** The footfall this tick, if a half cycle of walking or running just ended. */
     Foot footfall() const { return m_footfall; }

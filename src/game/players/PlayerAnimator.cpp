@@ -145,9 +145,13 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     // A hit cuts into anything at once, unless one is already being reeled from; while it
     // plays nothing else is asked of the body.
     const bool felled = deed == PlayerDeed::FallBack || deed == PlayerDeed::FallForward;
-    const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel || felled;
+    const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel ||
+                        deed == PlayerDeed::Spike || felled;
     if (struck && !floored() && (felled || !reacting())) {
         Action reaction = deed == PlayerDeed::Flinch ? Action::HitReact : Action::Stun;
+        if (deed == PlayerDeed::Spike) {
+            reaction = Action::SpikeHit;
+        }
         if (felled) {
             reaction = deed == PlayerDeed::FallBack ? Action::FallBack : Action::FallForward;
         }
@@ -360,6 +364,7 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::ThrowPotionRelease:
     case Action::Death:
     case Action::HitReact:
+    case Action::SpikeHit:
     case Action::Stun:
     case Action::TurboStrong:
     case Action::TurboFull:

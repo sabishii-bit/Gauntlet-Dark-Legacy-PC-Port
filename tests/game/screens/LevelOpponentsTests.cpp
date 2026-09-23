@@ -41,7 +41,7 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
     const auto root = test::scratchDirectory("level-opponents-empty");
     std::vector<std::string> phases;
     const LevelOpponents::Events events{
-        .hurt = [](usize, f32, HurtKind, bool) { FAIL("No combatants"); },
+        .hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) { FAIL("No combatants"); },
         .blast = [](const Vec3&, f32, f32) { FAIL("No combatants"); },
         .settleBlasts = [&] { phases.emplace_back("blast"); },
         .legend = [](const LegendEvent&) { FAIL("No boss"); },
@@ -83,15 +83,20 @@ TEST_CASE("breath contacts share a player's quarter-second gate across creatures
     std::vector<usize> hurt;
     std::vector<HurtKind> kinds;
     LevelOpponents::Events events;
-    events.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed) {
+    events.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
+                      const PlayerImpact& impact) {
         REQUIRE(damage == 40);
         REQUIRE(directed);
+        REQUIRE(impact.flags == PlayerImpact::kKnockDown);
+        REQUIRE(impact.direction == Vec3(0, 0, -1));
         hurt.push_back(index);
         kinds.push_back(kind);
     };
     CritterBlow fire;
     fire.player = 3;
     fire.damage = 40;
+    fire.flags = PlayerImpact::kKnockDown;
+    fire.direction = {0, 0, -1};
     fire.breath = true;
     LevelOpponents::applyCritterBlow(fire, players, events);
     REQUIRE(hurt == std::vector<usize>{0});
@@ -165,7 +170,7 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.bosses().spawn(kind, Vec3{0}, 0));
     LevelOpponents::Events events;
-    events.hurt = [](usize, f32, HurtKind, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.blast = [](const Vec3&, f32, f32) {};
     events.settleBlasts = [] {};
     events.legend = [](const LegendEvent&) {};

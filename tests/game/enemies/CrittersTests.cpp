@@ -704,7 +704,7 @@ std::filesystem::path targetedCritter() {
          "frameStart":0,"frameEnd":0,"damage0":0,
          "frameStart2":14,"frameEnd2":25,"damage1":1}],
       "damages":[{"type":8,"offset":[0,-100,0],"sfxIndex":0},
-        {"type":8,"radius":3,"maxDistance":10,"damage":100,"sfxIndex":1}],
+        {"type":8,"flags":32,"radius":3,"maxDistance":10,"damage":100,"sfxIndex":1}],
       "sounds":[{"name":"ROARFX","flags":66,"offset":[0,97,0]},
         {"name":"IMPACT","flags":66,"offset":[0,-2,0]}]})");
     return root;
@@ -862,6 +862,7 @@ TEST_CASE("targeted rocks snapshot the player and keep the impact there after a 
         critters.update(kTicks, kStep, party);
         for (const CritterBlow& blow : critters.takeBlows()) {
             REQUIRE(blow.damage == 100);
+            REQUIRE(blow.flags == 0x20);
             ++hits;
         }
         for (const CritterCue& cue : critters.takeCues()) {

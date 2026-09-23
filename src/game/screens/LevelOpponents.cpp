@@ -172,7 +172,8 @@ void LevelOpponents::applyCritterBlow(const CritterBlow& blow, std::span<PlayerR
         if (blow.breath) {
             player.breathGap = 0.25f;
         }
-        events.hurt(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true);
+        events.hurt(i, blow.damage, blow.breath ? HurtKind::Burn : HurtKind::Blow, true,
+                    {blow.flags, blow.direction});
     }
 }
 
@@ -201,13 +202,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         for (usize i = 0; i < players.size(); ++i) {
             if (hit.player >= 0 && players[i].actor.player() == hit.player &&
                 players[i].life == PlayerLife::Standing) {
-                const bool guarding =
-                    players[i].figure != nullptr && players[i].figure->animator().guarding();
-                if ((hit.flags & EnemyMissileKind::kKnockBack) != 0 && !guarding &&
-                    players[i].reaction == PlayerDeed::None) {
-                    players[i].reaction = PlayerDeed::Flinch;
-                }
-                events.hurt(i, hit.damage, HurtKind::Pierce, true);
+                events.hurt(i, hit.damage, HurtKind::Pierce, true, {hit.flags, hit.direction});
             }
         }
         if (hit.burstRadius > 0.0f) {
@@ -239,7 +234,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         for (usize player = 0; player < players.size(); ++player) {
             if (players[player].actor.player() == hit.player &&
                 players[player].life == PlayerLife::Standing) {
-                events.hurt(player, hit.damage, HurtKind::Pierce, true);
+                events.hurt(player, hit.damage, HurtKind::Pierce, true, {hit.flags, hit.direction});
             }
         }
     }
@@ -285,12 +280,8 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
                 players[i].life != PlayerLife::Standing) {
                 continue;
             }
-            const bool guarding =
-                players[i].figure != nullptr && players[i].figure->animator().guarding();
-            if (blow.knocksDown && !guarding && players[i].reaction == PlayerDeed::None) {
-                players[i].reaction = PlayerDeed::Flinch;
-            }
-            events.hurt(i, blow.damage, HurtKind::Blow, true);
+            events.hurt(i, blow.damage, HurtKind::Blow, true,
+                        {blow.knocksBack ? PlayerImpact::kKnockBack : 0, blow.direction});
         }
     }
     for (const EnemyLoss& loss : m_enemies.takeLosses()) {

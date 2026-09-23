@@ -467,6 +467,7 @@ void Critters::strikeWith(Critter& critter, s32 id, const CritterMove& move, s32
         blow.critter = id;
         blow.damage = damage->damage * m_scales.damage;
         blow.breath = breath.has_value();
+        blow.flags = damage->flags;
         const Vec3 away = feet - critter.position;
         const f32 length = flatDistance(feet, critter.position);
         blow.direction = length > 0.001f ? Vec3{away.x / length, 0.0f, away.z / length}

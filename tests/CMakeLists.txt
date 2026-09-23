@@ -106,6 +106,7 @@ add_executable(tests
     game/players/PlayerControlsTests.cpp
     game/players/PlayerActorTests.cpp
     game/players/PlayerAnimatorTests.cpp
+    game/players/PlayerImpactTests.cpp
     game/world/LevelWorldTests.cpp
     game/world/LevelCatalogTests.cpp
     game/world/ExitPortalsTests.cpp

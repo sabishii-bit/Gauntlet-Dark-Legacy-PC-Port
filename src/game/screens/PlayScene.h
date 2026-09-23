@@ -250,7 +250,8 @@ private:
     LevelFixtures::Events fixtureEvents();
     PlayerAttacks::Targets attackTargets();
     void hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage);
-    void hurt(usize index, f32 damage, HurtKind kind, bool directed = false);
+    void hurt(usize index, f32 damage, HurtKind kind, bool directed = false,
+              const PlayerImpact& impact = {});
     void updateEnemies(s32 ticks, f32 seconds);
     void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer);
     void strikeGenerator(s32 id, f32 power, s32 byPlayer);

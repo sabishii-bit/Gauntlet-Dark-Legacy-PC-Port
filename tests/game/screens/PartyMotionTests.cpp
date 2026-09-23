@@ -8,6 +8,9 @@
 
 #include "engine/core/Types.h"
 
+#include "FakeRenderDevice.h"
+#include "TestSupport.h"
+#include "game/screens/LevelOpponents.h"
 #include "game/screens/PartyMotion.h"
 
 namespace {
@@ -95,6 +98,94 @@ TEST_CASE("party motion ignores invalid player ids", "[game][screens][party-moti
     f.players[1].actor.spawn(4, {}, nullptr, Vec3{0}, 0);
     f.step();
     REQUIRE(f.calls.empty());
+}
+
+TEST_CASE("boss impacts reach retail player animations and lock input through recovery",
+          "[game][screens][party-motion][player-impact][unpacked]") {
+    const auto root = test::unpackedOrSkip("PLAYERS/WAR/RED/objects.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    test::FakeRenderDevice device;
+    Fixture f;
+    PlayerRuntime& player = f.players[0];
+    player.figure = PlayerFigure::load(device, root, player.actor.save());
+    REQUIRE(player.figure != nullptr);
+    REQUIRE(player.figure->animator().bound());
+    // Complete the entrance before combat, just as the scene does.
+    for (s32 i = 0; i < 120; ++i) {
+        player.figure->animate(0, 2, 1.0f / 30);
+    }
+    REQUIRE(player.figure->animator().action() == PlayerAnimator::Action::Ready);
+    player.actor.save().progress().health = 1000;
+    PlayerHealth health;
+    const PlayerHealth::Events healthEvents{.block = [](f32, f32) {},
+                                            .sound = [](std::string_view) {},
+                                            .cry = [](std::string_view) {},
+                                            .named = [](std::string_view) {}};
+    LevelOpponents::Events opponents;
+    opponents.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
+                         const PlayerImpact& impact) {
+        REQUIRE(index == 0); // input id 3 is not party index 3
+        health.hurt(f.players[index], damage, kind, directed, false, 1, healthEvents, impact);
+    };
+    CritterBlow blow;
+    blow.player = 3;
+    blow.damage = 10;
+    blow.flags = PlayerImpact::kKnockDown;
+    blow.direction = {0, 0, -1};
+    using Action = PlayerAnimator::Action;
+    PlayerDeed expected = PlayerDeed::FallBack;
+    Action first = Action::FallBack;
+    Action recovery = Action::GetUpBack;
+    s32 remainingHealth = 990;
+    SECTION("a frontal heavy hit knocks the player onto their back") {}
+    SECTION("a heavy hit from behind knocks the player onto their face") {
+        blow.direction.z = 1;
+        expected = PlayerDeed::FallForward;
+        first = Action::FallForward;
+        recovery = Action::GetUpForward;
+    }
+    SECTION("a raised guard halves the hit and downgrades falling to recoil") {
+        for (s32 i = 0; i < 60; ++i) {
+            player.figure->animate(0, 2, 1.0f / 30, PlayerDeed::Defend);
+        }
+        REQUIRE(player.figure->animator().defending());
+        remainingHealth = 995;
+        expected = PlayerDeed::Flinch;
+        first = Action::HitReact;
+        recovery = Action::Ready;
+    }
+    SECTION("stun flags reel without knocking the player off their feet") {
+        blow.flags = PlayerImpact::kStun;
+        expected = PlayerDeed::Reel;
+        first = Action::Stun;
+        recovery = Action::Ready;
+    }
+    LevelOpponents::applyCritterBlow(blow, f.players, opponents);
+    REQUIRE(player.actor.save().health() == remainingHealth);
+    REQUIRE(player.reaction == expected);
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.inputs[3].attack = true;
+    f.players[1].life = PlayerLife::InTower;
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.step();
+    REQUIRE(player.figure->animator().action() == first);
+    bool gotUp = false;
+    for (s32 i = 0; i < 120 && player.figure->animator().reacting(); ++i) {
+        f.step();
+        REQUIRE(player.actor.position() == Vec3(0));
+        REQUIRE_FALSE(player.figure->animator().released());
+        REQUIRE(f.calls.empty());
+        gotUp = gotUp || player.figure->animator().action() == recovery;
+    }
+    REQUIRE(gotUp);
+    REQUIRE_FALSE(player.figure->animator().reacting());
+    f.inputs[3].attack = false;
+    f.step();
+    REQUIRE(player.actor.position().z > 0);
 }
 
 TEST_CASE("charge steering and strafe directions remain camera relative",
