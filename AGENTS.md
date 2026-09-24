@@ -1894,9 +1894,16 @@ save. Save from the active shop/journey on shutdown, not the closed PlayScene.
 WDATA exports the three pile maxima at level record offsets E0/E4/E8. Retail's
 buy driver adds 10 to permanent attributes, scales powerup time by the class,
 and sells keys/potions singly or a whole powerup slot at price * 3 / 4.
-The current screen intentionally uses counters/bars, not a claimed pixel-exact
-recreation of retail's piled-gold animation. Test `[shop]` and use the unsaved
-`after-level-shop` scenario when changing this flow.
+The presentation uses the original column artwork, FONT32, cropped rising piles,
+catalog-scaled scrolling rows and timed numeric stats. `ShopLayout` owns catalog
+geometry; `AfterLevelPresentation` draws it. The realm's S_TALLYSFX loop is shared
+by all growing piles, never restarted per frame, and stopped on completion/close.
+Tests pin retail coordinates, captions, pile timing and mixed audio samples;
+they do not establish complete visual parity. Pile growth uses fixed 60 Hz
+one-tick integer updates (not the 90 px/s approximation). The user-reported
+per-pile completion cue remains unidentified. The separate post-shop inventory
+panel outro remains unimplemented. Test `[shop]` and use the unsaved
+`after-level-shop` scenario (which now reads WDATA maxima) when changing this flow.
 
 ## Git
 

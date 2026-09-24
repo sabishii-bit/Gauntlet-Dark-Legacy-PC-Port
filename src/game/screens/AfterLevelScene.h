@@ -1,7 +1,9 @@
 #pragma once
+#include <optional>
 #include <string_view>
 
 #include "engine/assets/BitmapFont.h"
+#include "engine/assets/MessageTable.h"
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/ui/Canvas.h"
@@ -31,8 +33,15 @@ private:
     void drawTally(const ShopLane& lane, s32 x);
     void drawStats(const ShopLane& lane, s32 x);
     void drawShop(const ShopLane& lane, s32 x);
-    void line(s32 x, s32 y, std::string_view value, Color color = Color::white());
+    void line(s32 x, s32 y, std::string_view value, f32 scale, Color color = Color::white(),
+              bool glow = false);
+    void image(std::string_view name, s32 x, s32 y, Color color = Color::white());
+    void prompt(s32 x, s32 y, s32 size);
+    void drawBackground(s32 player);
+    void drawPile(usize pile, s32 x, f32 height);
+    std::string_view rank(const ShopLane& lane) const;
     void sound(std::string_view name);
+    void updateTallySound();
     bool m_open = false;
     GameContext m_context;
     RenderDevice* m_device = nullptr;
@@ -42,10 +51,16 @@ private:
     TextureSet m_static;
     BitmapFont m_font;
     TextPainter m_text;
+    MessageTable m_titles;
+    const Texture* m_glow = nullptr;
+    std::array<f32, 4> m_scroll{};
+    f64 m_time = 0;
     StatusBoxPainter m_boxes;
     Canvas m_canvas;
     SoundSet m_musicBank;
     SoundSet m_common;
     SoundHandle m_music = kNoSound;
+    SoundHandle m_tallySound = kNoSound;
+    std::optional<u32> m_tallyCue;
 };
 } // namespace gdl::game

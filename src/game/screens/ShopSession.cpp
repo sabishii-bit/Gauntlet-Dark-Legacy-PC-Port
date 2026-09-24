@@ -6,6 +6,44 @@
 
 #include "engine/core/Error.h"
 namespace gdl::game {
+std::array<s32, 5> ShopLane::statsValues(bool previous) const {
+    const auto level = previous ? entryLevel : experienceLevel(member.save.experience());
+    auto values = entryStats;
+    if (!previous) {
+        values = member.save.character == kSumnerClass
+                     ? masteryStats()
+                     : displayStats(stats, level, member.save.progress());
+    }
+    return {values.strength(), values.armor(), values.magic(), values.speed(),
+            std::min(9999, kStartingHealth + 100 * (level - 1))};
+}
+std::array<s32, 5> ShopLane::statsRevealTicks() const {
+    std::array<s32, 5> result{};
+    s32 tick = phase == ShopPhase::BeforeStats ? 90 : 30;
+    const auto before = statsValues(true);
+    const auto after = statsValues(false);
+    for (usize i = 0; i < result.size(); ++i) {
+        result[i] = tick;
+        if (before[i] != after[i]) {
+            tick += 60;
+        }
+    }
+    return result;
+}
+bool ShopLane::statsReady() const {
+    const auto ticks = statsRevealTicks();
+    const s32 last =
+        ticks.back() + (statsValues(true).back() != statsValues(false).back() ? 60 : 0);
+    return phaseSeconds * 60 >= last;
+}
+void ShopLane::rememberShopEntry() {
+    entryGold = member.save.gold;
+    goldHeight = tally.targetHeight(0);
+    entryLevel = experienceLevel(member.save.experience());
+    entryStats = member.save.character == kSumnerClass
+                     ? masteryStats()
+                     : displayStats(stats, entryLevel, member.save.progress());
+}
 void ShopSession::start(std::span<const PartyMember> party, std::span<const LevelResults> results,
                         const std::array<s32, 3>& maxima, const ClassDataSet& classes,
                         ShopCatalog catalog) {
@@ -34,6 +72,11 @@ void ShopSession::start(std::span<const PartyMember> party, std::span<const Leve
         const auto result = std::ranges::find(results, member.player, &LevelResults::player);
         lane.tally.start(result != results.end() ? *result : LevelResults{member.player, {}},
                          maxima);
+        lane.entryLevel =
+            experienceLevel(std::max(0, member.save.experience() - lane.tally.results().totals[2]));
+        lane.entryStats = member.save.character == kSumnerClass
+                              ? masteryStats()
+                              : displayStats(lane.stats, lane.entryLevel, member.save.progress());
         if (member.fallen) {
             lane.phase = ShopPhase::Done;
         }
@@ -44,6 +87,7 @@ void ShopSession::skipTally() {
     for (auto& lane : m_lanes) {
         if (lane.phase == ShopPhase::Tally) {
             lane.phase = ShopPhase::Shopping;
+            lane.rememberShopEntry();
         }
     }
 }
@@ -55,22 +99,32 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
         lane.transacted = false;
         lane.feedbackLeft = std::max(0.0, lane.feedbackLeft - seconds);
         const auto& input = inputs[static_cast<usize>(lane.member.player)];
+        const auto previousPhase = lane.phase;
+        lane.phaseSeconds += seconds;
         switch (lane.phase) {
         case ShopPhase::Tally: {
             const bool ready = lane.tally.finished();
             lane.tally.update(seconds);
             // A press on the frame the tally ends cannot also leave it.
             if (ready && input.select) {
-                lane.phase = ShopPhase::BeforeStats;
+                lane.phase = lane.entryLevel == experienceLevel(lane.member.save.experience())
+                                 ? ShopPhase::Shopping
+                                 : ShopPhase::BeforeStats;
             }
             break;
         }
         case ShopPhase::BeforeStats:
-            if (input.select) {
+            if (lane.statsReady() && input.select) {
                 lane.phase = ShopPhase::Shopping;
             }
             break;
         case ShopPhase::Shopping: {
+            const f32 targetHeight = LevelTally::kInitialHeight +
+                                     static_cast<f32>(lane.member.save.gold) *
+                                         (LevelTally::kMaxHeight - LevelTally::kInitialHeight) /
+                                         (static_cast<f32>(lane.entryGold) + 1);
+            lane.goldHeight = std::max(
+                targetHeight, lane.goldHeight - static_cast<f32>(std::min(seconds, 60.0)) * 60);
             const usize count = m_catalog.items().size();
             if (input.up || input.left) {
                 lane.cursor = (lane.cursor + count - 1) % count;
@@ -99,11 +153,17 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             break;
         }
         case ShopPhase::AfterStats:
-            if (input.select) {
+            if (lane.statsReady() && input.select) {
                 lane.phase = ShopPhase::Done;
             }
             break;
         case ShopPhase::Done: break;
+        }
+        if (lane.phase != previousPhase) {
+            lane.phaseSeconds = 0;
+            if (lane.phase == ShopPhase::Shopping) {
+                lane.rememberShopEntry();
+            }
         }
     }
 }
