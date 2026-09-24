@@ -39,6 +39,9 @@ TEST_CASE("each class throws its own weapon, the tier its level earns", "[game][
     REQUIRE(MissileSpec::of(3).spin == 0.0f);
     REQUIRE(MissileSpec::of(3).staysInHand);
     REQUIRE(MissileSpec::of(8).model == "MIN");
+    REQUIRE(MissileSpec::of(0).impactTree == "SPARKS");
+    REQUIRE(MissileSpec::of(7).impactTree == "EXPSMALL");
+    REQUIRE(MissileSpec::of(15).impactTree == "EXPSMALL");
     REQUIRE(MissileSpec::of(16).model == "STF"); // Sumner throws as a wizard
     REQUIRE(MissileSpec::of(-4).model == "AXE");
     bool inCostume = false;
@@ -136,6 +139,8 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
     REQUIRE(impacts[0].position.z < 10.5f);
     REQUIRE(impacts[0].owner == 1);
     REQUIRE(impacts[0].potion == 0);
+    REQUIRE(impacts[0].effect == "SPARKS");
+    REQUIRE(impacts[0].wallSound == MissileWallSound::Level);
     REQUIRE(missiles.takeImpacts().empty());
 
     // Over a floor, the lob comes down onto it.
@@ -172,6 +177,29 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
     missiles.launch(axeFrom(Vec3{0.0f, 3.0f, 0.0f}));
     missiles.clear();
     REQUIRE(missiles.count() == 0);
+}
+
+TEST_CASE("world contacts retain the launched weapon's effect and volley sound policy",
+          "[game][world][missiles][projectile-impact]") {
+    CollisionTriangle wall;
+    wall.normal = {0, 0, -1};
+    wall.vertices = {Vec3{-20, -5, 10}, Vec3{20, -5, 10}, Vec3{0, 40, 10}};
+    WorldCollision collision;
+    collision.build({wall});
+    PlayerMissiles missiles;
+    auto launch = axeFrom({0, 3, 0});
+    launch.spec = &MissileSpec::of(7);
+    launch.wallSound = MissileWallSound::Silent;
+    REQUIRE(missiles.launch(launch));
+    missiles.update(0.5f, &collision);
+    REQUIRE(missiles.count() == 0);
+    const auto impacts = missiles.takeImpacts();
+    REQUIRE(impacts.size() == 1);
+    CHECK(impacts.front().target == -1);
+    CHECK(impacts.front().effect == "EXPSMALL");
+    CHECK(impacts.front().wallSound == MissileWallSound::Silent);
+    missiles.update(0.5f, &collision);
+    CHECK(missiles.takeImpacts().empty());
 }
 
 TEST_CASE("what stands in a missile's way stops it and learns what hit it",

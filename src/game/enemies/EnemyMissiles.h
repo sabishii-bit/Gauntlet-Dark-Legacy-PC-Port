@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "engine/core/Types.h"
@@ -63,6 +64,9 @@ struct EnemyMissileHit {
     f32 burstRadius = 0.0f;
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 direction{0.0f, 0.0f, 1.0f};
+    bool worldContact = false; ///< expiry alone is not a surface hit
+    std::string_view effect() const;
+    std::string_view sound() const;
 };
 
 /**

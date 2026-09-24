@@ -1,6 +1,7 @@
 #pragma once
 #include <array>
 #include <optional>
+#include <string_view>
 
 #include "engine/core/Types.h"
 
@@ -24,6 +25,7 @@ public:
         EffectTrees& effects;
         LevelSoundscape& audio;
         SoundPlayer* sounds;
+        std::string_view wallHitSound; ///< resolved from the level's audio record
     };
     PlayerArsenal() = default;
     ~PlayerArsenal() = default;
@@ -38,6 +40,8 @@ public:
     void usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor);
     void burstPotion(s32 kind, const Vec3& position, f32 power);
+    /** Present a collision once, without applying target damage or expiry effects. */
+    void presentImpact(const MissileImpact& impact);
     f32 magicPowerOf(const PlayerActor& actor) const;
     PlayerMissiles& missiles() { return m_missiles; }
     const PlayerMissiles& missiles() const { return m_missiles; }

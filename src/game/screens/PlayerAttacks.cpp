@@ -555,10 +555,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),
                                            missileTargets);
     for (const MissileImpact& impact : m_resources->arsenal.missiles().takeImpacts()) {
-        if (impact.potion != 0) {
-            m_resources->arsenal.burstPotion(impact.potion, impact.position,
-                                             impact.potency); // weapons leave no mark yet
-        }
+        m_resources->arsenal.presentImpact(impact);
         if (impact.target >= kSafeRockTargetBase) {
             targets.fixtures.strikeSafeRock(static_cast<usize>(impact.target - kSafeRockTargetBase),
                                             impact.damage);

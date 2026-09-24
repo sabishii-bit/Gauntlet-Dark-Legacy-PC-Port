@@ -23,6 +23,7 @@ struct MissileSpec {
     f32 spin = 0.0f;          ///< radians a second it tumbles forwards
     f32 weight = 8.0f;        ///< how hard it falls, units a second squared
     bool staysInHand = false; ///< a staff or a bow is not what flies
+    std::string_view impactTree = "SPARKS"; ///< the weapon's world-contact effect
 
     /** The spec of a class (the unlockable classes fly like the class they shadow). */
     static const MissileSpec& of(s32 classIndex);
@@ -34,6 +35,9 @@ struct MissileSpec {
     /** How a thrown potion flies. */
     static const MissileSpec& potion();
 };
+
+/** Spread volleys sound only on the centre projectile. */
+enum class MissileWallSound : u8 { Level, ThreeWay, FiveWay, Silent };
 
 /** What sets a missile off. */
 struct MissileLaunch {
@@ -49,6 +53,7 @@ struct MissileLaunch {
     f32 potency = 0.0f;               ///< the magic power its burst goes off with
     f32 damage = 0.0f;                ///< what it does to what it hits
     f32 scale = 1.0f;                 ///< how large it is drawn: a strong throw's is doubled
+    MissileWallSound wallSound = MissileWallSound::Level;
 };
 
 /** Something standing that a missile stops against: an upright cylinder from its base. */
@@ -67,6 +72,8 @@ struct MissileImpact {
     f32 potency = 0.0f;
     f32 damage = 0.0f;
     s32 target = -1; ///< the id of the target it stopped against; none for a wall or the floor
+    std::string_view effect = "SPARKS";
+    MissileWallSound wallSound = MissileWallSound::Level;
 };
 
 /**
@@ -103,6 +110,7 @@ public:
         f32 scale = 1.0f;
         const MissileSpec* spec = nullptr;
         const TreeModel* model = nullptr;
+        MissileWallSound wallSound = MissileWallSound::Level;
     };
 
     /** A missile's pace from the stat that throws it. */

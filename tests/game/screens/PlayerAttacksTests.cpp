@@ -29,11 +29,67 @@ struct Fixture {
     std::array<PlayerRuntime, 1> players;
     PlayerAttacks::Targets targets{opponents, fixtures, {}};
     Fixture() {
-        arsenal.bind({device, classes, weapons, world.collision(), effects, audio, nullptr});
+        arsenal.bind({device, classes, weapons, world.collision(), effects, audio, nullptr, {}});
         attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
     }
 };
+
+TEST_CASE("scene projectile updates present retail world impacts once and preserve potion bursts",
+          "[game][screens][player-attacks][projectile-impact][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::unpackedOrSkip("audio/COMMON/sounds.json");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    REQUIRE(f.world.load(f.device, root, *level));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.audio.open(root, &sounds, f.world.audio());
+    CHECK(f.world.wallHitSound() == "S_WEAPONHITWOOD");
+    f.arsenal.bind({f.device, f.classes, f.weapons, f.world.collision(), f.effects, f.audio,
+                    &sounds, f.world.wallHitSound()});
+    const Vec3 start{24.375f, 10, 2.5f};
+    const auto floor = f.world.collision().floorAt(start, 20, 50);
+    REQUIRE(floor);
+    MissileLaunch launch;
+    launch.position = {start.x, floor->y + 3, start.z};
+    launch.velocity = Vec3{0, -5, 0};
+    launch.owner = 3;
+    launch.spec = &MissileSpec::of(0);
+    std::string_view expected = "SPARKS";
+    SECTION("ordinary weapon") {}
+    SECTION("jester bomb") {
+        launch.spec = &MissileSpec::of(7);
+        expected = "EXPSMALL";
+    }
+    SECTION("potion keeps its own effect and sound without sparks") {
+        launch.spec = &MissileSpec::potion();
+        launch.potion = 1;
+        launch.potency = 8;
+        expected = "MP_FIRE";
+    }
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(1, f.players, f.targets);
+    REQUIRE(f.arsenal.missiles().count() == 0);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == expected);
+    CHECK(sounds.voiceCount() == 1);
+    f.attacks.updateProjectiles(1, f.players, f.targets);
+    CHECK(f.effects.count() == 1);
+    CHECK(sounds.voiceCount() == 1);
+    f.effects.update(1.0f / 30);
+    f.device.draws.clear();
+    f.effects.draw(f.device, Mat4{1}, f.world.fullLighting());
+    CHECK_FALSE(f.device.draws.empty());
+    f.effects.clear();
+    f.audio.close();
+}
 
 TEST_CASE("player shields consume one potion and expire even without artwork",
           "[game][screens][player-attacks]") {
