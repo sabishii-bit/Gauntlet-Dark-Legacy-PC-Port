@@ -11,6 +11,14 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("overlapping enemy centres still select melee without a spurious aim direction",
+          "[game][target-assist][melee]") {
+    const std::array targets{MissileTarget{0, {0, 0, 0}, 2, 8}};
+    REQUIRE(TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 3));
+    REQUIRE_FALSE(TargetAssist::select({0, 3, 0}, {0, 0, 1}, targets, 30));
+    REQUIRE_FALSE(TargetAssist::melee({0, 9, 0}, 6, {0, 0, 1}, targets, 3));
+}
+
 TEST_CASE("target assist chooses the nearest forward surface without targeting behind",
           "[game][target-assist]") {
     const Vec3 origin{0, 3, 0};

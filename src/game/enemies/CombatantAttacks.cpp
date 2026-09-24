@@ -113,7 +113,7 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
 }
 
 void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
-                    std::optional<std::string_view> node) {
+                    std::optional<std::string_view> node, const AttackDefinition* damage) {
     const CritterData& data = critter.stock->data;
     for (s32 at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
         const CombatEffectDefinition* record = data.sound(at);
@@ -130,6 +130,10 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         out.yaw = record->follows() ? critter.yaw : 0.0f;
         out.scale = record->scale * critter.scale;
         out.life = record->life;
+        const Vec3 offset = record->offset + (damage != nullptr ? damage->offset : Vec3{0});
+        if (damage != nullptr) {
+            out.pitchYaw = {damage->pitch, damage->yaw};
+        }
         out.follows = record->follows();
         out.shakes = (record->flags & CombatEffectDefinition::kShakes) != 0;
         out.arena = (record->flags & CombatEffectDefinition::kArenaCue) != 0;
@@ -143,8 +147,8 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         const bool root = (record->flags & 0x801U) != 0 && (record->flags & (0x2000U | 0x40U)) == 0;
         if (root && !out.tree.empty()) {
             out.rootAttachment = true;
-            out.nodeOffset = record->offset;
-            out.position = Vec3{modelTransform(critter) * Vec4{record->offset, 1.0f}};
+            out.nodeOffset = offset;
+            out.position = Vec3{modelTransform(critter) * Vec4{offset, 1.0f}};
             out.scale = record->scale;
             out.follows = true;
         } else if ((record->flags & 0x80U) != 0 && (record->flags & 0x801U) == 0) {
@@ -154,8 +158,8 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         } else if (node.has_value() && !out.tree.empty() &&
                    (record->flags & kAlternateParent) == 0) {
             out.node = *node;
-            out.nodeOffset = record->offset;
-            out.position = Vec3{attachmentTransform(critter, *node) * Vec4{record->offset, 1.0f}};
+            out.nodeOffset = offset;
+            out.position = Vec3{attachmentTransform(critter, *node) * Vec4{offset, 1.0f}};
             out.scale = record->scale; // creature scale is already in the parent matrix
             out.follows = true;
         } else if ((record->flags & 0x40U) != 0) {
@@ -167,6 +171,11 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
                     : position + record->offset * critter.scale;
             out.follows = false;
             out.yaw = 0;
+        }
+        if (out.node.has_value() || out.rootAttachment) {
+            const Mat4 parent = out.rootAttachment ? modelTransform(critter)
+                                                   : attachmentTransform(critter, *out.node);
+            out.placement = CritterArea::placement(parent, out.nodeOffset, out.pitchYaw);
         }
         if (!out.tree.empty() || !out.sound.empty() || out.shakes || out.arena) {
             m_cues.push_back(std::move(out));

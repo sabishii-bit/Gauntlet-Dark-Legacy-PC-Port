@@ -72,6 +72,7 @@ add_executable(tests
     game/world/SumnerHintsTests.cpp
     game/world/PlayerMissilesTests.cpp
     game/world/TargetAssistTests.cpp
+    game/world/BodyCollisionTests.cpp
     game/world/PlayerFigureTests.cpp
     game/world/PlayerFamiliarTests.cpp
     game/world/CameraMovementLimitTests.cpp

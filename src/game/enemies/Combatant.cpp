@@ -241,6 +241,15 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                     }
                     return;
                 }
+                if (harm->type == AttackDefinition::kBreath) {
+                    if ((critter.soundsGiven & bit) == 0) {
+                        critter.soundsGiven |= bit;
+                        cue(critter, i, harm->sound, partPosition(critter, move->colnode),
+                            move->colnode, harm);
+                    }
+                    strikeWith(critter, i, *move, index, players);
+                    return;
+                }
                 const Vec3 where = targeted ? *critter.attackTarget + Vec3{modelTransform(critter) *
                                                                            Vec4{harm->offset, 0.0f}}
                                             : partPosition(critter, move->colnode) + harm->offset;

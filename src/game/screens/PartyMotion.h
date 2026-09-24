@@ -57,6 +57,8 @@ public:
         /** Consulted after collision, before attack events; false blocks the horizontal step. */
         std::function<bool(const Vec3&, const Vec3&)> allowMovement;
         std::function<PlayerDeed(usize, bool)> attackDeed;
+        /** Dynamic creature collision, before the camera limit and action events. */
+        std::function<Vec3(usize, const Vec3&, const Vec3&)> resolveMovement;
     };
     static std::vector<CameraSubject> step(std::span<PlayerRuntime> players,
                                            std::span<const PlayInput> inputs, bool held,

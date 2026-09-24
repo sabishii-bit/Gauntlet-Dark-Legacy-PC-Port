@@ -59,6 +59,7 @@ public:
      * simulation. No AI, collision, or time advances, and each reward is consumed once. */
     void settleRewards(std::span<const PlayerRuntime> players, const Events& events);
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
+    Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to) const;
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
     static void applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
                                  const Events& events);

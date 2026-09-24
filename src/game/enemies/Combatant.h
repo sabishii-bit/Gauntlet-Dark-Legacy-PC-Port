@@ -78,6 +78,8 @@ public:
     ItemArchive* archive();
     std::optional<Mat4> nodeTransform(std::string_view node) const;
     std::optional<Mat4> rootTransform() const;
+    /** Animated hit volumes; movement uses only solid nodes plus the root fallback. */
+    std::vector<MissileTarget> bodyTargets(bool solidOnly = false) const;
     std::optional<f32> contactDistance(const Vec3& from, const Vec3& to, f32 radius) const;
     bool within(const Vec3& centre, f32 radius) const;
     bool reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
@@ -164,7 +166,8 @@ private:
     static bool curbedMove(const Actor& critter, const MoveDefinition& move);
     /** Sets off sound record `index` (and what it links to) at `position`. */
     void cue(Actor& critter, s32 id, s32 index, const Vec3& position,
-             std::optional<std::string_view> node = std::nullopt);
+             std::optional<std::string_view> node = std::nullopt,
+             const AttackDefinition* damage = nullptr);
 
     std::vector<CombatCue> m_cues;
     std::vector<CombatGrab> m_grabs;

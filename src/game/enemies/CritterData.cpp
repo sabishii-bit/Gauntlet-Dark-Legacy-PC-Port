@@ -223,6 +223,7 @@ bool CritterData::load(const std::filesystem::path& file) {
             part.position = vecOf(n, "position");
             part.radius = n.value("radius", 0.0f);
             part.damageScale = n.value("damageScale", 1.0f);
+            part.flags = n.value("flags", 0U);
             m_parts.push_back(part);
         }
         return loaded();

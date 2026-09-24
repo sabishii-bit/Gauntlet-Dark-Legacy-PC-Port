@@ -252,12 +252,11 @@ usize Critters::count() const {
     }
     return count;
 }
-std::vector<MissileTarget> Critters::targets() const {
+std::vector<MissileTarget> Critters::targets(bool solidOnly) const {
     std::vector<MissileTarget> out;
     for (const auto& actor : m_critters) {
-        if (actor.alive()) {
-            out.push_back({actor.id(), actor.position(), actor.radius(), 8.0f});
-        }
+        const auto parts = actor.bodyTargets(solidOnly);
+        out.insert(out.end(), parts.begin(), parts.end());
     }
     return out;
 }

@@ -1134,6 +1134,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         .attackDeed =
             [this](usize i, bool strong) {
                 return m_attacks.attackDeed(m_players[i].actor, strong, attackTargets());
+            },
+        .resolveMovement =
+            [this](usize i, const Vec3& from, const Vec3& to) {
+                return m_opponents.resolveMovement(m_players[i].actor, from, to);
             }};
     const std::vector<CameraSubject> subjects = PartyMotion::step(
         m_players, inputs, held, bossCameraOn() ? m_bossCamera.yaw() : m_camera.yaw(), ticks,

@@ -152,6 +152,8 @@ struct CritterPart {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.0f;
     f32 damageScale = 1.0f;
+    u32 flags = 0;
+    static constexpr u32 kSolid = 8; ///< stops movement, independently of accepting damage
 };
 
 /** How a boss's health meter is laid out across the top of the screen: strips of 256, the

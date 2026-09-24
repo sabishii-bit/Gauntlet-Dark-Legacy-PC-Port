@@ -12,9 +12,50 @@
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelOpponents.h"
 #include "game/world/SafeRocks.h"
+#include "game/world/TargetAssist.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("mountain creatures stop a player in melee range and release collision on death",
+          "[level-opponents][collision][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELB/animations.json");
+    test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
+    test::FakeRenderDevice device;
+    LevelOpponents opponents;
+    for (const auto kind : {CombatantKind::Golem, CombatantKind::Gargoyle}) {
+        opponents.critters().open(device, root, nullptr, {}, 'B');
+        const auto id = opponents.critters().spawn(kind, Vec3{0}, 0.8f);
+        REQUIRE(id);
+        const auto bodies = opponents.critters().targets(true);
+        REQUIRE_FALSE(bodies.empty());
+        const Vec3 centre = bodies.back().base + Vec3{0, bodies.back().height * 0.5f, 0};
+        const Vec3 from{centre.x, 0, centre.z - 30};
+        const Vec3 to{centre.x, 0, centre.z + 30};
+        PlayerActor player;
+        player.spawn(0, {}, nullptr, from, 0);
+        Vec3 stop = from;
+        bool contacted = false;
+        for (s32 step = 0; step < 240 && !contacted; ++step) {
+            const Vec3 wanted = stop + Vec3{0, 0, 0.25f};
+            stop = opponents.resolveMovement(player, stop, wanted);
+            contacted = glm::distance(stop, wanted) > 1e-4f;
+        }
+        CAPTURE(static_cast<s32>(kind), stop.x, stop.y, stop.z);
+        REQUIRE(contacted);
+        const auto target = TargetAssist::melee(
+            stop, player.height(), {0, 0, 1}, opponents.critters().targets(), player.radius() + 1);
+        REQUIRE(target);
+        CHECK(target->id == *id);
+        EnemyHit hit;
+        hit.damage = 1000000;
+        opponents.critters().hurt(*id, hit);
+        REQUIRE_FALSE(opponents.critters().alive(*id));
+        CHECK(glm::distance(opponents.resolveMovement(player, from, to), to) < 1e-4f);
+        opponents.close();
+    }
+}
 
 TEST_CASE("Forsaken Province entrance generators breed with the placed enemy roster loaded",
           "[level-opponents][generators][unpacked]") {

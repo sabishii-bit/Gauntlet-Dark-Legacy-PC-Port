@@ -59,6 +59,30 @@ std::optional<Mat4> Combatant::nodeTransform(std::string_view node) const {
 std::optional<Mat4> Combatant::rootTransform() const {
     return present() ? std::optional{modelTransform(m_actor)} : std::nullopt;
 }
+std::vector<MissileTarget> Combatant::bodyTargets(bool solidOnly) const {
+    std::vector<MissileTarget> out;
+    if (!alive()) {
+        return out;
+    }
+    const auto& actor = m_actor;
+    for (const auto& part : data()->parts()) {
+        if (part.radius <= 0 || (solidOnly && (part.flags & CritterPart::kSolid) == 0) ||
+            !actor.stock->tree->findNode(part.node).has_value()) {
+            continue;
+        }
+        const Vec3 centre{attachmentTransform(actor, part.node) * Vec4{part.position, 1}};
+        const f32 radius = part.radius * actor.scale;
+        out.push_back({id(), centre - Vec3{0, radius, 0}, radius, 2 * radius});
+    }
+    if (data()->parts().empty()) {
+        out.push_back({id(), position(), radius() * actor.scale, 8 * actor.scale});
+    } else {
+        const Vec3 centre = partPosition(actor, {});
+        const f32 radius = (solidOnly ? data()->wallRadius() : data()->radius()) * actor.scale;
+        out.push_back({id(), centre - Vec3{0, radius, 0}, radius, 2 * radius});
+    }
+    return out;
+}
 void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                      const Texture* frozenTexture) const {
     const Actor& critter = m_actor;
@@ -88,16 +112,22 @@ std::optional<f32> Combatant::contactDistance(const Vec3& from, const Vec3& to, 
     }
     const Vec3 sweep = to - from;
     const f32 length = glm::length(sweep);
-    const Vec3 centre = position() + Vec3{0, 4, 0};
-    const f32 t = length > 0.001f
-                      ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f)
-                      : 0;
-    const Vec3 nearest = from + sweep * t;
-    if (flatDistance(nearest, centre) <= radius + this->radius() &&
-        std::abs(nearest.y - centre.y) <= radius + 4.0f) {
-        return glm::length(nearest - from);
+    std::optional<f32> best;
+    for (const auto& body : bodyTargets()) {
+        const Vec3 centre = body.base + Vec3{0, body.height * 0.5f, 0};
+        const f32 t =
+            length > 0.001f
+                ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f)
+                : 0;
+        const Vec3 nearest = from + sweep * t;
+        const f32 distance = t * length;
+        if (flatDistance(nearest, centre) <= radius + body.radius &&
+            std::abs(nearest.y - centre.y) <= radius + body.height * 0.5f &&
+            (!best.has_value() || distance < *best)) {
+            best = distance;
+        }
     }
-    return std::nullopt;
+    return best;
 }
 bool Combatant::within(const Vec3& centre, f32 radius) const {
     return alive() && glm::length(position() + Vec3{0, 4, 0} - centre) <= radius + this->radius();
