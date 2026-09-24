@@ -44,6 +44,40 @@ TEST_CASE("an unturned camera looks along positive z in a left-handed frame", "[
     REQUIRE(near(ahead.z, 10.0f));
 }
 
+TEST_CASE("top-facing lightning ribbons retain their authored axis and face the eye",
+          "[world][camera][legend]") {
+    // CameraFace 800C7EB0 dispatches mode 8 to TopFaceMat 800B95EC:
+    // x = normalize(cross(eye-position,z)), y = cross(z,x), z is untouched.
+    const auto camera = CameraFrame::at({5, 10, -20});
+    for (const f32 scale : {0.001f, 1.0f, 3.0f, -0.005f}) {
+        Mat4 model = glm::rotate(glm::translate(Mat4{1}, Vec3{1, 2, 3}), 0.7f,
+                                 glm::normalize(Vec3{1, 2, 3}));
+        model = glm::scale(model, Vec3{scale});
+        const Mat4 faced = camera.face(model, CameraFrame::kFacingTop);
+        CHECK(faced[2] == model[2]);
+        CHECK(faced[3] == model[3]);
+        const auto side =
+            glm::normalize(glm::cross(camera.position - Vec3{model[3]}, Vec3{model[2]}));
+        CHECK(near(Vec3{faced[0]}, side));
+        CHECK(near(Vec3{faced[1]}, glm::cross(Vec3{model[2]}, side)));
+        CHECK(glm::dot(Vec3{faced[1]}, camera.position - Vec3{model[3]}) > 0);
+    }
+    CHECK(CameraFrame::facingOf(0x08001800) == CameraFrame::kFacingTop);
+}
+
+TEST_CASE("top-facing ribbons have a finite fallback for axial eyes and collapsed keys",
+          "[world][camera][legend]") {
+    const auto camera = CameraFrame::at({0, 0, 10});
+    const Mat4 axial = camera.face(Mat4{1}, CameraFrame::kFacingTop);
+    CHECK(axial == Mat4{1});
+    const Mat4 collapsed = glm::scale(Mat4{1}, Vec3{0});
+    const Mat4 faced = camera.face(collapsed, CameraFrame::kFacingTop);
+    CHECK(faced[0] == Vec4{0});
+    CHECK(faced[1] == Vec4{0, 1, 0, 0});
+    CHECK(faced[2] == collapsed[2]);
+    CHECK(faced[3] == collapsed[3]);
+}
+
 TEST_CASE("yaw turns about y and a positive pitch looks down", "[world][camera]") {
     WorldCamera camera;
     camera.yaw = kPi;

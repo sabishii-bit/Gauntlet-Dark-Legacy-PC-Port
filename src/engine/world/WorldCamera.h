@@ -54,10 +54,11 @@ struct CameraFrame {
     static constexpr u32 kFacingShift = 24U;
     static constexpr u32 kFacingMask = 0xFU;
     static constexpr u32 kFacingFull = 4; ///< the whole rotation follows the camera
+    static constexpr u32 kFacingTop = 8;  ///< roll an XZ ribbon toward the eye, preserving its z
     static u32 facingOf(u32 objectFlags) { return (objectFlags >> kFacingShift) & kFacingMask; }
 
-    /** `placement` with its rotation turned to face this camera: fully for kFacingFull,
-     * else about the vertical so its z axis points at the camera. */
+    /** Face the camera fully, about a ribbon's authored z (kFacingTop), or about the
+     * world vertical for ordinary upright sprites. */
     Mat4 face(const Mat4& placement, u32 mode) const;
 };
 
