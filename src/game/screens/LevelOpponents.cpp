@@ -241,6 +241,22 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     // What the throwers let fly lands on the party, or bursts where it fell; what blows
     // itself up blasts everything about it.
     for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
+        if (const std::string_view tree = hit.effect(); !tree.empty()) {
+            EffectTrees::Setting setting;
+            setting.unlit = true;
+            setting.depthWrite = false;
+            if (hit.burstRadius <= 0) {
+                setting.tint.a = 96;
+            }
+            if (m_resources->weapons.loaded()) {
+                const u32 effect = m_resources->effects.startSet(
+                    m_resources->device, m_resources->weapons, tree, hit.position, setting);
+                if (effect != 0) {
+                    m_cueEffects.push_back(effect);
+                }
+            }
+        }
+        m_resources->audio.playNamed(hit.sound());
         for (usize i = 0; i < players.size(); ++i) {
             if (hit.player >= 0 && players[i].actor.player() == hit.player &&
                 players[i].life == PlayerLife::Standing) {

@@ -130,6 +130,10 @@ public:
      * data. */
     const LevelInfo* level() const { return m_level; }
     const LevelAudioInfo* audio() const { return m_audio; }
+    /** The authored world-impact sound, empty when the level specifies none. */
+    std::string_view wallHitSound() const {
+        return m_audio != nullptr ? m_worldData.soundName(m_audio->hitSound) : std::string_view{};
+    }
     /** What the triggers refused or opened since last asked. */
     std::vector<TriggerRefusal> takeTriggerRefusals() { return m_triggers.takeRefusals(); }
     std::vector<TriggerOpening> takeTriggerOpenings() { return m_triggers.takeOpenings(); }

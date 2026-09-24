@@ -151,8 +151,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     // materialises with the follow camera already on it.
     const bool atEntrance = world.arrivalPoint(options.arrivalWorld) == world.startPoint(0);
     beginSpawn(device, !options.position.has_value() && atEntrance);
-    m_arsenal.bind(
-        {device, m_classes, m_weapons, world.collision(), m_effects, m_audio, context.sounds});
+    m_arsenal.bind({device, m_classes, m_weapons, world.collision(), m_effects, m_audio,
+                    context.sounds, world.wallHitSound()});
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
                     m_arsenal, m_dimmer});
     m_bossSequence.bind(

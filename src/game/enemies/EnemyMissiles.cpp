@@ -1,5 +1,6 @@
 #include "game/enemies/EnemyMissiles.h"
 
+#include <array>
 #include <cmath>
 #include <utility>
 
@@ -18,6 +19,21 @@ f32 flatDistance(const Vec3& a, const Vec3& b) {
 }
 
 } // namespace
+
+std::string_view EnemyMissileHit::effect() const {
+    if (burstRadius > 0) {
+        return "EXPSMALL";
+    }
+    constexpr std::array<std::string_view, 5> kWorldHits{"SPARKS", "FIREHIT", "HITCOL", "HITCOL",
+                                                         "HITCOL"};
+    const u32 element = flags & 0xF;
+    return worldContact && element < kWorldHits.size() ? kWorldHits[element] : std::string_view{};
+}
+
+std::string_view EnemyMissileHit::sound() const {
+    // Ordinary enemy bolts have no wall sound; the lobber's bomb supplies its own.
+    return burstRadius > 0 ? "S_LOBBER_BOMB" : std::string_view{};
+}
 
 EnemyMissileKind EnemyMissileKind::arrow() {
     EnemyMissileKind kind;
@@ -182,6 +198,7 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
         }
         if (struckWorld || missile.secondsLeft <= 0.0f) {
             EnemyMissileHit hit;
+            hit.worldContact = struckWorld;
             hit.player = -1;
             hit.shooter = missile.shooter;
             hit.damage = missile.kind.damage;

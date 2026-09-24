@@ -84,16 +84,22 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     launch.reach = PlayerMissiles::reachFor(figure.animator().attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
     launch.model = &figure.missile();
-    // Thrown into a wall at arm's length, nothing flies.
+    // An obstructed muzzle still produces a world impact, without a flying weapon.
     const f32 radius = launch.spec->radius;
     const Vec3 clear = m_resources->collision.resolveWalls(launch.position, radius,
                                                            launch.position.y - radius * 0.5f,
                                                            launch.position.y + radius * 0.5f);
     if (glm::distance(clear, launch.position) > 1e-4f) {
+        presentImpact({.position = clear, .owner = launch.owner});
         return;
     }
     // A three or five way shot worn spreads the throw, fifteen degrees apart.
     const s32 shots = spreads ? PowerupEffects::of(save.progress().inventory).shots() : 1;
+    if (shots == 5) {
+        launch.wallSound = MissileWallSound::FiveWay;
+    } else if (shots == 3) {
+        launch.wallSound = MissileWallSound::ThreeWay;
+    }
     for (const Vec3& way : PlayerMissiles::spread(facing, shots)) {
         launch.direction = way;
         if (target.has_value()) {
@@ -105,6 +111,7 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
                                    aim.z * std::cos(turn) - aim.x * std::sin(turn)};
         }
         m_missiles.launch(launch);
+        launch.wallSound = MissileWallSound::Silent;
     }
     if (const auto sound = figure.throwSound();
         m_resources->sounds != nullptr && sound.has_value()) {
@@ -141,6 +148,35 @@ void PlayerArsenal::burstPotion(s32 kind, const Vec3& position, f32 power) {
                                    std::min(kBurstPerPower * power, 1.0f));
     }
     m_resources->audio.playNamed(look.sound);
+}
+
+void PlayerArsenal::presentImpact(const MissileImpact& impact) {
+    if (!m_resources) {
+        return;
+    }
+    if (impact.potion != 0) {
+        burstPotion(impact.potion, impact.position, impact.potency);
+        return;
+    }
+    if (impact.target >= 0) {
+        return; // Target owners supply their own material/body feedback.
+    }
+    if (m_resources->weapons.loaded()) {
+        EffectTrees::Setting setting;
+        setting.unlit = true;
+        setting.depthWrite = false;
+        if (impact.effect == "SPARKS") {
+            setting.tint.a = 96;
+        }
+        m_resources->effects.startSet(m_resources->device, m_resources->weapons, impact.effect,
+                                      impact.position, setting);
+    }
+    switch (impact.wallSound) {
+    case MissileWallSound::Level: m_resources->audio.playNamed(m_resources->wallHitSound); break;
+    case MissileWallSound::ThreeWay: m_resources->audio.playNamed("S_3WAYAXE"); break;
+    case MissileWallSound::FiveWay: m_resources->audio.playNamed("S_5WAYAXE"); break;
+    case MissileWallSound::Silent: break;
+    }
 }
 
 f32 PlayerArsenal::magicPowerOf(const PlayerActor& actor) const {

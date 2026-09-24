@@ -30,7 +30,7 @@ constexpr std::array<MissileSpec, 16> kSpecs{{
     {"HAM", kCostumeTiers, 1.0f, kTumble, 20.0f, false},
     {"MAC", kCostumeTiers, 1.0f, kTumble, 8.0f, false},
     {"WND", kStaffTiers, 1.2f, 0.0f, 8.0f, true},
-    {"BOM", kBombTiers, 0.7f, 0.0f, 8.0f, false},
+    {"BOM", kBombTiers, 0.7f, 0.0f, 8.0f, false, "EXPSMALL"},
     {"MIN", kFirstTiers, 1.0f, kTumble, 12.0f, false},
     {"FAL", kFirstTiers, 1.0f, kTumble, 8.0f, false},
     {"STF", kStaffTiers, 1.2f, 0.0f, 8.0f, true},
@@ -38,7 +38,7 @@ constexpr std::array<MissileSpec, 16> kSpecs{{
     {"OGR", kFirstTiers, 1.0f, kTumble, 20.0f, false},
     {"UNI", kFirstTiers, 1.0f, kTumble, 8.0f, false},
     {"WND", kStaffTiers, 1.2f, 0.0f, 8.0f, true},
-    {"BOM", kBombTiers, 0.7f, 0.0f, 8.0f, false},
+    {"BOM", kBombTiers, 0.7f, 0.0f, 8.0f, false, "EXPSMALL"},
 }};
 
 usize specIndex(s32 classIndex) {
@@ -104,6 +104,7 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     missile.scale = launch.scale;
     missile.spec = launch.spec;
     missile.model = launch.model;
+    missile.wallSound = launch.wallSound;
     m_missiles.push_back(missile);
     return true;
 }
@@ -137,7 +138,8 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
             });
             if (struck != targets.end()) {
                 m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
-                                                  missile.potency, missile.damage, struck->id});
+                                                  missile.potency, missile.damage, struck->id,
+                                                  missile.spec->impactTree, missile.wallSound});
                 missile.age = kLifeSeconds;
                 break;
             }
@@ -152,7 +154,8 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                 collision->floorAt(missile.position, radius, radius * 0.5f).has_value();
             if (wall || floor) {
                 m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
-                                                  missile.potency, missile.damage, -1});
+                                                  missile.potency, missile.damage, -1,
+                                                  missile.spec->impactTree, missile.wallSound});
                 missile.age = kLifeSeconds;
             }
         }

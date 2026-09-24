@@ -72,6 +72,7 @@ TEST_CASE("the tower takes its light, camera range and sounds from the realm's d
     REQUIRE(tower.audio() != nullptr);
     REQUIRE(tower.audio()->bank == "WIZTOWER");
     REQUIRE(tower.audio()->stream == "tower");
+    REQUIRE(tower.wallHitSound() == "S_WEAPONHITSTON");
     // The lit level draws its lightmapped batches with their lightmaps.
     tower.draw(device, Mat4{1.0f}, WorldCamera{});
     usize lightmapped = 0;

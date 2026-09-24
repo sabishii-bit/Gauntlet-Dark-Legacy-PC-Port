@@ -70,6 +70,9 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     REQUIRE(hits[0].shooter == 2);
     REQUIRE(hits[0].damage == 10.0f);
     REQUIRE(hits[0].burstRadius == 0.0f);
+    CHECK_FALSE(hits[0].worldContact);
+    CHECK(hits[0].effect().empty());
+    CHECK(hits[0].sound().empty());
     REQUIRE(hits[0].direction.z > 0.9f);
     REQUIRE(flying >= 20); // about eight tenths of a second
     REQUIRE(flying <= 30);
@@ -96,6 +99,9 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     REQUIRE(hits.size() == 1);
     REQUIRE(hits[0].player == -1);
     REQUIRE(hits[0].burstRadius == 3.0f);
+    CHECK(hits[0].worldContact);
+    CHECK(hits[0].effect() == "EXPSMALL");
+    CHECK(hits[0].sound() == "S_LOBBER_BOMB");
     REQUIRE((hits[0].flags & EnemyMissileKind::kKnockBack) != 0);
     REQUIRE(highest > 5.0f);
     REQUIRE(hits[0].position.z == Approx(20.0f).margin(1.5f));
@@ -107,12 +113,38 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
         missiles.update(kStep, nullptr, nobody);
     }
     REQUIRE(missiles.count() == 0);
-    REQUIRE(missiles.takeHits().size() == 1);
+    const auto expired = missiles.takeHits();
+    REQUIRE(expired.size() == 1);
+    CHECK_FALSE(expired[0].worldContact);
+    CHECK(expired[0].effect().empty());
+    CHECK(expired[0].sound().empty());
     // The lob's leaving velocity lands it in the flight its pace gives.
     const Vec3 leave =
         EnemyMissiles::lobVelocity(Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 40.0f}, 20.0f);
     REQUIRE(leave.z == Approx(20.0f));
     REQUIRE(leave.y == Approx(0.5f * EnemyMissiles::kGravity * 2.0f));
+}
+
+TEST_CASE("enemy wall contacts choose their element effect without inventing bolt sounds",
+          "[game][enemies][projectile-impact]") {
+    WorldCollision collision;
+    collision.build({triangle({-20, -10, 10}, {20, -10, 10}, {0, 40, 10}, {0, 0, -1})});
+    for (u32 element = 0; element < 5; ++element) {
+        EnemyMissiles missiles;
+        missiles.launch(EnemyMissileKind::bolt(10, 25, 0.5f, element), {0, 3, 0}, {0, 3, 20}, 1,
+                        nullptr, 1);
+        std::vector<EnemyMissileHit> hits;
+        for (s32 i = 0; i < 30 && hits.empty(); ++i) {
+            missiles.update(kStep, &collision, {});
+            hits = missiles.takeHits();
+        }
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].worldContact);
+        CHECK(hits[0].effect() == (element == 0 ? "SPARKS" : element == 1 ? "FIREHIT" : "HITCOL"));
+        CHECK(hits[0].sound().empty());
+        missiles.update(kStep, &collision, {});
+        CHECK(missiles.takeHits().empty());
+    }
 }
 
 TEST_CASE("every kind throws what the original's table gives it, from the slot its way uses",
