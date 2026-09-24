@@ -102,4 +102,51 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
     menu.close();
     CHECK_FALSE(menu.isOpen());
 }
+
+TEST_CASE("level abort uses the retail parchment dialog without character-file warnings",
+          "[pause][unpacked]") {
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    GameContext context;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    context.strings = &strings;
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 0));
+    MenuInput down;
+    down.down = true;
+    MenuInput select;
+    select.select = true;
+    menu.update(1.0 / 60, down);
+    menu.update(1.0 / 60, select);
+    const auto& definition = menu.menu().definition();
+    CHECK(definition.title == "Abort Level?");
+    CHECK(definition.items[0].text == "No");
+    CHECK(definition.items[1].text == "Yes");
+    CHECK(definition.body.empty());
+    CHECK(definition.playerLabel.empty());
+    CHECK_FALSE(definition.prompts);
+    CHECK(definition.parchmentFont);
+    CHECK(definition.colors.off.r == 92);
+    CHECK(definition.colors.off.g == 26);
+    CHECK(definition.colors.off.b == 3);
+    CHECK(definition.backdropY == 64);
+    CHECK(definition.backdropWidth == 320);
+    CHECK(definition.backdropHeight == 220);
+    menu.update(1, {});
+    menu.update(1.0 / 60, down);
+    const auto outcome = menu.update(1.0 / 60, select);
+    CHECK(
+        (outcome == PauseOutcome::ReturnTower || menu.update(1, {}) == PauseOutcome::ReturnTower));
+}
 } // namespace

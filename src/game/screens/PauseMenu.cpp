@@ -48,6 +48,9 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
         if (const auto glow = m_textures.find("FONT32_GLOW")) {
             m_art.glow = &m_textures.texture(device, *glow);
         }
+        if (const auto parchment = m_textures.find("FONT32_PARCH")) {
+            m_art.parchment = &m_textures.texture(device, *parchment);
+        }
         m_slots.open(config.saveDirectory(), config.save.slots);
         showMain();
         m_open = true;
@@ -200,6 +203,22 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input, const Input*
         menu.bodyY = 215;
         menu.bodyScale = 0.4f;
         menu.items = {{text("files.no"), 0}, {text("files.yes"), 1}};
+        if (!m_inTower) {
+            // The retail abort dialog is a small centred parchment, with only
+            // its title and No/Yes. Character-file warnings belong to quitting.
+            menu.titleScale = 1.2f;
+            menu.x = -256;
+            menu.backdropX = -1;
+            menu.backdropY = 64;
+            menu.backdropWidth = 320;
+            menu.backdropHeight = 220;
+            menu.parchmentFont = true;
+            menu.fades = true;
+            menu.prompts = false;
+            menu.playerLabel.clear();
+            menu.body.clear();
+            menu.items = {{text("pause.no"), 0}, {text("pause.yes"), 1}};
+        }
         m_menu.open(menu, m_text, m_screen);
     }
     return PauseOutcome::Running;

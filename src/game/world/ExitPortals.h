@@ -73,6 +73,8 @@ public:
     /** Steps every portal by `ticks` (`seconds` long) under the party; the portal the whole
      * party has just left by, if any. */
     std::optional<usize> update(s32 ticks, f32 seconds, std::span<const PortalVisitor> party);
+    /** Continues the selected sequences while gameplay is held for transportation. */
+    void animate(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
     /** The two characters of an exit's parameters that name where it leads. */

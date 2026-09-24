@@ -142,6 +142,8 @@ public:
 
     /** Shows the items a party of `players` sees. */
     void setPlayerCount(s32 players);
+    /** Removes the tower's introductory crystal pickups once the province gate is earned. */
+    void retireCrystals();
     /** Takes whatever the collectors touch and starts its burst; the pickups are returned
      * for the game to hand out. With a `judge`, each touched item is its to take, take part
      * of or leave; only those it took from are returned. */

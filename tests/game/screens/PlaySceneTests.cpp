@@ -802,9 +802,16 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
         const PlayScene::Inputs still{};
         PlayOutcome outcome = PlayOutcome::Running;
         s32 leavingFrames = 0;
+        f32 departureCameraY = 0;
         for (s32 i = 0; i < 900 && outcome == PlayOutcome::Running; ++i) {
             outcome = scene.update(1.0 / 60.0, still);
             leavingFrames += scene.leaving() ? 1 : 0;
+            if (leavingFrames == 1) {
+                departureCameraY = scene.camera().attention().y;
+            }
+            if (leavingFrames == 51) {
+                CHECK(scene.camera().attention().y < departureCameraY - 3.0f);
+            }
         }
         REQUIRE(outcome == PlayOutcome::Travel);
         // Fifty ticks of sinking/spinning precede the two-second covering transition.

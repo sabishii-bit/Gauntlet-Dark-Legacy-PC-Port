@@ -297,7 +297,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
             continue;
         }
         const auto menu = readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
-        if (((menu.start && !menu.select) || menu.escape) &&
+        if (!m_tower.leaving() && ((menu.start && !menu.select) || menu.escape) &&
             m_pause.open(renderDevice(), context(), m_tower.party(), player)) {
             // Music continues in menus, including while adjusting its volume.
             for (auto& controls : m_controls) {
@@ -456,6 +456,7 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
     PlayOptions options;
     options.welcome = false;
     options.arriving = true;
+    options.arrivalWorld = static_cast<u32>(std::max(m_towerWorld.ref().realmId, 0));
     if (!startTower(party, options) && !startTitleScreen()) {
         startNextAttractScreen();
     }
@@ -483,7 +484,7 @@ void Gauntlet::updateJourney(f64 deltaSeconds) {
     }
     if (!journey.presentationStarted) {
         journey.presentationStarted = true;
-        m_levelLoading.open(context(), journey.destination);
+        m_levelLoading.open(renderDevice(), context(), journey.destination, journey.party);
         journey.movie = m_levelLoading.movie();
         // Present at least one frame of the map before advancing its clock.
         return;
@@ -500,7 +501,6 @@ void Gauntlet::updateJourney(f64 deltaSeconds) {
         }
         m_movie.close();
         m_movieActive = false;
-        LevelLoadingScreen::rememberMovie(journey.movie, journey.party);
         finishJourney();
         return;
     }
@@ -544,12 +544,14 @@ void Gauntlet::onRender(RenderDevice& device) {
             m_movie.render(device, projection, Rect{0, 0, frameWidth, frameHeight});
             return;
         }
-        const auto width = static_cast<f32>(m_config.display.virtualWidth);
-        const auto height = static_cast<f32>(m_config.display.virtualHeight);
+        const auto width =
+            m_levelLoading.active() ? 512.0f : static_cast<f32>(m_config.display.virtualWidth);
+        const auto height =
+            m_levelLoading.active() ? 384.0f : static_cast<f32>(m_config.display.virtualHeight);
         m_canvas.begin(
             device, makeVirtualScreenTransform(projection, width, height, frameWidth, frameHeight));
         if (m_levelLoading.active()) {
-            m_levelLoading.draw(m_canvas, device, width);
+            m_levelLoading.draw(m_canvas, device);
         } else {
             m_loadingPicture.draw(m_canvas, width);
         }

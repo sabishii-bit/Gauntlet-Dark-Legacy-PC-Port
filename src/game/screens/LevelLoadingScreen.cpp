@@ -9,6 +9,8 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/players/Progression.h"
+
 namespace gdl::game {
 namespace {
 constexpr f32 kCanvasWidth = 512;
@@ -21,30 +23,37 @@ constexpr usize kMaxDashes = 8;
 } // namespace
 
 bool LevelLoadingScreen::movieWanted(std::string_view movie, std::span<const PartyMember> party) {
-    return !movie.empty() && std::ranges::any_of(party, [&](const PartyMember& member) {
-        return !member.fallen &&
-               std::ranges::find(member.save.moviesSeen, movie) == member.save.moviesSeen.end();
-    });
+    return !movie.empty() &&
+           std::ranges::any_of(party, [](const PartyMember& member) { return !member.fallen; });
 }
 
-void LevelLoadingScreen::rememberMovie(std::string_view movie, std::span<PartyMember> party) {
-    if (movie.empty()) {
-        return;
-    }
-    for (auto& member : party) {
-        if (!member.fallen &&
-            std::ranges::find(member.save.moviesSeen, movie) == member.save.moviesSeen.end()) {
-            member.save.moviesSeen.emplace_back(movie);
-        }
-    }
-}
-
-void LevelLoadingScreen::open(const GameContext& context, const LevelRef& level) {
+void LevelLoadingScreen::open(RenderDevice& device, const GameContext& context,
+                              const LevelRef& level, std::span<const PartyMember> party) {
     close();
     if (level.isTower()) {
         return;
     }
     m_active = true;
+    m_boxes.load(device, context.unpackedRoot, context.strings);
+    for (const auto& member : party) {
+        if (member.player < 0 || static_cast<usize>(member.player) >= m_status.size()) {
+            continue;
+        }
+        auto& status = m_status[static_cast<usize>(member.player)];
+        const auto& save = member.save;
+        status.mode = StatusBoxView::Mode::Status;
+        status.active = true;
+        status.classIndex = save.character;
+        status.color = save.color;
+        status.name = save.name;
+        status.level = experienceLevel(save.experience());
+        status.gold = save.gold;
+        status.health = member.fallen ? 0 : save.health();
+        status.inTower = member.fallen;
+        status.keys = save.progress().inventory.keys;
+        status.potions = static_cast<s32>(save.progress().inventory.potions.size());
+        status.potionKind = save.progress().inventory.nextPotion();
+    }
     m_name = level.name;
     m_sounds = context.sounds;
     m_textures.load(context.unpackedRoot / "MAPS" / ("LEVEL" + level.name));
@@ -72,6 +81,8 @@ void LevelLoadingScreen::close() {
         }
     }
     m_handles.clear();
+    m_boxes.release();
+    m_status = {};
     m_sounds = nullptr;
     m_bank = {};
     m_textures.releaseTextures();
@@ -132,26 +143,24 @@ bool LevelLoadingScreen::update(f32 seconds) {
 }
 
 void LevelLoadingScreen::tile(Canvas& canvas, RenderDevice& device, std::string_view name,
-                              const Vec2& position, f32 alpha, f32 scale) {
+                              const Vec2& position, f32 alpha) {
     if (const auto index = m_textures.find(name)) {
         const auto& entry = m_textures.entry(*index);
         canvas.draw(m_textures.texture(device, *index),
-                    Rect{position.x * scale, position.y * scale,
-                         static_cast<f32>(entry.width) * scale,
-                         static_cast<f32>(entry.height) * scale},
+                    Rect{position.x, position.y, static_cast<f32>(entry.width),
+                         static_cast<f32>(entry.height)},
                     Color::white().withAlpha(static_cast<u8>(255 * std::clamp(alpha, 0.0f, 1.0f))));
     }
 }
 
-void LevelLoadingScreen::draw(Canvas& canvas, RenderDevice& device, f32 width) {
-    const f32 scale = width / kCanvasWidth;
-    canvas.fill({0, 0, width, kCanvasHeight * scale}, Color::black());
+void LevelLoadingScreen::draw(Canvas& canvas, RenderDevice& device) {
+    canvas.fill({0, 0, kCanvasWidth, kCanvasHeight}, Color::black());
     for (s32 i = 0; i < 4; ++i) {
         tile(canvas, device, std::format("MAP_{}_{:02}", m_name, i),
-             kTilePositions[static_cast<usize>(i)], 1, scale);
+             kTilePositions[static_cast<usize>(i)], 1);
     }
     for (usize i = 0; i < m_dashes; ++i) {
-        tile(canvas, device, std::format("DASH_{}_{}", m_name, i + 1), m_points[i + 1], 1, scale);
+        tile(canvas, device, std::format("DASH_{}_{}", m_name, i + 1), m_points[i + 1], 1);
     }
     if (!m_points.empty() && m_points.front().x >= 0) {
         const f32 routeSeconds = static_cast<f32>(m_dashes > 0 ? m_dashes - 1 : 0) * kDashSeconds;
@@ -159,11 +168,16 @@ void LevelLoadingScreen::draw(Canvas& canvas, RenderDevice& device, f32 width) {
         const s32 phase = frame % 130;
         const s32 ramp = std::max(0, phase > 60 ? 120 - phase : phase);
         const f32 glow = static_cast<f32>(std::clamp((59 + ramp * 255) / 60, 4, 250)) / 255;
-        tile(canvas, device, "MAP_" + m_name + "GLOW", m_points.front(), glow, scale);
+        tile(canvas, device, "MAP_" + m_name + "GLOW", m_points.front(), glow);
     }
     for (s32 i = 0; i < 4; ++i) {
         tile(canvas, device, std::format("LDMAP_{}_{:02}", m_name, i),
-             kTilePositions[static_cast<usize>(i)], previewAlpha(), scale);
+             kTilePositions[static_cast<usize>(i)], previewAlpha());
+    }
+    // The bottom 64 pixels of the map tiles are padding under the status panels,
+    // not part of the map image. Retail keeps those panels during both pictures.
+    for (usize i = 0; i < m_status.size(); ++i) {
+        m_boxes.draw(canvas, static_cast<s32>(i), m_status[i], false);
     }
 }
 

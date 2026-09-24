@@ -124,6 +124,15 @@ void PlacedItems::setPlayerCount(s32 players) {
     }
 }
 
+void PlacedItems::retireCrystals() {
+    for (Item& item : m_items) {
+        if (item.subtype == ItemInfo::kCrystal) {
+            item.taken = true;
+            item.visible = false;
+        }
+    }
+}
+
 bool PlacedItems::makeFigure(RenderDevice& device, Item& item) {
     for (ItemArchive* archive : m_archives) {
         if (archive == nullptr || !archive->loaded()) {

@@ -135,6 +135,11 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
             } else if (ready && portal.action > kWaiting) {
                 advance(portal, 0);
             }
+            if (portal.action == kWaiting) {
+                // Countdown starts when the last player arrives, not while the
+                // partial party waits. Do not restart the looping sequence.
+                portal.ticksLeft = kWaitingTicks;
+            }
         } else if (portal.action > 0) {
             // Left alone it plays itself out, the waiting sequence cut short.
             if (ready || portal.action == kWaiting) {
@@ -142,6 +147,13 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
             }
         }
         portal.ticksLeft = std::max(portal.ticksLeft - ticks, 0);
+    }
+    animate(seconds);
+    return left;
+}
+
+void ExitPortals::animate(f32 seconds) {
+    for (Portal& portal : m_portals) {
         if (m_tree != nullptr && portal.player.playing()) {
             const bool loops =
                 portal.action == 0 || portal.action == 1 || portal.action == kWaiting;
@@ -151,7 +163,6 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
                                   static_cast<s32>(portal.player.frame()));
         }
     }
-    return left;
 }
 
 void ExitPortals::draw(RenderDevice& device, const Mat4& clip,

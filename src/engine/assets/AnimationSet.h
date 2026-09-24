@@ -89,6 +89,12 @@ struct TreeSequenceInfo {
     std::vector<TrackInfo> tracks;
     std::vector<s32> trackOfNode; ///< per tree node: its track's index, -1 for none
 
+    /** Object/texture nodes count backward for bit 0. Transform tracks still use
+     * the playback frame: their keys already describe the sequence's movement. */
+    s32 effectFrame(s32 frame) const {
+        return (flags & 1U) != 0 && frames > 0 ? frames - frame - 1 : frame;
+    }
+
     /** The keys node `node` plays in this sequence, or null when it stays at rest. */
     const TrackInfo* track(usize node) const {
         return node < trackOfNode.size() && trackOfNode[node] >= 0

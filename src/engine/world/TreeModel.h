@@ -92,6 +92,7 @@ private:
      * after, in order; none for a sequence it shows nothing in. */
     struct FrameRun {
         s32 start = 0;
+        s32 reverseLength = 0; ///< sequence extent when object frames play backward
         std::vector<Shape> shapes;
     };
     struct Node {

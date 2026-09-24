@@ -123,4 +123,61 @@ TEST_CASE("a portal left alone plays itself out and goes back to idle", "[game][
     REQUIRE(f.portals.portal(0).action == 1);
 }
 
+TEST_CASE("the real portal holds ACTIVE2 without replaying ACTIVE1 for a waiting party",
+          "[portals][unpacked]") {
+    Fixture f("portals-real-loop");
+    const auto archive = test::unpackedOrSkip("ITEMS/LEVELL/animations.json").parent_path();
+    REQUIRE(f.items.load(archive));
+    REQUIRE(f.portals.bind(f.device, f.layout, f.items, f.catalog, nullptr));
+    const std::array split{PortalVisitor{Vec3{10, 0, 10}}, PortalVisitor{Vec3{30, 0, 10}}};
+    REQUIRE_FALSE(f.run(split, 200));
+    REQUIRE(f.portals.portal(0).action == ExitPortals::kWaiting);
+    const auto sequence = f.portals.portal(0).player.sequence();
+    f32 previous = f.portals.portal(0).player.frame();
+    bool wrapped = false;
+    for (s32 i = 0; i < 120; ++i) {
+        REQUIRE_FALSE(f.portals.update(1, 1.0f / 60, split));
+        const auto& portal = f.portals.portal(0);
+        CHECK(portal.action == ExitPortals::kWaiting);
+        CHECK(portal.player.sequence() == sequence);
+        CHECK(portal.ticksLeft == ExitPortals::kWaitingTicks - 1);
+        wrapped |= portal.player.frame() < previous;
+        previous = portal.player.frame();
+    }
+    CHECK(wrapped);
+    const std::array together{split[0], split[0]};
+    // The wait does not expire before the missing player arrives.
+    for (s32 i = 0; i < ExitPortals::kWaitingTicks - 1; ++i) {
+        f.portals.update(1, 1.0f / 60, together);
+        CHECK(f.portals.portal(0).action == ExitPortals::kWaiting);
+    }
+    REQUIRE(f.run(together, 120) == 0);
+    const auto finalSequence = f.portals.portal(0).player.sequence();
+    f.portals.animate(5);
+    CHECK(f.portals.portal(0).action == ExitPortals::kLast);
+    CHECK(f.portals.portal(0).player.sequence() == finalSequence);
+
+    // ACTIVE3's stored meshes grow, but flag 1 plays them in reverse so the
+    // closing flame shrinks rather than showing the startup a second time.
+    const auto treeIndex = f.items.trees.find(ExitPortals::kFigure);
+    REQUIRE(treeIndex);
+    const auto& tree = f.items.trees.tree(*treeIndex);
+    const auto closing = tree.findSequence("ACTIVE3");
+    REQUIRE(closing);
+    CHECK(tree.sequences[*closing].effectFrame(0) == 14);
+    TreeModel model;
+    REQUIRE(model.bind(tree, f.items.models, f.items.textures, f.device));
+    const auto height = [&](s32 frame) {
+        f.device.draws.clear();
+        model.setFrame(*closing, frame);
+        model.draw(f.device, Mat4{1}, Mat4{1});
+        f32 top = 0;
+        for (const auto& draw : f.device.draws) {
+            top = std::max(top, test::maxCorner(draw).y);
+        }
+        return top;
+    };
+    CHECK(height(0) > height(14) + 5);
+}
+
 } // namespace

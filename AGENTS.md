@@ -248,7 +248,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   9; the tag is bytes 4 and 5 of its parameters) and ports its state machine:
   with the whole party on it (radius 3, plus a unit per extra member) it runs
   IDLE, READY, ACTIVE1, ACTIVE2 (held 45 ticks), ACTIVE3 and the party is
-  through; with only some it waits at ACTIVE2; left alone it plays out to
+  through; with only some it loops ACTIVE2 without restarting ACTIVE1 and
+  resets the 45-tick wait until everyone arrives; left alone it plays out to
   IDLE. `PlayScene::update` then returns `PlayOutcome::Travel` with
   `destination()` and `party()`; `Gauntlet::startLevel` reloads the one
   `LevelWorld` and reopens the scene with `PlayOptions::arrivalWorld` (the
@@ -260,13 +261,20 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `--only levelG`. Scenarios take `level` (`tests/scenarios/level-g1.json`).
   Still to come for other levels: which portals a save has opened.
 * Portal departure is `screens/PortalDeparture`: a 50-tick held-control exit,
-  with ten DEATHLIGHT skin frames, a sinking spin and S_EXITFLAME. The logical
-  position stays at the platform so the camera does not follow the sinking body.
+  with ten DEATHLIGHT skin frames, a sinking spin and the S_TUNNEL one-shot
+  (S_EXITFLAME is a different, looping sound). The camera follows the body's
+  downward displacement; pause is blocked during departure. ACTIVE3's flag 1
+  reverses its object-frame run and keyed texture effects, not transform tracks.
+  Ignoring that flag makes the closing flame repeat the startup's growth.
   `screens/LevelLoadingScreen` then shows the realm map, its MAPS route/glow,
-  and the LDMAP stage preview, with entering/name speech from the MAP audio bank.
-  `Gauntlet` plays the destination's authored movie before opening play, once
-  per character (`CharacterSave::moviesSeen`), or again for a newcomer in the
-  party. Start skips it. Missing movies do not prevent travel or become seen.
+  and the LDMAP stage preview, with entering/name speech from the MAP audio bank
+  and the four status panels over the map texture's bottom padding.
+  `Gauntlet` plays the destination's authored movie before opening play on every
+  entry. Legacy `CharacterSave::moviesSeen` data is retained but ignored. Start
+  skips the movie; missing movies do not prevent travel.
+  Abort-level returns preserve the originating realm's tower start marker.
+  Tower crystal pickups are omitted if any party member has earned province
+  crystal gate 1 (15 crystals); realm id 7 is not the crystal-array index.
   Refresh exports with `gdlunpack <assets> <out> --only MAPS` and `--only WDATA`.
   `python scripts/scenario.py tower-portal-g1` exercises the complete sequence.
   Gameplay lessons are suppressed in the tower before marking them seen;
