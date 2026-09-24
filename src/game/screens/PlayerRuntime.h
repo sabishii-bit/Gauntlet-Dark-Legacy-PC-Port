@@ -22,6 +22,7 @@ struct PlayerRuntime {
     std::unique_ptr<PlayerFigure> figure; ///< null when character assets are unavailable
     std::optional<usize> slot;            ///< persistent save slot, not the input player id
     CharacterSave entrySave;              ///< restored when a fallen character leaves the level
+    s32 levelKills = 0;                   ///< creatures and generators credited during this level
     PlayerLife life = PlayerLife::Standing;
     f32 painOwed = 0.0f;                    ///< accumulated damage not yet answered by a cry
     s32 hitSoundGap = 0;                    ///< ticks before another impact sound

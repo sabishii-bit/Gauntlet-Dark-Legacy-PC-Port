@@ -84,6 +84,22 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
     try {
         const Scenario scenario = Scenario::load(file);
         log::info("Scenario {}: {} in the party", file.string(), scenario.party.size());
+        if (scenario.afterLevel) {
+            Journey journey;
+            journey.destination = LevelRef::tower();
+            journey.party = scenario.partyMembers();
+            journey.options.welcome = false;
+            journey.options.arriving = true;
+            if (!m_afterLevel.open(renderDevice(), context(), journey.party, scenario.results,
+                                   {1000, 100, 1000},
+                                   scenario.level.empty() ? "G1" : scenario.level)) {
+                return false;
+            }
+            m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
+            m_loadingPicture.cover();
+            m_journey = std::move(journey);
+            return true;
+        }
         if (!scenario.level.empty()) {
             if (!m_levels.loaded()) {
                 m_levels.load(m_options.unpackedDirectory);
@@ -123,7 +139,9 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         requestQuit();
     }
 
-    if (m_journey.has_value()) {
+    if (m_afterLevel.isOpen()) {
+        updateAfterLevel(deltaSeconds);
+    } else if (m_journey.has_value()) {
         // The next level loads only once the picture has been put on screen.
         if (m_journey->shown) {
             finishJourney();
@@ -298,7 +316,19 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         journey.options.welcome = false;
         journey.options.arriving = true;
         journey.options.arrivalWorld = static_cast<u32>(std::max(m_towerWorld.ref().realmId, 0));
+        const bool completedLevel = !m_towerWorld.isTower();
+        const auto results = m_tower.levelResults();
         m_tower.close();
+        if (completedLevel) {
+            const auto* level = m_towerWorld.level();
+            const auto maxima =
+                level != nullptr ? level->shopMaxima : std::array<s32, 3>{1000, 100, 1000};
+            if (!m_afterLevel.open(renderDevice(), context(), journey.party, results, maxima,
+                                   m_towerWorld.ref().name)) {
+                log::warn("Shop unavailable; keeping level rewards and continuing. Run gdlunpack "
+                          "--only SHPDATA.");
+            }
+        }
         m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
         m_loadingPicture.cover();
         m_journey = std::move(journey);
@@ -329,6 +359,20 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     }
 }
 
+void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
+    ShopSession::Inputs inputs;
+    for (s32 player = 0; player < 4; ++player) {
+        inputs[static_cast<usize>(player)] =
+            readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
+    }
+    if (m_afterLevel.update(deltaSeconds, inputs)) {
+        GDL_VERIFY(m_journey.has_value(), "Shop requires a pending journey");
+        m_journey->party = m_afterLevel.session().party();
+        keepParty();
+        m_afterLevel.close();
+    }
+}
+
 void Gauntlet::finishJourney() {
     GDL_VERIFY(m_journey.has_value(), "Finishing a journey requires a pending journey");
     const Journey journey = std::move(*m_journey);
@@ -347,6 +391,10 @@ void Gauntlet::onRender(RenderDevice& device) {
     const Mat4 projection =
         makeLetterboxProjection(frameWidth, frameHeight, static_cast<f32>(framebuffer.width),
                                 static_cast<f32>(framebuffer.height));
+    if (m_afterLevel.isOpen()) {
+        m_afterLevel.render(device, projection, frameWidth, frameHeight);
+        return;
+    }
     if (m_journey.has_value()) {
         const auto width = static_cast<f32>(m_config.display.virtualWidth);
         const auto height = static_cast<f32>(m_config.display.virtualHeight);
@@ -379,10 +427,14 @@ void Gauntlet::onRender(RenderDevice& device) {
 /** The party's characters go back into the slots they came from (or were first saved to),
  * with all they have gathered; a character never saved has no slot and is not kept. */
 void Gauntlet::keepParty() {
-    if (!m_tower.isOpen()) {
-        return;
+    std::vector<PartyMember> party;
+    if (m_afterLevel.isOpen()) {
+        party = m_afterLevel.session().party();
+    } else if (m_tower.isOpen()) {
+        party = m_tower.party();
+    } else if (m_journey.has_value()) {
+        party = m_journey->party;
     }
-    const std::vector<PartyMember> party = m_tower.party();
     const bool anySlot = std::ranges::any_of(
         party, [](const PartyMember& member) { return member.slot.has_value(); });
     if (!anySlot || !m_saves.open(m_config.saveDirectory(), m_config.save.slots)) {
@@ -398,6 +450,7 @@ void Gauntlet::onShutdown() {
     m_title.close();
     m_select.close();
     m_tower.close();
+    m_afterLevel.close();
     m_loadingPicture.release();
     m_journey.reset();
     m_towerWorld.clear();

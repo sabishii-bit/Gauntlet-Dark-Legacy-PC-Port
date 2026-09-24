@@ -1,6 +1,4 @@
-#include <algorithm>
 #include <bit>
-#include <cstddef>
 #include <numbers>
 #include <string_view>
 #include <vector>
@@ -39,7 +37,9 @@ struct Record {
     }
     void f32At(usize at, f32 value) { u32At(at, std::bit_cast<u32>(value)); }
     void textAt(usize at, std::string_view text) {
-        std::ranges::copy(text, bytes.begin() + static_cast<std::ptrdiff_t>(at));
+        for (const char c : text) {
+            bytes.at(at++) = static_cast<u8>(c);
+        }
     }
 };
 
@@ -70,6 +70,9 @@ std::vector<u8> sampleWad() {
     level.f32At(0xA8, 2.0f);  // the difficulty
     level.f32At(0xD8, 1.5f);  // how fast its traps cycle
     level.f32At(0x98, 1.0f);
+    level.u32At(0xE0, 1234);
+    level.u32At(0xE4, 123);
+    level.u32At(0xE8, 2345);
     level.f32At(0xEC, 0.8f);
     level.f32At(0xF0, -1.0f);
     level.f32At(0xF4, -6.0f);
@@ -170,6 +173,7 @@ TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds"
     REQUIRE(level.mapIndex == -1);
     REQUIRE(level.maxEnemies == 25);
     REQUIRE(level.musicVolume == Approx(0.75f));
+    REQUIRE(level.shopMaxima == std::array<s32, 3>{1234, 123, 2345});
     REQUIRE(LevelTuningRecord::kNames[2] == "damage");
     REQUIRE(level.tuning.values[2] == Approx(1.25f));
     REQUIRE(level.tuning.values[3] == Approx(2.0f));

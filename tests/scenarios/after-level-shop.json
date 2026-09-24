@@ -1,0 +1,11 @@
+{
+  "screen": "shop",
+  "level": "G1",
+  "party": [
+    {
+      "player": 0, "class": "WAR", "color": "YEL", "name": "SHOP", "level": 20,
+      "gold": 5000, "health": 700, "keys": 2, "potions": [1, 3],
+      "results": {"gold": 850, "kills": 74, "experience": 1250}
+    }
+  ]
+}

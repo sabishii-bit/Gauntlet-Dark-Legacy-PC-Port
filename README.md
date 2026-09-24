@@ -172,6 +172,31 @@ another place.
 
 ## Tests
 
+### End-level tally and item shop
+
+Successful level exits now show each surviving player's gold, kill and experience
+tally, then attributes, shopping, and updated attributes before continuing.
+Players shop independently; travel waits for everybody to select Exit and confirm.
+Menu directions select items, Confirm buys, Back sells for 75% of the listed price,
+and Start moves the cursor to Exit. These use the existing remappable menu bindings
+(defaults: arrows/D-pad, Enter or A to buy, Backspace or Y to sell).
+Purchases update the character carried into the next stage and its existing save slot.
+Fallen players retain their rollback save and do not shop.
+
+For an existing asset installation, export the new catalog and level tally scales:
+
+```powershell
+build/windows-ninja-release/bin/gdlunpack.exe assets/GUNE5D/Gauntlet assets/unpacked --only SHPDATA
+build/windows-ninja-release/bin/gdlunpack.exe assets/GUNE5D/Gauntlet assets/unpacked --only WDATA
+python scripts/scenario.py after-level-shop
+```
+
+The scenario uses a disposable, unsaved character with 5,000 gold. The catalog,
+icons, scroll artwork and realm shop music come from the installed game data.
+The current tally uses readable counters/bars rather than reproducing the original
+stacked-pile artwork and its exact animation; this presentation still needs retail
+side-by-side tuning.
+
 The tests are Catch2, under `tests/` in the same shape as `src/`, and come in
 three tiers:
 

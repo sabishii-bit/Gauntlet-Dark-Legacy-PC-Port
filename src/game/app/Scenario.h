@@ -38,7 +38,9 @@ struct ScenarioMember {
 struct Scenario {
     std::vector<ScenarioMember> party;
     PlayOptions tower;
-    std::string level; ///< the level to open onto, such as G1; none is the tower
+    std::string level;       ///< the level to open onto, such as G1; none is the tower
+    bool afterLevel = false; ///< tally/shop preview before returning to the tower
+    std::vector<LevelResults> results;
 
     /** Throws FormatError on malformed text, an unknown class or colour, or an empty party. */
     static Scenario fromJson(std::string_view text);

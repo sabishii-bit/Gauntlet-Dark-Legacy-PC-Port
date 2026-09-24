@@ -19,6 +19,7 @@
 
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
+#include "game/players/LevelResults.h"
 #include "game/players/LevelWatch.h"
 #include "game/players/Party.h"
 #include "game/players/PlayerActor.h"
@@ -213,6 +214,7 @@ public:
     const LevelRef& destination() const { return m_destination; }
     /** The party as it stands, with all it has gathered, for the next level. */
     std::vector<PartyMember> party() const;
+    std::vector<LevelResults> levelResults() const;
     const EffectTrees& effects() const { return m_effects; }
     /** The powerup selector over `player`'s box. */
     const PowerupSelector& selector(s32 player) const { return m_hud.selector(player); }
@@ -252,6 +254,7 @@ private:
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     LevelFixtures::Events fixtureEvents();
+    LevelOpponents::Events opponentEvents();
     PlayerAttacks::Targets attackTargets();
     void hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage);
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false,

@@ -1759,6 +1759,22 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   port must be patched, add `vcpkg-overlays/` plus `vcpkg-configuration.json`
   and say why in the overlay's README.
 
+## End-level shop ownership
+
+`AfterLevelScene` is the tally/shop presentation; `ShopSession` owns per-player
+flow and `ShopPurchase` owns atomic buy/sell rules. Successful non-tower travel
+holds the pending journey until all surviving lanes finish. Do not award tally
+totals again: gold/experience are checkpoint deltas, kills include generators,
+and the character already owns these rewards. Fallen members retain their entry
+save. Save from the active shop/journey on shutdown, not the closed PlayScene.
+`gdlunpack --only SHPDATA` exports the 80-byte ITEM records to shop/catalog.json;
+WDATA exports the three pile maxima at level record offsets E0/E4/E8. Retail's
+buy driver adds 10 to permanent attributes, scales powerup time by the class,
+and sells keys/potions singly or a whole powerup slot at price * 3 / 4.
+The current screen intentionally uses counters/bars, not a claimed pixel-exact
+recreation of retail's piled-gold animation. Test `[shop]` and use the unsaved
+`after-level-shop` scenario when changing this flow.
+
 ## Git
 
 * Do not commit or push unless asked. Never commit anything under `assets/`.

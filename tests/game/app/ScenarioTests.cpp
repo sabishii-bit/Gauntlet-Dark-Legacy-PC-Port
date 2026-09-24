@@ -14,6 +14,18 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("a shop scenario stages results without awarding their totals twice",
+          "[game][scenario][shop]") {
+    const auto scenario = Scenario::fromJson(R"({"screen":"shop","party":[
+        {"player":3,"gold":5000,"results":{"gold":800,"kills":12,"experience":300}}]})");
+    REQUIRE(scenario.afterLevel);
+    REQUIRE(scenario.results.size() == 1);
+    REQUIRE(scenario.results[0].player == 3);
+    REQUIRE(scenario.results[0].totals[0] == 800);
+    REQUIRE(scenario.partyMembers()[0].save.gold == 5000);
+    REQUIRE(scenario.partyMembers()[0].save.experience() == 0);
+}
+
 TEST_CASE("a scenario can stage pending tower promotions", "[game][scenario][promotion]") {
     const auto scenario = Scenario::fromJson(R"({"party":[
         {"level":30,"promotedLevel":29},{"level":80,"promotedLevel":79}],"arrivalWorld":7})");

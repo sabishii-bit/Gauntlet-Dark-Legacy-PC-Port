@@ -63,6 +63,9 @@ LevelRecord readLevel(std::span<const u8> bytes, usize at) {
     for (usize i = 0; i < LevelTuningRecord::kCount; ++i) {
         level.tuning.values[i] = readWadF32(bytes, at + 0x9C + i * 4, kWhat);
     }
+    for (usize i = 0; i < level.shopMaxima.size(); ++i) {
+        level.shopMaxima[i] = static_cast<s32>(readWadU32(bytes, at + 0xE0 + i * 4, kWhat));
+    }
     level.ambient = readWadF32(bytes, at + 0xEC, kWhat);
     level.lightDirection = readVec3(bytes, at + 0xF0);
     level.lightColor = readVec3(bytes, at + 0xFC);
