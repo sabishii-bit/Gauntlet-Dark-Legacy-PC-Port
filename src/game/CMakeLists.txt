@@ -43,6 +43,7 @@ add_library(game STATIC
     players/Relics.cpp
     players/ItemPickup.h
     players/ItemPickup.cpp
+    players/PickupVoices.cpp
     combat/Damage.h
     combat/Damage.cpp
     screens/PlayerPowerups.h

@@ -699,6 +699,8 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     if (!taking.took()) {
         if (taking.outcome == ItemTaking::Outcome::KeysFull) {
             postHelp(HelpMessages::kKeysFull, pickup.collector);
+        } else if (taking.outcome == ItemTaking::Outcome::PotionsFull) {
+            postHelp(HelpMessages::kPotionsFull, pickup.collector);
         } else if (taking.outcome == ItemTaking::Outcome::HealthFull) {
             postHelp(HelpMessages::kHealthFull, pickup.collector);
         } else if (taking.outcome == ItemTaking::Outcome::AlreadyHeld) {
@@ -710,6 +712,21 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
         m_players[pickup.collector].turbo.add(TurboMeter::kFull);
     }
     switch (static_cast<ItemKind>(pickup.subtype)) {
+    case ItemKind::Gold:
+        if (m_world->ref().realmId != 12 && pickup.amount >= 25) {
+            postHelp(17, pickup.collector);
+        }
+        break;
+    case ItemKind::Keys:
+        postHelp(m_fixtures.gates().size() > 0 ? 8 : HelpMessages::kChestNeedsKey,
+                 pickup.collector);
+        break;
+    case ItemKind::Potion:
+        // Retail tries the next lesson only when the previous one could not be posted.
+        if (!postHelp(7, pickup.collector) && !postHelp(94, pickup.collector)) {
+            postHelp(95, pickup.collector);
+        }
+        break;
     case ItemKind::Runestone: shareRune(pickup.amount); break;
     case ItemKind::Legend:
         postHelp(HelpMessages::kFirstLegendName + taking.count, pickup.collector);
@@ -725,15 +742,26 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     if (!taking.card.empty()) {
         m_hud.pickups().addCard(actor.player(), taking.card);
     }
+    if (taking.message >= 0) {
+        postHelp(taking.message, pickup.collector);
+    }
     if (!taking.sound.empty()) {
-        m_audio.playNamed(taking.sound);
+        if (pickup.subtype == static_cast<s32>(ItemKind::Gold) && m_world->ref().realmId == 12) {
+            m_audio.playNamed(PickupVoices::bonusGold(actor.player(), pickup.amount));
+        } else {
+            m_audio.playNamed(taking.sound);
+        }
     } else if (PlayerFigure* figure = m_players[pickup.collector].figure.get();
-               figure != nullptr && m_context.sounds != nullptr) {
-        const std::string_view voice = classCode(actor.save().character % kStartingClassCount);
-        const auto sound =
-            figure->voice().find(std::format("S_{}{}", voice, taking.hurt ? "PAIN1" : "EATSFX"));
-        if (sound.has_value()) {
-            m_context.sounds->play(figure->voice().sequence(*sound), 1.0f, SoundCategory::Effects);
+               (taking.ate || taking.hurt) && figure != nullptr && m_context.sounds != nullptr) {
+        const bool pojo =
+            (PowerupEffects::of(actor.save().progress().inventory).special & 0x400) != 0;
+        const PickupVoice cue =
+            m_pickupVoices.food(actor.save().character,
+                                m_world->placedItems().item(pickup.item).name, taking.hurt, pojo);
+        if (cue.common) {
+            m_audio.playNamed(cue.sound);
+        } else {
+            m_audio.playFrom(figure->voice(), cue.sound);
         }
     }
     return taking.left;
