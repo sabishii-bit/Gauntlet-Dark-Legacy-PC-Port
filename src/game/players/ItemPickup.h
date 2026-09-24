@@ -52,6 +52,7 @@ struct ItemTaking {
     s32 count = 0;          ///< what the card shows was got; a scroll's page, a legend's realm
     std::string_view card;  ///< the STATIC texture of the card that slides up
     std::string_view sound; ///< from the common bank; empty when the class's voice answers
+    s32 message = -1;       ///< retail msgPost id; independent of the immediate pickup sound
     bool ate = false;       ///< the class's eating sound plays
     bool hurt = false;      ///< or its pain, at food gone bad
 

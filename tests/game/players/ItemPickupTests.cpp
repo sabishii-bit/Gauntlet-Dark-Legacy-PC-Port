@@ -1,9 +1,12 @@
 
+#include <array>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
 
 #include "game/players/ItemPickup.h"
+#include "game/players/PickupVoices.h"
 #include "game/players/Progression.h"
 
 namespace {
@@ -157,6 +160,70 @@ TEST_CASE("a scroll is read where it lies and goes, nothing kept", "[game][playe
     REQUIRE(taking.card.empty());
     REQUIRE(save.progress().relics == Relics{});
     REQUIRE(save.progress().inventory == Inventory{});
+    CHECK(taking.sound.empty());
+    CHECK_FALSE(taking.ate);
+    CHECK_FALSE(taking.hurt);
+    CHECK(taking.message == -1);
+}
+
+TEST_CASE("every powerup pickup selects the retail message independently of its sound",
+          "[game][players][items]") {
+    struct Expected {
+        s32 kind;
+        u32 flags;
+        s32 message;
+        std::string_view sound = "S_PICKUPSPECIAL";
+    };
+    const std::array cases{
+        Expected{5, 0x80000, 37}, Expected{5, 0x400000, 47}, Expected{5, 0x200000, 38},
+        Expected{5, 0x100000, 48}, Expected{5, 0x10000000, 86}, Expected{5, 0x20000000, 87},
+        Expected{5, 1, 40}, Expected{5, 2, 41}, Expected{5, 3, 42}, Expected{5, 4, 43},
+        Expected{6, 0x100000, 54}, Expected{6, 0x10000, 35}, Expected{6, 0x80000, 49},
+        Expected{6, 0x20000, 52}, Expected{6, 0x200000, 91, "S_PICKUPSHIELD"},
+        Expected{6, 0x400000, 92}, Expected{6, 0x2000, 132}, Expected{7, 0, 32}, Expected{8, 0, 33},
+        Expected{9, 4, 36}, Expected{9, 2, 39}, Expected{9, 8, 51},
+        Expected{9, 1, 53, "S_LEVITATEUP"}, Expected{9, 0x10, 81}, Expected{9, 0x20, 82},
+        Expected{9, 0x40, 83}, Expected{9, 0x80, 84}, Expected{9, 0x100, 88, "S_GROW"},
+        Expected{9, 0x200, 89, "S_SHRINK"}, Expected{9, 0x400, 93, "S_POJO"},
+        Expected{9, 0x2000, 98}, Expected{9, 0x1000, 99}, Expected{9, 0x8000, 100},
+        Expected{9, 0x4000, 100}, Expected{9, 0x80000, 113}, Expected{9, 0x100000, 148},
+        Expected{9, 0x200000, 149}, Expected{9, 0x400000, 150},
+        // Ordered selection, exact low-nibble comparison, and no invented unknown cue.
+        Expected{5, 0x480004, 37}, Expected{5, 7, -1}, Expected{9, 0x101, 53, "S_LEVITATEUP"},
+        Expected{9, 0x10000, -1}, Expected{9, 0, -1}};
+    for (const Expected& expected : cases) {
+        CAPTURE(expected.kind, expected.flags);
+        CharacterSave save;
+        const ItemTaking taking = takeItem(save, ItemOffer{expected.kind, 30, expected.flags, 1});
+        REQUIRE(taking.took());
+        CHECK(taking.message == expected.message);
+        CHECK(taking.sound == expected.sound);
+    }
+}
+
+TEST_CASE("food voices distinguish class lines, archer fruit, poison and Pojo", "[game][items]") {
+    CHECK(PickupVoices::foodChoice(0, "MEAT", false, false, false).sound == "S_WAREATSFX");
+    CHECK(PickupVoices::foodChoice(0, "MEAT", false, false, true).sound == "S_WAREAT");
+    CHECK(PickupVoices::foodChoice(1, "APPLE", true, false, false).sound == "S_VALPOISON");
+    CHECK(PickupVoices::foodChoice(3, "MEAT", false, false, true).sound == "S_ARCEAT1");
+    CHECK(PickupVoices::foodChoice(3, "APPLE", false, false, true).sound == "S_ARCEAT2");
+    CHECK(PickupVoices::foodChoice(3, "BANANA", false, false, true).sound == "S_ARCEAT3");
+    CHECK(PickupVoices::foodChoice(3, "PINEAPPLE", false, false, true).sound == "S_ARCEAT4");
+    CHECK(PickupVoices::foodChoice(11, "APPLE", false, false, true).sound == "S_ARCEAT2");
+    CHECK(PickupVoices::foodChoice(0, "MEAT", false, true, true).sound.empty());
+    CHECK(PickupVoices::foodChoice(0, "MEAT", false, true, false).sound == "S_POJOEATSFX");
+    CHECK(PickupVoices::foodChoice(0, "MEAT", true, true, false).sound == "S_POJOPOISON");
+    CHECK(PickupVoices::foodChoice(0, "MEAT", true, true, false).common);
+    CHECK(PickupVoices::bonusGold(0, 50) == "S_PKUPBRONZE1");
+    CHECK(PickupVoices::bonusGold(1, 100) == "S_PKUPSILVER2");
+    CHECK(PickupVoices::bonusGold(3, 500) == "S_PKUPGOLD4");
+    CHECK(PickupVoices::bonusGold(2, 25) == "S_PKUPGOLD3");
+    CharacterSave save;
+    save.progress().health = 100;
+    CHECK(takeItem(save, offer(ItemKind::Food, 100)).message == 15);
+    CHECK(takeItem(save, offer(ItemKind::Food, 50)).message == 16);
+    CHECK(takeItem(save, offer(ItemKind::Food, -50)).message == 28);
+    CHECK(takeItem(save, offer(ItemKind::Food, 1)).message == -1);
 }
 
 } // namespace

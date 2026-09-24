@@ -22,6 +22,7 @@
 #include "game/players/LevelResults.h"
 #include "game/players/LevelWatch.h"
 #include "game/players/Party.h"
+#include "game/players/PickupVoices.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
@@ -318,6 +319,7 @@ private:
     PlayerArsenal m_arsenal;
     ExitPortals m_portals;
     PlayerHealth m_health;
+    PickupVoices m_pickupVoices;
     AmbientDimmer m_dimmer;
     PlayerAttacks m_attacks;
     LevelFixtures m_fixtures;

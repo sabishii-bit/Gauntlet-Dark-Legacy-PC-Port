@@ -10,14 +10,61 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 41> kSpecs{{
+constexpr std::array<HelpMessageSpec, 87> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
+    {HelpMessages::kPotionsFull, "FULLOFBOMBS", "S_MAGICFULL"},
     {HelpMessages::kKeysFull, "FULLOFKEYS", "S_KEYFULL"},
     {HelpMessages::kNoPotion, "COLLECTMAGICFIRST", "S_COLLECTPOT"},
+    {7, "USEMAGIC2", "S_USEMAGIC2"},
+    {8, "SAVEKEYS", "S_SAVEKEYS"},
+    {15, "EATMEAT", "S_MEATGIVES"},
+    {16, "EATFRUIT", "S_FRUITGIVES"},
+    {17, "COLLECTGOLD", "S_COLLECTGOLD"},
+    {28, "POISONEDFOOD", "S_POISONEDFOOD"},
+    {94, "THROWMAGIC", "S_THROWMAGIC"},
+    {95, "MAGICSHIELD", "S_SHIELDMAGIC"},
     {HelpMessages::kTrapsHurt, "AVOIDOBJECTS", "S_AVOID"},
     {HelpMessages::kRandomChest, "RANDOMCHEST", "S_SILVER"},
     {HelpMessages::kBarrelsHold, "WOODBARREL", "S_SOMEBARRELS"},
+    // message.c's descriptor IDs and text indices, resolved against ENGLISH's names.
+    {32, "SPEEDUP", "S_XSPEED"},
+    {33, "MAGICUP", "S_XMAGIC"},
+    {35, "INVULNERABILITY", "S_INVULVOX"},
+    {36, "INVISIBILITY", "S_INVISVOX"},
+    {37, "THREEWAYS", "S_3WAYSHOTVOX"},
+    {38, "REFLECTSHOT", "S_REFLECTVOX"},
+    {39, "SEETHRU", "S_XRAYVOX"},
+    {40, "REDAMULET", "S_FIREAMVOX"},
+    {41, "BLUEAMULET", "S_LGHTNGAMVOX"},
+    {42, "YELAMULET", "S_LIGHTAMVOX"},
+    {43, "GREENAMULET", "S_ACIDAMVOX"},
+    {47, "FIVEWAYS", "S_5WAYSHOTVOX"},
+    {48, "SUPERSHOT", "S_SUPERVOX"},
+    {49, "HALO", "S_ANTIDEATHVOX"},
+    {51, "TIMESTOP", "S_STOPPEDVOX"},
+    {52, "REFLECTARMOR", "S_REFLECTSHVOX"},
+    {53, "LEVITATION", "S_LEVVOX"},
+    {54, "INVULNERABILITY", "S_INVULVOX"},
+    {81, "FIREBREATHE", "S_FIREBRVOX"},
+    {82, "ACIDBREATHE", "S_ACIDBRVOX"},
+    {83, "ELECBREATHE", "S_LGHTNGBRVOX"},
+    {84, "PHOENIX", "S_PHOENIXVOX"},
+    {86, "HAMMERMSG", "S_HAMMERVOX"},
+    {87, "RAPIDFIREMSG", "S_RAPIDFIREVOX"},
+    {88, "GROWTHMSG", "S_GROWTHVOX"},
+    {89, "SHRINKMSG", "S_SHRINKVOX"},
+    {91, "FIRESHIELDMSG", "S_FIREWALLSHVOX"},
+    {92, "ELECSHIELDMSG", "S_LGHTNGSHVOX"},
+    {93, "POJOMSG", "S_POJOVOX", HelpRepeat::Always},
+    {98, "MASKMSG", "S_MASKVOX"},
+    {99, "HORNSMSG", "S_HORNSVOX"},
+    {100, "GAUNTLETMSG", "S_GAUNTLETVOX"},
+    {113, "TURBOBOOST", "S_TURBOBOOST"},
+    {132, "GASMASK", "S_GASMASK"},
+    {148, "MIKEY", "S_PICKUPCRYST", HelpRepeat::OnceForAll, -1, 50, false, true},
+    {149, "HANDOFDEATH", "S_PICKUPCRYST", HelpRepeat::OnceForAll, -1, 50, false, true},
+    {150, "HEALTHVAMP", "S_PICKUPCRYST", HelpRepeat::OnceForAll, -1, 50, false, true},
     // The classes' turbo attacks by name: the lesser, then the greater.
     {57, "WAR_TURBO", "S_FIREARC", HelpRepeat::OncePerSession, 1, 60, true},
     {58, "WAR_TURBO", "S_PLASMATRAIL", HelpRepeat::OncePerSession, 2, 70, true},
@@ -78,8 +125,28 @@ Color HelpMessages::inkOf(s32 player) {
 }
 
 bool HelpMessages::gameplayTip(s32 id) {
-    return (id >= kDoorNeedsKey && id <= kBarrelsHold) || id == kUseTurbo ||
+    return (id >= kDoorNeedsKey && id <= 28) || id == 94 || id == 95 || id == kUseTurbo ||
            (id >= kBlastsDestroy && id <= kChestsExplode);
+}
+
+HelpMessages::VoiceLead HelpMessages::voiceLead(s32 id, bool multiplayer) {
+    if (id == 93) {
+        return VoiceLead::PlayerName;
+    }
+    if (id == kLevelUp || id == 89) {
+        return VoiceLead::PlayerHas;
+    }
+    if (multiplayer) {
+        // Retail does not prefix shield, gas-mask, turbo or crystal announcements.
+        static constexpr std::array kNamed{32,  33,  35,  36,  37,  38,  39,  40,  41,  42,
+                                           43,  47,  48,  49,  51,  52,  53,  54,  81,  82,
+                                           83,  84,  86,  87,  88,  98,  99,  100, 114, 115,
+                                           116, 117, 118, 119, 120, 121, 122, 123, 124};
+        if (std::ranges::find(kNamed, id) != kNamed.end()) {
+            return VoiceLead::PlayerHas;
+        }
+    }
+    return VoiceLead::None;
 }
 
 void HelpMessages::clear() {
@@ -98,8 +165,7 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player, std::span<const He
         return nullptr;
     }
     // One at a time, unless it outranks what is up; the pause between them is the lessons'.
-    const bool lesson =
-        spec->repeat != HelpRepeat::OncePerSession && spec->repeat != HelpRepeat::Always;
+    const bool lesson = id <= 28 || id == 44 || id == 45 || id == 55 || id == 80;
     if ((showing() && m_priority >= spec->priority) || (lesson && m_pauseLeft > 0)) {
         return nullptr;
     }

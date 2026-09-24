@@ -111,4 +111,35 @@ TEST_CASE("party HUD clears transient presentation without altering participants
     REQUIRE_FALSE(hud.selector(3).showing());
     REQUIRE(players[0].actor.save().health() == 123);
 }
+TEST_CASE("crystal-style item announcements use common audio and do not replay when seen",
+          "[game][screens][party-hud][items]") {
+    const auto root = test::scratchDirectory("party-hud-item-voice");
+    const auto path = root / "audio/COMMON";
+    std::filesystem::create_directories(path);
+    const std::array<s16, 4> pcm{8192, 8192, 8192, 8192};
+    writeFile(path / "tone.wav", formats::encodeWav(pcm, 48000, 1));
+    writeTextFile(path / "sounds.json", R"({"sounds":[{"name":"S_PICKUPCRYST","volume":127,
+        "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]}],
+        "samples":[{"index":0,"file":"tone.wav","sampleRate":48000,"frames":4}]})");
+    writeTextFile(root / "messages.json", R"({"messages":[{"name":"MIKEY","lines":["MIKEY"]}]})");
+    MessageTable messages;
+    REQUIRE(messages.load(root / "messages.json"));
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    LevelSoundscape audio;
+    audio.open(root, &sounds, nullptr);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+    PartyHud hud;
+    hud.help().setTexts(&messages);
+    REQUIRE(hud.postHelp(148, 0, players, audio));
+    REQUIRE(sounds.voiceCount() == 1);
+    std::array<f32, 128> output{};
+    mixer.mix(output);
+    REQUIRE(output.back() > 0);
+    hud.help().update(1000);
+    REQUIRE_FALSE(hud.postHelp(148, 0, players, audio));
+    REQUIRE(sounds.voiceCount() == 1);
+    audio.close();
+}
 } // namespace

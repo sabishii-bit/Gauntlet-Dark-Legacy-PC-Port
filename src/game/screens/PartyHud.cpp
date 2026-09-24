@@ -69,11 +69,23 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
         // narrator's lines are in either of its banks.
         if (spec->classVoice && index < players.size() && players[index].figure != nullptr) {
             audio.playFrom(players[index].figure->voice(), spec->voice);
-        } else if (id == HelpMessages::kLevelUp && players[index].figure != nullptr) {
+        } else if (spec->commonVoice) {
+            audio.playNamed(spec->voice);
+        } else if (const auto lead = HelpMessages::voiceLead(id, readers.size() > 1);
+                   lead != HelpMessages::VoiceLead::None && players[index].figure != nullptr) {
             const CharacterSave& save = players[index].actor.save();
             const std::string name = std::format("S_{}{}2", colorCode(save.color),
                                                  classCode(save.character % kStartingClassCount));
-            const SoundHandle spoken = audio.playFrom(players[index].figure->voice(), name);
+            const bool pojo = (PowerupEffects::of(save.progress().inventory).special & 0x400) != 0;
+            SoundHandle spoken = pojo ? audio.narrate("S_POJO2")
+                                      : audio.playFrom(players[index].figure->voice(), name);
+            if (lead == HelpMessages::VoiceLead::PlayerHas) {
+                const SoundHandle has =
+                    audio.narrate("S_HAS", LevelSoundscape::Narrator::Either, spoken);
+                if (has != kNoSound) {
+                    spoken = has;
+                }
+            }
             audio.narrate(spec->voice, LevelSoundscape::Narrator::Either, spoken);
         } else {
             audio.narrate(spec->voice);

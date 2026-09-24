@@ -33,6 +33,7 @@ struct HelpMessageSpec {
     s32 line = -1;     ///< the one line of the text that is shown; all of them when -1
     s32 priority = 50; ///< one higher than what is up takes its place
     bool classVoice = false;
+    bool commonVoice = false; ///< crystal pickup cue, not a narrator recording
 };
 
 /** Someone a message can be for: the player, and the messages their character has seen. */
@@ -54,6 +55,7 @@ class HelpMessages {
 public:
     static constexpr s32 kDoorNeedsKey = 1;
     static constexpr s32 kChestNeedsKey = 2;
+    static constexpr s32 kPotionsFull = 3;
     static constexpr s32 kKeysFull = 4;
     static constexpr s32 kNoPotion = 6;
     static constexpr s32 kTrapsHurt = 21;
@@ -84,6 +86,9 @@ public:
 
     static const HelpMessageSpec* specOf(s32 id);
     static bool gameplayTip(s32 id);
+    enum class VoiceLead : u8 { None, PlayerName, PlayerHas };
+    /** sounds_evt.c::fn_8009CB44 uses names on more announcements in multiplayer. */
+    static VoiceLead voiceLead(s32 id, bool multiplayer);
     /** The ink a player's messages are written in. */
     static Color inkOf(s32 player);
 
