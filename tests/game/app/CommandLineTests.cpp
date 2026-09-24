@@ -69,6 +69,16 @@ TEST_CASE("the scenario flag names the start to open into", "[game][commandline]
     REQUIRE(parseCommandLine(bare, defaults()).action == CommandLineAction::Fail);
 }
 
+TEST_CASE("idle presentations can be previewed without their inactivity wait",
+          "[game][commandline]") {
+    constexpr std::array<std::string_view, 1> kDemo{"--demo"};
+    constexpr std::array<std::string_view, 1> kSaver{"--screensaver"};
+    REQUIRE(parseCommandLine(kDemo, defaults()).options.startAtDemo);
+    REQUIRE(parseCommandLine(kSaver, defaults()).options.previewScreensaver);
+    REQUIRE_FALSE(parseCommandLine({}, defaults()).options.startAtDemo);
+    REQUIRE_FALSE(parseCommandLine({}, defaults()).options.previewScreensaver);
+}
+
 TEST_CASE("the data flag points at the configuration directory", "[game][commandline]") {
     constexpr std::array<std::string_view, 2> kArgs{"--data", "W:/conf"};
     const CommandLineResult result = parseCommandLine(kArgs, defaults());

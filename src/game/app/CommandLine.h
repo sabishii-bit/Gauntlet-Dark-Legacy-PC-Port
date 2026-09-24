@@ -17,6 +17,8 @@ struct GameOptions {
     std::filesystem::path unpackedDirectory; ///< output of gdlunpack (PNG images, JSON manifests)
     std::filesystem::path dataDirectory;     ///< shipped configuration and text (the data/ tree)
     bool startAtTitle = false;               ///< skip the intro movies and open the title screen
+    bool startAtDemo = false;                ///< open a level flyby without waiting at the title
+    bool previewScreensaver = false;         ///< show the idle weapons and quit on input
     std::filesystem::path scenario;          ///< a described start to open straight into
 };
 

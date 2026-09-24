@@ -164,6 +164,10 @@ add_library(game STATIC
     screens/TitleScene.cpp
     screens/MovieScene.h
     screens/MovieScene.cpp
+    screens/IdleScreen.cpp
+    screens/IdleScreen.h
+    screens/AttractScene.cpp
+    screens/AttractScene.h
     screens/SmokeTestScene.h
     screens/SmokeTestScene.cpp
     screens/SelectLane.h

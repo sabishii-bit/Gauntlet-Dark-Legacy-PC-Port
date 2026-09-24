@@ -25,6 +25,14 @@ void AttractSequencer::reset() {
     m_titleShown = false;
 }
 
+void AttractSequencer::titleShown() {
+    m_titleShown = true;
+    constexpr usize kAfterTitle = 5;
+    if (m_position < kAfterTitle) {
+        m_position = kAfterTitle;
+    }
+}
+
 std::string_view AttractSequencer::movieName(s32 variant, u32 wave) {
     constexpr std::array<std::string_view, kWaveCount> kCharacterMovies{"war_dwa", "val_kni",
                                                                         "wiz_sor", "jes_arc"};

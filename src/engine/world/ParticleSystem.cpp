@@ -354,6 +354,11 @@ Vec3 ParticleEmitter::newOrigin() {
 /** The direction through the marker's frame at the speed, spread into the cone. */
 Vec3 ParticleEmitter::newVelocity() {
     const ParticleDescriptor& d = m_descriptor;
+    // Stationary particles can still rise under gravity. There is no launch direction
+    // to spread when speed is zero; normalizing it would make every coordinate NaN.
+    if (d.speed == 0.0f) {
+        return Vec3{0.0f};
+    }
     if (d.angle == ParticleDescriptor::kSphere) {
         const Vec3 random{random01() - 0.5f, random01() - 0.5f, random01() - 0.5f};
         const f32 length = glm::length(random);

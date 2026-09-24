@@ -75,6 +75,7 @@ struct BossCameraInfo {
 };
 
 struct LevelInfo {
+    u16 selectionFlags = 0;
     std::string name;  ///< "L1"
     std::string title; ///< "Tower"
     std::string audioBank;
