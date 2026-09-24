@@ -381,8 +381,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   came into the level (`PartyMember::fallen`, the entry snapshot, keeping
   only the help they saw); they stand again when the party is next in the
   tower, and stay fallen through any other level. With everyone fallen and
-  the last body gone, three seconds later the scene returns
-  `PlayOutcome::Fallen` and `Gauntlet` takes the party to the tower. Nobody
+  the last body gone, `screens/GameOver` runs the retail 240-tick defeat
+  sequence (`gamemain.c::fn_800521E8`): voice `S_GAMEOVERVOX` at tick 60,
+  one caption character every eight ticks thereafter, white double-size
+  FONT32 at y=120. The complete line is centred before revealing its prefix.
+  `PlayOutcome::GameOver` closes gameplay, preserves the existing entry-save
+  rollback, and selects the one-shot `fail` movie before resuming attract mode.
+  Fallen players cannot pause; the defeat sequence cannot enter idle mode.
+  The failure movie is excluded from ordinary attract rotation. Nobody
   is hurt in the tower. Not yet: knockback, the low-health narrator lines,
   armour and shields reducing damage, gas spoiling food, blasts destroying
   pickups, breakable walls (item type 10, subtype 42).

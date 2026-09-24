@@ -29,6 +29,7 @@
 #include "game/players/TurboMeter.h"
 #include "game/screens/BossSequence.h"
 #include "game/screens/GameContext.h"
+#include "game/screens/GameOver.h"
 #include "game/screens/LevelArrivalPresentation.h"
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelMessages.h"
@@ -77,9 +78,9 @@ struct PlayOptions {
 
 enum class PlayOutcome : u8 {
     Running,
-    Leave,  ///< back to the title
-    Travel, ///< through an exit portal to destination()
-    Fallen  ///< everyone has died: back to the tower, where they stand again
+    Leave,   ///< back to the title
+    Travel,  ///< through an exit portal to destination()
+    GameOver ///< the last death and defeat caption are complete: leave gameplay
 };
 
 /**
@@ -106,7 +107,7 @@ enum class PlayOutcome : u8 {
  * cloud of gas. The original's help messages go up over a character the first time each
  * thing happens. A character whose health runs out falls and waits in the tower, its box
  * saying so; it comes back, as it entered the level, when the party returns there, and when
- * everyone has fallen the party is taken back.
+ * everyone has fallen the game-over sequence ends the session.
  */
 class PlayScene {
 public:
@@ -213,6 +214,8 @@ public:
     const TransitionScreen& transition() const { return m_transition; }
     /** Whether the party has gone through a portal and the picture is coming up over it. */
     bool leaving() const { return m_leaving; }
+    bool canPause(s32 player) const;
+    const GameOver& gameOver() const { return m_gameOver; }
     /** Where the party is bound once update() has said Travel, and the realm it leaves. */
     const LevelRef& destination() const { return m_destination; }
     /** The party as it stands, with all it has gathered, for the next level. */
@@ -302,7 +305,6 @@ private:
     void updateHints(const Inputs& inputs, s32 ticks);
     CameraView cameraView() const;
 
-    bool m_open = false;
     RenderDevice* m_device = nullptr;
     GameContext m_context;
     LevelWorld* m_world = nullptr;
@@ -312,6 +314,7 @@ private:
     TowerCamera m_camera;
     BossCamera m_bossCamera;
     std::vector<PlayerRuntime> m_players;
+    GameOver m_gameOver;
     LevelSoundscape m_audio;
     SumnerFigure m_sumner;
     TextureSet m_staticTextures;
@@ -331,7 +334,6 @@ private:
     EffectTrees m_effects;
     BossSequence m_bossSequence;
     f32 m_playSeconds = 0.0f;
-    f32 m_fallenSeconds = 0.0f; ///< since the last of the party fell
     SumnerVisit m_sumnerVisit;
     TowerPromotion m_promotion;
     TowerRelics m_towerRelics;
@@ -347,6 +349,7 @@ private:
 
     ItemArchive m_weapons;              ///< shared weapon and effect assets
     LevelArrivalPresentation m_arrival; ///< borrows the weapons archive
+    bool m_open = false;
     bool m_welcomePending = false;
     bool m_leaving = false;
     PortalDeparture m_departure;

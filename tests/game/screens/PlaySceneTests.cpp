@@ -76,7 +76,7 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
 }
 
 TEST_CASE("sparse party ids keep their state together across harm and scene reopening",
-          "[game][screens][unpacked]") {
+          "[game][screens][game-over][unpacked]") {
     const auto root = unpackedRoot();
     test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
     const GameConfig config;
@@ -168,6 +168,31 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     REQUIRE(carried[1].save.experience() == expectedExperience);
     REQUIRE(carried[1].helpHeard == std::vector<s32>{6});
 
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 300; ++i) {
+        REQUIRE(scene.update(1.0 / 60.0, still) == PlayOutcome::Running);
+    }
+    REQUIRE_FALSE(scene.gameOver().active());
+    REQUIRE_FALSE(scene.canPause(3));
+    REQUIRE(scene.canPause(1));
+    scene.hurtPlayer(1, 10000.0f, HurtKind::Burn);
+    REQUIRE_FALSE(scene.gameOver().active());
+    REQUIRE_FALSE(scene.canPause(1));
+    for (s32 i = 0; i < 1200 && !scene.gameOver().active(); ++i) {
+        REQUIRE(scene.update(1.0 / 60.0, still) == PlayOutcome::Running);
+    }
+    REQUIRE(scene.gameOver().active());
+    REQUIRE_FALSE(scene.canPause(0));
+    REQUIRE(scene.levelResults().empty());
+    for (s32 i = 0; i < GameOver::kDurationTicks - 1; ++i) {
+        REQUIRE(scene.update(1.0 / 60.0, still) == PlayOutcome::Running);
+    }
+    REQUIRE(scene.update(1.0 / 60.0, still) == PlayOutcome::GameOver);
+    REQUIRE(scene.party()[0].save.health() == 300);
+    REQUIRE(scene.party()[1].save.health() == 700);
+    REQUIRE(scene.party()[0].slot == std::optional<usize>{7});
+    REQUIRE(scene.party()[1].slot == std::optional<usize>{2});
+
     // Reopening implicitly closes the old scene. No death, reaction, slot or turbo leaks.
     CharacterSave replacement = first;
     replacement.name = "ZERO";
@@ -175,6 +200,7 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     const std::vector<PartyMember> next{PartyMember{0, replacement, std::nullopt, false, 5.0f, {}}};
     REQUIRE(scene.open(device, context, world, next, options));
     REQUIRE(scene.actorCount() == 1);
+    REQUIRE_FALSE(scene.gameOver().active());
     REQUIRE(scene.actor(3) == nullptr);
     REQUIRE(scene.actor(1) == nullptr);
     REQUIRE(scene.animator(3) == nullptr);
@@ -1046,7 +1072,7 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     for (s32 i = 0; i < 1200 && outcome == PlayOutcome::Running; ++i) {
         outcome = scene.update(1.0 / 60.0, still);
     }
-    REQUIRE(outcome == PlayOutcome::Fallen);
+    REQUIRE(outcome == PlayOutcome::GameOver);
     const std::vector<PartyMember> after = scene.party();
     REQUIRE(after.size() == 1);
     REQUIRE(after[0].fallen);
