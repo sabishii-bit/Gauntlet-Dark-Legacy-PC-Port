@@ -1,4 +1,4 @@
-#include <cmath>
+#include <algorithm>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -58,6 +58,7 @@ struct Fixture {
         input.right = true;
         menu.update(input, 1);
     }
+    void release() { menu.update({}, 1); }
 };
 
 TEST_CASE("settings audio changes persist transactionally and stay bounded", "[settings]") {
@@ -67,36 +68,107 @@ TEST_CASE("settings audio changes persist transactionally and stay bounded", "[s
     MenuInput left;
     left.left = true;
     f.menu.update(left, 1);
-    CHECK(std::abs(f.config.audio.masterVolume - 0.95f) < 0.0001f);
+    CHECK(f.writes == 0);
+    CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 127);
+    f.release();
     CHECK(f.writes == 1);
     f.fail = true;
     f.menu.update(left, 1);
+    f.release();
     CHECK(f.writes == 1);
-    CHECK(f.menu.config().audio.masterVolume == f.config.audio.masterVolume);
+    CHECK(AudioSlider::value(f.config.audio.musicVolume) == 127);
+    CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 126);
     f.fail = false;
-    for (s32 i = 0; i < 30; ++i) {
-        f.menu.update(left, 1);
-    }
-    CHECK(f.config.audio.masterVolume == 0);
+    left.left = false;
+    left.leftHeld = true;
+    f.menu.update(left, 255);
+    f.release();
+    CHECK(f.config.audio.musicVolume == 0);
     f.down();
     f.right();
-    CHECK(std::abs(f.config.audio.musicVolume - 0.75f) < 0.0001f);
+    f.release();
+    CHECK(AudioSlider::value(f.config.audio.effectsVolume) == 129);
     f.down();
     f.menu.update(left, 1);
-    CHECK(std::abs(f.config.audio.effectsVolume - 0.95f) < 0.0001f);
+    CHECK(f.menu.config().audio.stereo); // held alone does not repeat the mode toggle
+    CHECK(f.menu.menu().definition().items[2].markedPart == 2);
+    f.right();
+    CHECK(f.menu.menu().definition().items[2].markedPart == 1);
+    f.release();
+    CHECK_FALSE(f.config.audio.stereo);
+    f.select();
+    CHECK_FALSE(f.menu.config().audio.stereo); // confirm is a no-op
+    left.leftHeld = false;
+    left.left = true;
+    f.menu.update(left, 1);
+    CHECK(f.menu.menu().definition().items[2].markedPart == 2);
+    f.release();
+    CHECK(f.config.audio.stereo);
+    CHECK(f.config.audio.masterVolume == 1);
+}
+
+TEST_CASE("options omit generic instructions but retain actionable notices", "[settings]") {
+    Fixture f;
+    std::vector<BitmapGlyph> glyphs;
+    for (s32 c = 'A'; c <= 'Z'; ++c) {
+        glyphs.push_back({c, 16, 0, 0});
+    }
+    auto font = BitmapFont::fromGlyphs(32, 16, std::move(glyphs));
+    f.painter.setFont(&font, &f.texture);
+    const auto footerDrawn = [&] {
+        test::FakeRenderDevice device;
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        f.menu.draw(canvas, f.painter, {});
+        canvas.end();
+        return std::ranges::any_of(device.draws, [](const auto& draw) {
+            return std::ranges::any_of(draw.vertices,
+                                       [](const auto& vertex) { return vertex.position.y >= 276; });
+        });
+    };
+    CHECK_FALSE(footerDrawn()); // options root
+    f.select();
+    f.fail = true;
+    f.right();
+    f.release();
+    CHECK(footerDrawn()); // failed persistence remains visible
+    f.fail = false;
+    f.back();
+    f.down();
+    f.select();
+    f.select();
+    CHECK(footerDrawn()); // difficulty applies next level
+    f.back();
+    f.back();
+    f.down();
+    f.select();
+    CHECK_FALSE(footerDrawn()); // compass
+    f.back();
+    f.down();
+    f.select();
+    CHECK_FALSE(footerDrawn()); // controls
+    f.down();
+    f.down();
+    f.select();
+    CHECK(f.menu.capturing());
+    CHECK(footerDrawn()); // binding capture still explains what it is waiting for
 }
 
 TEST_CASE("difficulty and compass options survive a configuration save", "[settings]") {
     Fixture f;
     f.down();
     f.select();
-    f.right();
+    f.select(); // difficulty submenu
+    f.down();
+    f.select();
     REQUIRE(f.config.difficulty.level == "hard");
+    f.back();
     f.back();
     f.down();
     f.select();
-    f.right();
-    REQUIRE_FALSE(f.config.camera.compass);
+    f.down();
+    f.select();
+    REQUIRE(f.config.camera.compass);
     const auto file = test::scratchDirectory("menu-settings") / "settings.json";
     f.config.saveFile(file);
     GameConfig restored;
@@ -106,6 +178,80 @@ TEST_CASE("difficulty and compass options survive a configuration save", "[setti
     MenuInput back;
     back.back = true;
     CHECK(f.menu.update(back, 1).action == MenuAction::Back);
+}
+
+TEST_CASE("retail menu scopes exclude title-only and tower-only settings", "[settings]") {
+    Fixture f;
+    const auto open = [&](SettingsMenu::Scope scope) {
+        f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, scope);
+        std::vector<s32> codes;
+        for (const auto& item : f.menu.menu().definition().items) {
+            codes.push_back(item.code);
+        }
+        return codes;
+    };
+    CHECK(open(SettingsMenu::Scope::Title) == std::vector<s32>{0, 1, 2, 3});
+    CHECK(open(SettingsMenu::Scope::Tower) == std::vector<s32>{0, 2, 3});
+    CHECK(open(SettingsMenu::Scope::Level) == std::vector<s32>{0, 3});
+}
+
+TEST_CASE("audio previews held ticks and persists once on release", "[settings]") {
+    Fixture f;
+    s32 previews = 0;
+    f.menu.open(
+        f.config, &f.strings,
+        [&](const auto&) {
+            ++f.writes;
+            return true;
+        },
+        f.painter, {}, {}, SettingsMenu::Scope::Title,
+        [&](const AudioConfig& audio) {
+            ++previews;
+            CHECK(audio.masterVolume == 1);
+        });
+    f.select();
+    REQUIRE(f.menu.menu().definition().items.size() == 3);
+    CHECK(f.menu.menu().definition().items[0].text == "Music Volume");
+    CHECK(f.menu.menu().definition().items[0].extraSpacing == 52);
+    CHECK(f.menu.menu().definition().x == 128);
+    CHECK(f.menu.menu().itemY(0) == 108);
+    f.select();
+    CHECK(previews == 0);
+    MenuInput hold;
+    hold.rightHeld = true;
+    f.menu.update(hold, 2);
+    f.menu.update(hold, 6);
+    CHECK(AudioSlider::value(f.menu.config().audio.musicVolume) == 136);
+    CHECK(previews == 2);
+    CHECK(f.writes == 0);
+    f.back();
+    CHECK(f.writes == 1);
+    CHECK(f.menu.page() == SettingsMenu::Page::Root);
+}
+
+TEST_CASE("volume sliders use the five original sprite extents and inactive opacities",
+          "[settings]") {
+    test::FakeTexture left{64, 64};
+    test::FakeTexture empty{128, 32};
+    test::FakeTexture fill{128, 32};
+    test::FakeTexture knob{32, 64};
+    test::FakeTexture right{64, 64};
+    const AudioSlider slider{{&left, &empty, &fill, &knob, &right}};
+    test::FakeRenderDevice device;
+    Canvas canvas;
+    canvas.begin(device, Mat4{1});
+    slider.draw(canvas, 128, 133, 0, false, 255);
+    canvas.end();
+    REQUIRE(device.draws.size() == 5);
+    CHECK(Vec2(device.draws[0].vertices[0].position) == Vec2{76, 133});
+    CHECK(Vec2(device.draws[1].vertices[0].position) == Vec2{128, 144});
+    const auto& fillDraw = device.draws[2];
+    const auto [min, max] = std::ranges::minmax_element(fillDraw.vertices, {},
+                                                        [](const auto& v) { return v.position.x; });
+    CHECK(max->position.x - min->position.x == 1);
+    CHECK(fillDraw.vertices[0].color == Color::white().withAlpha(95));
+    CHECK(Vec2(device.draws[3].vertices[0].position) == Vec2{109, 135});
+    CHECK(Vec2(device.draws[4].vertices[0].position) == Vec2{368, 133});
 }
 
 TEST_CASE("controls capture keyboard and any title controller without consuming confirmation",

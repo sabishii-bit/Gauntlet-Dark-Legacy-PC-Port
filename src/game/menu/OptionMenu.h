@@ -11,6 +11,7 @@
 #include "engine/ui/ModelSprite.h"
 #include "engine/ui/TextPainter.h"
 
+#include "game/menu/AudioSlider.h"
 #include "game/menu/MenuInput.h"
 
 namespace gdl::game {
@@ -27,6 +28,10 @@ struct MenuItem {
     s32 code = 0;
     s32 extraSpacing = 0; ///< pixels added below the item
     bool enabled = true;  ///< disabled items are greyed and skipped
+    /// A second choice on the same row, e.g. Mono / Stereo.
+    // NOLINTNEXTLINE(readability-redundant-member-init) -- default for partial aggregates
+    std::string alternate{};
+    s32 markedPart = 0; ///< 0: no mark, 1: first choice, 2: alternate choice
 };
 
 struct MenuColors {
@@ -81,6 +86,7 @@ u8 pulseOpacity(s32 time, s32 radius, s32 hold);
 
 /** The glyph sheets a menu can draw with; any missing sheet falls back to `font`. */
 struct MenuTextures {
+    AudioSlider audioSlider;
     const Texture* font = nullptr;
     const Texture* glow = nullptr;
     const Texture* parchment = nullptr;
@@ -136,6 +142,7 @@ public:
 
     const MenuDefinition& definition() const { return m_definition; }
     s32 selection() const { return m_selection; }
+    void markItem(usize item, s32 part) { m_definition.items.at(item).markedPart = part; }
     s32 time() const { return m_time; }
     s32 finishTimer() const { return m_finishTimer; }
     s32 columnX() const { return m_columnX; }

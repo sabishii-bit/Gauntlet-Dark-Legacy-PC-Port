@@ -26,6 +26,8 @@ struct GameContext {
     std::filesystem::path unpackedRoot;
     /** Applies and persists a settings edit; false leaves the active configuration unchanged. */
     std::function<bool(const GameConfig&)> saveSettings;
+    /** Live audio preview while dragging a slider; persistence happens on release. */
+    std::function<void(const AudioConfig&)> previewAudio;
 };
 
 } // namespace gdl::game

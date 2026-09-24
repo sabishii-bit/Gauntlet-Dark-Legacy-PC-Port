@@ -14,7 +14,7 @@ namespace gdl::game {
 bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
                            std::span<const PartyMember> party,
                            std::span<const LevelResults> results, const std::array<s32, 3>& maxima,
-                           std::string_view levelName) {
+                           std::string_view levelName, bool towerShop) {
     close();
     m_context = context;
     m_device = &device;
@@ -37,6 +37,9 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
         }
         m_text.setFont(&m_font, &m_static.texture(device, *font));
         m_session.start(party, results, maxima, classes, std::move(catalog));
+        if (towerShop) {
+            m_session.skipTally();
+        }
         // Decode every image before entering the screen: a broken export fails here,
         // not half-way through a transaction or render pass.
         for (const auto& item : m_session.catalog().items()) {

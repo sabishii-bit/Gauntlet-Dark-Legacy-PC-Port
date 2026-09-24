@@ -365,4 +365,49 @@ TEST_CASE("releasing the backdrop keeps the text fading without it", "[game][men
     }
 }
 
+TEST_CASE("a two-choice row highlights only its active part and renders one checkmark",
+          "[game][menu][settings]") {
+    auto font = BitmapFont::fromGlyphs(10, 4, {{'A', 8, 0, 0}, {'B', 8, 8, 0}, {'~', 8, 16, 0}});
+    test::FakeTexture sheet{32, 32};
+    test::FakeTexture glow{32, 32};
+    TextPainter painter;
+    painter.setFont(&font, &sheet);
+    MenuTextures textures;
+    textures.font = &sheet;
+    textures.glow = &glow;
+    MenuDefinition definition;
+    definition.x = 100;
+    definition.y = 100;
+    definition.items = {{"A", 0, 0, true, "B", 2}};
+    OptionMenu menu;
+    menu.open(definition, painter, {});
+    const auto verify = [&](s32 selectedPart) {
+        menu.markItem(0, selectedPart);
+        test::FakeRenderDevice device;
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        menu.draw(canvas, painter, textures);
+        canvas.end();
+        s32 marks = 0;
+        s32 glowingGlyphs = 0;
+        for (const auto& draw : device.draws) {
+            for (usize i = 0; i < draw.vertices.size(); i += 6) {
+                if (draw.texture == &glow) {
+                    ++glowingGlyphs;
+                    CHECK(draw.vertices[i].position.x ==
+                          100 + TextPainter::kCellInset +
+                              (selectedPart == 2 ? painter.measure("A    ", 1) : 0) -
+                              OptionMenu::kGlowExpand);
+                } else if (draw.vertices[i].uv.x == (16 + TextPainter::kCellInset) / 32) {
+                    ++marks;
+                }
+            }
+        }
+        CHECK(glowingGlyphs == 1);
+        CHECK(marks == 1);
+    };
+    verify(2);
+    verify(1);
+}
+
 } // namespace

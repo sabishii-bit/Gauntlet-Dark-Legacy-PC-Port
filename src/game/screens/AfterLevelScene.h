@@ -17,7 +17,7 @@ class AfterLevelScene {
 public:
     bool open(RenderDevice& device, const GameContext& context, std::span<const PartyMember> party,
               std::span<const LevelResults> results, const std::array<s32, 3>& maxima,
-              std::string_view levelName);
+              std::string_view levelName, bool towerShop = false);
     void close();
     bool isOpen() const { return m_open; }
     bool update(f64 seconds, const ShopSession::Inputs& inputs);

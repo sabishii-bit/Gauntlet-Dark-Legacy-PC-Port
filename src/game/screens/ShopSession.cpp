@@ -40,6 +40,13 @@ void ShopSession::start(std::span<const PartyMember> party, std::span<const Leve
         m_lanes.push_back(std::move(lane));
     }
 }
+void ShopSession::skipTally() {
+    for (auto& lane : m_lanes) {
+        if (lane.phase == ShopPhase::Tally) {
+            lane.phase = ShopPhase::Shopping;
+        }
+    }
+}
 void ShopSession::update(f64 seconds, const Inputs& inputs) {
     if (!std::isfinite(seconds) || seconds < 0) {
         return;

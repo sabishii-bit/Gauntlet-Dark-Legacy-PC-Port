@@ -98,7 +98,9 @@ void OptionMenu::open(const MenuDefinition& definition, const TextPainter& paint
     m_columnWidth = 0;
     for (const MenuItem& item : m_definition.items) {
         m_columnHeight += m_lineHeight + item.extraSpacing;
-        m_columnWidth = std::max(m_columnWidth, painter.measure(item.text, m_definition.scale));
+        const auto label =
+            item.alternate.empty() ? item.text : item.text + "    " + item.alternate + " ~";
+        m_columnWidth = std::max(m_columnWidth, painter.measure(label, m_definition.scale));
     }
 
     if (m_definition.y == -1) {
@@ -307,6 +309,31 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
     for (usize i = 0; i < m_definition.items.size(); ++i) {
         const MenuItem& item = m_definition.items[i];
         const s32 y = itemY(i);
+        if (!item.alternate.empty()) {
+            const auto first = item.text + "    ";
+            const auto x = m_definition.x;
+            const auto secondX = x + painter.measure(first, m_definition.scale);
+            drawLabel(canvas, painter, x, y, first, m_definition.scale,
+                      m_definition.colors.off.withAlpha(fade), textures.font);
+            drawLabel(canvas, painter, secondX, y, item.alternate, m_definition.scale,
+                      m_definition.colors.off.withAlpha(fade), textures.font);
+            const bool alternate = item.markedPart == 2;
+            const auto& activeText = alternate ? item.alternate : item.text;
+            const s32 activeX = alternate ? secondX : x;
+            if (static_cast<s32>(i) == m_selection) {
+                TextStyle glow;
+                glow.scale = m_definition.scale;
+                glow.color = m_definition.colors.hi.withAlpha(
+                    std::min(fade, pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks)));
+                glow.texture = textures.glow != nullptr ? textures.glow : textures.font;
+                glow.expand = kGlowExpand;
+                painter.draw(canvas, activeX, y, activeText, glow);
+            }
+            drawLabel(canvas, painter, activeX, y, activeText + " ~", m_definition.scale,
+                      m_definition.colors.on.withAlpha(fade), itemSheet(textures, true));
+            continue;
+        }
+        const auto label = item.text + (item.markedPart == 1 ? " ~" : "");
         const bool selected = static_cast<s32>(i) == m_selection;
         if (selected) {
             const u8 pulse = pulseOpacity(m_time, kPulseTicks, kPulseHoldTicks);
@@ -316,8 +343,8 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
             glow.color = m_definition.colors.hi.withAlpha(glowAlpha);
             glow.texture = textures.glow != nullptr ? textures.glow : textures.font;
             glow.expand = kGlowExpand;
-            painter.draw(canvas, m_definition.x, y, item.text, glow);
-            drawLabel(canvas, painter, m_definition.x, y, item.text, m_definition.scale,
+            painter.draw(canvas, m_definition.x, y, label, glow);
+            drawLabel(canvas, painter, m_definition.x, y, label, m_definition.scale,
                       m_definition.colors.on.withAlpha(fade), itemSheet(textures, true));
         } else {
             Color color = m_definition.parchmentFont && !garamondActive
@@ -326,7 +353,7 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
             if (!item.enabled) {
                 color = color.withAlpha(static_cast<u8>(fade / 2));
             }
-            drawLabel(canvas, painter, m_definition.x, y, item.text, m_definition.scale, color,
+            drawLabel(canvas, painter, m_definition.x, y, label, m_definition.scale, color,
                       itemSheet(textures, false));
         }
     }

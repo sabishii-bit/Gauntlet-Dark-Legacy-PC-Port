@@ -57,12 +57,12 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
     CHECK_FALSE(device.draws.empty());
     SECTION("resume and quit confirmation") {
         CHECK(step(back) == PauseOutcome::Resume);
-        for (s32 i = 0; i < 4; ++i) {
+        for (s32 i = 0; i < 3; ++i) {
             step(down);
         }
         step(select);
         CHECK(step(select) == PauseOutcome::Running); // default No
-        for (s32 i = 0; i < 4; ++i) {
+        for (s32 i = 0; i < 3; ++i) {
             step(down);
         }
         step(select);
@@ -70,28 +70,26 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
         CHECK(step(select) == PauseOutcome::Title);
     }
     SECTION("shared settings") {
-        for (s32 i = 0; i < 3; ++i) {
-            step(down);
-        }
         step(select);
         step(select); // settings -> audio
         MenuInput left;
         left.left = true;
         step(left);
+        step({});
         REQUIRE(settingsSaved);
-        CHECK(config.audio.masterVolume < 1);
+        CHECK(AudioSlider::value(config.audio.musicVolume) == 127);
         step(back);
         step(back);
-        CHECK(step(select) == PauseOutcome::Resume);
+        CHECK(step(back) == PauseOutcome::Resume);
     }
     SECTION("save and reload") {
         step(down);
         step(select);
+        step(select); // manage -> save
         step(select); // save -> slot 1
         REQUIRE(menu.party()[0].slot == 0);
         CHECK_FALSE(party[0].slot.has_value());
         CHECK(step(select) == PauseOutcome::Running); // acknowledge saved
-        step(down);
         step(down);
         step(select);
         step(select); // load -> slot -> confirm

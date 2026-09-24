@@ -14,6 +14,25 @@ using Catch::Matchers::WithinAbs;
 
 constexpr f64 kEpsilon = 1e-5;
 
+TEST_CASE("mono folds both stereo channels without changing the output format", "[audio][mixer]") {
+    AudioMixer mixer(48000);
+    auto stream = mixer.createStream({48000, 2});
+    stream->push(std::array<f32, 4>{0.25f, 0.75f, -0.5f, 0.5f});
+    mixer.setStereo(false);
+    std::array<f32, 4> out{};
+    mixer.mix(out);
+    CHECK_THAT(out[0], WithinAbs(0.5, kEpsilon));
+    CHECK(out[0] == out[1]);
+    CHECK_THAT(out[2], WithinAbs(0.0, kEpsilon));
+    CHECK(out[2] == out[3]);
+    mixer.setStereo(true);
+    stream->push(std::array<f32, 2>{0.25f, 0.75f});
+    std::array<f32, 2> stereo{};
+    mixer.mix(stereo);
+    CHECK_THAT(stereo[0], WithinAbs(0.25, kEpsilon));
+    CHECK_THAT(stereo[1], WithinAbs(0.75, kEpsilon));
+}
+
 TEST_CASE("streams are summed into a zeroed buffer", "[audio][mixer]") {
     AudioMixer mixer(48000);
     REQUIRE(mixer.outputRate() == 48000);

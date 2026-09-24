@@ -11,7 +11,7 @@
 #include "game/screens/SaveMenu.h"
 
 namespace gdl::game {
-enum class PauseOutcome : u8 { Running, Resume, Reload, Title };
+enum class PauseOutcome : u8 { Running, Resume, Reload, Title, ReturnTower, Shop };
 
 /** A paused party's menu. File operations never mutate a running scene directly. */
 class PauseMenu {
@@ -30,8 +30,9 @@ public:
     const OptionMenu& menu() const { return m_menu; }
 
 private:
-    enum class Page : u8 { Main, Files, Options, Quit };
+    enum class Page : u8 { Main, Manage, Files, Options, Quit };
     void showMain();
+    void showManage();
     void showFiles();
     MenuDefinition backdrop() const;
     std::string text(std::string_view id) const;
@@ -50,5 +51,6 @@ private:
     Page m_page = Page::Main;
     s32 m_player = 0;
     bool m_open = false;
+    bool m_inTower = true;
 };
 } // namespace gdl::game

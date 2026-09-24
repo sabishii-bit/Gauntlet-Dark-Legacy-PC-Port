@@ -1788,21 +1788,33 @@ black duplicate shell that fades out this way, leaving the stone mesh intact.
 `screens/PauseMenu` owns the paused overlay and takes a party snapshot. `SaveMenu`
 is its pure file-operation/confirmation controller; it updates that snapshot only
 after success and protects other joined players' slots. `Gauntlet` freezes scene
-updates and the audio mixer while paused. On resume it applies successful slot
+updates while paused; audio keeps playing so Audio settings can be previewed.
+On resume it applies successful slot
 assignments without reopening the scene; on load it closes the old scene without
 autosaving it and restores the snapshot in the tower. Shutdown while paused saves
 the snapshot, not the discarded live scene. Saves are character progress, not
 mid-level world snapshots. Corrupt existing files still require overwrite consent.
 
 `menu/SettingsMenu` serves both title and pause screens, using `GameContext`'s
-persistence callback. Failed writes leave active settings unchanged. Audio applies
-immediately; difficulty is sampled on the next level opening. Gameplay remapping
+persistence callback. Discrete failed writes leave active settings unchanged.
+Audio previews immediately, persists on directional release or leaving Audio, and
+keeps a visible retryable error on failure; difficulty is sampled on the next level opening. Gameplay remapping
 does not rewrite menu navigation or action-chord semantics. Capture reserves pause
 and cancellation inputs; paused capture is restricted to its owner's controller,
 while title capture accepts any controller. `CompassHud` draws a world-axis compass.
 `replaceTextFile` uses exclusive sibling temporary creation and rename; failed
 writes/replacements preserve the previous file, without promising crash durability.
 Focused tests: `[settings],[save-menu],[pause],[compass],[save],[file],[mixer]`.
+
+Audio uses byte-valued Music/Sfx sliders and a two-choice Mono/Stereo row.
+`MenuItem::markedPart` identifies the saved/previewed choice independently of
+row focus: only the active part receives the highlight and checkmark. The font's
+`~` glyph is a checkmark, never a separator. Master volume remains config-only.
+Title, tower and level settings have distinct entry lists. Tower Start offers
+Settings, Manage Character, Shop, Inventory (disabled until implemented), and
+Quit Game; level Start offers Settings and Quit Level. The PC binding editor and
+save-file management are not claims of complete retail menu parity; multiplayer
+rules remain disabled until their gameplay is implemented.
 
 ## End-level shop ownership
 

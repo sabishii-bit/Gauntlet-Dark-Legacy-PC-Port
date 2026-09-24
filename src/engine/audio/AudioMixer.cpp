@@ -30,7 +30,19 @@ void AudioMixer::mix(std::span<f32> stereoOut) {
         const bool abandoned = stream.use_count() == 1 && stream->queuedSeconds() == 0.0;
         return stream->drained() || abandoned;
     });
+    if (!m_stereo) {
+        for (usize i = 0; i + 1 < stereoOut.size(); i += 2) {
+            const f32 mono = (stereoOut[i] + stereoOut[i + 1]) * 0.5f;
+            stereoOut[i] = mono;
+            stereoOut[i + 1] = mono;
+        }
+    }
     limit(stereoOut);
+}
+
+void AudioMixer::setStereo(bool stereo) {
+    const std::scoped_lock lock(m_mutex);
+    m_stereo = stereo;
 }
 
 void AudioMixer::setPaused(bool paused) {
