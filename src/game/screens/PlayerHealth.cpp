@@ -5,6 +5,9 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+
+#include "game/combat/Damage.h"
+#include "game/players/PowerupEffects.h"
 namespace gdl::game {
 namespace {
 constexpr f32 kPainEvery = 30.0f; ///< harm from blows between cries
@@ -32,8 +35,26 @@ f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directe
 
 void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed,
                         bool inTower, f32 damageScale, const Events& events,
-                        const PlayerImpact& impact) {
+                        const PlayerImpact& impact, bool bossEncounter) {
     if (runtime.life != PlayerLife::Standing || inTower || damage <= 0.0f) {
+        return;
+    }
+    if (damage > 1.0f) {
+        damage *= damageScale;
+    }
+    const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
+    PlayerImpact received = impact;
+    if (kind == HurtKind::Gas) {
+        received.flags |= Damage::kGas;
+    }
+    const Damage modified = Damage::modify(damage, received.flags, worn.armor, 0, bossEncounter);
+    damage = modified.amount;
+    received.flags = modified.flags;
+    if ((received.flags & Damage::kLow) != 0 && (worn.special & powerup::kLevitation) != 0) {
+        return;
+    }
+    if (damage < 0) {
+        runtime.actor.save().progress().health += static_cast<s32>(std::lround(-damage));
         return;
     }
     const f32 unguarded = damage;
@@ -43,9 +64,6 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     }
     if (damage <= 0.0f) {
         return;
-    }
-    if (damage > 1.0f) {
-        damage *= damageScale;
     }
     if (damage > 1.0f) {
         runtime.hitFlashTicks = kHitFlashTicks;
@@ -67,8 +85,8 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     save.progress().health = left;
     const bool braced = runtime.figure != nullptr && (runtime.figure->animator().defending() ||
                                                       runtime.figure->animator().shoving());
-    runtime.reaction = PlayerImpact::combine(runtime.reaction,
-                                             impact.reaction(damage, runtime.actor.yaw(), braced));
+    runtime.reaction = PlayerImpact::combine(
+        runtime.reaction, received.reaction(damage, runtime.actor.yaw(), braced));
     // Crossing into low health is remarked on by name rather than cried over.
     if (before > kHealthLowMark && left <= kHealthLowMark) {
         events.named(kBadlyLine);

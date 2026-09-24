@@ -138,4 +138,39 @@ TEST_CASE("surviving hits request reactions after health gates and damage scalin
     f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, impact);
     REQUIRE(f.player.reaction == PlayerDeed::None);
 }
+TEST_CASE("inventory protection reaches damage healing and reaction handling",
+          "[game][items][player-health]") {
+    Fixture f;
+    auto& inventory = f.player.actor.save().progress().inventory;
+    SECTION("silver invulnerability") {
+        inventory.addPowerup(6, 0x10000, 0, 30);
+        f.hit(100);
+        CHECK(f.player.actor.save().health() == 1000);
+        CHECK(f.player.hitFlashTicks == 0);
+        inventory.powerups[0].on = false;
+        f.hit(100);
+        CHECK(f.player.actor.save().health() == 900);
+    }
+    SECTION("gold invulnerability converts scaled damage into health") {
+        inventory.addPowerup(6, 0x110000, 0, 30);
+        f.hit(100, HurtKind::Blow, false, 2);
+        CHECK(f.player.actor.save().health() == 1020);
+        CHECK(f.player.reaction == PlayerDeed::None);
+        CHECK(f.sounds.empty());
+    }
+    SECTION("gas mask does not grant physical invulnerability") {
+        inventory.addPowerup(6, 0x2008, 0, 15);
+        f.hit(10, HurtKind::Gas);
+        CHECK(f.player.actor.save().health() == 1000);
+        f.hit(10);
+        CHECK(f.player.actor.save().health() == 990);
+    }
+    SECTION("knockback armor strips the reaction without discarding damage") {
+        inventory.addPowerup(6, 0x40000, 0, 15);
+        f.health.hurt(f.player, 30, HurtKind::Blow, true, false, 1, f.events,
+                      {PlayerImpact::kKnockDown, {0, 0, 1}});
+        CHECK(f.player.actor.save().health() == 970);
+        CHECK(f.player.reaction == PlayerDeed::None);
+    }
+}
 } // namespace

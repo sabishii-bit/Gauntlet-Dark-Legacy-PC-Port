@@ -32,6 +32,7 @@ public:
     f32 wallRadius() const { return m_wallRadius; }
     const CritterMovement& movement() const { return m_movement; }
     f32 armor() const { return m_armor; }
+    u32 shieldFlags() const { return m_shieldFlags; }
     f32 maxHealth() const { return m_maxHealth; }
     f32 experience() const { return m_experience; }
     f32 wakeThreshold() const { return m_wake; } ///< how near the party comes before a boss stirs
@@ -65,6 +66,7 @@ private:
     f32 m_wallRadius = 1.0f;
     CritterMovement m_movement;
     f32 m_armor = 0.0f;
+    u32 m_shieldFlags = 0;
     f32 m_maxHealth = 1.0f;
     f32 m_experience = 0.0f;
     f32 m_wake = 0.0f;

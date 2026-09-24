@@ -530,4 +530,26 @@ TEST_CASE("enemy hits queue feedback once and animate masked death skins to comp
     enemies.close();
     CHECK(enemies.takeFeedback().empty());
 }
+TEST_CASE("invisibility breaks swarm targeting without removing the physical player",
+          "[game][items][enemies][unpacked]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    std::vector<EnemyView> party{playerAt({0, 0, 10})};
+    enemies.update(kTicks, kStep, party);
+    REQUIRE(enemies.targetOf(*id) == 0);
+    party[0].invisible = true;
+    enemies.update(kTicks, kStep, party);
+    CHECK(enemies.targetOf(*id) == -1);
+    CHECK_FALSE(party[0].hidden);
+    party[0].invisible = false;
+    enemies.update(kTicks, kStep, party);
+    CHECK(enemies.targetOf(*id) == 0);
+}
 } // namespace

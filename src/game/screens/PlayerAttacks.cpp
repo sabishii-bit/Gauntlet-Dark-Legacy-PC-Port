@@ -3,9 +3,11 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <numbers>
 
 #include "engine/core/Types.h"
 
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
 #include "game/world/TargetAssist.h"
@@ -16,9 +18,9 @@ constexpr std::array<std::string_view, 5> kShieldTrees{"MS_FIRE", "MS_FIRE", "MS
                                                        "MS_ACID"};
 constexpr std::array<std::string_view, 5> kShieldSounds{"S_SHIELD2", "S_SHIELD2", "S_SHIELD1",
                                                         "S_SHIELD3", "S_SHIELD4"};
-constexpr f32 kShieldSeconds = 3.0f;   ///< how long a potion's ring lasts
-constexpr f32 kShieldRadius = 25.0f;   ///< at full size; it is sized by the magic, as a burst is
-constexpr f32 kShieldPotency = 0.25f;  ///< of the character's magic power, its harm
+constexpr f32 kShieldSeconds = 3.0f; ///< how long a potion's ring lasts
+constexpr f32 kShieldDamage = 25.0f;
+constexpr f32 kShieldPotency = 0.25f;  ///< of the character's magic power, its radius
 constexpr f32 kShieldHarmEvery = 0.5f; ///< seconds between its harming what it touches
 constexpr std::string_view kBlockEffect = "BLOCKFX";
 constexpr f32 kBlockWorth = 2.0f;      ///< what a guard must take off a hurt for it to show
@@ -288,8 +290,9 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
     const f32 size = std::min(PlayerArsenal::kBurstPerPower * power, 1.0f);
     PotionShield shield;
     shield.actor = index;
-    shield.radius = kShieldRadius * size;
-    shield.damage = kShieldPotency * power;
+    shield.radius = kShieldPotency * power;
+    shield.damage = kShieldDamage;
+    shield.flags = EnemyHit::kMagic | static_cast<u32>(kind);
     shield.secondsLeft = kShieldSeconds;
     if (m_resources->weapons.loaded() &&
         m_resources->weapons.trees.find(kShieldTrees[look]).has_value()) {
@@ -304,7 +307,7 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
     m_shields.push_back(shield);
 }
 
-/** The rings go about with their characters and harm the barrels they touch. */
+/** The rings follow their bearers and harm nearby creatures and breakable fixtures. */
 void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
                                   const Targets& targets) {
     if (!m_resources.has_value()) {
@@ -312,7 +315,8 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
     }
     for (PotionShield& shield : m_shields) {
         shield.secondsLeft -= seconds;
-        if (shield.actor >= players.size() || players[shield.actor].life != PlayerLife::Standing) {
+        if (shield.secondsLeft <= 0 || shield.actor >= players.size() ||
+            players[shield.actor].life != PlayerLife::Standing) {
             shield.secondsLeft = 0.0f;
             continue;
         }
@@ -323,6 +327,31 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             continue;
         }
         shield.harmIn = kShieldHarmEvery;
+        const auto& actor = players[shield.actor].actor;
+        for (const s32 id : targets.opponents.enemies().reachedBy(
+                 at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
+            targets.opponents.strikeEnemy(id, shield.damage, shield.flags,
+                                          targets.opponents.enemies().positionOf(id) - at,
+                                          actor.player(), players);
+        }
+        for (const s32 id : targets.opponents.critters().reachedBy(
+                 at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
+            targets.opponents.strikeCritter(id, shield.damage, shield.flags,
+                                            targets.opponents.critters().positionOf(id) - at,
+                                            actor.player(), std::nullopt, false, players);
+        }
+        for (const s32 id : targets.opponents.generators().within(at, shield.radius)) {
+            targets.opponents.strikeGenerator(id, shield.damage, actor.player());
+        }
+        if (targets.opponents.bosses().within(at, shield.radius)) {
+            EnemyHit hit;
+            hit.damage = shield.damage;
+            hit.flags = shield.flags;
+            hit.player = actor.player();
+            hit.level = experienceLevel(actor.save().experience());
+            hit.direction = *targets.opponents.bosses().position() - at;
+            targets.opponents.bosses().hurt(hit);
+        }
         for (const usize barrel : targets.fixtures.barrels().within(at, shield.radius)) {
             targets.fixtures.strikeBarrel(barrel, shield.damage,
                                           players[shield.actor].actor.player(), players,
@@ -515,7 +544,11 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
                                              actor.save().progress());
         damage = PlayerMissiles::damageFor(block.strength());
     }
-    u32 flags = 0;
+    const auto worn = PowerupEffects::of(actor.save().progress().inventory);
+    u32 flags = worn.weapon;
+    if (worn.grown()) {
+        damage *= 2;
+    }
     if (animator.meleePower()) {
         damage *= 2;
         flags |= EnemyHit::kKnockBack;
@@ -567,6 +600,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         } else if (impact.target >= kBossTargetBase) {
             EnemyHit hit;
             hit.damage = impact.damage;
+            hit.flags = impact.flags;
             hit.player = impact.owner;
             hit.where = impact.position;
             for (const PlayerRuntime& runtime : players) {
@@ -587,9 +621,9 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                     direction.y = 0.0f;
                 }
             }
-            targets.opponents.strikeCritter(impact.target - kCritterTargetBase, impact.damage, 0,
-                                            direction, impact.owner, impact.position, false,
-                                            players);
+            targets.opponents.strikeCritter(impact.target - kCritterTargetBase, impact.damage,
+                                            impact.flags, direction, impact.owner, impact.position,
+                                            false, players);
         } else if (impact.target >= kGeneratorTargetBase) {
             targets.opponents.strikeGenerator(impact.target - kGeneratorTargetBase, impact.damage,
                                               impact.owner);
@@ -603,8 +637,9 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                     direction.y = 0.0f;
                 }
             }
-            targets.opponents.strikeEnemy(impact.target - kEnemyTargetBase, impact.damage, 0,
-                                          direction, impact.owner, players, false, impact.position);
+            targets.opponents.strikeEnemy(impact.target - kEnemyTargetBase, impact.damage,
+                                          impact.flags, direction, impact.owner, players, false,
+                                          impact.position);
         } else if (impact.target >= 0) {
             targets.fixtures.strikeBarrel(static_cast<usize>(impact.target), impact.damage,
                                           impact.owner, players, targets.fixtureEvents);

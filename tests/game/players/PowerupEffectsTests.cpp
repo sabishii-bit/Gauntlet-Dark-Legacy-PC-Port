@@ -88,4 +88,31 @@ TEST_CASE("keys are spent and potions taken out one at a time", "[game][players]
     REQUIRE(inventory.nextHeld(7, 1) == 2);
 }
 
+TEST_CASE("only the longest enabled amulet supplies the elemental nibble",
+          "[game][items][powerups]") {
+    Inventory inventory;
+    inventory.addPowerup(5, 1, 0, 90);
+    inventory.addPowerup(5, 2, 0, 60);
+    inventory.addPowerup(5, powerup::kThreeWayShot, 0, 30);
+    CHECK(PowerupEffects::of(inventory).weapon == (powerup::kThreeWayShot | 1));
+    inventory.powerups[0].on = false;
+    CHECK(PowerupEffects::of(inventory).weapon == (powerup::kThreeWayShot | 2));
+    inventory.powerups[0].on = true;
+    inventory.powerups[1].strength = 100;
+    CHECK(PowerupEffects::of(inventory).weapon == (powerup::kThreeWayShot | 2));
+}
+
+TEST_CASE("charged powerups expire on the final use and disabled items cannot be spent",
+          "[game][items][inventory]") {
+    Inventory inventory;
+    inventory.addPowerup(5, 0x100000, 2, -1);
+    REQUIRE(inventory.spendPowerup(5, 0x100000));
+    CHECK(inventory.powerups[0].charge == 1);
+    inventory.powerups[0].on = false;
+    CHECK_FALSE(inventory.spendPowerup(5, 0x100000));
+    inventory.powerups[0].on = true;
+    REQUIRE(inventory.spendPowerup(5, 0x100000));
+    CHECK_FALSE(inventory.powerups[0].held());
+    CHECK_FALSE(inventory.spendPowerup(5, 0x100000));
+}
 } // namespace

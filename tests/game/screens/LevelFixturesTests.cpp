@@ -247,4 +247,25 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     CHECK(f.world.placedItems().item(held).position == openedPosition);
     f.fixtures.clear();
 }
+TEST_CASE("armor items prevent fixture knockdown before the health callback",
+          "[game][items][level-fixtures][unpacked]") {
+    Fixture f;
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    REQUIRE(f.world.load(f.device, root, *level));
+    REQUIRE_FALSE(f.world.isTower());
+    f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
+    REQUIRE(f.players[0].reaction != PlayerDeed::None);
+    for (const u32 flags : {0x10000U, 0x110000U, 0x40000U}) {
+        f.players[0].actor.save().progress().inventory = {};
+        f.players[0].actor.save().progress().inventory.addPowerup(6, flags, 0, 20);
+        f.players[0].reaction = PlayerDeed::None;
+        f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
+        CHECK(f.players[0].reaction == PlayerDeed::None);
+    }
+}
 } // namespace

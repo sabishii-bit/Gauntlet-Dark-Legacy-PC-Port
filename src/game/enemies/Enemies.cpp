@@ -7,6 +7,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/Damage.h"
 #include "game/enemies/EnemyMissiles.h"
 
 namespace gdl::game {
@@ -544,7 +545,7 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
                            std::span<f32> crowding) {
     bool anyone = false;
     for (const EnemyView& view : players) {
-        anyone = anyone || !view.hidden;
+        anyone = anyone || (!view.hidden && !view.invisible);
     }
     if (!anyone) {
         enemy.recognized = false;
@@ -554,7 +555,7 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         (m_frame % kRetargetEvery) == (static_cast<u32>(slot) % kRetargetEvery) || enemy.target < 0;
     if (enemy.target >= 0) {
         const EnemyView* current = viewOf(players, enemy.target);
-        if (current == nullptr || current->hidden) {
+        if (current == nullptr || current->hidden || current->invisible) {
             look = true;
         }
     }
@@ -564,7 +565,7 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         enemy.weightedDistance = 100000.0f;
         enemy.targetDistance = 100000.0f;
         for (const EnemyView& view : players) {
-            if (view.hidden) {
+            if (view.hidden || view.invisible) {
                 continue;
             }
             const f32 distance = flatDistance(view.position, enemy.position);
@@ -951,14 +952,18 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
         const f32 gap = static_cast<f32>(hit.level) - m_scales.playerLevel;
         amount *= gap < 0.0f ? 1.0f + 0.01f * gap : 1.0f + 0.1f * gap;
     }
-    amount = std::max(amount - kind.armor, hit.player >= 0 ? 1.0f : 0.0f);
+    const Damage modified = Damage::modify(amount, hit.flags, 0, kind.armor, false);
+    amount = std::max(modified.amount, hit.player >= 0 ? 1.0f : 0.0f);
     if (amount <= 0.0f) {
         return;
     }
     enemy.state = State::Active;
     enemy.health -= amount;
     enemy.hurtPending += amount;
-    enemy.hurtFlags |= hit.flags;
+    if ((modified.flags & Damage::kElement) != 0) {
+        enemy.hurtFlags &= ~Damage::kElement;
+    }
+    enemy.hurtFlags |= modified.flags;
     const f32 length = glm::length(hit.direction);
     if (length > 0.001f) {
         enemy.hurtDirection = hit.direction / length;

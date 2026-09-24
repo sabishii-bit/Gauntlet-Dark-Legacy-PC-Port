@@ -315,4 +315,72 @@ TEST_CASE("a melee contact routes damage sound and impact once through level opp
     CHECK(f.effects.count() == 0);
     f.audio.close();
 }
+TEST_CASE("potion shields harm enemies behind the bearer and stop at expiration",
+          "[game][items][player-attacks][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    Fixture f;
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    EnemyScales scales;
+    scales.health = 10;
+    enemies.open(f.device, root, nullptr, 4, scales, 7);
+    REQUIRE(enemies.loadKind(13));
+    EnemySpawn spawn;
+    spawn.kind = 13;
+    spawn.tier = 3;
+    spawn.placed = true;
+    spawn.position = {0, 0, -2};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    f.players[0].actor.save().progress().inventory.addPotions(1, 1);
+    const auto before = enemies.healthOf(*id);
+    f.attacks.shieldPotion(0, f.players);
+    f.attacks.updateShields(0.01f, f.players, f.targets);
+    CHECK(enemies.healthOf(*id) < before);
+    const auto after = enemies.healthOf(*id);
+    f.attacks.updateShields(0.1f, f.players, f.targets);
+    CHECK(enemies.healthOf(*id) == after);
+    f.attacks.updateShields(4, f.players, f.targets);
+    CHECK(enemies.healthOf(*id) == after);
+    f.attacks.clear();
+    f.opponents.close();
+}
+TEST_CASE("weapon item flags survive the flight and produce elemental enemy feedback",
+          "[game][items][player-attacks][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    Fixture f;
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(13));
+    EnemySpawn spawn;
+    spawn.kind = 13;
+    spawn.tier = 3;
+    spawn.placed = true;
+    spawn.position = {0, 0, 2};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const auto before = enemies.healthOf(*id);
+    MissileLaunch launch;
+    launch.owner = 3;
+    launch.position = {0, 1, 0};
+    launch.velocity = Vec3{0, 0, 30};
+    launch.spec = &MissileSpec::of(0);
+    launch.damage = 10;
+    launch.flags = 1 | EnemyHit::kKnockDown;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(0.1f, f.players, f.targets);
+    CHECK(enemies.healthOf(*id) == Approx(before - (10 - enemyKind(13).armor) * 1.5f));
+    const auto feedback = enemies.takeFeedback();
+    REQUIRE(feedback.size() == 1);
+    CHECK(feedback[0].flags == launch.flags);
+    f.attacks.clear();
+    f.opponents.close();
+}
 } // namespace

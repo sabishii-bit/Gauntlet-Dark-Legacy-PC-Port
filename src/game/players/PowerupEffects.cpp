@@ -99,12 +99,21 @@ constexpr std::array<PowerupName, 74> kNames{{
 
 PowerupEffects PowerupEffects::of(const Inventory& inventory) {
     PowerupEffects effects;
+    f32 elementTime = -1;
     for (const PowerupSlot& slot : inventory.powerups) {
         if (!slot.working()) {
             continue;
         }
         switch (slot.kind) {
-        case powerup::kWeapon: effects.weapon |= slot.flags; break;
+        case powerup::kWeapon:
+            // The low nibble is one element, not four independent flags.
+            if ((slot.flags & 0xF) != 0 &&
+                (elementTime < 0 || (slot.strength > 0 && slot.strength > elementTime))) {
+                elementTime = slot.strength;
+                effects.weapon = (effects.weapon & ~0xFU) | (slot.flags & 0xF);
+            }
+            effects.weapon |= slot.flags & ~0xFU;
+            break;
         case powerup::kArmor: effects.armor |= slot.flags; break;
         case powerup::kSpeed: effects.paceAdd += slot.charge; break;
         case powerup::kMagic: effects.magicAdd += slot.charge; break;

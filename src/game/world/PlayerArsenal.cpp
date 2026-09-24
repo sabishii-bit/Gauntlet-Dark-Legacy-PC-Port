@@ -81,6 +81,7 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
                       facing * (hand.z + PlayerMissiles::kMuzzle);
     launch.speed = PlayerMissiles::speedFor(stat);
     launch.damage = PlayerMissiles::damageFor(stat) * scale;
+    launch.flags = PowerupEffects::of(save.progress().inventory).weapon;
     launch.reach = PlayerMissiles::reachFor(figure.animator().attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
     launch.model = &figure.missile();
