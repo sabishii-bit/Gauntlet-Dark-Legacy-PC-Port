@@ -162,6 +162,9 @@ bool TitleScene::loadResources(RenderDevice& device, const std::filesystem::path
     m_menuTextures.glow = staticTexture("FONT32_GLOW");
     m_menuTextures.parchment = staticTexture("FONT32_PARCH");
     m_menuTextures.arrows = staticTexture("ARROWS");
+    for (usize i = 0; i < AudioSlider::kTextures.size(); ++i) {
+        m_menuTextures.audioSlider.textures[i] = staticTexture(AudioSlider::kTextures[i]);
+    }
     for (usize i = 0; i < m_menuTextures.garamond.size(); ++i) {
         m_menuTextures.garamond[i] = staticTexture(std::format("FONT32GAR{}", i));
     }
@@ -382,7 +385,8 @@ void TitleScene::openOptionsMenu() {
     menu.burn = "LOGO_BURN1";
     menu.burnArea = kOptionsBurnArea;
     m_optionsMenu.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
-                       m_context.strings, m_context.saveSettings, m_text, m_screen, menu);
+                       m_context.strings, m_context.saveSettings, m_text, m_screen, menu,
+                       SettingsMenu::Scope::Title, m_context.previewAudio);
 }
 
 /** Backing out hands the scroll to the burn effect while the text fades out. */

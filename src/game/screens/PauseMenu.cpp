@@ -18,6 +18,7 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
     m_context = context;
     m_party.assign(party.begin(), party.end());
     m_player = player;
+    m_inTower = context.tower == nullptr || context.tower->isTower();
     if (std::ranges::none_of(party,
                              [player](const auto& member) { return member.player == player; })) {
         return false;
@@ -35,6 +36,11 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
             return false;
         }
         m_art.font = &m_textures.texture(device, *font);
+        for (usize i = 0; i < AudioSlider::kTextures.size(); ++i) {
+            if (const auto image = m_textures.find(AudioSlider::kTextures[i])) {
+                m_art.audioSlider.textures[i] = &m_textures.texture(device, *image);
+            }
+        }
         m_text.setFont(&m_font, m_art.font);
         if (const auto scroll = m_textures.find("SCROLL_A")) {
             m_art.backdrop = &m_textures.texture(device, *scroll);
@@ -63,9 +69,9 @@ void PauseMenu::close() {
 }
 MenuDefinition PauseMenu::backdrop() const {
     MenuDefinition menu;
-    menu.x = -m_screen.width / 2;
-    menu.y = 112;
-    menu.scale = 0.667f;
+    menu.x = 128;
+    menu.y = -1;
+    menu.scale = 1.0f;
     menu.backdrop = "SCROLL_A";
     menu.backdropX = 16;
     menu.backdropY = 8;
@@ -81,12 +87,24 @@ MenuDefinition PauseMenu::backdrop() const {
 void PauseMenu::showMain() {
     m_page = Page::Main;
     auto menu = backdrop();
-    menu.title = text("pause.title");
-    menu.items = {{text("pause.resume"), 0},
-                  {text("select.save"), 1},
-                  {text("select.load"), 2},
-                  {text("menu.options"), 3},
-                  {text("pause.quit"), 4}};
+    menu.title = text(m_inTower ? "pause.tower" : "pause.game");
+    menu.items = {{text("pause.settings"), 3}};
+    if (m_inTower) {
+        menu.items.push_back({text("pause.manage"), 5});
+        menu.items.push_back({text("pause.shop"), 6});
+        // Keep the retail entry visible, but do not pretend an unrelated screen is
+        // the character's inventory viewer. That viewer is not implemented yet.
+        menu.items.push_back({text("pause.inventory"), 7, 0, false});
+    }
+    menu.items.push_back({text(m_inTower ? "pause.quit" : "pause.quitLevel"), 4});
+    m_menu.open(menu, m_text, m_screen);
+}
+void PauseMenu::showManage() {
+    m_page = Page::Manage;
+    auto menu = backdrop();
+    menu.title = text("pause.manage");
+    // Character files are a PC implementation of management, not a mid-level save.
+    menu.items = {{text("select.save"), 1}, {text("select.load"), 2}};
     m_menu.open(menu, m_text, m_screen);
 }
 void PauseMenu::showFiles() {
@@ -132,7 +150,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input, const Input*
             if (m_files.succeeded() && m_files.mode() == SaveMenu::Mode::Load) {
                 return PauseOutcome::Reload;
             }
-            showMain();
+            showManage();
         } else {
             showFiles();
         }
@@ -140,15 +158,18 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input, const Input*
     }
     if (m_page == Page::Quit) {
         if (event.action == MenuAction::Choice && event.code == 1) {
-            return PauseOutcome::Title;
+            return m_inTower ? PauseOutcome::Title : PauseOutcome::ReturnTower;
         }
         if (event.action == MenuAction::Back || event.action == MenuAction::Choice) {
             showMain();
         }
         return PauseOutcome::Running;
     }
-    if (event.action == MenuAction::Back || (input.start && !input.select) ||
-        (event.action == MenuAction::Choice && event.code == 0)) {
+    if (m_page == Page::Manage && event.action == MenuAction::Back) {
+        showMain();
+        return PauseOutcome::Running;
+    }
+    if (event.action == MenuAction::Back || (input.start && !input.select)) {
         return PauseOutcome::Resume;
     }
     if (event.action != MenuAction::Choice) {
@@ -163,11 +184,17 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input, const Input*
     } else if (event.code == 3) {
         m_page = Page::Options;
         m_settings.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
-                        m_context.strings, m_context.saveSettings, m_text, m_screen, backdrop());
+                        m_context.strings, m_context.saveSettings, m_text, m_screen, backdrop(),
+                        m_inTower ? SettingsMenu::Scope::Tower : SettingsMenu::Scope::Level,
+                        m_context.previewAudio);
+    } else if (event.code == 5) {
+        showManage();
+    } else if (event.code == 6) {
+        return PauseOutcome::Shop;
     } else if (event.code == 4) {
         m_page = Page::Quit;
         auto menu = backdrop();
-        menu.title = text("pause.quitConfirm");
+        menu.title = text(m_inTower ? "pause.quitConfirm" : "pause.abortConfirm");
         menu.titleScale = 0.667f;
         menu.body = {text("files.quitWarning")};
         menu.bodyY = 215;

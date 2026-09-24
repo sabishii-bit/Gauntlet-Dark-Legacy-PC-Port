@@ -29,13 +29,14 @@ struct TimingConfig {
 
 struct CameraConfig {
     f32 horizontalFovDegrees = 60.0f;
-    bool compass = true;
+    bool compass = false;
 };
 
 struct AudioConfig {
     f32 masterVolume = 1.0f;
-    f32 musicVolume = 0.7f;
-    f32 effectsVolume = 1.0f;
+    f32 musicVolume = 128.0f / 255.0f;
+    f32 effectsVolume = 128.0f / 255.0f;
+    bool stereo = true;
 };
 
 struct TextConfig {

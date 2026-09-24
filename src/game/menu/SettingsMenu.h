@@ -14,10 +14,13 @@ namespace gdl::game {
 /** Shared title/pause settings, with transactional edits and gameplay-binding capture. */
 class SettingsMenu {
 public:
-    enum class Page : u8 { Root, Audio, Game, Compass, Controls };
+    enum class Page : u8 { Root, Audio, Game, Compass, Controls, Difficulty };
+    enum class Scope : u8 { Title, Tower, Level };
     using Persist = std::function<bool(const GameConfig&)>;
+    using PreviewAudio = std::function<void(const AudioConfig&)>;
     void open(const GameConfig& config, const StringTable* strings, Persist persist,
-              const TextPainter& painter, const MenuScreen& screen, MenuDefinition backdrop);
+              const TextPainter& painter, const MenuScreen& screen, MenuDefinition backdrop,
+              Scope scope = Scope::Title, PreviewAudio preview = {});
     MenuEvent update(const MenuInput& input, s32 ticks, const Input* raw = nullptr, s32 pad = -1);
     void close() {
         m_menu.close();
@@ -34,6 +37,7 @@ public:
 private:
     void rebuild(s32 selection = 0);
     void change(s32 direction);
+    bool flushAudio();
     void capture(const Input& raw, s32 pad);
     void commit(GameConfig next);
     std::string text(std::string_view id) const;
@@ -44,6 +48,9 @@ private:
     const TextPainter* m_painter = nullptr;
     const StringTable* m_strings = nullptr;
     Persist m_persist;
+    PreviewAudio m_previewAudio;
+    bool m_audioDirty = false;
+    Scope m_scope = Scope::Title;
     GameConfig m_config;
     Page m_page = Page::Root;
     bool m_pad = false;

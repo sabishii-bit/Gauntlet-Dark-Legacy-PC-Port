@@ -15,12 +15,13 @@
   },
   "camera": {
     "horizontalFovDegrees": 60.0,
-    "compass": true
+    "compass": false
   },
   "audio": {
     "masterVolume": 1.0,
-    "musicVolume": 0.7,
-    "effectsVolume": 1.0
+    "musicVolume": 0.5019608,
+    "effectsVolume": 0.5019608,
+    "stereo": true
   },
   "text": {
     "language": "en"

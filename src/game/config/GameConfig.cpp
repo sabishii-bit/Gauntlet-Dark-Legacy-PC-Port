@@ -126,6 +126,7 @@ void GameConfig::mergeJson(std::string_view json) {
         read(a, "masterVolume", audio.masterVolume);
         read(a, "musicVolume", audio.musicVolume);
         read(a, "effectsVolume", audio.effectsVolume);
+        read(a, "stereo", audio.stereo);
     }
     if (root.contains("text")) {
         read(root.at("text"), "language", text.language);
@@ -236,7 +237,8 @@ std::string GameConfig::toJson() const {
                       {"compass", camera.compass}};
     root["audio"] = {{"masterVolume", audio.masterVolume},
                      {"musicVolume", audio.musicVolume},
-                     {"effectsVolume", audio.effectsVolume}};
+                     {"effectsVolume", audio.effectsVolume},
+                     {"stereo", audio.stereo}};
     root["text"] = {{"language", text.language}};
     root["save"] = {{"directory", save.directory}, {"slots", save.slots}};
     root["game"] = {{"difficulty", difficulty.level}};

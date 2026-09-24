@@ -249,9 +249,10 @@ TEST_CASE("title options persist edits without beginning a game",
     MenuInput left;
     left.left = true;
     CHECK(scene.step(1, left) == TitleOutcome::Running);
+    scene.step(1, {}); // release persists the slider's preview
     GameConfig saved;
     REQUIRE(saved.loadFile(file));
-    CHECK(saved.audio.masterVolume < 1);
+    CHECK(AudioSlider::value(saved.audio.musicVolume) == 127);
     CHECK_FALSE(scene.loading());
     scene.step(1, press(false, false, false, true));
     CHECK(scene.settings().page() == SettingsMenu::Page::Root);

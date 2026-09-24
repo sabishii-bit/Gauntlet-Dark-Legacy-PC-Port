@@ -30,6 +30,8 @@ public:
     void start(std::span<const PartyMember> party, std::span<const LevelResults> results,
                const std::array<s32, 3>& maxima, const ClassDataSet& classes, ShopCatalog catalog);
     void update(f64 seconds, const Inputs& inputs);
+    /** A tower visit has no completed level to tally. */
+    void skipTally();
     bool finished() const;
     const std::vector<ShopLane>& lanes() const { return m_lanes; }
     const ShopCatalog& catalog() const { return m_catalog; }

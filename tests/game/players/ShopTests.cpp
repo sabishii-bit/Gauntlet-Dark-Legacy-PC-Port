@@ -278,6 +278,16 @@ TEST_CASE("fallen shop members cannot purchase and invalid parties are refused",
     REQUIRE_THROWS_AS(session.start(duplicate, {}, {}, data, catalog()), FormatError);
 }
 
+TEST_CASE("tower shop starts shopping without tallying a fictitious level", "[shop]") {
+    ShopSession session;
+    const std::array<PartyMember, 1> party{{{2, shopper()}}};
+    session.start(party, {}, {}, classes(), catalog());
+    session.skipTally();
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Shopping);
+    REQUIRE(session.party()[0].save.gold == party[0].save.gold);
+    REQUIRE(session.party()[0].save.experience() == party[0].save.experience());
+}
+
 TEST_CASE("Sumner shops using Wizard data without a fictitious SUM class record", "[shop]") {
     ShopSession session;
     const auto data = classes();

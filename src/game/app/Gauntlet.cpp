@@ -53,6 +53,7 @@ void Gauntlet::onInit() {
                   (m_options.dataDirectory / kTextDirectory).string());
     }
     m_audio = std::make_unique<AudioDevice>();
+    m_audio->mixer().setStereo(m_config.audio.stereo);
     m_sounds = std::make_unique<SoundPlayer>(m_audio->mixer());
     m_sounds->setMasterVolume(m_config.audio.masterVolume);
     m_sounds->setCategoryVolume(SoundCategory::Music, m_config.audio.musicVolume);
@@ -131,6 +132,11 @@ GameContext Gauntlet::context() {
     context.levels = &m_levels;
     context.unpackedRoot = m_options.unpackedDirectory;
     context.saveSettings = [this](const GameConfig& config) { return saveSettings(config); };
+    context.previewAudio = [this](const AudioConfig& audio) {
+        m_sounds->setCategoryVolume(SoundCategory::Music, audio.musicVolume);
+        m_sounds->setCategoryVolume(SoundCategory::Effects, audio.effectsVolume);
+        m_audio->mixer().setStereo(audio.stereo);
+    };
     return context;
 }
 
@@ -295,7 +301,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         const auto menu = readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
         if (((menu.start && !menu.select) || menu.escape) &&
             m_pause.open(renderDevice(), context(), m_tower.party(), player)) {
-            m_audio->mixer().setPaused(true);
+            // Music continues in menus, including while adjusting its volume.
             for (auto& controls : m_controls) {
                 controls.reset();
             }
@@ -384,6 +390,7 @@ bool Gauntlet::saveSettings(const GameConfig& config) {
         m_sounds->setMasterVolume(config.audio.masterVolume);
         m_sounds->setCategoryVolume(SoundCategory::Music, config.audio.musicVolume);
         m_sounds->setCategoryVolume(SoundCategory::Effects, config.audio.effectsVolume);
+        m_audio->mixer().setStereo(config.audio.stereo);
         for (auto& controls : m_controls) {
             controls.reset();
         }
@@ -424,6 +431,26 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
             startNextAttractScreen();
         }
         return;
+    }
+    if (outcome == PauseOutcome::Shop) {
+        Journey journey;
+        journey.destination = LevelRef::tower();
+        journey.party = party;
+        journey.options.welcome = false;
+        if (const auto* actor = m_tower.actor(source.pad)) {
+            journey.options.position = actor->position();
+        }
+        if (m_afterLevel.open(renderDevice(), context(), party, {}, {1000, 100, 1000}, "G", true)) {
+            keepParty();
+            m_tower.close();
+            m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
+            m_loadingPicture.cover();
+            m_journey = std::move(journey);
+        }
+        return;
+    }
+    if (outcome == PauseOutcome::ReturnTower) {
+        keepParty();
     }
     // Loading restores characters in the tower, not a snapshot of transient enemies.
     // Do not autosave the discarded level over the character just loaded.

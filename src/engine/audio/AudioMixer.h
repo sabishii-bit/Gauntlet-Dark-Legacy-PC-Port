@@ -34,6 +34,8 @@ public:
 
     /** Silences output without consuming queued audio, preserving paused scene cues. */
     void setPaused(bool paused);
+    /** Mono folds the stereo mix to equal left/right channels before limiting. */
+    void setStereo(bool stereo);
 
 private:
     /** Turns the mix down wherever it would pass the ceiling. */
@@ -44,6 +46,7 @@ private:
     f32 m_limiterGain = 1.0f;
     mutable std::mutex m_mutex;
     bool m_paused = false;
+    bool m_stereo = true;
     std::vector<std::shared_ptr<AudioStream>> m_streams;
 };
 
