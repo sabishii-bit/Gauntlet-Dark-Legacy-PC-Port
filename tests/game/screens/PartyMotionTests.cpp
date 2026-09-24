@@ -137,6 +137,33 @@ TEST_CASE("party motion ignores invalid player ids", "[game][screens][party-moti
     REQUIRE(f.calls.empty());
 }
 
+TEST_CASE("pending web reactions slow movement without swallowing the escape input",
+          "[game][party-motion][player-impact][spider]") {
+    Fixture f;
+    f.players[1].life = PlayerLife::InTower;
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.inputs[3].attack = true;
+    f.inputs[3].usePotion = true;
+    f.step();
+    const f32 normalStep = f.players[0].actor.position().z;
+    REQUIRE(normalStep > 0);
+    f.players[0].actor.place(Vec3{0});
+    f.calls.clear();
+    for (s32 frame = 0; frame < 120; ++frame) {
+        f.players[0].reaction = PlayerDeed::Webbed;
+        f.step();
+        REQUIRE(f.players[0].actor.position().z == Approx(normalStep * 0.4f * (frame + 1)));
+        REQUIRE(f.calls.empty());
+    }
+    const Vec3 before = f.players[0].actor.position();
+    f.players[0].reaction = PlayerDeed::Webbed;
+    f.step(true);
+    REQUIRE(f.players[0].actor.position() == before);
+    f.players[0].reaction = PlayerDeed::FallBack;
+    f.step();
+    REQUIRE(f.players[0].actor.position() == before);
+}
+
 TEST_CASE("arrival locks movement turning and buttons until the player animation ends",
           "[game][screens][party-motion][unpacked]") {
     const auto root = test::unpackedOrSkip("PLAYERS/WAR/RED/objects.json")

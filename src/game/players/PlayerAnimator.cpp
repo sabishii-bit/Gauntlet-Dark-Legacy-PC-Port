@@ -169,7 +169,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     const bool felled = deed == PlayerDeed::FallBack || deed == PlayerDeed::FallForward;
     const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel ||
                         deed == PlayerDeed::Spike || deed == PlayerDeed::Webbed || felled;
-    if (struck && !floored() && (felled || !reacting())) {
+    if (struck && !floored() &&
+        (felled || !reacting() || (deed == PlayerDeed::Webbed && webbed()))) {
         Action reaction = deed == PlayerDeed::Flinch ? Action::HitReact : Action::Stun;
         if (deed == PlayerDeed::Spike) {
             reaction = Action::SpikeHit;
@@ -183,7 +184,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         if (m_sequences[index(reaction)] >= 0) {
             Decision reel;
             reel.action = reaction;
-            reel.cut = Cut::Now;
+            reel.cut = webbed() ? Cut::IfDifferent : Cut::Now;
+            reel.repeat = reaction == Action::WebReact;
             play(reel, seconds);
             m_released = false; // a throw it cut into never leaves the hand
             m_potionUsed = false;
