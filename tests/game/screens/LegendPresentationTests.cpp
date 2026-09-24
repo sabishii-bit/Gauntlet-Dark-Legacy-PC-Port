@@ -5,9 +5,11 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/WorldCamera.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -345,6 +347,101 @@ TEST_CASE("legend audio tries alternate spellings only when the first name is un
     presentation.show(LegendCue::Brandished, 2, 10, 42, fixture.bearer);
     presentation.show(LegendCue::Thrown, 2, 10, 42, fixture.bearer);
     REQUIRE(attempted == std::vector<std::string>{"S_LEGWPUP", "S_JLEGWTHROW", "S_JEGWTHROW"});
+}
+
+TEST_CASE(
+    "retail blue relic lightning fans into the bearer instead of facing lengthwise at the camera",
+    "[game][screens][legend][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+    LegendFixture fixture;
+    REQUIRE(fixture.weapons.load(root));
+    fixture.bearer.position = Vec3{4, 7, 9};
+    fixture.show(LegendCue::Brandished);
+    const auto* burst = fixture.find("COMBO_BLU");
+    REQUIRE(burst != nullptr);
+    const u32 burstId = burst->id;
+    const auto slot = fixture.weapons.textures.find("FXCOMBOBLUTEX");
+    REQUIRE(slot.has_value());
+    const auto frameSlot = fixture.weapons.textures.find("FXCOMBOBLUTEX00");
+    REQUIRE(frameSlot.has_value());
+    const auto* firstFrame = &fixture.weapons.textures.texture(fixture.device, *frameSlot);
+    const auto* secondFrame = &fixture.weapons.textures.texture(fixture.device, *frameSlot + 1);
+    const CameraFrame camera = CameraFrame::at({12, 30, -40});
+    usize visibleRibbons = 0;
+    bool sawFirstFrame = false;
+    bool sawSecondFrame = false;
+
+    // The source meshes are eleven XZ strips, with one end at the charge origin
+    // and the other 43.0859 units along each authored z. Mode 8 rolls their width
+    // toward the camera; it must not replace those eleven separate directions.
+    for (s32 tick = 0; tick < 18; ++tick) {
+        fixture.effects.update(1.0f / 60.0f);
+        burst = fixture.find("COMBO_BLU");
+        REQUIRE(burst != nullptr);
+        fixture.device.draws.clear();
+        fixture.effects.draw(fixture.device, Mat4{1}, {}, &camera);
+        usize ribbon = 0;
+        for (const auto& draw : fixture.device.draws) {
+            if (draw.texture != firstFrame && draw.texture != secondFrame) {
+                continue;
+            }
+            sawFirstFrame |= draw.texture == firstFrame;
+            sawSecondFrame |= draw.texture == secondFrame;
+            REQUIRE(draw.vertices.size() == 6);
+            const usize node = 2 + 2 * ribbon;
+            REQUIRE(node < burst->tree->nodes.size());
+            CHECK(CameraFrame::facingOf(burst->tree->nodes[node].objectFlags) ==
+                  CameraFrame::kFacingTop);
+            const Mat4 pose = burst->transform() * burst->pose.matrices()[node];
+            const Vec3 origin = (draw.vertices[0].position + draw.vertices[5].position) * 0.5f;
+            const Vec3 tip = (draw.vertices[1].position + draw.vertices[2].position) * 0.5f;
+            CHECK(glm::distance(origin, fixture.bearer.position) < 0.001f);
+            CHECK(glm::distance(tip, Vec3{pose * Vec4{0, 0, 43.0859f, 1}}) < 0.001f);
+            const Vec3 normal = glm::cross(draw.vertices[1].position - draw.vertices[0].position,
+                                           draw.vertices[2].position - draw.vertices[0].position);
+            // Mesh winding is clockwise in the game's left-handed world. Tiny
+            // collapsed keys take TopFaceMat's fallback and need not face us.
+            if (glm::length(glm::cross(camera.position - origin, Vec3{pose[2]})) >= 0.01f) {
+                CHECK(glm::dot(normal, camera.position - origin) <= 0.001f);
+                ++visibleRibbons;
+            }
+            CHECK_FALSE(draw.state.depthWrite);
+            ++ribbon;
+        }
+        CHECK(ribbon == 11);
+    }
+    CHECK(visibleRibbons > 0);
+    CHECK(sawFirstFrame);
+    CHECK(sawSecondFrame);
+    fixture.effects.update(1.0f);
+    CHECK_FALSE(fixture.effects.playing(burstId));
+    fixture.presentation.clear();
+    CHECK(fixture.effects.count() == 0);
+}
+
+TEST_CASE("every costume uses its authored relic charge once at brandishing",
+          "[game][screens][legend][unpacked]") {
+    const s32 color = GENERATE(0, 1, 2, 3);
+    const s32 boss = GENERATE(34, 41, 42);
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+    LegendFixture fixture;
+    REQUIRE(fixture.weapons.load(root));
+    fixture.bearer.color = color;
+    CHECK(fixture.effects.count() == 0);
+    fixture.show(LegendCue::Brandished, boss);
+    const auto* charge = fixture.find(LegendShow::chargeTree(color));
+    REQUIRE(charge != nullptr);
+    const u32 id = charge->id;
+    CHECK(charge->position == fixture.bearer.position);
+    CHECK(charge->playbackRate == Approx(LegendShow::kBurstPlaybackRate));
+    CHECK_FALSE(charge->repeats);
+    for (s32 tick = 0; tick < 90; ++tick) {
+        fixture.presentation.update(1.0f / 60, fixture.bearer, fixture.target);
+        fixture.effects.update(1.0f / 60);
+    }
+    CHECK_FALSE(fixture.effects.playing(id));
+    CHECK(fixture.find(LegendShow::chargeTree(color)) == nullptr);
+    fixture.presentation.clear();
 }
 
 } // namespace

@@ -105,6 +105,25 @@ Mat4 CameraFrame::face(const Mat4& placement, u32 mode) const {
     }
     Mat4 faced = placement;
     const Vec3 at{placement[3]};
+    if (mode == kFacingTop) {
+        // An XZ ribbon keeps its length and direction. Only its width rolls to
+        // put the top surface toward the eye; facing its z at the eye collapses
+        // it edge-on and destroys the directions of a radial lightning burst.
+        const Vec3 along{placement[2]};
+        const Vec3 side = glm::cross(position - at, along);
+        constexpr f32 kTopFaceThreshold = 0.01f;
+        const f32 length = glm::length(side);
+        if (length >= kTopFaceThreshold) {
+            faced[0] = Vec4{side / length, 0.0f};
+            faced[1] = Vec4{glm::cross(along, Vec3{faced[0]}), 0.0f};
+        } else {
+            // The original's collinear-eye fallback, also safe for a collapsed
+            // animation key: no normalization of a zero-length axis.
+            faced[1] = Vec4{0, 1, 0, 0};
+            faced[0] = Vec4{glm::cross(Vec3{0, 1, 0}, along), 0.0f};
+        }
+        return faced;
+    }
     // Facing replaces orientation, not the authored growth of a billboard effect.
     const Vec3 scale{glm::length(Vec3{placement[0]}), glm::length(Vec3{placement[1]}),
                      glm::length(Vec3{placement[2]})};

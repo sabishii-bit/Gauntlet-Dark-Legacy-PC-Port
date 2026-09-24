@@ -1564,8 +1564,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   colours are still skipped by the geometry decoder.
 * Facing: an object's flags carry a facing mode in their top nibble
   (`CameraFrame::facingOf`): mode 4 takes the camera's whole frame (a proper
-  rotation with z back at the camera), the others turn about the vertical to
-  face it. `TreeModel::draw` and `WorldScene::draw` take a `CameraFrame`
+  rotation with z back at the camera). Mode 8 keeps the authored z axis and
+  rolls an XZ ribbon's width toward the eye (the blue relic charge's eleven
+  lightning strips need this); the remaining modes turn about the vertical.
+  `TreeModel::draw` and `WorldScene::draw` take a `CameraFrame`
   (`CameraFrame::of(camera)`) and apply it per node or unit.
 * Scenarios: `app/Scenario` reads a JSON start (party members by class and
   colour code, level and crystals; position, yaw, welcome) into
