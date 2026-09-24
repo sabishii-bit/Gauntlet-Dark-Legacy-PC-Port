@@ -28,6 +28,10 @@ struct ScenarioMember {
     std::vector<s32> potions; ///< the kind of each carried
     std::vector<PowerupSlot> powerups; ///< carried and worn
     std::vector<s32> legends;          ///< the legend items carried, by the realm of their boss
+    std::vector<s32> runes;            ///< installed runestones, indexed from zero
+    std::vector<s32> shards;           ///< installed window pieces, tower realm order 1..8
+    std::vector<s32> newRunes;         ///< awaiting the return ceremony
+    std::vector<s32> newShards;
 };
 
 /**

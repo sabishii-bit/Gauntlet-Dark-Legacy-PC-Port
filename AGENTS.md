@@ -1395,9 +1395,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * Sumner's beam (`L1XPLIGHTRAY01`) starts unseen and comes up over 180 ticks
   while a player is within `kBeamRadius` of him, going again once they
   leave (`PlayScene::updateBeam`). The stained-glass light through the
-  window over the door (`kTempleLights`) starts dark: it is the Desecrated
-  Temple's, lit once its shards are all found, and the save keeps no shards
-  yet.
+  window over the door (`kTempleLights`) starts dark until TowerRelics restores
+  the party's completed eight-piece window.
 * The welcome's cut to the crystals is letterboxed as the original's
   trigger cameras are (`kCutBarTop`/`kCutBarBottom`: 48 and 80 of the 384
   canvas rows) with the status boxes hidden.
@@ -1758,6 +1757,31 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   script steers around it. Bump the baseline rather than patching ports; if a
   port must be patched, add `vcpkg-overlays/` plus `vcpkg-configuration.json`
   and say why in the overlay's README.
+
+## Tower relic presentation
+
+`screens/TowerRelics` owns the tower collection and queued Sumner/placement
+ceremonies; `PlaySceneRelics` routes audio, input holds and save acknowledgements.
+The item's stored index is zero-based for runestones (RUNE1..13), while boss
+glass uses tower realm order 1..8 (SHARD1..8). Their authored anchors are
+L1RUNEPLACE, L1RUNE13 and L1WINDOWFRAME, using world-space positions. Already
+installed pieces start at their final pose without entrance particles; new
+pieces play their own ACTIVE sequence, then stay. The cut cameras are 201/203
+for runes and 202 for glass; Sumner's speech uses the nearest event marker and
+the 170/220/240 camera banks. Arrival and promotions finish before these visits.
+`Relics::pendingRunes/pendingShards` persist interrupted ceremonies separately
+from ownership; absent fields in legacy saves mean already installed. A party
+member's installed piece satisfies the shared display without replay for others.
+Only completed placements clear pending bits. Use `[tower-relics]` and
+`python scripts/scenario.py tower-relics`; scenario `runes`/`shards` are installed,
+`newRunes`/`newShards` are awaiting presentation. Follow-up completion speeches,
+progression-gate choreography and exact camera blends are not implemented by this path.
+
+`TextureAnimator` also applies keyed subtree opacity: source -4 fades out,
+-5 fades in, measured from the animation offset over its frame count. These
+are not texture swaps. `TreeModel` resets and reapplies node opacity each pose;
+zero-opacity parts submit no draw. The first twelve tower runestones carry a
+black duplicate shell that fades out this way, leaving the stone mesh intact.
 
 ## End-level shop ownership
 

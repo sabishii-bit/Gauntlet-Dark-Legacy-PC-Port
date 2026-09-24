@@ -106,6 +106,8 @@ struct TextureAnimationInfo {
     static constexpr s32 kByName = -1;
     static constexpr s32 kScrollU = -2;
     static constexpr s32 kScrollV = -3;
+    static constexpr s32 kFadeOut = -4;
+    static constexpr s32 kFadeIn = -5;
     static constexpr s32 kFreeRunning = -1; ///< the flag of one stepped on the game clock
 
     std::string name;
@@ -120,6 +122,7 @@ struct TextureAnimationInfo {
 
     bool scrolls() const { return source == kScrollU || source == kScrollV; }
     bool cycles() const { return source >= 0 || source == kByName; }
+    bool fades() const { return source == kFadeOut || source == kFadeIn; }
     /** Stepped on the game clock, rather than keyed to a sequence's frame. */
     bool freeRunning() const { return flag == kFreeRunning; }
 };

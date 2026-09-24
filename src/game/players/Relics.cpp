@@ -12,6 +12,7 @@ bool Relics::addRune(s32 rune) {
         return false;
     }
     runes |= bit(rune);
+    pendingRunes |= bit(rune);
     return true;
 }
 
@@ -40,6 +41,9 @@ bool Relics::addShard(s32 order) {
         return false;
     }
     shards |= bit(order);
+    if (order >= 1 && order <= 8) {
+        pendingShards |= bit(order);
+    }
     return true;
 }
 

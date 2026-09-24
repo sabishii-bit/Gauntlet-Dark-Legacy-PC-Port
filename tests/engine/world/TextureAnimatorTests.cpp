@@ -185,6 +185,33 @@ TEST_CASE("an animation keyed to a sequence is never stepped, but read off at a 
     REQUIRE(TextureAnimator::scrollStateAt(10, 9, 8).scale == 1.0f);
 }
 
+TEST_CASE("keyed subtree fades clamp at their offset and end without resolving a texture",
+          "[world][animation]") {
+    Fixture f("texture-animator-fades");
+    auto fade = cycle("OVERLAY", -1, TextureAnimationInfo::kFadeOut, 20, 0, 0);
+    fade.flag = 2;
+    fade.offset = 18;
+    auto appear = fade;
+    appear.source = TextureAnimationInfo::kFadeIn;
+    auto empty = appear;
+    empty.frames = 0;
+    const std::array animations{fade, appear, empty};
+    f.animator.bind(animations, f.textures, f.device);
+    REQUIRE(f.animator.size() == 3);
+    REQUIRE(f.animator.motionAt(0, 0)->alpha == 1.0f);
+    REQUIRE(f.animator.motionAt(0, 18)->alpha == 1.0f);
+    REQUIRE(*f.animator.motionAt(0, 28)->alpha == Approx(127.0f / 255));
+    REQUIRE(f.animator.motionAt(0, 38)->alpha == 0.0f);
+    REQUIRE(f.animator.motionAt(0, 500)->alpha == 0.0f);
+    REQUIRE(f.animator.motionAt(1, 0)->alpha == 0.0f);
+    REQUIRE(*f.animator.motionAt(1, 28)->alpha == Approx(127.0f / 255));
+    REQUIRE(f.animator.motionAt(1, 38)->alpha == 1.0f);
+    REQUIRE(f.animator.motionAt(2, 500)->alpha == 0.0f);
+    f.animator.step(f.scene, 100);
+    REQUIRE(f.animator.counter(0) == 0);
+    REQUIRE(f.animator.motionAt(0, 18)->alpha == 1.0f);
+}
+
 TEST_CASE("a cycle ends where its frames cannot be read", "[world][animation]") {
     Fixture f("texture-animator-short");
     const std::vector<TextureAnimationInfo> animations{cycle("STONE", 0, 1, 5, 0, 1)};

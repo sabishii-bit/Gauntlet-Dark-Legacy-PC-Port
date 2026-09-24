@@ -82,6 +82,46 @@ TEST_CASE("a tree model stands its meshes in the world, lit, opaque parts first"
     REQUIRE(device.draws[1].texture != device.draws[0].texture);
 }
 
+TEST_CASE("authored fades hide only their subtree and reset on the next pose",
+          "[world][model][animation]") {
+    const auto dir = sampleFigure("tree-model-fade");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    auto tree = trees.tree(0);
+    tree.sequences.emplace_back();
+    tree.nodes[2].textureAnimation = 0;
+    TextureAnimationInfo fade;
+    fade.source = TextureAnimationInfo::kFadeOut;
+    fade.flag = 0;
+    fade.offset = 10;
+    fade.frames = 20;
+    test::FakeRenderDevice device;
+    TextureAnimator animator;
+    animator.bind(std::span{&fade, 1}, textures, device);
+    TreeModel figure;
+    REQUIRE(figure.bind(tree, models, textures, device));
+    animator.apply(figure, tree, 0, 20);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[0].vertices[0].color.a == 255);
+    REQUIRE(device.draws[1].vertices[0].color.a == 127);
+    REQUIRE_FALSE(device.draws[1].state.depthWrite);
+    device.draws.clear();
+    animator.apply(figure, tree, 0, 30);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 1);
+    REQUIRE(device.draws[0].texture == &textures.texture(device, 0));
+    device.draws.clear();
+    animator.apply(figure, tree, 0, 0);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[1].vertices[0].color.a == 255);
+}
+
 TEST_CASE("alternate skin preserves base coverage and the original opaque or translucent material",
           "[world][model]") {
     const auto dir = sampleFigure("tree-model-masked");

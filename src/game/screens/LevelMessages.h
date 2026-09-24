@@ -42,6 +42,7 @@ public:
     bool active() const { return m_scroll.active(); }
     const ScrollBox& scroll() const { return m_scroll; }
     const TextPainter& text() const { return m_text; }
+    const MessageTable& strings() const { return m_scrollText; }
 
 private:
     BitmapFont m_font32;

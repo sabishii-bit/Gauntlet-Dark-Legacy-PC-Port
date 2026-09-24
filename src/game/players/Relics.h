@@ -22,7 +22,9 @@ struct Relics {
 
     u16 runes = 0;
     u16 legends = 0;
-    u16 shards = 0; ///< the bosses' shards, a bit per realm in the tower's order
+    u16 shards = 0;       ///< the bosses' shards, a bit per realm in the tower's order
+    u16 pendingRunes = 0; ///< collected, but not yet presented in the tower
+    u16 pendingShards = 0;
     std::array<s32, kGargoyleKinds> gargoylePieces{};
 
     bool hasShard(s32 order) const {

@@ -59,6 +59,46 @@ TEST_CASE("effect transforms retain pitch roll and scale from a full attachment"
     REQUIRE(effect.transform() == expected);
 }
 
+TEST_CASE("persistent effects hold their last pose until explicitly released",
+          "[game][world][effects][tower-relics]") {
+    const auto root = test::scratchDirectory("effect-persistent");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json",
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"PIECE","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"ACTIVE","frames":30,"frameRate":30}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.persistent = true;
+    setting.loop = false;
+    setting.settled = true;
+    setting.emitParticles = false;
+    const auto id = effects.startSet(device, archive, "PIECE", Vec3{0}, setting);
+    REQUIRE(id != 0);
+    REQUIRE(effects.effect(0).player.frame() == 29);
+    effects.update(1000);
+    REQUIRE(effects.count() == 1);
+    REQUIRE(effects.effect(0).player.frame() == 29);
+    effects.stop(id);
+    REQUIRE(effects.count() == 0);
+    setting.settled = false;
+    REQUIRE(effects.startSet(device, archive, "PIECE", Vec3{0}, setting) != 0);
+    REQUIRE(effects.effect(0).player.frame() == 0);
+    effects.update(0.5f);
+    REQUIRE(effects.effect(0).player.frame() == 15);
+    effects.update(1000);
+    REQUIRE(effects.count() == 1);
+    REQUIRE(effects.effect(0).player.frame() == 29);
+    effects.clear();
+    REQUIRE(effects.count() == 0);
+}
+
 TEST_CASE("Wraith's waiting portal retains its authored static scale throughout its hold",
           "[game][world][effects][wraith][unpacked]") {
     const auto root = test::unpackedOrSkip("MONSTERS/WRAITH/animations.json").parent_path();
