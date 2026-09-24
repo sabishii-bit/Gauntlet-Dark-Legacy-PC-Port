@@ -56,6 +56,20 @@ struct Fixture {
     }
 };
 
+TEST_CASE("a damage flash expires after two simulation frames without holding controls",
+          "[game][screens][party-motion]") {
+    Fixture f;
+    f.players[0].hitFlashTicks = 4;
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.step();
+    CHECK(f.players[0].hitFlashTicks == 2);
+    CHECK(f.players[0].actor.position().z > 0);
+    f.step();
+    CHECK(f.players[0].hitFlashTicks == 0);
+    f.step();
+    CHECK(f.players[0].hitFlashTicks == 0);
+}
+
 TEST_CASE("stationary attacks face assisted targets without overriding movement or strafe",
           "[game][screens][party-motion][target-assist]") {
     Fixture f;

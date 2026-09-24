@@ -47,6 +47,21 @@ TEST_CASE("player health respects tower immunity and scales only substantial dam
     REQUIRE(f.sounds == std::vector<std::string>{"S_PLYRDMG"});
 }
 
+TEST_CASE("ordinary enemy damage flashes the skin without inventing a stagger",
+          "[game][screens][player-health]") {
+    Fixture f;
+    f.hit(10, HurtKind::Blow, true);
+    CHECK(f.player.hitFlashTicks == 0);
+    f.hit(1);
+    CHECK(f.player.hitFlashTicks == 0);
+    f.hit(10);
+    CHECK(f.player.hitFlashTicks == PlayerHealth::kHitFlashTicks);
+    CHECK(f.player.reaction == PlayerDeed::None);
+    f.player.hitFlashTicks = 1;
+    f.hit(10);
+    CHECK(f.player.hitFlashTicks == PlayerHealth::kHitFlashTicks);
+}
+
 TEST_CASE("player death keeps the save sentinel and only emits cues once",
           "[game][screens][player-health]") {
     Fixture f;

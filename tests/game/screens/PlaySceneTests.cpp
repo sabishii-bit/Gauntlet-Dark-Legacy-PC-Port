@@ -1009,6 +1009,21 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     scene.hurtPlayer(0, 100.0f, HurtKind::Blow);
     REQUIRE(scene.actor(0)->save().health() == 200);
     REQUIRE_FALSE(scene.fallen(0));
+    const auto white = world.powerups().textures.find("AAAWHITE");
+    REQUIRE(white);
+    const Texture* flash = &world.powerups().textures.texture(device, *white);
+    const auto flashes = [&] {
+        device.draws.clear();
+        scene.render(device, makeScreenProjection(640.0f, 448.0f), 640.0f, 448.0f);
+        return std::ranges::any_of(device.draws, [&](const test::RecordedDraw& draw) {
+            return draw.state.maskedTexture == flash;
+        });
+    };
+    CHECK(flashes());
+    for (s32 i = 0; i < 4; ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    CHECK_FALSE(flashes());
     scene.hurtPlayer(0, 500.0f, HurtKind::Burn);
     REQUIRE(scene.fallen(0));
     scene.hurtPlayer(0, 500.0f, HurtKind::Burn); // the fallen are past hurting

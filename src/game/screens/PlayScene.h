@@ -348,6 +348,7 @@ private:
     bool m_welcomePending = false;
     bool m_leaving = false;
     PortalDeparture m_departure;
+    const Texture* m_hitFlashTexture = nullptr; ///< borrowed from the world's powerup archive
     Intro m_intro = Intro::None;
 };
 

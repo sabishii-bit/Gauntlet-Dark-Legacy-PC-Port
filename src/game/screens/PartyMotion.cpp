@@ -63,6 +63,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
     std::vector<CameraSubject> subjects;
     subjects.reserve(players.size());
     for (usize i = 0; i < players.size(); ++i) {
+        players[i].hitFlashTicks = std::max(0, players[i].hitFlashTicks - ticks);
         PlayerActor& actor = players[i].actor;
         const auto player = static_cast<usize>(actor.player());
         const bool down = players[i].life != PlayerLife::Standing;

@@ -21,6 +21,7 @@ enum class HurtKind : u8 {
  * Like the scene it replaces, this cue sequence persists across level reopenings. */
 class PlayerHealth {
 public:
+    static constexpr s32 kHitFlashTicks = 4;
     struct Events {
         std::function<void(f32, f32)> block;
         std::function<void(std::string_view)> sound;
