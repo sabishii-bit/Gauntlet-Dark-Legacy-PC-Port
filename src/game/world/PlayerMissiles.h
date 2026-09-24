@@ -54,6 +54,7 @@ struct MissileLaunch {
     f32 damage = 0.0f;                ///< what it does to what it hits
     f32 scale = 1.0f;                 ///< how large it is drawn: a strong throw's is doubled
     MissileWallSound wallSound = MissileWallSound::Level;
+    u32 flags = 0;
 };
 
 /** Something standing that a missile stops against: an upright cylinder from its base. */
@@ -74,6 +75,7 @@ struct MissileImpact {
     s32 target = -1; ///< the id of the target it stopped against; none for a wall or the floor
     std::string_view effect = "SPARKS";
     MissileWallSound wallSound = MissileWallSound::Level;
+    u32 flags = 0;
 };
 
 /**
@@ -111,6 +113,7 @@ public:
         const MissileSpec* spec = nullptr;
         const TreeModel* model = nullptr;
         MissileWallSound wallSound = MissileWallSound::Level;
+        u32 flags = 0;
     };
 
     /** A missile's pace from the stat that throws it. */

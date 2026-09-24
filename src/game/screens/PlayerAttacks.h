@@ -91,6 +91,7 @@ private:
      * touches, every so often, until it is spent. */
     struct PotionShield {
         usize actor = 0;
+        u32 flags = 0;
         u32 effect = 0;
         f32 radius = 0.0f;
         f32 damage = 0.0f;

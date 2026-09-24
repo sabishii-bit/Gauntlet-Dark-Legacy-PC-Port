@@ -84,6 +84,32 @@ const PowerupSlot* Inventory::powerup(s32 kind, u32 mask) const {
     return nullptr;
 }
 
+void Inventory::advance(f32 seconds) {
+    for (auto& slot : powerups) {
+        if (slot.working() && slot.strength > 0) {
+            slot.strength = std::max(0.0f, slot.strength - std::max(0.0f, seconds));
+        }
+    }
+}
+
+bool Inventory::spendPowerup(s32 kind, u32 mask) {
+    for (auto& slot : powerups) {
+        if (!slot.working() || slot.kind != kind || (slot.flags & mask) == 0) {
+            continue;
+        }
+        if (slot.charge < 0) {
+            return true;
+        }
+        const bool available = slot.charge >= 1;
+        slot.charge = std::max(0.0f, slot.charge - 1);
+        if (slot.charge <= 0) {
+            slot.strength = 0;
+        }
+        return available;
+    }
+    return false;
+}
+
 s32 Inventory::nextHeld(s32 from, s32 step) const {
     const auto count = static_cast<s32>(powerups.size());
     s32 at = from;

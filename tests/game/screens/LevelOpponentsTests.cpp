@@ -332,12 +332,14 @@ TEST_CASE("opponent views preserve player identity and hide fallen participants"
     players[0].actor.spawn(3, {}, nullptr, Vec3{10, 0, 20}, 0);
     players[1].actor.spawn(1, {}, nullptr, Vec3{30, 0, 40}, 0);
     players[1].life = PlayerLife::Dying;
+    players[0].actor.save().progress().inventory.addPowerup(9, 4, 0, 30);
     const auto views = LevelOpponents::enemyViews(players);
     REQUIRE(views.size() == 2);
     REQUIRE(views[0].player == 3);
     REQUIRE(views[0].position == players[0].actor.position());
     REQUIRE(views[0].radius == players[0].actor.radius());
     REQUIRE_FALSE(views[0].hidden);
+    REQUIRE(views[0].invisible);
     REQUIRE(views[1].player == 1);
     REQUIRE(views[1].hidden);
 }

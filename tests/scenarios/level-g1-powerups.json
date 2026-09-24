@@ -1,0 +1,26 @@
+{
+  "screen": "tower",
+  "level": "G1",
+  "party": [
+    {
+      "player": 0,
+      "class": "WAR",
+      "color": "BLU",
+      "name": "TEST",
+      "level": 10,
+      "health": 600,
+      "potions": [1, 2, 3, 4],
+      "powerups": [
+        {"kind": 5, "flags": 1, "strength": 90},
+        {"kind": 5, "flags": 524288, "strength": 45},
+        {"kind": 6, "flags": 65536, "strength": 15},
+        {"kind": 6, "flags": 8200, "strength": 30},
+        {"kind": 9, "flags": 256, "strength": 30},
+        {"kind": 9, "flags": 524288, "strength": 1}
+      ]
+    }
+  ],
+  "position": [100.0, 10.2, -72.5],
+  "yaw": 1.57,
+  "welcome": false
+}

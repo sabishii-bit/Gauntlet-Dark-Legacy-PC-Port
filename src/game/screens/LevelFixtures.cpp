@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/ItemPickup.h"
+#include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
 namespace gdl::game {
 namespace {
@@ -218,6 +219,8 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         }
         // Every trap stuns: spikes and blades make their victim flinch, the rest reel.
         if (PlayerHealth::guarded(players[hit.victim], hit.damage, false) > 1.0f &&
+            !PowerupEffects::of(players[hit.victim].actor.save().progress().inventory)
+                 .preventsKnockback() &&
             players[hit.victim].life == PlayerLife::Standing) {
             players[hit.victim].reaction = PlayerImpact::combine(
                 players[hit.victim].reaction, hit.pierces ? PlayerDeed::Spike : PlayerDeed::Reel);
@@ -335,6 +338,7 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
                 const bool guarding =
                     players[i].figure != nullptr && players[i].figure->animator().guarding();
                 if (PlayerHealth::guarded(players[i], felt.damage, true) > kKnockdownFrom &&
+                    !PowerupEffects::of(actor.save().progress().inventory).preventsKnockback() &&
                     !guarding && !m_resources->world.isTower()) {
                     const Vec3 push = actor.position() - felt.position;
                     f32 round = std::atan2(push.x, push.z) - actor.yaw();

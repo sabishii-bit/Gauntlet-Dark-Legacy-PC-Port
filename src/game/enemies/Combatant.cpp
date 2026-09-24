@@ -7,6 +7,8 @@
 #include <utility>
 
 #include "engine/core/Types.h"
+
+#include "game/combat/Damage.h"
 namespace gdl::game {
 namespace {
 constexpr f32 kDrop = 6.0f;
@@ -307,7 +309,10 @@ void Combatant::hurt(const EnemyHit& hit) {
         amount *= kBlockShare;
         flags &= ~(EnemyHit::kFloors | EnemyHit::kKnockBack);
     }
-    amount = std::max(amount - data.armor(), hit.player >= 0 ? 1.0f : 0.0f);
+    const Damage modified = Damage::modify(amount, flags, data.shieldFlags(), data.armor(),
+                                           data.kind() == CombatantKind::Boss);
+    flags = modified.flags;
+    amount = std::max(modified.amount, hit.player >= 0 ? 1.0f : 0.0f);
     if (amount <= 0.0f) {
         return;
     }

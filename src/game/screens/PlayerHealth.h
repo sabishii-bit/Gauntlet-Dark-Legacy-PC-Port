@@ -29,7 +29,8 @@ public:
         std::function<void(std::string_view)> named;
     };
     void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed, bool inTower,
-              f32 damageScale, const Events& events, const PlayerImpact& impact = {});
+              f32 damageScale, const Events& events, const PlayerImpact& impact = {},
+              bool bossEncounter = false);
     static f32 guarded(const PlayerRuntime& runtime, f32 damage, bool directed);
 
 private:

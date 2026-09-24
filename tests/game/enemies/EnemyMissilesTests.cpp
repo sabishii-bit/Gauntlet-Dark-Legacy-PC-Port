@@ -363,4 +363,18 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE_FALSE(enemies.alive(*suicide));
 }
 
+TEST_CASE("invisibility does not make an enemy arrow pass through its victim",
+          "[game][items][enemies]") {
+    EnemyMissiles missiles;
+    auto victim = playerAt({0, 0, 10});
+    victim.invisible = true;
+    std::vector<EnemyView> party{victim};
+    missiles.launch(EnemyMissileKind::arrow(), {0, 3, 0}, {0, 3, 10}, 1, nullptr, 2);
+    for (s32 tick = 0; tick < 30; ++tick) {
+        missiles.update(kStep, nullptr, party);
+    }
+    const auto hits = missiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].player == 0);
+}
 } // namespace

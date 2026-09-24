@@ -19,6 +19,8 @@ inline constexpr u32 kThreeWayShot = 0x00080000; ///< weapon
 inline constexpr u32 kFiveWayShot = 0x00400000;  ///< weapon
 inline constexpr u32 kInvisible = 0x00000004;    ///< special
 inline constexpr u32 kGrowth = 0x00000100;       ///< special
+inline constexpr u32 kLevitation = 1;            ///< special
+inline constexpr u32 kTurbo = 0x00080000;        ///< special, immediate meter refill
 } // namespace powerup
 
 /**
@@ -49,6 +51,7 @@ struct PowerupEffects {
     s32 shots() const;
     bool invisible() const { return (special & powerup::kInvisible) != 0; }
     bool grown() const { return (special & powerup::kGrowth) != 0; }
+    bool preventsKnockback() const { return (armor & 0x150000) != 0; }
     /** How solid the body is drawn `seconds` into the level. */
     f32 bodyAlpha(f32 seconds) const;
 };

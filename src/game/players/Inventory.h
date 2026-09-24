@@ -53,6 +53,10 @@ struct Inventory {
     /** The powerup of `kind` with any of `mask` that is held and switched on, or null. */
     const PowerupSlot* powerup(s32 kind, u32 mask) const;
     usize powerupCount() const;
+    /** Expire enabled timed items; disabled and charged/permanent items do not tick. */
+    void advance(f32 seconds);
+    /** Spend one charge of an enabled item; a negative charge count is unlimited. */
+    bool spendPowerup(s32 kind, u32 mask);
     /** The next held slot after `from` going by `step` (1 or -1), wrapping; -1 with none
      * held. From -1 the search starts at either end. */
     s32 nextHeld(s32 from, s32 step) const;

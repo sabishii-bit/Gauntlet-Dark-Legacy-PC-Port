@@ -14,6 +14,7 @@
 #include "game/menu/CompassHud.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/Progression.h"
+#include "game/screens/PlayerPowerups.h"
 #include "game/world/CameraMovementLimit.h"
 
 namespace gdl::game {
@@ -603,7 +604,7 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
          .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
          .cry = [this, index](std::string_view voice) { m_attacks.cry(index, voice, m_players); },
          .named = [this, index](std::string_view line) { sayWithName(index, line); }},
-        impact);
+        impact, m_world->level() != nullptr && m_world->level()->bossType >= 0);
 }
 
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says
@@ -1017,6 +1018,17 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_world->revealCrystals(seconds);
     m_hud.pickups().step(ticks, seconds);
     m_sumner.update(seconds);
+    auto powerupClock = PlayerPowerups::Clock::Paused;
+    if (!held && !m_world->isTower()) {
+        const bool bossLevel = m_world->level() != nullptr && m_world->level()->bossType >= 0;
+        const BossView boss = m_opponents.bosses().view();
+        if (!bossLevel) {
+            powerupClock = PlayerPowerups::Clock::Level;
+        } else if (boss.awake && boss.alive) {
+            powerupClock = PlayerPowerups::Clock::BossFight;
+        }
+    }
+    PlayerPowerups::update(m_players, seconds, powerupClock);
     const PartyMotion::Events movementEvents{
         .perform =
             [this](usize i, PartyMotion::Action action) {

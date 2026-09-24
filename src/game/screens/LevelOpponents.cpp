@@ -9,6 +9,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/LevelFixtures.h"
 namespace gdl::game {
@@ -163,6 +164,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         view.height = actor.height();
         view.level = experienceLevel(actor.save().experience());
         view.hidden = player.life != PlayerLife::Standing;
+        view.invisible = PowerupEffects::of(actor.save().progress().inventory).invisible();
         view.captured = player.capture.held();
         views.push_back(view);
     }

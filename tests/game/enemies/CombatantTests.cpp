@@ -289,4 +289,13 @@ TEST_CASE("boss replacement retains borrowed archives and undrained death events
     REQUIRE(boss.archive() == djinnArchive);
     REQUIRE(boss.view().health == 100);
 }
+TEST_CASE("bosses load elemental armor from exported retail types", "[game][items][unpacked]") {
+    CritterData data;
+    REQUIRE(data.load(test::unpackedOrSkip("critter/DRAGON.json")));
+    CHECK(data.shieldFlags() == 1);
+    REQUIRE(data.load(test::unpackedOrSkip("critter/LICH.json")));
+    CHECK(data.shieldFlags() == 8);
+    REQUIRE(data.load(test::unpackedOrSkip("critter/CHIMERA.json")));
+    CHECK(data.shieldFlags() == 0);
+}
 } // namespace

@@ -105,6 +105,7 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     missile.spec = launch.spec;
     missile.model = launch.model;
     missile.wallSound = launch.wallSound;
+    missile.flags = launch.flags;
     m_missiles.push_back(missile);
     return true;
 }
@@ -139,7 +140,8 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
             if (struck != targets.end()) {
                 m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
                                                   missile.potency, missile.damage, struck->id,
-                                                  missile.spec->impactTree, missile.wallSound});
+                                                  missile.spec->impactTree, missile.wallSound,
+                                                  missile.flags});
                 missile.age = kLifeSeconds;
                 break;
             }
@@ -155,7 +157,8 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
             if (wall || floor) {
                 m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
                                                   missile.potency, missile.damage, -1,
-                                                  missile.spec->impactTree, missile.wallSound});
+                                                  missile.spec->impactTree, missile.wallSound,
+                                                  missile.flags});
                 missile.age = kLifeSeconds;
             }
         }
