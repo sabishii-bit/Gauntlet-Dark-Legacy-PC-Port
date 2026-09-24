@@ -476,6 +476,7 @@ void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
 }
 
 void Gauntlet::updateJourney(f64 deltaSeconds) {
+    GDL_VERIFY(m_journey.has_value(), "Updating a journey requires a pending journey");
     Journey& journey = *m_journey;
     if (!journey.shown) {
         return;
