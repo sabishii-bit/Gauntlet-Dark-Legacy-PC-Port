@@ -1,0 +1,14 @@
+{
+  "screen": "tower",
+  "level": "E1",
+  "party": [
+    {
+      "player": 0,
+      "class": "JES",
+      "color": "GRE",
+      "name": "TEST",
+      "level": 60
+    }
+  ],
+  "welcome": false
+}

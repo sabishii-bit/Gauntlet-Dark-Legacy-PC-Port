@@ -16,6 +16,23 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("Desecrated Temple scenario starts an unsaved level 60 Jester at the entrance",
+          "[game][scenario][desecrated-temple]") {
+    const auto file =
+        test::dataDirectory().parent_path() / "tests/scenarios/level-e1-desecrated-temple.json";
+    const auto scenario = Scenario::load(file);
+    REQUIRE(scenario.level == "E1");
+    REQUIRE(scenario.party.size() == 1);
+    const auto party = scenario.partyMembers();
+    REQUIRE(party[0].save.character == classIndexOf("JES").value());
+    REQUIRE(party[0].save.color == colorIndexOf("GRE").value());
+    REQUIRE(experienceLevel(party[0].save.experience()) == 60);
+    REQUIRE_FALSE(party[0].slot.has_value());
+    REQUIRE_FALSE(scenario.tower.position.has_value());
+    REQUIRE_FALSE(scenario.tower.yaw.has_value());
+    REQUIRE_FALSE(scenario.afterLevel);
+}
+
 TEST_CASE("mountain creature scenarios provide unsaved level 99 green knights",
           "[game][scenario][mountain-creatures]") {
     for (const auto* name : {"golem", "gargoyle"}) {
