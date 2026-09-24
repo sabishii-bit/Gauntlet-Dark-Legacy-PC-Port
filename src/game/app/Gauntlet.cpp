@@ -176,8 +176,8 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
 
 void Gauntlet::updateMovie(f64 deltaSeconds) {
     const MenuInput menu = readMenuInput(input(), m_config.menu);
-    const bool toTitle = m_options.playMovie.empty() && menu.start;
-    const bool playing = !toTitle && !menu.select && m_movie.update(deltaSeconds);
+    const bool toTitle = m_options.playMovie.empty() && m_attract.canSkipToTitle() && menu.start;
+    const bool playing = !menu.start && !menu.select && m_movie.update(deltaSeconds);
     if (playing) {
         return;
     }
@@ -637,6 +637,7 @@ bool Gauntlet::startMovie(std::string_view name) {
 bool Gauntlet::startTitleScreen() {
     setMaxFrameRate(m_config.display.maxFrameRate);
     if (m_title.open(renderDevice(), context())) {
+        m_attract.titleShown();
         return true;
     }
     if (!m_titleWarned) {

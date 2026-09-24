@@ -2,6 +2,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "engine/codec/MoviePlayback.h"
@@ -58,6 +59,39 @@ TEST_CASE("the Midway logo movie plays through", "[codec][movie][assets]") {
     REQUIRE(audio.size() < 800000);
     REQUIRE(std::ranges::max(audio) > 0.1f);
     REQUIRE(updates >= 240);
+}
+
+TEST_CASE("the story and title movies play through with picture and sound",
+          "[codec][movie][assets]") {
+    const auto* name = GENERATE("VQMOVIES/OPENING.avi", "VQMOVIES/TITLE2.avi");
+    CAPTURE(name);
+    MoviePlayback playback;
+    REQUIRE(playback.open(test::assetOrSkip(name)));
+    REQUIRE(playback.info().frameCount > 0);
+    REQUIRE(playback.info().hasAudio);
+    const u32 expectedFrames = playback.info().frameCount;
+    const f64 step = 1.0 / playback.info().framesPerSecond;
+    std::vector<f32> audio;
+    bool sawColour = false;
+    bool finished = false;
+    for (u32 update = 0; update < expectedFrames + 10; ++update) {
+        const bool playing = playback.update(step);
+        playback.takeAudio(audio);
+        if (playback.frameChanged()) {
+            const Image& frame = playback.frame();
+            sawColour =
+                sawColour || frame.pixel(frame.width / 2, frame.height / 2) != Color::black();
+        }
+        if (!playing) {
+            finished = true;
+            break;
+        }
+    }
+    REQUIRE(finished);
+    REQUIRE(playback.decodedFrames() == expectedFrames);
+    REQUIRE(sawColour);
+    REQUIRE_FALSE(audio.empty());
+    REQUIRE(std::ranges::max(audio) > 0.1f);
 }
 
 } // namespace
