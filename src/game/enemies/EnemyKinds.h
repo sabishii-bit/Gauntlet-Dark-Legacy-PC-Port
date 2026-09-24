@@ -37,6 +37,7 @@ inline constexpr s32 kSwarmKindCount = 28; ///< the kinds that come in tiers
 inline constexpr s32 kGruntKind = 4;
 inline constexpr s32 kRatKind = 3;
 inline constexpr s32 kDeathKind = 30;
+inline constexpr s32 kItKind = 31;
 inline constexpr s32 kGolemEnemyKind = 29;
 inline constexpr s32 kGargoyleEnemyKind = 32;
 inline constexpr s32 kGeneralEnemyKind = 33;

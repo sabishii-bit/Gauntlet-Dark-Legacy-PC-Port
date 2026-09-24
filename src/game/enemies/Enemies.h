@@ -84,6 +84,7 @@ struct EnemyHit {
 
 /** Where an enemy is asked to appear: about `position`, facing `direction`. */
 struct EnemySpawn {
+    enum class Priority : s8 { FreeSlotOnly = -1, Offscreen = 0, Visible = 1 };
     s32 kind = kGruntKind;
     s32 tier = 1;
     s32 algorithm = -1; ///< the kind's own when negative
@@ -91,9 +92,10 @@ struct EnemySpawn {
     Vec3 direction{0.0f, 0.0f, 1.0f};
     f32 clearance = 0.0f; ///< how far out from `position` it is set (a generator's height)
     s32 generator = -1;
-    bool placed = false; ///< set exactly where asked, as a level's placement is
-    bool asleep = false; ///< a placement of no strength waits to be woken
-    s32 idleTicks = 120; ///< a thrower's wait between throws
+    bool placed = false;                     ///< set exactly where asked, as a level's placement is
+    bool asleep = false;                     ///< a placement of no strength waits to be woken
+    s32 idleTicks = 120;                     ///< a thrower's wait between throws
+    Priority priority = Priority::Offscreen; ///< replacement permission, independent of strength
 };
 
 /** A blast one of the swarm goes up in. */

@@ -247,7 +247,6 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
     case BreakableStrike::Kind::Plain:
     case BreakableStrike::Kind::Holding:
         playRealmSound(kBarrelBreakSound);
-        effect(kBarrelSmoke);
         if (struck->contents >= 0 &&
             m_resources->world.placeItemRecord(m_resources->device, struck->contents,
                                                struck->position, struck->count)) {
@@ -261,6 +260,7 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
     case BreakableStrike::Kind::Exploding:
         playRealmSound(kBarrelBlastSound);
         effect(kBarrelBlast);
+        effect(kBarrelSmoke);
         m_blasts.push_back(
             Blast{struck->position, kBlastRadius, kBarrelBlastDamage * trapDamageScale()});
         break;

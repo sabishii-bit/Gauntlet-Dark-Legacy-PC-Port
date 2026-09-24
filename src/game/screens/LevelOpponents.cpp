@@ -143,6 +143,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         const Mat4 placement = itemPlacement(instance.position, instance.rotation);
         spawn.direction = Vec3{placement[2][0], 0.0f, placement[2][2]};
         spawn.placed = true;
+        spawn.priority = EnemySpawn::Priority::FreeSlotOnly;
         spawn.asleep = strength == 0;
         m_enemies.spawn(spawn, {}, m_generators.obstacles());
     }
