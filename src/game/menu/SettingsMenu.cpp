@@ -322,6 +322,8 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks, const Input* r
             rebuild(m_page == Page::Compass && m_config.camera.compass ? 1 : 0);
         } else if (m_page == Page::Game && event.code == 0) {
             m_page = Page::Difficulty;
+            // MSVC's checked array iterator is not a pointer; keep the portable iterator type.
+            // NOLINTNEXTLINE(readability-qualified-auto)
             const auto selected =
                 std::ranges::find(DifficultyConfig::kNames, m_config.difficulty.level);
             rebuild(selected == DifficultyConfig::kNames.end()
