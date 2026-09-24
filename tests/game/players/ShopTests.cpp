@@ -189,9 +189,14 @@ TEST_CASE("level result tally is frame independent and never awards currency", "
     const auto results = LevelResults::between(3, entry, exit, 47);
     REQUIRE(results.player == 3);
     REQUIRE(results.totals == std::array<s32, 3>{200, 47, 900});
-    const s32 fps = GENERATE(30, 60, 120);
+    const s32 fps = GENERATE(30, 60, 120, 144);
     LevelTally tally;
     tally.start(results, {1000, 100, 1000});
+    for (s32 i = 0; i < fps / 2; ++i) {
+        tally.update(1.0 / fps);
+    }
+    REQUIRE(tally.height(2) == 50); // 20 initial pixels + 30 integer presentation ticks
+    REQUIRE(tally.height(0) == 20);
     for (s32 i = 0; i < fps * 8; ++i) {
         tally.update(1.0 / fps);
     }
@@ -223,9 +228,8 @@ TEST_CASE("shop lanes independently tally buy sell and wait for sparse player ID
     session.update(60, input);
     REQUIRE(session.lanes()[0].phase == ShopPhase::Tally);
     session.update(0, input);
-    REQUIRE(session.lanes()[0].phase == ShopPhase::BeforeStats);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Shopping);
     REQUIRE(session.lanes()[1].phase == ShopPhase::Tally);
-    session.update(0, input);
     REQUIRE(session.lanes()[0].phase == ShopPhase::Shopping);
     REQUIRE(session.party()[0].save.gold == 5000); // entering never also buys
     input = {};
@@ -253,12 +257,14 @@ TEST_CASE("shop lanes independently tally buy sell and wait for sparse player ID
     session.update(0, input);
     REQUIRE(session.lanes()[0].phase == ShopPhase::AfterStats);
     session.update(0, input);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::AfterStats);
+    session.update(0.5, input);
     REQUIRE(session.lanes()[0].phase == ShopPhase::Done);
     REQUIRE_FALSE(session.finished());
     input = {};
     input[1].select = true;
     for (s32 i = 0; i < 4; ++i) {
-        session.update(0, input);
+        session.update(1, input);
     }
     REQUIRE(session.finished());
     REQUIRE(session.party()[0].slot == 2);
@@ -286,6 +292,74 @@ TEST_CASE("tower shop starts shopping without tallying a fictitious level", "[sh
     REQUIRE(session.lanes()[0].phase == ShopPhase::Shopping);
     REQUIRE(session.party()[0].save.gold == party[0].save.gold);
     REQUIRE(session.party()[0].save.experience() == party[0].save.experience());
+}
+
+TEST_CASE("retail piles grow from 20 to 64..208 pixels, largest first", "[shop][results]") {
+    // GUNE5D 8009A0AC: baseline 320, top 112, initial height 20 (80343E0C..14).
+    LevelTally tally;
+    tally.start({0, {600, 300, 500}}, {999, 999, 999});
+    REQUIRE(tally.order() == std::array<usize, 3>{0, 2, 1});
+    REQUIRE(tally.targetHeight(0) == 124);
+    REQUIRE(tally.targetHeight(1) == 64);
+    REQUIRE(tally.targetHeight(2) == 104);
+    REQUIRE(tally.height(0) == 20);
+    tally.update(1);
+    REQUIRE(tally.height(0) == 80);
+    REQUIRE(tally.height(2) == 20);
+    REQUIRE(tally.growingRank() == 0);
+    tally.update(1);
+    REQUIRE(tally.height(0) == 124);
+    REQUIRE(tally.height(2) == 36);
+    REQUIRE(tally.height(1) == 20);
+    tally.start({0, {9999, 9999, 9999}}, {});
+    REQUIRE(tally.order() == std::array<usize, 3>{0, 2, 1});
+    REQUIRE(tally.targetHeight(0) == 208);
+}
+
+TEST_CASE("retail level-up stats reveal changes before accepting Continue", "[shop][results]") {
+    // 80099410: no level change skips the page; promotion waits 90 ticks then 60 per change.
+    auto save = shopper();
+    save.progress().experience = levelExperience(2);
+    const std::array<PartyMember, 1> party{{{0, save}}};
+    const std::array<LevelResults, 1> results{{{0, {0, 0, levelExperience(2)}}}};
+    ShopSession session;
+    session.start(party, results, {1000, 100, 1000}, classes(), catalog());
+    session.update(10, {});
+    ShopSession::Inputs input;
+    input[0].select = true;
+    session.update(0, input);
+    const auto& lane = session.lanes()[0];
+    REQUIRE(lane.phase == ShopPhase::BeforeStats);
+    REQUIRE(lane.statsRevealTicks() == std::array<s32, 5>{90, 150, 210, 270, 330});
+    REQUIRE(lane.statsValues(true)[4] == 500);
+    REQUIRE(lane.statsValues(false)[4] == 600);
+    session.update(6, input);
+    REQUIRE(lane.phase == ShopPhase::BeforeStats);
+    session.update(0.5, input);
+    REQUIRE(lane.phase == ShopPhase::Shopping);
+    REQUIRE(session.party()[0].save.gold == save.gold);
+}
+
+TEST_CASE("post-shop stats retain the original values across multiple purchases", "[shop]") {
+    ShopSession session;
+    const std::array<PartyMember, 1> party{{{0, shopper()}}};
+    auto items = ShopCatalog::fromJson(R"({"items":[
+        {"texture":"","description":"EXIT","scale":1,"type":0,"price":0,"amount":0},
+        {"texture":"SHP_STRENGTH","description":"Strength","scale":1,"type":5,"price":1000,"amount":10}
+    ]})");
+    session.start(party, {}, {}, classes(), std::move(items));
+    session.skipTally();
+    const auto before = session.lanes()[0].statsValues(true);
+    ShopSession::Inputs input;
+    input[0].down = true;
+    session.update(0, input);
+    input = {};
+    input[0].select = true;
+    session.update(0, input);
+    session.update(1, {});
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].statsValues(true) == before);
+    REQUIRE(session.lanes()[0].statsValues(false)[0] == before[0] + 20);
 }
 
 TEST_CASE("Sumner shops using Wizard data without a fictitious SUM class record", "[shop]") {

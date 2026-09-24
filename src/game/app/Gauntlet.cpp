@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "engine/assets/PngImage.h"
+#include "engine/assets/WorldData.h"
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -99,14 +100,27 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
         const Scenario scenario = Scenario::load(file);
         log::info("Scenario {}: {} in the party", file.string(), scenario.party.size());
         if (scenario.afterLevel) {
+            const auto sceneContext = context();
+            const auto levelName = scenario.level.empty() ? "G1" : scenario.level;
+            const auto reference = m_levels.byName(levelName);
+            WorldData world;
+            if (!reference ||
+                !world.load(m_options.unpackedDirectory / reference->worldDataFile())) {
+                log::error("After-level scenario: no realm data for {}", levelName);
+                return false;
+            }
+            const auto* level = world.level(levelName);
+            if (level == nullptr) {
+                log::error("After-level scenario: no level data for {}", levelName);
+                return false;
+            }
             Journey journey;
             journey.destination = LevelRef::tower();
             journey.party = scenario.partyMembers();
             journey.options.welcome = false;
             journey.options.arriving = true;
-            if (!m_afterLevel.open(renderDevice(), context(), journey.party, scenario.results,
-                                   {1000, 100, 1000},
-                                   scenario.level.empty() ? "G1" : scenario.level)) {
+            if (!m_afterLevel.open(renderDevice(), sceneContext, journey.party, scenario.results,
+                                   level->shopMaxima, levelName)) {
                 return false;
             }
             m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);

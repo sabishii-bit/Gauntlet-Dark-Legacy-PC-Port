@@ -16,6 +16,8 @@ add_library(game STATIC
     screens/ShopSession.cpp
     screens/AfterLevelScene.h
     screens/AfterLevelScene.cpp
+    screens/AfterLevelPresentation.cpp
+    screens/ShopLayout.cpp
     app/Gauntlet.h
     app/Gauntlet.cpp
     app/CommandLine.h

@@ -21,6 +21,16 @@ struct ShopLane {
     ShopResult feedback = ShopResult::Invalid;
     f64 feedbackLeft = 0;
     bool transacted = false; ///< a one-update event, including refused attempts
+    s32 entryLevel = 1;
+    StatBlock entryStats;
+    f64 phaseSeconds = 0;
+    s32 entryGold = 0;
+    f32 goldHeight = LevelTally::kInitialHeight;
+    /** Strength, armor, magic, speed, max health, in the shop's row order. */
+    std::array<s32, 5> statsValues(bool previous) const;
+    std::array<s32, 5> statsRevealTicks() const;
+    bool statsReady() const;
+    void rememberShopEntry();
 };
 /** The end-level flow independent of rendering/audio. Input addresses player IDs, not
  * vector positions. Fallen members keep their rollback saves but cannot shop. */
