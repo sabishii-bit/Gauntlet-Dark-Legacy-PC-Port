@@ -321,10 +321,15 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(std::abs(enemies.yawOf(*archer)) < 0.5f);
     // The bomber lobs.
     spawn.tier = kBomberStrength;
+    SECTION("stationary bomber") {}
+    SECTION("retreating bomber uses the archer movement with bomb ammunition") {
+        spawn.algorithm = kSkirmishBombWay;
+    }
     spawn.position = Vec3{30.0f, 0.0f, 0.0f};
     const auto bomber = enemies.spawn(spawn, {});
     REQUIRE(bomber.has_value());
-    REQUIRE(enemies.algorithmOf(*bomber) == kBombWay);
+    REQUIRE(enemies.algorithmOf(*bomber) ==
+            (spawn.algorithm == kSkirmishBombWay ? kSkirmishBombWay : kBombWay));
     missiles.clear();
     const std::vector<EnemyView> afar{playerAt(Vec3{30.0f, 0.0f, 25.0f})};
     for (s32 i = 0; i < 300 && missiles.count() == 0; ++i) {
@@ -339,6 +344,7 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     // The suicide: a first-tier body, a fuse, a run, and a blast of fifty at the level's
     // half, dead of it.
     spawn.tier = kSuicideStrength;
+    spawn.algorithm = -1;
     spawn.position = Vec3{-30.0f, 0.0f, 0.0f};
     const auto suicide = enemies.spawn(spawn, {});
     REQUIRE(suicide.has_value());

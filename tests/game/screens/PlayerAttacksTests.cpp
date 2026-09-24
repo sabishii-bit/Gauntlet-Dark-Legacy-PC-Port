@@ -35,6 +35,61 @@ struct Fixture {
     }
 };
 
+TEST_CASE("potion magic damages survivors once and drives knockdown through get-up",
+          "[game][screens][player-attacks][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    Fixture f;
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    EnemyScales scales;
+    scales.health = 10;
+    f.opponents.enemies().open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(f.opponents.enemies().loadKind(13));
+    EnemySpawn spawn;
+    spawn.kind = 13;
+    spawn.tier = 3;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 2};
+    const auto enemy = f.opponents.enemies().spawn(spawn, {});
+    REQUIRE(enemy);
+    const f32 before = f.opponents.enemies().healthOf(*enemy);
+    SECTION("used potion") {
+        auto& inventory = f.players[0].actor.save().progress().inventory;
+        inventory.addPotions(1, 1);
+        f.attacks.usePotion(0, f.players);
+        CHECK(inventory.potions.empty());
+    }
+    SECTION("thrown potion hits with splash rather than ordinary projectile damage") {
+        MissileLaunch potion;
+        potion.owner = 3;
+        potion.position = Vec3{0, 1, 0};
+        potion.velocity = Vec3{0, 0, 50};
+        potion.spec = &MissileSpec::potion();
+        potion.potion = 1;
+        potion.potency = 16;
+        potion.damage = 40;
+        REQUIRE(f.arsenal.missiles().launch(potion));
+    }
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    REQUIRE(f.opponents.enemies().healthOf(*enemy) < before);
+    REQUIRE(f.opponents.enemies().healthOf(*enemy) > 0);
+    const f32 after = f.opponents.enemies().healthOf(*enemy);
+    f.opponents.enemies().update(2, 1.0f / 30, {});
+    REQUIRE(f.opponents.enemies().animatorOf(*enemy)->action() == EnemyAction::HitReact2);
+    bool gotUp = false;
+    for (s32 frame = 0; frame < 240; ++frame) {
+        f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+        f.opponents.enemies().update(2, 1.0f / 30, {});
+        gotUp = gotUp || f.opponents.enemies().animatorOf(*enemy)->action() == EnemyAction::GetUp;
+    }
+    CHECK(gotUp);
+    CHECK(f.opponents.enemies().healthOf(*enemy) == after);
+    f.attacks.clear();
+    f.opponents.close();
+}
+
 TEST_CASE("scene projectile updates present retail world impacts once and preserve potion bursts",
           "[game][screens][player-attacks][projectile-impact][unpacked]") {
     const auto root =

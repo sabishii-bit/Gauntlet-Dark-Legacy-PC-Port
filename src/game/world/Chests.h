@@ -33,7 +33,7 @@ struct ChestEvent {
     Kind kind = Kind::Unlocked;
     usize chest = 0;
     usize visitor = 0;     ///< who unlocked it (for Opened, who had)
-    s32 contents = -1;     ///< Opened: the item record that was inside, or -1
+    s32 contents = -1;     ///< Unlocked/Opened: the resolved pickup record, or -1
     s32 gold = 0;          ///< Opened: what a chest of gold pays its opener
     bool explodes = false; ///< Opened: it was a trapped chest
     Vec3 position{0.0f, 0.0f, 0.0f};
@@ -43,7 +43,7 @@ struct ChestEvent {
  * A level's chests, worked the way the original works them: each is a container item whose
  * first parameter names the item record inside it (or a list to pick one from at random). A
  * chest stands shut and solid until someone against it has a key to spend; it then plays its
- * opening and, its lid up, gives up what it held: a pickup dropped where it stands, gold
+ * opening with its pickup riding NULL1; its lid up, it makes that pickup collectible, pays gold
  * paid straight to its opener when it is a chest of gold, or a blast when it is trapped.
  */
 class Chests {

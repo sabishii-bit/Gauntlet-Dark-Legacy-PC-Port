@@ -46,6 +46,7 @@ void PlayerAttacks::clear() {
     m_strikeEffects.clear();
     m_strikeSources.clear();
     m_shields.clear();
+    m_potions.clear();
     m_resources.reset();
 }
 /** What a charge runs into is struck, once each charge. */
@@ -556,6 +557,10 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                                            missileTargets);
     for (const MissileImpact& impact : m_resources->arsenal.missiles().takeImpacts()) {
         m_resources->arsenal.presentImpact(impact);
+        if (impact.potion != 0) {
+            beginPotion(impact);
+            continue;
+        }
         if (impact.target >= kSafeRockTargetBase) {
             targets.fixtures.strikeSafeRock(static_cast<usize>(impact.target - kSafeRockTargetBase),
                                             impact.damage);
@@ -606,6 +611,94 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
             targets.fixtures.settleBlasts(players, targets.fixtureEvents);
         }
     }
+    updatePotions(seconds, players, targets);
+}
+
+void PlayerAttacks::usePotion(usize index, std::span<PlayerRuntime> players) {
+    if (m_resources && index < players.size()) {
+        if (const auto burst = m_resources->arsenal.usePotion(players[index].actor)) {
+            beginPotion(*burst);
+        }
+    }
+}
+
+void PlayerAttacks::beginPotion(const MissileImpact& impact) {
+    if (!m_resources) {
+        return;
+    }
+    static constexpr std::array<std::string_view, 5> kTrees{"MP_FIRE", "MP_FIRE", "MP_ELEC",
+                                                            "MP_LIGHT", "MP_ACID"};
+    PotionBurst burst;
+    burst.impact = impact;
+    const auto kind = static_cast<usize>(std::clamp(impact.potion, 0, 4));
+    if (const auto tree = m_resources->weapons.trees.find(kTrees[kind])) {
+        const auto& sequences = m_resources->weapons.trees.tree(*tree).sequences;
+        if (!sequences.empty()) {
+            AnimationPlayer animation;
+            animation.start(sequences[0], 0);
+            burst.duration = std::max(1.0f / 30, animation.secondsPerFrame() *
+                                                     static_cast<f32>(sequences[0].frames));
+        }
+    }
+    m_potions.push_back(std::move(burst));
+}
+
+void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
+                                  const Targets& targets) {
+    for (PotionBurst& burst : m_potions) {
+        // ProcessEffects expands the magic wave while its damage falls. Each
+        // target is struck once, not once per frame while it tries to get up.
+        burst.elapsed += seconds;
+        const f32 phase = 1.0f - burst.elapsed / burst.duration;
+        if (phase <= 0.33f) {
+            continue;
+        }
+        const f32 radius = burst.impact.potency * (1.33f - phase);
+        const f32 power = burst.impact.damage * 1.5f * (phase - 0.33f);
+        const u32 flags = EnemyHit::kMagic | static_cast<u32>(burst.impact.potion);
+        for (const MissileTarget& target : projectileTargets(targets)) {
+            Vec3 direction = target.base - burst.impact.position;
+            if (std::hypot(direction.x, direction.z) > radius + target.radius ||
+                std::abs(direction.y) > radius + target.height ||
+                std::ranges::find(burst.hit, target.id) != burst.hit.end()) {
+                continue;
+            }
+            burst.hit.push_back(target.id);
+            direction.y = 0;
+            const s32 byPlayer = burst.impact.owner;
+            if (target.id >= kSafeRockTargetBase) {
+                targets.fixtures.strikeSafeRock(static_cast<usize>(target.id - kSafeRockTargetBase),
+                                                power);
+            } else if (target.id >= kBossTargetBase) {
+                EnemyHit hit;
+                hit.damage = power;
+                hit.flags = flags;
+                hit.player = byPlayer;
+                hit.direction = direction;
+                for (const auto& player : players) {
+                    if (player.actor.player() == byPlayer) {
+                        hit.level = experienceLevel(player.actor.save().experience());
+                    }
+                }
+                targets.opponents.bosses().hurt(hit);
+            } else if (target.id >= kCritterTargetBase) {
+                targets.opponents.strikeCritter(target.id - kCritterTargetBase, power, flags,
+                                                direction, byPlayer, target.base, false, players);
+            } else if (target.id >= kGeneratorTargetBase) {
+                targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, power,
+                                                  byPlayer);
+            } else if (target.id >= kEnemyTargetBase) {
+                targets.opponents.strikeEnemy(target.id - kEnemyTargetBase, power, flags, direction,
+                                              byPlayer, players);
+            } else {
+                targets.fixtures.strikeBarrel(static_cast<usize>(target.id), power, byPlayer,
+                                              players, targets.fixtureEvents);
+            }
+        }
+    }
+    targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+    std::erase_if(m_potions,
+                  [](const PotionBurst& burst) { return burst.elapsed >= burst.duration; });
 }
 
 } // namespace gdl::game

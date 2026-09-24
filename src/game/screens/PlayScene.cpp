@@ -327,9 +327,11 @@ void PlayScene::collectItems() {
         // Against an open chest, a character reaches what lies in it.
         const Vec3 here = presenceOf(collectors.size());
         const s32 chest = m_fixtures.chests().holdingTouchedBy(ChestVisitor{here, actor.radius()});
-        const Vec3 from =
-            chest >= 0 ? m_fixtures.chests().chest(static_cast<usize>(chest)).figure.position()
-                       : here;
+        Vec3 from = here;
+        if (chest >= 0) {
+            const s32 held = m_fixtures.chests().chest(static_cast<usize>(chest)).held;
+            from = m_world->placedItems().item(static_cast<usize>(held)).position;
+        }
         collectors.push_back(Collector{from, actor.reach(), actor.height() * 0.5f});
     }
     const std::vector<Pickup> pickups = m_world->collect(
@@ -1028,7 +1030,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     launchWeapon(i, m_players[i].actor.facing(), kStrongThrowScale, true);
                     break;
                 case PartyMotion::Action::ShieldPotion: m_attacks.shieldPotion(i, m_players); break;
-                case PartyMotion::Action::UsePotion: m_arsenal.usePotion(m_players[i].actor); break;
+                case PartyMotion::Action::UsePotion: m_attacks.usePotion(i, m_players); break;
                 case PartyMotion::Action::ThrowPotion:
                     m_arsenal.throwPotion(m_players[i].actor);
                     break;

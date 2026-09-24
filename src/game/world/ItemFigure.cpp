@@ -151,13 +151,20 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
 }
 
 void ItemFigure::play(s32 index, bool loop) {
+    const bool hadPose = m_index >= 0;
     m_index = index;
     m_loop = loop;
     if (m_tree == nullptr || index < 0 || static_cast<usize>(index) >= m_tree->sequences.size()) {
         return;
     }
     m_player.start(m_tree->sequences[static_cast<usize>(index)], static_cast<u32>(index));
-    m_pose.evaluate(*m_tree, static_cast<u32>(index), 0.0f);
+    const auto& sequence = m_tree->sequences[static_cast<usize>(index)];
+    // Atree's empty state changes object visibility, not the previous pose.
+    // CHEST OPEN must retain the final ACTIVE lid/socket transforms.
+    m_holdPose = hadPose && sequence.frames == 0 && sequence.tracks.empty();
+    if (!m_holdPose) {
+        m_pose.evaluate(*m_tree, static_cast<u32>(index), 0.0f);
+    }
     m_model.setFrame(static_cast<u32>(index), 0);
 }
 
@@ -166,12 +173,32 @@ void ItemFigure::update(f32 seconds) {
         return;
     }
     m_player.advance(seconds, m_loop);
-    m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+    if (!m_holdPose) {
+        m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+    }
     m_model.setFrame(m_player.sequence(), static_cast<s32>(m_player.frame()));
 }
 
 bool ItemFigure::finished() const {
     return m_tree == nullptr || !m_player.playing() || m_player.finished();
+}
+
+std::optional<Mat4> ItemFigure::nodeTransform(std::string_view name) const {
+    if (m_tree != nullptr) {
+        for (usize i = 0; i < m_tree->nodes.size(); ++i) {
+            if (m_tree->nodes[i].name == name && i < m_pose.matrices().size()) {
+                return m_transform * m_pose.matrices()[i];
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+f32 ItemFigure::progress() const {
+    return m_player.frameCount() > 1
+               ? std::clamp((m_player.frame() + 1) / static_cast<f32>(m_player.frameCount()), 0.0f,
+                            1.0f)
+               : 1.0f;
 }
 
 s32 ItemFigure::ticksOf(s32 index) const {

@@ -153,4 +153,98 @@ TEST_CASE("barrel smoke belongs to detonations, not ordinary broken containers",
     CHECK(checked == std::array<bool, 4>{true, true, true, true});
     f.fixtures.clear();
 }
+
+TEST_CASE("poison barrel cloud remains rendered for the damaging lifetime and disperses",
+          "[game][screens][level-fixtures][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    usize barrel = 0;
+    while (barrel < f.fixtures.barrels().size() &&
+           f.fixtures.barrels().barrel(barrel).kind != BreakableStrike::Kind::Poison) {
+        ++barrel;
+    }
+    REQUIRE(barrel < f.fixtures.barrels().size());
+    f.fixtures.strikeBarrel(barrel, 10000, -1, {}, f.events);
+    REQUIRE(f.effects.count() == 1);
+    const u32 id = f.effects.effect(0).id;
+    for (s32 frame = 0; frame < 119; ++frame) {
+        f.effects.update(1.0f / 30);
+        f.fixtures.update(2, 1.0f / 30, {}, f.events);
+        REQUIRE(f.effects.playing(id));
+        if (frame > 30) {
+            CHECK(f.effects.effect(0).name == "POISONEXP2");
+            CHECK(glm::length(Vec3{f.effects.effect(0).transform()[0]}) == 3.5f);
+            f.device.draws.clear();
+            f.effects.draw(f.device, Mat4{1}, f.world.fullLighting());
+            REQUIRE_FALSE(f.device.draws.empty());
+        }
+    }
+    f.fixtures.update(6, 0.1f, {}, f.events);
+    CHECK_FALSE(f.effects.playing(id));
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "POISONEXP3");
+    CHECK_FALSE(f.fixtures.barrels().barrel(barrel).gone);
+    CHECK(f.fixtures.barrels().barrel(barrel).state == Breakables::kBroken);
+    f.effects.update(2);
+    CHECK(f.effects.count() == 0);
+    f.fixtures.clear();
+}
+
+TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected early",
+          "[game][screens][level-fixtures][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    f.events.help = [](s32, usize) {};
+    f.events.card = [](s32, std::string_view) {};
+    usize index = 0;
+    while (index < f.fixtures.chests().size()) {
+        const auto& chest = f.fixtures.chests().chest(index);
+        if (chest.shown && chest.subtype == Chests::kChest && chest.contents >= 0 &&
+            chest.figure.nodeTransform("NULL1")) {
+            break;
+        }
+        ++index;
+    }
+    REQUIRE(index < f.fixtures.chests().size());
+    const auto& chest = f.fixtures.chests().chest(index);
+    f.players[0].actor.place(chest.box.centre);
+    f.players[0].actor.save().progress().inventory.keys = 9;
+    f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.events);
+    REQUIRE(chest.state == Chests::kOpening);
+    REQUIRE(chest.held >= 0);
+    const auto held = static_cast<usize>(chest.held);
+    const usize count = f.world.placedItems().size();
+    REQUIRE_FALSE(f.world.placedItems().item(held).takeable());
+    for (s32 frame = 0; frame < 300 && chest.state != Chests::kOpen; ++frame) {
+        f.fixtures.update(2, 1.0f / 30, std::span{f.players}.first(1), f.events);
+        const auto socket = chest.figure.nodeTransform("NULL1");
+        REQUIRE(socket);
+        CHECK(glm::distance(f.world.placedItems().item(held).position, Vec3{(*socket)[3]}) <
+              0.001f);
+    }
+    REQUIRE(chest.state == Chests::kOpen);
+    CHECK(f.world.placedItems().size() == count);
+    CHECK(f.world.placedItems().item(held).takeable());
+    CHECK(glm::distance(f.world.placedItems().item(held).position, chest.figure.position()) > 1);
+    const Vec3 openedPosition = f.world.placedItems().item(held).position;
+    f.fixtures.update(60, 1, std::span{f.players}.first(1), f.events);
+    CHECK(f.world.placedItems().item(held).position == openedPosition);
+    f.fixtures.clear();
+}
 } // namespace

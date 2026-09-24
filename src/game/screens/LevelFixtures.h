@@ -68,6 +68,7 @@ private:
         Vec3 position{0.0f, 0.0f, 0.0f};
         f32 damage = 0.0f;
         f32 secondsLeft = 0.0f;
+        u32 effect = 0;
     };
     std::vector<GasCloud> m_clouds;
     /** A blast yet to be felt: one barrel's sets off the next, in turn. */

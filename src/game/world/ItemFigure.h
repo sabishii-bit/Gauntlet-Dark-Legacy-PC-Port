@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string_view>
 #include <vector>
 
@@ -59,6 +60,9 @@ public:
     s32 sequence() const { return m_index; }
     /** Whether a sequence played once has reached its end (a missing one has at once). */
     bool finished() const;
+    /** Current posed attachment, including the instance's placement. */
+    std::optional<Mat4> nodeTransform(std::string_view name) const;
+    f32 progress() const;
     /** How many sequences the figure has. */
     usize sequenceCount() const { return m_tree != nullptr ? m_tree->sequences.size() : 0; }
     /** How long the sequence number `index` lasts, in ticks of a sixtieth. */
@@ -78,6 +82,7 @@ private:
     Mat4 m_transform{1.0f};
     s32 m_index = -1;
     bool m_loop = false;
+    bool m_holdPose = false;
 };
 
 /** Whether a party of `players` sees an item placed for `minPlayers`, by the original's

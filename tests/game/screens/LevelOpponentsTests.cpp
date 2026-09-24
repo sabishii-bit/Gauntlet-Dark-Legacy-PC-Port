@@ -38,6 +38,20 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     players[0].actor.spawn(0, {}, nullptr, {24.375f, 0.0078125f, 2.5f}, 0);
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.enemies().count() == static_cast<usize>(world.level()->maxEnemies));
+    std::array<bool, 3> special{};
+    bool skirmishBomber = false;
+    for (s32 id = 0; id < Enemies::kMost; ++id) {
+        if (!opponents.enemies().alive(id)) {
+            continue;
+        }
+        const s32 variant = opponents.enemies().variantOf(id);
+        if (variant >= kArcherStrength && variant <= kSuicideStrength) {
+            special[static_cast<usize>(variant - kArcherStrength)] = true;
+        }
+        skirmishBomber = skirmishBomber || opponents.enemies().algorithmOf(id) == kSkirmishBombWay;
+    }
+    CHECK(special == std::array<bool, 3>{true, true, true});
+    CHECK(skirmishBomber);
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
     events.blast = [](const Vec3&, f32, f32) {};

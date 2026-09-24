@@ -114,6 +114,11 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
                 chest.opener = static_cast<s32>(v);
                 chest.figure.play(kOpening, false);
                 event.kind = ChestEvent::Kind::Unlocked;
+                chest.contents = resolveContents(m_infos, chest.contents,
+                                                 static_cast<usize>(chest.instance), m_seed);
+                if (chest.subtype != kTrappedChest && chest.subtype != kGoldChest) {
+                    event.contents = chest.contents;
+                }
                 events.push_back(event);
                 break;
             }
@@ -126,8 +131,7 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
             event.visitor = static_cast<usize>(std::max(chest.opener, 0));
             event.position = chest.figure.position();
             event.explodes = chest.subtype == kTrappedChest;
-            const s32 inside = resolveContents(m_infos, chest.contents,
-                                               static_cast<usize>(chest.instance), m_seed);
+            const s32 inside = chest.contents;
             if (!event.explodes && inside >= 0) {
                 const ItemInfo& record = m_infos[static_cast<usize>(inside)];
                 if (chest.subtype == kGoldChest) {

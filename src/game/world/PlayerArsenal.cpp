@@ -190,13 +190,21 @@ f32 PlayerArsenal::magicPowerOf(const PlayerActor& actor) const {
     return PowerupEffects::of(save.progress().inventory).magicPower(magic);
 }
 
-void PlayerArsenal::usePotion(PlayerActor& actor) {
+std::optional<MissileImpact> PlayerArsenal::usePotion(PlayerActor& actor) {
     if (!m_resources.has_value()) {
-        return;
+        return std::nullopt;
     }
     if (const s32 kind = actor.save().progress().inventory.takePotion(); kind != 0) {
         burstPotion(kind, actor.position(), magicPowerOf(actor));
+        MissileImpact burst;
+        burst.position = actor.position();
+        burst.owner = actor.player();
+        burst.potion = kind;
+        burst.potency = magicPowerOf(actor);
+        burst.damage = 40.0f; // start_magic: fixed damage, magic stat controls radius.
+        return burst;
     }
+    return std::nullopt;
 }
 
 void PlayerArsenal::throwPotion(PlayerActor& actor) {
@@ -217,6 +225,7 @@ void PlayerArsenal::throwPotion(PlayerActor& actor) {
         Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} * kPotionToss;
     launch.potion = kind;
     launch.potency = kThrownShare * magicPowerOf(actor);
+    launch.damage = 40.0f;
     launch.spec = &MissileSpec::potion();
     launch.model = &m_potionModels[static_cast<usize>(
         std::clamp(kind, 0, static_cast<s32>(m_potionModels.size()) - 1))];

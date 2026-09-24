@@ -461,7 +461,8 @@ const EnemyMind& enemyMindOf(s32 algorithm) {
     case kStandWay: return kStand;
     case kThrowWay:
     case kBombWay: return kThrow;
-    case kSkirmishWay: return kSkirmish;
+    case kSkirmishWay:
+    case kSkirmishBombWay: return kSkirmish;
     case kSuicideWay: return kSuicide;
     case kWanderWay:
     case kWanderOtherWay:

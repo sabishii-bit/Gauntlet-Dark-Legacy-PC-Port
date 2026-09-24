@@ -178,9 +178,8 @@ void Breakables::update(f32 seconds) {
         if (barrel.state != kBreaking || !barrel.figure.finished()) {
             continue;
         }
-        // Staves are left lying; a blast or a cloud leaves nothing.
-        if (barrel.kind == BreakableStrike::Kind::Exploding ||
-            barrel.kind == BreakableStrike::Kind::Poison) {
+        // Gas escapes the barrel, but does not consume its broken staves.
+        if (barrel.kind == BreakableStrike::Kind::Exploding) {
             barrel.gone = true;
         } else {
             barrel.state = kBroken;
