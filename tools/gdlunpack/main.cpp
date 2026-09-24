@@ -29,6 +29,7 @@
 #include "formats/ModelArchive.h"
 #include "formats/ObjWriter.h"
 #include "formats/PlayerDataWad.h"
+#include "formats/ShopWad.h"
 #include "formats/SoundBank.h"
 #include "formats/TextRom.h"
 #include "formats/TplFile.h"
@@ -63,6 +64,7 @@ struct Summary {
     u32 cardImages = 0;
     u32 banks = 0;
     u32 samples = 0;
+    u32 shopItems = 0;
     u32 failures = 0;
 };
 
@@ -1187,6 +1189,11 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
             json.key(LevelTuningRecord::kNames[i]).value(level.tuning.values[i]);
         }
         json.endObject();
+        json.key("shopMaxima").beginArray();
+        for (const s32 maximum : level.shopMaxima) {
+            json.value(maximum);
+        }
+        json.endArray();
         json.key("ambient").value(level.ambient);
         json.key("lightDirection")
             .numbers(std::array<f32, 3>{level.lightDirection.x, level.lightDirection.y,
@@ -1386,6 +1393,28 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
                         unpackCritter(entry.path(), outRoot / "critter", summary);
                     }
                 }
+            } else if (upper == "SHPDATA") {
+                const auto file = AssetLocator(directory).find("SHOP.WAD");
+                if (!file) {
+                    throw FileError("SHOP.WAD missing");
+                }
+                JsonWriter json;
+                json.beginObject().key("items").beginArray();
+                const auto items = parseShopWad(readFile(*file));
+                for (const auto& item : items) {
+                    json.beginObject();
+                    json.key("texture").value(item.texture);
+                    json.key("description").value(item.description);
+                    json.key("scale").value(static_cast<f64>(item.scale));
+                    json.key("type").value(item.type);
+                    json.key("price").value(item.price);
+                    json.key("amount").value(item.amount);
+                    json.endObject();
+                }
+                json.endArray().endObject();
+                std::filesystem::create_directories(outRoot / "shop");
+                writeTextFile(outRoot / "shop/catalog.json", json.take());
+                summary.shopItems += static_cast<u32>(items.size());
             } else if (upper == "PDATA") {
                 for (const auto& entry : std::filesystem::directory_iterator(directory)) {
                     if (toLowerAscii(entry.path().extension().string()) == ".wad") {
@@ -1427,10 +1456,10 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
     print(std::format(
         "{} archives, {} textures, {} models, {} animation trees, {} fonts, "
         "{} text roms, {} sound banks, {} samples, {} classes, {} critters, {} worlds, "
-        "{} realms, {} card images, {} failures",
+        "{} realms, {} card images, {} shop items, {} failures",
         summary.archives, summary.textures, summary.models, summary.animations, summary.fonts,
         summary.textRoms, summary.banks, summary.samples, summary.classes, summary.critters,
-        summary.worlds, summary.realms, summary.cardImages, summary.failures));
+        summary.worlds, summary.realms, summary.cardImages, summary.shopItems, summary.failures));
     return summary.failures == 0 ? 0 : 3;
 }
 

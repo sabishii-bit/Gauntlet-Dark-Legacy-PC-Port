@@ -22,7 +22,7 @@ std::filesystem::path sampleRealm(std::string_view name) {
      "tuning": {"playerLevel": 10, "experience": 2.5, "damage": 0, "difficulty": 2,
                 "trapRate": 4, "trapDamage": 0, "enemyHealth": 0.75, "enemySpeed": 0,
                 "generatorMost": 0.5},
-     "maxEnemies": 13,
+     "maxEnemies": 13, "shopMaxima": [1500, 300, 2500],
      "ambient": 0.8, "lightDirection": [-1, -6, 2], "lightColor": [1, 0.9, 0.8],
      "lightIntensity": 1},
     {"name": "L2", "title": "Tower", "cameraIndex": 5, "audioIndex": -1}
@@ -46,6 +46,8 @@ TEST_CASE("world data names a realm's levels and the records they point at", "[a
     REQUIRE(level != nullptr);
     REQUIRE(level->title == "Tower");
     REQUIRE(level->musicVolume == Approx(0.75f));
+    REQUIRE(level->shopMaxima == std::array<s32, 3>{1500, 300, 2500});
+    REQUIRE(data.level("L2")->shopMaxima == std::array<s32, 3>{1000, 100, 1000});
     // A scale left at zero is the level's difficulty; the damage multiplier is then one.
     REQUIRE(level->tuning.difficulty == 2.0f);
     REQUIRE(level->tuning.damage == 1.0f);

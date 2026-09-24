@@ -60,6 +60,7 @@ struct LevelRecord {
     f32 musicVolume = 0.0f;
     f32 soundVolume = 0.0f;
     LevelTuningRecord tuning;
+    std::array<s32, 3> shopMaxima{};         ///< gold, kills, experience pile scales
     f32 ambient = 1.0f;                      ///< grey ambient light
     Vec3 lightDirection{-0.3f, -1.4f, 1.0f}; ///< the way the light travels
     Vec3 lightColor{1.0f, 1.0f, 1.0f};

@@ -4,6 +4,14 @@
 # cameras), menu (widgets), screens (full screens and what they receive), app (the driver and
 # attract flow). A module only includes those below it.
 add_library(game STATIC
+    players/ShopPurchase.h
+    players/ShopPurchase.cpp
+    players/LevelResults.h
+    players/LevelResults.cpp
+    screens/ShopSession.h
+    screens/ShopSession.cpp
+    screens/AfterLevelScene.h
+    screens/AfterLevelScene.cpp
     app/Gauntlet.h
     app/Gauntlet.cpp
     app/CommandLine.h

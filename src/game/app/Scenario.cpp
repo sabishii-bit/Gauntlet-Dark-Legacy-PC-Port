@@ -38,10 +38,11 @@ Scenario Scenario::fromJson(std::string_view text) {
         throw FormatError("scenario: not an object");
     }
     const std::string screen = root.value("screen", std::string("tower"));
-    if (screen != "tower") {
+    if (screen != "tower" && screen != "shop") {
         throw FormatError("scenario: unknown screen " + screen);
     }
     Scenario scenario;
+    scenario.afterLevel = screen == "shop";
     if (!root.contains("party") || !root.at("party").is_array() || root.at("party").empty()) {
         throw FormatError("scenario: the party is missing or empty");
     }
@@ -55,6 +56,12 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.promotedLevel = entry.value("promotedLevel", -1);
         member.crystals = entry.value("crystals", std::vector<s32>{});
         member.gold = entry.value("gold", 0);
+        if (scenario.afterLevel) {
+            const auto& result = entry.value("results", Json::object());
+            scenario.results.push_back({member.player,
+                                        {result.value("gold", 0), result.value("kills", 0),
+                                         result.value("experience", 0)}});
+        }
         member.health = entry.value("health", 0);
         member.keys = entry.value("keys", 0);
         member.slot = entry.value("slot", -1);

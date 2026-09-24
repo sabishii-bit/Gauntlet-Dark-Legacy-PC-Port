@@ -403,7 +403,13 @@ void PlayScene::harm(s32 player, f32 damage, HurtKind kind) {
 
 void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
     for (usize i = 0; i < m_players.size(); ++i) {
-        if (m_players[i].actor.player() != player || isDown(i) || amount <= 0) {
+        if (m_players[i].actor.player() != player || isDown(i)) {
+            continue;
+        }
+        if (kill) {
+            ++m_players[i].levelKills;
+        }
+        if (amount <= 0) {
             continue;
         }
         CharacterSave& save = m_players[i].actor.save();
@@ -506,49 +512,52 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
 }
 
 void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
-    m_opponents.update(
-        ticks, seconds, m_players, m_fixtures.obstacles(),
-        {.hurt = [this](usize i, f32 damage, HurtKind kind, bool directed,
-                        const PlayerImpact& impact) { hurt(i, damage, kind, directed, impact); },
-         .blast = [this](const Vec3& position, f32 radius,
-                         f32 damage) { blast(position, radius, damage); },
-         .settleBlasts = [this] { settleBlasts(); },
-         .legend =
-             [this](const LegendEvent& event) {
-                 m_bossSequence.showLegend(event, m_opponents.bosses(), m_players);
-             },
-         .advanceLegend =
-             [this](f32 duration) {
-                 m_bossSequence.advanceLegend(duration, m_opponents.bosses(), m_players);
-             },
-         .fallen =
-             [this](const Vec3& position) {
-                 m_bossSequence.fallen(position, m_opponents.bosses(), m_players);
-             },
-         .spew =
-             [this](const CombatSpew& spew) {
-                 m_bossSequence.spewCoins(spew, m_opponents, m_players);
-             },
-         .advanceVictory = [this](s32 elapsed, f32 duration) { updateVictory(elapsed, duration); },
-         .levels = [this] { updateLevels(); },
-         .award = [this](s32 player, s32 amount,
-                         bool kill) { awardExperience(player, amount, kill); },
-         .blocksBreath =
-             [this](const Vec3& from, const Vec3& to) {
-                 return m_fixtures.safeRocks().blocksBreath(from, to);
-             },
-         .blocksArea =
-             [this](const Vec3& from, const Vec3& to) {
-                 constexpr f32 kAreaProbeRadius = 0.1f;
-                 return m_fixtures.safeRocks().blocksSegment(from, to, kAreaProbeRadius);
-             },
-         .arenaAnchors = [this] { return m_fixtures.safeRocks().attackAnchors(); },
-         .arenaTargets = [this] { return m_fixtures.safeRocks().arenaTargets(); },
-         .activateArena =
-             [this](const CombatArenaActivation& activation) {
-                 m_fixtures.safeRocks().scheduleActivation(activation.index, activation.delay);
-             },
-         .shake = [this] { m_shake.start(); }});
+    m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), opponentEvents());
+}
+
+LevelOpponents::Events PlayScene::opponentEvents() {
+    return {
+        .hurt = [this](usize i, f32 damage, HurtKind kind, bool directed,
+                       const PlayerImpact& impact) { hurt(i, damage, kind, directed, impact); },
+        .blast = [this](const Vec3& position, f32 radius,
+                        f32 damage) { blast(position, radius, damage); },
+        .settleBlasts = [this] { settleBlasts(); },
+        .legend =
+            [this](const LegendEvent& event) {
+                m_bossSequence.showLegend(event, m_opponents.bosses(), m_players);
+            },
+        .advanceLegend =
+            [this](f32 duration) {
+                m_bossSequence.advanceLegend(duration, m_opponents.bosses(), m_players);
+            },
+        .fallen =
+            [this](const Vec3& position) {
+                m_bossSequence.fallen(position, m_opponents.bosses(), m_players);
+            },
+        .spew =
+            [this](const CombatSpew& spew) {
+                m_bossSequence.spewCoins(spew, m_opponents, m_players);
+            },
+        .advanceVictory = [this](s32 elapsed, f32 duration) { updateVictory(elapsed, duration); },
+        .levels = [this] { updateLevels(); },
+        .award = [this](s32 player, s32 amount,
+                        bool kill) { awardExperience(player, amount, kill); },
+        .blocksBreath =
+            [this](const Vec3& from, const Vec3& to) {
+                return m_fixtures.safeRocks().blocksBreath(from, to);
+            },
+        .blocksArea =
+            [this](const Vec3& from, const Vec3& to) {
+                constexpr f32 kAreaProbeRadius = 0.1f;
+                return m_fixtures.safeRocks().blocksSegment(from, to, kAreaProbeRadius);
+            },
+        .arenaAnchors = [this] { return m_fixtures.safeRocks().attackAnchors(); },
+        .arenaTargets = [this] { return m_fixtures.safeRocks().arenaTargets(); },
+        .activateArena =
+            [this](const CombatArenaActivation& activation) {
+                m_fixtures.safeRocks().scheduleActivation(activation.index, activation.delay);
+            },
+        .shake = [this] { m_shake.start(); }};
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);
@@ -616,6 +625,18 @@ bool PlayScene::leaveBy(usize portal) {
                   exit.tag);
     }
     return false;
+}
+
+std::vector<LevelResults> PlayScene::levelResults() const {
+    std::vector<LevelResults> results;
+    for (usize i = 0; i < m_players.size(); ++i) {
+        const auto& runtime = m_players[i];
+        if (!isDown(i)) {
+            results.push_back(LevelResults::between(runtime.actor.player(), runtime.entrySave,
+                                                    runtime.actor.save(), runtime.levelKills));
+        }
+    }
+    return results;
 }
 
 std::vector<PartyMember> PlayScene::party() const {
@@ -1051,6 +1072,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
         if (const auto portal = m_portals.update(ticks, seconds, standing);
             portal.has_value() && leaveBy(*portal)) {
+            m_opponents.settleRewards(m_players, opponentEvents());
             m_leaving = true;
             m_transition.comeUp();
         }

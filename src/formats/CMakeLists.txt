@@ -31,6 +31,8 @@ add_library(formats STATIC
     CritterWad.cpp
     WadDirectory.h
     WadDirectory.cpp
+    ShopWad.h
+    ShopWad.cpp
     WorldDataWad.h
     WorldDataWad.cpp
     WorldFile.h

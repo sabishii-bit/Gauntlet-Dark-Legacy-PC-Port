@@ -90,8 +90,9 @@ struct LevelInfo {
     f32 musicVolume = 1.0f;
     f32 soundVolume = 1.0f;
     LevelTuning tuning;
-    f32 ambient = 1.0f;                      ///< grey ambient light
-    Vec3 lightDirection{-0.3f, -1.4f, 1.0f}; ///< the way the light travels
+    std::array<s32, 3> shopMaxima{1000, 100, 1000}; ///< exported level-end pile scales
+    f32 ambient = 1.0f;                             ///< grey ambient light
+    Vec3 lightDirection{-0.3f, -1.4f, 1.0f};        ///< the way the light travels
     Vec3 lightColor{1.0f, 1.0f, 1.0f};
     f32 lightIntensity = 1.0f;
 };

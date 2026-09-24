@@ -9,6 +9,8 @@ find_package(Stb REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 add_library(engine STATIC
+    assets/ShopCatalog.h
+    assets/ShopCatalog.cpp
     core/Types.h
     core/SpecialMembers.h
     core/Error.h

@@ -2,6 +2,9 @@ find_package(Catch2 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
+    formats/ShopWadTests.cpp
+    game/players/ShopTests.cpp
+    game/screens/AfterLevelSceneTests.cpp
     TestSupport.h
     FakeRenderDevice.h
     engine/core/TypesTests.cpp

@@ -15,6 +15,52 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("exit settlement credits a last-frame generator kill once without advancing combat",
+          "[shop][level-opponents][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(3, {}, nullptr, {0, 0, 0}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    s32 generator = -1;
+    for (usize i = 0; i < opponents.generators().count(); ++i) {
+        if (opponents.generators().standing(static_cast<s32>(i))) {
+            generator = static_cast<s32>(i);
+            break;
+        }
+    }
+    REQUIRE(generator >= 0);
+    s32 credited = 0;
+    LevelOpponents::Events events;
+    events.award = [&](s32 player, s32 amount, bool killed) {
+        REQUIRE(player == 3);
+        REQUIRE(amount == 0);
+        REQUIRE(killed);
+        ++credited;
+    };
+    events.levels = [] {};
+    opponents.strikeGenerator(generator, 1000000, 3);
+    REQUIRE_FALSE(opponents.generators().standing(generator));
+    opponents.settleRewards(players, events);
+    REQUIRE(credited == 1);
+    opponents.strikeGenerator(generator, 1000000, 3);
+    opponents.settleRewards(players, events);
+    REQUIRE(credited == 1);
+    opponents.close();
+    effects.clear();
+}
+
 TEST_CASE("Wraith entrance stops its persistent portal before the emergence effects",
           "[game][screens][level-opponents][wraith][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/WRAITH.json").parent_path().parent_path();

@@ -131,9 +131,17 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     scene.awardExperience(1, 250);
     REQUIRE(scene.actor(1)->save().experience() == expectedExperience);
     REQUIRE(scene.actor(3)->save().experience() == first.experience());
+    scene.awardExperience(1, 0, true); // zero-XP kills still contribute to the end-level tally
+    scene.awardExperience(1, 0, false);
+    REQUIRE(scene.levelResults().size() == 2);
+    REQUIRE(scene.levelResults()[1].player == 1);
+    REQUIRE(scene.levelResults()[1].totals[1] == 2);
+    REQUIRE(scene.levelResults()[1].totals[2] == expectedExperience - second.experience());
     scene.hurtPlayer(3, 1000.0f, HurtKind::Burn);
     REQUIRE(scene.fallen(3));
     REQUIRE_FALSE(scene.fallen(1));
+    REQUIRE(scene.levelResults().size() == 1);
+    REQUIRE(scene.levelResults()[0].player == 1);
     REQUIRE(scene.turboMeter(3)->held() == 0.0f);
     REQUIRE(scene.turboMeter(1)->held() > 20.0f);
     const auto carried = scene.party();

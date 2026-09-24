@@ -55,6 +55,9 @@ public:
     void close();
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                 std::span<const Obstacle> fixtures, const Events& events);
+    /** Drain hits from the last projectile/attack phase before a level transition freezes
+     * simulation. No AI, collision, or time advances, and each reward is consumed once. */
+    void settleRewards(std::span<const PlayerRuntime> players, const Events& events);
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
     static void applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
@@ -79,6 +82,7 @@ public:
     const BossMeter& meter() const { return m_bossMeter; }
 
 private:
+    void awardEnemyLosses(const Events& events);
     void awardBossLosses(std::span<const PlayerRuntime> players, const Events& events);
     void awardCritterLosses(std::span<const PlayerRuntime> players, const Events& events);
     void showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss);
@@ -114,5 +118,6 @@ private:
         m_cueEffects; ///< all emitted cues, including detached effects borrowing artwork
 
     std::array<f32, 4> m_critterExperienceOwed{};
+    std::vector<s32> m_destroyedGenerators; ///< credited IDs, drained on the next update
 };
 } // namespace gdl::game

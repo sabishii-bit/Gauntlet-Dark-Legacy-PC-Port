@@ -39,6 +39,7 @@ LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> ros
     }
     level.musicVolume = json.value("musicVolume", 1.0f);
     level.soundVolume = json.value("soundVolume", 1.0f);
+    level.shopMaxima = json.value("shopMaxima", std::array<s32, 3>{1000, 100, 1000});
     if (const auto tuning = json.find("tuning"); tuning != json.end() && tuning->is_object()) {
         // A zero stands for the difficulty, itself one when it is zero.
         const f32 difficulty = tuning->value("difficulty", 0.0f);

@@ -20,6 +20,7 @@
 #include "game/app/CommandLine.h"
 #include "game/config/GameConfig.h"
 #include "game/players/PlayerControls.h"
+#include "game/screens/AfterLevelScene.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/MovieScene.h"
 #include "game/screens/PlayScene.h"
@@ -49,6 +50,7 @@ private:
     void updateTitle(f64 deltaSeconds);
     void updateSelect(f64 deltaSeconds);
     void updateTower(f64 deltaSeconds);
+    void updateAfterLevel(f64 deltaSeconds);
     void finishJourney();
     /** Writes the party in play back into its save slots. */
     void keepParty();
@@ -76,6 +78,7 @@ private:
     LevelCatalog m_levels;
     LevelWorld m_towerWorld; ///< the level in play: the tower until the party travels
     PlayScene m_tower;
+    AfterLevelScene m_afterLevel;
     /** A journey between levels: the picture is drawn over an empty view for a frame, so
      * that it is on screen while the next level loads, which holds everything up. */
     struct Journey {

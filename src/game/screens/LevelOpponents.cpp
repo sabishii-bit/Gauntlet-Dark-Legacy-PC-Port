@@ -26,6 +26,7 @@ void LevelOpponents::close() {
     m_moveEffects.clear();
     m_cueEffects.clear();
     m_generators.clear();
+    m_destroyedGenerators.clear();
     m_enemyMissiles.clear();
     m_critters.close();
     m_bossMeter.clear();
@@ -371,9 +372,27 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
                         {blow.knocksBack ? PlayerImpact::kKnockBack : 0, blow.direction});
         }
     }
+    awardEnemyLosses(events);
+}
+
+void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    awardBossLosses(players, events);
+    awardCritterLosses(players, events);
+    awardEnemyLosses(events);
+    events.levels();
+}
+
+void LevelOpponents::awardEnemyLosses(const Events& events) {
     for (const EnemyLoss& loss : m_enemies.takeLosses()) {
         events.award(loss.player, loss.experience, loss.killed);
     }
+    for (const s32 player : m_destroyedGenerators) {
+        events.award(player, 0, true);
+    }
+    m_destroyedGenerators.clear();
 }
 
 /** A hit on one of the swarm, from a player or the world. */
@@ -441,6 +460,7 @@ void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
                                              levelName.empty() ? 'G' : levelName.front()));
     if (event->destroyed) {
         m_enemies.generatorGone(id);
+        m_destroyedGenerators.push_back(byPlayer);
     }
 }
 
@@ -608,7 +628,7 @@ void LevelOpponents::awardBossLosses(std::span<const PlayerRuntime> players, con
             f32& owed = m_critterExperienceOwed[static_cast<usize>(player)];
             owed += loss.experience;
             const auto whole = static_cast<s32>(std::floor(owed));
-            if (whole > 0) {
+            if (whole > 0 || loss.killed) {
                 owed -= static_cast<f32>(whole);
                 events.award(player, whole, loss.killed);
             }
@@ -640,7 +660,7 @@ void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
             f32& owed = m_critterExperienceOwed[static_cast<usize>(player)];
             owed += loss.experience;
             const auto whole = static_cast<s32>(std::floor(owed));
-            if (whole > 0) {
+            if (whole > 0 || loss.killed) {
                 owed -= static_cast<f32>(whole);
                 events.award(player, whole, loss.killed);
             }
