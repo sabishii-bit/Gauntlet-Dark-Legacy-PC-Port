@@ -170,6 +170,24 @@ comes from `data/text/<language>.json`. Saved characters are kept in a `saves`
 folder beside the executable unless `save.directory` in the settings names
 another place.
 
+Press **Start** on a controller, or **Escape** on the keyboard during play,
+to pause. Save Character and Load Character operate on the player who opened the
+menu; slots used by another joined player are protected. Overwrites and loads
+require confirmation. Loading restores that character's progress and returns the
+party to the tower; it is not a mid-level save state. Once a character has a slot,
+travel, returning to the title and shutdown save it automatically.
+
+The title and pause **Options** menus share persisted audio levels, difficulty,
+compass visibility and gameplay bindings. Left/right adjusts values; confirm
+opens a page or captures a binding. Difficulty changes apply when the next level
+opens. The compass uses world north (+Z), rotating with the view. Controls lets
+you choose keyboard/controller and an action, replace or clear its binding, or
+restore defaults. Action combinations follow the remapped actions. Escape or the
+controller's Back button cancels capture; Start remains reserved for pausing.
+Changes are saved to the per-user settings file immediately, with a visible error
+if persistence fails. Character/settings files are replaced only after a complete
+temporary file has been written; this is not a power-loss durability guarantee.
+
 ## Tests
 
 ### End-level tally and item shop

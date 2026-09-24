@@ -2,6 +2,10 @@ find_package(Catch2 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
+    game/menu/SettingsMenuTests.cpp
+    game/menu/CompassHudTests.cpp
+    game/screens/SaveMenuTests.cpp
+    game/screens/PauseMenuTests.cpp
     formats/ShopWadTests.cpp
     game/players/ShopTests.cpp
     game/screens/AfterLevelSceneTests.cpp

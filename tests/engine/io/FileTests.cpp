@@ -54,6 +54,25 @@ TEST_CASE("missing files throw FileError", "[io][file]") {
     REQUIRE_THROWS_AS(FileStream(dir / "nope.bin"), FileError);
 }
 
+TEST_CASE("transactional text writes replace complete files and clean up failed replacements",
+          "[io][file]") {
+    const auto dir = test::scratchDirectory("file-replace");
+    const auto path = dir / "save.json";
+    replaceTextFile(path, "old character");
+    replaceTextFile(path, "new character");
+    CHECK(readTextFile(path) == "new character");
+    CHECK(std::distance(std::filesystem::directory_iterator(dir),
+                        std::filesystem::directory_iterator{}) == 1);
+    const auto blocked = dir / "occupied";
+    std::filesystem::create_directory(blocked);
+    writeTextFile(blocked / "keep", "unrelated");
+    REQUIRE_THROWS_AS(replaceTextFile(blocked, "replacement"), FileError);
+    CHECK(readTextFile(blocked / "keep") == "unrelated");
+    CHECK(readTextFile(path) == "new character");
+    CHECK(std::distance(std::filesystem::directory_iterator(dir),
+                        std::filesystem::directory_iterator{}) == 2);
+}
+
 TEST_CASE("text files read back as strings", "[io][file]") {
     const auto dir = test::scratchDirectory("file-text");
     writeTextFile(dir / "note.txt", "hello\nworld");

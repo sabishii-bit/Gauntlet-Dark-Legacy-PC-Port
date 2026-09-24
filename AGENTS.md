@@ -1783,6 +1783,27 @@ are not texture swaps. `TreeModel` resets and reapplies node opacity each pose;
 zero-opacity parts submit no draw. The first twelve tower runestones carry a
 black duplicate shell that fades out this way, leaving the stone mesh intact.
 
+## Save/load and settings menus
+
+`screens/PauseMenu` owns the paused overlay and takes a party snapshot. `SaveMenu`
+is its pure file-operation/confirmation controller; it updates that snapshot only
+after success and protects other joined players' slots. `Gauntlet` freezes scene
+updates and the audio mixer while paused. On resume it applies successful slot
+assignments without reopening the scene; on load it closes the old scene without
+autosaving it and restores the snapshot in the tower. Shutdown while paused saves
+the snapshot, not the discarded live scene. Saves are character progress, not
+mid-level world snapshots. Corrupt existing files still require overwrite consent.
+
+`menu/SettingsMenu` serves both title and pause screens, using `GameContext`'s
+persistence callback. Failed writes leave active settings unchanged. Audio applies
+immediately; difficulty is sampled on the next level opening. Gameplay remapping
+does not rewrite menu navigation or action-chord semantics. Capture reserves pause
+and cancellation inputs; paused capture is restricted to its owner's controller,
+while title capture accepts any controller. `CompassHud` draws a world-axis compass.
+`replaceTextFile` uses exclusive sibling temporary creation and rename; failed
+writes/replacements preserve the previous file, without promising crash durability.
+Focused tests: `[settings],[save-menu],[pause],[compass],[save],[file],[mixer]`.
+
 ## End-level shop ownership
 
 `AfterLevelScene` is the tally/shop presentation; `ShopSession` owns per-player

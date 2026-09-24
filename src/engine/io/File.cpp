@@ -1,5 +1,7 @@
 #include "engine/io/File.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstring>
 #include <format>
 #include <system_error>
@@ -39,6 +41,29 @@ void writeTextFile(const std::filesystem::path& path, std::string_view text) {
     std::vector<u8> bytes(text.size());
     std::memcpy(bytes.data(), text.data(), text.size());
     writeFile(path, bytes);
+}
+
+void replaceTextFile(const std::filesystem::path& path, std::string_view text) {
+    static std::atomic<u64> sequence{0};
+    auto temporary = path;
+    temporary +=
+        std::format(".{}.{}.tmp", std::chrono::steady_clock::now().time_since_epoch().count(),
+                    sequence.fetch_add(1));
+    // Exclusive creation prevents us from truncating or removing someone else's temporary.
+    std::FILE* file = openFile(temporary, "wbx");
+    const usize written = std::fwrite(text.data(), 1, text.size(), file);
+    const s32 closed = std::fclose(file);
+    std::error_code error;
+    if (written == text.size() && closed == 0) {
+        std::filesystem::rename(temporary, path, error);
+        if (!error) {
+            return;
+        }
+    }
+    std::error_code cleanup;
+    std::filesystem::remove(temporary, cleanup);
+    throw FileError(
+        std::format("cannot replace {}{}", path.string(), error ? ": " + error.message() : ""));
 }
 
 FileStream::FileStream(const std::filesystem::path& path)

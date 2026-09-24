@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 
 #include "engine/assets/StringTable.h"
 #include "engine/audio/SoundPlayer.h"
@@ -17,12 +18,14 @@ namespace gdl::game {
 struct GameContext {
     const GameConfig* config = nullptr;
     const StringTable* strings = nullptr;
-    SoundPlayer* sounds = nullptr;       ///< optional; screens run silently without one
+    SoundPlayer* sounds = nullptr;        ///< optional; screens run silently without one
     const AssetLocator* assets = nullptr; ///< the game's files as shipped, for its streams
-    LevelWorld* tower = nullptr;   ///< the level in play, shared by the screens: the hub
-                                   ///< tower until the party travels
+    LevelWorld* tower = nullptr;          ///< the level in play, shared by the screens: the hub
+                                          ///< tower until the party travels
     const LevelCatalog* levels = nullptr; ///< where exit portals lead; without it they are dead
     std::filesystem::path unpackedRoot;
+    /** Applies and persists a settings edit; false leaves the active configuration unchanged. */
+    std::function<bool(const GameConfig&)> saveSettings;
 };
 
 } // namespace gdl::game

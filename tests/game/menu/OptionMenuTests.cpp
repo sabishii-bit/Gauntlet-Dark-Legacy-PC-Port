@@ -107,6 +107,15 @@ TEST_CASE("navigation wraps and reports choices and backing out", "[game][menu]"
     REQUIRE(started.code == 2);
 }
 
+TEST_CASE("a menu with no enabled entries cannot confirm a disabled choice", "[game][menu]") {
+    Fixture f;
+    MenuDefinition definition;
+    definition.items = {{"EMPTY", 0, 0, false}};
+    f.menu.open(definition, f.painter, {});
+    CHECK(f.menu.update(pressed(false, false, true, false), 1).action == MenuAction::None);
+    CHECK(f.menu.update(pressed(false, false, false, true), 1).action == MenuAction::Back);
+}
+
 TEST_CASE("fading menus close over thirty ticks and others at once", "[game][menu]") {
     Fixture f;
     f.menu.open(threeItems(), f.painter, MenuScreen{});

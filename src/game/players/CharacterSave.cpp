@@ -196,9 +196,12 @@ void SaveSlots::refresh() {
         SaveSlotInfo& info = m_slots[i];
         info = SaveSlotInfo{};
         const std::filesystem::path file = path(i);
-        if (!std::filesystem::exists(file)) {
+        std::error_code error;
+        const bool exists = std::filesystem::exists(file, error);
+        if (!exists && !error) {
             continue;
         }
+        info.occupied = true;
         try {
             const CharacterSave save = CharacterSave::fromJson(readTextFile(file));
             info.exists = true;
@@ -233,13 +236,14 @@ bool SaveSlots::write(usize index, const CharacterSave& save) {
         return false;
     }
     try {
-        writeTextFile(path(index), save.toJson());
+        replaceTextFile(path(index), save.toJson());
     } catch (const std::exception& e) {
         log::warn("Saves: {}: {}", path(index).string(), e.what());
         return false;
     }
     SaveSlotInfo& info = m_slots[index];
     info.exists = true;
+    info.occupied = true;
     info.name = save.name;
     info.character = save.character;
     info.color = save.color;

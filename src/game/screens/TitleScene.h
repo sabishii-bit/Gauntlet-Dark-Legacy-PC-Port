@@ -21,6 +21,7 @@
 #include "game/menu/BurnDialogueScroll.h"
 #include "game/menu/MenuInput.h"
 #include "game/menu/OptionMenu.h"
+#include "game/menu/SettingsMenu.h"
 #include "game/screens/GameContext.h"
 
 namespace gdl::game {
@@ -45,10 +46,12 @@ public:
     void close();
     bool isOpen() const { return m_open; }
 
-    TitleOutcome update(f64 deltaSeconds, const MenuInput& input);
+    TitleOutcome update(f64 deltaSeconds, const MenuInput& input, const Input* raw = nullptr);
 
     /** Steps the scene by whole ticks; update() calls this from wall-clock time. */
-    TitleOutcome step(s32 ticks, const MenuInput& input);
+    TitleOutcome step(s32 ticks, const MenuInput& input, const Input* raw = nullptr);
+    bool capturingBinding() const { return m_optionsMenu.capturing(); }
+    const SettingsMenu& settings() const { return m_optionsMenu; }
 
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);
 
@@ -97,7 +100,7 @@ private:
     Canvas m_canvas;
     MenuTextures m_menuTextures;
     OptionMenu m_titleMenu;
-    OptionMenu m_optionsMenu;
+    SettingsMenu m_optionsMenu;
     BurnDialogueScroll m_fire;
     std::vector<const Image*> m_fireMasks;
     std::vector<const Texture*> m_fireRing;

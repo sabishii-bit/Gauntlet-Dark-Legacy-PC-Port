@@ -24,6 +24,10 @@ void writeFile(const std::filesystem::path& path, std::span<const u8> bytes);
 /** Writes text as UTF-8 bytes, replacing any existing file; throws FileError. */
 void writeTextFile(const std::filesystem::path& path, std::string_view text);
 
+/** Replaces a text file only after a complete sibling temporary has been closed.
+ * A write/rename failure leaves the previous file intact; not a power-loss durability guarantee. */
+void replaceTextFile(const std::filesystem::path& path, std::string_view text);
+
 /** Sequential binary file access with seeking; every failure throws FileError. */
 class FileStream {
 public:

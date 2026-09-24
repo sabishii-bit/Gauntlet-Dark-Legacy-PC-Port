@@ -228,4 +228,34 @@ TEST_CASE("the clock and screen come from the configuration", "[game][title][unp
     REQUIRE(scene.time() == 7);
 }
 
+TEST_CASE("title options persist edits without beginning a game",
+          "[game][title][settings][unpacked]") {
+    test::FakeRenderDevice device;
+    Fixture f;
+    auto context = f.context(nullptr);
+    const auto file = test::scratchDirectory("title-settings") / "settings.json";
+    context.saveSettings = [&](const GameConfig& next) {
+        next.saveFile(file);
+        f.config = next;
+        return true;
+    };
+    TitleScene scene;
+    REQUIRE(scene.open(device, context));
+    scene.step(1, press(true));
+    scene.step(1, press(false, false, true));
+    scene.step(1, press(false, true)); // root options
+    scene.step(1, press(false, true)); // audio
+    REQUIRE(scene.settings().page() == SettingsMenu::Page::Audio);
+    MenuInput left;
+    left.left = true;
+    CHECK(scene.step(1, left) == TitleOutcome::Running);
+    GameConfig saved;
+    REQUIRE(saved.loadFile(file));
+    CHECK(saved.audio.masterVolume < 1);
+    CHECK_FALSE(scene.loading());
+    scene.step(1, press(false, false, false, true));
+    CHECK(scene.settings().page() == SettingsMenu::Page::Root);
+    CHECK_FALSE(scene.burning());
+}
+
 } // namespace

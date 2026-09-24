@@ -14,7 +14,8 @@
     "gameplayFrameRate": 30
   },
   "camera": {
-    "horizontalFovDegrees": 60.0
+    "horizontalFovDegrees": 60.0,
+    "compass": true
   },
   "audio": {
     "masterVolume": 1.0,

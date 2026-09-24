@@ -39,10 +39,6 @@ constexpr s32 kGlowHideThreshold = 8;
 constexpr s32 kLoadingFadeSlope = 2;
 constexpr s32 kMenuStart = 11;
 constexpr s32 kMenuOptions = 12;
-constexpr s32 kMenuAudio = 17;
-constexpr s32 kMenuGameOptions = 16;
-constexpr s32 kMenuCompass = 20;
-constexpr s32 kMenuControls = 21;
 constexpr s32 kTitleMenuY = 304;
 constexpr s32 kOptionsMenuX = 128;
 constexpr s32 kOptionsPromptY = 304;
@@ -113,7 +109,7 @@ void TitleScene::close() {
     }
     m_music = kNoSound;
     m_titleMenu.close();
-    m_optionsMenu.close();
+    m_optionsMenu = SettingsMenu{};
     m_fire.reset();
     m_fireMasks.clear();
     m_fireRing.clear();
@@ -276,15 +272,15 @@ bool TitleScene::musicPlaying() const {
            m_context.sounds->isPlaying(m_music);
 }
 
-TitleOutcome TitleScene::update(f64 deltaSeconds, const MenuInput& input) {
+TitleOutcome TitleScene::update(f64 deltaSeconds, const MenuInput& input, const Input* raw) {
     m_tickRemainder += deltaSeconds * m_tickRate;
     auto ticks = static_cast<s32>(std::floor(m_tickRemainder));
     m_tickRemainder -= ticks;
     ticks = std::clamp(ticks, 0, kMaxTicksPerFrame);
-    return step(ticks, input);
+    return step(ticks, input, raw);
 }
 
-TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {
+TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput, const Input* raw) {
     if (!m_open) {
         return TitleOutcome::Running;
     }
@@ -305,12 +301,11 @@ TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {
     }
 
     if (m_optionsMenu.isOpen()) {
-        const MenuEvent event = m_optionsMenu.update(input, ticks);
+        const MenuEvent event = m_optionsMenu.update(input, ticks, raw);
         if (event.action == MenuAction::Back) {
             closeOptionsMenu();
         } else if (event.action == MenuAction::Choice) {
             playMenuSound(kSoundSelect);
-            log::info("Title screen: options item {} is not built yet", event.code);
         } else if (event.action == MenuAction::Moved) {
             playMenuSound(kSoundMove);
         }
@@ -370,10 +365,6 @@ void TitleScene::openOptionsMenu() {
     menu.title = std::string(text("menu.options"));
     menu.x = kOptionsMenuX;
     menu.y = -1;
-    menu.items = {{std::string(text("menu.audio")), kMenuAudio},
-                  {std::string(text("menu.gameOptions")), kMenuGameOptions},
-                  {std::string(text("menu.compass")), kMenuCompass},
-                  {std::string(text("menu.controls")), kMenuControls}};
     menu.colors.off = kOptionsOffColor;
     menu.prompts = true;
     menu.backLabel = std::string(text("menu.back"));
@@ -390,16 +381,17 @@ void TitleScene::openOptionsMenu() {
     menu.backdropHeight = kOptionsBackdropHeight;
     menu.burn = "LOGO_BURN1";
     menu.burnArea = kOptionsBurnArea;
-    m_optionsMenu.open(menu, m_text, m_screen);
+    m_optionsMenu.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
+                       m_context.strings, m_context.saveSettings, m_text, m_screen, menu);
 }
 
 /** Backing out hands the scroll to the burn effect while the text fades out. */
 void TitleScene::closeOptionsMenu() {
     const bool canBurn = m_device != nullptr && m_scrollImage != nullptr && !m_fireMasks.empty() &&
                          !m_fireRing.empty();
-    if (canBurn && m_fire.start(*m_device, m_optionsMenu.backdropArea(), *m_scrollImage,
+    if (canBurn && m_fire.start(*m_device, m_optionsMenu.menu().backdropArea(), *m_scrollImage,
                                 m_fireMasks, m_fireRing)) {
-        m_optionsMenu.releaseBackdrop();
+        m_optionsMenu.menu().releaseBackdrop();
         playMenuSound(kSoundScroll);
     }
     m_optionsMenu.close();
