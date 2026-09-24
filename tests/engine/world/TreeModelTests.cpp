@@ -320,6 +320,23 @@ TEST_CASE("an object node shows the mesh of its run that the frame calls for", "
     flame.setFrame(7, 0);
     flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
     REQUIRE(device.draws.size() == 2);
+
+    // Reverse applies to the sequence frame BEFORE subtracting the run's start.
+    TreeInfo reversed = trees.tree(0);
+    reversed.sequences[0].flags |= 1U;
+    REQUIRE(flame.bind(reversed, models, textures, device));
+    device.draws.clear();
+    flame.setFrame(0, 3); // sequence frame 2 -> banner
+    flame.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].state.alphaTest > 0);
+    flame.setFrame(0, 4); // sequence frame 1 -> body
+    flame.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[1].state.alphaTest == 0);
+    flame.setFrame(0, 5); // sequence frame 0 -> before the run
+    flame.draw(device, Mat4{1}, Mat4{1});
+    CHECK(device.draws.size() == 2);
 }
 
 TEST_CASE("the spawn effect's flame column comes and goes with its frames",
@@ -552,6 +569,11 @@ TEST_CASE("tree texture overrides follow each sequence and reset between shared 
     REQUIRE(drawn(1, 2) == &textures.texture(device, 1));
     REQUIRE(drawn(0, 0) == &textures.texture(device, 1));
     REQUIRE(drawn(2, 0) == &textures.texture(device, 0)); // no inherited sequence override
+    tree.sequences[1].frames = 4;
+    tree.sequences[1].flags = 1;
+    CHECK(drawn(1, 0) == &textures.texture(device, 1));
+    CHECK(drawn(1, 3) == &textures.texture(device, 0));
+    tree.sequences[1].flags = 0;
     tree.nodes.front().textureAnimation = 1;
     REQUIRE(drawn(1, 0) == &textures.texture(device, 1)); // node override takes precedence
 }

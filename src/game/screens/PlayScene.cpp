@@ -947,6 +947,19 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_towerRelics.animate(seconds);
     if (m_leaving) {
         m_departure.update(ticks);
+        m_portals.animate(seconds);
+        if (m_departure.started()) {
+            std::vector<CameraSubject> subjects;
+            for (usize i = 0; i < m_players.size(); ++i) {
+                if (!isDown(i)) {
+                    const auto& actor = m_players[i].actor;
+                    subjects.push_back({actor.position() + m_departure.displacement(),
+                                        actor.followPoint() + m_departure.displacement()});
+                }
+            }
+            m_camera.update(subjects, m_world->cameraMarkers(), m_world->cameraRange(),
+                            cameraView(), seconds);
+        }
         if (m_departure.finished()) {
             m_transition.comeUp();
         }
@@ -1104,7 +1117,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             m_opponents.settleRewards(m_players, opponentEvents());
             m_leaving = true;
             m_departure.begin(*m_device, m_weapons.textures);
-            m_audio.playNamed("S_EXITFLAME");
+            m_audio.playNamed(PortalDeparture::kSound);
         }
     }
     // The camera keeps to those still standing, while anyone is.

@@ -265,6 +265,7 @@ void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence
         return;
     }
     const TreeSequenceInfo& selected = tree.sequences[sequence];
+    frame = selected.effectFrame(frame);
     for (s32 i = 0; i < selected.textureAnimationCount; ++i) {
         if (const auto moved = motionAt(selected.textureAnimationStart + i, frame)) {
             show(*moved);

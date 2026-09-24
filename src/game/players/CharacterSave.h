@@ -24,7 +24,7 @@ struct CharacterSave {
     s32 gold = 0;
     s32 levelTotal = 0;
     std::vector<s32> helpSeen;           ///< the help messages already shown to it, in order
-    std::vector<std::string> moviesSeen; ///< completed or explicitly skipped encounter movies
+    std::vector<std::string> moviesSeen; ///< legacy saves only; never gates level-entry movies
     std::array<ClassProgress, kClassCount> classes{};
 
     const ClassProgress& progress() const { return classes[static_cast<usize>(character)]; }

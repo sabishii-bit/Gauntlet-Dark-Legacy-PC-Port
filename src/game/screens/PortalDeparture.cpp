@@ -41,7 +41,7 @@ Mat4 PortalDeparture::transform(const Mat4& body) const {
     }
     const f32 elapsed = static_cast<f32>(m_ticks);
     Mat4 result = glm::rotate(body, kSpinPerSecond * elapsed / 60.0f, Vec3{0, 1, 0});
-    result[3].y -= elapsed * kSinkPerTick;
+    result[3] += Vec4{displacement(), 0};
     return result;
 }
 

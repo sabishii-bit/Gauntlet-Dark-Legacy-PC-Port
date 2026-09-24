@@ -81,6 +81,39 @@ TEST_CASE("the tower takes its light, camera range and sounds from the realm's d
     REQUIRE(lightmapped > 100);
 }
 
+TEST_CASE("returning parties do not respawn the province's introductory tower crystals",
+          "[tower-crystals][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld tower;
+    REQUIRE(tower.load(device, root));
+    tower.setPlayerCount(2);
+    std::array<TriggerVisitor, 2> party;
+    party[1].crystals[1] = 14;
+    tower.startTriggers(party);
+    const auto visible = [&] {
+        usize count = 0;
+        const auto& items = tower.placedItems();
+        for (usize i = 0; i < items.size(); ++i) {
+            count += items.item(i).subtype == ItemInfo::kCrystal && items.item(i).visible ? 1 : 0;
+        }
+        return count;
+    };
+    REQUIRE(visible() == 15);
+    party[1].crystals[1] = 15; // Any member qualifies, including one joining a newcomer.
+    tower.startTriggers(party);
+    CHECK(visible() == 0);
+    tower.setPlayerCount(1);
+    tower.hideCrystals();
+    tower.revealCrystals(100);
+    CHECK(visible() == 0);
+    REQUIRE(tower.load(device, root));
+    tower.setPlayerCount(2);
+    tower.startTriggers(party);
+    CHECK(visible() == 0);
+}
+
 TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner his archive",
           "[game][world][unpacked]") {
     test::unpackedOrSkip("LEVELS/LEVELL1/animations.json");

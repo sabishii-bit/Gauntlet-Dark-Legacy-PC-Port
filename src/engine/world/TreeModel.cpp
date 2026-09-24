@@ -82,6 +82,12 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
             for (const TreeNodeInfo::ObjectFrames& run : info.objectFrames) {
                 FrameRun frames;
                 frames.start = run.start;
+                if (node.runs.size() < tree.sequences.size()) {
+                    const auto& sequence = tree.sequences[node.runs.size()];
+                    if ((sequence.flags & 1U) != 0) {
+                        frames.reverseLength = sequence.frames;
+                    }
+                }
                 if (!run.object.empty()) {
                     const auto model = models.find(run.object);
                     if (!model.has_value()) {
@@ -118,7 +124,8 @@ void TreeModel::setFrame(u32 sequence, s32 frame) {
         }
         const FrameRun& run = node.runs[sequence];
         const auto count = static_cast<s32>(run.shapes.size());
-        const s32 at = frame - run.start;
+        const s32 sampled = run.reverseLength > 0 ? run.reverseLength - frame - 1 : frame;
+        const s32 at = sampled - run.start;
         if (at >= 0 && at < count) {
             node.shape = run.shapes[static_cast<usize>(at)];
         } else if (count == 1) {

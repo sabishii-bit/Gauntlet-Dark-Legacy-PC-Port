@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <string_view>
 
 #include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
@@ -9,10 +10,11 @@
 namespace gdl::game {
 
 /** The committed portal departure: held controls, lightning skin, then a sinking spin.
- * Presentation only; the logical player position stays at the portal for the camera. */
+ * The camera follows the same downward displacement as the rendered bodies. */
 class PortalDeparture {
 public:
     static constexpr s32 kTicks = 50;
+    static constexpr std::string_view kSound = "S_TUNNEL";
     static constexpr f32 kSinkPerTick = 0.12f;
     static constexpr f32 kSpinPerSecond = 3.0f * glm::pi<f32>();
     void begin(RenderDevice& device, TextureSet& weapons);
@@ -20,6 +22,7 @@ public:
     void update(s32 ticks);
     bool started() const { return m_started; }
     bool finished() const { return m_started && m_ticks >= kTicks; }
+    Vec3 displacement() const { return {0, -static_cast<f32>(m_ticks) * kSinkPerTick, 0}; }
     Mat4 transform(const Mat4& body) const;
     const Texture* skin() const;
 

@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/SoundSet.h"
+
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/screens/PortalDeparture.h"
@@ -53,5 +55,22 @@ TEST_CASE("portal departure uses the animated lightning skin, not spawn flames",
     departure.update(5);
     CHECK(departure.skin() == nullptr);
     departure.clear();
+}
+
+TEST_CASE("transport uses the tunnel one-shot rather than the looping portal flame",
+          "[portal-departure][unpacked]") {
+    const auto path = test::unpackedOrSkip("audio/COMMON/sounds.json");
+    SoundSet sounds;
+    REQUIRE(sounds.load(path.parent_path()));
+    const auto tunnel = sounds.find(PortalDeparture::kSound);
+    REQUIRE(tunnel);
+    CHECK(sounds.entry(*tunnel).id == 4);
+    CHECK(sounds.entry(*tunnel).duration > 0);
+    REQUIRE_FALSE(sounds.entry(*tunnel).sequence.empty());
+    for (const auto& step : sounds.entry(*tunnel).sequence) {
+        CHECK_FALSE(step.loopBack);
+        CHECK_FALSE(step.loopStart);
+    }
+    CHECK_FALSE(sounds.sequence(*tunnel).steps.empty());
 }
 } // namespace

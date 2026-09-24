@@ -9,6 +9,8 @@
   "pause.quitLevel": "Quit Level",
   "pause.quitConfirm": "Quit Game?",
   "pause.abortConfirm": "Abort Level?",
+  "pause.no": "No",
+  "pause.yes": "Yes",
   "files.player": "PLAYER",
   "files.slot": "SLOT",
   "files.empty": "EMPTY",

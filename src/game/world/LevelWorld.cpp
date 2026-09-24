@@ -1,5 +1,6 @@
 #include "game/world/LevelWorld.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -134,6 +135,14 @@ bool LevelWorld::setObjectVisible(std::string_view name, bool visible) {
 }
 
 void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
+    // The province uses crystal gate index 1, not its realm id (7). Retail omits
+    // these tower-only pickups if any active character has earned that gate.
+    if (isTower() && std::ranges::any_of(visitors, [](const TriggerVisitor& visitor) {
+            return visitor.crystals[1] >= LevelTriggers::crystalsNeeded(1) ||
+                   visitor.crystals[1] < 0;
+        })) {
+        m_placedItems.retireCrystals();
+    }
     m_triggers.openMet(visitors, m_worldAnimator, m_scene, &m_collision);
     m_worldAnimator.apply(m_scene);
     syncCollision();
