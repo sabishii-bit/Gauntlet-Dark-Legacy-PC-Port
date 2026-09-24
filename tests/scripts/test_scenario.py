@@ -73,6 +73,40 @@ class ScenarioTests(unittest.TestCase):
                 self.assertEqual(scenario.main(args), 0)
             run.assert_not_called()
             self.assertIn("level-c5-genie", output.getvalue())
+            self.assertIn("Built-in previews:", output.getvalue())
+            self.assertIn("screensaver", output.getvalue())
+            self.assertIn("demo", output.getvalue())
+
+    def test_previews_launch_without_a_party_scenario(self):
+        executable = self.executable("debug")
+        for name in ("demo", "screensaver"):
+            with self.subTest(name=name):
+                result, run = self.run_main([name.upper(), "--preset", "debug", "--frames", "120",
+                                             "--", "--no-vsync"], code=7)
+                self.assertEqual(result, 7)
+                run.assert_called_once_with(
+                    [str(executable), "--" + name, "--frames", "120", "--no-vsync"],
+                    cwd=self.root, check=False)
+
+    def test_previews_build_through_the_build_script(self):
+        for name in ("demo", "screensaver"):
+            with self.subTest(name=name):
+                result, run = self.run_main([name, "--build", "--frames", "120"])
+                self.assertEqual(result, 0)
+                run.assert_called_once_with(
+                    [sys.executable, str(self.root / "scripts/build.py"), "release", "--run", "--",
+                     "--" + name, "--frames", "120"], cwd=self.root, check=False)
+
+    def test_preview_named_json_files_remain_scenarios(self):
+        executable = self.executable()
+        for name in ("demo", "screensaver"):
+            with self.subTest(name=name):
+                path = self.root / "tests/scenarios" / (name + ".json")
+                path.write_text("{}", encoding="utf-8")
+                result, run = self.run_main([name + ".json"])
+                self.assertEqual(result, 0)
+                run.assert_called_once_with([str(executable), "--scenario", str(path)],
+                                            cwd=self.root, check=False)
 
     def test_launch_is_root_relative_preserves_arguments_and_returns_exit_code(self):
         executable = self.executable()
@@ -101,7 +135,8 @@ class ScenarioTests(unittest.TestCase):
     def test_invalid_inputs_never_launch(self):
         for args in (["genie"], ["genie", "--preset", "missing"],
                      ["turbo"], ["missing"], ["genie", "--frames", "0"],
-                     ["genie", "--frames", "no"]):
+                     ["genie", "--frames", "no"], ["demo"], ["screensaver"],
+                     ["demo", "--preset", "missing"], ["screensaver", "--frames", "0"]):
             with self.subTest(args=args), mock.patch.object(scenario.subprocess, "run") as run, \
                     contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                 scenario.main(args)
