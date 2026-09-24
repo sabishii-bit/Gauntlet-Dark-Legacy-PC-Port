@@ -37,6 +37,9 @@ void PlayerAttacks::bind(const Resources& resources) {
 }
 void PlayerAttacks::clear() {
     if (m_resources.has_value()) {
+        for (const auto& item : m_items) {
+            m_resources->effects.stop(item.effect);
+        }
         for (const StrikeEffect& effect : m_strikeEffects) {
             m_resources->effects.stop(effect.effect);
         }
@@ -49,6 +52,7 @@ void PlayerAttacks::clear() {
     m_strikeSources.clear();
     m_shields.clear();
     m_potions.clear();
+    m_items.clear();
     m_resources.reset();
 }
 /** What a charge runs into is struck, once each charge. */
@@ -506,6 +510,10 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
 
 PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong,
                                      const Targets& targets) const {
+    if (const auto item =
+            ItemAttack::select(PowerupEffects::of(actor.save().progress().inventory))) {
+        return item->deed;
+    }
     const PlayerDeed ranged = strong ? PlayerDeed::StrongAttack : PlayerDeed::Attack;
     if (!m_resources) {
         return ranged;
@@ -647,6 +655,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         }
     }
     updatePotions(seconds, players, targets);
+    updateItems(seconds, players, targets);
 }
 
 void PlayerAttacks::usePotion(usize index, std::span<PlayerRuntime> players) {

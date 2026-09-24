@@ -8,6 +8,8 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/PowerupEffects.h"
+
 namespace gdl::game {
 
 namespace {
@@ -69,6 +71,11 @@ const MissileSpec& MissileSpec::potion() {
     return kPotion;
 }
 
+const MissileSpec& MissileSpec::superShot() {
+    static constexpr MissileSpec kSuper{"SUPERARROW", {}, 5.0f, 0.0f, 0.0f, true};
+    return kSuper;
+}
+
 bool MissileSpec::byMagic(s32 classIndex) {
     const usize family = specIndex(classIndex) % kFamilyCount;
     return family == 2 || family == 6;
@@ -118,7 +125,9 @@ f32 PlayerMissiles::damageFor(s32 stat) {
 
 void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                             std::span<const MissileTarget> targets) {
+    m_ricochetIn = std::max(0.0f, m_ricochetIn - seconds);
     for (Missile& missile : m_missiles) {
+        const bool penetrates = missile.potion == 0 && (missile.flags & powerup::kSuperShot) != 0;
         // Steps no longer than half its size, so no wall is flown clean through.
         const f32 radius = missile.spec->radius;
         const f32 travel = glm::length(missile.velocity) * seconds;
@@ -130,31 +139,69 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
             missile.tumble += missile.spec->spin * step;
             missile.age += step;
             // What stands in its way stops it before any wall behind does.
-            const auto struck = std::ranges::find_if(targets, [&](const MissileTarget& target) {
+            for (const auto& target : targets) {
+                if (std::ranges::find(missile.pierced, target.id) != missile.pierced.end()) {
+                    continue;
+                }
                 const f32 reach = target.radius + radius;
-                return std::hypot(missile.position.x - target.base.x,
-                                  missile.position.z - target.base.z) <= reach &&
-                       missile.position.y + radius >= target.base.y &&
-                       missile.position.y - radius <= target.base.y + target.height;
-            });
-            if (struck != targets.end()) {
+                const bool contact = std::hypot(missile.position.x - target.base.x,
+                                                missile.position.z - target.base.z) <= reach &&
+                                     missile.position.y + radius >= target.base.y &&
+                                     missile.position.y - radius <= target.base.y + target.height;
+                if (!contact) {
+                    continue;
+                }
                 m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
-                                                  missile.potency, missile.damage, struck->id,
+                                                  missile.potency, missile.damage, target.id,
                                                   missile.spec->impactTree, missile.wallSound,
                                                   missile.flags});
-                missile.age = kLifeSeconds;
+                missile.pierced.push_back(target.id);
+                if (!penetrates) {
+                    missile.age = kLifeSeconds;
+                    break;
+                }
+            }
+            if (missile.age >= kLifeSeconds) {
                 break;
             }
-            if (collision == nullptr) {
+            if (collision == nullptr || penetrates) {
                 continue;
             }
             const Vec3 pushed = collision->resolveWalls(missile.position, radius,
                                                         missile.position.y - radius * 0.5f,
                                                         missile.position.y + radius * 0.5f);
             const bool wall = glm::distance(pushed, missile.position) > 1e-4f;
-            const bool floor =
-                collision->floorAt(missile.position, radius, radius * 0.5f).has_value();
-            if (wall || floor) {
+            const auto floor = collision->floorAt(missile.position, radius, radius * 0.5f);
+            if (wall || floor.has_value()) {
+                if (missile.potion == 0 && (missile.flags & powerup::kReflect) != 0) {
+                    const Vec3 normal =
+                        wall ? glm::normalize(pushed - missile.position) : floor->normal;
+                    missile.position = pushed;
+                    if (!wall) {
+                        missile.position.y = floor->y + radius + 0.01f;
+                    }
+                    if (glm::dot(missile.velocity, normal) < 0) {
+                        missile.velocity = glm::reflect(missile.velocity, normal);
+                        if (missile.velocity.y > 0) {
+                            missile.velocity.y *= 0.4f;
+                        }
+                        missile.age += 1.0f;
+                        m_impacts.push_back({missile.position,
+                                             missile.owner,
+                                             0,
+                                             0,
+                                             0,
+                                             -1,
+                                             {},
+                                             m_ricochetIn <= 0 ? MissileWallSound::Ricochet
+                                                               : MissileWallSound::Silent,
+                                             missile.flags});
+                        if (m_ricochetIn <= 0) {
+                            m_ricochetIn = 1.0f;
+                        }
+                    }
+                    continue;
+                }
                 m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
                                                   missile.potency, missile.damage, -1,
                                                   missile.spec->impactTree, missile.wallSound,
@@ -189,6 +236,7 @@ void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip,
 }
 
 void PlayerMissiles::clear() {
+    m_ricochetIn = 0;
     m_missiles.clear();
     m_impacts.clear();
 }

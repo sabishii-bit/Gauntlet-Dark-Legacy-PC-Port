@@ -56,7 +56,7 @@ struct Inventory {
     /** Expire enabled timed items; disabled and charged/permanent items do not tick. */
     void advance(f32 seconds);
     /** Spend one charge of an enabled item; a negative charge count is unlimited. */
-    bool spendPowerup(s32 kind, u32 mask);
+    bool spendPowerup(s32 kind, u32 mask, bool conserve = false);
     /** The next held slot after `from` going by `step` (1 or -1), wrapping; -1 with none
      * held. From -1 the search starts at either end. */
     s32 nextHeld(s32 from, s32 step) const;

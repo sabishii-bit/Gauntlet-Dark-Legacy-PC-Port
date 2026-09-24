@@ -134,12 +134,16 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
             events.select(i, in.selector, ticks);
         }
-        actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
+        const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
+        actor.setPaceBonus(powerups.paceAdd);
         // A body in a throw keeps its feet where they are, turning to the stick.
         const bool closeAttack = deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
                                  deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow;
         f32 actionPace = animator != nullptr ? animator->moveScale() : 1.0f;
-        if (closeAttack) {
+        const bool itemAttack = deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
+                                deed == PlayerDeed::Breathe || deed == PlayerDeed::FireLeft ||
+                                deed == PlayerDeed::FireRight;
+        if (closeAttack || itemAttack) {
             actionPace = 0;
         }
         const f32 pace = webbed ? PlayerAnimator::kWebPace : actionPace;
@@ -164,7 +168,10 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (!move.any() && !charging && player < inputs.size() && !inputs[player].strafe &&
             (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack ||
              deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
-             deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow) &&
+             deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow ||
+             deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
+             deed == PlayerDeed::Breathe || deed == PlayerDeed::FireLeft ||
+             deed == PlayerDeed::FireRight) &&
             events.aim) {
             if (const auto target = events.aim(i)) {
                 actor.faceToward(*target);
@@ -176,6 +183,8 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             players[i].rammed.clear();
         }
         if (players[i].figure != nullptr) {
+            players[i].figure->setAttackSpeed((powerups.weapon & powerup::kRapidFire) != 0,
+                                              (powerups.special & powerup::kSpeedBoost) != 0);
             players[i].figure->animate(move.magnitude, ticks, seconds, deed);
             events.advanceTurbo(i, ticks, seconds);
             if (players[i].figure->animator().meleeStruck()) {
@@ -189,6 +198,12 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
             if (players[i].figure->animator().strongReleased()) {
                 events.perform(i, Action::StrongThrow);
+            }
+            if (players[i].figure->animator().superReleased()) {
+                events.perform(i, Action::SuperShot);
+            }
+            if (players[i].figure->animator().itemReleased() != PlayerDeed::None) {
+                events.perform(i, Action::ItemAttack);
             }
             players[i].blockLeft = std::max(players[i].blockLeft - seconds, 0.0f);
             if (players[i].figure->animator().potionShielded()) {

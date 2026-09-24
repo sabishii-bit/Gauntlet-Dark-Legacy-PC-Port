@@ -26,6 +26,8 @@ public:
         LevelSoundscape& audio;
         SoundPlayer* sounds;
         std::string_view wallHitSound; ///< resolved from the level's audio record
+        bool tower = false;
+        bool bossEncounter = false;
     };
     PlayerArsenal() = default;
     ~PlayerArsenal() = default;
@@ -37,6 +39,9 @@ public:
     void clear();
     void launchWeapon(const PlayerActor& actor, PlayerFigure* body, const Vec3& direction,
                       f32 scale, bool spreads, std::optional<Vec3> target = std::nullopt);
+    void launchSuperShot(PlayerActor& actor, PlayerFigure* body,
+                         std::optional<Vec3> target = std::nullopt);
+    void launchGauntlet(const PlayerActor& actor, PlayerFigure* body, bool left);
     std::optional<MissileImpact> usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor);
     void burstPotion(s32 kind, const Vec3& position, f32 power);
@@ -50,6 +55,8 @@ private:
     void loadPotionModels();
     std::optional<Resources> m_resources;
     std::array<TreeModel, 5> m_potionModels;
+    TreeModel m_superShot;
+    std::array<TreeModel, 2> m_gauntlets;
     PlayerMissiles m_missiles;
 };
 } // namespace gdl::game

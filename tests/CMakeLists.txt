@@ -125,6 +125,7 @@ add_executable(tests
     game/players/PlayerActorTests.cpp
     game/players/PlayerCaptureTests.cpp
     game/players/PlayerAnimatorTests.cpp
+    game/players/ItemAttackTests.cpp
     game/players/PlayerImpactTests.cpp
     game/world/LevelWorldTests.cpp
     game/world/LevelCatalogTests.cpp

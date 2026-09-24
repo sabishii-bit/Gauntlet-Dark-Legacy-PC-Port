@@ -35,6 +35,54 @@ struct Fixture {
     }
 };
 
+TEST_CASE("retail item attacks play authored effects and spend one charge on the animation event",
+          "[game][items][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    for (const u32 mask : {powerup::kFireBreath, powerup::kAcidBreath, powerup::kLightningBreath,
+                           powerup::kSkorneHorns, powerup::kSkorneMask, powerup::kThunderHammer}) {
+        Fixture f;
+        CAPTURE(mask);
+        LevelCatalog catalog;
+        REQUIRE(catalog.load(root));
+        const auto level = catalog.byName("G1");
+        REQUIRE(level);
+        REQUIRE(f.world.load(f.device, root, *level));
+        REQUIRE(f.weapons.load(root / "WEAPONS"));
+        auto& player = f.players[0];
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        const bool hammer = mask == powerup::kThunderHammer;
+        const s32 kind = hammer ? powerup::kWeapon : powerup::kSpecial;
+        auto& inventory = player.actor.save().progress().inventory;
+        inventory.addPowerup(kind, mask, 2, -1);
+        const auto item = ItemAttack::select(PowerupEffects::of(inventory));
+        REQUIRE(item);
+        const auto deed = f.attacks.attackDeed(player.actor, false, f.targets);
+        REQUIRE(deed == item->deed);
+        player.figure->animate(0, 2, 1.0f / 30, deed);
+        for (s32 frame = 0;
+             frame < 180 && player.figure->animator().itemReleased() == PlayerDeed::None; ++frame) {
+            player.figure->animate(0, 2, 1.0f / 30);
+        }
+        REQUIRE(player.figure->animator().itemReleased() == deed);
+        f.attacks.useItemAttack(0, f.players);
+        REQUIRE(f.effects.count() == 1);
+        CHECK(f.effects.effect(0).name == item->tree);
+        CHECK(f.effects.effect(0).attachment.has_value());
+        const auto* slot = inventory.powerup(kind, mask);
+        REQUIRE(slot);
+        CHECK(slot->charge == (item->chargeKind != 0 ? 1 : 2));
+        for (s32 frame = 0; frame < 20; ++frame) {
+            f.effects.update(1.0f / 30);
+            f.effects.draw(f.device, Mat4{1}, f.world.fullLighting());
+        }
+        CHECK_FALSE(f.device.draws.empty());
+        f.attacks.clear();
+        CHECK(f.effects.count() == 0);
+    }
+}
+
 TEST_CASE("potion magic damages survivors once and drives knockdown through get-up",
           "[game][screens][player-attacks][unpacked]") {
     const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")

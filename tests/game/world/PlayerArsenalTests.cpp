@@ -33,6 +33,68 @@ struct Fixture {
     }
 };
 
+TEST_CASE("super shot spends one charge per volley and preserves the last charged shot",
+          "[game][items][player-arsenal]") {
+    Fixture f;
+    PlayerFigure figure;
+    auto& inventory = f.actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 1, -1);
+    inventory.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0, 30);
+    bool tower = false;
+    bool boss = false;
+    SECTION("ordinary level") {}
+    SECTION("tower conserves charges") {
+        tower = true;
+    }
+    SECTION("boss uses smaller damage multiplier") {
+        boss = true;
+    }
+    f.arsenal.bind({f.device,
+                    f.classes,
+                    f.weapons,
+                    f.collision,
+                    f.effects,
+                    f.audio,
+                    nullptr,
+                    {},
+                    tower,
+                    boss});
+    f.arsenal.launchSuperShot(f.actor, &figure);
+    REQUIRE(f.arsenal.missiles().count() == 3);
+    for (usize i = 0; i < 3; ++i) {
+        const auto& shot = f.arsenal.missiles().missile(i);
+        CHECK(shot.spec == &MissileSpec::superShot());
+        CHECK((shot.flags & powerup::kSuperShot) != 0);
+        CHECK(shot.damage == Approx(boss ? 7.5f : 10.0f));
+        CHECK(shot.velocity.y == 0);
+    }
+    CHECK((inventory.powerup(powerup::kWeapon, powerup::kSuperShot) != nullptr) == tower);
+    if (!tower) {
+        f.arsenal.launchSuperShot(f.actor, &figure);
+        REQUIRE(f.arsenal.missiles().count() == 6);
+        CHECK((f.arsenal.missiles().missile(3).flags & powerup::kSuperShot) == 0);
+    }
+}
+
+TEST_CASE("Skorne gauntlets use their own elemental projectiles without consuming super shot",
+          "[game][items]") {
+    for (const bool left : {false, true}) {
+        Fixture f;
+        PlayerFigure figure;
+        auto& inventory = f.actor.save().progress().inventory;
+        inventory.addPowerup(powerup::kSpecial,
+                             left ? powerup::kLeftGauntlet : powerup::kRightGauntlet, 0, 60);
+        inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 5, -1);
+        f.arsenal.launchGauntlet(f.actor, &figure, left);
+        REQUIRE(f.arsenal.missiles().count() == 1);
+        const auto& missile = f.arsenal.missiles().missile(0);
+        CHECK(missile.spec->model == (left ? "BOSSG_ELEC" : "BOSSG_ACID"));
+        CHECK((missile.flags & 0xF) == (left ? 2 : 4));
+        CHECK(missile.damage == 5);
+        CHECK(inventory.powerup(powerup::kWeapon, powerup::kSuperShot)->charge == 5);
+    }
+}
+
 /** A small visible effect and looping tone keep wall feedback covered without game data. */
 std::filesystem::path impactAssets() {
     const auto root = test::scratchDirectory("player-wall-impact");

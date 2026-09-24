@@ -57,6 +57,11 @@ void PlayerAnimator::unbind() {
     m_shieldAsked = false;
     m_legendAsked = false;
     m_legendReleased = false;
+    m_superReleased = false;
+    m_superHeld = false;
+    m_itemReleased = PlayerDeed::None;
+    m_rapid = false;
+    m_speed = false;
     m_strafe = StrafeWay::None;
     m_attackSeconds = 0.0f;
     m_player.stop();
@@ -87,7 +92,12 @@ PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
     case PlayerDeed::StrongAttack: return Action::StrongThrow;
     case PlayerDeed::HurlLegend: return Action::UsePotion;
     case PlayerDeed::ThrowLegend: return Action::StrongThrow;
-    case PlayerDeed::ShootLegend: return Action::SpecialShot;
+    case PlayerDeed::ShootLegend:
+    case PlayerDeed::SuperShot: return Action::SpecialShot;
+    case PlayerDeed::Hammer: return Action::Hammer;
+    case PlayerDeed::Breathe: return Action::Breathe;
+    case PlayerDeed::FireLeft: return Action::FireLeft;
+    case PlayerDeed::FireRight: return Action::FireRight;
     default: return Action::Ready;
     }
 }
@@ -129,6 +139,9 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     m_strongReleased = false;
     m_potionShielded = false;
     m_legendReleased = false;
+    m_superReleased = false;
+    m_itemReleased = PlayerDeed::None;
+    m_superHeld = deed == PlayerDeed::SuperShot;
     if (deed == PlayerDeed::Die || dying()) {
         // Nothing else is asked of a body that falls: it plays through once and stays down.
         if (m_sequences[index(Action::Death)] < 0) {
@@ -209,7 +222,7 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         m_legendAsked = isLegend(deed);
         m_shieldAsked = false;
         play(move, seconds);
-        m_turboBegan = !m_legendAsked;
+        m_turboBegan = !m_legendAsked && deed != PlayerDeed::SuperShot && !itemAttacking();
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
         return;
     }
@@ -456,8 +469,23 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::StrongThrow:
         d.action = Action::StrongThrowRecover; // the weapon leaves as the wind-up ends
         break;
-    case Action::SpecialShot: d.action = Action::SpecialShotRecover; break;
+    case Action::SpecialShot:
+    case Action::SpecialShotRepeat:
+        d.action =
+            !m_legendAsked && m_superHeld && m_sequences[index(Action::SpecialShotRepeat)] >= 0
+                ? Action::SpecialShotRepeat
+                : Action::SpecialShotRecover;
+        d.cut = Cut::WhenDone;
+        break;
     case Action::SpecialShotRecover: break;
+    case Action::Hammer: d.action = Action::HammerRecover; break;
+    case Action::Breathe: d.action = Action::BreatheRecover; break;
+    case Action::FireLeft: d.action = Action::FireLeftRecover; break;
+    case Action::FireRight: d.action = Action::FireRightRecover; break;
+    case Action::HammerRecover:
+    case Action::BreatheRecover:
+    case Action::FireLeftRecover:
+    case Action::FireRightRecover: break;
     case Action::FallBack: d.action = Action::GetUpBack; break;
     case Action::FallForward: d.action = Action::GetUpForward; break;
     case Action::GetUpBack:
@@ -485,8 +513,8 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
             d.action = Action::ThrowMoving;
         }
     }
-    if (requested >= Action::Quick1 && d.action == requested && !meleeing() && !throwing() &&
-        !conjuring() && !reacting() && !turboing() && !entering()) {
+    if (requested >= Action::Quick1 && requested <= Action::LowRecover && d.action == requested &&
+        !meleeing() && !throwing() && !conjuring() && !reacting() && !turboing() && !entering()) {
         d.cut = Cut::IfDifferent;
     }
     if (d.action == Action::Ready && m_current != Action::Ready) {
@@ -497,7 +525,14 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
 
 void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     const u32 target = sequenceOf(decision.action);
-    m_player.advance(seconds, decision.repeat);
+    const bool rapidAction = isThrow(m_current) || (m_current >= Action::StrafeShootForward1 &&
+                                                    m_current <= Action::StrafeShootRight2);
+    const bool speedAction =
+        m_speed && !entering() && !dying() && !reacting() && !turboing() && !conjuring();
+    constexpr f32 kItemAnimationDuration = 0.75f;
+    m_player.advance(seconds /
+                         ((m_rapid && rapidAction) || speedAction ? kItemAnimationDuration : 1.0f),
+                     decision.repeat);
     const bool done = m_player.finished();
     const bool different = !m_player.playing() || m_player.sequence() != target;
     bool restart = false;
@@ -509,6 +544,19 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     }
     if (!restart) {
         return;
+    }
+    // action.c emits breath at entry, but hammer and gauntlets at the
+    // completed wind-up/recovery boundary. Interrupted wind-ups never fire.
+    if (decision.action == Action::Breathe) {
+        m_itemReleased = PlayerDeed::Breathe;
+    } else if (done && m_current == Action::Hammer && decision.action == Action::HammerRecover) {
+        m_itemReleased = PlayerDeed::Hammer;
+    } else if (done && m_current == Action::FireLeft &&
+               decision.action == Action::FireLeftRecover) {
+        m_itemReleased = PlayerDeed::FireLeft;
+    } else if (done && m_current == Action::FireRight &&
+               decision.action == Action::FireRightRecover) {
+        m_itemReleased = PlayerDeed::FireRight;
     }
     // A fidget giving way starts the timers for the next one.
     if (m_current == Action::Idle1) {
@@ -547,6 +595,12 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         decision.action == Action::UsePotionRelease;
     if (m_legendAsked && windUpOver) {
         m_legendReleased = true;
+    }
+    if (!m_legendAsked && done &&
+        (m_current == Action::SpecialShot || m_current == Action::SpecialShotRepeat) &&
+        (decision.action == Action::SpecialShotRepeat ||
+         decision.action == Action::SpecialShotRecover)) {
+        m_superReleased = true;
     }
     if (m_current == Action::StrongThrow && decision.action == Action::StrongThrowRecover &&
         !m_legendAsked) {

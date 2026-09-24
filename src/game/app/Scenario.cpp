@@ -83,7 +83,8 @@ Scenario Scenario::fromJson(std::string_view text) {
         for (const Json& powerup : entry.value("powerups", Json::array())) {
             member.powerups.push_back(
                 PowerupSlot{powerup.value("strength", 30.0f), powerup.value("kind", 0),
-                            powerup.value("charge", 0.0f), powerup.value("flags", 0U), true});
+                            powerup.value("charge", 0.0f), powerup.value("flags", 0U),
+                            powerup.value("active", true)});
         }
         if (!classIndexOf(member.classCode).has_value()) {
             throw FormatError("scenario: unknown class " + member.classCode);
@@ -167,6 +168,11 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         }
         for (const PowerupSlot& slot : member.powerups) {
             progress.inventory.addPowerup(slot.kind, slot.flags, slot.charge, slot.strength);
+            for (auto& held : progress.inventory.powerups) {
+                if (held.kind == slot.kind && held.flags == slot.flags && held.held()) {
+                    held.on = slot.on;
+                }
+            }
         }
         members.push_back(PartyMember{
             member.player, std::move(save),

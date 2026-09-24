@@ -70,6 +70,73 @@ f32 playingIndex(const PlayerAnimator& animator) {
     return animator.pose().matrices()[0][3].x;
 }
 
+TEST_CASE("super shots repeat their firing cycle and interruptions never release a shot",
+          "[game][items][player-animation]") {
+    auto tree = classTree();
+    for (const auto* name : {"SSHOT1", "SSHOT2", "SSHOTR"}) {
+        TreeSequenceInfo sequence;
+        sequence.name = name;
+        sequence.frames = 6;
+        sequence.frameRate = 30;
+        tree.sequences.push_back(sequence);
+    }
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, 2, kStep, PlayerDeed::SuperShot);
+    CHECK(animator.action() == Action::SpecialShot);
+    CHECK_FALSE(animator.turboBegan());
+    CHECK_FALSE(animator.superReleased());
+    SECTION("holding fires every completed cycle; release recovers") {
+        s32 shots = 0;
+        for (s32 i = 0; i < 30; ++i) {
+            animator.update(PlayerMotion::Stand, 2, kStep, PlayerDeed::SuperShot);
+            shots += animator.superReleased() ? 1 : 0;
+            CHECK_FALSE(animator.released());
+            CHECK_FALSE(animator.legendReleased());
+        }
+        CHECK(shots >= 3);
+        for (s32 i = 0; i < 30; ++i) {
+            animator.update(PlayerMotion::Stand, 2, kStep);
+        }
+        CHECK(animator.action() == Action::Ready);
+    }
+    SECTION("damage cancels windup") {
+        animator.update(PlayerMotion::Stand, 2, kStep, PlayerDeed::Flinch);
+        CHECK(animator.action() == Action::HitReact);
+        CHECK_FALSE(animator.superReleased());
+    }
+    SECTION("death cancels even on a finishing frame") {
+        animator.update(PlayerMotion::Stand, 60, 1, PlayerDeed::Die);
+        CHECK_FALSE(animator.superReleased());
+    }
+}
+
+TEST_CASE("rapid fire speeds throwing but not arrival or idle", "[game][items][player-animation]") {
+    const auto tree = classTree();
+    PlayerAnimator normal;
+    PlayerAnimator rapid;
+    REQUIRE(normal.bind(tree, false));
+    REQUIRE(rapid.bind(tree, false));
+    rapid.setAttackSpeed(true, false);
+    s32 normalShots = 0;
+    s32 rapidShots = 0;
+    for (s32 i = 0; i < 180; ++i) {
+        normal.update(PlayerMotion::Stand, 2, kStep, PlayerDeed::Attack);
+        rapid.update(PlayerMotion::Stand, 2, kStep, PlayerDeed::Attack);
+        normalShots += normal.released() ? 1 : 0;
+        rapidShots += rapid.released() ? 1 : 0;
+    }
+    CHECK(rapidShots > normalShots);
+    REQUIRE(normal.bind(tree));
+    REQUIRE(rapid.bind(tree));
+    rapid.setAttackSpeed(true, true);
+    for (s32 i = 0; i < 10; ++i) {
+        normal.update(PlayerMotion::Stand, 2, kStep);
+        rapid.update(PlayerMotion::Stand, 2, kStep);
+        CHECK(normal.player().frame() == rapid.player().frame());
+    }
+}
+
 s32 stepsUntil(PlayerAnimator& animator, PlayerMotion motion, Action wanted, s32 limit) {
     s32 steps = 0;
     while (animator.action() != wanted && steps < limit) {
@@ -737,6 +804,34 @@ TreeInfo meleeTree() {
         tree.sequences.push_back(sequence);
     }
     return tree;
+}
+
+TEST_CASE("item animation events separate breath entry from hammer and gauntlet impact",
+          "[game][items][animation]") {
+    const TreeInfo tree = meleeTree();
+    for (const auto deed :
+         {PlayerDeed::Hammer, PlayerDeed::Breathe, PlayerDeed::FireLeft, PlayerDeed::FireRight}) {
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
+        REQUIRE(animator.itemAttacking());
+        CHECK_FALSE(animator.turboBegan());
+        CHECK(animator.moveScale() == 0);
+        s32 emitted = animator.itemReleased() == deed ? 1 : 0;
+        CHECK(emitted == (deed == PlayerDeed::Breathe ? 1 : 0));
+        for (s32 frame = 0; frame < 30; ++frame) {
+            animator.update(PlayerMotion::Stand, kTicks, kStep);
+            emitted += animator.itemReleased() == deed ? 1 : 0;
+            CHECK_FALSE(animator.released());
+            CHECK_FALSE(animator.strongReleased());
+            CHECK_FALSE(animator.superReleased());
+        }
+        CHECK(emitted == 1);
+        CHECK(animator.action() == Action::Ready);
+        animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
+        animator.update(PlayerMotion::Stand, 30, 0.5f, PlayerDeed::Die);
+        CHECK(animator.itemReleased() == PlayerDeed::None);
+    }
 }
 
 TEST_CASE("held close attacks chain quick swings without ever throwing a weapon",

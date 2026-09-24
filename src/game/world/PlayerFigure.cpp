@@ -216,6 +216,18 @@ std::optional<Vec3> PlayerFigure::handPosition(const Mat4& body) const {
     return Vec3{body * m_transforms[static_cast<usize>(m_handNode)] * Vec4{0.0f, 0.0f, 0.0f, 1.0f}};
 }
 
+std::optional<Mat4> PlayerFigure::attachment(const Mat4& body,
+                                             std::string_view objectSuffix) const {
+    if (m_costume != nullptr) {
+        for (usize n = 0; n < m_costume->nodes.size() && n < m_transforms.size(); ++n) {
+            if (m_costume->nodes[n].object.ends_with(objectSuffix)) {
+                return body * m_transforms[n];
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
                         const WorldLighting& lighting, f32 alpha, bool hideWeapon) const {
     m_model.draw(device, clip, body, lighting, m_transforms, nullptr, alpha);

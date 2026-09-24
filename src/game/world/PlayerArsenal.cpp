@@ -39,9 +39,24 @@ void PlayerArsenal::bind(const Resources& resources) {
     clear();
     m_resources.emplace(resources);
     loadPotionModels();
+    if (const auto tree = resources.weapons.trees.find("SUPERARROW")) {
+        m_superShot.bind(resources.weapons.trees.tree(*tree), resources.weapons.models,
+                         resources.weapons.textures, resources.device);
+    }
+    constexpr std::array<std::string_view, 2> kGauntlets{"BOSSG_ACID", "BOSSG_ELEC"};
+    for (usize i = 0; i < kGauntlets.size(); ++i) {
+        if (const auto tree = resources.weapons.trees.find(kGauntlets[i])) {
+            m_gauntlets[i].bind(resources.weapons.trees.tree(*tree), resources.weapons.models,
+                                resources.weapons.textures, resources.device);
+        }
+    }
 }
 void PlayerArsenal::clear() {
     m_missiles.clear();
+    m_superShot.clear();
+    for (auto& model : m_gauntlets) {
+        model.clear();
+    }
     for (TreeModel& model : m_potionModels) {
         model.clear();
     }
@@ -81,7 +96,7 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
                       facing * (hand.z + PlayerMissiles::kMuzzle);
     launch.speed = PlayerMissiles::speedFor(stat);
     launch.damage = PlayerMissiles::damageFor(stat) * scale;
-    launch.flags = PowerupEffects::of(save.progress().inventory).weapon;
+    launch.flags = PowerupEffects::of(save.progress().inventory).weapon & ~powerup::kSuperShot;
     launch.reach = PlayerMissiles::reachFor(figure.animator().attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
     launch.model = &figure.missile();
@@ -125,6 +140,76 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     }
 }
 
+void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
+                                    std::optional<Vec3> target) {
+    if (!m_resources || body == nullptr) {
+        return;
+    }
+    auto& inventory = actor.save().progress().inventory;
+    const auto worn = PowerupEffects::of(inventory);
+    if (!inventory.spendPowerup(powerup::kWeapon, powerup::kSuperShot, m_resources->tower)) {
+        launchWeapon(actor, body, actor.facing(), 1, true, target);
+        return;
+    }
+    s32 stat = 0;
+    if (const auto* stats = m_resources->classes.stats(actor.save().character)) {
+        const auto block = displayStats(*stats, experienceLevel(actor.save().experience()),
+                                        actor.save().progress());
+        stat = MissileSpec::byMagic(actor.save().character) ? block.magic() : block.strength();
+    }
+    MissileLaunch launch;
+    launch.owner = actor.player();
+    launch.position = actor.followPoint() + actor.facing() * PlayerMissiles::kMuzzle;
+    launch.direction = actor.facing();
+    if (target && glm::length(*target - launch.position) > 0.001f) {
+        launch.direction = glm::normalize(*target - launch.position);
+    }
+    launch.speed = PlayerMissiles::speedFor(stat);
+    launch.damage = PlayerMissiles::damageFor(stat) * (m_resources->bossEncounter ? 1.5f : 2.0f);
+    launch.flags = worn.weapon | powerup::kSuperShot | 0x20U;
+    launch.spec = &MissileSpec::superShot();
+    launch.model = &m_superShot;
+    for (const auto& direction : PlayerMissiles::spread(launch.direction, worn.shots())) {
+        launch.velocity = direction * launch.speed;
+        m_missiles.launch(launch);
+    }
+    if (const auto sound = body->throwSound(); m_resources->sounds && sound) {
+        m_resources->sounds->play(body->voice().sequence(*sound), 1, SoundCategory::Effects);
+    }
+}
+
+void PlayerArsenal::launchGauntlet(const PlayerActor& actor, PlayerFigure* body, bool left) {
+    if (!m_resources || body == nullptr) {
+        return;
+    }
+    const auto worn = PowerupEffects::of(actor.save().progress().inventory);
+    if ((worn.special & (left ? powerup::kLeftGauntlet : powerup::kRightGauntlet)) == 0) {
+        return;
+    }
+    s32 stat = 0;
+    if (const auto* stats = m_resources->classes.stats(actor.save().character)) {
+        const auto block = displayStats(*stats, experienceLevel(actor.save().experience()),
+                                        actor.save().progress());
+        stat = MissileSpec::byMagic(actor.save().character) ? block.magic() : block.strength();
+    }
+    static constexpr std::array<MissileSpec, 2> kSpecs{
+        {{"BOSSG_ACID", {}, 2, 0, 0, true}, {"BOSSG_ELEC", {}, 2, 0, 0, true}}};
+    const usize which = left ? 1 : 0;
+    MissileLaunch launch;
+    launch.owner = actor.player();
+    launch.position = actor.followPoint() + actor.facing() * PlayerMissiles::kMuzzle;
+    launch.speed = PlayerMissiles::speedFor(stat);
+    launch.damage = PlayerMissiles::damageFor(stat);
+    launch.flags = worn.weapon | (left ? 2U : 4U);
+    launch.spec = &kSpecs[which];
+    launch.model = &m_gauntlets[which];
+    for (const auto& direction : PlayerMissiles::spread(actor.facing(), worn.shots())) {
+        launch.velocity = direction * launch.speed;
+        m_missiles.launch(launch);
+    }
+    m_resources->audio.playNamed(left ? "S_GAUNTLET1" : "S_GAUNTLET2");
+}
+
 void PlayerArsenal::loadPotionModels() {
     if (!m_resources.has_value() || !m_resources->weapons.loaded()) {
         return;
@@ -162,7 +247,7 @@ void PlayerArsenal::presentImpact(const MissileImpact& impact) {
     if (impact.target >= 0) {
         return; // Target owners supply their own material/body feedback.
     }
-    if (m_resources->weapons.loaded()) {
+    if (m_resources->weapons.loaded() && !impact.effect.empty()) {
         EffectTrees::Setting setting;
         setting.unlit = true;
         setting.depthWrite = false;
@@ -177,6 +262,7 @@ void PlayerArsenal::presentImpact(const MissileImpact& impact) {
     case MissileWallSound::ThreeWay: m_resources->audio.playNamed("S_3WAYAXE"); break;
     case MissileWallSound::FiveWay: m_resources->audio.playNamed("S_5WAYAXE"); break;
     case MissileWallSound::Silent: break;
+    case MissileWallSound::Ricochet: m_resources->audio.playNamed("S_RICOCHET"); break;
     }
 }
 
