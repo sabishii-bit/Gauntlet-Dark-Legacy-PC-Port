@@ -263,38 +263,44 @@ const EnemyView* Enemies::viewOf(std::span<const EnemyView> players, s32 player)
 // ---- spawning ---------------------------------------------------------------------------
 
 std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn, std::span<const EnemyView> players) {
-    // The first empty slot; failing one, the least worth keeping: the furthest from its
-    // player, the dying and sleeping hardly worth anything, the unseen worth still less.
+    // Prefer a free slot, otherwise the greatest recycling score. Dying/sleeping
+    // enemies get reduced scores; other unseen enemies get the offscreen bonus.
     for (s32 i = 0; i < m_most; ++i) {
         if (m_enemies[static_cast<usize>(i)].state == State::Inactive) {
             return i;
         }
     }
     s32 best = -1;
+    bool bestVisible = false;
     f32 bestCost = -1.0f;
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
-        f32 cost = enemy.targetDistance;
-        if (enemy.state == State::Dying || enemy.state == State::Asleep) {
-            cost *= 0.01f;
+        if (enemy.kind == kItKind) {
+            continue;
         }
+        f32 cost = enemy.targetDistance;
         bool seen = false;
         for (const EnemyView& view : players) {
-            seen = seen || flatDistance(view.position, enemy.position) <= enemy.sight;
+            seen = seen ||
+                   (!view.hidden && flatDistance(view.position, enemy.position) <= enemy.sight);
         }
-        if (!seen) {
+        if (enemy.state == State::Dying || enemy.state == State::Asleep) {
+            cost *= 0.01f;
+        } else if (!seen) {
             cost += kFarRecycleCost;
         }
         if (cost > bestCost) {
             bestCost = cost;
             best = i;
+            bestVisible = seen;
         }
     }
     if (best < 0) {
         return std::nullopt;
     }
-    // A lesser one is never made room for by a greater.
-    if (spawn.kind < kSwarmKindCount && spawn.tier < m_enemies[static_cast<usize>(best)].tier) {
+    // Visibility importance, not combat strength, controls replacement. Visibility still
+    // uses the population's proximity approximation until a camera-frustum query is supplied.
+    if (spawn.kind < kSwarmKindCount && static_cast<s32>(spawn.priority) < (bestVisible ? 1 : 0)) {
         return std::nullopt;
     }
     Enemy& taken = m_enemies[static_cast<usize>(best)];

@@ -9,11 +9,65 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelOpponents.h"
 #include "game/world/SafeRocks.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Forsaken Province entrance generators breed with the placed enemy roster loaded",
+          "[level-opponents][generators][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    test::unpackedOrSkip("MONSTERS/MAG/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G1")));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelFixtures fixtures;
+    fixtures.bind({device, world, weapons, effects, audio, 1});
+    fixtures.setPlayerCount(1);
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {24.375f, 0.0078125f, 2.5f}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.enemies().count() == static_cast<usize>(world.level()->maxEnemies));
+    LevelOpponents::Events events;
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.blast = [](const Vec3&, f32, f32) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    for (s32 frame = 0; frame < 300; ++frame) {
+        opponents.update(2, 1.0f / 30, players, fixtures.obstacles(), events);
+    }
+    s32 bred = 0;
+    s32 weakBred = 0;
+    for (usize g = 0; g < opponents.generators().count(); ++g) {
+        const auto id = static_cast<s32>(g);
+        bred += opponents.generators().bredOf(id);
+        if (opponents.generators().tierOf(id) == 1) {
+            weakBred += opponents.generators().bredOf(id);
+        }
+    }
+    CHECK(bred > 0);
+    CHECK(weakBred > 0);
+    CHECK(opponents.enemies().count() <= static_cast<usize>(world.level()->maxEnemies));
+    opponents.close();
+    fixtures.clear();
+    effects.clear();
+}
 
 TEST_CASE("exit settlement credits a last-frame generator kill once without advancing combat",
           "[shop][level-opponents][unpacked]") {

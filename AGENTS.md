@@ -561,8 +561,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   up, and dead plays out its fall and is gone. Experience is the kind's hit
   or kill share through `awardExperience`. A slot is found first empty, else
   the least worth keeping (the furthest from its player, a dying or sleeping
-  one a hundredth of that, an unseen one ten thousand dearer), never a
-  stronger one for a weaker. `Generators` are the level's type-3 items:
+  one a hundredth of that, otherwise an unseen one ten thousand dearer).
+  Replacement permission is visibility importance, not combat tier: a weak
+  generator can replace a distant strong enemy. Placed swarm enemies only
+  take free slots; routine births only replace unseen enemies. IT is never
+  recycled. Visibility still uses player proximity, not the camera frustum.
+  `Generators` are the level's type-3 items:
   params little-endian s16s strength (the tier bred and how many records of
   health), way, count and interval (defaults 10/5/2 and 5/10/15 by tier), the
   count and interval scaled by the level's `generatorMost` and
@@ -1228,6 +1232,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   ACTIVE, stops blocking, and leaves its staves (DONE) or, having blown up
   or gassed, nothing. Sounds are the realm bank's `S_BARREL_WOOD`/`_EXPLO`/
   `_GAS` plus the realm's letter, `S_WEAPONHITWOOD` for a blow it survives.
+  Only an explosive barrel's detonation emits `DESTSMOKE`, alongside
+  `EXPLOSION`; plain and item-holding barrels emit no smoke, and poison
+  barrels use `POISONEXP1` instead.
 * Help messages (`screens/HelpMessages`): the original's table of message
   ids, each a message of the game's strings (`text/english.json`, whose
   lines are the box's lines) and a narrator line from the `VOICE1` bank,

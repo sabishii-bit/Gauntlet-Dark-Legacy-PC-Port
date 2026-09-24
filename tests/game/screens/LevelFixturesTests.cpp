@@ -107,4 +107,50 @@ TEST_CASE("fixture updates age per-player hazard cooldowns without reordering th
     REQUIRE(f.players[0].actor.player() == 3);
     REQUIRE(f.players[1].actor.player() == 1);
 }
+
+TEST_CASE("barrel smoke belongs to detonations, not ordinary broken containers",
+          "[game][screens][level-fixtures][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    std::array<bool, 4> checked{};
+    for (usize i = 0; i < f.fixtures.barrels().size(); ++i) {
+        const auto kind = f.fixtures.barrels().barrel(i).kind;
+        const auto index = static_cast<usize>(kind);
+        if (checked[index] || !f.fixtures.barrels().standing(i)) {
+            continue;
+        }
+        CAPTURE(kind);
+        if (f.fixtures.barrels().barrel(i).health > 1) {
+            f.fixtures.strikeBarrel(i, 1, -1, {}, f.events);
+            REQUIRE(f.effects.count() == 0);
+            REQUIRE(f.fixtures.barrels().standing(i));
+        }
+        f.fixtures.strikeBarrel(i, 10000, -1, {}, f.events);
+        REQUIRE_FALSE(f.fixtures.barrels().standing(i));
+        if (kind == BreakableStrike::Kind::Exploding) {
+            REQUIRE(f.effects.count() == 2);
+            CHECK(f.effects.effect(0).name == "EXPLOSION");
+            CHECK(f.effects.effect(1).name == "DESTSMOKE");
+        } else if (kind == BreakableStrike::Kind::Poison) {
+            REQUIRE(f.effects.count() == 1);
+            CHECK(f.effects.effect(0).name == "POISONEXP1");
+        } else {
+            CHECK(f.effects.count() == 0);
+            CHECK(f.fixtures.barrels().barrel(i).state == Breakables::kBreaking);
+        }
+        checked[index] = true;
+        f.effects.clear();
+    }
+    CHECK(checked == std::array<bool, 4>{true, true, true, true});
+    f.fixtures.clear();
+}
 } // namespace

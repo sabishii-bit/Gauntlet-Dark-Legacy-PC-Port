@@ -401,9 +401,10 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     }
     REQUIRE((enemies.positionOf(*second) != Vec3{10.0f, 0.0f, 0.0f}));
     // The level's cap holds: a third takes the slot of the one least worth keeping, the
-    // one furthest off, and a weaker one never displaces a stronger.
+    // one furthest off, when the request permits replacing a visible enemy.
     spawn.asleep = false;
     spawn.position = Vec3{-10.0f, 0.0f, -10.0f};
+    spawn.priority = EnemySpawn::Priority::Visible;
     const auto third = enemies.spawn(spawn, party);
     REQUIRE(third.has_value());
     REQUIRE(enemies.count() == 2);
@@ -414,7 +415,14 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     EnemySpawn great = spawn;
     great.tier = 3;
     REQUIRE(strong.spawn(great, {}).has_value());
+    spawn.priority = EnemySpawn::Priority::FreeSlotOnly;
     REQUIRE_FALSE(strong.spawn(spawn, {}).has_value());
+    spawn.priority = EnemySpawn::Priority::Offscreen;
+    const std::array<EnemyView, 1> watching{playerAt(strong.positionOf(0) + Vec3{0, 0, 10})};
+    REQUIRE_FALSE(strong.spawn(spawn, watching).has_value());
+    REQUIRE(strong.tierOf(0) == 3);
+    REQUIRE(strong.spawn(spawn, {}).has_value()); // strength is not replacement importance
+    REQUIRE(strong.tierOf(0) == 1);
     REQUIRE(strong.spawn(great, {}).has_value());
     // A generator gone is forgotten by what it bred.
     great.generator = 5;
