@@ -17,6 +17,8 @@ public:
               std::span<const Mat4> pose);
     void step(f32 seconds, const Mat4& root, std::span<const Mat4> pose);
     void setTextureFrame(u32 slot, const Texture& texture);
+    /** Ends emission without discarding particles already in flight. */
+    void stop();
     void draw(RenderDevice& device, const Mat4& clip, const Vec3& right, const Vec3& up) const;
     const ParticleField& field() const { return m_field; }
 

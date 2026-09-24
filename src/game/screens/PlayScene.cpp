@@ -85,8 +85,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_transition.cover();
         m_transition.clearAway();
     }
-    // Sumner's beam waits unseen until the party comes to him; the temple's light waits for
-    // shards the save does not keep yet.
+    // Sumner's beam waits for the party; the window light is restored from
+    // the collection after the party has been loaded.
     m_beam = -1;
     m_beamAlpha = 0.0f;
     for (usize i = 0; i < world.layout().objects().size(); ++i) {
@@ -152,6 +152,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     if (world.isTower()) {
         m_promotion.begin(m_players, m_hud.strings());
         m_promotion.bind(device, world.items(), world.layout(), m_players);
+        beginTowerRelics();
     }
     log::info("Tower: {} in the party", m_players.size());
     log::info("Level {} ({}): {} exit portals", world.ref().name, world.ref().title,
@@ -164,6 +165,8 @@ void PlayScene::close() {
     m_audio.stopCues();
     m_sumnerVisit.clear();
     m_promotion.clear();
+    m_towerRelics.clear();
+    m_relicVoice = kNoSound;
     m_promotionVoice = kNoSound;
     m_messages.clear();
     if (m_world != nullptr) {
@@ -855,6 +858,9 @@ WorldCamera PlayScene::viewCamera() const {
     if (!spawning() && m_promotion.active() && m_promotion.camera().has_value()) {
         return *m_promotion.camera();
     }
+    if (relicCeremonyOn() && m_towerRelics.camera()) {
+        return *m_towerRelics.camera();
+    }
     return bossCameraOn() ? m_shake.apply(m_bossCamera.camera(), m_bossCamera.attention())
                           : m_shake.apply(m_camera.camera(), m_camera.attention());
 }
@@ -924,6 +930,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     // Gone through a portal, the party is out of play while the transition picture comes
     // up over the level, which goes on around it; once it covers the view they travel.
     m_transition.update(seconds);
+    m_towerRelics.animate(seconds);
     if (m_leaving) {
         m_world->update(seconds);
         m_effects.update(seconds);
@@ -960,6 +967,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     }
     if (m_promotion.active() && m_intro != Intro::Crystal) {
         updatePromotion(ticks, seconds);
+        return PlayOutcome::Running;
+    }
+    if (relicCeremonyOn()) {
+        updateTowerRelics(ticks, seconds);
         return PlayOutcome::Running;
     }
     const bool held = m_intro == Intro::Crystal;
@@ -1138,6 +1149,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const Mat4 clip = viewCamera().clipTransform(config.horizontalFovRadians(), frameWidth,
                                                  frameHeight, frameProjection);
     m_world->draw(device, clip, viewCamera());
+    m_towerRelics.draw(device, clip, m_world->lighting(), viewCamera(), relicCeremonyOn());
     m_sumner.draw(device, clip, m_world->lighting());
     if (!spawning()) {
         m_promotion.draw(device, clip, m_world->lighting());
@@ -1176,7 +1188,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                                       frameHeight));
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
     // bars top and bottom, the status boxes hidden beneath the lower one.
-    const bool cut = m_intro == Intro::Crystal || (m_promotion.active() && !spawning());
+    const bool cut =
+        m_intro == Intro::Crystal || (m_promotion.active() && !spawning()) || relicCeremonyOn();
     m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
@@ -1199,6 +1212,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_messages.draw(m_canvas);
     if (!spawning()) {
         m_promotion.drawCaption(m_canvas, m_messages.text(), width, height);
+    }
+    if (relicCeremonyOn()) {
+        m_towerRelics.drawCaption(m_canvas, m_messages.text(), width, height);
     }
     m_sumnerVisit.draw(m_canvas, m_messages.text());
     m_canvas.end();

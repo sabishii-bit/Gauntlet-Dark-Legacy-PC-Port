@@ -38,6 +38,7 @@
 #include "game/screens/PlayerHealth.h"
 #include "game/screens/SumnerVisit.h"
 #include "game/screens/TowerPromotion.h"
+#include "game/screens/TowerRelics.h"
 #include "game/screens/TransitionScreen.h"
 #include "game/world/BossCamera.h"
 #include "game/world/CameraShake.h"
@@ -240,6 +241,7 @@ public:
                                                   const CharacterSave& save);
     const SumnerFigure& sumner() const { return m_sumner; }
     const TowerPromotion& promotion() const { return m_promotion; }
+    const TowerRelics& towerRelics() const { return m_towerRelics; }
     s32 familiarTier(s32 player) const;
 
 private:
@@ -271,6 +273,9 @@ private:
      * Appearance upgrades and title ceremonies wait for a tower return. */
     void updateLevels();
     void updatePromotion(s32 ticks, f32 seconds);
+    void beginTowerRelics();
+    void updateTowerRelics(s32 ticks, f32 seconds);
+    bool relicCeremonyOn() const;
     static constexpr f32 kLevelUpHealth = 100.0f;
     void sayWithName(usize index, std::string_view line);
     void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
@@ -324,6 +329,8 @@ private:
     f32 m_fallenSeconds = 0.0f; ///< since the last of the party fell
     SumnerVisit m_sumnerVisit;
     TowerPromotion m_promotion;
+    TowerRelics m_towerRelics;
+    SoundHandle m_relicVoice = kNoSound;
     SoundHandle m_promotionVoice = kNoSound;
     std::vector<std::unique_ptr<PlayerFigure>>
         m_promotionFigures; ///< retain borrowed voice/effect clips until close

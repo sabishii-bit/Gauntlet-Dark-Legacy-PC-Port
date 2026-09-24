@@ -159,6 +159,7 @@ add_executable(tests
     game/screens/LevelMessagesTests.cpp
     game/screens/SumnerVisitTests.cpp
     game/screens/TowerPromotionTests.cpp
+    game/screens/TowerRelicsTests.cpp
     game/screens/LegendPresentationTests.cpp
     game/screens/PlaySceneTests.cpp
     game/screens/PartyMotionTests.cpp

@@ -42,9 +42,11 @@ bool EffectTrees::bindVisuals(Effect& effect) {
     if (wantsMesh && !mesh) {
         return false;
     }
-    effect.model.setAppearance(effect.unlit, effect.tint, effect.depthWrite);
-    effect.particles.bind(*effect.tree, *effect.archive, *effect.device, effect.transform(),
-                          effect.pose.matrices());
+    effect.model.setAppearance(effect.unlit, effect.tint, effect.depthWrite, effect.additive);
+    if (effect.emitParticles) {
+        effect.particles.bind(*effect.tree, *effect.archive, *effect.device, effect.transform(),
+                              effect.pose.matrices());
+    }
     return mesh || effect.particles.field().size() > 0;
 }
 
@@ -119,7 +121,10 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     effect->playbackRate = setting.playbackRate;
     effect->velocity = setting.velocity;
     effect->timed = setting.seconds > 0.0f;
-    effect->repeats = effect->timed && setting.then.empty() && setting.loop;
+    effect->persistent = setting.persistent;
+    effect->emitParticles = setting.emitParticles;
+    effect->additive = setting.additive;
+    effect->repeats = (effect->timed || effect->persistent) && setting.then.empty() && setting.loop;
     effect->then = setting.then;
     effect->device = &device;
     effect->archive = &archive;
@@ -132,8 +137,11 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
             effect->secondsLeft = kStillSeconds;
         }
     } else {
-        effect->player.start(effect->tree->sequences[0], 0);
-        effect->pose.evaluate(*effect->tree, 0, 0.0f);
+        const f32 frame = setting.settled
+                              ? static_cast<f32>(std::max(effect->tree->sequences[0].frames - 1, 0))
+                              : 0;
+        effect->player.start(effect->tree->sequences[0], 0, 0, frame);
+        effect->pose.evaluate(*effect->tree, 0, frame);
         // StartFXTree substitutes thirty frames for an empty sequence, using
         // that sequence's rate. It is a timed still, not a completed animation.
         const auto& sequence = effect->tree->sequences[0];
@@ -145,7 +153,7 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     if (!bindVisuals(*effect)) {
         return 0;
     }
-    effect->model.setFrame(0, 0);
+    effect->model.setFrame(0, static_cast<s32>(effect->player.frame()));
     const bool known = std::ranges::any_of(m_motions, [&](const std::unique_ptr<Motion>& motion) {
         return motion->archive == &archive;
     });
@@ -158,7 +166,8 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     const u32 id = effect->id;
     for (const auto& motion : m_motions) {
         if (motion->archive == &archive) {
-            motion->animator.apply(effect->model, *effect->tree, 0, 0);
+            motion->animator.apply(effect->model, *effect->tree, 0,
+                                   static_cast<s32>(effect->player.frame()));
         }
     }
     m_effects.push_back(std::move(effect));
@@ -212,6 +221,9 @@ void EffectTrees::update(f32 seconds) {
             effect->pose.evaluate(*effect->tree, effect->player.sequence(), effect->player.frame());
             effect->model.setFrame(effect->player.sequence(),
                                    static_cast<s32>(effect->player.frame()));
+            if (effect->persistent && !effect->repeats && effect->player.finished()) {
+                effect->particles.stop();
+            }
         }
         effect->particles.step(seconds, effect->transform(), effect->pose.matrices());
         for (const std::unique_ptr<Motion>& motion : m_motions) {
@@ -252,6 +264,9 @@ void EffectTrees::update(f32 seconds) {
         }
     }
     std::erase_if(m_effects, [](const std::unique_ptr<Effect>& effect) {
+        if (effect->persistent) {
+            return false;
+        }
         const bool timed = effect->tree->sequences.empty() || effect->timed;
         return timed ? effect->secondsLeft <= 0.0f : effect->player.finished();
     });

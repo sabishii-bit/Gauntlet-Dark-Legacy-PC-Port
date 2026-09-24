@@ -19,6 +19,15 @@ struct Found {
     u32 index = 0;
 };
 
+f32 fadeAlpha(s32 since, s32 duration, bool fadeOut) {
+    const f32 fraction =
+        duration > 0 ? std::clamp(static_cast<f32>(since) / static_cast<f32>(duration), 0.0f, 1.0f)
+                     : 0.0f;
+    // Tree opacity is stored in an eight-bit channel, truncated rather than rounded.
+    const f32 alpha = fadeOut ? 1.0f - fraction : fraction;
+    return static_cast<f32>(static_cast<u8>(alpha * 255.0f)) / 255.0f;
+}
+
 std::optional<Found> findFrame(std::string_view name, TextureSet& textures,
                                std::span<TextureSet* const> lenders) {
     if (const auto index = textures.find(name); index.has_value()) {
@@ -43,8 +52,9 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations, Tex
     m_entryOfInfo.assign(animations.size(), -1);
     for (usize i = 0; i < animations.size(); ++i) {
         const TextureAnimationInfo& animation = animations[i];
-        if (animation.texture < 0 || animation.frames == 0 ||
-            !(animation.cycles() || animation.scrolls())) {
+        const bool fade = animation.fades() && !animation.freeRunning();
+        if (!fade && (animation.texture < 0 || animation.frames == 0 ||
+                      !(animation.cycles() || animation.scrolls()))) {
             continue;
         }
         Entry entry;
@@ -54,6 +64,13 @@ void TextureAnimator::bind(std::span<const TextureAnimationInfo> animations, Tex
         entry.counter = animation.start;
         entry.keyed = !animation.freeRunning();
         entry.offset = animation.offset;
+        if (fade) {
+            entry.fade = animation.source == TextureAnimationInfo::kFadeOut ? -1 : 1;
+            entry.period = animation.frames;
+            m_entryOfInfo[i] = static_cast<s32>(m_entries.size());
+            m_entries.push_back(std::move(entry));
+            continue;
+        }
         if (animation.scrolls()) {
             const f32 sign = animation.frames < 0 ? -1.0f : 1.0f;
             entry.direction = animation.source == TextureAnimationInfo::kScrollU ? Vec2{sign, 0.0f}
@@ -161,6 +178,10 @@ std::optional<TextureMotion> TextureAnimator::motionAt(s32 info, s32 frame) cons
     TextureMotion motion;
     motion.slot = entry.slot;
     const s32 since = frame - entry.offset;
+    if (entry.fade != 0) {
+        motion.alpha = fadeAlpha(since, entry.period, entry.fade < 0);
+        return motion;
+    }
     if (entry.frames.empty()) {
         const ScrollState scroll = scrollStateAt(since, entry.rate, entry.period);
         motion.offset = entry.direction * scroll.along;
@@ -182,7 +203,9 @@ TextureMotion TextureAnimator::motion(usize index) const {
     const Entry& entry = m_entries[index];
     TextureMotion motion;
     motion.slot = entry.slot;
-    if (entry.frames.empty()) {
+    if (entry.fade != 0) {
+        motion.alpha = fadeAlpha(entry.counter - entry.offset, entry.period, entry.fade < 0);
+    } else if (entry.frames.empty()) {
         const f32 along =
             static_cast<f32>(entry.counter % entry.period) / static_cast<f32>(entry.period);
         motion.offset = entry.direction * along;
@@ -225,7 +248,9 @@ void TextureAnimator::apply(WorldScene& scene) const {
 void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence, s32 frame) const {
     model.resetTextures();
     const auto show = [&](const TextureMotion& moved) {
-        if (moved.frame != nullptr) {
+        if (moved.alpha.has_value()) {
+            model.setNodeAlpha(0, *moved.alpha);
+        } else if (moved.frame != nullptr) {
             model.setTextureFrame(moved.slot, moved.frame);
         } else {
             model.setTextureOffset(moved.slot, moved.offset, moved.scale);
@@ -247,7 +272,9 @@ void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence
     }
     for (usize i = 0; i < tree.nodes.size(); ++i) {
         if (const auto moved = motionAt(tree.nodes[i].textureAnimation, frame)) {
-            if (moved->frame != nullptr) {
+            if (moved->alpha.has_value()) {
+                model.setNodeAlpha(i, *moved->alpha);
+            } else if (moved->frame != nullptr) {
                 model.setNodeTextureFrame(i, moved->slot, moved->frame);
             } else {
                 model.setNodeTextureOffset(i, moved->offset, moved->scale);

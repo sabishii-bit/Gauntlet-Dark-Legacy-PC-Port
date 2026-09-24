@@ -37,6 +37,10 @@ public:
         Vec3 velocity{0.0f, 0.0f, 0.0f}; ///< carried along, as what a move sends flying is
         f32 seconds = 0.0f; ///< over nought, it repeats for this long instead of playing once
         bool loop = true;   ///< with seconds, false holds the final pose until the lifetime ends
+        bool persistent = false; ///< retained until stop/clear, independently of animation
+        bool emitParticles = true;
+        bool settled = false; ///< begin at the final pose, without playing the entrance
+        bool additive = false;
         /** With `seconds`: the tree plays once and this one then repeats in its place. */
         std::string then;
         bool unlit = false;
@@ -55,7 +59,10 @@ public:
         Vec3 velocity{0.0f, 0.0f, 0.0f};
         bool repeats = false;
         bool timed = false; ///< lifetime is separate from animation speed or completion
-        std::string then;   ///< the tree that takes over once this has played
+        bool persistent = false;
+        bool emitParticles = true;
+        bool additive = false;
+        std::string then; ///< the tree that takes over once this has played
         RenderDevice* device = nullptr;
         const TreeInfo* tree = nullptr;
         ItemArchive* archive = nullptr;

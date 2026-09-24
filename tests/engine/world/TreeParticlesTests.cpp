@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/TreeParticles.h"
 
@@ -41,6 +42,13 @@ TEST_CASE("tree particle nodes follow posed attachments without requiring model 
     particles.setTextureFrame(42, unrelated); // a missing texture is not slot zero
     REQUIRE(particles.field().textureOf(0) == &device.whiteTexture());
     REQUIRE(particles.field().particleCount() == count);
+    particles.stop();
+    REQUIRE(particles.field().particleCount() == count); // finish their lives, do not pop away
+    for (s32 i = 0; i < 300; ++i) {
+        particles.step(1.0f / 30, parent, pose);
+    }
+    REQUIRE(particles.field().particleCount() == 0);
+    REQUIRE_FALSE(particles.field().active(0));
     particles.bind(TreeInfo{}, archive, device, Mat4{1}, {});
     REQUIRE(particles.field().size() == 0);
 }

@@ -50,6 +50,8 @@ public:
      * every material there, while frame substitutions still name a texture slot. */
     void setNodeTextureFrame(usize root, u32 slot, const Texture* frame);
     void setNodeTextureOffset(usize root, const Vec2& offset, const Vec2& scale);
+    /** Sets opacity throughout one subtree; resetTextures restores opaque nodes. */
+    void setNodeAlpha(usize root, f32 alpha);
     void resetTextures();
     /** Applies an alternate appearance without making solid skin translucent or filling
      * its cutouts. Cleared by resetTextures(). */
@@ -106,6 +108,7 @@ private:
         std::vector<std::pair<u32, const Texture*>> frames;
         std::optional<Vec2> uvOffset;
         Vec2 uvScale{1.0f};
+        f32 alpha = 1.0f;
     };
 
     static Shape makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device);

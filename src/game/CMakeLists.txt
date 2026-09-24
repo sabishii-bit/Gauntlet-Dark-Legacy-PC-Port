@@ -123,6 +123,8 @@ add_library(game STATIC
     world/CameraMovementLimit.cpp
     world/SkorneArena.cpp
     screens/TowerPromotion.cpp
+    screens/TowerRelics.cpp
+    screens/PlaySceneRelics.cpp
     screens/PlayScenePromotion.cpp
     world/PlayerArsenal.cpp
     world/LevelSoundscape.cpp

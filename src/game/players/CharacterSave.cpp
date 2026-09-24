@@ -57,6 +57,8 @@ Json relicsJson(const Relics& relics) {
     return Json{{"runes", relics.runes},
                 {"legends", relics.legends},
                 {"shards", relics.shards},
+                {"pendingRunes", relics.pendingRunes},
+                {"pendingShards", relics.pendingShards},
                 {"gargoylePieces", relics.gargoylePieces}};
 }
 
@@ -65,6 +67,10 @@ Relics relicsFromJson(const Json& object) {
     relics.runes = static_cast<u16>(object.value("runes", 0U));
     relics.legends = static_cast<u16>(object.value("legends", 0U));
     relics.shards = static_cast<u16>(object.value("shards", 0U));
+    // Older saves already banked their collection. Only explicit pending bits
+    // replay a ceremony, including a return interrupted by saving and quitting.
+    relics.pendingRunes = static_cast<u16>(object.value("pendingRunes", 0U) & relics.runes);
+    relics.pendingShards = static_cast<u16>(object.value("pendingShards", 0U) & relics.shards);
     const auto pieces = object.value("gargoylePieces", std::vector<s32>{});
     for (usize kind = 0; kind < relics.gargoylePieces.size() && kind < pieces.size(); ++kind) {
         relics.gargoylePieces[kind] = pieces[kind];

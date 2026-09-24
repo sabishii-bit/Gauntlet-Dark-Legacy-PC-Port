@@ -48,6 +48,12 @@ void TreeParticles::step(f32 seconds, const Mat4& root, std::span<const Mat4> po
     m_field.step(seconds);
 }
 
+void TreeParticles::stop() {
+    for (usize i = 0; i < m_field.size(); ++i) {
+        m_field.stop(i);
+    }
+}
+
 void TreeParticles::setTextureFrame(u32 slot, const Texture& texture) {
     for (usize i = 0; i < m_nodes.size(); ++i) {
         if (m_nodes[i].texture == slot) {

@@ -140,9 +140,10 @@ void TreeModel::draw(RenderDevice& device, const Mat4& clip, const Mat4& model,
 void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& model,
                           const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
                           const CameraFrame* camera, f32 alpha, bool translucent) const {
-    const bool fading = alpha < 1.0f;
     for (const Node& node : m_nodes) {
-        if (node.shape.mesh == nullptr) {
+        const f32 opacity = alpha * node.alpha;
+        const bool fading = opacity < 1.0f;
+        if (node.shape.mesh == nullptr || opacity <= 0.0f) {
             continue;
         }
         Mat4 placement = node.index < nodeTransforms.size() ? model * nodeTransforms[node.index]
@@ -174,7 +175,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                 color.g = static_cast<u8>(static_cast<u32>(color.g) * m_tint.g / 255);
                 color.b = static_cast<u8>(static_cast<u32>(color.b) * m_tint.b / 255);
                 if (fading) {
-                    color.a = static_cast<u8>(static_cast<f32>(color.a) * alpha);
+                    color.a = static_cast<u8>(static_cast<f32>(color.a) * opacity);
                 }
                 m_batch.vertex(Vec3{placed}, color, uv);
             }
@@ -237,6 +238,15 @@ void TreeModel::resetTextures() {
         node.frames.clear();
         node.uvOffset.reset();
         node.uvScale = Vec2{1.0f};
+        node.alpha = 1.0f;
+    }
+}
+
+void TreeModel::setNodeAlpha(usize root, f32 alpha) {
+    for (Node& node : m_nodes) {
+        if (std::ranges::find(node.ancestors, root) != node.ancestors.end()) {
+            node.alpha = std::clamp(alpha, 0.0f, 1.0f);
+        }
     }
 }
 

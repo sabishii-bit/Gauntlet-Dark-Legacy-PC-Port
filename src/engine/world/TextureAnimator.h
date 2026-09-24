@@ -22,6 +22,7 @@ struct TextureMotion {
     const Texture* frame = nullptr; ///< null for a scroll
     Vec2 offset{0.0f, 0.0f};
     Vec2 scale{1.0f, 1.0f};
+    std::optional<f32> alpha; ///< subtree opacity for a keyed fade, not a texture change
 };
 
 /** Where a keyed scroll stands: how far along it has slid, and the stretch of the
@@ -87,6 +88,7 @@ private:
         s32 counter = 0;
         bool keyed = false; ///< read at a sequence frame, never stepped
         s32 offset = 0;     ///< a keyed one's first sequence frame
+        s32 fade = 0;       ///< -1 fades out, +1 fades in, 0 cycles or scrolls
     };
 
     static void show(const Entry& entry, WorldScene& scene);

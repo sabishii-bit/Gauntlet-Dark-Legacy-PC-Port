@@ -68,6 +68,18 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.turbo = entry.value("turbo", 0.0f);
         member.potions = entry.value("potions", std::vector<s32>{});
         member.legends = entry.value("legends", std::vector<s32>{});
+        member.runes = entry.value("runes", std::vector<s32>{});
+        member.shards = entry.value("shards", std::vector<s32>{});
+        member.newRunes = entry.value("newRunes", std::vector<s32>{});
+        member.newShards = entry.value("newShards", std::vector<s32>{});
+        const auto invalidRune = [](s32 rune) { return rune < 0 || rune >= Relics::kRuneCount; };
+        const auto invalidShard = [](s32 shard) { return shard < 1 || shard > 8; };
+        if (std::ranges::any_of(member.runes, invalidRune) ||
+            std::ranges::any_of(member.newRunes, invalidRune) ||
+            std::ranges::any_of(member.shards, invalidShard) ||
+            std::ranges::any_of(member.newShards, invalidShard)) {
+            throw FormatError("scenario: a tower collectible is out of range");
+        }
         for (const Json& powerup : entry.value("powerups", Json::array())) {
             member.powerups.push_back(
                 PowerupSlot{powerup.value("strength", 30.0f), powerup.value("kind", 0),
@@ -139,6 +151,19 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         progress.inventory.potions = member.potions;
         for (const s32 realm : member.legends) {
             progress.relics.addLegend(realm);
+        }
+        for (const s32 rune : member.runes) {
+            progress.relics.addRune(rune);
+        }
+        for (const s32 shard : member.shards) {
+            progress.relics.addShard(shard);
+        }
+        progress.relics.pendingRunes = progress.relics.pendingShards = 0;
+        for (const s32 rune : member.newRunes) {
+            progress.relics.addRune(rune);
+        }
+        for (const s32 shard : member.newShards) {
+            progress.relics.addShard(shard);
         }
         for (const PowerupSlot& slot : member.powerups) {
             progress.inventory.addPowerup(slot.kind, slot.flags, slot.charge, slot.strength);
