@@ -186,6 +186,7 @@ add_library(game STATIC
     screens/LevelLoadingScreen.cpp
     screens/PortalDeparture.h
     screens/PortalDeparture.cpp
+    screens/LevelExitSpeech.cpp
     screens/PickupHud.h
     screens/PickupHud.cpp
     screens/BossMeter.h

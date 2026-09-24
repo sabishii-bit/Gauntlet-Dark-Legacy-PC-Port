@@ -133,6 +133,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   their clips, including queued narration. Other SoundPlayer clients are untouched.
   Close it after scene users finish and before destroying the borrowed SoundPlayer;
   do not move it while emitters borrow banks.
+* `screens/LevelExitSpeech` is application-owned: the missed-runestone/legend
+  reminder begins once with portal departure and survives PlayScene teardown
+  into the tally. It checks remaining placed pickups and the party's current
+  class inventories, rotating the original VOICE1 cues independently. Legendary
+  items take priority. Tower, Temple/Underworld and the boss wizard's completed
+  ceremony do not use this reminder. Close its borrowed audio before SoundPlayer
+  destruction or returning to the title, not on ordinary level travel.
+  `python scripts/scenario.py exit-runestone` starts at the Fields exit.
 * `screens/BossVictoryPresentation` composes the `BossVictory` timeline with
   the wizard's borrowed model/animation, placement and typed captions. It
   consumes standing-party snapshots and messages, returning voice cues and a

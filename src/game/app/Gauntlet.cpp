@@ -401,7 +401,17 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
                                     buttons.selectorRight};
         in.menu = readMenuInput(input(), m_config.menu, source);
     }
+    const bool wasLeaving = m_tower.leaving();
     const PlayOutcome outcome = m_tower.update(deltaSeconds, inputs);
+    // Exit speech begins with the sinking spin, once for the party, and must
+    // survive closing PlayScene before the tally. Temple/Underworld and the
+    // boss wizard's departure have their own speeches.
+    if (!wasLeaving && m_tower.leaving() && !m_towerWorld.isTower() &&
+        m_towerWorld.ref().realmId != 5 && m_towerWorld.ref().realmId != 8 &&
+        m_tower.victory().stage() <= BossVictory::Stage::Appearing) {
+        m_exitSpeech.begin(m_options.unpackedDirectory, m_sounds.get(),
+                           ExitRelics::remaining(m_towerWorld.placedItems()), m_tower.party());
+    }
     if (outcome == PlayOutcome::Travel) {
         // The party goes on with all it carries; back in the tower it arrives at the way in
         // of the realm it left.
@@ -697,6 +707,7 @@ void Gauntlet::onShutdown() {
     m_tower.close();
     m_afterLevel.close();
     m_loadingPicture.release();
+    m_exitSpeech.close();
     m_levelLoading.close();
     m_journey.reset();
     m_towerWorld.clear();
@@ -720,6 +731,7 @@ bool Gauntlet::startMovie(std::string_view name) {
 }
 
 bool Gauntlet::startTitleScreen() {
+    m_exitSpeech.close();
     setMaxFrameRate(m_config.display.maxFrameRate);
     if (m_title.open(renderDevice(), context())) {
         m_attract.titleShown();

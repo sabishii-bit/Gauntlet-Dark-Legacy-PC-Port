@@ -24,6 +24,7 @@
 #include "game/screens/AttractScene.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/IdleScreen.h"
+#include "game/screens/LevelExitSpeech.h"
 #include "game/screens/LevelLoadingScreen.h"
 #include "game/screens/MovieScene.h"
 #include "game/screens/PauseMenu.h"
@@ -92,6 +93,7 @@ private:
     PlayScene m_tower;
     PauseMenu m_pause;
     AfterLevelScene m_afterLevel;
+    LevelExitSpeech m_exitSpeech;
     /** A journey between levels: the picture is drawn over an empty view for a frame, so
      * that it is on screen while the next level loads, which holds everything up. */
     struct Journey {
