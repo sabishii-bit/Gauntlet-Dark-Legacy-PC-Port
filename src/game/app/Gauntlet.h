@@ -22,6 +22,7 @@
 #include "game/players/PlayerControls.h"
 #include "game/screens/AfterLevelScene.h"
 #include "game/screens/GameContext.h"
+#include "game/screens/LevelLoadingScreen.h"
 #include "game/screens/MovieScene.h"
 #include "game/screens/PauseMenu.h"
 #include "game/screens/PlayScene.h"
@@ -55,6 +56,7 @@ private:
     bool saveSettings(const GameConfig& config);
     void updateAfterLevel(f64 deltaSeconds);
     void finishJourney();
+    void updateJourney(f64 deltaSeconds);
     /** Writes the party in play back into its save slots. */
     void keepParty();
     bool startTower(std::span<const PartyMember> party, const PlayOptions& options = {});
@@ -90,10 +92,14 @@ private:
         std::vector<PartyMember> party;
         PlayOptions options;
         bool shown = false; ///< the covering frame has been drawn
+        bool presentationStarted = false;
+        bool movieStarted = false;
+        std::string movie;
     };
     std::optional<Journey> m_journey;
     SaveSlots m_saves; ///< where the party in play is kept
     TransitionScreen m_loadingPicture;
+    LevelLoadingScreen m_levelLoading;
     Canvas m_canvas;
     SmokeTestScene m_smokeTest;
     bool m_movieActive = false;

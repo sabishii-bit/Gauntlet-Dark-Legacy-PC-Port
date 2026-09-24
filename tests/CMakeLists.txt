@@ -115,6 +115,8 @@ add_executable(tests
     game/players/PowerupEffectsTests.cpp
     game/screens/PowerupSelectorTests.cpp
     game/screens/TransitionScreenTests.cpp
+    game/screens/LevelLoadingScreenTests.cpp
+    game/screens/PortalDepartureTests.cpp
     game/world/EffectTreesTests.cpp
     game/world/CombatantProjectilesTests.cpp
     game/players/PlayerControlsTests.cpp

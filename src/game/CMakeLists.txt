@@ -169,6 +169,10 @@ add_library(game STATIC
     screens/HelpMessages.cpp
     screens/TransitionScreen.h
     screens/TransitionScreen.cpp
+    screens/LevelLoadingScreen.h
+    screens/LevelLoadingScreen.cpp
+    screens/PortalDeparture.h
+    screens/PortalDeparture.cpp
     screens/PickupHud.h
     screens/PickupHud.cpp
     screens/BossMeter.h

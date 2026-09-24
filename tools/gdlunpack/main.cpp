@@ -1178,6 +1178,13 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
         json.key("cameraIndex").value(static_cast<int>(level.cameraIndex));
         json.key("audioIndex").value(static_cast<int>(level.audioIndex));
         json.key("mapIndex").value(static_cast<int>(level.mapIndex));
+        if (level.mapIndex >= 0 && static_cast<usize>(level.mapIndex) < data.maps.size()) {
+            json.key("mapPoints").beginArray();
+            for (const Vec2& point : data.maps[static_cast<usize>(level.mapIndex)]) {
+                json.beginArray().value(point.x).value(point.y).endArray();
+            }
+            json.endArray();
+        }
         json.key("bossCameraIndex").value(static_cast<int>(level.bossCameraIndex));
         json.key("rune").value(static_cast<int>(level.rune));
         json.key("legend").value(static_cast<int>(level.legend));
@@ -1354,6 +1361,15 @@ int run(const std::filesystem::path& assetRoot, const std::filesystem::path& out
                         continue;
                     }
                     unpackLevel(level, outRoot / "LEVELS" / levelName, summary);
+                }
+            } else if (upper == "MAPS") {
+                for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+                    if (entry.is_directory()) {
+                        unpackArchive(entry.path(),
+                                      outRoot / "MAPS" /
+                                          normalizeAssetName(entry.path().filename().string()),
+                                      summary);
+                    }
                 }
             } else if (upper == "ITEMS") {
                 // Each level's item set is its own archive, opt-in alongside the levels.

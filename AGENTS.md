@@ -259,10 +259,22 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   are unpacked here: `gdlunpack <assets> <out> --only levelG1`, then
   `--only levelG`. Scenarios take `level` (`tests/scenarios/level-g1.json`).
   Still to come for other levels: which portals a save has opened.
-* The loading screen is `screens/TransitionScreen`: the `TRANSITION_SCREEN`
+* Portal departure is `screens/PortalDeparture`: a 50-tick held-control exit,
+  with ten DEATHLIGHT skin frames, a sinking spin and S_EXITFLAME. The logical
+  position stays at the platform so the camera does not follow the sinking body.
+  `screens/LevelLoadingScreen` then shows the realm map, its MAPS route/glow,
+  and the LDMAP stage preview, with entering/name speech from the MAP audio bank.
+  `Gauntlet` plays the destination's authored movie before opening play, once
+  per character (`CharacterSave::moviesSeen`), or again for a newcomer in the
+  party. Start skips it. Missing movies do not prevent travel or become seen.
+  Refresh exports with `gdlunpack <assets> <out> --only MAPS` and `--only WDATA`.
+  `python scripts/scenario.py tower-portal-g1` exercises the complete sequence.
+  Gameplay lessons are suppressed in the tower before marking them seen;
+  level-up, item and attack-name announcements remain available there.
+* The covering transition is `screens/TransitionScreen`: the `TRANSITION_SCREEN`
   texture of the static set drawn 512x320 over the view. Leaving by a portal
   it comes up over two seconds (the original's alpha, 255 * (1 - d / 2)),
-  `Gauntlet` draws it covering for a frame before the blocking load, and the
+  `Gauntlet` draws it covering before the map/preview sequence, and the
   arriving scene clears it away over half a second (that fade out is ours).
   Without the texture it is plain black.
 * Level fixtures (`world/ItemFigure`, `Chests`, `LockedGates`, `Traps`), bound

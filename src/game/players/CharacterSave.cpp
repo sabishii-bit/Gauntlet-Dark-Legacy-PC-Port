@@ -128,6 +128,7 @@ std::string CharacterSave::toJson() const {
     root["classUnlock"] = classUnlock;
     root["gold"] = gold;
     root["helpSeen"] = helpSeen;
+    root["moviesSeen"] = moviesSeen;
     root["levelTotal"] = levelTotal;
     Json progress = Json::object();
     for (s32 i = 0; i < kClassCount; ++i) {
@@ -154,6 +155,7 @@ CharacterSave CharacterSave::fromJson(std::string_view text) {
     save.classUnlock = static_cast<u16>(root.value("classUnlock", 0));
     save.gold = root.value("gold", 0);
     save.helpSeen = root.value("helpSeen", std::vector<s32>{});
+    save.moviesSeen = root.value("moviesSeen", std::vector<std::string>{});
     std::ranges::sort(save.helpSeen);
     save.levelTotal = root.value("levelTotal", 0);
     if (save.character < 0 || save.character >= kClassCount || save.color < 0 ||

@@ -137,7 +137,10 @@ WAV and JSON under `assets/unpacked` (about 200 MB; the level folders add
 about 20 MB each and come with `--levels`). `python scripts/build.py --unpack`
 runs it for you (the level folders and `MONSTERS` are opt-in);
 `gdlunpack <assets> <out> --only <folder>` converts one
-folder.
+folder. Existing exports need `--only MAPS` and `--only WDATA` for the
+world-map/route and stage-preview travel screens. Movies still use the original
+`VQMOVIES` files. `python scripts/scenario.py tower-portal-g1` starts on the
+Fields portal to test departure, both loading screens, and the first-visit movie.
 
 ```
 gauntlet [--assets <dir>] [--unpacked <dir>] [--data <dir>] [--title] [--movie <name>]

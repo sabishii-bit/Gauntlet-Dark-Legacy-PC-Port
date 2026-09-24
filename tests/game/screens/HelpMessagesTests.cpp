@@ -16,6 +16,15 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("gameplay tips exclude informational announcements", "[help][travel]") {
+    CHECK(HelpMessages::gameplayTip(HelpMessages::kUseTurbo));
+    CHECK(HelpMessages::gameplayTip(HelpMessages::kBarrelsHold));
+    CHECK(HelpMessages::gameplayTip(HelpMessages::kTrapsHurt));
+    CHECK_FALSE(HelpMessages::gameplayTip(HelpMessages::kLevelUp));
+    CHECK_FALSE(HelpMessages::gameplayTip(HelpMessages::kFirstTurboName));
+    CHECK_FALSE(HelpMessages::gameplayTip(HelpMessages::kHealthFull));
+}
+
 void loadStrings(std::string_view name, MessageTable& strings) {
     const auto dir = test::scratchDirectory(name);
     writeTextFile(dir / "english.json", R"({
