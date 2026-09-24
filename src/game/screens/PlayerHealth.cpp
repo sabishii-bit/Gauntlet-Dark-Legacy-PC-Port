@@ -47,6 +47,9 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     if (damage > 1.0f) {
         damage *= damageScale;
     }
+    if (damage > 1.0f) {
+        runtime.hitFlashTicks = kHitFlashTicks;
+    }
     CharacterSave& save = runtime.actor.save();
     const s32 left = save.health() - static_cast<s32>(std::lround(damage));
     if (left < 1) {

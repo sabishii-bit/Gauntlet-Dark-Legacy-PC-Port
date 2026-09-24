@@ -313,6 +313,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Heavy flags are downgraded to knockback by a raised guard or shove; damage
   at most two removes knockback/heavy flags. Ordinary unflagged damage does
   not force a stagger. A lesser contact cannot erase a pending fall.
+  Damage over one also flashes the POWERUPS `AAAWHITE` skin for two 30 Hz
+  frames, preserving costume coverage and leaving the held weapon alone.
+  This visual feedback does not stop movement or turn every ordinary hit into
+  a stagger. Portal skin takes precedence over a pending damage flash.
   Knockback translation, airborne/whirlwind physics and exact same-frame
   accumulation of damage/force remain separate unfinished behavior; grounded
   reaction selection is not a claim that these have been reconstructed.

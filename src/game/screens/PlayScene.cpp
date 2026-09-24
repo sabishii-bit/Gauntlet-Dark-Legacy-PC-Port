@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <exception>
 #include <format>
 #include <numbers>
 
@@ -66,6 +67,13 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         return false;
     }
     m_classes.load(context.unpackedRoot / kClassDataDirectory);
+    if (const auto white = world.powerups().textures.find("AAAWHITE")) {
+        try {
+            m_hitFlashTexture = &world.powerups().textures.texture(device, *white);
+        } catch (const std::exception& e) {
+            log::warn("Player damage skin: {}", e.what());
+        }
+    }
     m_audio.open(context.unpackedRoot, context.sounds, world.audio());
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
     // Sumner, his hints and his welcome belong to the tower alone.
@@ -178,6 +186,7 @@ void PlayScene::close() {
     m_fixtures.clear();
     m_transition.release();
     m_departure.clear();
+    m_hitFlashTexture = nullptr;
     m_leaving = false;
     m_attacks.clear();
     m_arsenal.clear(); // before the figures whose models they fly
@@ -1174,7 +1183,11 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             const Mat4 body = glm::scale(
                 m_departure.transform(runtime.capture.body().value_or(runtime.actor.transform())),
                 Vec3{size, size, size});
-            figure.setSkinTexture(m_departure.skin());
+            const Texture* skin = m_departure.skin();
+            if (!m_departure.started() && runtime.hitFlashTicks > 0) {
+                skin = m_hitFlashTexture;
+            }
+            figure.setSkinTexture(skin);
             figure.draw(device, clip, body, m_world->lighting(), worn.bodyAlpha(m_playSeconds),
                         runtime.move.weaponHidden());
             figure.setSkinTexture(nullptr);
