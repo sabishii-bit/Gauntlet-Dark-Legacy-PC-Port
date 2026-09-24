@@ -38,7 +38,11 @@ enum class PlayerDeed : u8 {
     ShootLegend, ///< the special shot
     Grabbed,
     Thrown,
-    Webbed
+    Webbed,
+    Melee,
+    MeleeLow,
+    MeleeSlow,
+    MeleeSlowLow
 };
 
 /** Which way a strafing character steps, against the way it faces. */
@@ -115,11 +119,24 @@ public:
         SpecialShotRecover,
         SpikeHit,
         Grabbed,
-        WebReact
+        WebReact,
+        Quick1,
+        Quick2,
+        Quick3,
+        Quick2Recover,
+        Quick3Recover,
+        SlowStart,
+        SlowSwing,
+        SlowRecover,
+        LowKick,
+        LowKickRecover,
+        Low1,
+        Low2,
+        LowRecover
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 55;
+    static constexpr usize kActionCount = 68;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -131,7 +148,10 @@ public:
         "STRAFE_WLKL2", "STRAFE_WLKR1", "STRAFE_WLKR2", "STRAFE_ATKF1", "STRAFE_ATKF2",
         "STRAFE_ATKB1", "STRAFE_ATKB2", "STRAFE_ATKL1", "STRAFE_ATKL2", "STRAFE_ATKR1",
         "STRAFE_ATKR2", "FALLDOWN",     "GETUP",        "FALLFRNT",     "GETUP2",
-        "SSHOT1",       "SSHOTR",       "SPIKEHIT",     "GRABBED",      "WEBREACT"};
+        "SSHOT1",       "SSHOTR",       "SPIKEHIT",     "GRABBED",      "WEBREACT",
+        "ATTQUICK1",    "ATTQUICK2",    "ATTQUICK3",    "ATTQUICK2R",   "ATTQUICK3R",
+        "ATTSTART",     "ATTSLOW1",     "ATTSLOW1R",    "ATTLOWK",      "ATTLOWKR",
+        "ATTLOW1",      "ATTLOW2",      "ATTLOWR"};
     static constexpr f32 kReleaseFrame = 2.0f;        ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -187,6 +207,11 @@ public:
     }
     /** Whether this tick's step ended a release: the moment the weapon flies. */
     bool released() const { return m_released; }
+    bool meleeing() const { return m_current >= Action::Quick1; }
+    /** One contact at the completed swing, never a projectile release. */
+    bool meleeStruck() const { return m_meleeStruck; }
+    bool meleePower() const { return m_meleePower; }
+    bool meleeKick() const { return m_meleeKick; }
     /** How long the attack had been going when the weapon was let go. */
     f32 attackSeconds() const { return m_attackSeconds; }
     /** The arrival is pending or still playing; player input must wait. */
@@ -205,7 +230,9 @@ public:
         if (strongThrowing()) {
             return kStrongThrowPace;
         }
-        return throwing() || conjuring() || reacting() || turboing() || guarding() ? 0.0f : 1.0f;
+        return throwing() || meleeing() || conjuring() || reacting() || turboing() || guarding()
+                   ? 0.0f
+                   : 1.0f;
     }
     static constexpr f32 kChargePace = 1.5f;
     static constexpr f32 kWebPace = 0.4f;
@@ -291,6 +318,9 @@ private:
     Foot m_footfall = Foot::None;
     bool m_entered = true; ///< the entrance has played (or was not asked for)
     bool m_released = false;
+    bool m_meleeStruck = false;
+    bool m_meleePower = false;
+    bool m_meleeKick = false;
     bool m_potionUsed = false;
     bool m_potionThrown = false;
     bool m_dead = false;

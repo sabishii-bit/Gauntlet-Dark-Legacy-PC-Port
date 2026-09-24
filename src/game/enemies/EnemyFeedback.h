@@ -1,0 +1,27 @@
+#pragma once
+
+#include <string>
+#include <string_view>
+
+#include "engine/core/Types.h"
+#include "engine/math/Math.h"
+
+namespace gdl::game {
+/** A successful swarm hit, captured before its actor can die or its slot be recycled. */
+struct EnemyFeedback {
+    s32 kind = 0;
+    s32 tier = 1;
+    s32 hitCount = 1;
+    bool killed = false;
+    bool close = false;
+    u32 flags = 0;
+    Vec3 position{0};
+    f32 yaw = 0;
+    f32 halfHeight = 0;
+
+    std::string sound(bool bossLevel = false) const;
+    std::string_view effect() const;
+    f32 effectScale() const;
+    std::string_view deathSkin() const;
+};
+} // namespace gdl::game

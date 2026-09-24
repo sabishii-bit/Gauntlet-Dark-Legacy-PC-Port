@@ -49,4 +49,17 @@ TEST_CASE("assisted shots reach raised and lowered targets without changing hori
     }
     REQUIRE(TargetAssist::velocity(origin, origin, 20, 8) == Vec3{0});
 }
+TEST_CASE("melee reach uses horizontal surfaces with vertical overlap and wall visibility",
+          "[game][target-assist][melee]") {
+    std::array targets{MissileTarget{0, {0, 0, 5}, 3, 18}, MissileTarget{1, {0, 10, 1}, 1, 4},
+                       MissileTarget{2, {0, 0, -2}, 1, 4}};
+    const auto selected = TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 3);
+    REQUIRE(selected);
+    CHECK(selected->id == 0);
+    CHECK_FALSE(TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 1));
+    targets[0] = {0, {0, 0, 5}, 1, 6};
+    WorldCollision collision;
+    collision.build({{{0, 0, -1}, {Vec3{-10, 0, 2}, Vec3{10, 0, 2}, Vec3{0, 20, 2}}}});
+    CHECK_FALSE(TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 6, &collision));
+}
 } // namespace

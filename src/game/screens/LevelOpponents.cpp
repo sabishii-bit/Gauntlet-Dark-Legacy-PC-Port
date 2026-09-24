@@ -387,6 +387,32 @@ void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const
 }
 
 void LevelOpponents::awardEnemyLosses(const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    for (const EnemyFeedback& feedback : m_enemies.takeFeedback()) {
+        m_resources->audio.playNamed(feedback.sound(m_bosses.present()));
+        const std::string_view tree = feedback.effect();
+        ItemArchive* archive = m_enemies.archive(feedback.kind);
+        if (archive == nullptr || !archive->trees.find(tree).has_value()) {
+            archive = &m_resources->weapons;
+        }
+        if (!tree.empty() && archive->trees.find(tree).has_value()) {
+            EffectTrees::Setting setting;
+            setting.scale = feedback.effectScale();
+            setting.yaw = feedback.yaw;
+            // The common impact rows set node alpha to 96; TREEHIT/TREEDIE
+            // leave the archive's own opacity unchanged.
+            if (tree != "TREEHIT" && tree != "TREEDIE") {
+                setting.tint.a = 96;
+            }
+            const u32 effect = m_resources->effects.startSet(m_resources->device, *archive, tree,
+                                                             feedback.position, setting);
+            if (effect != 0) {
+                m_cueEffects.push_back(effect);
+            }
+        }
+    }
     for (const EnemyLoss& loss : m_enemies.takeLosses()) {
         events.award(loss.player, loss.experience, loss.killed);
     }
@@ -398,7 +424,8 @@ void LevelOpponents::awardEnemyLosses(const Events& events) {
 
 /** A hit on one of the swarm, from a player or the world. */
 void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                                 std::span<const PlayerRuntime> players) {
+                                 std::span<const PlayerRuntime> players, bool close,
+                                 std::optional<Vec3> where) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -407,6 +434,8 @@ void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direc
     hit.flags = flags;
     hit.direction = direction;
     hit.player = byPlayer;
+    hit.close = close;
+    hit.where = where;
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         if (actor.player() == byPlayer) {

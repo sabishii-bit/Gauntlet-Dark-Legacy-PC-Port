@@ -46,6 +46,8 @@ public:
     void cry(usize index, std::string_view which, std::span<PlayerRuntime> players);
     std::optional<Vec3> aim(const PlayerActor& actor, const Vec3& facing,
                             const Targets& targets) const;
+    PlayerDeed attackDeed(const PlayerActor& actor, bool strong, const Targets& targets) const;
+    void melee(usize index, std::span<PlayerRuntime> players, const Targets& targets);
     const MoveStrikes& strikes() const { return m_strikes; }
     usize shieldCount() const { return m_shields.size(); }
 

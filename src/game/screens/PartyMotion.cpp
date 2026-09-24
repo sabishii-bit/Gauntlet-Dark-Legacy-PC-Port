@@ -125,19 +125,23 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 deed = PlayerDeed::UsePotion;
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
-            } else if (in.strongAttack && players[i].figure != nullptr &&
-                       players[i].figure->animator().canBegin(PlayerDeed::StrongAttack)) {
-                deed = PlayerDeed::StrongAttack; // nothing is ever in reach yet: the strong throw
+            } else if (in.strongAttack && players[i].figure != nullptr) {
+                deed = events.attackDeed ? events.attackDeed(i, true) : PlayerDeed::StrongAttack;
             } else if (in.turbo) {
                 deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
             } else if (in.attack) {
-                deed = PlayerDeed::Attack;
+                deed = events.attackDeed ? events.attackDeed(i, false) : PlayerDeed::Attack;
             }
             events.select(i, in.selector, ticks);
         }
         actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
         // A body in a throw keeps its feet where they are, turning to the stick.
-        const f32 actionPace = animator != nullptr ? animator->moveScale() : 1.0f;
+        const bool closeAttack = deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
+                                 deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow;
+        f32 actionPace = animator != nullptr ? animator->moveScale() : 1.0f;
+        if (closeAttack) {
+            actionPace = 0;
+        }
         const f32 pace = webbed ? PlayerAnimator::kWebPace : actionPace;
         const bool charging =
             players[i].figure != nullptr && players[i].figure->animator().shoving();
@@ -158,7 +162,10 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         // Stationary normal attacks face the assisted target. The stick, strafe,
         // charging and authored turbo movement retain control of their heading.
         if (!move.any() && !charging && player < inputs.size() && !inputs[player].strafe &&
-            (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack) && events.aim) {
+            (deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack ||
+             deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow ||
+             deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow) &&
+            events.aim) {
             if (const auto target = events.aim(i)) {
                 actor.faceToward(*target);
             }
@@ -171,6 +178,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (players[i].figure != nullptr) {
             players[i].figure->animate(move.magnitude, ticks, seconds, deed);
             events.advanceTurbo(i, ticks, seconds);
+            if (players[i].figure->animator().meleeStruck()) {
+                events.perform(i, Action::Melee);
+            }
             if (players[i].life == PlayerLife::Dying && players[i].figure->animator().dead()) {
                 players[i].life = PlayerLife::InTower; // the body goes; its box says where
             }

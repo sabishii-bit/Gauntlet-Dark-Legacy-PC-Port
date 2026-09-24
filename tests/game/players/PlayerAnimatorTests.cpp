@@ -725,4 +725,80 @@ TEST_CASE("captured players loop GRABBED and hold their fall until released by p
     REQUIRE(animator.dying());
 }
 
+TreeInfo meleeTree() {
+    TreeInfo tree = classTree();
+    for (auto action = static_cast<usize>(Action::Quick1); action < PlayerAnimator::kActionCount;
+         ++action) {
+        TreeSequenceInfo sequence;
+        sequence.name = PlayerAnimator::kSequenceNames[action];
+        sequence.frames = 6;
+        sequence.frameRate = 30;
+        sequence.trackOfNode = {-1};
+        tree.sequences.push_back(sequence);
+    }
+    return tree;
+}
+
+TEST_CASE("held close attacks chain quick swings without ever throwing a weapon",
+          "[game][players][animation][melee]") {
+    const TreeInfo tree = meleeTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Melee);
+    REQUIRE(animator.action() == Action::Quick1);
+    REQUIRE(animator.moveScale() == 0);
+    s32 hits = 0;
+    for (s32 frame = 0; frame < 30; ++frame) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Melee);
+        CHECK_FALSE(animator.released());
+        CHECK_FALSE(animator.strongReleased());
+        if (animator.meleeStruck()) {
+            ++hits;
+            CHECK(animator.action() == (hits % 2 != 0 ? Action::Quick2 : Action::Quick3));
+            CHECK_FALSE(animator.meleePower());
+            CHECK_FALSE(animator.meleeKick());
+        }
+    }
+    REQUIRE(hits >= 3);
+    for (s32 frame = 0; frame < 25; ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep);
+        CHECK_FALSE(animator.released());
+    }
+    CHECK(animator.action() == Action::Ready);
+    CHECK_FALSE(animator.meleeStruck());
+}
+
+TEST_CASE("slow and low melee contacts occur once per completed swing and cancel on damage",
+          "[game][players][animation][melee]") {
+    const TreeInfo tree = meleeTree();
+    for (const PlayerDeed deed :
+         {PlayerDeed::MeleeSlow, PlayerDeed::MeleeLow, PlayerDeed::MeleeSlowLow}) {
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
+        REQUIRE(animator.meleeing());
+        s32 contacts = 0;
+        for (s32 frame = 0; frame < 30; ++frame) {
+            animator.update(PlayerMotion::Stand, kTicks, kStep);
+            if (animator.meleeStruck()) {
+                ++contacts;
+                CHECK(animator.meleePower() == (deed == PlayerDeed::MeleeSlow));
+                CHECK(animator.meleeKick() == (deed == PlayerDeed::MeleeLow));
+            }
+            CHECK_FALSE(animator.released());
+            CHECK_FALSE(animator.strongReleased());
+        }
+        CHECK(contacts == 1);
+        CHECK(animator.action() == Action::Ready);
+    }
+    for (const PlayerDeed interrupt : {PlayerDeed::Flinch, PlayerDeed::Die, PlayerDeed::Reel}) {
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+        animator.update(PlayerMotion::Stand, 30, 0.5f, interrupt);
+        CHECK_FALSE(animator.meleeStruck());
+        CHECK_FALSE(animator.meleeing());
+    }
+}
+
 } // namespace
