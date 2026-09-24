@@ -42,7 +42,12 @@ enum class PlayerDeed : u8 {
     Melee,
     MeleeLow,
     MeleeSlow,
-    MeleeSlowLow
+    MeleeSlowLow,
+    SuperShot,
+    Hammer,
+    Breathe,
+    FireLeft,
+    FireRight
 };
 
 /** Which way a strafing character steps, against the way it faces. */
@@ -132,11 +137,20 @@ public:
         LowKickRecover,
         Low1,
         Low2,
-        LowRecover
+        LowRecover,
+        SpecialShotRepeat,
+        Hammer,
+        HammerRecover,
+        Breathe,
+        BreatheRecover,
+        FireLeft,
+        FireLeftRecover,
+        FireRight,
+        FireRightRecover
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 68;
+    static constexpr usize kActionCount = 77;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -151,7 +165,9 @@ public:
         "SSHOT1",       "SSHOTR",       "SPIKEHIT",     "GRABBED",      "WEBREACT",
         "ATTQUICK1",    "ATTQUICK2",    "ATTQUICK3",    "ATTQUICK2R",   "ATTQUICK3R",
         "ATTSTART",     "ATTSLOW1",     "ATTSLOW1R",    "ATTLOWK",      "ATTLOWKR",
-        "ATTLOW1",      "ATTLOW2",      "ATTLOWR"};
+        "ATTLOW1",      "ATTLOW2",      "ATTLOWR",      "SSHOT2",       "ATTCHOP",
+        "ATTCHOPR",     "ATTBREATHE",   "ATTBREATHER",  "ATTFIREL",     "ATTFIRELR",
+        "ATTFIRER",     "ATTFIRERR"};
     static constexpr f32 kReleaseFrame = 2.0f;        ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -207,7 +223,7 @@ public:
     }
     /** Whether this tick's step ended a release: the moment the weapon flies. */
     bool released() const { return m_released; }
-    bool meleeing() const { return m_current >= Action::Quick1; }
+    bool meleeing() const { return m_current >= Action::Quick1 && m_current <= Action::LowRecover; }
     /** One contact at the completed swing, never a projectile release. */
     bool meleeStruck() const { return m_meleeStruck; }
     bool meleePower() const { return m_meleePower; }
@@ -250,16 +266,28 @@ public:
     /** Whether the body is in a turbo move, which plays through with nothing else heeded. */
     bool turboing() const {
         return m_current == Action::TurboStrong || m_current == Action::TurboFull ||
-               m_current == Action::Shove || strongThrowing() || specialShooting();
+               m_current == Action::Shove || strongThrowing() || specialShooting() ||
+               itemAttacking();
     }
     /** Whether the body is in the special shot or recovering from it. */
     bool specialShooting() const {
-        return m_current == Action::SpecialShot || m_current == Action::SpecialShotRecover;
+        return m_current == Action::SpecialShot || m_current == Action::SpecialShotRecover ||
+               m_current == Action::SpecialShotRepeat;
     }
     /** Whether the body is making a legend item's gesture: the moment its wind-up ends is
      * `legendReleased`, and no potion or weapon goes with it. */
     bool castingLegend() const { return m_legendAsked; }
     bool legendReleased() const { return m_legendReleased; }
+    bool superReleased() const { return m_superReleased; }
+    bool itemAttacking() const {
+        return m_current >= Action::Hammer && m_current <= Action::FireRightRecover;
+    }
+    PlayerDeed itemReleased() const { return m_itemReleased; }
+    /** Item animation multipliers leave movement and simulation clocks unchanged. */
+    void setAttackSpeed(bool rapid, bool speed) {
+        m_rapid = rapid;
+        m_speed = speed;
+    }
     /** Whether the body is in the strong throw or recovering from it. */
     bool strongThrowing() const {
         return m_current == Action::StrongThrow || m_current == Action::StrongThrowRecover;
@@ -330,6 +358,11 @@ private:
     bool m_shieldAsked = false; ///< the potion being used is for a shield
     bool m_legendAsked = false; ///< the gesture under way is a legend item's
     bool m_legendReleased = false;
+    bool m_superReleased = false;
+    bool m_superHeld = false;
+    PlayerDeed m_itemReleased = PlayerDeed::None;
+    bool m_rapid = false;
+    bool m_speed = false;
     StrafeWay m_strafe = StrafeWay::None;
     bool m_potionLatch = false; ///< a potion has gone for this press of its button
     f32 m_attackSeconds = 0.0f; ///< since the attack began, while it goes on

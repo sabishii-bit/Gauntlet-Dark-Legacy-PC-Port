@@ -200,6 +200,8 @@ add_library(game STATIC
     screens/LevelFixtures.cpp
     screens/LevelOpponents.cpp
     screens/PlayerAttacks.cpp
+    screens/PlayerItemAttacks.cpp
+    players/ItemAttack.cpp
     screens/PlayerHealth.cpp
     screens/PlayScene.cpp)
 

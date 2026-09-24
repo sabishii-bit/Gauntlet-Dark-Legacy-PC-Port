@@ -153,7 +153,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     const bool atEntrance = world.arrivalPoint(options.arrivalWorld) == world.startPoint(0);
     beginSpawn(device, !options.position.has_value() && atEntrance);
     m_arsenal.bind({device, m_classes, m_weapons, world.collision(), m_effects, m_audio,
-                    context.sounds, world.wallHitSound()});
+                    context.sounds, world.wallHitSound(), world.isTower(),
+                    world.level() != nullptr && world.level()->bossType >= 0});
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
                     m_arsenal, m_dimmer});
     m_bossSequence.bind(
@@ -1041,7 +1042,14 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 case PartyMotion::Action::StrongThrow:
                     launchWeapon(i, m_players[i].actor.facing(), kStrongThrowScale, true);
                     break;
+                case PartyMotion::Action::SuperShot:
+                    m_arsenal.launchSuperShot(m_players[i].actor, m_players[i].figure.get(),
+                                              m_attacks.aim(m_players[i].actor,
+                                                            m_players[i].actor.facing(),
+                                                            attackTargets()));
+                    break;
                 case PartyMotion::Action::ShieldPotion: m_attacks.shieldPotion(i, m_players); break;
+                case PartyMotion::Action::ItemAttack: m_attacks.useItemAttack(i, m_players); break;
                 case PartyMotion::Action::UsePotion: m_attacks.usePotion(i, m_players); break;
                 case PartyMotion::Action::ThrowPotion:
                     m_arsenal.throwPotion(m_players[i].actor);

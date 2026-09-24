@@ -39,6 +39,8 @@ public:
         Ram,
         ThrowWeapon,
         StrongThrow,
+        SuperShot,
+        ItemAttack,
         ShieldPotion,
         UsePotion,
         ThrowPotion,

@@ -18,6 +18,63 @@ using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
 
+TEST_CASE("super shots pierce bodies once and ignore walls", "[game][items][missiles]") {
+    PlayerMissiles missiles;
+    MissileLaunch launch;
+    launch.position = {0, 3, 0};
+    launch.velocity = Vec3{0, 0, 30};
+    launch.spec = &MissileSpec::superShot();
+    launch.flags = 0x100020;
+    launch.damage = 10;
+    REQUIRE(missiles.launch(launch));
+    CollisionTriangle wall;
+    wall.normal = {0, 0, -1};
+    wall.vertices = {Vec3{-50, -10, 10}, Vec3{50, -10, 10}, Vec3{0, 50, 10}};
+    WorldCollision collision;
+    collision.build({wall});
+    const std::array<MissileTarget, 3> targets{
+        {{1, {0, 0, 8}, 1, 8}, {2, {0, 0, 16}, 1, 8}, {3, {0, 0, 16}, 1, 8}}};
+    for (s32 i = 0; i < 60; ++i) {
+        missiles.update(kStep, &collision, targets);
+    }
+    REQUIRE(missiles.count() == 1);
+    CHECK(missiles.missile(0).position.z == Approx(30));
+    const auto hits = missiles.takeImpacts();
+    REQUIRE(hits.size() == 3);
+    CHECK(hits[0].target == 1);
+    CHECK(hits[1].target == 2);
+    CHECK(hits[2].target == 3);
+    missiles.update(3, &collision, targets);
+    CHECK(missiles.count() == 0);
+    CHECK(missiles.takeImpacts().empty());
+}
+
+TEST_CASE("reflective weapons rebound without creating a damaging wall hit",
+          "[game][items][missiles]") {
+    PlayerMissiles missiles;
+    MissileLaunch launch;
+    launch.position = {0, 3, 0};
+    launch.velocity = Vec3{0, 0, 30};
+    launch.spec = &MissileSpec::of(0);
+    launch.flags = 0x200000;
+    launch.damage = 10;
+    REQUIRE(missiles.launch(launch));
+    CollisionTriangle wall;
+    wall.normal = {0, 0, -1};
+    wall.vertices = {Vec3{-50, -10, 10}, Vec3{50, -10, 10}, Vec3{0, 50, 10}};
+    WorldCollision collision;
+    collision.build({wall});
+    missiles.update(0.5f, &collision);
+    REQUIRE(missiles.count() == 1);
+    CHECK(missiles.missile(0).velocity.z < 0);
+    const auto hits = missiles.takeImpacts();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].damage == 0);
+    CHECK(hits[0].effect.empty());
+    missiles.update(3, &collision);
+    CHECK(missiles.count() == 0);
+}
+
 MissileLaunch axeFrom(const Vec3& position) {
     MissileLaunch launch;
     launch.owner = 1;

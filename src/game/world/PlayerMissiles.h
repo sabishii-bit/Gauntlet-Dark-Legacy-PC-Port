@@ -34,10 +34,11 @@ struct MissileSpec {
     static bool byMagic(s32 classIndex);
     /** How a thrown potion flies. */
     static const MissileSpec& potion();
+    static const MissileSpec& superShot();
 };
 
 /** Spread volleys sound only on the centre projectile. */
-enum class MissileWallSound : u8 { Level, ThreeWay, FiveWay, Silent };
+enum class MissileWallSound : u8 { Level, ThreeWay, FiveWay, Silent, Ricochet };
 
 /** What sets a missile off. */
 struct MissileLaunch {
@@ -114,6 +115,7 @@ public:
         const TreeModel* model = nullptr;
         MissileWallSound wallSound = MissileWallSound::Level;
         u32 flags = 0;
+        std::vector<s32> pierced;
     };
 
     /** A missile's pace from the stat that throws it. */
@@ -146,6 +148,7 @@ public:
 private:
     std::vector<Missile> m_missiles;
     std::vector<MissileImpact> m_impacts;
+    f32 m_ricochetIn = 0;
 };
 
 } // namespace gdl::game

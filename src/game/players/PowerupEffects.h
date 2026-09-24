@@ -15,12 +15,25 @@ inline constexpr s32 kArmor = 6;
 inline constexpr s32 kSpeed = 7;
 inline constexpr s32 kMagic = 8;
 inline constexpr s32 kSpecial = 9;
-inline constexpr u32 kThreeWayShot = 0x00080000; ///< weapon
-inline constexpr u32 kFiveWayShot = 0x00400000;  ///< weapon
-inline constexpr u32 kInvisible = 0x00000004;    ///< special
-inline constexpr u32 kGrowth = 0x00000100;       ///< special
-inline constexpr u32 kLevitation = 1;            ///< special
-inline constexpr u32 kTurbo = 0x00080000;        ///< special, immediate meter refill
+inline constexpr u32 kThreeWayShot = 0x00080000;  ///< weapon
+inline constexpr u32 kFiveWayShot = 0x00400000;   ///< weapon
+inline constexpr u32 kSuperShot = 0x00100000;     ///< weapon
+inline constexpr u32 kReflect = 0x00200000;       ///< weapon
+inline constexpr u32 kRapidFire = 0x20000000;     ///< weapon
+inline constexpr u32 kThunderHammer = 0x10000000; ///< weapon
+inline constexpr u32 kFireBreath = 0x10;          ///< special
+inline constexpr u32 kAcidBreath = 0x20;
+inline constexpr u32 kLightningBreath = 0x40;
+inline constexpr u32 kBreath = kFireBreath | kAcidBreath | kLightningBreath;
+inline constexpr u32 kSkorneHorns = 0x1000;
+inline constexpr u32 kSkorneMask = 0x2000;
+inline constexpr u32 kRightGauntlet = 0x4000;
+inline constexpr u32 kLeftGauntlet = 0x8000;
+inline constexpr u32 kSpeedBoost = 0x00010000; ///< special
+inline constexpr u32 kInvisible = 0x00000004;  ///< special
+inline constexpr u32 kGrowth = 0x00000100;     ///< special
+inline constexpr u32 kLevitation = 1;          ///< special
+inline constexpr u32 kTurbo = 0x00080000;      ///< special, immediate meter refill
 } // namespace powerup
 
 /**

@@ -6,6 +6,7 @@
 #include "engine/core/Types.h"
 #include "engine/world/AmbientDimmer.h"
 
+#include "game/players/ItemAttack.h"
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelOpponents.h"
 #include "game/world/MoveStrikes.h"
@@ -38,6 +39,7 @@ public:
     void ramBarrels(usize index, std::span<PlayerRuntime> players, const Targets& targets);
     void shieldPotion(usize index, std::span<PlayerRuntime> players);
     void usePotion(usize index, std::span<PlayerRuntime> players);
+    void useItemAttack(usize index, std::span<PlayerRuntime> players);
     void showBlock(usize index, f32 taken, f32 left, std::span<PlayerRuntime> players);
     void updateTurbo(usize index, s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                      const std::function<void(s32, usize)>& help);
@@ -55,6 +57,19 @@ public:
 private:
     void beginPotion(const MissileImpact& impact);
     void updatePotions(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
+    void updateItems(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
+    static void strikeTarget(const MissileTarget& target, f32 damage, u32 flags,
+                             const PlayerActor& owner, std::span<PlayerRuntime> players,
+                             const Targets& targets);
+    struct ItemArea {
+        ItemAttack attack;
+        usize actor = 0;
+        u32 effect = 0;
+        f32 elapsed = 0;
+        f32 lifetime = 1;
+        std::vector<s32> hit;
+    };
+    std::vector<ItemArea> m_items;
     struct PotionBurst {
         MissileImpact impact;
         f32 elapsed = 0;

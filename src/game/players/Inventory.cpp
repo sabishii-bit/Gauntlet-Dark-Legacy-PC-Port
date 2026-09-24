@@ -92,12 +92,12 @@ void Inventory::advance(f32 seconds) {
     }
 }
 
-bool Inventory::spendPowerup(s32 kind, u32 mask) {
+bool Inventory::spendPowerup(s32 kind, u32 mask, bool conserve) {
     for (auto& slot : powerups) {
         if (!slot.working() || slot.kind != kind || (slot.flags & mask) == 0) {
             continue;
         }
-        if (slot.charge < 0) {
+        if (slot.charge < 0 || (conserve && slot.charge >= 1)) {
             return true;
         }
         const bool available = slot.charge >= 1;

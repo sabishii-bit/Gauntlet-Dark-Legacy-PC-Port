@@ -115,7 +115,10 @@ PowerupEffects PowerupEffects::of(const Inventory& inventory) {
             effects.weapon |= slot.flags & ~0xFU;
             break;
         case powerup::kArmor: effects.armor |= slot.flags; break;
-        case powerup::kSpeed: effects.paceAdd += slot.charge; break;
+        case powerup::kSpeed:
+            effects.paceAdd += slot.charge;
+            effects.special |= powerup::kSpeedBoost;
+            break;
         case powerup::kMagic: effects.magicAdd += slot.charge; break;
         case powerup::kSpecial: effects.special |= slot.flags; break;
         default: break;

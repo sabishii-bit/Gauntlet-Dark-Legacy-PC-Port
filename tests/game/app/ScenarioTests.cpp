@@ -46,7 +46,7 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
   "party": [
     {"player": 2, "class": "val", "color": "red", "name": "Kim", "level": 3, "crystals": [0, 5],
      "gold": 120, "health": 250, "keys": 2, "slot": 5, "turbo": 45, "potions": [1, 4],
-     "powerups": [{"kind": 5, "flags": 524288}, {"kind": 7, "charge": 2.5, "strength": 60}],
+     "powerups": [{"kind": 5, "flags": 524288}, {"kind": 7, "charge": 2.5, "strength": 60, "active": false}],
      "legends": [7, 2]},
     {"class": "WAR"}
   ],
@@ -83,6 +83,7 @@ TEST_CASE("a scenario describes a party, where it stands and whether it is welco
     REQUIRE(members[0].save.progress().inventory.powerupCount() == 2);
     REQUIRE(members[0].save.progress().inventory.powerup(5, 0x80000)->strength == 30.0f);
     REQUIRE(members[0].save.progress().inventory.powerups[1].charge == 2.5f);
+    REQUIRE_FALSE(members[0].save.progress().inventory.powerups[1].on);
     REQUIRE(members[0].save.progress().relics.hasLegend(7)); // the town's book, the mountain's axe
     REQUIRE(members[0].save.progress().relics.hasLegend(2));
     REQUIRE_FALSE(members[0].save.progress().relics.hasLegend(1));
