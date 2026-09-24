@@ -145,9 +145,9 @@ ShopResult sellShopItem(CharacterSave& save, const ShopItem& item) {
     } else if (item.type == 3) {
         inventory.takePotion();
     } else {
-        auto slot = std::ranges::find_if(inventory.powerups,
-                                         [&](const auto& held) { return matches(held, item); });
-        *slot = {};
+        auto& slot = *std::ranges::find_if(inventory.powerups,
+                                           [&](const auto& held) { return matches(held, item); });
+        slot = {};
     }
     save.gold = std::min(99999, save.gold + item.price * 3 / 4);
     return ShopResult::Sold;
