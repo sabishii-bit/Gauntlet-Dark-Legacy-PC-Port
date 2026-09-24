@@ -85,6 +85,8 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
     // Unattached SFXX offsets are world-axis offsets, scaled by the creature.
     flying.shot.origin += cue->offset * shot.scale;
     flying.archive = &archive;
+    flying.leavesGenerator = (cue->flags & 0x20000U) != 0;
+    flying.summonsEnemies = (cue->flags & 0x400000U) != 0;
     flying.position = flying.shot.origin;
     flying.velocity = CombatantProjectile::velocity(*damage, flying.shot, spread(m_random));
     flying.rotation.y = std::atan2(flying.velocity.x, flying.velocity.z);
@@ -109,7 +111,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
     for (Flying& flying : m_flying) {
         const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
         if (!effects.playing(flying.effect)) {
-            if (!flying.stuck && !flying.morphed && damage.morph >= 0) {
+            if (!flying.stuck && !flying.settled && !flying.morphed && damage.morph >= 0) {
                 flying.morphed = true;
                 flying.effect = show(flying, damage.morph, device, effects, sound,
                                      damage.morphLife > 0.0f ? damage.morphLife : kMorphLife);
@@ -117,10 +119,19 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                 if (flying.morphed) {
                     show(flying, damage.morphEnd, device, effects, sound);
                 }
+                if (flying.leavesGenerator) {
+                    Mat4 placement = glm::translate(Mat4{1}, flying.position);
+                    placement = glm::rotate(placement, flying.rotation.y, Vec3{0, 1, 0});
+                    m_generators.push_back(placement);
+                }
+                summon(flying);
                 flying.effect = 0;
             }
         }
         if (flying.effect == 0) {
+            continue;
+        }
+        if (flying.settled) {
             continue;
         }
         if (!flying.morphed && damage.morph >= 0 &&
@@ -207,6 +218,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             // A blocking world overlap owns this small step; do not hit through its wall.
             if (wall || victim != nullptr) {
                 flying.position = wall ? destination : glm::mix(from, to, nearest);
+                summon(flying);
                 if (wall && (damage.flags & kReflect) != 0) {
                     if (glm::dot(flying.velocity, normal) < 0) {
                         flying.velocity = glm::reflect(flying.velocity, normal);
@@ -261,8 +273,16 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         show(flying, damage.hitSound, device, effects, sound, kStickyLife);
                     break;
                 }
-                show(flying, damage.hitSound, device, effects, sound);
-                flying.effect = 0;
+                const u32 impact = show(flying, damage.hitSound, device, effects, sound);
+                if (flying.leavesGenerator) {
+                    flying.settled = true;
+                    flying.effect = impact;
+                    if (impact == 0) {
+                        m_generators.push_back(glm::translate(Mat4{1}, flying.position));
+                    }
+                } else {
+                    flying.effect = 0;
+                }
                 break;
             }
             flying.position = to;
@@ -282,6 +302,24 @@ void CombatantProjectiles::clear(EffectTrees& effects) {
     m_emittedEffects.clear();
     m_flying.clear();
     m_hits.clear();
+    m_generators.clear();
+    m_summons.clear();
+}
+
+void CombatantProjectiles::summon(Flying& flying) {
+    if (flying.summonsEnemies) {
+        m_summons.push_back(glm::rotate(glm::translate(Mat4{1}, flying.position), flying.rotation.y,
+                                        Vec3{0, 1, 0}));
+        flying.summonsEnemies = false;
+    }
+}
+
+std::vector<Mat4> CombatantProjectiles::takeSummons() {
+    return std::exchange(m_summons, {});
+}
+
+std::vector<Mat4> CombatantProjectiles::takeGenerators() {
+    return std::exchange(m_generators, {});
 }
 
 std::vector<CombatantProjectileHit> CombatantProjectiles::takeHits() {

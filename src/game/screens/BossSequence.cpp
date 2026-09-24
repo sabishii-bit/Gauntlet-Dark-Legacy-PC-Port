@@ -100,8 +100,8 @@ void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRu
     }
 }
 
-/** The boss has fallen: everyone in play gets its shard, its key rises where it fell, the
- * meter goes, and the wizard's visit is set going. */
+/** Everyone in play receives the victory bit, including at the altar. BossDeath only
+ * creates the floating key and its sound for the eight ordinary realm bosses. */
 void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
                           std::span<PlayerRuntime> players) {
     if (!m_resources) {
@@ -111,6 +111,9 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
     const LevelInfo* level = r.world.level();
     if (level == nullptr || m_victory.state().running() || m_victory.state().finished()) {
         return;
+    }
+    if (m_legend != nullptr) {
+        m_legend->clear();
     }
     const s32 order = LevelRef::orderOf(r.world.ref().realmId);
     u16 found = 0;
@@ -132,10 +135,12 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
     m_victory.begin(level->bossType, letter, inRealm, found, false);
     m_shardPosition = where + bosses.rewardOffset();
     if (r.world.items().loaded()) {
-        EffectTrees::Setting setting;
-        setting.seconds = kBossKeySeconds;
-        setting.then = kBossKeyLaterTree;
-        r.effects.startSet(r.device, r.world.items(), kBossKeyTree, m_shardPosition, setting);
+        if (level->bossType < 42) {
+            EffectTrees::Setting setting;
+            setting.seconds = kBossKeySeconds;
+            setting.then = kBossKeyLaterTree;
+            r.effects.startSet(r.device, r.world.items(), kBossKeyTree, m_shardPosition, setting);
+        }
         std::vector<Vec3> standing;
         for (const PlayerRuntime& runtime : players) {
             if (runtime.life == PlayerLife::Standing) {
@@ -143,10 +148,11 @@ void BossSequence::fallen(const Vec3& where, const Bosses& bosses,
             }
         }
         const Vec3* boss = bosses.position();
-        m_victory.bindWizard(r.device, r.world.items(), boss != nullptr ? *boss : Vec3{0.0f},
-                             standing);
+        m_victory.bindWizard(r.device, r.world.items(), boss != nullptr ? *boss : where, standing);
     }
-    r.audio.playNamed(std::format("{}{}", kBossKeySoundPrefix, letter));
+    if (level->bossType < 42) {
+        r.audio.playNamed(std::format("{}{}", kBossKeySoundPrefix, letter));
+    }
 }
 
 /** The wizard's visit runs on: he fades in, says his piece (typed out under the view, his

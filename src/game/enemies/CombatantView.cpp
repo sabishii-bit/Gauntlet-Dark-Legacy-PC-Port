@@ -72,6 +72,7 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
     critter.stock->textures.apply(critter.stock->body, *critter.stock->tree,
                                   critter.player.sequence(),
                                   static_cast<s32>(critter.player.frame()));
+    critter.stock->body.setAppearance(false, critter.tint);
     // Retail flashes the normal skin on bit 3 in the final 180 frozen ticks.
     if (frozenTexture != nullptr && critter.frozenTicks > 0 &&
         (critter.frozenTicks >= kThawBlinkTicks || (critter.frozenTicks & kThawBlinkBit) == 0)) {

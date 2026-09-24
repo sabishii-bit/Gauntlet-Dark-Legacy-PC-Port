@@ -53,9 +53,14 @@ struct Fixture {
                 {"type":1,"flags":1048576,"behaviorFlags":9,"radius":0.5,"damage":60,
                  "minSpeed":30,"maxSpeed":30,"sfxIndex":0,"morph":1,"morphLife":15},
                 {"type":1,"flags":67108864,"behaviorFlags":9,"radius":0.5,"maxDistance":2,"damage":1,
-                 "minSpeed":30,"maxSpeed":30,"sfxIndex":3,"sfx":2}],
+                 "minSpeed":30,"maxSpeed":30,"sfxIndex":3,"sfx":2},
+                {"type":1,"flags":1,"behaviorFlags":9,"radius":0.5,"damage":20,
+                 "minSpeed":30,"maxSpeed":30,"sfxIndex":4,"sfx":2},
+                {"type":1,"flags":0,"behaviorFlags":9,"radius":0.5,"damage":0,
+                 "minSpeed":30,"maxSpeed":30,"sfxIndex":5,"sfx":2}],
             "sounds":[{"name":"SHOT","levelFormat":"S_%cSHOT"},{"name":"LOOP"},
-                      {"name":"HIT","flags":16,"levelFormat":"S_%cHIT"},{"name":"LOOP","life":100}]})");
+                      {"name":"HIT","flags":16,"levelFormat":"S_%cHIT"},{"name":"LOOP","life":100},
+                      {"name":"SHOT","flags":131072},{"name":"SHOT","flags":4194304}]})");
         REQUIRE(archive.load(root));
         REQUIRE(data.load(root / "critter.json"));
     }
@@ -75,6 +80,146 @@ struct Fixture {
         projectiles.update(seconds, collision, players, device, effects, sound);
     }
 };
+
+TEST_CASE("generator shots leave one stage placement on expiry, but never on clear",
+          "[boss-projectiles][spider]") {
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 4;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    f.step(0.05f);
+    REQUIRE(f.projectiles.takeGenerators().empty());
+    f.step(0.1f);
+    REQUIRE(f.projectiles.count() == 0);
+    const auto generators = f.projectiles.takeGenerators();
+    REQUIRE(generators.size() == 1);
+    REQUIRE(generators[0][3].z == Approx(1.5f));
+    REQUIRE(f.projectiles.takeGenerators().empty());
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    f.projectiles.clear(f.effects);
+    REQUIRE(f.projectiles.takeGenerators().empty());
+}
+
+TEST_CASE("summoning shots invoke one callback on contact or expiration, never on clear",
+          "[boss-projectiles][garm]") {
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 5;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    SECTION("contact does not wait for the impact animation") {
+        const std::array<EnemyView, 1> players{{{0, {0, 0, 1}, 1, 6}}};
+        f.step(0.01f, players);
+    }
+    SECTION("expiration also summons") {
+        f.step(0.2f);
+    }
+    REQUIRE(f.projectiles.takeSummons().size() == 1);
+    f.step(2);
+    REQUIRE(f.projectiles.takeSummons().empty());
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    f.projectiles.clear(f.effects);
+    REQUIRE(f.projectiles.takeSummons().empty());
+}
+
+TEST_CASE("Lich and Spider Queen egg records request stage generators",
+          "[boss-projectiles][spider][lich][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+    for (const std::string name : {"LICH", "DRIDER"}) {
+        DYNAMIC_SECTION(name) {
+            test::unpackedOrSkip("MONSTERS/" + name + "/animations.json");
+            CritterData data;
+            REQUIRE(data.load(root / "critter" / (name + ".json")));
+            ItemArchive archive;
+            REQUIRE(archive.load(root / "MONSTERS" / name));
+            test::FakeRenderDevice device;
+            EffectTrees effects;
+            CombatantProjectiles projectiles;
+            usize eggs = 0;
+            for (usize i = 0; i < data.damages().size(); ++i) {
+                const auto& damage = data.damages()[i];
+                const auto* cue = data.sound(damage.sound);
+                if (cue == nullptr || (cue->flags & 0x20000U) == 0) {
+                    continue;
+                }
+                CombatShot shot;
+                shot.data = &data;
+                shot.damageIndex = static_cast<s32>(i);
+                shot.origin = {0, 3, 0};
+                projectiles.launch(shot, archive, device, effects, {});
+                REQUIRE(projectiles.count() == 1);
+                for (s32 frame = 0; frame < 900 && projectiles.count() > 0; ++frame) {
+                    effects.update(1.0f / 30);
+                    projectiles.update(1.0f / 30, nullptr, {}, device, effects, {});
+                }
+                REQUIRE(projectiles.takeGenerators().size() == 1);
+                ++eggs;
+            }
+            REQUIRE(eggs == (name == "LICH" ? 1 : 2));
+            projectiles.clear(effects);
+        }
+    }
+}
+
+TEST_CASE("Garm's two body-break projectiles request summons without player damage",
+          "[boss-projectiles][garm][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
+    CritterData data;
+    REQUIRE(data.load(root / "critter/GARM.json"));
+    ItemArchive archive;
+    REQUIRE(archive.load(root / "MONSTERS/GARM"));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    CombatantProjectiles projectiles;
+    WorldCollision floor;
+    CollisionTriangle triangle;
+    triangle.normal = {0, 1, 0};
+    triangle.vertices = {Vec3{-100, 0, -100}, Vec3{0, 0, 100}, Vec3{100, 0, -100}};
+    floor.build({triangle});
+    for (const s32 index : {1, 2}) {
+        CombatShot shot;
+        shot.data = &data;
+        shot.damageIndex = index;
+        shot.origin = {0, 6, 0};
+        projectiles.launch(shot, archive, device, effects, {});
+        REQUIRE(projectiles.count() == 1);
+        const std::array<EnemyView, 1> players{{{0, {0, 0, 0}, 1, 12}}};
+        for (s32 frame = 0; frame < 900 && projectiles.count() > 0; ++frame) {
+            effects.update(1.0f / 30);
+            projectiles.update(1.0f / 30, &floor, players, device, effects, {});
+        }
+        REQUIRE(projectiles.takeSummons().size() == 1);
+        REQUIRE(projectiles.takeGenerators().empty());
+        REQUIRE(projectiles.takeHits().empty());
+    }
+    projectiles.clear(effects);
+}
+
+TEST_CASE("generator shots finish their impact before leaving a stage placement",
+          "[boss-projectiles][spider]") {
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 4;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array<EnemyView, 1> players{{{0, {0, 0, 1}, 1, 6}}};
+    f.step(0.01f, players);
+    REQUIRE(f.projectiles.takeHits().size() == 1);
+    REQUIRE(f.projectiles.takeGenerators().empty());
+    REQUIRE(f.projectiles.count() == 1);
+    f.step(2, players);
+    REQUIRE(f.projectiles.takeGenerators().size() == 1);
+    REQUIRE(f.projectiles.takeHits().empty());
+    REQUIRE(f.projectiles.count() == 0);
+}
 
 TEST_CASE("pass-through snakes survive player contact but still collide with the world",
           "[game][boss-projectiles][wraith]") {

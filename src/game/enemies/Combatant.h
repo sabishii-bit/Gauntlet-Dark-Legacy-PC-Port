@@ -50,6 +50,7 @@ public:
     void blind(s32 ticks);
     void curb(f32 seconds);
     void resize(f32 scale);
+    void tint(Color color) { m_actor.tint = color; }
     void hold(bool held);
     void roar();
     bool present() const { return m_actor.state != State::Inactive; }
@@ -125,6 +126,7 @@ private:
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
         f32 roarOwed = 0.0f; ///< damage taken toward the next roar
         f32 alpha = 1.0f;
+        Color tint = Color::white();
         f32 scale = 1.0f;
         s32 frozenTicks = 0;     ///< a legend item's: it stands still this long
         s32 blindTicks = 0;      ///< and finds no one this long

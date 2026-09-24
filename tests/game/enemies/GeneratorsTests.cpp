@@ -50,6 +50,45 @@ std::filesystem::path sampleLevel(std::string_view name) {
     return dir;
 }
 
+TEST_CASE("boss generators use the stage record and breed after the birth delay",
+          "[spider][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/SPI/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 17, {}, 3);
+    Generators generators;
+    ItemArchive noArt;
+    ItemInfo info;
+    info.type = ItemInfo::kGenerator;
+    info.name = "BOSSGEN";
+    info.hitPoints = 10;
+    info.height = 5;
+    info.radius = 2;
+    info.armor = 0;
+    REQUIRE(generators.placeBoss(device, info, noArt, enemies, 9, Mat4{1}, nullptr));
+    REQUIRE(generators.count() == 1);
+    REQUIRE(generators.kindOf(0) == 9);
+    REQUIRE(generators.healthOf(0) == 10);
+    REQUIRE(generators.tierOf(0) == 1);
+    REQUIRE(generators.mostOf(0) == 10);
+    REQUIRE(generators.intervalOf(0) == 5);
+    REQUIRE(generators.countdownOf(0) == 40);
+    REQUIRE_FALSE(generators.bodyShown(0));
+    const std::vector<EnemyView> party{{0, {0, 0, 20}, 1, 6}};
+    generators.update(40, enemies, party);
+    REQUIRE(generators.bredOf(0) == 0);
+    generators.update(2, enemies, party);
+    REQUIRE(generators.bredOf(0) == 1);
+    const auto event = generators.strike(0, 10, 0);
+    REQUIRE(event.has_value());
+    REQUIRE(event->destroyed);
+    generators.update(600, enemies, party);
+    REQUIRE(generators.bredOf(0) == 1);
+}
+
 TEST_CASE("the fields place forty-seven generators for a party of one, of grunts and rats",
           "[game][enemies][unpacked]") {
     const std::filesystem::path level =

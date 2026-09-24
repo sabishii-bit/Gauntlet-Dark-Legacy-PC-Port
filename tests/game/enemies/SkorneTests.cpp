@@ -169,4 +169,63 @@ TEST_CASE("Skorne health and range windows expose his authored attack families",
     REQUIRE(shots == std::set<s32>{4, 5});
     REQUIRE(detachedSlam);
 }
+
+TEST_CASE("Savior weakens Skorne on release and death finishes before the victory notice",
+          "[skorne][legend][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'E');
+    REQUIRE(bosses.spawn(42, {0, -25.375f, 0}, 0));
+    REQUIRE(bosses.bringLegend(0));
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, -9.75f, 33};
+    player.height = 6;
+    player.radius = 1;
+    const std::array players{player};
+    const f32 health = bosses.view().health;
+    bosses.landLegend(); // no effect before the rite asks for the cast
+    REQUIRE(bosses.view().health == health);
+    for (s32 frame = 0; frame < 900 && !bosses.legend().thrown(); ++frame) {
+        bosses.update(2, 1.0f / 30, players);
+    }
+    REQUIRE(bosses.legend().thrown());
+    REQUIRE(bosses.view().health == health);
+    REQUIRE_FALSE(bosses.curbed());
+    bosses.landLegend();
+    REQUIRE(bosses.curbed());
+    REQUIRE(bosses.view().health == Catch::Approx(health * 0.9f + 4)); // ordinary armor applies
+    const f32 weakened = bosses.view().health;
+    bosses.landLegend();
+    REQUIRE(bosses.view().health == weakened);
+    for (s32 frame = 0; frame < 1500 && bosses.legend().running(); ++frame) {
+        bosses.update(2, 1.0f / 30, players);
+    }
+    REQUIRE_FALSE(bosses.legend().running());
+    REQUIRE_FALSE(bosses.curbed());
+    REQUIRE_FALSE(bosses.legend().darkens());
+    EnemyHit hit;
+    hit.damage = bosses.view().maxHealth * 2;
+    hit.player = 0;
+    bosses.hurt(hit);
+    REQUIRE_FALSE(bosses.view().alive);
+    REQUIRE(bosses.present());
+    REQUIRE_FALSE(bosses.takeDefeat().has_value());
+    const Vec3 rewardOffset = bosses.rewardOffset();
+    s32 spews = 0;
+    for (s32 frame = 0; frame < 900 && bosses.present(); ++frame) {
+        bosses.update(2, 1.0f / 30, players);
+        for (const auto& spew : bosses.takeSpews()) {
+            REQUIRE(spew.velocity.y > 0);
+            ++spews;
+        }
+    }
+    REQUIRE(spews == 1);
+    REQUIRE_FALSE(bosses.present());
+    REQUIRE(bosses.takeDefeat().has_value());
+    REQUIRE_FALSE(bosses.takeDefeat().has_value());
+    REQUIRE(bosses.rewardOffset() == rewardOffset);
+}
 } // namespace
