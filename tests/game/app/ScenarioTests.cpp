@@ -5,14 +5,74 @@
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
 #include "game/players/Progression.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("mountain creature scenarios provide unsaved level 99 green knights",
+          "[game][scenario][mountain-creatures]") {
+    for (const auto* name : {"golem", "gargoyle"}) {
+        const auto file = test::dataDirectory().parent_path() / "tests/scenarios" /
+                          (std::string{"level-b5-mountain-"} + name + ".json");
+        const auto scenario = Scenario::load(file);
+        REQUIRE(scenario.level == "B5");
+        REQUIRE(scenario.party.size() == 1);
+        const auto party = scenario.partyMembers();
+        REQUIRE(party[0].save.character == classIndexOf("KNI").value());
+        REQUIRE(party[0].save.color == colorIndexOf("GRE").value());
+        REQUIRE(experienceLevel(party[0].save.experience()) == 99);
+        REQUIRE(party[0].save.health() == 10400);
+        REQUIRE_FALSE(party[0].slot.has_value());
+        REQUIRE(scenario.tower.position.has_value());
+        REQUIRE(scenario.tower.welcome == false);
+    }
+}
+
+TEST_CASE("mountain creature scenario starts have walkable clearance near their placed enemy",
+          "[game][scenario][mountain-creatures][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELB5/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto ref = levels.byName("B5");
+    REQUIRE(ref.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    for (const auto* name : {"golem", "gargoyle"}) {
+        const auto file = test::dataDirectory().parent_path() / "tests/scenarios" /
+                          (std::string{"level-b5-mountain-"} + name + ".json");
+        const auto scenario = Scenario::load(file);
+        const auto position = *scenario.tower.position;
+        const auto floor = world.collision().floorAt(position, 2, 6);
+        INFO(name);
+        REQUIRE(floor.has_value());
+        INFO("floor height: " << floor->y);
+        const auto resolved =
+            world.collision().resolveWalls(position, 1.5f, floor->y + 0.1f, floor->y + 6);
+        REQUIRE(glm::length(resolved - position) < 0.01f);
+        bool found = false;
+        for (const auto& instance : world.layout().itemInstances()) {
+            if (instance.info < 0 || instance.minPlayers != 1) {
+                continue;
+            }
+            const auto& info = world.layout().itemInfos()[static_cast<usize>(instance.info)];
+            const std::string_view wanted = std::string_view{name} == "golem" ? "GOLEM" : "GAR";
+            if (info.type == ItemInfo::kPlacedEnemy && info.name == wanted &&
+                glm::length(instance.position - position) < 25) {
+                found = true;
+            }
+        }
+        REQUIRE(found);
+    }
+}
 
 TEST_CASE("a shop scenario stages results without awarding their totals twice",
           "[game][scenario][shop]") {
