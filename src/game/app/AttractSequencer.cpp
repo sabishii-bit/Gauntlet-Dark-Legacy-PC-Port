@@ -22,6 +22,7 @@ AttractStep AttractSequencer::next() {
 void AttractSequencer::reset() {
     m_position = 0;
     m_wave = 0;
+    m_titleShown = false;
 }
 
 std::string_view AttractSequencer::movieName(s32 variant, u32 wave) {

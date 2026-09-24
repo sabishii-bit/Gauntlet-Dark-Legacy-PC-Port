@@ -51,4 +51,27 @@ TEST_CASE("wrapping the table advances the wave and reset returns to the start",
     REQUIRE(sequencer.next().movie == "midway");
 }
 
+TEST_CASE("startup movies cannot jump to title but later attract movies can", "[game][attract]") {
+    AttractSequencer sequencer;
+    REQUIRE_FALSE(sequencer.canSkipToTitle());
+    REQUIRE(sequencer.next().movie == "midway");
+    REQUIRE_FALSE(sequencer.canSkipToTitle());
+    REQUIRE(sequencer.next().movie == "opening");
+    REQUIRE_FALSE(sequencer.canSkipToTitle());
+    REQUIRE(sequencer.next().movie == "title2");
+    REQUIRE_FALSE(sequencer.canSkipToTitle());
+    sequencer.next();
+    REQUIRE(sequencer.next().screen == AttractScreen::TitleScreen);
+    REQUIRE_FALSE(sequencer.canSkipToTitle());
+    sequencer.titleShown();
+    REQUIRE(sequencer.canSkipToTitle());
+    for (gdl::usize step = 0; step < AttractSequencer::kScreenTable.size(); ++step) {
+        sequencer.next();
+        REQUIRE(sequencer.canSkipToTitle());
+    }
+    sequencer.reset();
+    REQUIRE_FALSE(sequencer.canSkipToTitle());
+    REQUIRE(sequencer.next().movie == "midway");
+}
+
 } // namespace

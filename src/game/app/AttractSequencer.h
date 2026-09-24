@@ -58,12 +58,17 @@ public:
     u32 wave() const { return m_wave; }
     usize position() const { return m_position; }
 
+    /** Start may leave idle attract movies only after the startup sequence reaches the title. */
+    bool canSkipToTitle() const { return m_titleShown; }
+    void titleShown() { m_titleShown = true; }
+
     /** Movie played for a movie table row in a given wave. */
     static std::string_view movieName(s32 variant, u32 wave);
 
 private:
     usize m_position = 0;
     u32 m_wave = 0;
+    bool m_titleShown = false;
 };
 
 } // namespace gdl::game
