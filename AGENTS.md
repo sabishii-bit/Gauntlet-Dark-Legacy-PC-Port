@@ -2,6 +2,17 @@
 
 Read this before changing anything. It applies to people and to coding agents.
 
+## Documentation scope and player-facing text
+
+* Do not edit `README.md` unless the user explicitly requests that edit. Feature,
+  control, setup and workflow changes do not implicitly authorize README updates.
+* All player-facing text, including menu labels, prompts and helper text, must
+  come from a verified reference unless the user explicitly specifies or authorizes
+  original wording. Use retail string tables, assets, binary evidence or captured
+  retail screens; identify the reference in the commit message or a focused test.
+  A localization key alone is not evidence. Do not invent text to fill an uncertain
+  UI implementation; establish the wording and its context before adding it.
+
 ## What this repository is
 
 A standalone C++26 / Vulkan reconstruction of the *Gauntlet Dark Legacy*
@@ -1705,8 +1716,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   as `/std:c++latest` (the C++26 preview). Use only features all three support.
 * `.clang-format` is authoritative; the editor formats on save. Run
   `clang-format -i` over anything edited outside the editor.
-* `.clang-tidy` is the linter. clangd applies it live; `python
-  scripts/lint.py` runs it over the whole tree. Do not add `NOLINT` without a
+* `.clang-tidy` is the linter. clangd applies it live. Before pushing code changes,
+  run `python scripts/lint.py <changed.cpp> ...` and
+  `python scripts/clangd-check.py <changed.cpp> ...` on the affected files and
+  resolve their diagnostics. For header changes, include the consuming translation
+  units that exercise the changed declarations. Do not add `NOLINT` without a
   reason in the same comment; prefer restructuring the code.
 * Names: types `PascalCase`, functions and variables `camelBack`, members
   `m_`, constants and `constexpr` values `kName`, macros `GDL_*`. Name classes
@@ -1770,7 +1784,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   add shell or PowerShell scripts. `scripts/setup.py` gets a fresh machine
   ready (finds or installs the compiler, CMake, Ninja, vcpkg and the Linux
   packages, then builds; `--check` only reports); when a new tool or package
-  becomes a requirement, teach it to `setup.py` and the README's table.
+  becomes a requirement, teach it to `setup.py`. Update the README's table only
+  when the user explicitly requests a README edit.
   `scripts/devenv.py` resolves the
   environment (on Windows: the x64 MSVC developer environment with the
   Visual Studio CMake and Ninja first on PATH; `--shell` opens it
@@ -1780,16 +1795,16 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `scripts/clangd-check.py` check the tree. If a stale cache picks up the
   wrong tool, reconfigure with `python scripts/configure.py --fresh`. Keep
   both platforms building.
-* Definition of done for any change: `python scripts/build.py --test`
-  warning-free and green, `python scripts/lint.py` clean,
-  `python scripts/clangd-check.py` clean, and `gauntlet --frames 120` runs to
-  a clean shutdown (with `--title` too when the change touches the 2D
-  screens; `python scripts/build.py --unpack` first).
-  For responsibility-only PlayScene refactors, use an incremental build,
-  tests for the extracted component and affected scene behavior, and lint/editor
-  checks limited to changed files. Add or update regression tests for the new
-  boundary. Do not rerun project-wide tests or lint for each extraction;
-  reserve broader validation for changes with broader impact.
+* Before pushing, use an incremental build, targeted tests for the changed behavior,
+  and clean lint/editor checks scoped to the affected files as described above.
+  Add or update regression tests for changed behavior and extracted boundaries.
+  For runtime changes, also check that `gauntlet --frames 120` runs to a clean
+  shutdown (with `--title` too when the change touches the 2D screens;
+  `python scripts/build.py --unpack` first).
+  Do not default to project-wide tests or lint for narrow changes; reserve broader
+  validation for broader impact. For documentation-only edits, check the changed
+  Markdown and run `git diff --check`; C++ lint does not validate Markdown. State
+  which checks actually ran rather than claiming a non-applicable lint pass.
 * CI (`.github/workflows/ci.yml`) runs `setup.py` then builds and runs the
   unit tests on Windows and Linux, lints on Linux, and tries the `gpu` tier
   on a software Vulkan device under Xvfb (best effort). The game-data tier
