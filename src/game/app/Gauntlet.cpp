@@ -192,7 +192,7 @@ void Gauntlet::updateMovie(f64 deltaSeconds) {
 
 void Gauntlet::updateTitle(f64 deltaSeconds) {
     const TitleOutcome outcome =
-        m_title.update(deltaSeconds, readMenuInput(input(), m_config.menu), &input());
+        m_title.update(deltaSeconds, readMenuInput(input(), m_config.menu));
     if (outcome == TitleOutcome::Running) {
         return;
     }
@@ -402,7 +402,7 @@ bool Gauntlet::saveSettings(const GameConfig& config) {
 void Gauntlet::updatePause(f64 deltaSeconds) {
     const auto source = MenuInputSource::forPlayer(m_pause.player());
     const auto outcome =
-        m_pause.update(deltaSeconds, readMenuInput(input(), m_config.menu, source), &input());
+        m_pause.update(deltaSeconds, readMenuInput(input(), m_config.menu, source));
     if (outcome == PauseOutcome::Running) {
         return;
     }

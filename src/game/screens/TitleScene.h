@@ -46,11 +46,10 @@ public:
     void close();
     bool isOpen() const { return m_open; }
 
-    TitleOutcome update(f64 deltaSeconds, const MenuInput& input, const Input* raw = nullptr);
+    TitleOutcome update(f64 deltaSeconds, const MenuInput& input);
 
     /** Steps the scene by whole ticks; update() calls this from wall-clock time. */
-    TitleOutcome step(s32 ticks, const MenuInput& input, const Input* raw = nullptr);
-    bool capturingBinding() const { return m_optionsMenu.capturing(); }
+    TitleOutcome step(s32 ticks, const MenuInput& input);
     const SettingsMenu& settings() const { return m_optionsMenu; }
 
     void render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth, f32 frameHeight);

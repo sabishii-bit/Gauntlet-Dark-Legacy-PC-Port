@@ -55,6 +55,18 @@ void drawLabel(Canvas& canvas, const TextPainter& painter, s32 x, s32 y, std::st
 
 } // namespace
 
+MenuDefinition MenuDefinition::parchment() {
+    MenuDefinition menu;
+    menu.x = 128;
+    menu.colors.off = Color::rgba(92, 26, 3);
+    menu.parchmentFont = true;
+    menu.backdrop = "SCROLL_A";
+    menu.backdropY = 8;
+    menu.backdropWidth = 480;
+    menu.backdropHeight = 360;
+    return menu;
+}
+
 u8 pulseOpacity(s32 time, s32 radius, s32 hold) {
     const s32 span = radius * 2;
     s32 phase = time % (span + hold);
@@ -278,6 +290,9 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
     const Texture* labelSheet = m_definition.parchmentFont && textures.parchment != nullptr
                                     ? textures.parchment
                                     : textures.font;
+    const Color labelColor = m_definition.parchmentFont && textures.parchment == nullptr
+                                 ? m_definition.colors.off.withAlpha(fade)
+                                 : white;
 
     const bool hasBackdrop = !m_definition.backdrop.empty() && textures.backdrop != nullptr;
     if (hasBackdrop && !m_backdropReleased) {
@@ -294,13 +309,13 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
         if (!m_definition.title.empty()) {
             const s32 x = -static_cast<s32>(m_backdrop.x + m_backdrop.width / 2.0f);
             const s32 y = static_cast<s32>(m_backdrop.y) + kTitleMargin;
-            drawLabel(canvas, painter, x, y, m_definition.title, m_definition.titleScale, white,
-                      labelSheet);
+            drawLabel(canvas, painter, x, y, m_definition.title, m_definition.titleScale,
+                      labelColor, labelSheet);
         }
         if (!m_definition.playerLabel.empty()) {
             const s32 y = static_cast<s32>(m_backdrop.y) + kPlayerTagMargin;
             drawLabel(canvas, painter, -kPlayerTagX, y, m_definition.playerLabel, kPromptScale,
-                      white, labelSheet);
+                      labelColor, labelSheet);
         }
     }
 
@@ -347,9 +362,10 @@ void OptionMenu::draw(Canvas& canvas, const TextPainter& painter,
             drawLabel(canvas, painter, m_definition.x, y, label, m_definition.scale,
                       m_definition.colors.on.withAlpha(fade), itemSheet(textures, true));
         } else {
-            Color color = m_definition.parchmentFont && !garamondActive
-                              ? white
-                              : m_definition.colors.off.withAlpha(fade);
+            Color color =
+                m_definition.parchmentFont && textures.parchment != nullptr && !garamondActive
+                    ? white
+                    : m_definition.colors.off.withAlpha(fade);
             if (!item.enabled) {
                 color = color.withAlpha(static_cast<u8>(fade / 2));
             }

@@ -89,4 +89,11 @@ std::string_view EnemyFeedback::deathSkin() const {
     }
     return halfHeight > 2 && element < kSkins.size() ? kSkins[element] : std::string_view{};
 }
+
+s32 EnemyFeedback::deathSkinFrames() const {
+    if (deathSkin().empty()) {
+        return 0;
+    }
+    return kind == 5 && (flags & 0xF) == 0 ? 15 : 10;
+}
 } // namespace gdl::game

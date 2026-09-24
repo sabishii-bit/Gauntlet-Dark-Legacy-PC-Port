@@ -40,14 +40,8 @@ constexpr s32 kLoadingFadeSlope = 2;
 constexpr s32 kMenuStart = 11;
 constexpr s32 kMenuOptions = 12;
 constexpr s32 kTitleMenuY = 304;
-constexpr s32 kOptionsMenuX = 128;
-constexpr s32 kOptionsPromptY = 304;
-constexpr s32 kOptionsBackdropY = 8;
-constexpr s32 kOptionsBackdropWidth = 480;
-constexpr s32 kOptionsBackdropHeight = 360;
 constexpr Rect kOptionsBurnArea{290.0f, 142.0f, 224.0f, 172.0f};
 constexpr Color kGlowColor = Color::rgba(130, 0, 234);
-constexpr Color kOptionsOffColor = Color::rgba(92, 26, 3);
 
 constexpr std::array<std::pair<s32, s32>, 4> kBackdropPositions{
     {{0, 0}, {256, 0}, {0, 256}, {256, 256}}};
@@ -275,15 +269,15 @@ bool TitleScene::musicPlaying() const {
            m_context.sounds->isPlaying(m_music);
 }
 
-TitleOutcome TitleScene::update(f64 deltaSeconds, const MenuInput& input, const Input* raw) {
+TitleOutcome TitleScene::update(f64 deltaSeconds, const MenuInput& input) {
     m_tickRemainder += deltaSeconds * m_tickRate;
     auto ticks = static_cast<s32>(std::floor(m_tickRemainder));
     m_tickRemainder -= ticks;
     ticks = std::clamp(ticks, 0, kMaxTicksPerFrame);
-    return step(ticks, input, raw);
+    return step(ticks, input);
 }
 
-TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput, const Input* raw) {
+TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput) {
     if (!m_open) {
         return TitleOutcome::Running;
     }
@@ -304,7 +298,7 @@ TitleOutcome TitleScene::step(s32 ticks, const MenuInput& rawInput, const Input*
     }
 
     if (m_optionsMenu.isOpen()) {
-        const MenuEvent event = m_optionsMenu.update(input, ticks, raw);
+        const MenuEvent event = m_optionsMenu.update(input, ticks);
         if (event.action == MenuAction::Back) {
             closeOptionsMenu();
         } else if (event.action == MenuAction::Choice) {
@@ -364,24 +358,13 @@ void TitleScene::openTitleMenu() {
 }
 
 void TitleScene::openOptionsMenu() {
-    MenuDefinition menu;
+    auto menu = MenuDefinition::parchment();
     menu.title = std::string(text("menu.options"));
-    menu.x = kOptionsMenuX;
-    menu.y = -1;
-    menu.colors.off = kOptionsOffColor;
-    menu.prompts = true;
-    menu.backLabel = std::string(text("menu.back"));
-    menu.selectLabel = std::string(text("menu.select"));
-    menu.promptY = kOptionsPromptY;
     menu.fades = true;
-    menu.parchmentFont = true;
     menu.garamondIntro = true;
     menu.playerLabel = fillPlaceholder(text("menu.player"), 1);
     menu.backdrop = std::string(kScrollTexture);
     menu.backdropX = -1;
-    menu.backdropY = kOptionsBackdropY;
-    menu.backdropWidth = kOptionsBackdropWidth;
-    menu.backdropHeight = kOptionsBackdropHeight;
     menu.burn = "LOGO_BURN1";
     menu.burnArea = kOptionsBurnArea;
     m_optionsMenu.open(m_context.config != nullptr ? *m_context.config : GameConfig{},

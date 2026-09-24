@@ -45,6 +45,10 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
     PauseMenu menu;
     REQUIRE(menu.open(device, context, party, 2));
     CHECK(menu.player() == 2);
+    CHECK(menu.menu().definition().parchmentFont);
+    CHECK_FALSE(menu.menu().definition().prompts);
+    CHECK(menu.menu().definition().backLabel.empty());
+    CHECK(menu.menu().definition().selectLabel.empty());
     MenuInput down;
     down.down = true;
     MenuInput select;

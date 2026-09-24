@@ -207,6 +207,53 @@ TEST_CASE("drawing emits the glow, the labels, the icon and the prompts", "[game
     REQUIRE(device.draws.front().texture == &backdrop);
 }
 
+TEST_CASE("parchment menus share red labels and purple focus without unsolicited footers",
+          "[game][menu]") {
+    Fixture f;
+    test::FakeRenderDevice device;
+    const test::FakeTexture glow{64, 64};
+    const test::FakeTexture parchment{64, 64};
+    const test::FakeTexture backdrop{16, 16};
+    MenuTextures textures;
+    textures.font = &f.sheet;
+    textures.glow = &glow;
+    textures.parchment = &parchment;
+    textures.backdrop = &backdrop;
+    auto definition = MenuDefinition::parchment();
+    definition.title = "A";
+    definition.items = {{"B", 0}, {"C", 1}};
+    CHECK_FALSE(definition.prompts);
+    CHECK(definition.backLabel.empty());
+    CHECK(definition.selectLabel.empty());
+    CHECK(definition.colors.off == Color::rgba(92, 26, 3));
+    CHECK(definition.colors.hi == Color::rgba(130, 0, 234));
+    SECTION("the precolored parchment sheet supplies the title and inactive label") {
+        f.menu.open(definition, f.painter, {});
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        f.menu.draw(canvas, f.painter, textures);
+        canvas.end();
+        REQUIRE(device.draws.size() == 5);
+        CHECK(device.draws[1].texture == &parchment); // title
+        CHECK(device.draws[2].texture == &glow);
+        CHECK(device.draws[2].vertices[0].color.r == definition.colors.hi.r);
+        CHECK(device.draws[2].vertices[0].color.b == definition.colors.hi.b);
+        CHECK(device.draws[4].texture == &parchment); // inactive item
+    }
+    SECTION("a missing parchment sheet falls back to red ink, never white labels") {
+        textures.parchment = nullptr;
+        f.menu.open(definition, f.painter, {});
+        Canvas canvas;
+        canvas.begin(device, Mat4{1});
+        f.menu.draw(canvas, f.painter, textures);
+        canvas.end();
+        REQUIRE(device.draws.size() == 4); // The two plain-font items share a batch.
+        CHECK(device.draws[1].texture == &f.sheet);
+        CHECK(device.draws[1].vertices[0].color == definition.colors.off);
+        CHECK(device.draws.back().vertices.back().color == definition.colors.off);
+    }
+}
+
 TEST_CASE("a menu writes its body in ink and centres a lone prompt", "[game][menu]") {
     Fixture f;
     test::FakeRenderDevice device;

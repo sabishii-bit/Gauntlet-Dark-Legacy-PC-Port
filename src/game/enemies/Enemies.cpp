@@ -21,6 +21,7 @@ constexpr f32 kSpawnDrop = 6.0f;       ///< a spawn finds its floor within this
 constexpr s32 kFarRecycleCost = 10000; ///< an unseen enemy is that much cheaper to reuse
 constexpr f32 kPushFloor = 0.01f;
 constexpr f32 kGravity = 100.0f;
+constexpr f32 kDeathSkinRate = 15.0f;
 
 constexpr s32 kRetargetEvery = 8; ///< frames between a mind looking round again
 constexpr f32 kRunFrom = 1.25f;   ///< a pace this much over a walk's runs
@@ -498,7 +499,11 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             enemy.yaw = turnToward(enemy, enemy.mind.heading, ticks);
             move(enemy, i, ticks, seconds, Vec3{0.0f, 0.0f, 0.0f}, players, obstacles);
             enemy.animator.update(ticks, seconds, false);
-            if (enemy.animator.dead() || !enemy.animator.reacting()) {
+            // A completed dissolve retires the body even if its fall is still playing.
+            const bool dissolved =
+                !enemy.deathSkin.empty() &&
+                enemy.deathSeconds * kDeathSkinRate >= static_cast<f32>(enemy.deathSkinFrames);
+            if (dissolved || enemy.animator.dead() || !enemy.animator.reacting()) {
                 die(enemy);
             }
             continue;
@@ -977,6 +982,7 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
     if (killed) {
         enemy.killed = true;
         enemy.deathSkin = feedback.deathSkin();
+        enemy.deathSkinFrames = feedback.deathSkinFrames();
     }
     if (hit.player >= 0) {
         EnemyLoss loss;
@@ -1162,8 +1168,8 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
                     if (animation.name != enemy.deathSkin) {
                         continue;
                     }
-                    const auto frame = static_cast<s32>(enemy.deathSeconds * 15.0f);
-                    if (frame < 10 && frame < animation.frames) {
+                    const auto frame = static_cast<s32>(enemy.deathSeconds * kDeathSkinRate);
+                    if (frame < enemy.deathSkinFrames && frame < animation.frames) {
                         const auto first =
                             animation.source >= 0
                                 ? std::optional<u32>{static_cast<u32>(animation.source)}

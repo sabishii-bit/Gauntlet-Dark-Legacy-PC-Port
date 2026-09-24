@@ -265,6 +265,7 @@ private:
         s32 hitCount = 0;
         f32 flashSeconds = 0;
         f32 deathSeconds = 0;
+        s32 deathSkinFrames = 0;
         std::string_view deathSkin;
         EnemyAnimator animator;
     };
