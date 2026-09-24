@@ -44,9 +44,10 @@ struct LevelTuningRecord {
 
 struct LevelRecord {
     u32 flags = 0;
-    std::string name;      ///< up to four characters, "L1"
-    std::string title;     ///< "Tower"
-    std::string audioBank; ///< usually empty; the audio record names the bank
+    u16 selectionFlags = 0; ///< bit 1 permits this level in the attract rotation
+    std::string name;       ///< up to four characters, "L1"
+    std::string title;      ///< "Tower"
+    std::string audioBank;  ///< usually empty; the audio record names the bank
     std::string movie;
     s32 bossType = 0;
     std::array<s16, 6> enemyTypes{}; ///< rows of the realm's enemies the level uses; -1 none

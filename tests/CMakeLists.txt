@@ -104,6 +104,8 @@ add_executable(tests
     game/menu/MenuInputTests.cpp
     game/menu/OptionMenuTests.cpp
     game/screens/TitleSceneTests.cpp
+    game/screens/IdleScreenTests.cpp
+    game/screens/AttractSceneTests.cpp
     game/config/GameConfigTests.cpp
     game/players/ClassDataTests.cpp
     game/players/ProgressionTests.cpp

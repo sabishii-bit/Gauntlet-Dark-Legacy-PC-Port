@@ -60,7 +60,7 @@ public:
 
     /** Start may leave idle attract movies only after the startup sequence reaches the title. */
     bool canSkipToTitle() const { return m_titleShown; }
-    void titleShown() { m_titleShown = true; }
+    void titleShown();
 
     /** Movie played for a movie table row in a given wave. */
     static std::string_view movieName(s32 variant, u32 wave);

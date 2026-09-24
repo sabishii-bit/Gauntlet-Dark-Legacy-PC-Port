@@ -61,6 +61,7 @@ std::vector<u8> sampleWad() {
 
     Record level(WorldDataFile::kLevelSize);
     level.u32At(0, 0x10);
+    level.u16At(4, 2);
     level.textAt(8, "L1");
     level.textAt(0x14, "Tower");
     level.textAt(0x34, "intro");
@@ -185,6 +186,7 @@ TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds"
     REQUIRE(data.levels.size() == 1);
     const LevelRecord& level = data.levels[0];
     REQUIRE(level.flags == 0x10);
+    REQUIRE(level.selectionFlags == 2);
     REQUIRE(level.name == "L1");
     REQUIRE(level.title == "Tower");
     REQUIRE(level.movie == "intro");

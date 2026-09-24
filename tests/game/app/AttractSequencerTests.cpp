@@ -9,6 +9,14 @@ namespace {
 
 using namespace gdl::game;
 
+TEST_CASE("entering title directly advances into the flyby loop", "[game][attract]") {
+    AttractSequencer sequencer;
+    sequencer.titleShown();
+    REQUIRE(sequencer.next().screen == AttractScreen::Screen2D);
+    REQUIRE(sequencer.next().screen == AttractScreen::Flyby);
+    REQUIRE(sequencer.next().movie == "war_dwa");
+}
+
 TEST_CASE("the attract loop opens with the three intro movies", "[game][attract]") {
     AttractSequencer sequencer;
     const AttractStep first = sequencer.next();

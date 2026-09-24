@@ -34,6 +34,7 @@ void requireRecords(std::span<const u8> bytes, const WadSection& section, usize 
 LevelRecord readLevel(std::span<const u8> bytes, usize at) {
     LevelRecord level;
     level.flags = readWadU32(bytes, at, kWhat);
+    level.selectionFlags = static_cast<u16>(readS16(bytes, at + 4));
     level.name = readWadText(bytes, at + 8, kNameSize, kWhat);
     level.title = readWadText(bytes, at + 0x14, kTextSize, kWhat);
     level.audioBank = readWadText(bytes, at + 0x24, kTextSize, kWhat);

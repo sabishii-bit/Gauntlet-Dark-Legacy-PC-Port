@@ -47,6 +47,28 @@ TEST_CASE("an envelope runs from birth to the life's end, then over the fade",
     REQUIRE(envelope.at(11.0f, 10.0f, 0.0f) == 10.0f);
 }
 
+TEST_CASE("zero-speed cone particles stay finite and rise under gravity", "[world][particles]") {
+    auto source = torchTemplate();
+    source.speed = 0.0f;
+    source.angle = 5.0f;
+    const auto descriptor = ParticleDescriptor::fromTemplate(source);
+    ParticleEmitter emitter;
+    emitter.start(descriptor, glm::translate(Mat4{1.0f}, Vec3{10, 20, 30}));
+    emitter.step(1);
+    REQUIRE_FALSE(emitter.particles().empty());
+    const auto born = emitter.particles()[0];
+    REQUIRE(born.velocity == Vec3{0.0f});
+    emitter.step(2);
+    const auto& particle = emitter.particles()[0];
+    const auto position = emitter.positionOf(particle);
+    REQUIRE(std::isfinite(position.x));
+    REQUIRE(std::isfinite(position.y));
+    REQUIRE(std::isfinite(position.z));
+    REQUIRE(position.x == born.origin.x);
+    REQUIRE(position.z == born.origin.z);
+    REQUIRE(position.y > born.origin.y);
+}
+
 TEST_CASE("a template resolves over its preset into frames and units", "[world][particles]") {
     REQUIRE(particlePresets().size() == 8);
     REQUIRE(particlePresets()[5].preset == 5);

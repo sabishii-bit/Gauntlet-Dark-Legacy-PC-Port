@@ -21,7 +21,9 @@
 #include "game/config/GameConfig.h"
 #include "game/players/PlayerControls.h"
 #include "game/screens/AfterLevelScene.h"
+#include "game/screens/AttractScene.h"
 #include "game/screens/GameContext.h"
+#include "game/screens/IdleScreen.h"
 #include "game/screens/LevelLoadingScreen.h"
 #include "game/screens/MovieScene.h"
 #include "game/screens/PauseMenu.h"
@@ -49,6 +51,8 @@ private:
     bool startTitleScreen();
     void startNextAttractScreen();
     void updateMovie(f64 deltaSeconds);
+    void updateAttract(f64 deltaSeconds);
+    bool updateIdle(f64 deltaSeconds);
     void updateTitle(f64 deltaSeconds);
     void updateSelect(f64 deltaSeconds);
     void updateTower(f64 deltaSeconds);
@@ -77,6 +81,9 @@ private:
     std::unique_ptr<SoundPlayer> m_sounds;
     std::unique_ptr<AssetLocator> m_assets;
     AttractSequencer m_attract;
+    AttractScene m_demo;
+    IdleWatch m_idleWatch;
+    IdleScreen m_idleScreen;
     MovieScene m_movie;
     TitleScene m_title;
     PlayerSelectScene m_select;

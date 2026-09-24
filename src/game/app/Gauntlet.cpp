@@ -61,6 +61,19 @@ void Gauntlet::onInit() {
     m_assets = std::make_unique<AssetLocator>(assetDirectory());
     m_smokeTest.init(renderDevice());
 
+    if (m_options.previewScreensaver) {
+        m_idleWatch.update(IdleWatch::kWaitSeconds, input(), true);
+        if (!m_idleScreen.open(renderDevice(), m_options.unpackedDirectory)) {
+            requestQuit();
+        }
+        return;
+    }
+    if (m_options.startAtDemo) {
+        m_attract.titleShown();
+        startNextAttractScreen();
+        return;
+    }
+
     if (!m_options.playMovie.empty()) {
         if (!startMovie(m_options.playMovie)) {
             requestQuit();
@@ -141,6 +154,9 @@ GameContext Gauntlet::context() {
 }
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
+    if (updateIdle(deltaSeconds)) {
+        return;
+    }
     // Gameplay and editable menus own Escape; only passive screens treat it as quit.
     if (readMenuInput(input(), m_config.menu).escape && !m_tower.isOpen() && !m_pause.isOpen() &&
         !m_journey.has_value() && !(m_title.isOpen() && m_title.optionsOpen()) &&
@@ -154,6 +170,8 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         updateAfterLevel(deltaSeconds);
     } else if (m_journey.has_value()) {
         updateJourney(deltaSeconds);
+    } else if (m_demo.isOpen()) {
+        updateAttract(deltaSeconds);
     } else if (m_movieActive) {
         updateMovie(deltaSeconds);
     } else if (m_title.isOpen()) {
@@ -171,6 +189,48 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         log::trace("{:.1f} fps", static_cast<f64>(m_fpsFrames) / m_fpsAccumulator);
         m_fpsAccumulator = 0.0;
         m_fpsFrames = 0;
+    }
+}
+
+bool Gauntlet::updateIdle(f64 deltaSeconds) {
+    const bool eligible =
+        m_options.previewScreensaver ||
+        (!m_movieActive && !m_journey.has_value() && !m_demo.isOpen() &&
+         (!m_title.isOpen() || m_title.menuOpen() || m_title.optionsOpen()) &&
+         (m_tower.isOpen() || m_select.isOpen() || m_afterLevel.isOpen() || m_title.isOpen()));
+    const bool wasOpen = m_idleScreen.isOpen();
+    if (m_idleWatch.update(deltaSeconds, input(), eligible)) {
+        if (!wasOpen && !m_idleScreen.open(renderDevice(), m_options.unpackedDirectory)) {
+            m_idleWatch.reset();
+            return false;
+        }
+        m_audio->mixer().setPaused(true);
+        m_idleScreen.update(deltaSeconds, glm::radians(m_config.camera.horizontalFovDegrees),
+                            static_cast<f32>(m_config.display.frameWidth) /
+                                static_cast<f32>(m_config.display.frameHeight));
+        return true;
+    }
+    if (wasOpen) {
+        m_idleScreen.close();
+        m_audio->mixer().setPaused(false);
+        for (auto& controls : m_controls) {
+            controls.reset();
+        }
+        if (m_options.previewScreensaver) {
+            requestQuit();
+        }
+    }
+    return wasOpen || m_idleWatch.consumingInput();
+}
+
+void Gauntlet::updateAttract(f64 deltaSeconds) {
+    const auto outcome = m_demo.update(deltaSeconds, readMenuInput(input(), m_config.menu));
+    if (outcome == AttractOutcome::Running) {
+        return;
+    }
+    m_demo.close();
+    if (outcome != AttractOutcome::Title || !startTitleScreen()) {
+        startNextAttractScreen();
     }
 }
 
@@ -535,6 +595,15 @@ void Gauntlet::onRender(RenderDevice& device) {
     const Mat4 projection =
         makeLetterboxProjection(frameWidth, frameHeight, static_cast<f32>(framebuffer.width),
                                 static_cast<f32>(framebuffer.height));
+    if (m_idleScreen.isOpen()) {
+        m_idleScreen.render(device, projection, frameWidth, frameHeight,
+                            glm::radians(m_config.camera.horizontalFovDegrees));
+        return;
+    }
+    if (m_demo.isOpen()) {
+        m_demo.render(device, projection, frameWidth, frameHeight);
+        return;
+    }
     if (m_afterLevel.isOpen()) {
         m_afterLevel.render(device, projection, frameWidth, frameHeight);
         return;
@@ -604,6 +673,8 @@ void Gauntlet::keepParty() {
 }
 
 void Gauntlet::onShutdown() {
+    m_idleScreen.close();
+    m_demo.close();
     keepParty();
     m_pause.close();
     m_movie.close();
@@ -651,6 +722,13 @@ bool Gauntlet::startTitleScreen() {
 void Gauntlet::startNextAttractScreen() {
     for (usize attempts = 0; attempts < AttractSequencer::kScreenTable.size(); ++attempts) {
         const AttractStep step = m_attract.next();
+        if (step.screen == AttractScreen::Flyby || step.screen == AttractScreen::Demo) {
+            if (m_demo.openNext(renderDevice(), context())) {
+                setMaxFrameRate(m_config.timing.gameplayFrameRate);
+                return;
+            }
+            continue;
+        }
         if (step.screen == AttractScreen::TitleScreen) {
             if (startTitleScreen()) {
                 return;
