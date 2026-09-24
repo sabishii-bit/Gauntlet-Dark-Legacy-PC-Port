@@ -806,6 +806,14 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
         for (s32 i = 0; i < 900 && outcome == PlayOutcome::Running; ++i) {
             outcome = scene.update(1.0 / 60.0, still);
             leavingFrames += scene.leaving() ? 1 : 0;
+            if (scene.leaving()) {
+                bool raised = false;
+                for (usize portal = 0; portal < scene.portals().size(); ++portal) {
+                    const auto& exit = scene.portals().portal(portal);
+                    raised |= exit.tag == "g1" && exit.action == ExitPortals::kWaiting;
+                }
+                CHECK(raised);
+            }
             if (leavingFrames == 1) {
                 departureCameraY = scene.camera().attention().y;
             }

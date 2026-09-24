@@ -507,7 +507,17 @@ TEST_CASE("enemy hits queue feedback once and animate masked death skins to comp
     CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
         return draw.state.maskedTexture == &weapons.textures.texture(device, *skin + 1);
     }));
-    CHECK(stepsUntil(enemies, {}, [&] { return enemies.count() == 0; }, 180) < 180);
+    // Every remaining death draw must retain the dissolve skin. In particular,
+    // reaching its tenth frame must never restore the original body texture.
+    for (s32 frame = 0; frame < 30; ++frame) {
+        enemies.update(kTicks, kStep, {});
+        device.draws.clear();
+        enemies.draw(device, Mat4{1}, {}, &device.whiteTexture(), &weapons);
+        for (const auto& draw : device.draws) {
+            CHECK(draw.state.maskedTexture != nullptr);
+        }
+    }
+    CHECK(enemies.count() == 0);
     CHECK(enemies.takeFeedback().empty());
     const auto again = enemies.spawn(spawn, {});
     REQUIRE(again);

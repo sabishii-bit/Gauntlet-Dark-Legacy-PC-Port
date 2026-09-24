@@ -5,7 +5,6 @@
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/StringTable.h"
 #include "engine/core/Types.h"
-#include "engine/platform/Input.h"
 #include "engine/ui/TextPainter.h"
 
 #include "FakeRenderDevice.h"
@@ -143,15 +142,6 @@ TEST_CASE("options omit generic instructions but retain actionable notices", "[s
     f.down();
     f.select();
     CHECK_FALSE(footerDrawn()); // compass
-    f.back();
-    f.down();
-    f.select();
-    CHECK_FALSE(footerDrawn()); // controls
-    f.down();
-    f.down();
-    f.select();
-    CHECK(f.menu.capturing());
-    CHECK(footerDrawn()); // binding capture still explains what it is waiting for
 }
 
 TEST_CASE("difficulty and compass options survive a configuration save", "[settings]") {
@@ -254,79 +244,22 @@ TEST_CASE("volume sliders use the five original sprite extents and inactive opac
     CHECK(Vec2(device.draws[4].vertices[0].position) == Vec2{368, 133});
 }
 
-TEST_CASE("controls capture keyboard and any title controller without consuming confirmation",
-          "[settings]") {
+TEST_CASE("Controls stays disabled in every scope and cannot mutate bindings", "[settings]") {
     Fixture f;
-    f.down();
-    f.down();
-    f.down();
-    f.select();
-    f.down();
-    f.down();
-    f.select();
-    REQUIRE(f.menu.capturing());
-    Input input;
-    input.setKey(Key::P, true);
-    f.menu.update({}, 1, &input);
-    CHECK_FALSE(f.menu.capturing());
-    CHECK(f.config.play.up == std::vector<Key>{Key::P});
-    CHECK(f.config.play.actionChords);
-    CHECK(f.config.play.padMagicGestures);
-    f.select();
-    input.beginPoll();
-    input.setKey(Key::Escape, true);
-    f.menu.update({}, 1, &input);
-    CHECK_FALSE(f.menu.capturing());
-    CHECK(f.writes == 1);
-    // Re-enter Controls, toggle device, choose binding; controller 3 can capture.
-    f.back();
-    f.select();
-    f.select();
-    f.down();
-    f.down();
-    f.select();
-    input.beginPoll();
-    input.setKey(Key::Escape, false);
-    PadSnapshot pad;
-    pad.connected = true;
-    pad.buttons[static_cast<usize>(PadButton::RightBumper)] = true;
-    input.setPad(2, pad);
-    f.menu.update({}, 1, &input);
-    CHECK(f.config.play.padUp == std::vector<PadButton>{PadButton::RightBumper});
-    f.down();
-    f.select();
-    CHECK(f.config.play.padUp.empty());
-    f.down();
-    f.select();
-    CHECK(f.config.play.padUp == PlayBindings{}.padUp);
-    CHECK(f.config.play.up == PlayBindings{}.up);
-}
-
-TEST_CASE("controls reject pause bindings and only capture the owning pad in play", "[settings]") {
-    Fixture f;
-    f.down();
-    f.down();
-    f.down();
-    f.select();
-    f.select();
-    f.down();
-    f.down();
-    f.select();
-    Input input;
-    PadSnapshot pad;
-    pad.connected = true;
-    pad.buttons[static_cast<usize>(PadButton::Start)] = true;
-    input.setPad(1, pad);
-    f.menu.update({}, 1, &input, 1);
-    REQUIRE(f.menu.capturing());
-    pad.buttons[static_cast<usize>(PadButton::A)] = true;
-    input.setPad(0, pad);
-    f.menu.update({}, 1, &input, 1);
-    REQUIRE(f.menu.capturing());
-    input.beginPoll();
-    input.setPad(1, pad);
-    f.menu.update({}, 1, &input, 1);
-    REQUIRE_FALSE(f.menu.capturing());
-    CHECK(f.config.play.padUp == std::vector<PadButton>{PadButton::A});
+    for (const auto scope :
+         {SettingsMenu::Scope::Title, SettingsMenu::Scope::Tower, SettingsMenu::Scope::Level}) {
+        f.menu.open(f.config, &f.strings, {}, f.painter, {}, {}, scope);
+        const auto& items = f.menu.menu().definition().items;
+        const auto controls = std::ranges::find(items, 3, &MenuItem::code);
+        REQUIRE(controls != items.end());
+        CHECK_FALSE(controls->enabled);
+        const auto bindings = f.config.toJson();
+        for (usize i = 0; i < items.size() * 2; ++i) {
+            f.down();
+            CHECK(items[static_cast<usize>(f.menu.menu().selection())].code != 3);
+        }
+        CHECK(f.config.toJson() == bindings);
+        CHECK(f.writes == 0);
+    }
 }
 } // namespace

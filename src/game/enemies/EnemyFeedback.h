@@ -23,5 +23,6 @@ struct EnemyFeedback {
     std::string_view effect() const;
     f32 effectScale() const;
     std::string_view deathSkin() const;
+    s32 deathSkinFrames() const;
 };
 } // namespace gdl::game

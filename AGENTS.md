@@ -258,9 +258,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `world/ExitPortals` stands the `EXIT_PORTAL` figure at every exit item (type
   9; the tag is bytes 4 and 5 of its parameters) and ports its state machine:
   with the whole party on it (radius 3, plus a unit per extra member) it runs
-  IDLE, READY, ACTIVE1, ACTIVE2 (held 45 ticks), ACTIVE3 and the party is
-  through; with only some it loops ACTIVE2 without restarting ACTIVE1 and
-  resets the 45-tick wait until everyone arrives; left alone it plays out to
+  IDLE, READY, ACTIVE1, ACTIVE2 (held 45 ticks), then signals transportation
+  while retaining the raised ACTIVE2 glow; with only some it loops ACTIVE2 without restarting ACTIVE1 and
+  resets the 45-tick wait until everyone arrives; left alone it plays ACTIVE3 out to
   IDLE. `PlayScene::update` then returns `PlayOutcome::Travel` with
   `destination()` and `party()`; `Gauntlet::startLevel` reloads the one
   `LevelWorld` and reopens the scene with `PlayOptions::arrivalWorld` (the
@@ -640,8 +640,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   world damage also sounds/shows. `EnemyFeedback` selects tier/count-specific
   CLOSE/FAR sound names and element/kind-specific effect trees; `LevelOpponents`
   drains them once and owns effect cleanup. `Enemies` applies a two-frame white
-  masked hit skin and the ten-frame death skin at 15 fps, preserving original
-  texture cutouts. Death requests must not loop or restart the animation; a
+  masked hit skin and the death skin at 15 fps (ten frames, fifteen for the
+  stone golem's DEATHALT), preserving original texture cutouts. The body retires
+  when the dissolve finishes even if its fall animation has time left; never
+  restore its normal skin for that tail. Death requests must not loop or restart the animation; a
   missing DEATH sequence uses HIT2 without GETUP. Killed actors immediately
   leave targeting and cannot issue duplicate hit/death rewards.
 * Combat ownership: `enemies/Combatant` is one noncopyable fighter borrowing stable
@@ -1859,10 +1861,13 @@ mid-level world snapshots. Corrupt existing files still require overwrite consen
 `menu/SettingsMenu` serves both title and pause screens, using `GameContext`'s
 persistence callback. Discrete failed writes leave active settings unchanged.
 Audio previews immediately, persists on directional release or leaving Audio, and
-keeps a visible retryable error on failure; difficulty is sampled on the next level opening. Gameplay remapping
-does not rewrite menu navigation or action-chord semantics. Capture reserves pause
-and cancellation inputs; paused capture is restricted to its owner's controller,
-while title capture accepts any controller. `CompassHud` draws a world-axis compass.
+keeps a visible retryable error on failure; difficulty is sampled on the next level opening.
+Controls remains disabled and unimplemented; do not restore the discarded binding-capture
+screen. Gameplay bindings remain configurable through the settings file.
+Title Options and Pause share `MenuDefinition::parchment()`: precolored red parchment
+labels, purple focus glow, and no nonselectable Back/Select footer. Keep menu styling
+in this shared factory rather than constructing inconsistent screen-local defaults.
+`CompassHud` draws a world-axis compass.
 `replaceTextFile` uses exclusive sibling temporary creation and rename; failed
 writes/replacements preserve the previous file, without promising crash durability.
 Focused tests: `[settings],[save-menu],[pause],[compass],[save],[file],[mixer]`.
@@ -1873,8 +1878,8 @@ row focus: only the active part receives the highlight and checkmark. The font's
 `~` glyph is a checkmark, never a separator. Master volume remains config-only.
 Title, tower and level settings have distinct entry lists. Tower Start offers
 Settings, Manage Character, Shop, Inventory (disabled until implemented), and
-Quit Game; level Start offers Settings and Quit Level. The PC binding editor and
-save-file management are not claims of complete retail menu parity; multiplayer
+Quit Game; level Start offers Settings and Quit Level. PC save-file management
+is not a claim of complete retail menu parity; multiplayer
 rules remain disabled until their gameplay is implemented.
 
 ## End-level shop ownership

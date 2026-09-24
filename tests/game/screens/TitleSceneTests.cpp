@@ -121,6 +121,10 @@ TEST_CASE("the options menu opens over the title menu and fades away", "[game][t
     scene.step(1, press(false, true));
     REQUIRE(scene.optionsOpen());
     REQUIRE(scene.menuOpen());
+    CHECK(scene.settings().menu().definition().parchmentFont);
+    CHECK_FALSE(scene.settings().menu().definition().prompts);
+    CHECK(scene.settings().menu().definition().backLabel.empty());
+    CHECK(scene.settings().menu().definition().selectLabel.empty());
     scene.step(1, press(false, false, false, true));
     REQUIRE(scene.optionsOpen());
     scene.step(OptionMenu::kFadeTicks, MenuInput{});

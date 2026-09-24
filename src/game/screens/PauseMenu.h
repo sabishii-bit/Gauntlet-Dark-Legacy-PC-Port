@@ -25,7 +25,7 @@ public:
     bool isOpen() const { return m_open; }
     s32 player() const { return m_player; }
     const std::vector<PartyMember>& party() const { return m_party; }
-    PauseOutcome update(f64 seconds, const MenuInput& input, const Input* raw = nullptr);
+    PauseOutcome update(f64 seconds, const MenuInput& input);
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
     const OptionMenu& menu() const { return m_menu; }
 

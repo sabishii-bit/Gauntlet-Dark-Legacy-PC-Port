@@ -31,9 +31,8 @@ struct PortalVisitor {
 /**
  * A level's exit portals, worked the way the original works them: each is one of the level's
  * exit items, carrying the two characters that name where it leads, and wakes through its
- * five sequences (idle, ready, two of starting up and the last) while the party stands on
- * it. With every member on it it runs through to the end and the party leaves; with only
- * some it stops at the third, waiting; left alone it plays itself out and goes back to idle.
+ * five sequences (idle, ready, startup, raised glow and closing). The raised glow loops
+ * while occupied, including the committed departure; left alone it closes back to idle.
  */
 class ExitPortals {
 public:
@@ -70,8 +69,8 @@ public:
     usize size() const { return m_portals.size(); }
     const Portal& portal(usize index) const { return m_portals[index]; }
 
-    /** Steps every portal by `ticks` (`seconds` long) under the party; the portal the whole
-     * party has just left by, if any. */
+    /** Steps every portal by `ticks` (`seconds` long); returns the portal ready to transport
+     * the whole party, retaining its raised glow while the departure plays. */
     std::optional<usize> update(s32 ticks, f32 seconds, std::span<const PortalVisitor> party);
     /** Continues the selected sequences while gameplay is held for transportation. */
     void animate(f32 seconds);

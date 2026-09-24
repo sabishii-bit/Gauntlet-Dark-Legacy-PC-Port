@@ -7,32 +7,6 @@
 #include "engine/core/Types.h"
 
 namespace gdl::game {
-namespace {
-struct Binding {
-    std::string_view label;
-    std::vector<Key> PlayBindings::*keys;
-    std::vector<PadButton> PlayBindings::*buttons;
-};
-constexpr std::array kBindings{
-    Binding{"controls.up", &PlayBindings::up, &PlayBindings::padUp},
-    Binding{"controls.down", &PlayBindings::down, &PlayBindings::padDown},
-    Binding{"controls.left", &PlayBindings::left, &PlayBindings::padLeft},
-    Binding{"controls.right", &PlayBindings::right, &PlayBindings::padRight},
-    Binding{"controls.attack", &PlayBindings::attack, &PlayBindings::padAttack},
-    Binding{"controls.strongAttack", &PlayBindings::strongAttack, &PlayBindings::padStrongAttack},
-    Binding{"controls.magic", &PlayBindings::usePotion, &PlayBindings::padUsePotion},
-    Binding{"controls.throw", &PlayBindings::throwPotion, &PlayBindings::padThrowPotion},
-    Binding{"controls.shield", &PlayBindings::shieldPotion, &PlayBindings::padShieldPotion},
-    Binding{"controls.turbo", &PlayBindings::turbo, &PlayBindings::padTurbo},
-    Binding{"controls.charge", &PlayBindings::charge, &PlayBindings::padCharge},
-    Binding{"controls.strafe", &PlayBindings::strafe, &PlayBindings::padStrafe},
-    Binding{"controls.selectorUp", &PlayBindings::selectorUp, &PlayBindings::padSelectorUp},
-    Binding{"controls.selectorDown", &PlayBindings::selectorDown, &PlayBindings::padSelectorDown},
-    Binding{"controls.selectorLeft", &PlayBindings::selectorLeft, &PlayBindings::padSelectorLeft},
-    Binding{"controls.selectorRight", &PlayBindings::selectorRight,
-            &PlayBindings::padSelectorRight}};
-} // namespace
-
 std::string SettingsMenu::text(std::string_view id) const {
     return std::string(m_strings != nullptr ? m_strings->get(id) : id);
 }
@@ -49,31 +23,8 @@ void SettingsMenu::open(const GameConfig& config, const StringTable* strings, Pe
     m_screen = screen;
     m_backdrop = std::move(backdrop);
     m_page = Page::Root;
-    m_capturing = false;
-    m_pad = false;
-    m_action = 0;
     m_notice.clear();
     rebuild();
-}
-std::string SettingsMenu::bindingLabel() const {
-    std::string value;
-    const auto append = [&](std::string_view name) {
-        if (!value.empty()) {
-            value += ", ";
-        }
-        value += name;
-    };
-    const auto& binding = kBindings[m_action];
-    if (m_pad) {
-        for (const auto button : m_config.play.*binding.buttons) {
-            append(padButtonName(button));
-        }
-    } else {
-        for (const auto key : m_config.play.*binding.keys) {
-            append(keyName(key));
-        }
-    }
-    return value.empty() ? text("settings.unbound") : value;
 }
 void SettingsMenu::rebuild(s32 selection) {
     auto definition = m_backdrop;
@@ -94,7 +45,7 @@ void SettingsMenu::rebuild(s32 selection) {
         if (m_scope != Scope::Level) {
             add(text("menu.compass"), 2);
         }
-        add(text("menu.controls"), 3);
+        definition.items.push_back({text("menu.controls"), 3, 0, false});
         break;
     case Page::Audio: {
         definition.title = text("menu.audio");
@@ -128,17 +79,6 @@ void SettingsMenu::rebuild(s32 selection) {
         add(text("settings.hide"), 0);
         add(text("settings.show"), 1);
         definition.items[m_config.camera.compass ? 1 : 0].markedPart = 1;
-        break;
-    case Page::Controls:
-        definition.title = text("menu.controls");
-        definition.scale = 0.667f;
-        add(text("settings.device") + ": " +
-                text(m_pad ? "settings.controller" : "settings.keyboard"),
-            0);
-        add(text("settings.action") + ": " + text(kBindings[m_action].label), 1);
-        add(text("settings.binding") + ": " + bindingLabel(), 2);
-        add(text("settings.clearBinding"), 3);
-        add(text("settings.restoreControls"), 4);
         break;
     }
     m_menu.open(definition, *m_painter, m_screen, selection);
@@ -188,95 +128,13 @@ void SettingsMenu::change(s32 direction) {
         next.difficulty.level = DifficultyConfig::kNames[static_cast<usize>(code)];
     } else if (m_page == Page::Compass) {
         next.camera.compass = code == 1;
-    } else if (m_page == Page::Controls) {
-        if (code == 0) {
-            m_pad = !m_pad;
-            rebuild(0);
-            return;
-        }
-        if (code == 1) {
-            m_action = static_cast<usize>(
-                (static_cast<s32>(m_action) + direction + static_cast<s32>(kBindings.size())) %
-                static_cast<s32>(kBindings.size()));
-            rebuild(1);
-            return;
-        }
-        if (code == 2) {
-            m_capturing = true;
-            m_notice = text("settings.capture");
-            return;
-        }
-        if (code == 3) {
-            if (m_pad) {
-                (next.play.*kBindings[m_action].buttons).clear();
-            } else {
-                (next.play.*kBindings[m_action].keys).clear();
-            }
-        } else if (code == 4) {
-            next.play = PlayBindings{};
-        } else {
-            return;
-        }
     } else {
         return;
     }
     commit(std::move(next));
 }
-void SettingsMenu::capture(const Input& raw, s32 pad) {
-    const s32 first = pad < 0 ? 0 : pad;
-    const s32 last = pad < 0 ? Input::kMaxPads - 1 : pad;
-    bool cancel = raw.wasKeyPressed(Key::Escape);
-    for (s32 index = first; index <= last; ++index) {
-        cancel |= raw.wasPadButtonPressed(index, PadButton::Back);
-    }
-    if (cancel) {
-        m_capturing = false;
-        m_notice.clear();
-        return;
-    }
-    auto next = m_config;
-    if (m_pad) {
-        for (s32 index = first; index <= last; ++index) {
-            for (usize i = 0; i < static_cast<usize>(PadButton::Count); ++i) {
-                const auto button = static_cast<PadButton>(i);
-                if (std::ranges::find(m_config.menu.padStart, button) !=
-                    m_config.menu.padStart.end()) {
-                    continue;
-                }
-                if (raw.wasPadButtonPressed(index, button)) {
-                    next.play.*kBindings[m_action].buttons = {button};
-                    m_capturing = false;
-                    commit(std::move(next));
-                    return;
-                }
-            }
-        }
-    } else {
-        for (usize i = 1; i < static_cast<usize>(Key::Count); ++i) {
-            const auto key = static_cast<Key>(i);
-            if (std::ranges::find(m_config.menu.start, key) != m_config.menu.start.end()) {
-                continue;
-            }
-            if (raw.wasKeyPressed(key)) {
-                next.play.*kBindings[m_action].keys = {key};
-                m_capturing = false;
-                commit(std::move(next));
-                return;
-            }
-        }
-    }
-}
-MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks, const Input* raw, s32 pad) {
+MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks) {
     if (!m_menu.isOpen()) {
-        return {};
-    }
-    if (m_capturing) {
-        if (raw != nullptr) {
-            capture(*raw, pad);
-        } else if (input.back || input.escape) {
-            m_capturing = false;
-            m_notice.clear();
-        }
         return {};
     }
     const bool horizontal = input.left || input.right || input.leftHeld || input.rightHeld;
@@ -289,10 +147,6 @@ MenuEvent SettingsMenu::update(const MenuInput& input, s32 ticks, const Input* r
         if (!flushAudio() && (input.back || input.escape)) {
             return {};
         }
-    }
-    if (!m_menu.closing() && (input.left || input.right) && m_page == Page::Controls) {
-        change(input.left ? -1 : 1);
-        return {MenuAction::Moved, 0};
     }
     auto mapped = input;
     mapped.back |= input.escape;
@@ -353,6 +207,7 @@ void SettingsMenu::draw(Canvas& canvas, const TextPainter& painter,
     }
     TextStyle style;
     style.scale = 0.5f;
+    style.color = m_menu.definition().colors.off;
     const auto notice =
         m_notice.empty() && m_page == Page::Difficulty ? text("settings.nextLevel") : m_notice;
     if (!notice.empty()) {

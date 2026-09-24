@@ -94,11 +94,11 @@ TEST_CASE("a portal runs through with the whole party on it and waits for stragg
     const std::array<PortalVisitor, 2> split{on, off};
     REQUIRE_FALSE(f.run(split, 200).has_value());
     REQUIRE(f.portals.portal(0).action == ExitPortals::kWaiting);
-    // The other arrives: the last sequence plays and the party is through.
+    // The other arrives: transport starts with the raised glow still held.
     const std::array<PortalVisitor, 2> together{on, PortalVisitor{Vec3{9.0f, 0.0f, 11.0f}, 0.75f}};
     const auto left = f.run(together, 200);
     REQUIRE(left == 0U);
-    REQUIRE(f.portals.portal(0).action == ExitPortals::kLast);
+    REQUIRE(f.portals.portal(0).action == ExitPortals::kWaiting);
     // The far portal never stirred.
     REQUIRE(f.portals.portal(1).action == 0);
 }
@@ -153,9 +153,29 @@ TEST_CASE("the real portal holds ACTIVE2 without replaying ACTIVE1 for a waiting
     }
     REQUIRE(f.run(together, 120) == 0);
     const auto finalSequence = f.portals.portal(0).player.sequence();
-    f.portals.animate(5);
-    CHECK(f.portals.portal(0).action == ExitPortals::kLast);
+    // Rendering must retain the tall column through many wraps, not merely
+    // keep the same action id while showing a startup mesh again.
+    for (s32 frame = 0; frame < 300; ++frame) {
+        f.portals.animate(1.0f / 60);
+        f.device.draws.clear();
+        f.portals.draw(f.device, Mat4{1}, {});
+        f32 top = 0;
+        for (const auto& draw : f.device.draws) {
+            top = std::max(top, test::maxCorner(draw).y);
+        }
+        CHECK(top > 12);
+        CHECK(f.portals.portal(0).player.sequence() == finalSequence);
+    }
+    CHECK(f.portals.portal(0).action == ExitPortals::kWaiting);
     CHECK(f.portals.portal(0).player.sequence() == finalSequence);
+    // Only abandoning the platform closes the column.
+    const std::array away{split[1], split[1]};
+    REQUIRE_FALSE(f.portals.update(1, 1.0f / 60, away));
+    CHECK(f.portals.portal(0).action == ExitPortals::kLast);
+    // Rejoining during the closing sequence must start a fresh visit, not
+    // repeatedly restart ACTIVE3 or leave the portal unable to transport.
+    REQUIRE(f.run(together, 180) == 0);
+    CHECK(f.portals.portal(0).action == ExitPortals::kWaiting);
 
     // ACTIVE3's stored meshes grow, but flag 1 plays them in reverse so the
     // closing flame shrinks rather than showing the startup a second time.

@@ -71,19 +71,8 @@ void PauseMenu::close() {
     m_party.clear();
 }
 MenuDefinition PauseMenu::backdrop() const {
-    MenuDefinition menu;
-    menu.x = 128;
-    menu.y = -1;
-    menu.scale = 1.0f;
-    menu.backdrop = "SCROLL_A";
+    auto menu = MenuDefinition::parchment();
     menu.backdropX = 16;
-    menu.backdropY = 8;
-    menu.backdropWidth = 480;
-    menu.backdropHeight = 360;
-    menu.colors.off = Color::rgba(92, 26, 3);
-    menu.prompts = true;
-    menu.backLabel = text("menu.back");
-    menu.selectLabel = text("menu.select");
     menu.playerLabel = std::format("{}: {}", text("files.player"), m_player + 1);
     return menu;
 }
@@ -122,7 +111,7 @@ void PauseMenu::showFiles() {
     menu.scale = 0.5f;
     m_menu.open(menu, m_text, m_screen);
 }
-PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input, const Input* raw) {
+PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
     if (!m_open) {
         return PauseOutcome::Running;
     }
@@ -130,7 +119,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input, const Input*
         m_context.config != nullptr ? m_context.config->timing.tickRate : TimingConfig{}.tickRate;
     const auto ticks = std::max(static_cast<s32>(std::lround(seconds * rate)), 0);
     if (m_page == Page::Options) {
-        if (m_settings.update(input, ticks, raw, m_player).action == MenuAction::Back) {
+        if (m_settings.update(input, ticks).action == MenuAction::Back) {
             showMain();
         }
         return PauseOutcome::Running;

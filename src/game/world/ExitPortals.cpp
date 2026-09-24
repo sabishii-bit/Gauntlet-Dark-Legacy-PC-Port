@@ -123,10 +123,13 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
         const bool everyone = !party.empty() && on == party.size();
         const bool ready = portal.ticksLeft <= 0;
         if (everyone) {
-            if (portal.action == kLast && ready) {
+            if (portal.action == kWaiting && ready) {
+                // Commit travel with the column still raised. The departure owns
+                // the player's sinking animation; closing here drops the glow
+                // before the player has left the platform.
                 left = index;
             } else if (ready || portal.action == 0) {
-                advance(portal, portal.action + 1);
+                advance(portal, portal.action == kLast ? 1 : portal.action + 1);
             }
         } else if (on > 0) {
             // Some of the party: up to the waiting sequence, and back round from past it.

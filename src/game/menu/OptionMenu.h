@@ -41,6 +41,9 @@ struct MenuColors {
 };
 
 struct MenuDefinition {
+    /** Shared parchment menu: red ink, purple selection glow, no instruction footer. */
+    static MenuDefinition parchment();
+
     std::string title; ///< drawn above the backdrop; empty for a bare menu
     f32 titleScale = 1.2f;
     s32 x = -256; ///< item x; negative centres the column on -x

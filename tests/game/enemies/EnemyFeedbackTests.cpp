@@ -39,6 +39,7 @@ TEST_CASE("enemy impact and death skins retain elemental and nonflesh distinctio
     CHECK(feedback.effect() == "BLOODFX1");
     CHECK(feedback.effectScale() == Approx(2));
     CHECK(feedback.deathSkin() == "DEATHBLOOD");
+    CHECK(feedback.deathSkinFrames() == 10);
     feedback.killed = true;
     CHECK(feedback.effect() == "BLOODFX2");
     feedback.flags = 1;
@@ -56,7 +57,9 @@ TEST_CASE("enemy impact and death skins retain elemental and nonflesh distinctio
     CHECK(feedback.effect() == "HITDIE");
     CHECK(feedback.effectScale() == Approx(1));
     CHECK(feedback.deathSkin() == "DEATHALT");
+    CHECK(feedback.deathSkinFrames() == 15);
     feedback.kind = 11;
+    CHECK(feedback.deathSkinFrames() == 10);
     CHECK(feedback.effect() == "TREEDIE");
     feedback.killed = false;
     CHECK(feedback.effect() == "TREEHIT");
@@ -64,6 +67,7 @@ TEST_CASE("enemy impact and death skins retain elemental and nonflesh distinctio
     feedback.halfHeight = 1;
     CHECK(feedback.effect() == "TREEHIT");
     CHECK(feedback.deathSkin().empty());
+    CHECK(feedback.deathSkinFrames() == 0);
     feedback.flags = 0x1000000;
     CHECK(feedback.effect().empty());
     CHECK_FALSE(feedback.sound().empty());
