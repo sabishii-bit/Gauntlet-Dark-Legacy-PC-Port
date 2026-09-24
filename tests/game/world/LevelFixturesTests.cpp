@@ -365,6 +365,11 @@ TEST_CASE("barrels stand in the way until blows break them, each after its kind"
     REQUIRE(barrels.barrel(0).state == Breakables::kBroken);
     REQUIRE_FALSE(barrels.barrel(0).gone);
     REQUIRE(barrels.barrel(1).gone);
+    REQUIRE(barrels.strike(2, 100)->broken);
+    barrels.update(1);
+    CHECK_FALSE(barrels.barrel(2).gone);
+    CHECK(barrels.barrel(2).state == Breakables::kBroken);
+    CHECK_FALSE(barrels.barrel(2).box.solid);
 }
 
 } // namespace

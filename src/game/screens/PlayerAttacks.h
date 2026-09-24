@@ -37,6 +37,7 @@ public:
     void clear();
     void ramBarrels(usize index, std::span<PlayerRuntime> players, const Targets& targets);
     void shieldPotion(usize index, std::span<PlayerRuntime> players);
+    void usePotion(usize index, std::span<PlayerRuntime> players);
     void showBlock(usize index, f32 taken, f32 left, std::span<PlayerRuntime> players);
     void updateTurbo(usize index, s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                      const std::function<void(s32, usize)>& help);
@@ -52,6 +53,15 @@ public:
     usize shieldCount() const { return m_shields.size(); }
 
 private:
+    void beginPotion(const MissileImpact& impact);
+    void updatePotions(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
+    struct PotionBurst {
+        MissileImpact impact;
+        f32 elapsed = 0;
+        f32 duration = 1;
+        std::vector<s32> hit;
+    };
+    std::vector<PotionBurst> m_potions;
     static std::vector<MissileTarget> projectileTargets(const Targets& targets);
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;

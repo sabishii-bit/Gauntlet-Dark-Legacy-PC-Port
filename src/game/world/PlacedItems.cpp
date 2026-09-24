@@ -9,6 +9,14 @@
 #include "game/world/ItemFigure.h"
 
 namespace gdl::game {
+void PlacedItems::attach(usize index, const Mat4& transform, bool contained) {
+    if (index < m_items.size()) {
+        Item& item = m_items[index];
+        item.transform = transform;
+        item.position = Vec3{transform[3]};
+        item.contained = contained;
+    }
+}
 
 bool PlacedItems::Item::shownTo(s32 players) const {
     if (minPlayers > kExactPlayersMark) {

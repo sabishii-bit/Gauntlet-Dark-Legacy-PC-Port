@@ -67,6 +67,9 @@ public:
     const ParticleField& particles() const { return m_particles; }
     /** The pickups the level places: the crystals Sumner keeps for a new party. */
     const PlacedItems& placedItems() const { return m_placedItems; }
+    void attachItem(usize index, const Mat4& transform, bool contained) {
+        m_placedItems.attach(index, transform, contained);
+    }
     /** Shows the pickups a party of `players` sees; none for the select screen's empty one. */
     void setPlayerCount(s32 players) { m_placedItems.setPlayerCount(players); }
     /** Fades one of the level's objects (a unit); see WorldScene::setObjectAlpha. */

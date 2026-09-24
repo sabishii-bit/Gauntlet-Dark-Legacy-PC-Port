@@ -48,6 +48,11 @@ void LevelFixtures::bind(const Resources& resources) {
     m_safeRocks.bind(device, world.layout(), world.items());
 }
 void LevelFixtures::clear() {
+    if (m_resources) {
+        for (const GasCloud& cloud : m_clouds) {
+            m_resources->effects.stop(cloud.effect);
+        }
+    }
     m_chests.clear();
     m_gates.clear();
     m_traps.clear();
@@ -146,6 +151,12 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
                 actor.save().progress().inventory.spendKey();
             }
             m_resources->audio.playNamed(kChestSound);
+            if (event.contents >= 0 && m_resources->world.placeItemRecord(
+                                           m_resources->device, event.contents, event.position,
+                                           m_chests.chest(event.chest).count)) {
+                m_chests.hold(event.chest,
+                              static_cast<s32>(m_resources->world.placedItems().size()) - 1);
+            }
             break;
         case ChestEvent::Kind::Opened:
             if (event.explodes) {
@@ -163,13 +174,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
                 events.card(actor.player(), "GOLD");
                 m_resources->audio.playNamed(kPickupSound);
             } else if (event.contents >= 0) {
-                // It lies in the open chest, for whoever touches the chest next.
-                const s32 count = m_chests.chest(event.chest).count;
-                if (m_resources->world.placeItemRecord(m_resources->device, event.contents,
-                                                       event.position, count)) {
-                    m_chests.hold(event.chest,
-                                  static_cast<s32>(m_resources->world.placedItems().size()) - 1);
-                }
+                // Already visible on the opening lid's attachment; now collectible.
             } else {
                 m_chests.remove(event.chest);
             }
@@ -178,6 +183,20 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             events.help(HelpMessages::kChestNeedsKey, event.visitor);
             break;
         }
+    }
+    for (usize i = 0; i < m_chests.size(); ++i) {
+        const auto& chest = m_chests.chest(i);
+        if (chest.gone || chest.held < 0) {
+            continue;
+        }
+        const Mat4 socket = chest.figure.nodeTransform("NULL1").value_or(
+            glm::translate(Mat4{1}, chest.figure.position()));
+        // DoItems grows the child from 20% to full size during OPEN.
+        const f32 scale =
+            chest.state == Chests::kOpening ? 0.2f + 0.8f * chest.figure.progress() : 1;
+        m_resources->world.attachItem(static_cast<usize>(chest.held),
+                                      glm::scale(socket, Vec3{scale}),
+                                      chest.state != Chests::kOpen);
     }
     for (const GateEvent& event : m_gates.update(ticks, seconds, visitors)) {
         if (event.visitor >= players.size()) {
@@ -264,11 +283,23 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
         m_blasts.push_back(
             Blast{struck->position, kBlastRadius, kBarrelBlastDamage * trapDamageScale()});
         break;
-    case BreakableStrike::Kind::Poison:
+    case BreakableStrike::Kind::Poison: {
         playRealmSound(kBarrelGasSound);
-        effect(kBarrelGas);
-        m_clouds.push_back(GasCloud{struck->position, kGasDamage * trapDamageScale(), kGasSeconds});
+        // StartExplosion(25): entrance -> sustained gas -> dispersal,
+        // with horizontal scale 3.5 and a four-second sustained hazard.
+        EffectTrees::Setting setting;
+        setting.persistent = true;
+        setting.then = "POISONEXP2";
+        setting.unlit = true;
+        setting.depthWrite = false;
+        const u32 id = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                                     kBarrelGas, struck->position, setting);
+        m_resources->effects.placeAt(
+            id, glm::scale(glm::translate(Mat4{1}, struck->position), Vec3{3.5f, 1, 3.5f}));
+        m_clouds.push_back(
+            GasCloud{struck->position, kGasDamage * trapDamageScale(), kGasSeconds, id});
         break;
+    }
     }
 }
 
@@ -334,6 +365,17 @@ void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
     }
     for (GasCloud& cloud : m_clouds) {
         cloud.secondsLeft -= seconds;
+        if (cloud.secondsLeft <= 0) {
+            m_resources->effects.stop(cloud.effect);
+            EffectTrees::Setting setting;
+            setting.unlit = true;
+            setting.depthWrite = false;
+            const u32 id = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                                         "POISONEXP3", cloud.position, setting);
+            m_resources->effects.placeAt(
+                id, glm::scale(glm::translate(Mat4{1}, cloud.position), Vec3{3.5f, 1, 3.5f}));
+            continue;
+        }
         for (usize i = 0; i < players.size(); ++i) {
             if ((players[i].life != PlayerLife::Standing) || players[i].cloudGap > 0.0f) {
                 continue;

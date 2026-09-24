@@ -104,6 +104,7 @@ public:
         f32 alpha = 1.0f;                 ///< under one while it fades in
         bool visible = false;
         bool taken = false;
+        bool contained = false;          ///< opening chest owns it; not yet collectible
         Vec3 velocity{0.0f, 0.0f, 0.0f}; ///< while thrown
         bool thrown = false;             ///< in the air or rolling, not yet at rest
         f32 noGrabSeconds = 0.0f;        ///< over nought, no one can take it yet
@@ -113,7 +114,7 @@ public:
         /** Whether a collector is on it. */
         bool touchedBy(const Collector& collector) const;
         /** Whether it may be taken now. */
-        bool takeable() const { return visible && !taken && noGrabSeconds <= 0.0f; }
+        bool takeable() const { return visible && !taken && !contained && noGrabSeconds <= 0.0f; }
         /** The realm a crystal counts towards, or -1 for anything else. */
         s32 realm() const;
     };
@@ -137,6 +138,8 @@ public:
     void clear();
     usize size() const { return m_items.size(); }
     const Item& item(usize index) const { return m_items[index]; }
+    /** Follow a container's animated socket without floor snapping. */
+    void attach(usize index, const Mat4& transform, bool contained);
     usize visibleCount() const;
     s32 playerCount() const { return m_players; }
 
