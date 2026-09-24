@@ -44,6 +44,9 @@ void PlayerAnimator::unbind() {
     m_stillTicks = 0;
     m_fidgetTicks = 0;
     m_released = false;
+    m_meleeStruck = false;
+    m_meleePower = false;
+    m_meleeKick = false;
     m_potionUsed = false;
     m_potionThrown = false;
     m_potionLatch = false;
@@ -95,7 +98,7 @@ bool PlayerAnimator::canBegin(PlayerDeed deed) const {
         return false;
     }
     return bound() && m_sequences[index(action)] >= 0 && !entering() && !throwing() &&
-           !conjuring() && !reacting() && !turboing() && !dying();
+           !meleeing() && !conjuring() && !reacting() && !turboing() && !dying();
 }
 
 PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
@@ -112,6 +115,9 @@ u32 PlayerAnimator::sequenceOf(Action action) const {
 }
 
 void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed) {
+    m_meleeStruck = false;
+    m_meleePower = false;
+    m_meleeKick = false;
     if (!bound()) {
         return;
     }
@@ -209,7 +215,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // The guard: up at once when asked for, held for as long as it is, then let down. A
     // class without the sequences does not guard.
-    const bool free = !entering() && !throwing() && !conjuring() && !reacting() && !turboing();
+    const bool free =
+        !entering() && !throwing() && !meleeing() && !conjuring() && !reacting() && !turboing();
     const bool asked =
         deed == PlayerDeed::Defend && free && m_sequences[index(Action::Defend)] >= 0;
     if (asked || guarding()) {
@@ -246,6 +253,17 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         motion = PlayerMotion::Stand;
     }
     bool attack = deed == PlayerDeed::Attack;
+    Action melee = Action::Ready;
+    switch (deed) {
+    case PlayerDeed::Melee: melee = Action::Quick1; break;
+    case PlayerDeed::MeleeLow: melee = Action::LowKick; break;
+    case PlayerDeed::MeleeSlow: melee = Action::SlowStart; break;
+    case PlayerDeed::MeleeSlowLow: melee = Action::Low1; break;
+    default: break;
+    }
+    if (m_sequences[index(melee)] < 0) {
+        melee = Action::Ready;
+    }
     // A class without a deed's sequences does not do it.
     // One potion a press: the button must come up before it asks for another.
     const bool forShield = deed == PlayerDeed::ShieldPotion;
@@ -265,8 +283,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // A class without the throw's sequences does not throw.
     attack = attack && m_sequences[index(Action::Throw)] >= 0;
-    const bool stepping =
-        m_strafe != StrafeWay::None && motion != PlayerMotion::Stand && !throwing() && !conjuring();
+    const bool stepping = m_strafe != StrafeWay::None && motion != PlayerMotion::Stand &&
+                          !throwing() && !meleeing() && !conjuring();
     if (stepping && attack && m_sequences[index(strafeStep(m_strafe, true))] >= 0) {
         play(decide(strafeStep(m_strafe, true)), seconds);
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
@@ -275,7 +293,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         }
         return;
     }
-    if ((attack && !stepping) || throwing() || use || toss || conjuring()) {
+    if ((attack && !stepping) || throwing() || meleeing() || melee != Action::Ready || use ||
+        toss || conjuring()) {
         motion = PlayerMotion::Stand;
         m_stillTicks = 0;
         m_fidgetTicks = 0;
@@ -298,6 +317,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         requested = Action::UsePotion;
     } else if (toss) {
         requested = Action::ThrowPotion;
+    } else if (melee != Action::Ready) {
+        requested = melee;
     } else if (m_strafe != StrafeWay::None && motion != PlayerMotion::Stand &&
                m_sequences[index(strafeStep(m_strafe, false))] >= 0) {
         requested = strafeStep(m_strafe, false);
@@ -375,6 +396,37 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         }
         break;
     case Action::Start: break;
+    case Action::Quick1:
+    case Action::Quick2:
+    case Action::Quick3:
+        if (requested == Action::Quick1) {
+            d.action = m_current == Action::Quick2 ? Action::Quick3 : Action::Quick2;
+        } else {
+            d.action = m_current == Action::Quick2 ? Action::Quick2Recover : Action::Quick3Recover;
+        }
+        break;
+    case Action::Quick2Recover:
+    case Action::Quick3Recover:
+        if (requested == Action::Quick1) {
+            d.action = m_current == Action::Quick2Recover ? Action::Quick3 : Action::Quick2;
+            if (m_player.frame() <= kReleaseFrame) {
+                d.cut = Cut::IfDifferent;
+            }
+        }
+        break;
+    case Action::SlowStart: d.action = Action::SlowSwing; break;
+    case Action::SlowSwing: d.action = Action::SlowRecover; break;
+    case Action::LowKick: d.action = Action::LowKickRecover; break;
+    case Action::Low1:
+    case Action::Low2:
+        d.action = Action::LowRecover;
+        if (requested == Action::Low1) {
+            d.action = m_current == Action::Low1 ? Action::Low2 : Action::Low1;
+        }
+        break;
+    case Action::LowRecover:
+    case Action::SlowRecover:
+    case Action::LowKickRecover: d.cut = Cut::WhenDone; break;
     case Action::Throw:
     case Action::ThrowMoving:
         // The wind-up gives way to the release at its end, or at once from its second frame.
@@ -426,12 +478,16 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     // An attack cuts into walking and running at once, and from their first halves takes the
     // moving wind-up.
     if (requested == Action::Throw && d.action == Action::Throw && !isThrow(m_current)) {
-        if (m_current != Action::Start) {
+        if (m_current != Action::Start && !meleeing()) {
             d.cut = Cut::IfDifferent;
         }
         if (m_current == Action::Walk1 || m_current == Action::Run1) {
             d.action = Action::ThrowMoving;
         }
+    }
+    if (requested >= Action::Quick1 && d.action == requested && !meleeing() && !throwing() &&
+        !conjuring() && !reacting() && !turboing() && !entering()) {
+        d.cut = Cut::IfDifferent;
     }
     if (d.action == Action::Ready && m_current != Action::Ready) {
         d.transition = kStanceBlend;
@@ -470,6 +526,18 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     }
     if (m_current == Action::ThrowRelease || m_current == Action::ThrowMovingRelease) {
         m_released = true;
+    }
+    // Contacts belong to completed swings, never to an interruption by damage or death.
+    if (done && decision.action != Action::Death && decision.action != Action::HitReact &&
+        decision.action != Action::Stun && decision.action != Action::SpikeHit &&
+        decision.action != Action::FallBack && decision.action != Action::FallForward &&
+        decision.action != Action::Grabbed && decision.action != Action::WebReact) {
+        m_meleeStruck = m_current == Action::Quick1 || m_current == Action::Quick2 ||
+                        m_current == Action::Quick3 || m_current == Action::SlowSwing ||
+                        m_current == Action::LowKick || m_current == Action::Low1 ||
+                        m_current == Action::Low2;
+        m_meleePower = m_current == Action::SlowSwing;
+        m_meleeKick = m_current == Action::LowKick;
     }
     // A legend item leaves the hand where a potion's magic would go off, the strong throw's
     // weapon would fly or the special shot's wind-up ends.

@@ -1034,6 +1034,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     break;
                 case PartyMotion::Action::FirstFoot: m_audio.playFootstep(false); break;
                 case PartyMotion::Action::SecondFoot: m_audio.playFootstep(true); break;
+                case PartyMotion::Action::Melee:
+                    m_attacks.melee(i, m_players, attackTargets());
+                    break;
                 }
             },
         .select =
@@ -1066,6 +1069,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 const auto& attention =
                     bossCameraOn() ? m_bossCamera.attention() : m_camera.attention();
                 return CameraMovementLimit::allows(before, after, attention, camera, cameraView());
+            },
+        .attackDeed =
+            [this](usize i, bool strong) {
+                return m_attacks.attackDeed(m_players[i].actor, strong, attackTargets());
             }};
     const std::vector<CameraSubject> subjects = PartyMotion::step(
         m_players, inputs, held, bossCameraOn() ? m_bossCamera.yaw() : m_camera.yaw(), ticks,
@@ -1209,7 +1216,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_portals.draw(device, clip, m_world->lighting());
     m_fixtures.draw(device, clip, m_world->lighting());
     m_opponents.generators().draw(device, clip, m_world->lighting());
-    m_opponents.enemies().draw(device, clip, m_world->lighting());
+    m_opponents.enemies().draw(device, clip, m_world->lighting(), m_hitFlashTexture, &m_weapons);
     m_opponents.critters().draw(device, clip, m_world->lighting());
     // The boss stands out in the level's own light while the rite darkens the rest.
     m_opponents.bosses().draw(device, clip,

@@ -465,7 +465,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   more than 2 off a hurt shows `BLOCKFX` for 0.01 s a point that got
   through (a third of a second to one), and not again until it is over
   (untinted: the original colours it by class at a quarter alpha).
-  Not yet: the strong attack's melee variants, damage types (the element,
+  Not yet: directional/stepping strong melee variants, damage types (the element,
   knock-over) doing anything, the directional guards (what selects them was
   not found; they look like answers to where a blow comes from), and the
   two player combo (a grab, carry and throw system of its own, help 111
@@ -490,12 +490,20 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (`FALLFRNT`, then `GETUP2`) when it came from behind the way it faces,
   onto its back (`FALLDOWN`, `GETUP`) otherwise, heeding nothing until it is
   up (`PlayerAnimator::floored`, part of `reacting`). Not yet, because they
-  need something to be aimed at or to come from: melee (the quick and slow
-  attacks against what is in reach, their combos and directions, which the
-  original resolves through its enemy targeting), the knock-back slide,
+  need something to be aimed at or to come from: directional/stepping melee
+  variants, the knock-back slide,
   falling from ledges (`FALLING`, `LAND`: the actor still refuses a step
   with nothing under it), pushing, webs, grabs and Death's, the victory
   pose, the super shot and the familiars' attacks.
+* Close normal attacks use `TargetAssist::melee` (horizontal surface reach,
+  vertical overlap, facing and walls), then `PlayerAttacks::attackDeed` selects
+  the quick/slow or low-body action. `PlayerAnimator` plays ATTQUICK1 then
+  alternating ATTQUICK2/3 with their recoveries; slow attacks use ATTSTART,
+  ATTSLOW1/R; low bodies use ATTLOWK/R or ATTLOW1/2/R. Completed swings emit
+  one contact; interruptions do not. `PartyMotion` plants the feet and routes
+  contacts to `PlayerAttacks::melee`, which rechecks reach, damages one live
+  target and never launches a missile. Distant attacks retain their throws.
+  Directional/step melee and attack-input buffering remain separate work.
 * The swarm (`game/enemies`). `EnemyKinds` is the original's per-kind table
   (thirty-four rows: size, pace, damage, health, armour, the experience a hit
   and a kill are worth, the way each goes about, all of it its own, none of
@@ -614,10 +622,17 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Not yet: the other minds (guards 8, milestone routes 10, the ghosts' 19,
   the kiting of 26/28/29 and the rest), the original's missile lead and
   weight, the arrow's and bomb's hit effects and sounds, Death, IT, gibs
-  and the enemies' sounds (a generator struck or destroyed sounds the
-  realm's `S_GENDAM<letter>` / `S_GENKILL<letter>`), melee for the player
-  (now that there is something to hit), and the original's on-screen gate
+  and attack/idle enemy sounds (hit/death sounds are routed below),
+  and the original's on-screen gate
   on breeding.
+* Swarm hit/death feedback is queued separately from experience rewards, so
+  world damage also sounds/shows. `EnemyFeedback` selects tier/count-specific
+  CLOSE/FAR sound names and element/kind-specific effect trees; `LevelOpponents`
+  drains them once and owns effect cleanup. `Enemies` applies a two-frame white
+  masked hit skin and the ten-frame death skin at 15 fps, preserving original
+  texture cutouts. Death requests must not loop or restart the animation; a
+  missing DEATH sequence uses HIT2 without GETUP. Killed actors immediately
+  leave targeting and cannot issue duplicate hit/death rewards.
 * Combat ownership: `enemies/Combatant` is one noncopyable fighter borrowing stable
   `CombatantAssets`; it owns animation, movement, health/status and outgoing combat
   events, not a population or an encounter. `MoveDefinition.h` holds the shared

@@ -136,6 +136,7 @@ void Enemies::close() {
     m_stocks.clear();
     m_blows.clear();
     m_losses.clear();
+    m_feedback.clear();
     m_device = nullptr;
     m_collision = nullptr;
     m_frame = 0;
@@ -489,7 +490,9 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         if (enemy.state == State::Inactive || enemy.state == State::Asleep) {
             continue;
         }
+        enemy.flashSeconds = std::max(0.0f, enemy.flashSeconds - seconds);
         if (enemy.state == State::Dying) {
+            enemy.deathSeconds += seconds;
             react(enemy);
             enemy.animator.request(EnemyAction::Dying);
             enemy.yaw = turnToward(enemy, enemy.mind.heading, ticks);
@@ -633,7 +636,7 @@ void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
 }
 
 void Enemies::react(Enemy& enemy) { // NOLINT(readability-convert-member-functions-to-static)
-    if (enemy.hurtPending < 1.0f) {
+    if (enemy.hurtPending < 1.0f && enemy.health > 0.0f) {
         enemy.pushMagnitude = enemy.push.x * enemy.push.x + enemy.push.z * enemy.push.z;
         return;
     }
@@ -932,7 +935,7 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
         return;
     }
     Enemy& enemy = m_enemies[static_cast<usize>(id)];
-    if (enemy.state != State::Active && enemy.state != State::Asleep) {
+    if ((enemy.state != State::Active && enemy.state != State::Asleep) || enemy.killed) {
         return;
     }
     const EnemyKind& kind = enemyKind(enemy.kind);
@@ -957,8 +960,23 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
     }
     enemy.hurtBy = hit.player;
     const bool killed = enemy.health <= 0.0f;
+    ++enemy.hitCount;
+    const EnemyFeedback feedback{enemy.kind,
+                                 enemy.tier,
+                                 enemy.hitCount,
+                                 killed,
+                                 hit.close,
+                                 hit.flags,
+                                 hit.where.has_value() && enemy.reach >= 4.0f
+                                     ? *hit.where
+                                     : enemy.position + Vec3{0, kind.attentionHeight, 0},
+                                 enemy.yaw,
+                                 enemy.reach};
+    m_feedback.push_back(feedback);
+    enemy.flashSeconds = killed ? 0.0f : 2.0f / 30.0f;
     if (killed) {
         enemy.killed = true;
+        enemy.deathSkin = feedback.deathSkin();
     }
     if (hit.player >= 0) {
         EnemyLoss loss;
@@ -975,6 +993,12 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
 
 void Enemies::die(Enemy& enemy) {
     enemy = Enemy{};
+}
+
+std::vector<EnemyFeedback> Enemies::takeFeedback() {
+    std::vector<EnemyFeedback> out;
+    out.swap(m_feedback);
+    return out;
 }
 
 /** A shot or a lob at the player it is after, from its eyes to their middle. */
@@ -1035,7 +1059,7 @@ std::vector<MissileTarget> Enemies::targets() const {
     std::vector<MissileTarget> out;
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
-        if (enemy.state != State::Active && enemy.state != State::Asleep) {
+        if (!alive(i)) {
             continue;
         }
         out.push_back(MissileTarget{i, enemy.position, enemy.radius, enemy.height});
@@ -1113,7 +1137,8 @@ std::vector<s32> Enemies::reachedBy(const Vec3& centre, f32 radius, f32 arc,
 
 // ---- looking -----------------------------------------------------------------------------
 
-void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) {
+void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                   const Texture* hitFlash, ItemArchive* weapons) {
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
         if (enemy.state == State::Inactive || !enemy.animator.bound()) {
@@ -1125,6 +1150,34 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         }
         TreeModel& body =
             *const_cast<TreeModel*>(found); // NOLINT(cppcoreguidelines-pro-type-const-cast)
+        body.resetTextures();
+        body.setAppearance(enemy.killed || enemy.flashSeconds > 0);
+        if (enemy.flashSeconds > 0) {
+            body.setMaskedTexture(hitFlash);
+        }
+        if (enemy.killed && !enemy.deathSkin.empty()) {
+            ItemArchive* skins = enemy.deathSkin == "DEATHALT" ? archive(enemy.kind) : weapons;
+            if (skins != nullptr) {
+                for (const TextureAnimationInfo& animation : skins->trees.textureAnimations()) {
+                    if (animation.name != enemy.deathSkin) {
+                        continue;
+                    }
+                    const auto frame = static_cast<s32>(enemy.deathSeconds * 15.0f);
+                    if (frame < 10 && frame < animation.frames) {
+                        const auto first =
+                            animation.source >= 0
+                                ? std::optional<u32>{static_cast<u32>(animation.source)}
+                                : skins->textures.find(animation.frameName);
+                        if (first.has_value() &&
+                            *first + static_cast<u32>(frame) < skins->textures.size()) {
+                            body.setMaskedTexture(
+                                &skins->textures.texture(device, *first + static_cast<u32>(frame)));
+                        }
+                    }
+                    break;
+                }
+            }
+        }
         // The flip-book kinds change their whole mesh with the frame; the rest are posed.
         const AnimationPlayer& player = enemy.animator.player();
         body.setFrame(player.sequence(), static_cast<s32>(std::lround(player.frame())));
@@ -1135,7 +1188,7 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
 }
 
 bool Enemies::alive(s32 id) const {
-    return id >= 0 && id < m_most &&
+    return id >= 0 && id < m_most && !m_enemies[static_cast<usize>(id)].killed &&
            (m_enemies[static_cast<usize>(id)].state == State::Active ||
             m_enemies[static_cast<usize>(id)].state == State::Asleep);
 }

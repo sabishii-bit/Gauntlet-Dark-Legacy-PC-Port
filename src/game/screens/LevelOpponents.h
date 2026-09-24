@@ -64,7 +64,8 @@ public:
                                  const Events& events);
     static void applyGrab(const CombatGrab& grab, bool boss, std::span<PlayerRuntime> players);
     void strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
-                     std::span<const PlayerRuntime> players);
+                     std::span<const PlayerRuntime> players, bool close = false,
+                     std::optional<Vec3> where = std::nullopt);
     void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
                        std::optional<Vec3> where, bool close,
                        std::span<const PlayerRuntime> players);

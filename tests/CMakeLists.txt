@@ -132,6 +132,7 @@ add_executable(tests
     game/players/LevelWatchTests.cpp
     game/enemies/EnemyKindsTests.cpp
     game/enemies/EnemyAnimatorTests.cpp
+    game/enemies/EnemyFeedbackTests.cpp
     game/enemies/EnemyMindTests.cpp
     game/enemies/EnemyMissilesTests.cpp
     game/enemies/EnemiesTests.cpp

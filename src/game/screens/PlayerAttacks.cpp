@@ -474,6 +474,78 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
                                 &m_resources->world.collision());
 }
 
+PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong,
+                                     const Targets& targets) const {
+    const PlayerDeed ranged = strong ? PlayerDeed::StrongAttack : PlayerDeed::Attack;
+    if (!m_resources) {
+        return ranged;
+    }
+    constexpr f32 kCloseReach = 1.0f;
+    const auto target = TargetAssist::melee(
+        actor.position(), actor.height(), actor.facing(), projectileTargets(targets),
+        actor.radius() + kCloseReach, &m_resources->world.collision());
+    if (!target) {
+        return ranged;
+    }
+    constexpr f32 kLowHeight = 4.0f;
+    const bool low = target->height <= kLowHeight;
+    if (strong) {
+        return low ? PlayerDeed::MeleeSlowLow : PlayerDeed::MeleeSlow;
+    }
+    return low ? PlayerDeed::MeleeLow : PlayerDeed::Melee;
+}
+
+void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const Targets& targets) {
+    if (!m_resources || index >= players.size() || players[index].figure == nullptr) {
+        return;
+    }
+    const PlayerActor& actor = players[index].actor;
+    const PlayerAnimator& animator = players[index].figure->animator();
+    constexpr f32 kHitReach = 2.0f;
+    const auto target = TargetAssist::melee(actor.position(), actor.height(), actor.facing(),
+                                            projectileTargets(targets), actor.radius() + kHitReach,
+                                            &m_resources->world.collision());
+    if (!target) {
+        return;
+    }
+    f32 damage = PlayerMissiles::kLeastDamage;
+    if (const ClassStats* stats = m_resources->classes.stats(actor.save().character)) {
+        const StatBlock block = displayStats(*stats, experienceLevel(actor.save().experience()),
+                                             actor.save().progress());
+        damage = PlayerMissiles::damageFor(block.strength());
+    }
+    u32 flags = 0;
+    if (animator.meleePower()) {
+        damage *= 2;
+        flags |= EnemyHit::kKnockBack;
+    } else if (animator.meleeKick() && target->height <= 4.0f) {
+        flags |= EnemyHit::kKnockDown;
+    }
+    const Vec3 point = target->base + Vec3{0, target->height * 0.5f, 0};
+    const Vec3 direction = target->base - actor.position();
+    const s32 id = target->id;
+    if (id >= kSafeRockTargetBase) {
+        targets.fixtures.strikeSafeRock(static_cast<usize>(id - kSafeRockTargetBase), damage);
+    } else if (id >= kBossTargetBase) {
+        const EnemyHit hit{
+            damage, flags, direction, actor.player(), experienceLevel(actor.save().experience()),
+            point,  true};
+        targets.opponents.bosses().hurt(hit);
+    } else if (id >= kCritterTargetBase) {
+        targets.opponents.strikeCritter(id - kCritterTargetBase, damage, flags, direction,
+                                        actor.player(), point, true, players);
+    } else if (id >= kGeneratorTargetBase) {
+        targets.opponents.strikeGenerator(id - kGeneratorTargetBase, damage, actor.player());
+    } else if (id >= kEnemyTargetBase) {
+        targets.opponents.strikeEnemy(id - kEnemyTargetBase, damage, flags, direction,
+                                      actor.player(), players, true, point);
+    } else {
+        targets.fixtures.strikeBarrel(static_cast<usize>(id), damage, actor.player(), players,
+                                      targets.fixtureEvents);
+        targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+    }
+}
+
 void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> players,
                                       const Targets& targets) {
     if (!m_resources) {
@@ -530,7 +602,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                 }
             }
             targets.opponents.strikeEnemy(impact.target - kEnemyTargetBase, impact.damage, 0,
-                                          direction, impact.owner, players);
+                                          direction, impact.owner, players, false, impact.position);
         } else if (impact.target >= 0) {
             targets.fixtures.strikeBarrel(static_cast<usize>(impact.target), impact.damage,
                                           impact.owner, players, targets.fixtureEvents);

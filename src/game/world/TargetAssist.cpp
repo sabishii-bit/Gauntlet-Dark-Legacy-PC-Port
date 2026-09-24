@@ -4,6 +4,34 @@
 #include <cmath>
 
 namespace gdl::game {
+std::optional<MissileTarget> TargetAssist::melee(const Vec3& feet, f32 height, const Vec3& facing,
+                                                 std::span<const MissileTarget> targets, f32 reach,
+                                                 const WorldCollision* collision) {
+    std::optional<MissileTarget> nearest;
+    f32 best = reach;
+    for (const MissileTarget& target : targets) {
+        if (target.id < 0 || target.radius <= 0 || target.height <= 0 ||
+            target.base.y >= feet.y + height || target.base.y + target.height <= feet.y) {
+            continue;
+        }
+        const f32 distance =
+            std::hypot(target.base.x - feet.x, target.base.z - feet.z) - target.radius;
+        if (distance >= best) {
+            continue;
+        }
+        const Vec3 origin{
+            feet.x,
+            std::clamp(feet.y + height * 0.5f, target.base.y, target.base.y + target.height),
+            feet.z};
+        if (!select(origin, facing, std::span{&target, 1}, kBossRange, collision).has_value()) {
+            continue;
+        }
+        nearest = target;
+        best = distance;
+    }
+    return nearest;
+}
+
 std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
                                          std::span<const MissileTarget> targets, f32 range,
                                          const WorldCollision* collision) {

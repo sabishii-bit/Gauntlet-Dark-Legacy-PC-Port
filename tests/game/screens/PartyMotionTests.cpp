@@ -38,7 +38,8 @@ struct Fixture {
         .advanceTurbo = [](usize, s32, f32) { FAIL("No figure, no animation events"); },
         .thrownImpact = {},
         .aim = {},
-        .allowMovement = {}};
+        .allowMovement = {},
+        .attackDeed = {}};
 
     Fixture() {
         CollisionTriangle first;
@@ -377,5 +378,39 @@ TEST_CASE("charge steering and strafe directions remain camera relative",
     REQUIRE(PartyMotion::strafeWayOf(std::numbers::pi_v<f32>, 0) == StrafeWay::Back);
     REQUIRE(PartyMotion::strafeWayOf(1.0f, 0) == StrafeWay::Right);
     REQUIRE(PartyMotion::strafeWayOf(-1.0f, 0) == StrafeWay::Left);
+}
+TEST_CASE("held close attack input plants the feet and dispatches melee contacts instead of throws",
+          "[game][screens][party-motion][melee][unpacked]") {
+    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    Fixture f;
+    test::FakeRenderDevice device;
+    f.players[0].figure = PlayerFigure::load(device, root, f.players[0].actor.save(), false);
+    REQUIRE(f.players[0].figure);
+    s32 contacts = 0;
+    s32 missiles = 0;
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.attackDeed = [](usize, bool strong) {
+        return strong ? PlayerDeed::MeleeSlow : PlayerDeed::Melee;
+    };
+    f.events.perform = [&](usize, PartyMotion::Action action) {
+        contacts += action == PartyMotion::Action::Melee ? 1 : 0;
+        missiles +=
+            action == PartyMotion::Action::ThrowWeapon || action == PartyMotion::Action::StrongThrow
+                ? 1
+                : 0;
+    };
+    f.inputs[3].attack = true;
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    for (s32 frame = 0; frame < 60; ++frame) {
+        f.step();
+        CHECK(f.players[0].actor.position() == Vec3{0});
+    }
+    CHECK(contacts >= 3);
+    CHECK(missiles == 0);
+    CHECK(f.players[0].figure->animator().meleeing());
 }
 } // namespace

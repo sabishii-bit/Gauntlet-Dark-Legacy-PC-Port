@@ -17,6 +17,7 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/enemies/EnemyAnimator.h"
+#include "game/enemies/EnemyFeedback.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/world/ItemFigure.h"
@@ -168,6 +169,7 @@ public:
     std::vector<EnemyBlow> takeBlows();
     std::vector<EnemyLoss> takeLosses();
     std::vector<EnemyBurst> takeBursts();
+    std::vector<EnemyFeedback> takeFeedback();
 
     /** Deals a hit to an enemy; what it is worth comes back as a loss. */
     void hurt(s32 id, const EnemyHit& hit);
@@ -181,7 +183,8 @@ public:
     /** The live enemies a strike reaches. */
     std::vector<s32> reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
 
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting);
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const Texture* hitFlash = nullptr, ItemArchive* weapons = nullptr);
 
     bool alive(s32 id) const;
     bool dying(s32 id) const;
@@ -259,6 +262,10 @@ private:
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
         s32 hurtBy = -1;
         bool killed = false;
+        s32 hitCount = 0;
+        f32 flashSeconds = 0;
+        f32 deathSeconds = 0;
+        std::string_view deathSkin;
         EnemyAnimator animator;
     };
 
@@ -300,6 +307,7 @@ private:
     std::vector<EnemyBlow> m_blows;
     std::vector<EnemyLoss> m_losses;
     std::vector<EnemyBurst> m_bursts;
+    std::vector<EnemyFeedback> m_feedback;
     std::mt19937 m_random;
     u32 m_frame = 0;
 };

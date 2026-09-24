@@ -451,4 +451,73 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     REQUIRE(bred.algorithmOf(*vermin) == 0);
 }
 
+TEST_CASE("enemy hits queue feedback once and animate masked death skins to completion",
+          "[game][enemies][enemy-feedback][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.tier = 2;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.player = 0;
+    hit.close = true;
+    enemies.hurt(*id, hit);
+    auto feedback = enemies.takeFeedback();
+    REQUIRE(feedback.size() == 1);
+    CHECK(feedback[0].sound() == "S_GRU2HIT1CLOSE");
+    enemies.draw(device, Mat4{1}, {}, &device.whiteTexture(), &weapons);
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+        return draw.state.maskedTexture == &device.whiteTexture();
+    }));
+    enemies.update(kTicks, kStep, {});
+    CHECK(enemies.animatorOf(*id)->action() == EnemyAction::HitReact1);
+    hit.damage = 1000;
+    enemies.hurt(*id, hit);
+    enemies.hurt(*id, hit);
+    CHECK_FALSE(enemies.alive(*id));
+    CHECK(enemies.targets().empty());
+    feedback = enemies.takeFeedback();
+    REQUIRE(feedback.size() == 1);
+    CHECK(feedback[0].killed);
+    CHECK(feedback[0].sound() == "S_GRU2DIECLOSE");
+    device.draws.clear();
+    enemies.draw(device, Mat4{1}, {}, &device.whiteTexture(), &weapons);
+    REQUIRE_FALSE(device.draws.empty());
+    const auto skin = weapons.textures.find("DTH_BLOOD00");
+    REQUIRE(skin);
+    CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+        return draw.state.maskedTexture == &weapons.textures.texture(device, *skin);
+    }));
+    for (s32 frame = 0; frame < 3; ++frame) {
+        enemies.update(kTicks, kStep, {});
+    }
+    device.draws.clear();
+    enemies.draw(device, Mat4{1}, {}, &device.whiteTexture(), &weapons);
+    CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+        return draw.state.maskedTexture == &weapons.textures.texture(device, *skin + 1);
+    }));
+    CHECK(stepsUntil(enemies, {}, [&] { return enemies.count() == 0; }, 180) < 180);
+    CHECK(enemies.takeFeedback().empty());
+    const auto again = enemies.spawn(spawn, {});
+    REQUIRE(again);
+    hit.damage = 1;
+    enemies.hurt(*again, hit);
+    feedback = enemies.takeFeedback();
+    REQUIRE(feedback.size() == 1);
+    CHECK(feedback[0].hitCount == 1);
+    enemies.hurt(*again, hit);
+    enemies.close();
+    CHECK(enemies.takeFeedback().empty());
+}
 } // namespace

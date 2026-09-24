@@ -68,6 +68,8 @@ add_library(game STATIC
     players/LevelWatch.cpp
     enemies/EnemyKinds.cpp
     enemies/EnemyAnimator.cpp
+    enemies/EnemyFeedback.h
+    enemies/EnemyFeedback.cpp
     enemies/EnemyMind.cpp
     enemies/EnemyMissiles.cpp
     enemies/Enemies.cpp

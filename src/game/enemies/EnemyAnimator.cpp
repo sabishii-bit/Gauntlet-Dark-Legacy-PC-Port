@@ -89,7 +89,7 @@ EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
     Decision d;
     d.action = next;
     // A hit is answered from the stance, whatever the body was doing.
-    const Action current = isHit(next) ? Action::Ready : m_current;
+    const Action current = isHit(next) && m_current != Action::Dying ? Action::Ready : m_current;
     const auto whenDone = [&d] {
         d.cut = Cut::WhenDoneIfDifferent;
         d.repeat = false;
@@ -255,6 +255,9 @@ EnemyAnimator::Decision EnemyAnimator::decide(Action next, bool contact) const {
     default: break;
     }
     // What the tree lacks is stood in for.
+    if (isHit(d.action)) {
+        d.repeat = false;
+    }
     switch (d.action) {
     case Action::Attack2:
     case Action::PowerAttack:
@@ -306,7 +309,7 @@ void EnemyAnimator::play(Decision decision, f32 seconds) {
         if (decision.action == Action::Dying && has(Action::HitReact2)) {
             target = sequenceOf(Action::HitReact2);
         } else {
-            decision.repeat = true;
+            decision.repeat = decision.action != Action::Dying;
             if (decision.cut != Cut::WhenDoneIfDifferent) {
                 decision.cut = Cut::IfDifferent;
             }
@@ -319,7 +322,8 @@ void EnemyAnimator::play(Decision decision, f32 seconds) {
         m_dead = true;
         return;
     }
-    const bool different = !m_player.playing() || m_player.sequence() != target;
+    const bool different = !m_player.playing() || m_player.sequence() != target ||
+                           (decision.action == Action::Dying && m_current != Action::Dying);
     const bool restart =
         decision.cut == Cut::IfDifferent ? (done || different) : (done && different);
     if (!restart) {

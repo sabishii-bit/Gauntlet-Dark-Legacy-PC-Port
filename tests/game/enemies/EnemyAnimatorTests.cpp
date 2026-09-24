@@ -162,4 +162,31 @@ TEST_CASE("a body idling after a throw refuses to attack, and a tree without a s
     REQUIRE_FALSE(animator.bind(tree));
 }
 
+TEST_CASE("repeated death requests finish once and never stand back up",
+          "[game][enemies][animation][enemy-feedback]") {
+    for (const bool deathSequence : {false, true}) {
+        TreeInfo tree = gruntTree();
+        if (deathSequence) {
+            TreeSequenceInfo sequence = tree.sequences[8];
+            sequence.name = "DEATH";
+            tree.sequences.push_back(sequence);
+        }
+        EnemyAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.request(Action::HitReact2);
+        animator.update(kTicks, kStep);
+        REQUIRE(animator.action() == Action::HitReact2);
+        animator.request(Action::Dying);
+        animator.update(kTicks, kStep);
+        REQUIRE(animator.action() == Action::Dying);
+        for (s32 frame = 0; frame < 30; ++frame) {
+            animator.request(Action::Dying);
+            animator.update(kTicks, kStep);
+            CHECK(animator.action() == Action::Dying);
+            CHECK_FALSE(animator.struck());
+        }
+        CHECK(animator.dead());
+    }
+}
+
 } // namespace

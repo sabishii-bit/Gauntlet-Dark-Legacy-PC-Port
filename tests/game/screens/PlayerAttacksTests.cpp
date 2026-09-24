@@ -3,9 +3,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "game/screens/PlayerAttacks.h"
 namespace {
 using namespace gdl;
@@ -91,5 +93,115 @@ TEST_CASE("player attacks clear transient state and safely ignore closed or miss
     f.attacks.shieldPotion(0, f.players);
     REQUIRE(f.attacks.shieldCount() == 0);
     REQUIRE(f.players[0].actor.save().progress().inventory.potions.size() == 1);
+}
+TEST_CASE("close attacks resolve to melee while distant attacks still throw",
+          "[game][screens][player-attacks][melee][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    Fixture f;
+    f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+    REQUIRE(f.players[0].figure);
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.tier = 3;
+    spawn.placed = true;
+    spawn.position = {0, 0, 2.5f};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    CHECK(f.attacks.attackDeed(f.players[0].actor, false, f.targets) == PlayerDeed::Melee);
+    CHECK(f.attacks.attackDeed(f.players[0].actor, true, f.targets) == PlayerDeed::MeleeSlow);
+    f.players[0].actor.place({0, 0, -20});
+    CHECK(f.attacks.attackDeed(f.players[0].actor, false, f.targets) == PlayerDeed::Attack);
+    CHECK(f.attacks.attackDeed(f.players[0].actor, true, f.targets) == PlayerDeed::StrongAttack);
+    f.players[0].actor.place({0, 0, 0});
+    auto& figure = *f.players[0].figure;
+    bool contacted = false;
+    for (s32 frame = 0; frame < 30 && !contacted; ++frame) {
+        figure.animate(0, 2, 1.0f / 30, f.attacks.attackDeed(f.players[0].actor, false, f.targets));
+        CHECK_FALSE(figure.animator().released());
+        contacted = figure.animator().meleeStruck();
+    }
+    CHECK(contacted);
+    enemies.close();
+}
+
+TEST_CASE("a melee contact routes damage sound and impact once through level opponents",
+          "[game][screens][player-attacks][melee][enemy-feedback][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::unpackedOrSkip("audio/TOWN/sounds.json");
+    Fixture f;
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    const LevelAudioInfo info{.bank = "TOWN", .stream = {}};
+    f.audio.open(root, &sounds, &info);
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    // This fixture has no level mesh: retain the routing facade, but spawn
+    // its test actors without a floor constraint.
+    enemies.open(f.device, root, nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(13));
+    EnemySpawn spawn;
+    spawn.kind = 13;
+    spawn.tier = 3;
+    spawn.placed = true;
+    spawn.position = {0, 0, 2.5f};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+    REQUIRE(f.players[0].figure);
+    const f32 health = enemies.healthOf(*id);
+    auto& figure = *f.players[0].figure;
+    s32 contacts = 0;
+    for (s32 frame = 0; frame < 30 && contacts == 0; ++frame) {
+        figure.animate(0, 2, 1.0f / 30, f.attacks.attackDeed(f.players[0].actor, false, f.targets));
+        if (figure.animator().meleeStruck()) {
+            f.attacks.melee(0, f.players, f.targets);
+            ++contacts;
+        }
+    }
+    REQUIRE(contacts == 1);
+    CHECK(enemies.healthOf(*id) < health);
+    const f32 afterHit = enemies.healthOf(*id);
+    f.players[0].actor.place({0, 0, -20});
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(enemies.healthOf(*id) == afterHit); // contact rechecks reach, not the wind-up's target
+    f.players[0].actor.place({0, 0, 0});
+    s32 awards = 0;
+    LevelOpponents::Events events;
+    events.levels = [] {};
+    events.award = [&](s32 player, s32, bool) {
+        CHECK(player == 3);
+        ++awards;
+    };
+    f.opponents.settleRewards(f.players, events);
+    CHECK(awards == 1);
+    CHECK(sounds.voiceCount() == 1);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "BLOODFX1");
+    CHECK(f.effects.effect(0).tint.a == 96);
+    f.opponents.settleRewards(f.players, events);
+    CHECK(awards == 1);
+    CHECK(sounds.voiceCount() == 1);
+    f.opponents.strikeEnemy(*id, 1000, 0, {0, 0, 1}, 3, f.players, true);
+    f.opponents.settleRewards(f.players, events);
+    CHECK(awards == 2);
+    CHECK(sounds.voiceCount() == 2);
+    REQUIRE(f.effects.count() == 2);
+    CHECK(f.effects.effect(1).name == "BLOODFX2");
+    f.opponents.close();
+    CHECK(f.effects.count() == 0);
+    f.audio.close();
 }
 } // namespace
