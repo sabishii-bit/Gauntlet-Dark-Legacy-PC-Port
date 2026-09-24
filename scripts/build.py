@@ -5,6 +5,8 @@
     python scripts/build.py --test                   # build, then run the unit tests
     python scripts/build.py --unpack                 # build, then unpack the console assets
     python scripts/build.py --run -- --title         # build the release preset, then launch the game
+    python scripts/build.py --run -- --demo          # preview the idle level flyby
+    python scripts/build.py --run -- --screensaver   # preview the flaming weapons
     python scripts/build.py linux-clang-release      # any build preset from CMakePresets.json
 
 Configures first when the preset has never been configured. Arguments after "--"

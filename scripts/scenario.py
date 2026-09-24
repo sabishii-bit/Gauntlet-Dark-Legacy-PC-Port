@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Launch a scenario by full name, unique suffix, or JSON path.
+"""Launch a scenario by name or JSON path, or preview the demo/screensaver.
 
     python scripts/scenario.py genie
     python scripts/scenario.py --list
     python scripts/scenario.py dragon --build
     python scripts/scenario.py genie --frames 600 -- --no-vsync
+    python scripts/scenario.py demo --build
+    python scripts/scenario.py screensaver --build
 
 Uses the platform's existing Release build unless --preset selects another.
 --build delegates to build.py to configure/build before launching. Paths passed
 after -- are interpreted from the repository root, where the game is launched.
+The bare names demo and screensaver select built-in previews, not saved parties.
+Use an explicit JSON path to launch a custom scenario with either of those names.
 """
 
 import argparse
@@ -21,6 +25,7 @@ import build
 import devenv
 
 ROOT = devenv.ROOT
+PREVIEWS = {"demo": "--demo", "screensaver": "--screensaver"}
 
 
 def scenarios() -> list[pathlib.Path]:
@@ -60,7 +65,8 @@ def main(argv=None) -> int:
         game_args = argv[separator + 1:]
         argv = argv[:separator]
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("name", nargs="?", help="e.g. genie, level-c5-genie, or a JSON path")
+    parser.add_argument("name", nargs="?",
+                        help="e.g. genie, a JSON path, demo, or screensaver")
     parser.add_argument("--list", action="store_true", help="list available scenarios")
     parser.add_argument("--preset", default=devenv.release_preset(), help="build preset to run")
     parser.add_argument("--build", action="store_true", help="build before launching")
@@ -71,13 +77,16 @@ def main(argv=None) -> int:
         print("Available scenarios:")
         for path in scenarios():
             print(f"  {path.stem}")
+        print("Built-in previews:")
+        for name in PREVIEWS:
+            print(f"  {name}")
         return 0
     try:
-        scenario = resolve_scenario(args.name)
+        preview = PREVIEWS.get(args.name.casefold())
+        launch_args = [preview] if preview else ["--scenario", str(resolve_scenario(args.name))]
         presets = build.build_presets()
         if args.preset not in presets:
             raise ValueError(f"Unknown preset '{args.preset}'. Known: {', '.join(presets)}")
-        launch_args = ["--scenario", str(scenario)]
         if args.frames is not None:
             launch_args.extend(["--frames", str(args.frames)])
         launch_args.extend(game_args)
