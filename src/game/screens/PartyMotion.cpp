@@ -84,15 +84,23 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             subjects.push_back({actor.position(), actor.followPoint()});
             continue;
         }
-        // Reeling from a hit, a character neither moves nor does anything.
-        const bool reeling =
-            players[i].reaction != PlayerDeed::None ||
-            (players[i].figure != nullptr && players[i].figure->animator().reacting());
+        // Webs own the reaction animation and buttons, but allow a slow escape walk.
+        const PlayerAnimator* animator =
+            players[i].figure != nullptr ? &players[i].figure->animator() : nullptr;
+        const bool webbed = players[i].reaction == PlayerDeed::Webbed ||
+                            (animator != nullptr && animator->webbed());
+        const bool reeling = players[i].reaction != PlayerDeed::None ||
+                             (animator != nullptr && animator->reacting());
+        const bool immobilized =
+            (players[i].reaction != PlayerDeed::None &&
+             players[i].reaction != PlayerDeed::Webbed) ||
+            (animator != nullptr && animator->reacting() && !animator->webbed());
         const bool entering =
             players[i].figure != nullptr && players[i].figure->animator().entering();
-        const MoveInput& move = !held && !down && !reeling && !entering && player < inputs.size()
-                                    ? inputs[player].move
-                                    : MoveInput{};
+        const MoveInput& move =
+            !held && !down && !immobilized && !entering && player < inputs.size()
+                ? inputs[player].move
+                : MoveInput{};
         // What the buttons ask: a potion first, when one is carried, then the attack.
         PlayerDeed deed = down ? PlayerDeed::Die : PlayerDeed::None;
         if (!down && players[i].reaction != PlayerDeed::None) {
@@ -128,8 +136,8 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         actor.setPaceBonus(PowerupEffects::of(actor.save().progress().inventory).paceAdd);
         // A body in a throw keeps its feet where they are, turning to the stick.
-        const f32 pace =
-            players[i].figure != nullptr ? players[i].figure->animator().moveScale() : 1.0f;
+        const f32 actionPace = animator != nullptr ? animator->moveScale() : 1.0f;
+        const f32 pace = webbed ? PlayerAnimator::kWebPace : actionPace;
         const bool charging =
             players[i].figure != nullptr && players[i].figure->animator().shoving();
         // Strafing, the character steps the way the stick is pushed without turning to it.

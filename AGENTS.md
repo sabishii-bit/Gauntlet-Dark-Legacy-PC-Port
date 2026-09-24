@@ -987,7 +987,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   morph lifetime. THROW's sticky ATK07LP impact becomes ATK07WEB for twenty
   seconds, floor-aligned by SFXX 0x10, with stationary radius-two contacts.
   Sticky contacts run at the authored 30 Hz and request WEBREACT rather than an
-  invented stun or knockdown. Tests cover 30/60/120 Hz, expiry, archive cleanup,
+  invented stun or knockdown. WEBREACT retains 40% movement speed (DoPlayerAction,
+  0x800ac068, action 128), not the zero-speed stun policy: players must be able
+  to walk out of the damaging web. Continuous contact loops the animation without
+  restarting it each frame. Reaction-owned buttons remain suppressed.
+  Tests cover 30/60/120 Hz, expiry, archive cleanup,
   entrance routing and actual WRAITH artwork. `python scripts/scenario.py wraith`
   starts at the level entrance, outside wake range; `wraith-attacks` starts close
   enough to wake it. Need LEVELJ5, LEVELJ and MONSTERS/WRAITH unpacked.

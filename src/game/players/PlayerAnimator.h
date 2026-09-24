@@ -196,6 +196,9 @@ public:
         if (entering()) {
             return 0.0f;
         }
+        if (webbed()) {
+            return kWebPace;
+        }
         if (shoving()) {
             return kChargePace; // the charge rushes on, faster than a run
         }
@@ -205,6 +208,9 @@ public:
         return throwing() || conjuring() || reacting() || turboing() || guarding() ? 0.0f : 1.0f;
     }
     static constexpr f32 kChargePace = 1.5f;
+    static constexpr f32 kWebPace = 0.4f;
+    /** Web contact suppresses attacks, but leaves a slow escape walk. */
+    bool webbed() const { return m_current == Action::WebReact; }
     /** Whether the guard is coming up, up or going down; the feet stay put throughout. */
     bool guarding() const {
         return m_current == Action::DefendRaise || m_current == Action::Defend ||
@@ -246,8 +252,7 @@ public:
     static Action otherHalfOf(Action step);
     /** Whether this tick's step began a turbo move: the meter pays for it then. */
     bool turboBegan() const { return m_turboBegan; }
-    /** Whether the body is flinching or reeling from a hit: it stands where it was struck,
-     * does nothing else, and is not set reeling again until it is over. */
+    /** Whether a hit reaction owns the animation. Webs still permit slow movement. */
     bool reacting() const {
         return m_current == Action::HitReact || m_current == Action::Stun ||
                m_current == Action::SpikeHit || m_current == Action::Grabbed ||

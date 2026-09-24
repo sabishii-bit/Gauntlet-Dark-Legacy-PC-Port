@@ -116,11 +116,12 @@ TEST_CASE("sticky contacts use WEBREACT without restarting the reaction every fr
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Webbed);
     REQUIRE(animator.action() == Action::WebReact);
     REQUIRE(animator.reacting());
-    REQUIRE(animator.moveScale() == 0);
+    REQUIRE(animator.moveScale() == Approx(0.4f));
     REQUIRE_FALSE(animator.released());
-    for (s32 i = 0; i < 5; ++i) {
+    for (s32 i = 0; i < 120; ++i) {
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Webbed);
         REQUIRE(animator.action() == Action::WebReact);
+        REQUIRE(animator.moveScale() == Approx(0.4f));
     }
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);
     REQUIRE_FALSE(animator.reacting());

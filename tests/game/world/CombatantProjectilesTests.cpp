@@ -15,6 +15,8 @@
 #include "formats/CritterWad.h"
 #include "game/enemies/BossDefinition.h"
 #include "game/enemies/CombatantFixture.h"
+#include "game/screens/PartyMotion.h"
+#include "game/screens/PlayerHealth.h"
 #include "game/world/CombatantProjectiles.h"
 #include "game/world/LevelWorld.h"
 
@@ -129,6 +131,7 @@ TEST_CASE("summoning shots invoke one callback on contact or expiration, never o
 
 TEST_CASE("Lich and Spider Queen egg records request stage generators",
           "[boss-projectiles][spider][lich][unpacked]") {
+    const bool hitPlayer = GENERATE(false, true);
     const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
     for (const std::string name : {"LICH", "DRIDER"}) {
         DYNAMIC_SECTION(name) {
@@ -153,10 +156,21 @@ TEST_CASE("Lich and Spider Queen egg records request stage generators",
                 shot.origin = {0, 3, 0};
                 projectiles.launch(shot, archive, device, effects, {});
                 REQUIRE(projectiles.count() == 1);
+                const std::vector<EnemyView> players =
+                    hitPlayer ? std::vector<EnemyView>{{0, {0, -10, 0}, 10, 30}}
+                              : std::vector<EnemyView>{};
+                usize hits = 0;
                 for (s32 frame = 0; frame < 900 && projectiles.count() > 0; ++frame) {
                     effects.update(1.0f / 30);
-                    projectiles.update(1.0f / 30, nullptr, {}, device, effects, {});
+                    projectiles.update(1.0f / 30, nullptr, players, device, effects, {});
+                    for (const auto& hit : projectiles.takeHits()) {
+                        ++hits;
+                        REQUIRE((hit.flags & PlayerImpact::kSticky) == 0);
+                        const PlayerImpact impact{hit.flags, hit.direction};
+                        REQUIRE(impact.reaction(hit.damage, 0, false) != PlayerDeed::Webbed);
+                    }
                 }
+                REQUIRE(hits == (hitPlayer ? 1 : 0));
                 REQUIRE(projectiles.takeGenerators().size() == 1);
                 ++eggs;
             }
@@ -219,6 +233,89 @@ TEST_CASE("generator shots finish their impact before leaving a stage placement"
     REQUIRE(f.projectiles.takeGenerators().size() == 1);
     REQUIRE(f.projectiles.takeHits().empty());
     REQUIRE(f.projectiles.count() == 0);
+}
+
+void checkWebEscape(s32 fps, bool animated) {
+    Fixture f;
+    const f32 dt = 1.0f / static_cast<f32>(fps);
+    std::array<PlayerRuntime, 1> players;
+    auto& player = players[0];
+    player.actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+    player.actor.save().progress().health = 1000;
+    if (animated) {
+        const auto root = test::unpackedOrSkip("PLAYERS/WAR/RED/objects.json")
+                              .parent_path()
+                              .parent_path()
+                              .parent_path()
+                              .parent_path();
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save());
+        REQUIRE(player.figure != nullptr);
+        for (s32 frame = 0; frame < 150; ++frame) {
+            player.figure->animate(0, 2, 1.0f / 30);
+        }
+        REQUIRE_FALSE(player.figure->animator().entering());
+    }
+    WorldCollision world;
+    CollisionTriangle floor;
+    floor.vertices = {Vec3{-100, 0, -100}, Vec3{0, 0, 100}, Vec3{100, 0, -100}};
+    floor.normal = {0, 1, 0};
+    world.build({floor});
+    std::array<PlayInput, 1> inputs;
+    inputs[0].move = {Vec2{0, 1}, 1};
+    inputs[0].attack = true;
+    PlayerHealth health;
+    const PlayerHealth::Events healthEvents{.block = [](f32, f32) {},
+                                            .sound = [](std::string_view) {},
+                                            .cry = [](std::string_view) {},
+                                            .named = [](std::string_view) {}};
+    PartyMotion::Events motion;
+    motion.perform = [](usize, PartyMotion::Action) {};
+    motion.select = [](usize, const SelectorInput&, s32) {};
+    motion.advanceTurbo = [](usize, s32, f32) {};
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 3;
+    shot.origin = {0, 2, -1};
+    shot.target = Vec3{0, 2, 5};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    s32 hits = 0;
+    s32 healthAfterEscape = 0;
+    for (s32 frame = 0; frame < fps * 5; ++frame) {
+        const std::array<EnemyView, 1> views{
+            {{0, player.actor.position(), player.actor.radius(), player.actor.height()}}};
+        f.step(dt, views, &world);
+        for (const auto& hit : f.projectiles.takeHits()) {
+            ++hits;
+            health.hurt(player, hit.damage, HurtKind::Pierce, true, false, 1, healthEvents,
+                        {hit.flags, hit.direction});
+        }
+        const s32 ticks = (frame + 1) * 60 / fps - frame * 60 / fps;
+        PartyMotion::step(players, inputs, false, 0, ticks, dt, world, motion);
+        if (frame == fps * 3) {
+            healthAfterEscape = player.actor.save().health();
+            REQUIRE(player.actor.position().z > 3);
+            inputs[0].attack = false;
+        }
+    }
+    REQUIRE(hits > 1);
+    REQUIRE(hits < 90);
+    REQUIRE(player.actor.save().health() == healthAfterEscape);
+    REQUIRE(player.life == PlayerLife::Standing);
+    REQUIRE(f.projectiles.count() == 1); // Escaped a live trap; it did not merely expire.
+    if (player.figure != nullptr) {
+        REQUIRE_FALSE(player.figure->animator().webbed());
+    }
+    f.projectiles.clear(f.effects);
+}
+
+TEST_CASE("players can escape a landed sticky projectile and stop taking contact damage",
+          "[boss-projectiles][player-impact][party-motion][spider]") {
+    checkWebEscape(GENERATE(30, 60, 120), false);
+}
+
+TEST_CASE("animated players can walk out of a live web while holding attack",
+          "[boss-projectiles][player-impact][party-motion][spider][unpacked]") {
+    checkWebEscape(GENERATE(30, 60, 120), true);
 }
 
 TEST_CASE("pass-through snakes survive player contact but still collide with the world",
