@@ -565,8 +565,12 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     REQUIRE(critters.kindOf(*general) == CombatantKind::General);
     REQUIRE(critters.maxHealthOf(*general) == 200.0f);
     REQUIRE(critters.radiusOf(*general) == 3.5f);
-    REQUIRE(critters.targets().size() == 1);
-    REQUIRE(critters.targets()[0].radius == 3.5f);
+    const auto targets = critters.targets();
+    REQUIRE(targets.size() == critters.dataOf(*general)->parts().size() + 1);
+    REQUIRE(targets.back().radius == 3.5f); // the root fallback accompanies animated nodes
+    for (const auto& target : targets) {
+        REQUIRE(target.id == *general); // several hit volumes still represent one enemy
+    }
     REQUIRE((critters.struckBy(Vec3{-5.0f, 4.0f, 0.0f}, Vec3{30.0f, 4.0f, 0.0f}, 0.5f) == general));
     REQUIRE_FALSE(
         critters.struckBy(Vec3{-5.0f, 4.0f, 10.0f}, Vec3{30.0f, 4.0f, 10.0f}, 0.5f).has_value());

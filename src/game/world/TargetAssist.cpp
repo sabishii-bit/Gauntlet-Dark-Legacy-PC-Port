@@ -23,7 +23,11 @@ std::optional<MissileTarget> TargetAssist::melee(const Vec3& feet, f32 height, c
             feet.x,
             std::clamp(feet.y + height * 0.5f, target.base.y, target.base.y + target.height),
             feet.z};
-        if (!select(origin, facing, std::span{&target, 1}, kBossRange, collision).has_value()) {
+        // At an overlapping centre there is no bearing to normalize. Contact is
+        // already established; do not turn a close attack into a ranged throw.
+        const bool coincident = std::hypot(target.base.x - feet.x, target.base.z - feet.z) < 1e-5f;
+        if (!coincident &&
+            !select(origin, facing, std::span{&target, 1}, kBossRange, collision).has_value()) {
             continue;
         }
         nearest = target;

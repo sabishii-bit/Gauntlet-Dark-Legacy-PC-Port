@@ -127,6 +127,75 @@ TEST_CASE("one combatant rejects absent assets and owns independent state and ev
     actors[1].clear();
 }
 
+TEST_CASE("combatant hit volumes follow posed nodes and solid flags", "[game][combatant]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":1,"wallRadius":1,"colCount":3}],
+      "moves":[{"name":"READY","anim":"STEP","type":32}],
+      "nodes":[{"nodeName":"BODY","position":[5,3,0],"radius":2,"flags":8},
+               {"nodeName":"BODY","position":[0,8,0],"radius":1,"flags":0},
+               {"nodeName":"ABSENT","position":[50,0,0],"radius":9,"flags":8}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 7, {10, 0, 0}, 1.57079633f, nullptr, {}, 'G'));
+    const auto targets = actor.bodyTargets();
+    REQUIRE(targets.size() == 3); // two real nodes and the root fallback
+    CHECK(targets[0].id == 7);
+    CHECK(targets[0].base.x == Approx(10));
+    CHECK(targets[0].base.z == Approx(-5));
+    CHECK(targets[0].base.y == Approx(1));
+    CHECK(targets[0].height == 4);
+    REQUIRE(actor.bodyTargets(true).size() == 2);
+    CHECK(actor.contactDistance({10, 3, -10}, {10, 3, -3}, 0.5f).has_value());
+    actor.resize(2);
+    CHECK(actor.bodyTargets()[0].radius == 4);
+    actor.clear();
+    CHECK(actor.bodyTargets().empty());
+}
+
+TEST_CASE("breath effect inherits the damage node offset and rotation",
+          "[game][combatant][breath]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GAR_EAGL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GAR_EAGL","type":7}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":3}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"FIRE","anim":"STEP","type":128,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[{"type":4,"radius":3,"maxDistance":12,"damage":1,"pitch":0.35,
+                  "offset":[0,0,-2],"sfxIndex":0}],
+      "sounds":[{"name":"FIREFX","offset":[0,0,1],"scale":1}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {10, 0, 0}, 1.57079633f, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 0;
+    player.position = {20, 0, 0};
+    const std::array players{player};
+    std::vector<CombatCue> cues;
+    for (s32 i = 0; i < 10 && cues.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        cues = actor.takeCues();
+    }
+    REQUIRE(cues.size() == 1);
+    const auto& cue = cues.front();
+    REQUIRE(cue.tree == "FIREFX");
+    REQUIRE(cue.node == "BODY");
+    REQUIRE(cue.follows);
+    REQUIRE(cue.nodeOffset == Vec3{0, 0, -1});
+    REQUIRE(cue.pitchYaw.x == Approx(0.35f));
+    REQUIRE(cue.position.x == Approx(9));
+    REQUIRE(cue.placement.has_value());
+    CHECK((*cue.placement)[2].x > 0.9f);
+    CHECK((*cue.placement)[2].y < -0.3f);
+}
+
 TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
           "[game][combatant]") {
     const auto root = familyAssets();

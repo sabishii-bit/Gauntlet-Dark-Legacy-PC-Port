@@ -66,7 +66,7 @@ public:
     void hold(s32 id, bool held);
     /** Has it roar as soon as its move is over. */
     void roar(s32 id);
-    std::vector<MissileTarget> targets() const;
+    std::vector<MissileTarget> targets(bool solidOnly = false) const;
     std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
     std::vector<s32> within(const Vec3& centre, f32 radius) const;
     std::vector<s32> reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;

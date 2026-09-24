@@ -160,6 +160,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         const Vec3 before = actor.position();
         actor.update(charging ? chargeInput(actor, move, cameraYaw) : move, cameraYaw, seconds,
                      &collision, pace, strafes);
+        if (!down && events.resolveMovement) {
+            actor.place(events.resolveMovement(i, before, actor.position()));
+        }
         if (events.allowMovement && !events.allowMovement(before, actor.position())) {
             actor.place(Vec3{before.x, actor.position().y, before.z});
         }

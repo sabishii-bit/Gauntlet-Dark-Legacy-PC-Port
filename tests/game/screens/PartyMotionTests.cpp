@@ -39,7 +39,8 @@ struct Fixture {
         .thrownImpact = {},
         .aim = {},
         .allowMovement = {},
-        .attackDeed = {}};
+        .attackDeed = {},
+        .resolveMovement = {}};
 
     Fixture() {
         CollisionTriangle first;
@@ -102,6 +103,22 @@ TEST_CASE("party motion consults the shared-view limit before reporting moved su
     f.inputs[3].move.direction.y = -1;
     f.step();
     REQUIRE(f.players[0].actor.position().z < before.z);
+}
+
+TEST_CASE("party motion resolves creatures before camera limits and snapshots",
+          "[game][party-motion][collision]") {
+    Fixture f;
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.events.resolveMovement = [](usize, const Vec3& from, const Vec3& to) {
+        return Vec3{from.x, to.y, from.z};
+    };
+    f.events.allowMovement = [](const Vec3& from, const Vec3& to) {
+        CHECK(from == to);
+        return true;
+    };
+    const auto subjects = f.step();
+    CHECK(f.players[0].actor.position() == Vec3{0});
+    CHECK(subjects[0].feet == Vec3{0});
 }
 
 TEST_CASE("party motion routes sparse input ids and snapshots after movement",

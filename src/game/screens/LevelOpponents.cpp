@@ -12,7 +12,30 @@
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/LevelFixtures.h"
+#include "game/world/BodyCollision.h"
 namespace gdl::game {
+Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from,
+                                     const Vec3& to) const {
+    auto bodies = m_enemies.targets();
+    const auto critters = m_critters.targets(true);
+    const auto bosses = m_bosses.targets();
+    bodies.insert(bodies.end(), critters.begin(), critters.end());
+    bodies.insert(bodies.end(), bosses.begin(), bosses.end());
+    Vec3 resolved = BodyCollision::resolve(from, to, player.radius(), player.height(), bodies);
+    // A slide along a creature must still respect the level walls. If wall resolution
+    // would move back inside a creature, retain the already-safe pre-step position.
+    if (m_resources.has_value()) {
+        resolved = m_resources->world.collision().resolveWalls(
+            resolved, player.radius(), resolved.y, resolved.y + player.height());
+        const Vec3 checked =
+            BodyCollision::resolve(from, resolved, player.radius(), player.height(), bodies);
+        if (glm::distance(checked, resolved) > 1e-4f) {
+            return {from.x, to.y, from.z};
+        }
+    }
+    return resolved;
+}
+
 void LevelOpponents::close() {
     if (m_resources.has_value()) {
         m_combatantProjectiles.clear(m_resources->effects);
