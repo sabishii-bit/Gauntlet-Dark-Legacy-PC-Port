@@ -163,6 +163,7 @@ struct WorldDataFile {
     std::vector<BossCameraRecord> bossCameras;
     std::vector<AudioRecord> audio;
     std::vector<SoundRecord> sounds;
+    std::vector<std::array<Vec2, 9>> maps; ///< destination glow, then eight route dashes
 
     /** Parses a little-endian WDATA wad; throws FormatError. */
     static WorldDataFile parse(std::span<const u8> bytes);

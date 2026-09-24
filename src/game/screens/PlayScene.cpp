@@ -177,6 +177,7 @@ void PlayScene::close() {
     m_portals.clear();
     m_fixtures.clear();
     m_transition.release();
+    m_departure.clear();
     m_leaving = false;
     m_attacks.clear();
     m_arsenal.clear(); // before the figures whose models they fly
@@ -435,6 +436,9 @@ void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
  * seen it. */
 
 bool PlayScene::postHelp(s32 id, usize index, s32 number) {
+    if (m_world != nullptr && m_world->isTower() && HelpMessages::gameplayTip(id)) {
+        return false;
+    }
     return m_hud.postHelp(id, index, m_players, m_audio, number);
 }
 
@@ -933,6 +937,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_transition.update(seconds);
     m_towerRelics.animate(seconds);
     if (m_leaving) {
+        m_departure.update(ticks);
+        if (m_departure.finished()) {
+            m_transition.comeUp();
+        }
         m_world->update(seconds);
         m_effects.update(seconds);
         updateAmbience();
@@ -1086,7 +1094,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             portal.has_value() && leaveBy(*portal)) {
             m_opponents.settleRewards(m_players, opponentEvents());
             m_leaving = true;
-            m_transition.comeUp();
+            m_departure.begin(*m_device, m_weapons.textures);
+            m_audio.playNamed("S_EXITFLAME");
         }
     }
     // The camera keeps to those still standing, while anyone is.
@@ -1156,15 +1165,19 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_promotion.draw(device, clip, m_world->lighting());
     }
     for (const PlayerRuntime& runtime : m_players) {
-        if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower) {
-            const PlayerFigure& figure = *runtime.figure;
+        if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower &&
+            !m_departure.finished()) {
+            PlayerFigure& figure = *runtime.figure;
             const PowerupEffects worn =
                 PowerupEffects::of(runtime.actor.save().progress().inventory);
             const f32 size = bodyScale(runtime.actor.save(), worn);
-            const Mat4 body = glm::scale(runtime.capture.body().value_or(runtime.actor.transform()),
-                                         Vec3{size, size, size});
+            const Mat4 body = glm::scale(
+                m_departure.transform(runtime.capture.body().value_or(runtime.actor.transform())),
+                Vec3{size, size, size});
+            figure.setSkinTexture(m_departure.skin());
             figure.draw(device, clip, body, m_world->lighting(), worn.bodyAlpha(m_playSeconds),
                         runtime.move.weaponHidden());
+            figure.setSkinTexture(nullptr);
         }
     }
     m_portals.draw(device, clip, m_world->lighting());

@@ -731,6 +731,48 @@ TEST_CASE("in the fields a runestone is everyone's, a gargoyle piece the finder'
     scene.close();
 }
 
+TEST_CASE("tower play does not consume the first level's gameplay lessons",
+          "[game][screens][travel][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene scene;
+    const bool inTower = GENERATE(true, false);
+    if (!inTower) {
+        REQUIRE(world.load(device, root, *levels.byName("G1")));
+    }
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    PlayScene::Inputs use{};
+    use[0].usePotion = true;
+    scene.update(1.0 / 60.0, use);
+    const auto& seen = scene.actor(0)->save().helpSeen;
+    CHECK((std::ranges::find(seen, HelpMessages::kNoPotion) != seen.end()) == !inTower);
+    CHECK(scene.help().showing() == !inTower);
+    scene.close();
+}
+
 TEST_CASE("the whole party on one of the tower's portals travels to the level it names",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
@@ -765,9 +807,9 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
             leavingFrames += scene.leaving() ? 1 : 0;
         }
         REQUIRE(outcome == PlayOutcome::Travel);
-        // Through the portal, the transition picture took its two seconds to come up.
-        REQUIRE(leavingFrames >= 115);
-        REQUIRE(leavingFrames <= 125);
+        // Fifty ticks of sinking/spinning precede the two-second covering transition.
+        REQUIRE(leavingFrames >= 165);
+        REQUIRE(leavingFrames <= 175);
         REQUIRE(scene.transition().covering());
         REQUIRE(scene.destination().name == "G1");
         REQUIRE(scene.destination().realmId == 7);

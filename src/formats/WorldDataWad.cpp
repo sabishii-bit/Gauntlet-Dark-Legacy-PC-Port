@@ -199,6 +199,19 @@ WorldDataFile WorldDataFile::parse(std::span<const u8> bytes) {
             out.sounds.push_back(readSound(bytes, sounds->offset + usize{i} * kSoundSize));
         }
     }
+    if (const WadSection* maps = findWadSection(sections, "MAPS"); maps != nullptr) {
+        constexpr usize kMapSize = usize{9} * 2 * sizeof(f32);
+        requireRecords(bytes, *maps, kMapSize);
+        for (u32 i = 0; i < maps->count; ++i) {
+            std::array<Vec2, 9> points{};
+            for (usize p = 0; p < points.size(); ++p) {
+                const usize at = maps->offset + usize{i} * kMapSize + p * 2 * sizeof(f32);
+                points[p] = {readWadF32(bytes, at, kWhat),
+                             readWadF32(bytes, at + sizeof(f32), kWhat)};
+            }
+            out.maps.push_back(points);
+        }
+    }
     return out;
 }
 

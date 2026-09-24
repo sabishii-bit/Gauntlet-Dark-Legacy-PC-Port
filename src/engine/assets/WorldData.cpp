@@ -26,6 +26,11 @@ LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> ros
     level.title = json.value("title", std::string{});
     level.audioBank = json.value("audioBank", std::string{});
     level.movie = json.value("movie", std::string{});
+    if (const auto points = json.find("mapPoints"); points != json.end()) {
+        for (const auto& point : *points) {
+            level.mapPoints.emplace_back(point.at(0).get<f32>(), point.at(1).get<f32>());
+        }
+    }
     level.cameraIndex = json.value("cameraIndex", -1);
     level.audioIndex = json.value("audioIndex", -1);
     level.maxEnemies = json.value("maxEnemies", 25);

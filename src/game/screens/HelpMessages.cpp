@@ -77,6 +77,11 @@ Color HelpMessages::inkOf(s32 player) {
                : ScrollBox::kTextColor;
 }
 
+bool HelpMessages::gameplayTip(s32 id) {
+    return (id >= kDoorNeedsKey && id <= kBarrelsHold) || id == kUseTurbo ||
+           (id >= kBlastsDestroy && id <= kChestsExplode);
+}
+
 void HelpMessages::clear() {
     m_lines.clear();
     m_id = -1;

@@ -143,7 +143,8 @@ GameContext Gauntlet::context() {
 void Gauntlet::onUpdate(f64 deltaSeconds) {
     // Gameplay and editable menus own Escape; only passive screens treat it as quit.
     if (readMenuInput(input(), m_config.menu).escape && !m_tower.isOpen() && !m_pause.isOpen() &&
-        !(m_title.isOpen() && m_title.optionsOpen()) && !(m_select.isOpen() && m_select.typing())) {
+        !m_journey.has_value() && !(m_title.isOpen() && m_title.optionsOpen()) &&
+        !(m_select.isOpen() && m_select.typing())) {
         requestQuit();
     }
 
@@ -152,10 +153,7 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
     } else if (m_afterLevel.isOpen()) {
         updateAfterLevel(deltaSeconds);
     } else if (m_journey.has_value()) {
-        // The next level loads only once the picture has been put on screen.
-        if (m_journey->shown) {
-            finishJourney();
-        }
+        updateJourney(deltaSeconds);
     } else if (m_movieActive) {
         updateMovie(deltaSeconds);
     } else if (m_title.isOpen()) {
@@ -477,11 +475,52 @@ void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
     }
 }
 
+void Gauntlet::updateJourney(f64 deltaSeconds) {
+    Journey& journey = *m_journey;
+    if (!journey.shown) {
+        return;
+    }
+    if (!journey.presentationStarted) {
+        journey.presentationStarted = true;
+        m_levelLoading.open(context(), journey.destination);
+        journey.movie = m_levelLoading.movie();
+        // Present at least one frame of the map before advancing its clock.
+        return;
+    }
+    if (journey.movieStarted) {
+        bool skip = false;
+        for (const auto& member : journey.party) {
+            const auto menu =
+                readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(member.player));
+            skip = skip || menu.start;
+        }
+        if (!skip && m_movie.update(deltaSeconds)) {
+            return;
+        }
+        m_movie.close();
+        m_movieActive = false;
+        LevelLoadingScreen::rememberMovie(journey.movie, journey.party);
+        finishJourney();
+        return;
+    }
+    if (!m_levelLoading.update(static_cast<f32>(deltaSeconds))) {
+        return;
+    }
+    if (LevelLoadingScreen::movieWanted(journey.movie, journey.party) &&
+        startMovie(journey.movie)) {
+        journey.movieStarted = true;
+        m_levelLoading.close();
+        return;
+    }
+    finishJourney();
+}
+
 void Gauntlet::finishJourney() {
     GDL_VERIFY(m_journey.has_value(), "Finishing a journey requires a pending journey");
     const Journey journey = std::move(*m_journey);
     m_journey.reset();
     m_loadingPicture.release();
+    m_levelLoading.close();
     if (!startLevel(journey.destination, journey.party, journey.options) &&
         !startLevel(LevelRef::tower(), journey.party, journey.options) && !startTitleScreen()) {
         startNextAttractScreen();
@@ -500,11 +539,19 @@ void Gauntlet::onRender(RenderDevice& device) {
         return;
     }
     if (m_journey.has_value()) {
+        if (m_journey->movieStarted) {
+            m_movie.render(device, projection, Rect{0, 0, frameWidth, frameHeight});
+            return;
+        }
         const auto width = static_cast<f32>(m_config.display.virtualWidth);
         const auto height = static_cast<f32>(m_config.display.virtualHeight);
         m_canvas.begin(
             device, makeVirtualScreenTransform(projection, width, height, frameWidth, frameHeight));
-        m_loadingPicture.draw(m_canvas, width);
+        if (m_levelLoading.active()) {
+            m_levelLoading.draw(m_canvas, device, width);
+        } else {
+            m_loadingPicture.draw(m_canvas, width);
+        }
         m_canvas.end();
         m_journey->shown = true;
         return;
@@ -562,6 +609,7 @@ void Gauntlet::onShutdown() {
     m_tower.close();
     m_afterLevel.close();
     m_loadingPicture.release();
+    m_levelLoading.close();
     m_journey.reset();
     m_towerWorld.clear();
     m_smokeTest.shutdown();

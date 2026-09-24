@@ -79,6 +79,8 @@ struct LevelInfo {
     std::string title; ///< "Tower"
     std::string audioBank;
     std::string movie;
+    std::vector<Vec2>
+        mapPoints; ///< glow anchor followed by route dash anchors; negative means unused
     s32 cameraIndex = -1;
     s32 audioIndex = -1;
     s32 maxEnemies = 25; ///< how many enemies the place keeps about at once

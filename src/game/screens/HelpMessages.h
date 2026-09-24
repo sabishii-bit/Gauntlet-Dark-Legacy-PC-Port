@@ -83,6 +83,7 @@ public:
     static constexpr u8 kScrollAlpha = 128;
 
     static const HelpMessageSpec* specOf(s32 id);
+    static bool gameplayTip(s32 id);
     /** The ink a player's messages are written in. */
     static Color inkOf(s32 player);
 

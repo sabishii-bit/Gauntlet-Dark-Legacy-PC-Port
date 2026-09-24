@@ -36,6 +36,7 @@
 #include "game/screens/PartyMotion.h"
 #include "game/screens/PlayerAttacks.h"
 #include "game/screens/PlayerHealth.h"
+#include "game/screens/PortalDeparture.h"
 #include "game/screens/SumnerVisit.h"
 #include "game/screens/TowerPromotion.h"
 #include "game/screens/TowerRelics.h"
@@ -346,6 +347,7 @@ private:
     LevelArrivalPresentation m_arrival; ///< borrows the weapons archive
     bool m_welcomePending = false;
     bool m_leaving = false;
+    PortalDeparture m_departure;
     Intro m_intro = Intro::None;
 };
 

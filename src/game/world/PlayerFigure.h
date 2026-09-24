@@ -57,6 +57,11 @@ public:
     std::optional<u32> throwSound() const { return m_throwSound; }
     /** Lazily loads the costume colour's effect archive; null when unavailable. */
     ItemArchive* effects();
+    /** A temporary full-bright skin; null restores the costume's normal appearance. */
+    void setSkinTexture(const Texture* texture) {
+        m_model.setMaskedTexture(texture);
+        m_model.setAppearance(texture != nullptr);
+    }
 
 private:
     /** An unlockable class without its own archive borrows the class it shadows. */

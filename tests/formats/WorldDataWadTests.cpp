@@ -21,6 +21,16 @@ using namespace gdl::formats;
 using Catch::Approx;
 using test::ByteWriter;
 
+TEST_CASE("realm maps preserve their glow and route coordinates",
+          "[formats][wad][travel][assets]") {
+    const auto data = WorldDataFile::parse(readFile(test::assetOrSkip("WDATA/TOWN.WAD")));
+    REQUIRE(data.maps.size() == 5);
+    CHECK(data.maps[0][0] == Vec2{36, 164});
+    CHECK(data.maps[0][1] == Vec2{-1, -1});
+    CHECK(data.maps[1][1] == Vec2{56, 180});
+    CHECK(data.levels[0].mapIndex == 0);
+}
+
 /** A zeroed record that fields are written into at their offsets. */
 struct Record {
     std::vector<u8> bytes;
@@ -117,15 +127,22 @@ std::vector<u8> sampleWad() {
     const u32 cameraAt = levelAt + WorldDataFile::kLevelSize;
     const u32 audioAt = cameraAt + WorldDataFile::kCameraSize;
     const u32 soundAt = audioAt + WorldDataFile::kAudioSize;
-    const u32 directoryAt = soundAt + WorldDataFile::kSoundSize;
+    const u32 mapAt = soundAt + WorldDataFile::kSoundSize;
+    const u32 directoryAt = mapAt + 72;
 
     ByteWriter w;
-    w.putU32(directoryAt).putU32(5).putZeros(8);
+    w.putU32(directoryAt).putU32(6).putZeros(8);
     w.putBytes(world.bytes);
     w.putBytes(level.bytes);
     w.putBytes(camera.bytes);
     w.putBytes(audio.bytes);
     w.putBytes(sound.bytes);
+    Record map(72);
+    for (usize i = 0; i < 9; ++i) {
+        map.f32At(i * 8, i == 0 ? 36.0f : -1.0f);
+        map.f32At(i * 8 + 4, i == 0 ? 164.0f : -1.0f);
+    }
+    w.putBytes(map.bytes);
     const auto entry = [&](std::string_view reversedTag, u32 offset, u32 count) {
         w.putText(reversedTag).putU32(offset).putU32(count).putU32(count);
     };
@@ -134,6 +151,7 @@ std::vector<u8> sampleWad() {
     entry("SMAC", cameraAt, 1);
     entry("SDUA", audioAt, 1);
     entry("SDNS", soundAt, 1);
+    entry("SPAM", mapAt, 1);
     return w.bytes();
 }
 
@@ -141,7 +159,7 @@ TEST_CASE("a wad directory lists its sections with their tags the right way roun
           "[formats][wad]") {
     const std::vector<u8> bytes = sampleWad();
     const std::vector<WadSection> sections = readWadDirectory(bytes, "sample");
-    REQUIRE(sections.size() == 5);
+    REQUIRE(sections.size() == 6);
     REQUIRE(sections[0].tag == "WRLD");
     REQUIRE(sections[1].tag == "LEVL");
     REQUIRE(sections[1].offset == 36);
@@ -160,6 +178,9 @@ TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds"
           "[formats][wad][world]") {
     const WorldDataFile data = WorldDataFile::parse(sampleWad());
     REQUIRE(data.realm == 13);
+    REQUIRE(data.maps.size() == 1);
+    CHECK(data.maps[0][0] == Vec2{36, 164});
+    CHECK(data.maps[0][8] == Vec2{-1, -1});
     REQUIRE(data.prefix == "levelL");
     REQUIRE(data.levels.size() == 1);
     const LevelRecord& level = data.levels[0];
@@ -218,10 +239,13 @@ TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds"
 
     // A wad without the world header, or with records past its end, is rejected.
     std::vector<u8> bytes = sampleWad();
-    bytes[bytes.size() - usize{5} * 16] = 'X';
+    bytes[bytes.size() - usize{6} * 16] = 'X';
     REQUIRE_THROWS_AS(WorldDataFile::parse(bytes), FormatError);
     bytes = sampleWad();
-    bytes[bytes.size() - usize{4} * 16 + 8] = 200; // two hundred levels
+    bytes[bytes.size() - usize{5} * 16 + 8] = 200; // two hundred levels
+    REQUIRE_THROWS_AS(WorldDataFile::parse(bytes), FormatError);
+    bytes = sampleWad();
+    bytes[bytes.size() - 16 + 8] = 200; // two hundred map coordinate records
     REQUIRE_THROWS_AS(WorldDataFile::parse(bytes), FormatError);
 }
 
