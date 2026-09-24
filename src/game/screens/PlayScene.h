@@ -215,6 +215,8 @@ public:
     const LevelRef& destination() const { return m_destination; }
     /** The party as it stands, with all it has gathered, for the next level. */
     std::vector<PartyMember> party() const;
+    /** Associates a manual save with the live participant without restarting the level. */
+    void setSaveSlot(s32 player, std::optional<usize> slot);
     std::vector<LevelResults> levelResults() const;
     const EffectTrees& effects() const { return m_effects; }
     /** The powerup selector over `player`'s box. */

@@ -20,6 +20,9 @@ std::shared_ptr<AudioStream> AudioMixer::createStream(const AudioStreamDesc& des
 void AudioMixer::mix(std::span<f32> stereoOut) {
     std::ranges::fill(stereoOut, 0.0f);
     const std::scoped_lock lock(m_mutex);
+    if (m_paused) {
+        return;
+    }
     for (const auto& stream : m_streams) {
         stream->mixInto(stereoOut);
     }
@@ -28,6 +31,11 @@ void AudioMixer::mix(std::span<f32> stereoOut) {
         return stream->drained() || abandoned;
     });
     limit(stereoOut);
+}
+
+void AudioMixer::setPaused(bool paused) {
+    const std::scoped_lock lock(m_mutex);
+    m_paused = paused;
 }
 
 void AudioMixer::limit(std::span<f32> stereoOut) {

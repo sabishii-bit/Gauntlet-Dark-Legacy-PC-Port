@@ -245,7 +245,10 @@ void SelectLane::openListMenu(State state) {
         for (usize i = 0; i < slots.count(); ++i) {
             const SaveSlotInfo& info = slots.slot(i);
             MenuItem item;
-            item.text = info.exists ? info.name : std::string(text("select.empty"));
+            item.text =
+                info.exists
+                    ? info.name
+                    : std::string(text(info.occupied ? "files.unreadable" : "select.empty"));
             item.code = kMenuSlotBase + static_cast<s32>(i);
             item.enabled = state == State::SavePick || info.exists;
             definition.items.push_back(item);
@@ -500,7 +503,7 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
         } else if (event.action == MenuAction::Choice && event.code >= kMenuSlotBase) {
             const auto slot = static_cast<usize>(event.code - kMenuSlotBase);
             const bool inUse = (frame.slotsInUse & (1U << slot)) != 0;
-            if (m_state == State::LoadPick && inUse) {
+            if (inUse) {
                 play(SelectSound::Buzzer);
                 break;
             }
@@ -511,7 +514,7 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
                 enter(State::Loading);
             } else {
                 const bool exists = m_services != nullptr && m_services->slots != nullptr &&
-                                    m_services->slots->slot(slot).exists;
+                                    m_services->slots->slot(slot).occupied;
                 enter(exists ? State::OverwriteConfirm : State::Saving);
             }
         } else if (event.action == MenuAction::Moved) {

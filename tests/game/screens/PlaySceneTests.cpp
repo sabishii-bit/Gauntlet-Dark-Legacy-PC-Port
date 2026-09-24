@@ -121,6 +121,16 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     REQUIRE(scene.figureDirectory(usize{0}) == scene.figureDirectory(s32{3}));
     REQUIRE(scene.figureDirectory(usize{1}) == scene.figureDirectory(s32{1}));
 
+    const auto positionBeforeSave = scene.actor(3)->position();
+    const auto characterBeforeSave = scene.actor(3)->save().toJson();
+    scene.setSaveSlot(3, 5);
+    scene.setSaveSlot(0, 6); // absent input id is not a vector index
+    CHECK(scene.party()[0].slot == 5);
+    CHECK(scene.party()[1].slot == 2);
+    CHECK(scene.actor(3)->position() == positionBeforeSave);
+    CHECK(scene.actor(3)->save().toJson() == characterBeforeSave);
+    scene.setSaveSlot(3, 7);
+
     scene.hurtPlayer(3, 100.0f, HurtKind::Blow);
     REQUIRE(scene.actor(3)->save().health() == 200);
     REQUIRE(scene.actor(1)->save().health() == 700);

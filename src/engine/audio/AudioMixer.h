@@ -32,6 +32,9 @@ public:
 
     usize streamCount() const;
 
+    /** Silences output without consuming queued audio, preserving paused scene cues. */
+    void setPaused(bool paused);
+
 private:
     /** Turns the mix down wherever it would pass the ceiling. */
     void limit(std::span<f32> stereoOut);
@@ -40,6 +43,7 @@ private:
     f32 m_releaseStep; ///< how far the limiter's gain rises per frame
     f32 m_limiterGain = 1.0f;
     mutable std::mutex m_mutex;
+    bool m_paused = false;
     std::vector<std::shared_ptr<AudioStream>> m_streams;
 };
 

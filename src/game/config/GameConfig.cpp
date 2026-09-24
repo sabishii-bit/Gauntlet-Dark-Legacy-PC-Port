@@ -119,6 +119,7 @@ void GameConfig::mergeJson(std::string_view json) {
     }
     if (root.contains("camera")) {
         read(root.at("camera"), "horizontalFovDegrees", camera.horizontalFovDegrees);
+        read(root.at("camera"), "compass", camera.compass);
     }
     if (root.contains("audio")) {
         const Json& a = root.at("audio");
@@ -231,7 +232,8 @@ std::string GameConfig::toJson() const {
                        {"maxFrameRate", display.maxFrameRate}};
     root["timing"] = {{"tickRate", timing.tickRate},
                       {"gameplayFrameRate", timing.gameplayFrameRate}};
-    root["camera"] = {{"horizontalFovDegrees", camera.horizontalFovDegrees}};
+    root["camera"] = {{"horizontalFovDegrees", camera.horizontalFovDegrees},
+                      {"compass", camera.compass}};
     root["audio"] = {{"masterVolume", audio.masterVolume},
                      {"musicVolume", audio.musicVolume},
                      {"effectsVolume", audio.effectsVolume}};
@@ -300,7 +302,7 @@ std::string GameConfig::toJson() const {
 
 void GameConfig::saveFile(const std::filesystem::path& file) const {
     std::filesystem::create_directories(file.parent_path());
-    writeTextFile(file, toJson());
+    replaceTextFile(file, toJson());
 }
 
 f32 DifficultyConfig::gain() const {

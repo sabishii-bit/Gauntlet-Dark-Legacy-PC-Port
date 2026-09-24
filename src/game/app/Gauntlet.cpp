@@ -130,16 +130,20 @@ GameContext Gauntlet::context() {
     }
     context.levels = &m_levels;
     context.unpackedRoot = m_options.unpackedDirectory;
+    context.saveSettings = [this](const GameConfig& config) { return saveSettings(config); };
     return context;
 }
 
 void Gauntlet::onUpdate(f64 deltaSeconds) {
-    // Escape quits, except while a name is being typed, where it leaves the name instead.
-    if (readMenuInput(input(), m_config.menu).escape && !(m_select.isOpen() && m_select.typing())) {
+    // Gameplay and editable menus own Escape; only passive screens treat it as quit.
+    if (readMenuInput(input(), m_config.menu).escape && !m_tower.isOpen() && !m_pause.isOpen() &&
+        !(m_title.isOpen() && m_title.optionsOpen()) && !(m_select.isOpen() && m_select.typing())) {
         requestQuit();
     }
 
-    if (m_afterLevel.isOpen()) {
+    if (m_pause.isOpen()) {
+        updatePause(deltaSeconds);
+    } else if (m_afterLevel.isOpen()) {
         updateAfterLevel(deltaSeconds);
     } else if (m_journey.has_value()) {
         // The next level loads only once the picture has been put on screen.
@@ -184,7 +188,7 @@ void Gauntlet::updateMovie(f64 deltaSeconds) {
 
 void Gauntlet::updateTitle(f64 deltaSeconds) {
     const TitleOutcome outcome =
-        m_title.update(deltaSeconds, readMenuInput(input(), m_config.menu));
+        m_title.update(deltaSeconds, readMenuInput(input(), m_config.menu), &input());
     if (outcome == TitleOutcome::Running) {
         return;
     }
@@ -284,6 +288,20 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
 }
 
 void Gauntlet::updateTower(f64 deltaSeconds) {
+    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
+        if (m_tower.actor(player) == nullptr) {
+            continue;
+        }
+        const auto menu = readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
+        if (((menu.start && !menu.select) || menu.escape) &&
+            m_pause.open(renderDevice(), context(), m_tower.party(), player)) {
+            m_audio->mixer().setPaused(true);
+            for (auto& controls : m_controls) {
+                controls.reset();
+            }
+            return;
+        }
+    }
     PlayScene::Inputs inputs;
     for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
         const MenuInputSource source = MenuInputSource::forPlayer(player);
@@ -359,6 +377,65 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     }
 }
 
+bool Gauntlet::saveSettings(const GameConfig& config) {
+    try {
+        config.saveFile(GameConfig::userSettingsPath());
+        m_config = config;
+        m_sounds->setMasterVolume(config.audio.masterVolume);
+        m_sounds->setCategoryVolume(SoundCategory::Music, config.audio.musicVolume);
+        m_sounds->setCategoryVolume(SoundCategory::Effects, config.audio.effectsVolume);
+        for (auto& controls : m_controls) {
+            controls.reset();
+        }
+        return true;
+    } catch (const std::exception& e) {
+        log::warn("Could not save settings: {}", e.what());
+        return false;
+    }
+}
+
+void Gauntlet::updatePause(f64 deltaSeconds) {
+    const auto source = MenuInputSource::forPlayer(m_pause.player());
+    const auto outcome =
+        m_pause.update(deltaSeconds, readMenuInput(input(), m_config.menu, source), &input());
+    if (outcome == PauseOutcome::Running) {
+        return;
+    }
+    const auto party = m_pause.party();
+    // Only successful saves attach the running characters to new slots. A loaded
+    // character belongs to the replacement scene, never the one being discarded.
+    if (outcome != PauseOutcome::Reload) {
+        for (const auto& member : party) {
+            m_tower.setSaveSlot(member.player, member.slot);
+        }
+    }
+    m_pause.close();
+    m_audio->mixer().setPaused(false);
+    for (auto& controls : m_controls) {
+        controls.reset();
+    }
+    if (outcome == PauseOutcome::Resume) {
+        return;
+    }
+    if (outcome == PauseOutcome::Title) {
+        keepParty();
+        m_tower.close();
+        if (!startTitleScreen()) {
+            startNextAttractScreen();
+        }
+        return;
+    }
+    // Loading restores characters in the tower, not a snapshot of transient enemies.
+    // Do not autosave the discarded level over the character just loaded.
+    m_tower.close();
+    PlayOptions options;
+    options.welcome = false;
+    options.arriving = true;
+    if (!startTower(party, options) && !startTitleScreen()) {
+        startNextAttractScreen();
+    }
+}
+
 void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
     ShopSession::Inputs inputs;
     for (s32 player = 0; player < 4; ++player) {
@@ -419,6 +496,9 @@ void Gauntlet::onRender(RenderDevice& device) {
     }
     if (m_tower.isOpen()) {
         m_tower.render(device, projection, frameWidth, frameHeight);
+        if (m_pause.isOpen()) {
+            m_pause.render(device, projection, frameWidth, frameHeight);
+        }
         return;
     }
     m_smokeTest.render(device, projection, static_cast<f32>(clock().totalSeconds()));
@@ -428,7 +508,9 @@ void Gauntlet::onRender(RenderDevice& device) {
  * with all they have gathered; a character never saved has no slot and is not kept. */
 void Gauntlet::keepParty() {
     std::vector<PartyMember> party;
-    if (m_afterLevel.isOpen()) {
+    if (m_pause.isOpen()) {
+        party = m_pause.party();
+    } else if (m_afterLevel.isOpen()) {
         party = m_afterLevel.session().party();
     } else if (m_tower.isOpen()) {
         party = m_tower.party();
@@ -446,6 +528,7 @@ void Gauntlet::keepParty() {
 
 void Gauntlet::onShutdown() {
     keepParty();
+    m_pause.close();
     m_movie.close();
     m_title.close();
     m_select.close();

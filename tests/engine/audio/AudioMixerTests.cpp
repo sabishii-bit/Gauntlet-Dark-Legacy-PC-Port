@@ -76,4 +76,20 @@ TEST_CASE("abandoned empty streams are dropped", "[audio][mixer]") {
     REQUIRE(mixer.streamCount() == 0);
 }
 
+TEST_CASE("pausing silences audio without consuming the stream", "[audio][mixer]") {
+    AudioMixer mixer(48000);
+    const auto stream = mixer.createStream({48000, 1});
+    stream->push(std::array<f32, 2>{0.25f, 0.25f});
+    const auto queued = stream->queuedSeconds();
+    std::array<f32, 4> output{1, 1, 1, 1};
+    mixer.setPaused(true);
+    mixer.mix(output);
+    CHECK(output == std::array<f32, 4>{0, 0, 0, 0});
+    CHECK(stream->queuedSeconds() == queued);
+    mixer.setPaused(false);
+    mixer.mix(output);
+    CHECK_THAT(output[0], WithinAbs(0.25, kEpsilon));
+    CHECK(stream->queuedSeconds() < queued);
+}
+
 } // namespace

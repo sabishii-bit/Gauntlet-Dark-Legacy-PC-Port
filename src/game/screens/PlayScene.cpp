@@ -10,6 +10,7 @@
 #include "engine/core/Types.h"
 #include "engine/world/WorldCamera.h"
 
+#include "game/menu/CompassHud.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/Progression.h"
 #include "game/world/CameraMovementLimit.h"
@@ -1193,6 +1194,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
+        if (config.camera.compass) {
+            CompassHud::draw(m_canvas, m_messages.text(), m_context.strings, width,
+                             viewCamera().yaw);
+        }
         m_opponents.meter().draw(m_canvas, device);
         m_bossSequence.victory().drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width,
                                              height);
@@ -1218,6 +1223,15 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     m_sumnerVisit.draw(m_canvas, m_messages.text());
     m_canvas.end();
+}
+
+void PlayScene::setSaveSlot(s32 player, std::optional<usize> slot) {
+    for (auto& runtime : m_players) {
+        if (runtime.actor.player() == player) {
+            runtime.slot = slot;
+            return;
+        }
+    }
 }
 
 CameraView PlayScene::cameraView() const {

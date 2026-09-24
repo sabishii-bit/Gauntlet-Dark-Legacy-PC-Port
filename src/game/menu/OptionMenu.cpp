@@ -165,6 +165,9 @@ MenuEvent OptionMenu::update(const MenuInput& input, s32 ticks) {
         return input.back ? MenuEvent{MenuAction::Back, 0} : MenuEvent{};
     }
     if (input.select || (m_definition.startSelects && input.start)) {
+        if (!m_definition.items[static_cast<usize>(m_selection)].enabled) {
+            return {};
+        }
         return MenuEvent{MenuAction::Choice,
                          m_definition.items[static_cast<usize>(m_selection)].code};
     }

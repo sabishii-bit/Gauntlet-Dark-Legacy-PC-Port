@@ -29,6 +29,7 @@ struct TimingConfig {
 
 struct CameraConfig {
     f32 horizontalFovDegrees = 60.0f;
+    bool compass = true;
 };
 
 struct AudioConfig {

@@ -42,6 +42,7 @@ struct CharacterSave {
 /** What a slot holds, without reading the whole save. */
 struct SaveSlotInfo {
     bool exists = false;
+    bool occupied = false; ///< a file exists, even when corrupt and not loadable
     std::string name;
     s32 character = 0;
     s32 color = 0;
