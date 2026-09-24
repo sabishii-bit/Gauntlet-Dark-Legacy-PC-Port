@@ -35,6 +35,10 @@ public:
                 RenderDevice& device, EffectTrees& effects, const PlaySound& sound);
     void clear(EffectTrees& effects);
     std::vector<CombatantProjectileHit> takeHits();
+    /** Expired SFXX 0x20000 effects leave a stage-owned BOSSGEN at this placement. */
+    std::vector<Mat4> takeGenerators();
+    /** SFXX 0x400000 invokes the boss summon callback on collision or expiration. */
+    std::vector<Mat4> takeSummons();
     usize count() const { return m_flying.size(); }
 
 private:
@@ -47,16 +51,22 @@ private:
         Vec3 rotation{0.0f};
         u32 effect = 0;
         bool morphed = false;
-        bool stuck = false;     ///< stationary sticky impact, no longer a flying missile
+        bool stuck = false;   ///< stationary sticky impact, no longer a flying missile
+        bool settled = false; ///< generator projectile's impact is finishing before placement
+        bool leavesGenerator = false;
+        bool summonsEnemies = false;
         f32 contactSeconds = 0; ///< sticky contacts advance on the authored 30 Hz game clock
         s32 piercedPlayer = -1; ///< reflecting shots spend their pass-through on first contact
     };
     u32 show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
              const PlaySound& sound, f32 life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
+    void summon(Flying& flying);
     std::vector<Flying> m_flying;
     std::vector<u32> m_emittedEffects; ///< impacts and end effects still borrow the launch archive
     std::vector<CombatantProjectileHit> m_hits;
+    std::vector<Mat4> m_generators;
+    std::vector<Mat4> m_summons;
     std::mt19937 m_random;
 };
 } // namespace gdl::game

@@ -199,9 +199,11 @@ f32 LegendShow::burstSecondsOf(s32 kind) {
 
 Vec3 LegendShow::bossOffsetOf(s32 kind) {
     switch (kind) {
-    case 39: return Vec3{-2.4375f, -2.3125f, 3.33203125f};
-    case 40: return Vec3{0.0f, -2.3125f, 2.5625f};
-    case 42: return Vec3{0.0f, 2.765625f, 2.125f};
+    // PlayerMotion reads these pool entries with lfd, not lfs. Reading only
+    // their high words put the stationary effects close to the boss's feet.
+    case 39: return Vec3{-7.0f, -5.0f, 85.0f};
+    case 40: return Vec3{0.0f, -5.0f, 10.0f};
+    case 42: return Vec3{0.0f, 17.0f, 3.0f};
     default: return Vec3{0.0f, 0.0f, 0.0f};
     }
 }

@@ -197,7 +197,9 @@ TEST_CASE("the rite is shown by the boss's kind: the hold, the gesture, the flig
     REQUIRE(LegendShow::restingTreeOf(39) == "LEGENDFX");
     REQUIRE(LegendShow::burstTreeOf(39) == "LEGENDFX2");
     REQUIRE(LegendShow::bossOffsetOf(41) == Vec3{0.0f, 0.0f, 0.0f});
-    REQUIRE(LegendShow::bossOffsetOf(40).z == Approx(2.5625f));
+    REQUIRE(LegendShow::bossOffsetOf(39) == Vec3{-7, -5, 85});
+    REQUIRE(LegendShow::bossOffsetOf(40) == Vec3{0, -5, 10});
+    REQUIRE(LegendShow::bossOffsetOf(42) == Vec3{0, 17, 3});
     // The sounds are the realm's, by letter, with the dream's throw as the bank misspells it.
     REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::PickedUp, 'G').front() == "S_LEGWPUP");
     REQUIRE(LegendShow::soundNamesOf(LegendShow::Sound::Thrown, 'G').front() == "S_GLEGWTHROW");

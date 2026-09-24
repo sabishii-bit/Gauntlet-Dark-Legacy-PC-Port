@@ -714,8 +714,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   ticks (`pausecnt` with the `SEETHROUGH` texture), blinds
   the genie 1800 and the plague fiend 18000 (`unkAC6`: no targets, turning
   at a tenth), or curbs the attacks whose damage entry has flag 0x4000
-  (`unkAC8`: the spider's for good at 0.8 scale, tinted green in the
-  original, the yeti's, wraith's and temple's for 29 s from its roar).
+  (`unkAC8`: the spider's for good at 0.8 scale with green (64,255,64)
+  body tint, the yeti's, wraith's and temple's for 29 s from its roar).
   `LegendRite` stages it as the original does (`lbl_8034489C` and the
   bearer's `quest_state`): `Bosses::bringLegend(player)` at the level's
   start for the first of the party with the item; the boss holds `READY`
@@ -843,7 +843,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `BossVictory` checks the party's first twelve runes for the Temple follow-up;
   S_E2VOXA/B is selected once before the first caption, not replayed per page.
   Both Skorne victory wizards use fixed position (0,-12,6), not the ordinary
-  boss/party midpoint. This pass does not certify visual parity or complete
+  boss/party midpoint. Savior applies its damage on the bearer's release cue,
+  once, not when the casting gesture is requested. Its boss-relative effect
+  position is (0,17,3); the Yeti/Wraith positions are (-7,-5,85)/(0,-5,10).
+  Boss defeat/rewards begin after the dying actor is removed, not at the lethal
+  hit. The death animation still owns its coin/relic spew. Boss-key art/audio
+  are restricted to kinds below 42. Savior barrier occlusion remains unverified.
+  This pass does not certify visual parity or complete
   the separate Underworld (`SKORNE2`) encounter. General SFXX floor-alignment,
   camera shakes and custom callbacks still need their own retail validation.
 * Boss locomotion has two encounter roles; neither role implies melee-only
@@ -908,9 +914,28 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   no node and zero offset: adding TYPE.originOffset incorrectly raised the gravel
   ten units. Synthetic attachment tests and the retail START cue cover this.
   Remaining combat work includes Lich grabs/sticky hands, whirlwind player motion,
-  effect-spawned BOSSGEN instances, effect-owned impact damage/trails, SFXX camera
-  shakes and the Lich's arena-dirt visibility cue. Playing a move or its visual
+  effect-owned impact damage/trails and SFXX camera shakes. Playing a move or its visual
   is not evidence these gameplay paths are implemented.
+* Spider Queen's `[spider]` coverage includes all thirteen attack families,
+  all five projectile records and the 22-unit home bound. Bellows poison,
+  shrink and tint apply at the player's release cue; its three-second plume
+  follows the bearer's full yaw. Use `python scripts/scenario.py spider-bellows`.
+  `CombatantProjectiles` preserves SFXX 0x20000 through egg impact/expiration,
+  then requests a stage-owned BOSSGEN. `Generators::placeBoss` uses the level's
+  first enemy kind, forty-tick birth delay and ordinary population/rate scales;
+  generators can be destroyed. Spider Queen and Lich share this path. The D5
+  integration test requires actual spider births, not merely egg visuals.
+  Missing BOSSGEN art is not replaced with an invented mesh.
+  A zero-frame effect sequence lasts thirty frames at its authored rate unless
+  an explicit lifetime overrides it; immediately expiring it creates eggs in
+  midair before their trajectory can reach the floor.
+  Garm is different: NODE break records reference projectile damage 1/2, whose
+  SFXX 0x400000 calls BossGenerateEnemy on collision or expiration. Its callback
+  creates two tier-three GRM minions three units out at +/- pi/4. The projectile
+  completion queue and level callback are supported, but Garm's destructible
+  body-part health/model replacement and launch trigger remain unfinished.
+  His MOVE list never references damage 1/2; do not invent a summoning attack
+  or treat an idle attack-census test as coverage of this mechanic.
 * Spider Queen and Wraith's type-2 attacks use `CritterArea` and
   `CombatantAreas`: constant-radius root-attached sectors, independent of
   the move's remaining frames and of whether their SFXX has visible artwork.

@@ -83,6 +83,7 @@ private:
     void awardCritterLosses(std::span<const PlayerRuntime> players, const Events& events);
     void showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss);
     void followCritterEffects();
+    void finishSummons(std::span<const EnemyView> players);
     std::optional<Resources> m_resources;
     Enemies m_enemies;
     Generators m_generators;

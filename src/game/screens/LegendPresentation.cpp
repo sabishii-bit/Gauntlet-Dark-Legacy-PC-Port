@@ -1,6 +1,7 @@
 #include "game/screens/LegendPresentation.h"
 
 #include <algorithm>
+#include <cmath>
 #include <string>
 #include <utility>
 
@@ -119,6 +120,7 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
     if (!bearer.has_value() || m_player < 0 || bearer->player != m_player) {
         return result;
     }
+    const bool wasReleased = m_released;
     if (m_gestureOwed) {
         if (!bearer->canGesture) {
             m_gestureOwed = false;
@@ -131,6 +133,9 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
     }
     if (bearer->released) {
         release(*bearer, target);
+    }
+    if ((m_kind == 37 || m_kind == 42) && !wasReleased && m_released) {
+        result.landed = true;
     }
     if (m_held != 0) {
         if (m_effects.playing(m_held)) {
@@ -149,7 +154,10 @@ LegendPresentation::Update LegendPresentation::update(f32 seconds,
             result.landed = true;
         }
     } else if (m_flying != 0 && LegendShow::flightOf(m_kind) == LegendShow::Flight::WithBearer) {
-        m_effects.moveTo(m_flying, bearer->position + bearer->facing * LegendShow::kAhead);
+        const Mat4 root =
+            glm::rotate(glm::translate(Mat4{1}, bearer->position),
+                        std::atan2(bearer->facing.x, bearer->facing.z), Vec3{0, 1, 0});
+        m_effects.placeAt(m_flying, glm::translate(root, Vec3{0, 0, LegendShow::kAhead}));
     }
     return result;
 }

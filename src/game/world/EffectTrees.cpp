@@ -134,6 +134,13 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     } else {
         effect->player.start(effect->tree->sequences[0], 0);
         effect->pose.evaluate(*effect->tree, 0, 0.0f);
+        // StartFXTree substitutes thirty frames for an empty sequence, using
+        // that sequence's rate. It is a timed still, not a completed animation.
+        const auto& sequence = effect->tree->sequences[0];
+        if (sequence.frames == 0 && !effect->timed) {
+            effect->timed = true;
+            effect->secondsLeft = 30.0f * effect->player.secondsPerFrame();
+        }
     }
     if (!bindVisuals(*effect)) {
         return 0;

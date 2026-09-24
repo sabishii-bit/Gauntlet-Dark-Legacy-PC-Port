@@ -6,6 +6,7 @@
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -16,6 +17,33 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("zero-frame effects retain the thirty-frame fallback at their authored rate",
+          "[game][world][effects]") {
+    const auto root = test::scratchDirectory("effect-zero-frame");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json",
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"STILL","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"ACTIVE","frames":0,"frameRate":60}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    REQUIRE(effects.start(device, archive, "STILL", Vec3{0}));
+    REQUIRE(effects.effect(0).secondsLeft == Catch::Approx(2));
+    effects.update(1.9f);
+    REQUIRE(effects.count() == 1);
+    effects.update(0.11f);
+    REQUIRE(effects.count() == 0);
+    EffectTrees::Setting setting;
+    setting.seconds = 3;
+    REQUIRE(effects.startSet(device, archive, "STILL", Vec3{0}, setting) != 0);
+    REQUIRE(effects.effect(0).secondsLeft == Catch::Approx(3));
+}
 
 TEST_CASE("effect transforms retain pitch roll and scale from a full attachment",
           "[game][world][effects]") {

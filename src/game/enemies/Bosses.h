@@ -65,8 +65,8 @@ public:
     /** Begins the rite of the boss's legend item, carried by `player`; false when the boss
      * has none, or it is already begun. */
     bool bringLegend(s32 player);
-    /** The Dragon's ice axe and Genie's lamp act on impact, not on the request to throw them.
-     * Repeated impacts are ignored. Appearance is supplied separately at draw time. */
+    /** The axe/lamp act on impact; the Savior acts when the casting gesture releases it.
+     * Repeated notifications are ignored. Appearance is supplied separately at draw time. */
     void landLegend();
     const LegendRite& legend() const { return m_rite; }
 
@@ -82,6 +82,8 @@ public:
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatGrab> takeGrabs() { return m_fighter.takeGrabs(); }
     std::vector<CombatLoss> takeLosses();
+    /** One notification after the death animation and hold finish, not on the lethal hit. */
+    std::optional<Vec3> takeDefeat();
     std::vector<CombatCue> takeCues() { return m_fighter.takeCues(); }
     std::vector<CombatShot> takeShots() { return m_fighter.takeShots(); }
     /** What its death threw out: the coins it spews. */
@@ -137,12 +139,15 @@ private:
     f32 m_textureFrames = 0;
     std::optional<s32> m_id;
     std::optional<Vec3> m_cameraBase;
+    std::optional<Vec3> m_defeat;
+    Vec3 m_rewardOffset{0}; ///< retained through removal for the victory presentation
     s32 m_kind = -1;
     std::string m_name;
     bool m_awake = false;
     f32 m_wakeDistance = 0.0f;
     LegendRite m_rite;
     bool m_roarAsked = false;
+    bool m_legendStruck = false;
     std::vector<LegendEvent> m_legendEvents;
 };
 

@@ -89,6 +89,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
                       const WorldCollision* collision, const GeneratorScales& scales, s32 players,
                       std::span<const LevelEnemy> roster) {
     clear();
+    m_scales = scales;
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     for (const ItemInstance& instance : layout.itemInstances()) {
         if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size()) {
@@ -151,8 +152,43 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         generator.box.halfAlong = info.zSize > 0.0f ? info.zSize : info.radius;
         generator.box.height = info.height;
         generator.countdown = 0;
-        m_generators.push_back(generator);
+        m_generators.push_back(std::move(generator));
     }
+    return true;
+}
+
+bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items,
+                           Enemies& enemies, s32 kind, const Mat4& placement,
+                           const WorldCollision* collision) {
+    if (info.type != ItemInfo::kGenerator || info.name != "BOSSGEN" || kind < 0 ||
+        kind >= kEnemyKindCount || !enemies.loadKind(kind)) {
+        return false;
+    }
+    Generator generator;
+    generator.boss = true;
+    generator.kind = kind;
+    generator.tier = 1;
+    generator.state = 1;
+    // PlaceItem's default instance has strength one, AI zero and a forty-tick birth wait.
+    generator.algorithm = 0;
+    generator.countdown = 40;
+    generator.most = static_cast<s32>(static_cast<f32>(kDefaultMost[0]) * m_scales.most);
+    generator.interval = static_cast<s32>(static_cast<f32>(kDefaultInterval[0]) * m_scales.rate);
+    generator.health = generator.threshold = static_cast<f32>(info.hitPoints) * m_scales.health;
+    generator.armor = static_cast<f32>(info.armor);
+    ItemInstance instance;
+    instance.position = Vec3{placement[3]};
+    instance.rotation.y = std::atan2(placement[2].x, placement[2].z);
+    generator.bossFigure = std::make_unique<ItemFigure>();
+    // A missing BOSSGEN tree does not prevent PlaceItem from creating its gameplay object.
+    generator.bossFigure->place(device, items, "BOSSGEN", instance, collision);
+    generator.bossFigure->play(0, true);
+    generator.position = generator.bossFigure->position();
+    generator.yaw = instance.rotation.y;
+    generator.direction = Vec3{std::sin(generator.yaw), 0, std::cos(generator.yaw)};
+    generator.clearance = info.height;
+    generator.box = generator.bossFigure->obstacle(info);
+    m_generators.push_back(std::move(generator));
     return true;
 }
 
@@ -184,6 +220,9 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
     }
     for (usize g = 0; g < m_generators.size(); ++g) {
         Generator& generator = m_generators[g];
+        if (generator.bossFigure != nullptr && generator.state > 0) {
+            generator.bossFigure->update(static_cast<f32>(ticks) / 60.0f);
+        }
         if (generator.state <= 0 || generator.tier <= 0 || generator.most <= 0) {
             continue;
         }
@@ -326,6 +365,12 @@ std::vector<Obstacle> Generators::obstacles() const {
 
 void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
     for (const Generator& generator : m_generators) {
+        if (generator.boss) {
+            if (generator.state > 0 && generator.bossFigure != nullptr) {
+                generator.bossFigure->draw(device, clip, lighting);
+            }
+            continue;
+        }
         const Bodies* bodies = bodiesOf(generator.kind);
         if (bodies == nullptr) {
             continue;
@@ -351,6 +396,10 @@ bool Generators::bodyShown(s32 id) const {
         return false;
     }
     const Generator& generator = m_generators[static_cast<usize>(id)];
+    if (generator.boss) {
+        return generator.state > 0 && generator.bossFigure != nullptr &&
+               generator.bossFigure->hasFigure();
+    }
     const Bodies* bodies = bodiesOf(generator.kind);
     return bodies != nullptr &&
            bodies->models[static_cast<usize>(std::clamp(generator.state, 0, kStates))].bound();

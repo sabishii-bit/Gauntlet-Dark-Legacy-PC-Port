@@ -293,6 +293,22 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     m_combatantProjectiles.update(seconds, &m_resources->world.collision(), views,
                                   m_resources->device, m_resources->effects, shotSound);
+    for (const Mat4& placement : m_combatantProjectiles.takeGenerators()) {
+        if (level == nullptr || level->enemies.empty() || !m_bosses.view().alive) {
+            continue;
+        }
+        const s32 kind = level->enemies.front().kind;
+        if (kind == level->bossType) {
+            continue;
+        }
+        for (const ItemInfo& info : m_resources->world.layout().itemInfos()) {
+            if (info.type == ItemInfo::kGenerator && info.name == "BOSSGEN") {
+                m_generators.placeBoss(m_resources->device, info, m_resources->world.items(),
+                                       m_enemies, kind, placement, &m_resources->world.collision());
+                break;
+            }
+        }
+    }
     for (const CombatantProjectileHit& hit : m_combatantProjectiles.takeHits()) {
         for (usize player = 0; player < players.size(); ++player) {
             if (players[player].actor.player() == hit.player &&
@@ -339,6 +355,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         showCritterCue(cue, m_critters.archiveOf(cue.critter), false);
     }
     followCritterEffects();
+    finishSummons(views);
     for (const CombatBlow& blow : m_critters.takeBlows()) {
         applyCritterBlow(blow, players, events);
     }
@@ -489,6 +506,36 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     }
 }
 
+void LevelOpponents::finishSummons(std::span<const EnemyView> players) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    for (const Mat4& placement : m_combatantProjectiles.takeSummons()) {
+        if (!m_bosses.view().alive || m_bosses.view().kind != 44) {
+            continue;
+        }
+        // BossGenerateEnemy: two tier-three Garm minions, three units out,
+        // yawed by +/- pi/4 from the summoning effect's forward direction.
+        constexpr s32 kGarmMinion = 27;
+        constexpr f32 kOffset = 3;
+        constexpr f32 kYaw = 0.7853981633974483f;
+        if (m_enemies.loadKind(kGarmMinion)) {
+            const Vec3 origin{placement[3]};
+            const Vec3 forward = glm::normalize(Vec3{placement[2]});
+            for (const f32 yaw : {kYaw, -kYaw}) {
+                EnemySpawn spawn;
+                spawn.kind = kGarmMinion;
+                spawn.tier = 3;
+                spawn.direction = Vec3{glm::rotate(Mat4{1}, yaw, Vec3{0, 1, 0}) * Vec4{forward, 0}};
+                spawn.position = origin + kOffset * spawn.direction;
+                spawn.clearance = 1;
+                spawn.placed = true;
+                m_enemies.spawn(spawn, players);
+            }
+        }
+    }
+}
+
 /** Effects riding on the great ones go where they go, and are let go of when they end. */
 void LevelOpponents::followCritterEffects() {
     if (!m_resources.has_value()) {
@@ -545,10 +592,12 @@ void LevelOpponents::awardBossLosses(std::span<const PlayerRuntime> players, con
     for (const CombatSpew& spew : m_bosses.takeSpews()) {
         events.spew(spew);
     }
+    // CritterDelInst calls BossDeath after the animation/hold, independently
+    // of the hit and kill experience awarded below.
+    if (const auto defeated = m_bosses.takeDefeat(); defeated.has_value()) {
+        events.fallen(*defeated);
+    }
     for (const CombatLoss& loss : m_bosses.takeLosses()) {
-        if (loss.killed) {
-            events.fallen(loss.position);
-        }
         for (const PlayerRuntime& runtime : players) {
             const PlayerActor& actor = runtime.actor;
             const s32 player = actor.player();

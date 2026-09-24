@@ -158,6 +158,65 @@ TEST_CASE("the genie lamp's blindness effect rides its root for 28 seconds",
     REQUIRE(fixture.find("LEGENDFX") == nullptr);
 }
 
+TEST_CASE("Bellows release once and their plume turns with the bearer", "[legend][spider]") {
+    LegendFixture fixture;
+    fixture.load("legend-bellows");
+    fixture.show(LegendCue::Brandished, 37);
+    fixture.show(LegendCue::Thrown, 37);
+    REQUIRE_FALSE(fixture.presentation.update(0, fixture.bearer, fixture.target).landed);
+    fixture.bearer.position = {2, 3, 4};
+    fixture.bearer.facing = {1, 0, 0};
+    fixture.bearer.released = true;
+    REQUIRE(fixture.presentation.update(0, fixture.bearer, fixture.target).landed);
+    const auto* effect = fixture.find("LEGENDPRJ");
+    REQUIRE(effect != nullptr);
+    REQUIRE(effect->secondsLeft == 3);
+    REQUIRE(effect->position.x == Approx(7));
+    REQUIRE(effect->position.y == Approx(3));
+    REQUIRE(effect->position.z == Approx(4));
+    REQUIRE(effect->transform()[2].x == Approx(1));
+    fixture.bearer.facing = {0, 0, -1};
+    REQUIRE_FALSE(fixture.presentation.update(0, fixture.bearer, fixture.target).landed);
+    REQUIRE(effect->position.z == Approx(-1));
+    REQUIRE(effect->transform()[2].z == Approx(-1));
+    fixture.effects.update(3.1f);
+    REQUIRE(fixture.effects.count() == 0);
+}
+
+TEST_CASE("Savior releases once at Skorne's chest and its effect lasts thirty seconds",
+          "[game][screens][legend][skorne]") {
+    LegendFixture fixture;
+    fixture.load("legend-savior");
+    const auto show = [&](LegendCue cue) {
+        fixture.presentation.show(cue, fixture.bearer.player, 5, 42, fixture.bearer);
+    };
+    show(LegendCue::Brandished);
+    show(LegendCue::Thrown);
+    REQUIRE(fixture.presentation.update(0, fixture.bearer, fixture.target).gesture ==
+            PlayerDeed::HurlLegend);
+    REQUIRE(fixture.find("LEGENDPRJ") == nullptr);
+    fixture.bearer.casting = true;
+    REQUIRE_FALSE(fixture.presentation.update(0, fixture.bearer, fixture.target).landed);
+    fixture.bearer.released = true;
+    REQUIRE(fixture.presentation.update(0, fixture.bearer, fixture.target).landed);
+    const auto* effect = fixture.find("LEGENDPRJ");
+    REQUIRE(effect != nullptr);
+    REQUIRE(effect->position == fixture.target.position + Vec3{0, 17, 3});
+    REQUIRE(effect->secondsLeft == 30);
+    REQUIRE_FALSE(fixture.presentation.update(0, fixture.bearer, fixture.target).landed);
+    REQUIRE(fixture.sounds == std::vector<std::string>{"S_LEGWPUP", "S_ELEGWTHROW", "S_ELEGWFLY"});
+    fixture.effects.update(0);
+    REQUIRE(fixture.find("LEGENDPRJ") == nullptr);
+    REQUIRE(fixture.find("LEGENDFX") != nullptr);
+    fixture.effects.update(29.9f);
+    REQUIRE(fixture.find("LEGENDFX") != nullptr);
+    fixture.effects.update(0.2f);
+    REQUIRE(fixture.find("LEGENDFX") == nullptr);
+    show(LegendCue::WornOff);
+    REQUIRE(fixture.stopped == std::vector<SoundHandle>{3});
+    REQUIRE(fixture.sounds.back() == "S_ELEGWPDN");
+}
+
 TEST_CASE("legend cleanup releases its own effects and sound but not other effects",
           "[game][screens][legend]") {
     LegendFixture fixture;

@@ -27,12 +27,15 @@ void Bosses::close() {
     m_textureFrames = 0;
     m_id.reset();
     m_cameraBase.reset();
+    m_defeat.reset();
+    m_rewardOffset = Vec3{0};
     m_kind = -1;
     m_name.clear();
     m_awake = false;
     m_wakeDistance = 0.0f;
     m_rite.clear();
     m_roarAsked = false;
+    m_legendStruck = false;
     m_legendEvents.clear();
 }
 
@@ -60,7 +63,8 @@ void Bosses::stageLegend(s32 ticks) {
     const bool roarDone =
         m_roarAsked && (!canRoar || (moveType == MoveDefinition::kRoar && m_fighter.moveDone()));
     for (const LegendCue cue : m_rite.update(ticks, risen, roarDone)) {
-        if (cue == LegendCue::Thrown && m_kind != 34 && m_kind != 36) {
+        if (cue == LegendCue::Thrown && m_kind != 34 && m_kind != 36 && m_kind != 37 &&
+            m_kind != 42) {
             strikeWithLegend();
         } else if (cue == LegendCue::WornOff) {
             m_fighter.curb(0.0f);
@@ -75,6 +79,15 @@ void Bosses::stageLegend(s32 ticks) {
 }
 
 void Bosses::landLegend() {
+    if (m_kind == 37 || m_kind == 42) {
+        // Bellows and Savior act on the cast's release, not the request for the
+        // gesture. The roar controls lighting independently of that release.
+        if (m_id.has_value() && m_rite.thrown() && !m_legendStruck) {
+            strikeWithLegend();
+            m_legendStruck = true;
+        }
+        return;
+    }
     if (!m_id.has_value() || !m_rite.finishOnImpact()) {
         return;
     }
@@ -105,6 +118,9 @@ void Bosses::strikeWithLegend() {
         m_fighter.curb(weakness->curbSeconds);
     }
     m_fighter.resize(weakness->scale);
+    if (m_kind == 37) {
+        m_fighter.tint(Color::rgba(64, 255, 64));
+    }
 }
 
 std::vector<LegendEvent> Bosses::takeLegendEvents() {
@@ -153,6 +169,7 @@ bool Bosses::spawn(s32 kind, const Vec3& position, f32 yaw, f32 wakeDistance) {
     m_awake = false;
     const CritterData* data = m_fighter.data();
     m_wakeDistance = wakeDistance;
+    m_rewardOffset = rewardOffset();
     m_cameraBase =
         m_fighter.position() + Vec3{0.0f, data != nullptr ? data->floorOffset() : 0.0f, 0.0f};
     if (m_wakeDistance <= 0.0f && data != nullptr) {
@@ -186,9 +203,11 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) 
             assets->textures.step(frames);
         }
     }
+    const Vec3 before = m_fighter.position();
     m_fighter.update(ticks, seconds, players);
     stageLegend(ticks);
     if (!m_fighter.present()) {
+        m_defeat = before;
         m_id.reset();
         m_rite.clear();
     }
@@ -210,10 +229,19 @@ std::vector<CombatLoss> Bosses::takeLosses() {
     return m_fighter.takeLosses();
 }
 
+std::optional<Vec3> Bosses::takeDefeat() {
+    return std::exchange(m_defeat, std::nullopt);
+}
+
 void Bosses::hurt(const EnemyHit& hit) {
     if (m_id.has_value()) {
         m_awake = true; // struck, it wakes
         m_fighter.hurt(hit);
+        if (!m_fighter.alive()) {
+            m_rite.clear();
+            m_fighter.hold(false);
+            m_legendEvents.clear();
+        }
     }
 }
 
@@ -294,7 +322,8 @@ Vec3 Bosses::cameraOffset() const {
 
 Vec3 Bosses::rewardOffset() const {
     const CritterData* data = m_id.has_value() ? m_fighter.data() : nullptr;
-    return data != nullptr ? data->originOffset() + Vec3{0, data->floorOffset(), 0} : Vec3{0};
+    return data != nullptr ? data->originOffset() + Vec3{0, data->floorOffset(), 0}
+                           : m_rewardOffset;
 }
 
 std::string_view Bosses::moveName() const {

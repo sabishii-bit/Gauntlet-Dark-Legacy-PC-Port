@@ -57,6 +57,9 @@ public:
               const WorldCollision* collision, const GeneratorScales& scales, s32 players,
               std::span<const LevelEnemy> roster = {});
     void clear();
+    /** A boss effect leaves a tier-one generator. Its optional BOSSGEN art is borrowed. */
+    bool placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items, Enemies& enemies,
+                   s32 kind, const Mat4& placement, const WorldCollision* collision);
 
     /** Runs the countdowns, breeding into `enemies` where a player is within reach. */
     void update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
@@ -114,6 +117,8 @@ private:
         Vec3 direction{0.0f, 0.0f, 1.0f};
         f32 clearance = 0.0f;
         Obstacle box;
+        std::unique_ptr<ItemFigure> bossFigure;
+        bool boss = false;
     };
 
     Bodies* bodiesOf(s32 kind);
@@ -123,6 +128,7 @@ private:
 
     std::vector<Generator> m_generators;
     std::vector<std::unique_ptr<Bodies>> m_bodies;
+    GeneratorScales m_scales;
 };
 
 } // namespace gdl::game

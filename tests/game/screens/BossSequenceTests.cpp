@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <format>
 #include <type_traits>
 
 #include <catch2/catch_test_macros.hpp>
@@ -35,13 +36,15 @@ struct Fixture {
         players[1].actor.spawn(1, {}, nullptr, Vec3{4, 5, 6}, 0);
     }
     void bind() { sequence.bind({device, world, weapons, textures, effects, audio, &levels}); }
-    void loadLevel() {
+    void loadLevel(s32 bossType = 41) {
         const auto root = test::scratchDirectory("boss-sequence");
         const auto level = root / "LEVELS/LEVELG5";
         std::filesystem::create_directories(level);
         std::filesystem::create_directories(root / "wdata");
-        writeTextFile(root / "wdata/TOWN.json", R"({"realm":7,"prefix":"levelG","levels":[
-            {"name":"G5","bossType":41,"rune":1},{"name":"G1","rune":2}]})");
+        writeTextFile(root / "wdata/TOWN.json",
+                      std::format(R"({{"realm":7,"prefix":"levelG","levels":[
+            {{"name":"G5","bossType":{},"rune":1}},{{"name":"G1","rune":2}}]}})",
+                                  bossType));
         writeTextFile(level / "world.json", R"({"objects":[
             {"name":"FLOOR","object":0,"parent":-1,"position":[0,0,0]}]})");
         writeTextFile(level / "objects.json",
@@ -57,6 +60,10 @@ struct Fixture {
         REQUIRE(ref.has_value());
         REQUIRE(world.load(device, root, *ref));
         REQUIRE(world.level() != nullptr);
+        writeTextFile(level / "animations.json", R"({"trees":[
+            {"name":"BOSSKEY","nodes":[{"name":"FLOOR","object":"FLOOR","parent":-1,"position":[0,0,0]}]},
+            {"name":"WIZARD","nodes":[{"name":"FLOOR","object":"FLOOR","parent":-1,"position":[0,0,0]}]}]})");
+        REQUIRE(world.items().load(level));
         bind();
     }
 };
@@ -93,6 +100,19 @@ TEST_CASE("boss sequence is inert when closed or when no level record exists",
     f.sequence.clear();
     REQUIRE(f.sequence.frozenTexture() == nullptr);
     REQUIRE(f.effects.count() == 0);
+}
+
+TEST_CASE("Skorne records victory without an ordinary boss key effect", "[skorne][boss-sequence]") {
+    for (const s32 kind : {41, 42, 43, 44}) {
+        Fixture f;
+        f.loadLevel(kind);
+        f.sequence.fallen({2, 3, 4}, f.bosses, f.players);
+        REQUIRE(f.players[0].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
+        REQUIRE(f.sequence.victory().state().running());
+        REQUIRE(f.effects.count() == (kind < 42 ? 1 : 0));
+        f.sequence.fallen({2, 3, 4}, f.bosses, f.players);
+        REQUIRE(f.effects.count() == (kind < 42 ? 1 : 0));
+    }
 }
 
 TEST_CASE("boss victory rewards the entire party once and signals completion once",
