@@ -14,7 +14,13 @@ AttractStep AttractSequencer::next() {
     AttractStep step;
     step.screen = entry.screen;
     if (entry.screen == AttractScreen::TitleMovie || entry.screen == AttractScreen::Movie) {
-        step.movie = movieName(entry.variant, m_wave);
+        constexpr s32 kFailureMovie = 4;
+        if (entry.variant != kFailureMovie || m_failurePending) {
+            step.movie = movieName(entry.variant, m_wave);
+        }
+        if (entry.variant == kFailureMovie) {
+            m_failurePending = false;
+        }
     }
     return step;
 }
@@ -23,6 +29,7 @@ void AttractSequencer::reset() {
     m_position = 0;
     m_wave = 0;
     m_titleShown = false;
+    m_failurePending = false;
 }
 
 void AttractSequencer::titleShown() {
@@ -31,6 +38,13 @@ void AttractSequencer::titleShown() {
     if (m_position < kAfterTitle) {
         m_position = kAfterTitle;
     }
+}
+
+void AttractSequencer::gameOver() {
+    m_position = kScreenTable.size() - 1;
+    m_wave = 0;
+    m_titleShown = true;
+    m_failurePending = true;
 }
 
 std::string_view AttractSequencer::movieName(s32 variant, u32 wave) {

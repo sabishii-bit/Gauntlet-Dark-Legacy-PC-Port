@@ -170,6 +170,7 @@ add_executable(tests
     game/screens/BossSequenceTests.cpp
     game/screens/LevelArrivalPresentationTests.cpp
     game/screens/LevelMessagesTests.cpp
+    game/screens/GameOverTests.cpp
     game/screens/SumnerVisitTests.cpp
     game/screens/TowerPromotionTests.cpp
     game/screens/TowerRelicsTests.cpp

@@ -9,6 +9,28 @@ namespace {
 
 using namespace gdl::game;
 
+TEST_CASE("the failure movie is reserved for game over", "[game][attract][game-over]") {
+    AttractSequencer sequencer;
+    for (gdl::usize i = 0; i < 2 * AttractSequencer::kScreenTable.size(); ++i) {
+        REQUIRE(sequencer.next().movie != "fail");
+    }
+    sequencer.gameOver();
+    const auto failure = sequencer.next();
+    REQUIRE(failure.screen == AttractScreen::Movie);
+    REQUIRE(failure.movie == "fail");
+    REQUIRE(sequencer.canSkipToTitle());
+    for (gdl::usize i = 0; i < AttractSequencer::kScreenTable.size(); ++i) {
+        REQUIRE(sequencer.next().movie != "fail");
+    }
+    sequencer.gameOver();
+    sequencer.reset();
+    for (gdl::usize i = 0; i < AttractSequencer::kScreenTable.size(); ++i) {
+        REQUIRE(sequencer.next().movie != "fail");
+    }
+    sequencer.gameOver();
+    REQUIRE(sequencer.next().movie == "fail");
+}
+
 TEST_CASE("entering title directly advances into the flyby loop", "[game][attract]") {
     AttractSequencer sequencer;
     sequencer.titleShown();

@@ -197,6 +197,7 @@ add_library(game STATIC
     screens/BossSequence.cpp
     screens/LevelArrivalPresentation.cpp
     screens/LevelMessages.cpp
+    screens/GameOver.cpp
     screens/SumnerVisit.cpp
     screens/PlayerSelectScene.h
     screens/PlayerSelectScene.cpp

@@ -61,6 +61,8 @@ public:
     /** Start may leave idle attract movies only after the startup sequence reaches the title. */
     bool canSkipToTitle() const { return m_titleShown; }
     void titleShown();
+    /** Enter the defeat-only movie row before resuming attract mode. */
+    void gameOver();
 
     /** Movie played for a movie table row in a given wave. */
     static std::string_view movieName(s32 variant, u32 wave);
@@ -69,6 +71,7 @@ private:
     usize m_position = 0;
     u32 m_wave = 0;
     bool m_titleShown = false;
+    bool m_failurePending = false;
 };
 
 } // namespace gdl::game

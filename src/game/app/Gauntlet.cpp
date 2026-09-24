@@ -211,6 +211,7 @@ bool Gauntlet::updateIdle(f64 deltaSeconds) {
         m_options.previewScreensaver ||
         (!m_movieActive && !m_journey.has_value() && !m_demo.isOpen() &&
          (!m_title.isOpen() || m_title.menuOpen() || m_title.optionsOpen()) &&
+         !m_tower.gameOver().active() &&
          (m_tower.isOpen() || m_select.isOpen() || m_afterLevel.isOpen() || m_title.isOpen()));
     const bool wasOpen = m_idleScreen.isOpen();
     if (m_idleWatch.update(deltaSeconds, input(), eligible)) {
@@ -367,7 +368,7 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
 
 void Gauntlet::updateTower(f64 deltaSeconds) {
     for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
-        if (m_tower.actor(player) == nullptr) {
+        if (!m_tower.canPause(player)) {
             continue;
         }
         const auto menu = readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
@@ -440,19 +441,16 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         m_journey = std::move(journey);
         return;
     }
-    if (outcome == PlayOutcome::Fallen) {
-        // Everyone fell: the party is taken back to the tower, as it was before the level.
+    if (outcome == PlayOutcome::GameOver) {
+        // Retain checkpoint saves, then end the session rather than resurrecting
+        // the defeated party in the tower or awarding a successful-level tally.
         keepParty();
-        Journey journey;
-        journey.destination = LevelRef::tower();
-        journey.party = m_tower.party();
-        journey.options.welcome = false;
-        journey.options.arriving = true;
-        journey.options.arrivalWorld = static_cast<u32>(std::max(m_towerWorld.ref().realmId, 0));
         m_tower.close();
-        m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
-        m_loadingPicture.cover();
-        m_journey = std::move(journey);
+        m_towerWorld.clear();
+        m_exitSpeech.close();
+        m_attract.gameOver();
+        setMaxFrameRate(m_config.display.maxFrameRate);
+        startNextAttractScreen();
         return;
     }
     if (outcome == PlayOutcome::Leave) {

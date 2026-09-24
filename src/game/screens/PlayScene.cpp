@@ -43,7 +43,6 @@ constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the ch
 constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
 constexpr s32 kSpecialPowerup = 9;      ///< the pickup subtype of the specials
 constexpr u32 kTurboFlag = 0x80000;     ///< of them, the one that fills the turbo meter
-constexpr f32 kFallenSeconds = 3.0f;    ///< from the last death to the tower
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
@@ -203,7 +202,7 @@ void PlayScene::close() {
     if (m_world != nullptr) {
         m_world->setAmbientOffset(0.0f);
     }
-    m_fallenSeconds = 0.0f;
+    m_gameOver.clear();
     m_audio.close(); // before the figures whose class voices it can play
     m_promotionFigures.clear();
     m_players.clear();
@@ -957,6 +956,18 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     const auto ticks =
         std::clamp(static_cast<s32>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
     const f32 seconds = static_cast<f32>(ticks) / tickRate;
+    if (m_gameOver.active()) {
+        // The world remains behind the caption, but no player input, portal,
+        // reward or victory ceremony can restart the finished session.
+        m_world->update(seconds);
+        m_portals.animate(seconds);
+        m_effects.update(seconds);
+        updateAmbience();
+        if (m_gameOver.step(ticks)) {
+            m_audio.narrate(GameOver::kVoice, LevelSoundscape::Narrator::Primary);
+        }
+        return m_gameOver.finished() ? PlayOutcome::GameOver : PlayOutcome::Running;
+    }
     // A scroll holds everything else still until it has burnt away; the welcome's leads on
     // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
     // Sumner was saying over it.
@@ -1159,15 +1170,22 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     PortalVisitor{m_players[i].actor.position(), m_players[i].actor.radius()});
             }
         }
-        // With nobody left, and the last of them done falling, the party is taken back.
-        const bool falling = std::ranges::any_of(m_players, [](const PlayerRuntime& runtime) {
-            return runtime.life == PlayerLife::Dying;
-        });
-        if (standing.empty() && !m_players.empty() && !falling) {
-            m_fallenSeconds += seconds;
-            if (m_fallenSeconds >= kFallenSeconds) {
-                return PlayOutcome::Fallen;
+        // Wait for the last death animation, not just the last lethal hit.
+        if (GameOver::ready(m_players)) {
+            std::string_view caption;
+            if (const auto message = m_hud.strings().find(GameOver::kMessage)) {
+                const auto& pages = m_hud.strings().message(*message).pages;
+                if (!pages.empty()) {
+                    caption = pages.front();
+                }
             }
+            if (m_context.strings != nullptr && m_context.strings->has(GameOver::kTextId)) {
+                caption = m_context.strings->get(GameOver::kTextId);
+            }
+            m_gameOver.begin(caption);
+            m_audio.stopCues();
+            log::info("All players have fallen; game over");
+            return PlayOutcome::Running;
         }
         if (const auto portal = m_portals.update(ticks, seconds, standing);
             portal.has_value() && leaveBy(*portal)) {
@@ -1283,6 +1301,11 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const auto height = static_cast<f32>(config.display.virtualHeight);
     m_canvas.begin(device, makeVirtualScreenTransform(frameProjection, width, height, frameWidth,
                                                       frameHeight));
+    if (m_gameOver.active()) {
+        m_gameOver.draw(m_canvas, m_messages.text(), width);
+        m_canvas.end();
+        return;
+    }
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
     // bars top and bottom, the status boxes hidden beneath the lower one.
     const bool cut =
@@ -1328,6 +1351,11 @@ void PlayScene::setSaveSlot(s32 player, std::optional<usize> slot) {
             return;
         }
     }
+}
+
+bool PlayScene::canPause(s32 player) const {
+    return m_open && !m_leaving && !m_gameOver.active() && actor(player) != nullptr &&
+           !fallen(player);
 }
 
 CameraView PlayScene::cameraView() const {
