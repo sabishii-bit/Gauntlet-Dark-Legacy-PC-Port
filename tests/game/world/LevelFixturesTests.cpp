@@ -115,7 +115,7 @@ TEST_CASE("X-Ray reveals the nearest closed chest without spending keys or chang
     CHECK(chests.chest(1).revealed);
     party[0].position = Vec3{41.9f, 0, 0};
     chests.updateXray(f.device, f.items, f.items, 0, party);
-    CHECK_FALSE(chests.chest(2).revealed); // trapped chests are excluded
+    CHECK(chests.chest(2).revealed); // a trap must be visible before spending a key on it
     party[0].position = Vec3{1.9f, 0, 0};
     party[0].keys = 1;
     const auto opened = chests.update(0, party);
@@ -163,6 +163,41 @@ TEST_CASE("a box pushes a body out by its nearest side and knows what is against
     REQUIRE_FALSE(shownToParty(3, 2));
     REQUIRE(shownToParty(12, 2)); // exactly two
     REQUIRE_FALSE(shownToParty(12, 3));
+}
+
+TEST_CASE("triangle-list gate floors do not consume keys but upright barriers still do",
+          "[game][world][fixtures][temple-inventory]") {
+    const auto directory = test::scratchDirectory("gate-surface-contact");
+    writeTextFile(directory / "world.json", R"({
+      "objects": [{"name":"ROOT", "position":[0,0,0]}],
+      "itemInfos": [{"type":7,"name":"GATE","collisionType":4,"radius":5,"height":3}],
+      "itemInstances": [
+        {"info":0,"position":[0,0,0],"collision":[
+          {"normal":[0,1,0],"vertices":[[-5,0,-5],[5,0,-5],[0,0,5]]}]},
+        {"info":0,"position":[20,0,0],"rotation":[1.5707964,0,0],"collision":[
+          {"normal":[0,1,0],"vertices":[[-5,0,-5],[5,0,-5],[0,0,5]]}]}
+      ]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(directory));
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    LockedGates gates;
+    REQUIRE(gates.bind(device, layout, items, nullptr));
+    REQUIRE(gates.size() == 2);
+    CHECK_FALSE(gates.gate(0).blocksPassage);
+    CHECK(gates.gate(1).blocksPassage);
+    REQUIRE(gates.obstacles().size() == 1);
+    std::array visitors{ChestVisitor{Vec3{0}, 0.75f, 1}};
+    CHECK(gates.update(1, 1.0f / 60, visitors).empty());
+    visitors[0].position.x = 20;
+    visitors[0].keys = 0;
+    auto events = gates.update(1, 1.0f / 60, visitors);
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].kind == GateEvent::Kind::Refused);
+    visitors[0].keys = 1;
+    events = gates.update(1, 1.0f / 60, visitors);
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].kind == GateEvent::Kind::Unlocked);
 }
 
 TEST_CASE("a chest's contents are its record, or the pick from a list by the item's place",

@@ -44,7 +44,8 @@ std::filesystem::path sampleLayout(std::string_view name) {
   "itemInstances": [
     {"info": 0, "minPlayers": 1, "flags": 0, "name": "", "position": [19.3, -2, -57.5],
      "rotation": [0, 1.5, 0], "params": [7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
-    {"info": 1, "minPlayers": 12, "name": "chestg3", "position": [1, 2, 3]}
+    {"info": 1, "minPlayers": 12, "name": "chestg3", "position": [1, 2, 3],
+     "collision": [{"normal": [0, 1, 0], "vertices": [[0, 0, 0], [1, 0, 0], [0, 0, 1]]}]}
   ],
   "locators": [
     {"type": "cameraGame", "delay": 0, "next": 0, "position": [0, 4, 17], "rotation": [0.5, 3.1, 0]},
@@ -135,6 +136,10 @@ TEST_CASE("a layout carries its animations and tells its objects' roles", "[asse
     REQUIRE(layout.itemInstances()[0].params[0] == 7);
     REQUIRE(layout.itemInstances()[1].name == "CHESTG3");
     REQUIRE(layout.itemInstances()[1].minPlayers == 12);
+    REQUIRE(layout.itemInstances()[0].collision.empty());
+    REQUIRE(layout.itemInstances()[1].collision.size() == 1);
+    CHECK(layout.itemInstances()[1].collision[0].normal == Vec3{0, 1, 0});
+    CHECK(layout.itemInstances()[1].collision[0].vertices[2] == Vec3{0, 0, 1});
     // An animation naming a missing object or with broken keys fails the load.
     const auto dir = test::scratchDirectory("world-layout-bad-animation");
     writeTextFile(dir / "world.json", R"({"objects": [{"name": "A", "position": [0, 0, 0]}],

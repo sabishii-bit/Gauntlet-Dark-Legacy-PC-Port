@@ -112,6 +112,12 @@ struct ItemInfo {
     std::vector<s32> choices; ///< a choice list's item records
 };
 
+/** An item's authored collision surface, in the item's local coordinates. */
+struct ItemCollisionTriangle {
+    Vec3 normal{0, 1, 0};
+    std::array<Vec3, 3> vertices{};
+};
+
 /** One item the level places: which kind, the party it takes to show it, its own name when
  * it has one, where it stands and the kind's parameters. */
 struct ItemInstance {
@@ -122,6 +128,7 @@ struct ItemInstance {
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 rotation{0.0f, 0.0f, 0.0f}; ///< pitch, yaw, roll
     std::array<u8, 12> params{};
+    std::vector<ItemCollisionTriangle> collision;
 };
 
 /** A marker point of a level: cameras, start positions and event spots. */

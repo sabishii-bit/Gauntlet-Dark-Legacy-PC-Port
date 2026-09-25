@@ -81,6 +81,20 @@ ItemInstance readItemInstance(const Json& entry) {
     if (entry.contains("rotation")) {
         instance.rotation = readVec3(entry.at("rotation"));
     }
+    if (entry.contains("collision")) {
+        for (const Json& surface : entry.at("collision")) {
+            ItemCollisionTriangle triangle;
+            triangle.normal = readVec3(surface.at("normal"));
+            const auto& vertices = surface.at("vertices");
+            if (!vertices.is_array() || vertices.size() != triangle.vertices.size()) {
+                throw FormatError("item collision: expected three vertices");
+            }
+            for (usize i = 0; i < triangle.vertices.size(); ++i) {
+                triangle.vertices[i] = readVec3(vertices.at(i));
+            }
+            instance.collision.push_back(triangle);
+        }
+    }
     const auto params = entry.value("params", std::vector<u32>{});
     for (usize i = 0; i < instance.params.size() && i < params.size(); ++i) {
         instance.params[i] = static_cast<u8>(params[i]);

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <string>
 #include <vector>
@@ -288,6 +289,78 @@ TEST_CASE("X-Ray builds visible chest contents without spawning a collectible",
     chests.updateXray(f.device, f.world.items(), f.world.powerups(), 0, party);
     CHECK_FALSE(chest.revealed);
 }
+TEST_CASE("Temple entrance preserves keys and X-Ray reveals its actual container figures",
+          "[game][level-fixtures][temple-inventory][xray][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("E1");
+    REQUIRE(level);
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, root, *level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    f.events.help = [](s32, usize) {};
+    auto& inventory = f.players[0].actor.save().progress().inventory;
+    inventory.keys = 1;
+    inventory.addPowerup(9, 2, 0, 60);
+    const auto party = std::span{f.players}.first(1);
+    SECTION("floor-only carpet is not a key-operated gate") {
+        const auto& instances = f.world.layout().itemInstances();
+        const auto gate = std::ranges::find_if(
+            instances, [](const auto& instance) { return instance.name == "E1DOORCARPET23"; });
+        REQUIRE(gate != instances.end());
+        REQUIRE(gate->collision.size() == 6);
+        for (const auto& triangle : gate->collision) {
+            CHECK(triangle.normal == Vec3{0, 1, 0});
+        }
+        f.players[0].actor.place(gate->position);
+        f.fixtures.update(1, 1.0f / 60, party, f.events);
+        CHECK(inventory.keys == 1);
+    }
+    SECTION("food, treasure and trapped chest previews actually draw") {
+        std::array<bool, 3> checked{};
+        for (usize i = 0; i < f.fixtures.chests().size(); ++i) {
+            const auto& chest = f.fixtures.chests().chest(i);
+            if (!chest.shown || chest.contents < 0) {
+                continue;
+            }
+            const auto& record = f.world.layout().itemInfos()[static_cast<usize>(chest.contents)];
+            usize kind = 0;
+            if (chest.subtype == Chests::kTrappedChest) {
+                kind = 2;
+            } else if (chest.subtype == Chests::kGoldChest) {
+                kind = 1;
+            }
+            if (checked[kind] || record.type != ItemInfo::kPowerup ||
+                (kind == 0 && record.subtype != 3)) {
+                continue;
+            }
+            CAPTURE(chest.instance, record.name);
+            // Inside the ten-unit reveal radius, outside the chest's touch box.
+            f.players[0].actor.place(chest.figure.position() + Vec3{0, 0, 4});
+            f.fixtures.update(1, 1.0f / 60, party, f.events);
+            REQUIRE(chest.state == Chests::kShut);
+            CHECK(chest.revealed);
+            CHECK(chest.preview.hasFigure());
+            f.device.draws.clear();
+            chest.preview.draw(f.device, Mat4{1}, {});
+            CHECK_FALSE(f.device.draws.empty());
+            CHECK(inventory.keys == 1);
+            // Toggling off restores the container instead of leaving a stale reveal.
+            inventory.powerups[0].on = false;
+            f.fixtures.update(1, 1.0f / 60, party, f.events);
+            CHECK_FALSE(chest.revealed);
+            inventory.powerups[0].on = true;
+            checked[kind] = true;
+        }
+        CHECK(checked == std::array<bool, 3>{true, true, true});
+    }
+    f.fixtures.clear();
+}
+
 TEST_CASE("armor items prevent fixture knockdown before the health callback",
           "[game][items][level-fixtures][unpacked]") {
     Fixture f;
