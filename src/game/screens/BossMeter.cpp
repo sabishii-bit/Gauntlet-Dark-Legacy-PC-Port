@@ -14,12 +14,13 @@ namespace {
 constexpr std::string_view kBackground = "METER_BG";
 constexpr std::string_view kFill = "METER_FG";
 
-const Texture* textureOf(TextureSet* textures, RenderDevice& device, std::string_view stem,
-                         s32 piece) {
+const Texture* textureOf(TextureSet* textures, RenderDevice& device, std::string_view prefix,
+                         std::string_view stem, s32 piece) {
     if (textures == nullptr) {
         return nullptr;
     }
-    const std::string name = std::format("{}{}", stem, piece + 1);
+    const std::string name =
+        std::format("{}{}{}{}", prefix, prefix.empty() ? "" : "_", stem, piece + 1);
     const auto index = textures->find(name);
     if (!index.has_value()) {
         return nullptr;
@@ -40,6 +41,7 @@ bool BossMeter::bind(const HealthMeterDefinition& meter, TextureSet* textures, s
         return false;
     }
     m_textures = textures;
+    m_name = meter.name;
     m_pieces = std::min(meter.pieces, kMostPieces);
     m_left = left;
     m_leftInset = meter.leftInset;
@@ -50,6 +52,7 @@ bool BossMeter::bind(const HealthMeterDefinition& meter, TextureSet* textures, s
 
 void BossMeter::clear() {
     m_textures = nullptr;
+    m_name.clear();
     m_pieces = 0;
     m_left = 0;
     m_leftInset = 0;
@@ -116,7 +119,7 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
     for (s32 piece = 0; piece < m_pieces; ++piece) {
         const auto x = static_cast<f32>(m_left + piece * kPieceWidth);
         if (m_backed) {
-            if (const Texture* back = textureOf(m_textures, device, kBackground, piece)) {
+            if (const Texture* back = textureOf(m_textures, device, m_name, kBackground, piece)) {
                 canvas.draw(*back,
                             Rect{x, static_cast<f32>(kY), static_cast<f32>(kPieceWidth),
                                  static_cast<f32>(back->height())},
@@ -127,7 +130,7 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
         if (width <= 0) {
             continue;
         }
-        if (const Texture* fill = textureOf(m_textures, device, kFill, piece)) {
+        if (const Texture* fill = textureOf(m_textures, device, m_name, kFill, piece)) {
             // Cropped, not squeezed: the fill's left `width` pixels.
             const f32 across = static_cast<f32>(width) / static_cast<f32>(kPieceWidth);
             canvas.draw(*fill,
@@ -135,6 +138,59 @@ void BossMeter::draw(Canvas& canvas, RenderDevice& device) const {
                              static_cast<f32>(fill->height())},
                         Rect{0.0f, 0.0f, across, 1.0f}, plain);
         }
+    }
+}
+
+void BossMeters::bind(std::span<const HealthMeterReading> readings, TextureSet* textures) {
+    clear();
+    s32 left = 0;
+    s32 nextLeft = 0;
+    for (const auto& reading : readings) {
+        if (!reading.definition.shown || reading.definition.pieces <= 0) {
+            continue;
+        }
+        if (m_count == kCapacity) {
+            log::warn("Boss meters: more than {} enabled meters", kCapacity);
+            break;
+        }
+        if (reading.definition.backed) {
+            left = nextLeft;
+            nextLeft += reading.definition.advance;
+        }
+        auto& meter = m_meters[m_count++];
+        meter.bind(reading.definition, textures, left);
+        meter.update(0, reading.health, reading.maxHealth, true, false);
+    }
+}
+
+void BossMeters::update(s32 ticks, std::span<const HealthMeterReading> readings, bool alive,
+                        bool frozen) {
+    usize index = 0;
+    for (const auto& reading : readings) {
+        if (!reading.definition.shown || reading.definition.pieces <= 0) {
+            continue;
+        }
+        if (index == m_count) {
+            break;
+        }
+        m_meters[index++].update(ticks, reading.health, reading.maxHealth, alive, frozen);
+    }
+    // Missing actors may have been retired this frame; never leave a stale layer visible.
+    while (index < m_count) {
+        m_meters[index++].update(0, 0, 1, false, false);
+    }
+}
+
+void BossMeters::clear() {
+    for (auto& meter : m_meters) {
+        meter.clear();
+    }
+    m_count = 0;
+}
+
+void BossMeters::draw(Canvas& canvas, RenderDevice& device) const {
+    for (usize index = 0; index < m_count; ++index) {
+        m_meters[index].draw(canvas, device);
     }
 }
 

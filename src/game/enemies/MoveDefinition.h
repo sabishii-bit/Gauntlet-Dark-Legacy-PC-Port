@@ -169,7 +169,15 @@ struct HealthMeterDefinition {
     s32 rightInset = 0;
     bool shown = false;
     bool backed = false;
+    std::string name; ///< TYPE suffix; empty for an ordinary boss, EAGLE/LION/SNAKE for heads
     Vec3 barOffset{0.0f, 0.0f, 0.0f}; ///< where the in-world bar hangs
+};
+
+/** One independently damaged body's HUD meter, in stable root/child order. */
+struct HealthMeterReading {
+    HealthMeterDefinition definition;
+    f32 health = 0;
+    f32 maxHealth = 1;
 };
 
 } // namespace gdl::game

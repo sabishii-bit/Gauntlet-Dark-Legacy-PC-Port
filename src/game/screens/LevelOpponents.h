@@ -80,8 +80,8 @@ public:
     Bosses& bosses() { return m_bosses; }
     const Bosses& bosses() const { return m_bosses; }
     const EnemyMissiles& missiles() const { return m_enemyMissiles; }
-    BossMeter& meter() { return m_bossMeter; }
-    const BossMeter& meter() const { return m_bossMeter; }
+    BossMeters& meter() { return m_bossMeter; }
+    const BossMeters& meter() const { return m_bossMeter; }
 
 private:
     void awardEnemyLosses(const Events& events);
@@ -95,7 +95,7 @@ private:
     Generators m_generators;
     Critters m_critters;
     Bosses m_bosses;
-    BossMeter m_bossMeter;
+    BossMeters m_bossMeter;
     EnemyMissiles m_enemyMissiles;
     CombatantProjectiles m_combatantProjectiles;
     /** An effect riding on one of the great ones. */

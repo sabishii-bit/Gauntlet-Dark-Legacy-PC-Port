@@ -19,6 +19,46 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("Chimera arena binds and updates head health meters through the opponent phase",
+          "[game][screens][level-opponents][chimera][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELA5/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("critter/CHIMERA.json");
+    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+    test::unpackedOrSkip("ITEMS/LEVELA5/objects.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A5");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, {});
+    REQUIRE(opponents.meter().count() == 3);
+    REQUIRE(opponents.meter().showing());
+    const auto before = opponents.bosses().healthMeters();
+    REQUIRE(before.size() == 3);
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    EnemyHit hit;
+    hit.damage = 62;
+    opponents.bosses().hurt(hit, 2);
+    opponents.update(2, 1.0f / 30.0f, {}, {}, events);
+    CHECK(opponents.meter().meter(0).shown() == before[0].health);
+    CHECK(opponents.meter().meter(1).shown() == before[1].health - 6);
+    CHECK(opponents.meter().meter(2).shown() == before[2].health);
+    opponents.close();
+    REQUIRE_FALSE(opponents.meter().bound());
+}
+
 TEST_CASE("Temple generator damage plays realm particles and each accepted hit sounds",
           "[level-opponents][generators][enemy-feedback][unpacked]") {
     const auto root =
