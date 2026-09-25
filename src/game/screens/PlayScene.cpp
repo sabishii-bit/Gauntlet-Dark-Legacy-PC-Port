@@ -123,6 +123,11 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         world.placeItem(device, item.name, item.position);
     }
     world.setPlayerCount(static_cast<s32>(m_players.size()));
+    beginChallenge();
+    if (world.ref().isSecret() && m_challenge.state() == SecretChallenge::State::Inactive) {
+        close();
+        return false;
+    }
     m_fixtures.setPlayerCount(static_cast<s32>(m_players.size()));
     m_opponents.open({device, world, m_weapons, m_effects, m_audio, context.unpackedRoot,
                       context.config != nullptr ? context.config->difficulty.gain() : 1.0f},
@@ -183,6 +188,9 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 }
 
 void PlayScene::close() {
+    m_challenge.clear();
+    m_challengeHud.clear();
+    m_secretTravel = false;
     m_shake.clear();
     m_audio.stopCues();
     m_sumnerVisit.clear();
@@ -648,7 +656,7 @@ bool PlayScene::leaveBy(usize portal) {
         log::info("Portal {}: on to {} ({})", exit.tag, m_destination.name, m_destination.title);
         return true;
     }
-    if (!m_world->isTower()) {
+    if (!m_world->isTower() && !exit.secret) {
         m_destination = LevelRef::tower();
         log::info("Portal {}: its level is not unpacked; back to the tower", exit.tag);
         return true;
@@ -705,6 +713,8 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     if (pickup.collector >= m_players.size()) {
         return std::nullopt;
     }
+    const bool secretCoin =
+        pickup.subtype == static_cast<s32>(ItemKind::Gold) && m_world->ref().isSecret();
     PlayerActor& actor = m_players[pickup.collector].actor;
     const ClassStats* stats = m_classes.stats(actor.save().character);
     const ItemTaking taking = takeItem(
@@ -727,7 +737,8 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     }
     switch (static_cast<ItemKind>(pickup.subtype)) {
     case ItemKind::Gold:
-        if (m_world->ref().realmId != 12 && pickup.amount >= 25) {
+        collectChallengeCoin(pickup.item);
+        if (!m_world->ref().isSecret() && pickup.amount >= 25) {
             postHelp(17, pickup.collector);
         }
         break;
@@ -754,13 +765,14 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     default: break;
     }
     if (!taking.card.empty()) {
-        m_hud.pickups().addCard(actor.player(), taking.card);
+        // Retail do_got_it selects COINHUD in realm 12 before testing gold value.
+        m_hud.pickups().addCard(actor.player(), secretCoin ? "COINHUD" : taking.card);
     }
     if (taking.message >= 0) {
         postHelp(taking.message, pickup.collector);
     }
     if (!taking.sound.empty()) {
-        if (pickup.subtype == static_cast<s32>(ItemKind::Gold) && m_world->ref().realmId == 12) {
+        if (secretCoin) {
             m_audio.playNamed(PickupVoices::bonusGold(actor.player(), pickup.amount));
         } else {
             m_audio.playNamed(taking.sound);
@@ -1071,6 +1083,11 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         return PlayOutcome::Running;
     }
     const bool held = m_intro == Intro::Crystal;
+    if (!held && updateChallenge(seconds)) {
+        m_destination = LevelRef::tower(); // the application restores the parent when present
+        m_secretTravel = true;
+        return PlayOutcome::Travel;
+    }
     if (held) {
         m_cutTicks -= ticks;
         if (m_cutTicks <= 0) {
@@ -1228,6 +1245,13 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         if (const auto portal = m_portals.update(ticks, seconds, standing);
             portal.has_value() && leaveBy(*portal)) {
             m_opponents.settleRewards(m_players, opponentEvents());
+            if (m_portals.portal(*portal).secret) {
+                m_secretTravel = true;
+                m_secretReturnPosition = m_portals.portal(*portal).departurePosition.value_or(
+                    m_portals.portal(*portal).position);
+                m_portals.consume(*portal);
+                return PlayOutcome::Travel;
+            }
             m_leaving = true;
             m_departure.begin(*m_device, m_weapons.textures);
             m_audio.playNamed(PortalDeparture::kSound);
@@ -1363,6 +1387,10 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
+        if (m_challenge.state() != SecretChallenge::State::Inactive) {
+            m_challengeHud.draw(m_canvas, m_challenge.remaining(), m_challenge.duration(),
+                                !spawning() && !m_messages.active());
+        }
         if (config.camera.compass) {
             CompassHud::draw(m_canvas, m_messages.text(), m_context.strings, width,
                              viewCamera().yaw);

@@ -12,6 +12,35 @@ import build
 
 
 class BuildLaunchTests(unittest.TestCase):
+    def test_challenge_export_upgrade_is_verified_and_runs_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            binary = root / "build/release"
+            (binary / "bin").mkdir(parents=True)
+            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
+            (root / "raw/WDATA").mkdir(parents=True)
+            manifest = root / "export/wdata/SECRET.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('{"levels":[{"flags":4}]}', encoding="utf-8")
+            args = ["--data", "raw", "--unpacked", "export"]
+
+            def unpack(_command):
+                manifest.write_text('{"levels":[{"flags":4,"timeLimit":70}]}',
+                                    encoding="utf-8")
+
+            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
+                build.refresh_challenge_data(binary, args, root)
+                run.assert_called_once_with([
+                    str(binary / "bin" / f"gdlunpack{build.EXE}"), str(root / "raw"),
+                    str(root / "export"), "--only", "WDATA"])
+                run.reset_mock()
+                build.refresh_challenge_data(binary, args, root)
+                run.assert_not_called()
+                manifest.write_text('{"levels":[{"flags":4}]}', encoding="utf-8")
+                run.side_effect = None
+                with self.assertRaisesRegex(ValueError, "still missing"):
+                    build.refresh_challenge_data(binary, args, root)
+
     def test_item_collision_refreshes_only_incomplete_levels_and_verifies_output(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -82,6 +111,7 @@ class BuildLaunchTests(unittest.TestCase):
             root = pathlib.Path(directory)
             build.refresh_player_effects(root / "build/release", [], root)
             build.refresh_item_collision(root / "build/release", [], root)
+            build.refresh_challenge_data(root / "build/release", [], root)
             run.assert_not_called()
 
     def test_custom_asset_paths_are_respected_and_missing_raw_assets_fail_clearly(self):

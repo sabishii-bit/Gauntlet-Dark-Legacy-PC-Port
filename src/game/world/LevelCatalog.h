@@ -21,6 +21,8 @@ struct LevelRef {
     std::string ownItems;  ///< the level's own, such as ITEMS/LEVELG5, which boss levels have
 
     static constexpr s32 kTowerRealm = 13;
+    static constexpr s32 kSecretRealm = 12;
+    bool isSecret() const { return realmId == kSecretRealm; }
     /** Sumner's tower, which needs no catalogue to be found. */
     static LevelRef tower();
     bool isTower() const { return realmId == kTowerRealm; }

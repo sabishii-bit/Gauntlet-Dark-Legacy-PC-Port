@@ -37,6 +37,8 @@ public:
     void startMusic(const AssetLocator* assets, f32 volume);
     /** Stop scene cues early in teardown, leaving ambient loops until close(). */
     void stopCues();
+    /** Silence a suspended stage without releasing banks borrowed by its actors. */
+    void suspend();
     /** Stops every voice started here before releasing its borrowed clips. */
     void close();
 

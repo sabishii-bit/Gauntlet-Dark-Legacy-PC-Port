@@ -77,6 +77,8 @@ struct BossCameraInfo {
 
 struct LevelInfo {
     u16 selectionFlags = 0;
+    u32 flags = 0;
+    s32 timeLimit = 0; ///< seconds; flags bit 2 enables the level clock
     std::string name;  ///< "L1"
     std::string title; ///< "Tower"
     std::string audioBank;

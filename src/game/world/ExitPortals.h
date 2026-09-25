@@ -18,6 +18,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/world/ItemFigure.h"
 #include "game/world/LevelCatalog.h"
 
 namespace gdl::game {
@@ -37,6 +38,7 @@ struct PortalVisitor {
 class ExitPortals {
 public:
     static constexpr s32 kExitItem = 9;
+    static constexpr s32 kSecretSubtype = 50;
     static constexpr std::string_view kFigure = "EXIT_PORTAL";
     static constexpr std::array<std::string_view, 5> kSequences{"IDLE", "READY", "ACTIVE1",
                                                                 "ACTIVE2", "ACTIVE3"};
@@ -49,6 +51,11 @@ public:
     /** One portal. */
     struct Portal {
         s32 instance = -1;
+        bool secret = false;
+        bool consumed = false;
+        std::optional<Vec3> departurePosition;
+        s32 minPlayers = 1;
+        ItemFigure icon;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Mat4 transform{1.0f};
         f32 radius = 3.0f;
@@ -68,6 +75,7 @@ public:
     void clear();
     usize size() const { return m_portals.size(); }
     const Portal& portal(usize index) const { return m_portals[index]; }
+    void consume(usize index) { m_portals[index].consumed = true; }
 
     /** Steps every portal by `ticks` (`seconds` long); returns the portal ready to transport
      * the whole party, retaining its raised glow while the departure plays. */

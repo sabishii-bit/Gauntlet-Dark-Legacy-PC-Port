@@ -4,6 +4,9 @@
 # cameras), menu (widgets), screens (full screens and what they receive), app (the driver and
 # attract flow). A module only includes those below it.
 add_library(game STATIC
+    world/SecretChallenge.cpp
+    screens/ChallengeHud.cpp
+    screens/PlaySceneChallenge.cpp
     world/DestructibleWalls.cpp
     world/MissileTarget.cpp
     menu/SettingsMenu.cpp

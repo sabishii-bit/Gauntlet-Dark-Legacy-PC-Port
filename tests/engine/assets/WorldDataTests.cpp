@@ -38,7 +38,7 @@ std::filesystem::path sampleRealm(std::string_view name) {
     writeTextFile(dir / "TOWER.json", R"({
   "realm": 13, "prefix": "levelL",
   "levels": [
-    {"name": "L1", "title": "Tower", "selectionFlags": 2, "cameraIndex": 0, "audioIndex": 0, "musicVolume": 0.75,
+    {"name": "L1", "title": "Tower", "selectionFlags": 2, "flags": 4, "timeLimit": 45, "cameraIndex": 0, "audioIndex": 0, "musicVolume": 0.75,
      "tuning": {"playerLevel": 10, "experience": 2.5, "damage": 0, "difficulty": 2,
                 "trapRate": 4, "trapDamage": 0, "enemyHealth": 0.75, "enemySpeed": 0,
                 "generatorMost": 0.5},
@@ -66,6 +66,9 @@ TEST_CASE("world data names a realm's levels and the records they point at", "[a
     REQUIRE(level != nullptr);
     REQUIRE(level->title == "Tower");
     REQUIRE(level->selectionFlags == 2);
+    CHECK(level->flags == 4);
+    CHECK(level->timeLimit == 45);
+    CHECK(data.level("L2")->timeLimit == 0);
     REQUIRE(data.level("L2")->selectionFlags == 0);
     REQUIRE(level->musicVolume == Approx(0.75f));
     REQUIRE(level->shopMaxima == std::array<s32, 3>{1500, 300, 2500});

@@ -337,7 +337,14 @@ TEST_CASE("level ambience outlives early cue teardown but not close or rebind",
     soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
     const SoundHandle second = soundscape.ambience().emitter(0).handle;
     REQUIRE(player.isPlaying(second));
+    soundscape.suspend();
+    CHECK_FALSE(player.isPlaying(second));
+    CHECK(soundscape.ambience().size() == 1);
+    soundscape.updateAmbience(listeners, AmbientEar{}, 1.0f);
+    const SoundHandle resumed = soundscape.ambience().emitter(0).handle;
+    CHECK(player.isPlaying(resumed));
     soundscape.close();
+    CHECK_FALSE(player.isPlaying(resumed));
     REQUIRE_FALSE(player.isPlaying(second));
     REQUIRE(soundscape.ambience().size() == 0);
 }

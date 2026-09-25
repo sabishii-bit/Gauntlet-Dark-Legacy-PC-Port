@@ -69,6 +69,7 @@ bool StatusBoxPainter::load(RenderDevice& device, const std::filesystem::path& u
 }
 
 void StatusBoxPainter::release() {
+    m_countTextures = nullptr;
     m_initials.setFont(nullptr, nullptr);
     m_score.setFont(nullptr, nullptr);
     m_smallCaps.setFont(nullptr, nullptr);
@@ -263,7 +264,17 @@ void StatusBoxPainter::drawCount(Canvas& canvas, s32 slot, std::string_view icon
         return;
     }
     const s32 left = slot * kWidth;
-    if (const Texture* mark = staticTexture(icon)) {
+    const Texture* mark = staticTexture(icon);
+    if (mark == nullptr && m_countTextures != nullptr && m_device != nullptr) {
+        if (const auto index = m_countTextures->find(icon)) {
+            try {
+                mark = &m_countTextures->texture(*m_device, *index);
+            } catch (const std::exception& error) {
+                log::warn("Pickup icon {}: {}", icon, error.what());
+            }
+        }
+    }
+    if (mark != nullptr) {
         canvas.draw(*mark,
                     Rect{static_cast<f32>(left + kCountIconX), static_cast<f32>(kCountIconY),
                          static_cast<f32>(kCountIconSize), static_cast<f32>(kCountIconSize)});

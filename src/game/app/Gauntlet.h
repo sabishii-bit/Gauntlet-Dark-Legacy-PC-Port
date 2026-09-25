@@ -89,8 +89,18 @@ private:
     TitleScene m_title;
     PlayerSelectScene m_select;
     LevelCatalog m_levels;
-    LevelWorld m_towerWorld; ///< the level in play: the tower until the party travels
-    PlayScene m_tower;
+    struct PlaySession {
+        PlaySession() = default;
+        PlaySession(const PlaySession&) = delete;
+        PlaySession& operator=(const PlaySession&) = delete;
+        PlaySession(PlaySession&&) = delete;
+        PlaySession& operator=(PlaySession&&) = delete;
+        LevelWorld world;
+        PlayScene scene;
+        ~PlaySession() { scene.close(); }
+    };
+    std::unique_ptr<PlaySession> m_play = std::make_unique<PlaySession>();
+    std::unique_ptr<PlaySession> m_parent; ///< stage retained during a secret challenge
     PauseMenu m_pause;
     AfterLevelScene m_afterLevel;
     LevelExitSpeech m_exitSpeech;
@@ -104,8 +114,10 @@ private:
         bool presentationStarted = false;
         bool movieStarted = false;
         std::string movie;
+        bool secret = false;
     };
     std::optional<Journey> m_journey;
+    void returnFromChallenge(std::span<const PartyMember> party);
     SaveSlots m_saves; ///< where the party in play is kept
     TransitionScreen m_loadingPicture;
     LevelLoadingScreen m_levelLoading;
