@@ -1,16 +1,21 @@
 #include "game/enemies/EnemyMissiles.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <utility>
 
 #include "engine/core/Types.h"
 
+#include "game/enemies/CombatantProjectile.h"
+
 namespace gdl::game {
 
 namespace {
 
 constexpr f32 kFootClearance = 0.1f;
+constexpr f32 kSimulationStep = 1.0f / 30.0f;
+constexpr f32 kLeastSpatialStep = 0.05f;
 
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
@@ -142,74 +147,74 @@ void EnemyMissiles::launch(const EnemyMissileKind& kind, const Vec3& from, const
 
 void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                            std::span<const EnemyView> players) {
+    if (seconds <= 0) {
+        return;
+    }
     for (EnemyMissile& missile : m_missiles) {
-        if (missile.kind.burstRadius > 0.0f) {
-            missile.velocity.y -= kGravity * seconds;
-        }
-        const Vec3 from = missile.position;
-        const Vec3 to = from + missile.velocity * seconds;
-        missile.turned += missile.kind.spin * seconds;
-        missile.secondsLeft -= seconds;
-        // The first player its body meets along the step takes it.
-        bool ended = false;
-        for (const EnemyView& view : players) {
-            if (view.hidden) {
-                continue;
+        f32 remaining = std::min(seconds, missile.secondsLeft);
+        const f32 gravity = missile.kind.burstRadius > 0 ? kGravity : 0;
+        const f32 radius = std::max(missile.kind.radius, 0.0f);
+        while (remaining > 0 && missile.secondsLeft > 0) {
+            // Bound travel as well as time: the world collider tests overlaps, not segments.
+            const f32 speedBound = glm::length(missile.velocity) + gravity * kSimulationStep;
+            const f32 spatialStep = std::max(radius * 0.5f, kLeastSpatialStep);
+            const f32 dt =
+                std::min({remaining, kSimulationStep, spatialStep / std::max(speedBound, 1.0f)});
+            const Vec3 from = missile.position;
+            const Vec3 acceleration{0, -gravity, 0};
+            const Vec3 to = from + missile.velocity * dt + acceleration * (0.5f * dt * dt);
+            missile.velocity += acceleration * dt;
+            missile.turned += missile.kind.spin * dt;
+            missile.secondsLeft = std::max(0.0f, missile.secondsLeft - dt);
+            remaining = std::max(0.0f, remaining - dt);
+
+            bool struckWorld = false;
+            Vec3 destination = to;
+            if (collision != nullptr) {
+                const Vec3 pushed =
+                    collision->resolveWalls(to, radius, to.y - radius, to.y + radius);
+                struckWorld = glm::distance(pushed, to) > 0.001f;
+                if (struckWorld) {
+                    destination = pushed;
+                } else if (const auto floor = collision->floorAt(
+                               to, std::abs(to.y - from.y) + radius, radius + kFootClearance);
+                           floor && to.y <= floor->y + radius &&
+                           glm::dot(missile.velocity, floor->normal) < 0) {
+                    struckWorld = true;
+                    destination.y = floor->y + radius;
+                }
             }
-            const Vec3 centre = view.position + Vec3{0.0f, 0.5f * view.height, 0.0f};
-            const Vec3 sweep = to - from;
-            const f32 length = glm::length(sweep);
-            const f32 t =
-                length > 0.001f
-                    ? std::clamp(glm::dot(centre - from, sweep) / (length * length), 0.0f, 1.0f)
-                    : 0.0f;
-            const Vec3 nearest = from + sweep * t;
-            if (flatDistance(nearest, centre) <= view.radius + missile.kind.radius &&
-                std::abs(nearest.y - centre.y) <= 0.5f * view.height + missile.kind.radius) {
+            const EnemyView* victim = nullptr;
+            f32 first = 1;
+            if (!struckWorld) {
+                for (const EnemyView& view : players) {
+                    if (view.hidden) {
+                        continue;
+                    }
+                    const auto contact = CombatantProjectile::contact(
+                        from, to, radius, view.position, view.radius, view.height);
+                    if (contact && (*contact < first || (victim == nullptr && *contact == first))) {
+                        first = *contact;
+                        victim = &view;
+                    }
+                }
+            }
+            missile.position = victim != nullptr ? glm::mix(from, to, first) : destination;
+            if (struckWorld || victim != nullptr || missile.secondsLeft <= 0) {
                 EnemyMissileHit hit;
-                hit.player = view.player;
+                hit.worldContact = struckWorld;
+                hit.player = victim != nullptr ? victim->player : -1;
                 hit.shooter = missile.shooter;
                 hit.damage = missile.kind.damage;
                 hit.flags = missile.kind.flags;
                 hit.burstRadius = missile.kind.burstRadius;
-                hit.position = nearest;
-                hit.direction = length > 0.001f ? sweep / length : Vec3{0.0f, 0.0f, 1.0f};
+                hit.position = missile.position;
+                const f32 speed = glm::length(missile.velocity);
+                hit.direction = speed > 0.001f ? missile.velocity / speed : Vec3{0, 0, 1};
                 m_hits.push_back(hit);
-                ended = true;
-                break;
+                missile.secondsLeft = 0;
             }
         }
-        if (ended) {
-            missile.secondsLeft = 0.0f;
-            continue;
-        }
-        // Else the world: a wall in the way, or the floor reached, ends it there.
-        bool struckWorld = false;
-        if (collision != nullptr) {
-            const Vec3 pushed = collision->resolveWalls(
-                to, missile.kind.radius, to.y - missile.kind.radius, to.y + missile.kind.radius);
-            struckWorld = flatDistance(pushed, to) > 0.001f;
-            if (!struckWorld) {
-                if (const auto floor =
-                        collision->floorAt(to, 0.0f, 2.0f * missile.kind.radius + kFootClearance)) {
-                    struckWorld = to.y <= floor->y + missile.kind.radius;
-                }
-            }
-        }
-        if (struckWorld || missile.secondsLeft <= 0.0f) {
-            EnemyMissileHit hit;
-            hit.worldContact = struckWorld;
-            hit.player = -1;
-            hit.shooter = missile.shooter;
-            hit.damage = missile.kind.damage;
-            hit.flags = missile.kind.flags;
-            hit.burstRadius = missile.kind.burstRadius;
-            hit.position = to;
-            m_hits.push_back(hit);
-            missile.secondsLeft = 0.0f;
-            continue;
-        }
-        missile.position = to;
     }
     std::erase_if(m_missiles,
                   [](const EnemyMissile& missile) { return missile.secondsLeft <= 0.0f; });
