@@ -99,8 +99,7 @@ private:
  * rule: at least that many, or exactly ten less than it when it is over ten. */
 bool shownToParty(s32 minPlayers, s32 players);
 
-/** Where an item instance stands: its pitch, yaw and roll as the original stacks them onto
- * its matrix, the yaw outermost (so a half turn of both others is a half turn of yaw). */
+/** Places authored item angles by world-axis pitch, yaw, then roll, followed by translation. */
 Mat4 itemPlacement(const Vec3& position, const Vec3& rotation);
 
 } // namespace gdl::game

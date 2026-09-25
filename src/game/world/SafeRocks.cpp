@@ -45,7 +45,7 @@ bool SafeRocks::bind(RenderDevice& device, const WorldLayout& layout, ItemArchiv
         rock->placement = itemPlacement(instance.position, instance.rotation);
         rock->obstacle.centre = Vec3{rock->placement * Vec4{info.collisionOffset, 1.0f}};
         rock->obstacle.height = info.height;
-        rock->obstacle.yaw = instance.rotation.y;
+        rock->obstacle.yaw = std::atan2(rock->placement[2].x, rock->placement[2].z);
         rock->obstacle.halfAcross = info.xSize > 0.0f ? info.xSize : info.radius;
         rock->obstacle.halfAlong = info.zSize > 0.0f ? info.zSize : info.radius;
         if (info.collisionType == 1) {

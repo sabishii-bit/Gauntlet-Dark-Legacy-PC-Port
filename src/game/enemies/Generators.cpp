@@ -205,7 +205,8 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.armor = static_cast<f32>(info.armor);
     ItemInstance instance;
     instance.position = Vec3{placement[3]};
-    instance.rotation.y = std::atan2(placement[2].x, placement[2].z);
+    const f32 yaw = std::atan2(placement[2].x, placement[2].z);
+    instance.rotation.y = -yaw;
     generator.bossFigure = std::make_unique<ItemFigure>();
     // A missing BOSSGEN tree does not prevent PlaceItem from creating its gameplay object.
     generator.bossFigure->place(device, items, "BOSSGEN", instance, collision);
@@ -213,7 +214,7 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.position = generator.bossFigure->position();
     generator.placement = placement;
     generator.placement[3] = Vec4{generator.position, 1};
-    generator.yaw = instance.rotation.y;
+    generator.yaw = yaw;
     generator.direction = Vec3{std::sin(generator.yaw), 0, std::cos(generator.yaw)};
     generator.clearance = info.height;
     generator.box = generator.bossFigure->obstacle(info);
@@ -415,9 +416,7 @@ void Generators::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
         if (!model.bound()) {
             continue;
         }
-        const Mat4 place = glm::rotate(glm::translate(Mat4{1.0f}, generator.position),
-                                       generator.yaw, Vec3{0.0f, 1.0f, 0.0f});
-        model.draw(device, clip, place, lighting);
+        model.draw(device, clip, generator.placement, lighting);
     }
 }
 

@@ -207,7 +207,7 @@ usize Chests::updateXray(RenderDevice& device, ItemArchive& items, ItemArchive& 
                 ItemArchive& archive = items.trees.find(name) ? items : powerups;
                 ItemInstance instance;
                 instance.position = chest.figure.position();
-                instance.rotation.y = chest.figure.yaw();
+                instance.rotation.y = -chest.figure.yaw();
                 chest.preview.place(device, archive, name, instance, nullptr);
             }
             chest.preview.update(seconds);

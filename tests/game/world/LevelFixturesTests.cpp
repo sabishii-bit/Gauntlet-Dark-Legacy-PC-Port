@@ -1,4 +1,5 @@
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <numbers>
 #include <vector>
@@ -151,9 +152,9 @@ TEST_CASE("a box pushes a body out by its nearest side and knows what is against
     REQUIRE_FALSE(box.touchedBy(Vec3{12.5f, 0.0f, 5.0f}, 0.75f));
     box.solid = false;
     REQUIRE(box.pushOut(Vec3{10.0f, 0.0f, 5.0f}, 0.75f) == Vec3{10.0f, 0.0f, 5.0f});
-    // A half turn of pitch and of roll together is a half turn of yaw.
+    // With pitch/roll at pi, the world-axis yaw's sign is reversed as well.
     const Mat4 flipped = itemPlacement(Vec3{1.0f, 2.0f, 3.0f}, Vec3{kPi, 0.5f, -kPi});
-    const Mat4 turned = itemPlacement(Vec3{1.0f, 2.0f, 3.0f}, Vec3{0.0f, 0.5f + kPi, 0.0f});
+    const Mat4 turned = itemPlacement(Vec3{1.0f, 2.0f, 3.0f}, Vec3{0.0f, kPi - 0.5f, 0.0f});
     for (s32 column = 0; column < 4; ++column) {
         for (s32 row = 0; row < 4; ++row) {
             REQUIRE(flipped[column][row] == Approx(turned[column][row]).margin(1e-5));
@@ -163,6 +164,44 @@ TEST_CASE("a box pushes a body out by its nearest side and knows what is against
     REQUIRE_FALSE(shownToParty(3, 2));
     REQUIRE(shownToParty(12, 2)); // exactly two
     REQUIRE_FALSE(shownToParty(12, 3));
+}
+
+TEST_CASE("item placement applies authored world-axis rotations without reversing wall facings",
+          "[game][world][fixtures][item-orientation]") {
+    const std::array rotations{Vec3{0, kPi / 2, 0}, Vec3{0, -kPi / 2, 0}, Vec3{kPi, 0.5f, -kPi},
+                               Vec3{0.3f, -0.7f, 0.2f}};
+    const Vec3 position{12, 4, -8};
+    // AddItemInstList calls WPitchMat3, WYawMat3, WRollMat3 in that order.
+    // Transform each basis vector independently using those routines' scalar equations.
+    for (const Vec3& angles : rotations) {
+        const Mat4 actual = itemPlacement(position, angles);
+        for (s32 axis = 0; axis < 3; ++axis) {
+            Vec3 basis{0};
+            basis[axis] = 1;
+            const Vec3 pitched{basis.x, std::cos(angles.x) * basis.y - std::sin(angles.x) * basis.z,
+                               std::cos(angles.x) * basis.z + std::sin(angles.x) * basis.y};
+            const Vec3 yawed{std::cos(angles.y) * pitched.x - std::sin(angles.y) * pitched.z,
+                             pitched.y,
+                             std::cos(angles.y) * pitched.z + std::sin(angles.y) * pitched.x};
+            const Vec3 expected{std::cos(angles.z) * yawed.x - std::sin(angles.z) * yawed.y,
+                                std::cos(angles.z) * yawed.y + std::sin(angles.z) * yawed.x,
+                                yawed.z};
+            CHECK(glm::distance(Vec3{actual[axis]}, expected) < 0.00001f);
+        }
+        CHECK(Vec3{actual[3]} == position);
+        ItemFigure figure;
+        ItemArchive noArt;
+        ItemInstance instance;
+        instance.position = position;
+        instance.rotation = angles;
+        test::FakeRenderDevice device;
+        figure.place(device, noArt, "absent", instance, nullptr);
+        ItemInfo info;
+        info.xSize = 3;
+        info.zSize = 1;
+        CHECK(figure.obstacle(info).yaw == Approx(std::atan2(actual[2].x, actual[2].z)));
+    }
+    CHECK(Vec3{itemPlacement(Vec3{0}, Vec3{0, kPi / 2, 0})[2]}.x == Approx(-1));
 }
 
 TEST_CASE("triangle-list gate floors do not consume keys but upright barriers still do",

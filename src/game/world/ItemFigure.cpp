@@ -135,8 +135,8 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
             m_position.y = floor->y + kFloorLift;
         }
     }
-    m_yaw = instance.rotation.y;
     m_transform = itemPlacement(m_position, instance.rotation);
+    m_yaw = std::atan2(m_transform[2].x, m_transform[2].z);
     m_tree = nullptr;
     m_index = -1;
     m_player.stop();
@@ -258,10 +258,12 @@ void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLightin
 }
 
 Mat4 itemPlacement(const Vec3& position, const Vec3& rotation) {
+    // Item angles are world-axis pitch, yaw, roll. GLM post-multiplies, so compose
+    // them in reverse order; the authored yaw has the opposite sign to GLM's Y turn.
     Mat4 transform = glm::translate(Mat4{1.0f}, position);
-    transform = glm::rotate(transform, rotation.y, Vec3{0.0f, 1.0f, 0.0f});
-    transform = glm::rotate(transform, -rotation.x, Vec3{1.0f, 0.0f, 0.0f});
-    return glm::rotate(transform, rotation.z, Vec3{0.0f, 0.0f, 1.0f});
+    transform = glm::rotate(transform, rotation.z, Vec3{0.0f, 0.0f, 1.0f});
+    transform = glm::rotate(transform, -rotation.y, Vec3{0.0f, 1.0f, 0.0f});
+    return glm::rotate(transform, rotation.x, Vec3{1.0f, 0.0f, 0.0f});
 }
 
 Obstacle ItemFigure::obstacle(const ItemInfo& info) const {
