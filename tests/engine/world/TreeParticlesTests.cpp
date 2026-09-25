@@ -1,4 +1,6 @@
 #include <array>
+#include <filesystem>
+#include <string_view>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -12,6 +14,56 @@
 
 namespace {
 using namespace gdl;
+
+std::filesystem::path particleTextureSet(std::string_view name) {
+    const auto root = test::scratchDirectory(name);
+    writeFile(root / "glow.png", test::kTinyPng);
+    writeTextFile(root / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"GLOW","file":"glow.png","width":2,"height":2}]})");
+    return root;
+}
+
+TEST_CASE("particle texture lookup preserves local slots and borrowed ownership",
+          "[engine][world][tree-particles]") {
+    const auto root = particleTextureSet("tree-particle-local-textures");
+    writeTextFile(root / "animations.json", R"({
+        "particles":[{"preset":1,"enables":16385,"texture":"GLOW"},
+                     {"preset":1,"enables":16385,"texture":"MISSING"}],
+        "trees":[{"name":"TEST","nodes":[
+            {"name":"FOUND","parent":-1,"position":[0,0,0],"particle":0},
+            {"name":"ABSENT","parent":-1,"position":[0,0,0],"particle":1}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.trees.load(root));
+    REQUIRE(archive.textures.load(root));
+    TextureSet lender;
+    REQUIRE(lender.load(particleTextureSet("tree-particle-lender-textures")));
+    TextureSet empty;
+    test::FakeRenderDevice device;
+    const std::array<TextureSet*, 3> lenders{nullptr, &empty, &lender};
+    const std::array pose{Mat4{1}, Mat4{1}};
+    TreeParticles particles;
+    particles.bind(archive.trees.tree(0), archive, device, Mat4{1}, pose, lenders);
+    REQUIRE(particles.field().size() == 2);
+    CHECK(particles.field().textureOf(0) == &archive.textures.texture(device, 0));
+    CHECK(particles.field().textureOf(1) == &device.whiteTexture());
+    const test::FakeTexture nextFrame{1, 1};
+    particles.setTextureFrame(0, nextFrame);
+    CHECK(particles.field().textureOf(0) == &nextFrame);
+    CHECK(particles.field().textureOf(1) == &device.whiteTexture());
+
+    // Without local textures, only the matching lender supplies a binding.
+    ItemArchive borrowingArchive;
+    REQUIRE(borrowingArchive.trees.load(root));
+    particles.bind(borrowingArchive.trees.tree(0), borrowingArchive, device, Mat4{1}, pose,
+                   lenders);
+    REQUIRE(particles.field().size() == 2);
+    const Texture* borrowed = &lender.texture(device, 0);
+    CHECK(particles.field().textureOf(0) == borrowed);
+    CHECK(particles.field().textureOf(1) == &device.whiteTexture());
+    particles.setTextureFrame(0, nextFrame);
+    CHECK(particles.field().textureOf(0) == borrowed);
+    CHECK(particles.field().textureOf(1) == &device.whiteTexture());
+}
 
 TEST_CASE("tree particle nodes follow posed attachments without requiring model assets",
           "[engine][world][tree-particles]") {
