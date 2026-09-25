@@ -118,6 +118,7 @@ void unpackAnimations(const AssetLocator& locator, const std::filesystem::path& 
         const AnimationFile file = AnimationFile::parse(readFile(*animPath));
         JsonWriter json;
         json.beginObject();
+        json.key("textureBindingVersion").value(1);
         json.key("textureAnimations").beginArray();
         for (const TextureAnimation& animation : file.textureAnimations) {
             json.beginObject();

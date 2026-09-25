@@ -45,6 +45,10 @@ public:
     void animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed = PlayerDeed::None);
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
               const WorldLighting& lighting, f32 alpha, bool hideWeapon) const;
+    /** Retail head equipment, attached to the posed HEAD object. The level's
+     * powerup archive must outlive this figure, like its other borrowed draw resources. */
+    void drawHeadwear(RenderDevice& device, ItemArchive& powerups, const PowerupEffects& worn,
+                      const Mat4& clip, const Mat4& body, const WorldLighting& lighting, f32 alpha);
     /** A posed hand, if available; callers choose their own fallback attachment. */
     std::optional<Vec3> handPosition(const Mat4& body) const;
     std::optional<Mat4> attachment(const Mat4& body, std::string_view objectSuffix) const;
@@ -87,6 +91,8 @@ private:
     std::filesystem::path m_directory;
     TreeInfo m_weaponTree;
     TreeModel m_weapon;
+    TreeInfo m_headwearTree;
+    TreeModel m_headwear;
     s32 m_handNode = -1;
     std::vector<s32> m_classNodeOfNode;
     std::vector<Mat4> m_transforms;

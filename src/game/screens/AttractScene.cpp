@@ -119,7 +119,9 @@ bool AttractScene::openNext(RenderDevice& device, const GameContext& context) {
                 continue;
             }
             m_world.setPlayerCount(1);
-            m_audio.open(context.unpackedRoot, context.sounds, m_world.audio());
+            m_audio.open(context.unpackedRoot, context.sounds, m_world.audio(),
+                         m_world.ref().name.empty() ? 'L' : m_world.ref().name.front(),
+                         m_world.level() != nullptr && m_world.level()->bossType >= 0);
             m_audio.bindAmbience(m_world.layout());
             m_audio.startMusic(context.assets, info->musicVolume);
             m_textures.load(context.unpackedRoot / "STATIC");

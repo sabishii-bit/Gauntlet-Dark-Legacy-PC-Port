@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <type_traits>
@@ -18,6 +19,40 @@ using namespace gdl::game;
 
 static_assert(!std::is_move_constructible_v<PlayerFigure>);
 static_assert(!std::is_copy_constructible_v<PlayerFigure>);
+
+TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
+          "[game][figure][xray][unpacked]") {
+    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("PLAYERS/JES/YEL/animations.json");
+    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    CharacterSave save;
+    save.character = 7;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
+    PowerupEffects worn;
+    figure->drawHeadwear(device, powerups, worn, Mat4{1}, body, {}, 1);
+    CHECK(device.draws.empty());
+    worn.special = powerup::kXRay;
+    figure->drawHeadwear(device, powerups, worn, Mat4{1}, body, {}, 1);
+    REQUIRE_FALSE(device.draws.empty());
+    const auto head = figure->attachment(body, "HEAD");
+    REQUIRE(head);
+    const auto object = powerups.models.find("HEAD_XRAY");
+    REQUIRE(object);
+    const auto& mesh = powerups.models.mesh(*object);
+    const Vec3 drawn = device.draws.front().vertices.front().position;
+    CHECK(std::ranges::any_of(mesh.vertices, [&](const auto& vertex) {
+        return glm::distance(drawn, Vec3{*head * Vec4{vertex.position, 1}}) < 0.0001f;
+    }));
+    device.draws.clear();
+    worn.special = 0;
+    figure->drawHeadwear(device, powerups, worn, Mat4{1}, body, {}, 1);
+    CHECK(device.draws.empty());
+}
 
 TEST_CASE("Jester throws face the camera and his permanent familiar fires once per release",
           "[game][world][figure][unpacked]") {

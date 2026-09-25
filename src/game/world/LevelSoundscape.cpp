@@ -16,31 +16,18 @@ namespace gdl::game {
 namespace {
 constexpr std::array<std::string_view, 2> kStepSounds{"S_STEPROCK1", "S_STEPROCK2"};
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
-/** What a target sounds while it opens before the party and once it has, by the sound slot its
- * trigger names: the force fields and magic crossings, the lifts, the east gates, the west
- * gates. The tower's ambience bank keeps them under the audio directory's elevator slot
- * names; its own sample names call them ffield, lwrtwr, eastgat and westgat. */
-struct OpeningSounds {
-    std::string_view moving;
-    std::string_view done;
-};
-constexpr std::array<OpeningSounds, 4> kOpeningSounds{{{"S_ELVMETL", "S_ELVMETSTPL"},
-                                                       {"S_ELVROPEL", "S_ELVROPESTPL"},
-                                                       {"S_ELVCHAINL", "S_ELVCHAINSTPL"},
-                                                       {"S_ELVSTONEL", "S_ELVSTONESTPL"}}};
-
-/** The sounds a trigger's slot names, or null for a slot without any. */
-const OpeningSounds* openingSoundsOf(s32 slot) {
-    return slot >= 0 && static_cast<usize>(slot) < kOpeningSounds.size()
-               ? &kOpeningSounds[static_cast<usize>(slot)]
-               : nullptr;
-}
+// sounds_evt.c's material table, not the order of sounds in any one bank.
+// In CATHEDRAL the ICE slot contains the heavy-door creak recordings.
+constexpr std::array<std::string_view, 6> kOpeningMaterials{"MET", "ROPE",  "CHAIN",
+                                                            "ICE", "STONE", "*ROCK"};
 
 } // namespace
 
 void LevelSoundscape::open(const std::filesystem::path& root, SoundPlayer* output,
-                           const LevelAudioInfo* info) {
+                           const LevelAudioInfo* info, char realm, bool boss) {
     close();
+    m_realm = realm;
+    m_boss = boss;
     m_output = output;
     if (info != nullptr) {
         m_level.load(root / "audio" / info->bank);
@@ -234,11 +221,10 @@ void LevelSoundscape::speakOverScroll(std::string_view name) {
 }
 
 void LevelSoundscape::opening(const TriggerOpening& event) {
-    const OpeningSounds* sounds = openingSoundsOf(event.sound);
-    if (event.atOnce || sounds == nullptr) {
+    if (event.atOnce) {
         return;
     }
-    if (const SoundHandle handle = playNamed(sounds->moving); handle != kNoSound) {
+    if (const SoundHandle handle = playOpening(event.sound, false); handle != kNoSound) {
         m_openings.push_back(Opening{event.target, handle});
     }
 }
@@ -252,9 +238,21 @@ void LevelSoundscape::settled(const TriggerOpening& event) {
             ++i;
         }
     }
-    if (const OpeningSounds* sounds = openingSoundsOf(event.sound); sounds != nullptr) {
-        playNamed(sounds->done);
+    playOpening(event.sound, true);
+}
+
+SoundHandle LevelSoundscape::playOpening(s32 slot, bool settled) {
+    if (slot < 0 || static_cast<usize>(slot) >= kOpeningMaterials.size()) {
+        return kNoSound;
     }
+    // GC 800a1614 constructs the sixth pair without a realm suffix, and
+    // selects the B-suffixed elevator names in boss arenas.
+    const auto material = kOpeningMaterials[static_cast<usize>(slot)];
+    if (material.starts_with('*')) {
+        return playNamed(std::format("S_{}{}", material.substr(1), settled ? "STOP" : "ROTATE"));
+    }
+    return playNamed(
+        std::format("S_ELV{}{}{}{}", material, settled ? "STP" : "", m_realm, m_boss ? "B" : ""));
 }
 
 } // namespace gdl::game

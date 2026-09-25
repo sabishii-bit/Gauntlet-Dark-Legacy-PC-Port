@@ -152,6 +152,70 @@ void Chests::hold(usize chest, s32 item) {
     }
 }
 
+usize Chests::updateXray(RenderDevice& device, ItemArchive& items, ItemArchive& powerups,
+                         f32 seconds, std::span<const ChestVisitor> party) {
+    std::vector<bool> selected(m_chests.size(), false);
+    for (const auto& visitor : party) {
+        if (!visitor.xray) {
+            continue;
+        }
+        f32 best = 10.0f * 10.0f;
+        usize closest = m_chests.size();
+        for (usize i = 0; i < m_chests.size(); ++i) {
+            const auto& chest = *m_chests[i];
+            if (!chest.shown || chest.gone || chest.state != kShut ||
+                chest.subtype == kTrappedChest) {
+                continue;
+            }
+            u32 seed = m_seed;
+            const s32 inside =
+                resolveContents(m_infos, chest.contents, static_cast<usize>(chest.instance), seed);
+            if (inside < 0 ||
+                (m_infos[static_cast<usize>(inside)].type != ItemInfo::kPowerup &&
+                 m_infos[static_cast<usize>(inside)].type != ItemInfo::kPlacedEnemy)) {
+                continue;
+            }
+            const Vec3 delta = chest.figure.position() - visitor.position;
+            const f32 distance = glm::dot(delta, delta);
+            if (distance < best) {
+                closest = i;
+                best = distance;
+            }
+        }
+        if (closest < selected.size()) {
+            selected[closest] = true;
+        }
+    }
+    usize fresh = 0;
+    for (usize i = 0; i < m_chests.size(); ++i) {
+        auto& chest = *m_chests[i];
+        if (selected[i]) {
+            fresh += chest.revealed ? 0U : 1U;
+            u32 seed = m_seed; // Looking must not change what opening a random chest produces.
+            const s32 inside =
+                resolveContents(m_infos, chest.contents, static_cast<usize>(chest.instance), seed);
+            if (inside != chest.previewContents) {
+                chest.previewContents = inside;
+                const auto& record = m_infos[static_cast<usize>(inside)];
+                std::string_view name = record.name;
+                if (record.type == ItemInfo::kPlacedEnemy) {
+                    name = "DEATH_ICON";
+                } else if (record.subtype == 2 && chest.count > 1) {
+                    name = "KEYRING";
+                }
+                ItemArchive& archive = items.trees.find(name) ? items : powerups;
+                ItemInstance instance;
+                instance.position = chest.figure.position();
+                instance.rotation.y = chest.figure.yaw();
+                chest.preview.place(device, archive, name, instance, nullptr);
+            }
+            chest.preview.update(seconds);
+        }
+        chest.revealed = selected[i];
+    }
+    return fresh;
+}
+
 s32 Chests::holdingTouchedBy(const ChestVisitor& visitor) const {
     for (usize index = 0; index < m_chests.size(); ++index) {
         const Chest& chest = *m_chests[index];
@@ -183,7 +247,11 @@ std::vector<Obstacle> Chests::obstacles() const {
 void Chests::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
     for (const std::unique_ptr<Chest>& chest : m_chests) {
         if (chest->shown && !chest->gone) {
-            chest->figure.draw(device, clip, lighting);
+            if (chest->revealed) {
+                // Retail MBTreeSetAlpha(0xC0) is transparency, not opacity.
+                chest->preview.draw(device, clip, lighting, 1.0f, 0.65f);
+            }
+            chest->figure.draw(device, clip, lighting, chest->revealed ? 63.0f / 255.0f : 1.0f);
         }
     }
 }

@@ -243,15 +243,21 @@ public:
         if (shoving()) {
             return kChargePace; // the charge rushes on, faster than a run
         }
-        if (strongThrowing()) {
-            return kStrongThrowPace;
+        if (quickMeleeing()) {
+            return kQuickMeleePace;
         }
+        // Strong throws remain planted per the GameCube playtest. AnimAction's
+        // generic PWRA_THROW quarter-pace branch still needs state-path reconciliation.
         return throwing() || meleeing() || conjuring() || reacting() || turboing() || guarding()
                    ? 0.0f
                    : 1.0f;
     }
     static constexpr f32 kChargePace = 1.5f;
     static constexpr f32 kWebPace = 0.4f;
+    static constexpr f32 kQuickMeleePace = 0.25f;
+    bool quickMeleeing() const {
+        return m_current >= Action::Quick1 && m_current <= Action::Quick3Recover;
+    }
     /** Web contact suppresses attacks, but leaves a slow escape walk. */
     bool webbed() const { return m_current == Action::WebReact; }
     /** Whether the guard is coming up, up or going down; the feet stay put throughout. */
@@ -294,8 +300,6 @@ public:
     }
     /** Whether this tick's step ended the strong throw's wind-up: the weapon flies. */
     bool strongReleased() const { return m_strongReleased; }
-    /** How much of its pace the body keeps in the strong throw. */
-    static constexpr f32 kStrongThrowPace = 0.25f;
     /** Whether the body can begin the turbo move `deed` now: it has the sequence and is not
      * in the middle of anything. */
     bool canBegin(PlayerDeed deed) const;

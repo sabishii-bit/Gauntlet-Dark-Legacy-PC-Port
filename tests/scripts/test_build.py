@@ -1,4 +1,5 @@
 """The build launcher forwards preview arguments after building the selected preset."""
+import json
 import pathlib
 import subprocess
 import sys
@@ -11,6 +12,55 @@ import build
 
 
 class BuildLaunchTests(unittest.TestCase):
+    def test_legacy_player_exports_refresh_once_before_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            binary = root / "build/release"
+            (binary / "bin").mkdir(parents=True)
+            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
+            (root / "assets/GUNE5D/Gauntlet/PLAYERS").mkdir(parents=True)
+            manifest = root / "assets/unpacked/PLAYERS/JES/SFXYEL/animations.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('{"trees":[]}', encoding="utf-8")
+            def unpack(_command):
+                manifest.write_text(json.dumps({"textureBindingVersion": 1, "trees": []}),
+                                    encoding="utf-8")
+
+            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
+                build.refresh_player_effects(binary, [], root)
+                run.assert_called_once_with([
+                    str(binary / "bin" / f"gdlunpack{build.EXE}"),
+                    str(root / "assets/GUNE5D/Gauntlet"), str(root / "assets/unpacked"),
+                    "--only", "PLAYERS"])
+                run.reset_mock()
+                # Optional node/sequence links may legitimately be absent. The
+                # exporter version, not their presence, establishes freshness.
+                manifest.write_text(json.dumps({"textureBindingVersion": 1, "trees": []}),
+                                    encoding="utf-8")
+                build.refresh_player_effects(binary, [], root)
+                run.assert_not_called()
+                manifest.write_text('{}', encoding="utf-8")
+                run.side_effect = None
+                with self.assertRaisesRegex(ValueError, "did not upgrade"):
+                    build.refresh_player_effects(binary, [], root)
+
+    def test_asset_free_builds_do_not_run_unpacker(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(build.devenv, "run") as run:
+            root = pathlib.Path(directory)
+            build.refresh_player_effects(root / "build/release", [], root)
+            run.assert_not_called()
+
+    def test_custom_asset_paths_are_respected_and_missing_raw_assets_fail_clearly(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            manifest = root / "custom output/PLAYERS/JES/SFXYEL/animations.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('{}', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "need re-exporting"):
+                build.refresh_player_effects(root / "build/release",
+                                             ["--unpacked", "custom output"], root)
+
     def test_previews_use_release_and_preserve_forwarded_arguments(self):
         with tempfile.TemporaryDirectory(prefix="gdl build ") as directory:
             root = pathlib.Path(directory)

@@ -89,6 +89,42 @@ struct Fixture {
     explicit Fixture(std::string_view name) { REQUIRE(layout.load(sampleLevel(name))); }
 };
 
+TEST_CASE("X-Ray reveals the nearest closed chest without spending keys or changing its loot",
+          "[game][world][fixtures][xray]") {
+    Fixture f("fixtures-xray");
+    Chests chests;
+    REQUIRE(chests.bind(f.device, f.layout, f.items, nullptr));
+    chests.setPlayerCount(2);
+    std::array party{ChestVisitor{Vec3{3, 0, 0}, 0.75f, 0, true}};
+    CHECK(chests.updateXray(f.device, f.items, f.items, 0, party) == 1);
+    CHECK(chests.chest(0).revealed);
+    CHECK(chests.chest(0).state == Chests::kShut);
+    CHECK(chests.chest(0).held == -1);
+    const auto preview = chests.chest(0).previewContents;
+    CHECK(preview == 1);
+    CHECK(chests.updateXray(f.device, f.items, f.items, 0, party) == 0);
+    party[0].xray = false;
+    CHECK(chests.updateXray(f.device, f.items, f.items, 0, party) == 0);
+    CHECK_FALSE(chests.chest(0).revealed);
+    party[0].xray = true;
+    party[0].position = Vec3{10, 0, 0};
+    chests.updateXray(f.device, f.items, f.items, 0, party);
+    CHECK_FALSE(chests.chest(0).revealed); // strict ten-unit reach
+    party[0].position = Vec3{21.9f, 0, 0};
+    CHECK(chests.updateXray(f.device, f.items, f.items, 0, party) == 1);
+    CHECK(chests.chest(1).revealed);
+    party[0].position = Vec3{41.9f, 0, 0};
+    chests.updateXray(f.device, f.items, f.items, 0, party);
+    CHECK_FALSE(chests.chest(2).revealed); // trapped chests are excluded
+    party[0].position = Vec3{1.9f, 0, 0};
+    party[0].keys = 1;
+    const auto opened = chests.update(0, party);
+    REQUIRE(opened.size() == 1);
+    CHECK(opened[0].contents == preview);
+    chests.updateXray(f.device, f.items, f.items, 0, party);
+    CHECK_FALSE(chests.chest(0).revealed);
+}
+
 TEST_CASE("a box pushes a body out by its nearest side and knows what is against it",
           "[game][world][fixtures]") {
     Obstacle box;

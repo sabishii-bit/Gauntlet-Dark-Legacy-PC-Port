@@ -256,4 +256,36 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
     }
 }
 
+void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
+                                const PowerupEffects& worn, const Mat4& clip, const Mat4& body,
+                                const WorldLighting& lighting, f32 alpha) {
+    // SetPlayerPowerups chooses one head object, in this precedence order.
+    std::string_view object;
+    if ((worn.special & powerup::kSkorneHorns) != 0) {
+        object = "BOSSHORN";
+    } else if ((worn.special & powerup::kSkorneMask) != 0) {
+        object = "BOSSMASK";
+    } else if ((worn.armor & 0x80000U) != 0) {
+        object = "HEAD_HALO";
+    } else if ((worn.armor & 0x2000U) != 0) {
+        object = "HEAD_GAS";
+    } else if (worn.xray()) {
+        object = "HEAD_XRAY";
+    }
+    const auto head = attachment(body, "HEAD");
+    if (object.empty() || !head || !powerups.loaded()) {
+        return;
+    }
+    if (m_headwearTree.name != object) {
+        m_headwearTree = {};
+        m_headwearTree.name = object;
+        TreeNodeInfo node;
+        node.name = object;
+        node.object = object;
+        m_headwearTree.nodes.push_back(node);
+        m_headwear.bind(m_headwearTree, powerups.models, powerups.textures, device);
+    }
+    m_headwear.draw(device, clip, *head, lighting, {}, nullptr, alpha);
+}
+
 } // namespace gdl::game

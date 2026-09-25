@@ -74,7 +74,9 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
             log::warn("Player damage skin: {}", e.what());
         }
     }
-    m_audio.open(context.unpackedRoot, context.sounds, world.audio());
+    m_audio.open(context.unpackedRoot, context.sounds, world.audio(),
+                 world.ref().name.empty() ? 'L' : world.ref().name.front(),
+                 world.level() != nullptr && world.level()->bossType >= 0);
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
     if (const auto glow = m_staticTextures.find("FONT32_GLOW")) {
         m_hud.setGlow(&m_staticTextures.texture(device, *glow));
@@ -1315,6 +1317,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             figure.draw(device, clip, body, m_world->lighting(),
                         worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha(),
                         runtime.move.weaponHidden());
+            figure.drawHeadwear(device, m_world->powerups(), worn, clip, body, m_world->lighting(),
+                                worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha());
             figure.setSkinTexture(nullptr);
         }
     }

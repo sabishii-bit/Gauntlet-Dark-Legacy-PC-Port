@@ -151,7 +151,11 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         const bool itemAttack = deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
                                 deed == PlayerDeed::Breathe || deed == PlayerDeed::FireLeft ||
                                 deed == PlayerDeed::FireRight;
-        if (closeAttack || itemAttack) {
+        if (closeAttack && deed == PlayerDeed::Melee) {
+            // The first input frame moves before the animation changes. Do not
+            // bypass an existing reaction/arrival lock to start a quick swing.
+            actionPace = std::min(actionPace, PlayerAnimator::kQuickMeleePace);
+        } else if (closeAttack || itemAttack || deed == PlayerDeed::StrongAttack) {
             actionPace = 0;
         }
         const f32 pace = webbed ? PlayerAnimator::kWebPace : actionPace;
@@ -166,8 +170,15 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                         : StrafeWay::None);
         }
         const Vec3 before = actor.position();
-        actor.update(charging ? chargeInput(actor, move, cameraYaw) : move, cameraYaw, seconds,
-                     &collision, pace, strafes);
+        MoveInput attackMove = move;
+        if (move.any() &&
+            (deed == PlayerDeed::Melee || (animator != nullptr && animator->quickMeleeing()))) {
+            // AnimAction gives quick melee a quarter pace and no steering.
+            const f32 heading = actor.yaw() - cameraYaw;
+            attackMove.direction = Vec2{std::sin(heading), std::cos(heading)};
+        }
+        actor.update(charging ? chargeInput(actor, move, cameraYaw) : attackMove, cameraYaw,
+                     seconds, &collision, pace, strafes);
         if (!down && events.resolveMovement) {
             actor.place(events.resolveMovement(i, before, actor.position()));
         }
