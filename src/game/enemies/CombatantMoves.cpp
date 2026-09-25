@@ -34,7 +34,7 @@ const EnemyView* Combatant::viewOf(std::span<const EnemyView> players, s32 playe
 }
 
 bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
-    const CritterData& data = critter.stock->data;
+    const CritterData& data = *critter.definition;
     if (index >= data.moves().size()) {
         return false;
     }
@@ -70,7 +70,7 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
 void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players) {
     critter.target = -1;
     critter.targetDistance = 100000.0f;
-    const TargetCriteria& sight = critter.stock->data.sight();
+    const TargetCriteria& sight = critter.definition->sight();
     for (const EnemyView& view : players) {
         if (view.hidden) {
             continue;
@@ -87,7 +87,7 @@ void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players)
 }
 
 std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const EnemyView> players) {
-    const CritterData& data = critter.stock->data;
+    const CritterData& data = *critter.definition;
     const EnemyView* view = viewOf(players, critter.target);
     f32 distance = 100000.0f;
     f32 bearing = kPi;
@@ -136,14 +136,14 @@ bool Combatant::curbedMove(const Actor& critter, const MoveDefinition& move) {
         return false;
     }
     return std::ranges::any_of(std::array{move.damage0, move.damage1}, [&](s32 index) {
-        const AttackDefinition* damage = critter.stock->data.damage(index);
+        const AttackDefinition* damage = critter.definition->damage(index);
         return damage != nullptr && (damage->behaviorFlags & AttackDefinition::kCurbed) != 0 &&
                damage->type != AttackDefinition::kProjectile;
     });
 }
 
 void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
-    const CritterData& data = critter.stock->data;
+    const CritterData& data = *critter.definition;
     const MoveDefinition* current =
         critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
     // What is loudest cuts in: the death, a roar after enough taken, a hit's reaction.
@@ -177,6 +177,9 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
             }
         }
         return;
+    }
+    if (critter.forcedPattern) {
+        return; // The parent's pattern step, not this branch's end frame, advances the move.
     }
     if (critter.hurtPending >= 1.0f) {
         const bool floors = (critter.hurtFlags & EnemyHit::kFloors) != 0;

@@ -385,11 +385,9 @@ bool LevelTriggers::visited(const LevelTrigger& trigger, f32 radius,
 void LevelTriggers::openMet(std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                             WorldScene& scene, WorldCollision* collision) {
     for (usize i = 0; i < m_triggers.size(); ++i) {
-        LevelTrigger& trigger = m_triggers[i];
+        const LevelTrigger& trigger = m_triggers[i];
         if ((trigger.flags & LevelTrigger::kRequirement) != 0 && qualifies(trigger, visitors)) {
             fire(i, true, true, animator, scene, collision);
-        } else if (!trigger.fired) {
-            trigger.occupied = visited(trigger, trigger.radius, visitors);
         }
     }
     for (Target& target : m_targets) {
@@ -426,14 +424,10 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         const f32 radius =
             trigger.needsCrystals() && qualified ? trigger.radius * kMetReach : trigger.radius;
         if (!visited(trigger, radius, visitors)) {
-            trigger.occupied = false;
             fire(i, false, false, animator, scene, collision);
             continue;
         }
         if (qualified) {
-            if (trigger.occupied) {
-                continue; // stood in from the start: not until they come back to it
-            }
             fire(i, true, false, animator, scene, collision);
         } else if ((trigger.flags & LevelTrigger::kRequirement) != 0 &&
                    trigger.refusalCooldown <= 0.0f) {

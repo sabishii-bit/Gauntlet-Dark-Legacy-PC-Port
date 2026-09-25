@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <optional>
 #include <random>
 #include <span>
@@ -38,6 +39,9 @@ public:
     /** Replaces the actor state; pending events survive until taken or explicitly cleared. */
     bool spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 yaw,
                const WorldCollision* collision, const EnemyScales& scales, char realm);
+    /** Independently controlled branches share assets and the body's placement. */
+    const Combatant* child(s32 id) const;
+    usize childCount() const { return m_children.size(); }
     void clear();
     /** Static stage attachment points supplied by the encounter, not player targets. */
     void setArenaAnchors(std::span<const Mat4> anchors);
@@ -45,7 +49,7 @@ public:
     bool raisesArenaRocks() const;
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Combatant> peers = {});
-    void hurt(const EnemyHit& hit);
+    void hurt(const EnemyHit& hit, s32 partId = -1);
     void freeze(s32 ticks);
     void blind(s32 ticks);
     void curb(f32 seconds);
@@ -98,6 +102,12 @@ private:
     struct Actor {
         State state = State::Inactive;
         CombatantAssets* stock = nullptr;
+        const CritterData* definition = nullptr;
+        const Combatant* parent = nullptr;
+        std::optional<usize> branch;
+        bool hidden = false;
+        bool forcedPattern = false;
+        bool childrenIntact = true;
         f32 health = 0.0f;
         f32 maxHealth = 1.0f;
         Vec3 position{0.0f, 0.0f, 0.0f};
@@ -149,6 +159,16 @@ private:
     };
 
     bool startMove(Actor& critter, usize index, bool recordUse = true);
+    bool spawnActor(CombatantAssets& stock, const CritterData& definition, s32 id,
+                    const Vec3& position, f32 yaw, const WorldCollision* collision,
+                    const EnemyScales& scales, char realm);
+    void updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView> players);
+    void inheritBodyPose();
+    void synchronizeChild();
+    void collectChildEvents(Combatant& part);
+    void hurtActor(const EnemyHit& hit);
+    std::vector<MissileTarget> ownTargets(bool solidOnly) const;
+    void loseHealth(f32 amount);
     void chooseMove(Actor& critter, std::span<const EnemyView> players);
     static std::optional<usize> bestMove(const Actor& critter, std::span<const EnemyView> players);
     bool choosePatternAttack(Actor& critter, std::span<const EnemyView> players);
@@ -191,6 +211,7 @@ private:
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);
 
     Actor m_actor;
+    std::vector<std::unique_ptr<Combatant>> m_children;
     s32 m_id = -1;
     const WorldCollision* m_collision = nullptr;
     EnemyScales m_scales;

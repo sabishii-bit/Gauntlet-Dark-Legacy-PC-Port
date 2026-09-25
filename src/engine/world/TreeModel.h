@@ -71,6 +71,8 @@ public:
     /** Shows the object nodes' meshes for `frame` of `sequence`: the run's mesh for the
      * frame, the only mesh of a one-frame run, else none. */
     void setFrame(u32 sequence, s32 frame);
+    /** Overrides object-animation frames for just one independently animated branch. */
+    void setSubtreeFrame(usize root, u32 sequence, s32 frame);
 
     /** Draws with `model` placing model space in the world and `clip` mapping the world to
      * clip space; opaque parts first, then translucent ones. `nodeTransforms`, one matrix per
@@ -113,6 +115,7 @@ private:
     };
 
     static Shape makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device);
+    static void selectFrame(Node& node, u32 sequence, s32 frame);
     /** Grows the bounds around `shape` at `offset`. */
     void include(const Shape& shape, const Vec3& offset, bool& first);
 

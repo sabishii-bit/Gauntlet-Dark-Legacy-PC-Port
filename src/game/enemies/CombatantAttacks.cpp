@@ -17,7 +17,7 @@ f32 flatDistance(const Vec3& a, const Vec3& b) {
 
 void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
                            std::span<const EnemyView> players) {
-    const AttackDefinition* damage = critter.stock->data.damage(damageIndex);
+    const AttackDefinition* damage = critter.definition->damage(damageIndex);
     if (damage == nullptr || damage->damage <= 0.0f) {
         return;
     }
@@ -86,12 +86,12 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
 
 void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
                       std::span<const EnemyView> players) {
-    const AttackDefinition* damage = critter.stock->data.damage(damageIndex);
+    const AttackDefinition* damage = critter.definition->damage(damageIndex);
     if (damage == nullptr) {
         return;
     }
     CombatShot shot;
-    shot.data = &critter.stock->data;
+    shot.data = critter.definition;
     shot.critter = id;
     shot.damageIndex = damageIndex;
     // The launch point follows the active node, but the offset and facing use the body.
@@ -114,11 +114,14 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
 
 void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
                     std::optional<std::string_view> node, const AttackDefinition* damage) {
-    const CritterData& data = critter.stock->data;
+    const CritterData& data = *critter.definition;
     for (s32 at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
         const CombatEffectDefinition* record = data.sound(at);
         if (record == nullptr) {
             break;
+        }
+        if ((record->flags & 0x400U) != 0) {
+            critter.hidden = true;
         }
         CombatCue out;
         out.critter = id;
@@ -146,9 +149,13 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         // Chimera's SFIRE1/2 need rotated offsets, not translation-only following.
         const bool root = (record->flags & 0x801U) != 0 && (record->flags & (0x2000U | 0x40U)) == 0;
         if (root && !out.tree.empty()) {
-            out.rootAttachment = true;
+            out.rootAttachment = critter.parent == nullptr;
+            if (critter.parent != nullptr) {
+                out.node = std::string{critter.definition->rootNode()};
+            }
             out.nodeOffset = offset;
-            out.position = Vec3{modelTransform(critter) * Vec4{offset, 1.0f}};
+            out.position = Vec3{attachmentTransform(critter, critter.definition->rootNode()) *
+                                Vec4{offset, 1.0f}};
             out.scale = record->scale;
             out.follows = true;
         } else if ((record->flags & 0x80U) != 0 && (record->flags & 0x801U) == 0) {

@@ -17,6 +17,7 @@ constexpr f32 kPushDecay = 0.8f;
 constexpr f32 kGravity = 100.0f;
 } // namespace
 void Combatant::clear() {
+    m_children.clear();
     m_actor = Actor{};
     m_id = -1;
     m_collision = nullptr;
@@ -53,6 +54,28 @@ bool Combatant::raisesArenaRocks() const {
 }
 bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 yaw,
                       const WorldCollision* collision, const EnemyScales& scales, char realm) {
+    m_children.clear();
+    if (!spawnActor(stock, stock.data, id, position, yaw, collision, scales, realm)) {
+        return false;
+    }
+    for (const auto& definition : stock.children) {
+        auto part = std::make_unique<Combatant>();
+        if (!part->spawnActor(stock, definition, id + 1 + static_cast<s32>(m_children.size()),
+                              position, yaw, nullptr, scales, realm)) {
+            clear();
+            return false;
+        }
+        part->m_actor.parent = this;
+        part->m_actor.branch = stock.tree->findNode(definition.rootNode());
+        part->synchronizeChild();
+        m_children.push_back(std::move(part));
+    }
+    return true;
+}
+
+bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition, s32 id,
+                           const Vec3& position, f32 yaw, const WorldCollision* collision,
+                           const EnemyScales& scales, char realm) {
     m_actor = Actor{};
     m_id = -1;
     m_collision = nullptr;
@@ -66,7 +89,8 @@ bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 
     Actor& critter = m_actor;
     critter.state = State::Active;
     critter.stock = &stock;
-    critter.maxHealth = stock.data.maxHealth() * m_scales.health;
+    critter.definition = &definition;
+    critter.maxHealth = definition.maxHealth() * m_scales.health;
     critter.health = critter.maxHealth;
     critter.position = position;
     if (m_collision != nullptr) {
@@ -76,21 +100,21 @@ bool Combatant::spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 
     }
     critter.yaw = yaw;
     critter.initialYaw = yaw;
-    critter.initialRoot = critter.position + Vec3{0.0f, stock.data.floorOffset(), 0.0f};
+    critter.initialRoot = critter.position + Vec3{0.0f, definition.floorOffset(), 0.0f};
     // The table's explicit home is in model-root space; public positions are floors.
     critter.homePosition = critter.position;
-    if (const auto& home = stock.data.movement().home; home.has_value()) {
-        critter.homePosition = *home - Vec3{0.0f, stock.data.floorOffset(), 0.0f};
+    if (const auto& home = definition.movement().home; home.has_value()) {
+        critter.homePosition = *home - Vec3{0.0f, definition.floorOffset(), 0.0f};
     }
-    critter.cooldowns.assign(stock.data.moves().size(), 0.0f);
+    critter.cooldowns.assign(definition.moves().size(), 0.0f);
     // Unused attacks are ready on arrival, independent of this instance's clock.
     // Subsequent cooldowns count from their recorded use, not the spawn time.
     const f32 unused = -std::numeric_limits<f32>::infinity();
-    critter.moveTimes.assign(stock.data.moves().size(), unused);
-    critter.patternTimes.assign(stock.data.patterns().size(), unused);
+    critter.moveTimes.assign(definition.moves().size(), unused);
+    critter.patternTimes.assign(definition.patterns().size(), unused);
     // It comes in by its entrance, or its stance when it has none.
-    const auto start = stock.data.moveOfType(MoveDefinition::kStart);
-    const auto ready = stock.data.moveOfType(MoveDefinition::kReady);
+    const auto start = definition.moveOfType(MoveDefinition::kStart);
+    const auto ready = definition.moveOfType(MoveDefinition::kReady);
     if (!(start.has_value() && startMove(critter, *start)) &&
         !(ready.has_value() && startMove(critter, *ready))) {
         critter = Actor{};
@@ -109,7 +133,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         return;
     }
     const s32 i = m_id;
-    const CritterData& data = critter.stock->data;
+    const CritterData& data = *critter.definition;
     critter.age += seconds;
     for (CritterArea& area : critter.areas) {
         area.secondsLeft -= seconds;
@@ -150,6 +174,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         critter.moveDone = critter.player.finished() && critter.finishedSeconds >= move->hold;
         critter.pose.evaluate(*critter.stock->tree, critter.player.sequence(),
                               critter.player.frame());
+        inheritBodyPose();
         const auto frame = static_cast<s32>(std::floor(critter.player.frame()));
         const auto active = [&](s32 start, s32 end) {
             const s32 last = end < start ? start : end;
@@ -277,7 +302,9 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     } else {
         critter.moveDone = true;
     }
-    carry(critter, seconds, move, players, peers);
+    if (critter.parent == nullptr) {
+        carry(critter, seconds, move, players, peers);
+    }
     carryGrab(critter, players);
     updateAreas(critter, i, players);
     critter.push *= std::pow(kPushDecay, static_cast<f32>(ticks));
@@ -286,6 +313,10 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         critter.push = Vec3{0.0f, 0.0f, 0.0f};
     }
     // The fallen fades once its death has played out, and is gone.
+    if (critter.parent != nullptr) {
+        return; // Dead branches retain their attachment for persistent stump effects.
+    }
+    updateChildren(ticks, seconds, players);
     if (critter.state == State::Dying && move != nullptr && move->type == MoveDefinition::kDeath &&
         move->hold > 0.0f) {
         constexpr f32 kBossDeathFade = 0.5f;
@@ -303,13 +334,34 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
 }
 
-void Combatant::hurt(const EnemyHit& hit) {
+void Combatant::hurt(const EnemyHit& hit, s32 partId) {
+    if (!alive()) {
+        return;
+    }
+    for (auto& part : m_children) {
+        if (part->id() == partId) {
+            const f32 before = part->health();
+            part->hurtActor(hit);
+            // A lethal branch hit removes that branch, without forwarding its final hit.
+            if (part->alive()) {
+                loseHealth(before - part->health());
+            }
+            m_actor.childrenIntact =
+                std::ranges::all_of(m_children, [](const auto& p) { return p->alive(); });
+            collectChildEvents(*part);
+            return;
+        }
+    }
+    hurtActor(hit);
+}
+
+void Combatant::hurtActor(const EnemyHit& hit) {
     Actor& critter = m_actor;
     const s32 id = m_id;
     if (critter.state != State::Active) {
         return;
     }
-    const CritterData& data = critter.stock->data;
+    const CritterData& data = *critter.definition;
     f32 amount = hit.damage;
     // A block lets a quarter through and shrugs off the throw.
     u32 flags = hit.flags;
@@ -325,7 +377,6 @@ void Combatant::hurt(const EnemyHit& hit) {
     if (amount <= 0.0f) {
         return;
     }
-    critter.health -= amount;
     critter.hurtPending += amount;
     critter.hurtFlags |= flags;
     critter.roarOwed += amount;
@@ -352,17 +403,45 @@ void Combatant::hurt(const EnemyHit& hit) {
         loss.position = critter.position;
         m_losses.push_back(loss);
     }
+    loseHealth(amount);
+    if (alive() && !m_children.empty()) {
+        const auto count =
+            std::ranges::count_if(m_children, [](const auto& part) { return part->alive(); });
+        if (count > 0) {
+            for (auto& part : m_children) {
+                if (part->alive()) {
+                    part->loseHealth(0.5f * amount / static_cast<f32>(count));
+                    collectChildEvents(*part);
+                }
+            }
+        }
+        m_actor.childrenIntact =
+            std::ranges::all_of(m_children, [](const auto& part) { return part->alive(); });
+    }
+}
+
+void Combatant::loseHealth(f32 amount) {
+    Actor& critter = m_actor;
+    if (!alive() || amount <= 0.0f) {
+        return;
+    }
+    critter.health -= amount;
     if (critter.health <= 0.0f) {
         critter.state = State::Dying;
         CombatLoss fall;
-        fall.critter = id;
-        fall.kind = data.kind();
+        fall.critter = m_id;
+        fall.kind = data()->kind();
         fall.form = form();
         fall.player = -1;
-        fall.experience = kKillShare * data.experience();
+        fall.experience = kKillShare * data()->experience();
         fall.killed = true;
         fall.position = critter.position;
         m_losses.push_back(fall);
+        for (auto& part : m_children) {
+            if (part->alive()) {
+                part->m_actor.health = 1.0f;
+            }
+        }
     }
 }
 

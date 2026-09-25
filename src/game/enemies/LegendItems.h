@@ -32,7 +32,7 @@ struct LegendWeakness {
     f32 curbSeconds = 0.0f; ///< over nought its curbed attacks are refused, bursts cut to this
     f32 curbLasts = 0.0f;   ///< seconds the curb lasts, from its roar; for good when nought
     f32 scale = 1.0f;       ///< how big it stands afterwards
-    bool beheads = false;   ///< the item takes one of its heads (a third of it, for now)
+    bool beheads = false;   ///< the scimitar targets the lion head, not a share of body health
 
     bool harms() const { return healthShare > 0.0f || damage > 0.0f; }
     bool curbs() const { return curbSeconds > 0.0f; }

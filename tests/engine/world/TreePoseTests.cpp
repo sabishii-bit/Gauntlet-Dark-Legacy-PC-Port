@@ -83,6 +83,26 @@ TEST_CASE("a track samples between keys, holds across large angle steps and past
     REQUIRE(TreePose::wrapAngle(1.0f) == 1.0f);
 }
 
+TEST_CASE("subtree overlays keep body motion and unrelated sibling poses",
+          "[world][animation][pose]") {
+    TreeInfo tree = sampleTree();
+    TreeNodeInfo sibling;
+    sibling.parent = 0;
+    sibling.position = Vec3{0, 0, 5};
+    tree.nodes.push_back(sibling);
+    tree.sequences[0].tracks.push_back(track(1, 4, {0, 4}, {0, 3}));
+    tree.sequences[0].trackOfNode = {0, 1, -1};
+    TreePose body;
+    body.evaluate(tree, 0, 0);
+    TreePose head;
+    head.evaluate(tree, 0, 4);
+    const Mat4 siblingBefore = body.matrices()[2];
+    body.overlaySubtree(head, 1);
+    REQUIRE(near(Vec3{body.matrices()[0][3]}, Vec3{1, 0, 0}));
+    REQUIRE(near(Vec3{body.matrices()[1][3]}, Vec3{1, 5, 0}));
+    REQUIRE(near(body.matrices()[2], siblingBefore));
+}
+
 TEST_CASE("a node's matrix turns in the original's sense and carries its rest offset",
           "[world][animation][pose]") {
     NodePose pose;

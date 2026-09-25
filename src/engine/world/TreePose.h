@@ -36,6 +36,8 @@ public:
     /** Blends this pose `t` of the way from `from` (0) to itself (1), angles by the shortest
      * arc, then rebuilds the matrices. Both poses must be of the same tree. */
     void blend(const TreePose& from, f32 t);
+    /** Copies local animation within a branch, preserving this pose's other branches. */
+    void overlaySubtree(const TreePose& from, usize root);
 
     bool posed() const { return m_tree != nullptr; }
     usize size() const { return m_poses.size(); }

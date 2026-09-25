@@ -115,22 +115,34 @@ bool TreeModel::bind(const TreeInfo& tree, ModelSet& models, TextureSet& texture
 
 void TreeModel::setFrame(u32 sequence, s32 frame) {
     for (Node& node : m_nodes) {
-        if (node.runs.empty()) {
-            continue;
+        selectFrame(node, sequence, frame);
+    }
+}
+
+void TreeModel::setSubtreeFrame(usize root, u32 sequence, s32 frame) {
+    for (Node& node : m_nodes) {
+        if (std::ranges::find(node.ancestors, root) != node.ancestors.end()) {
+            selectFrame(node, sequence, frame);
         }
-        node.shape = Shape{};
-        if (sequence >= node.runs.size()) {
-            continue;
-        }
-        const FrameRun& run = node.runs[sequence];
-        const auto count = static_cast<s32>(run.shapes.size());
-        const s32 sampled = run.reverseLength > 0 ? run.reverseLength - frame - 1 : frame;
-        const s32 at = sampled - run.start;
-        if (at >= 0 && at < count) {
-            node.shape = run.shapes[static_cast<usize>(at)];
-        } else if (count == 1) {
-            node.shape = run.shapes[0];
-        }
+    }
+}
+
+void TreeModel::selectFrame(Node& node, u32 sequence, s32 frame) {
+    if (node.runs.empty()) {
+        return;
+    }
+    node.shape = Shape{};
+    if (sequence >= node.runs.size()) {
+        return;
+    }
+    const FrameRun& run = node.runs[sequence];
+    const auto count = static_cast<s32>(run.shapes.size());
+    const s32 sampled = run.reverseLength > 0 ? run.reverseLength - frame - 1 : frame;
+    const s32 at = sampled - run.start;
+    if (at >= 0 && at < count) {
+        node.shape = run.shapes[static_cast<usize>(at)];
+    } else if (count == 1) {
+        node.shape = run.shapes[0];
     }
 }
 

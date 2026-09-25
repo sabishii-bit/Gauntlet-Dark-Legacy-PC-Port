@@ -24,8 +24,16 @@ constexpr f32 kBlindTurnShare = 0.1f;
 } // namespace
 void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                       std::span<const EnemyView> players, std::span<const Combatant> peers) {
-    const CritterMovement& movement = critter.stock->data.movement();
+    const CritterMovement& movement = critter.definition->movement();
     const bool bounded = critter.stock->definition.boundsToHome;
+    // CritterBossAI (GC 0x80039ad8) probes the supporting floor every frame,
+    // independently of locomotion. In A5 this is the descending elevator.
+    // position is floor-space here; rootTransform adds the TYPE floorOffset.
+    if (bounded && m_collision != nullptr) {
+        if (const auto floor = m_collision->floorAt(critter.position, 4.0f, 1000.0f)) {
+            critter.position.y = floor->y;
+        }
+    }
     const EnemyView* view = viewOf(players, critter.target);
     if (move != nullptr && move->turnRate > 0.0f && view != nullptr && critter.grabbed < 0) {
         const f32 wanted =
@@ -76,12 +84,12 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     // Never onto a player: it stops against them.
     for (const EnemyView& other : players) {
         if (!other.hidden &&
-            flatDistance(other.position, to) < other.radius + critter.stock->data.radius()) {
+            flatDistance(other.position, to) < other.radius + critter.definition->radius()) {
             return;
         }
     }
     if (m_collision != nullptr) {
-        const f32 wallRadius = critter.stock->data.wallRadius();
+        const f32 wallRadius = critter.definition->wallRadius();
         to = m_collision->resolveWalls(to, wallRadius, to.y + kFootClearance, to.y + 8.0f);
         const auto floor = m_collision->floorAt(to, kStepUp, kDrop);
         if (!floor.has_value()) {
@@ -95,7 +103,7 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
             continue;
         }
         if (flatDistance(other.position, to) <
-            other.stock->data.radius() + critter.stock->data.radius()) {
+            other.stock->data.radius() + critter.definition->radius()) {
             return;
         }
     }

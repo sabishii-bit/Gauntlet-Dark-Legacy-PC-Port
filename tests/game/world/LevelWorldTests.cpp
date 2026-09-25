@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/Bosses.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/players/PlayerActor.h"
@@ -24,6 +25,61 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("Chimera approach lowers the chained arena elevator",
+          "[game][world][chimera][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELA5/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A5");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    constexpr usize kElevator = 25;
+    REQUIRE(world.layout().objects()[kElevator].name == "A5ELEVATOR");
+    const f32 initial = world.scene().worldTransform(kElevator)[3].y;
+    std::array party{TriggerVisitor{.position = world.startPoint(0)->position}};
+    bool walk = true;
+    SECTION("walk from the retail entrance") {}
+    SECTION("start inside the scenario's pressure region") {
+        party[0].position = Vec3{0, 0, 10};
+        walk = false;
+    }
+    const auto* marker = world.layout().findLocator(LocatorKind::Boss);
+    REQUIRE(marker);
+    Bosses boss;
+    boss.open(device, root, &world.collision(), {}, 'A');
+    REQUIRE(boss.spawn(35, marker->position, 0));
+    const f32 initialBoss = boss.position()->y;
+    world.startTriggers(party);
+    bool halfway = false;
+    for (s32 frame = 0; frame < 600; ++frame) {
+        if (walk) {
+            party[0].position.z = std::max(-10.0f, party[0].position.z - 0.2f);
+        }
+        if (const auto floor = world.collision().floorAt(party[0].position, 3, 10)) {
+            party[0].position.y = floor->y;
+            party[0].floorObject = floor->object;
+        }
+        world.updateTriggers(1.0f / 30, party);
+        world.update(1.0f / 30);
+        const std::array views{EnemyView{.position = party[0].position}};
+        boss.update(2, 1.0f / 30, views);
+        const f32 descent = initial - world.scene().worldTransform(kElevator)[3].y;
+        if (!halfway && descent > 10 && descent < 20) {
+            halfway = true;
+            CHECK(boss.position()->y == Approx(initialBoss - descent).margin(0.15f));
+        }
+    }
+    CAPTURE(party[0].position.y, party[0].position.z, initial);
+    CHECK(world.triggers().opened(kElevator));
+    CHECK(world.scene().worldTransform(kElevator)[3].y == Approx(initial - 23.0f));
+    CHECK(halfway);
+    CHECK(boss.position()->y == Approx(initialBoss - 23.0f).margin(0.15f));
+}
 
 TEST_CASE("Temple spawning and entrance movement reject the wall-only underlay",
           "[game][world][collision][temple][unpacked]") {

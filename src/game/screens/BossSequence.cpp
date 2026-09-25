@@ -85,6 +85,12 @@ void BossSequence::advanceLegend(f32 seconds, Bosses& bosses, std::span<PlayerRu
     std::optional<LegendPresentation::Target> target;
     if (const Vec3* at = bosses.position(); at != nullptr) {
         target = LegendPresentation::Target{*at, bosses.height(), bosses.rootTransform()};
+        if (bosses.view().kind == 35) {
+            if (const auto lion = bosses.nodeTransform("CHIMLIONHEA")) {
+                target->position = Vec3{(*lion)[3]};
+                target->height = 0;
+            }
+        }
     }
     const LegendPresentation::Update result =
         m_legend->update(seconds, bearer(m_legend->player(), m_legend->kind(), players), target);

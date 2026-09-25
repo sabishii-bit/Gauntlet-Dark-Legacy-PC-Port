@@ -130,6 +130,7 @@ private:
         bool prelit = false; ///< shaded by its vertices' colours ///< turned to the camera this way
         bool chrome = false;
         bool sorted = false;
+        bool background = false; ///< depthless, far-layer scenery (e.g. A5 lightning sheets)
         bool visible = true;
         bool depthWrite = true;
     };

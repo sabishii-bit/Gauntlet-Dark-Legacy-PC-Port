@@ -38,13 +38,13 @@ bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectD
 
 std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefinition& damage,
                                         std::string_view node, std::optional<Mat4> worldParent) {
-    const CombatEffectDefinition* sound = critter.stock->data.sound(damage.sound);
+    const CombatEffectDefinition* sound = critter.definition->sound(damage.sound);
     if (sound == nullptr) {
         return std::nullopt;
     }
     // Other policies need a world-space/moving effect owner, not a guessed root.
     if (!supportsArea(damage, sound) || (worldParent.has_value() && sound->flags != 0)) {
-        log::warn("critter {}: unsupported attached area policy for {}", critter.stock->data.name(),
+        log::warn("critter {}: unsupported attached area policy for {}", critter.definition->name(),
                   sound->tree);
         return std::nullopt;
     }
@@ -56,7 +56,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
         if (sound->tree != "NULLFX") {
             const auto tree = critter.stock->archive.trees.find(sound->tree);
             if (!tree.has_value()) {
-                log::warn("critter {}: no area effect tree {}", critter.stock->data.name(),
+                log::warn("critter {}: no area effect tree {}", critter.definition->name(),
                           sound->tree);
                 return std::nullopt;
             }

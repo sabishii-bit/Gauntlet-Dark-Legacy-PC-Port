@@ -1,5 +1,6 @@
 #pragma once
 #include <filesystem>
+#include <vector>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/world/TextureAnimator.h"
@@ -13,6 +14,7 @@ namespace gdl::game {
 struct CombatantAssets {
     CombatantDefinition definition;
     CritterData data;
+    std::vector<CritterData> children;
     ItemArchive archive;
     const TreeInfo* tree = nullptr;
     TreeModel body;

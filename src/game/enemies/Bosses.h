@@ -65,7 +65,7 @@ public:
     /** Begins the rite of the boss's legend item, carried by `player`; false when the boss
      * has none, or it is already begun. */
     bool bringLegend(s32 player);
-    /** The axe/lamp act on impact; the Savior acts when the casting gesture releases it.
+    /** The axe/lamp/scimitar act on impact; the Savior acts when the casting gesture releases it.
      * Repeated notifications are ignored. Appearance is supplied separately at draw time. */
     void landLegend();
     const LegendRite& legend() const { return m_rite; }
@@ -84,12 +84,12 @@ public:
     std::vector<CombatLoss> takeLosses();
     /** One notification after the death animation and hold finish, not on the lethal hit. */
     std::optional<Vec3> takeDefeat();
-    std::vector<CombatCue> takeCues() { return m_fighter.takeCues(); }
+    std::vector<CombatCue> takeCues();
     std::vector<CombatShot> takeShots() { return m_fighter.takeShots(); }
     /** What its death threw out: the coins it spews. */
     std::vector<CombatSpew> takeSpews() { return m_fighter.takeSpews(); }
     std::vector<LegendEvent> takeLegendEvents();
-    void hurt(const EnemyHit& hit);
+    void hurt(const EnemyHit& hit, s32 partId = kTargetId);
     bool frozen() const;
     bool blinded() const;
     bool curbed() const;

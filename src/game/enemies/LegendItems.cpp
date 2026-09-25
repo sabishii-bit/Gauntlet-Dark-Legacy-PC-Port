@@ -17,7 +17,7 @@ constexpr f32 kTicksPerSecond = 60.0f;
 constexpr std::array<LegendWeakness, 9> kWeaknesses{{
     // boss, realm, share, damage, frozen, blind, curb, lasts, scale, beheads
     {34, 2, kTenth, 0.0f, 1200, 0, 0.0f, 0.0f, 1.0f, false},        // the dragon, iced
-    {35, 1, 1.0f / 3.0f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, true},       // the chimera, beheaded
+    {35, 1, 0.0f, 0.0f, 0, 0, 0.0f, 0.0f, 1.0f, true},              // the chimera, beheaded
     {36, 3, kTenth, 0.0f, 0, 1800, 0.0f, 0.0f, 1.0f, false},        // the genie, in the dark
     {37, 4, kTenth, 0.0f, 0, 0, 0.5f, 0.0f, 0.8f, false},           // the spider, poisoned
     {38, 11, kTenth, 0.0f, 0, 18000, 0.0f, 0.0f, 1.0f, false},      // the plague fiend, blinded

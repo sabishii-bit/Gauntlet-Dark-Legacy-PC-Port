@@ -63,8 +63,8 @@ void Bosses::stageLegend(s32 ticks) {
     const bool roarDone =
         m_roarAsked && (!canRoar || (moveType == MoveDefinition::kRoar && m_fighter.moveDone()));
     for (const LegendCue cue : m_rite.update(ticks, risen, roarDone)) {
-        if (cue == LegendCue::Thrown && m_kind != 34 && m_kind != 36 && m_kind != 37 &&
-            m_kind != 42) {
+        if (cue == LegendCue::Thrown && m_kind != 34 && m_kind != 35 && m_kind != 36 &&
+            m_kind != 37 && m_kind != 42) {
             strikeWithLegend();
         } else if (cue == LegendCue::WornOff) {
             m_fighter.curb(0.0f);
@@ -79,9 +79,9 @@ void Bosses::stageLegend(s32 ticks) {
 }
 
 void Bosses::landLegend() {
-    if (m_kind == 37 || m_kind == 42) {
-        // Bellows and Savior act on the cast's release, not the request for the
-        // gesture. The roar controls lighting independently of that release.
+    if (m_kind == 35 || m_kind == 37 || m_kind == 42) {
+        // The scimitar acts on impact; Bellows and Savior act on cast release.
+        // The roar controls lighting independently of that notification.
         if (m_id.has_value() && m_rite.thrown() && !m_legendStruck) {
             strikeWithLegend();
             m_legendStruck = true;
@@ -101,7 +101,16 @@ void Bosses::strikeWithLegend() {
     if (weakness == nullptr || !m_id.has_value() || !m_fighter.alive()) {
         return;
     }
-    if (weakness->harms()) {
+    if (weakness->beheads) {
+        // The scimitar targets the second child (lion), with 1.5 times its current health.
+        constexpr s32 kLion = 2;
+        if (const Combatant* lion = m_fighter.child(kLion); lion != nullptr && lion->alive()) {
+            EnemyHit hit;
+            hit.damage = 1.5f * lion->health();
+            hit.player = m_rite.player();
+            m_fighter.hurt(hit, kLion);
+        }
+    } else if (weakness->harms()) {
         EnemyHit hit;
         hit.damage =
             weakness->damage > 0.0f ? weakness->damage : weakness->healthShare * m_fighter.health();
@@ -217,6 +226,18 @@ std::vector<CombatBlow> Bosses::takeBlows() {
     return m_fighter.takeBlows();
 }
 
+std::vector<CombatCue> Bosses::takeCues() {
+    auto cues = m_fighter.takeCues();
+    if (m_kind == 35 && m_rite.stage() != LegendRite::Stage::None) {
+        for (auto& cue : cues) {
+            if (cue.tree == "STUMPL") {
+                cue.tree = "STUMPLQ";
+            }
+        }
+    }
+    return cues;
+}
+
 std::optional<Mat4> Bosses::nodeTransform(std::string_view node) const {
     return m_id.has_value() ? m_fighter.nodeTransform(node) : std::nullopt;
 }
@@ -233,10 +254,10 @@ std::optional<Vec3> Bosses::takeDefeat() {
     return std::exchange(m_defeat, std::nullopt);
 }
 
-void Bosses::hurt(const EnemyHit& hit) {
+void Bosses::hurt(const EnemyHit& hit, s32 partId) {
     if (m_id.has_value()) {
         m_awake = true; // struck, it wakes
-        m_fighter.hurt(hit);
+        m_fighter.hurt(hit, partId);
         if (!m_fighter.alive()) {
             m_rite.clear();
             m_fighter.hold(false);
@@ -246,6 +267,9 @@ void Bosses::hurt(const EnemyHit& hit) {
 }
 
 std::vector<MissileTarget> Bosses::targets() const {
+    if (m_fighter.childCount() > 0) {
+        return m_fighter.bodyTargets();
+    }
     return m_fighter.alive() ? std::vector<MissileTarget>{{kTargetId, m_fighter.position(),
                                                            m_fighter.radius(), 8.0f}}
                              : std::vector<MissileTarget>{};
