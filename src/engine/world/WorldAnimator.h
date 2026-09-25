@@ -35,6 +35,8 @@ public:
     /** Plays an object's animation once from where it stands: forwards to open, backwards
      * to close; `atOnce` jumps straight to the end. */
     void fire(s32 object, bool open, bool atOnce = false);
+    /** Loop while requested, then finish the current forward cycle on release. */
+    void cycle(s32 object, bool active);
     bool held(usize index) const { return m_tracks[index].held; }
 
     /** Poses every object at its current frame. */

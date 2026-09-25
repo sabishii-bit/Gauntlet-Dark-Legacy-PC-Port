@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <optional>
 
@@ -10,6 +11,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/world/LevelCatalog.h"
 #include "game/world/LevelWorld.h"
 
 namespace {
@@ -17,6 +19,32 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("unanimated Desert bridges appear on contact and vanish after release",
+          "[game][world][triggers][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELA3/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A3");
+    REQUIRE(level.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    constexpr usize kBarrier = 170;
+    const auto& objects = world.layout().objects();
+    REQUIRE((objects[kBarrier].flags & WorldObject::kAnimated) == 0);
+    const auto& pad = world.layout().itemInstances()[16];
+    world.startTriggers({});
+    CHECK(world.scene().objectAlpha(kBarrier) == 0.0f);
+    const std::array party{TriggerVisitor{.position = pad.position}};
+    world.updateTriggers(1.0f, party);
+    CHECK(world.scene().objectAlpha(kBarrier) == 1.0f);
+    CHECK(world.collision().solid(static_cast<s32>(kBarrier)));
+    world.updateTriggers(1.0f, {});
+    CHECK(world.scene().objectAlpha(kBarrier) == 0.0f);
+    CHECK_FALSE(world.collision().solid(static_cast<s32>(kBarrier)));
+}
 
 TEST_CASE("the tower loads its geometry, collision, start points and camera markers",
           "[game][world][unpacked]") {

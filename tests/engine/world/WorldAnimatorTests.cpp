@@ -88,6 +88,25 @@ TEST_CASE("world animations turn their objects thirty frames a second and loop",
     REQUIRE(f.animator.size() == 0);
 }
 
+TEST_CASE("a held switch cycles its track and releases at the forward endpoint",
+          "[world][animation]") {
+    WorldScene scene;
+    WorldAnimator animator;
+    animator.bind(layoutWithFlags("world-animator-cycle", 0));
+    animator.hold(0);
+    animator.cycle(0, true);
+    for (s32 i = 0; i < 10; ++i) {
+        animator.step(kStep, scene);
+    }
+    CHECK_FALSE(animator.finished(0));
+    animator.cycle(0, false);
+    for (s32 i = 0; i < 10; ++i) {
+        animator.step(kStep, scene);
+    }
+    CHECK(animator.finished(0));
+    CHECK(animator.frame(0) == 3);
+}
+
 TEST_CASE("one-shot animations stop at their last frame, backwards ones at their first",
           "[world][animation]") {
     WorldScene scene;
