@@ -414,6 +414,50 @@ TEST_CASE("scene projectile updates present retail world impacts once and preser
     f.audio.close();
 }
 
+TEST_CASE("Temple wall projectile hits remove the mesh and collision through the scene dispatch",
+          "[game][screens][player-attacks][walls][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("audio/COMMON/sounds.json");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("E1");
+    REQUIRE(level);
+    REQUIRE(f.world.load(f.device, root, *level));
+    f.audio.open(root, &sounds, f.world.audio());
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+    const auto& walls = f.world.walls();
+    REQUIRE(walls.size() == 5);
+    CHECK(walls.target(0, 0).pointNear({55, 3, -5}) == Vec3{55, 3, -10});
+    REQUIRE(walls.wall(0).health == 25);
+    MissileSpec spec;
+    spec.weight = 0;
+    spec.radius = 0.25f;
+    MissileLaunch launch;
+    launch.position = {55, 3, -5};
+    launch.velocity = Vec3{0, 0, -20};
+    launch.spec = &spec;
+    launch.damage = 10;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(0.4f, f.players, f.targets);
+    CHECK(walls.wall(0).health == 16);
+    CHECK(f.world.collision().solid(walls.wall(0).object));
+    CHECK(sounds.voiceCount() == 1);
+    launch.damage = 17;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(0.4f, f.players, f.targets);
+    CHECK_FALSE(walls.standing(0));
+    CHECK_FALSE(f.world.collision().solid(walls.wall(0).object));
+    CHECK(sounds.voiceCount() == 2);
+    // The subtype-42 death path has a sound, not an invented barrel explosion.
+    CHECK(f.effects.count() == 0);
+    f.fixtures.clear();
+    f.audio.close();
+}
+
 TEST_CASE("player shields consume one potion and expire even without artwork",
           "[game][screens][player-attacks]") {
     Fixture f;

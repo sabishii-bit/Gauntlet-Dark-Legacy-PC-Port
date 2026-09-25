@@ -44,6 +44,7 @@ public:
               const CameraFrame* camera = nullptr) const;
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     void strikeSafeRock(usize index, f32 power);
+    void strikeWall(usize index, f32 power, u32 flags = 0);
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
                       const Events& events);
     void blast(const Vec3& position, f32 radius, f32 damage, std::span<PlayerRuntime> players,

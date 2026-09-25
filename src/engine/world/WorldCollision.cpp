@@ -140,6 +140,11 @@ void WorldCollision::build(std::vector<CollisionTriangle> triangles) {
     index();
 }
 
+void WorldCollision::append(std::span<const CollisionTriangle> triangles) {
+    m_triangles.insert(m_triangles.end(), triangles.begin(), triangles.end());
+    index();
+}
+
 void WorldCollision::MovingObject::place(const Mat4& world) {
     const Mat3 rotation{world};
     bool first = true;

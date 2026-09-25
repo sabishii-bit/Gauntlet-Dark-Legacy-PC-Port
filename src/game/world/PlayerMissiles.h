@@ -17,6 +17,7 @@
 #include "game/world/EffectTrees.h"
 
 namespace gdl::game {
+struct StrikeHit;
 
 /** How a class's thrown weapon flies, from the original's tables. */
 struct MissileSpec {
@@ -64,12 +65,19 @@ struct MissileLaunch {
     u32 flags = 0;
 };
 
-/** Something standing that a missile stops against: an upright cylinder from its base. */
+/** Something a missile stops against: a cylinder, or an authored triangle surface. */
 struct MissileTarget {
     s32 id = -1;
     Vec3 base{0.0f, 0.0f, 0.0f};
     f32 radius = 1.0f;
     f32 height = 1.0f;
+    // The explicit default lets cylinder-only aggregate initializers omit geometry without
+    // -Wmissing-field-initializers, while mesh targets borrow surfaces for the query.
+    std::span<const CollisionTriangle>
+        surface{}; // NOLINT(readability-redundant-member-init): intentional aggregate default
+    Vec3 pointNear(const Vec3& point) const;
+    bool touches(const Vec3& point, f32 reach) const;
+    bool reachedBy(const StrikeHit& strike) const;
 };
 
 /** Where a missile was stopped. */

@@ -77,7 +77,7 @@ private:
         std::vector<s32> hit;
     };
     std::vector<PotionBurst> m_potions;
-    static std::vector<MissileTarget> projectileTargets(const Targets& targets);
+    std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
     void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players);
@@ -86,6 +86,7 @@ private:
     static constexpr s32 kCritterTargetBase = 3000;
     static constexpr s32 kBossTargetBase = 4000;
     static constexpr s32 kSafeRockTargetBase = 5000;
+    static constexpr s32 kWallTargetBase = 6000;
 
     std::optional<Resources> m_resources;
     MoveStrikes m_strikes;

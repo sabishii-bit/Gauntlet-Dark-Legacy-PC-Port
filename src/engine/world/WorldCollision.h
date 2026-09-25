@@ -49,6 +49,9 @@ public:
 
     /** Takes world-space triangles directly. */
     void build(std::vector<CollisionTriangle> triangles);
+    /** Adds independently removable, already world-space item surfaces. Object ids must
+     * be disjoint from the level objects. Existing visibility and moving objects survive. */
+    void append(std::span<const CollisionTriangle> triangles);
 
     /** Lets these objects' triangles follow a transform: the file keeps them local to the
      * object (as level files do for anything flagged to move, animated or not), and they

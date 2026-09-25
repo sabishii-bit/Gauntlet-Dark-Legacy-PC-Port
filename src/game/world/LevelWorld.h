@@ -22,6 +22,7 @@
 #include "engine/world/WorldLighting.h"
 #include "engine/world/WorldScene.h"
 
+#include "game/world/DestructibleWalls.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
 #include "game/world/PlacedItems.h"
@@ -72,7 +73,14 @@ public:
         m_placedItems.attach(index, transform, contained);
     }
     /** Shows the pickups a party of `players` sees; none for the select screen's empty one. */
-    void setPlayerCount(s32 players) { m_placedItems.setPlayerCount(players); }
+    void setPlayerCount(s32 players) {
+        m_placedItems.setPlayerCount(players);
+        m_walls.setPlayerCount(players, m_collision);
+    }
+    const DestructibleWalls& walls() const { return m_walls; }
+    std::optional<s32> strikeWall(usize index, f32 power, u32 flags = 0) {
+        return m_walls.strike(index, power, m_collision, flags);
+    }
     /** Fades one of the level's objects (a unit); see WorldScene::setObjectAlpha. */
     void setObjectAlpha(usize object, f32 alpha) { m_scene.setObjectAlpha(object, alpha); }
     f32 objectAlpha(usize object) const { return m_scene.objectAlpha(object); }
@@ -169,6 +177,7 @@ public:
         const CameraFrame frame = CameraFrame::of(camera);
         m_scene.drawOpaque(device, clip, frame);
         m_skorneArena.draw(device, clip, m_litNow);
+        m_walls.draw(device, clip, m_litNow);
         m_triggers.draw(device, clip, m_litNow);
         m_placedItems.draw(device, clip, m_litNow, &frame);
     }
@@ -191,6 +200,7 @@ private:
     ItemArchive m_powerups;
     PlacedItems m_placedItems;
     SkorneArena m_skorneArena;
+    DestructibleWalls m_walls;
     WorldLayout m_layout;
     WorldScene m_scene;
     WorldAnimator m_worldAnimator;

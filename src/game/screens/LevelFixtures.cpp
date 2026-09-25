@@ -250,6 +250,17 @@ void LevelFixtures::strikeSafeRock(usize index, f32 power) {
     }
 }
 
+void LevelFixtures::strikeWall(usize index, f32 power, u32 flags) {
+    if (!m_resources) {
+        return;
+    }
+    const auto health = m_resources->world.strikeWall(index, power, flags);
+    if (health) {
+        m_resources->audio.playNamed(*health == 0 ? "S_SECRETWALL"
+                                                  : m_resources->world.wallHitSound());
+    }
+}
+
 /** A blow on a barrel: wood sounds under it until it breaks, when what it held is left
  * lying, or it blows up, or its gas hangs where it stood. */
 void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
@@ -357,6 +368,12 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
         }
         for (const usize barrel : m_barrels.within(felt.position, felt.radius)) {
             strikeBarrel(barrel, felt.damage, -1, players, events);
+        }
+        const auto& walls = m_resources->world.walls();
+        for (usize i = 0; i < walls.size(); ++i) {
+            if (walls.standing(i) && walls.target(i, 0).touches(felt.position, felt.radius)) {
+                strikeWall(i, felt.damage);
+            }
         }
         for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
             if (m_safeRocks.rock(rock).obstacle.touchedBy(felt.position, felt.radius, 0.0f)) {

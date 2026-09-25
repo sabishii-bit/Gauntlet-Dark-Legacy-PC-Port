@@ -158,11 +158,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                 if (std::ranges::find(missile.pierced, target.id) != missile.pierced.end()) {
                     continue;
                 }
-                const f32 reach = target.radius + radius;
-                const bool contact = std::hypot(missile.position.x - target.base.x,
-                                                missile.position.z - target.base.z) <= reach &&
-                                     missile.position.y + radius >= target.base.y &&
-                                     missile.position.y - radius <= target.base.y + target.height;
+                const bool contact = target.touches(missile.position, radius);
                 if (!contact) {
                     continue;
                 }

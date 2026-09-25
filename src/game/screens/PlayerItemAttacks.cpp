@@ -100,7 +100,9 @@ void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 fl
                                  const PlayerActor& owner, std::span<PlayerRuntime> players,
                                  const Targets& targets) {
     const Vec3 direction = target.base - owner.position();
-    if (target.id >= kSafeRockTargetBase) {
+    if (target.id >= kWallTargetBase) {
+        targets.fixtures.strikeWall(static_cast<usize>(target.id - kWallTargetBase), damage, flags);
+    } else if (target.id >= kSafeRockTargetBase) {
         targets.fixtures.strikeSafeRock(static_cast<usize>(target.id - kSafeRockTargetBase),
                                         damage);
     } else if (target.id >= kBossTargetBase) {
