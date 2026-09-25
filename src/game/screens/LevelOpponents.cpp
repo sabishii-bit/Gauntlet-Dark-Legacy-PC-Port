@@ -80,6 +80,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         scales.sight = level->tuning.enemySightScale(gain);
         scales.damage = level->tuning.enemyDamage;
         scales.playerLevel = level->tuning.playerLevel;
+        scales.bossEncounter = level->bossType >= 0;
         breeding.health = level->tuning.generatorHealth;
         breeding.rate = level->tuning.generatorRateScale(gain);
         breeding.most = level->tuning.generatorMostScale(gain);

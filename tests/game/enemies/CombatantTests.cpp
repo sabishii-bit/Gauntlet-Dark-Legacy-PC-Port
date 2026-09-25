@@ -22,7 +22,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-std::filesystem::path familyAssets(s32 readyInterrupt = 60) {
+std::filesystem::path familyAssets(s32 readyInterrupt = 60, u32 shield = 0) {
     const auto root = test::scratchDirectory("combatant-families");
     std::filesystem::create_directories(root / "critter");
     for (const auto& definition :
@@ -49,7 +49,8 @@ std::filesystem::path familyAssets(s32 readyInterrupt = 60) {
                                    std::to_string(static_cast<s32>(definition.kind)) + "}],";
         writeTextFile(root / "critter" / (definition.name + ".json"),
                       header + R"(
-          "types":[{"moveCount":5,"maxHealth":100,"radius":1,"expValue":50}],
+          "types":[{"moveCount":5,"maxHealth":100,"radius":1,"expValue":50,"shieldFlags":)" +
+                          std::to_string(shield) + R"(}],
           "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":)" +
                           std::to_string(readyInterrupt) + R"(},
                    {"name":"WALK","anim":"STEP","type":52,"priority":10,"speed":3},
@@ -59,6 +60,55 @@ std::filesystem::path familyAssets(s32 readyInterrupt = 60) {
                    {"name":"DEATH","anim":"STEP","type":17,"priority":999}]})");
     }
     return root;
+}
+
+TEST_CASE("combatants preserve elemental immunity and sub-one damage", "[combatant][damage]") {
+    for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
+        CAPTURE(definition.name);
+        for (u32 element = 1; element <= 5; ++element) {
+            CAPTURE(element);
+            const u32 shield = element == 5 ? 0x1000 : 1U << (element + 7);
+            const u32 flags = element == 5 ? 0x200 : element;
+            test::FakeRenderDevice device;
+            CombatantAssets assets;
+            REQUIRE(assets.load(device, familyAssets(60, shield), definition, 'G'));
+            Combatant actor;
+            REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+            EnemyHit hit;
+            hit.damage = 20;
+            hit.flags = flags;
+            hit.player = 0;
+            actor.hurt(hit);
+            CHECK(actor.health() == 100);
+            CHECK(actor.takeLosses().empty());
+            CHECK(actor.takeCues().empty());
+            hit.damage = 0.25f;
+            hit.flags = 0;
+            actor.hurt(hit);
+            CHECK(actor.health() == Approx(99.75f));
+        }
+    }
+}
+
+TEST_CASE("combatant elemental multipliers follow the encounter not the creature family",
+          "[combatant][damage]") {
+    for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
+        test::FakeRenderDevice device;
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, familyAssets(), definition, 'G'));
+        for (const bool bossEncounter : {false, true}) {
+            CAPTURE(definition.name, bossEncounter);
+            Combatant actor;
+            REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr,
+                                EnemyScales{.bossEncounter = bossEncounter}, 'G'));
+            EnemyHit hit;
+            hit.damage = 20;
+            hit.flags = 1;
+            hit.player = 0;
+            actor.hurt(hit);
+            CHECK(actor.health() == Approx(bossEncounter ? 75 : 70));
+        }
+    }
 }
 
 TEST_CASE("creature families supply distinct policies without duplicating move execution",

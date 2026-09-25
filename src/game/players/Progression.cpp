@@ -75,4 +75,12 @@ StatBlock masteryStats() {
     return block;
 }
 
+f32 armorDefense(const ClassStats& stats, const ClassProgress& progress) {
+    constexpr f32 kArmorPerAttribute = 0.005f;
+    const f32 growth = static_cast<f32>((experienceLevel(progress.experience) - 1) * kStatPerLevel);
+    const f32 base = std::min(stats.armorMin + growth, stats.armorMax);
+    const f32 attribute = std::clamp(base + progress.armorAdd, 0.0f, static_cast<f32>(kMaxStat));
+    return attribute * kArmorPerAttribute;
+}
+
 } // namespace gdl::game

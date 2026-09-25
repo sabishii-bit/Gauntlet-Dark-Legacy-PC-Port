@@ -32,6 +32,27 @@ struct Fixture {
     }
 };
 
+TEST_CASE("player armor is subtracted before elemental affinity but not from gas",
+          "[player-health][damage]") {
+    Fixture f;
+    ClassStats stats;
+    stats.armorMin = 400; // two points of flat absorption
+    stats.armorMax = 800;
+    PlayerImpact impact{.flags = 1};
+    f.health.hurt(f.player, 20, HurtKind::Blow, false, false, 1, f.events, impact, false, &stats);
+    CHECK(f.player.actor.save().health() == 973); // (20 - 2) * 1.5
+    auto& inventory = f.player.actor.save().progress().inventory;
+    inventory.addPowerup(6, 1, 0, 60);
+    f.health.hurt(f.player, 20, HurtKind::Blow, false, false, 1, f.events, impact, false, &stats);
+    CHECK(f.player.actor.save().health() == 964); // (20 - 2) * 0.5
+    inventory.addPowerup(6, 0x800, 0, 60);
+    impact.flags = 4;
+    f.health.hurt(f.player, 20, HurtKind::Blow, false, false, 1, f.events, impact, false, &stats);
+    CHECK(f.player.actor.save().health() == 964); // acid immunity remains zero
+    f.health.hurt(f.player, 20, HurtKind::Gas, false, false, 1, f.events, {}, false, &stats);
+    CHECK(f.player.actor.save().health() == 944);
+}
+
 TEST_CASE("player health respects tower immunity and scales only substantial damage",
           "[game][screens][player-health]") {
     Fixture f;

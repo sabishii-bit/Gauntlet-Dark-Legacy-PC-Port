@@ -318,10 +318,10 @@ void Combatant::hurt(const EnemyHit& hit) {
         amount *= kBlockShare;
         flags &= ~(EnemyHit::kFloors | EnemyHit::kKnockBack);
     }
-    const Damage modified = Damage::modify(amount, flags, data.shieldFlags(), data.armor(),
-                                           data.kind() == CombatantKind::Boss);
+    const Damage modified =
+        Damage::modify(amount, flags, data.shieldFlags(), data.armor(), m_scales.bossEncounter);
     flags = modified.flags;
-    amount = std::max(modified.amount, hit.player >= 0 ? 1.0f : 0.0f);
+    amount = modified.amount;
     if (amount <= 0.0f) {
         return;
     }

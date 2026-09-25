@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "game/players/Progression.h"
@@ -6,6 +7,24 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("armor absorption follows class level and permanent bonuses", "[players][damage]") {
+    ClassStats stats;
+    stats.armorMin = 300;
+    stats.armorMax = 600;
+    ClassProgress progress;
+    CHECK(armorDefense(stats, progress) == Catch::Approx(1.5f));
+    progress.experience = levelExperience(21);
+    CHECK(armorDefense(stats, progress) == Catch::Approx(2));
+    progress.armorAdd = 10.5f;
+    CHECK(armorDefense(stats, progress) == Catch::Approx(2.0525f));
+    progress.experience = levelExperience(99);
+    CHECK(armorDefense(stats, progress) == Catch::Approx(3.0525f));
+    progress.armorAdd = 1000;
+    CHECK(armorDefense(stats, progress) == Catch::Approx(4.995f));
+    progress.armorAdd = -1000;
+    CHECK(armorDefense(stats, progress) == 0);
+}
 
 TEST_CASE("the experience curve matches the original's levels", "[game][players]") {
     REQUIRE(levelExperience(1) == 0);

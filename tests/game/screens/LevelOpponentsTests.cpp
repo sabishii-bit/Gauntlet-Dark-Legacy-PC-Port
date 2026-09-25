@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -16,6 +17,41 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("boss arenas propagate elemental scaling to summoned swarm enemies",
+          "[level-opponents][damage][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG5/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G5");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.level()->bossType >= 0);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    auto& enemies = opponents.enemies();
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn(EnemySpawn{.kind = kGruntKind, .tier = 3, .placed = true}, {});
+    REQUIRE(id);
+    const f32 before = enemies.healthOf(*id);
+    EnemyHit hit;
+    hit.damage = 20;
+    hit.flags = 1;
+    enemies.hurt(*id, hit);
+    CHECK(enemies.healthOf(*id) ==
+          Catch::Approx(before - (20 - enemyKind(kGruntKind).armor) * 1.25f));
+    opponents.close();
+    effects.clear();
+}
 
 TEST_CASE("mountain creatures stop a player in melee range and release collision on death",
           "[level-opponents][collision][unpacked]") {
