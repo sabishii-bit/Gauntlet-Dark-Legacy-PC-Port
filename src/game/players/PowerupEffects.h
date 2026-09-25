@@ -29,12 +29,14 @@ inline constexpr u32 kSkorneHorns = 0x1000;
 inline constexpr u32 kSkorneMask = 0x2000;
 inline constexpr u32 kRightGauntlet = 0x4000;
 inline constexpr u32 kLeftGauntlet = 0x8000;
-inline constexpr u32 kSpeedBoost = 0x00010000; ///< special
-inline constexpr u32 kInvisible = 0x00000004;  ///< special
-inline constexpr u32 kXRay = 0x00000002;       ///< special: see inside the nearest closed chest
-inline constexpr u32 kGrowth = 0x00000100;     ///< special
-inline constexpr u32 kLevitation = 1;          ///< special
-inline constexpr u32 kTurbo = 0x00080000;      ///< special, immediate meter refill
+inline constexpr u32 kSpeedBoost = 0x00010000;  ///< special
+inline constexpr u32 kInvisible = 0x00000004;   ///< special
+inline constexpr u32 kXRay = 0x00000002;        ///< special: see inside the nearest closed chest
+inline constexpr u32 kGrowth = 0x00000100;      ///< special
+inline constexpr u32 kLevitation = 1;           ///< special
+inline constexpr u32 kTurbo = 0x00080000;       ///< special, immediate meter refill
+inline constexpr u32 kHandOfDeath = 0x00200000; ///< special: return enemy melee damage
+inline constexpr u32 kHealthVamp = 0x00400000;  ///< special: return melee as magic and heal
 } // namespace powerup
 
 /**

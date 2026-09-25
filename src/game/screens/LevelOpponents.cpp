@@ -9,6 +9,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/LevelFixtures.h"
@@ -185,11 +186,47 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         view.height = actor.height();
         view.level = experienceLevel(actor.save().experience());
         view.hidden = player.life != PlayerLife::Standing;
-        view.invisible = PowerupEffects::of(actor.save().progress().inventory).invisible();
+        const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
+        view.invisible = powerups.invisible();
+        if ((powerups.special & powerup::kHealthVamp) != 0) {
+            view.meleeWard = EnemyMeleeWard::HealthVamp;
+        } else if ((powerups.special & powerup::kHandOfDeath) != 0) {
+            view.meleeWard = EnemyMeleeWard::HandOfDeath;
+        }
         view.captured = player.capture.held();
         views.push_back(view);
     }
     return views;
+}
+
+void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
+                                    const Events& events) {
+    for (usize i = 0; i < players.size(); ++i) {
+        PlayerRuntime& player = players[i];
+        if (player.actor.player() != blow.player || player.life != PlayerLife::Standing) {
+            continue;
+        }
+        if (blow.ward == EnemyMeleeWard::None) {
+            events.hurt(i, blow.damage, HurtKind::Blow, true, {blow.flags, blow.direction});
+            continue;
+        }
+        if (blow.ward == EnemyMeleeWard::HealthVamp && blow.damage > 0) {
+            CharacterSave& save = player.actor.save();
+            const s32 cap = mostHealth(experienceLevel(save.experience()));
+            if (save.health() < cap) {
+                save.progress().health =
+                    std::min(cap, save.health() + static_cast<s32>(std::lround(blow.damage)));
+            }
+        }
+        ItemArchive& archive = m_resources->world.powerups();
+        if (archive.trees.find("GETGEMORANGE").has_value()) {
+            const u32 effect = m_resources->effects.startSet(
+                m_resources->device, archive, "GETGEMORANGE", player.actor.followPoint(), {});
+            if (effect != 0) {
+                m_cueEffects.push_back(effect);
+            }
+        }
+    }
 }
 
 void LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRuntime> players,
@@ -403,13 +440,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     awardCritterLosses(players, events);
     events.levels();
     for (const EnemyBlow& blow : m_enemies.takeBlows()) {
-        for (usize i = 0; i < players.size(); ++i) {
-            if (players[i].actor.player() != blow.player ||
-                players[i].life != PlayerLife::Standing) {
-                continue;
-            }
-            events.hurt(i, blow.damage, HurtKind::Blow, true, {blow.flags, blow.direction});
-        }
+        applyEnemyBlow(blow, players, events);
     }
     awardEnemyLosses(events);
 }

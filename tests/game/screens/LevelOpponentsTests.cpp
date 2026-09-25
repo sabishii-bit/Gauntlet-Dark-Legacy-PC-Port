@@ -25,11 +25,7 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled protection",
-          "[level-opponents][enemy-melee][damage]") {
-    const s32 kind = GENERATE(kRatKind, kGruntKind);
-    const bool levitating = GENERATE(false, true);
-    const auto root = test::scratchDirectory("enemy-melee-low");
+void writeMeleeEnemy(const std::filesystem::path& root, s32 kind) {
     const std::string prefix{enemyKind(kind).prefix};
     const auto archive = root / "MONSTERS" / prefix;
     std::filesystem::create_directories(archive);
@@ -46,7 +42,17 @@ TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled pr
                      {"name":"ATTACK1","frames":3,"rate":30},
                      {"name":"ATTACK1R","frames":2,"rate":30},
                      {"name":"ATTACK3","frames":3,"rate":30},
-                     {"name":"ATTACK3R","frames":2,"rate":30}]}]})");
+                     {"name":"ATTACK3R","frames":2,"rate":30},
+                     {"name":"HIT1","frames":10,"rate":30},
+                     {"name":"HIT2","frames":10,"rate":30}]}]})");
+}
+
+TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled protection",
+          "[level-opponents][enemy-melee][damage]") {
+    const s32 kind = GENERATE(kRatKind, kGruntKind);
+    const bool levitating = GENERATE(false, true);
+    const auto root = test::scratchDirectory("enemy-melee-low");
+    writeMeleeEnemy(root, kind);
     test::FakeRenderDevice device;
     LevelWorld world;
     ItemArchive weapons;
@@ -96,6 +102,108 @@ TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled pr
         CHECK(progress.health < 1000);
     }
     opponents.close();
+}
+
+TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kill credit",
+          "[level-opponents][enemy-melee][damage]") {
+    // GUNE5D 8004DF58: A1E returns physical damage; A20 returns magic damage and
+    // calls heal_player (800784E0). Both use player -1 and StartGemFX(col_pos, 1).
+    const u32 flags = GENERATE(0x200000U, 0x400000U);
+    const bool enabled = GENERATE(false, true);
+    const s32 startingHealth = GENERATE(450, 499, 550);
+    const f32 damageScale = GENERATE(1.0f, 10.0f);
+    const auto root = test::scratchDirectory("enemy-melee-gems");
+    writeMeleeEnemy(root, kGruntKind);
+    const auto gem = root / "gem";
+    std::filesystem::create_directories(gem);
+    for (const auto* file : {"objects.json", "textures.json", "body.obj", "skin.png"}) {
+        std::filesystem::copy_file(root / "MONSTERS/GRU" / file, gem / file,
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
+    writeTextFile(gem / "animations.json", R"({"trees":[{"name":"GETGEMORANGE",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"FLASH","frames":30,"rate":30}]}]})");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.powerups().load(gem));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(0, {}, nullptr, {100, 0, 100}, 0);
+    ClassStats stats;
+    stats.height = 6;
+    stats.collisionY = 4;
+    players[1].actor.spawn(2, {}, &stats, {0, 0, 2}, 0);
+    auto& progress = players[1].actor.save().progress();
+    progress.health = startingHealth;
+    progress.inventory.addPowerup(powerup::kSpecial, flags, 0, 60);
+    progress.inventory.powerups[0].on = enabled;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    // Test flinching versus magical knockdown, then lethal returns. The world's player
+    // level must not scale an uncredited return from a level-one recipient.
+    opponents.enemies().open(device, root, nullptr, 2, {.damage = damageScale, .playerLevel = 50},
+                             1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    const auto enemy =
+        opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind, .tier = 3, .placed = true}, {});
+    REQUIRE(enemy);
+    const f32 enemyHealth = opponents.enemies().healthOf(*enemy);
+    PlayerHealth health;
+    PlayerHealth::Events healthEvents;
+    healthEvents.sound = [](std::string_view) {};
+    healthEvents.cry = [](std::string_view) {};
+    healthEvents.named = [](std::string_view) {};
+    usize damageEvents = 0;
+    usize rewards = 0;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [&](s32, s32, bool) { ++rewards; };
+    events.hurt = [&](usize i, f32 amount, HurtKind hurt, bool directed, const PlayerImpact& hit) {
+        CHECK(i == 1);
+        if (amount > 0) {
+            ++damageEvents;
+        }
+        health.hurt(players[i], amount, hurt, directed, false, 1, healthEvents, hit);
+    };
+    for (s32 frame = 0;
+         frame < 120 && damageEvents == 0 && opponents.enemies().healthOf(*enemy) == enemyHealth;
+         ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    CHECK(rewards == 0);
+    CHECK(players[0].actor.save().health() == 500);
+    if (enabled) {
+        CHECK(damageEvents == 0);
+        CHECK(opponents.enemies().healthOf(*enemy) ==
+              Catch::Approx(enemyHealth - 15 * damageScale));
+        const auto healing = static_cast<s32>(15 * damageScale);
+        const s32 healed =
+            startingHealth < 500 ? std::min(startingHealth + healing, 500) : startingHealth;
+        CHECK(progress.health == (flags == 0x400000U ? healed : startingHealth));
+        if (damageScale == 1) {
+            REQUIRE(opponents.enemies().animatorOf(*enemy) != nullptr);
+            CHECK(opponents.enemies().animatorOf(*enemy)->action() ==
+                  (flags == 0x400000U ? EnemyAction::HitReact2 : EnemyAction::HitReact1));
+        }
+        CHECK(players[1].hitFlashTicks == 0);
+        CHECK(players[1].painOwed == 0);
+        REQUIRE(effects.count() == 1);
+        CHECK(effects.effect(0).name == "GETGEMORANGE");
+        CHECK(effects.effect(0).position == Vec3{0, 4, 2});
+        CHECK(effects.effect(0).archive == &world.powerups());
+    } else {
+        CHECK(damageEvents == 1);
+        CHECK(opponents.enemies().healthOf(*enemy) == enemyHealth);
+        CHECK(progress.health < startingHealth);
+        CHECK(effects.count() == 0);
+    }
+    opponents.close();
+    CHECK(effects.count() == 0);
 }
 
 TEST_CASE("Chimera arena binds and updates head health meters through the opponent phase",

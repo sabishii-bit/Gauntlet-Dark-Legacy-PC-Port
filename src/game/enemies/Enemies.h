@@ -35,6 +35,9 @@ struct EnemyScales {
     bool bossEncounter = false; ///< applies to every opponent in the arena, not just the boss
 };
 
+/** Protection that returns a swarm enemy's melee blow to its attacker. */
+enum class EnemyMeleeWard : u8 { None, HandOfDeath, HealthVamp };
+
 /** A player as the enemies see one. */
 struct EnemyView {
     s32 player = -1;
@@ -45,6 +48,7 @@ struct EnemyView {
     bool hidden = false;    ///< not to be seen or sought
     bool captured = false;  ///< already parented to another combatant, not a new grab candidate
     bool invisible = false; ///< not a sight target, but still vulnerable to contact and hazards
+    EnemyMeleeWard meleeWard = EnemyMeleeWard::None;
 };
 
 /** A blow an enemy has landed on a player. */
@@ -56,6 +60,7 @@ struct EnemyBlow {
     bool power = false;               ///< the stronger every-eighth blow
     u32 flags = 0;                    ///< damage modifiers, including low attacks and knockback
     Vec3 direction{0.0f, 0.0f, 1.0f}; ///< from the enemy to the player
+    EnemyMeleeWard ward = EnemyMeleeWard::None; ///< returned damage; only Health Vamp also heals
 };
 
 /** An enemy hurt or killed by a player, and what that is worth. */

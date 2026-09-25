@@ -20,6 +20,30 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("the melee ward gem flash emits both authored orange particle trails",
+          "[effects][enemy-melee][unpacked]") {
+    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path();
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    REQUIRE(effects.start(device, powerups, "GETGEMORANGE", {2, 4, 6}));
+    REQUIRE(effects.count() == 1);
+    effects.update(0.2f);
+    const auto& effect = effects.effect(0);
+    const auto& field = effect.particles.field();
+    REQUIRE(field.size() == 2);
+    CHECK(field.particleCount() > 0);
+    CHECK(effect.position == Vec3{2, 4, 6});
+    for (usize i = 0; i < field.size(); ++i) {
+        CHECK(field.textureOf(i) != &device.whiteTexture());
+    }
+    effects.draw(device, Mat4{1}, {});
+    CHECK_FALSE(device.draws.empty());
+    effects.clear();
+    powerups.release();
+}
+
 TEST_CASE("lion gargoyle breath resolves FBALLX from the loaded weapons archive",
           "[effects][unpacked]") {
     const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
