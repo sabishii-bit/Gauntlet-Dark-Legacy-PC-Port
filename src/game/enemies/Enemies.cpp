@@ -28,6 +28,13 @@ constexpr s32 kRetargetEvery = 8; ///< frames between a mind looking round again
 constexpr f32 kRunFrom = 1.25f;   ///< a pace this much over a walk's runs
 constexpr f32 kStopped = 0.01f;   ///< a step that gets less than this is a dead stop
 
+/** An existing overlap must allow an outward step, but never a step through the centre. */
+bool separating(const Vec3& from, const Vec3& to, const Vec3& centre) {
+    const Vec2 away{from.x - centre.x, from.z - centre.z};
+    const Vec2 step{to.x - from.x, to.z - from.z};
+    return glm::dot(away, step) >= 0.0f && glm::dot(step, step) > 0.0f;
+}
+
 // The octants about a generator, as its facing is turned into each.
 Vec3 octant(const Vec3& v, s32 direction, f32& yawOffset) {
     constexpr f32 kHalfRoot = 0.707f;
@@ -718,11 +725,12 @@ bool Enemies::probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obs
     }
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& other = m_enemies[static_cast<usize>(i)];
-        if (i == self || other.state == State::Inactive) {
+        if (i == self || other.state == State::Inactive || other.state == State::Asleep) {
             continue;
         }
         if (flatDistance(other.position, at) < enemy.radius + other.radius &&
-            std::abs(other.position.y - at.y) < other.height) {
+            std::abs(other.position.y - at.y) < std::max(other.height, enemy.height) &&
+            !separating(enemy.position, at, other.position)) {
             return false;
         }
     }
@@ -768,13 +776,17 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
         probe.z += reach * std::cos(heading);
         return probeClear(enemy, probe, obstacles, slot);
     };
-    sense.open = [this, &enemy, reach](f32 heading) {
-        if (m_collision == nullptr) {
-            return true;
-        }
+    sense.open = [this, &enemy, obstacles, slot, reach](f32 heading) {
         Vec3 probe = enemy.position;
         probe.x += reach * std::sin(heading);
         probe.z += reach * std::cos(heading);
+        // Route selection must see the same item and body obstructions as movement.
+        if (!probeClear(enemy, probe, obstacles, slot)) {
+            return false;
+        }
+        if (m_collision == nullptr) {
+            return true;
+        }
         const Vec3 pushed = m_collision->resolveWalls(probe, enemy.radius * kWallRadiusScale,
                                                       probe.y + kFootClearance,
                                                       probe.y + enemy.height - kFootClearance);
@@ -908,6 +920,10 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
             if (pushed != to) {
                 enemy.bumpedWall = true;
                 to = pushed;
+                if (flatDistance(to, from) < kStopped &&
+                    flatDistance(from + translation, from) >= kStopped) {
+                    enemy.blocked = true;
+                }
             }
         }
     }
@@ -918,7 +934,8 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
             continue;
         }
         if (flatDistance(other.position, to) < enemy.radius + other.radius &&
-            std::abs(other.position.y - to.y) < std::max(other.height, enemy.height)) {
+            std::abs(other.position.y - to.y) < std::max(other.height, enemy.height) &&
+            !separating(from, to, other.position)) {
             enemy.bumpedOther = true;
             if (enemy.pushMagnitude > 1.0f && enemy.animator.reacting()) {
                 other.push += 0.5f * enemy.push;
