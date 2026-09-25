@@ -17,7 +17,7 @@ struct CollisionTriangle {
     Vec3 normal{0.0f, 1.0f, 0.0f};
     std::array<Vec3, 3> vertices{};
     s32 object = -1;     ///< the placed object it belongs to
-    u32 objectFlags = 0; ///< level flags, preserved for surface-specific collision responses
+    u32 objectFlags = 6; ///< level flags; synthetic triangles default to wall and floor queries
 };
 
 /** Where a downward probe met a floor. */
@@ -31,12 +31,16 @@ struct FloorHit {
 /**
  * The walkable surfaces and walls of a level: every placed object's collision triangles in
  * world space, indexed by a grid over the ground plane. Triangles whose normal points mostly
- * up are floors; the rest are walls.
+ * up can be floors; the object's retail query flags also determine whether a surface is
+ * walkable or blocks horizontal movement.
  */
 class WorldCollision {
 public:
     static constexpr f32 kFloorNormalY = 0.5f; ///< a normal with less y is a wall
     static constexpr f32 kCellSize = 8.0f;
+    // FloorCollide / PlayerWallCollide / EnemyWallCollide pass these masks to WorldCollide.
+    static constexpr u32 kFloorQueryFlags = 0x23C;
+    static constexpr u32 kWallQueryFlags = 0x13A;
 
     /** Reads `directory/collision.json`, whose triangles are already in world space, leaving
      * out the objects `layout` marks as decoration; false (with a warning) when missing or

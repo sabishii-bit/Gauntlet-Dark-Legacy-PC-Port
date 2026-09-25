@@ -1,6 +1,8 @@
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <optional>
+#include <string>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -11,6 +13,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/Enemies.h"
+#include "game/enemies/Generators.h"
+#include "game/players/PlayerActor.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelWorld.h"
 
@@ -19,6 +24,63 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("Temple spawning and entrance movement reject the wall-only underlay",
+          "[game][world][collision][temple][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    for (const auto* kind : {"ICE", "IMP", "PLA", "ZOM"}) {
+        test::unpackedOrSkip(std::string("MONSTERS/") + kind + "/animations.json");
+    }
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("E1");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const auto& collision = world.collision();
+    // Seed 1 previously put an ICE from a front-room generator at this location,
+    // five units below the player, on E1#32 rather than a walkable floor.
+    const Vec3 underground{-19.283f, 0, 66.033f};
+    CHECK_FALSE(collision.floorAt(underground, 6, 6));
+    CHECK_FALSE(collision.floorAt({0, 0, 110}, 6, 6));
+    Enemies enemies;
+    enemies.open(device, root, &collision, Enemies::kMost, {}, 1);
+    Generators generators;
+    REQUIRE(
+        generators.bind(device, world.layout(), enemies, &collision, {}, 1, {}, 5, &world.items()));
+    REQUIRE(generators.count() > 0);
+    REQUIRE_FALSE(
+        enemies.spawn(EnemySpawn{.kind = 16, .position = underground, .placed = true}, {}));
+    for (s32 g = 0; g < static_cast<s32>(generators.count()); ++g) {
+        const std::array party{EnemyView{.position = generators.positionOf(g) + Vec3{0, 0, 8}}};
+        generators.update(600, enemies, party);
+        for (const auto& enemy : enemies.targets()) {
+            CAPTURE(g, enemy.id, enemy.base.x, enemy.base.y, enemy.base.z);
+            CHECK(enemy.base.y >= 0);
+            const auto floor = collision.floorAt(enemy.base, 0.01f, 0.01f);
+            REQUIRE(floor);
+            CHECK((floor->objectFlags & WorldCollision::kFloorQueryFlags) != 0);
+        }
+    }
+    REQUIRE(enemies.count() > 0);
+    const auto* start = world.startPoint(0);
+    REQUIRE(start);
+    // Walk outwards and to either side of the entrance: no route may reach the
+    // non-walkable apron at y=-5 (the old implementation reached z=130).
+    for (const Vec2 direction : {Vec2{0, 1}, Vec2{1, 0}, Vec2{-1, 0}, Vec2{1, 1}, Vec2{-1, 1}}) {
+        PlayerActor actor;
+        actor.spawn(0, {}, nullptr, start->position, 0);
+        for (s32 frame = 0; frame < 1200; ++frame) {
+            actor.update({glm::normalize(direction), 1}, 0, 1.0f / 60, &collision);
+        }
+        CAPTURE(direction.x, direction.y, actor.position().x, actor.position().z);
+        CHECK(actor.position().y >= -4);
+        CHECK(actor.position().z <= 105);
+        CHECK(std::abs(actor.position().x) <= 20.001f);
+    }
+}
 
 TEST_CASE("unanimated Desert bridges appear on contact and vanish after release",
           "[game][world][triggers][unpacked]") {
