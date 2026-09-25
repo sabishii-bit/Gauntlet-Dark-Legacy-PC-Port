@@ -54,7 +54,7 @@ struct EnemyBlow {
     s32 tier = 1;
     f32 damage = 0.0f;
     bool power = false;               ///< the stronger every-eighth blow
-    bool knocksBack = false;          ///< a tall one's power blow makes its victim recoil
+    u32 flags = 0;                    ///< damage modifiers, including low attacks and knockback
     Vec3 direction{0.0f, 0.0f, 1.0f}; ///< from the enemy to the player
 };
 

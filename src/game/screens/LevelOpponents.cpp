@@ -408,8 +408,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
                 players[i].life != PlayerLife::Standing) {
                 continue;
             }
-            events.hurt(i, blow.damage, HurtKind::Blow, true,
-                        {blow.knocksBack ? PlayerImpact::kKnockBack : 0, blow.direction});
+            events.hurt(i, blow.damage, HurtKind::Blow, true, {blow.flags, blow.direction});
         }
     }
     awardEnemyLosses(events);

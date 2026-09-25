@@ -1,23 +1,102 @@
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/Damage.h"
+#include "game/players/PowerupEffects.h"
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelOpponents.h"
+#include "game/screens/PlayerHealth.h"
 #include "game/world/SafeRocks.h"
 #include "game/world/TargetAssist.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled protection",
+          "[level-opponents][enemy-melee][damage]") {
+    const s32 kind = GENERATE(kRatKind, kGruntKind);
+    const bool levitating = GENERATE(false, true);
+    const auto root = test::scratchDirectory("enemy-melee-low");
+    const std::string prefix{enemyKind(kind).prefix};
+    const auto archive = root / "MONSTERS" / prefix;
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":")" + prefix + R"(1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":2,"rate":30},
+                     {"name":"ATTACK1","frames":3,"rate":30},
+                     {"name":"ATTACK1R","frames":2,"rate":30},
+                     {"name":"ATTACK3","frames":3,"rate":30},
+                     {"name":"ATTACK3R","frames":2,"rate":30}]}]})");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(2, {}, nullptr, Vec3{0, 0, 2}, 0);
+    auto& progress = players[0].actor.save().progress();
+    progress.health = 1000;
+    progress.inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 60);
+    progress.inventory.powerups[0].on = levitating;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    // This contact test has no level geometry; do not probe the unloaded world's floor.
+    opponents.enemies().open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(kind));
+    REQUIRE(opponents.enemies().spawn(EnemySpawn{.kind = kind, .tier = 1, .placed = true}, {}));
+    PlayerHealth health;
+    PlayerHealth::Events healthEvents;
+    healthEvents.sound = [](std::string_view) {};
+    healthEvents.cry = [](std::string_view) {};
+    healthEvents.named = [](std::string_view) {};
+    usize contacts = 0;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [&](usize i, f32 amount, HurtKind hurt, bool directed, const PlayerImpact& hit) {
+        CHECK(i == 0);
+        CHECK(((hit.flags & Damage::kLow) != 0) == (kind == kRatKind));
+        CHECK(((hit.flags & PlayerImpact::kKnockBack) != 0) ==
+              (kind == kGruntKind && contacts == 7));
+        health.hurt(players[i], amount, hurt, directed, false, 1, healthEvents, hit);
+        ++contacts;
+    };
+    for (s32 frame = 0; frame < 300 && contacts < 8; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    REQUIRE(contacts == 8);
+    if (kind == kRatKind && levitating) {
+        CHECK(progress.health == 1000);
+        CHECK(players[0].hitFlashTicks == 0);
+        CHECK(players[0].painOwed == 0);
+    } else {
+        CHECK(progress.health < 1000);
+    }
+    opponents.close();
+}
 
 TEST_CASE("Chimera arena binds and updates head health meters through the opponent phase",
           "[game][screens][level-opponents][chimera][unpacked]") {

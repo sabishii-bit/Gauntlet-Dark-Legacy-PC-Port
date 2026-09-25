@@ -633,10 +633,15 @@ void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         blow.kind = enemy.kind;
         blow.tier = enemy.tier;
         blow.damage = fightOf(enemy);
+        if (enemy.reach <= kKnockBackHeight) {
+            blow.flags |= Damage::kLow;
+        }
         blow.power = enemy.animator.powerStruck();
         if (blow.power) {
             blow.damage *= kBlowGrowth;
-            blow.knocksBack = enemy.reach > kKnockBackHeight;
+            if (enemy.reach > kKnockBackHeight) {
+                blow.flags |= EnemyHit::kKnockBack;
+            }
         }
         const Vec3 toward = victim->position - enemy.position;
         const f32 length = flatDistance(victim->position, enemy.position);
