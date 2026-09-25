@@ -1,4 +1,6 @@
 #include <array>
+#include <format>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -15,6 +17,7 @@
 #include "../../engine/world/SampleLevel.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
 
 namespace {
@@ -24,6 +27,195 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
+
+struct SwitchFixture {
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ModelSet models;
+    TextureSet textures;
+    WorldScene scene;
+    WorldAnimator animator;
+    LevelTriggers triggers;
+
+    explicit SwitchFixture(
+        std::string_view instances,
+        std::string_view objects = R"({"name":"WALL","position":[0,10,0],"flags":4096})") {
+        const auto dir = test::sampleLevel("switch-modes");
+        writeTextFile(dir / "world.json", std::format(R"({{
+          "objects":[{}],
+          "itemInfos":[{{"type":5,"subtype":24,"name":"BRIDGEPAD","radius":1}}],
+          "itemInstances":[{}]}})",
+                                                      objects, instances));
+        REQUIRE(layout.load(dir));
+        REQUIRE(models.load(dir));
+        REQUIRE(textures.load(dir));
+        REQUIRE(scene.build(layout, models, textures, device));
+        animator.bind(layout);
+        triggers.bind(layout, animator, nullptr);
+        triggers.openMet({}, animator, scene, nullptr);
+    }
+    void step(f32 seconds, std::span<const TriggerVisitor> visitors = {}) {
+        animator.step(seconds, scene);
+        triggers.update(seconds, visitors, animator, scene, nullptr);
+    }
+    f32 height() const { return scene.worldTransform(0)[3].y; }
+};
+
+TEST_CASE("closing and opening switches can reuse the same lift", "[game][world][triggers]") {
+    SwitchFixture f(R"(
+      {"info":0,"position":[0,0,0],"params":[0,0,2,0,2,255,0,0,0,0,0,0]},
+      {"info":0,"position":[20,0,0],"params":[0,0,1,0,2,255,0,0,236,255,0,0]})");
+    CHECK(f.height() == Approx(8)); // endpoint from the second registration
+    std::array party{TriggerVisitor{.position = Vec3{0}}};
+    f.step(0.5f, party);
+    CHECK(f.triggers.opened(0));
+    CHECK(f.height() == Approx(10));
+    party[0].position.x = 20;
+    f.step(0.5f, party);
+    CHECK_FALSE(f.triggers.opened(0));
+    CHECK(f.height() == Approx(8));
+    party[0].position.x = 0;
+    f.step(0.5f, party);
+    CHECK(f.triggers.opened(0));
+    CHECK(f.height() == Approx(10));
+}
+
+TEST_CASE("toggle lifts require everyone on the target and repeat after their delay",
+          "[game][world][triggers]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,4,5,2,255,0,0,236,255,0,0]})");
+    std::array party{TriggerVisitor{.position = Vec3{0}, .floorObject = 0},
+                     TriggerVisitor{.position = Vec3{0}, .floorObject = -1}};
+    f.step(0.5f, party);
+    CHECK_FALSE(f.triggers.opened(0));
+    party[1].floorObject = 0;
+    f.step(0.5f, party);
+    CHECK(f.triggers.opened(0));
+    CHECK(f.height() == Approx(10));
+    f.step(0.5f, party);
+    CHECK(f.triggers.opened(0));
+    f.step(1.5f, party);
+    CHECK_FALSE(f.triggers.opened(0));
+    CHECK(f.height() == Approx(8));
+}
+
+TEST_CASE("pressure targets return when vacated", "[game][world][triggers]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,0,0,2,255,0,0,0,0,20,0]})");
+    const std::array party{TriggerVisitor{.position = Vec3{0}}};
+    f.step(0.5f, party);
+    CHECK(f.height() == Approx(12));
+    f.step(0.5f);
+    CHECK(f.height() == Approx(10));
+    CHECK_FALSE(f.triggers.opened(0));
+}
+
+TEST_CASE("gargoyle gates accept a completed collection without opening an empty party",
+          "[game][world][triggers]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,66,0,2,255,101,0,0,0,20,0]})");
+    CHECK_FALSE(f.triggers.opened(0));
+    std::array party{TriggerVisitor{.position = Vec3{0}}};
+    f.step(0.5f, party);
+    CHECK_FALSE(f.triggers.opened(0));
+    party[0].gargoylePieces[0] = Relics::kGargoyleNeeded[0];
+    f.step(0.5f, party);
+    CHECK(f.triggers.opened(0));
+}
+
+TEST_CASE("oscillating lift follows both endpoints while its pad is held",
+          "[game][world][triggers]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,32,0,2,255,0,0,0,0,20,0]})");
+    const std::array party{TriggerVisitor{.position = Vec3{0}}};
+    f.step(0.5f, party);
+    CHECK(f.height() == Approx(12));
+    f.step(0.5f, party);
+    CHECK(f.height() == Approx(10));
+    f.step(0.5f, party);
+    CHECK(f.height() == Approx(12));
+    f.step(0.5f);
+    CHECK(f.height() == Approx(10));
+}
+
+TEST_CASE("one idle pressure pad does not cancel another on the same target",
+          "[game][world][triggers]") {
+    SwitchFixture f(R"(
+      {"info":0,"position":[0,0,0],"params":[0,0,0,0,2,3,0,0,0,0,20,0]},
+      {"info":0,"position":[20,0,0],"params":[0,0,0,0,2,4,0,0,0,0,20,0]})");
+    const std::array party{TriggerVisitor{.position = Vec3{0}}};
+    f.step(0.5f, party);
+    CHECK(f.triggers.opened(0));
+    CHECK(f.height() == Approx(12));
+    const auto settled = f.triggers.takeSettled();
+    REQUIRE(settled.size() == 1);
+    CHECK(settled.front().sound == 3);
+    CHECK(settled.front().spot == Vec3{0});
+    f.step(0.5f);
+    CHECK_FALSE(f.triggers.opened(0));
+}
+
+TEST_CASE("fading a target hides and unblocks its entire subtree", "[game][world][triggers]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,50,0,2,255,0,0,0,0,0,0]})",
+                    R"({"name":"WALL","position":[0,10,0],"flags":4096,"child":1},
+                       {"name":"WALL","position":[0,2,0]})");
+    WorldCollision collision;
+    const std::array party{TriggerVisitor{.position = Vec3{0}}};
+    f.triggers.update(1, party, f.animator, f.scene, &collision);
+    for (usize i = 0; i < 2; ++i) {
+        CHECK(f.scene.objectAlpha(i) == 0.0f);
+        CHECK_FALSE(collision.solid(static_cast<s32>(i)));
+    }
+}
+
+TEST_CASE("every catalogued level retains and activates its ordinary root switches",
+          "[game][world][switch-census][unpacked]") {
+    const auto root = test::unpackedOrSkip("wdata/TOWN.json").parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    usize levels = 0;
+    usize switches = 0;
+    usize activated = 0;
+    for (const auto& realm : catalog.realms()) {
+        for (const auto& name : realm.levels) {
+            const auto ref = catalog.byName(name);
+            REQUIRE(ref.has_value());
+            const auto file = test::unpackedOrSkip(ref->directory + "/world.json");
+            WorldLayout layout;
+            REQUIRE(layout.load(file.parent_path()));
+            ++levels;
+            WorldAnimator animator;
+            animator.bind(layout);
+            LevelTriggers triggers;
+            triggers.bind(layout, animator, nullptr);
+            switches += triggers.size();
+            for (usize i = 0; i < triggers.size(); ++i) {
+                animator.bind(layout);
+                triggers.bind(layout, animator, nullptr);
+                const auto trigger = triggers.trigger(i);
+                CAPTURE(name, i, trigger.flags, trigger.target);
+                if (trigger.chained ||
+                    (trigger.flags & (LevelTrigger::kRequirement | LevelTrigger::kCloses)) != 0) {
+                    continue;
+                }
+                const std::array party{
+                    TriggerVisitor{.position = trigger.spot, .floorObject = trigger.target}};
+                WorldScene scene;
+                triggers.update(kStep, party, animator, scene, nullptr);
+                CHECK(triggers.trigger(i).fired);
+                if (trigger.target >= 0) {
+                    CHECK(triggers.opened(trigger.target));
+                }
+                ++activated;
+            }
+        }
+    }
+    CAPTURE(levels, switches, activated);
+    CHECK(levels > 40);
+    CHECK(switches > 1000);
+    CHECK(activated > 100);
+}
 
 TEST_CASE("unkeyed trigger targets translate their geometry to signed height endpoints",
           "[game][world][triggers]") {

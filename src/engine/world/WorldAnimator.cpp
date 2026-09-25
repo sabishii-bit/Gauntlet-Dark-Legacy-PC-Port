@@ -78,6 +78,18 @@ void WorldAnimator::fire(s32 object, bool open, bool atOnce) {
     }
 }
 
+void WorldAnimator::cycle(s32 object, bool active) {
+    const auto index = trackOf(object);
+    if (!index.has_value()) {
+        return;
+    }
+    Track& track = m_tracks[*index];
+    track.held = false;
+    track.once = !active;
+    track.reverse = false;
+    track.finished = false;
+}
+
 void WorldAnimator::pose(const Track& track, WorldScene& scene) {
     const NodePose pose = TreePose::sample(track.track, track.frame);
     scene.setObjectTransform(static_cast<usize>(track.object),

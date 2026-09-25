@@ -1248,11 +1248,18 @@ void PlayScene::updateAmbience() {
 std::vector<TriggerVisitor> PlayScene::visitors() const {
     std::vector<TriggerVisitor> out;
     for (usize i = 0; i < m_players.size(); ++i) {
+        if (isDown(i)) {
+            continue;
+        }
         const PlayerActor& actor = m_players[i].actor;
         TriggerVisitor visitor;
         visitor.position = presenceOf(i);
         visitor.radius = actor.radius();
         visitor.crystals = actor.save().progress().crystals;
+        visitor.gargoylePieces = actor.save().progress().relics.gargoylePieces;
+        if (const auto floor = m_world->collision().floorAt(visitor.position, 0.5f, 1.0f)) {
+            visitor.floorObject = floor->object;
+        }
         out.push_back(visitor);
     }
     return out;

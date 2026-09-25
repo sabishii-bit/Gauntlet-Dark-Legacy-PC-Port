@@ -55,6 +55,31 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     }
     const std::span<TextureSet* const> lent{lenders};
     std::vector<usize> controlledObjects;
+    // Fading trigger targets are not always flagged as animated. Keep their
+    // complete subtree individually drawable rather than baking it into a batch.
+    for (const auto& instance : m_layout.itemInstances()) {
+        if (instance.info < 0 || static_cast<usize>(instance.info) >= m_layout.itemInfos().size() ||
+            m_layout.itemInfos()[static_cast<usize>(instance.info)].type != ItemInfo::kTrigger) {
+            continue;
+        }
+        const usize target = instance.params[0] | (static_cast<usize>(instance.params[1]) << 8U);
+        if (target >= m_layout.objects().size()) {
+            continue;
+        }
+        for (usize i = 0; i < m_layout.objects().size(); ++i) {
+            auto at = static_cast<s32>(i);
+            for (usize guard = 0; at >= 0 && guard < m_layout.objects().size(); ++guard) {
+                if (static_cast<usize>(at) == target) {
+                    controlledObjects.push_back(i);
+                    break;
+                }
+                at = m_layout.objects()[static_cast<usize>(at)].parent;
+            }
+        }
+    }
+    std::ranges::sort(controlledObjects);
+    const auto duplicates = std::ranges::unique(controlledObjects);
+    controlledObjects.erase(duplicates.begin(), duplicates.end());
     const std::string_view arenaObject =
         bossArenaObject(m_level != nullptr ? m_level->bossType : -1);
     if (!arenaObject.empty()) {
@@ -151,6 +176,7 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
 
 void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors) {
     m_triggers.update(seconds, visitors, m_worldAnimator, m_scene, &m_collision);
+    syncCollision();
 }
 
 void LevelWorld::update(f32 seconds) {

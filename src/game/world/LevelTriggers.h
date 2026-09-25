@@ -13,12 +13,11 @@
 #include "engine/world/WorldScene.h"
 
 #include "game/players/Progression.h"
+#include "game/players/Relics.h"
 #include "game/world/ItemFigure.h"
 
 namespace gdl::game {
 
-/** Someone who can set off a trigger: where they stand, how wide they are and the crystals
- * they carry towards each realm. */
 /** A player stood in a trigger's spot without what it asks for. */
 struct TriggerRefusal {
     s32 trigger = -1;
@@ -37,10 +36,13 @@ struct TriggerOpening {
     s32 sound = -1;
 };
 
+/** An active participant's position, supporting floor and progression requirements. */
 struct TriggerVisitor {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.75f;
     std::array<s32, kRealmCount> crystals{};
+    std::array<s32, Relics::kGargoyleKinds> gargoylePieces{};
+    s32 floorObject = -1;
 };
 
 /** One of a level's triggers: a spot that, stepped into, opens the world object it names
@@ -52,10 +54,11 @@ struct LevelTrigger {
     s32 id = 0;
     s32 nextId = 0;
     f32 refusalCooldown = 0.0f; ///< seconds before the trigger refuses anyone again
-    s32 next = -1;              ///< the trigger chained after this one, or -1
-    bool chained = false;       ///< another trigger's next: fired through it, never stepped on
-    u32 flags = 0;              ///< the trigger's own flags
-    u32 kind = 0; ///< how the target moves: the flags the object's trigger type carries
+    f32 toggleCooldown = 0.0f;
+    s32 next = -1;        ///< the trigger chained after this one, or -1
+    bool chained = false; ///< another trigger's next: fired through it, never stepped on
+    u32 flags = 0;        ///< the trigger's own flags
+    u32 kind = 0;         ///< how the target moves: the flags the object's trigger type carries
     f32 radius = 0.0f;
     s32 sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
@@ -72,7 +75,11 @@ struct LevelTrigger {
     static constexpr u32 kCloses = 0x1;
     static constexpr s32 kGargoyleIds = 100; ///< ids from here guard the gargoyle gates
     static constexpr u32 kFades = 0x10;      ///< the target fades out rather than moving
-    static constexpr u32 kToggles = 0x20;
+    static constexpr u32 kToggles = 0x4;
+    static constexpr u32 kOscillates = 0x20;
+    static constexpr u32 kOnTarget = 0x100;
+    static constexpr u32 kWholeParty = 0x400;
+    static constexpr u32 kKeepContact = 0x80;
     static constexpr u32 kStaysSolid = 0x8; ///< the target keeps blocking while it moves
 };
 
@@ -82,7 +89,8 @@ struct LevelTrigger {
  * carrying the crystals the trigger asks for, opens the object and everything chained after
  * it. A trigger chained after another is set off only through it, never by a player. A
  * field flagged to fade thins out over half a second and stops blocking; an animated gate
- * plays its opening once. Gates asking for the golden icons stay shut for now.
+ * plays forwards or backwards. Switch flags select latches, closing commands,
+ * pressure plates or repeatable toggles, including whole-party lifts.
  */
 class LevelTriggers {
 public:
@@ -132,11 +140,15 @@ private:
         u32 kind = 0;
         bool animated = false;
         bool open = false;
-        bool settled = false; ///< done opening, or opened at once
+        bool settled = true;
+        bool pressed = false;   ///< contact combined across all switches naming this target
+        bool returning = false; ///< descending half of an oscillating height target
         f32 alpha = 1.0f;
         Vec3 origin{0.0f};
         f32 height = 0.0f;
+        f32 closedHeight = 0.0f;
         f32 openHeight = 0.0f;
+        std::vector<usize> subtree;
         Vec3 spot{0.0f, 0.0f, 0.0f}; ///< the spot of the trigger that opened it
         s32 sound = -1;
     };
@@ -144,22 +156,26 @@ private:
     Target* targetOf(s32 object);
     const Target* targetOf(s32 object) const;
     static TriggerOpening openingOf(const Target& target, bool atOnce);
+    static bool fadesAway(const Target& target);
+    static void applyAlpha(const Target& target, WorldScene& scene, WorldCollision* collision);
     static bool qualifies(const LevelTrigger& trigger, std::span<const TriggerVisitor> visitors);
     /** Whether anyone stands in the trigger's spot, `radius` wide. */
-    static bool visited(const LevelTrigger& trigger, f32 radius,
-                        std::span<const TriggerVisitor> visitors);
-    void fire(usize index, bool atOnce, WorldAnimator& animator, WorldScene& scene,
+    bool visited(const LevelTrigger& trigger, f32 radius,
+                 std::span<const TriggerVisitor> visitors) const;
+    void fire(usize index, bool active, bool atOnce, WorldAnimator& animator, WorldScene& scene,
               WorldCollision* collision);
-    /** True when the target opened now, not earlier. */
-    static bool openTarget(Target& target, bool atOnce, WorldAnimator& animator, WorldScene& scene,
-                           WorldCollision* collision);
+    /** True when the target's commanded state changes. */
+    static bool openTarget(Target& target, bool open, bool atOnce, WorldAnimator& animator,
+                           WorldScene& scene, WorldCollision* collision);
 
     std::vector<LevelTrigger> m_triggers;
     std::vector<Target> m_targets;
+    std::vector<s32> m_parents;
     std::vector<TriggerRefusal> m_refusals;
     std::vector<TriggerOpening> m_openings;
     std::vector<TriggerOpening> m_settled;
     f32 m_frameRemainder = 0.0f;
+    f32 m_emptyToggleDelay = 0.0f;
 };
 
 } // namespace gdl::game
