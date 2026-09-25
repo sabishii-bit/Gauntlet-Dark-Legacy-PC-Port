@@ -23,6 +23,69 @@ using Catch::Approx;
 constexpr s32 kTicks = 2;
 constexpr f32 kStep = 1.0f / 30.0f;
 
+TEST_CASE("wall generators share their authored facing across rendering collision and spawning",
+          "[game][generators][item-orientation]") {
+    const auto root = test::scratchDirectory("wall-generator-orientation");
+    const auto archive = root / "MONSTERS/GRU";
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 1\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
+        {"index":1,"name":"GEN_GRU3L1","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"GRU1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":10,"rate":30},
+                     {"name":"WALK","frames":10,"rate":30}]}]})");
+    writeTextFile(root / "world.json", R"({
+        "objects":[{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],
+        "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,
+                      "xSize":3,"zSize":1,"hitPoints":10}],
+        "itemInstances":[
+            {"info":0,"minPlayers":1,"position":[10,3,20],"rotation":[0,1.57079637,0],
+             "params":[1,0,7,0,5,0,20,0,0,0,0,0]},
+            {"info":0,"minPlayers":1,"position":[180,3,20],"rotation":[0.3,-0.7,0.2],
+             "params":[1,0,7,0,5,0,20,0,0,0,0,0]}]})");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1));
+    REQUIRE(generators.count() == 2);
+    generators.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 2);
+    const std::array vertices{Vec3{0, 0, 1}, Vec3{1, 0, 0}, Vec3{0, 1, 0}};
+    for (usize i = 0; i < generators.count(); ++i) {
+        const auto& instance = layout.itemInstances()[i];
+        const Mat4 placement = itemPlacement(instance.position, instance.rotation);
+        REQUIRE(device.draws[i].vertices.size() == vertices.size());
+        for (usize v = 0; v < vertices.size(); ++v) {
+            CHECK(glm::distance(device.draws[i].vertices[v].position,
+                                Vec3{placement * Vec4{vertices[v], 1}}) < 0.0001f);
+        }
+    }
+    // A positive authored quarter-turn points out of the wall toward -X, not +X.
+    CHECK(device.draws[0].vertices[0].position.x == Approx(9));
+    CHECK(generators.boxOf(0).yaw == Approx(-1.57079637f));
+    const std::array party{EnemyView{.position = Vec3{0, 3, 20}}};
+    generators.update(2, enemies, party);
+    REQUIRE(generators.bredOf(0) == 1);
+    REQUIRE(generators.bredOf(1) == 0);
+    bool found = false;
+    for (s32 id = 0; id < Enemies::kMost; ++id) {
+        if (enemies.alive(id) && enemies.generatorOf(id) == 0) {
+            found = true;
+            CHECK(enemies.positionOf(id).x < generators.positionOf(0).x);
+        }
+    }
+    REQUIRE(found);
+}
+
 TEST_CASE("Temple special generators load their own multi-node trees and cycle species",
           "[game][generators][unpacked]") {
     const auto root =
