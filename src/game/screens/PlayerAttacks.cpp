@@ -128,9 +128,13 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
     u32 id = 0;
     if (strike.harms()) {
-        id = m_strikes.start(strike, actor.player(), actor.position(), facing,
+        MoveStrike volume = strike;
+        if (strike.effect >= 0 && static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
+            volume.offset += stats->moveEffects[static_cast<usize>(strike.effect)].offset;
+        }
+        id = m_strikes.start(volume, actor.player(), actor.position(), facing,
                              ownDamageOf(index, players));
-        m_strikeSources.push_back(StrikeSource{id, index, strikeIndex});
+        m_strikeSources.push_back(StrikeSource{id, index, strikeIndex, {}});
     }
     const Vec3 origin = MoveStrikes::originOf(strike, actor.position(), facing);
     const MoveStrikes::Strike* started = m_strikes.find(id);
@@ -156,9 +160,9 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
         }
         EffectTrees::Setting setting;
         setting.scale = effect.scale;
-        setting.yaw = std::atan2(facing.x, facing.z);
+        setting.yaw = std::atan2(facing.x, facing.z) + strike.angle;
         if (started != nullptr && started->flies) {
-            setting.velocity = facing * started->speed;
+            setting.velocity = started->facing * started->speed;
             setting.seconds = started->secondsLeft;
             // What flies launches once, then its looping tree carries it on.
             if (at == strike.effect && strike.loopEffect >= 0 &&
@@ -177,87 +181,62 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
     }
 }
 
-/** The strikes under way harm what they reach: the barrels, for now. What flies takes its
- * effect along, and the effect ends with it. */
+/** All target families share the strike's cosine cone and swept cylinder contacts. */
 void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
                                   const Targets& targets) {
     if (!m_resources.has_value()) {
         return;
     }
+    for (auto& source : m_strikeSources) {
+        for (auto& contact : source.contacts) {
+            contact.remaining -= seconds;
+        }
+    }
     for (const StrikeHit& hit : m_strikes.update(seconds, &m_resources->world.collision())) {
         const auto source = std::ranges::find(m_strikeSources, hit.strike, &StrikeSource::strike);
-        // The swarm and the generators in its reach take it, with the row's damage type.
-        u32 flags = 0;
-        if (source != m_strikeSources.end() && source->actor < players.size()) {
-            const ClassStats* stats =
-                m_resources->classes.stats(players[source->actor].actor.save().character);
-            if (stats != nullptr && source->row >= 0 &&
-                static_cast<usize>(source->row) < stats->moveStrikes.size()) {
-                flags = static_cast<u32>(
-                    stats->moveStrikes[static_cast<usize>(source->row)].damageType);
-            }
+        if (source == m_strikeSources.end() || source->actor >= players.size()) {
+            continue;
         }
-        for (const s32 enemy :
-             targets.opponents.enemies().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
-            const Vec3 direction = targets.opponents.enemies().positionOf(enemy) - hit.centre;
-            targets.opponents.strikeEnemy(enemy, hit.damage, flags,
-                                          Vec3{direction.x, 0.0f, direction.z}, hit.owner, players);
+        const auto& owner = players[source->actor].actor;
+        const ClassStats* stats = m_resources->classes.stats(owner.save().character);
+        if (stats == nullptr || source->row < 0 ||
+            static_cast<usize>(source->row) >= stats->moveStrikes.size()) {
+            continue;
         }
-        for (const s32 generator : targets.opponents.generators().within(hit.centre, hit.radius)) {
-            targets.opponents.strikeGenerator(generator, hit.damage, hit.owner);
-        }
-        if (targets.opponents.bosses().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
-            EnemyHit struck;
-            struck.damage = hit.damage;
-            struck.flags = flags;
-            struck.player = hit.owner;
-            struck.close = true;
-            if (const Vec3* at = targets.opponents.bosses().position(); at != nullptr) {
-                struck.direction = Vec3{at->x - hit.centre.x, 0.0f, at->z - hit.centre.z};
-                struck.where = hit.centre + glm::normalize(struck.direction) * hit.radius;
-            }
-            targets.opponents.bosses().hurt(struck);
-        }
-        for (const s32 critter :
-             targets.opponents.critters().reachedBy(hit.centre, hit.radius, hit.arc, hit.facing)) {
-            const Vec3 direction = targets.opponents.critters().positionOf(critter) - hit.centre;
-            targets.opponents.strikeCritter(critter, hit.damage, flags,
-                                            Vec3{direction.x, 0.0f, direction.z}, hit.owner,
-                                            std::nullopt, true, players);
-        }
-        for (usize rock = 0; rock < targets.fixtures.safeRocks().size(); ++rock) {
-            const auto& cover = targets.fixtures.safeRocks().rock(rock).obstacle;
-            if (targets.fixtures.safeRocks().standing(rock) &&
-                hit.reaches(cover.centre, cover.cylinderRadius, cover.height)) {
-                targets.fixtures.strikeSafeRock(rock, hit.damage);
-            }
-        }
-        for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
-            if (!targets.fixtures.barrels().standing(barrel)) {
+        const MoveStrike& row = stats->moveStrikes[static_cast<usize>(source->row)];
+        for (const MissileTarget& target : projectileTargets(targets)) {
+            if (!hit.reaches(target.base, target.radius, target.height)) {
                 continue;
             }
-            const Breakables::Barrel& cask = targets.fixtures.barrels().barrel(barrel);
-            if (!hit.reaches(cask.figure.position(), cask.radius, cask.height)) {
+            auto contact =
+                std::ranges::find(source->contacts, target.id, &StrikeSource::Contact::target);
+            if (contact != source->contacts.end() && contact->remaining > 0) {
                 continue;
             }
-            targets.fixtures.strikeBarrel(barrel, hit.damage, hit.owner, players,
-                                          targets.fixtureEvents);
-            // What it harms shows the strike's own mark, when its class gives it one.
-            if (source == m_strikeSources.end() || source->actor >= players.size()) {
-                continue;
+            // A pass-through wave must not deal its full damage every render frame.
+            constexpr u32 kPassThrough = 0x100000;
+            constexpr f32 kProjectileGap = 0.25f;
+            constexpr f32 kPassThroughExtraGap = 3.0f;
+            const f32 gap = hit.damage > 2 ? kProjectileGap + ((row.damageType & kPassThrough) != 0
+                                                                   ? kPassThroughExtraGap
+                                                                   : 0.0f)
+                                           : 0.0f;
+            if (contact == source->contacts.end()) {
+                source->contacts.push_back({target.id, gap});
+            } else {
+                contact->remaining = gap;
             }
-            const ClassStats* stats =
-                m_resources->classes.stats(players[source->actor].actor.save().character);
+            strikeTarget(target, hit.damage, row.damageType, owner, players, targets);
             ItemArchive* archive = moveEffectsOf(source->actor, players);
-            if (stats == nullptr || archive == nullptr) {
+            if (archive == nullptr) {
                 continue;
             }
-            const s32 mark = stats->moveStrikes[static_cast<usize>(source->row)].hitEffect;
+            const s32 mark = row.hitEffect;
             if (mark >= 0 && static_cast<usize>(mark) < stats->moveEffects.size()) {
                 const MoveEffect& effect = stats->moveEffects[static_cast<usize>(mark)];
                 if (!effect.tree.empty() && archive->trees.find(effect.tree).has_value()) {
                     m_resources->effects.start(m_resources->device, *archive, effect.tree,
-                                               cask.figure.position(), effect.scale);
+                                               target.base, effect.scale);
                 }
                 if (!effect.sound.empty()) {
                     m_resources->audio.playNamed(effect.sound);

@@ -8,7 +8,21 @@
 namespace gdl::game {
 
 bool StrikeHit::reaches(const Vec3& position, f32 targetRadius, f32 targetHeight) const {
-    const Vec3 offset = position - centre;
+    if (radius <= 0 || damage <= 0) {
+        return false;
+    }
+    Vec3 nearest = centre;
+    if (swept) {
+        const Vec3 travel = centre - from;
+        const f32 lengthSquared = travel.x * travel.x + travel.z * travel.z;
+        if (lengthSquared > 0) {
+            const Vec3 toward = position - from;
+            const f32 along =
+                std::clamp((toward.x * travel.x + toward.z * travel.z) / lengthSquared, 0.0f, 1.0f);
+            nearest = from + travel * along;
+        }
+    }
+    const Vec3 offset = position - nearest;
     const f32 across = std::hypot(offset.x, offset.z);
     if (across > radius + targetRadius || offset.y > radius || offset.y + targetHeight < -radius) {
         return false;
@@ -35,9 +49,12 @@ u32 MoveStrikes::start(const MoveStrike& strike, s32 owner, const Vec3& position
     Strike started;
     started.id = m_next++;
     started.owner = owner;
-    started.flies = strike.type == MoveStrike::kFlies && strike.speed > 0.0f;
+    started.flies = strike.type == MoveStrike::kFlies;
+    constexpr s32 kIgnoresWorld = 0x40;
+    started.collidesWorld = (strike.flags & kIgnoresWorld) == 0;
     started.position = originOf(strike, position, facing);
-    started.facing = facing;
+    const f32 heading = std::atan2(facing.x, facing.z) + strike.angle;
+    started.facing = Vec3{std::sin(heading), 0, std::cos(heading)};
     started.speed = strike.speed;
     started.radius = started.flies ? strike.hitRadius : strike.radius;
     started.arc = started.flies ? -1.0f : strike.arc;
@@ -50,10 +67,15 @@ u32 MoveStrikes::start(const MoveStrike& strike, s32 owner, const Vec3& position
 
 std::vector<StrikeHit> MoveStrikes::update(f32 seconds, const WorldCollision* collision) {
     std::vector<StrikeHit> hits;
+    if (seconds <= 0) {
+        return hits;
+    }
     for (Strike& strike : m_strikes) {
+        const Vec3 from = strike.position;
         const auto hit = [&] {
-            return StrikeHit{strike.id,  strike.owner,  strike.position, strike.radius,
-                             strike.arc, strike.facing, strike.damage};
+            return StrikeHit{strike.id,     strike.owner, strike.position,
+                             strike.radius, strike.arc,   strike.facing,
+                             strike.damage, from,         strike.flies};
         };
         if (!strike.flies) {
             strike.delayLeft -= seconds;
@@ -64,16 +86,25 @@ std::vector<StrikeHit> MoveStrikes::update(f32 seconds, const WorldCollision* co
             continue;
         }
         strike.delayLeft = std::max(strike.delayLeft - seconds, 0.0f);
+        const f32 travelTime = std::clamp(strike.secondsLeft, 0.0f, seconds);
         strike.secondsLeft -= seconds;
-        strike.position += strike.facing * (strike.speed * seconds);
-        if (collision != nullptr) {
-            const Vec3 pushed = collision->resolveWalls(strike.position, 0.5f, strike.position.y,
-                                                        strike.position.y + 1.0f);
-            if (glm::distance(pushed, strike.position) > 1e-3f) {
-                strike.secondsLeft = 0.0f; // a wall ends it
+        const f32 travel = strike.speed * travelTime;
+        constexpr f32 kWallStep = 0.25f;
+        const auto steps = collision != nullptr && strike.collidesWorld
+                               ? std::max(1, static_cast<s32>(std::ceil(travel / kWallStep)))
+                               : 1;
+        for (s32 step = 0; step < steps; ++step) {
+            const Vec3 next = strike.position + strike.facing * (travel / static_cast<f32>(steps));
+            if (collision != nullptr && strike.collidesWorld) {
+                const Vec3 pushed = collision->resolveWalls(next, 0.5f, next.y, next.y + 1.0f);
+                if (glm::distance(pushed, next) > 1e-3f) {
+                    strike.secondsLeft = 0.0f;
+                    break;
+                }
             }
+            strike.position = next;
         }
-        if (strike.delayLeft <= 0.0f && strike.damage > 0.0f) {
+        if (travelTime > 0 && strike.delayLeft <= 0.0f && strike.damage > 0.0f) {
             hits.push_back(hit());
         }
     }
