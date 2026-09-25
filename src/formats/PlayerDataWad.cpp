@@ -20,6 +20,7 @@ constexpr usize kRecordSize = 0x180;
 constexpr usize kRangesOffset = 0x28;
 constexpr usize kBodyOffset = 0x48;
 constexpr usize kFamiliarOffset = 0x164;
+constexpr usize kFamiliarShotOffset = 0x170;
 
 } // namespace
 
@@ -37,6 +38,8 @@ PlayerClassRecord parsePlayerDataWad(std::span<const u8> bytes) {
     record.effectCount = readWadU16(bytes, offset, kWhat);
     for (usize axis = 0; axis < record.familiarOffset.size(); ++axis) {
         record.familiarOffset[axis] = readWadF32(bytes, offset + kFamiliarOffset + axis * 4, kWhat);
+        record.familiarShotOffset[axis] =
+            readWadF32(bytes, offset + kFamiliarShotOffset + axis * 4, kWhat);
     }
     record.damageCount = readWadU16(bytes, offset + 2, kWhat);
     const usize ranges = offset + kRangesOffset;

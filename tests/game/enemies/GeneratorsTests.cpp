@@ -23,6 +23,48 @@ using Catch::Approx;
 constexpr s32 kTicks = 2;
 constexpr f32 kStep = 1.0f / 30.0f;
 
+TEST_CASE("Temple special generators load their own multi-node trees and cycle species",
+          "[game][generators][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
+    for (const auto* kind : {"ICE", "IMP", "PLA", "ZOM"}) {
+        test::unpackedOrSkip(std::string("MONSTERS/") + kind + "/animations.json");
+    }
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELE1"));
+    ItemArchive items;
+    REQUIRE(items.load(root / "ITEMS/LEVELE"));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, Enemies::kMost, {}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1, {}, 5, &items));
+    usize expected = 0;
+    for (const auto& instance : layout.itemInstances()) {
+        if (layout.itemInfos()[static_cast<usize>(instance.info)].type == ItemInfo::kGenerator &&
+            shownToParty(instance.minPlayers, 1)) {
+            ++expected;
+        }
+    }
+    REQUIRE(expected > 0);
+    REQUIRE(generators.count() == expected);
+    for (s32 i = 0; i < static_cast<s32>(generators.count()); ++i) {
+        CHECK(generators.kindOf(i) == -2);
+        CHECK(generators.tierOf(i) == 2);
+        CHECK(generators.stateOf(i) == 2);
+        CHECK(generators.bodyShown(i));
+    }
+    const std::array views{EnemyView{.position = generators.positionOf(0)}};
+    generators.update(2, enemies, views);
+    REQUIRE(enemies.count() > 0);
+    generators.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    generators.strike(0, 100000, 0);
+    CHECK(generators.stateOf(0) == 0);
+    CHECK(generators.bodyShown(0)); // broken ruin remains
+}
+
 /** A field with one grunt generator of strength two at the origin facing +z, one of strength
  * three at x 60 for a party of two, and a rats' one at x 120. */
 std::filesystem::path sampleLevel(std::string_view name) {

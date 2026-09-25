@@ -76,10 +76,13 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     m_audio.open(context.unpackedRoot, context.sounds, world.audio());
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
+    if (const auto glow = m_staticTextures.find("FONT32_GLOW")) {
+        m_hud.setGlow(&m_staticTextures.texture(device, *glow));
+    }
     // Sumner, his hints and his welcome belong to the tower alone.
     if (world.isTower()) {
-        m_hud.setGlow(m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(),
-                                         m_context.unpackedRoot, m_context.strings));
+        m_sumnerVisit.load(device, m_staticTextures, m_world->powerups(), m_context.unpackedRoot,
+                           m_context.strings);
         m_sumner.load(device, world.items(), world.layout());
     }
     if (context.levels != nullptr) {
@@ -1078,6 +1081,12 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     m_attacks.ramBarrels(i, m_players, attackTargets());
                     break;
                 case PartyMotion::Action::ThrowWeapon: throwWeapon(m_players[i].actor); break;
+                case PartyMotion::Action::FamiliarShot:
+                    m_arsenal.launchFamiliar(m_players[i].actor, m_players[i].figure.get(),
+                                             m_attacks.aim(m_players[i].actor,
+                                                           m_players[i].actor.facing(),
+                                                           attackTargets()));
+                    break;
                 case PartyMotion::Action::StrongThrow:
                     launchWeapon(i, m_players[i].actor.facing(), kStrongThrowScale, true);
                     break;
@@ -1259,7 +1268,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_sumnerVisit.prepare(device);
     const Mat4 clip = viewCamera().clipTransform(config.horizontalFovRadians(), frameWidth,
                                                  frameHeight, frameProjection);
-    m_world->draw(device, clip, viewCamera());
+    m_world->drawOpaque(device, clip, viewCamera());
     m_towerRelics.draw(device, clip, m_world->lighting(), viewCamera(), relicCeremonyOn());
     m_sumner.draw(device, clip, m_world->lighting());
     if (!spawning()) {
@@ -1297,8 +1306,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                               m_bossSequence.frozenTexture());
     const CameraFrame effectCamera = CameraFrame::of(viewCamera());
     m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
+    m_world->drawDeferred(device, clip, viewCamera());
     m_opponents.missiles().draw(device, clip, m_world->lighting());
-    m_arsenal.missiles().draw(device, clip, m_world->lighting());
+    m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
     m_arrival.drawEffects(device, clip, m_world->lighting());
     const auto width = static_cast<f32>(config.display.virtualWidth);

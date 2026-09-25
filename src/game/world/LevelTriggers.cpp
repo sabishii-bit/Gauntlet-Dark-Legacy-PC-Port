@@ -11,9 +11,6 @@ namespace gdl::game {
 
 namespace {
 
-constexpr u32 kTriggerKind = 24; ///< the item subtype the tower's triggers use
-constexpr u32 kBridgeKind = 20;
-constexpr u32 kBridgeFlags = 0x10;
 constexpr u32 kDefaultFlags = 0x8;
 constexpr u8 kTinyRadius = 0xFF;
 
@@ -51,11 +48,21 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         trigger.target =
             object >= 0 && static_cast<usize>(object) < layout.objects().size() ? object : -1;
         // The trigger's flags: the kind's own, then whatever the instance adds.
-        u32 flags = static_cast<u32>(info.subtype) == kBridgeKind ? kBridgeFlags : kDefaultFlags;
-        if (static_cast<u32>(info.subtype) == kTriggerKind ||
-            static_cast<u32>(info.subtype) > kTriggerKind) {
-            flags = static_cast<u32>(static_cast<u16>(paramS16(instance, 2))) | kDefaultFlags;
+        const u32 params = static_cast<u16>(paramS16(instance, 2));
+        u32 flags = params | kDefaultFlags;
+        switch (info.subtype) {
+        case 20: flags = 0x10; break;
+        case 21: flags = 8; break;
+        case 22: flags = 0x12; break;
+        case 23: flags = 10; break;
+        case 25: flags = 0x804; break;
+        case 26: flags = 2; break;
+        case 27: flags = 0x80C; break;
+        case 28: flags = 9; break;
+        case 29: flags = 10; break;
+        default: break;
         }
+        flags |= params & ~0xFFU;
         trigger.flags = flags;
         trigger.kind = flags & 0xFFU;
         trigger.radius =
@@ -73,6 +80,11 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
             Target target;
             target.object = trigger.target;
             target.kind = trigger.kind;
+            target.origin = layout.objects()[static_cast<usize>(trigger.target)].position;
+            // RegisterItemWobj stores the two signed endpoint parameters in tenths.
+            // Without a keyed track, ProcessItemWobjs translates the node vertically.
+            target.height = 0.1f * static_cast<f32>(paramS16(instance, 8));
+            target.openHeight = 0.1f * static_cast<f32>(paramS16(instance, 10));
             target.animated = animator.trackOf(trigger.target).has_value();
             if (target.animated) {
                 animator.hold(trigger.target);
@@ -99,12 +111,38 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
 }
 
 void LevelTriggers::clear() {
+    m_figures.clear();
     m_triggers.clear();
     m_targets.clear();
     m_refusals.clear();
     m_openings.clear();
     m_settled.clear();
     m_frameRemainder = 0.0f;
+}
+
+void LevelTriggers::bindFigures(RenderDevice& device, const WorldLayout& layout,
+                                ItemArchive& items) {
+    m_figures.clear();
+    for (const auto& trigger : m_triggers) {
+        const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
+        const auto& info = layout.itemInfos()[static_cast<usize>(instance.info)];
+        auto figure = std::make_unique<ItemFigure>();
+        // Marker-only triggers have no tree. Preserve authored height: these pads
+        // may sit on a moving bridge rather than on the static collision floor.
+        if (!figure->place(device, items, info.name, instance, nullptr)) {
+            figure.reset();
+        }
+        m_figures.push_back(std::move(figure));
+    }
+}
+
+void LevelTriggers::draw(RenderDevice& device, const Mat4& clip,
+                         const WorldLighting& lighting) const {
+    for (const auto& figure : m_figures) {
+        if (figure != nullptr) {
+            figure->draw(device, clip, lighting);
+        }
+    }
 }
 
 std::vector<TriggerRefusal> LevelTriggers::takeRefusals() {
@@ -190,6 +228,11 @@ bool LevelTriggers::openTarget(Target& target, bool atOnce, WorldAnimator& anima
             target.alpha = 0.0f;
             scene.setObjectAlpha(static_cast<usize>(target.object), 0.0f);
         }
+    } else if (atOnce) {
+        target.height = target.openHeight;
+        scene.setObjectTransform(
+            static_cast<usize>(target.object),
+            glm::translate(Mat4{1}, target.origin + Vec3{0, target.height, 0}));
     }
     return true;
 }
@@ -202,6 +245,10 @@ void LevelTriggers::fire(usize index, bool atOnce, WorldAnimator& animator, Worl
             break;
         }
         trigger.fired = true;
+        if (static_cast<usize>(at) < m_figures.size() && m_figures[static_cast<usize>(at)]) {
+            auto& figure = *m_figures[static_cast<usize>(at)];
+            figure.play(atOnce ? 2 : 1, false);
+        }
         if (Target* target = targetOf(trigger.target); target != nullptr && !target->open) {
             target->spot = trigger.spot;
             target->sound = trigger.sound;
@@ -270,6 +317,27 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
     const f32 frames = std::floor(m_frameRemainder);
     m_frameRemainder -= frames;
     for (Target& target : m_targets) {
+        if (!target.animated && (target.kind & LevelTrigger::kFades) == 0) {
+            if (target.open && !target.settled) {
+                // GameCube items.c ProcessItemWobjs: 4.0 * gClockFrameStep.
+                const f32 distance = target.openHeight - target.height;
+                const f32 step = 4.0f * seconds;
+                target.height += std::clamp(distance, -step, step);
+                if (std::abs(target.openHeight - target.height) <= 0.001f) {
+                    target.height = target.openHeight;
+                    target.settled = true;
+                    if (std::abs(distance) > 0.001f) {
+                        m_settled.push_back(openingOf(target, false));
+                    }
+                }
+                if (collision != nullptr && (target.kind & LevelTrigger::kStaysSolid) == 0) {
+                    collision->setSolid(target.object, target.settled);
+                }
+            }
+            scene.setObjectTransform(
+                static_cast<usize>(target.object),
+                glm::translate(Mat4{1}, target.origin + Vec3{0, target.height, 0}));
+        }
         if (!target.open || (target.kind & LevelTrigger::kFades) == 0 || target.alpha <= 0.0f) {
             continue;
         }
@@ -278,6 +346,16 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         if (target.alpha <= 0.0f && !target.settled) {
             target.settled = true;
             m_settled.push_back(openingOf(target, false));
+        }
+    }
+    for (usize i = 0; i < m_figures.size(); ++i) {
+        if (m_figures[i] == nullptr) {
+            continue;
+        }
+        auto& figure = *m_figures[i];
+        figure.update(seconds);
+        if (m_triggers[i].fired && figure.sequence() == 1 && figure.finished()) {
+            figure.play(2, true);
         }
     }
     // An animated target is done once its animation has run to the end.

@@ -57,6 +57,10 @@ ClassStats parseClassStats(std::string_view text) {
     if (const auto offset = root.value("familiarOffset", std::vector<f32>{}); offset.size() == 3) {
         stats.familiarOffset = Vec3{offset[0], offset[1], offset[2]};
     }
+    if (const auto offset = root.value("familiarShotOffset", std::vector<f32>{});
+        offset.size() == 3) {
+        stats.familiarShotOffset = Vec3{offset[0], offset[1], offset[2]};
+    }
     const auto vec3 = [](const Json& object, const char* key) {
         const auto values = object.value(key, std::vector<f32>{});
         return values.size() == 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f};

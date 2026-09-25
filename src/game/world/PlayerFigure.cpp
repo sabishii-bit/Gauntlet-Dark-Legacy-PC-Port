@@ -81,6 +81,10 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
             if (auto* archive = figure->effects(); archive != nullptr) {
                 figure->m_familiar.bind(device, *archive, save.progress().appearanceLevel(),
                                         stats->familiarOffset);
+                if (const auto shot = archive->trees.find("FAMILIAR_SPIT")) {
+                    figure->m_familiarMissile.bind(archive->trees.tree(*shot), archive->models,
+                                                   archive->textures, device);
+                }
             }
         }
     }
@@ -187,11 +191,20 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
 }
 
 void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed) {
-    m_familiar.update(seconds, deed == PlayerDeed::Attack || deed == PlayerDeed::StrongAttack);
+    // PlayerMotion consumes the familiar-shot bit on the following simulation step,
+    // not on every frame the attack button is held.
+    m_familiarReleased = m_familiarPending && deed != PlayerDeed::Die;
+    m_familiarPending = false;
     if (!m_animator.bound()) {
         return;
     }
     m_animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed);
+    m_familiarPending =
+        familiarTier() > 0 &&
+        (m_animator.released() || m_animator.strongReleased() || m_animator.superReleased() ||
+         m_animator.itemReleased() == PlayerDeed::FireLeft ||
+         m_animator.itemReleased() == PlayerDeed::FireRight);
+    m_familiar.update(seconds, m_familiarPending);
     const std::span<const Mat4> matrices = m_animator.pose().matrices();
     m_transforms.resize(m_costume->nodes.size());
     for (usize n = 0; n < m_transforms.size(); ++n) {

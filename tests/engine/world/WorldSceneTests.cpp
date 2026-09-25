@@ -156,6 +156,26 @@ TEST_CASE("a world scene places every object that has a mesh and draws it in pas
     REQUIRE(f.device.draws.empty());
 }
 
+TEST_CASE("world transparency can be deferred until dynamic solid objects have drawn",
+          "[world][scene]") {
+    Fixture f("world-scene-deferred");
+    REQUIRE(f.build());
+    const CameraFrame camera;
+    f.scene.draw(f.device, Mat4{1}, camera);
+    const auto together = f.device.draws;
+    f.device.draws.clear();
+    f.scene.drawOpaque(f.device, Mat4{1}, camera);
+    const auto solidCount = f.device.draws.size();
+    REQUIRE(solidCount > 0);
+    REQUIRE(solidCount < together.size());
+    f.scene.drawDeferred(f.device, Mat4{1}, camera);
+    REQUIRE(f.device.draws.size() == together.size());
+    for (usize i = 0; i < together.size(); ++i) {
+        CHECK(f.device.draws[i].vertices.size() == together[i].vertices.size());
+        CHECK(f.device.draws[i].vertices.front().position == together[i].vertices.front().position);
+    }
+}
+
 TEST_CASE("moving objects carry what stands under them", "[world][scene]") {
     Fixture f("world-scene-moving");
     REQUIRE(f.build());

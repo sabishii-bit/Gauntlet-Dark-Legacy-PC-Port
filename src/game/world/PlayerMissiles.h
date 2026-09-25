@@ -10,6 +10,7 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
@@ -132,7 +133,8 @@ public:
     /** Flies every missile on by `seconds`; those a wall or floor stops are taken away. */
     void update(f32 seconds, const WorldCollision* collision,
                 std::span<const MissileTarget> targets = {});
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const CameraFrame* camera = nullptr) const;
     void clear();
 
     usize count() const { return m_missiles.size(); }

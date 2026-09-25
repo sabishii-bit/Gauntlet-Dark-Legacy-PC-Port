@@ -42,6 +42,8 @@ public:
     void launchSuperShot(PlayerActor& actor, PlayerFigure* body,
                          std::optional<Vec3> target = std::nullopt);
     void launchGauntlet(const PlayerActor& actor, PlayerFigure* body, bool left);
+    void launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
+                        std::optional<Vec3> target = std::nullopt);
     std::optional<MissileImpact> usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor);
     void burstPotion(s32 kind, const Vec3& position, f32 power);

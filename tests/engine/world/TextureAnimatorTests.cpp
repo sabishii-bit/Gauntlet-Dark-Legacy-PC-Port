@@ -118,6 +118,26 @@ TEST_CASE("texture animations cycle frames and slide coordinates once a game fra
     REQUIRE(f.animator.frame() == 0);
 }
 
+TEST_CASE("rain composes both scrolling coordinates without accumulating old offsets",
+          "[world][animation]") {
+    Fixture f("texture-animator-two-axis");
+    const std::array animations{cycle("RAIN", 1, TextureAnimationInfo::kScrollV, -10, 0, 0),
+                                cycle("RAIN", 1, TextureAnimationInfo::kScrollU, -300, 0, 0)};
+    f.animator.bind(animations, f.textures, f.device);
+    f.animator.step(f.scene, 3);
+    CHECK(f.scene.textureOffset(1).x == Approx(-0.01f));
+    CHECK(f.scene.textureOffset(1).y == Approx(-0.3f));
+    f.animator.apply(f.scene);
+    CHECK(f.scene.textureOffset(1).y == Approx(-0.3f));
+    f.animator.step(2);
+    f.animator.apply(f.scene);
+    CHECK(f.scene.textureOffset(1).x == Approx(-5.0f / 300.0f));
+    CHECK(f.scene.textureOffset(1).y == Approx(-0.5f));
+    f.animator.step(f.scene, 5);
+    CHECK(f.scene.textureOffset(1).y == 0);
+    CHECK(f.scene.textureOffset(1).x == Approx(-10.0f / 300.0f));
+}
+
 TEST_CASE("an animation keyed to a sequence is never stepped, but read off at a frame",
           "[world][animation]") {
     Fixture f("texture-animator");

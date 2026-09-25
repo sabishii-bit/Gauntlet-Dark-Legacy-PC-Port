@@ -161,10 +161,19 @@ public:
     /** Draws the level as `camera` sees it: the geometry with its sorted objects farthest
      * first, then the particles facing the camera. */
     void draw(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
+        drawOpaque(device, clip, camera);
+        drawDeferred(device, clip, camera);
+    }
+    void drawOpaque(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
         const CameraFrame frame = CameraFrame::of(camera);
-        m_scene.draw(device, clip, frame);
+        m_scene.drawOpaque(device, clip, frame);
         m_skorneArena.draw(device, clip, m_litNow);
+        m_triggers.draw(device, clip, m_litNow);
         m_placedItems.draw(device, clip, m_litNow, &frame);
+    }
+    void drawDeferred(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
+        const CameraFrame frame = CameraFrame::of(camera);
+        m_scene.drawDeferred(device, clip, frame);
         m_particles.draw(device, clip, frame.right, frame.up);
     }
 

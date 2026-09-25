@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <exception>
 #include <optional>
+#include <unordered_map>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -238,10 +239,28 @@ void TextureAnimator::step(u32 ticks) {
 }
 
 void TextureAnimator::apply(WorldScene& scene) const {
+    // Separate U and V records may address the same texture (Temple rain).
+    // Compose this frame's records, not the previous frame's offset.
+    std::unordered_map<u32, Vec2> offsets;
     for (const Entry& entry : m_entries) {
         if (!entry.keyed) {
-            show(entry, scene);
+            if (entry.frames.empty() && entry.fade == 0) {
+                auto [at, inserted] = offsets.try_emplace(entry.slot, 0.0f, 0.0f);
+                const f32 along =
+                    static_cast<f32>(entry.counter % entry.period) / static_cast<f32>(entry.period);
+                if (entry.direction.x != 0) {
+                    at->second.x = entry.direction.x * along;
+                }
+                if (entry.direction.y != 0) {
+                    at->second.y = entry.direction.y * along;
+                }
+            } else {
+                show(entry, scene);
+            }
         }
+    }
+    for (const auto& [slot, offset] : offsets) {
+        scene.setTextureOffset(slot, offset);
     }
 }
 
@@ -285,16 +304,8 @@ void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence
 }
 
 void TextureAnimator::step(WorldScene& scene, u32 ticks) {
-    for (u32 t = 0; t < ticks; ++t) {
-        ++m_frame;
-        for (Entry& entry : m_entries) {
-            if (entry.keyed || (entry.rate > 1 && m_frame % static_cast<u32>(entry.rate) != 0)) {
-                continue;
-            }
-            entry.counter = (entry.counter + 1) % entry.period;
-            show(entry, scene);
-        }
-    }
+    step(ticks);
+    apply(scene);
 }
 
 } // namespace gdl

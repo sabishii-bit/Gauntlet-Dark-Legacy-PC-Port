@@ -38,6 +38,7 @@ public:
         NoPotion,
         Ram,
         ThrowWeapon,
+        FamiliarShot,
         StrongThrow,
         SuperShot,
         ItemAttack,

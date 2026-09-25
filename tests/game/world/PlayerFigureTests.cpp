@@ -1,3 +1,4 @@
+#include <cmath>
 #include <filesystem>
 #include <type_traits>
 
@@ -8,6 +9,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/players/Progression.h"
+#include "game/world/PlayerArsenal.h"
 #include "game/world/PlayerFigure.h"
 
 namespace {
@@ -16,6 +18,79 @@ using namespace gdl::game;
 
 static_assert(!std::is_move_constructible_v<PlayerFigure>);
 static_assert(!std::is_copy_constructible_v<PlayerFigure>);
+
+TEST_CASE("Jester throws face the camera and his permanent familiar fires once per release",
+          "[game][world][figure][unpacked]") {
+    const auto root = test::unpackedOrSkip("PLAYERS/JES/SFXGRE/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("PLAYERS/JES/GRE/animations.json");
+    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.character = 7;
+    save.color = 3;
+    save.progress().experience = levelExperience(60);
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure != nullptr);
+    REQUIRE(figure->missile().bound());
+    REQUIRE(figure->familiarTier() == 1);
+    REQUIRE(figure->familiarMissile().bound());
+    CameraFrame camera;
+    camera.right = {0, 0, -1};
+    camera.forward = {-1, 0, 0};
+    PlayerMissiles missiles;
+    MissileLaunch launch;
+    launch.spec = &MissileSpec::of(7);
+    launch.model = &figure->missile();
+    launch.velocity = Vec3{0, 0, 35};
+    REQUIRE(missiles.launch(launch));
+    missiles.draw(device, Mat4{1}, {}, &camera);
+    REQUIRE_FALSE(device.draws.empty());
+    bool hasArea = false;
+    for (const auto& draw : device.draws) {
+        for (usize i = 0; i + 2 < draw.vertices.size(); i += 3) {
+            const Vec3 a = draw.vertices[i + 1].position - draw.vertices[i].position;
+            const Vec3 b = draw.vertices[i + 2].position - draw.vertices[i].position;
+            hasArea |= std::abs(glm::dot(glm::cross(a, b), camera.forward)) > 0.001f;
+        }
+    }
+    CHECK(hasArea); // The billboard is not edge-on to this side-view camera.
+    bool pending = false;
+    s32 releases = 0;
+    s32 familiarShots = 0;
+    for (s32 frame = 0; frame < 180; ++frame) {
+        figure->animate(0, 2, 1.0f / 30, PlayerDeed::Attack);
+        CHECK(figure->familiarReleased() == pending);
+        familiarShots += figure->familiarReleased() ? 1 : 0;
+        pending = figure->animator().released();
+        releases += pending ? 1 : 0;
+    }
+    CHECK(releases > 1);
+    CHECK(familiarShots == releases - (pending ? 1 : 0));
+
+    ClassDataSet classes;
+    REQUIRE(classes.load(root / "pdata"));
+    const auto* stats = classes.stats(save.character);
+    REQUIRE(stats != nullptr);
+    REQUIRE(stats->familiarShotOffset.y > 0); // requires refreshed PDAT export
+    PlayerActor actor;
+    actor.spawn(0, save, stats, Vec3{0}, 0);
+    ItemArchive weapons;
+    const WorldCollision collision;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    PlayerArsenal arsenal;
+    arsenal.bind({device, classes, weapons, collision, effects, audio, nullptr, {}});
+    arsenal.launchFamiliar(actor, figure.get(), Vec3{0, 5, 20});
+    REQUIRE(arsenal.missiles().count() == 1);
+    CHECK(arsenal.missiles().missile(0).damage == 6);
+    CHECK(arsenal.missiles().missile(0).position == stats->familiarShotOffset);
+    CHECK(arsenal.missiles().missile(0).spec->radius == 1);
+    CHECK(arsenal.missiles().missile(0).spec->weight == 10);
+}
 
 TEST_CASE("player figure scale prioritizes ogre and growth over mastery", "[game][world][figure]") {
     CharacterSave save;

@@ -11,6 +11,10 @@ namespace gdl::game {
 
 namespace {
 
+constexpr std::array<s32, 4> kTempleKinds{16, 23, 14, 13};
+constexpr std::array<s32, 4> kHellKinds{2, 24, 20, 25};
+constexpr std::array<s32, 4> kHellAlgorithms{30, 30, 7, 7};
+
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
     const f32 dz = a.z - b.z;
@@ -46,14 +50,15 @@ const Generators::Bodies* Generators::bodiesOf(s32 kind) const {
     return nullptr;
 }
 
-bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind) {
+bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
+                            ItemArchive* realmItems) {
     if (bodiesOf(kind) != nullptr) {
         return true;
     }
-    if (!enemies.loadKind(kind)) {
+    if (kind >= 0 && !enemies.loadKind(kind)) {
         return false;
     }
-    ItemArchive* archive = enemies.archive(kind);
+    ItemArchive* archive = kind < -1 ? realmItems : enemies.archive(kind);
     if (archive == nullptr) {
         return false;
     }
@@ -63,7 +68,16 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind) {
     // The state's object: "GEN_GRU3", tried with the level-one and root suffixes as the
     // original does. Whole is three; nought is the ruin.
     for (s32 state = 0; state <= kStates; ++state) {
-        const std::string base = std::format("GEN_{}{}", info.prefix, state);
+        const std::string base =
+            std::format("GEN_{}{}", kind < -1 ? "SPECIAL" : info.prefix, state);
+        // SPECIAL generators are multi-node authored trees in the realm archive,
+        // not a model from one of the four enemy species they produce.
+        if (const auto tree = archive->trees.find(base)) {
+            bodies->models[static_cast<usize>(state)].bind(
+                archive->trees.tree(*tree), archive->models, archive->textures, device);
+            bodies->models[static_cast<usize>(state)].setFrame(0, 0);
+            continue;
+        }
         for (const char* suffix : {"L1", "", "ROOT"}) {
             const auto object = archive->models.find(base + suffix);
             if (!object.has_value()) {
@@ -87,7 +101,7 @@ bool Generators::loadBodies(RenderDevice& device, Enemies& enemies, s32 kind) {
 
 bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& enemies,
                       const WorldCollision* collision, const GeneratorScales& scales, s32 players,
-                      std::span<const LevelEnemy> roster) {
+                      std::span<const LevelEnemy> roster, s32 realm, ItemArchive* realmItems) {
     clear();
     m_scales = scales;
     const std::vector<ItemInfo>& infos = layout.itemInfos();
@@ -99,18 +113,29 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         if (info.type != ItemInfo::kGenerator || !shownToParty(instance.minPlayers, players)) {
             continue;
         }
-        const auto named = enemyKindOf(info.name);
+        const bool special = info.name == "SPECIAL" && (realm == 5 || realm == 6);
+        const auto named =
+            special ? std::optional<s32>{realm == 5 ? -2 : -3} : enemyKindOf(info.name);
         if (!named.has_value()) {
             continue;
         }
-        const s32 strength = std::max(paramOf(instance, 0), 1);
+        const s32 specialTier = realm == 5 ? 2 : 3;
+        const s32 strength = special ? specialTier : std::max(paramOf(instance, 0), 1);
         const s32 kind = levelKindOf(roster, *named, strength);
-        if (!loadBodies(device, enemies, kind)) {
+        if (special) {
+            for (const s32 species : realm == 5 ? kTempleKinds : kHellKinds) {
+                enemies.loadKind(species);
+            }
+        }
+        if (!loadBodies(device, enemies, kind, realmItems)) {
             continue;
         }
         Generator generator;
         generator.kind = kind;
         generator.tier = std::clamp(strength, 1, 3);
+        if (special) {
+            generator.state = generator.tier;
+        }
         generator.algorithm = paramOf(instance, 1);
         if (generator.algorithm < 0) {
             generator.algorithm = enemyKind(kind).algorithm;
@@ -129,8 +154,8 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         generator.interval = static_cast<s32>(static_cast<f32>(interval) * scales.rate);
         generator.threshold = static_cast<f32>(info.hitPoints) * scales.health;
         generator.health = static_cast<f32>(info.hitPoints * generator.tier) * scales.health;
-        generator.armor =
-            info.armor > 0 ? static_cast<f32>(info.armor) : enemyKind(kind).generatorArmor;
+        const f32 defaultArmor = special ? 0.0f : enemyKind(kind).generatorArmor;
+        generator.armor = info.armor > 0 ? static_cast<f32>(info.armor) : defaultArmor;
         const Mat4 placement = itemPlacement(instance.position, instance.rotation);
         generator.position = instance.position;
         if (collision != nullptr) {
@@ -193,6 +218,7 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
 }
 
 void Generators::clear() {
+    m_specialBirth = 0;
     m_generators.clear();
     for (auto& bodies : m_bodies) {
         for (TreeModel& model : bodies->models) {
@@ -245,6 +271,11 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         spawn.kind = generator.kind;
         spawn.tier = generator.tier;
         spawn.algorithm = generator.algorithm;
+        if (generator.kind == -2 || generator.kind == -3) {
+            const usize at = m_specialBirth++ % kTempleKinds.size();
+            spawn.kind = generator.kind == -2 ? kTempleKinds[at] : kHellKinds[at];
+            spawn.algorithm = generator.kind == -2 ? 7 : kHellAlgorithms[at];
+        }
         spawn.position = generator.position;
         spawn.direction = generator.direction;
         spawn.clearance = generator.clearance;

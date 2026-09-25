@@ -14,6 +14,7 @@
 
 #include "../../engine/world/SampleLevel.h"
 #include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "game/world/LevelTriggers.h"
 
 namespace {
@@ -23,6 +24,108 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
+
+TEST_CASE("unkeyed trigger targets translate their geometry to signed height endpoints",
+          "[game][world][triggers]") {
+    const auto dir = test::sampleLevel("trigger-height-endpoints");
+    writeTextFile(dir / "world.json", R"({
+      "objects": [{"name":"WALL", "position":[0,10,0], "flags":4096}],
+      "itemInfos": [{"type":5,"subtype":23,"name":"BRIDGEPAD","radius":1}],
+      "itemInstances": [{"info":0,"position":[0,0,0],
+        "params":[0,0,0,0,2,255,0,0,0,0,236,255]}]
+    })");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ModelSet models;
+    TextureSet textures;
+    REQUIRE(layout.load(dir));
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    WorldScene scene;
+    REQUIRE(scene.build(layout, models, textures, device));
+    REQUIRE(scene.moving(0));
+    WorldAnimator animator;
+    animator.bind(layout);
+    LevelTriggers triggers;
+    triggers.bind(layout, animator, nullptr);
+    const std::array visitors{TriggerVisitor{.position = Vec3{0}}};
+    triggers.update(0.25f, visitors, animator, scene, nullptr);
+    CHECK(scene.worldTransform(0)[3].y == Approx(9));
+    CHECK(triggers.takeSettled().empty());
+    triggers.update(0.25f, {}, animator, scene, nullptr);
+    CHECK(scene.worldTransform(0)[3].y == Approx(8));
+    const auto settled = triggers.takeSettled();
+    REQUIRE(settled.size() == 1);
+    CHECK(settled.front().target == 0);
+    triggers.update(1, {}, animator, scene, nullptr);
+    CHECK(scene.worldTransform(0)[3].y == Approx(8));
+    CHECK(triggers.takeSettled().empty());
+}
+
+TEST_CASE("Temple bridge pads are visible and activate their authored world targets",
+          "[game][world][triggers][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELE1"));
+    WorldAnimator animator;
+    animator.bind(layout);
+    LevelTriggers triggers;
+    triggers.bind(layout, animator, nullptr);
+    ItemArchive items;
+    REQUIRE(items.load(root / "ITEMS/LEVELE"));
+    triggers.bindFigures(device, layout, items);
+    triggers.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    ModelSet models;
+    TextureSet textures;
+    REQUIRE(models.load(root / "LEVELS/LEVELE1"));
+    REQUIRE(textures.load(root / "LEVELS/LEVELE1"));
+    WorldScene scene;
+    const std::array<TextureSet*, 1> lenders{&items.textures};
+    REQUIRE(scene.build(layout, models, textures, device, {}, lenders));
+    bool tested = false;
+    for (usize i = 0; i < triggers.size(); ++i) {
+        const auto& trigger = triggers.trigger(i);
+        const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
+        const auto& info = layout.itemInfos()[static_cast<usize>(instance.info)];
+        if (info.subtype == 26) {
+            CHECK((trigger.flags & 0xFF) == 2);
+            REQUIRE(trigger.chained);
+            Vec3 activatingSpot = trigger.spot;
+            for (usize parent = 0; parent < triggers.size(); ++parent) {
+                if (triggers.trigger(parent).next == static_cast<s32>(i)) {
+                    activatingSpot = triggers.trigger(parent).spot;
+                }
+            }
+            const std::array visitors{TriggerVisitor{.position = activatingSpot}};
+            // E1ELEV99 has no keyed animation: params[10..11] raise it by five units.
+            REQUIRE_FALSE(animator.trackOf(trigger.target).has_value());
+            const auto target = static_cast<usize>(trigger.target);
+            REQUIRE(scene.moving(target));
+            const f32 startY = scene.worldTransform(target)[3].y;
+            triggers.update(kStep, visitors, animator, scene, nullptr);
+            CHECK(trigger.fired);
+            CHECK(triggers.opened(trigger.target));
+            CHECK(scene.worldTransform(target)[3].y == Approx(startY + 4.0f * kStep));
+            triggers.update(2.0f, {}, animator, scene, nullptr);
+            CHECK(scene.worldTransform(target)[3].y == Approx(startY + 5.0f));
+            tested = true;
+        } else if (info.subtype == 23 || info.subtype == 29) {
+            CHECK((trigger.flags & 0xFF) == 10);
+            if (info.subtype == 29) {
+                REQUIRE(animator.trackOf(trigger.target).has_value());
+                const std::array visitors{TriggerVisitor{.position = trigger.spot}};
+                triggers.update(kStep, visitors, animator, scene, nullptr);
+                CHECK(trigger.fired);
+                CHECK(triggers.opened(trigger.target));
+            }
+        }
+    }
+    REQUIRE(tested);
+}
 
 struct Fixture {
     test::FakeRenderDevice device;

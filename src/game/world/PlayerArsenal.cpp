@@ -178,6 +178,46 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     }
 }
 
+void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
+                                   std::optional<Vec3> target) {
+    if (!m_resources || body == nullptr || body->familiarTier() == 0 ||
+        !body->familiarMissile().bound()) {
+        return;
+    }
+    const auto* stats = m_resources->classes.stats(actor.save().character);
+    if (stats == nullptr) {
+        return;
+    }
+    // PlayerMotion / Start familiar spit: radius one, three-second life, speed 35;
+    // damage is 0.1 * (level - 25) + 2.5, independent of weapon powerups.
+    static constexpr MissileSpec kLevelShot{"FAMILIAR_SPIT", {}, 1, 0, 10, true, {}};
+    static constexpr MissileSpec kBossShot{"FAMILIAR_SPIT", {}, 1, 0, 0, true, {}};
+    MissileLaunch launch;
+    launch.owner = actor.player();
+    const auto worn = PowerupEffects::of(actor.save().progress().inventory);
+    const f32 scale = PlayerFigure::bodyScale(actor.save(), worn);
+    launch.position = Vec3{actor.transform() * Vec4{stats->familiarShotOffset * scale, 1}};
+    launch.direction = actor.facing();
+    launch.speed = 35;
+    launch.damage = 0.1f * static_cast<f32>(experienceLevel(actor.save().experience()));
+    launch.spec = m_resources->bossEncounter ? &kBossShot : &kLevelShot;
+    launch.model = &body->familiarMissile();
+    launch.wallSound = MissileWallSound::Silent;
+    // CalcTargetDir normalizes horizontal displacement, uses a 50-unit/second
+    // flight estimate, then StartFX scales the direction by 35.
+    const Vec3 aim = target.value_or(launch.position + actor.facing() * 21.0f);
+    const Vec3 delta = aim - launch.position;
+    const f32 distance = std::hypot(delta.x, delta.z);
+    const f32 inverse = distance > 0.001f ? 1.0f / distance : 1.0f;
+    const f32 drop = m_resources->bossEncounter ? 0.0f : -0.5f;
+    launch.velocity = Vec3{delta.x * inverse,
+                           0.02f * (0.5f * launch.spec->weight * distance * 0.02f +
+                                    (delta.y + drop) * 50.0f * inverse),
+                           delta.z * inverse} *
+                      launch.speed;
+    m_missiles.launch(launch);
+}
+
 void PlayerArsenal::launchGauntlet(const PlayerActor& actor, PlayerFigure* body, bool left) {
     if (!m_resources || body == nullptr) {
         return;
