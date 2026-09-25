@@ -39,13 +39,13 @@ void LevelFixtures::bind(const Resources& resources) {
     m_resources.emplace(resources);
     LevelWorld& world = resources.world;
     RenderDevice& device = resources.device;
-    m_chests.bind(device, world.layout(), world.items(), &world.collision());
-    m_gates.bind(device, world.layout(), world.items(), &world.collision());
+    m_chests.bind(device, world.layout(), world.items(), &world.collision(), &world.realmItems());
+    m_gates.bind(device, world.layout(), world.items(), &world.collision(), &world.realmItems());
     const LevelInfo* level = world.level();
     m_traps.bind(device, world.layout(), world.items(), &world.collision(), 1,
                  level != nullptr ? level->tuning.trapTimeScale(resources.difficultyGain) : 1.0f,
                  trapDamageScale(), &world.realmItems());
-    m_barrels.bind(device, world.layout(), world.items(), &world.collision());
+    m_barrels.bind(device, world.layout(), world.items(), &world.collision(), &world.realmItems());
     m_safeRocks.bind(device, world.layout(), world.items());
 }
 void LevelFixtures::clear() {
@@ -187,7 +187,8 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         }
     }
     const usize reveals = m_chests.updateXray(m_resources->device, m_resources->world.items(),
-                                              m_resources->world.powerups(), seconds, visitors);
+                                              m_resources->world.powerups(), seconds, visitors,
+                                              &m_resources->world.realmItems());
     for (usize i = 0; i < reveals; ++i) {
         m_resources->audio.playNamed("S_XRAY");
     }

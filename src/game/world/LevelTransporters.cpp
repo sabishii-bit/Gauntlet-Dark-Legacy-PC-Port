@@ -20,12 +20,13 @@ s32 parameter(const ItemInstance& instance, usize offset) {
 } // namespace
 
 void LevelTransporters::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-                             s32 players) {
+                             s32 players, ItemArchive* realmItems) {
     clear();
-    const auto tree = items.trees.find("TRANS");
+    ItemArchive& art = itemArchiveForTree(items, "TRANS", realmItems);
+    const auto tree = art.trees.find("TRANS");
     if (tree) {
-        m_tree = &items.trees.tree(*tree);
-        m_textures.bind(items.trees.textureAnimations(), items.textures, device);
+        m_tree = &art.trees.tree(*tree);
+        m_textures.bind(art.trees.textureAnimations(), art.textures, device);
     }
     const auto& infos = layout.itemInfos();
     const auto& instances = layout.itemInstances();
@@ -47,7 +48,7 @@ void LevelTransporters::bind(RenderDevice& device, const WorldLayout& layout, It
         pad.radius = info.radius;
         pad.height = info.height;
         pad.transform = itemPlacement(pad.position, instance.rotation);
-        if (m_tree != nullptr && pad.model.bind(*m_tree, items.models, items.textures, device)) {
+        if (m_tree != nullptr && pad.model.bind(*m_tree, art.models, art.textures, device)) {
             pad.pose.rest(*m_tree);
             if (const auto sequence = m_tree->findSequence("ACTIVE")) {
                 pad.animation.start(m_tree->sequences[*sequence], *sequence);

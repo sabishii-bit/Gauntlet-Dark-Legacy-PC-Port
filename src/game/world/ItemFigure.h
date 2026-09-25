@@ -102,4 +102,9 @@ bool shownToParty(s32 minPlayers, s32 players);
 /** Places authored item angles by world-axis pitch, yaw, then roll, followed by translation. */
 Mat4 itemPlacement(const Vec3& position, const Vec3& rotation);
 
+/** Borrows missing trees from the realm while retaining level-specific overrides.
+ * Both archives must outlive figures placed from them. */
+ItemArchive& itemArchiveForTree(ItemArchive& items, std::string_view name,
+                                ItemArchive* realmItems = nullptr);
+
 } // namespace gdl::game

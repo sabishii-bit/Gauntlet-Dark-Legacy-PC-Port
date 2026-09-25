@@ -69,9 +69,11 @@ public:
     };
 
     /** Stands a portal at every exit item of the layout, its figure from `items` (which must
-     * outlive them); true when the level has any. */
+     * outlive them), falling back to `realmItems` for missing trees; true when the level has any.
+     * Both archives must outlive the portals. */
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-              const LevelCatalog& catalog, const WorldCollision* collision);
+              const LevelCatalog& catalog, const WorldCollision* collision,
+              ItemArchive* realmItems = nullptr);
     void clear();
     usize size() const { return m_portals.size(); }
     const Portal& portal(usize index) const { return m_portals[index]; }

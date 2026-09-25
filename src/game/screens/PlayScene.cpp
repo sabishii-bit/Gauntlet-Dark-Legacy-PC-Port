@@ -93,7 +93,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_sumner.load(device, world.items(), world.layout());
     }
     if (context.levels != nullptr) {
-        m_portals.bind(device, world.layout(), world.items(), *context.levels, &world.collision());
+        m_portals.bind(device, world.layout(), world.items(), *context.levels, &world.collision(),
+                       &world.realmItems());
     }
     m_fixtures.bind({device, world, m_weapons, m_effects, m_audio,
                      context.config != nullptr ? context.config->difficulty.gain() : 1.0f});
@@ -118,7 +119,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         }
     }
     spawnParty(party, options);
-    m_transporters.bind(device, world.layout(), world.items(), static_cast<s32>(m_players.size()));
+    m_transporters.bind(device, world.layout(), world.items(), static_cast<s32>(m_players.size()),
+                        &world.realmItems());
     for (const DroppedItem& item : options.items) {
         world.placeItem(device, item.name, item.position);
     }

@@ -9,7 +9,7 @@
 namespace gdl::game {
 
 bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-                       const WorldCollision* collision) {
+                       const WorldCollision* collision, ItemArchive* realmItems) {
     clear();
     const std::vector<ItemInfo>& infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
@@ -24,7 +24,8 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         gate->instance = static_cast<s32>(index);
         gate->minPlayers = instance.minPlayers;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
-        if (!gate->figure.place(device, items, name, instance, collision)) {
+        ItemArchive& art = itemArchiveForTree(items, name, realmItems);
+        if (!gate->figure.place(device, art, name, instance, collision)) {
             log::warn("Gates: no figure {} in the item archive", name);
         }
         gate->box = gate->figure.obstacle(info);

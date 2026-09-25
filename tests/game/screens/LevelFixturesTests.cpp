@@ -95,6 +95,48 @@ TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific
     REQUIRE_FALSE(fixture.world.realmItems().loaded());
 }
 
+TEST_CASE("Courtyard fixtures borrow realm artwork without losing the level archive",
+          "[game][screens][level-fixtures][realm-art][unpacked]") {
+    const auto root = test::unpackedOrSkip("ITEMS/LEVELA/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELA1/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELA1/world.json");
+    Fixture fixture;
+    fixture.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A1");
+    REQUIRE(level);
+    REQUIRE(fixture.world.load(fixture.device, root, *level));
+    REQUIRE(fixture.world.items().trees.find("TENTACLE"));
+    REQUIRE_FALSE(fixture.world.items().trees.find("CHEST"));
+    REQUIRE(fixture.world.realmItems().trees.find("CHEST"));
+    fixture.fixtures.bind(
+        {fixture.device, fixture.world, fixture.weapons, fixture.effects, fixture.audio, 1});
+    const auto& chests = fixture.fixtures.chests();
+    const auto& gates = fixture.fixtures.gates();
+    const auto& barrels = fixture.fixtures.barrels();
+    REQUIRE(chests.size() > 0);
+    REQUIRE(gates.size() > 0);
+    REQUIRE(barrels.size() > 0);
+    for (usize i = 0; i < chests.size(); ++i) {
+        CAPTURE(i);
+        CHECK(chests.chest(i).figure.hasFigure());
+    }
+    for (usize i = 0; i < gates.size(); ++i) {
+        CAPTURE(i);
+        CHECK(gates.gate(i).figure.hasFigure());
+    }
+    for (usize i = 0; i < barrels.size(); ++i) {
+        CAPTURE(i);
+        CHECK(barrels.barrel(i).figure.hasFigure());
+    }
+    fixture.fixtures.clear();
+    fixture.world.clear();
+}
+
 TEST_CASE("every authored flame trap emits only outside OFF and retains its dying tails",
           "[game][screens][level-fixtures][unpacked]") {
     const auto root = test::unpackedOrSkip("ITEMS/LEVELB/animations.json")

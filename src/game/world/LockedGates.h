@@ -52,7 +52,7 @@ public:
     };
 
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-              const WorldCollision* collision);
+              const WorldCollision* collision, ItemArchive* realmItems = nullptr);
     void clear();
     usize size() const { return m_gates.size(); }
     const Gate& gate(usize index) const { return *m_gates[index]; }
