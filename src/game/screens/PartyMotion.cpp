@@ -69,6 +69,14 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         const bool down = players[i].life != PlayerLife::Standing;
         if (down) {
             players[i].capture.clear();
+            players[i].transport.clear();
+        } else if (players[i].transport.active()) {
+            actor.update({}, cameraYaw, seconds, nullptr);
+            if (players[i].figure != nullptr) {
+                players[i].figure->animate(0, ticks, seconds, PlayerDeed::None);
+            }
+            subjects.push_back({actor.position(), actor.followPoint()});
+            continue;
         } else if (players[i].capture.active()) {
             PlayerCapture& capture = players[i].capture;
             const PlayerDeed deed = capture.held() ? PlayerDeed::Grabbed : PlayerDeed::Thrown;

@@ -72,6 +72,24 @@ TEST_CASE("a damage flash expires after two simulation frames without holding co
     CHECK(f.players[0].hitFlashTicks == 0);
 }
 
+TEST_CASE("transport holds only its own player and clears on death",
+          "[party-motion][transporters]") {
+    Fixture f;
+    REQUIRE(f.players[0].transport.begin(Vec3{20, 0, 0}));
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.inputs[3].usePotion = true;
+    f.inputs[1].move = MoveInput{Vec2{0, 1}, 1};
+    f.step();
+    CHECK(f.players[0].actor.position() == Vec3{0});
+    CHECK_FALSE(f.players[0].actor.moving());
+    CHECK(f.players[1].actor.position().z > 0);
+    CHECK(std::ranges::find(f.calls, "help0") == f.calls.end());
+    f.players[0].life = PlayerLife::Dying;
+    f.step();
+    CHECK_FALSE(f.players[0].transport.active());
+    CHECK(f.players[0].transport.alpha() == 1.0f);
+}
+
 TEST_CASE("stationary attacks face assisted targets without overriding movement or strafe",
           "[game][screens][party-motion][target-assist]") {
     Fixture f;
