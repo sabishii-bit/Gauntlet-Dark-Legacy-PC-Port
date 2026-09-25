@@ -105,6 +105,8 @@ public:
     BossView view() const;
     /** How its meter is laid out, or null without a boss. */
     const HealthMeterDefinition* meter() const;
+    /** All enabled HUD meters, including defeated heads until the encounter ends. */
+    std::vector<HealthMeterReading> healthMeters() const;
     /** Its archive, whose textures the meter is drawn from; null without a boss. */
     ItemArchive* archive();
     const Vec3* position() const;

@@ -105,12 +105,9 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss);
             mark != nullptr) {
             m_bosses.spawn(level->bossType, mark->position, mark->rotation.y);
-            if (const HealthMeterDefinition* meter = m_bosses.meter(); meter != nullptr) {
-                ItemArchive* archive = m_bosses.archive();
-                m_bossMeter.bind(*meter, archive != nullptr ? &archive->textures : nullptr);
-                const BossView boss = m_bosses.view();
-                m_bossMeter.update(0, boss.health, boss.maxHealth, boss.alive, false);
-            }
+            ItemArchive* archive = m_bosses.archive();
+            m_bossMeter.bind(m_bosses.healthMeters(),
+                             archive != nullptr ? &archive->textures : nullptr);
             // The first of the party carrying its legend item brings it to the fight.
             for (const PlayerRuntime& runtime : players) {
                 const PlayerActor& actor = runtime.actor;
@@ -364,7 +361,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     if (m_bossMeter.bound()) {
         const BossView boss = m_bosses.view();
-        m_bossMeter.update(ticks, boss.health, boss.maxHealth, m_bosses.present() && boss.alive,
+        m_bossMeter.update(ticks, m_bosses.healthMeters(), m_bosses.present() && boss.alive,
                            m_bosses.frozen());
     }
     // The legend item held up is the bearer's no more; the rite is shown as it goes.

@@ -100,6 +100,7 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
         m_meter.rightInset = type.value("meterRightInset", 0);
         m_meter.shown = (typeFlags & HealthMeterDefinition::kShown) != 0 && m_meter.pieces > 0;
         m_meter.backed = (typeFlags & HealthMeterDefinition::kBacked) != 0;
+        m_meter.name = m_suffix;
         m_meter.barOffset = vecOf(type, "healthBarOffset");
         const s32 moveIndex = type.value("moveIndex", 0);
         const s32 moveCount = type.value("moveCount", 0);

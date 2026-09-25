@@ -7,6 +7,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/Bosses.h"
 #include "game/screens/BossMeter.h"
 
 namespace {
@@ -23,6 +24,115 @@ HealthMeterDefinition lichMeter() {
     meter.shown = true;
     meter.backed = true;
     return meter;
+}
+
+TEST_CASE("multipart meters retain independent eased health and clear every layer",
+          "[game][screens][hud]") {
+    std::array<HealthMeterReading, 3> readings;
+    for (auto& reading : readings) {
+        reading.definition = lichMeter();
+        reading.health = 1200;
+        reading.maxHealth = 1200;
+    }
+    readings[1].definition.backed = false;
+    readings[2].definition.backed = false;
+    readings[1].health = readings[1].maxHealth = 1500;
+    BossMeters meters;
+    REQUIRE_FALSE(meters.bound());
+    meters.bind(readings, nullptr);
+    REQUIRE(meters.count() == 3);
+    REQUIRE(meters.showing());
+    readings[1].health = 0;
+    meters.update(2, readings, true, false);
+    REQUIRE(meters.meter(0).shown() == 1200);
+    REQUIRE(meters.meter(1).shown() == 1494);
+    REQUIRE(meters.meter(2).shown() == 1200);
+    meters.update(500, readings, true, false);
+    REQUIRE(meters.meter(1).shown() == 0);
+    REQUIRE(meters.meter(1).showing()); // Empty head fill does not remove the shared frame.
+    meters.update(2, {}, false, false);
+    for (usize index = 0; index < meters.count(); ++index) {
+        REQUIRE_FALSE(meters.meter(index).showing());
+    }
+    meters.clear();
+    REQUIRE_FALSE(meters.bound());
+    REQUIRE_FALSE(meters.showing());
+    meters.bind(std::span{readings}.first(1), nullptr);
+    REQUIRE(meters.count() == 1);
+    REQUIRE(meters.meter(0).shown() == 1200);
+    REQUIRE_FALSE(meters.meter(1).bound());
+}
+
+TEST_CASE("Chimera draws its three head fills on one shared frame and drains the struck head",
+          "[game][screens][hud][chimera][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/CHIMERA.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+    test::unpackedOrSkip("MONSTERS/CHIMERA/textures.json");
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'A');
+    REQUIRE(bosses.spawn(35, Vec3{0}, 0));
+    auto readings = bosses.healthMeters();
+    REQUIRE(readings.size() == 3);
+    REQUIRE(readings[0].definition.name == "EAGLE");
+    REQUIRE(readings[1].definition.name == "LION");
+    REQUIRE(readings[2].definition.name == "SNAKE");
+    REQUIRE(readings[0].definition.backed);
+    REQUIRE_FALSE(readings[1].definition.backed);
+    REQUIRE_FALSE(readings[2].definition.backed);
+    REQUIRE(readings[0].maxHealth == 1200);
+    REQUIRE(readings[1].maxHealth == 1500);
+    REQUIRE(readings[2].maxHealth == 1200);
+    auto& textures = bosses.archive()->textures;
+    BossMeters meters;
+    meters.bind(readings, &textures);
+    Canvas canvas;
+    const auto draw = [&] {
+        device.draws.clear();
+        canvas.begin(device, Mat4{1});
+        meters.draw(canvas, device);
+        canvas.end();
+    };
+    draw();
+    const std::array names{"EAGLE_METER_BG1", "EAGLE_METER_FG1", "EAGLE_METER_BG2",
+                           "EAGLE_METER_FG2", "LION_METER_FG1",  "LION_METER_FG2",
+                           "SNAKE_METER_FG1", "SNAKE_METER_FG2"};
+    const std::array lefts{0, 0, 256, 256, 0, 256, 0, 256};
+    REQUIRE(device.draws.size() == names.size());
+    for (usize i = 0; i < names.size(); ++i) {
+        INFO(names[i]);
+        const auto texture = textures.find(names[i]);
+        REQUIRE(texture);
+        CHECK(device.draws[i].texture == &textures.texture(device, *texture));
+        CHECK(test::minCorner(device.draws[i]) == Vec2{lefts[i], BossMeter::kY});
+    }
+    EnemyHit hit;
+    hit.damage = 602; // Armor leaves six hundred damage, directed at the lion.
+    bosses.hurt(hit, 2);
+    readings = bosses.healthMeters();
+    REQUIRE(readings[0].health == 1200);
+    REQUIRE(readings[1].health == 900);
+    REQUIRE(readings[2].health == 1200);
+    meters.update(200, readings, true, false);
+    draw();
+    REQUIRE(device.draws.size() == names.size());
+    CHECK(test::maxCorner(device.draws[5]).x < test::maxCorner(device.draws[7]).x);
+    CHECK(meters.meter(0).fillWidths() == meters.meter(2).fillWidths());
+    hit.damage = 2000;
+    bosses.hurt(hit, 1); // Losing the eagle must not remove its shared background.
+    readings = bosses.healthMeters();
+    REQUIRE(readings.size() == 3);
+    meters.update(500, readings, true, false);
+    draw();
+    REQUIRE(device.draws.size() == names.size() - 1); // Eagle's empty second strip is omitted.
+    CHECK(device.draws.front().texture == &textures.texture(device, *textures.find(names[0])));
+    hit.damage = 10000;
+    bosses.hurt(hit);
+    meters.update(2, bosses.healthMeters(), bosses.view().alive, false);
+    draw();
+    REQUIRE(device.draws.empty());
+    meters.clear();
+    bosses.close();
 }
 
 TEST_CASE("a boss meter fills its two strips by the original's arithmetic and eases toward "

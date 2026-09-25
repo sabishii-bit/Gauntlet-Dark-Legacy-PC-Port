@@ -188,7 +188,7 @@ public:
         return m_opponents.bosses().present() ? std::optional<BossView>(m_opponents.bosses().view())
                                               : std::nullopt;
     }
-    const BossMeter& bossMeter() const { return m_opponents.meter(); }
+    const BossMeters& bossMeter() const { return m_opponents.meter(); }
     /** The wizard's visit once the boss has fallen. */
     const BossVictory& victory() const { return m_bossSequence.victory().state(); }
     /** The archive folder a character's figure was loaded from, for tests. */

@@ -2062,8 +2062,9 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.viewCamera().pitch <= world.level()->bossCamera->maxPitch + 0.01f);
     REQUIRE(scene.bossCamera().margin() >= 0.0f);
     REQUIRE(scene.bossMeter().showing());
-    REQUIRE(scene.bossMeter().shown() == scene.bossView()->maxHealth);
-    REQUIRE(scene.bossMeter().fillWidths()[0] == BossMeter::kPieceWidth);
+    REQUIRE(scene.bossMeter().count() == 1);
+    REQUIRE(scene.bossMeter().meter(0).shown() == scene.bossView()->maxHealth);
+    REQUIRE(scene.bossMeter().meter(0).fillWidths()[0] == BossMeter::kPieceWidth);
     // It wakes for the party; the book is spent as it is held up, and thrown it takes a
     // quarter of the lich, which the meter follows down.
     const f32 whole = scene.bossView()->maxHealth;
@@ -2129,7 +2130,7 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.bossView()->health == Approx(whole - (0.25f * whole - 1.0f)));
     const f32 struck = scene.bossView()->health;
     scene.update(1.0 / 60.0, still);
-    REQUIRE(scene.bossMeter().shown() > struck); // three a tick, not at once
+    REQUIRE(scene.bossMeter().meter(0).shown() > struck); // three a tick, not at once
     // The bearer makes the gesture of a potion used, at whose release the book leaves the
     // hand and is set burning on the lich.
     bool gestured = false;
@@ -2152,11 +2153,11 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(showing(LegendShow::kBurstTree));
-    for (s32 i = 0; i < 600 && scene.bossMeter().shown() > struck; ++i) {
+    for (s32 i = 0; i < 600 && scene.bossMeter().meter(0).shown() > struck; ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    REQUIRE(scene.bossMeter().shown() <= scene.bossView()->health);
-    REQUIRE(scene.bossMeter().fillWidths()[1] < BossMeter::kPieceWidth - 53);
+    REQUIRE(scene.bossMeter().meter(0).shown() <= scene.bossView()->health);
+    REQUIRE(scene.bossMeter().meter(0).fillWidths()[1] < BossMeter::kPieceWidth - 53);
     // Roared, the lich fights on in the light again.
     for (s32 i = 0; i < 600 && scene.bosses().legend().darkens(); ++i) {
         scene.update(1.0 / 60.0, still);
@@ -2176,18 +2177,7 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     scene.bosses().hurt(slay);
     scene.update(1.0 / 60.0, still);
     REQUIRE_FALSE(scene.bossView()->alive);
-    REQUIRE(scene.victory().running());
-    REQUIRE(scene.victory().stage() == BossVictory::Stage::Waiting);
-    REQUIRE(LevelRef::orderOf(7) == 1);
-    REQUIRE(scene.actor(0)->save().progress().relics.hasShard(1));
-    bool key = false;
-    for (usize e = 0; e < scene.effects().count(); ++e) {
-        key = key || scene.effects().effect(e).name == "BOSSKEY";
-        if (scene.effects().effect(e).name == "BOSSKEY") {
-            REQUIRE(scene.effects().effect(e).position == shardSpot);
-        }
-    }
-    REQUIRE(key);
+    REQUIRE_FALSE(scene.victory().running()); // Death animation owns the coin spew first.
     REQUIRE_FALSE(scene.bossMeter().showing());
     // At its death's 95th frame the lich throws the town's coins for the party (four
     // bronze and a silver for one) all round it, up steeply, which sail out and come down.
@@ -2208,6 +2198,21 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     }
     REQUIRE(bronze == 4);
     REQUIRE(aloft == 5);
+    for (s32 i = 0; i < 1200 && !scene.victory().running(); ++i) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE(scene.victory().running());
+    REQUIRE(scene.victory().stage() == BossVictory::Stage::Waiting);
+    REQUIRE(LevelRef::orderOf(7) == 1);
+    REQUIRE(scene.actor(0)->save().progress().relics.hasShard(1));
+    bool key = false;
+    for (usize e = 0; e < scene.effects().count(); ++e) {
+        key = key || scene.effects().effect(e).name == "BOSSKEY";
+        if (scene.effects().effect(e).name == "BOSSKEY") {
+            REQUIRE(scene.effects().effect(e).position == shardSpot);
+        }
+    }
+    REQUIRE(key);
     for (s32 i = 0; i < 400 && scene.victory().stage() != BossVictory::Stage::Defeat; ++i) {
         scene.update(1.0 / 60.0, still);
     }

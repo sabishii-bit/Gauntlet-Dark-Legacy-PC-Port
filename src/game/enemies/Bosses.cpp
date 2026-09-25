@@ -315,6 +315,25 @@ ItemArchive* Bosses::archive() {
     return m_id.has_value() ? m_fighter.archive() : nullptr;
 }
 
+std::vector<HealthMeterReading> Bosses::healthMeters() const {
+    std::vector<HealthMeterReading> readings;
+    if (!m_id.has_value()) {
+        return readings;
+    }
+    const auto append = [&readings](const Combatant& fighter) {
+        if (const CritterData* data = fighter.data(); data != nullptr && data->meter().shown) {
+            readings.push_back({data->meter(), fighter.health(), fighter.maxHealth()});
+        }
+    };
+    append(m_fighter);
+    for (usize index = 0; index < m_fighter.childCount(); ++index) {
+        if (const Combatant* child = m_fighter.child(kTargetId + 1 + static_cast<s32>(index))) {
+            append(*child);
+        }
+    }
+    return readings;
+}
+
 const Vec3* Bosses::position() const {
     return m_id.has_value() ? &m_fighter.position() : nullptr;
 }

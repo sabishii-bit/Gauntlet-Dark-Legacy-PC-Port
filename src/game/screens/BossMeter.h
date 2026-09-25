@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <span>
+#include <string>
 
 #include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
@@ -47,6 +49,7 @@ public:
 
 private:
     TextureSet* m_textures = nullptr;
+    std::string m_name;
     s32 m_pieces = 0;
     s32 m_left = 0;
     s32 m_leftInset = 0;
@@ -57,6 +60,24 @@ private:
     bool m_fresh = true; ///< nothing shown yet: the first health is taken as it is
     bool m_alive = true;
     bool m_frozen = false;
+};
+
+/** Ordered boss HUD layers: unbacked head fills share the preceding background's origin. */
+class BossMeters {
+public:
+    static constexpr usize kCapacity = 3;
+    void bind(std::span<const HealthMeterReading> readings, TextureSet* textures);
+    void update(s32 ticks, std::span<const HealthMeterReading> readings, bool alive, bool frozen);
+    void clear();
+    bool bound() const { return m_count > 0; }
+    bool showing() const { return bound() && m_meters[0].showing(); }
+    usize count() const { return m_count; }
+    const BossMeter& meter(usize index) const { return m_meters.at(index); }
+    void draw(Canvas& canvas, RenderDevice& device) const;
+
+private:
+    std::array<BossMeter, kCapacity> m_meters;
+    usize m_count = 0;
 };
 
 } // namespace gdl::game
