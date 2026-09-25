@@ -1,7 +1,9 @@
 #include <filesystem>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/SoundSet.h"
 #include "engine/assets/StringTable.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/audio/SoundPlayer.h"
@@ -165,6 +167,21 @@ TEST_CASE("the title screen plays its music and menu sounds", "[game][title][unp
     REQUIRE(scene.open(device, context));
     REQUIRE(scene.musicPlaying());
     REQUIRE(player.voiceCount() == 1);
+    // AudioSelect(1), GUNE5D 800a0f64: always SELECT's 0xc0000, not a boss flag.
+    SoundSet bank;
+    REQUIRE(bank.load(context.unpackedRoot / "audio/SELECT"));
+    const auto cue = bank.find("S_SELECTMUS");
+    REQUIRE(cue.has_value());
+    REQUIRE(bank.entry(*cue).id == 0xc0000);
+    REQUIRE(bank.sequence(*cue).loops());
+    AudioMixer expectedMixer(48000);
+    SoundPlayer expectedPlayer(expectedMixer);
+    expectedPlayer.play(bank.sequence(*cue), 1, SoundCategory::Music);
+    std::vector<f32> actual(9600);
+    std::vector<f32> expected(9600);
+    mixer.mix(actual);
+    expectedMixer.mix(expected);
+    CHECK(actual == expected);
     scene.step(1, press(true));
     REQUIRE(player.voiceCount() == 2);
     scene.step(1, press(false, false, true));

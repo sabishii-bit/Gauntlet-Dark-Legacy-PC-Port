@@ -520,7 +520,8 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         if (const auto* actor = m_tower.actor(source.pad)) {
             journey.options.position = actor->position();
         }
-        if (m_afterLevel.open(renderDevice(), context(), party, {}, {1000, 100, 1000}, "G", true)) {
+        if (m_afterLevel.open(renderDevice(), context(), party, {}, {1000, 100, 1000},
+                              m_towerWorld.ref().name, true)) {
             keepParty();
             m_tower.close();
             m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);

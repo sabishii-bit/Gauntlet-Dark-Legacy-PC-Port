@@ -12,6 +12,7 @@
 #include "engine/core/Types.h"
 
 #include "game/screens/ShopLayout.h"
+#include "game/screens/ShopMusic.h"
 
 namespace gdl::game {
 bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
@@ -78,8 +79,7 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
     if (m_context.sounds != nullptr) {
         try {
             m_common.load(context.unpackedRoot / "audio/COMMON");
-            const std::string bank =
-                std::format("SHOP_{}", levelName.empty() ? 'G' : levelName.front());
+            const std::string bank = std::format("SHOP_{}", shopMusicRealm(levelName));
             if (m_musicBank.load(context.unpackedRoot / "audio" / bank)) {
                 m_tallyCue = m_musicBank.find(std::format("S_TALLYSFX{}", bank.back()));
                 if (const auto music = m_musicBank.find("S_" + bank); music.has_value()) {
