@@ -29,6 +29,11 @@ bool levelWith(const Obstacle& box, const Vec3& position) {
 
 } // namespace
 
+ItemArchive& itemArchiveForTree(ItemArchive& items, std::string_view name,
+                                ItemArchive* realmItems) {
+    return !items.trees.find(name) && realmItems != nullptr ? *realmItems : items;
+}
+
 Vec3 Obstacle::pushOut(const Vec3& position, f32 radius) const {
     if (!solid || !levelWith(*this, position)) {
         return position;

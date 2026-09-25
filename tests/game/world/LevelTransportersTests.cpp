@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -8,9 +9,13 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/world/Breakables.h"
+#include "game/world/Chests.h"
+#include "game/world/ExitPortals.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTransporters.h"
 #include "game/world/LevelWorld.h"
+#include "game/world/LockedGates.h"
 
 namespace {
 using namespace gdl;
@@ -71,6 +76,114 @@ TEST_CASE("a transporter destination must fit within the shared camera", "[trans
     CHECK(LevelTransporters::soundForRealm(13).empty());
 }
 
+TEST_CASE("placed item art falls back per tree without replacing level-specific figures",
+          "[transporters][portals][realm-art]") {
+    const bool override = GENERATE(false, true);
+    const auto root = test::scratchDirectory("portal-realm-art");
+    const auto writeArchive = [](const std::filesystem::path& directory, bool hasTrees, bool wide) {
+        std::filesystem::create_directories(directory);
+        writeTextFile(directory / "body.obj",
+                      wide
+                          ? "v 0 0 0\nv 3 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n"
+                          : "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+        writeTextFile(directory / "objects.json", R"({"objects":[
+            {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+        writeFile(directory / "skin.png", test::kTinyPng);
+        writeTextFile(directory / "textures.json", R"({"bitmaps":[
+            {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+        writeTextFile(directory / "animations.json", hasTrees
+                                                         ? R"({"trees":[
+            {"name":"TRANS","nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+             "sequences":[{"name":"ACTIVE","frames":20,"rate":30}]},
+            {"name":"EXIT_PORTAL","nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+             "sequences":[{"name":"IDLE","frames":20,"rate":30}]},
+            {"name":"SECRET_ICON","nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+             "sequences":[{"name":"IDLE","frames":20,"rate":30}]},
+            {"name":"CHEST","nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+             "sequences":[{"name":"IDLE","frames":20,"rate":30}]},
+            {"name":"GATEB","nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+             "sequences":[{"name":"IDLE","frames":20,"rate":30}]},
+            {"name":"BAROBJ","nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+             "sequences":[{"name":"IDLE","frames":20,"rate":30}]}]})"
+                                                         : R"({"trees":[{"name":"OTHER","nodes":[
+                         {"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+                         "sequences":[{"name":"IDLE","frames":20,"rate":30}]}]})");
+    };
+    writeArchive(root / "own", override, true);
+    writeArchive(root / "realm", true, false);
+    writeTextFile(root / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+        "itemInfos":[{"type":11,"name":"TRANS"},{"type":9,"name":"EXIT_PORTAL"},
+                     {"type":9,"subtype":50,"name":"SECRET_ICON"},
+                     {"type":2,"subtype":46,"name":"CHEST"},
+                     {"type":7,"name":"GATEB"},
+                     {"type":10,"subtype":43,"name":"BAROBJ","hitPoints":5},
+                     {"type":1,"name":"SECRET_ICON"}],
+        "itemInstances":[{"info":0,"position":[0,0,0]},
+                         {"info":1,"position":[10,0,0]},
+                         {"info":2,"position":[20,0,0]},
+                         {"info":3,"position":[30,0,0],"params":[6,0,0,0,1,0]},
+                         {"info":4,"position":[40,0,0]},
+                         {"info":5,"position":[50,0,0]}]})");
+    test::FakeRenderDevice device;
+    ItemArchive own;
+    ItemArchive realm;
+    WorldLayout layout;
+    const LevelCatalog catalog;
+    REQUIRE(own.load(root / "own"));
+    REQUIRE(realm.load(root / "realm"));
+    REQUIRE(layout.load(root));
+    LevelTransporters pads;
+    pads.bind(device, layout, own, 1, &realm);
+    REQUIRE(pads.size() == 1);
+    REQUIRE(pads.pad(0).model.bound());
+    CHECK(pads.pad(0).animation.playing());
+    pads.animate(1.0f / 30);
+    CHECK(pads.pad(0).animation.frame() > 0);
+    pads.draw(device, Mat4{1}, {});
+    ExitPortals exits;
+    REQUIRE(exits.bind(device, layout, own, catalog, nullptr, &realm));
+    REQUIRE(exits.size() == 2);
+    CHECK(exits.portal(0).model.bound());
+    CHECK(exits.portal(1).icon.hasFigure());
+    exits.draw(device, Mat4{1}, {});
+    Chests chests;
+    LockedGates gates;
+    Breakables barrels;
+    REQUIRE(chests.bind(device, layout, own, nullptr, &realm));
+    REQUIRE(gates.bind(device, layout, own, nullptr, &realm));
+    REQUIRE(barrels.bind(device, layout, own, nullptr, &realm));
+    REQUIRE(chests.size() == 1);
+    REQUIRE(gates.size() == 1);
+    REQUIRE(barrels.size() == 1);
+    CHECK(chests.chest(0).figure.hasFigure());
+    CHECK(gates.gate(0).figure.hasFigure());
+    CHECK(barrels.barrel(0).figure.hasFigure());
+    chests.setPlayerCount(1);
+    gates.setPlayerCount(1);
+    barrels.setPlayerCount(1);
+    chests.draw(device, Mat4{1}, {});
+    gates.draw(device, Mat4{1}, {});
+    barrels.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 6);
+    const f32 width = override ? 3.0f : 1.0f;
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        REQUIRE(device.draws[i].vertices.size() == 3);
+        CHECK(device.draws[i].vertices[1].position.x == static_cast<f32>(i) * 10 + width);
+    }
+    ItemArchive powerups;
+    const std::array visitors{ChestVisitor{Vec3{33, 0, 0}, 0.75f, 0, true}};
+    REQUIRE(chests.updateXray(device, own, powerups, 0, visitors, &realm) == 1);
+    CHECK(chests.chest(0).revealed);
+    CHECK(chests.chest(0).preview.hasFigure());
+    // The borrowed realm remains loaded and reusable after releasing all consumers.
+    exits.clear();
+    pads.clear();
+    chests.clear();
+    gates.clear();
+    barrels.clear();
+    CHECK(realm.loaded());
+}
+
 TEST_CASE("every catalogued transporter has a partner, a landing floor and animated art",
           "[transporters][unpacked]") {
     const s32 players = GENERATE(1, 2, 3, 4);
@@ -103,7 +216,7 @@ TEST_CASE("every catalogued transporter has a partner, a landing floor and anima
             LevelWorld world;
             REQUIRE(world.load(device, root, *ref));
             LevelTransporters pads;
-            pads.bind(device, layout, world.items(), players);
+            pads.bind(device, layout, world.items(), players, &world.realmItems());
             for (usize i = 0; i < pads.size(); ++i) {
                 const auto& pad = pads.pad(i);
                 CAPTURE(i, pad.id, pad.destinationId);

@@ -35,7 +35,9 @@ public:
         AnimationPlayer animation;
     };
 
-    void bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items, s32 players);
+    /** Both archives must outlive the pads; level-specific art takes precedence. */
+    void bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items, s32 players,
+              ItemArchive* realmItems = nullptr);
     void clear();
     void animate(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;

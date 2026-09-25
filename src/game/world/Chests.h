@@ -84,7 +84,7 @@ public:
 
     /** Stands a chest at every chest item of the layout (barrels are not chests). */
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-              const WorldCollision* collision);
+              const WorldCollision* collision, ItemArchive* realmItems = nullptr);
     void clear();
     usize size() const { return m_chests.size(); }
     const Chest& chest(usize index) const { return *m_chests[index]; }
@@ -95,7 +95,7 @@ public:
     /** Retail do_see_thru: one nearest eligible shut chest per X-Ray wearer,
      * within ten units. Returns the number of newly revealed chests for the cue. */
     usize updateXray(RenderDevice& device, ItemArchive& items, ItemArchive& powerups, f32 seconds,
-                     std::span<const ChestVisitor> party);
+                     std::span<const ChestVisitor> party, ItemArchive* realmItems = nullptr);
     /** The boxes of the chests in sight, which nothing walks through. */
     std::vector<Obstacle> obstacles() const;
     /** What came out of an opened chest lies in it as dropped item number `item`. */

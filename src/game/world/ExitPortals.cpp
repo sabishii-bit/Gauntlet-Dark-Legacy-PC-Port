@@ -28,11 +28,13 @@ std::string ExitPortals::tagOf(const ItemInstance& instance) {
 }
 
 bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-                       const LevelCatalog& catalog, const WorldCollision* collision) {
+                       const LevelCatalog& catalog, const WorldCollision* collision,
+                       ItemArchive* realmItems) {
     clear();
-    const auto tree = items.loaded() ? items.trees.find(kFigure) : std::nullopt;
+    ItemArchive& art = itemArchiveForTree(items, kFigure, realmItems);
+    const auto tree = art.loaded() ? art.trees.find(kFigure) : std::nullopt;
     if (tree.has_value()) {
-        m_tree = &items.trees.tree(*tree);
+        m_tree = &art.trees.tree(*tree);
         for (usize i = 0; i < kSequences.size(); ++i) {
             const auto sequence = m_tree->findSequence(kSequences[i]);
             m_sequences[i] = sequence.has_value() ? static_cast<s32>(*sequence) : -1;
@@ -65,10 +67,11 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         portal.transform = glm::rotate(glm::translate(Mat4{1.0f}, portal.position),
                                        instance.rotation.y, Vec3{0.0f, 1.0f, 0.0f});
         if (portal.secret) {
-            portal.icon.place(device, items, info.name, instance, collision);
+            ItemArchive& iconArt = itemArchiveForTree(items, info.name, realmItems);
+            portal.icon.place(device, iconArt, info.name, instance, collision);
             portal.icon.play(0, true);
         } else if (m_tree != nullptr &&
-                   portal.model.bind(*m_tree, items.models, items.textures, device)) {
+                   portal.model.bind(*m_tree, art.models, art.textures, device)) {
             portal.pose.rest(*m_tree);
         }
         m_portals.push_back(std::move(portal));

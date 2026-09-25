@@ -41,7 +41,7 @@ s32 Chests::resolveContents(std::span<const ItemInfo> infos, s32 record, usize i
 }
 
 bool Chests::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-                  const WorldCollision* collision) {
+                  const WorldCollision* collision, ItemArchive* realmItems) {
     clear();
     m_infos = layout.itemInfos();
     const std::vector<ItemInstance>& instances = layout.itemInstances();
@@ -63,7 +63,8 @@ bool Chests::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& 
         chest->minPlayers = instance.minPlayers;
         chest->locked = (static_cast<u32>(info.activeType) & kLocked) != 0;
         const std::string& name = instance.name.empty() ? info.name : instance.name;
-        if (!chest->figure.place(device, items, name, instance, collision)) {
+        ItemArchive& art = itemArchiveForTree(items, name, realmItems);
+        if (!chest->figure.place(device, art, name, instance, collision)) {
             log::warn("Chests: no figure {} in the item archive", name);
         }
         chest->box = chest->figure.obstacle(info);
@@ -153,7 +154,8 @@ void Chests::hold(usize chest, s32 item) {
 }
 
 usize Chests::updateXray(RenderDevice& device, ItemArchive& items, ItemArchive& powerups,
-                         f32 seconds, std::span<const ChestVisitor> party) {
+                         f32 seconds, std::span<const ChestVisitor> party,
+                         ItemArchive* realmItems) {
     std::vector<bool> selected(m_chests.size(), false);
     for (const auto& visitor : party) {
         if (!visitor.xray) {
@@ -204,7 +206,8 @@ usize Chests::updateXray(RenderDevice& device, ItemArchive& items, ItemArchive& 
                 } else if (record.subtype == 2 && chest.count > 1) {
                     name = "KEYRING";
                 }
-                ItemArchive& archive = items.trees.find(name) ? items : powerups;
+                ItemArchive& levelArt = itemArchiveForTree(items, name, realmItems);
+                ItemArchive& archive = itemArchiveForTree(levelArt, name, &powerups);
                 ItemInstance instance;
                 instance.position = chest.figure.position();
                 instance.rotation.y = -chest.figure.yaw();

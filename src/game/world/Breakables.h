@@ -65,7 +65,7 @@ public:
     };
 
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
-              const WorldCollision* collision);
+              const WorldCollision* collision, ItemArchive* realmItems = nullptr);
     void clear();
     usize size() const { return m_barrels.size(); }
     const Barrel& barrel(usize index) const { return *m_barrels[index]; }
