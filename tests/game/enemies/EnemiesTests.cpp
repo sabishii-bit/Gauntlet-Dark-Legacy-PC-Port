@@ -1,3 +1,4 @@
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <vector>
@@ -6,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -581,5 +583,97 @@ TEST_CASE("invisibility breaks swarm targeting without removing the physical pla
     party[0].invisible = false;
     enemies.update(kTicks, kStep, party);
     CHECK(enemies.targetOf(*id) == 0);
+}
+std::filesystem::path routingAssets() {
+    const auto root = test::scratchDirectory("enemy-routing");
+    const auto archive = root / "MONSTERS/GRU";
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"GRU1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":10,"rate":30},
+                     {"name":"WALK","frames":10,"rate":30}]}]})");
+    return root;
+}
+
+TEST_CASE("chasers route around generator bodies instead of pushing into them forever",
+          "[game][enemies][enemy-routing]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, routingAssets(), nullptr, 4, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = kChaseWay;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    const std::array party{playerAt(Vec3{0, 0, 22})};
+    const std::array obstacles{
+        Obstacle{.centre = Vec3{0, 0, 9}, .halfAcross = 4, .halfAlong = 3, .height = 8}};
+    for (s32 frame = 0; frame < 900; ++frame) {
+        enemies.update(kTicks, kStep, party, obstacles);
+        CHECK(glm::distance(obstacles[0].pushOut(enemies.positionOf(*id), enemies.radiusOf(*id)),
+                            enemies.positionOf(*id)) < 0.001f);
+    }
+    CHECK(glm::distance(enemies.positionOf(*id), party[0].position) < 4);
+}
+
+TEST_CASE("chasers pass a stationary enemy and can recover from an existing overlap",
+          "[game][enemies][enemy-routing]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, routingAssets(), nullptr, 4, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = kStandWay;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 7};
+    const auto front = enemies.spawn(spawn, {});
+    REQUIRE(front.has_value());
+    spawn.algorithm = kChaseWay;
+    spawn.position = Vec3{0, 0, 0};
+    SECTION("separate bodies") {}
+    SECTION("overlapping placement") {
+        spawn.position.z = 5;
+    }
+    SECTION("coincident placement") {
+        spawn.position.z = 7;
+    }
+    const auto behind = enemies.spawn(spawn, {});
+    REQUIRE(behind.has_value());
+    const std::array party{playerAt(Vec3{0, 0, 22})};
+    const f32 separation = enemies.radiusOf(*front) + enemies.radiusOf(*behind);
+    for (s32 frame = 0; frame < 900; ++frame) {
+        const f32 before = glm::distance(enemies.positionOf(*front), enemies.positionOf(*behind));
+        enemies.update(kTicks, kStep, party);
+        const f32 after = glm::distance(enemies.positionOf(*front), enemies.positionOf(*behind));
+        CHECK(after + 0.001f >= std::min(before, separation));
+    }
+    CHECK(glm::distance(enemies.positionOf(*behind), party[0].position) < 4);
+}
+TEST_CASE("an item that cancels a walking step reports a blocked body to its mind",
+          "[game][enemies][enemy-routing]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, routingAssets(), nullptr, 4, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = kWanderWay;
+    spawn.placed = true;
+    spawn.position.z = 0.5f;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    const std::array obstacles{
+        Obstacle{.centre = Vec3{0, 0, 3}, .halfAcross = 4, .halfAlong = 1, .height = 8}};
+    enemies.update(kTicks, kStep, {}, obstacles);
+    CHECK(enemies.positionOf(*id) == spawn.position);
+    CHECK(enemies.bumpedWallOf(*id));
+    CHECK(enemies.blockedOf(*id));
 }
 } // namespace
