@@ -1,8 +1,10 @@
+#include <array>
 #include <filesystem>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
@@ -144,6 +146,63 @@ TEST_CASE("enemy wall contacts choose their element effect without inventing bol
         CHECK(hits[0].sound().empty());
         missiles.update(kStep, &collision, {});
         CHECK(missiles.takeHits().empty());
+    }
+}
+
+TEST_CASE("fast enemy shots stop at thin walls before reaching sheltered players",
+          "[game][enemies][enemy-projectile-contact]") {
+    const f32 dt = GENERATE(1.0f / 120, 1.0f / 60, 1.0f / 30, 0.2f);
+    WorldCollision collision;
+    collision.build({triangle({-20, -10, 1}, {20, -10, 1}, {0, 40, 1}, {0, 0, -1})});
+    EnemyMissiles missiles;
+    missiles.launch(EnemyMissileKind::bolt(25, 80, 0.2f, 2), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 4);
+    const std::array party{playerAt({0, 0, 4})};
+    for (s32 frame = 0; frame < 120 && missiles.count() != 0; ++frame) {
+        missiles.update(dt, &collision, party);
+    }
+    const auto hits = missiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].player == -1);
+    CHECK(hits[0].worldContact);
+    CHECK(hits[0].effect() == "HITCOL");
+    CHECK(hits[0].position.z < 1);
+    CHECK(hits[0].position.z > 0.5f);
+    CHECK(hits[0].direction.z == Approx(1));
+    CHECK(missiles.count() == 0);
+    missiles.update(dt, &collision, party);
+    CHECK(missiles.takeHits().empty());
+}
+
+TEST_CASE("enemy projectiles use the first body along their travel and catch descending floor hits",
+          "[game][enemies][enemy-projectile-contact]") {
+    EnemyMissiles missiles;
+    SECTION("nearer body protects the farther player despite reversed party order") {
+        const std::array party{playerAt({0, 0, 12}, 0), playerAt({0, 0, 4}, 1)};
+        missiles.launch(EnemyMissileKind::bolt(10, 80, 0.2f), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 0);
+        missiles.update(0.2f, nullptr, party);
+        const auto hits = missiles.takeHits();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].player == 1);
+        CHECK(hits[0].position.z == Approx(2.8f).margin(0.001f));
+    }
+    SECTION("a coarse descending step cannot skip the floor") {
+        WorldCollision collision;
+        collision.build(floor());
+        missiles.launch(EnemyMissileKind::bolt(10, 80, 0.2f), {0, 4, 0}, {0, -4, 0}, 1, nullptr, 0);
+        missiles.update(0.2f, &collision, {});
+        const auto hits = missiles.takeHits();
+        REQUIRE(hits.size() == 1);
+        CHECK(hits[0].worldContact);
+        CHECK(hits[0].position.y == Approx(0.2f).margin(0.001f));
+    }
+    SECTION("paused time neither moves a projectile nor applies a contact") {
+        const std::array party{playerAt({0, 0, 0})};
+        missiles.launch(EnemyMissileKind::arrow(), {0, 3, 0}, {0, 3, 10}, 1, nullptr, 0);
+        missiles.update(0, nullptr, party);
+        missiles.update(-1, nullptr, party);
+        REQUIRE(missiles.count() == 1);
+        CHECK(missiles.takeHits().empty());
+        CHECK(missiles.missile(0).position == Vec3{0, 3, 0});
     }
 }
 
