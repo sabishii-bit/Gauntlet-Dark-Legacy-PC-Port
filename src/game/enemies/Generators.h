@@ -33,6 +33,8 @@ struct GeneratorEvent {
     s32 kind = 0;
     s32 state = 3;
     Vec3 position{0.0f, 0.0f, 0.0f};
+    Mat4 placement{1};
+    bool stateChanged = false;
     bool destroyed = false;
 };
 
@@ -66,7 +68,7 @@ public:
     void update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                 std::span<const Obstacle> obstacles = {});
 
-    /** Strikes a generator with `power`; what comes of it, if its state changed. */
+    /** Reports each damaging strike; only state changes launch debris effects. */
     std::optional<GeneratorEvent> strike(s32 id, f32 power, s32 byPlayer);
     /** The nearest standing generator a sweep touches. */
     std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
@@ -114,6 +116,7 @@ private:
         f32 ratio = 0.0f; ///< grows each birth, stretching the countdown
         s32 bred = 0;
         Vec3 position{0.0f, 0.0f, 0.0f};
+        Mat4 placement{1};
         f32 yaw = 0.0f;
         Vec3 direction{0.0f, 0.0f, 1.0f};
         f32 clearance = 0.0f;

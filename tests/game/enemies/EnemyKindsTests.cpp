@@ -58,22 +58,29 @@ TEST_CASE("the enemy kinds are known by name, in tiers of health", "[game][enemi
 TEST_CASE("a level breeds its roster's kinds for the classes its generators name",
           "[game][enemies]") {
     // The fields: zombies for the medium, maggots for the small, and no large at all.
-    const std::vector<LevelEnemy> fields{{13, kMediumClass}, {13, kMediumOtherClass},
-                                         {12, kSmallClass}, {29, 5}, {33, 5}, {32, 5}};
+    const std::vector<LevelEnemy> fields{{13, kMediumClass, {}},
+                                         {13, kMediumOtherClass, {}},
+                                         {12, kSmallClass, {}},
+                                         {29, 5, {}},
+                                         {33, 5, {}},
+                                         {32, 5, {}}};
     REQUIRE(levelKindOf(fields, kGruntKind, 1) == 13);
     REQUIRE(levelKindOf(fields, kGruntKind, 3) == 13);
-    REQUIRE(levelKindOf(fields, kGruntKind, 4) == 13); // the second row, the same kind here
+    REQUIRE(levelKindOf(fields, kGruntKind, 4) == 13);     // the second row, the same kind here
     REQUIRE(levelKindOf(fields, kGruntKind + 1, 2) == 13); // a knight stands for the medium too
     REQUIRE(levelKindOf(fields, kRatKind, 1) == 12);
     REQUIRE(levelKindOf(fields, 33, 1) == 33); // the great ones stand for themselves
     // A roster without a medium falls back on its large; without either, the name itself.
-    const std::vector<LevelEnemy> sparse{{20, kLargeClass}, {0, kSmallClass}};
+    const std::vector<LevelEnemy> sparse{{20, kLargeClass, {}}, {0, kSmallClass, {}}};
     REQUIRE(levelKindOf(sparse, kGruntKind, 1) == 20);
     REQUIRE(levelKindOf(sparse, kRatKind, 1) == 0);
     REQUIRE(levelKindOf({}, kGruntKind, 1) == kGruntKind);
     REQUIRE(levelKindOf({}, kRatKind, 1) == kRatKind);
     // The strong variants take the medium's second row when the realm has one.
-    const std::vector<LevelEnemy> castle{{4, kMediumClass}, {19, kMediumOtherClass}, {3, kSmallClass}, {5, kLargeClass}};
+    const std::vector<LevelEnemy> castle{{4, kMediumClass, {}},
+                                         {19, kMediumOtherClass, {}},
+                                         {3, kSmallClass, {}},
+                                         {5, kLargeClass, {}}};
     REQUIRE(levelKindOf(castle, kGruntKind, 5) == 19);
     REQUIRE(levelKindOf(castle, kGruntKind, 2) == 4);
 }

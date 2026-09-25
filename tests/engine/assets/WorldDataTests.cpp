@@ -13,6 +13,26 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
+TEST_CASE("level enemy rosters preserve audio aliases separately from model kinds",
+          "[world-data][enemy-feedback]") {
+    const auto dir = test::scratchDirectory("world-enemy-audio");
+    writeTextFile(dir / "world.json", R"({
+      "enemies": [{"kind":13,"subtype":12,"stream":"EGRUNT"},
+                  {"kind":16,"subtype":12}],
+      "levels": [{"name":"E1","enemyTypes":[1,0,-1]}]
+    })");
+    WorldData world;
+    REQUIRE(world.load(dir / "world.json"));
+    const auto* level = world.level("E1");
+    REQUIRE(level != nullptr);
+    REQUIRE(level->enemies.size() == 2);
+    CHECK(level->enemies[0].kind == 16);
+    CHECK(level->enemies[0].stream.empty());
+    CHECK(level->enemies[1].kind == 13);
+    CHECK(level->enemies[1].subtype == 12);
+    CHECK(level->enemies[1].stream == "EGRUNT");
+}
+
 std::filesystem::path sampleRealm(std::string_view name) {
     const auto dir = test::scratchDirectory(name);
     writeTextFile(dir / "TOWER.json", R"({

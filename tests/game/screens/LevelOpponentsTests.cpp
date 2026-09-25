@@ -6,6 +6,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
@@ -17,6 +18,83 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Temple generator damage plays realm particles and each accepted hit sounds",
+          "[level-opponents][generators][enemy-feedback][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
+    test::unpackedOrSkip("audio/CATHEDRAL/sounds.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("E1")));
+    ItemArchive weapons;
+    EffectTrees effects;
+    AudioMixer mixer(48000);
+    SoundPlayer sound(mixer);
+    LevelSoundscape audio;
+    audio.open(root, &sound, world.audio(), 'E');
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.generators().count() > 0);
+    REQUIRE(opponents.generators().kindOf(0) == -2);
+    const f32 health = opponents.generators().healthOf(0);
+    opponents.strikeGenerator(0, 1, 0);
+    CHECK(opponents.generators().healthOf(0) < health);
+    CHECK(effects.count() == 0); // audio on damage, debris only when the state crumbles
+    CHECK(sound.voiceCount() == 1);
+    opponents.strikeGenerator(0, health * 0.5f, 0);
+    REQUIRE(effects.count() == 1);
+    CHECK(effects.effect(0).name == "GENHIT");
+    CHECK(effects.effect(0).archive == &world.items());
+    CHECK(effects.effect(0).particles.field().size() == 3);
+    CHECK(sound.voiceCount() == 2);
+    effects.update(0.2f);
+    const auto& effect = effects.effect(0);
+    CHECK(effect.particles.field().particleCount() > 0);
+    for (usize i = 0; i < effect.particles.field().size(); ++i) {
+        CHECK(effect.particles.field().textureOf(i) != &device.whiteTexture());
+        CHECK(effect.particles.field().emitter(i).node() ==
+              effect.transform() * effect.pose.matrices()[i + 2]);
+    }
+    opponents.strikeGenerator(0, health, 0);
+    REQUIRE(effects.count() == 2);
+    CHECK(effects.effect(1).name == "GENDIE");
+    CHECK(effects.effect(1).particles.field().size() == 4);
+    CHECK(sound.voiceCount() == 3);
+    opponents.strikeGenerator(0, health, 0);
+    CHECK(sound.voiceCount() == 3);
+
+    // Follow the real hit -> feedback -> bank -> mixer path, not just the name builder.
+    auto& enemies = opponents.enemies();
+    REQUIRE(enemies.loadKind(13));
+    const auto enemy = enemies.spawn(EnemySpawn{.kind = 13, .tier = 2, .placed = true}, {});
+    REQUIRE(enemy);
+    LevelOpponents::Events events;
+    events.award = [](s32, s32, bool) {};
+    events.levels = [] {};
+    EnemyHit hit;
+    hit.damage = 1;
+    enemies.hurt(*enemy, hit);
+    opponents.settleRewards(players, events);
+    CHECK(sound.voiceCount() == 4);
+    hit.damage = 100000;
+    enemies.hurt(*enemy, hit);
+    opponents.settleRewards(players, events);
+    CHECK(sound.voiceCount() == 5);
+    opponents.settleRewards(players, events);
+    CHECK(sound.voiceCount() == 5);
+    std::array<f32, 8192> samples{};
+    mixer.mix(samples);
+    CHECK(std::ranges::any_of(samples, [](f32 value) { return value != 0; }));
+    opponents.close();
+    CHECK(effects.count() == 0);
+    audio.close();
+}
 
 TEST_CASE("boss arenas propagate elemental scaling to summoned swarm enemies",
           "[level-opponents][damage][unpacked]") {

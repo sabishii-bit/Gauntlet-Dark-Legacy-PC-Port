@@ -299,7 +299,13 @@ TEST_CASE("a melee contact routes damage sound and impact once through level opp
     test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
     test::unpackedOrSkip("WEAPONS/animations.json");
     test::unpackedOrSkip("audio/TOWN/sounds.json");
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
     Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    REQUIRE(f.world.load(f.device, root, *level));
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);
     const LevelAudioInfo info{.bank = "TOWN", .stream = {}};
@@ -307,8 +313,8 @@ TEST_CASE("a melee contact routes damage sound and impact once through level opp
     REQUIRE(f.weapons.load(root / "WEAPONS"));
     f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
     auto& enemies = f.opponents.enemies();
-    // This fixture has no level mesh: retain the routing facade, but spawn
-    // its test actors without a floor constraint.
+    // Keep the real level's sound roster, but place this melee fixture's actors
+    // without a floor constraint so its geometry does not steer the contact.
     enemies.open(f.device, root, nullptr, 4, {}, 7);
     REQUIRE(enemies.loadKind(13));
     EnemySpawn spawn;

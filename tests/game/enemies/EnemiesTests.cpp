@@ -503,7 +503,8 @@ TEST_CASE("enemy hits queue feedback once and animate masked death skins to comp
     enemies.hurt(*id, hit);
     auto feedback = enemies.takeFeedback();
     REQUIRE(feedback.size() == 1);
-    CHECK(feedback[0].sound() == "S_GRU2HIT1CLOSE");
+    const std::array roster{LevelEnemy{kGruntKind, 2, "GRUNT"}};
+    CHECK(feedback[0].sound(roster) == "S_GRUNT2HIT1CLO");
     enemies.draw(device, Mat4{1}, {}, &device.whiteTexture(), &weapons);
     REQUIRE_FALSE(device.draws.empty());
     CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
@@ -519,7 +520,7 @@ TEST_CASE("enemy hits queue feedback once and animate masked death skins to comp
     feedback = enemies.takeFeedback();
     REQUIRE(feedback.size() == 1);
     CHECK(feedback[0].killed);
-    CHECK(feedback[0].sound() == "S_GRU2DIECLOSE");
+    CHECK(feedback[0].sound(roster) == "S_GRUNT2DIECLOS");
     device.draws.clear();
     enemies.draw(device, Mat4{1}, {}, &device.whiteTexture(), &weapons);
     REQUIRE_FALSE(device.draws.empty());

@@ -54,6 +54,7 @@ struct LevelTuning {
 struct LevelEnemy {
     s32 kind = -1;
     s32 subtype = 0;
+    std::string stream; ///< sound-name stem, independent of the model's prefix
 };
 
 /** How the camera frames a boss fight: how far about the party's line to the boss it may

@@ -433,7 +433,9 @@ void LevelOpponents::awardEnemyLosses(const Events& events) {
         return;
     }
     for (const EnemyFeedback& feedback : m_enemies.takeFeedback()) {
-        m_resources->audio.playNamed(feedback.sound(m_bosses.present()));
+        if (const auto* level = m_resources->world.level()) {
+            m_resources->audio.playNamed(feedback.sound(level->enemies, level->bossType));
+        }
         const std::string_view tree = feedback.effect();
         ItemArchive* archive = m_enemies.archive(feedback.kind);
         if (archive == nullptr || !archive->trees.find(tree).has_value()) {
@@ -521,15 +523,29 @@ void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
     if (!event.has_value()) {
         return;
     }
-    if (ItemArchive* archive = m_enemies.archive(event->kind); archive != nullptr) {
+    ItemArchive* archive =
+        event->kind < 0 ? &m_resources->world.items() : m_enemies.archive(event->kind);
+    if (event->stateChanged && archive != nullptr) {
         const std::string_view tree = event->destroyed ? "GENDIE" : "GENHIT";
         if (archive->trees.find(tree).has_value()) {
-            m_resources->effects.start(m_resources->device, *archive, tree, event->position);
+            const u32 effect = m_resources->effects.startSet(m_resources->device, *archive, tree,
+                                                             event->position, {});
+            m_resources->effects.placeAt(effect, event->placement);
+            if (effect != 0) {
+                m_cueEffects.push_back(effect);
+            }
         }
     }
     const std::string& levelName = m_resources->world.ref().name;
-    m_resources->audio.playNamed(std::format("{}{}", event->destroyed ? "S_GENKILL" : "S_GENDAM",
-                                             levelName.empty() ? 'G' : levelName.front()));
+    const auto* level = m_resources->world.level();
+    if (!event->destroyed || level == nullptr || level->bossType < 0) {
+        const std::string suffix =
+            m_resources->world.ref().realmId == 10 && event->kind == 24
+                ? "WAR"
+                : std::string(1, levelName.empty() ? 'G' : levelName.front());
+        m_resources->audio.playNamed(
+            std::format("{}{}", event->destroyed ? "S_GENKILL" : "S_GENDAM", suffix));
+    }
     if (event->destroyed) {
         m_enemies.generatorGone(id);
         m_destroyedGenerators.push_back(byPlayer);

@@ -11,6 +11,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "formats/AnimationTree.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/enemies/LegendItems.h"
 #include "game/world/EffectTrees.h"
 
@@ -18,6 +19,56 @@ namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("all authored monster generator effects bind their particle textures and emit",
+          "[generators][effects][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    usize checked = 0;
+    for (s32 kind = 0; kind < kSwarmKindCount; ++kind) {
+        const std::string directory = "MONSTERS/" + std::string(enemyKind(kind).name);
+        test::unpackedOrSkip(directory + "/animations.json");
+        ItemArchive archive;
+        REQUIRE(archive.load(root / directory));
+        for (const auto* name : {"GENHIT", "GENDIE"}) {
+            INFO(directory << "/" << name);
+            const auto treeIndex = archive.trees.find(name);
+            // Garm minions have no generator trees. WIND has an empty death
+            // placeholder and no hit tree; do not invent particles for either.
+            if (kind == 27 || (kind == 26 && std::string_view(name) == "GENHIT")) {
+                CHECK_FALSE(treeIndex);
+                continue;
+            }
+            REQUIRE(treeIndex);
+            const auto& tree = archive.trees.tree(*treeIndex);
+            const auto count = std::ranges::count_if(
+                tree.nodes, [](const TreeNodeInfo& node) { return node.particle >= 0; });
+            if (kind == 26) {
+                CHECK(count == 0);
+                continue;
+            }
+            test::FakeRenderDevice device;
+            EffectTrees effects;
+            EffectTrees::Setting setting;
+            setting.yaw = 1.1f;
+            REQUIRE(effects.startSet(device, archive, name, Vec3{9, 2, -8}, setting) != 0);
+            CHECK(effects.effect(0).particles.field().size() == static_cast<usize>(count));
+            effects.update(0.25f);
+            REQUIRE(effects.count() == 1);
+            const auto& particles = effects.effect(0).particles.field();
+            CHECK(particles.particleCount() > 0);
+            for (usize i = 0; i < particles.size(); ++i) {
+                CHECK(particles.textureOf(i) != &device.whiteTexture());
+            }
+            effects.draw(device, Mat4{1}, {});
+            CHECK_FALSE(device.draws.empty());
+            ++checked;
+        }
+    }
+    CHECK(checked == 52);
+}
 
 TEST_CASE("zero-frame effects retain the thirty-frame fallback at their authored rate",
           "[game][world][effects]") {

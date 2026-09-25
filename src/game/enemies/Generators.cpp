@@ -164,6 +164,8 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
             }
         }
         generator.yaw = std::atan2(placement[2][0], placement[2][2]);
+        generator.placement = placement;
+        generator.placement[3] = Vec4{generator.position, 1};
         generator.direction = Vec3{placement[2][0], 0.0f, placement[2][2]};
         if (glm::length(generator.direction) > 0.001f) {
             generator.direction = glm::normalize(generator.direction);
@@ -209,6 +211,8 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.bossFigure->place(device, items, "BOSSGEN", instance, collision);
     generator.bossFigure->play(0, true);
     generator.position = generator.bossFigure->position();
+    generator.placement = placement;
+    generator.placement[3] = Vec4{generator.position, 1};
     generator.yaw = instance.rotation.y;
     generator.direction = Vec3{std::sin(generator.yaw), 0, std::cos(generator.yaw)};
     generator.clearance = info.height;
@@ -323,15 +327,15 @@ std::optional<GeneratorEvent> Generators::strike(s32 id, f32 power, s32 byPlayer
     }
     generator.health -= amount;
     const s32 state = stateFor(generator, false);
-    if (state == generator.state) {
-        return std::nullopt;
-    }
+    const bool changed = state != generator.state;
     generator.state = state;
     GeneratorEvent event;
     event.generator = id;
     event.kind = generator.kind;
     event.state = state;
     event.position = generator.position;
+    event.placement = generator.placement;
+    event.stateChanged = changed;
     event.destroyed = state == 0;
     if (event.destroyed) {
         generator.box.solid = false;
