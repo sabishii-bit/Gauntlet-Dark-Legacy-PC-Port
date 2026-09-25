@@ -47,17 +47,19 @@ std::string lower(std::string_view text) {
 
 } // namespace
 
-bool CritterData::load(const std::filesystem::path& file) {
+bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
     *this = CritterData{};
     try {
         const Json root = Json::parse(readTextFile(file), nullptr, true, true);
         const auto types = root.value("types", Json::array());
         const auto descriptors = root.value("descriptors", Json::array());
-        if (types.empty() || descriptors.empty()) {
+        if (typeIndex >= types.size() || descriptors.empty()) {
             return false;
         }
-        // The first type is the creature; children (chimera heads) come after it.
-        const Json& type = types.front();
+        const Json& type = types[typeIndex];
+        m_childIndex = type.value("childIndex", -1);
+        m_parentIndex = type.value("parentIndex", -1);
+        m_rootNode = type.value("rootNode", "");
         const auto descriptor = static_cast<usize>(std::max(type.value("descriptor", 0), 0));
         const Json& desc = descriptors[std::min(descriptor, descriptors.size() - 1)];
         m_name = root.value("name", "");

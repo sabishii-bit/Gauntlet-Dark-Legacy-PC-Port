@@ -113,7 +113,7 @@ void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 fl
         hit.level = experienceLevel(owner.save().experience());
         hit.direction = direction;
         hit.where = target.base;
-        targets.opponents.bosses().hurt(hit);
+        targets.opponents.bosses().hurt(hit, target.id - kBossTargetBase);
     } else if (target.id >= kCritterTargetBase) {
         targets.opponents.strikeCritter(target.id - kCritterTargetBase, damage, flags, direction,
                                         owner.player(), target.base, false, players);

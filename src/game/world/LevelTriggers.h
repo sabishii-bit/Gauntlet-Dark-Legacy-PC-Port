@@ -68,8 +68,6 @@ struct LevelTrigger {
     f32 radius = 0.0f;
     s32 sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
-    bool occupied = false; ///< the party stood in it as the level opened: it waits for them
-                           ///< to leave and come back before it goes off (it still refuses)
 
     /** Whether it wants every visitor to carry a realm's crystals first. */
     bool needsCrystals() const { return (flags & kRequirement) != 0 && id < kGargoyleIds; }
@@ -125,9 +123,8 @@ public:
     /** How solid a fading target still looks, 1 shut to 0 gone. */
     f32 alphaOf(s32 object) const;
 
-    /** Opens at once whatever the party already qualifies for, as a level does when it
-     * starts; a spot the party is already standing in (a scenario's doing: nobody starts
-     * on one) waits for them to leave it and come back. */
+    /** Opens earned gates immediately. Ordinary pads react to contact on the first
+     * update too, as ProcessItems does; spawning inside one must not disable it. */
     void openMet(std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                  WorldScene& scene, WorldCollision* collision);
     /** Fires the triggers visitors stand in and carries the fades on by `seconds`. */

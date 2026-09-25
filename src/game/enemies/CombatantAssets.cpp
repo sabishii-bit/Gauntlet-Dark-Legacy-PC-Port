@@ -1,6 +1,8 @@
 #include "game/enemies/CombatantAssets.h"
 
 #include <format>
+#include <set>
+#include <utility>
 
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
@@ -10,6 +12,7 @@ CombatantAssets::~CombatantAssets() {
     clear();
 }
 void CombatantAssets::clear() {
+    children.clear();
     textures.clear();
     body.clear();
     tree = nullptr;
@@ -42,6 +45,19 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         return false;
     }
     tree = &archive.trees.tree(*index);
+    std::set<s32> visited{0};
+    for (s32 child = data.childIndex(); child >= 0;) {
+        CritterData part;
+        if (!visited.insert(child).second ||
+            !part.load(root / "critter" / (definition.name + ".json"), static_cast<usize>(child)) ||
+            part.parentIndex() != 0 || !tree->findNode(part.rootNode()).has_value()) {
+            log::warn("combatant {}: invalid child type {}", definition.name, child);
+            clear();
+            return false;
+        }
+        child = part.childIndex();
+        children.push_back(std::move(part));
+    }
     if (!body.bind(*tree, archive.models, archive.textures, device)) {
         clear();
         return false;

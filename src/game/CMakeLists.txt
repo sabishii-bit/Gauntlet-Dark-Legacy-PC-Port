@@ -93,6 +93,7 @@ add_library(game STATIC
     world/CombatantProjectiles.cpp
     enemies/Critters.cpp
     enemies/Combatant.cpp
+    enemies/CombatantParts.cpp
     enemies/MoveDefinition.cpp
     enemies/CombatantAssets.cpp
     enemies/CombatantMoves.cpp

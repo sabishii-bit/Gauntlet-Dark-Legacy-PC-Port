@@ -576,7 +576,7 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         const EnemyHit hit{
             damage, flags, direction, actor.player(), experienceLevel(actor.save().experience()),
             point,  true};
-        targets.opponents.bosses().hurt(hit);
+        targets.opponents.bosses().hurt(hit, id - kBossTargetBase);
     } else if (id >= kCritterTargetBase) {
         targets.opponents.strikeCritter(id - kCritterTargetBase, damage, flags, direction,
                                         actor.player(), point, true, players);
@@ -626,7 +626,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                     hit.level = experienceLevel(actor.save().experience());
                 }
             }
-            targets.opponents.bosses().hurt(hit);
+            targets.opponents.bosses().hurt(hit, impact.target - kBossTargetBase);
         } else if (impact.target >= kCritterTargetBase) {
             Vec3 direction{0.0f, 0.0f, 1.0f};
             for (const PlayerRuntime& runtime : players) {
@@ -739,7 +739,7 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                         hit.level = experienceLevel(player.actor.save().experience());
                     }
                 }
-                targets.opponents.bosses().hurt(hit);
+                targets.opponents.bosses().hurt(hit, target.id - kBossTargetBase);
             } else if (target.id >= kCritterTargetBase) {
                 targets.opponents.strikeCritter(target.id - kCritterTargetBase, power, flags,
                                                 direction, byPlayer, target.base, false, players);

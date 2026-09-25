@@ -146,6 +146,8 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         placedUnit.mesh = mesh;
         placedUnit.chrome = chrome;
         placedUnit.sorted = object.sorted();
+        placedUnit.background =
+            object.sorted() && !depthWrite && (object.objectFlags & WorldObject::kSortBehind) != 0;
         placedUnit.depthWrite = depthWrite;
         placedUnit.facing = facing;
         placedUnit.prelit = prelit;
@@ -406,6 +408,14 @@ void WorldScene::draw(RenderDevice& device, const Mat4& clip, const CameraFrame&
 void WorldScene::drawOpaque(RenderDevice& device, const Mat4& clip,
                             const CameraFrame& camera) const {
     std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
+    // Background sheets can intersect the arena in geometry space (A5's lightning
+    // does). A bias within the deferred queue alone still composites them over
+    // actors and pillars. Draw the authored depthless far layer before the solids.
+    for (const Unit& unit : m_units) {
+        if (unit.background) {
+            drawUnit(device, unit, clip, camera, true, true);
+        }
+    }
     usize next = 0;
     while (next < m_batches.size() && !m_batches[next].translucent && !m_batches[next].additive) {
         drawBatch(device, m_batches[next++], clip);
@@ -442,7 +452,9 @@ void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip,
                      [&](usize a, usize b) { return keys[a] < keys[b]; });
     for (const usize i : m_order) {
         const Unit& unit = m_units[i];
-        drawUnit(device, unit, clip, camera, unit.sorted, true);
+        if (!unit.background) {
+            drawUnit(device, unit, clip, camera, unit.sorted, true);
+        }
     }
     while (next < m_batches.size()) {
         drawBatch(device, m_batches[next++], clip);

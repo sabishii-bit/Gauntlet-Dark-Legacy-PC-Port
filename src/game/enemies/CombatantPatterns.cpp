@@ -13,7 +13,7 @@ f32 Combatant::attackRate(const Actor& critter) {
 }
 
 s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria,
-                           std::span<const EnemyView> players) {
+                            std::span<const EnemyView> players) {
     if (critter.blindTicks > 0) {
         return -1;
     }
@@ -28,7 +28,7 @@ s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria
         const f32 distance = glm::length(Vec2{delta.x, delta.z});
         const f32 bearing = std::atan2(delta.x, delta.z) - critter.yaw;
         if (!player.hidden && distance < nearest &&
-            critter.stock->data.sight().allows(distance, 0.0f, delta.y) &&
+            critter.definition->sight().allows(distance, 0.0f, delta.y) &&
             criteria.allows(distance, bearing, delta.y)) {
             nearest = distance;
             target = player.player;
@@ -38,7 +38,7 @@ s32 Combatant::attackTarget(const Actor& critter, const TargetCriteria& criteria
 }
 
 bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> players) {
-    const CritterData& data = critter.stock->data;
+    const CritterData& data = *critter.definition;
     const auto available = [&](s32 index) {
         if (index < 0 || static_cast<usize>(index) >= data.moves().size()) {
             return false;
@@ -68,7 +68,9 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
         const AttackPattern& pattern = data.patterns()[i];
         constexpr u32 kDisabled = 0x1000;
         if (static_cast<s32>(i) == previousPattern || pattern.moves.empty() ||
-            (pattern.flags & kDisabled) != 0 || !available(pattern.moves.front()) ||
+            (pattern.flags & kDisabled) != 0 ||
+            ((pattern.flags & 2U) != 0 && !critter.childrenIntact) ||
+            !available(pattern.moves.front()) ||
             critter.age < critter.patternTimes[i] + pattern.cooldown) {
             continue;
         }
@@ -85,6 +87,7 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
         constexpr u32 kLinkedOnly = 4;
         constexpr u32 kRequiresNode = 0x10;
         if (static_cast<s32>(i) == critter.move || !move.attack() ||
+            ((move.flags & 2U) != 0 && !critter.childrenIntact) ||
             (move.flags & kLinkedOnly) != 0 || !available(static_cast<s32>(i)) ||
             (move.cooldown > 0.0f && critter.age < critter.moveTimes[i] + move.cooldown)) {
             continue;

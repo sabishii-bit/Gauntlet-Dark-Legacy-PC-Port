@@ -23,7 +23,7 @@ Mat4 Combatant::modelTransform(const Actor& critter) {
     // The original places the root at floor Y + floorOffset, then transforms originOffset
     // and the animated nodes from that root. Keep our floor probes at the ground anchor:
     // the Dragon's root is 18.5 units above it, outside the probe's vertical search range.
-    const Vec3 root = critter.position + Vec3{0.0f, critter.stock->data.floorOffset(), 0.0f};
+    const Vec3 root = critter.position + Vec3{0.0f, critter.definition->floorOffset(), 0.0f};
     const Mat4 model =
         glm::rotate(glm::translate(Mat4{1.0f}, root), critter.yaw, Vec3{0.0f, 1.0f, 0.0f});
     return glm::scale(model, Vec3{critter.scale});
@@ -35,7 +35,7 @@ Vec3 Combatant::partPosition(const Actor& critter, std::string_view node) {
 
 Mat4 Combatant::partTransform(const Actor& critter, std::string_view node) {
     if (node.empty() || !critter.stock->tree->findNode(node).has_value()) {
-        return glm::translate(modelTransform(critter), critter.stock->data.originOffset());
+        return glm::translate(modelTransform(critter), critter.definition->originOffset());
     }
     return attachmentTransform(critter, node);
 }
@@ -54,12 +54,36 @@ Mat4 Combatant::attachmentTransform(const Actor& critter, std::string_view node)
 }
 
 std::optional<Mat4> Combatant::nodeTransform(std::string_view node) const {
+    if (present()) {
+        if (const auto index = m_actor.stock->tree->findNode(node)) {
+            for (const auto& part : m_children) {
+                s32 ancestor = static_cast<s32>(*index);
+                while (ancestor >= 0) {
+                    if (part->m_actor.branch == static_cast<usize>(ancestor)) {
+                        return attachmentTransform(part->m_actor, node);
+                    }
+                    ancestor = m_actor.stock->tree->nodes[static_cast<usize>(ancestor)].parent;
+                }
+            }
+        }
+    }
     return present() ? std::optional{attachmentTransform(m_actor, node)} : std::nullopt;
 }
 std::optional<Mat4> Combatant::rootTransform() const {
-    return present() ? std::optional{modelTransform(m_actor)} : std::nullopt;
+    return present() ? std::optional{attachmentTransform(m_actor, data()->rootNode())}
+                     : std::nullopt;
 }
 std::vector<MissileTarget> Combatant::bodyTargets(bool solidOnly) const {
+    auto out = ownTargets(solidOnly);
+    if (alive()) {
+        for (const auto& part : m_children) {
+            const auto volumes = part->ownTargets(solidOnly);
+            out.insert(out.end(), volumes.begin(), volumes.end());
+        }
+    }
+    return out;
+}
+std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
     std::vector<MissileTarget> out;
     if (!alive()) {
         return out;
@@ -76,7 +100,7 @@ std::vector<MissileTarget> Combatant::bodyTargets(bool solidOnly) const {
     }
     if (data()->parts().empty()) {
         out.push_back({id(), position(), radius() * actor.scale, 8 * actor.scale});
-    } else {
+    } else if (!actor.branch.has_value()) {
         const Vec3 centre = partPosition(actor, {});
         const f32 radius = (solidOnly ? data()->wallRadius() : data()->radius()) * actor.scale;
         out.push_back({id(), centre - Vec3{0, radius, 0}, radius, 2 * radius});
@@ -102,8 +126,20 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
         (critter.frozenTicks >= kThawBlinkTicks || (critter.frozenTicks & kThawBlinkBit) == 0)) {
         critter.stock->body.setMaskedTexture(frozenTexture);
     }
-    critter.stock->body.draw(device, clip, modelTransform(critter), lighting,
-                             critter.pose.matrices(), nullptr, critter.alpha);
+    TreePose pose = critter.pose;
+    for (const auto& part : m_children) {
+        const Actor& branch = part->m_actor;
+        if (branch.branch.has_value()) {
+            pose.overlaySubtree(branch.pose, *branch.branch);
+            critter.stock->body.setSubtreeFrame(*branch.branch, branch.player.sequence(),
+                                                static_cast<s32>(branch.player.frame()));
+            if (branch.hidden) {
+                critter.stock->body.setNodeAlpha(*branch.branch, 0.0f);
+            }
+        }
+    }
+    critter.stock->body.draw(device, clip, modelTransform(critter), lighting, pose.matrices(),
+                             nullptr, critter.alpha);
 }
 
 std::optional<f32> Combatant::contactDistance(const Vec3& from, const Vec3& to, f32 radius) const {
@@ -164,7 +200,7 @@ std::string Combatant::form() const {
     return m_actor.stock != nullptr ? m_actor.stock->definition.dropForm : std::string{};
 }
 const CritterData* Combatant::data() const {
-    return m_actor.stock != nullptr ? &m_actor.stock->data : nullptr;
+    return m_actor.stock != nullptr ? m_actor.definition : nullptr;
 }
 ItemArchive* Combatant::archive() {
     return present() ? &m_actor.stock->archive : nullptr;

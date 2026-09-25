@@ -321,6 +321,16 @@ TEST_CASE("an object node shows the mesh of its run that the frame calls for", "
     flame.draw(device, Mat4{1.0f}, Mat4{1.0f});
     REQUIRE(device.draws.size() == 2);
 
+    // One branch's clock may differ from the body's. An unrelated branch must
+    // not change this object, and a subtree override must survive until drawing.
+    flame.setSubtreeFrame(99, 0, 1);
+    flame.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    flame.setSubtreeFrame(0, 0, 2);
+    flame.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 3);
+    REQUIRE(device.draws.back().state.alphaTest > 0);
+
     // Reverse applies to the sequence frame BEFORE subtracting the run's start.
     TreeInfo reversed = trees.tree(0);
     reversed.sequences[0].flags |= 1U;

@@ -174,6 +174,21 @@ void TreePose::blend(const TreePose& from, f32 t) {
     compose();
 }
 
+void TreePose::overlaySubtree(const TreePose& from, usize root) {
+    GDL_VERIFY(m_tree != nullptr && from.m_tree == m_tree, "subtree poses must share a tree");
+    GDL_VERIFY(root < m_poses.size(), "subtree root out of range");
+    for (usize n = root; n < m_poses.size(); ++n) {
+        s32 ancestor = static_cast<s32>(n);
+        while (ancestor >= 0 && static_cast<usize>(ancestor) != root) {
+            ancestor = m_tree->nodes[static_cast<usize>(ancestor)].parent;
+        }
+        if (ancestor >= 0) {
+            m_poses[n] = from.m_poses[n];
+        }
+    }
+    compose();
+}
+
 void TreePose::compose() {
     m_matrices.resize(m_poses.size());
     for (usize n = 0; n < m_poses.size(); ++n) {

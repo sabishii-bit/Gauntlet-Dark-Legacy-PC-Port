@@ -176,6 +176,29 @@ TEST_CASE("world transparency can be deferred until dynamic solid objects have d
     }
 }
 
+TEST_CASE("depthless background lightning precedes solids and is not drawn again over actors",
+          "[world][scene][chimera]") {
+    Fixture f("world-scene-background");
+    // A5's 0xc81880: sorted, sort-behind, additive, no depth write. The sheet's
+    // vertices can be nearer than the arena: its authored layer takes precedence.
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"WALL","position":[0,0,30],"next":1,"child":-1},
+      {"name":"FLAME","position":[0,0,1],"next":2,"child":-1,"objectFlags":13113472},
+      {"name":"FLAME","position":[0,0,2],"next":-1,"child":-1,"objectFlags":8390784}]})");
+    REQUIRE(f.layout.load(f.directory));
+    REQUIRE(f.build());
+    const CameraFrame camera;
+    f.scene.drawOpaque(f.device, Mat4{1}, camera);
+    REQUIRE(f.device.draws.size() == 2);
+    CHECK(f.device.draws[0].vertices.front().position.z == 1);
+    CHECK_FALSE(f.device.draws[0].state.depthWrite);
+    CHECK(f.device.draws[1].vertices.front().position.z == 30);
+    f.device.draws.clear(); // actors are drawn here by PlayScene
+    f.scene.drawDeferred(f.device, Mat4{1}, camera);
+    REQUIRE(f.device.draws.size() == 1);
+    CHECK(f.device.draws[0].vertices.front().position.z == 2); // ordinary flames still deferred
+}
+
 TEST_CASE("moving objects carry what stands under them", "[world][scene]") {
     Fixture f("world-scene-moving");
     REQUIRE(f.build());

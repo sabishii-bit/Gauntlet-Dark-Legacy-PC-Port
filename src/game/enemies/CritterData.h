@@ -20,7 +20,10 @@ namespace gdl::game {
 class CritterData {
 public:
     /** Loads `critter/<NAME>.json`; false when it is not there or holds no type. */
-    bool load(const std::filesystem::path& file);
+    bool load(const std::filesystem::path& file, usize typeIndex = 0);
+    s32 childIndex() const { return m_childIndex; }
+    s32 parentIndex() const { return m_parentIndex; }
+    std::string_view rootNode() const { return m_rootNode; }
     bool loaded() const { return !m_moves.empty(); }
 
     std::string_view name() const { return m_name; }         ///< "GOLEM"
@@ -57,6 +60,9 @@ public:
     std::optional<usize> moveNamed(std::string_view name) const;
 
 private:
+    s32 m_childIndex = -1;
+    s32 m_parentIndex = -1;
+    std::string m_rootNode;
     std::string m_name;
     std::string m_folder;
     std::string m_prefix;

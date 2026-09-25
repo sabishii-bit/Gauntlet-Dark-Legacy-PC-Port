@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 
 #include <catch2/catch_approx.hpp>
@@ -698,6 +699,38 @@ TEST_CASE("weapon item flags survive the flight and produce elemental enemy feed
     const auto feedback = enemies.takeFeedback();
     REQUIRE(feedback.size() == 1);
     CHECK(feedback[0].flags == launch.flags);
+    f.attacks.clear();
+    f.opponents.close();
+}
+TEST_CASE("player projectiles sever the contacted Chimera head through encounter hit routing",
+          "[game][screens][player-attacks][chimera][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/CHIMERA.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+    Fixture f;
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& bosses = f.opponents.bosses();
+    bosses.open(f.device, root, nullptr, {}, 'A');
+    REQUIRE(bosses.spawn(35, Vec3{0}, 0));
+    const auto targets = bosses.targets();
+    const auto lion = std::ranges::find(targets, 2, &MissileTarget::id);
+    REQUIRE(lion != targets.end());
+    const Vec3 centre = lion->base + Vec3{0, lion->height * 0.5f, 0};
+    const f32 health = bosses.view().health;
+    MissileLaunch launch;
+    launch.owner = 3;
+    launch.position = centre + Vec3{0, 0, 10};
+    launch.velocity = Vec3{0, 0, -60};
+    launch.spec = &MissileSpec::of(0);
+    launch.damage = 2000;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    for (s32 step = 0; step < 20 && f.arsenal.missiles().count() > 0; ++step) {
+        f.attacks.updateProjectiles(1.0f / 60.0f, f.players, f.targets);
+    }
+    REQUIRE(f.arsenal.missiles().count() == 0);
+    const auto surviving = bosses.targets();
+    REQUIRE(std::ranges::none_of(surviving, [](const auto& target) { return target.id == 2; }));
+    REQUIRE(std::ranges::any_of(surviving, [](const auto& target) { return target.id == 1; }));
+    REQUIRE(bosses.view().health == health);
     f.attacks.clear();
     f.opponents.close();
 }
