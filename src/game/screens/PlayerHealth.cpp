@@ -86,6 +86,9 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     }
     const s32 before = save.health();
     save.progress().health = left;
+    if (kind == HurtKind::QuietBlow) {
+        runtime.painOwed += damage;
+    }
     const bool braced = runtime.figure != nullptr && (runtime.figure->animator().defending() ||
                                                       runtime.figure->animator().shoving());
     runtime.reaction = PlayerImpact::combine(
@@ -100,6 +103,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         return;
     }
     switch (kind) {
+    case HurtKind::QuietBlow: break;
     case HurtKind::Burn:
         cryPain(events);
         runtime.painOwed = 0.0f;

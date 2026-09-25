@@ -206,6 +206,67 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
     CHECK(effects.count() == 0);
 }
 
+TEST_CASE("enemy melee plays a dedicated impact on each contact including warded blows",
+          "[level-opponents][enemy-melee][unpacked]") {
+    const auto assets =
+        test::unpackedOrSkip("audio/COMMON/sounds.json").parent_path().parent_path().parent_path();
+    const bool warded = GENERATE(false, true);
+    const s32 tier = GENERATE(1, 3);
+    const auto root = test::scratchDirectory("enemy-impact-sound");
+    writeMeleeEnemy(root, kGruntKind);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    AudioMixer mixer(48000);
+    SoundPlayer sound(mixer);
+    LevelSoundscape audio;
+    audio.open(assets, &sound, nullptr);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(2, {}, nullptr, {0, 0, 2}, 0);
+    auto& progress = players[0].actor.save().progress();
+    progress.health = 1000;
+    progress.inventory.addPowerup(powerup::kSpecial, powerup::kHandOfDeath, 0, 60);
+    progress.inventory.powerups[0].on = warded;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 1, {.health = 100}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    REQUIRE(opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind, .tier = tier, .placed = true},
+                                      {}));
+    PlayerHealth health;
+    PlayerHealth::Events healthEvents;
+    healthEvents.sound = [](std::string_view) { FAIL("The impact was already sounded"); };
+    healthEvents.cry = [](std::string_view) { FAIL("Melee mode zero must not cry out"); };
+    healthEvents.named = [](std::string_view) {};
+    usize contacts = 0;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [&](usize i, f32 amount, HurtKind hurt, bool directed, const PlayerImpact& hit) {
+        CHECK(i == 0);
+        CHECK(hurt == HurtKind::QuietBlow);
+        ++contacts;
+        health.hurt(players[i], amount, hurt, directed, false, 1, healthEvents, hit);
+    };
+    for (s32 frame = 0; frame < 300 && sound.voiceCount() < 2; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    REQUIRE(sound.voiceCount() == 2);
+    CHECK(contacts == (warded ? 0 : 2));
+    std::array<f32, 8192> samples{};
+    mixer.mix(samples);
+    CHECK(std::ranges::any_of(samples, [](f32 value) { return value != 0; }));
+    opponents.close();
+    audio.close();
+    mixer.mix(samples); // Drain the stopped streams' fade-out before retiring their voices.
+    sound.update();
+    CHECK(sound.voiceCount() == 0);
+}
+
 TEST_CASE("Chimera arena binds and updates head health meters through the opponent phase",
           "[game][screens][level-opponents][chimera][unpacked]") {
     const auto root =

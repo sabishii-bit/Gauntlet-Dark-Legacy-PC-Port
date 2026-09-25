@@ -201,13 +201,26 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
 
 void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
                                     const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
         if (player.actor.player() != blow.player || player.life != PlayerLife::Standing) {
             continue;
         }
+        const LevelInfo* level = m_resources->world.level();
+        const auto sound =
+            EnemyFeedback::meleeSound(blow.kind, blow.tier,
+                                      level != nullptr ? std::span<const LevelEnemy>(level->enemies)
+                                                       : std::span<const LevelEnemy>{},
+                                      level != nullptr ? level->bossType : -1);
+        if (sound.has_value()) {
+            m_resources->audio.playNamed(*sound);
+        }
         if (blow.ward == EnemyMeleeWard::None) {
-            events.hurt(i, blow.damage, HurtKind::Blow, true, {blow.flags, blow.direction});
+            events.hurt(i, blow.damage, sound.has_value() ? HurtKind::QuietBlow : HurtKind::Blow,
+                        true, {blow.flags, blow.direction});
             continue;
         }
         if (blow.ward == EnemyMeleeWard::HealthVamp && blow.damage > 0) {

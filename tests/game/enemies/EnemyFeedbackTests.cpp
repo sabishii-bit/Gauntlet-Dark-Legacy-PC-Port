@@ -13,6 +13,31 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("enemy melee selects bite strike or tiered player impacts without generic duplicates",
+          "[enemy-feedback][enemy-melee]") {
+    // GUNE5D 8004DF58 chooses damage mode zero for these contacts. AudioPlayerHit's
+    // rows 3/4 are COMMON samples 0x35/0x36; AudioSetupBossStreams builds BITE/STRIKE.
+    const std::array roster{LevelEnemy{3, 1, "RAT"}, LevelEnemy{2, 1, "DEM"},
+                            LevelEnemy{8, 12, "MUM"}, LevelEnemy{11, 1, "TRE"}};
+    for (const s32 kind : {4, 5, 10}) {
+        CHECK(EnemyFeedback::meleeSound(kind, 1, {}) == "S_PLYRDMG5");
+        CHECK(EnemyFeedback::meleeSound(kind, 2, {}) == "S_PLYRDMG4");
+        CHECK(EnemyFeedback::meleeSound(kind, 3, {}) == "S_PLYRDMG4");
+    }
+    CHECK(EnemyFeedback::meleeSound(3, 3, roster) == "S_RATBITE");
+    CHECK(EnemyFeedback::meleeSound(2, 1, roster) == "S_DEM1BITE");
+    CHECK(EnemyFeedback::meleeSound(2, 3, roster) == "S_DEM2BITE");
+    CHECK(EnemyFeedback::meleeSound(8, 1, roster) == "S_MUM2BITE");
+    CHECK(EnemyFeedback::meleeSound(11, 1, roster) == "S_TRE1STRIKE");
+    CHECK(EnemyFeedback::meleeSound(11, 2, roster) == "S_TRE2STRIKE");
+    CHECK(EnemyFeedback::meleeSound(2, 1, roster, 41) == "S_DEM2BITEB");
+    REQUIRE(EnemyFeedback::meleeSound(3, 1, {}).has_value());
+    CHECK(EnemyFeedback::meleeSound(3, 1, {})->empty());
+    for (const s32 kind : {-1, 1, 7, 13, 27, 31, 100}) {
+        CHECK_FALSE(EnemyFeedback::meleeSound(kind, 1, roster).has_value());
+    }
+}
+
 TEST_CASE("retail enemy feedback resolves every gameplay realm's audio roster",
           "[enemy-feedback][unpacked]") {
     const auto root = test::unpackedOrSkip("wdata/TEMPLE.json").parent_path().parent_path();
@@ -30,11 +55,18 @@ TEST_CASE("retail enemy feedback resolves every gameplay realm's audio roster",
             test::unpackedOrSkip("audio/" + audio->bank + "/sounds.json");
             SoundSet bank;
             REQUIRE(bank.load(root / "audio" / audio->bank));
+            SoundSet common;
+            REQUIRE(common.load(test::unpackedOrSkip("audio/COMMON/sounds.json").parent_path()));
             for (const auto& enemy : level.enemies) {
                 if (enemy.kind >= 28 || enemy.stream.empty()) {
                     continue;
                 }
                 for (s32 tier = 1; tier <= 3; ++tier) {
+                    if (const auto impact = EnemyFeedback::meleeSound(
+                            enemy.kind, tier, level.enemies, level.bossType)) {
+                        INFO(realm << "/" << level.name << ": melee " << *impact);
+                        CHECK((bank.find(*impact).has_value() || common.find(*impact).has_value()));
+                    }
                     for (const bool close : {false, true}) {
                         for (const bool killed : {false, true}) {
                             for (s32 hits = 1; hits <= 2; ++hits) {
