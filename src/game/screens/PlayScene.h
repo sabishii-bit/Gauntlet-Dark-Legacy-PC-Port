@@ -40,6 +40,7 @@
 #include "game/screens/PlayerHealth.h"
 #include "game/screens/PortalDeparture.h"
 #include "game/screens/SumnerVisit.h"
+#include "game/screens/SwitchCutscene.h"
 #include "game/screens/TowerPromotion.h"
 #include "game/screens/TowerRelics.h"
 #include "game/screens/TransitionScreen.h"
@@ -167,6 +168,7 @@ public:
     const PlayerMissiles& missiles() const { return m_arsenal.missiles(); }
     const ExitPortals& portals() const { return m_portals; }
     const LevelTransporters& transporters() const { return m_transporters; }
+    const SwitchCutscene& switchCutscene() const { return m_switchCutscene; }
     const Chests& chests() const { return m_fixtures.chests(); }
     const LockedGates& gates() const { return m_fixtures.gates(); }
     const Traps& traps() const { return m_fixtures.traps(); }
@@ -265,6 +267,7 @@ private:
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     void updateTransporters(s32 ticks, f32 seconds, bool held);
+    void updateSwitchCutscene(s32 ticks, f32 seconds);
     LevelFixtures::Events fixtureEvents();
     LevelOpponents::Events opponentEvents();
     PlayerAttacks::Targets attackTargets();
@@ -325,6 +328,7 @@ private:
     PlayerArsenal m_arsenal;
     ExitPortals m_portals;
     LevelTransporters m_transporters;
+    SwitchCutscene m_switchCutscene;
     PlayerHealth m_health;
     PickupVoices m_pickupVoices;
     AmbientDimmer m_dimmer;

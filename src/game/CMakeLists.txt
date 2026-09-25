@@ -218,7 +218,10 @@ add_library(game STATIC
     players/ItemAttack.cpp
     screens/PlayerHealth.cpp
     screens/PlayScene.cpp
-    screens/PlaySceneTransport.cpp)
+    screens/PlaySceneTransport.cpp
+    screens/PlaySceneSwitch.cpp
+    screens/SwitchCutscene.cpp
+    screens/SwitchCutscene.h)
 
 add_library(gdl::game ALIAS game)
 

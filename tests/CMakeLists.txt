@@ -137,6 +137,8 @@ add_executable(tests
     game/world/ExitPortalsTests.cpp
     game/world/LevelTransportersTests.cpp
     game/screens/PlaySceneTransportTests.cpp
+    game/screens/PlaySceneSwitchTests.cpp
+    game/screens/SwitchCutsceneTests.cpp
     game/world/LevelFixturesTests.cpp
     game/world/SafeRocksTests.cpp
     game/players/LevelWatchTests.cpp
