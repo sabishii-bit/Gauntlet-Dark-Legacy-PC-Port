@@ -185,8 +185,9 @@ TEST_CASE("Fields exit uses its actual runestone and collection removes the remi
 }
 
 TEST_CASE("all exit taunts decode from the original narrator bank", "[exit-speech][unpacked]") {
+    const auto directory = test::unpackedOrSkip("audio/VOICE1/sounds.json").parent_path();
     SoundSet bank;
-    REQUIRE(bank.load(test::unpackedOrSkip("audio/VOICE1/sounds.json").parent_path()));
+    REQUIRE(bank.load(directory));
     for (const auto name : kCues) {
         INFO(name);
         const auto index = bank.find(name);

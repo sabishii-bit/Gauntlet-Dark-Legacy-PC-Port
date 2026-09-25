@@ -121,14 +121,18 @@ TEST_CASE("item voices use retail solo and multiplayer name prefixes", "[game][h
 TEST_CASE("pickup help text and recordings resolve in the extracted retail banks",
           "[game][help][items][assets][unpacked]") {
     const auto root = test::unpackedOrSkip("text/english.json").parent_path().parent_path();
+    const auto primaryDirectory = test::unpackedOrSkip("audio/VOICE1/sounds.json").parent_path();
+    const auto secondaryDirectory = test::unpackedOrSkip("audio/VOICE2/sounds.json").parent_path();
+    const auto commonDirectory = test::unpackedOrSkip("audio/COMMON/sounds.json").parent_path();
+    const auto secretDirectory = test::unpackedOrSkip("audio/SECRET/sounds.json").parent_path();
     MessageTable strings;
     REQUIRE(strings.load(root / "text/english.json"));
     SoundSet primary;
     SoundSet secondary;
     SoundSet common;
-    REQUIRE(primary.load(test::unpackedOrSkip("audio/VOICE1/sounds.json").parent_path()));
-    REQUIRE(secondary.load(test::unpackedOrSkip("audio/VOICE2/sounds.json").parent_path()));
-    REQUIRE(common.load(test::unpackedOrSkip("audio/COMMON/sounds.json").parent_path()));
+    REQUIRE(primary.load(primaryDirectory));
+    REQUIRE(secondary.load(secondaryDirectory));
+    REQUIRE(common.load(commonDirectory));
     const std::array ids{3,  7,  15, 16, 28, 32, 33, 35, 36,  37,  38,  39,  40,  41, 42,
                          43, 47, 48, 49, 51, 52, 53, 54, 81,  82,  83,  84,  86,  87, 88,
                          89, 91, 92, 93, 94, 95, 98, 99, 100, 113, 132, 148, 149, 150};
@@ -175,7 +179,7 @@ TEST_CASE("pickup help text and recordings resolve in the extracted retail banks
         }
     }
     SoundSet secret;
-    REQUIRE(secret.load(test::unpackedOrSkip("audio/SECRET/sounds.json").parent_path()));
+    REQUIRE(secret.load(secretDirectory));
     for (s32 player = 0; player < 4; ++player) {
         for (const s32 amount : {50, 100, 500}) {
             const auto sound = secret.find(PickupVoices::bonusGold(player, amount));
