@@ -50,6 +50,8 @@ public:
     std::optional<Mat4> attachment(const Mat4& body, std::string_view objectSuffix) const;
     bool heldWeaponBound() const { return m_handNode >= 0 && m_weapon.bound(); }
     s32 familiarTier() const { return m_familiar.tier(); }
+    bool familiarReleased() const { return m_familiarReleased; }
+    const TreeModel& familiarMissile() const { return m_familiarMissile; }
     const std::filesystem::path& directory() const { return m_directory; }
     void setStrafe(StrafeWay way) { m_animator.setStrafe(way); }
     void setAttackSpeed(bool rapid, bool speed) { m_animator.setAttackSpeed(rapid, speed); }
@@ -90,6 +92,9 @@ private:
     std::vector<Mat4> m_transforms;
     ItemArchive m_effects;
     PlayerFamiliar m_familiar;
+    TreeModel m_familiarMissile;
+    bool m_familiarPending = false;
+    bool m_familiarReleased = false;
     TreeModel m_missile;
     SoundSet m_voice;
     std::optional<u32> m_throwSound;

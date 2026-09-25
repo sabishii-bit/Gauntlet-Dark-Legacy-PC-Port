@@ -75,6 +75,73 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
     REQUIRE(scene.actorCount() == 0);
 }
 
+TEST_CASE("Temple floor pickups can be switched off through mapped D-pad presses",
+          "[game][screens][temple-selector][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("PLAYERS/JES/GRE/animations.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto ref = catalog.byName("E1");
+    REQUIRE(ref.has_value());
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    REQUIRE(world.startPoint(0) != nullptr);
+    GameConfig config;
+    REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.character = 7;
+    save.color = 3;
+    save.progress().experience = levelExperience(60);
+    PlayOptions options;
+    options.welcome = false;
+    options.position = world.startPoint(0)->position;
+    options.items = {{"ELECICON", *options.position}, {"XRAYICON", *options.position}};
+    const std::array party{PartyMember{0, save}};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    for (s32 i = 0; i < 180; ++i) {
+        scene.update(1.0 / 30, {});
+    }
+    const auto& inventory = scene.actor(0)->save().progress().inventory;
+    REQUIRE(inventory.powerup(powerup::kWeapon, 2) != nullptr);
+    REQUIRE(inventory.powerup(powerup::kSpecial, 2) != nullptr);
+    Input input;
+    PlayerControlReader controls;
+    const auto step = [&](bool up) {
+        input.beginPoll();
+        PadSnapshot pad;
+        pad.connected = true;
+        pad.buttons[static_cast<usize>(PadButton::DpadUp)] = up;
+        input.setPad(0, pad);
+        const auto buttons = controls.read(input, config.play, false, 0, 1.0f / 30);
+        PlayScene::Inputs inputs;
+        inputs[0].selector = {buttons.selectorUp, buttons.selectorDown, buttons.selectorLeft,
+                              buttons.selectorRight};
+        scene.update(1.0 / 30, inputs);
+    };
+    step(true);
+    for (s32 i = 0; i < 40; ++i) {
+        step(false);
+    }
+    REQUIRE(scene.selector(0).showing());
+    const auto selected = static_cast<usize>(scene.selector(0).selection());
+    REQUIRE(inventory.powerups[selected].on);
+    step(true);
+    CHECK_FALSE(inventory.powerups[selected].on);
+    step(false);
+    step(true);
+    CHECK(inventory.powerups[selected].on);
+}
+
 TEST_CASE("sparse party ids keep their state together across harm and scene reopening",
           "[game][screens][game-over][unpacked]") {
     const auto root = unpackedRoot();

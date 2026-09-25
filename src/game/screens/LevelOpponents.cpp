@@ -68,7 +68,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     close();
     m_resources.emplace(resources);
     RenderDevice& device = resources.device;
-    const LevelWorld& world = resources.world;
+    LevelWorld& world = resources.world;
     const LevelInfo* level = world.level();
     const f32 gain = resources.difficultyGain;
     EnemyScales scales;
@@ -98,7 +98,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
                                                    ? std::span<const LevelEnemy>(level->enemies)
                                                    : std::span<const LevelEnemy>{};
     m_generators.bind(device, world.layout(), m_enemies, &world.collision(), breeding, playerCount,
-                      roster);
+                      roster, static_cast<s32>(world.ref().realmId), &world.items());
     // The level's boss, at its boss mark.
     if (level != nullptr && !bossNameOf(level->bossType).empty()) {
         if (const WorldLocator* mark = world.layout().findLocator(LocatorKind::Boss);

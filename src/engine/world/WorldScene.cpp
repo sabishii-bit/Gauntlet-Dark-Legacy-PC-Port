@@ -83,7 +83,8 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         placement.local = glm::translate(Mat4{1.0f}, objects[i].position);
         placement.parent = objects[i].parent;
         for (auto at = static_cast<s32>(i); at >= 0; at = objects[static_cast<usize>(at)].parent) {
-            if (animated[static_cast<usize>(at)] != 0) {
+            if (animated[static_cast<usize>(at)] != 0 ||
+                (objects[static_cast<usize>(at)].flags & WorldObject::kAnimated) != 0) {
                 placement.moving = true;
                 break;
             }
@@ -398,7 +399,12 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
 }
 
 void WorldScene::draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const {
-    const Vec3& eye = camera.position;
+    drawOpaque(device, clip, camera);
+    drawDeferred(device, clip, camera);
+}
+
+void WorldScene::drawOpaque(RenderDevice& device, const Mat4& clip,
+                            const CameraFrame& camera) const {
     std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
     usize next = 0;
     while (next < m_batches.size() && !m_batches[next].translucent && !m_batches[next].additive) {
@@ -409,6 +415,16 @@ void WorldScene::draw(RenderDevice& device, const Mat4& clip, const CameraFrame&
         if (!unit.sorted) {
             drawUnit(device, unit, clip, camera, true, false);
         }
+    }
+}
+
+void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip,
+                              const CameraFrame& camera) const {
+    const Vec3& eye = camera.position;
+    std::fill(m_worldValid.begin(), m_worldValid.end(), u8{0});
+    usize next = 0;
+    while (next < m_batches.size() && !m_batches[next].translucent && !m_batches[next].additive) {
+        ++next;
     }
     while (next < m_batches.size() && !m_batches[next].additive) {
         drawBatch(device, m_batches[next++], clip);

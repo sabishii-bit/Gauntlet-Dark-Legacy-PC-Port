@@ -226,11 +226,11 @@ Mat4 PlayerMissiles::transformOf(const Missile& missile) {
     return glm::scale(out, Vec3{missile.scale, missile.scale, missile.scale});
 }
 
-void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip,
-                          const WorldLighting& lighting) const {
+void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                          const CameraFrame* camera) const {
     for (const Missile& missile : m_missiles) {
         if (missile.model != nullptr && missile.model->bound()) {
-            missile.model->draw(device, clip, transformOf(missile), lighting);
+            missile.model->draw(device, clip, transformOf(missile), lighting, {}, camera);
         }
     }
 }

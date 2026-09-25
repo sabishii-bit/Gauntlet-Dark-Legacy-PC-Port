@@ -79,6 +79,10 @@ public:
      * then the sorted objects farthest from the camera first (those flagged to face it
      * turned its way), and the glows last; `clip` maps world to clip space. */
     void draw(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const;
+    /** Insert dynamic solid objects between these passes so glass and light rays
+     * blend over them while still respecting the completed depth buffer. */
+    void drawOpaque(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const;
+    void drawDeferred(RenderDevice& device, const Mat4& clip, const CameraFrame& camera) const;
     /** Takes this much of the colour out of everything but what glows (the level's light is
      * baked into its vertices, so a change of ambient light is made this way). */
     void setDarken(f32 darken) { m_darken = darken; }

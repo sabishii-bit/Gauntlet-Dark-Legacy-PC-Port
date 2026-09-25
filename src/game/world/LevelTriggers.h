@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include "engine/world/WorldScene.h"
 
 #include "game/players/Progression.h"
+#include "game/world/ItemFigure.h"
 
 namespace gdl::game {
 
@@ -95,6 +97,9 @@ public:
 
     /** Takes the layout's trigger items, chains them, and holds their animated targets. */
     void bind(const WorldLayout& layout, WorldAnimator& animator, WorldCollision* collision);
+    /** Visible pressure pads are separate from the world objects they activate. */
+    void bindFigures(RenderDevice& device, const WorldLayout& layout, ItemArchive& items);
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     void clear();
     usize size() const { return m_triggers.size(); }
     const LevelTrigger& trigger(usize index) const { return m_triggers[index]; }
@@ -121,6 +126,7 @@ public:
     std::vector<TriggerOpening> takeSettled();
 
 private:
+    std::vector<std::unique_ptr<ItemFigure>> m_figures;
     struct Target {
         s32 object = -1;
         u32 kind = 0;
@@ -128,6 +134,9 @@ private:
         bool open = false;
         bool settled = false; ///< done opening, or opened at once
         f32 alpha = 1.0f;
+        Vec3 origin{0.0f};
+        f32 height = 0.0f;
+        f32 openHeight = 0.0f;
         Vec3 spot{0.0f, 0.0f, 0.0f}; ///< the spot of the trigger that opened it
         s32 sound = -1;
     };

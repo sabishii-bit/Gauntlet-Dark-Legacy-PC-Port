@@ -190,6 +190,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                                               (powerups.special & powerup::kSpeedBoost) != 0);
             players[i].figure->animate(move.magnitude, ticks, seconds, deed);
             events.advanceTurbo(i, ticks, seconds);
+            if (players[i].figure->familiarReleased()) {
+                events.perform(i, Action::FamiliarShot);
+            }
             if (players[i].figure->animator().meleeStruck()) {
                 events.perform(i, Action::Melee);
             }

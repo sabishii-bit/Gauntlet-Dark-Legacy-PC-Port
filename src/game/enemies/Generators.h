@@ -55,7 +55,8 @@ public:
      * into `enemies`. Instances naming a kind that is not known are left out. */
     bool bind(RenderDevice& device, const WorldLayout& layout, Enemies& enemies,
               const WorldCollision* collision, const GeneratorScales& scales, s32 players,
-              std::span<const LevelEnemy> roster = {});
+              std::span<const LevelEnemy> roster = {}, s32 realm = -1,
+              ItemArchive* realmItems = nullptr);
     void clear();
     /** A boss effect leaves a tier-one generator. Its optional BOSSGEN art is borrowed. */
     bool placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items, Enemies& enemies,
@@ -123,12 +124,14 @@ private:
 
     Bodies* bodiesOf(s32 kind);
     const Bodies* bodiesOf(s32 kind) const;
-    bool loadBodies(RenderDevice& device, Enemies& enemies, s32 kind);
+    bool loadBodies(RenderDevice& device, Enemies& enemies, s32 kind,
+                    ItemArchive* realmItems = nullptr);
     static s32 stateFor(const Generator& generator, bool destroyed);
 
     std::vector<Generator> m_generators;
     std::vector<std::unique_ptr<Bodies>> m_bodies;
     GeneratorScales m_scales;
+    u32 m_specialBirth = 0; ///< shared round-robin cursor, as in retail's enemy spawner
 };
 
 } // namespace gdl::game

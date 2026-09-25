@@ -92,6 +92,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_collision.setMovingObjects(m_movingObjects);
     std::erase_if(m_movingObjects, [&](s32 object) { return !m_collision.moving(object); });
     m_triggers.bind(m_layout, m_worldAnimator, &m_collision);
+    m_triggers.bindFigures(device, m_layout, m_items);
     m_worldAnimator.apply(m_scene);
     syncCollision();
     if (!m_powerups.load(unpackedRoot / kPowerups)) {
