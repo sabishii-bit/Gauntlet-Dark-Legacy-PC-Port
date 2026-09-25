@@ -909,8 +909,9 @@ u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
 }
 
 WorldCamera PlayScene::viewCamera() const {
-    if (m_switchCutscene.showing()) {
-        return *m_switchCutscene.camera();
+    if (const auto& camera = m_switchCutscene.camera();
+        m_switchCutscene.showing() && camera.has_value()) {
+        return *camera;
     }
     if (m_arrival.camera().active()) {
         return m_arrival.camera().camera();

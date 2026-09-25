@@ -134,10 +134,14 @@ std::optional<Vec3> LevelTransporters::landing(usize source, f32 radius,
                                                const WorldCollision& collision,
                                                const WorldCamera& camera,
                                                const CameraView& view) const {
-    if (source >= m_pads.size() || !m_pads[source].destination) {
+    if (source >= m_pads.size()) {
         return std::nullopt;
     }
-    Vec3 destination = m_pads[*m_pads[source].destination].position;
+    const auto destinationIndex = m_pads[source].destination;
+    if (!destinationIndex.has_value()) {
+        return std::nullopt;
+    }
+    Vec3 destination = m_pads[*destinationIndex].position;
     if (!visible(destination, radius, camera, view)) {
         return std::nullopt;
     }

@@ -37,8 +37,9 @@ void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevic
             }
         }
         if (index.has_value()) {
+            const u32 slot = *index;
             try {
-                texture = &owner->texture(device, *index);
+                texture = &owner->texture(device, slot);
             } catch (const std::exception& e) {
                 log::warn("Tree particles: texture {}: {}", descriptor.texture, e.what());
             }

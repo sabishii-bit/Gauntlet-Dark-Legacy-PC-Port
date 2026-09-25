@@ -65,8 +65,9 @@ TEST_CASE("the story and title movies play through with picture and sound",
           "[codec][movie][assets]") {
     const auto* name = GENERATE("VQMOVIES/OPENING.avi", "VQMOVIES/TITLE2.avi");
     CAPTURE(name);
+    const auto file = test::assetOrSkip(name);
     MoviePlayback playback;
-    REQUIRE(playback.open(test::assetOrSkip(name)));
+    REQUIRE(playback.open(file));
     REQUIRE(playback.info().frameCount > 0);
     REQUIRE(playback.info().hasAudio);
     const u32 expectedFrames = playback.info().frameCount;
