@@ -610,7 +610,8 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
          .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
          .cry = [this, index](std::string_view voice) { m_attacks.cry(index, voice, m_players); },
          .named = [this, index](std::string_view line) { sayWithName(index, line); }},
-        impact, m_world->level() != nullptr && m_world->level()->bossType >= 0);
+        impact, level != nullptr && level->bossType >= 0,
+        m_classes.stats(m_players[index].actor.save().character));
 }
 
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says

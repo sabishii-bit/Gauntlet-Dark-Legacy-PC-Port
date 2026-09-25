@@ -31,7 +31,8 @@ struct EnemyScales {
     f32 speed = 1.0f;
     f32 sight = 1.0f;
     f32 damage = 1.0f;
-    f32 playerLevel = 0.0f; ///< the level the place is meant for; none when nought
+    f32 playerLevel = 0.0f;     ///< the level the place is meant for; none when nought
+    bool bossEncounter = false; ///< applies to every opponent in the arena, not just the boss
 };
 
 /** A player as the enemies see one. */

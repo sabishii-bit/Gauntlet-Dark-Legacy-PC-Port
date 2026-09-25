@@ -61,4 +61,7 @@ StatBlock displayStats(const ClassStats& stats, s32 level, const ClassProgress& 
 /** What every stat reads for the hidden master class. */
 StatBlock masteryStats();
 
+/** Flat damage absorption from the current armor attribute, including level and shop gains. */
+f32 armorDefense(const ClassStats& stats, const ClassProgress& progress);
+
 } // namespace gdl::game

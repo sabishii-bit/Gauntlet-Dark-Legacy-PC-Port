@@ -451,6 +451,35 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     REQUIRE(bred.algorithmOf(*vermin) == 0);
 }
 
+TEST_CASE("swarm elemental hits use arena multipliers but retain their minimum damage",
+          "[enemies][damage][unpacked]") {
+    const auto root = unpackedRoot();
+    test::FakeRenderDevice device;
+    for (const bool bossEncounter : {false, true}) {
+        CAPTURE(bossEncounter);
+        Enemies enemies;
+        enemies.open(device, root, nullptr, 4, EnemyScales{.bossEncounter = bossEncounter}, 7);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        const auto id =
+            enemies.spawn(EnemySpawn{.kind = kGruntKind, .tier = 3, .placed = true}, {});
+        REQUIRE(id);
+        const f32 before = enemies.healthOf(*id);
+        EnemyHit hit;
+        hit.damage = 10;
+        hit.flags = 1;
+        hit.player = 0;
+        enemies.hurt(*id, hit);
+        const f32 expected = (10 - enemyKind(kGruntKind).armor) * (bossEncounter ? 1.25f : 1.5f);
+        CHECK(enemies.healthOf(*id) == Approx(before - expected));
+        REQUIRE(enemies.alive(*id));
+        const f32 after = enemies.healthOf(*id);
+        hit.damage = 0.1f;
+        hit.flags = 0;
+        enemies.hurt(*id, hit);
+        CHECK(enemies.healthOf(*id) == Approx(after - 1));
+    }
+}
+
 TEST_CASE("enemy hits queue feedback once and animate masked death skins to completion",
           "[game][enemies][enemy-feedback][unpacked]") {
     const auto root = unpackedRoot();

@@ -8,6 +8,7 @@
 
 #include "game/combat/Damage.h"
 #include "game/players/PowerupEffects.h"
+#include "game/players/Progression.h"
 namespace gdl::game {
 namespace {
 constexpr f32 kPainEvery = 30.0f; ///< harm from blows between cries
@@ -35,7 +36,7 @@ f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directe
 
 void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed,
                         bool inTower, f32 damageScale, const Events& events,
-                        const PlayerImpact& impact, bool bossEncounter) {
+                        const PlayerImpact& impact, bool bossEncounter, const ClassStats* stats) {
     if (runtime.life != PlayerLife::Standing || inTower || damage <= 0.0f) {
         return;
     }
@@ -47,7 +48,9 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     if (kind == HurtKind::Gas) {
         received.flags |= Damage::kGas;
     }
-    const Damage modified = Damage::modify(damage, received.flags, worn.armor, 0, bossEncounter);
+    const f32 armor = stats != nullptr ? armorDefense(*stats, runtime.actor.save().progress()) : 0;
+    const Damage modified =
+        Damage::modify(damage, received.flags, worn.armor, armor, bossEncounter);
     damage = modified.amount;
     received.flags = modified.flags;
     if ((received.flags & Damage::kLow) != 0 && (worn.special & powerup::kLevitation) != 0) {

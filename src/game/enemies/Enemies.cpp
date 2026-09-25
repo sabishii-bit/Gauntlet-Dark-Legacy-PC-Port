@@ -952,7 +952,8 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
         const f32 gap = static_cast<f32>(hit.level) - m_scales.playerLevel;
         amount *= gap < 0.0f ? 1.0f + 0.01f * gap : 1.0f + 0.1f * gap;
     }
-    const Damage modified = Damage::modify(amount, hit.flags, 0, kind.armor, false);
+    const Damage modified =
+        Damage::modify(amount, hit.flags, 0, kind.armor, m_scales.bossEncounter);
     amount = std::max(modified.amount, hit.player >= 0 ? 1.0f : 0.0f);
     if (amount <= 0.0f) {
         return;
