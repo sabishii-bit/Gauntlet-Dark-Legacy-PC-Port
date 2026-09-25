@@ -1,6 +1,11 @@
+#include <array>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/SoundSet.h"
+
+#include "TestSupport.h"
 #include "game/enemies/EnemyFeedback.h"
 
 namespace {
@@ -8,27 +13,79 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("retail enemy feedback resolves every gameplay realm's audio roster",
+          "[enemy-feedback][unpacked]") {
+    const auto root = test::unpackedOrSkip("wdata/TEMPLE.json").parent_path().parent_path();
+    // TEST is developer content with placeholder TOWN audio, not a gameplay realm.
+    constexpr std::array kRealms{"TOWN",  "MOUNT",  "CASTLE", "FOREST", "DESERT", "ICE",
+                                 "DREAM", "BATTLE", "SKY",    "TEMPLE", "HELL",   "SECRET"};
+    usize checked = 0;
+    for (const auto* realm : kRealms) {
+        test::unpackedOrSkip(std::string("wdata/") + realm + ".json");
+        WorldData world;
+        REQUIRE(world.load(root / "wdata" / (std::string(realm) + ".json")));
+        for (const auto& level : world.levels()) {
+            const auto* audio = world.audio(level.audioIndex);
+            REQUIRE(audio != nullptr);
+            test::unpackedOrSkip("audio/" + audio->bank + "/sounds.json");
+            SoundSet bank;
+            REQUIRE(bank.load(root / "audio" / audio->bank));
+            for (const auto& enemy : level.enemies) {
+                if (enemy.kind >= 28 || enemy.stream.empty()) {
+                    continue;
+                }
+                for (s32 tier = 1; tier <= 3; ++tier) {
+                    for (const bool close : {false, true}) {
+                        for (const bool killed : {false, true}) {
+                            for (s32 hits = 1; hits <= 2; ++hits) {
+                                EnemyFeedback feedback;
+                                feedback.kind = enemy.kind;
+                                feedback.tier = tier;
+                                feedback.close = close;
+                                feedback.killed = killed;
+                                feedback.hitCount = hits;
+                                const auto name = feedback.sound(level.enemies, level.bossType);
+                                INFO(realm << "/" << level.name << ": " << name);
+                                const auto id = bank.find(name);
+                                REQUIRE(id);
+                                CHECK_FALSE(bank.sequence(*id).steps.empty());
+                                ++checked;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    CHECK(checked > 1000);
+}
+
 TEST_CASE("enemy sounds distinguish tier hit count and close versus far damage",
           "[game][enemies][enemy-feedback]") {
+    const std::array roster{LevelEnemy{13, 2, "EGRUNT"}, LevelEnemy{27, 2, "GRM"}};
     EnemyFeedback feedback;
     feedback.kind = 13;
-    CHECK(feedback.sound() == "S_ZOM1HITFAR");
+    CHECK(feedback.sound(roster) == "S_EGRUNT1HITFAR");
     feedback.close = true;
-    CHECK(feedback.sound() == "S_ZOM1HITCLOSE");
+    CHECK(feedback.sound(roster) == "S_EGRUNT1HITCLO");
     feedback.tier = 2;
-    CHECK(feedback.sound() == "S_ZOM2HIT1CLOSE");
+    CHECK(feedback.sound(roster) == "S_EGRUNT2HIT1CL");
     feedback.hitCount = 2;
-    CHECK(feedback.sound() == "S_ZOM2HIT2CLOSE");
+    CHECK(feedback.sound(roster) == "S_EGRUNT2HIT2CL");
     feedback.killed = true;
-    CHECK(feedback.sound() == "S_ZOM2DIECLOSE");
+    CHECK(feedback.sound(roster) == "S_EGRUNT2DIECLO");
     feedback.close = false;
-    CHECK(feedback.sound() == "S_ZOM2DIEFAR");
+    CHECK(feedback.sound(roster) == "S_EGRUNT2DIEFAR");
     feedback.tier = 1;
-    CHECK(feedback.sound(true) == "S_ZOM2DIEFAR");
+    CHECK(feedback.sound(roster, 41) == "S_EGRUNT2DIEFAB");
     feedback.kind = 27;
-    CHECK(feedback.sound() == "S_GRM1DIEFAR");
+    CHECK(feedback.sound(roster) == "S_GRM1DIEFAR");
     feedback.kind = -1;
-    CHECK(feedback.sound().empty());
+    CHECK(feedback.sound(roster).empty());
+    feedback.kind = 13;
+    CHECK(feedback.sound({}).empty());
+    const std::array temple{LevelEnemy{13, 12, "EGRUNT"}};
+    CHECK(feedback.sound(temple) == "S_EGRUNT2DIEFAR");
 }
 
 TEST_CASE("enemy impact and death skins retain elemental and nonflesh distinctions",
@@ -70,7 +127,7 @@ TEST_CASE("enemy impact and death skins retain elemental and nonflesh distinctio
     CHECK(feedback.deathSkinFrames() == 0);
     feedback.flags = 0x1000000;
     CHECK(feedback.effect().empty());
-    CHECK_FALSE(feedback.sound().empty());
+    CHECK_FALSE(feedback.sound(std::array{LevelEnemy{21, 1, "ACI"}}).empty());
     feedback.flags = 15;
     CHECK(feedback.effect().empty());
     CHECK(feedback.deathSkin().empty());

@@ -142,7 +142,8 @@ bool WorldData::load(const std::filesystem::path& file) {
         m_prefix = root.value("prefix", std::string{});
         std::vector<LevelEnemy> roster;
         for (const nlohmann::json& enemy : root.value("enemies", nlohmann::json::array())) {
-            roster.push_back(LevelEnemy{enemy.value("kind", -1), enemy.value("subtype", 0)});
+            roster.push_back(LevelEnemy{enemy.value("kind", -1), enemy.value("subtype", 0),
+                                        enemy.value("stream", std::string{})});
         }
         std::vector<BossCameraInfo> bossCameras;
         for (const nlohmann::json& camera : root.value("bossCameras", nlohmann::json::array())) {

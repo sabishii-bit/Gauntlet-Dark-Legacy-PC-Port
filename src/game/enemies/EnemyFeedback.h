@@ -1,8 +1,10 @@
 #pragma once
 
+#include <span>
 #include <string>
 #include <string_view>
 
+#include "engine/assets/WorldData.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
@@ -19,7 +21,7 @@ struct EnemyFeedback {
     f32 yaw = 0;
     f32 halfHeight = 0;
 
-    std::string sound(bool bossLevel = false) const;
+    std::string sound(std::span<const LevelEnemy> roster, s32 bossType = -1) const;
     std::string_view effect() const;
     f32 effectScale() const;
     std::string_view deathSkin() const;

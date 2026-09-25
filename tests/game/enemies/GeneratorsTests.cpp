@@ -151,7 +151,7 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     REQUIRE(enemies.kindLoaded(kRatKind));
     // With the fields' roster the same records breed zombies and maggots instead.
     test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
-    const std::vector<LevelEnemy> fields{{13, kMediumClass}, {12, kSmallClass}};
+    const std::vector<LevelEnemy> fields{{13, kMediumClass, {}}, {12, kSmallClass, {}}};
     Enemies bred;
     bred.open(device, root, &collision, 13, EnemyScales{}, 3);
     Generators graves;
@@ -285,8 +285,12 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE(event->kind == kGruntKind);
     REQUIRE(event->generator == chosen);
     REQUIRE(generators.stateOf(chosen) == 2);
-    REQUIRE_FALSE(generators.strike(chosen, 4.0f, 0).has_value());
-    REQUIRE_FALSE(generators.strike(chosen, 8.0f, 0).has_value());
+    event = generators.strike(chosen, 4.0f, 0);
+    REQUIRE(event);
+    REQUIRE_FALSE(event->stateChanged);
+    event = generators.strike(chosen, 8.0f, 0);
+    REQUIRE(event);
+    REQUIRE_FALSE(event->stateChanged);
     REQUIRE(generators.healthOf(chosen) == Approx(8.0f));
     event = generators.strike(chosen, 3.0f, 0);
     REQUIRE(event.has_value());

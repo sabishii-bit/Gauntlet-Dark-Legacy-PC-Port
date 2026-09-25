@@ -1,5 +1,6 @@
 #include "game/enemies/EnemyFeedback.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 
@@ -32,26 +33,48 @@ bool hasTierSounds(s32 kind) {
 }
 } // namespace
 
-std::string EnemyFeedback::sound(bool bossLevel) const {
+std::string EnemyFeedback::sound(std::span<const LevelEnemy> roster, s32 bossType) const {
     if (kind < 0 || kind >= kSwarmKindCount) {
         return {};
     }
+    const auto row = std::ranges::find(roster, kind, &LevelEnemy::kind);
+    if (row == roster.end() || row->stream.empty()) {
+        return {};
+    }
     const bool tiered = hasTierSounds(kind);
-    const bool large = tier > 1 || bossLevel;
+    // Classes >= 10 bind both sizes to the large sound set. This includes
+    // the Temple's four species, regardless of the current actor's tier.
+    const bool large = tier > 1 || row->subtype >= 10 || bossType >= 0;
     const std::string_view suffix = close ? "CLOSE" : "FAR";
-    std::string stem{enemyKind(kind).prefix};
+    std::string stem{row->stream};
     if (tiered) {
         stem += large ? '2' : '1';
     } else if (kind == 27) {
         stem += '1';
     }
+    std::string name;
     if (killed) {
-        return std::format("S_{}DIE{}", stem, suffix);
+        name = std::format("S_{}DIE{}", stem, suffix);
+    } else if (tiered && large) {
+        name = std::format("S_{}HIT{}{}", stem, hitCount < 2 ? 1 : 2, suffix);
+    } else {
+        name = std::format("S_{}HIT{}", stem, suffix);
     }
-    if (tiered && large) {
-        return std::format("S_{}HIT{}{}", stem, hitCount < 2 ? 1 : 2, suffix);
+    // These boss banks replace byte 14 with a variant letter. Ordinary
+    // sound lookup compares the fifteen-character bank key.
+    char variant = '\0';
+    switch (bossType) {
+    case 41: variant = 'B'; break;
+    case 37: variant = 'D'; break;
+    case 36: variant = 'C'; break;
+    default: break;
     }
-    return std::format("S_{}HIT{}", stem, suffix);
+    if (variant != '\0') {
+        name.resize(std::min(name.size(), usize{14}));
+        name += variant;
+    }
+    name.resize(std::min(name.size(), usize{15}));
+    return name;
 }
 
 std::string_view EnemyFeedback::effect() const {
