@@ -36,6 +36,12 @@ struct TriggerOpening {
     s32 sound = -1;
 };
 
+/** A switch's rising activation edge, naming its camera marker and moving target. */
+struct TriggerCameraCue {
+    s32 id = 0;
+    s32 target = -1;
+};
+
 /** An active participant's position, supporting floor and progression requirements. */
 struct TriggerVisitor {
     Vec3 position{0.0f, 0.0f, 0.0f};
@@ -115,6 +121,7 @@ public:
     static s32 crystalsNeeded(s32 realm);
     /** Whether the target of a trigger has been opened. */
     bool opened(s32 object) const;
+    bool settled(s32 object) const;
     /** How solid a fading target still looks, 1 shut to 0 gone. */
     f32 alphaOf(s32 object) const;
 
@@ -132,6 +139,7 @@ public:
     std::vector<TriggerRefusal> takeRefusals();
     std::vector<TriggerOpening> takeOpenings();
     std::vector<TriggerOpening> takeSettled();
+    std::vector<TriggerCameraCue> takeCameraCues();
 
 private:
     std::vector<std::unique_ptr<ItemFigure>> m_figures;
@@ -174,6 +182,7 @@ private:
     std::vector<TriggerRefusal> m_refusals;
     std::vector<TriggerOpening> m_openings;
     std::vector<TriggerOpening> m_settled;
+    std::vector<TriggerCameraCue> m_cameraCues;
     f32 m_frameRemainder = 0.0f;
     f32 m_emptyToggleDelay = 0.0f;
 };

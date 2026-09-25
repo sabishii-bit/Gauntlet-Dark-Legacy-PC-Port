@@ -145,6 +145,7 @@ void LevelTriggers::clear() {
     m_refusals.clear();
     m_openings.clear();
     m_settled.clear();
+    m_cameraCues.clear();
     m_frameRemainder = 0.0f;
 }
 
@@ -183,6 +184,15 @@ std::vector<TriggerOpening> LevelTriggers::takeOpenings() {
 
 std::vector<TriggerOpening> LevelTriggers::takeSettled() {
     return std::exchange(m_settled, {});
+}
+
+std::vector<TriggerCameraCue> LevelTriggers::takeCameraCues() {
+    return std::exchange(m_cameraCues, {});
+}
+
+bool LevelTriggers::settled(s32 object) const {
+    const Target* target = targetOf(object);
+    return target == nullptr || target->settled;
 }
 
 TriggerOpening LevelTriggers::openingOf(const Target& target, bool atOnce) {
@@ -336,6 +346,9 @@ void LevelTriggers::fire(usize index, bool active, bool atOnce, WorldAnimator& a
             }
         } else if (contact || (trigger.flags & LevelTrigger::kToggles) != 0) {
             trigger.fired = contact;
+        }
+        if (trigger.fired && !wasFired && contact && !atOnce) {
+            m_cameraCues.push_back({trigger.id, trigger.target});
         }
         if (trigger.fired != wasFired && static_cast<usize>(at) < m_figures.size() &&
             m_figures[static_cast<usize>(at)]) {

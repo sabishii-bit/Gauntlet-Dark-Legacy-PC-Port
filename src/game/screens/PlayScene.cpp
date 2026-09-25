@@ -189,6 +189,7 @@ void PlayScene::close() {
     m_sumner.clear();
     m_portals.clear();
     m_transporters.clear();
+    m_switchCutscene.clear();
     m_fixtures.clear();
     m_transition.release();
     m_departure.clear();
@@ -899,6 +900,9 @@ u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
 }
 
 WorldCamera PlayScene::viewCamera() const {
+    if (m_switchCutscene.showing()) {
+        return *m_switchCutscene.camera();
+    }
     if (m_arrival.camera().active()) {
         return m_arrival.camera().camera();
     }
@@ -972,6 +976,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             m_audio.narrate(GameOver::kVoice, LevelSoundscape::Narrator::Primary);
         }
         return m_gameOver.finished() ? PlayOutcome::GameOver : PlayOutcome::Running;
+    }
+    if (m_switchCutscene.active()) {
+        updateSwitchCutscene(ticks, seconds);
+        return PlayOutcome::Running;
     }
     // A scroll holds everything else still until it has burnt away; the welcome's leads on
     // to the crystals. Leaving one burns it to the options menu's note and cuts off whatever
@@ -1173,6 +1181,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     updateBeam(ticks);
     m_world->updateTriggers(seconds, visitors());
     handleTriggerEvents();
+    if (m_switchCutscene.active()) {
+        updateAmbience();
+        return PlayOutcome::Running;
+    }
     if (!held && !m_messages.active() && m_world->isTower()) {
         updateSumnerVisit(seconds);
     }
@@ -1334,8 +1346,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
     // bars top and bottom, the status boxes hidden beneath the lower one.
-    const bool cut =
-        m_intro == Intro::Crystal || (m_promotion.active() && !spawning()) || relicCeremonyOn();
+    const bool cut = m_intro == Intro::Crystal || (m_promotion.active() && !spawning()) ||
+                     relicCeremonyOn() || m_switchCutscene.showing();
     m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
@@ -1380,8 +1392,8 @@ void PlayScene::setSaveSlot(s32 player, std::optional<usize> slot) {
 }
 
 bool PlayScene::canPause(s32 player) const {
-    return m_open && !m_leaving && !m_gameOver.active() && actor(player) != nullptr &&
-           !fallen(player);
+    return m_open && !m_leaving && !m_gameOver.active() && !m_switchCutscene.active() &&
+           actor(player) != nullptr && !fallen(player);
 }
 
 CameraView PlayScene::cameraView() const {
@@ -1480,6 +1492,9 @@ void PlayScene::handleTriggerEvents() {
     }
     for (const TriggerOpening& settled : m_world->takeTriggerSettled()) {
         m_audio.settled(settled);
+    }
+    for (const TriggerCameraCue& cue : m_world->takeTriggerCameraCues()) {
+        m_switchCutscene.begin(cue, m_world->layout(), m_world->isTower());
     }
 }
 

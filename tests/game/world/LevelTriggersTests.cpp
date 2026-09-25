@@ -61,6 +61,29 @@ struct SwitchFixture {
     f32 height() const { return scene.worldTransform(0)[3].y; }
 };
 
+TEST_CASE("switch camera cues occur on activation and expose target completion",
+          "[triggers][switch-camera]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,2,0,0,4,7,0,0,0,156,255]})");
+    CHECK(f.triggers.takeCameraCues().empty());
+    CHECK(f.triggers.settled(0));
+    CHECK(f.triggers.settled(-1));
+    const std::array party{TriggerVisitor{.position = Vec3{0}}};
+    f.step(kStep, party);
+    const auto cues = f.triggers.takeCameraCues();
+    REQUIRE(cues.size() == 1);
+    CHECK(cues[0].id == 7);
+    CHECK(cues[0].target == 0);
+    CHECK_FALSE(f.triggers.settled(0));
+    f.step(kStep, party);
+    CHECK(f.triggers.takeCameraCues().empty());
+    for (int frame = 0; frame < 300; ++frame) {
+        f.step(kStep, party);
+    }
+    CHECK(f.triggers.settled(0));
+    CHECK(f.triggers.takeCameraCues().empty());
+}
+
 TEST_CASE("closing and opening switches can reuse the same lift", "[game][world][triggers]") {
     SwitchFixture f(R"(
       {"info":0,"position":[0,0,0],"params":[0,0,2,0,2,255,0,0,0,0,0,0]},
@@ -398,6 +421,10 @@ TEST_CASE("a visitor sets off a trigger, opening its chain, once", "[game][world
     f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.trigger(1).fired);
     REQUIRE(f.triggers.trigger(2).fired); // the chain
+    const auto cameraCues = f.triggers.takeCameraCues();
+    REQUIRE(cameraCues.size() == 2);
+    CHECK(cameraCues[0].id == f.triggers.trigger(1).id);
+    CHECK(cameraCues[1].id == f.triggers.trigger(2).id);
     REQUIRE(f.triggers.opened(8));
     REQUIRE_FALSE(f.animator.held(0));
     // The gate plays its turn once and stays open.
@@ -507,6 +534,7 @@ TEST_CASE("what the party already qualifies for opens at once when the level sta
     const std::vector<TriggerVisitor> party{Fixture::visitor(Vec3{0.0f, 0.0f, 0.0f}, 15)};
     f.triggers.openMet(party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.trigger(0).fired);
+    CHECK(f.triggers.takeCameraCues().empty());
     REQUIRE(f.triggers.alphaOf(6) == 0.0f);
     REQUIRE_FALSE(f.collision.solid(6));
     REQUIRE_FALSE(f.triggers.trigger(1).fired); // gates want a visitor

@@ -59,6 +59,7 @@ public:
     /** Fires the triggers the visitors stand in and carries the fields' fades on. */
     void updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors);
     const LevelTriggers& triggers() const { return m_triggers; }
+    std::vector<TriggerCameraCue> takeTriggerCameraCues() { return m_triggers.takeCameraCues(); }
 
     const WorldLayout& layout() const { return m_layout; }
     const WorldScene& scene() const { return m_scene; }
