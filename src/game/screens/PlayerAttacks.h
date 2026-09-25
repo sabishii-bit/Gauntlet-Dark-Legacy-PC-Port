@@ -100,6 +100,11 @@ private:
         u32 strike = 0;
         usize actor = 0;
         s32 row = -1;
+        struct Contact {
+            s32 target = -1;
+            f32 remaining = 0;
+        };
+        std::vector<Contact> contacts;
     };
     std::vector<StrikeSource> m_strikeSources;
     /** A potion's magic ringing a character: it goes about with them and harms what it

@@ -5,6 +5,7 @@
 
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -34,6 +35,225 @@ struct Fixture {
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
     }
 };
+
+std::filesystem::path turboAssets() {
+    const auto root = test::scratchDirectory("turbo-contacts");
+    for (const auto* name : {"PLAYERS/WAR/YEL", "MONSTERS/GRU"}) {
+        const auto dir = root / name;
+        std::filesystem::create_directories(dir);
+        writeTextFile(dir / "body.obj",
+                      "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+        writeTextFile(dir / "objects.json", R"({"objects":[
+          {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+        writeFile(dir / "skin.png", test::kTinyPng);
+        writeTextFile(dir / "textures.json", R"({"bitmaps":[
+          {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    }
+    writeTextFile(root / "MONSTERS/GRU/animations.json", R"({"trees":[{"name":"GRU1",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"READY","frames":60,"rate":30}]}]})");
+    writeTextFile(root / "PLAYERS/WAR/YEL/animations.json", R"({"trees":[{"name":"WAR_YEL",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[]}]})");
+    std::filesystem::create_directories(root / "PLAYERS/WAR/ANIM");
+    writeTextFile(root / "PLAYERS/WAR/ANIM/animations.json", R"({"trees":[{"name":"WAR",
+      "nodes":[{"name":"BODY","parent":-1,"position":[0,0,0]}],"sequences":[
+      {"name":"READY","frames":60,"rate":30},
+      {"name":"ATTPWRB","frames":60,"rate":30},
+      {"name":"ATTPWRC","frames":60,"rate":30}]}]})");
+    std::filesystem::create_directories(root / "pdata");
+    writeTextFile(root / "pdata/WAR.json", R"({"height":6,"width":2,
+      "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
+      "moves":{"turboB":0,"turboC1":1},"moveStrikes":[
+      {"type":4,"startFrame":1,"radius":12,"arc":-1,"delay":0.1,"amount":50},
+      {"type":2,"startFrame":1,"hitRadius":10,"arc":-1,"offset":[0,9,2],
+       "speedMin":30,"speedMax":30,"maxTime":6,"amount":70,"flags":64,
+       "damageType":1048576}]})");
+    return root;
+}
+
+TEST_CASE("turbo contacts damage nearby enemies in every direction and reject distant floors",
+          "[game][screens][player-attacks][turbo-contacts]") {
+    const auto root = turboAssets();
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    EnemyScales scales;
+    scales.health = 100;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    std::array<s32, 4> ids{};
+    const std::array positions{Vec3{0, 0, 5}, Vec3{0, 0, -5}, Vec3{0, 40, 5}, Vec3{0, 0, 50}};
+    for (usize i = 0; i < positions.size(); ++i) {
+        EnemySpawn spawn;
+        spawn.kind = kGruntKind;
+        spawn.placed = true;
+        spawn.position = positions[i];
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id);
+        ids[i] = *id;
+    }
+    const f32 before = enemies.healthOf(ids[0]);
+    player.turbo.add(100);
+    for (s32 frame = 0; frame < 30; ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30,
+                               frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+        f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+    }
+    CHECK(enemies.healthOf(ids[0]) < before);
+    CHECK(enemies.healthOf(ids[1]) == enemies.healthOf(ids[0]));
+    CHECK(enemies.healthOf(ids[2]) == before);
+    CHECK(enemies.healthOf(ids[3]) == before);
+    CHECK(player.turbo.held() == 60);
+    f.attacks.clear();
+    f.opponents.close();
+}
+
+TEST_CASE("flying turbo strikes reach short enemies without dealing damage every frame",
+          "[game][screens][player-attacks][turbo-contacts]") {
+    const auto root = turboAssets();
+    for (const s32 hz : {30, 60, 120}) {
+        CAPTURE(hz);
+        Fixture f;
+        REQUIRE(f.classes.load(root / "pdata"));
+        f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+        auto& player = f.players[0];
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        EnemyScales scales;
+        scales.health = 100;
+        auto& enemies = f.opponents.enemies();
+        enemies.open(f.device, root, nullptr, 4, scales, 1);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        EnemySpawn spawn;
+        spawn.kind = kGruntKind;
+        spawn.placed = true;
+        spawn.position = Vec3{0, 0, 20};
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id);
+        const f32 before = enemies.healthOf(*id);
+        player.turbo.add(100);
+        const f32 seconds = 1.0f / static_cast<f32>(hz);
+        s32 contacts = 0;
+        for (s32 frame = 0; frame < hz * 2; ++frame) {
+            player.figure->animate(0, 1, seconds,
+                                   frame == 0 ? PlayerDeed::TurboFull : PlayerDeed::None);
+            f.attacks.updateTurbo(0, 1, seconds, f.players, [](s32, usize) {});
+            const f32 prior = enemies.healthOf(*id);
+            f.attacks.updateStrikes(seconds, f.players, f.targets);
+            contacts += enemies.healthOf(*id) < prior ? 1 : 0;
+        }
+        CHECK(enemies.healthOf(*id) < before);
+        CHECK(contacts == 1);
+        f.attacks.clear();
+        f.opponents.close();
+    }
+}
+
+TEST_CASE("every exported class can damage enemies with both turbo attacks",
+          "[game][screens][player-attacks][turbo-roster][unpacked]") {
+    const auto root = test::unpackedOrSkip("pdata/JES.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+    for (s32 character = 0; character < kSumnerClass; ++character) {
+        CAPTURE(classCode(character));
+        for (const auto deed : {PlayerDeed::TurboStrong, PlayerDeed::TurboFull}) {
+            CAPTURE(static_cast<s32>(deed));
+            Fixture f;
+            REQUIRE(f.classes.load(root / "pdata"));
+            f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1},
+                             f.players);
+            auto& player = f.players[0];
+            player.actor.save().character = character;
+            player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+            REQUIRE(player.figure);
+            REQUIRE(player.figure->animator().canBegin(deed));
+            auto& enemies = f.opponents.enemies();
+            EnemyScales scales;
+            scales.health = 100;
+            enemies.open(f.device, root, nullptr, 4, scales, 1);
+            REQUIRE(enemies.loadKind(kGruntKind));
+            EnemySpawn spawn;
+            spawn.kind = kGruntKind;
+            spawn.placed = true;
+            spawn.position = Vec3{0, 0, -5};
+            const auto near = enemies.spawn(spawn, {});
+            REQUIRE(near);
+            spawn.position.z = 35;
+            const auto far = enemies.spawn(spawn, {});
+            REQUIRE(far);
+            const f32 before = enemies.healthOf(*near);
+            player.turbo.add(100);
+            for (s32 frame = 0; frame < 150; ++frame) {
+                player.figure->animate(0, 2, 1.0f / 30, frame == 0 ? deed : PlayerDeed::None);
+                f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+                f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+                f.effects.update(1.0f / 30);
+            }
+            CHECK(enemies.healthOf(*near) < before);
+            if (deed == PlayerDeed::TurboFull) {
+                CHECK(enemies.healthOf(*far) < before);
+            }
+            f.attacks.clear();
+            f.opponents.close();
+        }
+    }
+}
+
+TEST_CASE("Jester turbo damage reaches bosses great creatures and generators",
+          "[game][screens][player-attacks][turbo-roster][unpacked]") {
+    const auto root = test::unpackedOrSkip("pdata/JES.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELG/animations.json");
+    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& player = f.players[0];
+    player.actor.save().character = 7;
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    auto& bosses = f.opponents.bosses();
+    auto& critters = f.opponents.critters();
+    auto& enemies = f.opponents.enemies();
+    auto& generators = f.opponents.generators();
+    bosses.open(f.device, root, nullptr, {}, 'G');
+    REQUIRE(bosses.spawn(41, {0, 0, -5}, 0));
+    critters.open(f.device, root, nullptr, {}, 'G');
+    const auto golem = critters.spawn(CombatantKind::Golem, {5, 0, 0}, 0);
+    REQUIRE(golem);
+    enemies.open(f.device, root, nullptr, 4, {}, 1);
+    ItemInfo generator;
+    generator.type = ItemInfo::kGenerator;
+    generator.name = "BOSSGEN";
+    generator.hitPoints = 500;
+    generator.height = 6;
+    generator.xSize = 2;
+    generator.zSize = 2;
+    Mat4 placement{1};
+    placement[3] = Vec4{-5, 0, 0, 1};
+    REQUIRE(generators.placeBoss(f.device, generator, f.weapons, enemies, kGruntKind, placement,
+                                 nullptr));
+    const f32 bossHealth = bosses.view().health;
+    const f32 golemHealth = critters.healthOf(*golem);
+    const f32 generatorHealth = generators.healthOf(0);
+    player.turbo.add(100);
+    for (s32 frame = 0; frame < 45; ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30,
+                               frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+        f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+    }
+    CHECK(bosses.view().health < bossHealth);
+    CHECK(critters.healthOf(*golem) < golemHealth);
+    CHECK(generators.healthOf(0) < generatorHealth);
+    f.attacks.clear();
+    f.opponents.close();
+}
 
 TEST_CASE("retail item attacks play authored effects and spend one charge on the animation event",
           "[game][items][unpacked]") {

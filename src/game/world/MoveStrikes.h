@@ -20,6 +20,8 @@ struct StrikeHit {
     f32 arc = -1.0f;
     Vec3 facing{0.0f, 0.0f, 1.0f};
     f32 damage = 0.0f;
+    Vec3 from{0.0f}; ///< beginning of a flying strike's swept contact segment
+    bool swept = false;
 
     /** Whether something standing at `position` is caught by it. */
     bool reaches(const Vec3& position, f32 targetRadius, f32 targetHeight) const;
@@ -38,6 +40,7 @@ public:
         u32 id = 0;
         s32 owner = 0;
         bool flies = false;
+        bool collidesWorld = true;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Vec3 facing{0.0f, 0.0f, 1.0f};
         f32 speed = 0.0f;
