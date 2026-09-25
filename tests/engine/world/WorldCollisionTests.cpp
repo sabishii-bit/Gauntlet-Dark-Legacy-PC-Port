@@ -75,6 +75,42 @@ TEST_CASE("a cylinder is pushed out of walls but left alone elsewhere", "[world]
     REQUIRE(over.x == Approx(4.8f));
 }
 
+TEST_CASE("world query flags distinguish walkable surfaces from wall-only geometry",
+          "[world][collision]") {
+    auto floor = triangle({-10, -5, -10}, {10, -5, -10}, {0, -5, 10}, {0, 1, 0});
+    auto wall = triangle({5, 0, -10}, {5, 3, -10}, {5, 3, 10}, {-1, 0, 0});
+    WorldCollision collision;
+    // Temple's E1#32 points upward but has only flag 2. Normal direction alone must
+    // not turn it into a floor beneath holes in the walkable mesh or beyond the stairs.
+    for (const u32 flags : {0U, 2U, 0x800U}) {
+        CAPTURE(flags);
+        floor.objectFlags = flags;
+        collision.build({floor});
+        CHECK_FALSE(collision.floorAt({0, 0, 0}, 6, 6));
+    }
+    for (const u32 flags : {4U, 8U, 0x10U, 0x20U, 0x200U}) {
+        CAPTURE(flags);
+        floor.objectFlags = flags;
+        collision.build({floor});
+        REQUIRE(collision.floorAt({0, 0, 0}, 6, 6));
+        CHECK(collision.floorAt({0, 0, 0}, 6, 6)->y == Approx(-5));
+    }
+    const Vec3 centre{4.8f, 0, 1};
+    wall.objectFlags = 4; // a floor-only object is not a horizontal blocker
+    collision.build({wall});
+    CHECK(collision.resolveWalls(centre, 0.5f, 0.2f, 2.8f) == centre);
+    wall.objectFlags = 2;
+    collision.build({wall});
+    CHECK(collision.resolveWalls(centre, 0.5f, 0.2f, 2.8f).x == Approx(4.5f));
+    // Moving geometry keeps the same query policy after transformation.
+    floor.objectFlags = 2;
+    floor.object = 3;
+    collision.build({floor});
+    collision.setMovingObjects(std::array<s32, 1>{3});
+    collision.setObjectTransform(3, glm::translate(Mat4{1}, Vec3{0, 5, 0}));
+    CHECK_FALSE(collision.floorAt({0, 0, 0}, 6, 6));
+}
+
 TEST_CASE("a moving object's triangles stay in its own space and follow its transform",
           "[world][collision]") {
     WorldCollision collision;

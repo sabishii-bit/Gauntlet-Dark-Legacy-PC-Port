@@ -312,7 +312,8 @@ std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above,
     const f32 lowest = position.y - below;
     eachTriangle(
         position.x, position.z, position.x, position.z, [&](const CollisionTriangle& triangle) {
-            if (triangle.normal.y < kFloorNormalY || !insideXZ(triangle, position.x, position.z)) {
+            if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
+                triangle.normal.y < kFloorNormalY || !insideXZ(triangle, position.x, position.z)) {
                 return;
             }
             const Vec3& v = triangle.vertices[0];
@@ -336,7 +337,8 @@ Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f3
         bool pushed = false;
         eachTriangle(out.x - reach, out.z - reach, out.x + reach, out.z + reach,
                      [&](const CollisionTriangle& triangle) {
-                         if (std::abs(triangle.normal.y) >= kFloorNormalY) {
+                         if ((triangle.objectFlags & kWallQueryFlags) == 0 ||
+                             std::abs(triangle.normal.y) >= kFloorNormalY) {
                              return; // a floor or a ceiling
                          }
                          Vec2 wallNormal{triangle.normal.x, triangle.normal.z};
