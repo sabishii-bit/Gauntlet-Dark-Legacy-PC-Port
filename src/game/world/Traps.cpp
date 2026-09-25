@@ -41,6 +41,7 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
             log::warn("Traps: no figure {} in the item archive", name);
         }
         trap->box = trap->figure.obstacle(info);
+        trap->figure.gateParticlesOnSequence(true);
         trap->box.solid = false;
         trap->ticksLeft = restTicks(*trap);
         m_traps.push_back(std::move(trap));
@@ -108,10 +109,11 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
     return hits;
 }
 
-void Traps::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
+void Traps::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                 const CameraFrame* camera) const {
     for (const std::unique_ptr<Trap>& trap : m_traps) {
         if (trap->shown) {
-            trap->figure.draw(device, clip, lighting);
+            trap->figure.draw(device, clip, lighting, 1, 1, camera);
         }
     }
 }

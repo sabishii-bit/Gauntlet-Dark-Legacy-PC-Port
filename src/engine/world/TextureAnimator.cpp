@@ -9,6 +9,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/TreeParticles.h"
 
 namespace gdl {
 
@@ -306,6 +307,35 @@ void TextureAnimator::apply(TreeModel& model, const TreeInfo& tree, u32 sequence
 void TextureAnimator::step(WorldScene& scene, u32 ticks) {
     step(ticks);
     apply(scene);
+}
+
+void TextureAnimator::apply(TreeParticles& particles, const TreeInfo& tree, u32 sequence,
+                            s32 frame) const {
+    const auto show = [&](const TextureMotion& moved) {
+        if (moved.frame != nullptr) {
+            particles.setTextureFrame(moved.slot, *moved.frame);
+        }
+    };
+    for (usize i = 0; i < size(); ++i) {
+        if (!keyed(i)) {
+            show(motion(i));
+        }
+    }
+    if (sequence >= tree.sequences.size()) {
+        return;
+    }
+    const auto& selected = tree.sequences[sequence];
+    frame = selected.effectFrame(frame);
+    for (s32 i = 0; i < selected.textureAnimationCount; ++i) {
+        if (const auto moved = motionAt(selected.textureAnimationStart + i, frame)) {
+            show(*moved);
+        }
+    }
+    for (const auto& node : tree.nodes) {
+        if (const auto moved = motionAt(node.textureAnimation, frame)) {
+            show(*moved);
+        }
+    }
 }
 
 } // namespace gdl

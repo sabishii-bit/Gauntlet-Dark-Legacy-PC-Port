@@ -7,6 +7,7 @@
 #include "engine/assets/ItemArchive.h"
 #include "engine/core/Types.h"
 #include "engine/world/ParticleField.h"
+#include "engine/world/TreePose.h"
 
 namespace gdl {
 /** Authored particle nodes of an animation tree. The archive owns their textures;
@@ -14,8 +15,10 @@ namespace gdl {
 class TreeParticles {
 public:
     void bind(const TreeInfo& tree, ItemArchive& archive, RenderDevice& device, const Mat4& root,
-              std::span<const Mat4> pose);
+              std::span<const Mat4> pose, std::span<TextureSet* const> lenders = {});
     void step(f32 seconds, const Mat4& root, std::span<const Mat4> pose);
+    void setEmitting(bool emitting);
+    void setLocalScales(std::span<const NodePose> poses);
     void setTextureFrame(u32 slot, const Texture& texture);
     /** Ends emission without discarding particles already in flight. */
     void stop();

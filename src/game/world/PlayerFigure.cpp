@@ -55,18 +55,20 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
     const std::string_view costume = colorCode(save.color);
     const std::filesystem::path directory = costumeDirectory(root, save);
     auto figure = std::make_unique<PlayerFigure>();
-    if (!figure->m_models.load(directory) || !figure->m_textures.load(directory) ||
-        !figure->m_trees.load(directory)) {
+    if (!figure->m_costumeArchive.models.load(directory) ||
+        !figure->m_costumeArchive.textures.load(directory) ||
+        !figure->m_costumeArchive.trees.load(directory)) {
         log::warn("Tower: no model for the {} {} under {}", costume, cls, directory.string());
         return nullptr;
     }
-    const auto tree = figure->m_trees.find(std::format("{}_{}", cls, costume));
-    if (!tree.has_value() || !figure->m_model.bind(figure->m_trees.tree(*tree), figure->m_models,
-                                                   figure->m_textures, device)) {
+    const auto tree = figure->m_costumeArchive.trees.find(std::format("{}_{}", cls, costume));
+    if (!tree.has_value() || !figure->m_model.bind(figure->m_costumeArchive.trees.tree(*tree),
+                                                   figure->m_costumeArchive.models,
+                                                   figure->m_costumeArchive.textures, device)) {
         log::warn("Tower: the {} {} figure could not be built", costume, cls);
         return nullptr;
     }
-    figure->m_costume = &figure->m_trees.tree(*tree);
+    figure->m_costume = &figure->m_costumeArchive.trees.tree(*tree);
     figure->m_directory = directory;
     figure->m_effectDirectory =
         classFolder(root, save.character, std::format("SFX{}", colorCode(save.color)));
@@ -96,10 +98,13 @@ void PlayerFigure::loadMissile(const std::filesystem::path& root, const Characte
     const s32 level = save.progress().appearanceLevel();
     bool inCostume = true;
     const std::string name = MissileSpec::treeName(save.character, level, &inCostume);
+    m_missileName = name;
+    m_missileArchive = inCostume ? &m_costumeArchive : &m_effects;
     bool bound = false;
     if (inCostume) {
-        if (const auto tree = m_trees.find(name); tree.has_value()) {
-            bound = m_missile.bind(m_trees.tree(*tree), m_models, m_textures, device);
+        if (const auto tree = m_costumeArchive.trees.find(name); tree.has_value()) {
+            bound = m_missile.bind(m_costumeArchive.trees.tree(*tree), m_costumeArchive.models,
+                                   m_costumeArchive.textures, device);
         }
     } else if (m_effects.load(m_effectDirectory)) {
         if (const auto tree = m_effects.trees.find(name); tree.has_value()) {
@@ -126,10 +131,10 @@ void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
         tier = 2;
     }
     std::string weapon{kHeldWeapon};
-    if (!m_models.find(weapon).has_value()) {
+    if (!m_costumeArchive.models.find(weapon).has_value()) {
         weapon = std::format("WEAP_{}_HD{}", colorCode(save.color), tier);
     }
-    if (!m_models.find(weapon).has_value()) {
+    if (!m_costumeArchive.models.find(weapon).has_value()) {
         log::warn("Tower: no {} in {}", weapon, m_directory.string());
         return;
     }
@@ -150,7 +155,7 @@ void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
     held.name = weapon;
     held.object = weapon;
     m_weaponTree.nodes.push_back(held);
-    if (!m_weapon.bind(m_weaponTree, m_models, m_textures, device)) {
+    if (!m_weapon.bind(m_weaponTree, m_costumeArchive.models, m_costumeArchive.textures, device)) {
         m_handNode = -1;
     }
 }

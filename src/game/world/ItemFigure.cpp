@@ -139,21 +139,45 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     m_transform = itemPlacement(m_position, instance.rotation);
     m_tree = nullptr;
     m_index = -1;
+    m_player.stop();
+    m_particles = {};
+    m_textures.clear();
+    m_textureFrames = 0;
+    m_gateParticles = false;
     const auto tree = items.loaded() ? items.trees.find(name) : std::nullopt;
-    if (!tree.has_value() ||
-        !m_model.bind(items.trees.tree(*tree), items.models, items.textures, device)) {
+    if (!tree.has_value()) {
         return false;
     }
     m_tree = &items.trees.tree(*tree);
+    const bool mesh = m_model.bind(*m_tree, items.models, items.textures, device);
+    const bool wantsMesh = std::ranges::any_of(m_tree->nodes, [](const TreeNodeInfo& node) {
+        return !node.object.empty() || std::ranges::any_of(node.objectFrames, [](const auto& run) {
+            return !run.object.empty();
+        });
+    });
     m_pose.rest(*m_tree);
+    m_particles.bind(*m_tree, items, device, m_transform, m_pose.matrices());
+    if (!mesh && (wantsMesh || m_particles.field().size() == 0)) {
+        m_tree = nullptr;
+        return false;
+    }
+    m_textures.bind(items.trees.textureAnimations(), items.textures, device);
     play(0, true);
     return true;
+}
+
+void ItemFigure::gateParticlesOnSequence(bool enabled) {
+    // AnimateNode's particle branch (80011334): sequence zero sets 0x200000
+    // to suppress births, while MBDrawPsys continues aging existing particles.
+    m_gateParticles = enabled;
+    m_particles.setEmitting(!enabled || m_index != 0);
 }
 
 void ItemFigure::play(s32 index, bool loop) {
     const bool hadPose = m_index >= 0;
     m_index = index;
     m_loop = loop;
+    m_particles.setEmitting(!m_gateParticles || index != 0);
     if (m_tree == nullptr || index < 0 || static_cast<usize>(index) >= m_tree->sequences.size()) {
         return;
     }
@@ -166,17 +190,28 @@ void ItemFigure::play(s32 index, bool loop) {
         m_pose.evaluate(*m_tree, static_cast<u32>(index), 0.0f);
     }
     m_model.setFrame(static_cast<u32>(index), 0);
+    m_particles.setLocalScales(m_pose.poses());
+    m_textures.apply(m_model, *m_tree, static_cast<u32>(index), 0);
+    m_textures.apply(m_particles, *m_tree, static_cast<u32>(index), 0);
 }
 
 void ItemFigure::update(f32 seconds) {
-    if (m_tree == nullptr || !m_player.playing()) {
+    if (m_tree == nullptr) {
         return;
     }
     m_player.advance(seconds, m_loop);
-    if (!m_holdPose) {
+    if (!m_holdPose && m_player.playing()) {
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
     }
     m_model.setFrame(m_player.sequence(), static_cast<s32>(m_player.frame()));
+    m_textureFrames += seconds * ParticleDescriptor::kFrameRate;
+    const auto frames = static_cast<u32>(m_textureFrames);
+    m_textureFrames -= static_cast<f32>(frames);
+    m_textures.step(frames);
+    m_textures.apply(m_model, *m_tree, m_player.sequence(), static_cast<s32>(m_player.frame()));
+    m_textures.apply(m_particles, *m_tree, m_player.sequence(), static_cast<s32>(m_player.frame()));
+    m_particles.setLocalScales(m_pose.poses());
+    m_particles.step(seconds, m_transform, m_pose.matrices());
 }
 
 bool ItemFigure::finished() const {
@@ -213,10 +248,12 @@ s32 ItemFigure::ticksOf(s32 index) const {
 }
 
 void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                      f32 alpha, f32 scale) const {
+                      f32 alpha, f32 scale, const CameraFrame* camera) const {
     if (m_tree != nullptr) {
         m_model.draw(device, clip, glm::scale(m_transform, Vec3{scale}), lighting,
-                     m_pose.matrices(), nullptr, alpha);
+                     m_pose.matrices(), camera, alpha);
+        const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
+        m_particles.draw(device, clip, frame.right, frame.up);
     }
 }
 

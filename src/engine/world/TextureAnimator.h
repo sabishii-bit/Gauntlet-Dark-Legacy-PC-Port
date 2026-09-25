@@ -14,6 +14,7 @@
 namespace gdl {
 
 class TreeModel;
+class TreeParticles;
 
 /** What an animation shows now: the frame its cycle has reached, or how far its scroll has
  * slid a coordinate and how much it has stretched it. */
@@ -75,6 +76,8 @@ public:
     /** Resets a shared model, then applies clock, sequence and texture-node overrides in
      * that order. Sequence overrides must not leak into the next instance's draw. */
     void apply(TreeModel& model, const TreeInfo& tree, u32 sequence, s32 frame) const;
+    /** Resolves particle sprite frames using the same clock and keyed sequence. */
+    void apply(TreeParticles& particles, const TreeInfo& tree, u32 sequence, s32 frame) const;
     /** Advances `ticks` game frames, showing each step. */
     void step(WorldScene& scene, u32 ticks = 1);
 

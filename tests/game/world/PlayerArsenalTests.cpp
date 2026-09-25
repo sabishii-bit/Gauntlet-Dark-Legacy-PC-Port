@@ -33,6 +33,34 @@ struct Fixture {
     }
 };
 
+TEST_CASE("equipped gauntlets route the shooter's textures into complete projectile playback",
+          "[game][player-arsenal][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("PLAYERS/WAR/YEL/animations.json");
+    test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
+    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    Fixture f;
+    f.arsenal.clear();
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    auto figure = PlayerFigure::load(f.device, root, f.actor.save(), false);
+    REQUIRE(figure);
+    f.arsenal.bind({f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
+    f.actor.save().progress().inventory.addPowerup(powerup::kSpecial, powerup::kLeftGauntlet, 0,
+                                                   60);
+    f.arsenal.launchGauntlet(f.actor, figure.get(), true);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    REQUIRE(f.arsenal.missiles().missile(0).effect != 0);
+    f.arsenal.missiles().update(0.1f, nullptr);
+    const auto& field = f.arsenal.missiles().visuals().effect(0).particles.field();
+    REQUIRE(field.size() == 2);
+    REQUIRE(field.particleCount() > 0);
+    REQUIRE(figure->effects());
+    const auto slot = figure->effects()->textures.find("ELEC_SPARK");
+    REQUIRE(slot);
+    CHECK(field.textureOf(1) == &figure->effects()->textures.texture(f.device, *slot));
+    f.arsenal.clear(); // borrowed figure archives must outlive every missile and tail
+}
+
 TEST_CASE("super shot spends one charge per volley and preserves the last charged shot",
           "[game][items][player-arsenal]") {
     Fixture f;
@@ -89,7 +117,7 @@ TEST_CASE("Skorne gauntlets use their own elemental projectiles without consumin
         REQUIRE(f.arsenal.missiles().count() == 1);
         const auto& missile = f.arsenal.missiles().missile(0);
         CHECK(missile.spec->model == (left ? "BOSSG_ELEC" : "BOSSG_ACID"));
-        CHECK((missile.flags & 0xF) == (left ? 2 : 4));
+        CHECK((missile.flags & 0xFU) == (left ? 2U : 4U));
         CHECK(missile.damage == 5);
         CHECK(inventory.powerup(powerup::kWeapon, powerup::kSuperShot)->charge == 5);
     }

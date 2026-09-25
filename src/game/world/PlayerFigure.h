@@ -3,14 +3,13 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "engine/assets/AnimationSet.h"
 #include "engine/assets/ItemArchive.h"
-#include "engine/assets/ModelSet.h"
 #include "engine/assets/SoundSet.h"
-#include "engine/assets/TextureSet.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/world/TreeModel.h"
@@ -61,6 +60,8 @@ public:
     void setAttackSpeed(bool rapid, bool speed) { m_animator.setAttackSpeed(rapid, speed); }
     const PlayerAnimator& animator() const { return m_animator; }
     const TreeModel& missile() const { return m_missile; }
+    ItemArchive* missileArchive() { return m_missileArchive; }
+    std::string_view missileTree() const { return m_missileName; }
     SoundSet& voice() { return m_voice; }
     std::optional<u32> throwSound() const { return m_throwSound; }
     /** Lazily loads the costume colour's effect archive; null when unavailable. */
@@ -81,9 +82,7 @@ private:
                      RenderDevice& device);
     void loadActions(const std::filesystem::path& root, const CharacterSave& save, bool enter);
 
-    ModelSet m_models;
-    TextureSet m_textures;
-    AnimationSet m_trees;
+    ItemArchive m_costumeArchive;
     AnimationSet m_actions;
     TreeModel m_model;
     PlayerAnimator m_animator;
@@ -102,6 +101,8 @@ private:
     bool m_familiarPending = false;
     bool m_familiarReleased = false;
     TreeModel m_missile;
+    ItemArchive* m_missileArchive = nullptr;
+    std::string m_missileName;
     SoundSet m_voice;
     std::optional<u32> m_throwSound;
     std::filesystem::path m_effectDirectory;

@@ -14,6 +14,8 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/world/EffectTrees.h"
+
 namespace gdl::game {
 
 /** How a class's thrown weapon flies, from the original's tables. */
@@ -50,11 +52,14 @@ struct MissileLaunch {
     f32 reach = 15.0f; ///< how far off it comes back down to just under where it left
     const MissileSpec* spec = nullptr;
     const TreeModel* model = nullptr; ///< must outlive the missile
-    std::optional<Vec3> velocity;     ///< set, it flies off at this instead of being lobbed
-    s32 potion = 0;                   ///< the kind of potion it is, which bursts where it lands
-    f32 potency = 0.0f;               ///< the magic power its burst goes off with
-    f32 damage = 0.0f;                ///< what it does to what it hits
-    f32 scale = 1.0f;                 ///< how large it is drawn: a strong throw's is doubled
+    ItemArchive* archive = nullptr;   ///< optional full tree playback; outlives clear()
+    std::string_view tree;
+    TextureSet* textureLender = nullptr; ///< the shooter's SFX textures, outlive clear()
+    std::optional<Vec3> velocity;        ///< set, it flies off at this instead of being lobbed
+    s32 potion = 0;                      ///< the kind of potion it is, which bursts where it lands
+    f32 potency = 0.0f;                  ///< the magic power its burst goes off with
+    f32 damage = 0.0f;                   ///< what it does to what it hits
+    f32 scale = 1.0f;                    ///< how large it is drawn: a strong throw's is doubled
     MissileWallSound wallSound = MissileWallSound::Level;
     u32 flags = 0;
 };
@@ -114,6 +119,7 @@ public:
         f32 scale = 1.0f;
         const MissileSpec* spec = nullptr;
         const TreeModel* model = nullptr;
+        u32 effect = 0;
         MissileWallSound wallSound = MissileWallSound::Level;
         u32 flags = 0;
         std::vector<s32> pierced;
@@ -130,6 +136,9 @@ public:
 
     /** Sets a missile flying; false when the launch names no spec. */
     bool launch(const MissileLaunch& launch);
+    /** Binds rendering separately from physics. Texture lenders outlive clear(). */
+    void bindVisuals(RenderDevice& device, std::span<TextureSet* const> lenders = {});
+    const EffectTrees& visuals() const { return m_visuals; }
     /** Flies every missile on by `seconds`; those a wall or floor stops are taken away. */
     void update(f32 seconds, const WorldCollision* collision,
                 std::span<const MissileTarget> targets = {});
@@ -151,6 +160,8 @@ private:
     std::vector<Missile> m_missiles;
     std::vector<MissileImpact> m_impacts;
     f32 m_ricochetIn = 0;
+    RenderDevice* m_device = nullptr;
+    EffectTrees m_visuals;
 };
 
 } // namespace gdl::game

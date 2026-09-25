@@ -7,7 +7,8 @@
 
 namespace gdl {
 void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevice& device,
-                         const Mat4& root, std::span<const Mat4> pose) {
+                         const Mat4& root, std::span<const Mat4> pose,
+                         std::span<TextureSet* const> lenders) {
     m_field.clear();
     m_nodes.clear();
     const auto& templates = archive.trees.particleTemplates();
@@ -22,10 +23,22 @@ void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevic
             descriptor.direction = node.direction;
         }
         const Texture* texture = &device.whiteTexture();
-        const auto index = archive.textures.find(descriptor.texture);
+        auto index = archive.textures.find(descriptor.texture);
+        TextureSet* owner = &archive.textures;
+        if (!index.has_value()) {
+            for (TextureSet* lender : lenders) {
+                if (lender != nullptr) {
+                    index = lender->find(descriptor.texture);
+                    if (index.has_value()) {
+                        owner = lender;
+                        break;
+                    }
+                }
+            }
+        }
         if (index.has_value()) {
             try {
-                texture = &archive.textures.texture(device, *index);
+                texture = &owner->texture(device, *index);
             } catch (const std::exception& e) {
                 log::warn("Tree particles: texture {}: {}", descriptor.texture, e.what());
             }
@@ -35,7 +48,25 @@ void TreeParticles::bind(const TreeInfo& tree, ItemArchive& archive, RenderDevic
         const Mat4 at =
             i < pose.size() ? root * pose[i] : glm::translate(root, tree.worldPosition(i));
         m_field.start(descriptor, at, texture, static_cast<u32>(i + 1));
-        m_nodes.push_back({i, index});
+        // Borrowed indices are not slots of the owning archive's animator.
+        m_nodes.push_back({i, owner == &archive.textures ? index : std::nullopt});
+    }
+}
+
+void TreeParticles::setEmitting(bool emitting) {
+    for (usize i = 0; i < m_nodes.size(); ++i) {
+        m_field.setEmitting(i, emitting);
+    }
+}
+
+void TreeParticles::setLocalScales(std::span<const NodePose> poses) {
+    // MBDrawPsys (800CC880) multiplies width by node->scale.y. MBTreeSetScale
+    // writes only that node, not its descendants. The composed world matrix
+    // already positions the emitter; extracting its scale here double-counts
+    // ancestors and incorrectly fattens effects attached to enlarged actors.
+    for (usize i = 0; i < m_nodes.size(); ++i) {
+        const usize node = m_nodes[i].node;
+        m_field.setSpriteScale(i, node < poses.size() ? poses[node].scale.y : 1.0f);
     }
 }
 

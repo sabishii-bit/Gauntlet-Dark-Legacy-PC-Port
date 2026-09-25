@@ -113,8 +113,23 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     missile.model = launch.model;
     missile.wallSound = launch.wallSound;
     missile.flags = launch.flags;
+    if (m_device != nullptr && launch.archive != nullptr && !launch.tree.empty()) {
+        EffectTrees::Setting setting;
+        setting.persistent = true;
+        const std::array<TextureSet*, 1> lenders{launch.textureLender};
+        missile.effect = m_visuals.startSet(
+            *m_device, *launch.archive, launch.tree, missile.position, setting,
+            launch.textureLender != nullptr ? std::span{lenders} : std::span<TextureSet* const>{});
+        m_visuals.placeAt(missile.effect, transformOf(missile));
+    }
     m_missiles.push_back(missile);
     return true;
+}
+
+void PlayerMissiles::bindVisuals(RenderDevice& device, std::span<TextureSet* const> lenders) {
+    clear();
+    m_device = &device;
+    m_visuals.setTextureLenders(lenders);
 }
 
 f32 PlayerMissiles::damageFor(s32 stat) {
@@ -210,6 +225,13 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
             }
         }
     }
+    for (const Missile& missile : m_missiles) {
+        m_visuals.placeAt(missile.effect, transformOf(missile));
+        if (missile.age >= kLifeSeconds) {
+            m_visuals.finish(missile.effect);
+        }
+    }
+    m_visuals.update(seconds);
     std::erase_if(m_missiles, [](const Missile& m) { return m.age >= kLifeSeconds; });
 }
 
@@ -229,16 +251,19 @@ Mat4 PlayerMissiles::transformOf(const Missile& missile) {
 void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                           const CameraFrame* camera) const {
     for (const Missile& missile : m_missiles) {
-        if (missile.model != nullptr && missile.model->bound()) {
+        if (missile.effect == 0 && missile.model != nullptr && missile.model->bound()) {
             missile.model->draw(device, clip, transformOf(missile), lighting, {}, camera);
         }
     }
+    m_visuals.draw(device, clip, lighting, camera);
 }
 
 void PlayerMissiles::clear() {
     m_ricochetIn = 0;
     m_missiles.clear();
     m_impacts.clear();
+    m_visuals.clear();
+    m_device = nullptr;
 }
 
 std::vector<MissileImpact> PlayerMissiles::takeImpacts() {

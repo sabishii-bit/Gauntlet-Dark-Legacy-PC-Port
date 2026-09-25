@@ -207,14 +207,14 @@ TEST_CASE("an emitter's phases run their frames, then it stops or starts over",
     REQUIRE(emitter.particles().size() == 1);
     emitter.step(3); // into the fade, where the rate runs down from two a frame
     REQUIRE(emitter.phase() == ParticleEmitter::Phase::Fading);
-    REQUIRE(emitter.particles().size() == 5);
+    REQUIRE(emitter.particles().size() == 4); // two old births survive, two born on the fade tick
     emitter.step(3);
     emitter.step(1);
     emitter.step(1);
     REQUIRE(emitter.phase() == ParticleEmitter::Phase::Fading);
     emitter.step(1);
     REQUIRE(emitter.phase() == ParticleEmitter::Phase::Done);
-    REQUIRE(emitter.active()); // until the last particle dies
+    REQUIRE_FALSE(emitter.active()); // the final fade births have now lived their three frames
     emitter.step(4);
     REQUIRE_FALSE(emitter.active());
 
@@ -236,6 +236,85 @@ TEST_CASE("an emitter's phases run their frames, then it stops or starts over",
     REQUIRE(emitter.phase() == ParticleEmitter::Phase::Done);
     emitter.step(1);
     REQUIRE(emitter.particles().size() == 12);
+}
+
+TEST_CASE("particle batches preserve every birth across phase boundaries", "[world][particles]") {
+    for (const bool oneShot : {false, true}) {
+        for (const bool forever : {false, true}) {
+            ParticleDescriptor descriptor = ParticleDescriptor::fromTemplate(torchTemplate());
+            descriptor.delay = 2;
+            descriptor.emitFrames = 3;
+            descriptor.fadeFrames = 6;
+            descriptor.rate = {6, 0, 2, 0};
+            descriptor.oneShot = oneShot;
+            descriptor.forever = forever;
+            descriptor.maxParticles = 30;
+            ParticleEmitter single;
+            ParticleEmitter batched;
+            single.start(descriptor, Mat4{1}, 123);
+            batched.start(descriptor, Mat4{1}, 123);
+            for (const u32 frames : {4U, 7U, 15U, 2U, 40U}) {
+                INFO(oneShot << " " << forever << " " << frames);
+                const u32 ticks = frames > ParticleEmitter::kMostFramesAtOnce ? 1 : frames;
+                for (u32 i = 0; i < ticks; ++i) {
+                    single.step(1);
+                }
+                batched.step(frames);
+                REQUIRE(single.phase() == batched.phase());
+                REQUIRE(single.age() == batched.age());
+                REQUIRE(single.particles().size() == batched.particles().size());
+                for (usize i = 0; i < single.particles().size(); ++i) {
+                    CHECK(single.particles()[i].age == batched.particles()[i].age);
+                    CHECK(single.particles()[i].origin == batched.particles()[i].origin);
+                    CHECK(single.particles()[i].velocity == batched.particles()[i].velocity);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("emission gates preserve live tails and clocks without accumulating paused births",
+          "[world][particles]") {
+    ParticleDescriptor descriptor;
+    descriptor.emitFrames = ParticleDescriptor::kEndless;
+    descriptor.rate = {1, 1, 1, 1};
+    descriptor.particleLife = 10;
+    ParticleEmitter emitter;
+    emitter.start(descriptor, Mat4{1});
+    emitter.step(1);
+    REQUIRE(emitter.particles().size() == 1);
+    emitter.setEmitting(false);
+    emitter.step(3);
+    REQUIRE(emitter.age() == 4);
+    REQUIRE(emitter.particles().size() == 1);
+    REQUIRE(emitter.particles()[0].age == 3);
+    emitter.setEmitting(true);
+    emitter.step(1);
+    REQUIRE(emitter.particles().size() == 2);
+    emitter.finish();
+    emitter.step(10);
+    REQUIRE_FALSE(emitter.active());
+}
+
+TEST_CASE("particle sprite width uses explicit local scale rather than inherited matrix scale",
+          "[world][particles]") {
+    ParticleDescriptor descriptor;
+    descriptor.oneShot = true;
+    descriptor.maxParticles = 1;
+    descriptor.particleLife = 10;
+    descriptor.width = {2, 2, 2, 2};
+    ParticleEmitter emitter;
+    emitter.start(descriptor, glm::scale(Mat4{1}, Vec3{7}));
+    emitter.step(1);
+    for (const f32 scale : {1.0f, 3.0f}) {
+        emitter.setSpriteScale(scale);
+        ImmediateBatch batch;
+        batch.begin(PrimitiveTopology::TriangleList);
+        emitter.draw(batch, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+        batch.end();
+        REQUIRE(batch.triangles().size() == 6);
+        CHECK(batch.triangles()[1].position.x - batch.triangles()[0].position.x == 2 * scale);
+    }
 }
 
 } // namespace

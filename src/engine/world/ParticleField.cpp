@@ -119,6 +119,18 @@ void ParticleField::setTexture(usize index, const Texture& texture) {
     }
 }
 
+void ParticleField::setEmitting(usize index, bool emitting) {
+    if (index < m_entries.size()) {
+        m_entries[index].emitter.setEmitting(emitting);
+    }
+}
+
+void ParticleField::setSpriteScale(usize index, f32 scale) {
+    if (index < m_entries.size()) {
+        m_entries[index].emitter.setSpriteScale(scale);
+    }
+}
+
 void ParticleField::stop(usize index) {
     if (index < m_entries.size()) {
         m_entries[index].emitter.finish();
