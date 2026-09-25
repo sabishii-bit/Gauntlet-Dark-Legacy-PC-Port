@@ -9,6 +9,17 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("X-Ray follows the equipped slot rather than merely carried inventory",
+          "[game][players][powerups][xray]") {
+    Inventory inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kXRay, 0, 30);
+    REQUIRE(PowerupEffects::of(inventory).xray());
+    for (auto& slot : inventory.powerups) {
+        slot.on = false;
+    }
+    REQUIRE_FALSE(PowerupEffects::of(inventory).xray());
+}
+
 TEST_CASE("worn powerups add up to what they do", "[game][players][powerups]") {
     Inventory inventory;
     PowerupEffects effects = PowerupEffects::of(inventory);

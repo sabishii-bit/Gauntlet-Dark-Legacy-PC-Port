@@ -212,9 +212,11 @@ s32 ItemFigure::ticksOf(s32 index) const {
                                       AnimationPlayer::kRateUnit * kTicksPerSecond));
 }
 
-void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
+void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                      f32 alpha, f32 scale) const {
     if (m_tree != nullptr) {
-        m_model.draw(device, clip, m_transform, lighting, m_pose.matrices());
+        m_model.draw(device, clip, glm::scale(m_transform, Vec3{scale}), lighting,
+                     m_pose.matrices(), nullptr, alpha);
     }
 }
 

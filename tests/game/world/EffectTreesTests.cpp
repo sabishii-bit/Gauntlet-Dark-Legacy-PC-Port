@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "formats/AnimationTree.h"
 #include "game/enemies/LegendItems.h"
 #include "game/world/EffectTrees.h"
 
@@ -502,6 +503,71 @@ TEST_CASE("the classes' turbo effects play through, flip-books that start late a
             }
             REQUIRE(effects.count() == 0);
         }
+    }
+}
+
+TEST_CASE("every player effect export retains retail node and sequence texture controls",
+          "[game][effects][assets][unpacked][player-effects]") {
+    for (const char* cls : {"WAR", "VAL", "WIZ", "ARC", "DWF", "KNI", "SOR", "JES"}) {
+        for (const char* color : {"YEL", "BLU", "RED", "GRE"}) {
+            const auto folder =
+                std::filesystem::path{"PLAYERS"} / cls / (std::string{"SFX"} + color);
+            CAPTURE(cls, color);
+            const auto rawPath = test::assetOrSkip((folder / "ANIM.PS2").generic_string());
+            const auto exportPath =
+                test::unpackedOrSkip((folder / "animations.json").generic_string());
+            const auto raw = formats::AnimationFile::parse(readFile(rawPath));
+            AnimationSet exported;
+            REQUIRE(exported.load(exportPath.parent_path()));
+            REQUIRE(exported.size() == raw.trees.size());
+            for (const auto& tree : raw.trees) {
+                const auto index = exported.find(tree.name);
+                REQUIRE(index);
+                const auto& actual = exported.tree(*index);
+                REQUIRE(actual.nodes.size() == tree.nodes.size());
+                REQUIRE(actual.sequences.size() == tree.sequences.size());
+                for (usize i = 0; i < tree.nodes.size(); ++i) {
+                    CHECK(actual.nodes[i].textureAnimation == tree.nodes[i].textureAnimation);
+                }
+                for (usize i = 0; i < tree.sequences.size(); ++i) {
+                    if (tree.sequences[i].textureAnimationCount > 0) {
+                        CHECK(actual.sequences[i].textureAnimationStart ==
+                              tree.sequences[i].textureAnimationStart);
+                    }
+                    CHECK(actual.sequences[i].textureAnimationCount ==
+                          tree.sequences[i].textureAnimationCount);
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("Jester strong and turbo trails use their delayed texture windows",
+          "[game][effects][unpacked][player-effects]") {
+    const auto directory = test::unpackedOrSkip("PLAYERS/JES/SFXYEL/animations.json").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(directory));
+    TextureAnimator textures;
+    textures.bind(archive.trees.textureAnimations(), archive.textures, device);
+    for (const auto* name : {"JES_PWRA2", "JES_PWRA3", "JES_PWRC1"}) {
+        CAPTURE(name);
+        const auto index = archive.trees.find(name);
+        REQUIRE(index);
+        const auto& tree = archive.trees.tree(*index);
+        const auto node = std::ranges::find_if(
+            tree.nodes, [](const auto& value) { return value.textureAnimation >= 0; });
+        REQUIRE(node != tree.nodes.end());
+        const auto& control =
+            archive.trees.textureAnimations()[static_cast<usize>(node->textureAnimation)];
+        REQUIRE(control.offset > 0);
+        REQUIRE(textures.motionAt(node->textureAnimation, 0));
+        CHECK(textures.motionAt(node->textureAnimation, 0)->scale.x == 0);
+        CHECK(textures.motionAt(node->textureAnimation, control.offset)->scale.x == 0);
+        CHECK(textures.motionAt(node->textureAnimation, control.offset + 1)->scale.x > 0);
+        CHECK(textures
+                  .motionAt(node->textureAnimation, control.offset + control.frames + control.rate)
+                  ->offset.x == Catch::Approx(1));
     }
 }
 

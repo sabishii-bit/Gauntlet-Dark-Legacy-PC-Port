@@ -247,6 +247,47 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     CHECK(f.world.placedItems().item(held).position == openedPosition);
     f.fixtures.clear();
 }
+
+TEST_CASE("X-Ray builds visible chest contents without spawning a collectible",
+          "[game][level-fixtures][xray][unpacked]") {
+    const auto root = test::unpackedOrSkip("wdata/TOWN.json").parent_path().parent_path();
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, root, *level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    Chests chests;
+    REQUIRE(chests.bind(f.device, f.world.layout(), f.world.items(), &f.world.collision()));
+    chests.setPlayerCount(1);
+    usize index = 0;
+    while (index < chests.size() &&
+           (!chests.chest(index).shown || chests.chest(index).subtype != Chests::kChest)) {
+        ++index;
+    }
+    REQUIRE(index < chests.size());
+    const auto& chest = chests.chest(index);
+    std::array party{ChestVisitor{chest.figure.position(), 0.75f, 0, true}};
+    const auto pickups = f.world.placedItems().size();
+    REQUIRE(chests.updateXray(f.device, f.world.items(), f.world.powerups(), 0, party) == 1);
+    CHECK(chest.revealed);
+    CHECK(chest.preview.hasFigure());
+    CHECK(chest.held == -1);
+    CHECK(f.world.placedItems().size() == pickups);
+    chests.draw(f.device, Mat4{1}, {});
+    bool translucentShell = false;
+    for (const auto& draw : f.device.draws) {
+        translucentShell |=
+            !draw.state.depthWrite && !draw.vertices.empty() && draw.vertices.front().color.a == 63;
+    }
+    CHECK(translucentShell);
+    party[0].xray = false;
+    chests.updateXray(f.device, f.world.items(), f.world.powerups(), 0, party);
+    CHECK_FALSE(chest.revealed);
+}
 TEST_CASE("armor items prevent fixture knockdown before the health callback",
           "[game][items][level-fixtures][unpacked]") {
     Fixture f;

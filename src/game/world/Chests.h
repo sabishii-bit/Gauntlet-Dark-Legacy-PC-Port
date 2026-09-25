@@ -21,6 +21,7 @@ struct ChestVisitor {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.75f;
     s32 keys = 0;
+    bool xray = false;
 };
 
 /** What a chest did this update. */
@@ -74,6 +75,9 @@ public:
         bool shown = true;
         s32 held = -1;     ///< the dropped item lying in it, open, until someone takes it
         bool gone = false; ///< emptied, it is no longer there
+        bool revealed = false;
+        s32 previewContents = -1;
+        ItemFigure preview; ///< visual only: never a collectible or an RNG draw
         ItemFigure figure;
         Obstacle box;
     };
@@ -88,6 +92,10 @@ public:
 
     /** Steps the chests under the party; what happened is returned for the game to act on. */
     std::vector<ChestEvent> update(f32 seconds, std::span<const ChestVisitor> party);
+    /** Retail do_see_thru: one nearest eligible shut chest per X-Ray wearer,
+     * within ten units. Returns the number of newly revealed chests for the cue. */
+    usize updateXray(RenderDevice& device, ItemArchive& items, ItemArchive& powerups, f32 seconds,
+                     std::span<const ChestVisitor> party);
     /** The boxes of the chests in sight, which nothing walks through. */
     std::vector<Obstacle> obstacles() const;
     /** What came out of an opened chest lies in it as dropped item number `item`. */

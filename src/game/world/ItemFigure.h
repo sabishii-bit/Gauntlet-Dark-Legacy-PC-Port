@@ -54,7 +54,8 @@ public:
     /** Starts the figure's sequence number `index`. */
     void play(s32 index, bool loop);
     void update(f32 seconds);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              f32 alpha = 1.0f, f32 scale = 1.0f) const;
 
     bool hasFigure() const { return m_tree != nullptr; }
     s32 sequence() const { return m_index; }

@@ -256,6 +256,54 @@ TEST_CASE("reopening a level clears bank and common sound identities",
     soundscape.close();
 }
 
+TEST_CASE("Temple heavy doors use the realm ICE slot rather than Tower sounds",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-temple-door");
+    writeBank(root, "TOWAMB", {"S_ELVSTONEL", "S_ELVMETL"}, -8192);
+    writeBank(root, "CATHEDRAL", {"S_ELVICEE", "S_ELVICESTPE", "S_ELVSTONEE"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    const LevelAudioInfo info{.bank = "CATHEDRAL", .stream = {}};
+    soundscape.open(root, &player, &info, 'E');
+    soundscape.opening(TriggerOpening{.target = 1, .sound = 3});
+    const auto creak = soundscape.fieldSound();
+    REQUIRE(creak != kNoSound);
+    std::array<f32, 128> output{};
+    mixer.mix(output);
+    CHECK(output.back() > 0);
+    soundscape.settled(TriggerOpening{.target = 1, .sound = 3});
+    CHECK_FALSE(player.isPlaying(creak));
+    CHECK(player.voiceCount() == 2);
+    soundscape.opening(TriggerOpening{.target = 2, .sound = 4});
+    CHECK(soundscape.fieldSound() != kNoSound);
+    const auto voices = player.voiceCount();
+    soundscape.opening(TriggerOpening{.target = 3, .sound = 0});
+    CHECK(player.voiceCount() == voices); // Missing realm sound is not a Tower fallback.
+    soundscape.close();
+}
+
+TEST_CASE("boss elevators and shared rock rotators use retail name variants",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-boss-opening");
+    writeBank(root, "BOSS", {"S_ELVSTONEEB", "S_ELVSTONESTPEB", "S_ROCKROTATE", "S_ROCKSTOP"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    const LevelAudioInfo info{.bank = "BOSS", .stream = {}};
+    soundscape.open(root, &player, &info, 'E', true);
+    for (const s32 slot : {4, 5}) {
+        soundscape.opening(TriggerOpening{.target = slot, .sound = slot});
+        const auto moving = soundscape.fieldSound();
+        REQUIRE(moving != kNoSound);
+        const auto count = player.voiceCount();
+        soundscape.settled(TriggerOpening{.target = slot, .sound = slot});
+        CHECK_FALSE(player.isPlaying(moving));
+        CHECK(player.voiceCount() == count + 1);
+    }
+    soundscape.close();
+}
+
 TEST_CASE("level ambience outlives early cue teardown but not close or rebind",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-ambience");

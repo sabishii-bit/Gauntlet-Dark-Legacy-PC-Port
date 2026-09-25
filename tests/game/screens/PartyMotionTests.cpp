@@ -123,6 +123,22 @@ TEST_CASE("party motion consults the shared-view limit before reporting moved su
     REQUIRE(f.players[0].actor.position().z < before.z);
 }
 
+TEST_CASE("quick melee creeps forward from its first input frame while slow melee stays planted",
+          "[game][party-motion][melee]") {
+    Fixture f;
+    f.inputs[3].attack = true;
+    f.inputs[3].move = MoveInput{Vec2{1, 0}, 1};
+    f.events.attackDeed = [](usize, bool) { return PlayerDeed::Melee; };
+    f.step();
+    const Vec3 quick = f.players[0].actor.position();
+    CHECK(quick.z > 0);
+    CHECK(quick.x == Approx(0).margin(0.0001f));
+    CHECK(f.players[0].actor.yaw() == Approx(0));
+    f.events.attackDeed = [](usize, bool) { return PlayerDeed::MeleeSlow; };
+    f.step();
+    CHECK(f.players[0].actor.position() == quick);
+}
+
 TEST_CASE("party motion resolves creatures before camera limits and snapshots",
           "[game][party-motion][collision]") {
     Fixture f;
@@ -414,7 +430,7 @@ TEST_CASE("charge steering and strafe directions remain camera relative",
     REQUIRE(PartyMotion::strafeWayOf(1.0f, 0) == StrafeWay::Right);
     REQUIRE(PartyMotion::strafeWayOf(-1.0f, 0) == StrafeWay::Left);
 }
-TEST_CASE("held close attack input plants the feet and dispatches melee contacts instead of throws",
+TEST_CASE("held close attack input advances slowly and dispatches melee contacts instead of throws",
           "[game][screens][party-motion][melee][unpacked]") {
     const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
                           .parent_path()
@@ -441,8 +457,10 @@ TEST_CASE("held close attack input plants the feet and dispatches melee contacts
     f.inputs[3].attack = true;
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
     for (s32 frame = 0; frame < 60; ++frame) {
+        const Vec3 before = f.players[0].actor.position();
         f.step();
-        CHECK(f.players[0].actor.position() == Vec3{0});
+        CHECK(f.players[0].actor.position().z > before.z);
+        CHECK(f.players[0].actor.position().x == 0);
     }
     CHECK(contacts >= 3);
     CHECK(missiles == 0);

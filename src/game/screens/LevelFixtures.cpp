@@ -138,7 +138,8 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         }
         actor.place(position);
         visitors.push_back(
-            ChestVisitor{position, actor.radius(), actor.save().progress().inventory.keys});
+            ChestVisitor{position, actor.radius(), actor.save().progress().inventory.keys,
+                         PowerupEffects::of(actor.save().progress().inventory).xray()});
         victims.push_back(TrapVictim{position, actor.radius()});
     }
     for (const ChestEvent& event : m_chests.update(seconds, visitors)) {
@@ -184,6 +185,11 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             events.help(HelpMessages::kChestNeedsKey, event.visitor);
             break;
         }
+    }
+    const usize reveals = m_chests.updateXray(m_resources->device, m_resources->world.items(),
+                                              m_resources->world.powerups(), seconds, visitors);
+    for (usize i = 0; i < reveals; ++i) {
+        m_resources->audio.playNamed("S_XRAY");
     }
     for (usize i = 0; i < m_chests.size(); ++i) {
         const auto& chest = m_chests.chest(i);

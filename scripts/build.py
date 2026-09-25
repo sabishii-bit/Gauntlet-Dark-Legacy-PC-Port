@@ -36,9 +36,45 @@ def build_presets() -> dict[str, str]:
 def cache_path(binary_dir: pathlib.Path, variable: str, default: pathlib.Path) -> pathlib.Path:
     """A PATH entry from CMakeCache.txt, or `default` when it is absent."""
     cache = binary_dir / "CMakeCache.txt"
+    if not cache.is_file():
+        return default
     match = re.search(rf"^{variable}:(?:PATH|FILEPATH|STRING)=(.*)$", cache.read_text(encoding="utf-8"),
                       re.MULTILINE)
     return pathlib.Path(match.group(1)) if match and match.group(1) else default
+
+
+def refresh_player_effects(binary_dir: pathlib.Path, app_args: list[str],
+                           root: pathlib.Path | None = None) -> None:
+    """Upgrade legacy player exports missing authored texture-animation bindings.
+
+    Inspect the actual schema rather than mtimes: a new executable alone cannot
+    repair old unpacked assets. No asset tree means an ordinary asset-free build.
+    """
+    root = ROOT if root is None else root
+    assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
+    unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
+    for flag, value in zip(app_args, app_args[1:]):
+        if flag == "--data":
+            assets = root / value
+        elif flag == "--unpacked":
+            unpacked = root / value
+    stale = []
+    for manifest in sorted((unpacked / "PLAYERS").glob("*/SFX*/animations.json")):
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        if data.get("textureBindingVersion", 0) < 1:
+            stale.append(manifest)
+    if not stale:
+        return
+    unpacker = binary_dir / "bin" / f"gdlunpack{EXE}"
+    if not (assets / "PLAYERS").is_dir() or not unpacker.is_file():
+        raise ValueError("Player effects need re-exporting. Provide the original PLAYERS assets "
+                         "and build gdlunpack before launching.")
+    print(f"Refreshing {len(stale)} legacy player effect archives", flush=True)
+    devenv.run([str(unpacker), str(assets), str(unpacked), "--only", "PLAYERS"])
+    for manifest in stale:
+        if json.loads(manifest.read_text(encoding="utf-8")).get("textureBindingVersion", 0) < 1:
+            raise ValueError(f"Player effect refresh did not upgrade {manifest}. "
+                             "Rebuild gdlunpack and check the original asset files.")
 
 
 def main() -> int:
@@ -86,6 +122,7 @@ def main() -> int:
         devenv.run(unpack_args)
 
     if args.run:
+        refresh_player_effects(binary_dir, app_args)
         return devenv.run([str(bin_dir / f"gauntlet{EXE}"), *app_args]).returncode
     return 0
 

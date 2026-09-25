@@ -30,7 +30,8 @@ public:
     LevelSoundscape& operator=(LevelSoundscape&&) = delete;
     ~LevelSoundscape() = default;
 
-    void open(const std::filesystem::path& root, SoundPlayer* output, const LevelAudioInfo* info);
+    void open(const std::filesystem::path& root, SoundPlayer* output, const LevelAudioInfo* info,
+              char realm = 'L', bool boss = false);
     void bindAmbience(const WorldLayout& layout);
     void updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear, f32 volume);
     void startMusic(const AssetLocator* assets, f32 volume);
@@ -68,6 +69,7 @@ private:
     };
     void playCommon(std::optional<u32> sound);
     SoundHandle track(SoundHandle handle);
+    SoundHandle playOpening(s32 slot, bool settled);
 
     SoundPlayer* m_output = nullptr;
     SoundSet m_common;
@@ -81,6 +83,8 @@ private:
     std::optional<u32> m_pickup;
     std::string m_stream;
     s32 m_streamParts = 1;
+    char m_realm = 'L';
+    bool m_boss = false;
     SoundHandle m_music = kNoSound;
     SoundHandle m_voice = kNoSound;
     std::vector<Opening> m_openings;

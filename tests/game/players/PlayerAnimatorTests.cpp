@@ -591,10 +591,11 @@ TEST_CASE("the strong throw lets the weapon go as its wind-up ends, then recover
     REQUIRE(animator.action() == Action::StrongThrow);
     REQUIRE(animator.turboBegan());
     REQUIRE(animator.strongThrowing());
-    REQUIRE(animator.moveScale() == PlayerAnimator::kStrongThrowPace);
+    REQUIRE(animator.moveScale() == 0);
     s32 releases = 0;
     s32 steps = 0;
     while (animator.strongThrowing() && steps < 200) {
+        CHECK(animator.moveScale() == 0); // wind-up and recovery, including held input
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::StrongAttack);
         if (animator.strongReleased()) {
             REQUIRE(animator.action() == Action::StrongThrowRecover);
@@ -841,7 +842,7 @@ TEST_CASE("held close attacks chain quick swings without ever throwing a weapon"
     REQUIRE(animator.bind(tree, false));
     animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Melee);
     REQUIRE(animator.action() == Action::Quick1);
-    REQUIRE(animator.moveScale() == 0);
+    REQUIRE(animator.moveScale() == PlayerAnimator::kQuickMeleePace);
     s32 hits = 0;
     for (s32 frame = 0; frame < 30; ++frame) {
         animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Melee);
