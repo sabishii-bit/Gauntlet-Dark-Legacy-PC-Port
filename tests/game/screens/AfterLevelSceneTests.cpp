@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
 #include <format>
+#include <utility>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -16,9 +18,88 @@
 #include "TestSupport.h"
 #include "game/screens/AfterLevelScene.h"
 #include "game/screens/ShopLayout.h"
+#include "game/screens/ShopMusic.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+TEST_CASE("shop music follows the departed realm including non-gameplay fallbacks",
+          "[shop][screens][audio]") {
+    // GUNE5D ShopMusicStart 800a0da8 and LevelLetter 80057a6c.
+    for (char realm = 'A'; realm <= 'K'; ++realm) {
+        CHECK(shopMusicRealm(std::format("{}1", realm)) == realm);
+    }
+    CHECK(shopMusicRealm("L1") == 'A');
+    CHECK(shopMusicRealm("L2") == 'A');
+    CHECK(shopMusicRealm("S1") == 'A');
+    CHECK(shopMusicRealm("T1") == 'G');
+    CHECK(shopMusicRealm("") == 'A');
+    CHECK(shopMusicRealm("?") == 'A');
+}
+
+TEST_CASE("shop plays the authored music through realm changes without retaining the old theme",
+          "[shop][screens][audio][unpacked]") {
+    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+    for (char realm = 'A'; realm <= 'K'; ++realm) {
+        test::unpackedOrSkip(std::format("audio/SHOP_{}/sounds.json", realm));
+    }
+    test::FakeRenderDevice device;
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    GameContext context;
+    context.unpackedRoot = root;
+    context.sounds = &sounds;
+    const std::array<PartyMember, 1> party{{{0, CharacterSave{}}}};
+    AfterLevelScene scene;
+    // E2 and F2 are Skorne's two arenas. Returning to G or opening the tower
+    // shop must not latch the last boss realm's theme for the rest of the save.
+    constexpr std::array<std::pair<std::string_view, char>, 17> kCases{{
+        {"A1", 'A'},
+        {"B1", 'B'},
+        {"C1", 'C'},
+        {"D1", 'D'},
+        {"E2", 'E'},
+        {"G1", 'G'},
+        {"F2", 'F'},
+        {"G1", 'G'},
+        {"H1", 'H'},
+        {"I1", 'I'},
+        {"J1", 'J'},
+        {"K1", 'K'},
+        {"L1", 'A'},
+        {"L2", 'A'},
+        {"S1", 'A'},
+        {"T1", 'G'},
+        {"", 'A'},
+    }};
+    for (const auto& [level, realm] : kCases) {
+        CAPTURE(level, realm);
+        REQUIRE(scene.open(device, context, party, {}, {}, level, level.starts_with('L')));
+        SoundSet bank;
+        REQUIRE(bank.load(root / "audio" / std::format("SHOP_{}", realm)));
+        const auto cue = bank.find(std::format("S_SHOP_{}", realm));
+        REQUIRE(cue.has_value());
+        AudioMixer expectedMixer(48000);
+        SoundPlayer expectedSound(expectedMixer);
+        expectedSound.play(bank.sequence(*cue), 1, SoundCategory::Music);
+        std::vector<f32> actual(9600);
+        std::vector<f32> expected(9600);
+        // Allow the previous voice's short stop ramp to drain before comparing.
+        mixer.mix(actual);
+        expectedMixer.mix(expected);
+        sounds.update();
+        REQUIRE(sounds.voiceCount() == 1);
+        mixer.mix(actual);
+        expectedMixer.mix(expected);
+        REQUIRE(actual == expected);
+        REQUIRE(std::ranges::any_of(actual, [](f32 value) { return value != 0; }));
+    }
+    scene.close();
+    std::vector<f32> tail(9600);
+    mixer.mix(tail);
+    sounds.update();
+    CHECK(sounds.voiceCount() == 0);
+}
+
 TEST_CASE("after-level screen fails safely without its portable catalog", "[shop][screens]") {
     test::FakeRenderDevice device;
     AfterLevelScene scene;
