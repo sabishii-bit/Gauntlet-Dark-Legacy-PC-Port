@@ -11,10 +11,11 @@
 namespace gdl::game {
 /** What hurt a character, which picks how it cries out. */
 enum class HurtKind : u8 {
-    Blow,   ///< cries out once enough has been taken
-    Burn,   ///< always cries out
-    Pierce, ///< groans
-    Gas     ///< coughs
+    Blow,     ///< cries out once enough has been taken
+    Burn,     ///< always cries out
+    Pierce,   ///< groans
+    Gas,      ///< coughs
+    QuietBlow ///< accumulates pain; the attacker supplies the impact sound, without a cry
 };
 
 /** Health/death rules and pain/low-health cue selection. Owns the party-wide cry RNG

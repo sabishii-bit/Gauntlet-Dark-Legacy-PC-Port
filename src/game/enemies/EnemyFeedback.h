@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -22,6 +23,10 @@ struct EnemyFeedback {
     f32 halfHeight = 0;
 
     std::string sound(std::span<const LevelEnemy> roster, s32 bossType = -1) const;
+    /** A dedicated melee impact, or nullopt for the ordinary player pain path.
+     * An empty name retains the dedicated path when its level sound is unavailable. */
+    static std::optional<std::string>
+    meleeSound(s32 kind, s32 tier, std::span<const LevelEnemy> roster, s32 bossType = -1);
     std::string_view effect() const;
     f32 effectScale() const;
     std::string_view deathSkin() const;

@@ -8,6 +8,8 @@
 
 namespace gdl::game {
 namespace {
+constexpr f32 kLowEnemyHeight = 4.0f;
+
 bool hasTierSounds(s32 kind) {
     switch (kind) {
     case 1:
@@ -31,7 +33,45 @@ bool hasTierSounds(s32 kind) {
     default: return false;
     }
 }
+std::string bankName(std::string name, s32 bossType) {
+    // Some boss banks replace byte 14 with a variant letter; bank keys hold 15 characters.
+    char variant = '\0';
+    switch (bossType) {
+    case 41: variant = 'B'; break;
+    case 37: variant = 'D'; break;
+    case 36: variant = 'C'; break;
+    default: break;
+    }
+    if (variant != '\0') {
+        name.resize(std::min(name.size(), usize{14}));
+        name += variant;
+    }
+    name.resize(std::min(name.size(), usize{15}));
+    return name;
+}
 } // namespace
+
+std::optional<std::string>
+EnemyFeedback::meleeSound(s32 kind, s32 tier, std::span<const LevelEnemy> roster, s32 bossType) {
+    if (kind < 0 || kind >= kSwarmKindCount) {
+        return std::nullopt;
+    }
+    if (kind == 4 || kind == 5 || kind == 10) {
+        return tier >= 2 ? "S_PLYRDMG4" : "S_PLYRDMG5";
+    }
+    if (enemyKind(kind).height > kLowEnemyHeight && kind != 2 && kind != 8 && kind != 11) {
+        return std::nullopt;
+    }
+    const auto row = std::ranges::find(roster, kind, &LevelEnemy::kind);
+    if (row == roster.end() || row->stream.empty()) {
+        return std::string{};
+    }
+    std::string stem = row->stream;
+    if (hasTierSounds(kind)) {
+        stem += tier > 1 || row->subtype >= 10 || bossType >= 0 ? '2' : '1';
+    }
+    return bankName(std::format("S_{}{}", stem, kind == 11 ? "STRIKE" : "BITE"), bossType);
+}
 
 std::string EnemyFeedback::sound(std::span<const LevelEnemy> roster, s32 bossType) const {
     if (kind < 0 || kind >= kSwarmKindCount) {
@@ -60,21 +100,7 @@ std::string EnemyFeedback::sound(std::span<const LevelEnemy> roster, s32 bossTyp
     } else {
         name = std::format("S_{}HIT{}", stem, suffix);
     }
-    // These boss banks replace byte 14 with a variant letter. Ordinary
-    // sound lookup compares the fifteen-character bank key.
-    char variant = '\0';
-    switch (bossType) {
-    case 41: variant = 'B'; break;
-    case 37: variant = 'D'; break;
-    case 36: variant = 'C'; break;
-    default: break;
-    }
-    if (variant != '\0') {
-        name.resize(std::min(name.size(), usize{14}));
-        name += variant;
-    }
-    name.resize(std::min(name.size(), usize{15}));
-    return name;
+    return bankName(name, bossType);
 }
 
 std::string_view EnemyFeedback::effect() const {

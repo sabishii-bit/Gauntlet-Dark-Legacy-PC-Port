@@ -53,6 +53,30 @@ TEST_CASE("player armor is subtracted before elemental affinity but not from gas
     CHECK(f.player.actor.save().health() == 944);
 }
 
+TEST_CASE("externally sounded melee retains damage and pain without an extra impact or cry",
+          "[player-health][enemy-melee]") {
+    Fixture f;
+    f.hit(75, HurtKind::QuietBlow);
+    CHECK(f.player.actor.save().health() == 925);
+    CHECK(f.player.painOwed == 75);
+    CHECK(f.player.hitFlashTicks == PlayerHealth::kHitFlashTicks);
+    CHECK(f.player.hitSoundGap == 0);
+    CHECK(f.sounds.empty());
+    CHECK(f.cries.empty());
+    f.hit(1);
+    CHECK(f.player.painOwed == 46);
+    CHECK(f.cries.size() == 1);
+    CHECK(f.sounds.empty());
+    f.player.actor.save().progress().health = 160;
+    f.hit(15, HurtKind::QuietBlow);
+    CHECK(f.named == std::vector<std::string>{"S_BADLY"});
+    CHECK(f.player.painOwed == 61);
+    f.hit(1000, HurtKind::QuietBlow);
+    CHECK(f.player.life == PlayerLife::Dying);
+    CHECK(f.sounds == std::vector<std::string>{"S_PLAYERDIES"});
+    CHECK(f.cries.back() == "DIE2");
+}
+
 TEST_CASE("player health respects tower immunity and scales only substantial damage",
           "[game][screens][player-health]") {
     Fixture f;
