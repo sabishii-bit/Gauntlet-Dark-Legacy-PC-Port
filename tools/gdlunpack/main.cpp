@@ -1195,6 +1195,7 @@ void unpackWorldData(const std::filesystem::path& file, const std::filesystem::p
         json.key("title").value(level.title);
         json.key("flags").value(level.flags);
         json.key("selectionFlags").value(level.selectionFlags);
+        json.key("timeLimit").value(level.timeLimit);
         json.key("audioBank").value(level.audioBank);
         json.key("movie").value(level.movie);
         json.key("bossType").value(level.bossType);

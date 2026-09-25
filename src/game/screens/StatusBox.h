@@ -88,6 +88,7 @@ public:
     void drawTurbo(Canvas& canvas, s32 slot, const TurboMeterLook& look);
     /** Draws a pickup count above slot `slot`: the STATIC `icon`, then "count/total". */
     void drawCount(Canvas& canvas, s32 slot, std::string_view icon, s32 count, s32 total);
+    void setCountTextures(TextureSet* textures) { m_countTextures = textures; }
 
 private:
     const Texture* selectTexture(std::string_view name);
@@ -98,6 +99,7 @@ private:
     const StringTable* m_strings = nullptr;
     TextureSet m_select;
     TextureSet m_static;
+    TextureSet* m_countTextures = nullptr; ///< borrowed level-specific pickup icons
     BitmapFont m_fontInitials;
     BitmapFont m_fontScore;
     BitmapFont m_fontSmallCaps;

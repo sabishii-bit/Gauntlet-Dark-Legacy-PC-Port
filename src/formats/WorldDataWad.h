@@ -45,6 +45,7 @@ struct LevelTuningRecord {
 struct LevelRecord {
     u32 flags = 0;
     u16 selectionFlags = 0; ///< bit 1 permits this level in the attract rotation
+    s16 timeLimit = 0;      ///< seconds allotted to a timed level
     std::string name;       ///< up to four characters, "L1"
     std::string title;      ///< "Tower"
     std::string audioBank;  ///< usually empty; the audio record names the bank

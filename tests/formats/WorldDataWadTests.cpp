@@ -1,3 +1,4 @@
+#include <array>
 #include <bit>
 #include <numbers>
 #include <string_view>
@@ -20,6 +21,17 @@ using namespace gdl;
 using namespace gdl::formats;
 using Catch::Approx;
 using test::ByteWriter;
+
+TEST_CASE("all nine secret worlds retain their individual retail time limits",
+          "[secret][formats][assets]") {
+    const auto data = WorldDataFile::parse(readFile(test::assetOrSkip("WDATA/SECRET.WAD")));
+    const std::array<s32, 9> seconds{70, 40, 45, 50, 130, 100, 55, 70, 60};
+    REQUIRE(data.levels.size() == seconds.size());
+    for (usize i = 0; i < seconds.size(); ++i) {
+        CHECK(data.levels[i].timeLimit == seconds[i]);
+        CHECK((data.levels[i].flags & 4) != 0);
+    }
+}
 
 TEST_CASE("realm maps preserve their glow and route coordinates",
           "[formats][wad][travel][assets]") {
@@ -63,6 +75,7 @@ std::vector<u8> sampleWad() {
     level.u32At(0, 0x10);
     level.u16At(4, 2);
     level.textAt(8, "L1");
+    level.u16At(0x0C, 45);
     level.textAt(0x14, "Tower");
     level.textAt(0x34, "intro");
     level.u32At(0x44, 0xFFFFFFFF);
@@ -187,6 +200,7 @@ TEST_CASE("world data wads describe a realm's levels, cameras, audio and sounds"
     const LevelRecord& level = data.levels[0];
     REQUIRE(level.flags == 0x10);
     REQUIRE(level.selectionFlags == 2);
+    CHECK(level.timeLimit == 45);
     REQUIRE(level.name == "L1");
     REQUIRE(level.title == "Tower");
     REQUIRE(level.movie == "intro");

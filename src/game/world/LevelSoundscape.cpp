@@ -116,7 +116,7 @@ void LevelSoundscape::stopCues() {
     m_openings.clear();
 }
 
-void LevelSoundscape::close() {
+void LevelSoundscape::suspend() {
     stopCues();
     for (const SoundHandle handle : m_voices) {
         stop(handle);
@@ -125,6 +125,10 @@ void LevelSoundscape::close() {
     if (m_output != nullptr) {
         m_ambience.stop(*m_output);
     }
+}
+
+void LevelSoundscape::close() {
+    suspend();
     m_ambience.clear();
     m_common = SoundSet{};
     m_level = SoundSet{};

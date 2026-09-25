@@ -49,6 +49,8 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         const ItemInfo& info = infos[static_cast<usize>(instance.info)];
         Portal portal;
         portal.instance = static_cast<s32>(index);
+        portal.secret = info.subtype == kSecretSubtype;
+        portal.minPlayers = instance.minPlayers;
         portal.radius = info.radius;
         portal.tag = tagOf(instance);
         portal.destination = catalog.byTag(portal.tag);
@@ -62,13 +64,19 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         }
         portal.transform = glm::rotate(glm::translate(Mat4{1.0f}, portal.position),
                                        instance.rotation.y, Vec3{0.0f, 1.0f, 0.0f});
-        if (m_tree != nullptr && portal.model.bind(*m_tree, items.models, items.textures, device)) {
+        if (portal.secret) {
+            portal.icon.place(device, items, info.name, instance, collision);
+            portal.icon.play(0, true);
+        } else if (m_tree != nullptr &&
+                   portal.model.bind(*m_tree, items.models, items.textures, device)) {
             portal.pose.rest(*m_tree);
         }
         m_portals.push_back(std::move(portal));
     }
     for (Portal& portal : m_portals) {
-        advance(portal, 0);
+        if (!portal.secret) {
+            advance(portal, 0);
+        }
         portal.ticksLeft = 0;
     }
     if (!m_portals.empty() && m_tree == nullptr) {
@@ -118,6 +126,20 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
     const f32 extra = party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
     for (usize index = 0; index < m_portals.size(); ++index) {
         Portal& portal = m_portals[index];
+        if (portal.consumed) {
+            continue;
+        }
+        if (portal.secret) {
+            const auto visitor = std::ranges::find_if(party, [&](const PortalVisitor& candidate) {
+                return standsOn(portal, candidate, 0);
+            });
+            if (shownToParty(portal.minPlayers, static_cast<s32>(party.size())) &&
+                visitor != party.end()) {
+                portal.departurePosition = visitor->position;
+                left = index;
+            }
+            continue;
+        }
         const auto on = static_cast<usize>(std::ranges::count_if(
             party, [&](const PortalVisitor& visitor) { return standsOn(portal, visitor, extra); }));
         const bool everyone = !party.empty() && on == party.size();
@@ -157,6 +179,12 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
 
 void ExitPortals::animate(f32 seconds) {
     for (Portal& portal : m_portals) {
+        if (portal.secret) {
+            if (!portal.consumed) {
+                portal.icon.update(seconds);
+            }
+            continue;
+        }
         if (m_tree != nullptr && portal.player.playing()) {
             const bool loops =
                 portal.action == 0 || portal.action == 1 || portal.action == kWaiting;
@@ -171,6 +199,12 @@ void ExitPortals::animate(f32 seconds) {
 void ExitPortals::draw(RenderDevice& device, const Mat4& clip,
                        const WorldLighting& lighting) const {
     for (const Portal& portal : m_portals) {
+        if (portal.secret) {
+            if (!portal.consumed) {
+                portal.icon.draw(device, clip, lighting);
+            }
+            continue;
+        }
         if (portal.model.bound()) {
             portal.model.draw(device, clip, portal.transform, lighting, portal.pose.matrices());
         }

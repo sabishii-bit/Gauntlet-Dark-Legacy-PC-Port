@@ -28,6 +28,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/players/TurboMeter.h"
 #include "game/screens/BossSequence.h"
+#include "game/screens/ChallengeHud.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/GameOver.h"
 #include "game/screens/LevelArrivalPresentation.h"
@@ -53,6 +54,7 @@
 #include "game/world/LevelWorld.h"
 #include "game/world/PlayerArsenal.h"
 #include "game/world/PlayerFigure.h"
+#include "game/world/SecretChallenge.h"
 #include "game/world/StartCamera.h"
 #include "game/world/SumnerFigure.h"
 #include "game/world/TowerCamera.h"
@@ -222,6 +224,12 @@ public:
     const GameOver& gameOver() const { return m_gameOver; }
     /** Where the party is bound once update() has said Travel, and the realm it leaves. */
     const LevelRef& destination() const { return m_destination; }
+    bool secretTravel() const { return m_secretTravel; }
+    const SecretChallenge& challenge() const { return m_challenge; }
+    /** Pause the parent stage while the party visits a secret challenge. */
+    void suspendForChallenge();
+    /** Return progress to the preserved stage without replacing its entry checkpoint. */
+    void resumeFromChallenge(std::span<const PartyMember> party);
     /** The party as it stands, with all it has gathered, for the next level. */
     std::vector<PartyMember> party() const;
     /** Associates a manual save with the live participant without restarting the level. */
@@ -256,6 +264,9 @@ public:
     s32 familiarTier(s32 player) const;
 
 private:
+    void beginChallenge();
+    void collectChallengeCoin(usize item);
+    bool updateChallenge(f32 seconds);
     void spawnParty(std::span<const PartyMember> party, const PlayOptions& options);
     void throwWeapon(const PlayerActor& actor);
     static bool freshParty(std::span<const PartyMember> party);
@@ -322,6 +333,10 @@ private:
     std::vector<PlayerRuntime> m_players;
     GameOver m_gameOver;
     LevelSoundscape m_audio;
+    SecretChallenge m_challenge;
+    ChallengeHud m_challengeHud;
+    bool m_secretTravel = false;
+    Vec3 m_secretReturnPosition{0.0f};
     SumnerFigure m_sumner;
     TextureSet m_staticTextures;
     LevelMessages m_messages;

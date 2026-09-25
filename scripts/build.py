@@ -110,6 +110,35 @@ def refresh_item_collision(binary_dir: pathlib.Path, app_args: list[str], root=N
                              "Rebuild gdlunpack and check the original asset files.")
 
 
+def refresh_challenge_data(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
+    """Upgrade realm exports lacking the authored timed-level durations."""
+    root = ROOT if root is None else root
+    assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
+    unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
+    for flag, value in zip(app_args, app_args[1:]):
+        if flag == "--data":
+            assets = root / value
+        elif flag == "--unpacked":
+            unpacked = root / value
+    manifest = unpacked / "wdata/SECRET.json"
+    if not manifest.is_file():
+        return
+
+    def incomplete():
+        levels = json.loads(manifest.read_text(encoding="utf-8")).get("levels", [])
+        return any(level.get("flags", 0) & 4 and level.get("timeLimit", 0) <= 0
+                   for level in levels)
+
+    if not incomplete():
+        return
+    unpacker = binary_dir / "bin" / f"gdlunpack{EXE}"
+    if not (assets / "WDATA").is_dir() or not unpacker.is_file():
+        raise ValueError("Secret challenges need WDATA re-exported with the updated gdlunpack.")
+    devenv.run([str(unpacker), str(assets), str(unpacked), "--only", "WDATA"])
+    if incomplete():
+        raise ValueError("Challenge durations are still missing after WDATA refresh.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("preset", nargs="?", default=None,
@@ -157,6 +186,7 @@ def main() -> int:
     if args.run:
         refresh_player_effects(binary_dir, app_args)
         refresh_item_collision(binary_dir, app_args)
+        refresh_challenge_data(binary_dir, app_args)
         return devenv.run([str(bin_dir / f"gauntlet{EXE}"), *app_args]).returncode
     return 0
 

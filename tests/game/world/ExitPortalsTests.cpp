@@ -200,4 +200,37 @@ TEST_CASE("the real portal holds ACTIVE2 without replaying ACTIVE1 for a waiting
     CHECK(height(0) > height(14) + 5);
 }
 
+TEST_CASE("a secret icon takes one toucher, keeps its authored radius, and is consumed once",
+          "[secret][portals]") {
+    const auto dir = sampleLevel("portals-secret");
+    writeTextFile(dir / "wdata/SECRET.json", R"({"realm":12,"prefix":"levelS",
+        "levels":[{"name":"S1","title":"Secret"}]})");
+    writeTextFile(
+        dir / "world.json",
+        R"({"objects":[{"name":"GROUND","position":[0,0,0],"next":-1,"child":-1}],"locators":[],
+        "itemInfos":[{"type":9,"subtype":50,"name":"SECRET_ICON","radius":1}],
+        "itemInstances":[{"info":0,"minPlayers":1,"position":[10,0,10],
+        "rotation":[0,0,0],"params":[0,0,0,0,83,49,0,0,0,0,0,0]}]})");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    LevelCatalog catalog;
+    ItemArchive items;
+    ExitPortals portals;
+    REQUIRE(layout.load(dir));
+    REQUIRE(catalog.load(dir));
+    REQUIRE(portals.bind(device, layout, items, catalog, nullptr));
+    REQUIRE(portals.size() == 1);
+    REQUIRE(portals.portal(0).secret);
+    REQUIRE(portals.portal(0).destination);
+    CHECK(portals.portal(0).destination->isSecret());
+    const std::array near{PortalVisitor{Vec3{12, 0, 10}, 0.5f},
+                          PortalVisitor{Vec3{30, 0, 30}, 0.5f}};
+    CHECK_FALSE(portals.update(2, 1.0f / 30, near)); // no party-size radius bonus
+    const std::array touching{PortalVisitor{Vec3{11, 0, 10}, 0.5f}, near[1]};
+    CHECK(portals.update(2, 1.0f / 30, touching) == 0);
+    CHECK(portals.portal(0).departurePosition == touching[0].position);
+    portals.consume(0);
+    CHECK_FALSE(portals.update(2, 1.0f / 30, touching));
+}
+
 } // namespace

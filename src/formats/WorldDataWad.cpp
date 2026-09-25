@@ -36,6 +36,7 @@ LevelRecord readLevel(std::span<const u8> bytes, usize at) {
     level.flags = readWadU32(bytes, at, kWhat);
     level.selectionFlags = static_cast<u16>(readS16(bytes, at + 4));
     level.name = readWadText(bytes, at + 8, kNameSize, kWhat);
+    level.timeLimit = readS16(bytes, at + 0x0C);
     level.title = readWadText(bytes, at + 0x14, kTextSize, kWhat);
     level.audioBank = readWadText(bytes, at + 0x24, kTextSize, kWhat);
     level.movie = readWadText(bytes, at + 0x34, kTextSize, kWhat);

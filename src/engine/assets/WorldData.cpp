@@ -23,6 +23,8 @@ Vec3 readVec3(const nlohmann::json& array, const Vec3& fallback) {
 LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> roster) {
     LevelInfo level;
     level.selectionFlags = json.value("selectionFlags", u16{0});
+    level.flags = json.value("flags", u32{0});
+    level.timeLimit = json.value("timeLimit", 0);
     level.name = json.value("name", std::string{});
     level.title = json.value("title", std::string{});
     level.audioBank = json.value("audioBank", std::string{});
