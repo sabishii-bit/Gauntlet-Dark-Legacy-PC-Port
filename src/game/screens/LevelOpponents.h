@@ -84,6 +84,8 @@ public:
     const BossMeters& meter() const { return m_bossMeter; }
 
 private:
+    void applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
+                        const Events& events);
     void awardEnemyLosses(const Events& events);
     void awardBossLosses(std::span<const PlayerRuntime> players, const Events& events);
     void awardCritterLosses(std::span<const PlayerRuntime> players, const Events& events);

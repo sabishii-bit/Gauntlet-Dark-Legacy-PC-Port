@@ -618,7 +618,6 @@ f32 Enemies::fightOf(const Enemy& enemy) const {
 }
 
 void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> players) {
-    (void)slot;
     const bool landed = enemy.animator.struck() || enemy.animator.powerStruck();
     if (!landed || enemy.attackIndex < 0) {
         if (landed) {
@@ -647,6 +646,17 @@ void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         const f32 length = flatDistance(victim->position, enemy.position);
         blow.direction = length > 0.001f ? Vec3{toward.x / length, 0.0f, toward.z / length}
                                          : Vec3{std::sin(enemy.yaw), 0.0f, std::cos(enemy.yaw)};
+        blow.ward = victim->meleeWard;
+        if (blow.ward != EnemyMeleeWard::None) {
+            EnemyHit returned;
+            returned.damage = blow.damage;
+            returned.flags = blow.ward == EnemyMeleeWard::HealthVamp ? EnemyHit::kMagic : 0;
+            returned.direction = Vec3{0};
+            returned.where = bodyCentre(enemy);
+            // The ward belongs to the victim, but the return carries no player credit
+            // or level scaling. Resolve it before the attacker advances its reaction.
+            hurt(slot, returned);
+        }
         m_blows.push_back(blow);
         ++enemy.attackCount;
     }
