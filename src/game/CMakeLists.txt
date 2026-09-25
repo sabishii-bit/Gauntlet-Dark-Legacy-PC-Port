@@ -4,6 +4,8 @@
 # cameras), menu (widgets), screens (full screens and what they receive), app (the driver and
 # attract flow). A module only includes those below it.
 add_library(game STATIC
+    world/DestructibleWalls.cpp
+    world/MissileTarget.cpp
     menu/SettingsMenu.cpp
     menu/CompassHud.cpp
     screens/SaveMenu.cpp

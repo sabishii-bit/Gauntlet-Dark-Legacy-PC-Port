@@ -63,6 +63,15 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
     }
     const PlayerActor& actor = players[index].actor;
     std::vector<usize>& rammed = players[index].rammed;
+    const auto& walls = m_resources->world.walls();
+    for (usize i = 0; i < walls.size(); ++i) {
+        const usize key = static_cast<usize>(kWallTargetBase) + i;
+        if (walls.standing(i) && std::ranges::find(rammed, key) == rammed.end() &&
+            walls.target(i, 0).touches(actor.followPoint(), actor.radius() + kRamReach)) {
+            rammed.push_back(key);
+            targets.fixtures.strikeWall(i, kRamDamage);
+        }
+    }
     for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
         if (!targets.fixtures.barrels().standing(barrel) ||
             std::ranges::find(rammed, barrel) != rammed.end() ||
@@ -205,7 +214,7 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
         }
         const MoveStrike& row = stats->moveStrikes[static_cast<usize>(source->row)];
         for (const MissileTarget& target : projectileTargets(targets)) {
-            if (!hit.reaches(target.base, target.radius, target.height)) {
+            if (!target.reachedBy(hit)) {
                 continue;
             }
             auto contact =
@@ -310,6 +319,12 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             continue;
         }
         shield.harmIn = kShieldHarmEvery;
+        const auto& walls = m_resources->world.walls();
+        for (usize i = 0; i < walls.size(); ++i) {
+            if (walls.standing(i) && walls.target(i, 0).touches(at, shield.radius)) {
+                targets.fixtures.strikeWall(i, shield.damage, shield.flags);
+            }
+        }
         const auto& actor = players[shield.actor].actor;
         for (const s32 id : targets.opponents.enemies().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
@@ -435,8 +450,16 @@ void PlayerAttacks::cry(usize index, std::string_view which, std::span<PlayerRun
     }
 }
 
-std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targets) {
+std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targets) const {
     std::vector<MissileTarget> missileTargets;
+    if (m_resources) {
+        const auto& walls = m_resources->world.walls();
+        for (usize i = 0; i < walls.size(); ++i) {
+            if (walls.standing(i)) {
+                missileTargets.push_back(walls.target(i, kWallTargetBase + static_cast<s32>(i)));
+            }
+        }
+    }
     for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
         if (targets.fixtures.barrels().standing(barrel)) {
             const Breakables::Barrel& cask = targets.fixtures.barrels().barrel(barrel);
@@ -545,7 +568,9 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     const Vec3 point = target->base + Vec3{0, target->height * 0.5f, 0};
     const Vec3 direction = target->base - actor.position();
     const s32 id = target->id;
-    if (id >= kSafeRockTargetBase) {
+    if (id >= kWallTargetBase) {
+        targets.fixtures.strikeWall(static_cast<usize>(id - kWallTargetBase), damage, flags);
+    } else if (id >= kSafeRockTargetBase) {
         targets.fixtures.strikeSafeRock(static_cast<usize>(id - kSafeRockTargetBase), damage);
     } else if (id >= kBossTargetBase) {
         const EnemyHit hit{
@@ -581,7 +606,10 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
             beginPotion(impact);
             continue;
         }
-        if (impact.target >= kSafeRockTargetBase) {
+        if (impact.target >= kWallTargetBase) {
+            targets.fixtures.strikeWall(static_cast<usize>(impact.target - kWallTargetBase),
+                                        impact.damage, impact.flags);
+        } else if (impact.target >= kSafeRockTargetBase) {
             targets.fixtures.strikeSafeRock(static_cast<usize>(impact.target - kSafeRockTargetBase),
                                             impact.damage);
         } else if (impact.target >= kBossTargetBase) {
@@ -680,16 +708,24 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
         const f32 power = burst.impact.damage * 1.5f * (phase - 0.33f);
         const u32 flags = EnemyHit::kMagic | static_cast<u32>(burst.impact.potion);
         for (const MissileTarget& target : projectileTargets(targets)) {
-            Vec3 direction = target.base - burst.impact.position;
-            if (std::hypot(direction.x, direction.z) > radius + target.radius ||
-                std::abs(direction.y) > radius + target.height ||
-                std::ranges::find(burst.hit, target.id) != burst.hit.end()) {
+            Vec3 direction =
+                (target.surface.empty() ? target.base : target.pointNear(burst.impact.position)) -
+                burst.impact.position;
+            const bool outside =
+                target.surface.empty()
+                    ? std::hypot(direction.x, direction.z) > radius + target.radius ||
+                          std::abs(target.base.y - burst.impact.position.y) > radius + target.height
+                    : !target.touches(burst.impact.position, radius);
+            if (outside || std::ranges::find(burst.hit, target.id) != burst.hit.end()) {
                 continue;
             }
             burst.hit.push_back(target.id);
             direction.y = 0;
             const s32 byPlayer = burst.impact.owner;
-            if (target.id >= kSafeRockTargetBase) {
+            if (target.id >= kWallTargetBase) {
+                targets.fixtures.strikeWall(static_cast<usize>(target.id - kWallTargetBase), power,
+                                            flags);
+            } else if (target.id >= kSafeRockTargetBase) {
                 targets.fixtures.strikeSafeRock(static_cast<usize>(target.id - kSafeRockTargetBase),
                                                 power);
             } else if (target.id >= kBossTargetBase) {

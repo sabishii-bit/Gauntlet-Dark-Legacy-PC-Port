@@ -115,6 +115,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         }
     }
     m_collision.setMovingObjects(m_movingObjects);
+    m_walls.bind(device, m_layout, m_models, m_textures, m_collision);
     std::erase_if(m_movingObjects, [&](s32 object) { return !m_collision.moving(object); });
     m_triggers.bind(m_layout, m_worldAnimator, &m_collision);
     m_triggers.bindFigures(device, m_layout, m_items);
@@ -185,6 +186,7 @@ void LevelWorld::update(f32 seconds) {
     }
     m_worldAnimator.step(seconds, m_scene);
     m_skorneArena.update(seconds);
+    m_walls.update(seconds);
     syncCollision();
     m_particles.step(seconds);
     m_placedItems.update(seconds);
@@ -225,6 +227,7 @@ void LevelWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
 }
 
 void LevelWorld::clear() {
+    m_walls.clear();
     m_skorneArena.clear();
     m_scene.clear();
     m_worldAnimator.clear();

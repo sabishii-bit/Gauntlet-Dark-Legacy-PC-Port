@@ -14,8 +14,11 @@ std::optional<MissileTarget> TargetAssist::melee(const Vec3& feet, f32 height, c
             target.base.y >= feet.y + height || target.base.y + target.height <= feet.y) {
             continue;
         }
+        const Vec3 surfacePoint = target.pointNear(feet + Vec3{0, height * 0.5f, 0});
         const f32 distance =
-            std::hypot(target.base.x - feet.x, target.base.z - feet.z) - target.radius;
+            target.surface.empty()
+                ? std::hypot(target.base.x - feet.x, target.base.z - feet.z) - target.radius
+                : glm::distance(surfacePoint, feet + Vec3{0, height * 0.5f, 0});
         if (distance >= best) {
             continue;
         }
@@ -49,10 +52,11 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
         if (target.id < 0 || target.radius <= 0.0f || target.height <= 0.0f) {
             continue;
         }
-        const Vec3 point = target.base + Vec3{0, target.height * 0.5f, 0};
+        const Vec3 point = target.pointNear(origin);
         const Vec3 offset = point - origin;
         const f32 flat = std::hypot(offset.x, offset.z);
-        const f32 distance = glm::length(offset) - target.radius;
+        const f32 targetRadius = target.surface.empty() ? target.radius : 0.0f;
+        const f32 distance = glm::length(offset) - targetRadius;
         if (flat < 1e-5f || distance >= bestDistance ||
             (offset.x * facing.x + offset.z * facing.z) / (flat * facingLength) < kFacingDot) {
             continue;
@@ -64,10 +68,13 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
             constexpr f32 kProbeRadius = 0.25f;
             const f32 length = glm::length(offset);
             const Vec3 direction = offset / length;
-            const auto steps = static_cast<s32>(std::ceil((length - target.radius) / kProbeRadius));
+            const auto steps = static_cast<s32>(std::ceil((length - targetRadius) / kProbeRadius));
             for (s32 step = 1; step < steps; ++step) {
                 const f32 along = static_cast<f32>(step) * kProbeRadius;
                 const Vec3 at = origin + direction * along;
+                if (!target.surface.empty() && target.touches(at, kProbeRadius)) {
+                    break;
+                }
                 if (glm::distance(collision->resolveWalls(at, kProbeRadius, at.y - kProbeRadius,
                                                           at.y + kProbeRadius),
                                   at) > 1e-4f) {

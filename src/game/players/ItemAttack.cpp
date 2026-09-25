@@ -85,9 +85,12 @@ bool ItemAttack::reaches(const Mat4& parent, const MissileTarget& target, f32 el
     }
     const f32 phase = lifetime <= 1.0f / 30 ? 1 : 1 - elapsed / lifetime;
     const f32 activeRadius = radius * (1.33f - phase);
-    const Vec3 delta = target.base + Vec3{0, target.height * 0.5f, 0} - Vec3{parent[3]};
+    const Vec3 delta = target.pointNear(Vec3{parent[3]}) - Vec3{parent[3]};
     const f32 distance = std::hypot(delta.x, delta.z);
-    const f32 reach = activeRadius + target.radius;
+    const f32 reach = activeRadius + (target.surface.empty() ? target.radius : 0.0f);
+    if (!target.surface.empty() && !target.touches(Vec3{parent[3]}, activeRadius)) {
+        return false;
+    }
     if (distance > reach || std::abs(delta.y) > activeRadius + target.height * 0.5f) {
         return false;
     }
