@@ -16,6 +16,32 @@ namespace {
 
 using namespace gdl;
 
+TEST_CASE("particle emission and expiry are independent of render cadence", "[world][particles]") {
+    const test::FakeRenderDevice device;
+    ParticleDescriptor descriptor;
+    descriptor.delay = 1;
+    descriptor.emitFrames = 3;
+    descriptor.fadeFrames = 4;
+    descriptor.particleLife = 8;
+    descriptor.particleFade = 5;
+    descriptor.rate = {7, 3, 2, 0};
+    for (const s32 rate : {15, 30, 60, 120}) {
+        INFO(rate);
+        ParticleField field;
+        field.start(descriptor, Mat4{1}, &device.whiteTexture(), 123);
+        for (s32 i = 0; i < rate / 5; ++i) {
+            field.step(1.0f / static_cast<f32>(rate));
+        }
+        REQUIRE(field.emitter(0).age() == 5); // six elapsed ticks, one delayed
+        REQUIRE(field.particleCount() == 16);
+        field.stop(0);
+        for (s32 i = 0; i < rate; ++i) {
+            field.step(1.0f / static_cast<f32>(rate));
+        }
+        REQUIRE(field.particleCount() == 0);
+    }
+}
+
 TEST_CASE("a field starts an emitter at every marker naming a template", "[world][particles]") {
     const auto dir = test::sampleLevel("particle-field");
     test::FakeRenderDevice device;

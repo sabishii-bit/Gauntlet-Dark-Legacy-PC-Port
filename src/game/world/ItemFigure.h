@@ -10,7 +10,9 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/AnimationPlayer.h"
+#include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/TreeParticles.h"
 #include "engine/world/TreePose.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
@@ -55,7 +57,10 @@ public:
     void play(s32 index, bool loop);
     void update(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              f32 alpha = 1.0f, f32 scale = 1.0f) const;
+              f32 alpha = 1.0f, f32 scale = 1.0f, const CameraFrame* camera = nullptr) const;
+    /** Traps suppress emission in OFF without killing their live particle tails. */
+    void gateParticlesOnSequence(bool enabled);
+    const TreeParticles& particles() const { return m_particles; }
 
     bool hasFigure() const { return m_tree != nullptr; }
     s32 sequence() const { return m_index; }
@@ -78,6 +83,10 @@ private:
     TreeModel m_model;
     TreePose m_pose;
     AnimationPlayer m_player;
+    TreeParticles m_particles;
+    TextureAnimator m_textures;
+    f32 m_textureFrames = 0;
+    bool m_gateParticles = false;
     Vec3 m_position{0.0f, 0.0f, 0.0f};
     f32 m_yaw = 0.0f;
     Mat4 m_transform{1.0f};

@@ -45,7 +45,8 @@ bool EffectTrees::bindVisuals(Effect& effect) {
     effect.model.setAppearance(effect.unlit, effect.tint, effect.depthWrite, effect.additive);
     if (effect.emitParticles) {
         effect.particles.bind(*effect.tree, *effect.archive, *effect.device, effect.transform(),
-                              effect.pose.matrices());
+                              effect.pose.matrices(), effect.lenders);
+        effect.particles.setLocalScales(effect.pose.poses());
     }
     return mesh || effect.particles.field().size() > 0;
 }
@@ -53,6 +54,22 @@ bool EffectTrees::bindVisuals(Effect& effect) {
 void EffectTrees::stop(u32 id) {
     std::erase_if(m_effects,
                   [id](const std::unique_ptr<Effect>& effect) { return effect->id == id; });
+}
+
+void EffectTrees::setTextureLenders(std::span<TextureSet* const> lenders) {
+    m_lenders.assign(lenders.begin(), lenders.end());
+}
+
+void EffectTrees::finish(u32 id) {
+    for (const auto& effect : m_effects) {
+        if (effect->id == id) {
+            effect->retiring = true;
+            effect->particles.stop();
+            for (usize i = 0; i < effect->trails.size(); ++i) {
+                effect->trails.stop(i);
+            }
+        }
+    }
 }
 
 void EffectTrees::moveTo(u32 id, const Vec3& position) {
@@ -102,7 +119,8 @@ void EffectTrees::attachTrail(u32 id, const ParticleDescriptor& descriptor,
 }
 
 u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
-                          const Vec3& position, const Setting& setting) {
+                          const Vec3& position, const Setting& setting,
+                          std::span<TextureSet* const> textureLenders) {
     const auto index = archive.loaded() ? archive.trees.find(tree) : std::nullopt;
     if (!index.has_value()) {
         log::warn("Effects: no tree {} to play", tree);
@@ -128,6 +146,8 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     effect->then = setting.then;
     effect->device = &device;
     effect->archive = &archive;
+    effect->lenders.assign(textureLenders.begin(), textureLenders.end());
+    effect->lenders.insert(effect->lenders.end(), m_lenders.begin(), m_lenders.end());
     if (setting.seconds > 0.0f) {
         effect->secondsLeft = setting.seconds;
     }
@@ -155,18 +175,22 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     }
     effect->model.setFrame(0, static_cast<s32>(effect->player.frame()));
     const bool known = std::ranges::any_of(m_motions, [&](const std::unique_ptr<Motion>& motion) {
-        return motion->archive == &archive;
+        return motion->archive == &archive && motion->lenders == effect->lenders;
     });
     if (!known) {
         auto motion = std::make_unique<Motion>();
         motion->archive = &archive;
-        motion->animator.bind(archive.trees.textureAnimations(), archive.textures, device);
+        motion->lenders = effect->lenders;
+        motion->animator.bind(archive.trees.textureAnimations(), archive.textures, device,
+                              effect->lenders);
         m_motions.push_back(std::move(motion));
     }
     const u32 id = effect->id;
     for (const auto& motion : m_motions) {
-        if (motion->archive == &archive) {
+        if (motion->archive == &archive && motion->lenders == effect->lenders) {
             motion->animator.apply(effect->model, *effect->tree, 0,
+                                   static_cast<s32>(effect->player.frame()));
+            motion->animator.apply(effect->particles, *effect->tree, 0,
                                    static_cast<s32>(effect->player.frame()));
         }
     }
@@ -184,6 +208,18 @@ void EffectTrees::update(f32 seconds) {
         }
     }
     for (const std::unique_ptr<Effect>& effect : m_effects) {
+        if (effect->retiring) {
+            effect->particles.step(seconds, effect->transform(), effect->pose.matrices());
+            effect->trails.step(seconds);
+            for (const auto& motion : m_motions) {
+                if (motion->archive == effect->archive && motion->lenders == effect->lenders) {
+                    motion->animator.apply(effect->particles, *effect->tree,
+                                           effect->player.sequence(),
+                                           static_cast<s32>(effect->player.frame()));
+                }
+            }
+            continue;
+        }
         effect->position += effect->velocity * seconds;
         for (usize i = 0; i < effect->trails.size(); ++i) {
             effect->trails.setNode(i, effect->attachment.has_value()
@@ -225,45 +261,23 @@ void EffectTrees::update(f32 seconds) {
                 effect->particles.stop();
             }
         }
+        effect->particles.setLocalScales(effect->pose.poses());
         effect->particles.step(seconds, effect->transform(), effect->pose.matrices());
         for (const std::unique_ptr<Motion>& motion : m_motions) {
-            if (motion->archive != effect->archive) {
+            if (motion->archive != effect->archive || motion->lenders != effect->lenders) {
                 continue;
             }
-            const auto show = [&](const TextureMotion& moved) {
-                if (moved.frame != nullptr) {
-                    effect->particles.setTextureFrame(moved.slot, *moved.frame);
-                }
-            };
             motion->animator.apply(effect->model, *effect->tree, effect->player.sequence(),
                                    static_cast<s32>(effect->player.frame()));
-            // The archive's own animations run on the clock; the tree's texture nodes and
-            // the sequence's own animations are read off at the frame the tree has reached.
-            for (usize i = 0; i < motion->animator.size(); ++i) {
-                if (!motion->animator.keyed(i)) {
-                    show(motion->animator.motion(i));
-                }
-            }
-            if (!effect->tree->sequences.empty()) {
-                const auto frame = static_cast<s32>(effect->player.frame());
-                const TreeSequenceInfo& sequence =
-                    effect->tree->sequences[effect->player.sequence()];
-                for (s32 i = 0; i < sequence.textureAnimationCount; ++i) {
-                    if (const auto moved =
-                            motion->animator.motionAt(sequence.textureAnimationStart + i, frame)) {
-                        show(*moved);
-                    }
-                }
-                for (const TreeNodeInfo& node : effect->tree->nodes) {
-                    if (const auto moved =
-                            motion->animator.motionAt(node.textureAnimation, frame)) {
-                        show(*moved);
-                    }
-                }
-            }
+            motion->animator.apply(effect->particles, *effect->tree, effect->player.sequence(),
+                                   static_cast<s32>(effect->player.frame()));
         }
     }
     std::erase_if(m_effects, [](const std::unique_ptr<Effect>& effect) {
+        if (effect->retiring) {
+            return effect->particles.field().particleCount() == 0 &&
+                   effect->trails.particleCount() == 0;
+        }
         if (effect->persistent) {
             return false;
         }
@@ -277,7 +291,9 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
     const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         const Mat4 placed = effect->transform();
-        effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), camera);
+        if (!effect->retiring) {
+            effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), camera);
+        }
         effect->particles.draw(device, clip, frame.right, frame.up);
         effect->trails.draw(device, clip, frame.right, frame.up);
     }
@@ -286,6 +302,7 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
 void EffectTrees::clear() {
     m_effects.clear();
     m_motions.clear();
+    m_lenders.clear();
     m_frames = 0.0f;
     m_nextId = 1;
 }

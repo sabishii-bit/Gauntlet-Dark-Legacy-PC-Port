@@ -104,6 +104,10 @@ public:
     const Mat4& node() const { return m_node; }
     /** Ends the emission; the particles live out their time. */
     void finish() { m_phase = Phase::Done; }
+    /** Suppresses births, not the phase clock or particles already in flight. */
+    void setEmitting(bool emitting) { m_emitting = emitting; }
+    /** Retail billboard width uses the particle node's local Y scale, not its world basis. */
+    void setSpriteScale(f32 scale) { m_spriteScale = scale; }
     /** Ages the particles `frames` on, dropping the dead, then emits the frame's share. */
     void step(u32 frames);
 
@@ -120,6 +124,7 @@ public:
     void draw(ImmediateBatch& batch, const Vec3& right, const Vec3& up) const;
 
 private:
+    void stepFrame();
     f32 rateNow();
     void emit(f32 age);
     Vec3 newOrigin();
@@ -132,6 +137,8 @@ private:
     Phase m_phase = Phase::Done;
     u32 m_age = 0;
     f32 m_saved = 0.0f; ///< the fraction of a particle owed from the last frame
+    bool m_emitting = true;
+    f32 m_spriteScale = 1.0f;
     std::minstd_rand m_random;
 };
 

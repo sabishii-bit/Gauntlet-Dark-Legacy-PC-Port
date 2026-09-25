@@ -35,9 +35,10 @@ const PotionLook& potionLook(s32 kind) {
 }
 
 } // namespace
-void PlayerArsenal::bind(const Resources& resources) {
+void PlayerArsenal::bind(const Resources& resources, std::span<TextureSet* const> textureLenders) {
     clear();
     m_resources.emplace(resources);
+    m_missiles.bindVisuals(resources.device, textureLenders);
     loadPotionModels();
     if (const auto tree = resources.weapons.trees.find("SUPERARROW")) {
         m_superShot.bind(resources.weapons.trees.tree(*tree), resources.weapons.models,
@@ -100,6 +101,8 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     launch.reach = PlayerMissiles::reachFor(figure.animator().attackSeconds());
     launch.spec = &MissileSpec::of(save.character);
     launch.model = &figure.missile();
+    launch.archive = figure.missileArchive();
+    launch.tree = figure.missileTree();
     // An obstructed muzzle still produces a world impact, without a flying weapon.
     const f32 radius = launch.spec->radius;
     const Vec3 clear = m_resources->collision.resolveWalls(launch.position, radius,
@@ -169,6 +172,8 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     launch.flags = worn.weapon | powerup::kSuperShot | 0x20U;
     launch.spec = &MissileSpec::superShot();
     launch.model = &m_superShot;
+    launch.archive = &m_resources->weapons;
+    launch.tree = "SUPERARROW";
     for (const auto& direction : PlayerMissiles::spread(launch.direction, worn.shots())) {
         launch.velocity = direction * launch.speed;
         m_missiles.launch(launch);
@@ -202,6 +207,8 @@ void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
     launch.damage = 0.1f * static_cast<f32>(experienceLevel(actor.save().experience()));
     launch.spec = m_resources->bossEncounter ? &kBossShot : &kLevelShot;
     launch.model = &body->familiarMissile();
+    launch.archive = body->effects();
+    launch.tree = "FAMILIAR_SPIT";
     launch.wallSound = MissileWallSound::Silent;
     // CalcTargetDir normalizes horizontal displacement, uses a 50-unit/second
     // flight estimate, then StartFX scales the direction by 35.
@@ -243,6 +250,11 @@ void PlayerArsenal::launchGauntlet(const PlayerActor& actor, PlayerFigure* body,
     launch.flags = worn.weapon | (left ? 2U : 4U);
     launch.spec = &kSpecs[which];
     launch.model = &m_gauntlets[which];
+    launch.archive = &m_resources->weapons;
+    launch.tree = kSpecs[which].model;
+    if (auto* archive = body->effects()) {
+        launch.textureLender = &archive->textures;
+    }
     for (const auto& direction : PlayerMissiles::spread(actor.facing(), worn.shots())) {
         launch.velocity = direction * launch.speed;
         m_missiles.launch(launch);
@@ -356,6 +368,8 @@ void PlayerArsenal::throwPotion(PlayerActor& actor) {
     launch.spec = &MissileSpec::potion();
     launch.model = &m_potionModels[static_cast<usize>(
         std::clamp(kind, 0, static_cast<s32>(m_potionModels.size()) - 1))];
+    launch.archive = &m_resources->weapons;
+    launch.tree = potionLook(kind).bottle;
     m_missiles.launch(launch);
 }
 } // namespace gdl::game

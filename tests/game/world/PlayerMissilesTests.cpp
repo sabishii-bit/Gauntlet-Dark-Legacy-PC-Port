@@ -8,6 +8,8 @@
 #include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
+#include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "game/world/PlayerMissiles.h"
 
 namespace {
@@ -17,6 +19,73 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
+
+TEST_CASE("gauntlet missiles own independent moving particle trees and retire with live tails",
+          "[game][missiles][effects][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELB/animations.json");
+    test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
+    ItemArchive weapons;
+    ItemArchive items;
+    ItemArchive player;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    REQUIRE(items.load(root / "ITEMS/LEVELB"));
+    REQUIRE(player.load(root / "PLAYERS/WAR/SFXYEL"));
+    test::FakeRenderDevice device;
+    for (const auto* tree : {"BOSSG_ACID", "BOSSG_ELEC"}) {
+        INFO(tree);
+        PlayerMissiles missiles;
+        const std::array<TextureSet*, 1> lenders{&items.textures};
+        missiles.bindVisuals(device, lenders);
+        MissileLaunch launch;
+        launch.spec = &MissileSpec::superShot();
+        launch.position = Vec3{0, 20, 0};
+        launch.velocity = Vec3{0, 0, 30};
+        launch.archive = &weapons;
+        launch.tree = tree;
+        launch.textureLender = &player.textures;
+        REQUIRE(missiles.launch(launch));
+        missiles.update(0.1f, nullptr);
+        REQUIRE(missiles.visuals().count() == 1);
+        const auto& first = missiles.visuals().effect(0);
+        REQUIRE(first.particles.field().particleCount() > 0);
+        REQUIRE_FALSE(first.particles.field().emitter(0).particles().empty());
+        const auto oldOrigin = first.particles.field().emitter(0).particles()[0].origin;
+        for (usize i = 0; i < first.particles.field().size(); ++i) {
+            const auto& field = first.particles.field();
+            const auto& name = field.emitter(i).descriptor().texture;
+            CHECK(field.textureOf(i) != &device.whiteTexture());
+            if (!weapons.textures.find(name)) {
+                TextureSet& owner = player.textures.find(name) ? player.textures : items.textures;
+                const auto slot = owner.find(name);
+                REQUIRE(slot);
+                CHECK(field.textureOf(i) == &owner.texture(device, *slot));
+            }
+        }
+        REQUIRE(missiles.launch(launch));
+        missiles.update(1.0f / 30, nullptr);
+        REQUIRE(missiles.visuals().count() == 2);
+        CHECK(missiles.visuals().effect(0).position.z > missiles.visuals().effect(1).position.z);
+        CHECK(missiles.visuals().effect(0).particles.field().emitter(0).age() >
+              missiles.visuals().effect(1).particles.field().emitter(0).age());
+        CHECK(missiles.visuals().effect(0).particles.field().emitter(0).particles()[0].origin ==
+              oldOrigin);
+        device.draws.clear();
+        missiles.draw(device, Mat4{1}, {});
+        REQUIRE(device.draws.size() > 2); // both meshes AND authored particle children
+        const std::array<MissileTarget, 1> targets{{{7, {0, 0, 0}, 100, 100}}};
+        missiles.update(1.0f / 30, nullptr, targets);
+        REQUIRE(missiles.count() == 0);
+        REQUIRE(missiles.takeImpacts().size() == 2);
+        REQUIRE(missiles.visuals().count() > 0);
+        CHECK(missiles.visuals().effect(0).retiring);
+        for (s32 i = 0; i < 300; ++i) {
+            missiles.update(1.0f / 30, nullptr);
+        }
+        REQUIRE(missiles.visuals().count() == 0);
+        missiles.clear();
+    }
+}
 
 TEST_CASE("super shots pierce bodies once and ignore walls", "[game][items][missiles]") {
     PlayerMissiles missiles;

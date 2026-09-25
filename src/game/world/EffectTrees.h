@@ -62,10 +62,12 @@ public:
         bool persistent = false;
         bool emitParticles = true;
         bool additive = false;
-        std::string then; ///< the tree that takes over once this has played
+        std::string then;      ///< the tree that takes over once this has played
+        bool retiring = false; ///< mesh gone; no new emission, but live particles finish
         RenderDevice* device = nullptr;
         const TreeInfo* tree = nullptr;
         ItemArchive* archive = nullptr;
+        std::vector<TextureSet*> lenders; ///< borrowed; same lifetime contract as archive
         TreeModel model;
         TreePose pose;
         AnimationPlayer player;
@@ -86,9 +88,14 @@ public:
                const Vec3& position, f32 scale = 1.0f);
     /** The same, turned, moving or repeating as `setting` says; its number, or nought. */
     u32 startSet(RenderDevice& device, ItemArchive& archive, std::string_view tree,
-                 const Vec3& position, const Setting& setting);
+                 const Vec3& position, const Setting& setting,
+                 std::span<TextureSet* const> textureLenders = {});
     /** Ends effect number `id` now. */
     void stop(u32 id);
+    /** Removes the mesh and ends births, retaining particle tails until they expire. */
+    void finish(u32 id);
+    /** Ordered fallback texture sets. Set before starting effects; owners must outlive clear(). */
+    void setTextureLenders(std::span<TextureSet* const> lenders);
     /** Removes time from the remaining lifetime and caps it, without restarting animation. */
     void shortenLifetime(u32 id, f32 secondsLost, f32 maximum);
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
@@ -112,11 +119,13 @@ private:
     /** An archive's texture animations, shared by its effects. */
     struct Motion {
         ItemArchive* archive = nullptr;
+        std::vector<TextureSet*> lenders;
         TextureAnimator animator;
     };
 
     std::vector<std::unique_ptr<Effect>> m_effects;
     std::vector<std::unique_ptr<Motion>> m_motions;
+    std::vector<TextureSet*> m_lenders;
     f32 m_frames = 0.0f;
     u32 m_nextId = 1;
 };

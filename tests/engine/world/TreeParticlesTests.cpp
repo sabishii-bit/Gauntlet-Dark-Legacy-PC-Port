@@ -1,5 +1,6 @@
 #include <array>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -34,9 +35,18 @@ TEST_CASE("tree particle nodes follow posed attachments without requiring model 
     particles.step(1.0f / 30, parent, pose);
     REQUIRE(particles.field().particleCount() > 0);
     REQUIRE(particles.field().emitter(0).node() == parent * pose[1]);
+    std::array<NodePose, 3> local{};
+    local[0].scale = Vec3{9}; // ancestor scaling must not multiply the billboard again
+    local[1].scale.y = 3;
+    particles.setLocalScales(local);
     particles.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
     REQUIRE_FALSE(device.draws.empty());
     REQUIRE(device.draws[0].texture == &device.whiteTexture());
+    const auto& vertices = device.draws[0].vertices;
+    REQUIRE(vertices.size() >= 6);
+    const auto& emitter = particles.field().emitter(0);
+    CHECK(vertices[1].position.x - vertices[0].position.x ==
+          Catch::Approx(emitter.widthOf(emitter.particles()[0]) * 3));
     const auto count = particles.field().particleCount();
     const test::FakeTexture unrelated{1, 1};
     particles.setTextureFrame(42, unrelated); // a missing texture is not slot zero

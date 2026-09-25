@@ -35,7 +35,7 @@ public:
     PlayerArsenal& operator=(const PlayerArsenal&) = delete;
     PlayerArsenal(PlayerArsenal&&) = delete;
     PlayerArsenal& operator=(PlayerArsenal&&) = delete;
-    void bind(const Resources& resources);
+    void bind(const Resources& resources, std::span<TextureSet* const> textureLenders = {});
     void clear();
     void launchWeapon(const PlayerActor& actor, PlayerFigure* body, const Vec3& direction,
                       f32 scale, bool spreads, std::optional<Vec3> target = std::nullopt);

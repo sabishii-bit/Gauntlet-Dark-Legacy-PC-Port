@@ -78,6 +78,11 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                  world.ref().name.empty() ? 'L' : world.ref().name.front(),
                  world.level() != nullptr && world.level()->bossType >= 0);
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
+    m_weapons.load(context.unpackedRoot / kWeaponsArchive);
+    const std::array<TextureSet*, 5> effectTextures{&m_weapons.textures, &world.items().textures,
+                                                    &world.realmItems().textures,
+                                                    &world.powerups().textures, &m_staticTextures};
+    m_effects.setTextureLenders(effectTextures);
     if (const auto glow = m_staticTextures.find("FONT32_GLOW")) {
         m_hud.setGlow(&m_staticTextures.texture(device, *glow));
     }
@@ -159,7 +164,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     beginSpawn(device, !options.position.has_value() && atEntrance);
     m_arsenal.bind({device, m_classes, m_weapons, world.collision(), m_effects, m_audio,
                     context.sounds, world.wallHitSound(), world.isTower(),
-                    world.level() != nullptr && world.level()->bossType >= 0});
+                    world.level() != nullptr && world.level()->bossType >= 0},
+                   effectTextures);
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
                     m_arsenal, m_dimmer});
     m_bossSequence.bind(
@@ -1324,7 +1330,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     m_portals.draw(device, clip, m_world->lighting());
     m_transporters.draw(device, clip, m_world->lighting());
-    m_fixtures.draw(device, clip, m_world->lighting());
+    const CameraFrame effectCamera = CameraFrame::of(viewCamera());
+    m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting());
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_hitFlashTexture, &m_weapons);
     m_opponents.critters().draw(device, clip, m_world->lighting());
@@ -1333,7 +1340,6 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
                                                                       : m_world->lighting(),
                               m_bossSequence.frozenTexture());
-    const CameraFrame effectCamera = CameraFrame::of(viewCamera());
     m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
     m_world->drawDeferred(device, clip, viewCamera());
     m_opponents.missiles().draw(device, clip, m_world->lighting());

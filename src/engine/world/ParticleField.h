@@ -40,6 +40,8 @@ public:
                 u32 seed = 1);
     /** Moves an emitter's marker; new particles leave from there. */
     void setNode(usize index, const Mat4& node);
+    void setEmitting(usize index, bool emitting);
+    void setSpriteScale(usize index, f32 scale);
     /** Replaces a sprite frame without restarting its emitter or live particles. */
     void setTexture(usize index, const Texture& texture);
     /** Ends an emitter's emission; its particles live out their time. */

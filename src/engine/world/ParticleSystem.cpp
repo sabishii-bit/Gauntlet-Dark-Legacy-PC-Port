@@ -244,6 +244,8 @@ void ParticleEmitter::start(const ParticleDescriptor& descriptor, const Mat4& no
     m_phase = descriptor.delay > 0 ? Phase::Delay : Phase::Emitting;
     m_age = 0;
     m_saved = 0.0f;
+    m_emitting = true;
+    m_spriteScale = 1.0f;
     m_random.seed(seed);
 }
 
@@ -289,20 +291,26 @@ f32 ParticleEmitter::rateNow() {
 }
 
 void ParticleEmitter::step(u32 frames) {
-    if (frames == 0) {
-        return;
+    // Use the same 30 Hz simulation at every render rate. Evaluating the rate
+    // only at the batch's end can skip a short emitting phase altogether.
+    const u32 count = frames > kMostFramesAtOnce ? 1U : frames;
+    for (u32 i = 0; i < count; ++i) {
+        stepFrame();
     }
-    const u32 dt = frames > kMostFramesAtOnce ? 1U : frames;
+}
+
+void ParticleEmitter::stepFrame() {
+    constexpr u32 kStep = 1;
     const ParticleDescriptor& d = m_descriptor;
     const auto span = static_cast<f32>(d.particleLife + d.particleFade);
     for (Particle& particle : m_particles) {
-        particle.age += static_cast<f32>(dt);
+        particle.age += static_cast<f32>(kStep);
     }
     std::erase_if(m_particles, [&](const Particle& p) { return p.age >= span; });
 
-    u32 elapsed = dt;
+    u32 elapsed = kStep;
     if (m_phase == Phase::Delay) {
-        m_age += dt;
+        m_age += kStep;
         if (m_age <= d.delay) {
             return;
         }
@@ -310,9 +318,12 @@ void ParticleEmitter::step(u32 frames) {
         m_age = elapsed;
         m_phase = Phase::Emitting;
     } else if (m_phase != Phase::Done) {
-        m_age += dt;
+        m_age += kStep;
     }
     f32 rate = rateNow();
+    if (!m_emitting) {
+        rate = 0;
+    }
     if (rate > 0.0f && d.rateRandom > 0.0f) {
         rate *= 1.0f + d.rateRandom * (2.0f * random01() - 1.0f);
     }
@@ -409,7 +420,7 @@ void ParticleEmitter::draw(ImmediateBatch& batch, const Vec3& right, const Vec3&
     for (const Particle& particle : m_particles) {
         const Vec3 centre = positionOf(particle);
         const Color color = colorOf(particle);
-        const f32 half = 0.5f * widthOf(particle);
+        const f32 half = 0.5f * widthOf(particle) * m_spriteScale;
         const Vec3 dx = right * half;
         const Vec3 dy = up * half;
         const Vec3 topLeft = centre - dx + dy;

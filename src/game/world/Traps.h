@@ -77,7 +77,8 @@ public:
     bool armed(usize index) const { return m_traps[index]->action != kResting; }
 
     std::vector<TrapHit> update(s32 ticks, f32 seconds, std::span<const TrapVictim> party);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const CameraFrame* camera = nullptr) const;
 
 private:
     s32 restTicks(const Trap& trap);

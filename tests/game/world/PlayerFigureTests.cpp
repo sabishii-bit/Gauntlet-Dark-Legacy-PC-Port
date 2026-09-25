@@ -77,9 +77,12 @@ TEST_CASE("Jester throws face the camera and his permanent familiar fires once p
     camera.right = {0, 0, -1};
     camera.forward = {-1, 0, 0};
     PlayerMissiles missiles;
+    missiles.bindVisuals(device);
     MissileLaunch launch;
     launch.spec = &MissileSpec::of(7);
     launch.model = &figure->missile();
+    launch.archive = figure->missileArchive();
+    launch.tree = figure->missileTree();
     launch.velocity = Vec3{0, 0, 35};
     REQUIRE(missiles.launch(launch));
     missiles.draw(device, Mat4{1}, {}, &camera);

@@ -88,10 +88,65 @@ TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific
         REQUIRE(vent.hasFigure());
         REQUIRE(vent.sequenceCount() == 4); // OFF, ONA, ON, ONB, not an invented one-tick cycle
         REQUIRE(vent.ticksOf(2) > 1);
+        REQUIRE(vent.particles().field().size() > 0);
     }
     fixture.fixtures.clear(); // borrowed figures must go before either archive
     fixture.world.clear();
     REQUIRE_FALSE(fixture.world.realmItems().loaded());
+}
+
+TEST_CASE("every authored flame trap emits only outside OFF and retains its dying tails",
+          "[game][screens][level-fixtures][unpacked]") {
+    const auto root = test::unpackedOrSkip("ITEMS/LEVELB/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    usize checked = 0;
+    for (const char realm : std::string_view("BCDGHIJK")) {
+        const std::string path = "ITEMS/LEVEL" + std::string(1, realm);
+        test::unpackedOrSkip(path + "/animations.json");
+        ItemArchive archive;
+        REQUIRE(archive.load(root / path));
+        test::FakeRenderDevice device;
+        for (const auto* name : {"FLAMEV", "FLAMEH", "FLAMEV1", "FLAMEH1"}) {
+            const auto index = archive.trees.find(name);
+            if (!index) {
+                continue;
+            }
+            const auto& tree = archive.trees.tree(*index);
+            if (!std::ranges::any_of(tree.nodes,
+                                     [](const auto& node) { return node.particle >= 0; })) {
+                continue;
+            }
+            INFO(path << "/" << name);
+            ItemFigure figure;
+            REQUIRE(figure.place(device, archive, name, {}, nullptr));
+            figure.gateParticlesOnSequence(true);
+            figure.update(0.1f);
+            REQUIRE(figure.particles().field().particleCount() == 0);
+            figure.play(2, true);
+            figure.update(0.1f);
+            REQUIRE(figure.particles().field().particleCount() > 0);
+            for (usize i = 0; i < figure.particles().field().size(); ++i) {
+                CHECK(figure.particles().field().textureOf(i) != &device.whiteTexture());
+            }
+            device.draws.clear();
+            figure.draw(device, Mat4{1}, {});
+            REQUIRE_FALSE(device.draws.empty());
+            const usize alive = figure.particles().field().particleCount();
+            figure.play(0, true);
+            REQUIRE(figure.particles().field().particleCount() == alive);
+            for (s32 i = 0; i < 300; ++i) {
+                figure.update(1.0f / 30);
+            }
+            REQUIRE(figure.particles().field().particleCount() == 0);
+            figure.play(2, true);
+            figure.update(0.1f);
+            REQUIRE(figure.particles().field().particleCount() > 0);
+            ++checked;
+        }
+    }
+    REQUIRE(checked == 15);
 }
 
 TEST_CASE("fixture updates age per-player hazard cooldowns without reordering the party",

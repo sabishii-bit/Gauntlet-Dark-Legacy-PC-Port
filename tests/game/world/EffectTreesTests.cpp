@@ -20,6 +20,57 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("lion gargoyle breath resolves FBALLX from the loaded weapons archive",
+          "[effects][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GAR_LION/animations.json");
+    ItemArchive weapons;
+    ItemArchive lion;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    REQUIRE(lion.load(root / "MONSTERS/GAR_LION"));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    const std::array<TextureSet*, 1> lenders{&weapons.textures};
+    effects.setTextureLenders(lenders);
+    REQUIRE_FALSE(lion.textures.find("FBALLX"));
+    REQUIRE(effects.start(device, lion, "FIREFX", Vec3{0}));
+    effects.update(0.4f); // both authored emitters wait 0.27 seconds before birth
+    REQUIRE(effects.count() == 1);
+    const auto& field = effects.effect(0).particles.field();
+    REQUIRE(field.size() > 0);
+    REQUIRE(field.particleCount() > 0);
+    const auto slot = weapons.textures.find("FBALLX");
+    REQUIRE(slot);
+    REQUIRE(field.size() == 2);
+    CHECK(field.emitter(1).descriptor().texture == "FBALLX");
+    CHECK(field.textureOf(1) == &weapons.textures.texture(device, *slot));
+    effects.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(device.draws.back().texture == field.textureOf(1));
+    effects.clear();
+}
+
+TEST_CASE("GETGARG pickup burst survives a four-frame batch", "[effects][unpacked]") {
+    const auto directory = test::unpackedOrSkip("POWERUPS/animations.json").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(directory));
+    test::FakeRenderDevice device;
+    EffectTrees single;
+    EffectTrees batch;
+    REQUIRE(single.start(device, archive, "GETGARG", Vec3{0}));
+    REQUIRE(batch.start(device, archive, "GETGARG", Vec3{0}));
+    for (s32 i = 0; i < 4; ++i) {
+        single.update(1.0f / 30);
+    }
+    batch.update(4.0f / 30);
+    REQUIRE(single.count() == 1);
+    REQUIRE(batch.count() == 1);
+    const auto& expected = single.effect(0).particles.field();
+    const auto& actual = batch.effect(0).particles.field();
+    REQUIRE(actual.particleCount() > 0);
+    CHECK(actual.particleCount() == expected.particleCount());
+}
+
 TEST_CASE("all authored monster generator effects bind their particle textures and emit",
           "[generators][effects][unpacked]") {
     const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
