@@ -48,6 +48,7 @@
 #include "game/world/EffectTrees.h"
 #include "game/world/ExitPortals.h"
 #include "game/world/LevelSoundscape.h"
+#include "game/world/LevelTransporters.h"
 #include "game/world/LevelWorld.h"
 #include "game/world/PlayerArsenal.h"
 #include "game/world/PlayerFigure.h"
@@ -165,6 +166,7 @@ public:
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
     const PlayerMissiles& missiles() const { return m_arsenal.missiles(); }
     const ExitPortals& portals() const { return m_portals; }
+    const LevelTransporters& transporters() const { return m_transporters; }
     const Chests& chests() const { return m_fixtures.chests(); }
     const LockedGates& gates() const { return m_fixtures.gates(); }
     const Traps& traps() const { return m_fixtures.traps(); }
@@ -262,6 +264,7 @@ private:
     void collectItems();
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
+    void updateTransporters(s32 ticks, f32 seconds, bool held);
     LevelFixtures::Events fixtureEvents();
     LevelOpponents::Events opponentEvents();
     PlayerAttacks::Targets attackTargets();
@@ -321,6 +324,7 @@ private:
     LevelMessages m_messages;
     PlayerArsenal m_arsenal;
     ExitPortals m_portals;
+    LevelTransporters m_transporters;
     PlayerHealth m_health;
     PickupVoices m_pickupVoices;
     AmbientDimmer m_dimmer;

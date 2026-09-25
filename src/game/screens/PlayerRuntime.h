@@ -7,6 +7,7 @@
 
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerCapture.h"
+#include "game/players/PlayerTransport.h"
 #include "game/players/TurboMeter.h"
 #include "game/players/TurboMove.h"
 #include "game/world/PlayerFigure.h"
@@ -19,6 +20,7 @@ enum class PlayerLife : u8 { Standing, Dying, InTower };
 struct PlayerRuntime {
     PlayerActor actor;
     PlayerCapture capture;
+    PlayerTransport transport;
     std::unique_ptr<PlayerFigure> figure; ///< null when character assets are unavailable
     std::optional<usize> slot;            ///< persistent save slot, not the input player id
     CharacterSave entrySave;              ///< restored when a fallen character leaves the level

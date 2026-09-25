@@ -58,6 +58,8 @@ add_library(game STATIC
     players/PlayerActor.cpp
     players/PlayerCapture.h
     players/PlayerCapture.cpp
+    players/PlayerTransport.h
+    players/PlayerTransport.cpp
     players/PlayerAnimator.h
     players/PlayerAnimator.cpp
     players/PlayerImpact.h
@@ -115,6 +117,8 @@ add_library(game STATIC
     world/Traps.cpp
     world/ExitPortals.h
     world/ExitPortals.cpp
+    world/LevelTransporters.h
+    world/LevelTransporters.cpp
     world/LevelWorld.h
     world/LevelWorld.cpp
     world/TowerCamera.h
@@ -213,7 +217,8 @@ add_library(game STATIC
     screens/PlayerItemAttacks.cpp
     players/ItemAttack.cpp
     screens/PlayerHealth.cpp
-    screens/PlayScene.cpp)
+    screens/PlayScene.cpp
+    screens/PlaySceneTransport.cpp)
 
 add_library(gdl::game ALIAS game)
 

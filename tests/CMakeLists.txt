@@ -128,12 +128,15 @@ add_executable(tests
     game/players/PlayerControlsTests.cpp
     game/players/PlayerActorTests.cpp
     game/players/PlayerCaptureTests.cpp
+    game/players/PlayerTransportTests.cpp
     game/players/PlayerAnimatorTests.cpp
     game/players/ItemAttackTests.cpp
     game/players/PlayerImpactTests.cpp
     game/world/LevelWorldTests.cpp
     game/world/LevelCatalogTests.cpp
     game/world/ExitPortalsTests.cpp
+    game/world/LevelTransportersTests.cpp
+    game/screens/PlaySceneTransportTests.cpp
     game/world/LevelFixturesTests.cpp
     game/world/SafeRocksTests.cpp
     game/players/LevelWatchTests.cpp

@@ -111,6 +111,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         }
     }
     spawnParty(party, options);
+    m_transporters.bind(device, world.layout(), world.items(), static_cast<s32>(m_players.size()));
     for (const DroppedItem& item : options.items) {
         world.placeItem(device, item.name, item.position);
     }
@@ -187,6 +188,7 @@ void PlayScene::close() {
     }
     m_sumner.clear();
     m_portals.clear();
+    m_transporters.clear();
     m_fixtures.clear();
     m_transition.release();
     m_departure.clear();
@@ -1148,6 +1150,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             [this](usize i, const Vec3& from, const Vec3& to) {
                 return m_opponents.resolveMovement(m_players[i].actor, from, to);
             }};
+    updateTransporters(ticks, seconds, held);
     const std::vector<CameraSubject> subjects = PartyMotion::step(
         m_players, inputs, held, bossCameraOn() ? m_bossCamera.yaw() : m_camera.yaw(), ticks,
         seconds, m_world->collision(), movementEvents);
@@ -1296,12 +1299,14 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                 skin = m_hitFlashTexture;
             }
             figure.setSkinTexture(skin);
-            figure.draw(device, clip, body, m_world->lighting(), worn.bodyAlpha(m_playSeconds),
+            figure.draw(device, clip, body, m_world->lighting(),
+                        worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha(),
                         runtime.move.weaponHidden());
             figure.setSkinTexture(nullptr);
         }
     }
     m_portals.draw(device, clip, m_world->lighting());
+    m_transporters.draw(device, clip, m_world->lighting());
     m_fixtures.draw(device, clip, m_world->lighting());
     m_opponents.generators().draw(device, clip, m_world->lighting());
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_hitFlashTexture, &m_weapons);
