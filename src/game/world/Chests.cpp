@@ -163,8 +163,9 @@ usize Chests::updateXray(RenderDevice& device, ItemArchive& items, ItemArchive& 
         usize closest = m_chests.size();
         for (usize i = 0; i < m_chests.size(); ++i) {
             const auto& chest = *m_chests[i];
-            if (!chest.shown || chest.gone || chest.state != kShut ||
-                chest.subtype == kTrappedChest) {
+            // ClosestChest checks visibility and action, not the container subtype:
+            // X-Ray also warns about a bomb inside a trapped chest.
+            if (!chest.shown || chest.gone || chest.state != kShut) {
                 continue;
             }
             u32 seed = m_seed;

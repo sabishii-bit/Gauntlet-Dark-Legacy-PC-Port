@@ -1,6 +1,7 @@
 #include "game/world/LockedGates.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -27,6 +28,22 @@ bool LockedGates::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
             log::warn("Gates: no figure {} in the item archive", name);
         }
         gate->box = gate->figure.obstacle(info);
+        if (info.collisionType == 4) {
+            // Type 7 also includes floor decorations (E1DOORCARPET23). Retail
+            // fn_8005FDA8 tests the authored triangle list, not the broad-phase
+            // radius as a solid box. A floor-only list cannot block a passage
+            // and must never reach the key-spending contact handler.
+            const Mat3 rotation{itemPlacement(Vec3{0}, instance.rotation)};
+            gate->blocksPassage =
+                std::ranges::any_of(instance.collision, [&](const auto& triangle) {
+                    return std::abs((rotation * triangle.normal).y) < WorldCollision::kFloorNormalY;
+                });
+            gate->box.solid = gate->blocksPassage;
+            if (instance.collision.empty()) {
+                log::warn("Gates: {} has no exported triangle collision; re-export the level",
+                          name);
+            }
+        }
         m_gates.push_back(std::move(gate));
     }
     return !m_gates.empty();
@@ -51,6 +68,9 @@ std::vector<GateEvent> LockedGates::update(s32 ticks, f32 seconds,
             continue;
         }
         gate.figure.update(seconds);
+        if (!gate.blocksPassage) {
+            continue;
+        }
         gate.refusalLeft = std::max(gate.refusalLeft - seconds, 0.0f);
         if (gate.state == kShut) {
             for (usize v = 0; v < party.size(); ++v) {

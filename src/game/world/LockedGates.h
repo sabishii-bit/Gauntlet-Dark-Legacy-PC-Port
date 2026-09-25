@@ -46,6 +46,7 @@ public:
         f32 refusalLeft = 0.0f;
         s32 minPlayers = 0;
         bool shown = true;
+        bool blocksPassage = true; ///< floor-only triangle lists are not key-operated barriers
         ItemFigure figure;
         Obstacle box;
     };

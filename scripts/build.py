@@ -77,6 +77,39 @@ def refresh_player_effects(binary_dir: pathlib.Path, app_args: list[str],
                              "Rebuild gdlunpack and check the original asset files.")
 
 
+def refresh_item_collision(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
+    """Re-export levels whose old manifests omitted their items' collision triangles."""
+    root = ROOT if root is None else root
+    assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
+    unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
+    for flag, value in zip(app_args, app_args[1:]):
+        if flag == "--data":
+            assets = root / value
+        elif flag == "--unpacked":
+            unpacked = root / value
+
+    def incomplete(manifest):
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        return any(item.get("triangleCount", 0) > 0 and
+                   len(item.get("collision", [])) != item["triangleCount"]
+                   for item in data.get("itemInstances", []))
+
+    stale = [manifest for manifest in sorted((unpacked / "LEVELS").glob("*/world.json"))
+             if incomplete(manifest)]
+    if not stale:
+        return
+    unpacker = binary_dir / "bin" / f"gdlunpack{EXE}"
+    if not (assets / "LEVELS").is_dir() or not unpacker.is_file():
+        raise ValueError("Item collision needs re-exporting. Provide the original LEVELS assets "
+                         "and build gdlunpack before launching.")
+    print(f"Refreshing collision data in {len(stale)} legacy level exports", flush=True)
+    for manifest in stale:
+        devenv.run([str(unpacker), str(assets), str(unpacked), "--only", manifest.parent.name])
+        if incomplete(manifest):
+            raise ValueError(f"Item collision refresh did not upgrade {manifest}. "
+                             "Rebuild gdlunpack and check the original asset files.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("preset", nargs="?", default=None,
@@ -123,6 +156,7 @@ def main() -> int:
 
     if args.run:
         refresh_player_effects(binary_dir, app_args)
+        refresh_item_collision(binary_dir, app_args)
         return devenv.run([str(bin_dir / f"gauntlet{EXE}"), *app_args]).returncode
     return 0
 

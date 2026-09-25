@@ -736,6 +736,27 @@ void unpackWorld(const AssetLocator& files, const std::filesystem::path& outDir,
             vec3(instance.position);
             json.key("rotation");
             vec3(instance.rotation);
+            // Item collision lists are local to the item, unlike static world geometry.
+            json.key("collision").beginArray();
+            if (instance.triangleIndex >= 0 && instance.triangleCount > 0) {
+                const auto first = static_cast<usize>(instance.triangleIndex);
+                const auto count = static_cast<usize>(instance.triangleCount);
+                if (first + count > world.collision.size()) {
+                    throw FormatError("item collision range is outside the world triangle table");
+                }
+                for (usize t = first; t < first + count; ++t) {
+                    json.beginObject();
+                    json.key("normal");
+                    vec3(world.collision[t].normal);
+                    json.key("vertices").beginArray();
+                    for (const Vec3& vertex : world.collision[t].vertices) {
+                        vec3(vertex);
+                    }
+                    json.endArray();
+                    json.endObject();
+                }
+            }
+            json.endArray();
             json.key("params").beginArray();
             for (const u8 value : instance.params) {
                 json.value(u32{value});

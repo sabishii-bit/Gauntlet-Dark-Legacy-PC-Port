@@ -12,6 +12,38 @@ import build
 
 
 class BuildLaunchTests(unittest.TestCase):
+    def test_item_collision_refreshes_only_incomplete_levels_and_verifies_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            binary = root / "build/release"
+            (binary / "bin").mkdir(parents=True)
+            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
+            (root / "raw/LEVELS").mkdir(parents=True)
+            manifest = root / "export/LEVELS/LEVELE1/world.json"
+            manifest.parent.mkdir(parents=True)
+            stale = {"itemInstances": [{"triangleCount": 1}]}
+            manifest.write_text(json.dumps(stale), encoding="utf-8")
+            current = {"itemInstances": [{"triangleCount": 1, "collision": [{}]}]}
+            args = ["--data", "raw", "--unpacked", "export"]
+
+            def unpack(_command):
+                manifest.write_text(json.dumps(current), encoding="utf-8")
+
+            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
+                build.refresh_item_collision(binary, args, root)
+                run.assert_called_once_with([
+                    str(binary / "bin" / f"gdlunpack{build.EXE}"), str(root / "raw"),
+                    str(root / "export"), "--only", "LEVELE1"])
+                run.reset_mock()
+                build.refresh_item_collision(binary, args, root)
+                run.assert_not_called()
+                manifest.write_text(json.dumps(stale), encoding="utf-8")
+                run.side_effect = None
+                with self.assertRaisesRegex(ValueError, "did not upgrade"):
+                    build.refresh_item_collision(binary, args, root)
+            with self.assertRaisesRegex(ValueError, "needs re-exporting"):
+                build.refresh_item_collision(binary, ["--unpacked", "export"], root)
+
     def test_legacy_player_exports_refresh_once_before_launch(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -49,6 +81,7 @@ class BuildLaunchTests(unittest.TestCase):
                 mock.patch.object(build.devenv, "run") as run:
             root = pathlib.Path(directory)
             build.refresh_player_effects(root / "build/release", [], root)
+            build.refresh_item_collision(root / "build/release", [], root)
             run.assert_not_called()
 
     def test_custom_asset_paths_are_respected_and_missing_raw_assets_fail_clearly(self):
