@@ -156,7 +156,7 @@ TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and
     }
     REQUIRE(blows.size() >= 8);
     REQUIRE(blows[7].power);
-    REQUIRE(blows[7].knocksBack);
+    REQUIRE((blows[7].flags & EnemyHit::kKnockBack) != 0);
     REQUIRE(blows[7].damage == Approx(15.0f * 0.667f * 1.5f));
     REQUIRE_FALSE(blows[6].power);
     // A blow does not land on someone who has gone.

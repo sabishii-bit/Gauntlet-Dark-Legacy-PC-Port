@@ -82,6 +82,48 @@ TEST_CASE("a level's exit items become portals that know where they lead",
     REQUIRE(f.portals.size() == 0);
 }
 
+TEST_CASE("exit portal artwork retains authored yaw pitch and roll", "[portals][item-rotation]") {
+    const auto dir = sampleLevel("portals-rotation");
+    writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+        "itemInfos":[{"type":9,"name":"EXIT_PORTAL"}],"itemInstances":[
+        {"info":0,"position":[10,0,10],"rotation":[0,1.570796327,0]},
+        {"info":0,"position":[20,0,10],"rotation":[1.570796327,0,0]},
+        {"info":0,"position":[30,0,10],"rotation":[3.141592654,0,3.141592654]}]})");
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 0 0 1\nv 1 0 0\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"EXIT_PORTAL",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"IDLE","frames":10,"rate":30}]}]})");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    const LevelCatalog catalog;
+    ItemArchive art;
+    ExitPortals portals;
+    REQUIRE(layout.load(dir));
+    REQUIRE(art.load(dir));
+    REQUIRE(portals.bind(device, layout, art, catalog, nullptr));
+    portals.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 3);
+    const std::array forward{Vec3{-1, 0, 0}, Vec3{0, -1, 0}, Vec3{0, 0, -1}};
+    const std::array right{Vec3{0, 0, 1}, Vec3{1, 0, 0}, Vec3{-1, 0, 0}};
+    for (usize i = 0; i < forward.size(); ++i) {
+        CAPTURE(i);
+        const auto& draw = device.draws[i];
+        REQUIRE(draw.vertices.size() == 3);
+        CHECK(glm::distance(draw.vertices[0].position, Vec3{10 + 10 * i, 0, 10}) < 0.0001f);
+        CHECK(glm::distance(draw.vertices[1].position - draw.vertices[0].position, forward[i]) <
+              0.0001f);
+        CHECK(glm::distance(draw.vertices[2].position - draw.vertices[0].position, right[i]) <
+              0.0001f);
+    }
+    portals.clear();
+}
+
 TEST_CASE("a portal runs through with the whole party on it and waits for stragglers",
           "[game][world][portals]") {
     Fixture f("portals-run");

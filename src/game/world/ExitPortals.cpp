@@ -64,8 +64,7 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
                 portal.position.y = floor->y + kFloorLift;
             }
         }
-        portal.transform = glm::rotate(glm::translate(Mat4{1.0f}, portal.position),
-                                       instance.rotation.y, Vec3{0.0f, 1.0f, 0.0f});
+        portal.transform = itemPlacement(portal.position, instance.rotation);
         if (portal.secret) {
             ItemArchive& iconArt = itemArchiveForTree(items, info.name, realmItems);
             portal.icon.place(device, iconArt, info.name, instance, collision);
