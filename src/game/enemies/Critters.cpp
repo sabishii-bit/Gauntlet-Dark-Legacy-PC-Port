@@ -107,7 +107,8 @@ void Critters::collect(Combatant& actor) {
         m_shots.push_back(event);
     }
 }
-void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) {
+void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
+                      bool timeStopped) {
     if (ticks <= 0) {
         return;
     }
@@ -118,7 +119,7 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
         stock->textures.step(frames);
     }
     for (auto& actor : m_critters) {
-        actor.update(ticks, seconds, players, m_critters);
+        actor.update(ticks, seconds, players, m_critters, timeStopped);
         collect(actor);
     }
 }

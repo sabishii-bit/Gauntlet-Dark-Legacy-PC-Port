@@ -42,7 +42,7 @@ public:
     /** Poses every object at its current frame. */
     void apply(WorldScene& scene) const;
     /** Poses every object, then moves `seconds` on. */
-    void step(f32 seconds, WorldScene& scene);
+    void step(f32 seconds, WorldScene& scene, bool pauseLoops = false);
 
 private:
     struct Track {

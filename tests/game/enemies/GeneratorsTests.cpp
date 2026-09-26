@@ -156,7 +156,7 @@ std::filesystem::path sampleLevel(std::string_view name) {
 }
 
 TEST_CASE("boss generators use the stage record and breed after the birth delay",
-          "[spider][unpacked]") {
+          "[spider][unpacked][stop-time]") {
     const auto root = test::unpackedOrSkip("MONSTERS/SPI/animations.json")
                           .parent_path()
                           .parent_path()
@@ -183,7 +183,11 @@ TEST_CASE("boss generators use the stage record and breed after the birth delay"
     REQUIRE(generators.countdownOf(0) == 40);
     REQUIRE_FALSE(generators.bodyShown(0));
     const std::vector<EnemyView> party{{0, {0, 0, 20}, 1, 6}};
-    generators.update(40, enemies, party);
+    generators.update(20, enemies, party, {}, true);
+    CHECK(generators.countdownOf(0) == 20);
+    generators.update(20, enemies, party, {}, true);
+    CHECK(generators.countdownOf(0) == 0);
+    generators.update(600, enemies, party, {}, true);
     REQUIRE(generators.bredOf(0) == 0);
     generators.update(2, enemies, party);
     REQUIRE(generators.bredOf(0) == 1);

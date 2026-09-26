@@ -234,7 +234,7 @@ void Generators::clear() {
 }
 
 void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
-                        std::span<const Obstacle> obstacles) {
+                        std::span<const Obstacle> obstacles, bool timeStopped) {
     if (ticks <= 0) {
         return;
     }
@@ -261,7 +261,7 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
             generator.countdown -= ticks;
             continue;
         }
-        if (out[g] >= generator.most) {
+        if (timeStopped || out[g] >= generator.most) {
             continue;
         }
         bool near = false;

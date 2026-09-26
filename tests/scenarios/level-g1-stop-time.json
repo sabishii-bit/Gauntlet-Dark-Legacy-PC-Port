@@ -1,0 +1,18 @@
+{
+  "screen": "tower",
+  "level": "G1",
+  "party": [
+    {
+      "player": 0,
+      "class": "WAR",
+      "color": "BLU",
+      "name": "TEST",
+      "level": 30,
+      "health": 2000,
+      "powerups": [{"kind": 9, "flags": 8, "strength": 30}]
+    }
+  ],
+  "position": [100.0, 10.2, -72.5],
+  "yaw": 1.57,
+  "welcome": false
+}

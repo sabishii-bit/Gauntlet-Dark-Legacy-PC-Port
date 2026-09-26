@@ -48,7 +48,7 @@ public:
     void setArenaTargets(std::span<const CombatArenaTarget> targets);
     bool raisesArenaRocks() const;
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                std::span<const Combatant> peers = {});
+                std::span<const Combatant> peers = {}, bool timeStopped = false);
     void hurt(const EnemyHit& hit, s32 partId = -1);
     void freeze(s32 ticks);
     void blind(s32 ticks);

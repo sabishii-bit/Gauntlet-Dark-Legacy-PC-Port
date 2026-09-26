@@ -33,6 +33,7 @@ inline constexpr u32 kLeftGauntlet = 0x8000;
 inline constexpr u32 kSpeedBoost = 0x00010000;  ///< special
 inline constexpr u32 kInvisible = 0x00000004;   ///< special
 inline constexpr u32 kXRay = 0x00000002;        ///< special: see inside the nearest closed chest
+inline constexpr u32 kStopTime = 0x00000008;    ///< special: halt ordinary opponents and hazards
 inline constexpr u32 kGrowth = 0x00000100;      ///< special
 inline constexpr u32 kLevitation = 1;           ///< special
 inline constexpr u32 kTurbo = 0x00080000;       ///< special, immediate meter refill

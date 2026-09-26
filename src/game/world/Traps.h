@@ -49,6 +49,7 @@ public:
     static constexpr s32 kBlade = 3;
     static constexpr s32 kBlades = 4;
     static constexpr s32 kTicksPerTimeUnit = 2; ///< the record's times are in half ticks
+    static constexpr s32 kStopTimeRest = 30;    ///< held safe, then waits half a second
 
     /** One trap. */
     struct Trap {
@@ -76,7 +77,8 @@ public:
     /** Whether a trap is out of its rest, and hurts. */
     bool armed(usize index) const { return m_traps[index]->action != kResting; }
 
-    std::vector<TrapHit> update(s32 ticks, f32 seconds, std::span<const TrapVictim> party);
+    std::vector<TrapHit> update(s32 ticks, f32 seconds, std::span<const TrapVictim> party,
+                                bool timeStopped = false);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
 

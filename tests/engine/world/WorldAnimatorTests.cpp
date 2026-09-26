@@ -135,4 +135,24 @@ TEST_CASE("one-shot animations stop at their last frame, backwards ones at their
     REQUIRE(animator.size() == 0);
 }
 
+TEST_CASE("pausing looping world tracks does not hold one-shot trigger movement",
+          "[world][animation][stop-time]") {
+    WorldScene scene;
+    WorldAnimator animator;
+    animator.bind(layoutWithFlags("world-time-stop", 0));
+    animator.step(kStep, scene);
+    REQUIRE(animator.frame(0) == Approx(1));
+    animator.step(5, scene, true);
+    CHECK(animator.frame(0) == Approx(1));
+    animator.step(kStep, scene);
+    CHECK(animator.frame(0) == Approx(2));
+    animator.fire(0, true);
+    animator.step(1, scene, true);
+    CHECK(animator.finished(0));
+    CHECK(animator.frame(0) == Approx(3));
+    animator.fire(0, false);
+    animator.step(1, scene, true);
+    CHECK(animator.finished(0));
+    CHECK(animator.frame(0) == Approx(0));
+}
 } // namespace

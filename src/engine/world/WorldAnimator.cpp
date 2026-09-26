@@ -102,11 +102,11 @@ void WorldAnimator::apply(WorldScene& scene) const {
     }
 }
 
-void WorldAnimator::step(f32 seconds, WorldScene& scene) {
+void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
     const f32 advance = seconds * kFramesPerSecond;
     for (Track& track : m_tracks) {
         pose(track, scene);
-        if (track.finished) {
+        if (track.finished || (pauseLoops && !track.once && !track.reverse)) {
             continue;
         }
         const auto last = static_cast<f32>(track.frames - 1);

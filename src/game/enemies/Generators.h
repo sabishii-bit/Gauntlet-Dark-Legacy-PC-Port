@@ -66,7 +66,7 @@ public:
 
     /** Runs the countdowns, breeding into `enemies` where a player is within reach. */
     void update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
-                std::span<const Obstacle> obstacles = {});
+                std::span<const Obstacle> obstacles = {}, bool timeStopped = false);
 
     /** Reports each damaging strike; only state changes launch debris effects. */
     std::optional<GeneratorEvent> strike(s32 id, f32 power, s32 byPlayer);

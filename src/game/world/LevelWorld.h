@@ -54,7 +54,7 @@ public:
 
     /** Moves the level's animated objects (and the collision that rides on them) and steps
      * its texture animations by `seconds`. */
-    void update(f32 seconds);
+    void update(f32 seconds, bool timeStopped = false);
     /** Opens at once the gates a party already qualifies for, as the level starts. */
     void startTriggers(std::span<const TriggerVisitor> visitors);
     /** Fires the triggers the visitors stand in and carries the fields' fades on. */

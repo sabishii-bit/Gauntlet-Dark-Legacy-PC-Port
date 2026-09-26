@@ -124,7 +124,7 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
     return true;
 }
 void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                       std::span<const Combatant> peers) {
+                       std::span<const Combatant> peers, bool timeStopped) {
     if (ticks <= 0) {
         return;
     }
@@ -149,6 +149,13 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         carryGrab(critter, players);
         return;
     }
+    const bool stopped = timeStopped && critter.state == State::Active;
+    if (stopped && critter.move >= 0 &&
+        data.moves()[static_cast<usize>(critter.move)].type != MoveDefinition::kStart) {
+        updateAreas(critter, i, players); // Already-created effects keep their own clock.
+        carryGrab(critter, players);
+        return;
+    }
     if (critter.state == State::Active) {
         chooseTarget(critter, players);
         if (critter.blindTicks > 0) {
@@ -156,7 +163,18 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
             critter.target = -1;
         }
     }
-    chooseMove(critter, players);
+    // CritterGolemAI still animates START/DEATH during Stop Time. Follow an
+    // entrance's explicit continuation, without running ready/attack selection.
+    if (!stopped || critter.move < 0) {
+        chooseMove(critter, players);
+    } else if (critter.moveDone) {
+        const s32 link = data.moves()[static_cast<usize>(critter.move)].link;
+        if (link >= 0) {
+            startMove(critter, static_cast<usize>(link));
+        }
+        updateAreas(critter, i, players);
+        return;
+    }
     if (critter.grabbed >= 0 &&
         (critter.state != State::Active || critter.grabMove != critter.move)) {
         m_grabs.push_back({critter.grabbed, i, std::nullopt, Vec3{0}, 0});
@@ -191,13 +209,13 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                 cue(critter, i, sound, where, node);
             }
         };
-        if (frame >= move->soundFrame) {
+        if (!stopped && frame >= move->soundFrame) {
             giveOnce(1U, move->sound, critter.position);
         }
-        if (frame >= move->sound2Frame) {
+        if (!stopped && frame >= move->sound2Frame) {
             giveOnce(2U, move->sound2, critter.position);
         }
-        if (critter.state == State::Active) {
+        if (critter.state == State::Active && !stopped) {
             // Retail move 0x88 captures Player.effectpos at its first damage frame.
             // Both the falling rock and its later impact use that same world point.
             if (move->type == MoveDefinition::kTargetArea && !critter.attackTarget.has_value() &&
@@ -302,7 +320,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     } else {
         critter.moveDone = true;
     }
-    if (critter.parent == nullptr) {
+    if (critter.parent == nullptr && !stopped) {
         carry(critter, seconds, move, players, peers);
     }
     carryGrab(critter, players);

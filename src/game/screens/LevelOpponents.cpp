@@ -13,6 +13,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/LevelFixtures.h"
+#include "game/screens/PlayerPowerups.h"
 #include "game/world/BodyCollision.h"
 namespace gdl::game {
 Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from,
@@ -316,8 +317,9 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     boxes.insert(boxes.end(), fixtures.begin(), fixtures.end());
     const LevelInfo* level = m_resources->world.level();
     const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
-    m_generators.update(ticks, m_enemies, views, boxes);
-    m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed);
+    const bool timeStopped = PlayerPowerups::timeStopped(players);
+    m_generators.update(ticks, m_enemies, views, boxes, timeStopped);
+    m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed, timeStopped);
     m_enemyMissiles.update(seconds, &m_resources->world.collision(), views);
     // What the throwers let fly lands on the party, or bursts where it fell; what blows
     // itself up blasts everything about it.
@@ -352,7 +354,8 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         events.blast(burst.position, LevelFixtures::kBlastRadius, burst.damage);
     }
     events.settleBlasts();
-    m_critters.update(ticks, seconds, views);
+    m_critters.update(ticks, seconds, views, timeStopped);
+    // Boss AI is independent of Stop Time; fired missiles likewise keep moving.
     m_bosses.setArenaAnchors(events.arenaAnchors ? events.arenaAnchors() : std::vector<Mat4>{});
     m_bosses.setArenaTargets(events.arenaTargets ? events.arenaTargets()
                                                  : std::vector<CombatArenaTarget>{});

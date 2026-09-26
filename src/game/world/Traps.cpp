@@ -71,7 +71,8 @@ s32 Traps::restTicks(const Trap& trap) {
     return static_cast<s32>(static_cast<f32>(time) * m_timeScale);
 }
 
-std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapVictim> party) {
+std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapVictim> party,
+                                   bool timeStopped) {
     std::vector<TrapHit> hits;
     m_gaps.resize(party.size(), 0.0f);
     for (f32& gap : m_gaps) {
@@ -80,6 +81,15 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
     for (usize index = 0; index < m_traps.size(); ++index) {
         Trap& trap = *m_traps[index];
         if (!trap.shown) {
+            continue;
+        }
+        if (timeStopped) {
+            if (trap.action != kResting) {
+                trap.action = kResting;
+                trap.figure.play(kResting, true);
+            }
+            trap.ticksLeft = kStopTimeRest;
+            trap.figure.update(seconds);
             continue;
         }
         trap.figure.update(seconds);
