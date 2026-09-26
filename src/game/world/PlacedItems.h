@@ -150,6 +150,14 @@ public:
     /** Poison exposed food within a gas cloud, retaining the pickup's placement and
      * identity. Returns newly changed items, for the retail gas-spoils-food message. */
     usize poisonFood(RenderDevice& device, const Vec3& position, f32 radius, f32 damage);
+    struct BlastChange {
+        Vec3 position{0};
+        bool destroyed = false; ///< otherwise treasure was reduced to junk
+    };
+    /** Explosions destroy exposed food/powerups and reduce treasure to junk.
+     * Quest pickups are protected; potions have a separate magic-release path. */
+    std::vector<BlastChange> blast(RenderDevice& device, const Vec3& position, f32 radius,
+                                   f32 damage);
     /** Takes whatever the collectors touch and starts its burst; the pickups are returned
      * for the game to hand out. With a `judge`, each touched item is its to take, take part
      * of or leave; only those it took from are returned. */
@@ -215,6 +223,8 @@ private:
     std::vector<ItemInfo> m_infos; ///< the level's item records, for dropping more
     /** Builds the figure of an item named `name`; false when no archive holds it. */
     bool makeFigure(RenderDevice& device, Item& item);
+    bool replaceFigure(RenderDevice& device, Item& item, std::string_view name);
+    bool exposedWithin(const Item& item, const Vec3& position, f32 radius) const;
     /** Flies a thrown item `seconds` on. */
     void fly(Item& item, f32 seconds);
     std::vector<ArchiveMotion> m_motions;

@@ -72,6 +72,10 @@ public:
     usize poisonFood(RenderDevice& device, const Vec3& position, f32 radius, f32 damage) {
         return m_placedItems.poisonFood(device, position, radius, damage);
     }
+    std::vector<PlacedItems::BlastChange> blastItems(RenderDevice& device, const Vec3& position,
+                                                     f32 radius, f32 damage) {
+        return m_placedItems.blast(device, position, radius, damage);
+    }
     void attachItem(usize index, const Mat4& transform, bool contained) {
         m_placedItems.attach(index, transform, contained);
     }

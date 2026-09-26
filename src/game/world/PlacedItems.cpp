@@ -151,19 +151,12 @@ usize PlacedItems::poisonFood(RenderDevice& device, const Vec3& position, f32 ra
     }
     usize changed = 0;
     for (Item& item : m_items) {
-        if (!item.visible || item.taken || item.contained ||
-            item.subtype != static_cast<s32>(ItemKind::Food) || item.info < 0 ||
-            static_cast<usize>(item.info) >= m_infos.size()) {
+        if (item.subtype != static_cast<s32>(ItemKind::Food) ||
+            !exposedWithin(item, position, radius)) {
             continue;
         }
         const ItemInfo& info = m_infos[static_cast<usize>(item.info)];
-        if (info.armor == -1 || info.collisionType != 1) {
-            continue;
-        }
-        const Vec3 centre = Vec3{item.transform * Vec4{info.collisionOffset, 1}};
-        const Vec3 delta = centre - position;
-        if (std::hypot(delta.x, delta.z) > radius + item.radius ||
-            std::abs(delta.y) > radius + item.height) {
+        if (info.armor == -1) {
             continue;
         }
         const bool meat = info.hitPoints == 2;
@@ -172,23 +165,80 @@ usize PlacedItems::poisonFood(RenderDevice& device, const Vec3& position, f32 ra
         if (item.name == name && item.value == value) {
             continue;
         }
-        // Prepare separately: a missing asset must not destroy the old figure or
-        // leave healthy-looking food with a poisonous pickup value.
-        Item replacement;
-        replacement.name = name;
-        if (!makeFigure(device, replacement)) {
+        if (!replaceFigure(device, item, name)) {
             continue;
         }
-        item.name = std::move(replacement.name);
-        item.model = std::move(replacement.model);
-        item.pose = std::move(replacement.pose);
-        item.figure = replacement.figure;
-        item.archive = replacement.archive;
-        item.player = replacement.player;
         item.value = value;
         ++changed;
     }
     return changed;
+}
+
+bool PlacedItems::exposedWithin(const Item& item, const Vec3& position, f32 radius) const {
+    if (!item.visible || item.taken || item.contained || item.info < 0 ||
+        static_cast<usize>(item.info) >= m_infos.size() || radius <= 0) {
+        return false;
+    }
+    const ItemInfo& info = m_infos[static_cast<usize>(item.info)];
+    const Vec3 centre = Vec3{item.transform * Vec4{info.collisionOffset, 1}};
+    const Vec3 delta = centre - position;
+    return info.collisionType == 1 && std::hypot(delta.x, delta.z) <= radius + item.radius &&
+           std::abs(delta.y) <= radius + item.height;
+}
+
+bool PlacedItems::replaceFigure(RenderDevice& device, Item& item, std::string_view name) {
+    // A failed asset load leaves both the current figure and pickup value intact.
+    Item replacement;
+    replacement.name = name;
+    if (!makeFigure(device, replacement)) {
+        return false;
+    }
+    item.name = std::move(replacement.name);
+    item.model = std::move(replacement.model);
+    item.pose = std::move(replacement.pose);
+    item.figure = replacement.figure;
+    item.archive = replacement.archive;
+    item.player = replacement.player;
+    return true;
+}
+
+std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, const Vec3& position,
+                                                         f32 radius, f32 damage) {
+    constexpr f32 kDestroyPower = 5;
+    constexpr s32 kJunkValue = 10;
+    std::vector<BlastChange> changes;
+    for (Item& item : m_items) {
+        if (!exposedWithin(item, position, radius)) {
+            continue;
+        }
+        const auto kind = static_cast<ItemKind>(item.subtype);
+        const bool treasure = kind == ItemKind::Gold;
+        const bool destructible =
+            kind == ItemKind::Food || kind == ItemKind::WeaponPowerup ||
+            kind == ItemKind::ArmorPowerup || kind == ItemKind::SpeedPowerup ||
+            kind == ItemKind::MagicPowerup || kind == ItemKind::SpecialPowerup;
+        if (!treasure && !destructible) {
+            continue;
+        }
+        const ItemInfo& info = m_infos[static_cast<usize>(item.info)];
+        const f32 power =
+            info.armor >= 0 ? std::max(1.0f, damage - static_cast<f32>(info.armor)) : damage;
+        if (power < kDestroyPower) {
+            continue;
+        }
+        if (treasure) {
+            if ((item.name == "TREAS_JUNK" && item.value == kJunkValue) ||
+                !replaceFigure(device, item, "TREAS_JUNK")) {
+                continue;
+            }
+            item.value = kJunkValue;
+        } else {
+            item.taken = true;
+            item.visible = false;
+        }
+        changes.push_back({item.position, !treasure});
+    }
+    return changes;
 }
 
 bool PlacedItems::makeFigure(RenderDevice& device, Item& item) {
