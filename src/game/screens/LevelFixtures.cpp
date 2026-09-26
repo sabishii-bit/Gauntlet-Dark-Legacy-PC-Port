@@ -386,6 +386,28 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
             }
         }
         events.opponents(felt.position, felt.radius, felt.damage);
+        // ProcessEffects shortens the item query by 1.5 for DMG_EXPLODE.
+        constexpr f32 kItemBlastInset = 1.5f;
+        const auto changes = m_resources->world.blastItems(
+            m_resources->device, felt.position, std::max(0.0f, felt.radius - kItemBlastInset),
+            felt.damage);
+        bool destroyed = false;
+        for (const auto& change : changes) {
+            // The retail effect table maps both CHESTDEST and ITEMDEST to this tree.
+            for (const auto* tree : {"CHESTDEST", "DESTSMOKE"}) {
+                m_resources->effects.start(m_resources->device, m_resources->weapons, tree,
+                                           change.position);
+            }
+            destroyed |= change.destroyed;
+        }
+        if (destroyed && events.help) {
+            for (usize i = 0; i < players.size(); ++i) {
+                if (players[i].life == PlayerLife::Standing) {
+                    events.help(HelpMessages::kBlastsDestroy, i);
+                    break;
+                }
+            }
+        }
     }
 }
 

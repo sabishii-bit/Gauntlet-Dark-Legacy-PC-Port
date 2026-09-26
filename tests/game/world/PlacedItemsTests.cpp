@@ -25,7 +25,7 @@ using namespace gdl::game;
 using Catch::Approx;
 
 TEST_CASE("food poisoning preserves missing artwork and uses record kind rather than value",
-          "[game][world][poison-food]") {
+          "[game][world][poison-food][blast-items]") {
     const bool missingFigure = GENERATE(false, true);
     const auto dir = test::scratchDirectory("placed-items-poison");
     std::filesystem::create_directories(dir / "models");
@@ -70,6 +70,67 @@ TEST_CASE("food poisoning preserves missing artwork and uses record kind rather 
     items.draw(device, Mat4{1}, {});
     REQUIRE_FALSE(device.draws.empty());
     CHECK(items.poisonFood(device, Vec3{2, 0, 0}, 1, 10) == 0);
+    CHECK(items.blast(device, Vec3{2, 0, 0}, 1, 4.99f).empty());
+    CHECK(items.blast(device, Vec3{0}, 1, 5).empty());
+    const auto changes = items.blast(device, Vec3{2, 0, 0}, 1, 5);
+    REQUIRE(changes.size() == 1);
+    CHECK(changes.front().destroyed);
+    CHECK_FALSE(items.item(0).takeable());
+    CHECK(items.blast(device, Vec3{2, 0, 0}, 1, 5).empty());
+}
+
+TEST_CASE("explosions destroy exposed food and powerups but preserve quest pickups",
+          "[game][world][blast-items][unpacked]") {
+    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELG1"));
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&powerups};
+    REQUIRE(items.bind(device, layout, nullptr, archives));
+    items.setPlayerCount(0);
+    const Vec3 origin{10000, 0, 10000};
+    const usize first = items.size();
+    for (const auto* name : {"APPLE", "FIREICON", "TREAS_GOLD", "KEY", "GEMBLUE", "SCROLL",
+                             "GARGEAGL", "POT_BLU", "HAM"}) {
+        REQUIRE(items.place(device, name, origin, nullptr));
+    }
+    const usize held = items.size() - 1;
+    items.attach(held, items.item(held).transform, true);
+    REQUIRE(items.place(device, "APPLE", origin + Vec3{0, 20, 0}, nullptr));
+    REQUIRE(items.place(device, "APPLE", origin + Vec3{20, 0, 0}, nullptr));
+    REQUIRE(items.blast(device, origin, 6, 4.99f).empty());
+    const auto changes = items.blast(device, origin, 6, 5);
+    REQUIRE(changes.size() == 3);
+    CHECK(changes[0].destroyed);
+    CHECK(changes[1].destroyed);
+    CHECK_FALSE(changes[2].destroyed);
+    CHECK(items.item(first).taken);
+    CHECK(items.item(first + 1).taken);
+    const auto& junk = items.item(first + 2);
+    CHECK(junk.name == "TREAS_JUNK");
+    CHECK(junk.value == 10);
+    REQUIRE(junk.figure == &powerups.trees.tree(*powerups.trees.find("TREAS_JUNK")));
+    CHECK(junk.takeable());
+    for (usize i = first + 3; i < items.size(); ++i) {
+        CHECK_FALSE(items.item(i).taken);
+    }
+    CHECK(items.blast(device, origin, 6, 50).empty());
+    items.update(0.1f);
+    items.draw(device, Mat4{1}, {});
+    CHECK_FALSE(device.draws.empty());
+    const std::array collectors{Collector{origin, 1, 1}};
+    const auto pickups =
+        items.collect(device, collectors, [](const Pickup& pickup) -> std::optional<s32> {
+            return pickup.subtype == static_cast<s32>(ItemKind::Gold) ? std::optional<s32>{0}
+                                                                      : std::nullopt;
+        });
+    REQUIRE(pickups.size() == 1);
+    CHECK(pickups.front().amount == 10);
+    CHECK(items.item(first).taken); // destroyed food is never collectible again
 }
 
 TEST_CASE("gas poisons food models and pickup values without moving or consuming them",

@@ -62,6 +62,51 @@ TEST_CASE("fixture explosions resolve live nearby players before opponents and d
     REQUIRE(f.calls.size() == 2);
 }
 
+TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit retail cues",
+          "[game][screens][level-fixtures][blast-items][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    const Vec3 origin{10000, 0, 10000};
+    const usize first = f.world.placedItems().size();
+    REQUIRE(f.world.placeItem(f.device, "APPLE", origin));
+    REQUIRE(f.world.placeItem(f.device, "TREAS_GOLD", origin));
+    // radius 12 - inset 1.5 + item radius 0.5: 11.1 must remain intact.
+    REQUIRE(f.world.placeItem(f.device, "APPLE", origin + Vec3{11.1f, 0, 0}));
+    usize helpCount = 0;
+    f.events.help = [&](s32 id, usize player) {
+        CHECK(id == HelpMessages::kBlastsDestroy);
+        CHECK(player == 0);
+        ++helpCount;
+    };
+    f.events.opponents = [](const Vec3&, f32, f32) {};
+    const auto party = std::span{f.players}.first(1);
+    f.fixtures.blast(origin, 12, 5, party, f.events);
+    CHECK(f.world.placedItems().item(first).taken);
+    CHECK(f.world.placedItems().item(first + 1).name == "TREAS_JUNK");
+    CHECK_FALSE(f.world.placedItems().item(first + 2).taken);
+    REQUIRE(helpCount == 1);
+    REQUIRE(f.effects.count() == 4);
+    for (usize i = 0; i < f.effects.count(); i += 2) {
+        CHECK(f.effects.effect(i).name == "CHESTDEST");
+        CHECK(f.effects.effect(i + 1).name == "DESTSMOKE");
+    }
+    f.effects.update(0.1f);
+    f.effects.draw(f.device, Mat4{1}, f.world.fullLighting());
+    REQUIRE_FALSE(f.device.draws.empty());
+    f.fixtures.settleBlasts(party, f.events);
+    CHECK(f.effects.count() == 4);
+    CHECK(helpCount == 1);
+    f.fixtures.clear();
+}
+
 TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific items",
           "[game][screens][level-fixtures][boss-stage][unpacked]") {
     const auto root = test::unpackedOrSkip("ITEMS/LEVELB/animations.json")
