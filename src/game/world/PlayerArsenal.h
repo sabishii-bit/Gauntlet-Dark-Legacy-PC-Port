@@ -46,7 +46,7 @@ public:
                         std::optional<Vec3> target = std::nullopt);
     std::optional<MissileImpact> usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor);
-    void burstPotion(s32 kind, const Vec3& position, f32 power);
+    void burstPotion(s32 kind, const Vec3& position, f32 power, bool castSound = true);
     /** Present a collision once, without applying target damage or expiry effects. */
     void presentImpact(const MissileImpact& impact);
     f32 magicPowerOf(const PlayerActor& actor) const;

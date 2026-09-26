@@ -393,6 +393,12 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
             felt.damage);
         bool destroyed = false;
         for (const auto& change : changes) {
+            if (change.potion) {
+                if (events.shatterPotion) {
+                    events.shatterPotion(*change.potion, change.position);
+                }
+                continue; // Magic replaces the bottle; no food-destruction smoke or help.
+            }
             // The retail effect table maps both CHESTDEST and ITEMDEST to this tree.
             for (const auto* tree : {"CHESTDEST", "DESTSMOKE"}) {
                 m_resources->effects.start(m_resources->device, m_resources->weapons, tree,

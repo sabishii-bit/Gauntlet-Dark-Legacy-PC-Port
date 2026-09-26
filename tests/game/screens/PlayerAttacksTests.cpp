@@ -734,4 +734,105 @@ TEST_CASE("player projectiles sever the contacted Chimera head through encounter
     f.attacks.clear();
     f.opponents.close();
 }
+TEST_CASE("explosions shatter world potions into ownerless magic without consuming inventory",
+          "[game][screens][player-attacks][shattered-potion][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    EnemyScales scales;
+    scales.health = 10;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(13));
+    const Vec3 origin{10000, 0, 10000};
+    const usize bottle = f.world.placedItems().size();
+    REQUIRE(f.world.placeItem(f.device, "POT_BLU", origin));
+    EnemySpawn spawn;
+    spawn.kind = 13;
+    spawn.tier = 3;
+    spawn.placed = true;
+    spawn.position = origin + Vec3{0, 0, 2};
+    const auto enemy = enemies.spawn(spawn, {});
+    REQUIRE(enemy);
+    spawn.position = origin + Vec3{0, 0, 40};
+    const auto farEnemy = enemies.spawn(spawn, {});
+    REQUIRE(farEnemy);
+    const f32 before = enemies.healthOf(*enemy);
+    const f32 farBefore = enemies.healthOf(*farEnemy);
+    auto& inventory = f.players[0].actor.save().progress().inventory;
+    inventory.addPotions(1, 1);
+    usize releases = 0;
+    f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32) {};
+    f.targets.fixtureEvents.help = [](s32, usize) { FAIL("A bottle is not destroyed food"); };
+    f.targets.fixtureEvents.shatterPotion = [&](s32 kind, const Vec3& position) {
+        CHECK(kind == 2);
+        CHECK(position == origin);
+        ++releases;
+        f.attacks.shatterPotion(kind, position);
+    };
+    f.fixtures.blast(origin, 12, 1, f.players, f.targets.fixtureEvents);
+    REQUIRE(releases == 1);
+    REQUIRE(f.world.placedItems().item(bottle).taken);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "MP_ELEC");
+    CHECK(f.effects.effect(0).scale == Approx(0.5f)); // radius power 16 / 32
+    CHECK_FALSE(inventory.potions.empty());
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    const f32 after = enemies.healthOf(*enemy);
+    REQUIRE(after < before);
+    const auto& sequence = f.effects.effect(0).tree->sequences[0];
+    AnimationPlayer wave;
+    wave.start(sequence, 0);
+    const f32 duration = wave.secondsPerFrame() * static_cast<f32>(sequence.frames);
+    const f32 phase = 1.0f - (1.0f / 30) / duration;
+    // Magic bypasses armor; an unshielded enemy takes the retail 1.5 elemental multiplier.
+    CHECK(before - after == Approx(32 * 1.5f * (phase - 0.33f) * 1.5f));
+    CHECK(enemies.takeLosses().empty()); // No player gets experience for ownerless magic.
+    for (s32 frame = 0; frame < 120; ++frame) {
+        f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+        f.effects.update(1.0f / 30);
+        f.effects.draw(f.device, Mat4{1}, f.world.fullLighting());
+    }
+    CHECK(enemies.healthOf(*enemy) == after); // no repeated damage/stunlock
+    CHECK(enemies.healthOf(*farEnemy) == farBefore);
+    REQUIRE_FALSE(f.device.draws.empty());
+    f.fixtures.blast(origin, 12, 50, f.players, f.targets.fixtureEvents);
+    CHECK(releases == 1);
+    f.attacks.clear();
+    f.fixtures.clear();
+    f.opponents.close();
+}
+
+TEST_CASE("ownerless potions retain their element and cycle only unspecified colors",
+          "[game][screens][player-attacks][shattered-potion][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("audio/COMMON/sounds.json");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    Fixture f;
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.audio.open(root, &sounds, f.world.audio());
+    for (const s32 kind : {0, 4, 0, 0, 0, 0}) {
+        f.attacks.shatterPotion(kind, Vec3{0});
+    }
+    constexpr std::array kNames{"MP_FIRE", "MP_ACID", "MP_ELEC", "MP_LIGHT", "MP_ACID", "MP_FIRE"};
+    REQUIRE(f.effects.count() == kNames.size());
+    for (usize i = 0; i < kNames.size(); ++i) {
+        CHECK(f.effects.effect(i).name == kNames[i]);
+        CHECK(f.effects.effect(i).scale == Approx(0.5f));
+    }
+    CHECK(sounds.voiceCount() == 0);
+    f.arsenal.burstPotion(1, Vec3{0}, 16); // A player's ordinary cast still sounds.
+    CHECK(sounds.voiceCount() == 1);
+    f.attacks.clear();
+}
+
 } // namespace

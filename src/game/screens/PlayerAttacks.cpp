@@ -52,6 +52,7 @@ void PlayerAttacks::clear() {
     m_strikeSources.clear();
     m_shields.clear();
     m_potions.clear();
+    m_nextPotionKind = 1;
     m_items.clear();
     m_resources.reset();
 }
@@ -673,6 +674,26 @@ void PlayerAttacks::usePotion(usize index, std::span<PlayerRuntime> players) {
     }
 }
 
+void PlayerAttacks::shatterPotion(s32 kind, const Vec3& position) {
+    if (!m_resources) {
+        return;
+    }
+    // start_magic(-1, ..., 0.8): power = 20 * 0.8, damage = 40 * 0.8.
+    // Ownerless magic has neither a player's color/level bonus nor AudioPotion.
+    if (kind == 0) {
+        kind = m_nextPotionKind;
+        m_nextPotionKind = m_nextPotionKind % 4 + 1;
+    }
+    MissileImpact impact;
+    impact.owner = -1;
+    impact.position = position;
+    impact.potion = kind;
+    impact.potency = 16;
+    impact.damage = 32;
+    m_resources->arsenal.burstPotion(kind, position, impact.potency, false);
+    beginPotion(impact);
+}
+
 void PlayerAttacks::beginPotion(const MissileImpact& impact) {
     if (!m_resources) {
         return;
@@ -755,6 +776,8 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
             }
         }
     }
+    // Broken bottles may append a new wave through the fixture callback, so
+    // resolve barrel chains only after iteration over existing waves finishes.
     targets.fixtures.settleBlasts(players, targets.fixtureEvents);
     std::erase_if(m_potions,
                   [](const PotionBurst& burst) { return burst.elapsed >= burst.duration; });

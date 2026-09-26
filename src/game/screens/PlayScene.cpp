@@ -483,17 +483,20 @@ PlayerAttacks::Targets PlayScene::attackTargets() {
 }
 
 LevelFixtures::Events PlayScene::fixtureEvents() {
-    return {.hurt = [this](usize i, f32 damage, HurtKind kind,
-                           bool directed) { hurt(i, damage, kind, directed); },
-            .help = [this](s32 id, usize i) { postHelp(id, i); },
-            .card = [this](s32 player,
-                           std::string_view name) { m_hud.pickups().addCard(player, name); },
-            .opponents = [this](const Vec3& position, f32 radius,
-                                f32 damage) { hurtOpponentsByBlast(position, radius, damage); },
-            .releaseEnemy =
-                [this](s32 record, const Vec3& position, s32 count) {
-                    return m_opponents.releaseDeath(record, position, count);
-                }};
+    return {
+        .hurt = [this](usize i, f32 damage, HurtKind kind,
+                       bool directed) { hurt(i, damage, kind, directed); },
+        .help = [this](s32 id, usize i) { postHelp(id, i); },
+        .card = [this](s32 player,
+                       std::string_view name) { m_hud.pickups().addCard(player, name); },
+        .opponents = [this](const Vec3& position, f32 radius,
+                            f32 damage) { hurtOpponentsByBlast(position, radius, damage); },
+        .releaseEnemy =
+            [this](s32 record, const Vec3& position, s32 count) {
+                return m_opponents.releaseDeath(record, position, count);
+            },
+        .shatterPotion = [this](s32 kind,
+                                const Vec3& position) { m_attacks.shatterPotion(kind, position); }};
 }
 void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
     m_fixtures.update(ticks, seconds, m_players, fixtureEvents());

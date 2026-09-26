@@ -94,8 +94,8 @@ TEST_CASE("explosions destroy exposed food and powerups but preserve quest picku
     items.setPlayerCount(0);
     const Vec3 origin{10000, 0, 10000};
     const usize first = items.size();
-    for (const auto* name : {"APPLE", "FIREICON", "TREAS_GOLD", "KEY", "GEMBLUE", "SCROLL",
-                             "GARGEAGL", "POT_BLU", "HAM"}) {
+    for (const auto* name :
+         {"APPLE", "FIREICON", "TREAS_GOLD", "KEY", "GEMBLUE", "SCROLL", "GARGEAGL", "HAM"}) {
         REQUIRE(items.place(device, name, origin, nullptr));
     }
     const usize held = items.size() - 1;
@@ -568,6 +568,54 @@ TEST_CASE("an instance's minimum can mean exactly that many players", "[game][wo
     REQUIRE_FALSE(item.shownTo(1));
     REQUIRE(item.shownTo(2));
     REQUIRE_FALSE(item.shownTo(3));
+}
+
+TEST_CASE("bottles use authored health and armor rather than the food blast threshold",
+          "[game][world][blast-items][shattered-potion]") {
+    const auto dir = test::scratchDirectory("placed-bottle-damage");
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"BOTTLE","nodes":[
+        {"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}]}]})");
+    writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+        "itemInfos":[{"type":1,"subtype":4,"name":"BOTTLE","collisionType":1,
+        "radius":0.5,"height":2,"armor":2,"hitPoints":3,"properties":2,
+        "collisionOffset":[2,0,0]}],
+        "itemInstances":[{"info":0,"position":[0,0,0],"minPlayers":1}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    ItemArchive archive;
+    REQUIRE(archive.load(dir));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive};
+    REQUIRE(items.bind(device, layout, nullptr, archives));
+    CHECK(items.blast(device, Vec3{2, 0, 0}, 1, 100).empty()); // hidden instance
+    items.setPlayerCount(1);
+    CHECK(items.blast(device, Vec3{0}, 1, 100).empty()); // wrong collision center
+    items.attach(0, Mat4{1}, true);
+    CHECK(items.blast(device, Vec3{2, 0, 0}, 1, 100).empty()); // held in chest
+    items.attach(0, Mat4{1}, false);
+    CHECK(items.blast(device, Vec3{2, 0, 0}, 1, 0).empty());
+    CHECK(items.item(0).health == 3);
+    CHECK(items.blast(device, Vec3{2, 0, 0}, 1, 2.1f).empty()); // rounds to zero
+    CHECK(items.item(0).health == 3);
+    CHECK(items.blast(device, Vec3{2, 0, 0}, 1, 2).empty()); // armor floor: one
+    CHECK(items.item(0).health == 2);
+    const auto changes = items.blast(device, Vec3{2, 0, 0}, 1, 4);
+    REQUIRE(changes.size() == 1);
+    REQUIRE(changes.front().potion == 2);
+    CHECK(changes.front().position == Vec3{0});
+    CHECK(items.item(0).health == 0);
+    CHECK_FALSE(items.item(0).takeable());
+    CHECK(items.blast(device, Vec3{2, 0, 0}, 1, 100).empty());
+    REQUIRE(items.place(device, "BOTTLE", Vec3{0}, nullptr));
+    CHECK(items.item(1).health == 3); // dropped bottles also initialize health
 }
 
 } // namespace

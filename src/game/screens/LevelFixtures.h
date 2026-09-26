@@ -36,6 +36,7 @@ public:
         std::function<void(s32, std::string_view)> card;
         std::function<void(const Vec3&, f32, f32)> opponents;
         std::function<bool(s32, const Vec3&, s32)> releaseEnemy;
+        std::function<void(s32, const Vec3&)> shatterPotion;
     };
     void bind(const Resources& resources);
     void clear();

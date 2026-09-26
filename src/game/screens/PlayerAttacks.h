@@ -39,6 +39,8 @@ public:
     void ramBarrels(usize index, std::span<PlayerRuntime> players, const Targets& targets);
     void shieldPotion(usize index, std::span<PlayerRuntime> players);
     void usePotion(usize index, std::span<PlayerRuntime> players);
+    /** A broken world pickup, not a cast by any member of the party. */
+    void shatterPotion(s32 kind, const Vec3& position);
     void useItemAttack(usize index, std::span<PlayerRuntime> players);
     void showBlock(usize index, f32 taken, f32 left, std::span<PlayerRuntime> players);
     void updateTurbo(usize index, s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
@@ -77,6 +79,7 @@ private:
         std::vector<s32> hit;
     };
     std::vector<PotionBurst> m_potions;
+    s32 m_nextPotionKind = 1;
     std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
