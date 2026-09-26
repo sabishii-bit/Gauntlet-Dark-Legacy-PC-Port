@@ -27,6 +27,8 @@ constexpr f32 kThrownShare = 0.75f;     ///< of that power a thrown potion keeps
 constexpr f32 kPotionLoft = 0.707f;     ///< as much up as forwards
 constexpr f32 kPotionHandHeight = 4.0f; ///< over the feet, where it leaves
 constexpr f32 kPotionHandReach = 2.0f;  ///< and ahead of them
+constexpr f32 kPhoenixDamage = 10.0f;
+constexpr u32 kPhoenixDamageFlags = 0x11; ///< fire plus knockback
 
 const PotionLook& potionLook(s32 kind) {
     return kPotions[kind >= 0 && static_cast<usize>(kind) < kPotions.size()
@@ -40,6 +42,10 @@ void PlayerArsenal::bind(const Resources& resources, std::span<TextureSet* const
     m_resources.emplace(resources);
     m_missiles.bindVisuals(resources.device, textureLenders);
     loadPotionModels();
+    if (const auto tree = resources.weapons.trees.find("PHOENIX_FBALL")) {
+        m_phoenixShot.bind(resources.weapons.trees.tree(*tree), resources.weapons.models,
+                           resources.weapons.textures, resources.device);
+    }
     if (const auto tree = resources.weapons.trees.find("SUPERARROW")) {
         m_superShot.bind(resources.weapons.trees.tree(*tree), resources.weapons.models,
                          resources.weapons.textures, resources.device);
@@ -55,6 +61,7 @@ void PlayerArsenal::bind(const Resources& resources, std::span<TextureSet* const
 void PlayerArsenal::clear() {
     m_missiles.clear();
     m_superShot.clear();
+    m_phoenixShot.clear();
     for (auto& model : m_gauntlets) {
         model.clear();
     }
@@ -185,8 +192,12 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
 
 void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
                                    std::optional<Vec3> target) {
-    if (!m_resources || body == nullptr || body->familiarTier() == 0 ||
-        !body->familiarMissile().bound()) {
+    if (!m_resources || body == nullptr) {
+        return;
+    }
+    const auto worn = PowerupEffects::of(actor.save().progress().inventory);
+    const bool phoenix = (worn.special & powerup::kPhoenix) != 0;
+    if (!phoenix && (body->familiarTier() == 0 || !body->familiarMissile().bound())) {
         return;
     }
     const auto* stats = m_resources->classes.stats(actor.save().character);
@@ -199,16 +210,17 @@ void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
     static constexpr MissileSpec kBossShot{"FAMILIAR_SPIT", {}, 1, 0, 0, true, {}};
     MissileLaunch launch;
     launch.owner = actor.player();
-    const auto worn = PowerupEffects::of(actor.save().progress().inventory);
     const f32 scale = PlayerFigure::bodyScale(actor.save(), worn);
     launch.position = Vec3{actor.transform() * Vec4{stats->familiarShotOffset * scale, 1}};
     launch.direction = actor.facing();
     launch.speed = 35;
-    launch.damage = 0.1f * static_cast<f32>(experienceLevel(actor.save().experience()));
+    launch.damage = phoenix ? kPhoenixDamage
+                            : 0.1f * static_cast<f32>(experienceLevel(actor.save().experience()));
+    launch.flags = phoenix ? kPhoenixDamageFlags : 0;
     launch.spec = m_resources->bossEncounter ? &kBossShot : &kLevelShot;
-    launch.model = &body->familiarMissile();
-    launch.archive = body->effects();
-    launch.tree = "FAMILIAR_SPIT";
+    launch.model = phoenix ? &m_phoenixShot : &body->familiarMissile();
+    launch.archive = phoenix ? &m_resources->weapons : body->effects();
+    launch.tree = phoenix ? "PHOENIX_FBALL" : "FAMILIAR_SPIT";
     launch.wallSound = MissileWallSound::Silent;
     // CalcTargetDir normalizes horizontal displacement, uses a 50-unit/second
     // flight estimate, then StartFX scales the direction by 35.

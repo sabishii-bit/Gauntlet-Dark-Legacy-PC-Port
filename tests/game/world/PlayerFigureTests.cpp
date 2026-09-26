@@ -20,6 +20,30 @@ using namespace gdl::game;
 static_assert(!std::is_move_constructible_v<PlayerFigure>);
 static_assert(!std::is_copy_constructible_v<PlayerFigure>);
 
+TEST_CASE("Phoenix activation follows enabled inventory and expires without requiring art",
+          "[game][figure][phoenix]") {
+    test::FakeRenderDevice device;
+    ItemArchive missing;
+    PlayerFigure figure;
+    Inventory inventory;
+    figure.setCompanionPowerups(device, missing, inventory);
+    CHECK_FALSE(figure.phoenixActive());
+    inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 1);
+    figure.setCompanionPowerups(device, missing, inventory);
+    CHECK(figure.phoenixActive());
+    inventory.powerups[0].on = false;
+    figure.setCompanionPowerups(device, missing, inventory);
+    CHECK_FALSE(figure.phoenixActive());
+    inventory.advance(2);
+    CHECK(inventory.powerups[0].strength == 1);
+    inventory.powerups[0].on = true;
+    inventory.advance(1);
+    figure.setCompanionPowerups(device, missing, inventory);
+    CHECK_FALSE(figure.phoenixActive());
+    figure.animate(0, 2, 1.0f / 30, PlayerDeed::Die);
+    CHECK_FALSE(figure.familiarReleased());
+}
+
 TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
           "[game][figure][xray][unpacked]") {
     const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
@@ -141,6 +165,50 @@ TEST_CASE("player figure scale prioritizes ogre and growth over mastery", "[game
     save.character = 12;
     REQUIRE(PlayerFigure::bodyScale(save, growth) == 1.6f);
     REQUIRE(PlayerFigure::bodyScale(save, {}) == 1.6f);
+}
+
+TEST_CASE(
+    "Phoenix enables companion release below level thirty and restores the familiar on toggle",
+    "[game][figure][phoenix][unpacked]") {
+    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    for (const s32 level : {1, 60}) {
+        CharacterSave save;
+        save.progress().experience = levelExperience(level);
+        auto figure = PlayerFigure::load(device, root, save, false);
+        REQUIRE(figure);
+        auto& inventory = save.progress().inventory;
+        inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 30);
+        figure->setCompanionPowerups(device, powerups, inventory);
+        REQUIRE(figure->phoenixActive());
+        s32 shots = 0;
+        bool pending = false;
+        for (s32 frame = 0; frame < 120; ++frame) {
+            figure->animate(0, 2, 1.0f / 30, PlayerDeed::Attack);
+            CHECK(figure->familiarReleased() == pending);
+            shots += figure->familiarReleased() ? 1 : 0;
+            pending = figure->animator().released();
+        }
+        CHECK(shots > 1);
+        inventory.powerups[0].on = false;
+        figure->setCompanionPowerups(device, powerups, inventory);
+        CHECK_FALSE(figure->phoenixActive());
+        CHECK(figure->familiarTier() == (level < 30 ? 0 : 1));
+        // Let the old release retire; subsequent releases require a permanent companion.
+        figure->animate(0, 2, 1.0f / 30, PlayerDeed::Attack);
+        shots = 0;
+        for (s32 frame = 0; frame < 120; ++frame) {
+            figure->animate(0, 2, 1.0f / 30, PlayerDeed::Attack);
+            shots += figure->familiarReleased() ? 1 : 0;
+        }
+        CHECK((shots > 0) == (level >= 30));
+        inventory.powerups[0].on = true;
+        inventory.advance(30);
+        figure->setCompanionPowerups(device, powerups, inventory);
+        CHECK_FALSE(figure->phoenixActive());
+    }
 }
 
 /** A costume with a wrist and an unmapped ornament, sharing a tiny synthetic mesh. */
