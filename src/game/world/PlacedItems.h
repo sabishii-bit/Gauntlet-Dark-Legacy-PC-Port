@@ -147,6 +147,9 @@ public:
     void setPlayerCount(s32 players);
     /** Removes the tower's introductory crystal pickups once the province gate is earned. */
     void retireCrystals();
+    /** Poison exposed food within a gas cloud, retaining the pickup's placement and
+     * identity. Returns newly changed items, for the retail gas-spoils-food message. */
+    usize poisonFood(RenderDevice& device, const Vec3& position, f32 radius, f32 damage);
     /** Takes whatever the collectors touch and starts its burst; the pickups are returned
      * for the game to hand out. With a `judge`, each touched item is its to take, take part
      * of or leave; only those it took from are returned. */

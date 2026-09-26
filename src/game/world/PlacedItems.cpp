@@ -6,6 +6,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/players/ItemPickup.h"
 #include "game/world/ItemFigure.h"
 
 namespace gdl::game {
@@ -139,6 +140,55 @@ void PlacedItems::retireCrystals() {
             item.visible = false;
         }
     }
+}
+
+usize PlacedItems::poisonFood(RenderDevice& device, const Vec3& position, f32 radius, f32 damage) {
+    // items.c::fn_8005C1DC (0x8005C1DC), DMG_POISONGAS: power above 2
+    // replaces food's figure and value. The record's hitpoints distinguish meat
+    // from fruit, not its name or healing amount. All shipped food uses cylinders.
+    if (damage <= 2.0f || radius <= 0.0f) {
+        return 0;
+    }
+    usize changed = 0;
+    for (Item& item : m_items) {
+        if (!item.visible || item.taken || item.contained ||
+            item.subtype != static_cast<s32>(ItemKind::Food) || item.info < 0 ||
+            static_cast<usize>(item.info) >= m_infos.size()) {
+            continue;
+        }
+        const ItemInfo& info = m_infos[static_cast<usize>(item.info)];
+        if (info.armor == -1 || info.collisionType != 1) {
+            continue;
+        }
+        const Vec3 centre = Vec3{item.transform * Vec4{info.collisionOffset, 1}};
+        const Vec3 delta = centre - position;
+        if (std::hypot(delta.x, delta.z) > radius + item.radius ||
+            std::abs(delta.y) > radius + item.height) {
+            continue;
+        }
+        const bool meat = info.hitPoints == 2;
+        const std::string_view name = meat ? "BADMEAT" : "GAPPLE";
+        const s32 value = meat ? -100 : -50;
+        if (item.name == name && item.value == value) {
+            continue;
+        }
+        // Prepare separately: a missing asset must not destroy the old figure or
+        // leave healthy-looking food with a poisonous pickup value.
+        Item replacement;
+        replacement.name = name;
+        if (!makeFigure(device, replacement)) {
+            continue;
+        }
+        item.name = std::move(replacement.name);
+        item.model = std::move(replacement.model);
+        item.pose = std::move(replacement.pose);
+        item.figure = replacement.figure;
+        item.archive = replacement.archive;
+        item.player = replacement.player;
+        item.value = value;
+        ++changed;
+    }
+    return changed;
 }
 
 bool PlacedItems::makeFigure(RenderDevice& device, Item& item) {

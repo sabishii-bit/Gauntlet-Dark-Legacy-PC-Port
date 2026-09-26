@@ -4,15 +4,18 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ItemArchive.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/players/ItemPickup.h"
 #include "game/world/PlacedItems.h"
 
 namespace {
@@ -20,6 +23,132 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("food poisoning preserves missing artwork and uses record kind rather than value",
+          "[game][world][poison-food]") {
+    const bool missingFigure = GENERATE(false, true);
+    const auto dir = test::scratchDirectory("placed-items-poison");
+    std::filesystem::create_directories(dir / "models");
+    std::filesystem::create_directories(dir / "textures");
+    writeTextFile(dir / "models/FOOD.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(
+        dir / "objects.json",
+        R"({"objects":[{"index":0,"name":"FOOD","file":"models/FOOD.obj","meshTriangles":1}]})");
+    writeFile(dir / "textures/FOOD.png", test::kTinyPng);
+    writeTextFile(
+        dir / "textures.json",
+        R"({"defs":[],"bitmaps":[{"index":0,"name":"FOOD","file":"textures/FOOD.png","width":2,"height":2,"flags":0}]})");
+    const std::string trees =
+        missingFigure
+            ? R"({"trees":[{"name":"FOOD","nodes":[{"name":"FOOD","object":"FOOD","parent":-1,"position":[0,0,0]}]}]})"
+            : R"({"trees":[{"name":"FOOD","nodes":[{"name":"FOOD","object":"FOOD","parent":-1,"position":[0,0,0]}]},{"name":"BADMEAT","nodes":[{"name":"FOOD","object":"FOOD","parent":-1,"position":[0,0,0]}]}]})";
+    writeTextFile(dir / "animations.json", trees);
+    // A meat-kind record with a small healing value: classification is not value >= 100.
+    writeTextFile(dir / "world.json",
+                  R"({"objects":[{"name":"GROUND","position":[0,0,0]}],"itemInfos":[
+        {"type":1,"subtype":3,"name":"FOOD","collisionType":1,"radius":0.5,"height":2,
+         "armor":-2,"hitPoints":2,"value":10,"collisionOffset":[2,0,0]}],
+        "itemInstances":[{"info":0,"position":[0,0,0],"minPlayers":1}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    ItemArchive archive;
+    REQUIRE(archive.load(dir));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive};
+    REQUIRE(items.bind(device, layout, nullptr, archives));
+    REQUIRE(items.size() == 1);
+    CHECK(items.poisonFood(device, Vec3{2, 0, 0}, 1, 10) == 0); // hidden party instance
+    items.setPlayerCount(1);
+    CHECK(items.poisonFood(device, Vec3{0}, 1, 10) == 0); // collision centre is offset
+    CHECK(items.poisonFood(device, Vec3{2, 0, 0}, 1, 2) == 0);
+    CHECK(items.poisonFood(device, Vec3{2, 0, 0}, 1, 10) == (missingFigure ? 0 : 1));
+    CHECK(items.item(0).name == (missingFigure ? "FOOD" : "BADMEAT"));
+    CHECK(items.item(0).value == (missingFigure ? 10 : -100));
+    CHECK(items.item(0).takeable());
+    items.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(items.poisonFood(device, Vec3{2, 0, 0}, 1, 10) == 0);
+}
+
+TEST_CASE("gas poisons food models and pickup values without moving or consuming them",
+          "[game][world][poison-food][unpacked]") {
+    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELG1"));
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&powerups};
+    REQUIRE(items.bind(device, layout, nullptr, archives));
+    items.setPlayerCount(0); // isolate newly placed food from authored level pickups
+    const Vec3 origin{10000, 0, 10000};
+    const usize apple = items.size();
+    REQUIRE(items.place(device, "APPLE", origin, nullptr));
+    const usize meat = items.size();
+    REQUIRE(items.place(device, "CHICKEN", origin + Vec3{0, 0, 2}, nullptr));
+    const usize protectedFood = items.size();
+    REQUIRE(items.place(device, "HAM", origin, nullptr));
+    items.attach(protectedFood, items.item(protectedFood).transform, true);
+    const usize distant = items.size();
+    REQUIRE(items.place(device, "APPLE", origin + Vec3{20, 0, 0}, nullptr));
+    const usize above = items.size();
+    REQUIRE(items.place(device, "APPLE", origin + Vec3{0, 20, 0}, nullptr));
+    const usize potion = items.size();
+    REQUIRE(items.place(device, "POT_BLU", origin, nullptr));
+    const Mat4 transform = items.item(meat).transform;
+    const s32 record = items.item(meat).info;
+    REQUIRE(items.poisonFood(device, origin, 6.5f, 2) == 0);
+    REQUIRE(items.poisonFood(device, origin, 0, 10) == 0);
+    REQUIRE(items.poisonFood(device, origin, 6.5f, 10) == 2);
+    CHECK(items.item(apple).name == "GAPPLE");
+    CHECK(items.item(apple).value == -50);
+    CHECK(items.item(meat).name == "BADMEAT");
+    CHECK(items.item(meat).value == -100);
+    CHECK(items.item(meat).info == record);
+    CHECK(items.item(meat).transform == transform);
+    CHECK(items.item(protectedFood).name == "HAM");
+    CHECK(items.item(distant).name == "APPLE");
+    CHECK(items.item(above).name == "APPLE");
+    CHECK(items.item(potion).name == "POT_BLU");
+    REQUIRE(items.poisonFood(device, origin, 6.5f, 10) == 0);
+    for (const usize index : {apple, meat}) {
+        const auto& item = items.item(index);
+        REQUIRE(item.figure == &powerups.trees.tree(*powerups.trees.find(item.name)));
+        REQUIRE(item.model.bound());
+        REQUIRE(item.takeable());
+    }
+    items.update(0.1f);
+    items.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    CharacterSave save;
+    save.progress().health = 500;
+    const std::array collectors{Collector{origin, 4, 1}};
+    const auto collected =
+        items.collect(device, collectors, [&](const Pickup& pickup) -> std::optional<s32> {
+            if (pickup.subtype != static_cast<s32>(ItemKind::Food)) {
+                return std::nullopt;
+            }
+            const auto result =
+                takeItem(save, {pickup.subtype, pickup.amount, pickup.flags, pickup.strength});
+            CHECK(result.hurt);
+            CHECK_FALSE(result.ate);
+            CHECK(result.message == 28);
+            return result.left;
+        });
+    REQUIRE(collected.size() == 2);
+    CHECK(save.health() == 350);
+    CHECK(items.item(apple).taken);
+    CHECK(items.item(meat).taken);
+    // Chest contents become vulnerable only after release; taken food never returns.
+    items.attach(protectedFood, items.item(protectedFood).transform, false);
+    REQUIRE(items.poisonFood(device, origin, 6.5f, 10) == 1);
+    CHECK(items.item(protectedFood).name == "BADMEAT");
+    CHECK(items.item(apple).taken);
+}
 
 TEST_CASE("the tower's crystals stand on the floor for a party large enough",
           "[game][world][unpacked]") {

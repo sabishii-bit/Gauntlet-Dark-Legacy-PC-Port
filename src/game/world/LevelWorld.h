@@ -69,6 +69,9 @@ public:
     const ParticleField& particles() const { return m_particles; }
     /** The pickups the level places: the crystals Sumner keeps for a new party. */
     const PlacedItems& placedItems() const { return m_placedItems; }
+    usize poisonFood(RenderDevice& device, const Vec3& position, f32 radius, f32 damage) {
+        return m_placedItems.poisonFood(device, position, radius, damage);
+    }
     void attachItem(usize index, const Mat4& transform, bool contained) {
         m_placedItems.attach(index, transform, contained);
     }
