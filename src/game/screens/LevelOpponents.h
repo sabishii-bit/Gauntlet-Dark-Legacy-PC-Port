@@ -58,6 +58,8 @@ public:
     /** Drain hits from the last projectile/attack phase before a level transition freezes
      * simulation. No AI, collision, or time advances, and each reward is consumed once. */
     void settleRewards(std::span<const PlayerRuntime> players, const Events& events);
+    /** Releases a chest's Death record; count distinguishes red from black. */
+    bool releaseDeath(s32 record, const Vec3& position, s32 count);
     static std::vector<EnemyView> enemyViews(std::span<const PlayerRuntime> players);
     Vec3 resolveMovement(const PlayerActor& player, const Vec3& from, const Vec3& to) const;
     /** Routes a contact by player identity; breath uses a shared quarter-second gate. */
@@ -91,6 +93,8 @@ private:
     void awardCritterLosses(std::span<const PlayerRuntime> players, const Events& events);
     void showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss);
     void followCritterEffects();
+    void updateDeaths(std::span<PlayerRuntime> players, const Events& events);
+    void clearDeaths();
     void finishSummons(std::span<const EnemyView> players);
     std::optional<Resources> m_resources;
     Enemies m_enemies;
@@ -120,6 +124,9 @@ private:
     std::vector<MoveEffect> m_moveEffects;
     std::vector<u32>
         m_cueEffects; ///< all emitted cues, including detached effects borrowing artwork
+    std::array<u32, Enemies::kMost> m_deathEffects{};
+    SoundHandle m_deathSound = kNoSound;
+    bool m_deathContact = false;
 
     std::array<f32, 4> m_critterExperienceOwed{};
     std::vector<s32> m_destroyedGenerators; ///< credited IDs, drained on the next update

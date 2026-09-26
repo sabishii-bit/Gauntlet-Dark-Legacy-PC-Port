@@ -4,6 +4,9 @@
 # cameras), menu (widgets), screens (full screens and what they receive), app (the driver and
 # attract flow). A module only includes those below it.
 add_library(game STATIC
+    enemies/DeathRules.cpp
+    enemies/EnemiesDeath.cpp
+    screens/LevelOpponentsDeath.cpp
     world/SecretChallenge.cpp
     screens/ChallengeHud.cpp
     screens/PlaySceneChallenge.cpp

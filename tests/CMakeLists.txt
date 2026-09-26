@@ -2,6 +2,9 @@ find_package(Catch2 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(tests
+    game/enemies/DeathRulesTests.cpp
+    game/enemies/EnemiesDeathTests.cpp
+    game/screens/LevelOpponentsDeathTests.cpp
     game/world/DestructibleWallsTests.cpp
     game/world/MissileTargetTests.cpp
     game/combat/DamageTests.cpp

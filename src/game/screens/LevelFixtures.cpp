@@ -153,6 +153,10 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
                 actor.save().progress().inventory.spendKey();
             }
             m_resources->audio.playNamed(kChestSound);
+            if (events.releaseEnemy && events.releaseEnemy(event.contents, event.position,
+                                                           m_chests.chest(event.chest).count)) {
+                break;
+            }
             if (event.contents >= 0 && m_resources->world.placeItemRecord(
                                            m_resources->device, event.contents, event.position,
                                            m_chests.chest(event.chest).count)) {

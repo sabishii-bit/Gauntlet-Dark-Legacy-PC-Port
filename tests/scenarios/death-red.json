@@ -1,0 +1,7 @@
+{
+  "screen": "tower",
+  "level": "E1",
+  "position": [55, 0.15625, 0],
+  "party": [{"player": 0, "class": "WAR", "color": "YEL", "name": "TEST", "level": 30, "health": 2000, "potions": [1, 1, 1]}],
+  "welcome": false
+}
