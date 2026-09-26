@@ -9,6 +9,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/screens/HelpMessages.h"
 #include "game/screens/LevelFixtures.h"
 namespace {
 using namespace gdl;
@@ -38,7 +39,8 @@ struct Fixture {
                 REQUIRE(radius == 2);
                 REQUIRE(damage == 5);
                 calls.emplace_back("opponents");
-            }};
+            },
+        .releaseEnemy = {}};
     Fixture() {
         fixtures.bind({device, world, weapons, effects, audio, 1});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
@@ -294,6 +296,57 @@ TEST_CASE("poison barrel cloud remains rendered for the damaging lifetime and di
     CHECK(f.fixtures.barrels().barrel(barrel).state == Breakables::kBroken);
     f.effects.update(2);
     CHECK(f.effects.count() == 0);
+    f.fixtures.clear();
+}
+
+TEST_CASE("breaking a gas barrel spoils nearby food and announces it only on a change",
+          "[game][screens][level-fixtures][poison-food][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    usize barrel = 0;
+    while (barrel < f.fixtures.barrels().size() &&
+           (!f.fixtures.barrels().standing(barrel) ||
+            f.fixtures.barrels().barrel(barrel).kind != BreakableStrike::Kind::Poison)) {
+        ++barrel;
+    }
+    REQUIRE(barrel < f.fixtures.barrels().size());
+    const Vec3 position = f.fixtures.barrels().barrel(barrel).figure.position();
+    const auto& items = f.world.placedItems();
+    const usize apple = items.size();
+    REQUIRE(f.world.placeItem(f.device, "APPLE", position));
+    f.players[0].actor.place(position + Vec3{100, 0, 0});
+    usize announcements = 0;
+    f.events.help = [&](s32 id, usize player) {
+        CHECK(id == HelpMessages::kGasSpoils);
+        CHECK(player == 0);
+        ++announcements;
+    };
+    const auto party = std::span{f.players}.first(1);
+    f.fixtures.strikeBarrel(barrel, 10000, -1, {}, f.events);
+    CHECK(items.item(apple).name == "APPLE");
+    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    CHECK(items.item(apple).name == "GAPPLE");
+    CHECK(items.item(apple).value == -50);
+    REQUIRE(announcements == 1);
+    for (s32 frame = 0; frame < 150; ++frame) {
+        f.fixtures.update(2, 1.0f / 30, party, f.events);
+    }
+    CHECK(announcements == 1);
+    // The expired cloud must not poison food subsequently dropped in the same spot.
+    const usize fresh = items.size();
+    REQUIRE(f.world.placeItem(f.device, "CHICKEN", position));
+    f.fixtures.update(2, 1.0f / 30, party, f.events);
+    CHECK(items.item(fresh).name == "CHICKEN");
+    CHECK(items.item(fresh).value == 100);
     f.fixtures.clear();
 }
 

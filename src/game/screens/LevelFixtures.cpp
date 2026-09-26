@@ -408,6 +408,18 @@ void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
                 id, glm::scale(glm::translate(Mat4{1}, cloud.position), Vec3{3.5f, 1, 3.5f}));
             continue;
         }
+        if (m_resources->world.poisonFood(m_resources->device, cloud.position, kGasRadius,
+                                          cloud.damage) > 0 &&
+            events.help) {
+            // Retail posts msgPost(0x88, -1, 0): party-wide help, not credited to
+            // the barrel's attacker. Present it over the first standing player.
+            for (usize i = 0; i < players.size(); ++i) {
+                if (players[i].life == PlayerLife::Standing) {
+                    events.help(HelpMessages::kGasSpoils, i);
+                    break;
+                }
+            }
+        }
         for (usize i = 0; i < players.size(); ++i) {
             if ((players[i].life != PlayerLife::Standing) || players[i].cloudGap > 0.0f) {
                 continue;
