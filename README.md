@@ -21,8 +21,8 @@ python scripts/build.py --unpack --levels
 python scripts/build.py --run
 ```
 
-`--run` builds and launches the release build; the Debug build the tests use
-runs the tower at well under its frame rate.
+`--run` defaults to the platform's Release build for playtesting. Builds and
+tests without `--run` default to Debug; an explicit preset overrides either.
 
 Python 3.9+ and git are all `setup.py` needs to begin with. It reports what it
 found, asks before installing anything (`--yes` skips the questions, `--check`
@@ -115,68 +115,87 @@ require confirmation. Loading restores that character's progress and returns the
 party to the tower; it is not a mid-level save state. Once a character has a slot,
 travel, returning to the title and shutdown save it automatically.
 
-The title and pause **Options** menus share persisted audio levels, difficulty,
-compass visibility and gameplay bindings. Left/right adjusts values; confirm
-opens a page or captures a binding. Difficulty changes apply when the next level
-opens. The compass uses world north (+Z), rotating with the view. Controls lets
-you choose keyboard/controller and an action, replace or clear its binding, or
-restore defaults. Action combinations follow the remapped actions. Escape or the
-controller's Back button cancels capture; Start remains reserved for pausing.
-Changes are saved to the per-user settings file immediately, with a visible error
-if persistence fails. Character/settings files are replaced only after a complete
+The title and pause **Options** menus share persisted audio levels, difficulty
+and compass visibility. Difficulty changes apply when the next level opens.
+The Controls menu remains unimplemented; gameplay bindings can be edited in the
+settings file. Failed settings writes show an error. Character/settings files
+are replaced only after a complete
 temporary file has been written; this is not a power-loss durability guarantee.
 
 ## Tests
 
-### End-level tally and item shop
+Run commands from the repository root. Use `python3` instead of `python` on
+systems where that is the Python 3 command. The Python helpers select the
+native build tools, including the MSVC developer environment on Windows.
 
-Successful level exits now show each surviving player's gold, kill and experience
-tally, then attributes, shopping, and updated attributes before continuing.
-Players shop independently; travel waits for everybody to select Exit and confirm.
-Menu directions select items, Confirm buys, Back sells for 75% of the listed price,
-and Start moves the cursor to Exit. These use the existing remappable menu bindings
-(defaults: arrows/D-pad, Enter or A to buy, Backspace or Y to sell).
-Purchases update the character carried into the next stage and its existing save slot.
-Fallen players retain their rollback save and do not shop.
+### Automated tests
 
-For an existing asset installation, export the new catalog and level tally scales:
-
-```powershell
-build/windows-ninja-release/bin/gdlunpack.exe assets/GUNE5D/Gauntlet assets/unpacked --only SHPDATA
-build/windows-ninja-release/bin/gdlunpack.exe assets/GUNE5D/Gauntlet assets/unpacked --only WDATA
-python scripts/scenario.py after-level-shop
+```sh
+python -m unittest discover -s tests/scripts -v   # Python helper regression tests
+python scripts/build.py --test                   # build Debug, then run non-GPU C++ tests
+python scripts/build.py windows-ninja-release --test  # use a specific build instead
 ```
 
-The scenario uses a disposable, unsaved character with 5,000 gold. The catalog,
-icons, scroll artwork and realm shop music come from the installed game data.
-The current tally uses readable counters/bars rather than reproducing the original
-stacked-pile artwork and its exact animation; this presentation still needs retail
-side-by-side tuning.
+The first command tests the scripts themselves. `build.py --test` builds the
+C++ project and invokes CTest with `-LE gpu`; it does not run the Python tests.
+Arguments after `build.py --` are game arguments, not test filters.
 
-The tests are Catch2, under `tests/` in the same shape as `src/`, and come in
-three tiers:
+C++ tests use Catch2 and mirror `src/` under `tests/`:
 
-| Tier | Needs | How it is run |
+| Tier | Needs | Execution |
 | --- | --- | --- |
-| Unit tests | nothing | always; this is what CI runs |
-| `[assets]` and `[unpacked]` tests | the game data, and the unpacked files | run with the rest; they skip themselves when the data is absent |
-| `gpu` label | a Vulkan device and a display | `ctest -L gpu`; excluded from `--test` and CI |
+| Asset-free tests | built test executable | run locally and in hosted CI |
+| `[assets]` / `[unpacked]` | original disc files / converted assets | included in the non-GPU run, but skip when their required data is absent |
+| `[gpu]` (CTest label `gpu`) | Vulkan device and display; some cases also need game data | opt-in locally; Linux CI attempts them with software Vulkan under Xvfb, as a best-effort step |
 
-```
-python scripts/build.py --test                    # build, then the whole suite (ctest -LE gpu)
-ctest --preset windows-ninja-debug                # the suite through CTest, GPU tests included
-ctest --preset windows-ninja-debug -R unit.       # only the entries whose name matches
-build/windows-ninja-debug/bin/tests               # the binary itself: everything
-build/windows-ninja-debug/bin/tests "[collision]" # one tag, or several: "[game][world]"
-build/windows-ninja-debug/bin/tests "a cylinder is pushed out of walls*"   # one case by name
-build/windows-ninja-debug/bin/tests --list-tests  # what there is
+After building, run or list CTest entries without rebuilding through the
+developer-environment helper (replace the preset for your platform/build):
+
+```sh
+python scripts/devenv.py -- ctest --preset windows-ninja-release -N
+python scripts/devenv.py -- ctest --preset windows-ninja-release -LE gpu -R "Stop Time"
+python scripts/devenv.py -- ctest --preset windows-ninja-release -L gpu
 ```
 
-Anything in the game is verified by a test against the unpacked data or by
-launching a scenario (`gauntlet --scenario tests/scenarios/tower-crystals.json`)
-and looking; CI cannot see the game data, so that tier runs on a machine that
-has it (`.github/workflows/ci.yml` has a `game_data` switch for a self-hosted
-runner).
+For Catch2 tag filters or case-name wildcards, invoke the built test executable
+through the same helper. These examples use Windows; on Linux use the matching
+build directory and omit `.exe`:
+
+```sh
+python scripts/devenv.py -- build/windows-ninja-release/bin/tests.exe "[stop-time]"
+python scripts/devenv.py -- build/windows-ninja-release/bin/tests.exe "[game][world]~[gpu]"
+python scripts/devenv.py -- build/windows-ninja-release/bin/tests.exe --list-tests
+```
+
+Adjacent tags mean AND; comma-separated filters mean OR. Rebuild after editing
+source: these direct CTest/Catch2 commands run the existing executable.
+
+Hosted CI runs the Python tests and builds/tests C++ on Windows and Linux,
+without game assets. A green hosted run does not validate skipped asset tests.
+The workflow's optional `game_data` input enables a prepared self-hosted runner
+with the original and unpacked files; see [.github/workflows/ci.yml](.github/workflows/ci.yml).
+
+### Scenarios and smoke checks
+
+```sh
+python scripts/scenario.py --list
+python scripts/scenario.py after-level-shop --build  # build Release and play the tally/shop
+python scripts/scenario.py stop-time --build         # exercise an item in a level
+python scripts/scenario.py stop-time --frames 120    # bounded run of the existing build
+python scripts/build.py --run -- --frames 120        # build and check ordinary startup/shutdown
+```
+
+Scenarios require the relevant game data to be extracted and unpacked. They
+set up a party and location for interactive playtesting; launching one does not
+automatically control the player or assert that combat, audio or visuals match.
+A bounded `--frames` run checks startup/runtime/shutdown, not behavioral parity.
+Use automated tests that drive actions and assert outcomes for regressions, and
+interactive scenarios for visual/audio comparison. Shipped scenarios use unsaved
+characters; custom scenarios can name a save slot, so check them before running.
+
+For a focused change, rebuild and run the relevant tests, scoped code-quality
+checks below, and a smoke check when runtime code changes. Reserve full-suite
+runs for broader changes; missing-data skips are not passes for that behavior.
 
 ## Code quality
 
