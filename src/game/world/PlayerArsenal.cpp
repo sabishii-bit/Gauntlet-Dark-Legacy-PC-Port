@@ -288,7 +288,7 @@ void PlayerArsenal::loadPotionModels() {
     }
 }
 
-void PlayerArsenal::burstPotion(s32 kind, const Vec3& position, f32 power) {
+void PlayerArsenal::burstPotion(s32 kind, const Vec3& position, f32 power, bool castSound) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -297,7 +297,9 @@ void PlayerArsenal::burstPotion(s32 kind, const Vec3& position, f32 power) {
         m_resources->effects.start(m_resources->device, m_resources->weapons, look.burst, position,
                                    std::min(kBurstPerPower * power, 1.0f));
     }
-    m_resources->audio.playNamed(look.sound);
+    if (castSound) {
+        m_resources->audio.playNamed(look.sound);
+    }
 }
 
 void PlayerArsenal::presentImpact(const MissileImpact& impact) {

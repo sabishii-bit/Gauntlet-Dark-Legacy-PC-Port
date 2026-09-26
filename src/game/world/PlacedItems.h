@@ -88,7 +88,8 @@ public:
         s32 instance = -1; ///< which of the layout's instances it is
         s32 info = -1;
         s32 subtype = 0;
-        s32 value = 0; ///< its amount; a part taken leaves the rest
+        s32 value = 0;  ///< its amount; a part taken leaves the rest
+        s32 health = 0; ///< destructible potion's remaining authored hit points
         u32 flags = 0;
         f32 strength = 0.0f;
         s32 minPlayers = 0;
@@ -152,10 +153,11 @@ public:
     usize poisonFood(RenderDevice& device, const Vec3& position, f32 radius, f32 damage);
     struct BlastChange {
         Vec3 position{0};
-        bool destroyed = false; ///< otherwise treasure was reduced to junk
+        bool destroyed = false;    ///< otherwise treasure was reduced to junk
+        std::optional<s32> potion; ///< shattered bottle; zero selects the next magic color
     };
     /** Explosions destroy exposed food/powerups and reduce treasure to junk.
-     * Quest pickups are protected; potions have a separate magic-release path. */
+     * Quest pickups are protected; shattered potions request an ownerless magic wave. */
     std::vector<BlastChange> blast(RenderDevice& device, const Vec3& position, f32 radius,
                                    f32 damage);
     /** Takes whatever the collectors touch and starts its burst; the pickups are returned

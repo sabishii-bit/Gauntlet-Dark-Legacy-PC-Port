@@ -77,6 +77,7 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
         item.info = instance.info;
         item.subtype = info.subtype;
         item.value = info.value;
+        item.health = info.hitPoints;
         if (info.subtype == ItemInfo::kScroll) {
             // A scroll's page is the instance's, from one.
             item.value = static_cast<s16>(instance.params[0] | (instance.params[1] << 8));
@@ -207,11 +208,32 @@ std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, c
     constexpr f32 kDestroyPower = 5;
     constexpr s32 kJunkValue = 10;
     std::vector<BlastChange> changes;
+    if (damage <= 0) {
+        return changes;
+    }
     for (Item& item : m_items) {
         if (!exposedWithin(item, position, radius)) {
             continue;
         }
         const auto kind = static_cast<ItemKind>(item.subtype);
+        const ItemInfo& info = m_infos[static_cast<usize>(item.info)];
+        if (kind == ItemKind::Potion) {
+            // Item damage (0x8005C1DC): bottles use health/armor, not the
+            // five-point threshold used by food and treasure. Held chest
+            // contents never reach this branch until released.
+            if (info.armor < 0) {
+                continue;
+            }
+            const f32 afterArmor = damage - static_cast<f32>(info.armor);
+            const f32 power = afterArmor <= 0 ? 1.0f : afterArmor;
+            item.health = std::max(0, item.health - static_cast<s32>(std::round(power)));
+            if (item.health == 0) {
+                item.taken = true;
+                item.visible = false;
+                changes.push_back({item.position, true, static_cast<s32>(item.flags & 0xF)});
+            }
+            continue;
+        }
         const bool treasure = kind == ItemKind::Gold;
         const bool destructible =
             kind == ItemKind::Food || kind == ItemKind::WeaponPowerup ||
@@ -220,7 +242,6 @@ std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, c
         if (!treasure && !destructible) {
             continue;
         }
-        const ItemInfo& info = m_infos[static_cast<usize>(item.info)];
         const f32 power =
             info.armor >= 0 ? std::max(1.0f, damage - static_cast<f32>(info.armor)) : damage;
         if (power < kDestroyPower) {
@@ -236,7 +257,7 @@ std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, c
             item.taken = true;
             item.visible = false;
         }
-        changes.push_back({item.position, !treasure});
+        changes.push_back({item.position, !treasure, std::nullopt});
     }
     return changes;
 }
@@ -291,6 +312,7 @@ bool PlacedItems::placeRecord(RenderDevice& device, s32 record, const Vec3& posi
     item.info = record;
     item.subtype = info->subtype;
     item.value = amount > 0 ? amount : info->value;
+    item.health = info->hitPoints;
     item.flags = info->properties;
     item.strength = static_cast<f32>(info->activeOn);
     item.radius = info->radius;
