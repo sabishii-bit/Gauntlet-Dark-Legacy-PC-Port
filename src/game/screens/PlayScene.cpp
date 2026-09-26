@@ -1103,10 +1103,6 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             m_intro = Intro::Done;
         }
     }
-    m_world->update(seconds);
-    m_world->revealCrystals(seconds);
-    m_hud.pickups().step(ticks, seconds);
-    m_sumner.update(seconds);
     auto powerupClock = PlayerPowerups::Clock::Paused;
     if (!held && !m_world->isTower()) {
         const bool bossLevel = m_world->level() != nullptr && m_world->level()->bossType >= 0;
@@ -1118,6 +1114,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
     }
     PlayerPowerups::update(m_players, seconds, powerupClock);
+    m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
+    m_world->revealCrystals(seconds);
+    m_hud.pickups().step(ticks, seconds);
+    m_sumner.update(seconds);
     for (auto& player : m_players) {
         if (player.figure != nullptr) {
             player.figure->setCompanionPowerups(*m_device, m_world->powerups(),

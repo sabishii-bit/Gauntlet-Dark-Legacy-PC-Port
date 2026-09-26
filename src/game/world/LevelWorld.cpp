@@ -180,11 +180,11 @@ void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> vis
     syncCollision();
 }
 
-void LevelWorld::update(f32 seconds) {
+void LevelWorld::update(f32 seconds, bool timeStopped) {
     if (!built()) {
         return;
     }
-    m_worldAnimator.step(seconds, m_scene);
+    m_worldAnimator.step(seconds, m_scene, timeStopped);
     m_skorneArena.update(seconds);
     m_walls.update(seconds);
     syncCollision();

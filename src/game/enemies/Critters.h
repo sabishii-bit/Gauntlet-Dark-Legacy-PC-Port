@@ -43,7 +43,8 @@ public:
     std::optional<s32> spawn(CombatantKind kind, const Vec3& position, f32 yaw,
                              std::string_view form = "");
 
-    void update(s32 ticks, f32 seconds, std::span<const EnemyView> players);
+    void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
+                bool timeStopped = false);
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatGrab> takeGrabs();
     std::vector<CombatLoss> takeLosses();

@@ -175,7 +175,7 @@ public:
      * what the throwers let go flies in `missiles`, when given. */
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Obstacle> obstacles = {}, class EnemyMissiles* missiles = nullptr,
-                f32 missileSpeedScale = 1.0f);
+                f32 missileSpeedScale = 1.0f, bool timeStopped = false);
     std::vector<EnemyBlow> takeBlows();
     std::vector<EnemyLoss> takeLosses();
     std::vector<EnemyBurst> takeBursts();

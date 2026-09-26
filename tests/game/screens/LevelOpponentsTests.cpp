@@ -1004,14 +1004,18 @@ TEST_CASE("breath blocked by arena cover neither damages nor consumes the breath
 }
 
 TEST_CASE("the level keeps boss effects on their animated node or full model root",
-          "[game][screens][level-opponents][breath][boss-effects][unpacked]") {
+          "[game][screens][level-opponents][breath][boss-effects][stop-time][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
     test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
     s32 kind = 34;
     f32 distance = 25;
     bool rootEffect = false;
+    bool timeStopped = false;
     CritterData lichData;
     SECTION("Dragon FIRE rides its animated mouth") {}
+    SECTION("Stop Time does not prevent the Dragon from attacking") {
+        timeStopped = true;
+    }
     SECTION("Lich attack wind-up rides its elevated root") {
         test::unpackedOrSkip("critter/LICH.json");
         test::unpackedOrSkip("MONSTERS/LICH/animations.json");
@@ -1028,6 +1032,10 @@ TEST_CASE("the level keeps boss effects on their animated node or full model roo
     LevelOpponents opponents;
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, distance}, 0);
+    if (timeStopped) {
+        players[0].actor.save().progress().inventory.addPowerup(powerup::kSpecial,
+                                                                powerup::kStopTime, 0, 60);
+    }
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
     REQUIRE(opponents.bosses().spawn(kind, Vec3{0}, 0));
     LevelOpponents::Events events;
@@ -1132,5 +1140,60 @@ TEST_CASE("the Lich's emergence cue hides the arena mound when he wakes",
     effects.clear();
     REQUIRE(world.load(device, root, *level));
     REQUIRE(world.scene().objectVisible(index));
+}
+TEST_CASE("Stop Time prevents melee releases without stopping incoming damage or death",
+          "[level-opponents][stop-time]") {
+    const auto root = test::scratchDirectory("opponents-stop-time");
+    writeMeleeEnemy(root, kGruntKind);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(2, {}, nullptr, Vec3{0, 0, 2}, 0);
+    auto& inventory = players[0].actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kStopTime, 0, 60);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    auto& enemies = opponents.enemies();
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto id = enemies.spawn(EnemySpawn{.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    REQUIRE(id);
+    usize contacts = 0;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [&](usize, f32, HurtKind, bool, const PlayerImpact&) { ++contacts; };
+    const auto tick = [&] { opponents.update(2, 1.0f / 30, players, {}, events); };
+    for (s32 frame = 0; frame < 90; ++frame) {
+        tick();
+    }
+    CHECK(contacts == 0);
+    CHECK(enemies.animatorOf(*id)->player().frame() == 0);
+    inventory.powerups[0].on = false;
+    for (s32 frame = 0; frame < 90 && contacts == 0; ++frame) {
+        tick();
+    }
+    REQUIRE(contacts > 0);
+    inventory.powerups[0].on = true;
+    const usize before = contacts;
+    const f32 heldFrame = enemies.animatorOf(*id)->player().frame();
+    for (s32 frame = 0; frame < 90; ++frame) {
+        tick();
+    }
+    CHECK(contacts == before);
+    CHECK(enemies.animatorOf(*id)->player().frame() == heldFrame);
+    opponents.strikeEnemy(*id, 1000, 0, Vec3{0, 0, 1}, -1, players);
+    for (s32 frame = 0; frame < 120; ++frame) {
+        tick();
+    }
+    CHECK(enemies.count() == 0);
+    CHECK(contacts == before);
+    opponents.close();
 }
 } // namespace

@@ -505,7 +505,7 @@ void Enemies::generatorGone(s32 generator) {
 
 void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                      std::span<const Obstacle> obstacles, EnemyMissiles* missiles,
-                     f32 missileSpeedScale) {
+                     f32 missileSpeedScale, bool timeStopped) {
     if (ticks <= 0) {
         return;
     }
@@ -538,6 +538,13 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             if (dissolved || enemy.animator.dead() || !enemy.animator.reacting()) {
                 die(enemy);
             }
+            continue;
+        }
+        if (timeStopped) {
+            react(enemy);
+            // Keep contact bookkeeping and incoming damage, without advancing
+            // attacks, AI, knockback or the animation's one-shot release cues.
+            move(enemy, i, 0, 0, Vec3{0}, players, obstacles);
             continue;
         }
         chooseTarget(enemy, i, players, crowding);

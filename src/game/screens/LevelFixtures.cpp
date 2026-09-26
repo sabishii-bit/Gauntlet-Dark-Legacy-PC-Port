@@ -9,6 +9,7 @@
 #include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
+#include "game/screens/PlayerPowerups.h"
 namespace gdl::game {
 namespace {
 constexpr std::string_view kChestSound = "S_CHEST";
@@ -221,7 +222,8 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             events.help(HelpMessages::kDoorNeedsKey, event.visitor);
         }
     }
-    for (const TrapHit& hit : m_traps.update(ticks, seconds, victims)) {
+    for (const TrapHit& hit :
+         m_traps.update(ticks, seconds, victims, PlayerPowerups::timeStopped(players))) {
         if (hit.victim >= players.size()) {
             continue;
         }

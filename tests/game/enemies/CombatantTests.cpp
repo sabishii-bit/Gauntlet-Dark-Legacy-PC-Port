@@ -420,4 +420,78 @@ TEST_CASE("bosses load elemental armor from exported retail types", "[game][item
     REQUIRE(data.load(chimera));
     CHECK(data.shieldFlags() == 0);
 }
+TEST_CASE("Stop Time allows entrances and their explicit continuation without locomotion",
+          "[combatant][stop-time]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":3,"maxHealth":100,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32},
+               {"name":"START","anim":"STEP","type":16,"link":0,"speed":3},
+               {"name":"WALK","anim":"STEP","type":52,"priority":10,"speed":3}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    REQUIRE(actor.moveName() == "START");
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 100};
+    const std::array players{player};
+    for (s32 frame = 0; frame < 60; ++frame) {
+        actor.update(2, 1.0f / 30, players, {}, true);
+    }
+    CHECK(actor.moveName() == "READY");
+    CHECK_FALSE(actor.moveDone());
+    CHECK(actor.position() == Vec3{0});
+    for (s32 frame = 0; frame < 12; ++frame) {
+        actor.update(2, 1.0f / 30, players);
+    }
+    CHECK(actor.moveName() == "WALK");
+    CHECK(glm::length(actor.position()) > 0);
+}
+
+TEST_CASE("Stop Time holds living ordinary combatants but damage and death still resolve",
+          "[combatant][stop-time]") {
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 100};
+    const std::array<EnemyView, 1> players{player};
+    for (const auto& definition :
+         {Golem::definition(), General::definition(), Gargoyle::definition()}) {
+        CAPTURE(definition.name);
+        test::FakeRenderDevice device;
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, familyAssets(), definition, 'G'));
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        for (s32 frame = 0; frame < 60; ++frame) {
+            actor.update(2, 1.0f / 30, players, {}, true);
+        }
+        CHECK(actor.moveName() == "READY");
+        CHECK_FALSE(actor.moveDone());
+        CHECK(actor.position() == Vec3{0});
+        for (s32 frame = 0; frame < 12; ++frame) {
+            actor.update(2, 1.0f / 30, players);
+        }
+        const Vec3 walked = actor.position();
+        CHECK(glm::length(walked) > 0);
+        EnemyHit hit;
+        hit.damage = 5;
+        actor.hurt(hit);
+        CHECK(actor.health() == 95);
+        for (s32 frame = 0; frame < 30; ++frame) {
+            actor.update(2, 1.0f / 30, players, {}, true);
+        }
+        CHECK(actor.position() == walked);
+        hit.damage = 1000;
+        actor.hurt(hit);
+        CHECK(actor.dying());
+        for (s32 frame = 0; frame < 90; ++frame) {
+            actor.update(2, 1.0f / 30, players, {}, true);
+        }
+        CHECK_FALSE(actor.present());
+    }
+}
 } // namespace

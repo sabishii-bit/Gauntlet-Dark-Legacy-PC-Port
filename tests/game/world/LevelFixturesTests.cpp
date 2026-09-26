@@ -482,4 +482,25 @@ TEST_CASE("barrels stand in the way until blows break them, each after its kind"
     CHECK_FALSE(barrels.barrel(2).box.solid);
 }
 
+TEST_CASE("Stop Time retracts live traps and leaves a half-second rest on release",
+          "[game][world][fixtures][stop-time]") {
+    Fixture f("fixtures-time-stop");
+    Traps traps;
+    REQUIRE(traps.bind(f.device, f.layout, f.items, nullptr, 7));
+    traps.setPlayerCount(1);
+    const std::array party{TrapVictim{Vec3{100, 0, 0}, 0.75f}};
+    for (s32 frame = 0; frame < 120 && !traps.armed(0); ++frame) {
+        traps.update(2, 1.0f / 30, party);
+    }
+    REQUIRE(traps.armed(0));
+    for (s32 frame = 0; frame < 120; ++frame) {
+        REQUIRE(traps.update(2, 1.0f / 30, party, true).empty());
+        REQUIRE_FALSE(traps.armed(0));
+    }
+    CHECK(traps.trap(0).ticksLeft == 30);
+    CHECK(traps.update(29, 29.0f / 60, party).empty());
+    CHECK_FALSE(traps.armed(0));
+    CHECK_FALSE(traps.update(1, 1.0f / 60, party).empty());
+    CHECK(traps.armed(0));
+}
 } // namespace
