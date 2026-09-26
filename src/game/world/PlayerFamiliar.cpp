@@ -6,14 +6,22 @@
 namespace gdl::game {
 bool PlayerFamiliar::bind(RenderDevice& device, ItemArchive& archive, s32 level,
                           const Vec3& offset) {
+    m_tier = tierFor(level);
+    return bindTree(device, archive, m_tier > 0 ? std::format("FAMILIAR{}", m_tier) : "", offset);
+}
+bool PlayerFamiliar::bindPhoenix(RenderDevice& device, ItemArchive& archive) {
+    m_tier = 0;
+    return bindTree(device, archive, "PHOENIX", Vec3{0});
+}
+bool PlayerFamiliar::bindTree(RenderDevice& device, ItemArchive& archive, std::string_view name,
+                              const Vec3& offset) {
     m_tree = nullptr;
     m_model.clear();
     m_player.stop();
-    m_tier = tierFor(level);
     m_offset = offset;
     m_frames = 0;
-    const auto index = archive.trees.find(std::format("FAMILIAR{}", m_tier));
-    if (m_tier == 0 || !index.has_value()) {
+    const auto index = archive.trees.find(name);
+    if (name.empty() || !index.has_value()) {
         return false;
     }
     const auto& tree = archive.trees.tree(*index);
@@ -47,10 +55,11 @@ void PlayerFamiliar::update(f32 seconds, bool attack) {
     m_textures.apply(m_model, *m_tree, m_player.sequence(), frame);
 }
 void PlayerFamiliar::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
-                          const WorldLighting& lighting, f32 alpha) const {
+                          const WorldLighting& lighting, f32 alpha,
+                          const CameraFrame* camera) const {
     if (m_tree != nullptr) {
         m_model.draw(device, clip, glm::translate(body, m_offset), lighting, m_pose.matrices(),
-                     nullptr, alpha);
+                     camera, alpha);
     }
 }
 } // namespace gdl::game

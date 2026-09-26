@@ -25,6 +25,7 @@ inline constexpr u32 kFireBreath = 0x10;          ///< special
 inline constexpr u32 kAcidBreath = 0x20;
 inline constexpr u32 kLightningBreath = 0x40;
 inline constexpr u32 kBreath = kFireBreath | kAcidBreath | kLightningBreath;
+inline constexpr u32 kPhoenix = 0x80; ///< special: temporary fire-spitting companion
 inline constexpr u32 kSkorneHorns = 0x1000;
 inline constexpr u32 kSkorneMask = 0x2000;
 inline constexpr u32 kRightGauntlet = 0x4000;

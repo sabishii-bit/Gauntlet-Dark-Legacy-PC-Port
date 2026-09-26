@@ -1,5 +1,6 @@
 #include "game/world/PlayerFigure.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <span>
@@ -205,11 +206,15 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
     }
     m_animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed);
     m_familiarPending =
-        familiarTier() > 0 &&
+        (m_phoenixActive || familiarTier() > 0) &&
         (m_animator.released() || m_animator.strongReleased() || m_animator.superReleased() ||
          m_animator.itemReleased() == PlayerDeed::FireLeft ||
          m_animator.itemReleased() == PlayerDeed::FireRight);
-    m_familiar.update(seconds, m_familiarPending);
+    if (m_phoenixActive) {
+        m_phoenix.update(seconds, m_familiarPending);
+    } else {
+        m_familiar.update(seconds, m_familiarPending);
+    }
     const std::span<const Mat4> matrices = m_animator.pose().matrices();
     m_transforms.resize(m_costume->nodes.size());
     for (usize n = 0; n < m_transforms.size(); ++n) {
@@ -218,6 +223,25 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
                               ? matrices[static_cast<usize>(source)]
                               : glm::translate(Mat4{1.0f}, m_costume->worldPosition(n));
     }
+}
+
+void PlayerFigure::setCompanionPowerups(RenderDevice& device, ItemArchive& powerups,
+                                        const Inventory& inventory) {
+    const bool active = (PowerupEffects::of(inventory).special & powerup::kPhoenix) != 0;
+    if (active && !m_phoenixActive) {
+        m_phoenix.bindPhoenix(device, powerups);
+    }
+    m_phoenixActive = active;
+    // The shared companion fades over the last second of its contributing powerups.
+    f32 remaining = 0;
+    constexpr u32 kCompanionFlags = 0x7004F1;
+    for (const auto& slot : inventory.powerups) {
+        if (slot.working() && slot.kind == powerup::kSpecial &&
+            (slot.flags & kCompanionFlags) != 0) {
+            remaining = std::max(remaining, slot.strength < 0 ? 1.0f : slot.strength);
+        }
+    }
+    m_phoenixAlpha = std::clamp(remaining, 0.0f, 1.0f);
 }
 
 ItemArchive* PlayerFigure::effects() {
@@ -247,9 +271,14 @@ std::optional<Mat4> PlayerFigure::attachment(const Mat4& body,
 }
 
 void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
-                        const WorldLighting& lighting, f32 alpha, bool hideWeapon) const {
+                        const WorldLighting& lighting, f32 alpha, bool hideWeapon,
+                        const CameraFrame* camera) const {
     m_model.draw(device, clip, body, lighting, m_transforms, nullptr, alpha);
-    m_familiar.draw(device, clip, body, lighting, alpha);
+    if (m_phoenixActive) {
+        m_phoenix.draw(device, clip, body, lighting, alpha * m_phoenixAlpha, camera);
+    } else {
+        m_familiar.draw(device, clip, body, lighting, alpha, camera);
+    }
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;
     if (heldWeaponBound() && !hideWeapon && (!thrown || m_staysInHand)) {

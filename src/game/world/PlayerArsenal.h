@@ -58,6 +58,7 @@ private:
     std::optional<Resources> m_resources;
     std::array<TreeModel, 5> m_potionModels;
     TreeModel m_superShot;
+    TreeModel m_phoenixShot;
     std::array<TreeModel, 2> m_gauntlets;
     PlayerMissiles m_missiles;
 };

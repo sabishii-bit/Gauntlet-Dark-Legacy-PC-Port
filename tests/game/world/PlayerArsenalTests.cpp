@@ -33,6 +33,58 @@ struct Fixture {
     }
 };
 
+TEST_CASE("Phoenix fires fixed fire damage without a permanent familiar or weapon enchantments",
+          "[game][items][player-arsenal][phoenix][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    Fixture f;
+    f.arsenal.clear();
+    REQUIRE(f.classes.load(root / "pdata"));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    PlayerFigure figure; // no earned familiar and no class SFX archive required
+    bool boss = false;
+    SECTION("ordinary level") {}
+    SECTION("boss has no gravity") {
+        boss = true;
+    }
+    f.arsenal.bind({f.device,
+                    f.classes,
+                    f.weapons,
+                    f.collision,
+                    f.effects,
+                    f.audio,
+                    nullptr,
+                    {},
+                    false,
+                    boss});
+    auto& inventory = f.actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kPhoenix, 0, 60);
+    inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot | 4, 0, 60);
+    const Vec3 aim{10, 5, 40};
+    f.arsenal.launchFamiliar(f.actor, &figure, aim);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    const auto& shot = f.arsenal.missiles().missile(0);
+    CHECK(shot.damage == 10);
+    CHECK(shot.flags == 0x11);
+    CHECK(shot.owner == 3);
+    CHECK(shot.spec->weight == (boss ? 0 : 10));
+    REQUIRE(shot.effect != 0);
+    CHECK(f.arsenal.missiles().visuals().effect(0).name == "PHOENIX_FBALL");
+    inventory.powerups[0].on = false;
+    f.arsenal.launchFamiliar(f.actor, &figure, aim);
+    CHECK(f.arsenal.missiles().count() == 1);
+    f.arsenal.missiles().update(0.1f, nullptr);
+    f.arsenal.missiles().draw(f.device, Mat4{1}, {});
+    REQUIRE_FALSE(f.device.draws.empty()); // disabling does not invalidate a flying shot
+    const std::array targets{MissileTarget{1000, f.arsenal.missiles().missile(0).position, 3, 8}};
+    f.arsenal.missiles().update(0.01f, nullptr, targets);
+    const auto impacts = f.arsenal.missiles().takeImpacts();
+    REQUIRE(impacts.size() == 1);
+    CHECK(impacts.front().target == 1000);
+    CHECK(impacts.front().damage == 10);
+    CHECK(impacts.front().flags == 0x11);
+    f.arsenal.clear();
+}
+
 TEST_CASE("equipped gauntlets route the shooter's textures into complete projectile playback",
           "[game][player-arsenal][unpacked]") {
     const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();

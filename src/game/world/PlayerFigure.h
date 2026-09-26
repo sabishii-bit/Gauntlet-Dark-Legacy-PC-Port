@@ -13,6 +13,7 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/WorldCamera.h"
 
 #include "game/players/CharacterSave.h"
 #include "game/players/PlayerAnimator.h"
@@ -42,8 +43,13 @@ public:
     static std::filesystem::path costumeDirectory(const std::filesystem::path& root,
                                                   const CharacterSave& save);
     void animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed = PlayerDeed::None);
+    /** Synchronize the temporary companion before animation. The powerup archive must
+     * outlive this figure; switching off does not invalidate missiles already in flight. */
+    void setCompanionPowerups(RenderDevice& device, ItemArchive& powerups,
+                              const Inventory& inventory);
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
-              const WorldLighting& lighting, f32 alpha, bool hideWeapon) const;
+              const WorldLighting& lighting, f32 alpha, bool hideWeapon,
+              const CameraFrame* camera = nullptr) const;
     /** Retail head equipment, attached to the posed HEAD object. The level's
      * powerup archive must outlive this figure, like its other borrowed draw resources. */
     void drawHeadwear(RenderDevice& device, ItemArchive& powerups, const PowerupEffects& worn,
@@ -53,6 +59,7 @@ public:
     std::optional<Mat4> attachment(const Mat4& body, std::string_view objectSuffix) const;
     bool heldWeaponBound() const { return m_handNode >= 0 && m_weapon.bound(); }
     s32 familiarTier() const { return m_familiar.tier(); }
+    bool phoenixActive() const { return m_phoenixActive; }
     bool familiarReleased() const { return m_familiarReleased; }
     const TreeModel& familiarMissile() const { return m_familiarMissile; }
     const std::filesystem::path& directory() const { return m_directory; }
@@ -97,6 +104,9 @@ private:
     std::vector<Mat4> m_transforms;
     ItemArchive m_effects;
     PlayerFamiliar m_familiar;
+    PlayerFamiliar m_phoenix;
+    bool m_phoenixActive = false;
+    f32 m_phoenixAlpha = 1;
     TreeModel m_familiarMissile;
     bool m_familiarPending = false;
     bool m_familiarReleased = false;

@@ -1115,6 +1115,12 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
     }
     PlayerPowerups::update(m_players, seconds, powerupClock);
+    for (auto& player : m_players) {
+        if (player.figure != nullptr) {
+            player.figure->setCompanionPowerups(*m_device, m_world->powerups(),
+                                                player.actor.save().progress().inventory);
+        }
+    }
     const PartyMotion::Events movementEvents{
         .perform =
             [this](usize i, PartyMotion::Action action) {
@@ -1322,16 +1328,18 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
 
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
                        f32 frameHeight) {
-    if (!m_open || m_context.config == nullptr) {
+    if (!m_open || m_world == nullptr || m_context.config == nullptr) {
         return;
     }
     const GameConfig& config = *m_context.config;
     m_messages.prepare(device);
     m_sumnerVisit.prepare(device);
-    const Mat4 clip = viewCamera().clipTransform(config.horizontalFovRadians(), frameWidth,
-                                                 frameHeight, frameProjection);
-    m_world->drawOpaque(device, clip, viewCamera());
-    m_towerRelics.draw(device, clip, m_world->lighting(), viewCamera(), relicCeremonyOn());
+    const WorldCamera camera = viewCamera();
+    const Mat4 clip = camera.clipTransform(config.horizontalFovRadians(), frameWidth, frameHeight,
+                                           frameProjection);
+    const CameraFrame companionCamera = CameraFrame::of(camera);
+    m_world->drawOpaque(device, clip, camera);
+    m_towerRelics.draw(device, clip, m_world->lighting(), camera, relicCeremonyOn());
     m_sumner.draw(device, clip, m_world->lighting());
     if (!spawning()) {
         m_promotion.draw(device, clip, m_world->lighting());
@@ -1353,7 +1361,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
             figure.setSkinTexture(skin);
             figure.draw(device, clip, body, m_world->lighting(),
                         worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha(),
-                        runtime.move.weaponHidden());
+                        runtime.move.weaponHidden(), &companionCamera);
             figure.drawHeadwear(device, m_world->powerups(), worn, clip, body, m_world->lighting(),
                                 worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha());
             figure.setSkinTexture(nullptr);
@@ -1361,7 +1369,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     m_portals.draw(device, clip, m_world->lighting());
     m_transporters.draw(device, clip, m_world->lighting());
-    const CameraFrame effectCamera = CameraFrame::of(viewCamera());
+    const CameraFrame effectCamera = companionCamera;
     m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting());
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_hitFlashTexture, &m_weapons);
@@ -1372,7 +1380,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                                                       : m_world->lighting(),
                               m_bossSequence.frozenTexture());
     m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
-    m_world->drawDeferred(device, clip, viewCamera());
+    m_world->drawDeferred(device, clip, camera);
     m_opponents.missiles().draw(device, clip, m_world->lighting());
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
@@ -1398,8 +1406,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                 !spawning() && !m_messages.active());
         }
         if (config.camera.compass) {
-            CompassHud::draw(m_canvas, m_messages.text(), m_context.strings, width,
-                             viewCamera().yaw);
+            CompassHud::draw(m_canvas, m_messages.text(), m_context.strings, width, camera.yaw);
         }
         m_opponents.meter().draw(m_canvas, device);
         m_bossSequence.victory().drawCaption(m_canvas, m_messages.text(), m_hud.strings(), width,
