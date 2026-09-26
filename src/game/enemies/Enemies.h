@@ -16,6 +16,7 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/enemies/DeathRules.h"
 #include "game/enemies/EnemyAnimator.h"
 #include "game/enemies/EnemyFeedback.h"
 #include "game/enemies/EnemyKinds.h"
@@ -49,6 +50,7 @@ struct EnemyView {
     bool captured = false;  ///< already parented to another combatant, not a new grab candidate
     bool invisible = false; ///< not a sight target, but still vulnerable to contact and hazards
     EnemyMeleeWard meleeWard = EnemyMeleeWard::None;
+    bool antiDeath = false;
 };
 
 /** A blow an enemy has landed on a player. */
@@ -88,6 +90,7 @@ struct EnemyHit {
     s32 level = 1;                    ///< the character's level, against the place's
     std::optional<Vec3> where;        ///< where it landed, when that is known
     bool close = false;               ///< a blow struck in the hand, not a missile
+    bool antiDeath = false;
 };
 
 /** Where an enemy is asked to appear: about `position`, facing `direction`. */
@@ -177,6 +180,10 @@ public:
     std::vector<EnemyLoss> takeLosses();
     std::vector<EnemyBurst> takeBursts();
     std::vector<EnemyFeedback> takeFeedback();
+    std::vector<DeathEvent> takeDeathEvents();
+    bool draining(s32 id) const;
+    /** Death departs after taking its victim's last health. */
+    void finishDeath(s32 id);
 
     /** Deals a hit to an enemy; what it is worth comes back as a loss. */
     void hurt(s32 id, const EnemyHit& hit);
@@ -227,6 +234,7 @@ private:
         std::array<TreeModel, 3> variantBodies;
         TreeModel arrow;
         TreeModel bomb;
+        std::array<TreeModel, 2> deathStatues;
     };
 
     struct Enemy {
@@ -259,6 +267,9 @@ private:
         s32 attackIndex = -1; ///< the player its swing is for
         s32 attackCount = 0;
         s32 stunTicks = 0;
+        s32 drainTicks = 0;
+        s32 endurance = 0;
+        bool draining = false;
         bool bumpedWall = false;  ///< the last step ran into the world
         bool bumpedOther = false; ///< or another enemy
         bool blocked = false;     ///< and came to a dead stop
@@ -286,6 +297,8 @@ private:
     void chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                       std::span<f32> crowding);
     void resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> players);
+    void drain(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players);
+    void hurtDeath(Enemy& enemy, s32 slot, const EnemyHit& hit);
     static void react(Enemy& enemy);
     MindSense sense(const Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players,
                     std::span<const Obstacle> obstacles) const;
@@ -316,6 +329,7 @@ private:
     std::vector<EnemyLoss> m_losses;
     std::vector<EnemyBurst> m_bursts;
     std::vector<EnemyFeedback> m_feedback;
+    std::vector<DeathEvent> m_deathEvents;
     std::mt19937 m_random;
     u32 m_frame = 0;
 };

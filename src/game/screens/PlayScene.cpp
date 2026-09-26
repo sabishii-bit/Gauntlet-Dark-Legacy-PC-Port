@@ -489,7 +489,11 @@ LevelFixtures::Events PlayScene::fixtureEvents() {
             .card = [this](s32 player,
                            std::string_view name) { m_hud.pickups().addCard(player, name); },
             .opponents = [this](const Vec3& position, f32 radius,
-                                f32 damage) { hurtOpponentsByBlast(position, radius, damage); }};
+                                f32 damage) { hurtOpponentsByBlast(position, radius, damage); },
+            .releaseEnemy =
+                [this](s32 record, const Vec3& position, s32 count) {
+                    return m_opponents.releaseDeath(record, position, count);
+                }};
 }
 void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
     m_fixtures.update(ticks, seconds, m_players, fixtureEvents());

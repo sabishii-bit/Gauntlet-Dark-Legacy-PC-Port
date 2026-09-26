@@ -40,7 +40,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     if (runtime.life != PlayerLife::Standing || inTower || damage <= 0.0f) {
         return;
     }
-    if (damage > 1.0f) {
+    if (damage > 1.0f && kind != HurtKind::DeathDrain) {
         damage *= damageScale;
     }
     const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
@@ -49,8 +49,8 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         received.flags |= Damage::kGas;
     }
     const f32 armor = stats != nullptr ? armorDefense(*stats, runtime.actor.save().progress()) : 0;
-    const Damage modified =
-        Damage::modify(damage, received.flags, worn.armor, armor, bossEncounter);
+    const Damage modified = Damage::modify(kind == HurtKind::DeathDrain ? -damage : damage,
+                                           received.flags, worn.armor, armor, bossEncounter);
     damage = modified.amount;
     received.flags = modified.flags;
     if ((received.flags & Damage::kLow) != 0 && (worn.special & powerup::kLevitation) != 0) {
@@ -61,7 +61,9 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         return;
     }
     const f32 unguarded = damage;
-    damage = guarded(runtime, damage, directed);
+    if (kind != HurtKind::DeathDrain) {
+        damage = guarded(runtime, damage, directed);
+    }
     if (runtime.figure != nullptr && runtime.figure->animator().defending()) {
         events.block(unguarded - damage, damage);
     }
@@ -103,6 +105,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         return;
     }
     switch (kind) {
+    case HurtKind::DeathDrain:
     case HurtKind::QuietBlow: break;
     case HurtKind::Burn:
         cryPain(events);

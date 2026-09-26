@@ -18,6 +18,12 @@ namespace gdl::game {
 Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from,
                                      const Vec3& to) const {
     auto bodies = m_enemies.targets();
+    if ((PowerupEffects::of(player.save().progress().inventory).armor & DeathRules::kProtection) ==
+        0) {
+        std::erase_if(bodies, [this](const MissileTarget& body) {
+            return m_enemies.kindOf(body.id) == kDeathKind;
+        });
+    }
     const auto critters = m_critters.targets(true);
     const auto bosses = m_bosses.targets();
     bodies.insert(bodies.end(), critters.begin(), critters.end());
@@ -38,6 +44,7 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
 }
 
 void LevelOpponents::close() {
+    clearDeaths();
     if (m_resources.has_value()) {
         m_combatantProjectiles.clear(m_resources->effects);
         for (const CritterEffect& cue : m_critterEffects) {
@@ -152,7 +159,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
             m_critters.spawnGargoyle(instance.position, facing);
             continue;
         }
-        if (*kind >= kSwarmKindCount || !m_enemies.loadKind(*kind)) {
+        if ((*kind >= kSwarmKindCount && *kind != kDeathKind) || !m_enemies.loadKind(*kind)) {
             continue;
         }
         EnemySpawn spawn;
@@ -167,7 +174,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         spawn.direction = Vec3{placement[2][0], 0.0f, placement[2][2]};
         spawn.placed = true;
         spawn.priority = EnemySpawn::Priority::FreeSlotOnly;
-        spawn.asleep = strength == 0;
+        spawn.asleep = strength == 0 && *kind != kDeathKind;
         m_enemies.spawn(spawn, {}, m_generators.obstacles());
     }
 }
@@ -188,6 +195,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         view.hidden = player.life != PlayerLife::Standing;
         const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
         view.invisible = powerups.invisible();
+        view.antiDeath = (powerups.armor & DeathRules::kProtection) != 0;
         if ((powerups.special & powerup::kHealthVamp) != 0) {
             view.meleeWard = EnemyMeleeWard::HealthVamp;
         } else if ((powerups.special & powerup::kHandOfDeath) != 0) {
@@ -455,6 +463,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     for (const EnemyBlow& blow : m_enemies.takeBlows()) {
         applyEnemyBlow(blow, players, events);
     }
+    updateDeaths(players, events);
     awardEnemyLosses(events);
 }
 
@@ -524,6 +533,8 @@ void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direc
         const PlayerActor& actor = runtime.actor;
         if (actor.player() == byPlayer) {
             hit.level = experienceLevel(actor.save().experience());
+            hit.antiDeath = (PowerupEffects::of(actor.save().progress().inventory).armor &
+                             DeathRules::kProtection) != 0;
         }
     }
     m_enemies.hurt(id, hit);

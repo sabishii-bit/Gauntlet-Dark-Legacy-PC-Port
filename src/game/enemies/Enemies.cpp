@@ -140,12 +140,16 @@ void Enemies::close() {
         }
         stock->arrow.clear();
         stock->bomb.clear();
+        for (TreeModel& statue : stock->deathStatues) {
+            statue.clear();
+        }
         stock->archive.release();
     }
     m_stocks.clear();
     m_blows.clear();
     m_losses.clear();
     m_feedback.clear();
+    m_deathEvents.clear();
     m_device = nullptr;
     m_collision = nullptr;
     m_frame = 0;
@@ -215,6 +219,14 @@ bool Enemies::loadKind(s32 kind) {
         bomb.has_value()) {
         stock->bomb.bind(stock->archive.trees.tree(*bomb), stock->archive.models,
                          stock->archive.textures, *m_device);
+    }
+    if (kind == kDeathKind) {
+        for (usize i = 0; i < stock->deathStatues.size(); ++i) {
+            if (const auto tree = stock->archive.trees.find(std::format("DEATHSTATUE{}", i + 1))) {
+                stock->deathStatues[i].bind(stock->archive.trees.tree(*tree), stock->archive.models,
+                                            stock->archive.textures, *m_device);
+            }
+        }
     }
     m_stocks.push_back(std::move(stock));
     return true;
@@ -383,6 +395,11 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     enemy.weightedDistance = 100000.0f;
     enemy.contact = -1;
     enemy.attackIndex = -1;
+    if (spawn.kind == kDeathKind) {
+        enemy.sight = 100000.0f;
+        enemy.endurance = spawn.placed ? 1 : 0;
+        enemy.stunTicks = spawn.placed ? 30 : 0;
+    }
 }
 
 std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const EnemyView> players,
@@ -502,6 +519,13 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         enemy.flashSeconds = std::max(0.0f, enemy.flashSeconds - seconds);
         if (enemy.state == State::Dying) {
             enemy.deathSeconds += seconds;
+            if (enemy.kind == kDeathKind) {
+                enemy.position.y += DeathRules::kRiseSpeed * seconds;
+                if (enemy.deathSeconds >= DeathRules::kFadeSeconds) {
+                    die(enemy);
+                }
+                continue;
+            }
             react(enemy);
             enemy.animator.request(EnemyAction::Dying);
             enemy.yaw = turnToward(enemy, enemy.mind.heading, ticks);
@@ -518,11 +542,16 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         }
         chooseTarget(enemy, i, players, crowding);
         resolveBlows(enemy, i, players);
-        react(enemy);
+        if (enemy.kind != kDeathKind) {
+            react(enemy);
+        }
         if (enemy.state == State::Dying) {
             continue;
         }
         think(enemy, i, ticks, players, obstacles);
+        if (enemy.kind == kDeathKind) {
+            drain(enemy, i, ticks, players);
+        }
         if (enemy.expired) {
             die(enemy);
             continue;
@@ -562,7 +591,8 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         (m_frame % kRetargetEvery) == (static_cast<u32>(slot) % kRetargetEvery) || enemy.target < 0;
     if (enemy.target >= 0) {
         const EnemyView* current = viewOf(players, enemy.target);
-        if (current == nullptr || current->hidden || current->invisible) {
+        if (current == nullptr || current->hidden || current->invisible ||
+            (enemy.kind == kDeathKind && current->antiDeath)) {
             look = true;
         }
     }
@@ -572,7 +602,7 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         enemy.weightedDistance = 100000.0f;
         enemy.targetDistance = 100000.0f;
         for (const EnemyView& view : players) {
-            if (view.hidden || view.invisible) {
+            if (view.hidden || view.invisible || (enemy.kind == kDeathKind && view.antiDeath)) {
                 continue;
             }
             const f32 distance = flatDistance(view.position, enemy.position);
@@ -618,6 +648,9 @@ f32 Enemies::fightOf(const Enemy& enemy) const {
 }
 
 void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> players) {
+    if (enemy.kind == kDeathKind) {
+        return;
+    }
     const bool landed = enemy.animator.struck() || enemy.animator.powerStruck();
     if (!landed || enemy.attackIndex < 0) {
         if (landed) {
@@ -818,8 +851,41 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     if (enemy.stunTicks > 0) {
         enemy.stunTicks -= ticks;
     }
-    const MindIntent intent = enemyMindOf(enemy.algorithm)
-                                  .think(enemy.mind, sense(enemy, slot, ticks, players, obstacles));
+    const MindSense sensed = sense(enemy, slot, ticks, players, obstacles);
+    s32 algorithm = enemy.algorithm;
+    std::optional<f32> retreat;
+    if (enemy.kind == kDeathKind) {
+        algorithm = enemy.target >= 0 ? kSeekWay : kWanderWay;
+        if (enemy.target < 0) {
+            const EnemyView* threat = nullptr;
+            for (const EnemyView& view : players) {
+                if (!view.hidden && !view.invisible && view.antiDeath &&
+                    (threat == nullptr || flatDistance(view.position, enemy.position) <
+                                              flatDistance(threat->position, enemy.position))) {
+                    threat = &view;
+                }
+            }
+            if (threat != nullptr) {
+                f32 offset = 0;
+                if (enemy.blocked && enemy.mind.counter < 8) {
+                    const s32 attempt = enemy.mind.counter++;
+                    const s32 pair = attempt / 2 + 1;
+                    offset =
+                        static_cast<f32>(pair) * (kPi / 36) * (attempt % 2 == 0 ? 1.0f : -1.0f);
+                }
+                const Vec3 toward = threat->position - enemy.position;
+                retreat = wrapAngle(std::atan2(toward.x, toward.z) + kPi + offset);
+            }
+        }
+    }
+    MindIntent intent;
+    if (retreat.has_value()) {
+        intent.heading = *retreat;
+        intent.pace = 0.9f;
+        enemy.mind.heading = *retreat;
+    } else {
+        intent = enemyMindOf(algorithm).think(enemy.mind, sensed);
+    }
     if (intent.become.has_value()) {
         enemy.algorithm = *intent.become;
     }
@@ -889,7 +955,8 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         if (view.hidden) {
             continue;
         }
-        if (flatDistance(view.position, to) < view.radius + enemy.radius + 0.5f &&
+        if ((enemy.kind != kDeathKind || !view.antiDeath || !separating(from, to, view.position)) &&
+            flatDistance(view.position, to) < view.radius + enemy.radius + 0.5f &&
             std::abs(view.position.y - to.y) < std::max(view.height, enemy.height)) {
             enemy.contact = view.player;
             break;
@@ -899,7 +966,8 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         if (const EnemyView* view = viewOf(players, enemy.contact); view != nullptr) {
             enemy.mind.route = turnDirection(from, view->position);
         }
-        if (enemy.state == State::Active && enemy.algorithm != 31) {
+        // Death drains at contact; it has no melee swing or recovery to hold movement.
+        if (enemy.kind != kDeathKind && enemy.state == State::Active && enemy.algorithm != 31) {
             enemy.attackIndex = enemy.contact;
             enemy.animator.request((enemy.attackCount & 7) == 7 ? EnemyAction::PowerAttack
                                                                 : EnemyAction::Attack);
@@ -974,6 +1042,10 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
     }
     Enemy& enemy = m_enemies[static_cast<usize>(id)];
     if ((enemy.state != State::Active && enemy.state != State::Asleep) || enemy.killed) {
+        return;
+    }
+    if (enemy.kind == kDeathKind) {
+        hurtDeath(enemy, id, hit);
         return;
     }
     const EnemyKind& kind = enemyKind(enemy.kind);
@@ -1072,6 +1144,12 @@ const TreeModel* Enemies::bodyOf(const Enemy& enemy) {
     Stock* stock = stockOf(enemy.kind);
     if (stock == nullptr) {
         return nullptr;
+    }
+    if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
+        const TreeModel& statue = stock->deathStatues[enemy.tier == 2 ? 1 : 0];
+        if (statue.bound()) {
+            return &statue;
+        }
     }
     if (enemy.variant != 0) {
         const auto v = static_cast<usize>(enemy.variant - kArcherStrength);
@@ -1195,7 +1273,7 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         TreeModel& body =
             *const_cast<TreeModel*>(found); // NOLINT(cppcoreguidelines-pro-type-const-cast)
         body.resetTextures();
-        body.setAppearance(enemy.killed || enemy.flashSeconds > 0);
+        body.setAppearance((enemy.killed && enemy.kind != kDeathKind) || enemy.flashSeconds > 0);
         if (enemy.flashSeconds > 0) {
             body.setMaskedTexture(hitFlash);
         }
@@ -1227,7 +1305,15 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         body.setFrame(player.sequence(), static_cast<s32>(std::lround(player.frame())));
         const Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, enemy.position), enemy.yaw,
                                        Vec3{0.0f, 1.0f, 0.0f});
-        body.draw(device, clip, model, lighting, enemy.animator.pose().matrices());
+        const f32 alpha = enemy.kind == kDeathKind && enemy.killed
+                              ? std::max(0.0f, 1.0f - enemy.deathSeconds / DeathRules::kFadeSeconds)
+                              : 1.0f;
+        if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
+            body.draw(device, clip, model, lighting);
+        } else {
+            body.draw(device, clip, model, lighting, enemy.animator.pose().matrices(), nullptr,
+                      alpha);
+        }
     }
 }
 
