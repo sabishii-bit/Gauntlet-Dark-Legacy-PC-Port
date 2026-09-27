@@ -69,6 +69,19 @@ TEST_CASE("an exit's tag names a realm by its letter and counts into the realm's
     REQUIRE_FALSE(tower == *fields);
 }
 
+TEST_CASE("players lie shadows everywhere but Cloud9", "[game][world][shadow]") {
+    LevelRef level;
+    level.realmId = LevelRef::kSecretRealm;
+    level.name = "S9";
+    CHECK_FALSE(level.playerShadows());
+    level.name = "S8";
+    CHECK(level.playerShadows());
+    level.realmId = 7; // another realm's ninth is shadowed
+    level.name = "S9";
+    CHECK(level.playerShadows());
+    CHECK(LevelRef::tower().playerShadows());
+}
+
 TEST_CASE("the unpacked realm data finds the tower's first portals' levels",
           "[game][world][levels][unpacked]") {
     const std::filesystem::path root =

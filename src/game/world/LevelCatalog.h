@@ -22,10 +22,14 @@ struct LevelRef {
 
     static constexpr s32 kTowerRealm = 13;
     static constexpr s32 kSecretRealm = 12;
+    static constexpr std::string_view kShadowlessLevel = "S9";
     bool isSecret() const { return realmId == kSecretRealm; }
     /** Sumner's tower, which needs no catalogue to be found. */
     static LevelRef tower();
     bool isTower() const { return realmId == kTowerRealm; }
+    /** Whether the players lie their shadows here: everywhere but the secret realm's ninth,
+     * Cloud9 (InitPlayer: world 12, level 8). */
+    bool playerShadows() const { return !(isSecret() && name == kShadowlessLevel); }
     /** A realm's place in the tower's order (the tower nought, then the town, the mountain,
      * the castle, the sky, the forest, the desert, the ice, the dream, the temple, the
      * underworld and the battlefield), which the bosses' shards and the hints go by; nought
