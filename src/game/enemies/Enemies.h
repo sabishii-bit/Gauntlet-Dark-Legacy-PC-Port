@@ -349,6 +349,7 @@ private:
     std::vector<EnemyFeedback> m_feedback;
     std::vector<DeathEvent> m_deathEvents;
     std::mt19937 m_random;
+    s32 m_bomber = -1; ///< the lit suicide bomber the rest run from this tick
     u32 m_frame = 0;
 };
 

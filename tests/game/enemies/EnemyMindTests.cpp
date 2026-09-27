@@ -236,22 +236,35 @@ TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer
     REQUIRE_FALSE(intent.expire);
     sense.generatorGone = true;
     REQUIRE(loiter.think(memory, sense).expire);
-    // The fleer runs straight away from its player, or round whatever is in the way.
+    // The fleer runs straight away from the lit bomber at twice its pace, nudged five degrees
+    // more off straight for each step in a row that gets nowhere.
     const EnemyMind& flee = enemyMindOf(kFleeWay);
     MindMemory fleeing;
-    intent = flee.think(fleeing, senseAhead());
+    MindSense scared = senseAhead();
+    scared.bomber = Vec3{0.0f, 0.0f, 3.0f};
+    intent = flee.think(fleeing, scared);
     REQUIRE(std::abs(intent.heading) == Approx(kPi));
-    REQUIRE(intent.pace > 1.0f);
+    REQUIRE(intent.pace == 2.0f);
     REQUIRE(intent.action == EnemyAction::Run);
-    MindSense cornered = senseAhead();
-    cornered.clear = [](f32 heading) { return std::abs(heading) < 2.0f; };
-    intent = flee.think(fleeing, cornered);
-    REQUIRE(std::abs(intent.heading) < 2.0f);
+    scared.blocked = true;
+    const f32 fiveDegrees = kPi / 36.0f;
+    REQUIRE(wrapAngle(flee.think(fleeing, scared).heading - kPi) == Approx(fiveDegrees));
+    REQUIRE(wrapAngle(flee.think(fleeing, scared).heading - kPi) == Approx(-fiveDegrees));
+    REQUIRE(wrapAngle(flee.think(fleeing, scared).heading - kPi) == Approx(2.0f * fiveDegrees));
+    scared.blocked = false;
+    REQUIRE(std::abs(flee.think(fleeing, scared).heading) == Approx(kPi));
     MindSense alone;
     alone.ticks = 2;
     fleeing.heading = 0.7f;
     intent = flee.think(fleeing, alone);
-    REQUIRE(intent.heading == 0.7f); // nobody to flee: wandering
+    REQUIRE(intent.heading == 0.7f); // no bomber to flee: wandering
+    // The ways whose move_logic looks out for bombers; the throwers and the bomber do not.
+    for (const s32 way : {kSeekWay, kProwlWay, kWanderWay, kChaseWay, kSkirmishWay, 30}) {
+        CHECK(fleesBombers(way));
+    }
+    for (const s32 way : {kThrowWay, kBombWay, kSuicideWay, kLurkWay, kLoiterWay, kLungeWay}) {
+        CHECK_FALSE(fleesBombers(way));
+    }
     // The lurker is still until a player is within sight, then seeks for good.
     const EnemyMind& lurk = enemyMindOf(kLurkWay);
     MindMemory lurking;

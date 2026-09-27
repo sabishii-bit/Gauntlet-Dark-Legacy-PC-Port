@@ -24,6 +24,7 @@ constexpr f32 kPushFloor = 0.01f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
 constexpr f32 kDeathSkinRate = 15.0f;
+constexpr f32 kBomberScare = 10.0f; ///< the swarm keeps this far from a lit suicide bomber
 constexpr s32 kScorpionKind = 0;
 constexpr s32 kAcidKind = 21;
 constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of the feet
@@ -539,6 +540,16 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         return;
     }
     ++m_frame;
+    // The first suicide bomber running at the party is one the rest keep away from.
+    m_bomber = -1;
+    for (s32 i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+        if (enemy.state == State::Active && !enemy.killed && enemy.algorithm == kSuicideWay &&
+            enemy.animator.action() == EnemyAction::Run) {
+            m_bomber = i;
+            break;
+        }
+    }
     std::array<f32, 4> crowding{};
     for (s32 i = 0; i < m_most; ++i) {
         Enemy& enemy = m_enemies[static_cast<usize>(i)];
@@ -915,6 +926,17 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     MindSense sensed = sense(enemy, slot, ticks, players, obstacles);
     sensed.random = m_random();
     s32 algorithm = enemy.algorithm;
+    // Near a lit bomber most ways run from it for the tick (FoundSuicideBomber): within ten
+    // of it, its player within this one's sight, and not held after a bump or rising.
+    if (m_bomber >= 0 && m_bomber != slot && fleesBombers(algorithm) && enemy.mind.deadEnd <= 0 &&
+        enemy.animator.action() != EnemyAction::Start) {
+        const Enemy& bomber = m_enemies[static_cast<usize>(m_bomber)];
+        if (bomber.targetDistance <= enemy.sight &&
+            glm::distance(bomber.position, enemy.position) < kBomberScare) {
+            algorithm = kFleeWay;
+            sensed.bomber = bomber.position;
+        }
+    }
     std::optional<f32> retreat;
     if (enemy.kind == kDeathKind) {
         algorithm = enemy.target >= 0 ? kSeekWay : kWanderWay;

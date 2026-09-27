@@ -33,6 +33,11 @@ constexpr f32 kLungeFrom = 10.0f; ///< a lunger within this lunges, else makes i
 constexpr f32 kLungeLands = 7.5f; ///< and its lunge lands on a player within this
 constexpr s32 kLungeWait = 30;    ///< ticks between attacks, and as many again at random
 constexpr f32 kCreepPace = 0.5f;
+constexpr f32 kFleePace = 2.0f;
+/** A fleer's nudges off straight away, one more for each step in a row that gets nowhere:
+ * five degrees either side, then ten, to twenty (lbl_8011BF60's first eight). */
+constexpr std::array<f32, 8> kFleeNudges{0.0872664601f, -0.0872664601f, 0.17453292f, -0.17453292f,
+                                         0.261799395f,  -0.261799395f,  0.34906584f, -0.34906584f};
 
 // The corner-hugging offsets, one more sixteenth of a turn for every bump.
 constexpr std::array<f32, 8> kCornerOffsets{
@@ -348,26 +353,25 @@ public:
     }
 };
 
-/** Away from the player it sees, at a run; nobody seen, it wanders. */
+/** Away from the lit suicide bomber near it at twice its pace, nudged further off straight
+ * for each step that gets nowhere (move_logic24); with none, it wanders. */
 class FleeMind : public EnemyMind {
 public:
     std::string_view name() const override { return "flee"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        if (sense.target < 0) {
+        if (!sense.bomber.has_value()) {
             return enemyMindOf(kWanderWay).think(memory, sense);
         }
-        countDown(memory, sense.ticks);
-        f32 away = wrapAngle(sense.faceAngle(memory.heading) + kPi);
-        if (!sense.clearAlong(away)) {
-            for (s32 k = 1; k <= 4 && !sense.clearAlong(away); ++k) {
-                away = wrapAngle(away +
-                                 static_cast<f32>(k) * (kPi / 4.0f) * (k % 2 == 0 ? 1.0f : -1.0f));
-            }
+        f32 nudge = 0.0f;
+        if (!sense.blocked) {
+            memory.counter = 0;
+        } else if (memory.counter < static_cast<s32>(kFleeNudges.size())) {
+            nudge = kFleeNudges[static_cast<usize>(memory.counter++)];
         }
-        memory.heading = away;
+        memory.heading = wrapAngle(yawBetween(sense.position, *sense.bomber) + kPi + nudge);
         MindIntent intent;
-        intent.heading = away;
-        intent.pace = 1.5f;
+        intent.heading = memory.heading;
+        intent.pace = kFleePace;
         intent.action = EnemyAction::Run;
         return intent;
     }
@@ -481,6 +485,31 @@ s32 MindSense::nearerSide() const {
     const f32 x2 = dx + std::sin(right);
     const f32 z2 = dz + std::cos(right);
     return x2 * x2 + z2 * z2 <= x1 * x1 + z1 * z1 ? -1 : 1;
+}
+
+bool fleesBombers(s32 algorithm) {
+    switch (algorithm) {
+    case kSeekWay:
+    case 1:
+    case kProwlWay:
+    case kMirroredProwlWay:
+    case kWanderWay:
+    case kWanderOtherWay:
+    case kChaseWay:
+    case 8:
+    case 9:
+    case 10:
+    case 12:
+    case 13:
+    case 14:
+    case 15:
+    case kSkirmishWay:
+    case kSkirmishBombWay:
+    case 22:
+    case 29:
+    case 30: return true;
+    default: return false;
+    }
 }
 
 const EnemyMind& enemyMindOf(s32 algorithm) {
