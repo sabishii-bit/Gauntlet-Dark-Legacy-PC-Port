@@ -24,8 +24,9 @@ constexpr f32 kPushFloor = 0.01f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
 constexpr f32 kDeathSkinRate = 15.0f;
-constexpr f32 kBomberScare = 10.0f; ///< the swarm keeps this far from a lit suicide bomber
-constexpr f32 kCastTicks = 90.0f;   ///< a caster's least wait, times the level's missile rate
+constexpr f32 kLaunchFacing = 0.707f; ///< a missile goes only within 45 degrees of the facing
+constexpr f32 kBomberScare = 10.0f;   ///< the swarm keeps this far from a lit suicide bomber
+constexpr f32 kCastTicks = 90.0f;     ///< a caster's least wait, times the level's missile rate
 constexpr s32 kScorpionKind = 0;
 constexpr s32 kAcidKind = 21;
 constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of the feet
@@ -1254,14 +1255,25 @@ void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                                                        : missileSlotOfWay(enemy.algorithm);
     const EnemyMissileKind what =
         enemyMissileOf(enemy.kind, which).value_or(EnemyMissileKind::arrow());
-    // The trees are the kind's <PREFIX>_ARROW, _BOMB and _FBALL (InitEnemyMissiles).
+    // The trees are the kind's <PREFIX>_ARROW, _BOMB and _FBALL (InitEnemyMissiles); a kind
+    // with no tree for the slot lets nothing go, and nothing goes at a player more than an
+    // eighth of a turn off its facing (EnemyStartMissile).
     const TreeModel* model = &stock->fireball;
     if (which == EnemyMissileKind::kArrow) {
         model = &stock->arrow;
     } else if (which == EnemyMissileKind::kBomb) {
         model = &stock->bomb;
     }
-    missiles.launch(what, from, aim, speedScale, model->bound() ? model : nullptr, slot);
+    if (!model->bound()) {
+        return;
+    }
+    const Vec2 toward{aim.x - from.x, aim.z - from.z};
+    if (glm::length(toward) > 0.0f &&
+        glm::dot(glm::normalize(toward), Vec2{std::sin(enemy.yaw), std::cos(enemy.yaw)}) <
+            kLaunchFacing) {
+        return;
+    }
+    missiles.launch(what, from, aim, speedScale, model, slot);
 }
 
 const TreeModel* Enemies::bodyOf(const Enemy& enemy) {

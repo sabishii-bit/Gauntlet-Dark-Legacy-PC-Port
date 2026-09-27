@@ -30,6 +30,7 @@ struct MindMemory {
     bool skirting = false;    ///< a chaser is going round something
     bool keepingOff = false;  ///< a skirmisher is backing away
     s32 lookout = -1;         ///< the lookout a patroller is making for; none until chosen
+    bool primed = false;      ///< a mind that starts on a random wait has drawn it
 };
 
 /** A level's lookouts: the points its patrollers walk between, each naming the one after it
@@ -133,9 +134,11 @@ inline constexpr s32 kSuicideWay = 18;      ///< the suicide's: a lit fuse and a
 inline constexpr s32 kThrowWay = 23;        ///< standing and shooting
 inline constexpr s32 kFleeWay = 24;         ///< away from a lit suicide bomber, a tick at a time
 inline constexpr s32 kLurkWay = 27;
-inline constexpr s32 kPatrolWay = 15; ///< walking the lookouts until a player comes near
-inline constexpr s32 kCastWay = 30;   ///< the casters': seeking, and casting from afar
-inline constexpr s32 kLungeWay = 31;  ///< the Garm brood's: creeping up and lunging
+inline constexpr s32 kStandCastWay = 28; ///< standing and casting at whoever it sees
+inline constexpr s32 kRangeCastWay = 29; ///< casting from a middle distance, kept
+inline constexpr s32 kPatrolWay = 15;    ///< walking the lookouts until a player comes near
+inline constexpr s32 kCastWay = 30;      ///< the casters': seeking, and casting from afar
+inline constexpr s32 kLungeWay = 31;     ///< the Garm brood's: creeping up and lunging
 
 /** Angles wrapped into a half turn either way. */
 f32 wrapAngle(f32 angle);

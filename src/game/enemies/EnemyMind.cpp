@@ -34,6 +34,14 @@ constexpr f32 kLungeLands = 7.5f; ///< and its lunge lands on a player within th
 constexpr s32 kLungeWait = 30;    ///< ticks between attacks, and as many again at random
 constexpr f32 kCreepPace = 0.5f;
 constexpr f32 kFleePace = 2.0f;
+constexpr f32 kHandToHand = 6.0f;     ///< a ranged caster this near its player chases it
+constexpr s32 kFirstWaitSpread = 30;  ///< a ranged caster's first wait, in ticks, at random
+constexpr f32 kCastReach = 10.0f;     ///< and it casts only at a player this far above or below
+constexpr f32 kBackOffWithin = 8.0f;  ///< a range keeper backs off from within this
+constexpr f32 kBackedOff = 10.0f;     ///< until beyond this
+constexpr f32 kCloseInBeyond = 18.0f; ///< and closes in from beyond this
+constexpr f32 kClosedIn = 16.0f;      ///< until within this
+constexpr f32 kRangePace = 0.8f;
 constexpr f32 kPatrolNotice = 0.8f; ///< of its sight, a patroller leaves off for its player
 constexpr f32 kLookoutReached = 1.0f;
 constexpr f32 kLookoutHeight = 4.0f;
@@ -410,6 +418,113 @@ public:
 };
 
 /** Standing where it is, facing whoever comes against it. */
+/** The ranged casters' shared business: their first wait drawn at random, then an attack asked
+ * for whenever the wait is out and the player is seen within sight and ten above or below (the
+ * power attack from the third strength, else the two attacks in turn). True when it asked. */
+/** A ranged caster's first wait, drawn once as it takes up its way (format_brain). */
+void primeRangedWait(MindMemory& memory, const MindSense& sense) {
+    if (!memory.primed) {
+        memory.primed = true;
+        memory.fuse = static_cast<s32>(sense.random % kFirstWaitSpread);
+    }
+}
+
+bool askRangedAttack(MindMemory& memory, const MindSense& sense, MindIntent& intent) {
+    primeRangedWait(memory, sense);
+    if (sense.target < 0 || !sense.recognized || sense.targetDistance > sense.sight ||
+        std::abs(sense.targetVertical) > kCastReach) {
+        return false;
+    }
+    if (memory.fuse > 0) {
+        memory.fuse -= sense.ticks;
+        return false;
+    }
+    constexpr s32 kPowerStrength = 3;
+    if (sense.tier >= kPowerStrength) {
+        intent.action = EnemyAction::PowerAttack;
+    } else {
+        intent.action = (++memory.counter & 1) != 0 ? EnemyAction::Attack : EnemyAction::Attack2;
+    }
+    return true;
+}
+
+/** Standing, facing its player and attacking whenever its wait allows, its swing casting at
+ * range; within six it chases hand to hand (move_logic28). */
+class StandCastMind : public EnemyMind {
+public:
+    std::string_view name() const override { return "stand-cast"; }
+    MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        if (sense.target >= 0 && sense.targetDistance <= kHandToHand) {
+            return enemyMindOf(kChaseWay).think(memory, sense);
+        }
+        memory.heading = sense.faceAngle(memory.heading);
+        MindIntent intent;
+        intent.heading = memory.heading;
+        intent.pace = 0.0f;
+        intent.action = EnemyAction::Ready;
+        askRangedAttack(memory, sense, intent);
+        return intent;
+    }
+};
+
+/** Keeping between eight and eighteen of its player: backing off inside eight until beyond
+ * ten, closing in beyond eighteen until within sixteen, at four fifths of its pace, nudged off
+ * straight a step at a time when that gets nowhere; in between it stands and attacks as its
+ * wait allows, and within six it chases hand to hand (move_logic29). */
+class RangeCastMind : public EnemyMind {
+public:
+    std::string_view name() const override { return "range-cast"; }
+    MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        primeRangedWait(memory, sense);
+        if (sense.target >= 0 && sense.targetDistance <= kHandToHand) {
+            return enemyMindOf(kChaseWay).think(memory, sense);
+        }
+        memory.heading = sense.faceAngle(memory.heading);
+        MindIntent intent;
+        intent.heading = memory.heading;
+        intent.pace = 0.0f;
+        intent.action = EnemyAction::Ready;
+        const bool inReach =
+            sense.target >= 0 && sense.recognized && std::abs(sense.targetVertical) <= kCastReach;
+        f32 nudge = 0.0f;
+        if (inReach) {
+            if (memory.mode == 0) {
+                if (sense.targetDistance <= kBackOffWithin) {
+                    memory.mode = 1;
+                }
+                if (sense.targetDistance > kCloseInBeyond) {
+                    memory.mode = 2;
+                }
+            } else {
+                if (memory.mode == 1 ? sense.targetDistance > kBackedOff
+                                     : sense.targetDistance <= kClosedIn) {
+                    memory.mode = 0;
+                }
+                if (memory.mode != 0 && sense.blocked) {
+                    if (memory.turns < static_cast<s32>(kFleeNudges.size())) {
+                        nudge = kFleeNudges[static_cast<usize>(memory.turns++)];
+                    } else {
+                        memory.mode = 0;
+                    }
+                }
+            }
+            if (!sense.blocked) {
+                memory.turns = 0;
+            }
+        }
+        if (memory.mode != 0 && memory.fuse <= 0 && inReach) {
+            const f32 away = memory.mode == 1 ? kPi : 0.0f;
+            intent.heading = wrapAngle(memory.heading + away + nudge);
+            intent.pace = kRangePace;
+            intent.action = EnemyAction::Walk;
+            intent.turn = memory.mode != 1; // backing off, it keeps facing them
+            return intent;
+        }
+        askRangedAttack(memory, sense, intent);
+        return intent;
+    }
+};
+
 /** Walking the level's lookouts: to the nearest, then on to the one each names, until a player
  * comes within four fifths of its sight, when it seeks them, taking up the round again from
  * the nearest lookout once they are further off (move_logic15). With no lookouts it wanders. */
@@ -534,6 +649,8 @@ const LurkMind kLurk;
 const LungeMind kLunge;
 const CastMind kCast;
 const PatrolMind kPatrol;
+const StandCastMind kStandCast;
+const RangeCastMind kRangeCast;
 const ThrowMind kThrow;
 const SkirmishMind kSkirmish;
 const SuicideMind kSuicide;
@@ -619,6 +736,8 @@ const EnemyMind& enemyMindOf(s32 algorithm) {
     case kLungeWay: return kLunge;
     case kCastWay: return kCast;
     case kPatrolWay: return kPatrol;
+    case kStandCastWay: return kStandCast;
+    case kRangeCastWay: return kRangeCast;
     case kThrowWay:
     case kBombWay: return kThrow;
     case kSkirmishWay:

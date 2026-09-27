@@ -280,6 +280,57 @@ TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer
     REQUIRE(intent.become == kSeekWay);
 }
 
+TEST_CASE("the ranged casters wait, then attack from where they stand or keep their distance",
+          "[game][enemies][mind]") {
+    const EnemyMind& stand = enemyMindOf(kStandCastWay);
+    const EnemyMind& range = enemyMindOf(kRangeCastWay);
+    REQUIRE(stand.name() == "stand-cast");
+    REQUIRE(range.name() == "range-cast");
+    // Its first wait is drawn at random under thirty ticks, then it attacks: the power attack
+    // at strength three, else the two attacks in turn.
+    MindMemory memory;
+    MindSense sense = senseAhead(12.0f);
+    sense.random = 4;
+    sense.tier = 3;
+    MindIntent intent = stand.think(memory, sense);
+    CHECK(intent.pace == 0.0f);
+    CHECK(intent.action == EnemyAction::Ready);
+    CHECK(memory.fuse == 2);
+    intent = stand.think(memory, sense);
+    CHECK(intent.action == EnemyAction::Ready);
+    CHECK(stand.think(memory, sense).action == EnemyAction::PowerAttack);
+    sense.tier = 2;
+    CHECK(stand.think(memory, sense).action == EnemyAction::Attack);
+    CHECK(stand.think(memory, sense).action == EnemyAction::Attack2);
+    // Not above or below by more than ten, and within six it chases hand to hand.
+    MindSense high = sense;
+    high.targetVertical = 11.0f;
+    CHECK(stand.think(memory, high).action == EnemyAction::Ready);
+    CHECK(stand.think(memory, senseAhead(5.0f)).pace > 0.0f);
+    // The range keeper backs off from within eight, still facing, until beyond ten; closes in
+    // from beyond eighteen until within sixteen; between, it stands and attacks.
+    MindMemory keeper;
+    MindSense close = senseAhead(7.0f);
+    close.random = 0;
+    intent = range.think(keeper, close);
+    CHECK(keeper.mode == 1);
+    CHECK(intent.pace == 0.8f);
+    CHECK(std::abs(intent.heading) == Approx(kPi));
+    CHECK_FALSE(intent.turn);
+    const MindSense clear = senseAhead(11.0f);
+    intent = range.think(keeper, clear);
+    CHECK(keeper.mode == 0);
+    CHECK(intent.pace == 0.0f);
+    const MindSense far = senseAhead(20.0f);
+    intent = range.think(keeper, far);
+    CHECK(keeper.mode == 2);
+    CHECK(intent.heading == Approx(0.0f));
+    CHECK(intent.pace == 0.8f);
+    CHECK(intent.turn);
+    CHECK(range.think(keeper, senseAhead(15.0f)).action != EnemyAction::Walk);
+    CHECK(keeper.mode == 0);
+}
+
 TEST_CASE("the patroller walks the lookouts until a player comes near", "[game][enemies][mind]") {
     std::vector<WorldLocator> locators(4);
     locators[0].kind = LocatorKind::Sentry;

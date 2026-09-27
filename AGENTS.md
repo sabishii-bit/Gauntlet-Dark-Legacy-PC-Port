@@ -589,7 +589,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (`fleesBombers`) within ten of the first lit suicide bomber running at the
   party, straight away from it at twice the pace, nudged 5 to 20 degrees off
   for each step in a row that gets nowhere; lurk (27) still until a player
-  is within sight, then seeking for good; cast (30, the third-strength
+  is within sight, then seeking for good; stand-cast (28) standing and
+  range-cast (29) keeping between eight and eighteen of its player (backing off,
+  still facing it, inside eight until past ten, closing in past eighteen until
+  within sixteen, at four fifths of its pace), both chasing within six and, after a
+  first wait of up to thirty ticks, asking for the power attack from the third
+  strength or else the two attacks in turn whenever its player is seen within sight
+  and ten above or below; cast (30, the third-strength
   casters) wandering unseen, chasing within six, else seeking and, every
   ninety ticks times the level's `enemyMissileRate` and up to half again,
   asking twenty to thirty ticks of its attack (the power one from the second
@@ -627,7 +633,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (the demons', ghosts', plague's, sorcerers', warlocks' and garm's bolts of
   their own in the third slot, the worm's three) and `missileSlotOfWay` the
   original's slot by way (16/23 the first, 17/26 the second, the rest the
-  third); a kind with nothing in its slot throws the arrow. Against a player the body stops and asks for the attack
+  third); a kind with nothing in its slot throws the arrow, but a kind with no tree
+  for the slot lets nothing go, nor does any at a player more than 45 degrees off its
+  facing (EnemyStartMissile). Against a player the body stops and asks for the attack
   (every eighth the power one), the blow landing as the swing ends whether or
   not the player is still there: the kind's damage, tiered down to two thirds
   and a third as its health falls under those shares of its kind's full

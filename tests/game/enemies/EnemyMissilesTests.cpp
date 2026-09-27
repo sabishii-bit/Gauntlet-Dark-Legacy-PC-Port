@@ -477,6 +477,41 @@ TEST_CASE("a strength-three demon casts its own fireball from afar and fights ha
     CHECK(enemies.takeBlows().empty());
 }
 
+TEST_CASE("a range-keeping sorcerer backs off, then casts its own bolt, and only ahead of it",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/SOR/animations.json")
+                                           .parent_path()
+                                           .parent_path()
+                                           .parent_path();
+    constexpr s32 kSorcererKind = 7;
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(floor());
+    Enemies enemies;
+    enemies.open(device, root, &collision, 13, {}, 5);
+    REQUIRE(enemies.loadKind(kSorcererKind));
+    EnemySpawn spawn;
+    spawn.kind = kSorcererKind;
+    spawn.tier = 3;
+    spawn.algorithm = kRangeCastWay;
+    spawn.placed = true;
+    const auto sorcerer = enemies.spawn(spawn, {});
+    REQUIRE(sorcerer.has_value());
+    // Too close: it backs away from the player before it casts.
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 7.0f})};
+    EnemyMissiles missiles;
+    for (s32 i = 0; i < 300 && missiles.count() == 0; ++i) {
+        enemies.update(kTicks, kStep, party, {}, &missiles, 1.0f);
+    }
+    REQUIRE(missiles.count() == 1);
+    CHECK(enemies.positionOf(*sorcerer).z < -1.0f);
+    const EnemyMissile& bolt = missiles.missile(0);
+    CHECK(bolt.shooter == *sorcerer);
+    CHECK(bolt.kind.damage == 20.0f); // the sorcerer's own, the third slot
+    REQUIRE(bolt.model != nullptr);   // SOR_FBALL
+    CHECK(enemies.takeBlows().empty());
+}
+
 TEST_CASE("invisibility does not make an enemy arrow pass through its victim",
           "[game][items][enemies]") {
     EnemyMissiles missiles;
