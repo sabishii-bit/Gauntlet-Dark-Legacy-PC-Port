@@ -583,8 +583,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   bumps and the route doubles back, ten refused headings and it goes
   straight anyway; loiter (11) turning on the spot, done with when its
   generator is gone; flee (24) away at a run; lurk (27) still until a player
-  is within sight, then seeking for good; stand (31) facing whoever comes
-  against it; throw (17, 23) standing, facing its player and throwing
+  is within sight, then seeking for good; lunge (31, Garm's brood whatever
+  it is placed with, as IT always lurks) creeping up on its player at half
+  pace and, every 30 to 59 ticks, lunging at full pace within ten (landing
+  within seven and a half) or else making its power attack; throw (17, 23) standing, facing its player and throwing
   whenever they are within sight and ten above or below and its wait since
   the last throw (the placement's fourth param in ticks, `idleTicks`) is
   over; skirmish (16, the archer's) the same, but backing off, weapon up
