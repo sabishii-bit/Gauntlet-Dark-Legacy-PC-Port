@@ -103,6 +103,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     const std::string& levelName = world.ref().name;
     m_critters.open(device, resources.root, &world.collision(), scales,
                     levelName.empty() ? 'G' : levelName.front());
+    m_critters.setHazards(&world.hazards());
     m_bosses.open(device, resources.root, &world.collision(), scales,
                   levelName.empty() ? 'G' : levelName.front());
     m_critterExperienceOwed.fill(0.0f);

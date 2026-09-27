@@ -33,6 +33,7 @@ void Critters::close() {
     m_shots.clear();
     m_device = nullptr;
     m_collision = nullptr;
+    m_hazards = nullptr;
     m_textureFrames = 0;
 }
 CombatantAssets* Critters::stockFor(const CombatantDefinition& definition) {
@@ -80,6 +81,7 @@ std::optional<s32> Critters::spawn(const CombatantDefinition& definition, const 
         auto& actor = m_critters[static_cast<usize>(id)];
         if (!actor.present()) {
             if (actor.spawn(*stock, id, position, yaw, m_collision, m_scales, m_realm)) {
+                actor.setHazards(m_hazards);
                 return id;
             }
             return std::nullopt;
