@@ -189,7 +189,8 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                     node.chrome ? Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)} : v.uv;
                 const Vec4 placed = placement * Vec4{v.position, 1.0f};
                 // Glows add their whole texture; the original never lights them.
-                Color color = additive || m_unlit ? Color::white() : lighting.shade(normal);
+                Color color =
+                    additive || m_unlit ? Color::white() : lighting.shade(Vec3{placed}, normal);
                 color.r = static_cast<u8>(static_cast<u32>(color.r) * m_tint.r / 255);
                 color.g = static_cast<u8>(static_cast<u32>(color.g) * m_tint.g / 255);
                 color.b = static_cast<u8>(static_cast<u32>(color.b) * m_tint.b / 255);

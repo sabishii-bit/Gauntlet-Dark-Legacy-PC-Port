@@ -10,6 +10,36 @@ namespace {
 using namespace gdl;
 using Catch::Approx;
 
+TEST_CASE("a point light adds its colour to what faces it, falling off to its radius",
+          "[world][lighting]") {
+    PointLight light;
+    light.position = Vec3{0, 5, 0};
+    light.color = Vec3{2, 0, 0};
+    light.radius = 20.0f;
+    light.intensity = 2.0f;
+    const Vec3 up{0, 1, 0};
+    // (1 - 25/400) * 2 * cos 0 / 5 = 0.375 of its colour.
+    CHECK(light.on(Vec3{0}, up).x == Approx(2.0f * 0.375f));
+    CHECK(light.on(Vec3{0}, up).y == 0.0f);
+    // Facing away, or beyond its radius, nothing.
+    CHECK(light.on(Vec3{0}, -up) == Vec3{0});
+    CHECK(light.on(Vec3{0, -20, 0}, up) == Vec3{0});
+    // Near enough it saturates at its whole colour.
+    CHECK(light.on(Vec3{0, 4.5f, 0}, up).x == Approx(2.0f));
+    WorldLighting lighting;
+    lighting.ambient = Vec3{0.2f};
+    lighting.lightColor = Vec3{0.0f};
+    const Color plain = lighting.shade(Vec3{0}, up);
+    lighting.points.push_back(light);
+    const Color lit = lighting.shade(Vec3{0}, up);
+    CHECK(lit.r > plain.r);
+    CHECK(lit.g == plain.g);
+    CHECK(lighting.brighten(Color{10, 20, 30, 128}, Vec3{0}, up).r > 10);
+    CHECK(lighting.brighten(Color{10, 20, 30, 128}, Vec3{0}, up).a == 128);
+    CHECK(lighting.pointsReach(Vec3{0, 20, 0}, 0.0f)); // fifteen from it, within twenty
+    CHECK_FALSE(lighting.pointsReach(Vec3{0, 20, 0}, -10.0f));
+}
+
 TEST_CASE("a level's light shades surfaces by ambient plus the light they face",
           "[world][lighting]") {
     const WorldLighting lighting =

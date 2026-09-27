@@ -9,6 +9,8 @@
 #include "engine/core/Types.h"
 #include "engine/world/AnimationPlayer.h"
 
+#include "game/world/DynamicLights.h"
+
 namespace gdl::game {
 
 LegendPresentation::LegendPresentation(EffectTrees& effects, Assets assets, Audio audio)
@@ -95,8 +97,11 @@ void LegendPresentation::brandish(const Bearer& bearer) {
     charge.unlit = true;
     charge.depthWrite = false;
     charge.tint = LegendShow::chargeTint(bearer.color);
+    charge.light =
+        EffectTrees::Light{DynamicLights::ofCostume(bearer.color), DynamicLights::kChargeRadius};
     start(m_assets.weapons, LegendShow::kAuraTree, bearer.position, charge);
     charge.tint = Color::white();
+    charge.light.reset();
     charge.playbackRate = LegendShow::kBurstPlaybackRate;
     if (const auto burst = m_assets.weapons.trees.find(LegendShow::chargeTree(bearer.color));
         burst.has_value()) {

@@ -6,6 +6,8 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/world/DynamicLights.h"
+
 namespace gdl::game {
 
 Mat4 EffectTrees::Effect::transform() const {
@@ -137,6 +139,7 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     effect->depthWrite = setting.depthWrite;
     effect->tint = setting.tint;
     effect->playbackRate = setting.playbackRate;
+    effect->light = setting.light;
     effect->velocity = setting.velocity;
     effect->timed = setting.seconds > 0.0f;
     effect->persistent = setting.persistent;
@@ -198,6 +201,35 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     return id;
 }
 
+void EffectTrees::lights(std::vector<PointLight>& out) const {
+    for (auto it = m_effects.rbegin(); it != m_effects.rend(); ++it) {
+        const Effect& effect = **it;
+        if (!effect.light.has_value() || effect.retiring || effect.light->radius <= 0.0f) {
+            continue;
+        }
+        f32 share = 1.0f;
+        if (effect.light->swells) {
+            const f32 remaining =
+                effect.timed || effect.tree == nullptr || effect.tree->sequences.empty()
+                    ? effect.secondsLeft
+                    : (static_cast<f32>(effect.player.frameCount()) - effect.player.frame()) *
+                          effect.player.secondsPerFrame() / std::max(effect.playbackRate, 1e-6f);
+            const f32 life = effect.lived + std::max(remaining, 0.0f);
+            const f32 phase = life > 0.0f ? std::clamp(effect.lived / life, 0.0f, 1.0f) : 1.0f;
+            share = phase < 0.5f ? 2.0f * phase : 2.0f * (1.0f - phase);
+        }
+        if (share <= 0.0f) {
+            continue;
+        }
+        PointLight light;
+        light.position = Vec3{effect.transform()[3]} + Vec3{0.0f, DynamicLights::kEffectLift, 0.0f};
+        light.color = effect.light->color;
+        light.radius = effect.light->radius * share;
+        light.intensity = DynamicLights::kEffectIntensity;
+        out.push_back(light);
+    }
+}
+
 void EffectTrees::update(f32 seconds) {
     m_frames += seconds * AnimationPlayer::kDefaultRate;
     const f32 whole = std::floor(m_frames);
@@ -208,6 +240,7 @@ void EffectTrees::update(f32 seconds) {
         }
     }
     for (const std::unique_ptr<Effect>& effect : m_effects) {
+        effect->lived += seconds;
         if (effect->retiring) {
             effect->particles.step(seconds, effect->transform(), effect->pose.matrices());
             effect->trails.step(seconds);

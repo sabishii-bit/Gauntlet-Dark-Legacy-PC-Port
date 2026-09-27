@@ -9,6 +9,7 @@
 
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
+#include "game/world/DynamicLights.h"
 #include "game/world/TargetAssist.h"
 namespace gdl::game {
 namespace {
@@ -294,8 +295,12 @@ void PlayerArsenal::burstPotion(s32 kind, const Vec3& position, f32 power, bool 
     }
     const PotionLook& look = potionLook(kind);
     if (m_resources->weapons.loaded()) {
-        m_resources->effects.start(m_resources->device, m_resources->weapons, look.burst, position,
-                                   std::min(kBurstPerPower * power, 1.0f));
+        EffectTrees::Setting setting;
+        setting.scale = std::min(kBurstPerPower * power, 1.0f);
+        setting.light = EffectTrees::Light{DynamicLights::ofPotion(kind),
+                                           DynamicLights::kMagicRadiusPerPower * power};
+        m_resources->effects.startSet(m_resources->device, m_resources->weapons, look.burst,
+                                      position, setting);
     }
     if (castSound) {
         m_resources->audio.playNamed(look.sound);

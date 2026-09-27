@@ -19,6 +19,7 @@
 #include "game/players/Progression.h"
 #include "game/screens/PlayerPowerups.h"
 #include "game/world/CameraMovementLimit.h"
+#include "game/world/DynamicLights.h"
 
 namespace gdl::game {
 
@@ -1418,6 +1419,33 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
     return out;
 }
 
+/** This frame's point lights (DoLighting clears them; ProcessEffects and do_players add
+ * them again): the effects' own and, in a dark level, a lantern over each standing player; the
+ * newest first, at most twelve. */
+void PlayScene::gatherLights() {
+    m_lights.clear();
+    m_effects.lights(m_lights);
+    const LevelInfo* level = m_world->level();
+    if (level != nullptr && (level->flags & DynamicLights::kDarkLevel) != 0) {
+        for (const PlayerRuntime& runtime : m_players) {
+            if (runtime.life != PlayerLife::Standing) {
+                continue;
+            }
+            PointLight lantern;
+            lantern.position =
+                runtime.actor.followPoint() + Vec3{0.0f, DynamicLights::kLanternLift, 0.0f};
+            lantern.color = DynamicLights::lantern(runtime.actor.save().color);
+            lantern.radius = DynamicLights::kLanternRadius;
+            lantern.intensity = DynamicLights::kLanternIntensity;
+            m_lights.push_back(lantern);
+        }
+    }
+    if (m_lights.size() > WorldLighting::kMostPoints) {
+        m_lights.resize(WorldLighting::kMostPoints);
+    }
+    m_world->setPointLights(m_lights);
+}
+
 void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.figure == nullptr || runtime.life == PlayerLife::InTower ||
@@ -1449,6 +1477,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const GameConfig& config = *m_context.config;
     m_messages.prepare(device);
     m_sumnerVisit.prepare(device);
+    gatherLights();
     const WorldCamera camera = viewCamera();
     const Mat4 clip = camera.clipTransform(config.horizontalFovRadians(), frameWidth, frameHeight,
                                            frameProjection);

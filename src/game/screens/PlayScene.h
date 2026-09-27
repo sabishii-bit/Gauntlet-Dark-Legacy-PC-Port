@@ -277,6 +277,7 @@ private:
     /** The bodies' shadows, after all of the level's floors (some of which are translucent). */
     void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) const;
     void watchOpponents();
+    void gatherLights();
     void beginChallenge();
     void collectChallengeCoin(usize item);
     bool updateChallenge(f32 seconds);
@@ -370,6 +371,7 @@ private:
     LevelRef m_destination;
     s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
     EffectTrees m_effects;
+    std::vector<PointLight> m_lights; ///< this frame's, gathered before it is drawn
     BossSequence m_bossSequence;
     f32 m_playSeconds = 0.0f;
     SumnerVisit m_sumnerVisit;

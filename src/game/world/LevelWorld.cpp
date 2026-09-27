@@ -270,6 +270,12 @@ std::optional<WorldCamera> LevelWorld::entranceCamera() const {
     return camera;
 }
 
+void LevelWorld::setPointLights(std::span<const PointLight> points) {
+    m_lighting.points.assign(points.begin(), points.end());
+    m_litNow.points = m_lighting.points;
+    m_scene.setPointLights(points);
+}
+
 void LevelWorld::setAmbientOffset(f32 offset) {
     if (offset == m_ambientOffset) {
         return;

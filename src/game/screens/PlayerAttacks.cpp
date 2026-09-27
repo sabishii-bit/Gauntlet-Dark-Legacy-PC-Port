@@ -11,6 +11,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
+#include "game/world/DynamicLights.h"
 #include "game/world/TargetAssist.h"
 namespace gdl::game {
 namespace {
@@ -216,6 +217,14 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
         const Vec3 side{facing.z, 0.0f, -facing.x};
         const Vec3 at3 = origin + side * effect.offset.x + Vec3{0.0f, effect.offset.y, 0.0f} +
                          facing * effect.offset.z;
+        // The strike's first effect gives off a light twice its reach in the class's colour,
+        // swelling over a burst's life and steady on what flies (PlyrSfxDoDamageSub).
+        if (at == strike.effect && strike.harms()) {
+            const f32 reach = strike.radius > 0.0f ? strike.radius : strike.hitRadius;
+            setting.light = EffectTrees::Light{
+                DynamicLights::ofClass(players[index].actor.save().character),
+                DynamicLights::kBlastRadiusScale * reach, started == nullptr || !started->flies};
+        }
         const u32 shown =
             m_resources->effects.startSet(m_resources->device, *archive, effect.tree, at3, setting);
         if (shown != 0 && started != nullptr && started->flies) {
@@ -325,6 +334,8 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
         EffectTrees::Setting setting;
         setting.scale = size;
         setting.seconds = kShieldSeconds;
+        setting.light = EffectTrees::Light{DynamicLights::ofPotion(static_cast<s32>(look)),
+                                           DynamicLights::kMagicRadiusPerPower * power};
         shield.effect =
             m_resources->effects.startSet(m_resources->device, m_resources->weapons,
                                           kShieldTrees[look], actor.position(), setting);
