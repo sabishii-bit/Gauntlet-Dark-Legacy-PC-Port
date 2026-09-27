@@ -21,6 +21,7 @@
 #include "game/enemies/EnemyFeedback.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
+#include "game/world/HazardSurfaces.h"
 #include "game/world/ItemFigure.h"
 #include "game/world/PlayerMissiles.h"
 
@@ -121,6 +122,13 @@ inline constexpr s32 kArcherStrength = 4;
 inline constexpr s32 kBomberStrength = 5;
 inline constexpr s32 kSuicideStrength = 6;
 
+/** The way an enemy of `kind` bred or placed at `strength` goes about, given the way its
+ * generator or placement names (fn_8004F87C, then init_enemy_vars): a way out of range is
+ * the kind's own; a small kind prowls, mirrored when `mirrored`, unless told which; a way of
+ * nought is filled in by strength (a strength-three caster casts, the variants throw, lob
+ * and run at the party, the rest chase); ways one and ten are nought and seven. */
+s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored);
+
 /**
  * The swarm: the level's ordinary enemies, up to twenty-five of them, each with the mind the
  * original gives its kind. They see the nearest player within their sight, chase it hugging
@@ -152,6 +160,8 @@ public:
     void open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
               const WorldCollision* collision, s32 most, const EnemyScales& scales, u32 seed);
     void close();
+    /** The level's harmful surfaces, borrowed until close. */
+    void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
 
     /** Loads a kind's archive ahead of need; false when it is not there. */
     bool loadKind(s32 kind);
@@ -294,6 +304,7 @@ private:
     bool clearAt(Enemy& enemy, const Vec3& position, std::span<const EnemyView> players,
                  std::span<const Obstacle> obstacles, s32 self) const;
     void initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind& kind);
+    void touchHazards(Enemy& enemy, s32 slot);
     void chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                       std::span<f32> crowding);
     void resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> players);
@@ -321,6 +332,7 @@ private:
     RenderDevice* m_device = nullptr;
     std::filesystem::path m_root;
     const WorldCollision* m_collision = nullptr;
+    const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     s32 m_most = kMost;
     EnemyScales m_scales;
     std::vector<std::unique_ptr<Stock>> m_stocks;

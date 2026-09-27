@@ -296,7 +296,7 @@ void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
     // SetPlayerPowerups chooses one head object, in this precedence order.
     std::string_view object;
     if ((worn.special & powerup::kSkorneHorns) != 0) {
-        object = "BOSSHORN";
+        object = "BOSSHORNS";
     } else if ((worn.special & powerup::kSkorneMask) != 0) {
         object = "BOSSMASK";
     } else if ((worn.armor & 0x80000U) != 0) {

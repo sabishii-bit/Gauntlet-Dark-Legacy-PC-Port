@@ -14,6 +14,9 @@ namespace {
 constexpr std::array<s32, 4> kTempleKinds{16, 23, 14, 13};
 constexpr std::array<s32, 4> kHellKinds{2, 24, 20, 25};
 constexpr std::array<s32, 4> kHellAlgorithms{30, 30, 7, 7};
+// A generator's kind resolves as though bred at no strength: never the medium's second row.
+constexpr s32 kGeneratorKindStrength = 0;
+constexpr std::array<s32, 3> kCasterAlgorithms{28, 29, 30}; ///< dropped once a state crumbles
 
 f32 flatDistance(const Vec3& a, const Vec3& b) {
     const f32 dx = a.x - b.x;
@@ -121,7 +124,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         }
         const s32 specialTier = realm == 5 ? 2 : 3;
         const s32 strength = special ? specialTier : std::max(paramOf(instance, 0), 1);
-        const s32 kind = levelKindOf(roster, *named, strength);
+        const s32 kind = levelKindOf(roster, *named, kGeneratorKindStrength);
         if (special) {
             for (const s32 species : realm == 5 ? kTempleKinds : kHellKinds) {
                 enemies.loadKind(species);
@@ -132,15 +135,15 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         }
         Generator generator;
         generator.kind = kind;
-        generator.tier = std::clamp(strength, 1, 3);
-        if (special) {
-            generator.state = generator.tier;
-        }
+        // The strength is also the state it stands in: a strength-one generator is one state
+        // from gone and looks it.
+        generator.tier = strength;
+        generator.state = std::min(strength, kStates);
         generator.algorithm = paramOf(instance, 1);
         if (generator.algorithm < 0) {
             generator.algorithm = enemyKind(kind).algorithm;
         }
-        const auto tierIndex = static_cast<usize>(generator.tier - 1);
+        const auto tierIndex = static_cast<usize>(std::clamp(strength, 1, kStates) - 1);
         s32 most = paramOf(instance, 2);
         s32 interval = paramOf(instance, 3);
         if (most == 0) {
@@ -330,6 +333,17 @@ std::optional<GeneratorEvent> Generators::strike(s32 id, f32 power, s32 byPlayer
     const s32 state = stateFor(generator, false);
     const bool changed = state != generator.state;
     generator.state = state;
+    // A crumbling state is also the strength it breeds at from then on, and it breeds twice
+    // as many; a caster brood goes back to seeking (fn_8005C1DC).
+    if (state != generator.tier) {
+        generator.tier = state;
+        if (state > 0) {
+            generator.most *= 2;
+        }
+        if (std::ranges::find(kCasterAlgorithms, generator.algorithm) != kCasterAlgorithms.end()) {
+            generator.algorithm = 0;
+        }
+    }
     GeneratorEvent event;
     event.generator = id;
     event.kind = generator.kind;
@@ -450,6 +464,9 @@ s32 Generators::kindOf(s32 id) const {
 }
 s32 Generators::tierOf(s32 id) const {
     return m_generators[static_cast<usize>(id)].tier;
+}
+s32 Generators::algorithmOf(s32 id) const {
+    return m_generators[static_cast<usize>(id)].algorithm;
 }
 s32 Generators::mostOf(s32 id) const {
     return m_generators[static_cast<usize>(id)].most;

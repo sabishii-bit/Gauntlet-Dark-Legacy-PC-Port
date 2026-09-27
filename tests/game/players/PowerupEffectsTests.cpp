@@ -42,7 +42,11 @@ TEST_CASE("worn powerups add up to what they do", "[game][players][powerups]") {
     REQUIRE(effects.armor == 0x10000U);
     REQUIRE(PowerupEffects{}.magicPower(0) == 8.0f);
     REQUIRE(PowerupEffects{}.magicPower(1000) == 32.0f);
-    REQUIRE(effects.magicPower(500) == Approx(20.0f + 40.0f));
+    // What the magic powerup adds stays within the range (SetPlayerVars).
+    REQUIRE(effects.magicPower(500) == 32.0f);
+    PowerupEffects smaller;
+    smaller.magicAdd = 5.0f;
+    REQUIRE(smaller.magicPower(500) == Approx(25.0f));
     REQUIRE(effects.invisible());
     REQUIRE(effects.grown());
     // Unseen, the body shows about a third solid, wavering over each second.

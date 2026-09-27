@@ -60,9 +60,8 @@ private:
     void beginPotion(const MissileImpact& impact);
     void updatePotions(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateItems(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
-    static void strikeTarget(const MissileTarget& target, f32 damage, u32 flags,
-                             const PlayerActor& owner, std::span<PlayerRuntime> players,
-                             const Targets& targets);
+    void strikeTarget(const MissileTarget& target, f32 damage, u32 flags, const PlayerActor& owner,
+                      std::span<PlayerRuntime> players, const Targets& targets);
     struct ItemArea {
         ItemAttack attack;
         usize actor = 0;
@@ -81,6 +80,11 @@ private:
     std::vector<PotionBurst> m_potions;
     s32 m_nextPotionKind = 1;
     std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
+    /** What a thrown weapon or a burst can strike: the targets and the shootable switches,
+     * which aiming and hand blows leave alone. */
+    std::vector<MissileTarget> strikeTargets(const Targets& targets) const;
+    /** Sets off the switch a strike hit, unless it was only gas; true when it was one. */
+    bool strikeSwitch(s32 id, u32 flags);
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
     void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players);
@@ -90,6 +94,7 @@ private:
     static constexpr s32 kBossTargetBase = 4000;
     static constexpr s32 kSafeRockTargetBase = 5000;
     static constexpr s32 kWallTargetBase = 6000;
+    static constexpr s32 kSwitchTargetBase = 7000; ///< the triggers that are shot
 
     std::optional<Resources> m_resources;
     MoveStrikes m_strikes;

@@ -32,7 +32,7 @@ public:
     };
     struct Events {
         std::function<void(usize, f32, HurtKind, bool)> hurt;
-        std::function<void(s32, usize)> help;
+        std::function<bool(s32, usize)> help; ///< whether the message went up
         std::function<void(s32, std::string_view)> card;
         std::function<void(const Vec3&, f32, f32)> opponents;
         std::function<bool(s32, const Vec3&, s32)> releaseEnemy;

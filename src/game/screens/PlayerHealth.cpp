@@ -22,6 +22,8 @@ constexpr s32 kHealthLastMark = 50; ///< and here: the life force, or about to d
 constexpr std::string_view kBadlyLine = "S_BADLY";
 constexpr std::string_view kLifeForceLine = "S_LIFEFORCE";
 constexpr std::string_view kAboutToDieLine = "S_ABOUT";
+constexpr f32 kLowHealthWait = 1.0f; ///< seconds a line waits behind narration (fn_8009FFF4)
+constexpr f32 kAboutToDieWait = 0.5f;
 } // namespace
 f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directed) {
     const PlayerFigure* figure = runtime.figure.get();
@@ -95,13 +97,21 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
                                                       runtime.figure->animator().shoving());
     runtime.reaction = PlayerImpact::combine(
         runtime.reaction, received.reaction(damage, runtime.actor.yaw(), braced));
-    // Crossing into low health is remarked on by name rather than cried over.
-    if (before > kHealthLowMark && left <= kHealthLowMark) {
-        events.named(kBadlyLine);
-        return;
-    }
-    if (before > kHealthLastMark && left <= kHealthLastMark) {
-        events.named((m_lowHealthTurn++ % 2 == 0) ? kLifeForceLine : kAboutToDieLine);
+    // Crossing into low health is remarked on by name rather than cried over, though a blow
+    // still lands with its sound. Which of the last two lines is heard is a toss.
+    const bool low = before > kHealthLowMark && left <= kHealthLowMark;
+    const bool last = !low && before > kHealthLastMark && left <= kHealthLastMark;
+    if (low || last) {
+        const bool lifeForce = !low && m_painRandom() % 2 == 0;
+        if (low || lifeForce) {
+            events.named(low ? kBadlyLine : kLifeForceLine, kLowHealthWait);
+        } else {
+            events.named(kAboutToDieLine, kAboutToDieWait);
+        }
+        if (kind == HurtKind::Blow) {
+            runtime.painOwed += damage;
+            landBlow(runtime, events);
+        }
         return;
     }
     switch (kind) {
@@ -123,12 +133,73 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         } else if (runtime.painOwed >= kPainEvery) {
             runtime.painOwed -= kPainEvery;
             cryPain(events);
-        } else if (runtime.hitSoundGap <= 0) {
-            events.sound(kHitSound);
-            runtime.hitSoundGap = kHitSoundGapTicks;
+        } else {
+            landBlow(runtime, events);
         }
         break;
     }
+}
+
+void PlayerHealth::landBlow(PlayerRuntime& runtime, const Events& events) {
+    if (runtime.hitSoundGap <= 0) {
+        events.sound(kHitSound);
+        runtime.hitSoundGap = kHitSoundGapTicks;
+    }
+}
+
+std::optional<PlayerHealth::Heartbeat> PlayerHealth::heartbeat(std::span<PlayerRuntime> players,
+                                                               s32 ticks, bool inTower) {
+    constexpr s32 kSteadyHealth = 100;
+    constexpr s32 kFaintHealth = 25;
+    constexpr s32 kFailingHealth = 10;
+    constexpr s32 kSteadyTicks = 120;
+    constexpr s32 kFaintTicks = 60;
+    constexpr s32 kFailingTicks = 30;
+    constexpr f32 kBaseLevel = 127.0f; ///< the original's level for the sound, played as 1
+    constexpr f32 kFaintLevel = 152.0f;
+    constexpr f32 kFailingLevel = 177.0f;
+    constexpr f32 kLastLevel = 202.0f;
+    PlayerRuntime* lowest = nullptr;
+    usize index = 0;
+    for (usize i = 0; i < players.size(); ++i) {
+        PlayerRuntime& runtime = players[i];
+        if (runtime.life == PlayerLife::Standing &&
+            (lowest == nullptr || runtime.actor.save().health() < lowest->actor.save().health())) {
+            lowest = &runtime;
+            index = i;
+        }
+    }
+    if (lowest == nullptr) {
+        return std::nullopt;
+    }
+    const s32 health = lowest->actor.save().health();
+    if (health > kHeartbeatHealth) {
+        return std::nullopt;
+    }
+    lowest->heartbeatTicks -= ticks;
+    if (lowest->heartbeatTicks > 0) {
+        return std::nullopt;
+    }
+    if (health >= kSteadyHealth) {
+        lowest->heartbeatTicks = kSteadyTicks;
+    } else if (health >= kFaintHealth) {
+        lowest->heartbeatTicks = kFaintTicks;
+    } else {
+        lowest->heartbeatTicks = kFailingTicks;
+    }
+    const u32 armor = PowerupEffects::of(lowest->actor.save().progress().inventory).armor;
+    if (inTower || (armor & (powerup::kInvulnerable | powerup::kGoldInvulnerable)) != 0) {
+        return std::nullopt;
+    }
+    f32 level = kBaseLevel;
+    if (health <= kFailingHealth) {
+        level = kLastLevel;
+    } else if (health < kFaintHealth) {
+        level = kFailingLevel;
+    } else if (health < kSteadyHealth) {
+        level = kFaintLevel;
+    }
+    return Heartbeat{index, level / kBaseLevel};
 }
 
 void PlayerHealth::cryPain(const Events& events) {

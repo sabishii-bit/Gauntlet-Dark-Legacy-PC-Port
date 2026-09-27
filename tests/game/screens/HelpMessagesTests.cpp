@@ -10,9 +10,12 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
 #include "game/players/PickupVoices.h"
+#include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
+#include "game/screens/PlayScene.h"
 
 namespace {
 
@@ -133,9 +136,9 @@ TEST_CASE("pickup help text and recordings resolve in the extracted retail banks
     REQUIRE(primary.load(primaryDirectory));
     REQUIRE(secondary.load(secondaryDirectory));
     REQUIRE(common.load(commonDirectory));
-    const std::array ids{3,  7,  15, 16, 28, 32, 33, 35, 36,  37,  38,  39,  40,  41, 42,
-                         43, 47, 48, 49, 51, 52, 53, 54, 81,  82,  83,  84,  86,  87, 88,
-                         89, 91, 92, 93, 94, 95, 98, 99, 100, 113, 132, 148, 149, 150};
+    const std::array ids{3,  7,  9,  15, 16, 28, 32, 33, 35, 36,  37,  38,  39,  40,  41,
+                         42, 43, 47, 48, 49, 51, 52, 53, 54, 81,  82,  83,  84,  86,  87,
+                         88, 89, 91, 92, 93, 94, 95, 98, 99, 100, 113, 132, 148, 149, 150};
     for (const s32 id : ids) {
         CAPTURE(id);
         const HelpMessageSpec* spec = HelpMessages::specOf(id);
@@ -161,6 +164,12 @@ TEST_CASE("pickup help text and recordings resolve in the extracted retail banks
         CHECK_FALSE(common.sequence(*sound).steps.empty());
     }
     REQUIRE(primary.find("S_POJO2").has_value());
+    for (s32 count = 1; count <= 12; ++count) {
+        for (const std::string& name : PlayScene::runeCountVoices(count)) {
+            CAPTURE(count, name);
+            CHECK(primary.find(name).has_value());
+        }
+    }
     REQUIRE(secondary.find("S_HAS").has_value());
     for (s32 character = 0; character < kStartingClassCount; ++character) {
         SoundSet voice;
@@ -176,6 +185,26 @@ TEST_CASE("pickup help text and recordings resolve in the extracted retail banks
                     CHECK_FALSE(voice.sequence(*sound).steps.empty());
                 }
             }
+        }
+    }
+    // Every character is named by its own clip, kept in the bank of the class it shadows: a
+    // minotaur is not announced as a warrior (AudioWithName).
+    REQUIRE(PickupVoices::nameOf(8, 0) != PickupVoices::nameOf(0, 0));
+    REQUIRE(PickupVoices::nameOf(kSumnerClass, 1) == PickupVoices::nameOf(0, 1));
+    CharacterSave carrier;
+    REQUIRE_FALSE(PickupVoices::carriesPojo(carrier));
+    carrier.progress().inventory.addPowerup(powerup::kSpecial, powerup::kPojo, 0, 60);
+    REQUIRE(PickupVoices::carriesPojo(carrier));
+    for (s32 character = 0; character < kSumnerClass; ++character) {
+        SoundSet voice;
+        REQUIRE(voice.load(root / "audio" / classCode(character % kStartingClassCount)));
+        for (s32 color = 0; color < kColorCount; ++color) {
+            const std::string name = PickupVoices::nameOf(character, color);
+            CAPTURE(character, color, name);
+            REQUIRE(name.find(classCode(character)) != std::string::npos);
+            const auto sound = voice.find(name);
+            REQUIRE(sound.has_value());
+            CHECK_FALSE(voice.sequence(*sound).steps.empty());
         }
     }
     SoundSet secret;

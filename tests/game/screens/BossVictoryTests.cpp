@@ -39,6 +39,8 @@ TEST_CASE("the wizard's words and voices go by the boss and the realm's runeston
     REQUIRE(BossVictory::runeVoiceOf(41, 'G', 1) == "S_RUNEVOX1G");
     REQUIRE(BossVictory::runeVoiceOf(35, 'A', 2) == "S_RUNEVOX1A");
     REQUIRE(BossVictory::runeVoiceOf(41, 'G', 3) == "S_RUNEVOX2G");
+    REQUIRE(BossVictory::runeVoiceOf(38, 'K', 2) == "S_RUNEVOX2K"); // the one of one
+    REQUIRE(BossVictory::runeVoiceOf(34, 'B', 3) == "S_RUNEVOX1B"); // no line of its own
     REQUIRE(BossVictory::runeVoiceOf(42, 'E', 3) == "S_E2VOXB");
     REQUIRE(BossVictory::runeVoiceOf(44, 'H', 3).empty());
 }

@@ -22,6 +22,7 @@ struct ChestVisitor {
     f32 radius = 0.75f;
     s32 keys = 0;
     bool xray = false;
+    Vec3 step{0.0f, 0.0f, 0.0f}; ///< how far it moved since the last update
 };
 
 /** What a chest did this update. */
@@ -53,8 +54,9 @@ public:
     static constexpr s32 kTrappedChest = 44;
     static constexpr s32 kChest = 46;
     static constexpr s32 kGoldChest = 47;
-    static constexpr u32 kLocked = 0x10; ///< of a record's active type: a key opens it
-    static constexpr s32 kShut = 0;      ///< the figure's sequences
+    static constexpr s32 kRandomChest = 48; ///< the silver chest, of the contents' choice list
+    static constexpr u32 kLocked = 0x10;    ///< of a record's active type: a key opens it
+    static constexpr s32 kShut = 0;         ///< the figure's sequences
     static constexpr s32 kOpening = 1;
     static constexpr s32 kOpen = 2;
     static constexpr s32 kSeedStep = 439; ///< what each random pick moves the seed on by

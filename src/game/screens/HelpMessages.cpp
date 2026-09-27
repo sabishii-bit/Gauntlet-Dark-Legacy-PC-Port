@@ -10,7 +10,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 87> kSpecs{{
+constexpr std::array<HelpMessageSpec, 88> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kPotionsFull, "FULLOFBOMBS", "S_MAGICFULL"},
@@ -18,6 +18,7 @@ constexpr std::array<HelpMessageSpec, 87> kSpecs{{
     {HelpMessages::kNoPotion, "COLLECTMAGICFIRST", "S_COLLECTPOT"},
     {7, "USEMAGIC2", "S_USEMAGIC2"},
     {8, "SAVEKEYS", "S_SAVEKEYS"},
+    {HelpMessages::kTransporter, "TRANSPORTERSMOVEYOU", "S_TRANSPORTER"},
     {15, "EATMEAT", "S_MEATGIVES"},
     {16, "EATFRUIT", "S_FRUITGIVES"},
     {17, "COLLECTGOLD", "S_COLLECTGOLD"},
@@ -147,6 +148,19 @@ HelpMessages::VoiceLead HelpMessages::voiceLead(s32 id, bool multiplayer) {
         }
     }
     return VoiceLead::None;
+}
+
+f32 HelpMessages::voiceWait(s32 id, VoiceLead lead) {
+    constexpr f32 kAloneWait = 0.5f;
+    constexpr f32 kHasWait = 4.0f;
+    constexpr f32 kLevelWait = 1.0f;
+    constexpr f32 kNameWait = 5.0f;
+    switch (lead) {
+    case VoiceLead::PlayerName: return kNameWait;
+    case VoiceLead::PlayerHas: return id == kLevelUp ? kLevelWait : kHasWait;
+    case VoiceLead::None:
+    default: return kAloneWait;
+    }
 }
 
 void HelpMessages::clear() {

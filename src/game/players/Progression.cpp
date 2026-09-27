@@ -58,11 +58,16 @@ usize StatBlock::best() const {
 
 StatBlock displayStats(const ClassStats& stats, s32 level, const ClassProgress& progress) {
     const auto growth = static_cast<f32>((level - 1) * kStatPerLevel);
+    // A class's growth stops at its most; what was bought goes on top (PlayerUpdateAtts).
+    const auto grown = [growth](f32 least, f32 most) {
+        const f32 value = least + growth;
+        return most > 0.0f ? std::min(value, most) : value;
+    };
     StatBlock block;
-    block.values[0] = static_cast<s32>(progress.fightAdd + stats.fightMin + growth);
-    block.values[1] = static_cast<s32>(progress.speedAdd + stats.speedMin + growth);
-    block.values[2] = static_cast<s32>(progress.armorAdd + stats.armorMin + growth);
-    block.values[3] = static_cast<s32>(progress.magicAdd + stats.magicMin + growth);
+    block.values[0] = static_cast<s32>(progress.fightAdd + grown(stats.fightMin, stats.fightMax));
+    block.values[1] = static_cast<s32>(progress.speedAdd + grown(stats.speedMin, stats.speedMax));
+    block.values[2] = static_cast<s32>(progress.armorAdd + grown(stats.armorMin, stats.armorMax));
+    block.values[3] = static_cast<s32>(progress.magicAdd + grown(stats.magicMin, stats.magicMax));
     for (s32& value : block.values) {
         value = std::min(value, kMaxStat);
     }

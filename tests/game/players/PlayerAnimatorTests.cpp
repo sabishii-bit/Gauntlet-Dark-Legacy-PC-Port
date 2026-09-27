@@ -461,7 +461,9 @@ TEST_CASE("struck, a character flinches or reels where it stands and then carrie
     REQUIRE(animator.action() == Action::HitReact);
     REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 60) < 60);
     REQUIRE_FALSE(animator.reacting());
-    REQUIRE(animator.moveScale() == 1.0f);
+    // A run covers 1.3 of the character's pace (AnimAction's per-action move scale).
+    REQUIRE(animator.moveScale() == PlayerAnimator::kRunPace);
+    REQUIRE(PlayerAnimator::kRunPace == Approx(1.3f));
     animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Reel);
     REQUIRE(animator.action() == Action::Stun);
     // A throw it cuts into never leaves the hand.
@@ -638,7 +640,9 @@ TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and 
     animator.update(PlayerMotion::Walk, kTicks, kStep);
     REQUIRE(animator.action() == Action::StrafeLeft1);
     REQUIRE(animator.strafing());
-    REQUIRE(animator.moveScale() == 1.0f);
+    // Strafing steps cover two thirds of the pace (AnimAction's per-action move scale).
+    REQUIRE(animator.moveScale() == PlayerAnimator::kStrafePace);
+    REQUIRE(PlayerAnimator::kStrafePace == Approx(0.667f));
     REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::StrafeLeft2, 60) < 60);
     REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::StrafeLeft1, 60) < 60);
     // Another way is taken up at the end of the step; standing still, it stands.
@@ -653,6 +657,7 @@ TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and 
     }
     REQUIRE(animator.action() >= Action::StrafeShootBack1);
     REQUIRE(animator.action() <= Action::StrafeShootBack2);
+    REQUIRE(animator.moveScale() == PlayerAnimator::kStrafePace); // shooting keeps the pace
     REQUIRE(shots >= 4);
     animator.setStrafe(StrafeWay::None);
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 60) < 60);

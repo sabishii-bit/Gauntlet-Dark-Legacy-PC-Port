@@ -129,6 +129,9 @@ public:
     static constexpr s32 kSumnerSpot = 240;    ///< the id of the trigger before him
     static constexpr f32 kGreetingSeconds = SumnerVisit::kGreetingSeconds;
     using Inputs = std::array<PlayInput, kPlayerCount>;
+    /** What the narrator says of the party's runestones, in order (AudioNumRunesFound): the
+     * first found, or the count and "runestones found"; nothing past twelve. */
+    static std::vector<std::string> runeCountVoices(s32 count);
 
     /** Where a new party's welcome has got to. */
     enum class Intro : u8 { None, Scroll, Crystal, Done };
@@ -232,6 +235,10 @@ public:
     void resumeFromChallenge(std::span<const PartyMember> party);
     /** The party as it stands, with all it has gathered, for the next level. */
     std::vector<PartyMember> party() const;
+    /** `party` (a snapshot of this scene's) as it leaves a level it gives up: everyone as they
+     * came in, keeping only what they were taught and the slots they are kept in (kill_player,
+     * then PlayerRestoreState in the tower). */
+    std::vector<PartyMember> abandonedParty(std::span<const PartyMember> party) const;
     /** Associates a manual save with the live participant without restarting the level. */
     void setSaveSlot(s32 player, std::optional<usize> slot);
     std::vector<LevelResults> levelResults() const;
@@ -301,7 +308,9 @@ private:
     void updateTowerRelics(s32 ticks, f32 seconds);
     bool relicCeremonyOn() const;
     static constexpr f32 kLevelUpHealth = 100.0f;
-    void sayWithName(usize index, std::string_view line);
+    void sayWithName(usize index, std::string_view line, f32 wait);
+    void updateHazardSurfaces(f32 seconds);
+    void handleRotatorCues();
     void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
     bool isDown(usize index) const {
         return index < m_players.size() && m_players[index].life != PlayerLife::Standing;
@@ -362,6 +371,7 @@ private:
     TowerRelics m_towerRelics;
     SoundHandle m_relicVoice = kNoSound;
     SoundHandle m_promotionVoice = kNoSound;
+    SoundHandle m_rotatorSound = kNoSound; ///< a turntable turning
     std::vector<std::unique_ptr<PlayerFigure>>
         m_promotionFigures; ///< retain borrowed voice/effect clips until close
     WorldCamera m_cutCamera;

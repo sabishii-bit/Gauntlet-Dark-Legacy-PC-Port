@@ -58,6 +58,7 @@ public:
     static constexpr s32 kPotionsFull = 3;
     static constexpr s32 kKeysFull = 4;
     static constexpr s32 kNoPotion = 6;
+    static constexpr s32 kTransporter = 9; ///< on arriving by a transporter
     static constexpr s32 kTrapsHurt = 21;
     static constexpr s32 kRandomChest = 23;
     static constexpr s32 kBarrelsHold = 27;
@@ -89,6 +90,9 @@ public:
     enum class VoiceLead : u8 { None, PlayerName, PlayerHas };
     /** sounds_evt.c::fn_8009CB44 uses names on more announcements in multiplayer. */
     static VoiceLead voiceLead(s32 id, bool multiplayer);
+    /** Seconds a message's voice may wait behind queued narration before it is dropped:
+     * half of one alone, four with "<name> has", one for a level gained, five for a name. */
+    static f32 voiceWait(s32 id, VoiceLead lead);
     /** The ink a player's messages are written in. */
     static Color inkOf(s32 player);
 

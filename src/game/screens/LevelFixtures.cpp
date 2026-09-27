@@ -129,6 +129,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     for (PlayerRuntime& player : players) {
         PlayerActor& actor = player.actor;
         if (player.life != PlayerLife::Standing || player.capture.held()) {
+            player.fixtureSpot.reset();
             visitors.push_back(ChestVisitor{kNowhere, actor.radius(), 0});
             victims.push_back(TrapVictim{kNowhere, actor.radius()});
             continue;
@@ -138,10 +139,14 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             position = box.pushOut(position, actor.radius());
         }
         actor.place(position);
-        visitors.push_back(
-            ChestVisitor{position, actor.radius(), actor.save().progress().inventory.keys,
-                         PowerupEffects::of(actor.save().progress().inventory).xray()});
-        victims.push_back(TrapVictim{position, actor.radius()});
+        const PowerupEffects worn = PowerupEffects::of(actor.save().progress().inventory);
+        const Vec3 step = player.fixtureSpot ? position - *player.fixtureSpot : Vec3{0.0f};
+        player.fixtureSpot = position;
+        visitors.push_back(ChestVisitor{position, actor.radius(),
+                                        actor.save().progress().inventory.keys, worn.xray(), step});
+        // Traps pass under a levitating body (ItemTouch's trap case).
+        const bool floating = (worn.special & powerup::kLevitation) != 0;
+        victims.push_back(TrapVictim{floating ? kNowhere : position, actor.radius()});
     }
     for (const ChestEvent& event : m_chests.update(seconds, visitors)) {
         if (event.visitor >= players.size()) {
@@ -187,7 +192,11 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             }
             break;
         case ChestEvent::Kind::Refused:
-            events.help(HelpMessages::kChestNeedsKey, event.visitor);
+            // A silver chest's own hint is given once the key lesson has nothing to add.
+            if (!events.help(HelpMessages::kChestNeedsKey, event.visitor) &&
+                m_chests.chest(event.chest).subtype == Chests::kRandomChest) {
+                events.help(HelpMessages::kRandomChest, event.visitor);
+            }
             break;
         }
     }

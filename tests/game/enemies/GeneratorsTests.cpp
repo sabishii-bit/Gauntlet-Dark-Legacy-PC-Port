@@ -236,7 +236,7 @@ TEST_CASE("the fields place forty-seven generators for a party of one, of grunts
     for (usize g = 0; g < generators.count(); ++g) {
         const auto id = static_cast<s32>(g);
         REQUIRE(generators.standing(id));
-        REQUIRE(generators.stateOf(id) == 3);
+        REQUIRE(generators.stateOf(id) == generators.tierOf(id));
         REQUIRE(generators.tierOf(id) >= 1);
         REQUIRE(generators.tierOf(id) <= 3);
         REQUIRE(generators.mostOf(id) > 0);
@@ -283,7 +283,7 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE(generators.mostOf(chosen) == 3);
     REQUIRE(generators.intervalOf(chosen) == 30);
     REQUIRE(generators.healthOf(chosen) == Approx(15.0f));
-    REQUIRE(generators.stateOf(chosen) == 3);
+    REQUIRE(generators.stateOf(chosen) == 2);
     REQUIRE(generators.standing(chosen));
     REQUIRE(generators.bodyShown(chosen));
     // The rats' one takes its defaults: ten at once, five between, at the record's scales.
@@ -340,14 +340,15 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
         enemies.update(kTicks, kStep, party);
     }
     REQUIRE(generators.bredOf(chosen) == 4);
-    // Struck: three of armour come off each blow, a point always getting through. Its
-    // health being two of its record's, the first blow crumbles it a state, as the original
-    // has it; at one of its record's it crumbles another, and then it is gone, breeding no
-    // more.
+    // Struck: three of armour come off each blow, a point always getting through. It stands
+    // in the state of its strength, two, until it is down to one of its record's health; it
+    // then crumbles to one, breeding at strength one and twice as many (fn_8005C1DC), and
+    // then it is gone, breeding no more.
     auto event = generators.strike(chosen, 2.0f, 0);
     REQUIRE(generators.healthOf(chosen) == Approx(14.0f));
     REQUIRE(event.has_value());
     REQUIRE(event->state == 2);
+    REQUIRE_FALSE(event->stateChanged);
     REQUIRE_FALSE(event->destroyed);
     REQUIRE(event->kind == kGruntKind);
     REQUIRE(event->generator == chosen);
@@ -362,6 +363,9 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     event = generators.strike(chosen, 3.0f, 0);
     REQUIRE(event.has_value());
     REQUIRE(event->state == 1);
+    REQUIRE(event->stateChanged);
+    REQUIRE(generators.tierOf(chosen) == 1);
+    REQUIRE(generators.mostOf(chosen) == 6);
     event = generators.strike(chosen, 50.0f, -1);
     REQUIRE(event.has_value());
     REQUIRE(event->destroyed);
@@ -379,6 +383,62 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     }
     REQUIRE(generators.bredOf(chosen) == 4);
     REQUIRE(enemies.count() == 0);
+}
+
+TEST_CASE("a generator stands in its strength's state and a crumble doubles its brood",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
+                                           .parent_path()
+                                           .parent_path()
+                                           .parent_path();
+    const auto dir = test::scratchDirectory("generators-crumble");
+    writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "GROUND", "position": [0, 0, 0], "next": -1, "child": -1}],
+  "animations": [], "particles": [], "locators": [],
+  "itemInfos": [
+    {"type": 3, "name": "GRU", "radius": 2, "height": 5, "collisionType": 1, "hitPoints": 10,
+     "armor": 1}
+  ],
+  "itemInstances": [
+    {"info": 0, "minPlayers": 1, "position": [0, 0, 0], "rotation": [0, 0, 0],
+     "params": [3, 0, 30, 0, 4, 0, 0, 0, 0, 0, 0, 0]},
+    {"info": 0, "minPlayers": 1, "position": [60, 0, 0], "rotation": [0, 0, 0],
+     "params": [1, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0]}
+  ]
+})");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 13, EnemyScales{}, 1);
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, GeneratorScales{}, 1));
+    REQUIRE(generators.count() == 2);
+    // Strength three: three records of health, the third state, a caster's way.
+    REQUIRE(generators.stateOf(0) == 3);
+    REQUIRE(generators.tierOf(0) == 3);
+    REQUIRE(generators.algorithmOf(0) == 30);
+    REQUIRE(generators.mostOf(0) == 4);
+    REQUIRE(generators.healthOf(0) == Approx(30.0f));
+    // Down to two records it crumbles: strength two, eight at once, and a seeker's way.
+    auto event = generators.strike(0, 12.0f, 0);
+    REQUIRE(event.has_value());
+    REQUIRE(event->stateChanged);
+    REQUIRE(event->state == 2);
+    REQUIRE(generators.tierOf(0) == 2);
+    REQUIRE(generators.mostOf(0) == 8);
+    REQUIRE(generators.algorithmOf(0) == 0);
+    // Strength one looks one state from gone, and a blow short of that is no crumble.
+    REQUIRE(generators.stateOf(1) == 1);
+    REQUIRE(generators.bodyShown(1));
+    event = generators.strike(1, 5.0f, 0);
+    REQUIRE(event.has_value());
+    REQUIRE_FALSE(event->stateChanged);
+    REQUIRE(generators.mostOf(1) == Generators::kDefaultMost[0]);
+    event = generators.strike(1, 50.0f, 0);
+    REQUIRE(event.has_value());
+    REQUIRE(event->destroyed);
+    REQUIRE(generators.mostOf(1) == Generators::kDefaultMost[0]); // gone, nothing doubles
 }
 
 TEST_CASE("a generator's record gives its strength, way, count and interval, or their defaults",

@@ -20,6 +20,12 @@ struct CollisionTriangle {
     u32 objectFlags = 6; ///< level flags; synthetic triangles default to wall and floor queries
 };
 
+/** A wall a body was pushed out of: whose it is and the nearest point of it. */
+struct WallContact {
+    s32 object = -1;
+    Vec3 point{0.0f, 0.0f, 0.0f};
+};
+
 /** Where a downward probe met a floor. */
 struct FloorHit {
     f32 y = 0.0f;
@@ -77,7 +83,8 @@ public:
      * it overlaps and returns the corrected centre. Sliding along walls falls out of it, so a
      * mover just steps and then corrects.
      */
-    Vec3 resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top) const;
+    Vec3 resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,
+                      std::vector<WallContact>* contacts = nullptr) const;
 
 private:
     /** An object whose triangles move with it. */

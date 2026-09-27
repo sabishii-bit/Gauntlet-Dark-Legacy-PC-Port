@@ -38,6 +38,7 @@ inline constexpr s32 kGruntKind = 4;
 inline constexpr s32 kRatKind = 3;
 inline constexpr s32 kDeathKind = 30;
 inline constexpr s32 kItKind = 31;
+inline constexpr s32 kGarmBroodKind = 27; ///< what Garm breeds
 inline constexpr s32 kGolemEnemyKind = 29;
 inline constexpr s32 kGargoyleEnemyKind = 32;
 inline constexpr s32 kGeneralEnemyKind = 33;
@@ -59,5 +60,8 @@ inline constexpr s32 kMediumOtherClass = 4; ///< the medium's second row: the st
  * level's roster says which kind fills each; a name of no class, or a class the roster
  * lacks, stands for itself. */
 s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength);
+
+/** Whether the kind is one of the small ones, which only ever prowl. */
+bool smallKind(s32 kind);
 
 } // namespace gdl::game

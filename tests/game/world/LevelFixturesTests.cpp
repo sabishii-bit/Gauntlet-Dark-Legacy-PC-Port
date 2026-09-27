@@ -324,6 +324,12 @@ TEST_CASE("a gate bars the way until a key is spent on it", "[game][world][fixtu
     REQUIRE(events.size() == 1);
     REQUIRE(events[0].kind == GateEvent::Kind::Refused);
     party[0].keys = 2;
+    // Backing away from it, a key is neither spent nor asked for (ItemTouch's door case).
+    const Vec3 away = party[0].position - gates.gate(0).figure.position();
+    party[0].step = glm::normalize(Vec3{away.x, 0.0f, away.z}) * 0.2f;
+    REQUIRE(gates.update(2, 1.0f / 30.0f, party).empty());
+    REQUIRE(gates.gate(0).state == LockedGates::kShut);
+    party[0].step = Vec3{0.0f};
     events = gates.update(2, 1.0f / 30.0f, party);
     REQUIRE(events.size() == 1);
     REQUIRE(events[0].kind == GateEvent::Kind::Unlocked);

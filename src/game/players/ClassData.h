@@ -39,11 +39,16 @@ bool classUnlocked(s32 classIndex, u16 unlockMask);
 
 /** An effect one of a class's moves shows. */
 struct MoveEffect {
+    static constexpr u32 kParticleFlags = 0x0F000000;
     s32 next = -1;    ///< another started with it
     std::string tree; ///< of the costume colour's effects; none when empty or `NULLFX`
     std::string sound;
     Vec3 offset{0.0f, 0.0f, 0.0f};
     f32 scale = 1.0f;
+    u32 flags = 0;
+    /** A particle emitter rather than a tree and a sound: `tree` names its texture and
+     * `sound` the node it is hung from (PsfxDoParticle), such as the magic users' hand glow. */
+    bool particle() const { return (flags & kParticleFlags) != 0; }
 };
 
 /** One thing a move does at one of its frames. */

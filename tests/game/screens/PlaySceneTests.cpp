@@ -2796,6 +2796,56 @@ TEST_CASE("a figure comes from the costume tier of its level when that is unpack
     REQUIRE(PlayScene::costumeDirectory(root, save).filename() == "BLU20");
 }
 
+TEST_CASE("quitting a level gives up what it gave, keeping lessons and save slots",
+          "[game][screens][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto level = levels.byName("G1");
+    REQUIRE(level.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave entering;
+    entering.name = "AB";
+    entering.gold = 40;
+    entering.progress().health = 300;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{13.2f, 10.2f, -59.0f};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, std::vector<PartyMember>{{2, entering}}, options));
+    // What the pause menu holds: gold and health gained, a lesson learned, a slot saved to.
+    std::vector<PartyMember> paused = scene.party();
+    paused[0].save.gold = 999;
+    paused[0].save.progress().health = 50;
+    paused[0].save.helpSeen = {9};
+    paused[0].slot = 4;
+    const std::vector<PartyMember> left = scene.abandonedParty(paused);
+    REQUIRE(left.size() == 1);
+    CHECK(left[0].player == 2);
+    CHECK(left[0].save.gold == 40);
+    CHECK(left[0].save.health() == 300);
+    CHECK(left[0].save.helpSeen == std::vector<s32>{9});
+    CHECK(left[0].slot == std::optional<usize>{4});
+    CHECK_FALSE(left[0].fallen);
+    scene.close();
+}
+
+TEST_CASE("the narrator counts the party's runestones as the original does", "[game][screens]") {
+    CHECK(PlayScene::runeCountVoices(0).empty());
+    CHECK(PlayScene::runeCountVoices(1) == std::vector<std::string>{"S_RUNEFOUND1"});
+    CHECK(PlayScene::runeCountVoices(2) == std::vector<std::string>{"S_RUNE2", "S_RUNEFOUND2"});
+    CHECK(PlayScene::runeCountVoices(12) == std::vector<std::string>{"S_RUNE12", "S_RUNEFOUND2"});
+    CHECK(PlayScene::runeCountVoices(13).empty()); // AudioNumRunesFound has no thirteenth
+}
+
 TEST_CASE("the tower scene refuses to open without the level", "[game][screens]") {
     const GameConfig config;
     test::FakeRenderDevice device;

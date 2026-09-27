@@ -246,6 +246,12 @@ public:
         if (quickMeleeing()) {
             return kQuickMeleePace;
         }
+        if (running()) {
+            return kRunPace;
+        }
+        if (strafing()) {
+            return kStrafePace;
+        }
         // Strong throws remain planted per the GameCube playtest. AnimAction's
         // generic PWRA_THROW quarter-pace branch still needs state-path reconciliation.
         return throwing() || meleeing() || conjuring() || reacting() || turboing() || guarding()
@@ -253,11 +259,14 @@ public:
                    : 1.0f;
     }
     static constexpr f32 kChargePace = 1.5f;
+    static constexpr f32 kRunPace = 1.3f;      ///< a run covers more ground than a walk
+    static constexpr f32 kStrafePace = 0.667f; ///< strafing steps, shooting or not
     static constexpr f32 kWebPace = 0.4f;
     static constexpr f32 kQuickMeleePace = 0.25f;
     bool quickMeleeing() const {
         return m_current >= Action::Quick1 && m_current <= Action::Quick3Recover;
     }
+    bool running() const { return m_current == Action::Run1 || m_current == Action::Run2; }
     /** Web contact suppresses attacks, but leaves a slow escape walk. */
     bool webbed() const { return m_current == Action::WebReact; }
     /** Whether the guard is coming up, up or going down; the feet stay put throughout. */

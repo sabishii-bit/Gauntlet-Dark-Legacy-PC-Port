@@ -43,12 +43,36 @@ public:
     void close();
 
     /** Search level, common, then ambient banks; a broken first match stays silent. */
-    SoundHandle playNamed(std::string_view name);
+    SoundHandle playNamed(std::string_view name, f32 volume = 1.0f);
     SoundHandle playFrom(SoundSet& bank, std::string_view name);
     SoundHandle playPromotion(std::string_view name, SoundHandle after = kNoSound);
     enum class Narrator : u8 { Primary, Either };
     SoundHandle narrate(std::string_view name, Narrator which = Narrator::Either,
                         SoundHandle after = kNoSound);
+
+    /** The narrator's queue (sndFxQueAddEx's announcer queue): lines play one after another,
+     * at most sixteen waiting. An announcement asks for room first, giving how long it is
+     * willing to wait behind what is already queued (never refused when negative); once let in,
+     * its parts are queued in turn. */
+    static constexpr usize kMostNarration = 16;
+    static constexpr f32 kAlwaysRoom = -1.0f;
+    bool narrationRoom(f32 maxWait) const;
+    /** Queues a narrator line, or a name clip of a character's own bank; kNoSound when the
+     * sound is missing or the queue is full. */
+    SoundHandle queueNarration(std::string_view name, Narrator which = Narrator::Either);
+    SoundHandle queueNarrationFrom(SoundSet& bank, std::string_view name);
+    static constexpr std::string_view kPojoName = "S_POJO2"; ///< Pojo's name before a line
+    /** An announcement by name (AudioWithName): the character's name clip from its own bank,
+     * or Pojo's when it carries him, then `lines`, queued together; nothing, and false, when
+     * the queue has no room within `maxWait`. */
+    bool announce(SoundSet& characterBank, std::string_view name, bool pojo,
+                  std::span<const std::string_view> lines, f32 maxWait);
+    /** While held nothing more is let into the queue: the good wizard has the floor. */
+    void holdNarration(bool held) { m_narrationHeld = held; }
+    /** Advances the queue's clock, letting finished lines go. */
+    void updateNarration(f32 seconds);
+    /** Seconds of queued narration still to come. */
+    f64 narrationBacklog() const;
     void playPickup();
     void playFootstep(bool second);
     void speakOverScroll(std::string_view name);
@@ -72,6 +96,8 @@ private:
     void playCommon(std::optional<u32> sound);
     SoundHandle track(SoundHandle handle);
     SoundHandle playOpening(s32 slot, bool settled);
+    SoundHandle queue(SoundSet& bank, u32 sound);
+    void clearNarration();
 
     SoundPlayer* m_output = nullptr;
     SoundSet m_common;
@@ -91,6 +117,10 @@ private:
     SoundHandle m_voice = kNoSound;
     std::vector<Opening> m_openings;
     std::vector<SoundHandle> m_voices; ///< includes queued narration; pruned as new sounds start
+    f64 m_narrationClock = 0.0;
+    std::vector<f64> m_narrationEnds; ///< when each queued line not yet over will end
+    SoundHandle m_narrationTail = kNoSound;
+    bool m_narrationHeld = false;
 };
 
 } // namespace gdl::game

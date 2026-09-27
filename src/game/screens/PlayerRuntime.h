@@ -28,6 +28,9 @@ struct PlayerRuntime {
     PlayerLife life = PlayerLife::Standing;
     f32 painOwed = 0.0f;                    ///< accumulated damage not yet answered by a cry
     s32 hitSoundGap = 0;                    ///< ticks before another impact sound
+    s32 heartbeatTicks = 0;                 ///< ticks before the low-health heart beats again
+    std::optional<Vec3> fixtureSpot;        ///< where the fixtures last saw it, for its step
+    f32 surfaceGap = 0.0f;                  ///< seconds before a harmful surface can hurt it again
     s32 hitFlashTicks = 0;                  ///< two 30 Hz frames of the white damage skin
     PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
     TurboMeter turbo;

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <optional>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/assets/AnimationSet.h"
@@ -23,9 +24,11 @@
 #include "engine/world/WorldScene.h"
 
 #include "game/world/DestructibleWalls.h"
+#include "game/world/HazardSurfaces.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
 #include "game/world/PlacedItems.h"
+#include "game/world/Rotators.h"
 #include "game/world/SkorneArena.h"
 #include "game/world/TowerCamera.h"
 
@@ -60,6 +63,10 @@ public:
     /** Fires the triggers the visitors stand in and carries the fields' fades on. */
     void updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors);
     const LevelTriggers& triggers() const { return m_triggers; }
+    void shootTrigger(usize index) { m_triggers.shoot(index); }
+    const Rotators& rotators() const { return m_rotators; }
+    std::vector<RotatorCue> takeRotatorCues() { return std::exchange(m_rotatorCues, {}); }
+    const HazardSurfaces& hazards() const { return m_hazards; }
     std::vector<TriggerCameraCue> takeTriggerCameraCues() { return m_triggers.takeCameraCues(); }
 
     const WorldLayout& layout() const { return m_layout; }
@@ -186,6 +193,7 @@ public:
         m_skorneArena.draw(device, clip, m_litNow);
         m_walls.draw(device, clip, m_litNow);
         m_triggers.draw(device, clip, m_litNow);
+        m_rotators.draw(device, clip, m_litNow);
         m_placedItems.draw(device, clip, m_litNow, &frame);
     }
     void drawDeferred(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
@@ -214,6 +222,9 @@ private:
     TextureAnimator m_textureAnimator;
     ParticleField m_particles;
     LevelTriggers m_triggers;
+    HazardSurfaces m_hazards;
+    Rotators m_rotators;
+    std::vector<RotatorCue> m_rotatorCues;
     std::vector<s32> m_movingObjects; ///< objects whose collision follows their animation
     f32 m_frameRemainder = 0.0f;      ///< game frames owed to the texture animations
     WorldCollision m_collision;

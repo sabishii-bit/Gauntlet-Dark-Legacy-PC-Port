@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 #include "engine/core/Types.h"
@@ -57,7 +58,8 @@ public:
     CharacterSave& save() { return m_save; }
     const Vec3& position() const { return m_position; }
     f32 yaw() const { return m_yaw; }
-    f32 speed() const { return m_speed + m_paceBonus; }
+    /** The pace, with what a speed powerup adds, never past the class range's most. */
+    f32 speed() const { return std::clamp(m_speed + m_paceBonus, kMinSpeed, kMaxSpeed); }
     /** Units a second a speed powerup adds to the class's pace. */
     void setPaceBonus(f32 bonus) { m_paceBonus = bonus; }
     f32 radius() const { return m_radius; }

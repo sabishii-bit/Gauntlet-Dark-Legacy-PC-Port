@@ -97,6 +97,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     }
     const auto seed = static_cast<u32>(std::hash<std::string>{}(world.ref().name));
     m_enemies.open(device, resources.root, &world.collision(), most, scales, seed);
+    m_enemies.setHazards(&world.hazards());
     const std::string& levelName = world.ref().name;
     m_critters.open(device, resources.root, &world.collision(), scales,
                     levelName.empty() ? 'G' : levelName.front());

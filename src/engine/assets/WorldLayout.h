@@ -85,6 +85,7 @@ struct ItemInfo {
     static constexpr s32 kTrigger = 5;     ///< a spot that drives a world object
     static constexpr s32 kGate = 7;        ///< a door a key opens
     static constexpr s32 kTrap = 8;
+    static constexpr s32 kRotator = 12;    ///< turns a world object about its upright axis
     static constexpr s32 kChoiceList = -1; ///< not an item: a list to pick one from
     static constexpr s32 kGold = 1;        ///< the powerup subtype of gold
     static constexpr s32 kRunestone = 10;  ///< the powerup subtype of a runestone

@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/combat/Damage.h"
 #include "game/screens/PlayerAttacks.h"
 namespace {
 using namespace gdl;
@@ -459,6 +460,54 @@ TEST_CASE("Temple wall projectile hits remove the mesh and collision through the
     f.audio.close();
 }
 
+TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
+          "[game][screens][player-attacks][triggers][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELC3/world.json").parent_path().parent_path().parent_path();
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("C3");
+    REQUIRE(level);
+    REQUIRE(f.world.load(f.device, root, *level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+    const LevelTriggers& triggers = f.world.triggers();
+    usize target = triggers.size();
+    for (usize i = 0; i < triggers.size(); ++i) {
+        if (triggers.trigger(i).shootable) {
+            target = i;
+        }
+    }
+    REQUIRE(target < triggers.size());
+    const Vec3 spot = triggers.trigger(target).spot + Vec3{0, 1, 0};
+    MissileSpec spec;
+    spec.weight = 0;
+    spec.radius = 0.25f;
+    const auto throwAt = [&](const Vec3& from, u32 flags) {
+        MissileLaunch launch;
+        launch.position = from;
+        launch.velocity = glm::normalize(spot - from) * 20.0f;
+        launch.spec = &spec;
+        launch.damage = 10;
+        launch.flags = flags;
+        REQUIRE(f.arsenal.missiles().launch(launch));
+        f.attacks.updateProjectiles(0.4f, f.players, f.targets);
+    };
+    // From whichever side is open to it.
+    bool shot = false;
+    for (const Vec3 side : {Vec3{0, 0, 4}, Vec3{0, 0, -4}, Vec3{4, 0, 0}, Vec3{-4, 0, 0}}) {
+        throwAt(spot + side, Damage::kGas);
+        CHECK_FALSE(triggers.trigger(target).shot); // a cloud sets nothing off
+        throwAt(spot + side, 0);
+        if (triggers.trigger(target).shot) {
+            shot = true;
+            break;
+        }
+    }
+    CHECK(shot);
+    f.fixtures.clear();
+}
+
 TEST_CASE("player shields consume one potion and expire even without artwork",
           "[game][screens][player-attacks]") {
     Fixture f;
@@ -771,7 +820,10 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
     inventory.addPotions(1, 1);
     usize releases = 0;
     f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32) {};
-    f.targets.fixtureEvents.help = [](s32, usize) { FAIL("A bottle is not destroyed food"); };
+    f.targets.fixtureEvents.help = [](s32, usize) {
+        FAIL("A bottle is not destroyed food");
+        return false;
+    };
     f.targets.fixtureEvents.shatterPotion = [&](s32 kind, const Vec3& position) {
         CHECK(kind == 2);
         CHECK(position == origin);

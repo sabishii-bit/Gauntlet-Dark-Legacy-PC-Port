@@ -7,6 +7,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/Damage.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
@@ -155,6 +156,11 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
                                  followed < stats->moveEffects.size();
          at = stats->moveEffects[static_cast<usize>(at)].next, ++followed) {
         const MoveEffect& effect = stats->moveEffects[static_cast<usize>(at)];
+        // A particle record's names are a texture and a node, neither a tree nor a sound;
+        // its emitter is not drawn yet.
+        if (effect.particle()) {
+            continue;
+        }
         if (!effect.sound.empty()) {
             if (const auto sound = players[index].figure->voice().find(effect.sound);
                 sound.has_value() && m_resources->sounds != nullptr) {
@@ -214,7 +220,7 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
             continue;
         }
         const MoveStrike& row = stats->moveStrikes[static_cast<usize>(source->row)];
-        for (const MissileTarget& target : projectileTargets(targets)) {
+        for (const MissileTarget& target : strikeTargets(targets)) {
             if (!target.reachedBy(hit)) {
                 continue;
             }
@@ -451,6 +457,31 @@ void PlayerAttacks::cry(usize index, std::string_view which, std::span<PlayerRun
     }
 }
 
+std::vector<MissileTarget> PlayerAttacks::strikeTargets(const Targets& targets) const {
+    std::vector<MissileTarget> all = projectileTargets(targets);
+    if (m_resources) {
+        const LevelTriggers& triggers = m_resources->world.triggers();
+        for (usize i = 0; i < triggers.size(); ++i) {
+            const LevelTrigger& trigger = triggers.trigger(i);
+            if (trigger.shootable) {
+                all.push_back(MissileTarget{kSwitchTargetBase + static_cast<s32>(i), trigger.spot,
+                                            trigger.radius, trigger.height});
+            }
+        }
+    }
+    return all;
+}
+
+bool PlayerAttacks::strikeSwitch(s32 id, u32 flags) {
+    if (id < kSwitchTargetBase) {
+        return false;
+    }
+    if (m_resources && (flags & Damage::kGas) == 0) {
+        m_resources->world.shootTrigger(static_cast<usize>(id - kSwitchTargetBase));
+    }
+    return true;
+}
+
 std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targets) const {
     std::vector<MissileTarget> missileTargets;
     if (m_resources) {
@@ -598,13 +629,16 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
     if (!m_resources) {
         return;
     }
-    const auto missileTargets = projectileTargets(targets);
+    const auto missileTargets = strikeTargets(targets);
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),
                                            missileTargets);
     for (const MissileImpact& impact : m_resources->arsenal.missiles().takeImpacts()) {
         m_resources->arsenal.presentImpact(impact);
         if (impact.potion != 0) {
             beginPotion(impact);
+            continue;
+        }
+        if (strikeSwitch(impact.target, impact.flags)) {
             continue;
         }
         if (impact.target >= kWallTargetBase) {
@@ -728,7 +762,7 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
         const f32 radius = burst.impact.potency * (1.33f - phase);
         const f32 power = burst.impact.damage * 1.5f * (phase - 0.33f);
         const u32 flags = EnemyHit::kMagic | static_cast<u32>(burst.impact.potion);
-        for (const MissileTarget& target : projectileTargets(targets)) {
+        for (const MissileTarget& target : strikeTargets(targets)) {
             Vec3 direction =
                 (target.surface.empty() ? target.base : target.pointNear(burst.impact.position)) -
                 burst.impact.position;
@@ -743,6 +777,9 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
             burst.hit.push_back(target.id);
             direction.y = 0;
             const s32 byPlayer = burst.impact.owner;
+            if (strikeSwitch(target.id, flags)) {
+                continue;
+            }
             if (target.id >= kWallTargetBase) {
                 targets.fixtures.strikeWall(static_cast<usize>(target.id - kWallTargetBase), power,
                                             flags);

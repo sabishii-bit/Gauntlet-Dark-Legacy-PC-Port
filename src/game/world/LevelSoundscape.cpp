@@ -118,6 +118,7 @@ void LevelSoundscape::stopCues() {
 
 void LevelSoundscape::suspend() {
     stopCues();
+    clearNarration();
     for (const SoundHandle handle : m_voices) {
         stop(handle);
     }
@@ -151,14 +152,15 @@ SoundHandle LevelSoundscape::track(SoundHandle handle) {
     return handle;
 }
 
-SoundHandle LevelSoundscape::playNamed(std::string_view name) {
+SoundHandle LevelSoundscape::playNamed(std::string_view name, f32 volume) {
     if (m_output == nullptr || name.empty()) {
         return kNoSound;
     }
     for (SoundSet* bank : {&m_level, &m_common, &m_ambient}) {
         if (const auto found = bank->find(name); found.has_value()) {
             try {
-                return track(m_output->play(bank->sequence(*found), 1.0f, SoundCategory::Effects));
+                return track(
+                    m_output->play(bank->sequence(*found), volume, SoundCategory::Effects));
             } catch (const std::exception& e) {
                 log::warn("Tower: sound {}: {}", name, e.what());
                 return kNoSound;
@@ -203,6 +205,81 @@ SoundHandle LevelSoundscape::narrate(std::string_view name, Narrator which, Soun
         }
     }
     return kNoSound;
+}
+
+bool LevelSoundscape::narrationRoom(f32 maxWait) const {
+    if (m_narrationHeld || m_narrationEnds.size() >= kMostNarration) {
+        return false;
+    }
+    return maxWait < 0.0f || narrationBacklog() <= static_cast<f64>(maxWait);
+}
+
+f64 LevelSoundscape::narrationBacklog() const {
+    return m_narrationEnds.empty() ? 0.0 : std::max(m_narrationEnds.back() - m_narrationClock, 0.0);
+}
+
+SoundHandle LevelSoundscape::queueNarration(std::string_view name, Narrator which) {
+    for (SoundSet* bank : {&m_narrator, &m_narratorSecond}) {
+        if (const auto found = bank->find(name); found.has_value()) {
+            return queue(*bank, *found);
+        }
+        if (which == Narrator::Primary) {
+            break;
+        }
+    }
+    return kNoSound;
+}
+
+SoundHandle LevelSoundscape::queueNarrationFrom(SoundSet& bank, std::string_view name) {
+    const auto found = bank.find(name);
+    return found.has_value() ? queue(bank, *found) : kNoSound;
+}
+
+SoundHandle LevelSoundscape::queue(SoundSet& bank, u32 sound) {
+    if (m_output == nullptr || m_narrationHeld || m_narrationEnds.size() >= kMostNarration) {
+        return kNoSound;
+    }
+    const SoundSequence& sequence = bank.sequence(sound);
+    const SoundHandle handle =
+        track(m_output->playAfter(m_narrationTail, sequence, 1.0f, SoundCategory::Effects));
+    if (handle == kNoSound) {
+        return kNoSound;
+    }
+    f64 length = 0.0;
+    for (const SoundSequenceStep& step : sequence.steps) {
+        length += step.clip != nullptr ? step.clip->seconds() : 0.0;
+    }
+    const f64 start = m_narrationClock + narrationBacklog();
+    m_narrationEnds.push_back(start + length);
+    m_narrationTail = handle;
+    return handle;
+}
+
+bool LevelSoundscape::announce(SoundSet& characterBank, std::string_view name, bool pojo,
+                               std::span<const std::string_view> lines, f32 maxWait) {
+    if (!narrationRoom(maxWait)) {
+        return false;
+    }
+    if (pojo) {
+        queueNarration(kPojoName);
+    } else {
+        queueNarrationFrom(characterBank, name);
+    }
+    for (const std::string_view line : lines) {
+        queueNarration(line);
+    }
+    return true;
+}
+
+void LevelSoundscape::updateNarration(f32 seconds) {
+    m_narrationClock += seconds;
+    std::erase_if(m_narrationEnds, [this](f64 end) { return end <= m_narrationClock; });
+}
+
+void LevelSoundscape::clearNarration() {
+    m_narrationEnds.clear();
+    m_narrationTail = kNoSound;
+    m_narrationHeld = false;
 }
 
 void LevelSoundscape::playCommon(std::optional<u32> sound) {

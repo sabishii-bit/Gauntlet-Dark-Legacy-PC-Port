@@ -64,6 +64,7 @@ private:
     void updateJourney(f64 deltaSeconds);
     /** Writes the party in play back into its save slots. */
     void keepParty();
+    void keepParty(std::span<const PartyMember> party);
     bool startTower(std::span<const PartyMember> party, const PlayOptions& options = {});
     /** Loads `level` and brings the party into it. */
     bool startLevel(const LevelRef& level, std::span<const PartyMember> party,

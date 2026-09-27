@@ -96,6 +96,7 @@ const EnemyMind& enemyMindOf(s32 algorithm);
 /** The ways with a mind of their own. */
 inline constexpr s32 kSeekWay = 0;
 inline constexpr s32 kProwlWay = 2;
+inline constexpr s32 kMirroredProwlWay = 4; ///< the same prowl, turning the other way
 inline constexpr s32 kWanderWay = 5;
 inline constexpr s32 kWanderOtherWay = 6;
 inline constexpr s32 kChaseWay = 7;

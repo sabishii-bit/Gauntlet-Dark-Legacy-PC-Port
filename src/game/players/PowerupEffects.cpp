@@ -1,5 +1,6 @@
 #include "game/players/PowerupEffects.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <numbers>
@@ -129,9 +130,12 @@ PowerupEffects PowerupEffects::of(const Inventory& inventory) {
 
 f32 PowerupEffects::magicPower(s32 magicStat) const {
     constexpr f32 kStatScale = 0.001f;
-    return kLeastMagicPower +
-           kStatScale * static_cast<f32>(magicStat) * (kMostMagicPower - kLeastMagicPower) +
-           magicAdd;
+    // What the powerups add still stays within the range (SetPlayerVars' clamps).
+    return std::clamp(kLeastMagicPower +
+                          kStatScale * static_cast<f32>(magicStat) *
+                              (kMostMagicPower - kLeastMagicPower) +
+                          magicAdd,
+                      kLeastMagicPower, kMostMagicPower);
 }
 
 s32 PowerupEffects::shots() const {
