@@ -728,8 +728,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   a move carries the body at its own `speed` a second (TYPE +0xAC is
   `roamRadius`, not speed) and turns it at its `turnRate`, never onto a player or
   another; over its harmful frames (`frameStart..frameEnd`, a second window
-  too) its damage record strikes: a blow (0) whoever is within the part's
-  radius plus its reach of the named node's posed position, a ring (3, the
+  too) its damage record strikes: a blow (0) whoever's cylinder, grown by the
+  reach, holds the named node's posed position plus the offset turned with the
+  node, every update of the window behind the player's shared quarter-second
+  gap (`breathGap`, fxhittime; CritterNodePlayerCollide); a ring (3, the
   stomp) whoever is within reach of the feet, each player once a move.
   Breath (4) instead uses `enemies/CombatantBreath`: an animated-node segment,
   authored offset/yaw/pitch and min/max horizontal distance, tested against
@@ -770,8 +772,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   block lets a quarter through and shrugs off the throw, and is worth
   amount / (1 + health) of the value to the hitter (a fiftieth less a level
   under the place's `playerLevel`, never under a tenth), paid in whole
-  points as they add up; fifty taken and it roars; a floored hit plays KD
-  (KB otherwise) and throws it (twenty, a golem five less); dead it plays
+  points as they add up; fifty taken and it roars. Only flagged hits move it
+  off what it is doing (CritterGetDoAction): 0x100 plays KD, 0x20 KB, 0x10
+  HITREACT; plain harm does not. Every hit shoves it by its flags whatever it
+  is doing (CritterDoKnockback: 20 dead, 10 for 0x10140, 7.5 for 0x20, 5 for
+  0x10, a golem five less, a boss never); dead it plays
   DEATH, fades a second and is gone, a fifth of its value going to everyone.
   A gargoyle slain leaves the key its form is named by (`GARGEAGL`) where
   it fell. The bosses (`game/enemies/Bosses`) are their own thing, though

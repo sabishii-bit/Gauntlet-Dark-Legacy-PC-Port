@@ -907,6 +907,34 @@ TEST_CASE("area contacts share effect immunity but not the breath timer",
     REQUIRE(contacts == 2);
 }
 
+TEST_CASE("a great one's blows land every quarter second through the shared hit gap",
+          "[game][screens][level-opponents][breath]") {
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(3, {}, nullptr, {}, 0);
+    LevelOpponents::Events events;
+    s32 contacts = 0;
+    events.hurt = [&](usize, f32, HurtKind kind, bool, const PlayerImpact&) {
+        REQUIRE(kind == HurtKind::Blow);
+        ++contacts;
+    };
+    CombatBlow blow;
+    blow.player = 3;
+    blow.damage = 10;
+    blow.gated = true;
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 1);
+    REQUIRE(players[0].breathGap == 0.25f); // fxhittime, as breath has it
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 1);
+    players[0].breathGap = 0;
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 2);
+    // An ungated contact (a ring, once a move) is not held off.
+    blow.gated = false;
+    LevelOpponents::applyCritterBlow(blow, players, events);
+    REQUIRE(contacts == 3);
+}
+
 TEST_CASE("breath contacts share a player's quarter-second gate across creatures",
           "[game][screens][level-opponents][breath]") {
     std::array<PlayerRuntime, 3> players;

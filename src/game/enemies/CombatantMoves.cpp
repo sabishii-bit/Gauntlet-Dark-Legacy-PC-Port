@@ -21,8 +21,16 @@ f32 yawBetween(const Vec3& from, const Vec3& to) {
 } // namespace
 
 namespace {
-constexpr f32 kKnockScale = 20.0f;
 constexpr f32 kMostPush = 40.0f;
+// What a hit's flags do to a great one (CritterGetDoAction, CritterDoKnockback).
+constexpr u32 kKnockOver = 0x100;  ///< knocked down: KD
+constexpr u32 kKnockedBack = 0x20; ///< knocked back: KB
+constexpr u32 kShaken = 0x10;      ///< flinches: HITREACT
+constexpr u32 kHardPush = 0x10140; ///< the heaviest shoves
+constexpr f32 kDeathPush = 20.0f;
+constexpr f32 kHardPushScale = 10.0f;
+constexpr f32 kKnockBackPush = 7.5f;
+constexpr f32 kShakePush = 5.0f;
 } // namespace
 const EnemyView* Combatant::viewOf(std::span<const EnemyView> players, s32 player) {
     for (const EnemyView& view : players) {
@@ -170,7 +178,30 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         }
         return false;
     };
+    // A hit shoves it by its flags, dead or alive, a golem less and a boss never.
+    const u32 flags = critter.hurtFlags;
+    if (critter.hurtPending >= 1.0f) {
+        f32 scale = 0.0f;
+        if (critter.state == State::Dying) {
+            scale = kDeathPush;
+        } else if ((flags & kHardPush) != 0) {
+            scale = kHardPushScale;
+        } else if ((flags & kKnockedBack) != 0) {
+            scale = kKnockBackPush;
+        } else if ((flags & kShaken) != 0) {
+            scale = kShakePush;
+        }
+        scale -= critter.stock->definition.knockbackReduction;
+        if (critter.stock->definition.kind != CombatantKind::Boss && scale > 0.0f) {
+            critter.push += critter.hurtDirection * scale;
+            if (const f32 magnitude = glm::length(critter.push); magnitude > kMostPush) {
+                critter.push *= kMostPush / magnitude;
+            }
+        }
+    }
     if (critter.state == State::Dying) {
+        critter.hurtPending = 0.0f;
+        critter.hurtFlags = 0;
         if (current == nullptr || current->type != MoveDefinition::kDeath) {
             if (!cutIn(data.moveOfType(MoveDefinition::kDeath))) {
                 critter.moveDone = true;
@@ -181,23 +212,25 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
     if (critter.forcedPattern) {
         return; // The parent's pattern step, not this branch's end frame, advances the move.
     }
-    if (critter.hurtPending >= 1.0f) {
-        const bool floors = (critter.hurtFlags & EnemyHit::kFloors) != 0;
-        const auto reaction =
-            data.moveOfType(floors ? MoveDefinition::kKnockDown : MoveDefinition::kKnockBack);
-        if (cutIn(reaction.has_value() ? reaction : data.moveOfType(MoveDefinition::kKnockBack))) {
-            f32 scale = floors ? kKnockScale : 0.0f;
-            scale = std::max(scale - critter.stock->definition.knockbackReduction, 0.0f);
-            critter.push += critter.hurtDirection * scale;
-            if (const f32 magnitude = glm::length(critter.push); magnitude > kMostPush) {
-                critter.push *= kMostPush / magnitude;
-            }
-        }
-        critter.hurtPending = 0.0f;
-        critter.hurtFlags = 0;
+    // Only a hit flagged to do so moves it off what it is doing: knocked down, knocked back,
+    // a roar once enough is taken, then a flinch. Plain harm leaves it be.
+    const bool hurt = critter.hurtPending >= 1.0f;
+    critter.hurtPending = 0.0f;
+    critter.hurtFlags = 0;
+    bool reacted = false;
+    if (hurt && (flags & kKnockOver) != 0) {
+        reacted = cutIn(data.moveOfType(MoveDefinition::kKnockDown));
     }
-    if (critter.roarOwed >= kRoarAfter && cutIn(data.moveOfType(MoveDefinition::kRoar))) {
+    if (hurt && !reacted && (flags & (kKnockOver | kKnockedBack)) != 0) {
+        reacted = cutIn(data.moveOfType(MoveDefinition::kKnockBack));
+    }
+    if (!reacted && critter.roarOwed >= kRoarAfter &&
+        cutIn(data.moveOfType(MoveDefinition::kRoar))) {
         critter.roarOwed = 0.0f;
+        reacted = true;
+    }
+    if (hurt && !reacted && (flags & kShaken) != 0) {
+        cutIn(data.moveOfType(MoveDefinition::kHitReact));
     }
     // A move plays out, then what it links to, then whatever is best.
     if (current != nullptr && !critter.moveDone) {

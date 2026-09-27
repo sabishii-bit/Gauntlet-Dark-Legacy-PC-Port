@@ -26,8 +26,10 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     std::optional<CombatantBreath> breath;
     switch (damage->type) {
     case AttackDefinition::kBlow:
-        centre = partPosition(critter, move.colnode) + damage->offset;
-        reach = damage->radius + damage->maxDistance;
+        // The part's offset turns with the part; the player's cylinder grows by the reach
+        // alone (CritterNodePlayerCollide).
+        centre = Vec3{partTransform(critter, move.colnode) * Vec4{damage->offset, 1.0f}};
+        reach = damage->maxDistance;
         break;
     case AttackDefinition::kRing:
         centre = critter.position;
@@ -46,19 +48,26 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         break;
     default: return;
     }
+    // A blow lands every update of its window, held off by the player's hit gap; a ring or
+    // a targeted area once a move.
+    const bool gated = breath.has_value() || damage->type == AttackDefinition::kBlow;
     for (const EnemyView& view : players) {
-        if (view.hidden ||
-            (!breath.has_value() && std::ranges::find(critter.struckThisMove, view.player) !=
-                                        critter.struckThisMove.end())) {
+        if (view.hidden || (!gated && std::ranges::find(critter.struckThisMove, view.player) !=
+                                          critter.struckThisMove.end())) {
             continue;
         }
         const Vec3 feet = view.position;
         const Vec3 body = feet + Vec3{0.0f, 0.5f * view.height, 0.0f};
-        const bool within =
-            breath.has_value()
-                ? breath->touches(*damage, body, view.radius, 0.5f * view.height)
-                : flatDistance(centre, feet) <= reach + view.radius &&
-                      std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius;
+        bool within = false;
+        if (breath.has_value()) {
+            within = breath->touches(*damage, body, view.radius, 0.5f * view.height);
+        } else if (damage->type == AttackDefinition::kBlow) {
+            within = flatDistance(centre, feet) <= reach + view.radius &&
+                     centre.y >= feet.y - reach && centre.y <= feet.y + view.height + reach;
+        } else {
+            within = flatDistance(centre, feet) <= reach + view.radius &&
+                     std::abs(centre.y - body.y) <= 0.5f * view.height + damage->radius;
+        }
         if (!within) {
             continue;
         }
@@ -67,6 +76,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         blow.critter = id;
         blow.damage = damage->damage * m_scales.damage;
         blow.breath = breath.has_value();
+        blow.gated = gated;
         blow.flags = damage->flags;
         blow.origin = centre;
         const Vec3 away = feet - critter.position;
@@ -77,7 +87,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
             const Vec3 direction = breath->end - breath->origin;
             const f32 size = glm::length(direction);
             blow.direction = size > 0.0f ? direction / size : Vec3{0.0f};
-        } else {
+        } else if (!gated) {
             critter.struckThisMove.push_back(view.player);
         }
         m_blows.push_back(blow);
