@@ -8,6 +8,7 @@
 
 #include "game/enemies/CombatantDefinition.h"
 #include "game/enemies/CritterData.h"
+#include "game/world/BlobShadow.h"
 
 namespace gdl::game {
 /** Stable shared assets for a fighter family. Release only after all borrowers finish. */
@@ -19,6 +20,7 @@ struct CombatantAssets {
     const TreeInfo* tree = nullptr;
     TreeModel body;
     TextureAnimator textures;
+    BlobShadow shadow; ///< SHADOW1L1 of its archive, when its type lies one
     CombatantAssets() = default;
     CombatantAssets(const CombatantAssets&) = delete;
     CombatantAssets& operator=(const CombatantAssets&) = delete;

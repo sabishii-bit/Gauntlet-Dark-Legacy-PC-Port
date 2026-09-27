@@ -17,6 +17,8 @@ namespace {
 
 using Json = nlohmann::json;
 
+constexpr u32 kShadowedType = 1; ///< the type flag for a shadow under it
+
 Vec3 vecOf(const Json& json, const char* key) {
     const auto values = json.value(key, std::vector<f32>{});
     return values.size() >= 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f, 0.0f, 0.0f};
@@ -85,6 +87,7 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
         m_movement.roamRadius =
             type.value("roamRadius", type.value("speed", m_movement.roamRadius));
         m_movement.turnLimit = type.value("turnLimit", m_movement.turnLimit);
+        m_shadowed = (typeFlags & kShadowedType) != 0;
         m_movement.squareBounds = (typeFlags & 0x20U) != 0;
         m_movement.initialStepBasis = (typeFlags & 0x40U) != 0;
         m_movement.unrestrictedTurn = (typeFlags & 0x400U) != 0;

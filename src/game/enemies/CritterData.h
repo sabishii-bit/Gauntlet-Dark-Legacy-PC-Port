@@ -40,6 +40,8 @@ public:
     f32 experience() const { return m_experience; }
     f32 wakeThreshold() const { return m_wake; } ///< how near the party comes before a boss stirs
     f32 vertDrift() const { return m_vertDrift; }
+    /** Whether it lies a shadow under it (TYPE flag 1, CritterInitGeo). */
+    bool shadowed() const { return m_shadowed; }
     /** Height of the model root above the floor anchor; may be negative. */
     f32 floorOffset() const { return m_floorOffset; }
     const Vec3& originOffset() const { return m_originOffset; }
@@ -77,6 +79,7 @@ private:
     f32 m_experience = 0.0f;
     f32 m_wake = 0.0f;
     f32 m_vertDrift = 0.0f;
+    bool m_shadowed = false;
     f32 m_floorOffset = 0.0f;
     Vec3 m_originOffset{0.0f, 0.0f, 0.0f};
     TargetCriteria m_sight;

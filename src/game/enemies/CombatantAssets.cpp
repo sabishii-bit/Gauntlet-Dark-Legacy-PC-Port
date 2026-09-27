@@ -2,17 +2,24 @@
 
 #include <format>
 #include <set>
+#include <string_view>
 #include <utility>
 
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
 namespace gdl::game {
+namespace {
+/** Every instance is made with subtype nought: the first of SHADOW1L1..3L1. */
+constexpr std::string_view kShadowObject = "SHADOW1L1";
+} // namespace
+
 CombatantAssets::~CombatantAssets() {
     clear();
 }
 void CombatantAssets::clear() {
     children.clear();
+    shadow.clear();
     textures.clear();
     body.clear();
     tree = nullptr;
@@ -63,6 +70,9 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         return false;
     }
     textures.bind(archive.trees.textureAnimations(), archive.textures, device);
+    if (data.shadowed()) {
+        shadow.bind(device, archive, kShadowObject);
+    }
     return true;
 }
 } // namespace gdl::game

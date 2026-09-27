@@ -100,6 +100,10 @@ public:
     std::optional<s32> struckBy(const Vec3& from, const Vec3& to, f32 radius) const;
     bool within(const Vec3& centre, f32 radius) const;
     bool reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
+    void drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye,
+                    const WorldLighting& lighting) const {
+        m_fighter.drawShadow(device, clip, eye, lighting);
+    }
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr) const;
 

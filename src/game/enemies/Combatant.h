@@ -92,6 +92,9 @@ public:
     std::optional<f32> contactDistance(const Vec3& from, const Vec3& to, f32 radius) const;
     bool within(const Vec3& centre, f32 radius) const;
     bool reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
+    /** Its shadow on the floor under it, when its type lies one. */
+    void drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye,
+                    const WorldLighting& lighting) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr) const;
     std::vector<CombatBlow> takeBlows();
