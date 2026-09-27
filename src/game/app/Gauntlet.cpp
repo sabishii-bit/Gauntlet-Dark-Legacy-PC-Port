@@ -507,7 +507,7 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
     if (outcome == PauseOutcome::Running) {
         return;
     }
-    const auto party = m_pause.party();
+    auto party = m_pause.party();
     // Only successful saves attach the running characters to new slots. A loaded
     // character belongs to the replacement scene, never the one being discarded.
     if (outcome != PauseOutcome::Reload) {
@@ -550,7 +550,9 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         return;
     }
     if (outcome == PauseOutcome::ReturnTower) {
-        keepParty();
+        // Quitting a level gives up what it gave, as dying in it does.
+        party = m_play->scene.abandonedParty(party);
+        keepParty(party);
     }
     // Loading restores characters in the tower, not a snapshot of transient enemies.
     // Do not autosave the discarded level over the character just loaded.
@@ -725,6 +727,10 @@ void Gauntlet::keepParty() {
     } else if (m_journey.has_value()) {
         party = m_journey->party;
     }
+    keepParty(party);
+}
+
+void Gauntlet::keepParty(std::span<const PartyMember> party) {
     const bool anySlot = std::ranges::any_of(
         party, [](const PartyMember& member) { return member.slot.has_value(); });
     if (!anySlot || !m_saves.open(m_config.saveDirectory(), m_config.save.slots)) {

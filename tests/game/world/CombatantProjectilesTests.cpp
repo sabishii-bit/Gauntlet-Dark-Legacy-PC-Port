@@ -267,7 +267,7 @@ void checkWebEscape(s32 fps, bool animated) {
     const PlayerHealth::Events healthEvents{.block = [](f32, f32) {},
                                             .sound = [](std::string_view) {},
                                             .cry = [](std::string_view) {},
-                                            .named = [](std::string_view) {}};
+                                            .named = [](std::string_view, f32) {}};
     PartyMotion::Events motion;
     motion.perform = [](usize, PartyMotion::Action) {};
     motion.select = [](usize, const SelectorInput&, s32) {};

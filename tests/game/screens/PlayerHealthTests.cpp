@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <array>
 #include <string>
 #include <vector>
 
@@ -6,6 +8,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/PowerupEffects.h"
 #include "game/screens/PlayerHealth.h"
 namespace {
 using namespace gdl;
@@ -22,7 +25,7 @@ struct Fixture {
         .block = [](f32, f32) { FAIL("No figure means no guard presentation"); },
         .sound = [this](std::string_view cue) { sounds.emplace_back(cue); },
         .cry = [this](std::string_view cue) { cries.emplace_back(cue); },
-        .named = [this](std::string_view cue) { named.emplace_back(cue); }};
+        .named = [this](std::string_view cue, f32) { named.emplace_back(cue); }};
     Fixture() {
         player.actor.spawn(3, {}, nullptr, Vec3{0}, 0);
         player.actor.save().progress().health = 1000;
@@ -120,21 +123,80 @@ TEST_CASE("player death keeps the save sentinel and only emits cues once",
     REQUIRE(f.cries == std::vector<std::string>{"DIE2"});
 }
 
-TEST_CASE("player low health announcements take precedence and alternate across participants",
+TEST_CASE("player low health announcements take precedence over cries, not the blow's sound",
           "[game][screens][player-health]") {
     Fixture f;
     f.player.actor.save().progress().health = 151;
     f.hit(1, HurtKind::Burn);
     REQUIRE(f.named == std::vector<std::string>{"S_BADLY"});
     REQUIRE(f.cries.empty());
-    f.player.actor.save().progress().health = 51;
-    f.hit(1, HurtKind::Pierce);
+    REQUIRE(f.sounds.empty());
+    // At fifty the line is a toss between the two (fn_8009FFF4 by frame parity).
+    std::vector<std::string> last;
     PlayerRuntime other;
     other.actor.spawn(1, {}, nullptr, Vec3{0}, 0);
-    other.actor.save().progress().health = 51;
-    f.health.hurt(other, 1, HurtKind::Gas, false, false, 1, f.events);
-    REQUIRE(f.named == std::vector<std::string>{"S_BADLY", "S_LIFEFORCE", "S_ABOUT"});
+    for (s32 i = 0; i < 40; ++i) {
+        other.actor.save().progress().health = 51;
+        f.named.clear();
+        f.health.hurt(other, 1, HurtKind::Gas, false, false, 1, f.events);
+        REQUIRE(f.named.size() == 1);
+        last.push_back(f.named.front());
+    }
+    CHECK(std::ranges::count(last, "S_LIFEFORCE") > 0);
+    CHECK(std::ranges::count(last, "S_ABOUT") > 0);
+    CHECK(std::ranges::count(last, "S_LIFEFORCE") + std::ranges::count(last, "S_ABOUT") == 40);
     REQUIRE(f.cries.empty());
+    // A blow that crosses a mark is still heard landing, and its harm still counts to a cry.
+    f.player.actor.save().progress().health = 55;
+    f.hit(10);
+    CHECK(f.sounds == std::vector<std::string>{"S_PLYRDMG"});
+    CHECK(f.player.painOwed == 10);
+    CHECK(f.cries.empty());
+}
+
+TEST_CASE("the lowest standing player's heart beats faster and louder as health falls",
+          "[game][screens][player-health]") {
+    std::array<PlayerRuntime, 2> party;
+    party[0].actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+    party[1].actor.spawn(1, {}, nullptr, Vec3{0}, 0);
+    party[0].actor.save().progress().health = 300;
+    party[1].actor.save().progress().health = 201;
+    CHECK_FALSE(PlayerHealth::heartbeat(party, 2, false)); // nobody at two hundred
+    party[1].actor.save().progress().health = 150;
+    auto beat = PlayerHealth::heartbeat(party, 2, false);
+    REQUIRE(beat);
+    CHECK(beat->player == 1);
+    CHECK(beat->volume == Approx(1.0f));
+    // Two seconds between beats at a hundred and over; then one, then half of one.
+    s32 ticks = 2;
+    while (!PlayerHealth::heartbeat(party, 2, false)) {
+        ticks += 2;
+    }
+    CHECK(ticks == 120);
+    party[1].actor.save().progress().health = 20;
+    party[1].heartbeatTicks = 0;
+    beat = PlayerHealth::heartbeat(party, 2, false);
+    REQUIRE(beat);
+    CHECK(beat->volume == Approx(177.0f / 127.0f));
+    CHECK(party[1].heartbeatTicks == 30);
+    party[1].actor.save().progress().health = 5;
+    party[1].heartbeatTicks = 0;
+    CHECK(PlayerHealth::heartbeat(party, 2, false)->volume == Approx(202.0f / 127.0f));
+    // The fallen are not heard; the lowest standing one is.
+    party[1].life = PlayerLife::InTower;
+    party[0].actor.save().progress().health = 60;
+    beat = PlayerHealth::heartbeat(party, 2, false);
+    REQUIRE(beat);
+    CHECK(beat->player == 0);
+    CHECK(beat->volume == Approx(152.0f / 127.0f));
+    // Silent in the tower and while invulnerable, though the beat keeps its time.
+    party[0].heartbeatTicks = 0;
+    CHECK_FALSE(PlayerHealth::heartbeat(party, 2, true));
+    CHECK(party[0].heartbeatTicks == 60);
+    party[0].heartbeatTicks = 0;
+    party[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable,
+                                                          0, 60);
+    CHECK_FALSE(PlayerHealth::heartbeat(party, 2, false));
 }
 
 TEST_CASE("player pain accumulates while burns pierces and gas retain their own cues",

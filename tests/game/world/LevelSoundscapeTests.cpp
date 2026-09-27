@@ -2,9 +2,12 @@
 #include <bit>
 #include <filesystem>
 #include <format>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/audio/AudioMixer.h"
@@ -77,6 +80,101 @@ TEST_CASE("level sound lookup preserves bank precedence and broken first matches
         REQUIRE(soundscape.playNamed("SHARED") == kNoSound);
         REQUIRE(player.voiceCount() == 0);
     }
+    soundscape.close();
+}
+
+/** A bank of one-second lines that play once, so the narrator's queue can be timed. */
+void writeSecondBank(const std::filesystem::path& root, std::string_view bank,
+                     std::initializer_list<std::string_view> names) {
+    const auto directory = root / "audio" / bank;
+    std::filesystem::create_directories(directory);
+    const std::vector<s16> pcm(48000, 4096);
+    writeFile(directory / "second.wav", formats::encodeWav(pcm, 48000, 1));
+    std::string sounds;
+    usize index = 0;
+    for (const auto name : names) {
+        if (index != 0) {
+            sounds += ',';
+        }
+        sounds += std::format(R"({{"index":{},"name":"{}","id":0,"duration":1,
+            "volume":127,"duck":0,"priority":0,
+            "sequence":[{{"sample":0,"loopStart":false,"loopBack":false}}]}})",
+                              index++, name);
+    }
+    writeTextFile(directory / "sounds.json",
+                  std::format(R"({{"sounds":[{}],"samples":[{{"index":0,"name":"line",
+                  "file":"second.wav","sampleRate":48000,"frames":48000}}]}})",
+                              sounds));
+}
+
+TEST_CASE("the narrator's queue plays lines in turn and turns away what would wait too long",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-queue");
+    writeSecondBank(root, "VOICE1", {"LINE", "OTHER", "S_POJO2"});
+    writeSecondBank(root, "CHARACTER", {"NAME"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    REQUIRE(soundscape.narrationRoom(0.5f));
+    SoundSet character;
+    REQUIRE(character.load(root / "audio/CHARACTER"));
+    const SoundHandle name = soundscape.queueNarrationFrom(character, "NAME");
+    REQUIRE(name != kNoSound);
+    const SoundHandle line = soundscape.queueNarration("LINE");
+    REQUIRE(line != kNoSound);
+    REQUIRE(player.voiceCount() == 1); // the line waits for the name
+    REQUIRE(soundscape.narrationBacklog() == Catch::Approx(2.0));
+    // Two seconds of it to come: an announcement willing to wait half of one is turned away,
+    // one willing to wait four, or for ever, is let in.
+    REQUIRE_FALSE(soundscape.narrationRoom(0.5f));
+    REQUIRE(soundscape.narrationRoom(4.0f));
+    REQUIRE(soundscape.narrationRoom(LevelSoundscape::kAlwaysRoom));
+    soundscape.updateNarration(1.6f);
+    REQUIRE(soundscape.narrationBacklog() == Catch::Approx(0.4));
+    REQUIRE(soundscape.narrationRoom(0.5f));
+    soundscape.updateNarration(1.0f);
+    REQUIRE(soundscape.narrationBacklog() == 0.0);
+    // No more than sixteen wait.
+    for (usize i = 0; i < LevelSoundscape::kMostNarration; ++i) {
+        REQUIRE(soundscape.queueNarration(i % 2 == 0 ? "LINE" : "OTHER") != kNoSound);
+    }
+    REQUIRE_FALSE(soundscape.narrationRoom(LevelSoundscape::kAlwaysRoom));
+    REQUIRE(soundscape.queueNarration("LINE") == kNoSound);
+    REQUIRE(soundscape.queueNarration("MISSING") == kNoSound);
+    // Leaving the level lets it all go.
+    soundscape.close();
+    REQUIRE(soundscape.narrationBacklog() == 0.0);
+}
+
+TEST_CASE("an announcement by name is let in whole or not at all, and the wizard silences it",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-announce");
+    writeSecondBank(root, "VOICE1", {"LINE", "OTHER", "S_POJO2"});
+    writeSecondBank(root, "CHARACTER", {"NAME"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    SoundSet character;
+    REQUIRE(character.load(root / "audio/CHARACTER"));
+    const std::array lines{std::string_view{"LINE"}, std::string_view{"OTHER"}};
+    REQUIRE(soundscape.announce(character, "NAME", false, lines, 0.5f));
+    REQUIRE(soundscape.narrationBacklog() == Catch::Approx(3.0)); // name and two lines
+    // Too much to wait behind: none of it goes in.
+    REQUIRE_FALSE(soundscape.announce(character, "NAME", false, lines, 0.5f));
+    REQUIRE(soundscape.narrationBacklog() == Catch::Approx(3.0));
+    // Carrying Pojo, his name is said instead of the character's.
+    soundscape.updateNarration(3.0f);
+    REQUIRE(soundscape.announce(character, "MISSING", true, std::span{lines}.first(1), 0.5f));
+    REQUIRE(soundscape.narrationBacklog() == Catch::Approx(2.0));
+    // While the wizard has the floor, even a line that would wait for ever is kept out.
+    soundscape.updateNarration(2.0f);
+    soundscape.holdNarration(true);
+    REQUIRE_FALSE(soundscape.narrationRoom(LevelSoundscape::kAlwaysRoom));
+    REQUIRE(soundscape.queueNarration("LINE") == kNoSound);
+    soundscape.holdNarration(false);
+    REQUIRE(soundscape.queueNarration("LINE") != kNoSound);
     soundscape.close();
 }
 

@@ -316,7 +316,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   type -1 is a choice list (`ItemInfo::choices`): the pick is
   ((seed >> 5) + item index) % n and each pick moves the seed on by 439.
   Touching a locked chest or gate spends a key (without one the help message
-  asks for it); a chest plays ACTIVE then OPEN to `S_CHEST`, and what it held lies in it,
+  asks for it; a silver chest falls back to its own hint; a gate ignores a
+  body backing away from it, `ChestVisitor::step`); a chest plays ACTIVE then OPEN to `S_CHEST`, and what it held lies in it,
   reached by touching the open chest as the original does (the player cannot
   reach its middle), after which the emptied chest goes. A gold chest pays
   its opener, a trapped one blows up (`EXPCHEST`, a blast of 50). The
@@ -389,9 +390,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   rollback, and selects the one-shot `fail` movie before resuming attract mode.
   Fallen players cannot pause; the defeat sequence cannot enter idle mode.
   The failure movie is excluded from ordinary attract rotation. Nobody
-  is hurt in the tower. Not yet: knockback, the low-health narrator lines,
-  armour and shields reducing damage, gas spoiling food, blasts destroying
-  pickups, breakable walls (item type 10, subtype 42).
+  is hurt in the tower. Crossing 150 health says the name (`S_<COL><CLS>2`,
+  Pojo's `S_POJO2` while carried) and `S_BADLY`; crossing 50 tosses between
+  `S_LIFEFORCE` and `S_ABOUT`; a blow crossing either still sounds. The
+  lowest standing player at 200 or under hears `S_WARN` (every 120/60/30
+  ticks, louder as health falls; silent in the tower or invulnerable:
+  `PlayerHealth::heartbeat`, do_weakening). Not yet: knockback.
 * The turbo meter (`players/TurboMeter`, one per actor in `PlayScene`): what
   it holds climbs 2 a second to 100 while the character is free to act (not
   fallen, not in a turbo move), what is shown chases that a point a tick up
@@ -614,7 +618,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   ten throwing it down) takes armour off, a character always getting a point
   in, scaled a hundredth softer a level under the place's `playerLevel` and a
   tenth harder a level over; it flinches or is thrown back (forty a small
-  body, twenty a tall one, capped at forty, decaying by 0.8 a tick) and gets
+  body, twenty a tall one, capped at forty, decaying by 0.8 a 30 Hz frame) and gets
   up, and dead plays out its fall and is gone. Experience is the kind's hit
   or kill share through `awardExperience`. A slot is found first empty, else
   the least worth keeping (the furthest from its player, a dying or sleeping
@@ -633,10 +637,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   breeds only with a player within forty-eight (ours, for the original's
   on-screen test); a birth goes in one of the eight octants about it, the
   humanoids only ahead, at its height plus the body's radius out, where the
-  floor is within six, no wall, player, enemy or box is in the way; a state
-  crumbles at each record of health (three whole, `GEN_<PREFIX><state>L1`
-  objects of the kind's archive, the kind's GENHIT/GENDIE trees over it) and
-  gone it frees its brood. Level placements (type 4) of ordinary strength
+  floor is within six, no wall, player, enemy or box is in the way; it stands
+  in the state of its strength (`GEN_<PREFIX><state>L1` objects of the kind's
+  archive, the kind's GENHIT/GENDIE trees over it) and crumbles a state at each
+  record of health; a crumble also becomes the strength it breeds at, doubles
+  its count and turns a caster brood (28-30) to seeking (fn_8005C1DC); gone it
+  frees its brood. A way of nought is filled in by kind and strength, the
+  small kinds prowl either way (2 or 4) and ways 1/10 become 0/7
+  (`resolvedWayOf`: fn_8004F87C, init_enemy_vars); the fixed ways of Garm's
+  minions, Death, IT and the golem wait on their minds. Level placements (type 4) of ordinary strength
   stand where put, asleep at nought. Level tuning's enemy and generator
   columns are in `LevelTuning` (`enemyHealth`, `enemySpeedScale(gain)` and so
   on: what they take and deal is the level's own, speed, sight, rate and
@@ -1321,6 +1330,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   move's strike row names the id), as one line of the class's
   `<CLS>_TURBO` text with the announcer's line from the class's own bank,
   at a priority (60, 70) that takes the place of a lesson (50) already up.
+  Announcements wait in `LevelSoundscape`'s narrator queue (sndFxQueAddEx's:
+  sixteen lines at most, in turn): each asks `narrationRoom(maxWait)` and is
+  dropped whole when more than that is still to come (a help voice 0.5 s,
+  "<name> has" 4, a level gained 1, low health 1 or 0.5, lost level 3, the
+  rune count never). Game over, the countdown and scroll speech play at once.
 * Back from a realm the party stands at the tower's start marker among that
   realm's portals: `LevelWorld::towerMarkerOf` is the original's realm to
   marker table (town 7 -> 1, mountain 2 -> 2), not the realm id itself. There
@@ -1540,6 +1554,25 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   beside it (`Image::bleedIntoTransparent`) so cut-out edges filter into the
   texture's own colour rather than the black the console files hide behind
   alpha; re-run the unpack after changing the decoder.
+* Harmful surfaces: `world/HazardSurfaces` reads a harm from bits 0xF0000 of
+  a world object's flags with its parents' (0x2000000 without 0x8000000: never).
+  `touching` tests the walls a body is against (`WorldCollision::resolveWalls`
+  contacts), then the floor under it. Players take 5, 10 with knockback, or 15
+  with knockdown away from the wall, once a second (`PlayerRuntime::surfaceGap`,
+  PlayerMotion_FloorFX; the mines sound `S_MINECARPHIT`); enemies take
+  `enemyHarmOf` every update, Garm's brood excepted (EnemyWorldDamage). Critters
+  (CritterWorldDamage) are not hurt yet.
+* Shootable triggers (type 5, subtype 31, `LevelTrigger::shootable`) are also
+  missile, burst and item-attack targets (`PlayerAttacks::strikeTargets`, ids
+  from 7000, never aimed at); a hit that is not gas sets `shot`, and the next
+  update fires the trigger as though the party stood in it (ItemDamage).
+* Rotators (item type 12, `world/Rotators`, updated with the triggers): subtype 0
+  turns its object for ever at the record's radians a tick; subtype 2, a
+  `BRIDGEPAD`, starts when stepped on and turns its object through the record's
+  angle once (the I2/J3 turntables), `glm::rotate` about +y matching YawMat3. The
+  castle and mines sound the turn and the stop (fn_8009D7E4). Subtype 1 (a
+  multiplayer camera target) and pausing floor spinners during camera cuts are not
+  done.
 * Triggers: `game/world/LevelTriggers` reads the layout's trigger items (type
   5): the target object from the instance's first parameter word, the trigger
   flags from its second (0x40 = wants the realm the id names, the kind's
@@ -1880,6 +1913,9 @@ Audio previews immediately, persists on directional release or leaving Audio, an
 keeps a visible retryable error on failure; difficulty is sampled on the next level opening.
 Controls remains disabled and unimplemented; do not restore the discarded binding-capture
 screen. Gameplay bindings remain configurable through the settings file.
+Quit Level gives up what the level gave: every member leaves as it came in, keeping
+only its lessons and save slot (`PlayScene::abandonedParty`; retail's kill_player and
+PlayerRestoreState). Retail's tally and shop before the tower are not run on that path.
 Title Options and Pause share `MenuDefinition::parchment()`: precolored red parchment
 labels, purple focus glow, and no nonselectable Back/Select footer. Keep menu styling
 in this shared factory rather than constructing inconsistent screen-local defaults.

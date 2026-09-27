@@ -2,6 +2,7 @@
 #include <array>
 #include <format>
 
+#include "game/players/PickupVoices.h"
 #include "game/screens/PlayScene.h"
 
 namespace gdl::game {
@@ -44,8 +45,7 @@ void PlayScene::updatePromotion(s32 ticks, f32 seconds) {
         SoundHandle name = kNoSound;
         if (runtime.figure != nullptr) {
             name = m_audio.playFrom(runtime.figure->voice(),
-                                    std::format("S_{}{}2", colorCode(save.color),
-                                                classCode(save.character % kStartingClassCount)));
+                                    PickupVoices::nameOf(save.character, save.color));
         }
         m_promotionVoice = m_audio.playPromotion(entry->voice, name);
     }

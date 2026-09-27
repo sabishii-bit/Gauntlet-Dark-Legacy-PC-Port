@@ -335,7 +335,8 @@ std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above,
     return best;
 }
 
-Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top) const {
+Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,
+                                  std::vector<WallContact>* contacts) const {
     Vec3 out = centre;
     const f32 reach = radius * 2.0f;
     for (s32 pass = 0; pass < kPasses; ++pass) {
@@ -351,16 +352,24 @@ Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f3
                          wallNormal =
                              normalLength > kEpsilon ? wallNormal / normalLength : Vec2{1.0f, 0.0f};
                          for (const f32 fraction : kProbeFractions) {
-                             const Slice slice =
-                                 sliceAt(triangle, bottom + (top - bottom) * fraction);
+                             const f32 height = bottom + (top - bottom) * fraction;
+                             const Slice slice = sliceAt(triangle, height);
                              if (!slice.valid) {
                                  continue;
                              }
                              const Vec2 here{out.x, out.z};
-                             const Vec2 away = here - closestOnSegment(slice.a, slice.b, here);
+                             const Vec2 nearest = closestOnSegment(slice.a, slice.b, here);
+                             const Vec2 away = here - nearest;
                              const f32 distance = glm::length(away);
                              if (distance >= radius) {
                                  continue;
+                             }
+                             if (contacts != nullptr &&
+                                 std::ranges::none_of(*contacts, [&](const WallContact& seen) {
+                                     return seen.object == triangle.object;
+                                 })) {
+                                 contacts->push_back(WallContact{
+                                     triangle.object, Vec3{nearest.x, height, nearest.y}});
                              }
                              // Push straight away from the wall when in front of it, else out along
                              // its normal so a mover never ends up behind it.

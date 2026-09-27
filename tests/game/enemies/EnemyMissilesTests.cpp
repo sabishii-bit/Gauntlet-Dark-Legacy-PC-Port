@@ -339,10 +339,12 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     enemies.open(device, root, &collision, 13, scales, 5);
     REQUIRE(enemies.loadKind(13));
     EnemyMissiles missiles;
-    // The archer: placed at strength four, the archer's body and way, a second-tier's health.
+    // The archer: placed at strength four with the skirmisher's way, as the levels place
+    // them, the archer's body and a second-tier's health.
     EnemySpawn spawn;
     spawn.kind = 13;
     spawn.tier = kArcherStrength;
+    spawn.algorithm = kSkirmishWay;
     spawn.placed = true;
     spawn.position = Vec3{0.0f, 0.0f, 0.0f};
     spawn.idleTicks = 90;
@@ -378,8 +380,9 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     }
     REQUIRE(enemies.positionOf(*archer).z < -1.0f);
     REQUIRE(std::abs(enemies.yawOf(*archer)) < 0.5f);
-    // The bomber lobs.
+    // The bomber lobs; given no way, its strength gives it the lobber's.
     spawn.tier = kBomberStrength;
+    spawn.algorithm = 0;
     SECTION("stationary bomber") {}
     SECTION("retreating bomber uses the archer movement with bomb ammunition") {
         spawn.algorithm = kSkirmishBombWay;
@@ -403,7 +406,7 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     // The suicide: a first-tier body, a fuse, a run, and a blast of fifty at the level's
     // half, dead of it.
     spawn.tier = kSuicideStrength;
-    spawn.algorithm = -1;
+    spawn.algorithm = 0;
     spawn.position = Vec3{-30.0f, 0.0f, 0.0f};
     const auto suicide = enemies.spawn(spawn, {});
     REQUIRE(suicide.has_value());
@@ -420,6 +423,23 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(bursts[0].damage == 25.0f);
     REQUIRE(bursts[0].position.z > 5.0f); // it ran most of the way
     REQUIRE_FALSE(enemies.alive(*suicide));
+    // Shot down before it gets there, it goes up all the same, once (enemy_dies).
+    spawn.position = Vec3{30.0f, 0.0f, 0.0f};
+    const auto shot = enemies.spawn(spawn, {});
+    REQUIRE(shot.has_value());
+    EnemyHit slay;
+    slay.damage = 100.0f;
+    slay.player = 0;
+    enemies.hurt(*shot, slay);
+    bursts = enemies.takeBursts();
+    REQUIRE(bursts.size() == 1);
+    REQUIRE(bursts[0].enemy == *shot);
+    REQUIRE(bursts[0].damage == 25.0f);
+    enemies.hurt(*shot, slay);
+    for (s32 i = 0; i < 30; ++i) {
+        enemies.update(kTicks, kStep, near, {}, &missiles, 1.0f);
+    }
+    REQUIRE(enemies.takeBursts().empty());
 }
 
 TEST_CASE("invisibility does not make an enemy arrow pass through its victim",

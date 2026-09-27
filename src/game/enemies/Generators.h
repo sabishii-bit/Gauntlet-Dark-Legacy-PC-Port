@@ -86,6 +86,7 @@ public:
     f32 healthOf(s32 id) const;
     s32 kindOf(s32 id) const;
     s32 tierOf(s32 id) const;
+    s32 algorithmOf(s32 id) const;
     s32 mostOf(s32 id) const;
     s32 intervalOf(s32 id) const;
     s32 countdownOf(s32 id) const;

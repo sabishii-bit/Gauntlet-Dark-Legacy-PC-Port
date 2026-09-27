@@ -14,6 +14,7 @@ namespace {
 constexpr f32 kDrop = 6.0f;
 constexpr f32 kDeathFade = 1.0f;
 constexpr f32 kPushDecay = 0.8f;
+constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
 } // namespace
 void Combatant::clear() {
@@ -325,7 +326,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
     carryGrab(critter, players);
     updateAreas(critter, i, players);
-    critter.push *= std::pow(kPushDecay, static_cast<f32>(ticks));
+    critter.push *= std::pow(kPushDecay, seconds * kPushFrameRate);
     critter.push.y = std::max(critter.push.y - kGravity * seconds, 0.0f);
     if (glm::length(critter.push) < 0.01f) {
         critter.push = Vec3{0.0f, 0.0f, 0.0f};

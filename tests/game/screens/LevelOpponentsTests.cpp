@@ -74,7 +74,7 @@ TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled pr
     PlayerHealth::Events healthEvents;
     healthEvents.sound = [](std::string_view) {};
     healthEvents.cry = [](std::string_view) {};
-    healthEvents.named = [](std::string_view) {};
+    healthEvents.named = [](std::string_view, f32) {};
     usize contacts = 0;
     LevelOpponents::Events events;
     events.settleBlasts = [] {};
@@ -154,7 +154,7 @@ TEST_CASE("Hand of Death and Health Vamp return melee without player pain or kil
     PlayerHealth::Events healthEvents;
     healthEvents.sound = [](std::string_view) {};
     healthEvents.cry = [](std::string_view) {};
-    healthEvents.named = [](std::string_view) {};
+    healthEvents.named = [](std::string_view, f32) {};
     usize damageEvents = 0;
     usize rewards = 0;
     LevelOpponents::Events events;
@@ -238,7 +238,7 @@ TEST_CASE("enemy melee plays a dedicated impact on each contact including warded
     PlayerHealth::Events healthEvents;
     healthEvents.sound = [](std::string_view) { FAIL("The impact was already sounded"); };
     healthEvents.cry = [](std::string_view) { FAIL("Melee mode zero must not cry out"); };
-    healthEvents.named = [](std::string_view) {};
+    healthEvents.named = [](std::string_view, f32) {};
     usize contacts = 0;
     LevelOpponents::Events events;
     events.settleBlasts = [] {};

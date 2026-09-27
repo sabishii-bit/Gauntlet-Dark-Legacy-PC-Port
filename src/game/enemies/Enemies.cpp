@@ -21,6 +21,7 @@ constexpr f32 kFootClearance = 0.1f;
 constexpr f32 kSpawnDrop = 6.0f;       ///< a spawn finds its floor within this
 constexpr s32 kFarRecycleCost = 10000; ///< an unseen enemy is that much cheaper to reuse
 constexpr f32 kPushFloor = 0.01f;
+constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
 constexpr f32 kDeathSkinRate = 15.0f;
 
@@ -79,23 +80,6 @@ u32 octantMaskOf(s32 kind) {
     }
 }
 
-// The small kinds (scorpions, rats, snakes, spiders, maggots, wolves, dogs, acid, hands) go
-// about the way of their own, whatever a generator asks.
-bool smallKind(s32 kind) {
-    switch (kind) {
-    case 0:
-    case 3:
-    case 6:
-    case 9:
-    case 12:
-    case 15:
-    case 18:
-    case 21:
-    case 22: return true;
-    default: return false;
-    }
-}
-
 // Which way to turn round something at `to`: along the axis of the wider gap.
 s32 turnDirection(const Vec3& from, const Vec3& to) {
     if (std::abs(from.x - to.x) >= std::abs(from.z - to.z)) {
@@ -111,6 +95,42 @@ f32 flatDistance(const Vec3& a, const Vec3& b) {
 }
 
 } // namespace
+
+s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored) {
+    constexpr s32 kMostWay = 31;
+    constexpr s32 kUnsetWay = 0;
+    constexpr s32 kCast = 30;
+    constexpr s32 kCasterStrength = 3;
+    constexpr s32 kPatrolWay = 1;     ///< never run: taken as seeking
+    constexpr s32 kMilestoneWay = 10; ///< never run: taken as chasing
+    if (way < 0 || way > kMostWay) {
+        way = enemyKind(kind).algorithm;
+    }
+    // The kinds whose third tier casts: demons, sorcerers, plague, worms, warlocks.
+    const bool caster = kind == 2 || kind == 7 || kind == 14 || kind == 17 || kind == 24;
+    const bool medium = caster || kind == 1 || kind == 4 || kind == 5 || kind == 8 || kind == 10 ||
+                        kind == 11 || kind == 13 || kind == 16 || kind == 19 || kind == 20 ||
+                        kind == 25 || kind == 32 || kind == 33;
+    if (smallKind(kind)) {
+        if (way != kProwlWay && way != kMirroredProwlWay) {
+            way = mirrored ? kMirroredProwlWay : kProwlWay;
+        }
+    } else if (medium && way == kUnsetWay) {
+        switch (strength) {
+        case kCasterStrength: way = caster ? kCast : kChaseWay; break;
+        case kArcherStrength: way = kThrowWay; break;
+        case kBomberStrength: way = kBombWay; break;
+        case kSuicideStrength: way = kSuicideWay; break;
+        default: way = kChaseWay; break;
+        }
+    }
+    if (way == kPatrolWay) {
+        way = kSeekWay;
+    } else if (way == kMilestoneWay) {
+        way = kChaseWay;
+    }
+    return way;
+}
 
 Enemies::~Enemies() {
     close();
@@ -152,6 +172,7 @@ void Enemies::close() {
     m_deathEvents.clear();
     m_device = nullptr;
     m_collision = nullptr;
+    m_hazards = nullptr;
     m_frame = 0;
 }
 
@@ -365,19 +386,8 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
         enemy.tier = enemy.variant == kSuicideStrength ? 1 : 2;
     }
     enemy.idleTicks = spawn.idleTicks;
-    enemy.algorithm =
-        spawn.algorithm >= 0 && spawn.algorithm < 32 ? spawn.algorithm : kind.algorithm;
-    if (spawn.algorithm < 0 || spawn.algorithm == kind.algorithm) {
-        switch (enemy.variant) {
-        case kArcherStrength: enemy.algorithm = kSkirmishWay; break;
-        case kBomberStrength: enemy.algorithm = kBombWay; break;
-        case kSuicideStrength: enemy.algorithm = kSuicideWay; break;
-        default: break;
-        }
-    }
-    if (smallKind(spawn.kind) && enemy.algorithm != 2 && enemy.algorithm != 4) {
-        enemy.algorithm = 2;
-    }
+    const bool mirrored = smallKind(spawn.kind) && (m_random() & 1U) != 0;
+    enemy.algorithm = resolvedWayOf(spawn.kind, spawn.tier, spawn.algorithm, mirrored);
     enemy.generator = spawn.generator;
     enemy.radius = kind.radius;
     enemy.height = kind.height;
@@ -416,9 +426,12 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     const EnemyKind& kind = enemyKind(spawn.kind);
     initialise(enemy, spawn, kind);
     const TreeInfo* tree = treeOf(spawn.kind, enemy.tier);
-    if (enemy.variant != 0 &&
-        stock->variantTrees[static_cast<usize>(enemy.variant - kArcherStrength)] != nullptr) {
-        tree = stock->variantTrees[static_cast<usize>(enemy.variant - kArcherStrength)];
+    // A strength past the known variants (retail's unshipped F) keeps its tier's tree.
+    if (enemy.variant != 0) {
+        const auto v = static_cast<usize>(enemy.variant - kArcherStrength);
+        if (v < stock->variantTrees.size() && stock->variantTrees[v] != nullptr) {
+            tree = stock->variantTrees[v];
+        }
     }
     const bool walksIn = enemy.variant == 0 && (spawn.kind == 1 || spawn.kind == kGruntKind ||
                                                 spawn.kind == 10 || spawn.kind == 7);
@@ -573,7 +586,7 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             shoot(enemy, i, players, *missiles, missileSpeedScale);
         }
         // Knock-back dies away, and what was thrown up comes down.
-        enemy.push *= std::pow(kPushDecay, static_cast<f32>(ticks));
+        enemy.push *= std::pow(kPushDecay, seconds * kPushFrameRate);
         if (std::abs(enemy.push.x) < kPushFloor) {
             enemy.push.x = 0.0f;
         }
@@ -581,7 +594,32 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             enemy.push.z = 0.0f;
         }
         enemy.push.y = std::max(enemy.push.y - kGravity * seconds, 0.0f);
+        touchHazards(enemy, i);
     }
+}
+
+/** A burning floor or a roller hurts whatever enemy is against it or on it, every update
+ * it is (EnemyWorldDamage); Garm's own brood is spared. */
+void Enemies::touchHazards(Enemy& enemy, s32 slot) {
+    if (m_hazards == nullptr || m_collision == nullptr || enemy.state != State::Active ||
+        enemy.kind == kGarmBroodKind) {
+        return;
+    }
+    const auto touch =
+        m_hazards->touching(*m_collision, enemy.position, enemy.radius, enemy.height);
+    if (!touch) {
+        return;
+    }
+    const auto harm = HazardSurfaces::enemyHarmOf(m_hazards->flagsOf(touch->object));
+    if (!harm) {
+        return;
+    }
+    EnemyHit hit;
+    hit.damage = harm->damage;
+    hit.flags = harm->impact;
+    hit.direction = touch->away;
+    hit.where = enemy.position;
+    hurt(slot, hit);
 }
 
 void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
@@ -901,12 +939,7 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
         return;
     }
     if (intent.explode) {
-        // It goes up: a blast where it stood, and itself dead of it.
-        EnemyBurst burst;
-        burst.position = bodyCentre(enemy);
-        burst.damage = kSuicideDamage * m_scales.damage;
-        burst.enemy = slot;
-        m_bursts.push_back(burst);
+        // It goes up: dead of its own blast, which its death sets off.
         EnemyHit own;
         own.damage = 999.0f;
         own.player = -1;
@@ -1100,6 +1133,14 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
         enemy.killed = true;
         enemy.deathSkin = feedback.deathSkin();
         enemy.deathSkinFrames = feedback.deathSkinFrames();
+        // Whatever kills a suicide sets it off, a blast where it stood (enemy_dies).
+        if (enemy.algorithm == kSuicideWay) {
+            EnemyBurst burst;
+            burst.position = bodyCentre(enemy);
+            burst.damage = kSuicideDamage * m_scales.damage;
+            burst.enemy = id;
+            m_bursts.push_back(burst);
+        }
     }
     if (hit.player >= 0) {
         EnemyLoss loss;

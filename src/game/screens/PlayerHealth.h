@@ -1,6 +1,8 @@
 #pragma once
 #include <functional>
+#include <optional>
 #include <random>
+#include <span>
 #include <string_view>
 
 #include "engine/core/Types.h"
@@ -29,16 +31,29 @@ public:
         std::function<void(f32, f32)> block;
         std::function<void(std::string_view)> sound;
         std::function<void(std::string_view)> cry;
-        std::function<void(std::string_view)> named;
+        std::function<void(std::string_view, f32)> named; ///< a line after the name, its wait
     };
     void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed, bool inTower,
               f32 damageScale, const Events& events, const PlayerImpact& impact = {},
               bool bossEncounter = false, const ClassStats* stats = nullptr);
     static f32 guarded(const PlayerRuntime& runtime, f32 damage, bool directed);
 
+    static constexpr s32 kHeartbeatHealth = 200; ///< at or under this the heart is heard
+    static constexpr std::string_view kHeartbeatSound = "S_WARN";
+    /** A heartbeat to play: whose, and how loud (1 is the sound's own level). */
+    struct Heartbeat {
+        usize player = 0;
+        f32 volume = 1.0f;
+    };
+    /** do_weakening's warning for `ticks` more: the standing player with the least health, at
+     * two hundred or under, hears their heart beat faster and louder as it falls; never in the
+     * tower nor while invulnerable. */
+    static std::optional<Heartbeat> heartbeat(std::span<PlayerRuntime> players, s32 ticks,
+                                              bool inTower);
+
 private:
     void cryPain(const Events& events);
+    static void landBlow(PlayerRuntime& runtime, const Events& events);
     std::mt19937 m_painRandom{0x5A17u};
-    u32 m_lowHealthTurn = 0;
 };
 } // namespace gdl::game

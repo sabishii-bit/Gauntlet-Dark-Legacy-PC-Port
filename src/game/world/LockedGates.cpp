@@ -78,6 +78,11 @@ std::vector<GateEvent> LockedGates::update(s32 ticks, f32 seconds,
                 if (!gate.box.touchedBy(party[v].position, party[v].radius)) {
                     continue;
                 }
+                // Backing away from it neither spends a key nor is refused (ItemTouch).
+                const Vec3 toward = gate.figure.position() - party[v].position;
+                if (party[v].step.x * toward.x + party[v].step.z * toward.z < 0.0f) {
+                    continue;
+                }
                 GateEvent event{GateEvent::Kind::Unlocked, index, v, gate.figure.position()};
                 if (party[v].keys <= 0) {
                     if (gate.refusalLeft <= 0.0f) {

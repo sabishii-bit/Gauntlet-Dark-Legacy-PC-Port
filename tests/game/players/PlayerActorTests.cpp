@@ -109,6 +109,8 @@ TEST_CASE("an action that holds the feet still lets the body turn", "[game][play
     const f32 plain = actor.speed();
     actor.setPaceBonus(2.0f);
     REQUIRE(actor.speed() == Approx(plain + 2.0f));
+    actor.setPaceBonus(100.0f); // a speed powerup never takes it past the range's most
+    REQUIRE(actor.speed() == PlayerActor::kMaxSpeed);
     actor.setPaceBonus(0.0f);
     // Half its pace is half the ground.
     actor.update(MoveInput{Vec2{1.0f, 0.0f}, 1.0f}, 0.0f, 1.0f, nullptr, 0.5f);

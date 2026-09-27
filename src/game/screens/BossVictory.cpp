@@ -55,11 +55,14 @@ std::string BossVictory::runeVoiceOf(s32 kind, char realm, s32 quality) {
     if (kind >= kDemon) {
         return kind == kDemon ? "S_E2VOXB" : std::string{};
     }
-    // None found, some, the one (of one), both.
+    // None found, some, or all of them (the one or both). The first four realms' guardians
+    // say the same for some as for all; the last four have a line of their own for all
+    // (AudioGoodWizard's table).
+    constexpr s32 kFirstAllVoiceKind = 38;
     s32 which = 1;
     if (quality <= 0) {
         which = 0;
-    } else if (quality == 3) {
+    } else if (quality >= 2 && kind >= kFirstAllVoiceKind) {
         which = 2;
     }
     return std::format("S_RUNEVOX{}{}", which, realm);

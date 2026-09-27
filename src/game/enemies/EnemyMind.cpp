@@ -453,7 +453,8 @@ s32 MindSense::nearerSide() const {
 const EnemyMind& enemyMindOf(s32 algorithm) {
     switch (algorithm) {
     case kSeekWay: return kSeek;
-    case kProwlWay: return kProwl;
+    case kProwlWay:
+    case kMirroredProwlWay: return kProwl;
     case kChaseWay: return kChase;
     case kLoiterWay: return kLoiter;
     case kFleeWay: return kFlee;

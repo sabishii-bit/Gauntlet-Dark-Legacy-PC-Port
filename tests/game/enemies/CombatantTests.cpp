@@ -300,6 +300,11 @@ TEST_CASE("golem knockback resistance remains a family rule not a shared actor s
         if (readyInterrupt != 0) {
             REQUIRE(actor.moveName() == "KD");
             REQUIRE(actor.position().x == Approx((20.0f - definition.knockbackReduction) / 30));
+            // The push loses a fifth each 30 Hz frame (CritterTranslate), not each tick.
+            actor.update(2, 1.0f / 30, {});
+            actor.update(2, 1.0f / 30, {});
+            REQUIRE(actor.position().x ==
+                    Approx((20.0f - definition.knockbackReduction) / 30 * (1 + 0.8 + 0.64)));
         } else {
             REQUIRE(actor.moveName() == "READY");
             REQUIRE(actor.position().x == 0);

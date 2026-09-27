@@ -72,6 +72,21 @@ const EnemyKind& enemyKind(s32 kind) {
     return kKinds[static_cast<usize>(std::clamp(kind, 0, kEnemyKindCount - 1))];
 }
 
+bool smallKind(s32 kind) {
+    switch (kind) {
+    case 0:
+    case 3:
+    case 6:
+    case 9:
+    case 12:
+    case 15:
+    case 18:
+    case 21:
+    case 22: return true;
+    default: return false;
+    }
+}
+
 s32 levelKindOf(std::span<const LevelEnemy> roster, s32 named, s32 strength) {
     const auto ofClass = [&roster](s32 subtype) -> std::optional<s32> {
         for (const LevelEnemy& enemy : roster) {

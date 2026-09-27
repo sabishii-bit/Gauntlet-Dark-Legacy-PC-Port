@@ -163,6 +163,10 @@ add_library(game STATIC
     world/AmbientSounds.cpp
     world/LevelTriggers.h
     world/LevelTriggers.cpp
+    world/HazardSurfaces.h
+    world/HazardSurfaces.cpp
+    world/Rotators.h
+    world/Rotators.cpp
     menu/ScrollBox.h
     menu/ScrollBox.cpp
     menu/MenuInput.h

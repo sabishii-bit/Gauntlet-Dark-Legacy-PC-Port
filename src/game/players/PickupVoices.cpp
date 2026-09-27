@@ -5,6 +5,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/ClassData.h"
+#include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
 
@@ -43,6 +44,15 @@ PickupVoice PickupVoices::foodChoice(s32 character, std::string_view name, bool 
         return {std::format("S_ARCEAT{}", food)};
     }
     return {std::format("S_{}EAT", code)};
+}
+
+std::string PickupVoices::nameOf(s32 character, s32 color) {
+    const s32 named = character < kSumnerClass ? character : character % kStartingClassCount;
+    return std::format("S_{}{}2", colorCode(color), classCode(named));
+}
+
+bool PickupVoices::carriesPojo(const CharacterSave& save) {
+    return (PowerupEffects::of(save.progress().inventory).special & powerup::kPojo) != 0;
 }
 
 std::string PickupVoices::bonusGold(s32 player, s32 amount) {

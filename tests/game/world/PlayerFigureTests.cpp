@@ -78,6 +78,35 @@ TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
     CHECK(device.draws.empty());
 }
 
+TEST_CASE("Every headwear powerup names an object of the powerups archive",
+          "[game][figure][headwear][unpacked]") {
+    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+    test::unpackedOrSkip("PLAYERS/JES/YEL/animations.json");
+    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    CharacterSave save;
+    save.character = 7;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
+    struct Worn {
+        u32 special;
+        u32 armor;
+    };
+    for (const Worn wear : {Worn{powerup::kSkorneHorns, 0}, Worn{powerup::kSkorneMask, 0},
+                            Worn{0, 0x80000U}, Worn{0, 0x2000U}, Worn{powerup::kXRay, 0}}) {
+        CAPTURE(wear.special, wear.armor);
+        PowerupEffects worn;
+        worn.special = wear.special;
+        worn.armor = wear.armor;
+        device.draws.clear();
+        figure->drawHeadwear(device, powerups, worn, Mat4{1}, body, {}, 1);
+        CHECK_FALSE(device.draws.empty());
+    }
+}
+
 TEST_CASE("Jester throws face the camera and his permanent familiar fires once per release",
           "[game][world][figure][unpacked]") {
     const auto root = test::unpackedOrSkip("PLAYERS/JES/SFXGRE/animations.json")

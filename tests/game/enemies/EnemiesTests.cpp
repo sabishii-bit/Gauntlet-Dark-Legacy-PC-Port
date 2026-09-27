@@ -6,6 +6,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
@@ -13,6 +14,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/enemies/Enemies.h"
+#include "game/world/HazardSurfaces.h"
 
 namespace {
 
@@ -222,8 +224,15 @@ TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its
     enemies.update(kTicks, kStep, party);
     REQUIRE(enemies.animatorOf(*id)->action() == EnemyAction::HitReact2);
     REQUIRE(enemies.pushCountOf(*id) == 1);
+    // Thrown down, it slides a fifth less each 30 Hz frame than the one before (do_enemies).
+    std::vector<f32> slides;
     for (s32 i = 0; i < 10; ++i) {
+        const f32 z = enemies.positionOf(*id).z;
         enemies.update(kTicks, kStep, party);
+        slides.push_back(z - enemies.positionOf(*id).z);
+    }
+    for (usize i = 1; i < 4; ++i) {
+        CHECK(slides[i + 1] / slides[i] == Approx(0.8f).margin(0.001f));
     }
     REQUIRE(enemies.positionOf(*id).z < before.z - 0.5f);
     // A character over the level the place is meant for hits a tenth harder a level.
@@ -445,7 +454,9 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     rat.position = Vec3{0.0f, 0.0f, 0.0f};
     const auto vermin = bred.spawn(rat, {});
     REQUIRE(vermin.has_value());
-    REQUIRE(bred.algorithmOf(*vermin) == 2);
+    const s32 prowl = bred.algorithmOf(*vermin);
+    REQUIRE((prowl == kProwlWay || prowl == kMirroredProwlWay));
+    REQUIRE(enemyMindOf(prowl).name() == "prowl");
     const std::vector<EnemyView> near{playerAt(Vec3{0.0f, 0.0f, 5.0f})};
     for (s32 i = 0; i < 20; ++i) {
         bred.update(kTicks, kStep, near);
@@ -675,5 +686,86 @@ TEST_CASE("an item that cancels a walking step reports a blocked body to its min
     CHECK(enemies.positionOf(*id) == spawn.position);
     CHECK(enemies.bumpedWallOf(*id));
     CHECK(enemies.blockedOf(*id));
+}
+
+TEST_CASE("an enemy on a burning floor is burned every update it stands there",
+          "[game][enemies][hazards][unpacked]") {
+    const auto dir = test::scratchDirectory("enemy-hazard-floor");
+    writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": 65540, "next": -1,
+               "child": -1}],
+  "animations": [], "particles": [], "locators": [], "itemInfos": [], "itemInstances": []
+})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    HazardSurfaces hazards;
+    hazards.bind(layout);
+    const Vec3 up{0.0f, 1.0f, 0.0f};
+    const std::vector<CollisionTriangle> floor{
+        triangle({-40, 0, -40}, {40, 0, 40}, {40, 0, -40}, up),
+        triangle({-40, 0, -40}, {-40, 0, 40}, {40, 0, 40}, up)};
+    WorldCollision collision;
+    collision.build(floor);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 13, EnemyScales{}, 1);
+    enemies.setHazards(&hazards);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.tier = 3;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    const f32 whole = enemies.healthOf(*id);
+    enemies.update(kTicks, kStep, {});
+    const f32 once = enemies.healthOf(*id);
+    REQUIRE(once < whole);
+    enemies.update(kTicks, kStep, {});
+    CHECK(enemies.healthOf(*id) == Approx(once - (whole - once)));
+    CHECK(enemies.takeLosses().empty()); // the world's harm is worth nothing to anyone
+    enemies.close();
+}
+
+TEST_CASE("a way of nought is filled in by kind and strength as the original does",
+          "[game][enemies]") {
+    constexpr s32 kDemonKind = 2;
+    // Unset: the medium kinds chase, the strength-three casters cast, the variants throw,
+    // lob and run at the party.
+    CHECK(resolvedWayOf(kGruntKind, 1, 0, false) == 7);
+    CHECK(resolvedWayOf(kGruntKind, 3, 0, false) == 7);
+    CHECK(resolvedWayOf(kDemonKind, 3, 0, false) == 30);
+    CHECK(resolvedWayOf(kDemonKind, 2, 0, false) == 7);
+    CHECK(resolvedWayOf(kGruntKind, kArcherStrength, 0, false) == kThrowWay);
+    CHECK(resolvedWayOf(kGruntKind, kBomberStrength, 0, false) == kBombWay);
+    CHECK(resolvedWayOf(kGruntKind, kSuicideStrength, 0, false) == kSuicideWay);
+    // A way given stands; one out of range is the kind's own, not the variant's.
+    CHECK(resolvedWayOf(kGruntKind, kArcherStrength, kSkirmishWay, false) == kSkirmishWay);
+    CHECK(resolvedWayOf(kGruntKind, kArcherStrength, -1, false) == 7);
+    CHECK(resolvedWayOf(kDeathKind, 1, -1, false) == 3);
+    // The small kinds prowl one way or the other, unless told which.
+    CHECK(resolvedWayOf(kRatKind, 1, 7, false) == 2);
+    CHECK(resolvedWayOf(kRatKind, 1, 0, true) == 4);
+    CHECK(resolvedWayOf(kRatKind, 1, 4, false) == 4);
+    // Ways one and ten are nought and seven.
+    CHECK(resolvedWayOf(kGruntKind, 1, 1, false) == 0);
+    CHECK(resolvedWayOf(kGruntKind, 1, 10, false) == 7);
+}
+
+TEST_CASE("a placement past the known variants keeps its tier's body",
+          "[game][enemies][unpacked]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 13, EnemyScales{}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.tier = kSuicideStrength + 1; // retail's F, which no archive ships
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    CHECK(enemies.variantOf(*id) == kSuicideStrength + 1);
+    REQUIRE(enemies.animatorOf(*id) != nullptr);
+    CHECK(enemies.animatorOf(*id)->has(EnemyAction::Walk));
 }
 } // namespace

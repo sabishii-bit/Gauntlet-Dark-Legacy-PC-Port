@@ -78,6 +78,8 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         }
         trigger.id = instance.params[6];
         trigger.nextId = instance.params[7];
+        trigger.shootable = info.subtype == LevelTrigger::kShootableSubtype;
+        trigger.height = info.height;
         // The slot is a signed byte in the data: 255 (and anything high) means none.
         const u8 slot = instance.params[5];
         trigger.sound = slot >= 0x80 ? -1 : static_cast<s32>(slot);
@@ -244,7 +246,7 @@ f32 LevelTriggers::alphaOf(s32 object) const {
     return target != nullptr ? target->alpha : 1.0f;
 }
 
-/** Crystal requirements apply to the party; a complete gargoyle collection can be shared. */
+/** One member meeting a crystal or gargoyle requirement opens it for the whole party. */
 bool LevelTriggers::qualifies(const LevelTrigger& trigger,
                               std::span<const TriggerVisitor> visitors) {
     if (visitors.empty()) {
@@ -261,13 +263,16 @@ bool LevelTriggers::qualifies(const LevelTrigger& trigger,
     if (!trigger.needsCrystals()) {
         return true;
     }
-    const s32 needed = crystalsNeeded(trigger.id);
-    const auto realm = static_cast<usize>(trigger.id);
-    if (realm >= kRealmCount) {
+    return std::ranges::any_of(
+        visitors, [&](const TriggerVisitor& visitor) { return crystalsMet(visitor, trigger.id); });
+}
+
+bool LevelTriggers::crystalsMet(const TriggerVisitor& visitor, s32 realm) {
+    if (realm < 0 || static_cast<usize>(realm) >= kRealmCount) {
         return false;
     }
-    return std::ranges::all_of(
-        visitors, [&](const TriggerVisitor& visitor) { return visitor.crystals[realm] >= needed; });
+    const s32 crystals = visitor.crystals[static_cast<usize>(realm)];
+    return visitor.sumner || crystals < 0 || crystals >= crystalsNeeded(realm);
 }
 
 bool LevelTriggers::openTarget(Target& target, bool open, bool atOnce, WorldAnimator& animator,
@@ -382,6 +387,12 @@ bool LevelTriggers::visited(const LevelTrigger& trigger, f32 radius,
                : std::ranges::any_of(visitors, inRange);
 }
 
+void LevelTriggers::shoot(usize index) {
+    if (index < m_triggers.size() && m_triggers[index].shootable) {
+        m_triggers[index].shot = true;
+    }
+}
+
 void LevelTriggers::openMet(std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                             WorldScene& scene, WorldCollision* collision) {
     for (usize i = 0; i < m_triggers.size(); ++i) {
@@ -415,6 +426,14 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
             trigger.refusalCooldown = std::max(trigger.refusalCooldown - seconds, 0.0f);
         }
         trigger.toggleCooldown = std::max(trigger.toggleCooldown - seconds, 0.0f);
+        // Shot, it goes off whether it heads a chain or follows one.
+        if (trigger.shot) {
+            trigger.shot = false;
+            if ((trigger.flags & LevelTrigger::kRequirement) == 0 || qualifies(trigger, visitors)) {
+                fire(i, true, false, animator, scene, collision);
+                continue;
+            }
+        }
         if (trigger.chained) {
             continue;
         }

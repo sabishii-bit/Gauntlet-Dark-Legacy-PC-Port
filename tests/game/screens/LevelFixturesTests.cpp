@@ -32,7 +32,11 @@ struct Fixture {
                 REQUIRE(directed);
                 calls.push_back("player" + std::to_string(i));
             },
-        .help = [](s32, usize) { FAIL("Empty scenery has no help event"); },
+        .help =
+            [](s32, usize) {
+                FAIL("Empty scenery has no help event");
+                return false;
+            },
         .card = [](s32, std::string_view) { FAIL("Empty scenery has no pickup card"); },
         .opponents =
             [this](const Vec3&, f32 radius, f32 damage) {
@@ -40,7 +44,8 @@ struct Fixture {
                 REQUIRE(damage == 5);
                 calls.emplace_back("opponents");
             },
-        .releaseEnemy = {}};
+        .releaseEnemy = {},
+        .shatterPotion = {}};
     Fixture() {
         fixtures.bind({device, world, weapons, effects, audio, 1});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
@@ -85,6 +90,7 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
         CHECK(id == HelpMessages::kBlastsDestroy);
         CHECK(player == 0);
         ++helpCount;
+        return true;
     };
     f.events.opponents = [](const Vec3&, f32, f32) {};
     const auto party = std::span{f.players}.first(1);
@@ -374,6 +380,7 @@ TEST_CASE("breaking a gas barrel spoils nearby food and announces it only on a c
         CHECK(id == HelpMessages::kGasSpoils);
         CHECK(player == 0);
         ++announcements;
+        return true;
     };
     const auto party = std::span{f.players}.first(1);
     f.fixtures.strikeBarrel(barrel, 10000, -1, {}, f.events);
@@ -406,7 +413,7 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     f.fixtures.setPlayerCount(1);
-    f.events.help = [](s32, usize) {};
+    f.events.help = [](s32, usize) { return true; };
     f.events.card = [](s32, std::string_view) {};
     usize index = 0;
     while (index < f.fixtures.chests().size()) {
@@ -497,7 +504,7 @@ TEST_CASE("Temple entrance preserves keys and X-Ray reveals its actual container
     REQUIRE(f.world.load(f.device, root, *level));
     f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
     f.fixtures.setPlayerCount(1);
-    f.events.help = [](s32, usize) {};
+    f.events.help = [](s32, usize) { return true; };
     auto& inventory = f.players[0].actor.save().progress().inventory;
     inventory.keys = 1;
     inventory.addPowerup(9, 2, 0, 60);
@@ -554,6 +561,82 @@ TEST_CASE("Temple entrance preserves keys and X-Ray reveals its actual container
         CHECK(checked == std::array<bool, 3>{true, true, true});
     }
     f.fixtures.clear();
+}
+
+TEST_CASE("a keyless touch of a silver chest falls back to its own hint",
+          "[game][items][level-fixtures][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELA6/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("A6");
+    REQUIRE(level);
+    for (const bool lessonShown : {true, false}) {
+        CAPTURE(lessonShown);
+        Fixture f;
+        f.fixtures.clear();
+        REQUIRE(f.world.load(f.device, root, *level));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+        const Chests& chests = f.fixtures.chests();
+        usize silver = chests.size();
+        for (usize i = 0; i < chests.size(); ++i) {
+            if (chests.chest(i).subtype == Chests::kRandomChest && chests.chest(i).locked) {
+                silver = i;
+            }
+        }
+        REQUIRE(silver < chests.size());
+        f.players[0].actor.spawn(0, {}, nullptr, chests.chest(silver).figure.position(), 0);
+        f.players[1].life = PlayerLife::InTower;
+        std::vector<s32> posted;
+        LevelFixtures::Events events = f.events;
+        events.help = [&](s32 id, usize) {
+            posted.push_back(id);
+            return id != HelpMessages::kChestNeedsKey || lessonShown;
+        };
+        for (s32 i = 0; i < 5 && posted.empty(); ++i) {
+            f.fixtures.update(2, 1.0f / 30, f.players, events);
+        }
+        if (lessonShown) {
+            CHECK(posted == std::vector<s32>{HelpMessages::kChestNeedsKey});
+        } else {
+            CHECK(posted ==
+                  std::vector<s32>{HelpMessages::kChestNeedsKey, HelpMessages::kRandomChest});
+        }
+        f.fixtures.clear();
+    }
+}
+
+TEST_CASE("traps pass under a levitating character", "[game][items][level-fixtures][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    for (const bool levitating : {false, true}) {
+        CAPTURE(levitating);
+        Fixture f;
+        f.fixtures.clear();
+        REQUIRE(f.world.load(f.device, root, *level));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+        REQUIRE(f.fixtures.traps().size() > 0);
+        const Vec3 spot = f.fixtures.traps().trap(0).figure.position();
+        f.players[0].actor.spawn(0, {}, nullptr, spot, 0);
+        f.players[1].life = PlayerLife::InTower;
+        if (levitating) {
+            f.players[0].actor.save().progress().inventory.addPowerup(powerup::kSpecial,
+                                                                      powerup::kLevitation, 0, 600);
+        }
+        s32 hurts = 0;
+        LevelFixtures::Events events = f.events;
+        events.hurt = [&hurts](usize, f32, HurtKind, bool) { ++hurts; };
+        events.help = [](s32, usize) { return true; };
+        for (s32 i = 0; i < 600; ++i) {
+            f.fixtures.update(2, 1.0f / 30, f.players, events);
+        }
+        CHECK((hurts > 0) != levitating);
+        f.fixtures.clear();
+    }
 }
 
 TEST_CASE("armor items prevent fixture knockdown before the health callback",

@@ -77,6 +77,14 @@ TEST_CASE("displayed stats grow with the level and the saved bonuses", "[game][p
     huge.fightAdd = 5000.0f;
     REQUIRE(displayStats(warrior, 99, huge).strength() == kMaxStat);
 
+    // Growth stops at the class's most; what was bought still goes on top (PlayerUpdateAtts).
+    warrior.fightMax = 650.0f;
+    warrior.magicMax = 500.0f;
+    REQUIRE(displayStats(warrior, 99, ClassProgress{}).strength() == 650);
+    REQUIRE(displayStats(warrior, 99, ClassProgress{}).magic() == 500);
+    REQUIRE(displayStats(warrior, 99, progress).magic() == 520);
+    REQUIRE(displayStats(warrior, 3, ClassProgress{}).strength() == 610); // not yet reached
+
     const StatBlock master = masteryStats();
     REQUIRE(master.magic() == kMaxStat);
     REQUIRE(master.best() == 0);

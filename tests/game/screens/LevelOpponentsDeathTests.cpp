@@ -36,7 +36,7 @@ TEST_CASE("Death drains bypass armor without bypassing invulnerability or normal
         ++deaths;
     };
     events.cry = [](std::string_view cry) { CHECK(cry == "DIE2"); };
-    events.named = [](std::string_view) {};
+    events.named = [](std::string_view, f32) {};
     ClassStats stats;
     stats.armorMin = 999;
     stats.armorMax = 999;
@@ -93,7 +93,7 @@ void verifyDeathTransfers(s32 tier, bool realAssets) {
     PlayerHealth::Events healthEvents;
     healthEvents.sound = [](std::string_view) {};
     healthEvents.cry = [](std::string_view) {};
-    healthEvents.named = [](std::string_view) {};
+    healthEvents.named = [](std::string_view, f32) {};
     LevelOpponents::Events events;
     events.settleBlasts = [] {};
     events.advanceLegend = [](f32) {};

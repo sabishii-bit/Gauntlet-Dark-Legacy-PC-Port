@@ -171,6 +171,8 @@ add_executable(tests
     game/world/MoveStrikesTests.cpp
     game/screens/HelpMessagesTests.cpp
     game/world/LevelTriggersTests.cpp
+    game/world/HazardSurfacesTests.cpp
+    game/world/RotatorsTests.cpp
     game/world/TowerCameraTests.cpp
     game/world/BossCameraTests.cpp
     game/world/StartCameraTests.cpp

@@ -77,7 +77,7 @@ void PlayerAttacks::updateItems(f32 seconds, std::span<PlayerRuntime> players,
         const auto& player = players[area.actor];
         const Mat4 parent = attachmentOf(player, area.attack.head);
         m_resources->effects.placeAt(area.effect, parent);
-        for (const auto& target : projectileTargets(targets)) {
+        for (const auto& target : strikeTargets(targets)) {
             if (std::ranges::find(area.hit, target.id) == area.hit.end() &&
                 area.attack.reaches(parent, target, area.elapsed, area.lifetime)) {
                 area.hit.push_back(target.id);
@@ -100,6 +100,9 @@ void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 fl
                                  const PlayerActor& owner, std::span<PlayerRuntime> players,
                                  const Targets& targets) {
     const Vec3 direction = target.base - owner.position();
+    if (strikeSwitch(target.id, flags)) {
+        return;
+    }
     if (target.id >= kWallTargetBase) {
         targets.fixtures.strikeWall(static_cast<usize>(target.id - kWallTargetBase), damage, flags);
     } else if (target.id >= kSafeRockTargetBase) {

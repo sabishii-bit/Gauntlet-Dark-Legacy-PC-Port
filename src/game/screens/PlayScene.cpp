@@ -1,6 +1,7 @@
 #include "game/screens/PlayScene.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <exception>
@@ -12,7 +13,9 @@
 #include "engine/world/WorldCamera.h"
 
 #include "game/menu/CompassHud.h"
+#include "game/players/ClassData.h"
 #include "game/players/ItemPickup.h"
+#include "game/players/PickupVoices.h"
 #include "game/players/Progression.h"
 #include "game/screens/PlayerPowerups.h"
 #include "game/world/CameraMovementLimit.h"
@@ -37,7 +40,9 @@ constexpr std::string_view kClassDataDirectory = "pdata";
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
 constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
-constexpr std::string_view kRuneVoicePrefix = "S_RUNE";    ///< then S_RUNE2 to S_RUNE12
+constexpr std::string_view kRuneVoicePrefix = "S_RUNE"; ///< then S_RUNE2 to S_RUNE12
+constexpr std::string_view kRunesFoundVoice = "S_RUNEFOUND2";
+constexpr s32 kMostRunesCounted = 12;
 constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
 constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
 constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
@@ -486,7 +491,7 @@ LevelFixtures::Events PlayScene::fixtureEvents() {
     return {
         .hurt = [this](usize i, f32 damage, HurtKind kind,
                        bool directed) { hurt(i, damage, kind, directed); },
-        .help = [this](s32 id, usize i) { postHelp(id, i); },
+        .help = [this](s32 id, usize i) { return postHelp(id, i); },
         .card = [this](s32 player,
                        std::string_view name) { m_hud.pickups().addCard(player, name); },
         .opponents = [this](const Vec3& position, f32 radius,
@@ -634,23 +639,51 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
                                 f32 left) { m_attacks.showBlock(index, taken, left, m_players); },
          .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
          .cry = [this, index](std::string_view voice) { m_attacks.cry(index, voice, m_players); },
-         .named = [this, index](std::string_view line) { sayWithName(index, line); }},
+         .named = [this, index](std::string_view line,
+                                f32 wait) { sayWithName(index, line, wait); }},
         impact, level != nullptr && level->bossType >= 0,
         m_classes.stats(m_players[index].actor.save().character));
 }
 
+/** Burning floors, rollers and carts hurt whoever is against or on them, at most once a
+ * second each (PlayerMotion_FloorFX); the heaviest jolt the mines' carts sound. */
+void PlayScene::updateHazardSurfaces(f32 seconds) {
+    constexpr f32 kSurfaceGap = 1.0f;
+    constexpr s32 kMineRealm = 9;
+    constexpr std::string_view kMineCartSound = "S_MINECARPHIT"; ///< AudioWorldHitPlyr's
+    for (usize i = 0; i < m_players.size(); ++i) {
+        PlayerRuntime& runtime = m_players[i];
+        runtime.surfaceGap = std::max(runtime.surfaceGap - seconds, 0.0f);
+        if (runtime.life != PlayerLife::Standing || runtime.capture.held() ||
+            runtime.surfaceGap > 0.0f) {
+            continue;
+        }
+        const PlayerActor& actor = runtime.actor;
+        const auto touch = m_world->hazards().touching(m_world->collision(), actor.position(),
+                                                       actor.radius(), actor.height());
+        if (!touch) {
+            continue;
+        }
+        runtime.surfaceGap = kSurfaceGap;
+        if (touch->harm.jolts && m_world->ref().realmId == kMineRealm) {
+            m_audio.playNamed(kMineCartSound);
+        }
+        hurt(i, touch->harm.damage, HurtKind::Blow, true,
+             PlayerImpact{touch->harm.impact, touch->away});
+    }
+}
+
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says
  * `line` after: what the original's announcements by name do. */
-void PlayScene::sayWithName(usize index, std::string_view line) {
+void PlayScene::sayWithName(usize index, std::string_view line, f32 wait) {
     PlayerFigure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
     if (body == nullptr || m_context.sounds == nullptr) {
         return;
     }
     const CharacterSave& save = m_players[index].actor.save();
-    const std::string name = std::format("S_{}{}2", colorCode(save.color),
-                                         classCode(save.character % kStartingClassCount));
-    const SoundHandle spoken = m_audio.playFrom(body->voice(), name);
-    m_audio.narrate(line, LevelSoundscape::Narrator::Either, spoken);
+    const std::array lines{line};
+    m_audio.announce(body->voice(), PickupVoices::nameOf(save.character, save.color),
+                     PickupVoices::carriesPojo(save), lines, wait);
 }
 
 /** The whole party has gone through a portal: where to? Its own level when that is unpacked;
@@ -704,6 +737,22 @@ std::vector<PartyMember> PlayScene::party() const {
         member.save.helpSeen = runtime.actor.save().helpSeen;
         member.helpHeard = runtime.helpHeard;
         members.push_back(std::move(member));
+    }
+    return members;
+}
+
+std::vector<PartyMember> PlayScene::abandonedParty(std::span<const PartyMember> party) const {
+    std::vector<PartyMember> members(party.begin(), party.end());
+    for (PartyMember& member : members) {
+        for (const PlayerRuntime& runtime : m_players) {
+            if (runtime.actor.player() != member.player) {
+                continue;
+            }
+            std::vector<s32> taught = std::move(member.save.helpSeen);
+            member.save = runtime.entrySave;
+            member.save.helpSeen = std::move(taught);
+            member.fallen = false;
+        }
     }
     return members;
 }
@@ -812,13 +861,19 @@ void PlayScene::shareRune(s32 rune) {
         relics.addRune(rune);
         held |= relics.runes;
     }
-    const s32 count = std::popcount(held);
-    if (count <= 0) {
-        return;
+    for (const std::string& voice : runeCountVoices(std::popcount(held))) {
+        m_audio.queueNarration(voice, LevelSoundscape::Narrator::Primary);
     }
-    const std::string voice =
-        count == 1 ? std::string(kFirstRuneVoice) : std::format("{}{}", kRuneVoicePrefix, count);
-    m_audio.narrate(voice, LevelSoundscape::Narrator::Primary);
+}
+
+std::vector<std::string> PlayScene::runeCountVoices(s32 count) {
+    if (count <= 0 || count > kMostRunesCounted) {
+        return {};
+    }
+    if (count == 1) {
+        return {std::string(kFirstRuneVoice)};
+    }
+    return {std::format("{}{}", kRuneVoicePrefix, count), std::string(kRunesFoundVoice)};
 }
 
 /** The first of the party standing in the spot before Sumner, or null. */
@@ -996,6 +1051,11 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     const auto ticks =
         std::clamp(static_cast<s32>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
     const f32 seconds = static_cast<f32>(ticks) / tickRate;
+    m_audio.updateNarration(seconds);
+    // Once the good wizard appears the announcer keeps quiet (good_wiz_state past two).
+    const BossVictory::Stage victory = m_bossSequence.victory().state().stage();
+    m_audio.holdNarration(victory != BossVictory::Stage::None &&
+                          victory != BossVictory::Stage::Waiting);
     if (m_gameOver.active()) {
         // The world remains behind the caption, but no player input, portal,
         // reward or victory ceremony can restart the finished session.
@@ -1208,6 +1268,12 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_shake.update(ticks);
     m_hud.help().update(ticks);
     updateFixtures(ticks, seconds);
+    if (!held) {
+        updateHazardSurfaces(seconds);
+        if (const auto beat = PlayerHealth::heartbeat(m_players, ticks, m_world->isTower())) {
+            m_audio.playNamed(PlayerHealth::kHeartbeatSound, beat->volume);
+        }
+    }
     updateEnemies(ticks, seconds);
     m_attacks.updateProjectiles(seconds, m_players, attackTargets());
     m_attacks.updateStrikes(seconds, m_players, attackTargets());
@@ -1321,6 +1387,7 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
         visitor.radius = actor.radius();
         visitor.crystals = actor.save().progress().crystals;
         visitor.gargoylePieces = actor.save().progress().relics.gargoylePieces;
+        visitor.sumner = actor.save().character == kSumnerClass;
         if (const auto floor = m_world->collision().floorAt(visitor.position, 0.5f, 1.0f)) {
             visitor.floorObject = floor->object;
         }
@@ -1532,7 +1599,39 @@ void PlayScene::announceUnlock(s32 realm) {
 
 /** Tells a refused party what a gate wants; a target opening before them (a gate's field, a
  * lift, a gate) sounds its slot's note until it is done, then the note of its end. */
+/** A turntable grinds as it turns and thuds as it stops (fn_8009D7E4): stone in the castle,
+ * metal in the mines, nothing elsewhere. */
+void PlayScene::handleRotatorCues() {
+    constexpr s32 kCastleRealm = 1;
+    constexpr s32 kMineRealm = 9;
+    const s32 realm = m_world->ref().realmId;
+    std::string_view turning;
+    std::string_view stopping;
+    if (realm == kCastleRealm) {
+        turning = "S_ROCKROTATE";
+        stopping = "S_ROCKSTOP";
+    } else if (realm == kMineRealm) {
+        turning = "S_METLROTATE";
+        stopping = "S_METLROTATESTO";
+    }
+    for (const RotatorCue& cue : m_world->takeRotatorCues()) {
+        if (turning.empty() || m_context.sounds == nullptr) {
+            continue;
+        }
+        if (cue.kind == RotatorCue::Kind::Turning) {
+            if (!m_context.sounds->isPlaying(m_rotatorSound)) {
+                m_rotatorSound = m_audio.playNamed(turning);
+            }
+        } else {
+            m_audio.stop(m_rotatorSound);
+            m_rotatorSound = kNoSound;
+            m_audio.playNamed(stopping);
+        }
+    }
+}
+
 void PlayScene::handleTriggerEvents() {
+    handleRotatorCues();
     // One scroll at a time: the frame's first refusal.
     if (const std::vector<TriggerRefusal> refusals = m_world->takeTriggerRefusals();
         !refusals.empty()) {

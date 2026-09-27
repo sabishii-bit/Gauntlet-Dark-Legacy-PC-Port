@@ -1,3 +1,4 @@
+#include "game/screens/HelpMessages.h"
 #include "game/screens/PlayScene.h"
 
 namespace gdl::game {
@@ -21,7 +22,7 @@ void PlayScene::updateTransporters(s32 ticks, f32 seconds, bool held) {
                 if (const auto floor = m_world->collision().floorAt(*destination, 4.0f, 10.0f)) {
                     destination->y = floor->y + PlayerActor::kFootClearance;
                     actor.place(*destination);
-                    postHelp(9, i);
+                    postHelp(HelpMessages::kTransporter, i);
                 } else {
                     // A failed landing must not repeatedly retrigger while standing here.
                     transport.cancel();

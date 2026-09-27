@@ -704,6 +704,8 @@
   "help.fullofkeys.1": "YOUR KEY RING IS FULL",
   "help.collectmagicfirst.1": "COLLECT POTION",
   "help.collectmagicfirst.2": "BEFORE USING MAGIC",
+  "help.transportersmoveyou.1": "TRANSPORTERS MOVE YOU",
+  "help.transportersmoveyou.2": "TO ANOTHER TRANSPORTER",
   "help.avoidobjects.1": "AVOID DANGEROUS OBJECTS",
   "help.randomchest.1": "SILVER CHESTS CONTAIN",
   "help.randomchest.2": "RANDOM ITEMS",

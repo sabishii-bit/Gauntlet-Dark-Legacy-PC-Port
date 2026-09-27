@@ -1,14 +1,15 @@
 #include "game/screens/PartyHud.h"
 
 #include <algorithm>
+#include <array>
 #include <exception>
-#include <format>
+#include <span>
 
 #include "engine/core/Types.h"
 
 #include "game/menu/OptionMenu.h"
 #include "game/menu/ScrollBox.h"
-#include "game/players/PowerupEffects.h"
+#include "game/players/PickupVoices.h"
 #include "game/players/Progression.h"
 namespace gdl::game {
 namespace {
@@ -66,29 +67,29 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
     }
     {
         // A turbo attack's name is called from the character's own class's bank; the
-        // narrator's lines are in either of its banks.
-        if (spec->classVoice && index < players.size() && players[index].figure != nullptr) {
-            audio.playFrom(players[index].figure->voice(), spec->voice);
-        } else if (spec->commonVoice) {
+        // narrator's lines are in either of its banks. Both wait in the narrator's queue, and
+        // an announcement that would wait too long is dropped whole (fn_8009CB44).
+        const auto lead = HelpMessages::voiceLead(id, readers.size() > 1);
+        const bool named = lead != HelpMessages::VoiceLead::None && !spec->classVoice &&
+                           !spec->commonVoice && players[index].figure != nullptr;
+        const f32 wait = HelpMessages::voiceWait(id, named ? lead : HelpMessages::VoiceLead::None);
+        if (spec->commonVoice) {
             audio.playNamed(spec->voice);
-        } else if (const auto lead = HelpMessages::voiceLead(id, readers.size() > 1);
-                   lead != HelpMessages::VoiceLead::None && players[index].figure != nullptr) {
+        } else if (!audio.narrationRoom(wait)) {
+            return true; // shown, but not heard
+        } else if (spec->classVoice && index < players.size() && players[index].figure != nullptr) {
+            audio.queueNarrationFrom(players[index].figure->voice(), spec->voice);
+        } else if (named) {
             const CharacterSave& save = players[index].actor.save();
-            const std::string name = std::format("S_{}{}2", colorCode(save.color),
-                                                 classCode(save.character % kStartingClassCount));
-            const bool pojo = (PowerupEffects::of(save.progress().inventory).special & 0x400) != 0;
-            SoundHandle spoken = pojo ? audio.narrate("S_POJO2")
-                                      : audio.playFrom(players[index].figure->voice(), name);
-            if (lead == HelpMessages::VoiceLead::PlayerHas) {
-                const SoundHandle has =
-                    audio.narrate("S_HAS", LevelSoundscape::Narrator::Either, spoken);
-                if (has != kNoSound) {
-                    spoken = has;
-                }
-            }
-            audio.narrate(spec->voice, LevelSoundscape::Narrator::Either, spoken);
+            const std::array has{std::string_view{"S_HAS"}, spec->voice};
+            const std::span<const std::string_view> lines =
+                lead == HelpMessages::VoiceLead::PlayerHas ? std::span{has}
+                                                           : std::span{has}.subspan(1);
+            audio.announce(players[index].figure->voice(),
+                           PickupVoices::nameOf(save.character, save.color),
+                           PickupVoices::carriesPojo(save), lines, wait);
         } else {
-            audio.narrate(spec->voice);
+            audio.queueNarration(spec->voice);
         }
     }
     return true;

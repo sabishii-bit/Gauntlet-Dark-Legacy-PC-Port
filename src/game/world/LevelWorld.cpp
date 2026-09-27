@@ -118,7 +118,10 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_walls.bind(device, m_layout, m_models, m_textures, m_collision);
     std::erase_if(m_movingObjects, [&](s32 object) { return !m_collision.moving(object); });
     m_triggers.bind(m_layout, m_worldAnimator, &m_collision);
+    m_hazards.bind(m_layout);
     m_triggers.bindFigures(device, m_layout, m_items);
+    m_rotators.bind(m_layout);
+    m_rotators.bindFigures(device, m_layout, m_items);
     m_worldAnimator.apply(m_scene);
     syncCollision();
     if (!m_powerups.load(unpackedRoot / kPowerups)) {
@@ -165,8 +168,7 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
     // The province uses crystal gate index 1, not its realm id (7). Retail omits
     // these tower-only pickups if any active character has earned that gate.
     if (isTower() && std::ranges::any_of(visitors, [](const TriggerVisitor& visitor) {
-            return visitor.crystals[1] >= LevelTriggers::crystalsNeeded(1) ||
-                   visitor.crystals[1] < 0;
+            return LevelTriggers::crystalsMet(visitor, 1);
         })) {
         m_placedItems.retireCrystals();
     }
@@ -177,6 +179,8 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
 
 void LevelWorld::updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors) {
     m_triggers.update(seconds, visitors, m_worldAnimator, m_scene, &m_collision);
+    std::vector<RotatorCue> cues = m_rotators.update(seconds, visitors, m_scene);
+    m_rotatorCues.insert(m_rotatorCues.end(), cues.begin(), cues.end());
     syncCollision();
 }
 
@@ -234,6 +238,9 @@ void LevelWorld::clear() {
     m_textureAnimator.clear();
     m_particles.clear();
     m_triggers.clear();
+    m_hazards.clear();
+    m_rotators.clear();
+    m_rotatorCues.clear();
     m_movingObjects.clear();
     m_placedItems.clear();
     m_powerups.clear();

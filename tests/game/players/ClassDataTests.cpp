@@ -86,7 +86,8 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
   "moves": {"turboAThrow": 2, "turboB": 0, "turboC1": 1, "turboC2": 2, "combo1": -1},
   "moveEffects": [
     {"next": 1, "tree": "WAR_POWERB", "sound": "S_WARTURBOB", "offset": [0, 5, 0], "scale": 2},
-    {"next": -1, "tree": "NULLFX", "sound": ""}],
+    {"next": -1, "tree": "NULLFX", "sound": ""},
+    {"next": -1, "tree": "WIZ_HEAD_Y", "sound": "R_WRIST", "flags": 33554432}],
   "moveStrikes": [
     {"type": 4, "radius": 12, "delay": 0.5, "arc": -1, "amount": 50, "effect": 0, "next": -1,
      "hitEffect": 1, "damageType": 257, "flags": 16, "help": 57},
@@ -115,8 +116,10 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
     REQUIRE_FALSE(span.lasting(40.0f));
     REQUIRE(war->moves.turboC2 == 2);
     REQUIRE(war->moves.combo1 == -1);
-    REQUIRE(war->moveEffects.size() == 2);
+    REQUIRE(war->moveEffects.size() == 3);
     REQUIRE(war->moveEffects[0].tree == "WAR_POWERB");
+    REQUIRE_FALSE(war->moveEffects[0].particle());
+    REQUIRE(war->moveEffects[2].particle()); // a hand glow: texture and node, not tree and sound
     REQUIRE(war->moveEffects[0].next == 1);
     REQUIRE(war->moveEffects[0].offset == Vec3{0.0f, 5.0f, 0.0f});
     REQUIRE(war->moveStrikes.size() == 3);

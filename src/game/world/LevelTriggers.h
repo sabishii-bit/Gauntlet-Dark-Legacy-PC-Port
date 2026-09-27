@@ -48,6 +48,7 @@ struct TriggerVisitor {
     f32 radius = 0.75f;
     std::array<s32, kRealmCount> crystals{};
     std::array<s32, Relics::kGargoyleKinds> gargoylePieces{};
+    bool sumner = false; ///< Sumner passes every crystal gate
     s32 floorObject = -1;
 };
 
@@ -68,6 +69,9 @@ struct LevelTrigger {
     f32 radius = 0.0f;
     s32 sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
+    bool shootable = false; ///< a target on the wall, set off by what hits it
+    f32 height = 0.0f;      ///< how tall it stands to what is thrown at it
+    bool shot = false;      ///< hit since the last update
 
     /** Whether it wants every visitor to carry a realm's crystals first. */
     bool needsCrystals() const { return (flags & kRequirement) != 0 && id < kGargoyleIds; }
@@ -85,6 +89,7 @@ struct LevelTrigger {
     static constexpr u32 kWholeParty = 0x400;
     static constexpr u32 kKeepContact = 0x80;
     static constexpr u32 kStaysSolid = 0x8; ///< the target keeps blocking while it moves
+    static constexpr s32 kShootableSubtype = 31;
 };
 
 /**
@@ -115,8 +120,14 @@ public:
     void clear();
     usize size() const { return m_triggers.size(); }
     const LevelTrigger& trigger(usize index) const { return m_triggers[index]; }
+    /** A thrown weapon, a burst or a blast has hit a shootable trigger: on the next update it
+     * goes off as though the whole party stood in it (ItemDamage's trigger case). */
+    void shoot(usize index);
     /** The crystals a realm's gate wants; none for realms without one. */
     static s32 crystalsNeeded(s32 realm);
+    /** Whether one visitor meets a realm's crystal gate: Sumner, a completed (negative) count
+     * or enough crystals. A gate opens for the party when anyone meets it. */
+    static bool crystalsMet(const TriggerVisitor& visitor, s32 realm);
     /** Whether the target of a trigger has been opened. */
     bool opened(s32 object) const;
     bool settled(s32 object) const;

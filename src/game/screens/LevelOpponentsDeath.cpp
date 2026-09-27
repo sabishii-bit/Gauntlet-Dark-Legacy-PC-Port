@@ -1,10 +1,18 @@
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <string_view>
 
+#include "game/players/PickupVoices.h"
 #include "game/players/Progression.h"
 #include "game/screens/LevelOpponents.h"
 
 namespace gdl::game {
+namespace {
+constexpr f32 kLostLevelWait = 3.0f; ///< seconds the line waits behind narration (AudioExp)
+constexpr f32 kDrainLineWait = 0.5f; ///< as a help message's voice
+} // namespace
+
 bool LevelOpponents::releaseDeath(s32 record, const Vec3& position, s32 count) {
     if (!m_resources.has_value()) {
         return false;
@@ -68,8 +76,13 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
                 progress.experience =
                     std::max(0, progress.experience +
                                     (cue.kind == DeathEvent::Kind::Drain ? -amount : amount));
-                if (experienceLevel(progress.experience) < before) {
-                    resources.audio.narrate("S_LOSTLEVEL");
+                if (experienceLevel(progress.experience) < before && player.figure != nullptr) {
+                    // "<name> has lost a level" (AudioExp).
+                    const CharacterSave& save = player.actor.save();
+                    const std::array lines{std::string_view{"S_LOSTLEVEL"}};
+                    resources.audio.announce(
+                        player.figure->voice(), PickupVoices::nameOf(save.character, save.color),
+                        PickupVoices::carriesPojo(save), lines, kLostLevelWait);
                 }
             } else if (cue.kind == DeathEvent::Kind::Return) {
                 progress.health += amount;
@@ -110,9 +123,9 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
                     DeathRules::effect(DeathRules::form(m_enemies.tierOf(i))),
                     m_enemies.positionOf(i), settings);
             }
-            if (!m_deathContact) {
-                resources.audio.narrate(m_enemies.tierOf(i) == 2 ? "S_DEATHDRAINXP"
-                                                                 : "S_DEATHDRAINS");
+            if (!m_deathContact && resources.audio.narrationRoom(kDrainLineWait)) {
+                resources.audio.queueNarration(m_enemies.tierOf(i) == 2 ? "S_DEATHDRAINXP"
+                                                                        : "S_DEATHDRAINS");
             }
         }
         const Mat4 transform = glm::rotate(glm::translate(Mat4{1}, m_enemies.positionOf(i)),

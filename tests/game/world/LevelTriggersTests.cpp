@@ -342,6 +342,53 @@ TEST_CASE("Temple bridge pads are visible and activate their authored world targ
     REQUIRE(tested);
 }
 
+TEST_CASE("a target on the wall is set off by what hits it, and walking past does nothing",
+          "[game][world][triggers][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELC3/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELC3"));
+    ModelSet models;
+    TextureSet textures;
+    REQUIRE(models.load(root / "LEVELS/LEVELC3"));
+    REQUIRE(textures.load(root / "LEVELS/LEVELC3"));
+    WorldScene scene;
+    REQUIRE(scene.build(layout, models, textures, device));
+    WorldAnimator animator;
+    animator.bind(layout);
+    LevelTriggers triggers;
+    triggers.bind(layout, animator, nullptr);
+    std::vector<usize> shootable;
+    for (usize i = 0; i < triggers.size(); ++i) {
+        if (triggers.trigger(i).shootable) {
+            shootable.push_back(i);
+            CHECK(triggers.trigger(i).height == 2.0f);
+        }
+    }
+    REQUIRE(shootable.size() == 2);
+    const usize first = shootable.front();
+    const LevelTrigger& target = triggers.trigger(first);
+    REQUIRE(target.target >= 0);
+    // Someone far off: nothing. Shot: it goes off on the next update, once.
+    const std::array away{TriggerVisitor{.position = target.spot + Vec3{200, 0, 0}}};
+    triggers.update(kStep, away, animator, scene, nullptr);
+    REQUIRE_FALSE(target.fired);
+    triggers.shoot(first);
+    triggers.update(kStep, away, animator, scene, nullptr);
+    CHECK(target.fired);
+    CHECK(triggers.opened(target.target));
+    CHECK_FALSE(target.shot);
+    // Only a shootable trigger takes a shot.
+    for (usize i = 0; i < triggers.size(); ++i) {
+        if (!triggers.trigger(i).shootable) {
+            triggers.shoot(i);
+            CHECK_FALSE(triggers.trigger(i).shot);
+            break;
+        }
+    }
+}
+
 struct Fixture {
     test::FakeRenderDevice device;
     ModelSet models;
@@ -486,13 +533,10 @@ TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
     f.triggers.update(LevelTriggers::kRefusalCooldown, party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.takeRefusals().size() == 1);
     REQUIRE(f.triggers.takeOpenings().empty());
-    // With every member carrying enough, the field goes, and from twice as far.
-    party[0].crystals[1] = 15;
+    // One member carrying enough opens it for everyone (towerAllPlayersMetBossReq), and the
+    // spot then reaches twice as far.
     party[0].position = Vec3{10.0f, 0.0f, 26.5f};
-    party.push_back(Fixture::visitor(Vec3{50.0f, 0.0f, 50.0f}, 2));
-    f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
-    REQUIRE_FALSE(f.triggers.trigger(0).fired); // the second member has too few
-    party[1].crystals[1] = 15;
+    party.push_back(Fixture::visitor(Vec3{50.0f, 0.0f, 50.0f}, 15));
     f.triggers.update(kStep, party, f.animator, f.scene, &f.collision);
     REQUIRE(f.triggers.trigger(0).fired);
     REQUIRE_FALSE(f.collision.solid(6));
@@ -524,6 +568,22 @@ TEST_CASE("a field wants the realm's crystals, then fades and stops blocking",
     for (const auto& draw : f.device.draws) {
         REQUIRE(draw.vertices[0].position != Vec3{10.0f, 0.0f, 30.0f}); // the torch is gone
     }
+}
+
+TEST_CASE("one member meets a crystal gate by count, a completed record or being Sumner",
+          "[game][world][triggers]") {
+    TriggerVisitor visitor;
+    visitor.crystals[1] = 14;
+    CHECK_FALSE(LevelTriggers::crystalsMet(visitor, 1));
+    visitor.crystals[1] = 15;
+    CHECK(LevelTriggers::crystalsMet(visitor, 1));
+    visitor.crystals[1] = -1;
+    CHECK(LevelTriggers::crystalsMet(visitor, 1));
+    visitor.crystals[1] = 0;
+    visitor.sumner = true;
+    CHECK(LevelTriggers::crystalsMet(visitor, 1));
+    CHECK_FALSE(LevelTriggers::crystalsMet(visitor, -1));
+    CHECK_FALSE(LevelTriggers::crystalsMet(visitor, static_cast<s32>(kRealmCount)));
 }
 
 TEST_CASE("what the party already qualifies for opens at once when the level starts",

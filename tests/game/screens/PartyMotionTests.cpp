@@ -289,7 +289,7 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
     const PlayerHealth::Events healthEvents{.block = [](f32, f32) {},
                                             .sound = [](std::string_view) {},
                                             .cry = [](std::string_view) {},
-                                            .named = [](std::string_view) {}};
+                                            .named = [](std::string_view, f32) {}};
     LevelOpponents::Events opponents;
     opponents.hurt = [&](usize index, f32 damage, HurtKind kind, bool directed,
                          const PlayerImpact& impact) {
