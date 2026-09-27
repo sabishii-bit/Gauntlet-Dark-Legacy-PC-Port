@@ -1586,8 +1586,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   contacts), then the floor under it. Players take 5, 10 with knockback, or 15
   with knockdown away from the wall, once a second (`PlayerRuntime::surfaceGap`,
   PlayerMotion_FloorFX; the mines sound `S_MINECARPHIT`); enemies take
-  `enemyHarmOf` every update, Garm's brood excepted (EnemyWorldDamage). Critters
-  (CritterWorldDamage) are not hurt yet.
+  `enemyHarmOf` every update, Garm's brood excepted (EnemyWorldDamage); the great
+  ones take the same every step they walk against or onto one (CritterWorldDamage,
+  `Combatant::setHazards`); bosses, clamped to home without world collision, do not.
 * Shootable triggers (type 5, subtype 31, `LevelTrigger::shootable`) are also
   missile, burst and item-attack targets (`PlayerAttacks::strikeTargets`, ids
   from 7000, never aimed at); a hit that is not gas sets `shot`, and the next

@@ -33,6 +33,8 @@ public:
     ~Critters();
 
     /** Prepares for the level: its realm letter picks the golem's and general's costume. */
+    /** The level's harmful surfaces, handed to each great one it stands; borrowed. */
+    void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
     void open(RenderDevice& device, const std::filesystem::path& unpackedRoot,
               const WorldCollision* collision, const EnemyScales& scales, char realm);
     void close();
@@ -118,6 +120,7 @@ private:
     RenderDevice* m_device = nullptr;
     std::filesystem::path m_root;
     const WorldCollision* m_collision = nullptr;
+    const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     EnemyScales m_scales;
     char m_realm = 'G';
     std::vector<std::unique_ptr<CombatantAssets>> m_stocks;

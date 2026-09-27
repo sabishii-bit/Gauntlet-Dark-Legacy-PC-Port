@@ -1,12 +1,15 @@
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <string>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -16,6 +19,7 @@
 #include "game/enemies/Gargoyle.h"
 #include "game/enemies/General.h"
 #include "game/enemies/Golem.h"
+#include "game/world/HazardSurfaces.h"
 
 namespace {
 using namespace gdl;
@@ -551,6 +555,66 @@ TEST_CASE("bosses load elemental armor from exported retail types", "[game][item
     REQUIRE(data.load(chimera));
     CHECK(data.shieldFlags() == 0);
 }
+TEST_CASE("a great one walking a harmful floor is hurt every step, for nobody's credit",
+          "[combatant][hazards]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GOLEM.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+      "types":[{"moveCount":2,"maxHealth":1000,"radius":1,"wallRadius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32},
+               {"name":"WALK","anim":"STEP","type":52,"priority":10,"speed":3}]})");
+    const auto dir = test::scratchDirectory("critter-hazard-floor");
+    writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": 196612, "next": -1,
+               "child": -1}],
+  "animations": [], "particles": [], "locators": [], "itemInfos": [], "itemInstances": []
+})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    HazardSurfaces hazards;
+    hazards.bind(layout); // 0x30000: a felling kind, fifteen to the swarm and great ones
+    const Vec3 up{0.0f, 1.0f, 0.0f};
+    std::vector<CollisionTriangle> floor(2);
+    floor[0].vertices = {Vec3{-200, 0, -200}, Vec3{200, 0, 200}, Vec3{200, 0, -200}};
+    floor[1].vertices = {Vec3{-200, 0, -200}, Vec3{-200, 0, 200}, Vec3{200, 0, 200}};
+    for (CollisionTriangle& triangle : floor) {
+        triangle.normal = up;
+        triangle.object = 0;
+    }
+    WorldCollision collision;
+    collision.build(floor);
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    for (const bool harmful : {false, true}) {
+        CAPTURE(harmful);
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, &collision, {}, 'G'));
+        if (harmful) {
+            actor.setHazards(&hazards);
+        }
+        EnemyView player;
+        player.player = 0;
+        player.position = {0, 0, 150};
+        const std::array players{player};
+        const f32 whole = actor.health();
+        for (s32 frame = 0; frame < 30 && actor.position().z <= 0.0f; ++frame) {
+            actor.update(2, 1.0f / 30, players);
+        }
+        REQUIRE(actor.position().z > 0.0f);
+        actor.update(2, 1.0f / 30, players);
+        if (!harmful) {
+            CHECK(actor.health() == whole);
+            continue;
+        }
+        CHECK(actor.health() < whole);
+        CHECK(std::fmod(whole - actor.health(), 15.0f) == Approx(0.0f).margin(0.01f));
+        for (const auto& loss : actor.takeLosses()) {
+            CHECK(loss.experience == 0.0f);
+        }
+    }
+}
+
 TEST_CASE("Stop Time allows entrances and their explicit continuation without locomotion",
           "[combatant][stop-time]") {
     const auto root = familyAssets();

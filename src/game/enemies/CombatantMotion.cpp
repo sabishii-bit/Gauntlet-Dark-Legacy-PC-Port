@@ -20,6 +20,7 @@ namespace {
 constexpr f32 kStepUp = 2.0f;
 constexpr f32 kDrop = 6.0f;
 constexpr f32 kFootClearance = 0.1f;
+constexpr f32 kWallProbeHeight = 8.0f; ///< how high over its feet walls stop it
 constexpr f32 kBlindTurnShare = 0.1f;
 } // namespace
 void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
@@ -90,7 +91,8 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
     }
     if (m_collision != nullptr) {
         const f32 wallRadius = critter.definition->wallRadius();
-        to = m_collision->resolveWalls(to, wallRadius, to.y + kFootClearance, to.y + 8.0f);
+        to = m_collision->resolveWalls(to, wallRadius, to.y + kFootClearance,
+                                       to.y + kWallProbeHeight);
         const auto floor = m_collision->floorAt(to, kStepUp, kDrop);
         if (!floor.has_value()) {
             return;
@@ -108,6 +110,22 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
         }
     }
     critter.position = to;
+    // A wall it walks against or a floor it walks onto may hurt it: the swarm's harms, burns
+    // and knocks at five and the felling kinds at fifteen, every step (CritterWorldDamage).
+    if (m_hazards != nullptr && m_collision != nullptr && critter.state != State::Dying) {
+        const auto touch = m_hazards->touching(*m_collision, to, critter.definition->wallRadius(),
+                                               kWallProbeHeight);
+        if (const auto harm = touch.has_value()
+                                  ? HazardSurfaces::enemyHarmOf(m_hazards->flagsOf(touch->object))
+                                  : std::nullopt) {
+            EnemyHit hit;
+            hit.damage = harm->damage;
+            hit.flags = harm->impact;
+            hit.direction = touch->away;
+            hit.where = to;
+            hurt(hit);
+        }
+    }
 }
 
 } // namespace gdl::game

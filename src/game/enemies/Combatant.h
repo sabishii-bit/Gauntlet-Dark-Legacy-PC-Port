@@ -20,6 +20,7 @@
 #include "game/enemies/CombatantProjectile.h"
 #include "game/enemies/CritterArea.h"
 #include "game/enemies/Enemies.h"
+#include "game/world/HazardSurfaces.h"
 
 namespace gdl::game {
 /** One fighter. Executes authored moves with family policy, without owning a population.
@@ -53,6 +54,9 @@ public:
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 std::span<const Combatant> peers = {}, bool timeStopped = false);
     void hurt(const EnemyHit& hit, s32 partId = -1);
+    /** The level's harmful surfaces, which hurt it where it walks against or onto them
+     * (CritterWorldDamage); borrowed, none for nothing. */
+    void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
     void freeze(s32 ticks);
     void blind(s32 ticks);
     void curb(f32 seconds);
@@ -222,6 +226,7 @@ private:
     std::vector<std::unique_ptr<Combatant>> m_children;
     s32 m_id = -1;
     const WorldCollision* m_collision = nullptr;
+    const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     EnemyScales m_scales;
     char m_realm = 'G';
     std::vector<CombatBlow> m_blows;
