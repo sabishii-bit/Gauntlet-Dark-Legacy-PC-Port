@@ -7,6 +7,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -21,6 +22,13 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr s32 kTicks = 2;
+
+/** A view from twenty back along -z, looking along +z at `target`, 60 degrees across. */
+ViewVolume lookingAt(const Vec3& target) {
+    ViewVolume view;
+    view.position = target - Vec3{0.0f, 0.0f, 20.0f};
+    return view;
+}
 constexpr f32 kStep = 1.0f / 30.0f;
 
 TEST_CASE("wall generators share their authored facing across rendering collision and spawning",
@@ -73,6 +81,8 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
     CHECK(device.draws[0].vertices[0].position.x == Approx(9));
     CHECK(generators.boxOf(0).yaw == Approx(-1.57079637f));
     const std::array party{EnemyView{.position = Vec3{0, 3, 20}}};
+    // Only the one on screen breeds.
+    generators.setView(lookingAt(generators.positionOf(0)));
     generators.update(2, enemies, party);
     REQUIRE(generators.bredOf(0) == 1);
     REQUIRE(generators.bredOf(1) == 0);
@@ -291,7 +301,8 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     REQUIRE(generators.mostOf(1) == 7);
     REQUIRE(generators.intervalOf(1) == 7);
     // Nobody near: nothing is bred. A player near it: one at once, and the countdown set
-    // going, stretched a little more each birth.
+    // going, stretched a little more each birth. Only the one on screen breeds.
+    generators.setView(lookingAt(generators.positionOf(chosen)));
     const std::vector<EnemyView> nobody;
     generators.update(kTicks, enemies, nobody);
     REQUIRE(enemies.count() == 0);
@@ -301,7 +312,7 @@ TEST_CASE("a generator breeds grunts for a party near it up to its count, and cr
     const std::vector<EnemyView> party{near};
     generators.update(kTicks, enemies, party);
     REQUIRE(generators.bredOf(chosen) == 1);
-    REQUIRE(generators.bredOf(1) == 0);             // too far off
+    REQUIRE(generators.bredOf(1) == 0);             // off screen
     REQUIRE(generators.countdownOf(chosen) == 180); // six ticks a unit of interval
     std::vector<s32> mine;
     for (s32 id = 0; id < Enemies::kMost; ++id) {

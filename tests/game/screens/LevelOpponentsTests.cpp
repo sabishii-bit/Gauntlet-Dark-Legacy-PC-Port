@@ -460,6 +460,56 @@ TEST_CASE("mountain creatures stop a player in melee range and release collision
     }
 }
 
+TEST_CASE("the placed enemies stand only once the camera comes to see them",
+          "[level-opponents][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G1")));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {24.375f, 0.0078125f, 2.5f}, 0);
+    LevelOpponents::Resources resources{device, world, weapons, effects, audio, root, 1};
+    resources.standOnSight = true;
+    opponents.open(resources, players);
+    CHECK(opponents.enemies().count() == 0);
+    const usize waiting = opponents.pendingPlacements();
+    REQUIRE(waiting > 0);
+    // A camera looking at nothing stands nothing.
+    ViewVolume nowhere;
+    nowhere.position = Vec3{0.0f, -1000.0f, 0.0f};
+    nowhere.forward = Vec3{0.0f, -1.0f, 0.0f};
+    opponents.watch(nowhere, nowhere.position);
+    CHECK(opponents.pendingPlacements() == waiting);
+    // Over one placement, looking down at it from close by: it stands, and the rest wait.
+    const std::vector<ItemInfo>& infos = world.layout().itemInfos();
+    std::optional<Vec3> spot;
+    for (const ItemInstance& instance : world.layout().itemInstances()) {
+        if (instance.info >= 0 &&
+            infos[static_cast<usize>(instance.info)].type == ItemInfo::kPlacedEnemy) {
+            spot = instance.position;
+            break;
+        }
+    }
+    REQUIRE(spot.has_value());
+    ViewVolume overhead;
+    overhead.position = *spot + Vec3{0.0f, 10.0f, 0.0f};
+    overhead.forward = Vec3{0.0f, -1.0f, 0.0f};
+    overhead.up = Vec3{0.0f, 0.0f, 1.0f};
+    opponents.watch(overhead, *spot);
+    CHECK(opponents.pendingPlacements() < waiting);
+    CHECK(opponents.pendingPlacements() > 0);
+    CHECK(opponents.enemies().count() + opponents.critters().count() > 0);
+    opponents.close();
+}
+
 TEST_CASE("Forsaken Province entrance generators breed with the placed enemy roster loaded",
           "[level-opponents][generators][unpacked]") {
     const auto root =
@@ -507,7 +557,14 @@ TEST_CASE("Forsaken Province entrance generators breed with the placed enemy ros
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
+    // A camera high over the player: the generators round them are on screen and breed, taking
+    // the places of bodies off it.
+    ViewVolume overhead;
+    overhead.position = players[0].actor.position() + Vec3{0.0f, 80.0f, 0.0f};
+    overhead.forward = Vec3{0.0f, -1.0f, 0.0f};
+    overhead.up = Vec3{0.0f, 0.0f, 1.0f};
     for (s32 frame = 0; frame < 300; ++frame) {
+        opponents.watch(overhead, players[0].actor.position());
         opponents.update(2, 1.0f / 30, players, fixtures.obstacles(), events);
     }
     s32 bred = 0;

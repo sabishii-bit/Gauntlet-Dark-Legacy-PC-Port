@@ -14,6 +14,7 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
@@ -166,6 +167,8 @@ public:
     void close();
     /** The level's harmful surfaces, borrowed until close. */
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
+    /** What the camera takes in, for what is on screen; none takes everything in. */
+    void setView(std::optional<ViewVolume> view) { m_view = view; }
     /** The lookouts its patrollers walk between. */
     void setLookouts(LookoutRoute lookouts) { m_lookouts = std::move(lookouts); }
 
@@ -301,6 +304,7 @@ private:
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
         s32 hurtBy = -1;
         bool killed = false;
+        bool onScreen = true; ///< in view by a margin (visactive)
         s32 hitCount = 0;
         f32 flashSeconds = 0;
         f32 deathSeconds = 0;
@@ -311,11 +315,12 @@ private:
 
     Stock* stockOf(s32 kind);
     const Stock* stockOf(s32 kind) const;
-    std::optional<s32> takeSlot(const EnemySpawn& spawn, std::span<const EnemyView> players);
+    std::optional<s32> takeSlot(const EnemySpawn& spawn);
     bool clearAt(Enemy& enemy, const Vec3& position, std::span<const EnemyView> players,
                  std::span<const Obstacle> obstacles, s32 self) const;
     void initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind& kind);
     void touchHazards(Enemy& enemy, s32 slot);
+    static void decayPush(Enemy& enemy, f32 seconds);
     void chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                       std::span<f32> crowding);
     /** Whether the swing it has just landed casts its missile rather than striking. */
@@ -358,6 +363,7 @@ private:
     std::vector<DeathEvent> m_deathEvents;
     std::mt19937 m_random;
     s32 m_bomber = -1; ///< the lit suicide bomber the rest run from this tick
+    std::optional<ViewVolume> m_view;
     u32 m_frame = 0;
 };
 

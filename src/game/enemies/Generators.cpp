@@ -176,6 +176,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
             generator.direction = Vec3{0.0f, 0.0f, 1.0f};
         }
         generator.clearance = info.height;
+        generator.viewRadius = 2.0f * std::max(info.radius, info.height);
         generator.box.centre = generator.position;
         generator.box.yaw = generator.yaw;
         generator.box.halfAcross = info.xSize > 0.0f ? info.xSize : info.radius;
@@ -267,12 +268,16 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         if (timeStopped || out[g] >= generator.most) {
             continue;
         }
+        // It breeds only on screen, by twice its size, and with a player not too far off
+        // (fn_800606FC's visibility, generate_now's distance); a boss's own always does.
         bool near = false;
         for (const EnemyView& view : players) {
             near = near || (!view.hidden &&
-                            flatDistance(view.position, generator.position) <= kNearDistance);
+                            glm::distance(view.position, generator.position) <= kActiveDistance);
         }
-        if (!near) {
+        const bool seen = generator.boss || !m_view.has_value() ||
+                          m_view->sees(generator.position, generator.viewRadius);
+        if (!near || !seen) {
             continue;
         }
         EnemySpawn spawn;

@@ -79,10 +79,11 @@ struct MindSense {
     s32 idleTicks = 120;                     ///< ticks a thrower waits between throws
     EnemyAction action = EnemyAction::Ready; ///< what the body is doing
     u32 random = 0;                          ///< a fresh draw from the pool's generator
-    const LookoutRoute* lookouts = nullptr;  ///< the level's, for a patroller
-    std::optional<Vec3> bomber;              ///< a lit suicide bomber near enough to run from
-    s32 tier = 1;                            ///< the strength it was made at
-    s32 castWait = 90;                       ///< a caster's least wait between casts, in ticks
+    bool onScreen = true; ///< in view (by a margin): off it, nothing is attacked from afar
+    const LookoutRoute* lookouts = nullptr; ///< the level's, for a patroller
+    std::optional<Vec3> bomber;             ///< a lit suicide bomber near enough to run from
+    s32 tier = 1;                           ///< the strength it was made at
+    s32 castWait = 90;                      ///< a caster's least wait between casts, in ticks
     /** Whether a step along a heading crosses nothing (a body against a wall may still
      * slide along it). */
     std::function<bool(f32 heading)> clear;

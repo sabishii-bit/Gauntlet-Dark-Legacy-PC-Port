@@ -24,9 +24,10 @@ constexpr f32 kPushFloor = 0.01f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
 constexpr f32 kDeathSkinRate = 15.0f;
-constexpr f32 kLaunchFacing = 0.707f; ///< a missile goes only within 45 degrees of the facing
-constexpr f32 kBomberScare = 10.0f;   ///< the swarm keeps this far from a lit suicide bomber
-constexpr f32 kCastTicks = 90.0f;     ///< a caster's least wait, times the level's missile rate
+constexpr f32 kLaunchFacing = 0.707f;  ///< a missile goes only within 45 degrees of the facing
+constexpr f32 kOnScreenMargin = 15.0f; ///< past twice its radius, what still counts as in view
+constexpr f32 kBomberScare = 10.0f;    ///< the swarm keeps this far from a lit suicide bomber
+constexpr f32 kCastTicks = 90.0f;      ///< a caster's least wait, times the level's missile rate
 constexpr s32 kScorpionKind = 0;
 constexpr s32 kAcidKind = 21;
 constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of the feet
@@ -329,7 +330,7 @@ const EnemyView* Enemies::viewOf(std::span<const EnemyView> players, s32 player)
 
 // ---- spawning ---------------------------------------------------------------------------
 
-std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn, std::span<const EnemyView> players) {
+std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn) {
     // Prefer a free slot, otherwise the greatest recycling score. Dying/sleeping
     // enemies get reduced scores; other unseen enemies get the offscreen bonus.
     for (s32 i = 0; i < m_most; ++i) {
@@ -346,11 +347,7 @@ std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn, std::span<const En
             continue;
         }
         f32 cost = enemy.targetDistance;
-        bool seen = false;
-        for (const EnemyView& view : players) {
-            seen = seen ||
-                   (!view.hidden && flatDistance(view.position, enemy.position) <= enemy.sight);
-        }
+        const bool seen = enemy.onScreen;
         if (enemy.state == State::Dying || enemy.state == State::Asleep) {
             cost *= 0.01f;
         } else if (!seen) {
@@ -365,8 +362,7 @@ std::optional<s32> Enemies::takeSlot(const EnemySpawn& spawn, std::span<const En
     if (best < 0) {
         return std::nullopt;
     }
-    // Visibility importance, not combat strength, controls replacement. Visibility still
-    // uses the population's proximity approximation until a camera-frustum query is supplied.
+    // Visibility importance, not combat strength, controls replacement.
     if (spawn.kind < kSwarmKindCount && static_cast<s32>(spawn.priority) < (bestVisible ? 1 : 0)) {
         return std::nullopt;
     }
@@ -442,7 +438,7 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     if (stock == nullptr) {
         return std::nullopt;
     }
-    const auto slot = takeSlot(spawn, players);
+    const auto slot = takeSlot(spawn);
     if (!slot.has_value()) {
         return std::nullopt;
     }
@@ -547,12 +543,18 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         return;
     }
     ++m_frame;
-    // The first suicide bomber running at the party is one the rest keep away from.
+    // What is on screen, by twice its radius and fifteen more (do_enemies' visactive).
+    for (s32 i = 0; i < m_most; ++i) {
+        Enemy& enemy = m_enemies[static_cast<usize>(i)];
+        enemy.onScreen = enemy.state == State::Inactive || !m_view.has_value() ||
+                         m_view->sees(bodyCentre(enemy), (2.0f * enemy.radius) + kOnScreenMargin);
+    }
+    // The first suicide bomber on screen running at the party is one the rest keep away from.
     m_bomber = -1;
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
         if (enemy.state == State::Active && !enemy.killed && enemy.algorithm == kSuicideWay &&
-            enemy.animator.action() == EnemyAction::Run) {
+            enemy.onScreen && enemy.animator.action() == EnemyAction::Run) {
             m_bomber = i;
             break;
         }
@@ -611,6 +613,12 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         if (enemy.state == State::Dying) {
             continue;
         }
+        // Out of view with its player out of its sight, it waits where it stands, neither
+        // thinking nor moving nor animating, and only its knock-back dies away (fn_8004D958).
+        if (!enemy.onScreen && enemy.targetDistance > enemy.sight) {
+            decayPush(enemy, seconds);
+            continue;
+        }
         think(enemy, i, ticks, players, obstacles);
         if (enemy.kind == kDeathKind) {
             drain(enemy, i, ticks, players);
@@ -628,17 +636,21 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         if (enemy.threw && missiles != nullptr) {
             shoot(enemy, i, players, *missiles, missileSpeedScale);
         }
-        // Knock-back dies away, and what was thrown up comes down.
-        enemy.push *= std::pow(kPushDecay, seconds * kPushFrameRate);
-        if (std::abs(enemy.push.x) < kPushFloor) {
-            enemy.push.x = 0.0f;
-        }
-        if (std::abs(enemy.push.z) < kPushFloor) {
-            enemy.push.z = 0.0f;
-        }
-        enemy.push.y = std::max(enemy.push.y - kGravity * seconds, 0.0f);
+        decayPush(enemy, seconds);
         touchHazards(enemy, i);
     }
+}
+
+/** Knock-back dies away, and what was thrown up comes down. */
+void Enemies::decayPush(Enemy& enemy, f32 seconds) {
+    enemy.push *= std::pow(kPushDecay, seconds * kPushFrameRate);
+    if (std::abs(enemy.push.x) < kPushFloor) {
+        enemy.push.x = 0.0f;
+    }
+    if (std::abs(enemy.push.z) < kPushFloor) {
+        enemy.push.z = 0.0f;
+    }
+    enemy.push.y = std::max(enemy.push.y - kGravity * seconds, 0.0f);
 }
 
 /** A burning floor or a roller hurts whatever enemy is against it or on it, every update
@@ -908,6 +920,7 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
     sense.blocked = enemy.blocked;
     sense.otherSide = enemy.otherSide;
     sense.generatorGone = enemy.generator < 0;
+    sense.onScreen = enemy.onScreen;
     sense.lookouts = &m_lookouts;
     sense.threw = enemy.threw;
     sense.idleTicks = enemy.idleTicks;
@@ -1060,9 +1073,9 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
     enemy.contact = -1;
     const Vec3 from = enemy.position;
     Vec3 to = from + translation;
-    // Against a player it stops dead and strikes.
+    // Against a player it stops dead and strikes; off screen it never touches one.
     for (const EnemyView& view : players) {
-        if (view.hidden) {
+        if (view.hidden || !enemy.onScreen) {
             continue;
         }
         if ((enemy.kind != kDeathKind || !view.antiDeath || !separating(from, to, view.position)) &&

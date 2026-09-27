@@ -39,6 +39,25 @@ struct WorldCamera {
                        const Mat4& frameProjection) const;
 };
 
+/**
+ * What a camera takes in, for telling whether something is on screen: in front of the eye and
+ * inside each side of the view by a margin (the original's world sphere visibility test).
+ */
+struct ViewVolume {
+    Vec3 position{0.0f, 0.0f, 0.0f};
+    Vec3 right{1.0f, 0.0f, 0.0f};
+    Vec3 up{0.0f, 1.0f, 0.0f};
+    Vec3 forward{0.0f, 0.0f, 1.0f};
+    f32 sinX = 0.5f; ///< the sine and cosine of half the view across
+    f32 cosX = 0.8660254f;
+    f32 sinY = 0.5f; ///< and of half the view up and down
+    f32 cosY = 0.8660254f;
+
+    static ViewVolume of(const WorldCamera& camera, f32 horizontalFov, f32 aspect);
+    /** Whether a sphere of `radius` about `centre` is at least partly in view. */
+    bool sees(const Vec3& centre, f32 radius) const;
+};
+
 /** Where a camera stands and which way its axes point, for what must face it. */
 struct CameraFrame {
     Vec3 position{0.0f, 0.0f, 0.0f};

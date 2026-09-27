@@ -45,6 +45,7 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
 }
 
 void LevelOpponents::close() {
+    m_pending.clear();
     clearDeaths();
     if (m_resources.has_value()) {
         m_combatantProjectiles.clear(m_resources->effects);
@@ -152,23 +153,25 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         const std::optional<s32> kind = levelKindOf(roster, *named, strength);
         // The great ones stand where they are put, facing as placed.
         const Mat4 stood = itemPlacement(instance.position, instance.rotation);
-        const f32 facing = std::atan2(stood[2][0], stood[2][2]);
-        if (*kind == kGolemEnemyKind) {
-            m_critters.spawnGolem(instance.position, facing);
+        Placement placement;
+        placement.kind = *kind;
+        placement.facing = std::atan2(stood[2][0], stood[2][2]);
+        placement.viewRadius = 2.0f * std::max(info.radius, info.height);
+        placement.spawn.position = instance.position;
+        const bool great =
+            *kind == kGolemEnemyKind || *kind == kGeneralEnemyKind || *kind == kGargoyleEnemyKind;
+        if (great) {
+            m_pending.push_back(placement);
             continue;
         }
-        if (*kind == kGeneralEnemyKind) {
-            m_critters.spawnGeneral(instance.position, facing);
-            continue;
-        }
-        if (*kind == kGargoyleEnemyKind) {
-            m_critters.spawnGargoyle(instance.position, facing);
+        // IT waits for company (fn_80060114: never with one player).
+        if (*kind == kItKind && playerCount <= 1) {
             continue;
         }
         if ((*kind >= kSwarmKindCount && *kind != kDeathKind) || !m_enemies.loadKind(*kind)) {
             continue;
         }
-        EnemySpawn spawn;
+        EnemySpawn& spawn = placement.spawn;
         spawn.kind = *kind;
         spawn.tier = std::max(strength, 1);
         spawn.algorithm = Generators::paramOf(instance, 1);
@@ -176,12 +179,52 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
             spawn.idleTicks = interval;
         }
         spawn.position = instance.position;
-        const Mat4 placement = itemPlacement(instance.position, instance.rotation);
-        spawn.direction = Vec3{placement[2][0], 0.0f, placement[2][2]};
+        spawn.direction = Vec3{stood[2][0], 0.0f, stood[2][2]};
         spawn.placed = true;
-        spawn.priority = EnemySpawn::Priority::FreeSlotOnly;
+        spawn.priority = EnemySpawn::Priority::Visible;
         spawn.asleep = strength == 0 && *kind != kDeathKind;
-        m_enemies.spawn(spawn, {}, m_generators.obstacles());
+        m_pending.push_back(placement);
+    }
+    if (!resources.standOnSight) {
+        standPlacements(std::nullopt, Vec3{0.0f});
+    }
+}
+
+void LevelOpponents::watch(const ViewVolume& view, const Vec3& attention) {
+    m_enemies.setView(view);
+    m_generators.setView(view);
+    standPlacements(view, attention);
+}
+
+/** Each placed enemy stands once the camera sees its spot, by its size, looking from no more
+ * than fifty away (fn_80060114); seen, it is gone from the waiting list whether or not the
+ * swarm had room for it. With no view, all stand. */
+void LevelOpponents::standPlacements(std::optional<ViewVolume> view, const Vec3& attention) {
+    constexpr f32 kPlacementReach = 50.0f;
+    std::erase_if(m_pending, [&](const Placement& placement) {
+        const Vec3& at = placement.spawn.position;
+        if (view.has_value() && (!view->sees(at, placement.viewRadius) ||
+                                 glm::distance(attention, at) > kPlacementReach)) {
+            return false;
+        }
+        // Seen, a placement may take the place of what is on screen (generate_enemy's
+        // importance 1); all standing at once, they only fill what is free.
+        Placement standing = placement;
+        if (!view.has_value()) {
+            standing.spawn.priority = EnemySpawn::Priority::FreeSlotOnly;
+        }
+        stand(standing);
+        return true;
+    });
+}
+
+void LevelOpponents::stand(const Placement& placement) {
+    const Vec3& at = placement.spawn.position;
+    switch (placement.kind) {
+    case kGolemEnemyKind: m_critters.spawnGolem(at, placement.facing); return;
+    case kGeneralEnemyKind: m_critters.spawnGeneral(at, placement.facing); return;
+    case kGargoyleEnemyKind: m_critters.spawnGargoyle(at, placement.facing); return;
+    default: m_enemies.spawn(placement.spawn, {}, m_generators.obstacles()); return;
     }
 }
 
