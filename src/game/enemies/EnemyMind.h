@@ -14,6 +14,16 @@
 
 namespace gdl::game {
 
+/** A zig-zagger's own count of its swings (move_logic14's count, flag1, flag2, counter1 and
+ * mode1). */
+struct ZigZag {
+    s32 count = 0;  ///< ticks to the next swing
+    s32 side = 0;   ///< which way the swings go: positive left, else right
+    s32 spread = 0; ///< grows with each fresh aim and dies away a tick at a time
+    s32 hold = 0;   ///< ticks before it may aim afresh
+    s32 swings = 0; ///< since the last aim
+};
+
 /** What an enemy remembers between ticks for its mind's sake. */
 struct MindMemory {
     f32 heading = 0.0f;       ///< the way it means to go
@@ -31,6 +41,7 @@ struct MindMemory {
     bool keepingOff = false;  ///< a skirmisher is backing away
     s32 lookout = -1;         ///< the lookout a patroller is making for; none until chosen
     bool primed = false;      ///< a mind that starts on a random wait has drawn it
+    ZigZag zigZag;
 };
 
 /** A level's lookouts: the points its patrollers walk between, each naming the one after it
@@ -134,6 +145,7 @@ inline constexpr s32 kSuicideWay = 18;      ///< the suicide's: a lit fuse and a
 inline constexpr s32 kThrowWay = 23;        ///< standing and shooting
 inline constexpr s32 kFleeWay = 24;         ///< away from a lit suicide bomber, a tick at a time
 inline constexpr s32 kLurkWay = 27;
+inline constexpr s32 kZigZagWay = 14;    ///< zig-zagging at its player from afar
 inline constexpr s32 kStandCastWay = 28; ///< standing and casting at whoever it sees
 inline constexpr s32 kRangeCastWay = 29; ///< casting from a middle distance, kept
 inline constexpr s32 kPatrolWay = 15;    ///< walking the lookouts until a player comes near

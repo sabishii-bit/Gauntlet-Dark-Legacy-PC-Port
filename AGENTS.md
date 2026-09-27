@@ -581,7 +581,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   jitters behind a wall, which we do not copy); a dead stop holds the
   heading ten ticks (fifteen for another enemy) and counts a bump, seven
   bumps and the route doubles back, ten refused headings and it goes
-  straight anyway; patrol (15) walking the level's lookouts (`LookoutRoute`: its
+  straight anyway; zig-zag (14) seeking within eight, else swinging a quarter turn
+  every 45 ticks and, after four swings and a drift over a quarter turn off its player,
+  aiming an eighth of a turn or more off straight at them; patrol (15) walking the level's lookouts (`LookoutRoute`: its
   sentry and event locators, twenty at most, each naming the next), the nearest first,
   seeking instead while a player is within four fifths of its sight; loiter (11)
   turning on the spot, done with when its
