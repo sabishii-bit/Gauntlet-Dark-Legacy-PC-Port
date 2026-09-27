@@ -281,6 +281,36 @@ TEST_CASE("a blow's offset turns with its node and reaches by its reach alone",
     CHECK(blows[0].origin.x == Approx(0.0f).margin(0.01f));
 }
 
+TEST_CASE("a sleeping boss takes nothing, and awake takes less the more are in the game",
+          "[game][combatant]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const s32 players : {1, 3}) {
+        CAPTURE(players);
+        Bosses boss;
+        EnemyScales scales;
+        scales.players = players;
+        boss.open(device, root, nullptr, scales, 'G');
+        REQUIRE(boss.spawn(36, {}, 0));
+        const f32 whole = boss.view().health;
+        EnemyHit hit;
+        hit.player = 0;
+        hit.damage = 20;
+        boss.hurt(hit); // asleep: nothing, and it sleeps on (CritterDamage, state under two)
+        CHECK(boss.view().health == whole);
+        CHECK(boss.takeLosses().empty());
+        boss.wake();
+        boss.hurt(hit);
+        // A third of the harm with three playing, each paid three times its share.
+        const f32 share = players == 3 ? 0.3f : 1.0f;
+        CHECK(boss.view().health == Approx(whole - 20.0f * share));
+        const auto losses = boss.takeLosses();
+        REQUIRE(losses.size() == 1);
+        CHECK(losses[0].experience ==
+              Approx(20.0f * share / (1.0f + whole) * 50.0f * static_cast<f32>(players)));
+    }
+}
+
 TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
           "[game][combatant]") {
     const auto root = familyAssets();
@@ -450,6 +480,7 @@ TEST_CASE("boss replacement retains borrowed archives and undrained death events
         EnemyHit kill;
         kill.player = 0;
         kill.damage = 1000;
+        boss.wake();
         boss.hurt(kill);
         for (s32 frame = 0; frame < 90; ++frame) {
             boss.update(2, 1.0f / 30, {});

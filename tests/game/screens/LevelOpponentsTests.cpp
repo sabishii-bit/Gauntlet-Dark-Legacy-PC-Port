@@ -298,6 +298,7 @@ TEST_CASE("Chimera arena binds and updates head health meters through the oppone
     events.award = [](s32, s32, bool) {};
     EnemyHit hit;
     hit.damage = 62;
+    opponents.bosses().wake();
     opponents.bosses().hurt(hit, 2);
     opponents.update(2, 1.0f / 30.0f, {}, {}, events);
     CHECK(opponents.meter().meter(0).shown() == before[0].health);

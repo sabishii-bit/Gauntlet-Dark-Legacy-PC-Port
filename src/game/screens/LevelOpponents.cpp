@@ -81,6 +81,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     const LevelInfo* level = world.level();
     const f32 gain = resources.difficultyGain;
     EnemyScales scales;
+    scales.players = static_cast<s32>(std::max<usize>(players.size(), 1));
     GeneratorScales breeding;
     s32 most = Enemies::kMost;
     if (level != nullptr) {

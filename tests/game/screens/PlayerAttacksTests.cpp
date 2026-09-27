@@ -794,6 +794,7 @@ TEST_CASE("player projectiles sever the contacted Chimera head through encounter
     auto& bosses = f.opponents.bosses();
     bosses.open(f.device, root, nullptr, {}, 'A');
     REQUIRE(bosses.spawn(35, Vec3{0}, 0));
+    bosses.wake(); // asleep, it would take nothing
     const auto targets = bosses.targets();
     const auto lion = std::ranges::find(targets, 2, &MissileTarget::id);
     REQUIRE(lion != targets.end());

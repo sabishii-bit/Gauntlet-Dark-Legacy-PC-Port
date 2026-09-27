@@ -399,6 +399,13 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     critter.hurtPending += amount;
     critter.hurtFlags |= flags;
     critter.roarOwed += amount;
+    // A boss takes less the more there are to fight it, outside a legend item's rite
+    // (CritterDamage's damage_mul).
+    const bool boss = data.kind() == CombatantKind::Boss;
+    const s32 players = std::clamp(m_scales.players, 0, static_cast<s32>(kBossShares.size()) - 1);
+    if (boss && !m_fullHarm) {
+        amount *= kBossShares[static_cast<usize>(players)];
+    }
     if (const f32 length = glm::length(hit.direction); length > 0.001f) {
         critter.hurtDirection = hit.direction / length;
     }
@@ -406,13 +413,19 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     const s32 mark =
         hit.close && data.hitSoundClose() >= 0 ? data.hitSoundClose() : data.hitSoundFar();
     cue(critter, id, mark, hit.where.value_or(partPosition(critter, {})));
-    // Every hit is worth its share of the creature's value to the one who dealt it, less a
-    // fiftieth a level under the level the place is meant for.
+    // Every hit is worth its share of the creature's value to the one who dealt it (a boss's
+    // times the players); then a character under the level the place is meant for does a
+    // fiftieth less a level to anything but a boss (CritterDamage).
     if (hit.player >= 0) {
-        f32 share = amount / (1.0f + critter.maxHealth) * data.experience();
-        if (m_scales.playerLevel > 0.0f && static_cast<f32>(hit.level) < m_scales.playerLevel) {
+        const f32 credited = std::clamp(amount, 0.0f, critter.health);
+        f32 share = std::min(credited / (1.0f + critter.maxHealth), 1.0f) * data.experience();
+        if (boss) {
+            share *= static_cast<f32>(players);
+        }
+        if (!boss && m_scales.playerLevel > 0.0f &&
+            static_cast<f32>(hit.level) < m_scales.playerLevel) {
             const f32 under = m_scales.playerLevel - static_cast<f32>(hit.level);
-            share *= std::max(1.0f - kUnderLevelLoss * under, 0.1f);
+            amount *= std::max(1.0f - kUnderLevelLoss * under, 0.1f);
         }
         CombatLoss loss;
         loss.critter = id;

@@ -98,6 +98,7 @@ TEST_CASE("Spider Queen egg attacks create generators that breed the stage's spi
     const usize before = opponents.generators().count();
     EnemyHit phase;
     phase.damage = opponents.bosses().view().maxHealth * 0.2f;
+    opponents.bosses().wake();
     opponents.bosses().hurt(phase);
     LevelOpponents::Events events;
     events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};

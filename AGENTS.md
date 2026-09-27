@@ -770,8 +770,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   and Chimera child-head control still need reconstruction.
   A hit takes the armour off (a point always through for a character), a
   block lets a quarter through and shrugs off the throw, and is worth
-  amount / (1 + health) of the value to the hitter (a fiftieth less a level
-  under the place's `playerLevel`, never under a tenth), paid in whole
+  amount / (1 + health) of the value to the hitter (the harm credited no more
+  than the health left; then, for anything but a boss, the harm itself is a
+  fiftieth less a level under the place's `playerLevel`, never under a
+  tenth; a boss takes 1/1/0.5/0.3/0.2 of harm by `EnemyScales::players` outside
+  a legend rite and pays that many times the share: CritterDamage), paid in whole
   points as they add up; fifty taken and it roars. Only flagged hits move it
   off what it is doing (CritterGetDoAction): 0x100 plays KD, 0x20 KB, 0x10
   HITREACT; plain harm does not. Every hit shoves it by its flags whatever it
@@ -784,7 +787,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   named by kind (`bossNameOf(bossType)`, the dragon 34 to the garm 44;
   archive `MONSTERS/<NAME>`, tree prefix plus suffix, `LICH`), stood at the
   level's `boss` mark by `bossType`, asleep until the party comes within
-  its table's `wakeThreshold` (or struck), fighting by the same move table
+  its table's `wakeThreshold` (asleep it takes no harm and a hit does not
+  wake it: CritterDamage's state test), fighting by the same move table
   through a `Combatant` fighter of its own (composition, not the shared
   pool: the step family, types 48 to 63, is chosen like the walk, and a
   named attack of speed, the lich's `CHARGE`, carries it), with a `BossView`

@@ -108,6 +108,7 @@ TEST_CASE("Chimera draws its three head fills on one shared frame and drains the
     }
     EnemyHit hit;
     hit.damage = 602; // Armor leaves six hundred damage, directed at the lion.
+    bosses.wake();
     bosses.hurt(hit, 2);
     readings = bosses.healthMeters();
     REQUIRE(readings[0].health == 1200);

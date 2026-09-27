@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <memory>
 #include <optional>
 #include <random>
@@ -35,6 +36,8 @@ public:
     static constexpr f32 kKillShare = 0.2f;
     static constexpr f32 kRoarAfter = 50.0f;
     static constexpr f32 kUnderLevelLoss = 0.02f;
+    /** A boss's share of harm by how many are in the game (lbl_8011AEC0). */
+    static constexpr std::array<f32, 5> kBossShares{1.0f, 1.0f, 0.5f, 0.3f, 0.2f};
     static constexpr s32 kTicksPerSecond = 60;
     /** Replaces the actor state; pending events survive until taken or explicitly cleared. */
     bool spawn(CombatantAssets& stock, s32 id, const Vec3& position, f32 yaw,
@@ -56,6 +59,8 @@ public:
     void resize(f32 scale);
     void tint(Color color) { m_actor.tint = color; }
     void hold(bool held);
+    /** While a legend item's rite runs, a boss takes its harm whole, however many play. */
+    void takeFullHarm(bool full) { m_fullHarm = full; }
     void roar();
     bool present() const { return m_actor.state != State::Inactive; }
     bool alive() const { return m_actor.state == State::Active; }
@@ -217,6 +222,7 @@ private:
     EnemyScales m_scales;
     char m_realm = 'G';
     std::vector<CombatBlow> m_blows;
+    bool m_fullHarm = false;
     std::vector<CombatLoss> m_losses;
     std::minstd_rand m_arenaRandom;
 };
