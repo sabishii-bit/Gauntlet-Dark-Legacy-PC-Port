@@ -381,13 +381,17 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   waited for by portals. `PlayScene::party()` hands the fallen on as they
   came into the level (`PartyMember::fallen`, the entry snapshot, keeping
   only the help they saw); they stand again when the party is next in the
-  tower, and stay fallen through any other level. With everyone fallen and
-  the last body gone, `screens/GameOver` runs the retail 240-tick defeat
+  tower, and stay fallen through any other level. With everyone fallen, the
+  last body gone and the announcer done, the party travels to the tower with
+  its entry saves (game_main's all-dead case, then PlayerRestoreState); it is
+  not a game over. Quitting the game from the tower (`PlayScene::startGameOver`,
+  opt_quit_request) runs `screens/GameOver`, the retail 240-tick defeat
   sequence (`gamemain.c::fn_800521E8`): voice `S_GAMEOVERVOX` at tick 60,
   one caption character every eight ticks thereafter, white double-size
   FONT32 at y=120. The complete line is centred before revealing its prefix.
-  `PlayOutcome::GameOver` closes gameplay, preserves the existing entry-save
-  rollback, and selects the one-shot `fail` movie before resuming attract mode.
+  `PlayOutcome::GameOver` then closes gameplay and selects the one-shot `fail`
+  movie before resuming attract mode. Retail's other road there, every player
+  dropping out with Back while dead, waits on drop-in/out.
   Fallen players cannot pause; the defeat sequence cannot enter idle mode.
   The failure movie is excluded from ordinary attract rotation. Nobody
   is hurt in the tower. Crossing 150 health says the name (`S_<COL><CLS>2`,

@@ -673,6 +673,22 @@ void PlayScene::updateHazardSurfaces(f32 seconds) {
     }
 }
 
+void PlayScene::startGameOver() {
+    std::string_view caption;
+    if (const auto message = m_hud.strings().find(GameOver::kMessage)) {
+        const auto& pages = m_hud.strings().message(*message).pages;
+        if (!pages.empty()) {
+            caption = pages.front();
+        }
+    }
+    if (m_context.strings != nullptr && m_context.strings->has(GameOver::kTextId)) {
+        caption = m_context.strings->get(GameOver::kTextId);
+    }
+    m_gameOver.begin(caption);
+    m_audio.stopCues();
+    log::info("The game is being quit; game over");
+}
+
 /** The narrator names the character ("Red Warrior", from the class's own bank) and says
  * `line` after: what the original's announcements by name do. */
 void PlayScene::sayWithName(usize index, std::string_view line, f32 wait) {
@@ -1306,22 +1322,15 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                     PortalVisitor{m_players[i].actor.position(), m_players[i].actor.radius()});
             }
         }
-        // Wait for the last death animation, not just the last lethal hit.
-        if (GameOver::ready(m_players)) {
-            std::string_view caption;
-            if (const auto message = m_hud.strings().find(GameOver::kMessage)) {
-                const auto& pages = m_hud.strings().message(*message).pages;
-                if (!pages.empty()) {
-                    caption = pages.front();
-                }
-            }
-            if (m_context.strings != nullptr && m_context.strings->has(GameOver::kTextId)) {
-                caption = m_context.strings->get(GameOver::kTextId);
-            }
-            m_gameOver.begin(caption);
+        // With everyone fallen, the last death played out and the announcer done, the party
+        // goes back to the tower as it came into the level (game_main sends a party of the
+        // dead or waiting to the tower, where PlayerRestoreState stands them again). The
+        // defeat caption is for a game that is being quit, not for a wiped party.
+        if (GameOver::ready(m_players) && m_audio.narrationBacklog() <= 0.0) {
+            m_destination = LevelRef::tower();
             m_audio.stopCues();
-            log::info("All players have fallen; game over");
-            return PlayOutcome::Running;
+            log::info("All players have fallen; back to the tower");
+            return PlayOutcome::Travel;
         }
         if (const auto portal = m_portals.update(ticks, seconds, standing);
             portal.has_value() && leaveBy(*portal)) {
