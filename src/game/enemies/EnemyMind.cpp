@@ -42,6 +42,12 @@ constexpr f32 kBackedOff = 10.0f;     ///< until beyond this
 constexpr f32 kCloseInBeyond = 18.0f; ///< and closes in from beyond this
 constexpr f32 kClosedIn = 16.0f;      ///< until within this
 constexpr f32 kRangePace = 0.8f;
+constexpr f32 kZigZagCloseIn = 8.0f;          ///< a zig-zagger this near its player seeks it
+constexpr s32 kSwingTicks = 45;               ///< between a zig-zagger's quarter-turn swings
+constexpr s32 kSwingsBeforeAim = 4;           ///< and how many it makes before it may aim afresh
+constexpr s32 kAimHold = 30;                  ///< ticks after a fresh aim before another
+constexpr f32 kAimOffset = kPi / 4.0f;        ///< off the player a fresh aim goes
+constexpr f32 kAimOffsetGrowth = kPi / 12.0f; ///< and further for each aim still counted
 constexpr f32 kPatrolNotice = 0.8f; ///< of its sight, a patroller leaves off for its player
 constexpr f32 kLookoutReached = 1.0f;
 constexpr f32 kLookoutHeight = 4.0f;
@@ -525,6 +531,54 @@ public:
     }
 };
 
+/** Zig-zagging at its player: a quarter turn every 45 ticks, always to the same side as it
+ * starts, and after four swings, once it has drifted more than a quarter turn off its player
+ * (or at once when a step gets nowhere), a fresh heading an eighth of a turn and more off
+ * straight at them, held thirty ticks. Unseen it wanders; within eight it seeks
+ * (move_logic14). */
+class ZigZagMind : public EnemyMind {
+public:
+    std::string_view name() const override { return "zig-zag"; }
+    MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        if (sense.target < 0 || !sense.recognized) {
+            return enemyMindOf(kWanderWay).think(memory, sense);
+        }
+        if (sense.targetDistance <= kZigZagCloseIn) {
+            return enemyMindOf(kSeekWay).think(memory, sense);
+        }
+        ZigZag& zig = memory.zigZag;
+        const f32 face = sense.faceAngle(memory.heading);
+        zig.count -= sense.ticks;
+        if (zig.count <= 0) {
+            zig.side = -zig.side;
+            memory.heading = wrapAngle(memory.heading + (zig.side > 0 ? kPi / 2.0f : -kPi / 2.0f));
+            zig.count += kSwingTicks;
+            ++zig.swings;
+        }
+        MindIntent intent;
+        intent.heading = memory.heading;
+        const f32 drift = wrapAngle(face - memory.heading);
+        if (zig.hold <= 0 &&
+            (sense.blocked || (zig.swings >= kSwingsBeforeAim && std::abs(drift) > kPi / 2.0f))) {
+            const f32 offset = kAimOffset + (kAimOffsetGrowth * static_cast<f32>(zig.spread));
+            if (zig.swings >= kSwingsBeforeAim) {
+                zig.side = -zig.side;
+            }
+            memory.heading = wrapAngle(face + (zig.side > 0 ? offset : -offset));
+            zig.count = 0;
+            zig.swings = 0;
+            ++zig.spread;
+            zig.hold = kAimHold;
+        } else {
+            if (zig.spread > 0) {
+                --zig.spread;
+            }
+            zig.hold -= sense.ticks;
+        }
+        return intent;
+    }
+};
+
 /** Walking the level's lookouts: to the nearest, then on to the one each names, until a player
  * comes within four fifths of its sight, when it seeks them, taking up the round again from
  * the nearest lookout once they are further off (move_logic15). With no lookouts it wanders. */
@@ -649,6 +703,7 @@ const LurkMind kLurk;
 const LungeMind kLunge;
 const CastMind kCast;
 const PatrolMind kPatrol;
+const ZigZagMind kZigZag;
 const StandCastMind kStandCast;
 const RangeCastMind kRangeCast;
 const ThrowMind kThrow;
@@ -736,6 +791,7 @@ const EnemyMind& enemyMindOf(s32 algorithm) {
     case kLungeWay: return kLunge;
     case kCastWay: return kCast;
     case kPatrolWay: return kPatrol;
+    case kZigZagWay: return kZigZag;
     case kStandCastWay: return kStandCast;
     case kRangeCastWay: return kRangeCast;
     case kThrowWay:

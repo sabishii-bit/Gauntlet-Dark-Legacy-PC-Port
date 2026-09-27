@@ -280,6 +280,38 @@ TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer
     REQUIRE(intent.become == kSeekWay);
 }
 
+TEST_CASE("the zig-zagger swings a quarter turn at a time and aims afresh once it drifts",
+          "[game][enemies][mind]") {
+    const EnemyMind& zig = enemyMindOf(kZigZagWay);
+    REQUIRE(zig.name() == "zig-zag");
+    MindMemory memory;
+    const MindSense sense = senseAhead(20.0f); // the player straight ahead, along +z
+    // Its first tick swings it a quarter turn, always the same way, and it walks on that way.
+    const MindIntent intent = zig.think(memory, sense);
+    CHECK(intent.heading == Approx(-kPi / 2.0f));
+    CHECK(intent.pace == 1.0f);
+    CHECK(memory.zigZag.count == 43);
+    // Every 45 ticks another. Four bring it back to straight at the player; once it has made
+    // four and drifted over a quarter turn off (the sixth), it aims afresh an eighth of a
+    // turn off straight at them, and holds that aim thirty ticks.
+    s32 ticks = 2;
+    for (; ticks < 600 && memory.zigZag.hold != 30; ticks += 2) {
+        zig.think(memory, sense);
+    }
+    CHECK(ticks == 226); // the sixth swing, 43 ticks after the first and 45 apart
+    CHECK(memory.zigZag.swings == 0);
+    CHECK(memory.zigZag.spread == 1);
+    CHECK(memory.heading == Approx(-kPi / 4.0f));
+    // Within eight it seeks; unseen it wanders.
+    MindMemory close;
+    CHECK(zig.think(close, senseAhead(7.0f)).heading == Approx(0.0f));
+    MindMemory lost;
+    lost.heading = 0.6f;
+    MindSense alone;
+    alone.ticks = 2;
+    CHECK(zig.think(lost, alone).heading == 0.6f);
+}
+
 TEST_CASE("the ranged casters wait, then attack from where they stand or keep their distance",
           "[game][enemies][mind]") {
     const EnemyMind& stand = enemyMindOf(kStandCastWay);
