@@ -802,6 +802,43 @@ TEST_CASE("an enemy on a burning floor is burned every update it stands there",
     enemies.close();
 }
 
+TEST_CASE("the swarm runs from a lit suicide bomber near it", "[game][enemies][unpacked]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 13, EnemyScales{}, 2);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.placed = true;
+    spawn.tier = kSuicideStrength;
+    spawn.algorithm = 0; // unset: the strength's own
+    spawn.position = Vec3{-30.0f, 0.0f, 0.0f};
+    const auto bomber = enemies.spawn(spawn, {});
+    REQUIRE(bomber.has_value());
+    REQUIRE(enemies.algorithmOf(*bomber) == kSuicideWay);
+    spawn.tier = 1;
+    spawn.algorithm = kChaseWay;
+    spawn.position = Vec3{-24.0f, 0.0f, 0.0f};
+    const auto chaser = enemies.spawn(spawn, {});
+    REQUIRE(chaser.has_value());
+    const std::vector<EnemyView> near{playerAt(Vec3{-30.0f, 0.0f, 12.0f})};
+    // Until the fuse is lit the chaser goes for the player like any other.
+    s32 frame = 0;
+    for (; frame < 600 && enemies.animatorOf(*bomber)->action() != EnemyAction::Run; ++frame) {
+        enemies.update(kTicks, kStep, near);
+    }
+    REQUIRE(enemies.animatorOf(*bomber)->action() == EnemyAction::Run);
+    // Then, within ten of it, it runs straight away from it.
+    const auto apart = [&] {
+        return glm::distance(enemies.positionOf(*bomber), enemies.positionOf(*chaser));
+    };
+    REQUIRE(apart() < 10.0f);
+    const f32 before = apart();
+    for (s32 i = 0; i < 4 && enemies.alive(*bomber); ++i) {
+        enemies.update(kTicks, kStep, near);
+    }
+    CHECK(apart() > before);
+}
+
 TEST_CASE("a way of nought is filled in by kind and strength as the original does",
           "[game][enemies]") {
     constexpr s32 kDemonKind = 2;

@@ -52,6 +52,7 @@ struct MindSense {
     s32 idleTicks = 120;                     ///< ticks a thrower waits between throws
     EnemyAction action = EnemyAction::Ready; ///< what the body is doing
     u32 random = 0;                          ///< a fresh draw from the pool's generator
+    std::optional<Vec3> bomber;              ///< a lit suicide bomber near enough to run from
     /** Whether a step along a heading crosses nothing (a body against a wall may still
      * slide along it). */
     std::function<bool(f32 heading)> clear;
@@ -95,6 +96,10 @@ public:
  * wanderer's. */
 const EnemyMind& enemyMindOf(s32 algorithm);
 
+/** Whether a body of this way runs from a lit suicide bomber near it: the ways whose
+ * move_logic checks FoundSuicideBomber first. */
+bool fleesBombers(s32 algorithm);
+
 /** The ways with a mind of their own. */
 inline constexpr s32 kSeekWay = 0;
 inline constexpr s32 kProwlWay = 2;
@@ -108,7 +113,7 @@ inline constexpr s32 kBombWay = 17;         ///< the bomber's: standing and lobb
 inline constexpr s32 kSkirmishBombWay = 26; ///< move_logic16 with bombs instead of arrows
 inline constexpr s32 kSuicideWay = 18;      ///< the suicide's: a lit fuse and a run
 inline constexpr s32 kThrowWay = 23;        ///< standing and shooting
-inline constexpr s32 kFleeWay = 24;
+inline constexpr s32 kFleeWay = 24;         ///< away from a lit suicide bomber, a tick at a time
 inline constexpr s32 kLurkWay = 27;
 inline constexpr s32 kLungeWay = 31; ///< the Garm brood's: creeping up and lunging
 
