@@ -28,8 +28,9 @@ constexpr f32 kBlockWorth = 2.0f;      ///< what a guard must take off a hurt fo
 constexpr f32 kBlockPerDamage = 0.01f; ///< seconds it shows for each point left
 constexpr f32 kBlockLeast = 0.333f;
 constexpr f32 kBlockMost = 1.0f;
-constexpr f32 kRamDamage = 3.0f; ///< what a charge does to what it runs into
-constexpr f32 kRamReach = 0.3f;  ///< how near counts as run into
+constexpr f32 kRamDamage = 3.0f;   ///< what a charge does to what it runs into
+constexpr f32 kChargeBlow = 32.0f; ///< and to an enemy or a great one (PlayerMotion's anim 8)
+constexpr f32 kRamReach = 0.3f;    ///< how near counts as run into
 
 } // namespace
 void PlayerAttacks::bind(const Resources& resources) {
@@ -95,6 +96,32 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
             rammed.push_back(key);
             targets.fixtures.strikeSafeRock(rock, kRamDamage);
         }
+    }
+    // A body run into is thrown down (PlayerMotion_DamageTarget, 0x20): swarm and great ones,
+    // never a boss, each once a charge.
+    const f32 blow = PowerupEffects::of(actor.save().progress().inventory).grown() ? 2 * kChargeBlow
+                                                                                   : kChargeBlow;
+    const Vec3 facing = actor.facing();
+    const auto ram = [&](const MissileTarget& target, s32 base, const auto& strike) {
+        const usize key = static_cast<usize>(base) + static_cast<usize>(target.id);
+        if (std::ranges::find(rammed, key) != rammed.end() ||
+            !target.touches(actor.followPoint(), actor.radius() + kRamReach)) {
+            return;
+        }
+        rammed.push_back(key);
+        strike(target);
+    };
+    for (const MissileTarget& target : targets.opponents.enemies().targets()) {
+        ram(target, kEnemyTargetBase, [&](const MissileTarget& hit) {
+            targets.opponents.strikeEnemy(hit.id, blow, EnemyHit::kKnockDown, facing,
+                                          actor.player(), players, true, hit.base);
+        });
+    }
+    for (const MissileTarget& target : targets.opponents.critters().targets()) {
+        ram(target, kCritterTargetBase, [&](const MissileTarget& hit) {
+            targets.opponents.strikeCritter(hit.id, blow, EnemyHit::kKnockDown, facing,
+                                            actor.player(), hit.base, true, players);
+        });
     }
     targets.fixtures.settleBlasts(players, targets.fixtureEvents);
 }

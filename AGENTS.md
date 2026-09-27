@@ -417,8 +417,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   going down is the charge (`SHOVE`, wanting 5, running the meter down 20 a
   second while it plays): the character rushes flat out at 1.5 times its
   pace the way the stick is pushed (past a quarter), else straight ahead,
-  and what it runs into is struck for 3, once a charge
-  (`PlayScene::chargeInput`, `ramBarrels`). Held by itself `turbo` is the
+  and what it runs into is struck once a charge: barrels, walls and rocks for
+  3, the swarm and great ones (never a boss) for 32 and thrown down,
+  doubled while grown (`PlayScene::chargeInput`, `ramBarrels`,
+  PlayerMotion_DamageTarget). Held by itself `turbo` is the
   guard: `DEFEND1` up, `DEFEND2` for as long as it is held, `DEFENDR` down;
   with too little in the meter for a turbo attack, turbo and attack together
   are still only the guard, as in the original. `PlayScene::guarded` is the
