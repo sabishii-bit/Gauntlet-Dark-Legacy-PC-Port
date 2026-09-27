@@ -461,8 +461,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
     }
     if (outcome == PlayOutcome::GameOver) {
         m_parent.reset();
-        // Retain checkpoint saves, then end the session rather than resurrecting
-        // the defeated party in the tower or awarding a successful-level tally.
+        // The game was quit: keep the characters, then play the failure movie.
         keepParty();
         m_play->scene.close();
         m_play->world.clear();
@@ -524,11 +523,10 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         return;
     }
     if (outcome == PauseOutcome::Title) {
+        // Quitting the game is the defeat sequence and then the failure movie (opt_quit_request
+        // sets MG_OVER); the characters are kept as they stand.
         keepParty();
-        m_play->scene.close();
-        if (!startTitleScreen()) {
-            startNextAttractScreen();
-        }
+        m_play->scene.startGameOver();
         return;
     }
     if (outcome == PauseOutcome::Shop) {

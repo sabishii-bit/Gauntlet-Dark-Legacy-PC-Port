@@ -208,14 +208,22 @@ SoundHandle LevelSoundscape::narrate(std::string_view name, Narrator which, Soun
 }
 
 bool LevelSoundscape::narrationRoom(f32 maxWait) const {
-    if (m_narrationHeld || m_narrationEnds.size() >= kMostNarration) {
+    if (m_narrationHeld) {
         return false;
     }
-    return maxWait < 0.0f || narrationBacklog() <= static_cast<f64>(maxWait);
+    const f64 backlog = narrationBacklog();
+    if (backlog > 0.0 && m_narrationEnds.size() >= kMostNarration) {
+        return false;
+    }
+    return maxWait < 0.0f || backlog <= static_cast<f64>(maxWait);
 }
 
 f64 LevelSoundscape::narrationBacklog() const {
-    return m_narrationEnds.empty() ? 0.0 : std::max(m_narrationEnds.back() - m_narrationClock, 0.0);
+    // Lines stopped from elsewhere no longer wait, whatever the clock says.
+    if (m_narrationEnds.empty() || m_output == nullptr || !m_output->isPlaying(m_narrationTail)) {
+        return 0.0;
+    }
+    return std::max(m_narrationEnds.back() - m_narrationClock, 0.0);
 }
 
 SoundHandle LevelSoundscape::queueNarration(std::string_view name, Narrator which) {
@@ -236,7 +244,13 @@ SoundHandle LevelSoundscape::queueNarrationFrom(SoundSet& bank, std::string_view
 }
 
 SoundHandle LevelSoundscape::queue(SoundSet& bank, u32 sound) {
-    if (m_output == nullptr || m_narrationHeld || m_narrationEnds.size() >= kMostNarration) {
+    if (m_output == nullptr || m_narrationHeld) {
+        return kNoSound;
+    }
+    if (!m_output->isPlaying(m_narrationTail)) {
+        m_narrationEnds.clear();
+    }
+    if (m_narrationEnds.size() >= kMostNarration) {
         return kNoSound;
     }
     const SoundSequence& sequence = bank.sequence(sound);

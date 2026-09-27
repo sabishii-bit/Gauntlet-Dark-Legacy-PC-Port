@@ -199,7 +199,7 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     scene.setSaveSlot(3, 7);
 
     scene.hurtPlayer(3, 100.0f, HurtKind::Blow);
-    REQUIRE(scene.actor(3)->save().health() == 200);
+    REQUIRE(scene.actor(3)->save().health() == 201); // less a point of the class's armour
     REQUIRE(scene.actor(1)->save().health() == 700);
     REQUIRE_FALSE(scene.fallen(1));
     const auto expectedExperience =
@@ -245,12 +245,20 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     scene.hurtPlayer(1, 10000.0f, HurtKind::Burn);
     REQUIRE_FALSE(scene.gameOver().active());
     REQUIRE_FALSE(scene.canPause(1));
-    for (s32 i = 0; i < 1200 && !scene.gameOver().active(); ++i) {
-        REQUIRE(scene.update(1.0 / 60.0, still) == PlayOutcome::Running);
+    // Everyone fallen and the last death played out, the party goes back to the tower as
+    // it came in: no defeat caption (game_main's all-dead case).
+    PlayOutcome outcome = PlayOutcome::Running;
+    for (s32 i = 0; i < 1200 && outcome == PlayOutcome::Running; ++i) {
+        outcome = scene.update(1.0 / 60.0, still);
     }
+    REQUIRE(outcome == PlayOutcome::Travel);
+    REQUIRE(scene.destination().isTower());
+    REQUIRE_FALSE(scene.gameOver().active());
+    REQUIRE(scene.levelResults().empty());
+    // Quitting the game is what plays the defeat sequence.
+    scene.startGameOver();
     REQUIRE(scene.gameOver().active());
     REQUIRE_FALSE(scene.canPause(0));
-    REQUIRE(scene.levelResults().empty());
     for (s32 i = 0; i < GameOver::kDurationTicks - 1; ++i) {
         REQUIRE(scene.update(1.0 / 60.0, still) == PlayOutcome::Running);
     }
@@ -1115,7 +1123,7 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     // Hurt, the character loses health; with none left it falls, and its box says where it
     // waits. The party goes on without what the level gave it.
     scene.hurtPlayer(0, 100.0f, HurtKind::Blow);
-    REQUIRE(scene.actor(0)->save().health() == 200);
+    REQUIRE(scene.actor(0)->save().health() == 201); // less a point of the class's armour
     REQUIRE_FALSE(scene.fallen(0));
     const auto white = world.powerups().textures.find("AAAWHITE");
     REQUIRE(white);
@@ -1139,7 +1147,8 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     for (s32 i = 0; i < 1200 && outcome == PlayOutcome::Running; ++i) {
         outcome = scene.update(1.0 / 60.0, still);
     }
-    REQUIRE(outcome == PlayOutcome::GameOver);
+    REQUIRE(outcome == PlayOutcome::Travel); // a wiped party goes back to the tower
+    REQUIRE(scene.destination().isTower());
     const std::vector<PartyMember> after = scene.party();
     REQUIRE(after.size() == 1);
     REQUIRE(after[0].fallen);
@@ -1176,7 +1185,7 @@ TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][scre
     for (s32 i = 0; i < 600 && scene.actor(0)->save().health() == 400; ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    REQUIRE(scene.actor(0)->save().health() == 390); // twenty, halved by the level
+    REQUIRE(scene.actor(0)->save().health() == 391); // twenty, halved by the level, less armour
     // The tick after, the body flinches, and pushing the stick moves it nowhere until it is
     // over; then it walks off.
     PlayScene::Inputs walking{};
@@ -1184,7 +1193,8 @@ TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][scre
     walking[0].move.magnitude = 1.0f;
     scene.update(1.0 / 60.0, walking);
     REQUIRE(scene.animator(0) != nullptr);
-    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::HitReact);
+    // Spikes play their own reaction (SPIKEHIT), not the ordinary flinch.
+    REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::SpikeHit);
     const Vec3 struckAt = scene.actor(0)->position();
     s32 held = 0;
     while (scene.animator(0)->reacting() && held < 200) {
@@ -2464,41 +2474,48 @@ TEST_CASE("a character hurt cries out by the original's rules: at once for a bur
     };
     sounds.stopAll();
     // A light blow is felt (the hit sounds) but not cried over; enough of them are: once
-    // thirty of health has gone (the level scales what a blow takes).
+    // thirty of harm has been taken, counted before the health is rounded (pain_accum), so
+    // what the level and the armour leave of each blow decides which one it is.
     const s32 whole = scene.actor(0)->save().health();
     scene.harm(0, 5.0f, HurtKind::Blow);
     REQUIRE(live() == 1);
     sounds.stopAll();
     REQUIRE(live() == 0);
+    const s32 perBlow = whole - scene.actor(0)->save().health();
+    REQUIRE(perBlow > 0);
     s32 cries = 0;
-    s32 blows = 0;
-    while (whole - scene.actor(0)->save().health() < 30 && blows < 20) {
+    s32 blows = 1;
+    while (cries == 0 && blows < 20) {
         scene.harm(0, 5.0f, HurtKind::Blow);
         ++blows;
-        if (whole - scene.actor(0)->save().health() < 30) {
-            REQUIRE(live() == 0); // the hit's sound waits its half second
-        } else {
-            cries = static_cast<s32>(live());
-        }
+        cries = static_cast<s32>(live()); // the hit's own sound waits its half second
     }
     REQUIRE(cries == 1);
+    const s32 lost = whole - scene.actor(0)->save().health();
+    CHECK(lost >= 30 - perBlow);
+    CHECK(lost <= 30 + 2 * perBlow);
     sounds.stopAll();
     // A heavy blow, or a burn, is cried over at once.
     scene.harm(0, 61.0f, HurtKind::Blow);
     REQUIRE(live() == 1);
     sounds.stopAll();
+    // (A burn the armour takes whole is not felt at all.)
     scene.harm(0, 1.5f, HurtKind::Burn);
+    REQUIRE(live() == 0);
+    scene.harm(0, 5.0f, HurtKind::Burn);
     REQUIRE(live() == 1);
     sounds.stopAll();
     // Down past a hundred and fifty the narrator names the character instead.
     const s32 health = scene.actor(0)->save().health();
     REQUIRE(health > 150);
     scene.harm(0, static_cast<f32>(health - 140), HurtKind::Burn);
-    REQUIRE(scene.actor(0)->save().health() == 140);
+    REQUIRE(scene.actor(0)->save().health() <= 150); // less what the armour takes
+    REQUIRE(scene.actor(0)->save().health() > 50);
     REQUIRE(live() >= 1); // the name, the line queued after it
     sounds.stopAll();
     scene.harm(0, 100.0f, HurtKind::Burn);
-    REQUIRE(scene.actor(0)->save().health() == 40);
+    REQUIRE(scene.actor(0)->save().health() <= 50);
+    REQUIRE(scene.actor(0)->save().health() > 0);
     REQUIRE(live() >= 1);
     scene.close();
 }

@@ -239,6 +239,9 @@ public:
      * came in, keeping only what they were taught and the slots they are kept in (kill_player,
      * then PlayerRestoreState in the tower). */
     std::vector<PartyMember> abandonedParty(std::span<const PartyMember> party) const;
+    /** Quitting the game plays the defeat caption and voice (MG_OVER), after which update
+     * returns GameOver. */
+    void startGameOver();
     /** Associates a manual save with the live participant without restarting the level. */
     void setSaveSlot(s32 player, std::optional<usize> slot);
     std::vector<LevelResults> levelResults() const;

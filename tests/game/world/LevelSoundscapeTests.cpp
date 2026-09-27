@@ -142,6 +142,12 @@ TEST_CASE("the narrator's queue plays lines in turn and turns away what would wa
     REQUIRE_FALSE(soundscape.narrationRoom(LevelSoundscape::kAlwaysRoom));
     REQUIRE(soundscape.queueNarration("LINE") == kNoSound);
     REQUIRE(soundscape.queueNarration("MISSING") == kNoSound);
+    // Lines stopped from elsewhere no longer hold anything up.
+    player.stopAll();
+    REQUIRE(soundscape.narrationBacklog() == 0.0);
+    REQUIRE(soundscape.narrationRoom(0.5f));
+    REQUIRE(soundscape.queueNarration("LINE") != kNoSound);
+    REQUIRE(soundscape.narrationBacklog() == Catch::Approx(1.0));
     // Leaving the level lets it all go.
     soundscape.close();
     REQUIRE(soundscape.narrationBacklog() == 0.0);
