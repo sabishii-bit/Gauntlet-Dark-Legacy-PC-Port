@@ -280,6 +280,58 @@ TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer
     REQUIRE(intent.become == kSeekWay);
 }
 
+TEST_CASE("the patroller walks the lookouts until a player comes near", "[game][enemies][mind]") {
+    std::vector<WorldLocator> locators(4);
+    locators[0].kind = LocatorKind::Sentry;
+    locators[0].position = Vec3{0, 0, 10};
+    locators[0].next = 1;
+    locators[1].kind = LocatorKind::CameraGame; // not a lookout
+    locators[2].kind = LocatorKind::Sentry;
+    locators[2].position = Vec3{10, 0, 10};
+    locators[2].next = 0;
+    locators[3].kind = LocatorKind::Event;
+    locators[3].position = Vec3{50, 0, 50};
+    locators[3].next = 3;
+    const LookoutRoute route = LookoutRoute::of(locators);
+    REQUIRE(route.points.size() == 3);
+    CHECK(route.next == std::vector<s32>{1, 0, 3});
+    const EnemyMind& patrol = enemyMindOf(kPatrolWay);
+    REQUIRE(patrol.name() == "patrol");
+    MindMemory memory;
+    MindSense sense;
+    sense.ticks = 2;
+    sense.lookouts = &route;
+    // To the nearest lookout first, at a walk.
+    const MindIntent intent = patrol.think(memory, sense);
+    CHECK(memory.lookout == 0);
+    CHECK(intent.heading == Approx(0.0f));
+    CHECK(intent.pace == 1.0f);
+    CHECK(intent.action == EnemyAction::Walk);
+    // Reached, on to the one it names.
+    sense.position = Vec3{0.5f, 1.0f, 9.6f};
+    patrol.think(memory, sense);
+    CHECK(memory.lookout == 1);
+    CHECK(patrol.think(memory, sense).heading == Approx(kPi / 2.0f).margin(0.05));
+    // A player within four fifths of its sight: it seeks them, and takes up the round again
+    // from the nearest once they are further off.
+    MindSense seen = senseAhead(20.0f);
+    seen.sight = 30.0f;
+    seen.lookouts = &route;
+    patrol.think(memory, seen);
+    CHECK(memory.lookout == -1);
+    seen = senseAhead(28.0f);
+    seen.sight = 30.0f;
+    seen.lookouts = &route;
+    patrol.think(memory, seen);
+    CHECK(memory.lookout == 0);
+    // No lookouts: it wanders.
+    MindMemory lost;
+    lost.heading = 0.3f;
+    MindSense bare;
+    bare.ticks = 2;
+    CHECK(patrol.think(lost, bare).heading == 0.3f);
+}
+
 TEST_CASE("the caster seeks and casts on its wait, wanders unseen, and fights close by",
           "[game][enemies][mind]") {
     const EnemyMind& cast = enemyMindOf(kCastWay);

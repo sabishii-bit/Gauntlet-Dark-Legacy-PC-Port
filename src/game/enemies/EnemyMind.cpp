@@ -34,6 +34,9 @@ constexpr f32 kLungeLands = 7.5f; ///< and its lunge lands on a player within th
 constexpr s32 kLungeWait = 30;    ///< ticks between attacks, and as many again at random
 constexpr f32 kCreepPace = 0.5f;
 constexpr f32 kFleePace = 2.0f;
+constexpr f32 kPatrolNotice = 0.8f; ///< of its sight, a patroller leaves off for its player
+constexpr f32 kLookoutReached = 1.0f;
+constexpr f32 kLookoutHeight = 4.0f;
 constexpr f32 kCastCloseIn = 6.0f; ///< a caster this near its player fights it hand to hand
 constexpr s32 kCastLeast = 20;     ///< ticks a cast is asked for, and as many as ten more
 constexpr s32 kCastSpread = 10;
@@ -49,6 +52,10 @@ constexpr std::array<f32, 8> kCornerOffsets{
 
 f32 yawBetween(const Vec3& from, const Vec3& to) {
     return std::atan2(to.x - from.x, to.z - from.z);
+}
+
+f32 flatDistance(const Vec3& a, const Vec3& b) {
+    return glm::length(Vec2{a.x - b.x, a.z - b.z});
 }
 
 /** A hold on the heading, unless one is already running. */
@@ -403,6 +410,44 @@ public:
 };
 
 /** Standing where it is, facing whoever comes against it. */
+/** Walking the level's lookouts: to the nearest, then on to the one each names, until a player
+ * comes within four fifths of its sight, when it seeks them, taking up the round again from
+ * the nearest lookout once they are further off (move_logic15). With no lookouts it wanders. */
+class PatrolMind : public EnemyMind {
+public:
+    std::string_view name() const override { return "patrol"; }
+    MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        if (sense.target >= 0 && sense.targetDistance <= kPatrolNotice * sense.sight &&
+            flatDistance(sense.targetPosition, sense.position) <= kPatrolNotice * sense.sight) {
+            memory.lookout = -1;
+            return enemyMindOf(kSeekWay).think(memory, sense);
+        }
+        if (sense.lookouts == nullptr || sense.lookouts->empty()) {
+            return enemyMindOf(kWanderWay).think(memory, sense);
+        }
+        const LookoutRoute& route = *sense.lookouts;
+        if (memory.lookout < 0 || static_cast<usize>(memory.lookout) >= route.points.size()) {
+            f32 best = 0.0f;
+            for (usize i = 0; i < route.points.size(); ++i) {
+                const f32 distance = glm::distance(route.points[i], sense.position);
+                if (memory.lookout < 0 || distance < best) {
+                    best = distance;
+                    memory.lookout = static_cast<s32>(i);
+                }
+            }
+        }
+        const Vec3& point = route.points[static_cast<usize>(memory.lookout)];
+        memory.heading = yawBetween(sense.position, point);
+        if (std::abs(point.y - sense.position.y) < kLookoutHeight &&
+            flatDistance(point, sense.position) < kLookoutReached) {
+            memory.lookout = route.next[static_cast<usize>(memory.lookout)];
+        }
+        MindIntent intent;
+        intent.heading = memory.heading;
+        return intent;
+    }
+};
+
 /** A caster: with nobody seen it wanders and near its player it chases; otherwise it seeks,
  * and every wait (the level's ninety ticks and up to half again) asks for its attack, the
  * power attack from the second strength, for twenty to thirty ticks; the attack's swing
@@ -488,6 +533,7 @@ const FleeMind kFlee;
 const LurkMind kLurk;
 const LungeMind kLunge;
 const CastMind kCast;
+const PatrolMind kPatrol;
 const ThrowMind kThrow;
 const SkirmishMind kSkirmish;
 const SuicideMind kSuicide;
@@ -521,6 +567,19 @@ s32 MindSense::nearerSide() const {
     const f32 x2 = dx + std::sin(right);
     const f32 z2 = dz + std::cos(right);
     return x2 * x2 + z2 * z2 <= x1 * x1 + z1 * z1 ? -1 : 1;
+}
+
+LookoutRoute LookoutRoute::of(std::span<const WorldLocator> locators) {
+    LookoutRoute route;
+    for (const WorldLocator& locator : locators) {
+        if ((locator.kind != LocatorKind::Sentry && locator.kind != LocatorKind::Event) ||
+            route.points.size() >= kMost) {
+            continue;
+        }
+        route.points.push_back(locator.position);
+        route.next.push_back(static_cast<s32>(locator.next));
+    }
+    return route;
 }
 
 bool fleesBombers(s32 algorithm) {
@@ -559,6 +618,7 @@ const EnemyMind& enemyMindOf(s32 algorithm) {
     case kLurkWay: return kLurk;
     case kLungeWay: return kLunge;
     case kCastWay: return kCast;
+    case kPatrolWay: return kPatrol;
     case kThrowWay:
     case kBombWay: return kThrow;
     case kSkirmishWay:

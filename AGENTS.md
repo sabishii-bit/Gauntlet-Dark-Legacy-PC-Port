@@ -581,7 +581,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   jitters behind a wall, which we do not copy); a dead stop holds the
   heading ten ticks (fifteen for another enemy) and counts a bump, seven
   bumps and the route doubles back, ten refused headings and it goes
-  straight anyway; loiter (11) turning on the spot, done with when its
+  straight anyway; patrol (15) walking the level's lookouts (`LookoutRoute`: its
+  sentry and event locators, twenty at most, each naming the next), the nearest first,
+  seeking instead while a player is within four fifths of its sight; loiter (11)
+  turning on the spot, done with when its
   generator is gone; flee (24) for a tick at a time, taken by most ways
   (`fleesBombers`) within ten of the first lit suicide bomber running at the
   party, straight away from it at twice the pace, nudged 5 to 20 degrees off

@@ -2,8 +2,11 @@
 
 #include <functional>
 #include <optional>
+#include <span>
 #include <string_view>
+#include <vector>
 
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
@@ -26,6 +29,18 @@ struct MindMemory {
     bool woken = false;       ///< a lurker has seen someone
     bool skirting = false;    ///< a chaser is going round something
     bool keepingOff = false;  ///< a skirmisher is backing away
+    s32 lookout = -1;         ///< the lookout a patroller is making for; none until chosen
+};
+
+/** A level's lookouts: the points its patrollers walk between, each naming the one after it
+ * (its sentry and event locators, in the order the level lists them, twenty at most). */
+struct LookoutRoute {
+    static constexpr usize kMost = 20;
+    std::vector<Vec3> points;
+    std::vector<s32> next;
+
+    static LookoutRoute of(std::span<const WorldLocator> locators);
+    bool empty() const { return points.empty(); }
 };
 
 /** What a mind senses of its body and the world in a tick. */
@@ -52,6 +67,7 @@ struct MindSense {
     s32 idleTicks = 120;                     ///< ticks a thrower waits between throws
     EnemyAction action = EnemyAction::Ready; ///< what the body is doing
     u32 random = 0;                          ///< a fresh draw from the pool's generator
+    const LookoutRoute* lookouts = nullptr;  ///< the level's, for a patroller
     std::optional<Vec3> bomber;              ///< a lit suicide bomber near enough to run from
     s32 tier = 1;                            ///< the strength it was made at
     s32 castWait = 90;                       ///< a caster's least wait between casts, in ticks
@@ -117,8 +133,9 @@ inline constexpr s32 kSuicideWay = 18;      ///< the suicide's: a lit fuse and a
 inline constexpr s32 kThrowWay = 23;        ///< standing and shooting
 inline constexpr s32 kFleeWay = 24;         ///< away from a lit suicide bomber, a tick at a time
 inline constexpr s32 kLurkWay = 27;
-inline constexpr s32 kCastWay = 30;  ///< the casters': seeking, and casting from afar
-inline constexpr s32 kLungeWay = 31; ///< the Garm brood's: creeping up and lunging
+inline constexpr s32 kPatrolWay = 15; ///< walking the lookouts until a player comes near
+inline constexpr s32 kCastWay = 30;   ///< the casters': seeking, and casting from afar
+inline constexpr s32 kLungeWay = 31;  ///< the Garm brood's: creeping up and lunging
 
 /** Angles wrapped into a half turn either way. */
 f32 wrapAngle(f32 angle);

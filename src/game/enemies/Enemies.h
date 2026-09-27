@@ -6,6 +6,7 @@
 #include <optional>
 #include <random>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -165,6 +166,8 @@ public:
     void close();
     /** The level's harmful surfaces, borrowed until close. */
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
+    /** The lookouts its patrollers walk between. */
+    void setLookouts(LookoutRoute lookouts) { m_lookouts = std::move(lookouts); }
 
     /** Loads a kind's archive ahead of need; false when it is not there. */
     bool loadKind(s32 kind);
@@ -343,6 +346,7 @@ private:
     std::filesystem::path m_root;
     const WorldCollision* m_collision = nullptr;
     const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
+    LookoutRoute m_lookouts;
     s32 m_most = kMost;
     EnemyScales m_scales;
     std::vector<std::unique_ptr<Stock>> m_stocks;
