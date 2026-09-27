@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -24,6 +25,7 @@ using Catch::Approx;
 
 constexpr s32 kTicks = 2;
 constexpr f32 kStep = 1.0f / 30.0f;
+constexpr Vec3 kFarEye{0.0f, 1.0e6f, 0.0f}; ///< so high that a shadow is pulled straight up
 
 std::filesystem::path unpackedRoot() {
     return test::unpackedOrSkip("MONSTERS/GRU/animations.json")
@@ -611,6 +613,76 @@ std::filesystem::path routingAssets() {
         "sequences":[{"name":"READY","frames":10,"rate":30},
                      {"name":"WALK","frames":10,"rate":30}]}]})");
     return root;
+}
+
+TEST_CASE("a swarm body lies the shadow of its tier under it", "[game][enemies][shadow]") {
+    const auto root = routingAssets();
+    const auto archive = root / "MONSTERS/GRU";
+    writeTextFile(archive / "flat.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 0 1\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
+        {"index":1,"name":"SHADOW2L1","file":"flat.obj","meshTriangles":1}]})");
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto shadows = [&] {
+        device.draws.clear();
+        enemies.drawShadows(device, Mat4{1}, kFarEye, {});
+        return device.draws.size();
+    };
+    // The first tier's is missing from this archive: none, and nothing breaks.
+    const auto first = enemies.spawn(
+        EnemySpawn{.kind = kGruntKind, .tier = 1, .position = Vec3{-9, 0, 0}, .placed = true}, {});
+    REQUIRE(first);
+    CHECK(shadows() == 0);
+    const auto second = enemies.spawn(
+        EnemySpawn{.kind = kGruntKind, .tier = 2, .position = Vec3{5, 2, 3}, .placed = true}, {});
+    REQUIRE(second);
+    REQUIRE(shadows() == 1);
+    CHECK(glm::distance(device.draws[0].vertices[0].position,
+                        Vec3{5, 2 + BlobShadow::kLift + BlobShadow::kPull, 3}) < 0.001f);
+    // The bodies' own draws leave it out: it goes after the level's floors.
+    device.draws.clear();
+    ItemArchive weapons;
+    enemies.draw(device, Mat4{1}, {}, &device.whiteTexture(), &weapons);
+    CHECK(
+        std::ranges::none_of(device.draws, [](const auto& draw) { return !draw.state.cullBack; }));
+}
+
+TEST_CASE("the zombies' own archive lies a shadow under each tier",
+          "[game][enemies][shadow][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    constexpr s32 kZombieKind = 13;
+    REQUIRE(enemyKind(kZombieKind).name == std::string_view{"ZOM"});
+    test::FakeRenderDevice device;
+    for (s32 tier = 1; tier <= 3; ++tier) {
+        CAPTURE(tier);
+        Enemies enemies;
+        enemies.open(device, root, nullptr, 4, {}, 7);
+        REQUIRE(enemies.loadKind(kZombieKind));
+        const auto id = enemies.spawn(
+            EnemySpawn{.kind = kZombieKind, .tier = tier, .position = Vec3{0}, .placed = true}, {});
+        REQUIRE(id);
+        const auto shadows = [&] {
+            device.draws.clear();
+            enemies.drawShadows(device, Mat4{1}, kFarEye, {});
+            return std::ranges::count_if(device.draws, [](const auto& draw) {
+                return !draw.state.depthWrite && !draw.state.cullBack;
+            });
+        };
+        // None while it rises (action 1, START), then one.
+        REQUIRE(enemies.animatorOf(*id)->action() == EnemyAction::Start);
+        CHECK(shadows() == 0);
+        for (s32 frame = 0; frame < 300 && enemies.animatorOf(*id)->action() == EnemyAction::Start;
+             ++frame) {
+            enemies.update(kTicks, kStep, {});
+        }
+        REQUIRE(enemies.animatorOf(*id)->action() != EnemyAction::Start);
+        CHECK(shadows() == 1);
+    }
 }
 
 TEST_CASE("chasers route around generator bodies instead of pushing into them forever",

@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <type_traits>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/io/File.h"
@@ -319,6 +320,42 @@ TEST_CASE("a player figure draws a rest-pose weapon when optional animations are
     device.draws.clear();
     figure->draw(device, Mat4{1.0f}, Mat4{1.0f}, {}, 1.0f, true);
     REQUIRE(device.draws.size() == 2);
+}
+
+TEST_CASE("a costume's shadow lies on the ground it is given, apart from the body",
+          "[game][world][figure]") {
+    const auto root = costumeFixture("figure-shadow", false);
+    const auto costume = root / "PLAYERS/WAR/BLU";
+    writeTextFile(costume / "objects.json", R"({"objects":[
+        {"index":0,"name":"R_WRIST","file":"mesh.obj","meshTriangles":1},
+        {"index":1,"name":"ORNAMENT","file":"mesh.obj","meshTriangles":1},
+        {"index":2,"name":"WEAP_HOLD","file":"mesh.obj","meshTriangles":1},
+        {"index":3,"name":"SHADOWL1","file":"mesh.obj","meshTriangles":1}]})");
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.color = 1;
+    const auto figure = PlayerFigure::load(device, root, save);
+    REQUIRE(figure != nullptr);
+    REQUIRE(figure->hasShadow());
+    // The body's own draws leave it out.
+    figure->draw(device, Mat4{1.0f}, Mat4{1.0f}, {}, 1.0f, false);
+    REQUIRE(device.draws.size() == 3);
+    device.draws.clear();
+    figure->drawShadow(device, Mat4{1.0f}, Vec3{5, 40, 7}, Vec3{5, -2, 7}, Vec3{0, 1, 0}, {}, 0.5f);
+    REQUIRE(device.draws.size() == 1);
+    const auto& shadow = device.draws[0];
+    REQUIRE(shadow.vertices[0].position.x == Catch::Approx(5.0f));
+    REQUIRE(shadow.vertices[0].position.y ==
+            Catch::Approx(-2.0f + BlobShadow::kLift + BlobShadow::kPull));
+    REQUIRE(shadow.vertices[0].position.z == Catch::Approx(7.0f));
+    REQUIRE_FALSE(shadow.state.depthWrite);
+    // A costume without one draws none.
+    const auto plain = PlayerFigure::load(device, costumeFixture("figure-no-shadow", false), save);
+    REQUIRE(plain != nullptr);
+    REQUIRE_FALSE(plain->hasShadow());
+    device.draws.clear();
+    plain->drawShadow(device, Mat4{1.0f}, Vec3{0, 40, 0}, Vec3{0.0f}, Vec3{0, 1, 0}, {}, 1.0f);
+    REQUIRE(device.draws.empty());
 }
 
 TEST_CASE("a player figure maps animation nodes by name and poses its held weapon",

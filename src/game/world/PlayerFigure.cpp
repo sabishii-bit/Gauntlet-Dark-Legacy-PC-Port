@@ -75,6 +75,8 @@ std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
         classFolder(root, save.character, std::format("SFX{}", colorCode(save.color)));
     figure->m_staysInHand = MissileSpec::of(save.character).staysInHand;
     figure->loadWeapon(save, device);
+    // InitPlayer's SHADOWL1 node (flags 0x880: no depth write).
+    figure->m_shadow.bind(device, figure->m_costumeArchive, kShadowObject);
     figure->loadMissile(root, save, device);
     figure->loadActions(root, save, enter);
     if (PlayerFamiliar::tierFor(save.progress().appearanceLevel()) > 0) {

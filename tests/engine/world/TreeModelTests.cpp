@@ -82,6 +82,35 @@ TEST_CASE("a tree model stands its meshes in the world, lit, opaque parts first"
     REQUIRE(device.draws[1].texture != device.draws[0].texture);
 }
 
+TEST_CASE("a double-sided tree model draws without culling until it is cleared", "[world][model]") {
+    const auto dir = sampleFigure("tree-model-double-sided");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].state.cullBack);
+    CHECK(device.draws[1].state.cullBack);
+    figure.setDoubleSided(true);
+    device.draws.clear();
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+    CHECK_FALSE(device.draws[0].state.cullBack);
+    CHECK_FALSE(device.draws[1].state.cullBack);
+    figure.clear();
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    device.draws.clear();
+    figure.draw(device, Mat4{1.0f}, Mat4{1.0f});
+    REQUIRE(device.draws.size() == 2);
+    CHECK(device.draws[0].state.cullBack);
+}
+
 TEST_CASE("authored fades hide only their subtree and reset on the next pose",
           "[world][model][animation]") {
     const auto dir = sampleFigure("tree-model-fade");
