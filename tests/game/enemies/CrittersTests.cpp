@@ -511,9 +511,17 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
         roared = roared || critters.moveOf(*id) == "ROAR";
     }
     REQUIRE(roared);
-    // Thrown down, it gets up; a character under the place's level is paid less.
+    // Knocked back (0x20) it plays KB; knocked over (0x100) it goes down with KD
+    // (CritterGetDoAction). A character under the place's level is paid less.
     EnemyHit knock = hit;
     knock.flags = EnemyHit::kKnockDown;
+    critters.hurt(*id, knock);
+    critters.update(kTicks, kStep, party);
+    REQUIRE(critters.moveOf(*id) == "KB");
+    for (s32 i = 0; i < 120 && critters.moveOf(*id) == "KB"; ++i) {
+        critters.update(kTicks, kStep, party);
+    }
+    knock.flags = 0x100;
     critters.hurt(*id, knock);
     critters.update(kTicks, kStep, party);
     REQUIRE(critters.moveOf(*id) == "KD");

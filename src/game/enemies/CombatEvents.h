@@ -37,8 +37,9 @@ struct CombatBlow {
     f32 damage = 0.0f;
     Vec3 direction{0.0f, 0.0f, 1.0f};
     bool breath = false;
-    u32 flags = 0;     ///< authored player damage modifiers, not the attack's behavior flags
-    Vec3 origin{0.0f}; ///< emitted segment origin, used for breath cover queries
+    bool gated = false; ///< held off by the player's shared quarter-second hit gap (fxhittime)
+    u32 flags = 0;      ///< authored player damage modifiers, not the attack's behavior flags
+    Vec3 origin{0.0f};  ///< emitted segment origin, used for breath cover queries
     bool area = false;
     f32 repeatGap = 0.0f; ///< area-effect immunity requested on contact
 };

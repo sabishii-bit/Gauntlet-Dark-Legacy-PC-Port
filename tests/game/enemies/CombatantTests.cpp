@@ -246,6 +246,41 @@ TEST_CASE("breath effect inherits the damage node offset and rotation",
     CHECK((*cue.placement)[2].y < -0.3f);
 }
 
+TEST_CASE("a blow's offset turns with its node and reaches by its reach alone",
+          "[game][combatant]") {
+    const auto root = familyAssets();
+    // A claw eight ahead of the body in its own space.
+    writeTextFile(root / "critter/GAR_EAGL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GAR_EAGL","type":7}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":3}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"CLAW","anim":"STEP","type":128,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[{"type":0,"radius":3,"maxDistance":1,"damage":10,"offset":[0,0,8]}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(), 'G'));
+    Combatant actor;
+    // Facing -z: the claw is at z -8, where a player standing in front of it is struck.
+    REQUIRE(actor.spawn(assets, 0, {0, 0, 0}, 3.14159265f, nullptr, {}, 'G'));
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, -8};
+    player.radius = 0.75f;
+    player.height = 5.0f;
+    const std::array players{player};
+    std::vector<CombatBlow> blows;
+    for (s32 i = 0; i < 10 && blows.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+    }
+    REQUIRE(blows.size() == 1);
+    CHECK(blows[0].gated); // the player's quarter-second gap holds off the next
+    CHECK(blows[0].origin.z == Approx(-8.0f).margin(0.01f));
+    CHECK(blows[0].origin.x == Approx(0.0f).margin(0.01f));
+}
+
 TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
           "[game][combatant]") {
     const auto root = familyAssets();
@@ -275,6 +310,8 @@ TEST_CASE("asset loading rejects a descriptor from the wrong combatant family",
     REQUIRE(population.kindOf(0) == CombatantKind::Unknown);
 }
 
+constexpr u32 kKnockOver = 0x100; ///< a hit that knocks a great one over
+
 TEST_CASE("golem knockback resistance remains a family rule not a shared actor special case",
           "[game][combatant]") {
     s32 readyInterrupt = 60;
@@ -292,24 +329,43 @@ TEST_CASE("golem knockback resistance remains a family rule not a shared actor s
         EnemyHit hit;
         hit.player = 0;
         hit.damage = 10;
-        hit.flags = EnemyHit::kKnockDown;
+        hit.flags = kKnockOver;
         hit.direction = {1, 0, 0};
         actor.hurt(hit);
         actor.update(2, 1.0f / 30, {});
         REQUIRE(actor.health() == 90); // refusing a reaction does not prevent the damage
-        if (readyInterrupt != 0) {
-            REQUIRE(actor.moveName() == "KD");
-            REQUIRE(actor.position().x == Approx((20.0f - definition.knockbackReduction) / 30));
-            // The push loses a fifth each 30 Hz frame (CritterTranslate), not each tick.
-            actor.update(2, 1.0f / 30, {});
-            actor.update(2, 1.0f / 30, {});
-            REQUIRE(actor.position().x ==
-                    Approx((20.0f - definition.knockbackReduction) / 30 * (1 + 0.8 + 0.64)));
-        } else {
-            REQUIRE(actor.moveName() == "READY");
-            REQUIRE(actor.position().x == 0);
-        }
+        // Knocked over, it is shoved ten, a golem five less, whatever it was doing
+        // (CritterDoKnockback runs every update); only its move depends on the stance.
+        const f32 shove = (10.0f - definition.knockbackReduction) / 30;
+        REQUIRE(actor.position().x == Approx(shove));
+        REQUIRE(actor.moveName() == (readyInterrupt != 0 ? "KD" : "READY"));
+        // The push loses a fifth each 30 Hz frame (CritterTranslate), not each tick.
+        actor.update(2, 1.0f / 30, {});
+        actor.update(2, 1.0f / 30, {});
+        REQUIRE(actor.position().x == Approx(shove * (1 + 0.8 + 0.64)));
     }
+}
+
+TEST_CASE("plain harm leaves a great one be; flagged hits shake, knock back or knock it over",
+          "[game][combatant]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 5;
+    hit.direction = {1, 0, 0};
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.moveName() == "READY"); // CritterGetDoAction: no flag, no reaction
+    CHECK(actor.position().x == 0.0f);
+    hit.flags = EnemyHit::kKnockBack; // 0x10 shakes it: five
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.position().x == Approx(5.0f / 30));
 }
 
 TEST_CASE("mixed families preserve the shared capacity while boss ownership is independent",

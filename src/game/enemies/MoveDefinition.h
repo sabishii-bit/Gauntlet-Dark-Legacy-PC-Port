@@ -108,7 +108,8 @@ struct MoveDefinition {
     static constexpr s32 kWalk = 52;
     static constexpr s32 kStepBack = 53;
     static constexpr s32 kStepToPoint = 56;
-    static constexpr s32 kStepTo = 64;
+    static constexpr s32 kStepTo = 64;   ///< the steps run up to here
+    static constexpr s32 kHitReact = 64; ///< a flinch from a hit flagged to shake it
     static constexpr s32 kKnockBack = 65;
     static constexpr s32 kKnockDown = 66;
     static constexpr s32 kAttackFrom = 128; ///< attacks are this and over

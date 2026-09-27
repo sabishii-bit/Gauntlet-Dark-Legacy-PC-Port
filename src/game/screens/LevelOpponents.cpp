@@ -257,7 +257,8 @@ void LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
         if (player.actor.player() != blow.player || player.life != PlayerLife::Standing ||
-            (blow.breath && player.breathGap > 0.0f) || (blow.area && player.effectGap > 0.0f)) {
+            ((blow.breath || blow.gated) && player.breathGap > 0.0f) ||
+            (blow.area && player.effectGap > 0.0f)) {
             continue;
         }
         if (blow.breath) {
@@ -265,6 +266,8 @@ void LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
             if (events.blocksBreath && events.blocksBreath(blow.origin, centre)) {
                 continue;
             }
+        }
+        if (blow.breath || blow.gated) {
             player.breathGap = 0.25f;
         }
         if (blow.area) {
