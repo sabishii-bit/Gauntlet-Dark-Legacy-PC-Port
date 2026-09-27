@@ -686,6 +686,36 @@ TEST_CASE("the zombies' own archive lies a shadow under each tier",
     }
 }
 
+TEST_CASE("a sentry paces between its lookouts", "[game][enemies][mind]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, routingAssets(), nullptr, 4, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    std::vector<WorldLocator> locators(2);
+    locators[0].kind = LocatorKind::Sentry;
+    locators[0].position = Vec3{0, 0, 10};
+    locators[0].next = 1;
+    locators[1].kind = LocatorKind::Sentry;
+    locators[1].position = Vec3{0, 0, -10};
+    locators[1].next = 0;
+    enemies.setLookouts(LookoutRoute::of(locators));
+    EnemySpawn spawn;
+    spawn.algorithm = kPatrolWay;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 2};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    f32 north = 0.0f;
+    f32 south = 0.0f;
+    for (s32 frame = 0; frame < 900; ++frame) {
+        enemies.update(kTicks, kStep, {});
+        north = std::max(north, enemies.positionOf(*id).z);
+        south = std::min(south, enemies.positionOf(*id).z);
+    }
+    CHECK(north > 9.0f);
+    CHECK(south < -9.0f);
+}
+
 TEST_CASE("chasers route around generator bodies instead of pushing into them forever",
           "[game][enemies][enemy-routing]") {
     test::FakeRenderDevice device;

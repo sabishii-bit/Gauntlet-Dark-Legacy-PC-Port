@@ -106,7 +106,7 @@ s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored) {
     constexpr s32 kUnsetWay = 0;
     constexpr s32 kCast = 30;
     constexpr s32 kCasterStrength = 3;
-    constexpr s32 kPatrolWay = 1;     ///< never run: taken as seeking
+    constexpr s32 kWayOne = 1;        ///< never run: taken as seeking
     constexpr s32 kMilestoneWay = 10; ///< never run: taken as chasing
     if (way < 0 || way > kMostWay) {
         way = enemyKind(kind).algorithm;
@@ -136,7 +136,7 @@ s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored) {
         default: way = kChaseWay; break;
         }
     }
-    if (way == kPatrolWay) {
+    if (way == kWayOne) {
         way = kSeekWay;
     } else if (way == kMilestoneWay) {
         way = kChaseWay;
@@ -907,6 +907,7 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
     sense.blocked = enemy.blocked;
     sense.otherSide = enemy.otherSide;
     sense.generatorGone = enemy.generator < 0;
+    sense.lookouts = &m_lookouts;
     sense.threw = enemy.threw;
     sense.idleTicks = enemy.idleTicks;
     sense.action = enemy.animator.action();
