@@ -200,7 +200,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             }
             m_batch.end();
             DrawState state;
-            state.cullBack = true;
+            state.cullBack = m_cullBack;
             state.blend = additive ? BlendMode::Additive : BlendMode::Alpha;
             if (m_maskedTexture != nullptr && !blended) {
                 state.blend = BlendMode::Opaque;

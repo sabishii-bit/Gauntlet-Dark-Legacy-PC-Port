@@ -18,6 +18,7 @@
 #include "game/players/CharacterSave.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
+#include "game/world/BlobShadow.h"
 #include "game/world/PlayerFamiliar.h"
 
 namespace gdl::game {
@@ -26,6 +27,7 @@ namespace gdl::game {
  * Borrowed missile models and effect archives must not outlive this figure. */
 class PlayerFigure {
 public:
+    static constexpr std::string_view kShadowObject = "SHADOWL1";
     PlayerFigure() = default;
     /** Character size shared by body rendering and posed-hand attachments. */
     static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
@@ -47,6 +49,12 @@ public:
      * outlive this figure; switching off does not invalidate missiles already in flight. */
     void setCompanionPowerups(RenderDevice& device, ItemArchive& powerups,
                               const Inventory& inventory);
+    bool hasShadow() const { return m_shadow.bound(); }
+    /** The costume's shadow, unscaled, lying on the floor at `ground` along its `normal`. */
+    void drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye, const Vec3& ground,
+                    const Vec3& normal, const WorldLighting& lighting, f32 alpha) const {
+        m_shadow.draw(device, clip, eye, ground, normal, lighting, alpha);
+    }
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
               const WorldLighting& lighting, f32 alpha, bool hideWeapon,
               const CameraFrame* camera = nullptr) const;
@@ -99,6 +107,7 @@ private:
     TreeModel m_weapon;
     TreeInfo m_headwearTree;
     TreeModel m_headwear;
+    BlobShadow m_shadow;
     s32 m_handNode = -1;
     std::vector<s32> m_classNodeOfNode;
     std::vector<Mat4> m_transforms;

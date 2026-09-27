@@ -24,6 +24,9 @@ constexpr f32 kPushFloor = 0.01f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
 constexpr f32 kDeathSkinRate = 15.0f;
+constexpr s32 kScorpionKind = 0;
+constexpr s32 kAcidKind = 21;
+constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of the feet
 
 constexpr s32 kRetargetEvery = 8; ///< frames between a mind looking round again
 constexpr f32 kRunFrom = 1.25f;   ///< a pace this much over a walk's runs
@@ -240,6 +243,12 @@ bool Enemies::loadKind(s32 kind) {
         bomb.has_value()) {
         stock->bomb.bind(stock->archive.trees.tree(*bomb), stock->archive.models,
                          stock->archive.textures, *m_device);
+    }
+    // Every kind lies a shadow of its tier under it but these (InitEnemyGeo).
+    if (kind != kScorpionKind && kind != kAcidKind && kind != kDeathKind && kind != kItKind) {
+        for (usize i = 0; i < stock->shadows.size(); ++i) {
+            stock->shadows[i].bind(*m_device, stock->archive, std::format("SHADOW{}L1", i + 1));
+        }
     }
     if (kind == kDeathKind) {
         for (usize i = 0; i < stock->deathStatues.size(); ++i) {
@@ -1362,6 +1371,29 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
             body.draw(device, clip, model, lighting, enemy.animator.pose().matrices(), nullptr,
                       alpha);
         }
+    }
+}
+
+void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
+                          const WorldLighting& lighting) const {
+    for (s32 i = 0; i < m_most; ++i) {
+        const Enemy& enemy = m_enemies[static_cast<usize>(i)];
+        const Stock* stock = stockOf(enemy.kind);
+        // It lies on the floor under the body, but not while the body rises (UpdateEnemy).
+        if (enemy.state == State::Inactive || !enemy.animator.bound() || stock == nullptr ||
+            enemy.animator.action() == EnemyAction::Start) {
+            continue;
+        }
+        const auto tier = static_cast<usize>(std::clamp(enemy.tier, 1, 3) - 1);
+        Vec3 ground = enemy.position;
+        Vec3 normal{0.0f, 1.0f, 0.0f};
+        if (m_collision != nullptr) {
+            if (const auto floor = m_collision->floorAt(ground, kShadowReach, kShadowReach)) {
+                ground.y = floor->y;
+                normal = floor->normal;
+            }
+        }
+        stock->shadows[tier].draw(device, clip, eye, ground, normal, lighting, 1.0f);
     }
 }
 

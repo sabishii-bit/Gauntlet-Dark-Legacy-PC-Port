@@ -47,7 +47,10 @@ constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll
 constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
 constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
 constexpr s32 kSpecialPowerup = 9;      ///< the pickup subtype of the specials
-constexpr u32 kTurboFlag = 0x80000;     ///< of them, the one that fills the turbo meter
+constexpr f32 kShadowReach =
+    1.0f; ///< a player's shadow looks for its floor from this over the feet
+constexpr f32 kShadowDrop = 100.0f; ///< and this far under them
+constexpr u32 kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
@@ -1405,6 +1408,27 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
     return out;
 }
 
+void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) const {
+    for (const PlayerRuntime& runtime : m_players) {
+        if (runtime.figure == nullptr || runtime.life == PlayerLife::InTower ||
+            m_departure.finished()) {
+            continue;
+        }
+        // It lies on the floor under the body, even while the body is thrown or sinks
+        // (PlayerMotion keeps its height at the floor, not the feet).
+        const Vec3 feet{
+            m_departure.transform(runtime.capture.body().value_or(runtime.actor.transform()))[3]};
+        if (const auto floor = m_world->collision().floorAt(feet, kShadowReach, kShadowDrop)) {
+            const PowerupEffects worn =
+                PowerupEffects::of(runtime.actor.save().progress().inventory);
+            runtime.figure->drawShadow(device, clip, eye, Vec3{feet.x, floor->y, feet.z},
+                                       floor->normal, m_world->lighting(),
+                                       worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha());
+        }
+    }
+    m_opponents.enemies().drawShadows(device, clip, eye, m_world->lighting());
+}
+
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,
                        f32 frameHeight) {
     if (!m_open || m_world == nullptr || m_context.config == nullptr) {
@@ -1460,6 +1484,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                               m_bossSequence.frozenTexture());
     m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
     m_world->drawDeferred(device, clip, camera);
+    drawShadows(device, clip, camera.position);
     m_opponents.missiles().draw(device, clip, m_world->lighting());
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);

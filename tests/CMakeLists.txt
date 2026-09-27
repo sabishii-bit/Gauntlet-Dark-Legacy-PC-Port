@@ -78,6 +78,7 @@ add_executable(tests
     game/world/PlayerMissilesTests.cpp
     game/world/TargetAssistTests.cpp
     game/world/BodyCollisionTests.cpp
+    game/world/BlobShadowTests.cpp
     game/world/PlayerFigureTests.cpp
     game/world/PlayerFamiliarTests.cpp
     game/world/CameraMovementLimitTests.cpp

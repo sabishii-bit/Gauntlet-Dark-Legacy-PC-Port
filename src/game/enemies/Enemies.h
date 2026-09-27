@@ -21,6 +21,7 @@
 #include "game/enemies/EnemyFeedback.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/enemies/EnemyMind.h"
+#include "game/world/BlobShadow.h"
 #include "game/world/HazardSurfaces.h"
 #include "game/world/ItemFigure.h"
 #include "game/world/PlayerMissiles.h"
@@ -208,6 +209,9 @@ public:
     /** The live enemies a strike reaches. */
     std::vector<s32> reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
 
+    /** The shadows under the bodies (SHADOW1L1..3L1 by tier), for after the level's floors. */
+    void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
+                     const WorldLighting& lighting) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* hitFlash = nullptr, ItemArchive* weapons = nullptr);
 
@@ -246,6 +250,7 @@ private:
         TreeModel arrow;
         TreeModel bomb;
         std::array<TreeModel, 2> deathStatues;
+        std::array<BlobShadow, 3> shadows; ///< SHADOW1L1..3L1, by tier
     };
 
     struct Enemy {

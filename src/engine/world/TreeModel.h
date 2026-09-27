@@ -34,6 +34,7 @@ public:
         m_nodes.clear();
         resetTextures();
         setAppearance(false);
+        m_cullBack = true;
     }
     bool bound() const { return !m_nodes.empty(); }
     usize nodeCount() const { return m_nodes.size(); }
@@ -64,6 +65,8 @@ public:
         m_depthWrite = depthWrite;
         m_additive = additive;
     }
+    /** Draws both faces of every part: a flat decal seen from either side. */
+    void setDoubleSided(bool doubleSided) { m_cullBack = !doubleSided; }
     Vec2 textureOffset(u32 slot) const;
     /** How a slot's coordinates are stretched, one and one when they are not. */
     Vec2 textureScale(u32 slot) const;
@@ -128,6 +131,7 @@ private:
     bool m_unlit = false;
     bool m_additive = false;
     bool m_depthWrite = true;
+    bool m_cullBack = true;
     Color m_tint = Color::white();
     std::vector<std::pair<u32, const Texture*>> m_frames; ///< slot, frame shown
     /** A slot's coordinates slid and stretched. */
