@@ -292,6 +292,13 @@ std::vector<s32> Critters::reachedBy(const Vec3& centre, f32 radius, f32 arc,
     }
     return out;
 }
+void Critters::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
+                           const WorldLighting& lighting) const {
+    for (const auto& actor : m_critters) {
+        actor.drawShadow(device, clip, eye, lighting);
+    }
+}
+
 void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                     const Texture* frozenTexture) const {
     for (const auto& actor : m_critters) {

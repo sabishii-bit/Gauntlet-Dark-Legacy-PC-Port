@@ -18,6 +18,7 @@ f32 flatDistance(const Vec3& a, const Vec3& b) {
 namespace {
 constexpr s32 kThawBlinkTicks = 180;
 constexpr s32 kThawBlinkBit = 8;
+constexpr f32 kShadowReach = 1.0f; ///< its shadow finds the floor within this of the anchor
 } // namespace
 Mat4 Combatant::modelTransform(const Actor& critter) {
     // The original places the root at floor Y + floorOffset, then transforms originOffset
@@ -107,6 +108,26 @@ std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
     }
     return out;
 }
+void Combatant::drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye,
+                           const WorldLighting& lighting) const {
+    const Actor& critter = m_actor;
+    if (critter.state == State::Inactive || critter.stock == nullptr ||
+        !critter.stock->shadow.bound()) {
+        return;
+    }
+    // On the floor under the anchor, tilted to it and scaled with the body (CritterTranslate).
+    Vec3 ground = critter.position;
+    Vec3 normal{0.0f, 1.0f, 0.0f};
+    if (m_collision != nullptr) {
+        if (const auto floor = m_collision->floorAt(ground, kShadowReach, kShadowReach)) {
+            ground.y = floor->y;
+            normal = floor->normal;
+        }
+    }
+    critter.stock->shadow.draw(device, clip, eye, ground, normal, lighting, critter.alpha,
+                               critter.scale);
+}
+
 void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                      const Texture* frozenTexture) const {
     const Actor& critter = m_actor;

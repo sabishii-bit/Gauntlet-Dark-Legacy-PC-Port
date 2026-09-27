@@ -73,6 +73,8 @@ public:
     std::vector<s32> reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
 
     /** Optional frozen skin is borrowed for this draw only. */
+    void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
+                     const WorldLighting& lighting) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr) const;
 

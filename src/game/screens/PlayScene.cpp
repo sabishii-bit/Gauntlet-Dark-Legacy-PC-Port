@@ -1427,6 +1427,8 @@ void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& 
         }
     }
     m_opponents.enemies().drawShadows(device, clip, eye, m_world->lighting());
+    m_opponents.critters().drawShadows(device, clip, eye, m_world->lighting());
+    m_opponents.bosses().drawShadow(device, clip, eye, m_world->lighting());
 }
 
 void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 frameWidth,

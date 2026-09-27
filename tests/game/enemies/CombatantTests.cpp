@@ -145,6 +145,45 @@ TEST_CASE("creature families supply distinct policies without duplicating move e
     REQUIRE_FALSE(gargoyle.boundsToHome);
 }
 
+TEST_CASE("a great one lies its shadow only when its type says so", "[game][combatant][shadow]") {
+    const auto root = familyAssets();
+    const auto archive = root / "MONSTERS/GOLEM/LEVELG";
+    writeTextFile(archive / "models/flat.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 0 1\nvn 0 -1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"models/body.obj","meshTriangles":1},
+      {"index":1,"name":"SHADOW1L1","file":"models/flat.obj","meshTriangles":1}]})");
+    for (const u32 typeFlags : {0U, 1U}) {
+        CAPTURE(typeFlags);
+        writeTextFile(root / "critter/GOLEM.json",
+                      R"({"descriptors":[{"prefix":"BODY","name":"GOLEM","type":3}],
+          "types":[{"moveCount":1,"maxHealth":100,"radius":1,"typeFlags":)" +
+                          std::to_string(typeFlags) + R"(}],
+          "moves":[{"name":"READY","anim":"STEP","type":32}]})");
+        test::FakeRenderDevice device;
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+        REQUIRE(assets.data.shadowed() == (typeFlags == 1));
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {4, 0, 6}, 0, nullptr, {}, 'G'));
+        actor.drawShadow(device, Mat4{1.0f}, Vec3{4, 60, 6}, {});
+        if (typeFlags == 0) {
+            CHECK(device.draws.empty());
+            continue;
+        }
+        REQUIRE(device.draws.size() == 1);
+        CHECK_FALSE(device.draws[0].state.depthWrite);
+        CHECK(device.draws[0].vertices[0].position.x == Approx(4));
+        CHECK(device.draws[0].vertices[0].position.y ==
+              Approx(BlobShadow::kLift + BlobShadow::kPull));
+        CHECK(device.draws[0].vertices[0].position.z == Approx(6));
+        actor.clear();
+        device.draws.clear();
+        actor.drawShadow(device, Mat4{1.0f}, Vec3{4, 60, 6}, {});
+        CHECK(device.draws.empty());
+    }
+}
+
 TEST_CASE("one combatant rejects absent assets and owns independent state and events",
           "[game][combatant]") {
     CombatantAssets assets;
