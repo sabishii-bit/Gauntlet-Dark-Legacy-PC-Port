@@ -259,6 +259,7 @@ TEST_CASE("Jester turbo damage reaches bosses great creatures and generators",
     auto& generators = f.opponents.generators();
     bosses.open(f.device, root, nullptr, {}, 'G');
     REQUIRE(bosses.spawn(41, {0, 0, -5}, 0));
+    bosses.wake(); // asleep it takes nothing
     critters.open(f.device, root, nullptr, {}, 'G');
     const auto golem = critters.spawn(CombatantKind::Golem, {5, 0, 0}, 0);
     REQUIRE(golem);
