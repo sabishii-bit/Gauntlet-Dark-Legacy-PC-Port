@@ -668,6 +668,11 @@ TEST_CASE("the tower tells a short party what a gate wants and congratulates a r
             }
             return actor->position() - from;
         };
+        // The entrance, held under the scroll, plays out before the character is free.
+        for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
+            scene.update(1.0 / 60.0, still);
+        }
+        REQUIRE_FALSE(awaitingEntrance(scene));
         const Vec3 forward = glm::normalize(step(Vec2{0.0f, 1.0f}, 6));
         const Vec3 right = glm::normalize(step(Vec2{1.0f, 0.0f}, 6));
         for (s32 i = 0; i < 900 && scene.fieldSound() == kNoSound; ++i) {
@@ -2425,6 +2430,10 @@ TEST_CASE("in the mountain's lair the ice axe is held in the hand, thrown with t
     for (usize i = itemsBefore; i < world.placedItems().size(); ++i) {
         REQUIRE(world.placedItems().item(i).name == "COIN_SILVER");
         REQUIRE(world.placedItems().item(i).value == 1000);
+    }
+    // The death animation owns the spew; the victory begins once the body is gone.
+    for (s32 i = 0; i < 1200 && !scene.victory().running(); ++i) {
+        scene.update(1.0 / 60.0, still);
     }
     REQUIRE(scene.victory().running());
     scene.close();
