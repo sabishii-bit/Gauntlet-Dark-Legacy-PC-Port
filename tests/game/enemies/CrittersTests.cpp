@@ -533,8 +533,11 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(other.has_value());
     EnemyHit weak = hit;
     weak.level = 10;
+    const f32 whole = seasoned.healthOf(*other);
     seasoned.hurt(*other, weak);
-    REQUIRE(seasoned.takeLosses()[0].experience == Approx(17.0f / 401.0f * 250.0f * 0.8f));
+    // Paid on the harm dealt; the harm itself is a fiftieth less a level under (CritterDamage).
+    REQUIRE(seasoned.takeLosses()[0].experience == Approx(17.0f / 401.0f * 250.0f));
+    REQUIRE(seasoned.healthOf(*other) == Approx(whole - 17.0f * 0.8f));
     // The killing blow: a fifth of its value to everyone, its death played out, then gone.
     EnemyHit slay;
     slay.damage = 1000.0f;

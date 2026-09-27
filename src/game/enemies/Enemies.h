@@ -35,6 +35,7 @@ struct EnemyScales {
     f32 damage = 1.0f;
     f32 playerLevel = 0.0f;     ///< the level the place is meant for; none when nought
     bool bossEncounter = false; ///< applies to every opponent in the arena, not just the boss
+    s32 players = 1;            ///< how many are in the game: a boss's share of harm and worth
 };
 
 /** Protection that returns a swarm enemy's melee blow to its attacker. */

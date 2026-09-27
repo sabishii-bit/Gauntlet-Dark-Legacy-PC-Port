@@ -90,6 +90,8 @@ public:
     std::vector<CombatSpew> takeSpews() { return m_fighter.takeSpews(); }
     std::vector<LegendEvent> takeLegendEvents();
     void hurt(const EnemyHit& hit, s32 partId = kTargetId);
+    /** Wakes it as the party coming within its threshold would. */
+    void wake() { m_awake = m_id.has_value(); }
     bool frozen() const;
     bool blinded() const;
     bool curbed() const;

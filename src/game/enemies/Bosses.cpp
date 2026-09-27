@@ -204,6 +204,7 @@ void Bosses::update(s32 ticks, f32 seconds, std::span<const EnemyView> players) 
             return;
         }
     }
+    m_fighter.takeFullHarm(m_rite.running());
     if (ticks > 0) {
         m_textureFrames += seconds * AnimationPlayer::kDefaultRate;
         const auto frames = static_cast<u32>(std::floor(m_textureFrames));
@@ -255,8 +256,8 @@ std::optional<Vec3> Bosses::takeDefeat() {
 }
 
 void Bosses::hurt(const EnemyHit& hit, s32 partId) {
-    if (m_id.has_value()) {
-        m_awake = true; // struck, it wakes
+    // Asleep it takes nothing and is not woken by it (CritterDamage: state under two).
+    if (m_id.has_value() && m_awake) {
         m_fighter.hurt(hit, partId);
         if (!m_fighter.alive()) {
             m_rite.clear();
