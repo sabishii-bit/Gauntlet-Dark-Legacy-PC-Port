@@ -10,6 +10,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PlayerPowerups.h"
+#include "game/world/DynamicLights.h"
 namespace gdl::game {
 namespace {
 constexpr std::string_view kChestSound = "S_CHEST";
@@ -173,8 +174,11 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         case ChestEvent::Kind::Opened:
             if (event.explodes) {
                 if (m_resources->weapons.loaded()) {
-                    m_resources->effects.start(m_resources->device, m_resources->weapons,
-                                               kChestBlast, event.position);
+                    EffectTrees::Setting setting;
+                    setting.light = EffectTrees::Light{
+                        DynamicLights::blast(), DynamicLights::kBlastRadiusScale * kBlastRadius};
+                    m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                                  kChestBlast, event.position, setting);
                 }
                 playRealmSound(kBarrelBlastSound);
                 m_chests.remove(event.chest);
@@ -294,8 +298,13 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
     }
     const auto effect = [&](std::string_view tree) {
         if (m_resources->weapons.loaded()) {
-            m_resources->effects.start(m_resources->device, m_resources->weapons, tree,
-                                       struck->position);
+            EffectTrees::Setting setting;
+            if (tree == kBarrelBlast) {
+                setting.light = EffectTrees::Light{DynamicLights::blast(),
+                                                   DynamicLights::kBlastRadiusScale * kBlastRadius};
+            }
+            m_resources->effects.startSet(m_resources->device, m_resources->weapons, tree,
+                                          struck->position, setting);
         }
     };
     switch (struck->kind) {

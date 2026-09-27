@@ -182,9 +182,17 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
                     Batch& batch = batchFor(part.texture, part.lightmap, additive, depthWrite);
                     for (const u32 index : part.indices) {
                         const MeshVertex& v = mesh->vertices[index];
-                        batch.geometry.vertex(
-                            v.position + offset, shadeOf(additive, prelit, v, v.normal, lighting),
-                            chrome ? chromeUv(v.normal) : v.uv, v.lightmapUv * batch.lightmapScale);
+                        const Vec3 at = v.position + offset;
+                        batch.geometry.vertex(at, shadeOf(additive, prelit, v, v.normal, lighting),
+                                              chrome ? chromeUv(v.normal) : v.uv,
+                                              v.lightmapUv * batch.lightmapScale);
+                        if (batch.normals.empty()) {
+                            batch.lowest = at;
+                            batch.highest = at;
+                        }
+                        batch.normals.push_back(v.normal);
+                        batch.lowest = glm::min(batch.lowest, at);
+                        batch.highest = glm::max(batch.highest, at);
                     }
                 }
             } catch (const std::exception& e) {
@@ -347,7 +355,29 @@ void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4&
     state.cullBack = true;
     state.depthWrite = batch.depthWrite;
     state.darken = batch.additive ? 0.0f : m_darken;
+    // Where a point light reaches it, a copy with the lights added is drawn instead.
+    const Vec3 centre = (batch.lowest + batch.highest) * 0.5f;
+    if (!batch.additive && !m_lighting.points.empty() &&
+        m_lighting.pointsReach(centre, glm::distance(centre, batch.highest))) {
+        const std::span<const ImmediateVertex> vertices = batch.geometry.triangles();
+        m_lit.clear();
+        m_lit.begin(PrimitiveTopology::TriangleList);
+        for (usize i = 0; i < vertices.size(); ++i) {
+            ImmediateVertex v = vertices[i];
+            if (m_lighting.pointsReach(v.position, 0.0f)) {
+                v.color = m_lighting.brighten(v.color, v.position, batch.normals[i]);
+            }
+            m_lit.vertex(v);
+        }
+        m_lit.end();
+        device.draw(m_lit, *slot.current(), clip, state);
+        return;
+    }
     device.draw(batch.geometry, *slot.current(), clip, state);
+}
+
+void WorldScene::setPointLights(std::span<const PointLight> points) {
+    m_lighting.points.assign(points.begin(), points.end());
 }
 
 Color WorldScene::shadeOf(bool additive, bool prelit, const MeshVertex& vertex, const Vec3& normal,
@@ -356,6 +386,15 @@ Color WorldScene::shadeOf(bool additive, bool prelit, const MeshVertex& vertex, 
         return kUnlit;
     }
     return prelit ? vertex.color : lighting.shade(normal);
+}
+
+Color WorldScene::shadeAt(bool additive, bool prelit, const MeshVertex& vertex,
+                          const Vec3& position, const Vec3& normal, const WorldLighting& lighting) {
+    if (additive) {
+        return kUnlit;
+    }
+    return prelit ? lighting.brighten(vertex.color, position, normal)
+                  : lighting.shade(position, normal);
 }
 
 /** Places, lights and draws a unit's parts: its opaque ones when `opaque`, its translucent
@@ -380,7 +419,7 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
             const MeshVertex& v = unit.mesh->vertices[index];
             const Vec3 normal = glm::normalize(normalMatrix * v.normal);
             const Vec4 placed = world * Vec4{v.position, 1.0f};
-            Color color = shadeOf(part.additive, unit.prelit, v, normal, m_lighting);
+            Color color = shadeAt(part.additive, unit.prelit, v, Vec3{placed}, normal, m_lighting);
             if (unit.alpha < 1.0f) {
                 color.a = static_cast<u8>(static_cast<f32>(color.a) * unit.alpha);
             }

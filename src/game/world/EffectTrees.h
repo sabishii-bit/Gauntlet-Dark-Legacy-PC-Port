@@ -30,6 +30,15 @@ class EffectTrees {
 public:
     static constexpr f32 kStillSeconds = 1.0f; ///< how long a tree without a sequence shows
 
+    /** A light an effect gives off while it plays (SfxSetLight). */
+    struct Light {
+        Vec3 color{1.0f, 1.0f, 1.0f};
+        f32 radius = 0.0f;
+        /** Whether the radius rises and falls again over the effect's life, as a damage
+         * row's does over its window (ProcessEffects' light scale); else it holds. */
+        bool swells = false;
+    };
+
     /** How an effect is set going, beyond where. */
     struct Setting {
         f32 scale = 1.0f;
@@ -47,6 +56,7 @@ public:
         bool depthWrite = true;
         Color tint = Color::white();
         f32 playbackRate = 1.0f; ///< animation speed, independent of motion and particle clocks
+        std::optional<Light> light;
     };
 
     /** One effect playing. */
@@ -76,6 +86,8 @@ public:
         bool depthWrite = true;
         Color tint = Color::white();
         f32 playbackRate = 1.0f;
+        std::optional<Light> light;
+        f32 lived = 0.0f;               ///< seconds since it started
         ParticleField trails;           ///< code-created emitters following the effect's root
         TreeParticles particles;        ///< particle nodes authored in the archive
         std::optional<Mat4> attachment; ///< full posed parent, rather than world yaw alone
@@ -106,6 +118,8 @@ public:
      * unless its descriptor explicitly requests dynamic particles. */
     void attachTrail(u32 id, const ParticleDescriptor& descriptor, const Texture& texture);
     bool playing(u32 id) const;
+    /** The lights the playing effects give off, a unit over each, the newest first. */
+    void lights(std::vector<PointLight>& out) const;
     void update(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;

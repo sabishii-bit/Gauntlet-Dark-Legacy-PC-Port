@@ -1644,6 +1644,19 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * Camera markers are the `cameraGame` locators (the original's marker table
   keeps only those enabled for the follow camera; trigger cameras serve the
   cuts). A marker's `delay` byte is a fixed camera distance when not zero.
+* Dynamic lights: `WorldLighting::points` (at most twelve, gathered anew each frame
+  by `PlayScene::gatherLights`, newest first) add `PointLight::on`, the original's
+  (1 - d^2/r^2) cos / d times the intensity, at most the whole colour, to every lit
+  vertex: tree models as they are drawn, units as they are placed, and the baked
+  batches through a lit copy wherever a light reaches (`WorldScene::setPointLights`).
+  Effects carry theirs (`EffectTrees::Setting::light`, a unit over the effect, twice
+  intensity): explosions twice the blast in red, potions and shields 1.5 of the magic
+  power in the element's colour, the legend charge ten in the costume colour, a turbo
+  strike's first effect twice its reach in the class's colour, swelling over a burst's
+  life (ours: retail swells over the damage window). In a dark level (flag 8) each
+  standing player carries a lantern (radius 20, intensity 10, ten over them). The
+  colours are `game/world/DynamicLights`. Not yet: the enemy bomb's light, the suicide
+  bomber's blast light, and a dark level's blacked-out ambient.
 * Additive geometry (`WorldObject::kAdditive`: glows, flames, the force
   fields) is drawn unlit (`WorldScene::kUnlit`), as the original never lights
   it; everything else takes `WorldLighting`. The streams' prelit vertex

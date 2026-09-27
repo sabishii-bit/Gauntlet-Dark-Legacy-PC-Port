@@ -129,6 +129,7 @@ add_executable(tests
     game/screens/LevelLoadingScreenTests.cpp
     game/screens/PortalDepartureTests.cpp
     game/screens/LevelExitSpeechTests.cpp
+    game/world/DynamicLightsTests.cpp
     game/world/EffectTreesTests.cpp
     game/world/CombatantProjectilesTests.cpp
     game/players/PlayerControlsTests.cpp

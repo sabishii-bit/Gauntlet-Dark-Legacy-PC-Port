@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -281,6 +283,43 @@ TEST_CASE("a prelit object is shaded by its vertices, not the lights", "[world][
     }
     REQUIRE(dim);
     REQUIRE(lit);
+}
+
+TEST_CASE("point lights brighten the baked geometry they reach, prelit or not",
+          "[world][scene][lights]") {
+    Fixture f("world-scene-lights");
+    const auto dir = test::scratchDirectory("world-scene-lights-layout");
+    writeTextFile(dir / "world.json", R"({"objects": [
+      {"name": "LIT", "position": [0, 0, 0], "next": -1, "flags": 2}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    REQUIRE(f.scene.build(layout, f.models, f.textures, f.device));
+    const auto reddest = [&] {
+        f.device.draws.clear();
+        f.scene.draw(f.device, Mat4{1.0f}, Vec3{10.0f, 0.0f, 10.0f});
+        REQUIRE(f.device.draws.size() == 1);
+        u8 most = 0;
+        for (const ImmediateVertex& v : f.device.draws[0].vertices) {
+            most = std::max(most, v.color.r);
+        }
+        return most;
+    };
+    const u8 plain = reddest();
+    REQUIRE(plain == 51); // its own baked colour
+    // A red light on every side of it, whichever way it faces.
+    std::vector<PointLight> lights;
+    for (const Vec3 side : {Vec3{3, 0, 0}, Vec3{-3, 0, 0}, Vec3{0, 3, 0}, Vec3{0, -3, 0},
+                            Vec3{0, 0, 3}, Vec3{0, 0, -3}}) {
+        PointLight light;
+        light.position = side;
+        light.color = Vec3{2, 0, 0};
+        light.radius = 20.0f;
+        lights.push_back(light);
+    }
+    f.scene.setPointLights(lights);
+    CHECK(reddest() > plain);
+    f.scene.setPointLights({});
+    CHECK(reddest() == plain);
 }
 
 TEST_CASE("an external texture nobody lends is drawn white", "[world][scene]") {

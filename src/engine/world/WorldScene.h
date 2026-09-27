@@ -33,6 +33,9 @@ public:
      * rest by the lights. */
     static Color shadeOf(bool additive, bool prelit, const MeshVertex& vertex, const Vec3& normal,
                          const WorldLighting& lighting);
+    /** The same at `position`, with the point lights added. */
+    static Color shadeAt(bool additive, bool prelit, const MeshVertex& vertex, const Vec3& position,
+                         const Vec3& normal, const WorldLighting& lighting);
     /** The sort keys of objects flagged to draw behind the rest, and behind those. */
     static constexpr f32 kSortBackBias = -10000.0f;
     static constexpr f32 kSortBehindBias = -20000.0f;
@@ -86,6 +89,8 @@ public:
     /** Takes this much of the colour out of everything but what glows (the level's light is
      * baked into its vertices, so a change of ambient light is made this way). */
     void setDarken(f32 darken) { m_darken = darken; }
+    /** This frame's point lights, which light everything but what glows. */
+    void setPointLights(std::span<const PointLight> points);
     f32 darken() const { return m_darken; }
     void draw(RenderDevice& device, const Mat4& clip, const Vec3& eye = Vec3{0.0f}) const {
         draw(device, clip, CameraFrame::at(eye));
@@ -107,6 +112,9 @@ private:
         const Texture* lightmap = nullptr; ///< scales the colour by its alpha, when set
         Vec2 lightmapScale{1.0f, 1.0f};    ///< texels of the lightmap to its [0, 1] range
         ImmediateBatch geometry;
+        std::vector<Vec3> normals; ///< one per vertex, for the point lights
+        Vec3 lowest{0.0f};         ///< the corners of what it holds
+        Vec3 highest{0.0f};
         bool translucent = false;
         bool additive = false;
         bool depthWrite = true;
@@ -162,6 +170,7 @@ private:
     mutable std::vector<usize> m_order; ///< the sorted units, farthest first
     mutable std::vector<usize> m_chain; ///< ancestors awaiting composition
     mutable ImmediateBatch m_scratch;
+    mutable ImmediateBatch m_lit; ///< a batch with this frame's point lights added
 };
 
 } // namespace gdl

@@ -157,6 +157,7 @@ add_library(game STATIC
     world/PlayerArsenal.cpp
     world/LevelSoundscape.cpp
     world/EffectTrees.h
+    world/DynamicLights.cpp
     world/EffectTrees.cpp
     world/PlacedItems.h
     world/PlacedItems.cpp

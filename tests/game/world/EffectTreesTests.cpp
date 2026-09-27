@@ -226,6 +226,52 @@ TEST_CASE("persistent effects hold their last pose until explicitly released",
     REQUIRE(effects.count() == 0);
 }
 
+TEST_CASE("an effect gives off its light a unit over it while it plays, swelling if asked",
+          "[game][world][effects][lights]") {
+    const auto root = test::scratchDirectory("effect-light");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json",
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"GLOW","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"ACTIVE","frames":30,"frameRate":30}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.emitParticles = false;
+    REQUIRE(effects.startSet(device, archive, "GLOW", Vec3{3, 0, 4}, setting) != 0);
+    setting.light = EffectTrees::Light{Vec3{2, 0, 0}, 24.0f};
+    REQUIRE(effects.startSet(device, archive, "GLOW", Vec3{5, 1, 5}, setting) != 0);
+    std::vector<PointLight> lights;
+    effects.lights(lights);
+    REQUIRE(lights.size() == 1); // the unlit one gives none
+    CHECK(lights[0].position == Vec3{5, 2, 5});
+    CHECK(lights[0].radius == 24.0f);
+    CHECK(lights[0].intensity == 2.0f);
+    CHECK(lights[0].color == Vec3{2, 0, 0});
+    // A swelling light is nothing as it starts, whole half way through its life.
+    effects.clear();
+    setting.light->swells = true;
+    REQUIRE(effects.startSet(device, archive, "GLOW", Vec3{0}, setting) != 0);
+    lights.clear();
+    effects.lights(lights);
+    CHECK(lights.empty());
+    effects.update(0.5f);
+    lights.clear();
+    effects.lights(lights);
+    REQUIRE(lights.size() == 1);
+    CHECK(lights[0].radius == Catch::Approx(24.0f).margin(1.0f));
+    // Gone with the effect.
+    effects.update(2.0f);
+    lights.clear();
+    effects.lights(lights);
+    CHECK(lights.empty());
+}
+
 TEST_CASE("Wraith's waiting portal retains its authored static scale throughout its hold",
           "[game][world][effects][wraith][unpacked]") {
     const auto root = test::unpackedOrSkip("MONSTERS/WRAITH/animations.json").parent_path();

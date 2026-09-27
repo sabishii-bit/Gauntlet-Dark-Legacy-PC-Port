@@ -146,6 +146,8 @@ public:
     /** The level's own light, whatever has been taken off it: what effects are drawn by, so
      * that they stand out when the level goes dark. */
     const WorldLighting& fullLighting() const { return m_lighting; }
+    /** This frame's point lights, lighting the level and everything lit in it. */
+    void setPointLights(std::span<const PointLight> points);
     /** Darkens everything lit by `offset` (-0.6 leaves two fifths of the light), the way the
      * original's ambient special darkens the picture. */
     void setAmbientOffset(f32 offset);
