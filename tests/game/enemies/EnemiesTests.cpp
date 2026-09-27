@@ -346,7 +346,8 @@ TEST_CASE("a grunt gets round a wall between it and its player, stops at a ledge
     pair.open(device, unpackedRoot(), &collision, 13, EnemyScales{}, 2);
     REQUIRE(pair.loadKind(kGruntKind));
     spawn.position = Vec3{-30.0f, 0.0f, -3.0f};
-    spawn.algorithm = kStandWay;
+    spawn.algorithm = kLoiterWay; // a generator's loiterer turns on the spot
+    spawn.generator = 0;
     const auto struck = pair.spawn(spawn, {});
     spawn.position = Vec3{-30.0f, 0.0f, -6.5f};
     const auto shoved = pair.spawn(spawn, {});
@@ -714,12 +715,14 @@ TEST_CASE("chasers pass a stationary enemy and can recover from an existing over
     enemies.open(device, routingAssets(), nullptr, 4, {}, 3);
     REQUIRE(enemies.loadKind(kGruntKind));
     EnemySpawn spawn;
-    spawn.algorithm = kStandWay;
+    spawn.algorithm = kLoiterWay; // a generator's loiterer turns on the spot
+    spawn.generator = 0;
     spawn.placed = true;
     spawn.position = Vec3{0, 0, 7};
     const auto front = enemies.spawn(spawn, {});
     REQUIRE(front.has_value());
     spawn.algorithm = kChaseWay;
+    spawn.generator = -1;
     spawn.position = Vec3{0, 0, 0};
     SECTION("separate bodies") {}
     SECTION("overlapping placement") {
@@ -815,6 +818,12 @@ TEST_CASE("a way of nought is filled in by kind and strength as the original doe
     CHECK(resolvedWayOf(kGruntKind, kArcherStrength, kSkirmishWay, false) == kSkirmishWay);
     CHECK(resolvedWayOf(kGruntKind, kArcherStrength, -1, false) == 7);
     CHECK(resolvedWayOf(kDeathKind, 1, -1, false) == 3);
+    // Garm's brood lunges and IT lurks, whatever they are placed with.
+    for (const s32 way : {-1, 0, kChaseWay, kSeekWay}) {
+        CAPTURE(way);
+        CHECK(resolvedWayOf(kGarmBroodKind, 3, way, false) == kLungeWay);
+        CHECK(resolvedWayOf(kItKind, 1, way, false) == kLurkWay);
+    }
     // The small kinds prowl one way or the other, unless told which.
     CHECK(resolvedWayOf(kRatKind, 1, 7, false) == 2);
     CHECK(resolvedWayOf(kRatKind, 1, 0, true) == 4);

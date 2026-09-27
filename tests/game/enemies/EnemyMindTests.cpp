@@ -38,7 +38,7 @@ TEST_CASE("the minds are found by the original's way numbers, strangers wanderin
     REQUIRE(enemyMindOf(kLoiterWay).name() == "loiter");
     REQUIRE(enemyMindOf(kFleeWay).name() == "flee");
     REQUIRE(enemyMindOf(kLurkWay).name() == "lurk");
-    REQUIRE(enemyMindOf(kStandWay).name() == "stand");
+    REQUIRE(enemyMindOf(kLungeWay).name() == "lunge");
     REQUIRE(enemyMindOf(19).name() == "wander");
     REQUIRE(enemyMindOf(-1).name() == "wander");
     REQUIRE(wrapAngle(kPi + 0.5f) == Approx(-kPi + 0.5f));
@@ -232,7 +232,7 @@ TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer
     MindIntent intent = loiter.think(memory, sense);
     REQUIRE(intent.pace == 0.0f);
     REQUIRE(intent.action == EnemyAction::Ready);
-    REQUIRE(intent.heading == Approx(2.0f * kPi / 64.0f));
+    REQUIRE(intent.heading == Approx(2.0f * kPi / 180.0f)); // a degree a tick
     REQUIRE_FALSE(intent.expire);
     sense.generatorGone = true;
     REQUIRE(loiter.think(memory, sense).expire);
@@ -265,16 +265,47 @@ TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer
     REQUIRE(lurking.woken);
     REQUIRE(intent.pace == 1.0f);
     REQUIRE(intent.become == kSeekWay);
-    // The stander only faces whoever comes against it.
-    const EnemyMind& stand = enemyMindOf(kStandWay);
-    MindMemory standing;
-    MindSense touching;
-    touching.contact = 0;
-    touching.contactPosition = Vec3{5.0f, 0.0f, 0.0f};
-    intent = stand.think(standing, touching);
+}
+
+TEST_CASE("the lunger creeps up facing its player and lunges or makes its power attack",
+          "[game][enemies][mind]") {
+    const EnemyMind& lunge = enemyMindOf(kLungeWay);
+    MindMemory memory;
+    // Nobody to face: it stands.
+    MindSense alone;
+    alone.ticks = 2;
+    MindIntent intent = lunge.think(memory, alone);
     REQUIRE(intent.pace == 0.0f);
+    // Near enough, the first thing it does is lunge; further off, its power attack.
+    MindSense sense = senseAhead(8.0f);
+    sense.ticks = 2;
+    sense.recognized = true;
+    sense.targetPosition = Vec3{8.0f, 0.0f, 0.0f};
+    sense.random = 7;
+    intent = lunge.think(memory, sense);
+    REQUIRE(intent.action == EnemyAction::Attack);
     REQUIRE(intent.heading == Approx(kPi / 2.0f));
-    REQUIRE(intent.action == EnemyAction::Ready);
+    REQUIRE(intent.pace == 0.5f);
+    MindMemory far;
+    MindSense distant = sense;
+    distant.targetDistance = 12.0f;
+    REQUIRE(lunge.think(far, distant).action == EnemyAction::PowerAttack);
+    // Lunging it goes at full pace, and lands only within seven and a half.
+    sense.action = EnemyAction::Attack;
+    intent = lunge.think(memory, sense);
+    REQUIRE(intent.pace == 1.0f);
+    REQUIRE_FALSE(intent.strike);
+    REQUIRE(memory.counter == 30 + 7);
+    sense.targetDistance = 7.0f;
+    REQUIRE(lunge.think(memory, sense).strike);
+    // Then it creeps on at half pace until the wait is out.
+    sense.action = EnemyAction::Walk;
+    for (s32 tick = 0; tick < 37; tick += 2) {
+        intent = lunge.think(memory, sense);
+        REQUIRE(intent.pace == 0.5f);
+        REQUIRE(intent.action == EnemyAction::Walk);
+    }
+    REQUIRE(lunge.think(memory, sense).action == EnemyAction::Attack);
 }
 
 TEST_CASE("a sense tells the way to its player and which side round is nearer",

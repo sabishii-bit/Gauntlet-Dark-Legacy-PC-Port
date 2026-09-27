@@ -109,6 +109,13 @@ s32 resolvedWayOf(s32 kind, s32 strength, s32 way, bool mirrored) {
     if (way < 0 || way > kMostWay) {
         way = enemyKind(kind).algorithm;
     }
+    // These go about their own way whatever they are placed with (fn_8004F87C).
+    if (kind == kGarmBroodKind) {
+        return kLungeWay;
+    }
+    if (kind == kItKind) {
+        return kLurkWay;
+    }
     // The kinds whose third tier casts: demons, sorcerers, plague, worms, warlocks.
     const bool caster = kind == 2 || kind == 7 || kind == 14 || kind == 17 || kind == 24;
     const bool medium = caster || kind == 1 || kind == 4 || kind == 5 || kind == 8 || kind == 10 ||
@@ -905,7 +912,8 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     if (enemy.stunTicks > 0) {
         enemy.stunTicks -= ticks;
     }
-    const MindSense sensed = sense(enemy, slot, ticks, players, obstacles);
+    MindSense sensed = sense(enemy, slot, ticks, players, obstacles);
+    sensed.random = m_random();
     s32 algorithm = enemy.algorithm;
     std::optional<f32> retreat;
     if (enemy.kind == kDeathKind) {
@@ -958,6 +966,9 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     }
     if (intent.throwing) {
         enemy.animator.request(EnemyAction::Throw);
+    }
+    if (intent.strike) {
+        enemy.attackIndex = enemy.target;
     }
     if (intent.pace > 0.0f) {
         enemy.animator.request(intent.action == EnemyAction::Walk && intent.pace >= kRunFrom
@@ -1016,7 +1027,8 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
             enemy.mind.route = turnDirection(from, view->position);
         }
         // Death drains at contact; it has no melee swing or recovery to hold movement.
-        if (enemy.kind != kDeathKind && enemy.state == State::Active && enemy.algorithm != 31) {
+        if (enemy.kind != kDeathKind && enemy.state == State::Active &&
+            enemy.algorithm != kLungeWay) {
             enemy.attackIndex = enemy.contact;
             enemy.animator.request((enemy.attackCount & 7) == 7 ? EnemyAction::PowerAttack
                                                                 : EnemyAction::Attack);
