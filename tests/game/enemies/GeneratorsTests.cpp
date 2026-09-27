@@ -32,7 +32,7 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
                   "v 0 0 1\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
     writeTextFile(archive / "objects.json", R"({"objects":[
         {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
-        {"index":1,"name":"GEN_GRU3L1","file":"body.obj","meshTriangles":1}]})");
+        {"index":1,"name":"GEN_GRU1L1","file":"body.obj","meshTriangles":1}]})");
     writeFile(archive / "skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
