@@ -34,6 +34,7 @@ struct EnemyScales {
     f32 speed = 1.0f;
     f32 sight = 1.0f;
     f32 damage = 1.0f;
+    f32 missileRate = 1.0f;     ///< how long casters wait between casts
     f32 playerLevel = 0.0f;     ///< the level the place is meant for; none when nought
     bool bossEncounter = false; ///< applies to every opponent in the arena, not just the boss
     s32 players = 1;            ///< how many are in the game: a boss's share of harm and worth
@@ -249,6 +250,7 @@ private:
         std::array<TreeModel, 3> variantBodies;
         TreeModel arrow;
         TreeModel bomb;
+        TreeModel fireball; ///< the third slot's shot
         std::array<TreeModel, 2> deathStatues;
         std::array<BlobShadow, 3> shadows; ///< SHADOW1L1..3L1, by tier
     };
@@ -313,6 +315,8 @@ private:
     void touchHazards(Enemy& enemy, s32 slot);
     void chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                       std::span<f32> crowding);
+    /** Whether the swing it has just landed casts its missile rather than striking. */
+    static bool castsNow(const Enemy& enemy);
     void resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> players);
     void drain(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players);
     void hurtDeath(Enemy& enemy, s32 slot, const EnemyHit& hit);
