@@ -270,7 +270,7 @@ public:
         memory.heading = intent.heading;
         intent.pace = 0.0f;
         intent.action = EnemyAction::Ready;
-        if (sense.target >= 0 && sense.targetDistance <= sense.sight &&
+        if (sense.onScreen && sense.target >= 0 && sense.targetDistance <= sense.sight &&
             std::abs(sense.targetVertical) <= kThrowReach && memory.fuse <= 0) {
             intent.throwing = true;
         }
@@ -295,7 +295,8 @@ public:
         intent.heading = face;
         intent.pace = 0.0f;
         intent.action = EnemyAction::Ready;
-        const bool level = sense.target >= 0 && std::abs(sense.targetVertical) <= kThrowReach;
+        const bool level =
+            sense.onScreen && sense.target >= 0 && std::abs(sense.targetVertical) <= kThrowReach;
         if (level) {
             if (!memory.keepingOff && sense.targetDistance <= kKeepOffFrom * sense.sight) {
                 memory.keepingOff = true;
@@ -437,8 +438,8 @@ void primeRangedWait(MindMemory& memory, const MindSense& sense) {
 
 bool askRangedAttack(MindMemory& memory, const MindSense& sense, MindIntent& intent) {
     primeRangedWait(memory, sense);
-    if (sense.target < 0 || !sense.recognized || sense.targetDistance > sense.sight ||
-        std::abs(sense.targetVertical) > kCastReach) {
+    if (!sense.onScreen || sense.target < 0 || !sense.recognized ||
+        sense.targetDistance > sense.sight || std::abs(sense.targetVertical) > kCastReach) {
         return false;
     }
     if (memory.fuse > 0) {
@@ -490,8 +491,8 @@ public:
         intent.heading = memory.heading;
         intent.pace = 0.0f;
         intent.action = EnemyAction::Ready;
-        const bool inReach =
-            sense.target >= 0 && sense.recognized && std::abs(sense.targetVertical) <= kCastReach;
+        const bool inReach = sense.onScreen && sense.target >= 0 && sense.recognized &&
+                             std::abs(sense.targetVertical) <= kCastReach;
         f32 nudge = 0.0f;
         if (inReach) {
             if (memory.mode == 0) {
@@ -640,7 +641,7 @@ public:
             const s32 spread = std::max(sense.castWait / 2, 1);
             memory.fuse = window + static_cast<s32>((sense.random >> 8U) % spread) + sense.castWait;
         }
-        const bool casting = memory.deadEnd > 0;
+        const bool casting = memory.deadEnd > 0 && sense.onScreen;
         MindIntent intent = enemyMindOf(kSeekWay).think(memory, sense);
         if (casting) {
             intent.action = sense.tier >= 2 ? EnemyAction::PowerAttack : EnemyAction::Attack;
@@ -661,7 +662,7 @@ public:
         intent.action = EnemyAction::Ready;
         memory.heading = sense.faceAngle(memory.heading);
         intent.heading = memory.heading;
-        if (sense.target < 0 || !sense.recognized) {
+        if (sense.target < 0 || !sense.recognized || !sense.onScreen) {
             return intent;
         }
         const s32 wait = kLungeWait + static_cast<s32>(sense.random % kLungeWait);

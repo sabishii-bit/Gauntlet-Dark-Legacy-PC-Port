@@ -72,6 +72,35 @@ Mat4 WorldCamera::projection(f32 horizontalFov, f32 aspect) {
     return glm::scale(Mat4{1.0f}, Vec3{1.0f, 1.0f, kDepthRange}) * reversed;
 }
 
+ViewVolume ViewVolume::of(const WorldCamera& camera, f32 horizontalFov, f32 aspect) {
+    ViewVolume volume;
+    volume.position = camera.position;
+    volume.right = camera.right();
+    volume.up = camera.up();
+    volume.forward = camera.forward();
+    const f32 halfX = horizontalFov / 2.0f;
+    const f32 halfY = std::atan(std::tan(halfX) / aspect);
+    volume.sinX = std::sin(halfX);
+    volume.cosX = std::cos(halfX);
+    volume.sinY = std::sin(halfY);
+    volume.cosY = std::cos(halfY);
+    return volume;
+}
+
+bool ViewVolume::sees(const Vec3& centre, f32 radius) const {
+    const Vec3 offset = centre - position;
+    const f32 depth = glm::dot(offset, forward);
+    if (depth < WorldCamera::kNear - radius) {
+        return false;
+    }
+    // Each side plane passes through the eye; the distance past it must be under the radius.
+    const f32 across = glm::dot(offset, right);
+    const f32 upward = glm::dot(offset, up);
+    const f32 sideBound = (depth * sinX) + radius;
+    const f32 heightBound = (depth * sinY) + radius;
+    return std::abs(across * cosX) <= sideBound && std::abs(upward * cosY) <= heightBound;
+}
+
 Mat4 WorldCamera::frameMapping(f32 frameWidth, f32 frameHeight) {
     const Mat4 mapping =
         glm::translate(Mat4{1.0f}, Vec3{frameWidth / 2.0f, frameHeight / 2.0f, 0.0f});

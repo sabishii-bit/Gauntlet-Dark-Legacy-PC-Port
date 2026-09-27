@@ -654,9 +654,16 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the least worth keeping (the furthest from its player, a dying or sleeping
   one a hundredth of that, otherwise an unseen one ten thousand dearer).
   Replacement permission is visibility importance, not combat tier: a weak
-  generator can replace a distant strong enemy. Placed swarm enemies only
-  take free slots; routine births only replace unseen enemies. IT is never
-  recycled. Visibility still uses player proximity, not the camera frustum.
+  generator can replace a distant strong enemy. A placement seen may replace
+  even what is on screen (importance 1); routine births only replace what is
+  off it. IT is never recycled. On screen is the camera's view volume
+  (`ViewVolume`, MBWorldSphereVisible3) by twice the body's radius and fifteen
+  more (visactive), as the scene hands it over each frame (`LevelOpponents::
+  watch`); with no view everything counts as on screen. Off screen with its
+  player out of its sight a body waits, neither thinking, moving nor animating
+  (fn_8004D958); off screen it never touches a player, the ranged and special
+  attackers (16/26, 17/23, 28-31) hold their attacks, and only an on-screen
+  bomber scatters the others.
   `Generators` are the level's type-3 items:
   params little-endian s16s strength (the tier bred and how many records of
   health), way, count and interval (defaults 10/5/2 and 5/10/15 by tier), the
@@ -664,8 +671,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `generatorRate` (with the difficulty gain) and truncated whole, the health
   by `generatorHealth`; the countdown is six ticks a unit of interval,
   stretched by a share that grows 1/(2 x count) a birth and wraps at one; one
-  breeds only with a player within forty-eight (ours, for the original's
-  on-screen test); a birth goes in one of the eight octants about it, the
+  breeds only while on screen by twice its larger size and with a player within
+  a thousand (a boss's own always); a birth goes in one of the eight octants about it, the
   humanoids only ahead, at its height plus the body's radius out, where the
   floor is within six, no wall, player, enemy or box is in the way; it stands
   in the state of its strength (`GEN_<PREFIX><state>L1` objects of the kind's
@@ -675,8 +682,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   frees its brood. A way of nought is filled in by kind and strength, the
   small kinds prowl either way (2 or 4) and ways 1/10 become 0/7
   (`resolvedWayOf`: fn_8004F87C, init_enemy_vars); Garm's minions always
-  lunge (31) and IT always lurks (27). Level placements (type 4) of ordinary strength
-  stand where put, asleep at nought. Level tuning's enemy and generator
+  lunge (31) and IT always lurks (27). Level placements (type 4) wait until the
+  camera, looking from no more than fifty off, sees their spot by twice their
+  larger size (fn_80060114; `Resources::standOnSight`, all at once without a
+  view), then stand where put, asleep at nought; IT never with one player. Level tuning's enemy and generator
   columns are in `LevelTuning` (`enemyHealth`, `enemySpeedScale(gain)` and so
   on: what they take and deal is the level's own, speed, sight, rate and
   count grow with the gain). Missile targets are the barrels by their ids,
@@ -686,9 +695,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Not yet: the other minds (guards 8, milestone routes 10, the ghosts' 19,
   the kiting of 26/28/29 and the rest), the original's missile lead and
   weight, the arrow's and bomb's hit effects and sounds, Death, IT, gibs
-  and attack/idle enemy sounds (hit/death sounds are routed below),
-  and the original's on-screen gate
-  on breeding.
+  and attack/idle enemy sounds (hit/death sounds are routed below).
 * Swarm hit/death feedback is queued separately from experience rewards, so
   world damage also sounds/shows. `EnemyFeedback` selects tier/count-specific
   CLOSE/FAR sound names and element/kind-specific effect trees; `LevelOpponents`

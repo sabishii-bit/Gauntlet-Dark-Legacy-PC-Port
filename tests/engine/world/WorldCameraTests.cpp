@@ -32,6 +32,27 @@ TEST_CASE("billboards retain animated size while replacing orientation", "[world
     }
 }
 
+TEST_CASE("a view volume sees a sphere ahead within its sides by the sphere's radius",
+          "[world][camera]") {
+    WorldCamera camera;
+    const ViewVolume view = ViewVolume::of(camera, 1.0471976f, 1.0f); // 60 degrees both ways
+    CHECK(view.sees(Vec3{0, 0, 10}, 0.0f));
+    CHECK_FALSE(view.sees(Vec3{0, 0, -10}, 1.0f)); // behind the eye
+    CHECK(view.sees(Vec3{0, 0, -10}, 11.0f));      // but a big enough sphere reaches forward
+    // The right side at depth 10 is tan(30) * 10 = 5.77 across; beyond it a margin reaches.
+    CHECK(view.sees(Vec3{5.5f, 0, 10}, 0.0f));
+    CHECK_FALSE(view.sees(Vec3{7.0f, 0, 10}, 0.0f));
+    // (7 cos30 - 10 sin30) = 1.06 past the side: a margin over that reaches, one under does not.
+    CHECK(view.sees(Vec3{7.0f, 0, 10}, 1.1f));
+    CHECK_FALSE(view.sees(Vec3{7.0f, 0, 10}, 1.0f));
+    CHECK_FALSE(view.sees(Vec3{0, -7.0f, 10}, 0.0f));
+    // Turning the camera turns what it sees.
+    camera.yaw = 1.5707964f;
+    const ViewVolume turned = ViewVolume::of(camera, 1.0471976f, 1.0f);
+    CHECK_FALSE(turned.sees(Vec3{0, 0, 10}, 0.0f));
+    CHECK(turned.sees(10.0f * camera.forward(), 0.0f));
+}
+
 TEST_CASE("an unturned camera looks along positive z in a left-handed frame", "[world][camera]") {
     const WorldCamera camera;
     REQUIRE(near(camera.forward(), Vec3{0.0f, 0.0f, 1.0f}));

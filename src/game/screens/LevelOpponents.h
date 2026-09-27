@@ -32,6 +32,9 @@ public:
         LevelSoundscape& audio;
         std::filesystem::path root;
         f32 difficultyGain = 1;
+        /** Whether the level's placed enemies wait to be seen (watch) before they stand;
+         * otherwise they all stand as it opens. */
+        bool standOnSight = false;
     };
     struct Events {
         std::function<void(usize, f32, HurtKind, bool, const PlayerImpact&)> hurt;
@@ -53,6 +56,10 @@ public:
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
+    /** What the camera takes in and where it looks: what is on screen, and the placed
+     * enemies it comes to see stand (fn_80060114). */
+    void watch(const ViewVolume& view, const Vec3& attention);
+    usize pendingPlacements() const { return m_pending.size(); }
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                 std::span<const Obstacle> fixtures, const Events& events);
     /** Drain hits from the last projectile/attack phase before a level transition freezes
@@ -96,6 +103,16 @@ private:
     void updateDeaths(std::span<PlayerRuntime> players, const Events& events);
     void clearDeaths();
     void finishSummons(std::span<const EnemyView> players);
+    /** A placed enemy or great one waiting to be seen. */
+    struct Placement {
+        EnemySpawn spawn;
+        s32 kind = -1;
+        f32 facing = 0.0f;
+        f32 viewRadius = 0.0f;
+    };
+    void standPlacements(std::optional<ViewVolume> view, const Vec3& attention);
+    void stand(const Placement& placement);
+    std::vector<Placement> m_pending;
     std::optional<Resources> m_resources;
     Enemies m_enemies;
     Generators m_generators;

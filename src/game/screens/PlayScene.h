@@ -276,6 +276,7 @@ public:
 private:
     /** The bodies' shadows, after all of the level's floors (some of which are translucent). */
     void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) const;
+    void watchOpponents();
     void beginChallenge();
     void collectChallengeCoin(usize item);
     bool updateChallenge(f32 seconds);

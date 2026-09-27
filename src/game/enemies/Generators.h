@@ -12,6 +12,7 @@
 #include "engine/math/Math.h"
 #include "engine/render/RenderDevice.h"
 #include "engine/world/TreeModel.h"
+#include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
@@ -47,8 +48,8 @@ struct GeneratorEvent {
 class Generators {
 public:
     static constexpr s32 kStates = 3;
-    static constexpr f32 kCountdownScale = 6.0f; ///< ticks a unit of interval counts for
-    static constexpr f32 kNearDistance = 48.0f;  ///< a player this close makes one breed
+    static constexpr f32 kCountdownScale = 6.0f;    ///< ticks a unit of interval counts for
+    static constexpr f32 kActiveDistance = 1000.0f; ///< no player this near, none breeds
     static constexpr std::array<s32, 3> kDefaultMost{10, 5, 2};
     static constexpr std::array<s32, 3> kDefaultInterval{5, 10, 15};
 
@@ -65,6 +66,8 @@ public:
                    s32 kind, const Mat4& placement, const WorldCollision* collision);
 
     /** Runs the countdowns, breeding into `enemies` where a player is within reach. */
+    /** What the camera takes in: a generator breeds only on screen; none takes all in. */
+    void setView(std::optional<ViewVolume> view) { m_view = view; }
     void update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                 std::span<const Obstacle> obstacles = {}, bool timeStopped = false);
 
@@ -121,6 +124,7 @@ private:
         f32 yaw = 0.0f;
         Vec3 direction{0.0f, 0.0f, 1.0f};
         f32 clearance = 0.0f;
+        f32 viewRadius = 0.0f; ///< how far outside the view it still counts as on screen
         Obstacle box;
         std::unique_ptr<ItemFigure> bossFigure;
         bool boss = false;
@@ -133,6 +137,7 @@ private:
     static s32 stateFor(const Generator& generator, bool destroyed);
 
     std::vector<Generator> m_generators;
+    std::optional<ViewVolume> m_view;
     std::vector<std::unique_ptr<Bodies>> m_bodies;
     GeneratorScales m_scales;
     u32 m_specialBirth = 0; ///< shared round-robin cursor, as in retail's enemy spawner

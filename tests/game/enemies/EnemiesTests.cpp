@@ -432,9 +432,17 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     spawn.priority = EnemySpawn::Priority::FreeSlotOnly;
     REQUIRE_FALSE(strong.spawn(spawn, {}).has_value());
     spawn.priority = EnemySpawn::Priority::Offscreen;
-    const std::array<EnemyView, 1> watching{playerAt(strong.positionOf(0) + Vec3{0, 0, 10})};
-    REQUIRE_FALSE(strong.spawn(spawn, watching).has_value());
+    // On screen, as the last update found it, an ordinary birth may not take its place.
+    ViewVolume watching;
+    watching.position = strong.positionOf(0) - Vec3{0, 0, 20};
+    strong.setView(watching);
+    strong.update(kTicks, kStep, {});
+    REQUIRE_FALSE(strong.spawn(spawn, {}).has_value());
     REQUIRE(strong.tierOf(0) == 3);
+    ViewVolume away = watching;
+    away.forward = Vec3{0, 0, -1};
+    strong.setView(away);
+    strong.update(kTicks, kStep, {});
     REQUIRE(strong.spawn(spawn, {}).has_value()); // strength is not replacement importance
     REQUIRE(strong.tierOf(0) == 1);
     REQUIRE(strong.spawn(great, {}).has_value());
@@ -684,6 +692,46 @@ TEST_CASE("the zombies' own archive lies a shadow under each tier",
         REQUIRE(enemies.animatorOf(*id)->action() != EnemyAction::Start);
         CHECK(shadows() == 1);
     }
+}
+
+TEST_CASE("off screen the swarm waits unless its player is in sight, and never strikes",
+          "[game][enemies][unpacked]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 4, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.algorithm = kChaseWay;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    ViewVolume away;
+    away.position = Vec3{0, 0, -40};
+    away.forward = Vec3{0, 0, -1}; // looking away from it, well back
+    enemies.setView(away);
+    // Nobody in sight and off screen: it stands just as it is.
+    const std::array far{playerAt(Vec3{0, 0, 100})};
+    for (s32 frame = 0; frame < 60; ++frame) {
+        enemies.update(kTicks, kStep, far);
+    }
+    CHECK(enemies.positionOf(*id) == Vec3{0});
+    // A player within its sight: it goes for them though off screen, but never lays a blow.
+    const std::array close{playerAt(Vec3{0, 0, 3})};
+    for (s32 frame = 0; frame < 120; ++frame) {
+        enemies.update(kTicks, kStep, close);
+    }
+    CHECK(enemies.positionOf(*id).z > 0.0f);
+    CHECK(enemies.takeBlows().empty());
+    // On screen, against them, it strikes.
+    ViewVolume watching;
+    watching.position = Vec3{0, 0, -20};
+    enemies.setView(watching);
+    bool struck = false;
+    for (s32 frame = 0; frame < 240 && !struck; ++frame) {
+        enemies.update(kTicks, kStep, close);
+        struck = !enemies.takeBlows().empty();
+    }
+    CHECK(struck);
 }
 
 TEST_CASE("a sentry paces between its lookouts", "[game][enemies][mind]") {

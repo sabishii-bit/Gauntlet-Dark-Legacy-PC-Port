@@ -140,7 +140,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     m_fixtures.setPlayerCount(static_cast<s32>(m_players.size()));
     m_opponents.open({device, world, m_weapons, m_effects, m_audio, context.unpackedRoot,
-                      context.config != nullptr ? context.config->difficulty.gain() : 1.0f},
+                      context.config != nullptr ? context.config->difficulty.gain() : 1.0f, true},
                      m_players);
     if (m_opponents.bosses().raisesArenaRocks()) {
         m_fixtures.safeRocks().hideForEruptions();
@@ -571,7 +571,16 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
 }
 
 void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
+    watchOpponents();
     m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), opponentEvents());
+}
+
+/** What the enemies count as on screen is what the view shows, and the placed ones it comes
+ * to see stand. */
+void PlayScene::watchOpponents() {
+    const CameraView view = cameraView();
+    m_opponents.watch(ViewVolume::of(viewCamera(), view.horizontalFov, view.aspect),
+                      bossCameraOn() ? m_bossCamera.attention() : m_camera.attention());
 }
 
 LevelOpponents::Events PlayScene::opponentEvents() {
@@ -1144,6 +1153,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     // around it and the start camera holds, then rides in; the title slides up until the
     // ride, when it sits.
     if (spawning()) {
+        watchOpponents();
         m_arrival.animate(seconds);
         for (const PlayerRuntime& runtime : m_players) {
             const std::unique_ptr<PlayerFigure>& figure = runtime.figure;
