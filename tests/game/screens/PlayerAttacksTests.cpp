@@ -116,6 +116,40 @@ TEST_CASE("turbo contacts damage nearby enemies in every direction and reject di
     f.opponents.close();
 }
 
+TEST_CASE("a charge throws down the enemy it runs into, once a charge",
+          "[game][screens][player-attacks][charge]") {
+    const auto root = turboAssets();
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    EnemyScales scales;
+    scales.health = 100;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto spawnAt = [&](const Vec3& position) {
+        EnemySpawn spawn;
+        spawn.kind = kGruntKind;
+        spawn.placed = true;
+        spawn.position = position;
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id);
+        return *id;
+    };
+    const s32 against = spawnAt(Vec3{0, 0, 1.5f});
+    const s32 afar = spawnAt(Vec3{0, 0, 20});
+    const f32 whole = enemies.healthOf(against);
+    f.attacks.ramBarrels(0, f.players, f.targets);
+    CHECK(enemies.healthOf(against) < whole - 20.0f); // thirty-two, less its armour
+    CHECK(enemies.healthOf(afar) == whole);
+    enemies.update(2, 1.0f / 30, {});
+    CHECK(enemies.pushCountOf(against) == 1); // thrown down, back the way the charge went
+    const f32 once = enemies.healthOf(against);
+    f.attacks.ramBarrels(0, f.players, f.targets);
+    CHECK(enemies.healthOf(against) == once); // not again in the same charge
+    f.opponents.close();
+}
+
 TEST_CASE("flying turbo strikes reach short enemies without dealing damage every frame",
           "[game][screens][player-attacks][turbo-contacts]") {
     const auto root = turboAssets();
