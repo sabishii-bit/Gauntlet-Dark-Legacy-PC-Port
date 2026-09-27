@@ -442,6 +442,41 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(enemies.takeBursts().empty());
 }
 
+TEST_CASE("a strength-three demon casts its own fireball from afar and fights hand to hand",
+          "[game][enemies][unpacked]") {
+    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/DEM/animations.json")
+                                           .parent_path()
+                                           .parent_path()
+                                           .parent_path();
+    constexpr s32 kDemonKind = 2;
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(floor());
+    Enemies enemies;
+    enemies.open(device, root, &collision, 13, {}, 5);
+    REQUIRE(enemies.loadKind(kDemonKind));
+    EnemySpawn spawn;
+    spawn.kind = kDemonKind;
+    spawn.tier = 3;
+    spawn.algorithm = 0; // unset: a third-strength caster casts
+    spawn.placed = true;
+    const auto demon = enemies.spawn(spawn, {});
+    REQUIRE(demon.has_value());
+    REQUIRE(enemies.algorithmOf(*demon) == kCastWay);
+    EnemyMissiles missiles;
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 20.0f})};
+    for (s32 i = 0; i < 300 && missiles.count() == 0; ++i) {
+        enemies.update(kTicks, kStep, party, {}, &missiles, 1.0f);
+    }
+    REQUIRE(missiles.count() == 1);
+    const EnemyMissile& ball = missiles.missile(0);
+    CHECK(ball.shooter == *demon);
+    CHECK(ball.kind.damage == 15.0f); // the demon's bolt, the third slot
+    REQUIRE(ball.model != nullptr);   // DEM_FBALL
+    CHECK(ball.velocity.z > 0.0f);
+    CHECK(enemies.takeBlows().empty());
+}
+
 TEST_CASE("invisibility does not make an enemy arrow pass through its victim",
           "[game][items][enemies]") {
     EnemyMissiles missiles;

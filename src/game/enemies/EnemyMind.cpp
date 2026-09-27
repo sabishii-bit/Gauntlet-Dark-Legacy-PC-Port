@@ -34,6 +34,9 @@ constexpr f32 kLungeLands = 7.5f; ///< and its lunge lands on a player within th
 constexpr s32 kLungeWait = 30;    ///< ticks between attacks, and as many again at random
 constexpr f32 kCreepPace = 0.5f;
 constexpr f32 kFleePace = 2.0f;
+constexpr f32 kCastCloseIn = 6.0f; ///< a caster this near its player fights it hand to hand
+constexpr s32 kCastLeast = 20;     ///< ticks a cast is asked for, and as many as ten more
+constexpr s32 kCastSpread = 10;
 /** A fleer's nudges off straight away, one more for each step in a row that gets nowhere:
  * five degrees either side, then ten, to twenty (lbl_8011BF60's first eight). */
 constexpr std::array<f32, 8> kFleeNudges{0.0872664601f, -0.0872664601f, 0.17453292f, -0.17453292f,
@@ -400,6 +403,38 @@ public:
 };
 
 /** Standing where it is, facing whoever comes against it. */
+/** A caster: with nobody seen it wanders and near its player it chases; otherwise it seeks,
+ * and every wait (the level's ninety ticks and up to half again) asks for its attack, the
+ * power attack from the second strength, for twenty to thirty ticks; the attack's swing
+ * casts its missile when it touches nobody (move_logic30). */
+class CastMind : public EnemyMind {
+public:
+    std::string_view name() const override { return "cast"; }
+    MindIntent think(MindMemory& memory, const MindSense& sense) const override {
+        if (sense.target < 0 || !sense.recognized) {
+            return enemyMindOf(kWanderWay).think(memory, sense);
+        }
+        if (sense.targetDistance <= kCastCloseIn) {
+            return enemyMindOf(kChaseWay).think(memory, sense);
+        }
+        if (memory.deadEnd <= 0) {
+            memory.fuse -= sense.ticks;
+        }
+        if (memory.deadEnd <= 0 && memory.fuse <= 0) {
+            const s32 window = kCastLeast + static_cast<s32>(sense.random % kCastSpread);
+            memory.deadEnd = window;
+            const s32 spread = std::max(sense.castWait / 2, 1);
+            memory.fuse = window + static_cast<s32>((sense.random >> 8U) % spread) + sense.castWait;
+        }
+        const bool casting = memory.deadEnd > 0;
+        MindIntent intent = enemyMindOf(kSeekWay).think(memory, sense);
+        if (casting) {
+            intent.action = sense.tier >= 2 ? EnemyAction::PowerAttack : EnemyAction::Attack;
+        }
+        return intent;
+    }
+};
+
 /** Facing its player, it creeps up at half pace and every half second to a second
  * attacks: a lunge at full pace within ten, landing within seven and a half, else its power
  * attack (move_logic31). With nobody to face, it stands. */
@@ -452,6 +487,7 @@ const LoiterMind kLoiter;
 const FleeMind kFlee;
 const LurkMind kLurk;
 const LungeMind kLunge;
+const CastMind kCast;
 const ThrowMind kThrow;
 const SkirmishMind kSkirmish;
 const SuicideMind kSuicide;
@@ -522,6 +558,7 @@ const EnemyMind& enemyMindOf(s32 algorithm) {
     case kFleeWay: return kFlee;
     case kLurkWay: return kLurk;
     case kLungeWay: return kLunge;
+    case kCastWay: return kCast;
     case kThrowWay:
     case kBombWay: return kThrow;
     case kSkirmishWay:

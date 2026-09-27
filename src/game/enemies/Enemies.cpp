@@ -25,6 +25,7 @@ constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
 constexpr f32 kDeathSkinRate = 15.0f;
 constexpr f32 kBomberScare = 10.0f; ///< the swarm keeps this far from a lit suicide bomber
+constexpr f32 kCastTicks = 90.0f;   ///< a caster's least wait, times the level's missile rate
 constexpr s32 kScorpionKind = 0;
 constexpr s32 kAcidKind = 21;
 constexpr f32 kShadowReach = 1.0f; ///< a shadow finds its floor within this of the feet
@@ -251,6 +252,11 @@ bool Enemies::loadKind(s32 kind) {
         bomb.has_value()) {
         stock->bomb.bind(stock->archive.trees.tree(*bomb), stock->archive.models,
                          stock->archive.textures, *m_device);
+    }
+    if (const auto ball = stock->archive.trees.find(std::format("{}_FBALL", info.prefix));
+        ball.has_value()) {
+        stock->fireball.bind(stock->archive.trees.tree(*ball), stock->archive.models,
+                             stock->archive.textures, *m_device);
     }
     // Every kind lies a shadow of its tier under it but these (InitEnemyGeo).
     if (kind != kScorpionKind && kind != kAcidKind && kind != kDeathKind && kind != kItKind) {
@@ -588,7 +594,16 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             continue;
         }
         chooseTarget(enemy, i, players, crowding);
-        resolveBlows(enemy, i, players);
+        // A caster's swing, or a lunger's power swing, that touches nobody casts its missile
+        // instead (fn_8004DF58).
+        if (castsNow(enemy) && enemy.contact < 0) {
+            if (missiles != nullptr) {
+                shoot(enemy, i, players, *missiles, missileSpeedScale);
+            }
+            enemy.attackIndex = -1;
+        } else {
+            resolveBlows(enemy, i, players);
+        }
         if (enemy.kind != kDeathKind) {
             react(enemy);
         }
@@ -717,6 +732,15 @@ f32 Enemies::fightOf(const Enemy& enemy) const {
         return fight;
     }
     return enemy.health > 0.333f * full ? 0.667f * fight : 0.333f * fight;
+}
+
+bool Enemies::castsNow(const Enemy& enemy) {
+    constexpr s32 kFirstCastingWay = 28;
+    if (enemy.algorithm == kLungeWay) {
+        return enemy.animator.powerStruck();
+    }
+    return enemy.algorithm >= kFirstCastingWay && enemy.algorithm <= kCastWay &&
+           (enemy.animator.struck() || enemy.animator.powerStruck());
 }
 
 void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> players) {
@@ -925,6 +949,8 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     }
     MindSense sensed = sense(enemy, slot, ticks, players, obstacles);
     sensed.random = m_random();
+    sensed.tier = enemy.tier;
+    sensed.castWait = static_cast<s32>(kCastTicks * m_scales.missileRate);
     s32 algorithm = enemy.algorithm;
     // Near a lit bomber most ways run from it for the tick (FoundSuicideBomber): within ten
     // of it, its player within this one's sight, and not held after a bump or rising.
@@ -1227,7 +1253,13 @@ void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                                                        : missileSlotOfWay(enemy.algorithm);
     const EnemyMissileKind what =
         enemyMissileOf(enemy.kind, which).value_or(EnemyMissileKind::arrow());
-    const TreeModel* model = which == EnemyMissileKind::kBomb ? &stock->bomb : &stock->arrow;
+    // The trees are the kind's <PREFIX>_ARROW, _BOMB and _FBALL (InitEnemyMissiles).
+    const TreeModel* model = &stock->fireball;
+    if (which == EnemyMissileKind::kArrow) {
+        model = &stock->arrow;
+    } else if (which == EnemyMissileKind::kBomb) {
+        model = &stock->bomb;
+    }
     missiles.launch(what, from, aim, speedScale, model->bound() ? model : nullptr, slot);
 }
 

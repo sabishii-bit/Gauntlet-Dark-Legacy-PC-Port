@@ -582,11 +582,20 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   heading ten ticks (fifteen for another enemy) and counts a bump, seven
   bumps and the route doubles back, ten refused headings and it goes
   straight anyway; loiter (11) turning on the spot, done with when its
-  generator is gone; flee (24) away at a run; lurk (27) still until a player
-  is within sight, then seeking for good; lunge (31, Garm's brood whatever
+  generator is gone; flee (24) for a tick at a time, taken by most ways
+  (`fleesBombers`) within ten of the first lit suicide bomber running at the
+  party, straight away from it at twice the pace, nudged 5 to 20 degrees off
+  for each step in a row that gets nowhere; lurk (27) still until a player
+  is within sight, then seeking for good; cast (30, the third-strength
+  casters) wandering unseen, chasing within six, else seeking and, every
+  ninety ticks times the level's `enemyMissileRate` and up to half again,
+  asking twenty to thirty ticks of its attack (the power one from the second
+  strength); lunge (31, Garm's brood whatever
   it is placed with, as IT always lurks) creeping up on its player at half
   pace and, every 30 to 59 ticks, lunging at full pace within ten (landing
-  within seven and a half) or else making its power attack; throw (17, 23) standing, facing its player and throwing
+  within seven and a half) or else making its power attack. A swing of ways
+  28 to 30, or a power swing of 31, that touches nobody casts the third slot
+  instead of striking (`Enemies::castsNow`, fn_8004DF58); throw (17, 23) standing, facing its player and throwing
   whenever they are within sight and ten above or below and its wait since
   the last throw (the placement's fourth param in ticks, `idleTicks`) is
   over; skirmish (16, the archer's) the same, but backing off, weapon up
@@ -610,7 +619,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `enemyMissileSpeed`, a lob leaves so as to fall there under a gravity of
   forty (ours: the original leads and weights it); either strikes the first
   player its body meets, or the world, and a lob bursts either way. The
-  models are the kind's `<PREFIX>_ARROW` and `_BOMB` trees (the zombies'
+  models are the kind's `<PREFIX>_ARROW`, `_BOMB` and `_FBALL` trees (the zombies'
   arrow is a pitchfork). `enemyMissileOf(kind, slot)` is the whole table
   (the demons', ghosts', plague's, sorcerers', warlocks' and garm's bolts of
   their own in the third slot, the worm's three) and `missileSlotOfWay` the
@@ -652,8 +661,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   its count and turns a caster brood (28-30) to seeking (fn_8005C1DC); gone it
   frees its brood. A way of nought is filled in by kind and strength, the
   small kinds prowl either way (2 or 4) and ways 1/10 become 0/7
-  (`resolvedWayOf`: fn_8004F87C, init_enemy_vars); the fixed ways of Garm's
-  minions, Death, IT and the golem wait on their minds. Level placements (type 4) of ordinary strength
+  (`resolvedWayOf`: fn_8004F87C, init_enemy_vars); Garm's minions always
+  lunge (31) and IT always lurks (27). Level placements (type 4) of ordinary strength
   stand where put, asleep at nought. Level tuning's enemy and generator
   columns are in `LevelTuning` (`enemyHealth`, `enemySpeedScale(gain)` and so
   on: what they take and deal is the level's own, speed, sight, rate and

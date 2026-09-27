@@ -53,6 +53,8 @@ struct MindSense {
     EnemyAction action = EnemyAction::Ready; ///< what the body is doing
     u32 random = 0;                          ///< a fresh draw from the pool's generator
     std::optional<Vec3> bomber;              ///< a lit suicide bomber near enough to run from
+    s32 tier = 1;                            ///< the strength it was made at
+    s32 castWait = 90;                       ///< a caster's least wait between casts, in ticks
     /** Whether a step along a heading crosses nothing (a body against a wall may still
      * slide along it). */
     std::function<bool(f32 heading)> clear;
@@ -115,6 +117,7 @@ inline constexpr s32 kSuicideWay = 18;      ///< the suicide's: a lit fuse and a
 inline constexpr s32 kThrowWay = 23;        ///< standing and shooting
 inline constexpr s32 kFleeWay = 24;         ///< away from a lit suicide bomber, a tick at a time
 inline constexpr s32 kLurkWay = 27;
+inline constexpr s32 kCastWay = 30;  ///< the casters': seeking, and casting from afar
 inline constexpr s32 kLungeWay = 31; ///< the Garm brood's: creeping up and lunging
 
 /** Angles wrapped into a half turn either way. */

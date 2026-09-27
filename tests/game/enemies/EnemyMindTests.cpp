@@ -280,6 +280,42 @@ TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer
     REQUIRE(intent.become == kSeekWay);
 }
 
+TEST_CASE("the caster seeks and casts on its wait, wanders unseen, and fights close by",
+          "[game][enemies][mind]") {
+    const EnemyMind& cast = enemyMindOf(kCastWay);
+    REQUIRE(cast.name() == "cast");
+    MindMemory memory;
+    MindSense sense = senseAhead(20.0f);
+    sense.tier = 3;
+    sense.castWait = 90;
+    sense.random = 3; // a window of 23 ticks, and a wait of 23 + 90
+    // The first thing it does on seeing its player is cast, the power attack at strength
+    // three, while it goes on towards them.
+    MindIntent intent = cast.think(memory, sense);
+    REQUIRE(intent.action == EnemyAction::PowerAttack);
+    REQUIRE(intent.heading == Approx(0.0f));
+    REQUIRE(memory.deadEnd == 21); // counted down as it seeks, this tick too
+    REQUIRE(memory.fuse == 23 + 90);
+    for (s32 tick = 2; tick < 23; tick += 2) {
+        REQUIRE(cast.think(memory, sense).action == EnemyAction::PowerAttack);
+    }
+    // The window out, it walks until its wait is.
+    intent = cast.think(memory, sense);
+    REQUIRE(intent.action == EnemyAction::Walk);
+    MindMemory weak;
+    sense.tier = 1;
+    REQUIRE(cast.think(weak, sense).action == EnemyAction::Attack);
+    // Unseen it wanders; within six it chases, hand to hand.
+    MindMemory idle;
+    MindSense alone;
+    alone.ticks = 2;
+    idle.heading = 0.4f;
+    REQUIRE(cast.think(idle, alone).heading == 0.4f);
+    MindMemory close;
+    REQUIRE(cast.think(close, senseAhead(5.0f)).action == EnemyAction::Walk);
+    REQUIRE(close.fuse == 0); // no cast begun
+}
+
 TEST_CASE("the lunger creeps up facing its player and lunges or makes its power attack",
           "[game][enemies][mind]") {
     const EnemyMind& lunge = enemyMindOf(kLungeWay);
