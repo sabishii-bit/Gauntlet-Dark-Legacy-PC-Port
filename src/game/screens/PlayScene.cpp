@@ -1411,7 +1411,7 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
 void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.figure == nullptr || runtime.life == PlayerLife::InTower ||
-            m_departure.finished()) {
+            m_departure.finished() || !m_world->ref().playerShadows()) {
             continue;
         }
         // It lies on the floor under the body, even while the body is thrown or sinks
