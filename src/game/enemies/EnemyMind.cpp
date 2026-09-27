@@ -20,15 +20,19 @@ constexpr s32 kShortWaitOther = 15; ///< when the bump was another enemy
 constexpr s32 kLongWaitOther = 50;
 constexpr f32 kWanderTurn = kPi / 4.0f; ///< a wanderer turns this much at a dead end
 constexpr s32 kWanderWait = 30;
-constexpr f32 kProwlPounce = 8.0f; ///< a prowler goes for a player this close
-constexpr f32 kLoiterTurn = kPi / 64.0f;
-constexpr f32 kThrowReach = 10.0f; ///< a thrower's player must be within this above or below
-constexpr f32 kKeepOffFrom = 0.6f; ///< of its sight, a skirmisher backs off from
-constexpr f32 kKeepOffTo = 0.8f;   ///< of its sight, and stops at
+constexpr f32 kProwlPounce = 8.0f;        ///< a prowler goes for a player this close
+constexpr f32 kLoiterTurn = kPi / 180.0f; ///< a tick: a sixth of a turn a second (do_ai way 11)
+constexpr f32 kThrowReach = 10.0f;        ///< a thrower's player must be within this above or below
+constexpr f32 kKeepOffFrom = 0.6f;        ///< of its sight, a skirmisher backs off from
+constexpr f32 kKeepOffTo = 0.8f;          ///< of its sight, and stops at
 constexpr f32 kKeepOffPace = 0.8f;
 constexpr s32 kFuseTicks = 60;
 constexpr s32 kBurnTicks = 240; ///< a suicide's run before it blows up anyway
 constexpr f32 kSuicidePace = 1.5f;
+constexpr f32 kLungeFrom = 10.0f; ///< a lunger within this lunges, else makes its power attack
+constexpr f32 kLungeLands = 7.5f; ///< and its lunge lands on a player within this
+constexpr s32 kLungeWait = 30;    ///< ticks between attacks, and as many again at random
+constexpr f32 kCreepPace = 0.5f;
 
 // The corner-hugging offsets, one more sixteenth of a turn for every bump.
 constexpr std::array<f32, 8> kCornerOffsets{
@@ -392,17 +396,46 @@ public:
 };
 
 /** Standing where it is, facing whoever comes against it. */
-class StandMind : public EnemyMind {
+/** Facing its player, it creeps up at half pace and every half second to a second
+ * attacks: a lunge at full pace within ten, landing within seven and a half, else its power
+ * attack (move_logic31). With nobody to face, it stands. */
+class LungeMind : public EnemyMind {
 public:
-    std::string_view name() const override { return "stand"; }
+    std::string_view name() const override { return "lunge"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        if (sense.contact >= 0) {
-            memory.heading = yawBetween(sense.position, sense.contactPosition);
-        }
         MindIntent intent;
-        intent.heading = memory.heading;
         intent.pace = 0.0f;
         intent.action = EnemyAction::Ready;
+        memory.heading = sense.faceAngle(memory.heading);
+        intent.heading = memory.heading;
+        if (sense.target < 0 || !sense.recognized) {
+            return intent;
+        }
+        const s32 wait = kLungeWait + static_cast<s32>(sense.random % kLungeWait);
+        switch (sense.action) {
+        case EnemyAction::Attack:
+        case EnemyAction::AttackRecover:
+            intent.pace = 1.0f;
+            memory.counter = wait;
+            intent.strike = sense.targetDistance <= kLungeLands;
+            break;
+        case EnemyAction::PowerAttack:
+        case EnemyAction::PowerAttackRecover:
+            intent.pace = kCreepPace;
+            memory.counter = wait;
+            break;
+        default:
+            if (memory.counter <= 0) {
+                intent.pace = kCreepPace;
+                intent.action = sense.targetDistance <= kLungeFrom ? EnemyAction::Attack
+                                                                   : EnemyAction::PowerAttack;
+            } else if (sense.action != EnemyAction::Start) {
+                memory.counter -= sense.ticks;
+                intent.pace = kCreepPace;
+                intent.action = EnemyAction::Walk;
+            }
+            break;
+        }
         return intent;
     }
 };
@@ -414,7 +447,7 @@ const ChaseMind kChase;
 const LoiterMind kLoiter;
 const FleeMind kFlee;
 const LurkMind kLurk;
-const StandMind kStand;
+const LungeMind kLunge;
 const ThrowMind kThrow;
 const SkirmishMind kSkirmish;
 const SuicideMind kSuicide;
@@ -459,7 +492,7 @@ const EnemyMind& enemyMindOf(s32 algorithm) {
     case kLoiterWay: return kLoiter;
     case kFleeWay: return kFlee;
     case kLurkWay: return kLurk;
-    case kStandWay: return kStand;
+    case kLungeWay: return kLunge;
     case kThrowWay:
     case kBombWay: return kThrow;
     case kSkirmishWay:

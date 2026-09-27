@@ -51,6 +51,7 @@ struct MindSense {
     bool threw = false;                      ///< the body let a missile go this tick
     s32 idleTicks = 120;                     ///< ticks a thrower waits between throws
     EnemyAction action = EnemyAction::Ready; ///< what the body is doing
+    u32 random = 0;                          ///< a fresh draw from the pool's generator
     /** Whether a step along a heading crosses nothing (a body against a wall may still
      * slide along it). */
     std::function<bool(f32 heading)> clear;
@@ -76,6 +77,7 @@ struct MindIntent {
     bool expire = false;       ///< the body is done with (a loiterer whose generator is gone)
     bool throwing = false;     ///< the body is asked to throw
     bool explode = false;      ///< the body blows itself up
+    bool strike = false;       ///< the swing under way lands on the player it is after
 };
 
 /**
@@ -108,7 +110,7 @@ inline constexpr s32 kSuicideWay = 18;      ///< the suicide's: a lit fuse and a
 inline constexpr s32 kThrowWay = 23;        ///< standing and shooting
 inline constexpr s32 kFleeWay = 24;
 inline constexpr s32 kLurkWay = 27;
-inline constexpr s32 kStandWay = 31;
+inline constexpr s32 kLungeWay = 31; ///< the Garm brood's: creeping up and lunging
 
 /** Angles wrapped into a half turn either way. */
 f32 wrapAngle(f32 angle);
