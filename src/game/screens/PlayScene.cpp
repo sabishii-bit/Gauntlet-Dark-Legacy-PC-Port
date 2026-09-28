@@ -1289,7 +1289,13 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         .resolveMovement =
             [this](usize i, const Vec3& from, const Vec3& to) {
                 return m_opponents.resolveMovement(m_players[i].actor, from, to);
-            }};
+            },
+        .startPoint = [this]() -> std::optional<Vec3> {
+            if (const WorldLocator* start = m_world->startPoint(0)) {
+                return start->position;
+            }
+            return std::nullopt;
+        }};
     updateTransporters(ticks, seconds, held);
     const std::vector<CameraSubject> subjects = PartyMotion::step(
         m_players, inputs, held, bossCameraOn() ? m_bossCamera.yaw() : m_camera.yaw(), ticks,
@@ -1425,6 +1431,7 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
 void PlayScene::gatherLights() {
     m_lights.clear();
     m_effects.lights(m_lights);
+    m_opponents.lights(m_lights);
     const LevelInfo* level = m_world->level();
     if (level != nullptr && (level->flags & DynamicLights::kDarkLevel) != 0) {
         for (const PlayerRuntime& runtime : m_players) {

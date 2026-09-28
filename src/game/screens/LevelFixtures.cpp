@@ -16,6 +16,7 @@ namespace {
 constexpr std::string_view kChestSound = "S_CHEST";
 constexpr f32 kKnockdownFrom = 1.0f; ///< a blast must do more than this to floor anyone
 constexpr f32 kBehind = 1.5707964f;  ///< a blow from further round than this is from behind
+constexpr f32 kBlastPush = 0.25f;    ///< how hard a blast throws its victim, as a push's length
 constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
 constexpr std::string_view kBarrelBreakSound = "S_BARREL_WOOD"; ///< with the realm's letter
 constexpr std::string_view kBarrelBlastSound = "S_BARREL_EXPLO";
@@ -387,6 +388,15 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
                     round = std::remainder(round, 2.0f * kBehind * 2.0f);
                     players[i].reaction =
                         std::abs(round) > kBehind ? PlayerDeed::FallBack : PlayerDeed::FallForward;
+                    // And throws them a little way from it (ProcessEffects: a quarter of the
+                    // way out along the ground).
+                    const Vec2 out{push.x, push.z};
+                    if (glm::length(out) > 0.0f) {
+                        const Vec2 away = glm::normalize(out) * kBlastPush;
+                        players[i].knockback.queue(
+                            Vec3{away.x, 0.0f, away.y}, PlayerImpact::kKnockDown,
+                            PlayerHealth::guarded(players[i], felt.damage, true));
+                    }
                 }
                 events.hurt(i, felt.damage, HurtKind::Blow, true);
             }

@@ -353,9 +353,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   frames, preserving costume coverage and leaving the held weapon alone.
   This visual feedback does not stop movement or turn every ordinary hit into
   a stagger. Portal skin takes precedence over a pending damage flash.
-  Knockback translation, airborne/whirlwind physics and exact same-frame
-  accumulation of damage/force remain separate unfinished behavior; grounded
-  reaction selection is not a claim that these have been reconstructed.
+  Knockback translation is `players/Knockback` (PlayerKnockback, PlayerMotion):
+  `PlayerHealth::hurt` queues each hit's direction with its effective flags; the
+  next party step first slides the body by the existing velocity, then kicks by
+  the frame's heaviest flag (knockback 16, knockdown/knockover 32 or Pojo's 80,
+  blown-away/whirlwind 100 times the summed push, only past a point of harm) and
+  snaps the facing along or against the push. The slide is horizontal, decays by
+  0.667 per 30 Hz frame, travels per axis at most 40/s the frame after a
+  0x18160 kick and 1.5 x pace otherwise, and walls and edges stop it as they stop
+  walking (`PlayerActor::slide`). Airborne/whirlwind physics remain unfinished.
 * Level tuning: each level record of a realm's data wad holds seventeen
   floats from +0x9C (`LevelTuningRecord`, unpacked as `tuning`): the player
   level it is meant for, experience and damage multipliers, the difficulty,
@@ -407,7 +413,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `S_LIFEFORCE` and `S_ABOUT`; a blow crossing either still sounds. The
   lowest standing player at 200 or under hears `S_WARN` (every 120/60/30
   ticks, louder as health falls; silent in the tower or invulnerable:
-  `PlayerHealth::heartbeat`, do_weakening). Not yet: knockback.
+  `PlayerHealth::heartbeat`, do_weakening). A blast that floors its victim also
+  pushes it a quarter-length push out from its centre as a knockdown.
 * The turbo meter (`players/TurboMeter`, one per actor in `PlayScene`): what
   it holds climbs 2 a second to 100 while the character is free to act (not
   fallen, not in a turbo move), what is shown chases that a point a tick up
@@ -532,12 +539,16 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   than a point through and finds no guard floors its victim: onto its face
   (`FALLFRNT`, then `GETUP2`) when it came from behind the way it faces,
   onto its back (`FALLDOWN`, `GETUP`) otherwise, heeding nothing until it is
-  up (`PlayerAnimator::floored`, part of `reacting`). Not yet, because they
-  need something to be aimed at or to come from: directional/stepping melee
-  variants, the knock-back slide,
-  falling from ledges (`FALLING`, `LAND`: the actor still refuses a step
-  with nothing under it), pushing, webs, grabs and Death's, the victory
-  pose, the super shot and the familiars' attacks.
+  up (`PlayerAnimator::floored`, part of `reacting`). Retail has no ledge
+  fall: a drop too deep to walk down stops a walking or sliding body like a
+  wall. A floor gone from under a body (moving or vanished) lets it sink at
+  most 16 a second, with no landing animation, sound or damage
+  (`PlayerActor::fall`); under the world's lowest point less 4.5 it stands
+  again beside another standing player (`PartyMotion::rescueSpot`,
+  get_player_pos's sixteen spots) or at the level's start. Not yet, because
+  they need something to be aimed at or to come from: directional/stepping
+  melee variants, pushing, Death's grab, the victory pose, the super shot
+  and the familiars' attacks.
 * Close normal attacks use `TargetAssist::melee` (horizontal surface reach,
   vertical overlap, facing and walls), then `PlayerAttacks::attackDeed` selects
   the quick/slow or low-body action. `PlayerAnimator` plays ATTQUICK1 then
@@ -633,11 +644,21 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   one. What they throw is `EnemyMissiles`: the original's table (0x80119128,
   0x30 a row, three slots a kind) gives every medium kind the same shot
   (ten damage, twenty-five a second, half a unit wide) and lob (ten, twenty,
-  knock-back, a burst of three, spinning about y); a shot flies straight at
-  the player's middle from the kind's attention height at the level's
-  `enemyMissileSpeed`, a lob leaves so as to fall there under a gravity of
-  forty (ours: the original leads and weights it); either strikes the first
-  player its body meets, or the world, and a lob bursts either way. The
+  knock-back, a burst of three, spinning about y). EnemyStartMissile aims from
+  the thrower's middle at the player's, never leading: a bolt (slot 2) flies
+  straight, arrows and lobs at the level's `enemyMissileSpeed` along the
+  ground, rising to fall under their own weight (30, 35; bolts 1, garm 0) on a
+  point 3.5 (5.5 for a lob) under the aim, a lob's error up or down running
+  over 5 x the level's `enemyMissileAim`; nothing is thrown downward. It
+  leaves 3 ahead of the kind's launch point (`enemyLaunchPointOf`), not past a
+  wall, and lives 3 s. Either strikes the first player its body meets (a
+  blow heard as `S_PLYRDMG2` for an arrow, `S_PLYRDMG3` for a bolt), or the
+  world; a lob bursts either way, and when its time runs out, with a red
+  light of 5 on it. The burst (`EnemyMissiles::burst`, ProcessEffects mode 1)
+  lasts its `EXPSMALL` effect, grows to 3 as its harm falls from 1.5 x to
+  nothing over the first two thirds, reaches each player once (not the one
+  the lob struck) with a quarter-length knockback push, dropped under 5 harm,
+  and strikes the swarm about it once (ours; retail every frame). The
   models are the kind's `<PREFIX>_ARROW`, `_BOMB` and `_FBALL` trees (the zombies'
   arrow is a pitchfork). `enemyMissileOf(kind, slot)` is the whole table
   (the demons', ghosts', plague's, sorcerers', warlocks' and garm's bolts of
@@ -701,9 +722,18 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   too, with the strike row's damage type. gdlunpack's `--only MONSTERS`
   unpacks the seventy-two monster archives (`GENERAL` one folder a realm).
   Not yet: the other minds (guards 8, milestone routes 10, the ghosts' 19,
-  the kiting of 26/28/29 and the rest), the original's missile lead and
-  weight, the arrow's and bomb's hit effects and sounds, Death, IT, gibs
-  and attack/idle enemy sounds (hit/death sounds are routed below).
+  the kiting of 26/28/29 and the rest), Death, IT, the missiles' item
+  obstruction, shield reflection and the garm's pass-through, and the suicide's
+  multi-part SuicideExplosion effect. The swarm's own sounds are only these
+  (sounds_evt.c): `S_ENEMYARROW` as an arrow leaves, `S_ENEMYFIREBALL` as a
+  bolt does (a demon's the realm's `S_FIREHOLE`, C/D/F lettered), none for a
+  lob, `S_SUICIDE_YELL` as a suicide starts its run (stopped only when a hit
+  kills one) and `S_SUICIDE_BOMB` as it goes up; its own fuse kills it without
+  a cry, a blood burst or a death skin. Retail has no swing, idle, alert or
+  taunt cries for the swarm, and no gibs: a kill is one death-burst tree and
+  the death skin. Enemy sounds play at their level of 255 times
+  `LevelOpponents::attenuation` (sndFxPlay3DAtten: full within 20 of the
+  nearest standing player, nothing past 70).
 * Swarm hit/death feedback is queued separately from experience rewards, so
   world damage also sounds/shows. `EnemyFeedback` selects tier/count-specific
   CLOSE/FAR sound names and element/kind-specific effect trees; `LevelOpponents`
@@ -1663,8 +1693,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   strike's first effect twice its reach in the class's colour, swelling over a burst's
   life (ours: retail swells over the damage window). In a dark level (flag 8) each
   standing player carries a lantern (radius 20, intensity 10, ten over them). The
-  colours are `game/world/DynamicLights`. Not yet: the enemy bomb's light, the suicide
-  bomber's blast light, and a dark level's blacked-out ambient.
+  colours are `game/world/DynamicLights`; the swarm's lobs and their bursts add theirs
+  (`LevelOpponents::lights`). Not yet: the suicide bomber's blast light, and a dark
+  level's blacked-out ambient.
 * Additive geometry (`WorldObject::kAdditive`: glows, flames, the force
   fields) is drawn unlit (`WorldScene::kUnlit`), as the original never lights
   it; everything else takes `WorldLighting`. The streams' prelit vertex

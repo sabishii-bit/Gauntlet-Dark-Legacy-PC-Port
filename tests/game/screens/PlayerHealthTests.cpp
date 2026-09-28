@@ -280,4 +280,41 @@ TEST_CASE("inventory protection reaches damage healing and reaction handling",
         CHECK(f.player.reaction == PlayerDeed::None);
     }
 }
+
+TEST_CASE("an enemy arrow and bolt land with their own sounds, a blow with the plain one",
+          "[player-health][enemy-missile]") {
+    for (const auto& [flags, heard] :
+         {std::pair{0x20000u, "S_PLYRDMG2"}, std::pair{0x40000u, "S_PLYRDMG3"},
+          std::pair{0u, "S_PLYRDMG"}}) {
+        Fixture f;
+        f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events,
+                      PlayerImpact{.flags = flags});
+        CHECK(f.sounds == std::vector<std::string>{heard});
+        CHECK(f.cries.empty());
+    }
+}
+
+TEST_CASE("a hit that knocks pushes its victim the way it came, as guarding and harm allow",
+          "[player-health][knockback]") {
+    Fixture f;
+    const PlayerImpact knock{.flags = PlayerImpact::kKnockDown, .direction = Vec3{0, 0, 1}};
+    f.health.hurt(f.player, 10, HurtKind::Blow, true, false, 1, f.events, knock);
+    REQUIRE(f.player.knockback.pending());
+    f.player.knockback.kick(0.0f, false);
+    CHECK(f.player.knockback.velocity().z == Approx(Knockback::kFallKick));
+    // Two points or less knock nobody anywhere; a hit with no knock pushes nothing.
+    Fixture light;
+    light.health.hurt(light.player, 2, HurtKind::Blow, true, false, 1, light.events, knock);
+    light.player.knockback.kick(0.0f, false);
+    CHECK(light.player.knockback.velocity() == Vec3{0.0f});
+    Fixture plain;
+    plain.health.hurt(plain.player, 10, HurtKind::Blow, true, false, 1, plain.events,
+                      PlayerImpact{.flags = 0, .direction = Vec3{0, 0, 1}});
+    plain.player.knockback.kick(0.0f, false);
+    CHECK(plain.player.knockback.velocity() == Vec3{0.0f});
+    // In the tower nothing hurts, so nothing pushes.
+    Fixture tower;
+    tower.health.hurt(tower.player, 10, HurtKind::Blow, true, true, 1, tower.events, knock);
+    CHECK_FALSE(tower.player.knockback.pending());
+}
 } // namespace

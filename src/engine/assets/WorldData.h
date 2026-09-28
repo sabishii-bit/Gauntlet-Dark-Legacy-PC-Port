@@ -32,6 +32,7 @@ struct LevelTuning {
     f32 generatorMost = 1.0f;     ///< and how many it keeps out at once
     f32 enemyMissileSpeed = 1.0f; ///< scales how fast what they throw flies
     f32 enemyMissileRate = 1.0f;  ///< scales how long its casters wait between casts
+    f32 enemyMissileAim = 1.0f;   ///< scales how far up or down their throws stray
 
     /** How long a trap's times run for a game whose difficulty setting scales by `gain`:
      * the faster the rate, the shorter. */

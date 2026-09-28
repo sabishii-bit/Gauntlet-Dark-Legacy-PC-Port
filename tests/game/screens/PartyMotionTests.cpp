@@ -40,7 +40,8 @@ struct Fixture {
         .aim = {},
         .allowMovement = {},
         .attackDeed = {},
-        .resolveMovement = {}};
+        .resolveMovement = {},
+        .startPoint = {}};
 
     Fixture() {
         CollisionTriangle first;
@@ -338,10 +339,19 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
     f.events.advanceTurbo = [](usize, s32, f32) {};
     f.step();
     REQUIRE(player.figure->animator().action() == first);
+    // The stick moves nothing until the player is up; only the knock slides the body, the
+    // way the blow travelled and no further than its kick carries.
+    const f32 along = blow.flags == PlayerImpact::kStun ? 0.0f : blow.direction.z;
     bool gotUp = false;
     for (s32 i = 0; i < 120 && player.figure->animator().reacting(); ++i) {
         f.step();
-        REQUIRE(player.actor.position() == Vec3(0));
+        const Vec3 at = player.actor.position();
+        REQUIRE(at.x == 0.0f);
+        REQUIRE(at.z * along >= 0.0f);
+        REQUIRE(std::abs(at.z) < 4.0f);
+        if (along == 0.0f) {
+            REQUIRE(at == Vec3(0));
+        }
         REQUIRE_FALSE(player.figure->animator().released());
         REQUIRE(f.calls.empty());
         gotUp = gotUp || player.figure->animator().action() == recovery;
@@ -349,8 +359,9 @@ TEST_CASE("boss impacts reach retail player animations and lock input through re
     REQUIRE(gotUp);
     REQUIRE_FALSE(player.figure->animator().reacting());
     f.inputs[3].attack = false;
+    const f32 settled = player.actor.position().z;
     f.step();
-    REQUIRE(player.actor.position().z > 0);
+    REQUIRE(player.actor.position().z > settled);
 }
 
 TEST_CASE("boss capture owns the full body transform and defers throw damage until landing",
@@ -465,5 +476,53 @@ TEST_CASE("held close attack input advances slowly and dispatches melee contacts
     CHECK(contacts >= 3);
     CHECK(missiles == 0);
     CHECK(f.players[0].figure->animator().meleeing());
+}
+
+TEST_CASE("a knock turns its victim at once and slides it from the next frame",
+          "[game][screens][party-motion][knockback]") {
+    Fixture f;
+    f.players[0].knockback.queue(Vec3{1, 0, 0}, Knockback::kKnockDown, 10.0f);
+    f.step();
+    CHECK(f.players[0].actor.yaw() == Approx(std::numbers::pi_v<f32> / 2));
+    CHECK(f.players[0].actor.position().x == Approx(0.0f));
+    f.step();
+    CHECK(f.players[0].actor.position().x == Approx(32.0f / 30.0f));
+    for (s32 frame = 0; frame < 30; ++frame) {
+        f.step();
+    }
+    const f32 rest = f.players[0].actor.position().x;
+    CHECK(rest < 4.0f);
+    f.step();
+    CHECK(f.players[0].actor.position().x == Approx(rest)); // the slide is over
+    // The fallen are not pushed.
+    f.players[1].life = PlayerLife::InTower;
+    f.players[1].knockback.queue(Vec3{1, 0, 0}, Knockback::kKnockDown, 10.0f);
+    f.step();
+    f.step();
+    CHECK(f.players[1].actor.position().x == Approx(10.0f));
+}
+
+TEST_CASE("a body lost under the world stands again beside another, or at the start",
+          "[game][screens][party-motion][falling]") {
+    Fixture f;
+    // Held above its floor, it sinks at sixteen a second.
+    f.players[0].actor.place(Vec3{0, 2, 0});
+    f.step();
+    CHECK(f.players[0].actor.position().y == Approx(2.0f - 16.0f / 30.0f));
+    // Out past the floor's edge, lost under it: stood again round the other player.
+    f.players[1].actor.place(Vec3{500, -10, 0});
+    f.players[0].actor.place(Vec3{0, 0, 0});
+    f.step();
+    const Vec3 rescued = f.players[1].actor.position();
+    CHECK(rescued.y == 0.0f);
+    CHECK(glm::distance(rescued, Vec3{0, 0, 0}) ==
+          Approx(PartyMotion::kRescueGap + 2 * f.players[0].actor.radius()));
+    // With nobody to stand beside, the level's start.
+    f.players[0].life = PlayerLife::InTower;
+    f.players[1].actor.place(Vec3{500, -10, 0});
+    f.events.startPoint = [] { return std::optional<Vec3>{Vec3{7, 0, 7}}; };
+    f.step();
+    CHECK(f.players[1].actor.position() == Vec3{7, 0, 7});
+    CHECK_FALSE(PartyMotion::rescueSpot(f.players, 1, f.collision).has_value());
 }
 } // namespace

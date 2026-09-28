@@ -42,6 +42,41 @@ MoveInput PartyMotion::chargeInput(const PlayerActor& actor, const MoveInput& st
     return rush;
 }
 
+std::optional<Vec3> PartyMotion::rescueSpot(std::span<const PlayerRuntime> players, usize lost,
+                                            const WorldCollision& collision) {
+    constexpr f32 kTurn = 6.2831853f;
+    if (lost >= players.size()) {
+        return std::nullopt;
+    }
+    const PlayerActor& body = players[lost].actor;
+    for (usize other = 0; other < players.size(); ++other) {
+        if (other == lost || players[other].life != PlayerLife::Standing) {
+            continue;
+        }
+        const PlayerActor& rescuer = players[other].actor;
+        if (rescuer.position().y <= collision.lowest() - kLostDepth) {
+            continue; // lost too
+        }
+        const f32 out = kRescueGap + rescuer.radius() + body.radius();
+        for (s32 k = 0; k < kRescueSpots; ++k) {
+            const f32 angle = kTurn * static_cast<f32>(k) / static_cast<f32>(kRescueSpots);
+            Vec3 spot = rescuer.position() + Vec3{std::sin(angle), 0.0f, std::cos(angle)} * out;
+            const auto floor = collision.floorAt(spot, kRescueRise, kRescueRise);
+            if (!floor.has_value()) {
+                continue;
+            }
+            spot.y = floor->y;
+            const Vec3 clear =
+                collision.resolveWalls(spot, body.radius(), spot.y + PlayerActor::kFootClearance,
+                                       spot.y + body.height() - PlayerActor::kFootClearance);
+            if (glm::distance(clear, spot) < 1e-3f) {
+                return spot;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 StrafeWay PartyMotion::strafeWayOf(f32 heading, f32 facing) {
     constexpr f32 kEighth = 0.7853982f;
     const f32 off = std::remainder(heading - facing, 8.0f * kEighth);
@@ -70,7 +105,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (down) {
             players[i].capture.clear();
             players[i].transport.clear();
+            players[i].knockback.clear();
         } else if (players[i].transport.active()) {
+            players[i].knockback.clear();
             actor.update({}, cameraYaw, seconds, nullptr);
             if (players[i].figure != nullptr) {
                 players[i].figure->animate(0, ticks, seconds, PlayerDeed::None);
@@ -78,6 +115,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             subjects.push_back({actor.position(), actor.followPoint()});
             continue;
         } else if (players[i].capture.active()) {
+            players[i].knockback.clear();
             PlayerCapture& capture = players[i].capture;
             const PlayerDeed deed = capture.held() ? PlayerDeed::Grabbed : PlayerDeed::Thrown;
             if (const auto impact = capture.update(seconds, actor, collision);
@@ -170,6 +208,15 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                         : StrafeWay::None);
         }
         const Vec3 before = actor.position();
+        // A knock slides the body on, then what hit it last frame kicks it, turning it to
+        // face along the push or against it (PlayerMotion, PlayerKnockback).
+        if (!down) {
+            actor.slide(players[i].knockback.step(seconds, actor.speed()), &collision);
+            if (const auto heading = players[i].knockback.kick(
+                    actor.yaw(), (powerups.special & powerup::kPojo) != 0)) {
+                actor.turnTo(*heading);
+            }
+        }
         MoveInput attackMove = move;
         if (move.any() &&
             (deed == PlayerDeed::Melee || (animator != nullptr && animator->quickMeleeing()))) {
@@ -184,6 +231,21 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         if (events.allowMovement && !events.allowMovement(before, actor.position())) {
             actor.place(Vec3{before.x, actor.position().y, before.z});
+        }
+        // A floor gone from under it lets it sink; lost under the world, it stands again
+        // beside another, or at the start.
+        if (players[i].life != PlayerLife::InTower) {
+            actor.fall(seconds, collision);
+        }
+        if (!down && collision.loaded() && actor.position().y <= collision.lowest() - kLostDepth) {
+            std::optional<Vec3> spot = rescueSpot(players, i, collision);
+            if (!spot.has_value() && events.startPoint) {
+                spot = events.startPoint();
+            }
+            if (spot.has_value()) {
+                actor.place(*spot);
+                players[i].knockback.clear();
+            }
         }
         // Stationary normal attacks face the assisted target. The stick, strafe,
         // charging and authored turbo movement retain control of their heading.

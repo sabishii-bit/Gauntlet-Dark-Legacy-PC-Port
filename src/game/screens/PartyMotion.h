@@ -60,7 +60,19 @@ public:
         std::function<PlayerDeed(usize, bool)> attackDeed;
         /** Dynamic creature collision, before the camera limit and action events. */
         std::function<Vec3(usize, const Vec3&, const Vec3&)> resolveMovement;
+        /** Where a body fallen out of the world with nobody to stand beside goes: the
+         * level's start, when there is one. */
+        std::function<std::optional<Vec3>()> startPoint;
     };
+    static constexpr f32 kLostDepth = 4.5f; ///< under the world's lowest point a body is lost
+    static constexpr s32 kRescueSpots = 16;
+    static constexpr f32 kRescueGap = 0.5f;  ///< how far from the rescuer's side it stands
+    static constexpr f32 kRescueRise = 6.0f; ///< how far above or below the rescuer's floor
+    /** Where a body lost out of the world stands again (get_player_pos): on one of sixteen
+     * spots round another standing player, just clear of them, where there is floor near
+     * theirs and no wall; nullopt with none. */
+    static std::optional<Vec3> rescueSpot(std::span<const PlayerRuntime> players, usize lost,
+                                          const WorldCollision& collision);
     static std::vector<CameraSubject> step(std::span<PlayerRuntime> players,
                                            std::span<const PlayInput> inputs, bool held,
                                            f32 cameraYaw, s32 ticks, f32 seconds,

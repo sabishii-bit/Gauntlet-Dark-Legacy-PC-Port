@@ -109,6 +109,7 @@ struct MindIntent {
     bool expire = false;       ///< the body is done with (a loiterer whose generator is gone)
     bool throwing = false;     ///< the body is asked to throw
     bool explode = false;      ///< the body blows itself up
+    bool yell = false;         ///< the body cries out as it starts its run
     bool strike = false;       ///< the swing under way lands on the player it is after
 };
 

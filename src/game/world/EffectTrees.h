@@ -118,6 +118,8 @@ public:
      * unless its descriptor explicitly requests dynamic particles. */
     void attachTrail(u32 id, const ParticleDescriptor& descriptor, const Texture& texture);
     bool playing(u32 id) const;
+    /** Seconds before effect number `id` is over; nullopt when it is not playing. */
+    std::optional<f32> remaining(u32 id) const;
     /** The lights the playing effects give off, a unit over each, the newest first. */
     void lights(std::vector<PointLight>& out) const;
     void update(f32 seconds);
@@ -130,6 +132,7 @@ public:
 
 private:
     static bool bindVisuals(Effect& effect);
+    static f32 secondsLeftOf(const Effect& effect);
     /** An archive's texture animations, shared by its effects. */
     struct Motion {
         ItemArchive* archive = nullptr;

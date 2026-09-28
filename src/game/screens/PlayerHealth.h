@@ -53,7 +53,7 @@ public:
 
 private:
     void cryPain(const Events& events);
-    static void landBlow(PlayerRuntime& runtime, const Events& events);
+    static void landBlow(PlayerRuntime& runtime, const Events& events, u32 flags);
     std::mt19937 m_painRandom{0x5A17u};
 };
 } // namespace gdl::game

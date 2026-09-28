@@ -88,16 +88,28 @@ bool EffectTrees::playing(u32 id) const {
         m_effects, [id](const std::unique_ptr<Effect>& effect) { return effect->id == id; });
 }
 
+f32 EffectTrees::secondsLeftOf(const Effect& effect) {
+    return effect.timed || effect.tree == nullptr || effect.tree->sequences.empty()
+               ? effect.secondsLeft
+               : (static_cast<f32>(effect.player.frameCount()) - effect.player.frame()) *
+                     effect.player.secondsPerFrame() / std::max(effect.playbackRate, 1e-6f);
+}
+
+std::optional<f32> EffectTrees::remaining(u32 id) const {
+    for (const auto& effect : m_effects) {
+        if (effect->id == id) {
+            return std::max(secondsLeftOf(*effect), 0.0f);
+        }
+    }
+    return std::nullopt;
+}
+
 void EffectTrees::shortenLifetime(u32 id, f32 secondsLost, f32 maximum) {
     for (auto& effect : m_effects) {
         if (effect->id != id) {
             continue;
         }
-        const f32 remaining =
-            effect->timed || effect->tree->sequences.empty()
-                ? effect->secondsLeft
-                : (static_cast<f32>(effect->player.frameCount()) - effect->player.frame()) *
-                      effect->player.secondsPerFrame() / std::max(effect->playbackRate, 1e-6f);
+        const f32 remaining = secondsLeftOf(*effect);
         // The cap applies before the loss: a long-lived reflected shot is set
         // to ten seconds; only subsequent contacts subtract a second.
         effect->secondsLeft =
@@ -210,11 +222,7 @@ void EffectTrees::lights(std::vector<PointLight>& out) const {
         }
         f32 share = 1.0f;
         if (effect.light->swells) {
-            const f32 remaining =
-                effect.timed || effect.tree == nullptr || effect.tree->sequences.empty()
-                    ? effect.secondsLeft
-                    : (static_cast<f32>(effect.player.frameCount()) - effect.player.frame()) *
-                          effect.player.secondsPerFrame() / std::max(effect.playbackRate, 1e-6f);
+            const f32 remaining = secondsLeftOf(effect);
             const f32 life = effect.lived + std::max(remaining, 0.0f);
             const f32 phase = life > 0.0f ? std::clamp(effect.lived / life, 0.0f, 1.0f) : 1.0f;
             share = phase < 0.5f ? 2.0f * phase : 2.0f * (1.0f - phase);

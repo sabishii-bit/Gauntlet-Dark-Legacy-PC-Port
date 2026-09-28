@@ -58,7 +58,9 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     missiles.launch(EnemyMissileKind::arrow(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 3.0f, 20.0f},
                     1.0f, nullptr, 2);
     REQUIRE(missiles.count() == 1);
-    REQUIRE(glm::length(missiles.missile(0).velocity) == Approx(25.0f));
+    // Twenty-five a second along the ground, rising to fall on the mark under its weight.
+    REQUIRE(glm::length(Vec2{missiles.missile(0).velocity.x, missiles.missile(0).velocity.z}) ==
+            Approx(25.0f));
     REQUIRE(missiles.missile(0).velocity.z > 24.0f);
     s32 flying = 0;
     std::vector<EnemyMissileHit> hits;
@@ -108,18 +110,28 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     REQUIRE(highest > 5.0f);
     REQUIRE(hits[0].position.z == Approx(20.0f).margin(1.5f));
     REQUIRE(hits[0].position.y < 0.5f);
-    // A shot with nothing in its way ends after its life.
+    // A shot with nothing in its way just goes after its life; a lob bursts where it is.
     missiles.launch(EnemyMissileKind::arrow(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 4.0f, 100.0f},
                     1.0f, nullptr, 0);
     for (s32 i = 0; i < 200; ++i) {
         missiles.update(kStep, nullptr, nobody);
     }
     REQUIRE(missiles.count() == 0);
-    const auto expired = missiles.takeHits();
+    CHECK(missiles.takeHits().empty());
+    missiles.launch(EnemyMissileKind::bomb(), Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 4.0f, 100.0f},
+                    1.0f, nullptr, 0);
+    s32 lived = 0;
+    std::vector<EnemyMissileHit> expired;
+    while (expired.empty() && lived < 200) {
+        missiles.update(kStep, nullptr, nobody);
+        expired = missiles.takeHits();
+        ++lived;
+    }
     REQUIRE(expired.size() == 1);
     CHECK_FALSE(expired[0].worldContact);
-    CHECK(expired[0].effect().empty());
-    CHECK(expired[0].sound().empty());
+    CHECK(expired[0].burstRadius == 3.0f);
+    CHECK(expired[0].effect() == "EXPSMALL");
+    CHECK(lived == Approx(EnemyMissiles::kLife * 30.0f).margin(1.0f));
     // The lob's leaving velocity lands it in the flight its pace gives.
     const Vec3 leave =
         EnemyMissiles::lobVelocity(Vec3{0.0f, 0.0f, 0.0f}, Vec3{0.0f, 0.0f, 40.0f}, 20.0f);
@@ -310,7 +322,9 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
     sense.action = EnemyAction::ReadyToWalk;
     intent = suicide.think(bomber, sense);
     REQUIRE(bomber.mode == 2);
+    CHECK(intent.yell); // it cries out as the run starts, once
     intent = suicide.think(bomber, sense);
+    CHECK_FALSE(intent.yell);
     REQUIRE(intent.pace == Approx(1.5f));
     REQUIRE(intent.action == EnemyAction::Run);
     REQUIRE_FALSE(intent.explode);
@@ -365,6 +379,12 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(missiles.missile(0).shooter == *archer);
     REQUIRE(missiles.missile(0).kind.burstRadius == 0.0f);
     REQUIRE(missiles.missile(0).velocity.z > 20.0f);
+    // The arrow twangs as it goes, from the archer's middle.
+    const auto shots = enemies.takeCues();
+    REQUIRE(shots.size() == 1);
+    CHECK(shots[0].kind == EnemyCue::Kind::Arrow);
+    CHECK(shots[0].enemyKind == 13);
+    CHECK(shots[0].position.y > 0.0f);
     REQUIRE(enemies.positionOf(*archer) == Vec3{0.0f, 0.0f, 0.0f}); // it stood to shoot
     std::vector<EnemyMissileHit> hits;
     for (s32 i = 0; i < 120 && hits.empty(); ++i) {
@@ -414,15 +434,24 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(enemies.algorithmOf(*suicide) == kSuicideWay);
     const std::vector<EnemyView> near{playerAt(Vec3{-30.0f, 0.0f, 12.0f})};
     std::vector<EnemyBurst> bursts;
+    s32 yells = 0;
+    enemies.takeFeedback();
     for (s32 i = 0; i < 600 && bursts.empty(); ++i) {
         enemies.update(kTicks, kStep, near, {}, &missiles, 1.0f);
         bursts = enemies.takeBursts();
+        for (const EnemyCue& cue : enemies.takeCues()) {
+            yells += cue.kind == EnemyCue::Kind::Yell ? 1 : 0;
+        }
     }
     REQUIRE(bursts.size() == 1);
     REQUIRE(bursts[0].enemy == *suicide);
     REQUIRE(bursts[0].damage == 25.0f);
     REQUIRE(bursts[0].position.z > 5.0f); // it ran most of the way
     REQUIRE_FALSE(enemies.alive(*suicide));
+    CHECK(yells == 1);
+    // Its own fuse lets the yell run on, and it dies without a cry or a burst of blood.
+    CHECK_FALSE(bursts[0].silencesYell);
+    CHECK(enemies.takeFeedback().empty());
     // Shot down before it gets there, it goes up all the same, once (enemy_dies).
     spawn.position = Vec3{30.0f, 0.0f, 0.0f};
     const auto shot = enemies.spawn(spawn, {});
@@ -435,6 +464,8 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     REQUIRE(bursts.size() == 1);
     REQUIRE(bursts[0].enemy == *shot);
     REQUIRE(bursts[0].damage == 25.0f);
+    CHECK(bursts[0].silencesYell);
+    CHECK(enemies.takeFeedback().size() == 1);
     enemies.hurt(*shot, slay);
     for (s32 i = 0; i < 30; ++i) {
         enemies.update(kTicks, kStep, near, {}, &missiles, 1.0f);
@@ -525,5 +556,165 @@ TEST_CASE("invisibility does not make an enemy arrow pass through its victim",
     const auto hits = missiles.takeHits();
     REQUIRE(hits.size() == 1);
     CHECK(hits[0].player == 0);
+}
+
+TEST_CASE("the swarm's shots and lobs are aimed as the original aims them, never leading",
+          "[game][enemies][enemy-aim]") {
+    // An arrow at twenty: a fixed pace along the ground, rising so as to fall on a point
+    // three and a half under the aim under its weight of thirty.
+    const Vec3 arrow =
+        EnemyMissiles::heading(EnemyMissileKind::arrow(), {0, 0, 0}, {0, 0, 20}, 25.0f, 0.0f);
+    CHECK(arrow.x == Approx(0.0f));
+    CHECK(arrow.z == Approx(1.0f));
+    CHECK(arrow.y == Approx(0.5f * 30.0f * 20.0f / 625.0f - 3.5f / 20.0f));
+    // A lob aims five and a half under, and an error lifts or drops it.
+    const Vec3 lob =
+        EnemyMissiles::heading(EnemyMissileKind::bomb(), {0, 0, 0}, {0, 0, 20}, 20.0f, 2.0f);
+    CHECK(lob.y == Approx(0.5f * 35.0f * 20.0f / 400.0f + (2.0f - 5.5f) / 20.0f));
+    // A bolt goes straight, but never downward.
+    const EnemyMissileKind bolt = *enemyMissileOf(7, EnemyMissileKind::kBolt);
+    const Vec3 up = EnemyMissiles::heading(bolt, {0, 0, 0}, {0, 3, 4}, 20.0f, 0.0f);
+    CHECK(glm::length(up) == Approx(1.0f));
+    CHECK(up.y == Approx(0.6f));
+    CHECK(EnemyMissiles::heading(bolt, {0, 4, 0}, {0, 0, 3}, 20.0f, 0.0f).y == 0.0f);
+
+    // It leaves three ahead of the kind's launch point, faced within an eighth of a turn.
+    EnemyMissiles missiles;
+    EnemyMissileLaunch launch;
+    launch.body = Vec3{0.0f, 3.0f, 0.0f};
+    launch.target = Vec3{0.0f, 3.0f, 20.0f};
+    launch.point = enemyLaunchPointOf(4, EnemyMissileKind::kArrow);
+    REQUIRE(missiles.launch(EnemyMissileKind::arrow(), launch));
+    const EnemyMissile& shot = missiles.missile(0);
+    const Vec3 way =
+        EnemyMissiles::heading(EnemyMissileKind::arrow(), launch.body, launch.target, 25.0f, 0.0f);
+    CHECK(shot.position.x == Approx(0.0f));
+    CHECK(shot.position.y == Approx(3.0f + 1.5f + 3.0f * way.y));
+    CHECK(shot.position.z == Approx(3.0f));
+    CHECK(shot.velocity.z == Approx(25.0f));
+    launch.facing = 1.0f; // more than an eighth of a turn off
+    CHECK_FALSE(missiles.launch(EnemyMissileKind::arrow(), launch));
+    launch.facing = 0.7f; // within it
+    CHECK(missiles.launch(EnemyMissileKind::arrow(), launch));
+    // A wall between the body and where it would leave keeps it in hand.
+    WorldCollision wall;
+    wall.build({triangle({-20, -10, 1.5f}, {20, -10, 1.5f}, {0, 40, 1.5f}, {0, 0, -1})});
+    launch.facing = 0.0f;
+    CHECK_FALSE(missiles.launch(EnemyMissileKind::arrow(), launch, &wall));
+    CHECK(missiles.count() == 2);
+
+    // The level's aim strays a lob up or down by up to two and a half times itself.
+    launch.aimError = 1.0f;
+    launch.point = enemyLaunchPointOf(4, EnemyMissileKind::kBomb);
+    f32 lowest = 100.0f;
+    f32 highest = -100.0f;
+    for (s32 i = 0; i < 64; ++i) {
+        EnemyMissiles lobs(static_cast<u32>(i));
+        REQUIRE(lobs.launch(EnemyMissileKind::bomb(), launch));
+        lowest = std::min(lowest, lobs.missile(0).velocity.y);
+        highest = std::max(highest, lobs.missile(0).velocity.y);
+    }
+    const f32 plain =
+        EnemyMissiles::heading(EnemyMissileKind::bomb(), launch.body, launch.target, 20.0f, 0.0f)
+            .y *
+        20.0f;
+    CHECK(lowest < plain);
+    CHECK(highest > plain);
+    CHECK(highest - lowest <= EnemyMissiles::kAimSpread + 0.01f);
+}
+
+TEST_CASE("the kinds' launch points and the flags their hits carry follow the original's table",
+          "[game][enemies][enemy-aim]") {
+    CHECK(enemyLaunchPointOf(1, EnemyMissileKind::kArrow).height == 2.5f);
+    CHECK(enemyLaunchPointOf(1, EnemyMissileKind::kBomb).height == 2.5f);
+    CHECK(enemyLaunchPointOf(2, EnemyMissileKind::kBolt).height == 0.0f);
+    CHECK(enemyLaunchPointOf(4, EnemyMissileKind::kArrow).height == 1.5f);
+    CHECK(enemyLaunchPointOf(13, EnemyMissileKind::kArrow).height == 1.0f);
+    CHECK(enemyLaunchPointOf(7, EnemyMissileKind::kBolt).height == 1.5f);
+    CHECK(enemyLaunchPointOf(24, EnemyMissileKind::kBolt).height == 1.5f);
+    CHECK(enemyLaunchPointOf(14, EnemyMissileKind::kBolt).height == 1.0f);
+    CHECK(enemyLaunchPointOf(14, EnemyMissileKind::kArrow).height == 1.5f);
+    CHECK(enemyLaunchPointOf(17, EnemyMissileKind::kBolt).height == 2.0f);
+    CHECK(enemyLaunchPointOf(17, EnemyMissileKind::kBolt).shift == 2.0f);
+    CHECK(enemyLaunchPointOf(23, EnemyMissileKind::kArrow).height == 0.0f);
+    CHECK(enemyLaunchPointOf(23, EnemyMissileKind::kBomb).shift == -2.5f);
+    CHECK(enemyLaunchPointOf(27, EnemyMissileKind::kBolt).height == 0.0f);
+    // An arrow's hit is heard as an arrow, a bolt's as a bolt; a lob knocks back.
+    CHECK(EnemyMissileKind::arrow().hitFlags() == EnemyMissileKind::kArrowHit);
+    CHECK(enemyMissileOf(20, 2)->hitFlags() == (0x1 | EnemyMissileKind::kBoltHit));
+    CHECK(EnemyMissileKind::bomb().hitFlags() == EnemyMissileKind::kKnockBack);
+    // Weights: the arrow thirty, the bomb thirty-five, the bolts one, the garm's none.
+    CHECK(EnemyMissileKind::arrow().weight == 30.0f);
+    CHECK(EnemyMissileKind::bomb().weight == 35.0f);
+    CHECK(enemyMissileOf(7, 2)->weight == 1.0f);
+    CHECK(enemyMissileOf(27, 2)->weight == 0.0f);
+    CHECK(enemyMissileOf(17, 1)->slot == EnemyMissileKind::kBomb);
+}
+
+TEST_CASE("a lob's burst grows as its harm fades, reaching each player once and the swarm",
+          "[game][enemies][enemy-burst]") {
+    EnemyMissiles missiles;
+    // Struck directly, player 0 is spared the burst; player 1 stands two and a half out,
+    // player 2 far away.
+    const std::array party{playerAt({0, -3, 0}, 0), playerAt({2.5f, -3, 0}, 1),
+                           playerAt({20, -3, 0}, 2)};
+    missiles.burst({0, 0, 0}, 3.0f, 10.0f, EnemyMissileKind::kKnockBack, 1.0f, 0);
+    CHECK(missiles.burstCount() == 1);
+    std::vector<PointLight> lights;
+    missiles.lights(lights);
+    REQUIRE(lights.size() == 1);
+    CHECK(lights[0].radius == EnemyMissiles::kBombLightRadius);
+    CHECK(lights[0].color.x > 0.0f);
+    CHECK(lights[0].color.y == 0.0f);
+    std::vector<EnemyMissileHit> hits;
+    for (s32 frame = 0; frame < 40; ++frame) {
+        missiles.update(kStep, nullptr, party);
+        const auto taken = missiles.takeHits();
+        hits.insert(hits.end(), taken.begin(), taken.end());
+    }
+    CHECK(missiles.burstCount() == 0);
+    s32 swarm = 0;
+    s32 reached = 0;
+    for (const EnemyMissileHit& hit : hits) {
+        REQUIRE(hit.fromBurst);
+        CHECK(hit.burstRadius == 0.0f);
+        if (hit.player < 0) {
+            ++swarm;
+            CHECK(hit.reach == 3.0f);
+            CHECK(hit.damage == Approx(10.0f * 1.5f * (1.0f - 0.33f)));
+            continue;
+        }
+        ++reached;
+        CHECK(hit.player == 1);
+        // Reached as the burst grew past it, with less than its first harm, pushed a quarter.
+        CHECK(hit.damage < 10.0f);
+        CHECK(hit.damage > 0.0f);
+        CHECK(hit.direction.x == Approx(EnemyMissiles::kBurstPush));
+        CHECK(hit.direction.y == 0.0f);
+    }
+    CHECK(swarm == 1);
+    CHECK(reached == 1);
+    // A weak burst only hurts: under five its knock goes.
+    missiles.burst({0, 0, 0}, 3.0f, 3.0f, EnemyMissileKind::kKnockBack, 1.0f, -1);
+    missiles.update(kStep, nullptr, std::array{playerAt({0.5f, -3, 0}, 3)});
+    for (const EnemyMissileHit& hit : missiles.takeHits()) {
+        CHECK((hit.flags & EnemyMissileKind::kKnockBack) == 0);
+    }
+}
+
+TEST_CASE("only a lob in flight lights its way", "[game][enemies][enemy-burst]") {
+    EnemyMissiles missiles;
+    missiles.launch(EnemyMissileKind::arrow(), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 0);
+    std::vector<PointLight> lights;
+    missiles.lights(lights);
+    CHECK(lights.empty());
+    missiles.launch(EnemyMissileKind::bomb(), {0, 3, 0}, {0, 0, 20}, 1, nullptr, 0);
+    missiles.lights(lights);
+    REQUIRE(lights.size() == 1);
+    CHECK(lights[0].position == missiles.missile(1).position);
+    missiles.clear();
+    lights.clear();
+    missiles.lights(lights);
+    CHECK(lights.empty());
 }
 } // namespace

@@ -4,18 +4,22 @@
 #include <numbers>
 
 namespace gdl::game {
+u32 PlayerImpact::effective(f32 damage, bool braced) const {
+    u32 kept = flags;
+    if (braced) {
+        kept = (kept & kHeavy) != 0 ? (kept & ~kHeavy) | kKnockBack : kept & ~kKnockBack;
+    }
+    if (damage <= 2.0f) {
+        kept &= ~(kHeavy | kKnockBack);
+    }
+    return kept;
+}
+
 PlayerDeed PlayerImpact::reaction(f32 damage, f32 facing, bool braced) const {
     if (damage <= 0.0f) {
         return PlayerDeed::None;
     }
-    u32 effective = flags;
-    if (braced) {
-        effective = (effective & kHeavy) != 0 ? (effective & ~kHeavy) | kKnockBack
-                                              : effective & ~kKnockBack;
-    }
-    if (damage <= 2.0f) {
-        effective &= ~(kHeavy | kKnockBack);
-    }
+    const u32 effective = this->effective(damage, braced);
     if ((effective & (kKnockDown | kBlownAway | kKnockOver)) != 0) {
         const f32 away = std::atan2(direction.x, direction.z);
         const f32 delta = std::remainder(away - facing, 2.0f * std::numbers::pi_v<f32>);

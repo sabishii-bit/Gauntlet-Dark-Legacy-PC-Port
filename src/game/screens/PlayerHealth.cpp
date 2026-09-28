@@ -16,6 +16,8 @@ constexpr s32 kHeavyBlow = 60;    ///< a blow taking more than this is cried ove
 constexpr u32 kPainCries = 4;     ///< S_<CLS>PAIN1 to 4
 constexpr std::string_view kDeathSound = "S_PLAYERDIES";
 constexpr std::string_view kHitSound = "S_PLYRDMG"; ///< a blow landing, now and then
+constexpr std::string_view kArrowHitSound = "S_PLYRDMG2";
+constexpr std::string_view kBoltHitSound = "S_PLYRDMG3";
 constexpr s32 kHitSoundGapTicks = 30;
 constexpr s32 kHealthLowMark = 150; ///< down to here: "needs food, badly"
 constexpr s32 kHealthLastMark = 50; ///< and here: the life force, or about to die
@@ -97,6 +99,8 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
                                                       runtime.figure->animator().shoving());
     runtime.reaction = PlayerImpact::combine(
         runtime.reaction, received.reaction(damage, runtime.actor.yaw(), braced));
+    // What knocks the body pushes it, along the way the hit came (damage_player's hit_force).
+    runtime.knockback.queue(received.direction, received.effective(damage, braced), damage);
     // Crossing into low health is remarked on by name rather than cried over, though a blow
     // still lands with its sound. Which of the last two lines is heard is a toss.
     const bool low = before > kHealthLowMark && left <= kHealthLowMark;
@@ -110,7 +114,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         }
         if (kind == HurtKind::Blow) {
             runtime.painOwed += damage;
-            landBlow(runtime, events);
+            landBlow(runtime, events, received.flags);
         }
         return;
     }
@@ -134,15 +138,25 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
             runtime.painOwed -= kPainEvery;
             cryPain(events);
         } else {
-            landBlow(runtime, events);
+            landBlow(runtime, events, received.flags);
         }
         break;
     }
 }
 
-void PlayerHealth::landBlow(PlayerRuntime& runtime, const Events& events) {
+/** A blow landing is heard now and then: an arrow's and a bolt's each their own
+ * (AudioPlayerHit's rows). */
+void PlayerHealth::landBlow(PlayerRuntime& runtime, const Events& events, u32 flags) {
+    constexpr u32 kArrowHit = 0x20000;
+    constexpr u32 kBoltHit = 0x40000;
     if (runtime.hitSoundGap <= 0) {
-        events.sound(kHitSound);
+        if ((flags & kArrowHit) != 0) {
+            events.sound(kArrowHitSound);
+        } else if ((flags & kBoltHit) != 0) {
+            events.sound(kBoltHitSound);
+        } else {
+            events.sound(kHitSound);
+        }
         runtime.hitSoundGap = kHitSoundGapTicks;
     }
 }

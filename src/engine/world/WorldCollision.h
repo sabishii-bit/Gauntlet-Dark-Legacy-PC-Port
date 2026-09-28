@@ -74,6 +74,8 @@ public:
     void clear();
     bool loaded() const { return !m_triangles.empty() || !m_moving.empty(); }
     usize triangleCount() const;
+    /** The lowest point of the still triangles; nought with none. */
+    f32 lowest() const { return m_triangles.empty() ? 0.0f : m_min.y; }
 
     /** The highest floor under `position`, from `above` over it down to `below` under it. */
     std::optional<FloorHit> floorAt(const Vec3& position, f32 above, f32 below) const;

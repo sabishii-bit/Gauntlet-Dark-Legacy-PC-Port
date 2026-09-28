@@ -70,6 +70,8 @@ add_library(game STATIC
     players/PlayerTransport.cpp
     players/PlayerAnimator.h
     players/PlayerAnimator.cpp
+    players/Knockback.h
+    players/Knockback.cpp
     players/PlayerImpact.h
     players/PlayerImpact.cpp
     world/LevelCatalog.h
