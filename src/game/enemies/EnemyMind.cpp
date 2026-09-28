@@ -21,6 +21,7 @@ constexpr s32 kLongWaitOther = 50;
 constexpr f32 kWanderTurn = kPi / 4.0f; ///< a wanderer turns this much at a dead end
 constexpr s32 kWanderWait = 30;
 constexpr f32 kProwlPounce = 8.0f;        ///< a prowler goes for a player this close
+constexpr s32 kProwlTurns = 4;            ///< turns at stops before it turns the other way
 constexpr f32 kLoiterTurn = kPi / 180.0f; ///< a tick: a sixth of a turn a second (do_ai way 11)
 constexpr f32 kThrowReach = 10.0f;        ///< a thrower's player must be within this above or below
 constexpr f32 kKeepOffFrom = 0.6f;        ///< of its sight, a skirmisher backs off from
@@ -152,19 +153,42 @@ public:
     }
 };
 
-/** The rat's way: about its business until a player comes within eight, then after it for
- * good. */
+/** The rat's way (move_logic02, 04): after a player only while one is within eight (its
+ * crowded distance), else straight on; a stop holds it a while and then turns it an eighth
+ * of a turn, to its own side, and the fourth such turn changes it for good to the other
+ * side's way. A player against it is faced. */
 class ProwlMind : public EnemyMind {
 public:
+    ProwlMind(f32 turn, s32 mirror) : m_turn(turn), m_mirror(mirror) {}
     std::string_view name() const override { return "prowl"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        if (sense.target >= 0 && sense.targetDistance <= kProwlPounce) {
-            MindIntent intent = enemyMindOf(kSeekWay).think(memory, sense);
-            intent.become = kSeekWay;
-            return intent;
+        if (sense.target >= 0 && sense.closeDistance <= kProwlPounce) {
+            return enemyMindOf(kSeekWay).think(memory, sense);
         }
-        return enemyMindOf(kWanderWay).think(memory, sense);
+        MindIntent intent;
+        if (sense.blocked) {
+            hold(memory, kWanderWait);
+        }
+        if (memory.deadEnd > 0) {
+            memory.deadEnd -= sense.ticks;
+            if (memory.deadEnd <= 0) {
+                memory.heading = wrapAngle(memory.heading + m_turn);
+                if (++memory.counter >= kProwlTurns) {
+                    memory.counter = 0;
+                    intent.become = m_mirror;
+                }
+            }
+        }
+        if (sense.contact >= 0) {
+            memory.heading = yawBetween(sense.position, sense.contactPosition);
+        }
+        intent.heading = memory.heading;
+        return intent;
     }
+
+private:
+    f32 m_turn;
+    s32 m_mirror;
 };
 
 /**
@@ -278,43 +302,53 @@ public:
     }
 };
 
-/** The archer's: throwing from range, and backing off, weapon up, when the player comes
- * within six tenths of its sight, until they are beyond eight tenths again. */
+/** The archer's (move_logic16): facing its player and, when they are level with it, backing
+ * off weapon up once they come within six tenths of its sight until they are beyond eight
+ * tenths again, nudged off straight for each stop, and giving up after eight; the wait since
+ * its last throw runs first, and only once it is out does it throw or back off. */
 class SkirmishMind : public EnemyMind {
 public:
     std::string_view name() const override { return "skirmish"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
         if (sense.threw) {
             memory.fuse = sense.idleTicks;
-        } else if (memory.fuse > 0) {
-            memory.fuse -= sense.ticks;
         }
+        // A fresh stop starts the nudges over.
+        if (sense.blocked && memory.stuck == 0) {
+            memory.turns = 0;
+        }
+        memory.stuck = sense.blocked ? 1 : 0;
         MindIntent intent;
         const f32 face = sense.faceAngle(memory.heading);
         memory.heading = face;
         intent.heading = face;
         intent.pace = 0.0f;
         intent.action = EnemyAction::Ready;
-        const bool level =
-            sense.onScreen && sense.target >= 0 && std::abs(sense.targetVertical) <= kThrowReach;
-        if (level) {
-            if (!memory.keepingOff && sense.targetDistance <= kKeepOffFrom * sense.sight) {
-                memory.keepingOff = true;
-            } else if (memory.keepingOff && sense.targetDistance > kKeepOffTo * sense.sight) {
+        if (!sense.onScreen || sense.target < 0 || std::abs(sense.targetVertical) > kThrowReach) {
+            return intent;
+        }
+        f32 nudge = 0.0f;
+        if (!memory.keepingOff) {
+            memory.keepingOff = sense.targetDistance <= kKeepOffFrom * sense.sight;
+        } else if (sense.targetDistance > kKeepOffTo * sense.sight) {
+            memory.keepingOff = false;
+        } else if (sense.blocked) {
+            if (memory.turns < static_cast<s32>(kFleeNudges.size())) {
+                nudge = kFleeNudges[static_cast<usize>(memory.turns++)];
+            } else {
                 memory.keepingOff = false;
             }
         }
-        if (!level) {
-            return intent;
-        }
-        if (memory.keepingOff) {
+        if (memory.fuse > 0) {
+            memory.fuse -= sense.ticks;
+        } else if (!memory.keepingOff) {
+            intent.throwing = true;
+        } else {
             // Away from the player, facing them still.
-            intent.heading = wrapAngle(face + kPi);
+            intent.heading = wrapAngle(face + kPi + nudge);
             intent.turn = false;
             intent.pace = kKeepOffPace;
             intent.action = EnemyAction::RunAttack;
-        } else if (memory.fuse <= 0 && sense.targetDistance <= sense.sight) {
-            intent.throwing = true;
         }
         return intent;
     }
@@ -520,7 +554,8 @@ public:
                 memory.turns = 0;
             }
         }
-        if (memory.mode != 0 && memory.fuse <= 0 && inReach) {
+        // Stopped by the world, it attacks where it stands instead.
+        if (memory.mode != 0 && memory.fuse <= 0 && inReach && !sense.bumpedWall) {
             const f32 away = memory.mode == 1 ? kPi : 0.0f;
             intent.heading = wrapAngle(memory.heading + away + nudge);
             intent.pace = kRangePace;
@@ -697,7 +732,8 @@ public:
 
 const SeekMind kSeek;
 const WanderMind kWander;
-const ProwlMind kProwl;
+const ProwlMind kProwl{kWanderTurn, kMirroredProwlWay};
+const ProwlMind kMirroredProwl{-kWanderTurn, kProwlWay};
 const ChaseMind kChase;
 const LoiterMind kLoiter;
 const FleeMind kFlee;
@@ -783,9 +819,10 @@ bool fleesBombers(s32 algorithm) {
 
 const EnemyMind& enemyMindOf(s32 algorithm) {
     switch (algorithm) {
-    case kSeekWay: return kSeek;
-    case kProwlWay:
-    case kMirroredProwlWay: return kProwl;
+    case kSeekWay:
+    case kSeekAliasWay: return kSeek;
+    case kProwlWay: return kProwl;
+    case kMirroredProwlWay: return kMirroredProwl;
     case kChaseWay: return kChase;
     case kLoiterWay: return kLoiter;
     case kFleeWay: return kFlee;

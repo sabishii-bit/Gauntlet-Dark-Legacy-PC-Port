@@ -468,11 +468,12 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     const s32 prowl = bred.algorithmOf(*vermin);
     REQUIRE((prowl == kProwlWay || prowl == kMirroredProwlWay));
     REQUIRE(enemyMindOf(prowl).name() == "prowl");
+    // A player near it is gone for while near, the prowl kept all the while (move_logic02).
     const std::vector<EnemyView> near{playerAt(Vec3{0.0f, 0.0f, 5.0f})};
     for (s32 i = 0; i < 20; ++i) {
         bred.update(kTicks, kStep, near);
     }
-    REQUIRE(bred.algorithmOf(*vermin) == 0);
+    CHECK(bred.algorithmOf(*vermin) == prowl);
 }
 
 TEST_CASE("swarm elemental hits use arena multipliers but retain their minimum damage",
@@ -622,6 +623,62 @@ std::filesystem::path routingAssets() {
         "sequences":[{"name":"READY","frames":10,"rate":30},
                      {"name":"WALK","frames":10,"rate":30}]}]})");
     return root;
+}
+
+TEST_CASE("the warlock comes and goes: seen a while, faded out, unseen a while, back again",
+          "[game][enemies][veil]") {
+    const auto root = test::scratchDirectory("enemy-veil");
+    const auto archive = root / "MONSTERS/WAR";
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"WAR1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":10,"rate":30},
+                     {"name":"WALK","frames":10,"rate":30}]}]})");
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 2, {}, 7);
+    REQUIRE(enemies.loadKind(Enemies::kVeilingKind));
+    const auto warlock =
+        enemies.spawn(EnemySpawn{.kind = Enemies::kVeilingKind, .tier = 1, .placed = true}, {});
+    REQUIRE(warlock.has_value());
+    CHECK(enemies.opacityOf(*warlock) == 1.0f);
+    // Seen for sixty to a hundred and nineteen ticks once it goes about (after its entrance),
+    // then fading out sixteen a tick.
+    s32 seen = 0;
+    while (enemies.opacityOf(*warlock) == 1.0f && seen < 600) {
+        enemies.update(kTicks, kStep, {});
+        seen += kTicks;
+    }
+    CHECK(seen >= 60);
+    CHECK(seen < 600);
+    s32 fading = 0;
+    while (enemies.opacityOf(*warlock) > 0.0f && fading < 400) {
+        enemies.update(kTicks, kStep, {});
+        fading += kTicks;
+    }
+    CHECK(fading <= 18);
+    // Gone from sight, body and shadow, for a while, then back.
+    device.draws.clear();
+    ItemArchive weapons;
+    enemies.draw(device, Mat4{1}, {}, &device.whiteTexture(), &weapons);
+    enemies.drawShadows(device, Mat4{1}, kFarEye, {});
+    CHECK(device.draws.empty());
+    s32 unseen = 0;
+    while (enemies.opacityOf(*warlock) == 0.0f && unseen < 400) {
+        enemies.update(kTicks, kStep, {});
+        unseen += kTicks;
+    }
+    CHECK(unseen >= 40);
+    CHECK(unseen < 400);
+    // Any kind but the warlock stays seen.
+    REQUIRE(enemies.loadKind(kGruntKind) == false); // no archive: nothing to veil
 }
 
 TEST_CASE("a swarm body lies the shadow of its tier under it", "[game][enemies][shadow]") {

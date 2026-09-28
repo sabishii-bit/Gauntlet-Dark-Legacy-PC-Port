@@ -66,8 +66,9 @@ struct MindSense {
     s32 target = -1; ///< the player it is after, if any
     Vec3 targetPosition{0.0f, 0.0f, 0.0f};
     f32 targetDistance = 100000.0f;
-    bool recognized = false; ///< it has seen its player within sight
-    s32 contact = -1;        ///< the player it stands against, if any
+    f32 closeDistance = 100000.0f; ///< the target's distance with the crowding others add
+    bool recognized = false;       ///< it has seen its player within sight
+    s32 contact = -1;              ///< the player it stands against, if any
     Vec3 contactPosition{0.0f, 0.0f, 0.0f};
     bool bumpedWall = false;  ///< the last step ran into the world
     bool bumpedOther = false; ///< or into another enemy
@@ -134,6 +135,7 @@ bool fleesBombers(s32 algorithm);
 
 /** The ways with a mind of their own. */
 inline constexpr s32 kSeekWay = 0;
+inline constexpr s32 kSeekAliasWay = 9; ///< do_ai runs move_logic00 for it too
 inline constexpr s32 kProwlWay = 2;
 inline constexpr s32 kMirroredProwlWay = 4; ///< the same prowl, turning the other way
 inline constexpr s32 kWanderWay = 5;
