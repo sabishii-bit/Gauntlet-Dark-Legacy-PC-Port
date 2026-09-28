@@ -22,6 +22,8 @@
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/players/MagicPerks.h"
+
 namespace gdl::game {
 
 /** A character who can pick things up: where they stand and how big they are. */
@@ -159,6 +161,18 @@ public:
     /** Poison exposed food within a gas cloud, retaining the pickup's placement and
      * identity. Returns newly changed items, for the retail gas-spoils-food message. */
     usize poisonFood(RenderDevice& device, const Vec3& position, f32 radius, f32 damage);
+    /** What a class family's potion magic did to an item, and how the item stands. */
+    struct PerkChange {
+        MagicPerkDeed deed = MagicPerkDeed::JunkToSilver;
+        Mat4 transform{1.0f};
+        bool shows = true; ///< whether its LEVELUP tree plays
+    };
+    /** A caster's potion magic over the exposed items within `radius` (fn_8005BA1C): the
+     * treasure family's makes junk (worth ten or less) silver worth 100, or from level 50
+     * gold worth 200; the food family's makes spoiled fruit an apple worth 50 and, from 50,
+     * spoiled meat a chicken worth 100. Changed items no longer qualify. */
+    std::vector<PerkChange> bless(RenderDevice& device, const Vec3& position, f32 radius,
+                                  MagicPerk perk);
     struct BlastChange {
         Vec3 position{0};
         bool destroyed = false;    ///< otherwise treasure was reduced to junk

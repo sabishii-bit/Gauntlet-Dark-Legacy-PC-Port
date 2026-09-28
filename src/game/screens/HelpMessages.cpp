@@ -10,7 +10,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 92> kSpecs{{
+constexpr std::array<HelpMessageSpec, 100> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kPotionsFull, "FULLOFBOMBS", "S_MAGICFULL"},
@@ -108,6 +108,15 @@ constexpr std::array<HelpMessageSpec, 92> kSpecs{{
     {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS"},
     {HelpMessages::kGasSpoils, "GASPOISON", "S_GASFOODBAD"},
     {HelpMessages::kChestsExplode, "CHESTSEXPL", "S_CHESTSEXPL"},
+    // What a class family's potion magic learns at levels 25 and 50 (fn_8005BA1C).
+    {HelpMessages::kFirstMagicPerk + 0, "WARMAGIC1", "S_MAGJNK2SILV", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kFirstMagicPerk + 1, "WARMAGIC2", "S_MAGJNK2GLD", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kFirstMagicPerk + 2, "VALMAGIC1", "S_MAGSTOPTRP", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kFirstMagicPerk + 3, "VALMAGIC2", "S_MAGDSTTRP", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kFirstMagicPerk + 4, "WIZMAGIC1", "S_MAGCLFRUIT", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kFirstMagicPerk + 5, "WIZMAGIC2", "S_MAGCLMEAT", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kFirstMagicPerk + 6, "ARCMAGIC1", "S_MAGSHOWWALLS", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kFirstMagicPerk + 7, "ARCMAGIC2", "S_MAGDSTWLLS", HelpRepeat::OncePerPlayer},
 }};
 
 /** The original's ink for players one to four: dark yellow, blue, red and green. */

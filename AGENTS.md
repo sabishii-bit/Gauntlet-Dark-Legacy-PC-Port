@@ -1441,7 +1441,25 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   and rocks the chest three ticks a point of power (a sixteen-tick square
   wave, 3 degrees of pitch and 4 of yaw a quarter apart, fn_800606FC); the
   subtype 1 it writes lands in the shared record, so every chest of that
-  kind loses its trapped, gold and silver ways, as retail's do. A player's hit on a
+  kind loses its trapped, gold and silver ways, as retail's do.
+* Magic perks (`players/MagicPerks`, fn_8005BA1C): from level 25 a caster's potion
+  wave (used, thrown or a floor bottle they shot; never an ownerless one)
+  carries their class family's perk (the class index mod 4, Sumner a wizard),
+  the greater from 50, applied before the wave's damage
+  (`LevelFixtures::bless`, `PlayerAttacks::bless`). The warriors' turns junk
+  (gold worth 10 or less) into `TREAS_SILVER` worth 100, or `TREAS_GOLD` worth
+  200, lying in the open or held in a shut chest or barrel (by the level's
+  record of that name), a chest also dressed as `CHESTG1`/`CHESTG3`; the
+  wizards' cleanses spoiled fruit into `APPLE` (50) and, greater, spoiled meat
+  into `CHICKEN` (100); the valkyries' holds a trap at rest for 600 ticks
+  (`Traps::stop`) or, greater, stands its `<name>_D` figure in its place
+  harmless for good, removing it when there is none (`Traps::disarm`); the
+  archers' blinks a secret wall white three times (half of each 60-tick
+  cycle, `DestructibleWalls::reveal`) or, greater, brings it down with 9999.
+  Each change plays `LEVELUP_YEL`/`BLU`/`RED` there (walls none; a trap held
+  again within 60 ticks none) and teaches the caster lessons 139-146
+  (`WARMAGIC1`..`ARCMAGIC2`) once per character. Not yet: the shield's
+  perk, and an open chest or gold (whose value retail rewrites) left alone. A player's hit on a
   generator is a hundredth softer a level under the place's `playerLevel`
   and a tenth harder a level over, never under a point. A swing (PlayerGetTarget,
   fn_8005B274) reaches shootable triggers but never the safe rocks, and a

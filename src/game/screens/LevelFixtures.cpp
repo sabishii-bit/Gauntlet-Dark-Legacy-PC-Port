@@ -19,7 +19,17 @@
 namespace gdl::game {
 namespace {
 constexpr std::string_view kChestSound = "S_CHEST";
-constexpr std::string_view kApple = "APPLE";          ///< what magic makes of Death in a chest
+constexpr std::string_view kApple = "APPLE"; ///< what magic makes of Death in a chest
+constexpr std::string_view kChicken = "CHICKEN";
+constexpr std::string_view kTreasureGold = "TREAS_GOLD";
+constexpr std::string_view kTreasureSilver = "TREAS_SILVER";
+constexpr std::string_view kGoldChestGreater = "CHESTG3"; ///< a chest the treasure perk gilds
+constexpr std::string_view kGoldChestLesser = "CHESTG1";
+constexpr s32 kChestPerkBase = 0; ///< ids of what a wave's perk has reached
+constexpr s32 kBarrelPerkBase = 1000;
+constexpr s32 kTrapPerkBase = 2000;
+constexpr s32 kWallPerkBase = 3000;
+constexpr f32 kWallRuin = 9999.0f;                    ///< the greater archer perk's blow
 constexpr std::string_view kDeathDies = "S_DEATHDIE"; ///< his cry as he goes
 constexpr f32 kKnockdownFrom = 1.0f; ///< a blast must do more than this to floor anyone
 constexpr f32 kBehind = 1.5707964f;  ///< a blow from further round than this is from behind
@@ -400,6 +410,187 @@ bool LevelFixtures::enchantChest(usize index, f32 power) {
     }
     m_resources->audio.playNamed(kDeathDies);
     return true;
+}
+
+namespace {
+/** The first item record of `name` among the pickups of `subtype`, or -1 (fn_8005BA1C looks
+ * its replacements up by name). */
+s32 pickupRecord(std::span<const ItemInfo> infos, std::string_view name, ItemKind subtype) {
+    const auto found = std::ranges::find_if(infos, [&](const ItemInfo& info) {
+        return info.type == ItemInfo::kPowerup && info.subtype == static_cast<s32>(subtype) &&
+               info.name == name;
+    });
+    return found != infos.end() ? static_cast<s32>(std::distance(infos.begin(), found)) : -1;
+}
+
+/** What a perk makes of a container's contents record: the new record and what it did. */
+struct ContentsTurn {
+    s32 record = -1;
+    MagicPerkDeed deed = MagicPerkDeed::JunkToSilver;
+};
+
+std::optional<ContentsTurn> blessContents(std::span<const ItemInfo> infos, s32 contents,
+                                          MagicPerk perk) {
+    constexpr s32 kMostJunk = 10;
+    constexpr s32 kRottenMeat = -100;
+    if (contents < 0 || static_cast<usize>(contents) >= infos.size()) {
+        return std::nullopt;
+    }
+    const ItemInfo& held = infos[static_cast<usize>(contents)];
+    if (held.type != ItemInfo::kPowerup) {
+        return std::nullopt;
+    }
+    if (perk.family == MagicPerkFamily::Treasure &&
+        held.subtype == static_cast<s32>(ItemKind::Gold) && held.value <= kMostJunk) {
+        return perk.greater ? ContentsTurn{pickupRecord(infos, kTreasureGold, ItemKind::Gold),
+                                           MagicPerkDeed::JunkToGold}
+                            : ContentsTurn{pickupRecord(infos, kTreasureSilver, ItemKind::Gold),
+                                           MagicPerkDeed::JunkToSilver};
+    }
+    if (perk.family == MagicPerkFamily::Food && held.subtype == static_cast<s32>(ItemKind::Food) &&
+        held.value < 0) {
+        if (held.value > kRottenMeat) {
+            return ContentsTurn{pickupRecord(infos, kApple, ItemKind::Food),
+                                MagicPerkDeed::CleanseFruit};
+        }
+        if (perk.greater) {
+            return ContentsTurn{pickupRecord(infos, kChicken, ItemKind::Food),
+                                MagicPerkDeed::CleanseMeat};
+        }
+    }
+    return std::nullopt;
+}
+
+/** The LEVELUP tree a change shows (fn_8009190C's FX_HEALGOLD, FX_HEALTRAP, FX_HEALFOOD);
+ * the walls show none. */
+std::string_view perkEffectOf(MagicPerkDeed deed) {
+    switch (deed) {
+    case MagicPerkDeed::JunkToSilver:
+    case MagicPerkDeed::JunkToGold: return "LEVELUP_YEL";
+    case MagicPerkDeed::StopTrap:
+    case MagicPerkDeed::DestroyTrap: return "LEVELUP_BLU";
+    case MagicPerkDeed::CleanseFruit:
+    case MagicPerkDeed::CleanseMeat: return "LEVELUP_RED";
+    default: return {};
+    }
+}
+} // namespace
+
+void LevelFixtures::bless(const Vec3& position, f32 radius, MagicPerk perk, usize caster,
+                          std::vector<s32>& reached, const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    auto& resources = *m_resources;
+    const auto firstTouch = [&](s32 id) {
+        if (std::ranges::find(reached, id) != reached.end()) {
+            return false;
+        }
+        reached.push_back(id);
+        return true;
+    };
+    const auto within = [&](const Vec3& centre, f32 across, f32 height) {
+        const Vec3 offset = centre - position;
+        return std::hypot(offset.x, offset.z) <= radius + across &&
+               std::abs(offset.y) <= radius + height;
+    };
+    std::vector<PlacedItems::PerkChange> changes =
+        resources.world.blessItems(resources.device, position, radius, perk);
+    const auto& infos = resources.world.layout().itemInfos();
+    switch (perk.family) {
+    case MagicPerkFamily::Treasure:
+    case MagicPerkFamily::Food:
+        for (usize i = 0; i < m_chests.size(); ++i) {
+            const Chests::Chest& chest = m_chests.chest(i);
+            if (!chest.shown || chest.gone || chest.state != Chests::kShut ||
+                !within(chest.box.centre, std::max(chest.box.halfAcross, chest.box.halfAlong),
+                        chest.box.height) ||
+                !firstTouch(kChestPerkBase + static_cast<s32>(i))) {
+                continue;
+            }
+            const auto turn = blessContents(infos, chest.contents, perk);
+            if (!turn.has_value()) {
+                continue;
+            }
+            // The treasure perk dresses the chest in gold as well.
+            std::string_view figure;
+            if (turn->deed == MagicPerkDeed::JunkToGold) {
+                figure = kGoldChestGreater;
+            } else if (turn->deed == MagicPerkDeed::JunkToSilver) {
+                figure = kGoldChestLesser;
+            }
+            ItemArchive& source =
+                figure.empty() || resources.world.items().trees.find(figure).has_value()
+                    ? resources.world.items()
+                    : resources.world.realmItems();
+            if (m_chests.changeContents(i, turn->record, resources.device, resources.world.layout(),
+                                        source, &resources.world.collision(), figure)) {
+                changes.push_back({turn->deed, chest.figure.transform()});
+            }
+        }
+        for (usize i = 0; i < m_barrels.size(); ++i) {
+            const Breakables::Barrel& cask = m_barrels.barrel(i);
+            if (!m_barrels.standing(i) || cask.kind != BreakableStrike::Kind::Holding ||
+                !within(cask.figure.position(), cask.radius, cask.height) ||
+                !firstTouch(kBarrelPerkBase + static_cast<s32>(i))) {
+                continue;
+            }
+            if (const auto turn = blessContents(infos, cask.contents, perk)) {
+                m_barrels.changeContents(i, turn->record);
+                changes.push_back({turn->deed, cask.figure.transform()});
+            }
+        }
+        break;
+    case MagicPerkFamily::Traps:
+        for (usize i = 0; i < m_traps.size(); ++i) {
+            const Traps::Trap& trap = m_traps.trap(i);
+            if (!trap.shown || trap.disarmed ||
+                !within(trap.box.centre, std::max(trap.box.halfAcross, trap.box.halfAlong),
+                        trap.box.height) ||
+                !firstTouch(kTrapPerkBase + static_cast<s32>(i))) {
+                continue;
+            }
+            if (perk.greater) {
+                const Mat4 at = trap.figure.transform();
+                if (m_traps.disarm(i, resources.device, resources.world.layout(),
+                                   resources.world.items(), &resources.world.collision(),
+                                   &resources.world.realmItems())) {
+                    changes.push_back({MagicPerkDeed::DestroyTrap, at});
+                }
+            } else {
+                const bool shows = m_traps.stop(i);
+                changes.push_back({MagicPerkDeed::StopTrap, trap.figure.transform(), shows});
+            }
+        }
+        break;
+    case MagicPerkFamily::Walls: {
+        const auto& walls = resources.world.walls();
+        for (usize i = 0; i < walls.size(); ++i) {
+            if (!walls.standing(i) || !walls.target(i, 0).touches(position, radius) ||
+                !firstTouch(kWallPerkBase + static_cast<s32>(i))) {
+                continue;
+            }
+            if (perk.greater) {
+                strikeWall(i, kWallRuin);
+                changes.push_back({MagicPerkDeed::DestroyWall, walls.wall(i).transform, false});
+            } else {
+                resources.world.revealWall(i);
+                changes.push_back({MagicPerkDeed::RevealWall, walls.wall(i).transform, false});
+            }
+        }
+        break;
+    }
+    }
+    for (const PlacedItems::PerkChange& change : changes) {
+        const std::string_view tree = perkEffectOf(change.deed);
+        if (change.shows && !tree.empty() && resources.weapons.loaded()) {
+            resources.effects.start(resources.device, resources.weapons, tree,
+                                    Vec3{change.transform[3]});
+        }
+        if (events.help) {
+            events.help(HelpMessages::kFirstMagicPerk + static_cast<s32>(change.deed), caster);
+        }
+    }
 }
 
 void LevelFixtures::strikeSafeRock(usize index, f32 power) {

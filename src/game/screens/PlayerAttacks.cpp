@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 
 #include "game/combat/Damage.h"
+#include "game/players/MagicPerks.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
@@ -879,6 +880,24 @@ void PlayerAttacks::enchantChests(PotionBurst& burst, f32 radius, f32 power,
     }
 }
 
+/** The magic of a caster from level 25 carries their class family's perk (start_magic's
+ * DMG_HEAL, fn_8005BA1C); a bottle broken by a blast has no caster and none. */
+void PlayerAttacks::bless(PotionBurst& burst, f32 radius, std::span<const PlayerRuntime> players,
+                          const Targets& targets) {
+    for (usize i = 0; i < players.size(); ++i) {
+        const PlayerActor& actor = players[i].actor;
+        if (actor.player() != burst.impact.owner) {
+            continue;
+        }
+        if (const auto perk =
+                MagicPerk::of(actor.save().character, experienceLevel(actor.save().experience()))) {
+            targets.fixtures.bless(burst.impact.position, radius, *perk, i, burst.blessed,
+                                   targets.fixtureEvents);
+        }
+        return;
+    }
+}
+
 void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                                   const Targets& targets) {
     for (PotionBurst& burst : m_potions) {
@@ -892,6 +911,8 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
         const f32 radius = burst.impact.potency * (1.33f - phase);
         const f32 power = burst.impact.damage * 1.5f * (phase - 0.33f);
         const u32 flags = EnemyHit::kMagic | static_cast<u32>(burst.impact.potion);
+        // The perk goes first: a barrel it cleanses may break under the same wave.
+        bless(burst, radius, players, targets);
         for (const MissileTarget& target : strikeTargets(targets)) {
             Vec3 direction =
                 (target.surface.empty() ? target.base : target.pointNear(burst.impact.position)) -

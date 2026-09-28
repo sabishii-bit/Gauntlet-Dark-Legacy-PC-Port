@@ -185,6 +185,25 @@ void Chests::rock(Chest& chest, f32 seconds) {
     chest.figure.tilt(pitch, yaw);
 }
 
+bool Chests::changeContents(usize index, s32 record, RenderDevice& device,
+                            const WorldLayout& layout, ItemArchive& items,
+                            const WorldCollision* collision, std::string_view figure) {
+    if (index >= m_chests.size()) {
+        return false;
+    }
+    Chest& chest = *m_chests[index];
+    if (!chest.shown || chest.gone || chest.state != kShut) {
+        return false;
+    }
+    chest.contents = record;
+    if (!figure.empty() && items.trees.find(figure).has_value()) {
+        const ItemInstance& instance = layout.itemInstances()[static_cast<usize>(chest.instance)];
+        chest.figure.place(device, items, figure, instance, collision);
+        chest.figure.play(kShut, true);
+    }
+    return true;
+}
+
 void Chests::hold(usize chest, s32 item) {
     if (chest < m_chests.size()) {
         m_chests[chest]->held = item;

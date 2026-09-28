@@ -182,6 +182,46 @@ usize PlacedItems::poisonFood(RenderDevice& device, const Vec3& position, f32 ra
     return changed;
 }
 
+std::vector<PlacedItems::PerkChange> PlacedItems::bless(RenderDevice& device, const Vec3& position,
+                                                        f32 radius, MagicPerk perk) {
+    constexpr s32 kMostJunk = 10;
+    constexpr s32 kRottenMeat = -100; ///< this or less is meat gone bad
+    constexpr s32 kSilver = 100;
+    constexpr s32 kGold = 200;
+    constexpr s32 kApple = 50;
+    constexpr s32 kChicken = 100;
+    struct Turn {
+        std::string_view figure;
+        s32 value = 0;
+        MagicPerkDeed deed = MagicPerkDeed::JunkToSilver;
+    };
+    std::vector<PerkChange> changes;
+    for (Item& item : m_items) {
+        if (!exposedWithin(item, position, radius)) {
+            continue;
+        }
+        std::optional<Turn> turn;
+        const auto kind = static_cast<ItemKind>(item.subtype);
+        if (perk.family == MagicPerkFamily::Treasure && kind == ItemKind::Gold &&
+            item.value <= kMostJunk) {
+            turn = perk.greater ? Turn{"TREAS_GOLD", kGold, MagicPerkDeed::JunkToGold}
+                                : Turn{"TREAS_SILVER", kSilver, MagicPerkDeed::JunkToSilver};
+        } else if (perk.family == MagicPerkFamily::Food && kind == ItemKind::Food &&
+                   item.value < 0) {
+            if (item.value > kRottenMeat) {
+                turn = Turn{"APPLE", kApple, MagicPerkDeed::CleanseFruit};
+            } else if (perk.greater) {
+                turn = Turn{"CHICKEN", kChicken, MagicPerkDeed::CleanseMeat};
+            }
+        }
+        if (turn.has_value() && replaceFigure(device, item, turn->figure)) {
+            item.value = turn->value;
+            changes.push_back({turn->deed, item.transform});
+        }
+    }
+    return changes;
+}
+
 bool PlacedItems::exposedWithin(const Item& item, const Vec3& position, f32 radius) const {
     if (!item.visible || item.taken || item.contained || item.info < 0 ||
         static_cast<usize>(item.info) >= m_infos.size() || radius <= 0) {

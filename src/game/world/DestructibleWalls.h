@@ -26,7 +26,13 @@ public:
         s32 object = -1;
         bool shown = true;
         f32 flash = 0;
+        s32 blinks = 0;     ///< white blinks still to come, revealing it
+        f32 blinkTicks = 0; ///< into the present blink's cycle
     };
+    static constexpr s32 kRevealBlinks = 3;
+    static constexpr f32 kBlinkWhite = 30; ///< ticks of a cycle it shows white
+    static constexpr f32 kBlinkCycle = 60; ///< past this the next cycle begins
+    static constexpr f32 kTicksPerSecond = 60;
     void bind(RenderDevice& device, const WorldLayout& layout, ModelSet& models,
               TextureSet& textures, WorldCollision& collision);
     void clear() { m_walls.clear(); }
@@ -38,6 +44,9 @@ public:
     MissileTarget target(usize index, s32 id) const;
     /** Remaining health after an accepted hit; zero is the single destruction event. */
     std::optional<s32> strike(usize index, f32 power, WorldCollision& collision, u32 flags = 0);
+    /** Shows a standing wall up (fn_8005BA1C's lesser archer perk): three blinks of white,
+     * half of each cycle of sixty ticks (fn_800606FC's obstacle flash). */
+    void reveal(usize index);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:

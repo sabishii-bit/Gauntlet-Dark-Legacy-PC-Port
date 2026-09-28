@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -56,8 +57,45 @@ void Traps::clear() {
 
 void Traps::setPlayerCount(s32 players) {
     for (const std::unique_ptr<Trap>& trap : m_traps) {
-        trap->shown = shownToParty(trap->minPlayers, players);
+        trap->shown = !trap->gone && shownToParty(trap->minPlayers, players);
     }
+}
+
+bool Traps::stop(usize index) {
+    if (index >= m_traps.size() || !m_traps[index]->shown || m_traps[index]->disarmed) {
+        return false;
+    }
+    Trap& trap = *m_traps[index];
+    const bool shows = trap.ticksLeft < kStopShownUnder;
+    if (trap.action != kResting) {
+        trap.action = kResting;
+        trap.figure.play(kResting, true);
+    }
+    trap.ticksLeft = kStoppedRest;
+    return shows;
+}
+
+bool Traps::disarm(usize index, RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
+                   const WorldCollision* collision, ItemArchive* realmItems) {
+    if (index >= m_traps.size() || !m_traps[index]->shown || m_traps[index]->disarmed) {
+        return false;
+    }
+    Trap& trap = *m_traps[index];
+    const ItemInstance& instance = layout.itemInstances()[static_cast<usize>(trap.instance)];
+    std::string name = layout.itemInfos()[static_cast<usize>(instance.info)].name;
+    name += kDisarmedSuffix;
+    ItemArchive& source =
+        !items.trees.find(name).has_value() && realmItems != nullptr ? *realmItems : items;
+    trap.disarmed = true;
+    trap.action = kResting;
+    if (source.trees.find(name).has_value() &&
+        trap.figure.place(device, source, name, instance, collision)) {
+        trap.figure.play(kResting, true);
+    } else {
+        trap.gone = true;
+        trap.shown = false;
+    }
+    return true;
 }
 
 /** How long a trap rests this round: its off time, or when that is negative somewhere at
@@ -81,6 +119,10 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
     for (usize index = 0; index < m_traps.size(); ++index) {
         Trap& trap = *m_traps[index];
         if (!trap.shown) {
+            continue;
+        }
+        if (trap.disarmed) {
+            trap.figure.update(seconds);
             continue;
         }
         if (timeStopped) {

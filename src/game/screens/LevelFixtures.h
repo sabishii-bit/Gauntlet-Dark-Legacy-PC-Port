@@ -3,9 +3,11 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 #include "engine/core/Types.h"
 
+#include "game/players/MagicPerks.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
@@ -50,6 +52,13 @@ public:
     /** Magic on a shut chest holding Death (fn_8005C1DC): he becomes the level's apple, with
      * his dying cry, and the chest rocks. False for any other chest. */
     bool enchantChest(usize index, f32 power);
+    /** A wave of potion magic of a caster (party index `caster`) with a class perk, reaching
+     * `radius` about `position` (fn_8005BA1C): junk into treasure, spoiled food cleansed, in
+     * the open or in a shut chest or a barrel; traps stopped or disarmed; secret walls shown
+     * up or brought down. Each change shows its family's LEVELUP tree and teaches the caster
+     * its lesson once. `reached` keeps what the wave has touched so each is touched once. */
+    void bless(const Vec3& position, f32 radius, MagicPerk perk, usize caster,
+               std::vector<s32>& reached, const Events& events);
     void strikeWall(usize index, f32 power, u32 flags = 0);
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
                       const Events& events);

@@ -76,9 +76,12 @@ private:
         f32 elapsed = 0;
         f32 duration = 1;
         std::vector<s32> hit;
+        std::vector<s32> blessed; ///< what its caster's class perk has reached
     };
     std::vector<PotionBurst> m_potions;
     static void enchantChests(PotionBurst& burst, f32 radius, f32 power, const Targets& targets);
+    static void bless(PotionBurst& burst, f32 radius, std::span<const PlayerRuntime> players,
+                      const Targets& targets);
     s32 m_nextPotionKind = 1;
     std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
     /** What a thrown weapon or a burst can strike: the targets and the shootable switches,

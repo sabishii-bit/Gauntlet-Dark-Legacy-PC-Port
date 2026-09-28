@@ -77,6 +77,10 @@ public:
     static constexpr s32 kBlastsDestroy = 135;
     static constexpr s32 kGasSpoils = 136;
     static constexpr s32 kChestsExplode = 137;
+    /** The first of the eight lessons of a class family's potion magic, in `MagicPerkDeed`'s
+     * order: junk to silver and to gold, traps stopped and destroyed, fruit and meat
+     * cleansed, secret walls revealed and destroyed. */
+    static constexpr s32 kFirstMagicPerk = 139;
     static constexpr s32 kLevelUp = 34; ///< "LEVEL %d", the number filled in
 
     static constexpr s32 kTicksPerLine = 60;

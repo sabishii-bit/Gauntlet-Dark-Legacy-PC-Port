@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -110,6 +111,11 @@ public:
      * three ticks a point of `power`. The subtype the original writes lands in the record
      * every chest of its kind shares, so they all lose their trapped, gold and silver ways. */
     bool transmute(usize index, s32 record, f32 power);
+    /** Potion magic's perk on a shut chest's contents (fn_8005BA1C): they become `record`,
+     * and with a `figure` named that tree of `items` stands in its place. */
+    bool changeContents(usize index, s32 record, RenderDevice& device, const WorldLayout& layout,
+                        ItemArchive& items, const WorldCollision* collision,
+                        std::string_view figure = {});
     /** What came out of an opened chest lies in it as dropped item number `item`. */
     void hold(usize chest, s32 item);
     /** The open chest `visitor` is against that still holds something (touching it is how
