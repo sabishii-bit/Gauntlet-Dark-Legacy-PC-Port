@@ -573,7 +573,11 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
 
 void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     watchOpponents();
-    m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), opponentEvents());
+    m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), opponentEvents(),
+                       m_fixtures.missileStops());
+    for (const RockHit& hit : m_opponents.takeRockHits()) {
+        m_fixtures.strikeSafeRock(hit.rock, hit.damage);
+    }
 }
 
 /** What the enemies count as on screen is what the view shows, and the placed ones it comes

@@ -29,7 +29,10 @@ constexpr s32 kChestPerkBase = 0; ///< ids of what a wave's perk has reached
 constexpr s32 kBarrelPerkBase = 1000;
 constexpr s32 kTrapPerkBase = 2000;
 constexpr s32 kWallPerkBase = 3000;
-constexpr f32 kWallRuin = 9999.0f;                    ///< the greater archer perk's blow
+constexpr f32 kWallRuin = 9999.0f;  ///< the greater archer perk's blow
+constexpr f32 kSmallestStop = 0.1f; ///< an item's reach for a missile, at the least
+constexpr s32 kTentRaising = 1;     ///< a tent wall's moves while it stops missiles
+constexpr s32 kTentRaised = 2;
 constexpr std::string_view kDeathDies = "S_DEATHDIE"; ///< his cry as he goes
 constexpr f32 kKnockdownFrom = 1.0f; ///< a blast must do more than this to floor anyone
 constexpr f32 kBehind = 1.5707964f;  ///< a blow from further round than this is from behind
@@ -101,6 +104,57 @@ std::vector<Obstacle> LevelFixtures::obstacles() const {
     }
     return result;
 }
+std::vector<MissileStop> LevelFixtures::missileStops() const {
+    std::vector<MissileStop> stops;
+    for (const auto& group : {m_chests.obstacles(), m_gates.obstacles(), m_barrels.obstacles()}) {
+        for (const Obstacle& box : group) {
+            stops.push_back(MissileStop::of(box));
+        }
+    }
+    for (usize i = 0; i < m_safeRocks.size(); ++i) {
+        if (m_safeRocks.standing(i)) {
+            const SafeRocks::Rock& rock = m_safeRocks.rock(i);
+            stops.push_back(MissileStop{.box = rock.obstacle,
+                                        .rock = static_cast<s32>(i),
+                                        .rockHealth = rock.health,
+                                        .rockArmor = rock.armor});
+        }
+    }
+    const auto upright = [](const Vec3& base, f32 radius, f32 height) {
+        Obstacle box;
+        box.centre = base;
+        box.cylinderRadius = std::max(radius, kSmallestStop);
+        box.halfAcross = box.cylinderRadius;
+        box.halfAlong = box.cylinderRadius;
+        box.height = height;
+        return MissileStop::of(box);
+    };
+    if (m_resources.has_value()) {
+        const PlacedItems& items = m_resources->world.placedItems();
+        for (const usize bottle : items.shootablePotions()) {
+            const PlacedItems::Item& item = items.item(bottle);
+            stops.push_back(upright(item.position, item.radius, item.height));
+        }
+        const LevelTriggers& triggers = m_resources->world.triggers();
+        for (usize i = 0; i < triggers.size(); ++i) {
+            const LevelTrigger& trigger = triggers.trigger(i);
+            if (trigger.shootable) {
+                stops.push_back(upright(trigger.spot, trigger.radius, trigger.height));
+            }
+        }
+    }
+    for (usize i = 0; i < m_traps.size(); ++i) {
+        const Traps::Trap& trap = m_traps.trap(i);
+        if (trap.shown && !trap.disarmed && trap.subtype == Traps::kTentWall &&
+            (trap.action == kTentRaising || trap.action == kTentRaised)) {
+            Obstacle box = trap.box;
+            box.solid = true;
+            stops.push_back(MissileStop::of(box));
+        }
+    }
+    return stops;
+}
+
 void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                          const CameraFrame* camera) const {
     m_chests.draw(device, clip, lighting);

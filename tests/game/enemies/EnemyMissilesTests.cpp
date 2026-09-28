@@ -792,7 +792,7 @@ TEST_CASE("the level's items stop the swarm's missiles, and one in the way keeps
     chest.halfAcross = 1.0f;
     chest.halfAlong = 1.0f;
     chest.height = 6.0f;
-    const std::array items{chest};
+    const std::array items{MissileStop::of(chest)};
     const std::array party{playerAt({0, 0, 20})};
     EnemyMissiles missiles;
     missiles.launch(EnemyMissileKind::bolt(10, 25, 0.3f), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 0);
@@ -812,7 +812,7 @@ TEST_CASE("the level's items stop the swarm's missiles, and one in the way keeps
     missiles.launch(EnemyMissileKind::bolt(10, 25, 0.3f), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 0);
     hits.clear();
     for (s32 frame = 0; frame < 60 && hits.empty(); ++frame) {
-        missiles.update(kStep, nullptr, party, {}, std::array{open});
+        missiles.update(kStep, nullptr, party, {}, std::array{MissileStop::of(open)});
         hits = missiles.takeHits();
     }
     REQUIRE(hits.size() == 1);
@@ -821,7 +821,7 @@ TEST_CASE("the level's items stop the swarm's missiles, and one in the way keeps
     EnemyMissileLaunch launch;
     launch.body = Vec3{0, 3, 8};
     launch.target = Vec3{0, 3, 20};
-    CHECK_FALSE(missiles.launch(EnemyMissileKind::arrow(), launch, nullptr, items));
+    CHECK_FALSE(missiles.launch(EnemyMissileKind::arrow(), launch, nullptr, std::array{chest}));
     CHECK(missiles.launch(EnemyMissileKind::arrow(), launch, nullptr, {}));
 }
 
@@ -882,7 +882,7 @@ TEST_CASE("the garm's bolt pierces the players it hurts and the items in its way
     missiles.launch(garm, {0, 3, 0}, {0, 3, 60}, 1, nullptr, 5);
     std::vector<EnemyMissileHit> hits;
     for (s32 frame = 0; frame < 30 && missiles.count() > 0; ++frame) {
-        missiles.update(kStep, nullptr, party, {}, std::array{chest});
+        missiles.update(kStep, nullptr, party, {}, std::array{MissileStop::of(chest)});
         const auto taken = missiles.takeHits();
         hits.insert(hits.end(), taken.begin(), taken.end());
     }
@@ -906,5 +906,52 @@ TEST_CASE("the garm's bolt pierces the players it hurts and the items in its way
     }
     CHECK(times == 4);
     CHECK(slow.missile(0).lived == Approx(1.0f).margin(0.01f));
+}
+
+TEST_CASE("a standing safe rock takes a missile's blow, and stops even the garm's bolt while it "
+          "stands",
+          "[game][enemies][enemy-missile-items]") {
+    Obstacle cover;
+    cover.centre = Vec3{0, 0, 10};
+    cover.cylinderRadius = 2.0f;
+    cover.halfAcross = 2.0f;
+    cover.halfAlong = 2.0f;
+    cover.height = 6.0f;
+    const std::array party{playerAt({0, 0, 20})};
+    const auto shoot = [&](const EnemyMissileKind& kind, const MissileStop& rock) {
+        EnemyMissiles missiles;
+        missiles.launch(kind, {0, 3, 0}, {0, 3, 20}, 1, nullptr, 0);
+        std::vector<EnemyMissileHit> hits;
+        std::vector<RockHit> blows;
+        for (s32 frame = 0; frame < 60 && missiles.count() > 0; ++frame) {
+            missiles.update(kStep, nullptr, party, {}, std::array{rock});
+            const auto taken = missiles.takeHits();
+            hits.insert(hits.end(), taken.begin(), taken.end());
+            const auto dealt = missiles.takeRockHits();
+            blows.insert(blows.end(), dealt.begin(), dealt.end());
+        }
+        return std::pair{hits, blows};
+    };
+    const MissileStop rock{.box = cover, .rock = 3, .rockHealth = 30, .rockArmor = 0};
+    const auto [hits, blows] = shoot(EnemyMissileKind::bolt(10, 25, 0.3f), rock);
+    REQUIRE(blows.size() == 1);
+    CHECK(blows[0].rock == 3);
+    CHECK(blows[0].damage == 10.0f);
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].worldContact); // it stops there, the player behind untouched
+
+    const EnemyMissileKind garm = *enemyMissileOf(27, EnemyMissileKind::kBolt);
+    const auto [held, struck] = shoot(garm, rock);
+    CHECK(struck.size() == 1);
+    REQUIRE(held.size() == 1);
+    CHECK(held[0].player == -1); // a rock left standing stops it
+    // One its blow brings down lets it through to the player.
+    MissileStop brittle = rock;
+    brittle.rockHealth = 5;
+    const auto [through, felled] = shoot(garm, brittle);
+    // (The level deals each blow before the next frame; left standing here, it is struck again.)
+    CHECK_FALSE(felled.empty());
+    REQUIRE_FALSE(through.empty());
+    CHECK(through[0].player == 0);
 }
 } // namespace

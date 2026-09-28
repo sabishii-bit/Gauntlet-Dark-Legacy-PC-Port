@@ -60,8 +60,12 @@ public:
      * enemies it comes to see stand (fn_80060114). */
     void watch(const ViewVolume& view, const Vec3& attention);
     usize pendingPlacements() const { return m_pending.size(); }
+    /** `stops` are what else stands in the way of the swarm's missiles. */
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
-                std::span<const Obstacle> fixtures, const Events& events);
+                std::span<const Obstacle> fixtures, const Events& events,
+                std::span<const MissileStop> stops = {});
+    /** The swarm's missiles' blows on safe rocks since the last call, for the level. */
+    std::vector<RockHit> takeRockHits() { return m_enemyMissiles.takeRockHits(); }
     /** Drain hits from the last projectile/attack phase before a level transition freezes
      * simulation. No AI, collision, or time advances, and each reward is consumed once. */
     void settleRewards(std::span<const PlayerRuntime> players, const Events& events);

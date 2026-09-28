@@ -126,6 +126,25 @@ struct EnemyBlast {
     bool lit = false;        ///< the lob's red light rides on it
 };
 
+/** Something of the level's in the way of the swarm's missiles besides the world
+ * (fn_8005ED44, SfxSkipItem): doors, chests, barrels, generators, bottles lying about, the
+ * triggers that are shot and raised tent walls stop one unharmed; a standing safe rock takes
+ * its blow, and a piercing bolt stops only at a rock that blow leaves standing. */
+struct MissileStop {
+    Obstacle box;
+    s32 rock = -1;      ///< the safe rock it is, or -1
+    s32 rockHealth = 0; ///< that rock's health and armour
+    s32 rockArmor = 0;
+
+    static MissileStop of(const Obstacle& box) { return MissileStop{.box = box}; }
+};
+
+/** A missile's blow on a safe rock, for the level to deal. */
+struct RockHit {
+    usize rock = 0;
+    f32 damage = 0.0f;
+};
+
 /**
  * The swarm's shots and lobs (EnemyStartMissile, ProcessEffects): a shot flies straight at
  * what it was aimed at, a lob rises and falls to land there, neither leading it; either
@@ -179,13 +198,14 @@ public:
     /** Sets a blast going. */
     void blast(EnemyBlast blast);
     /** Moves everything in flight and grows the blasts over `seconds`. Missiles stop at the
-     * world and at the level's `items` (doors, chests, barrels, generators, rocks), a piercing
-     * one going through the items and the players it hurts; armour that reflects sends one
-     * back, after which it strikes the `swarm`, as the blasts do (each by the id it is offered
-     * under). */
+     * world and at the level's `items` (`MissileStop`), a piercing one going through the
+     * players it hurts; armour that reflects sends one back, after which it strikes the
+     * `swarm`, as the blasts do (each by the id it is offered under). */
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
-                std::span<const MissileTarget> swarm = {}, std::span<const Obstacle> items = {});
+                std::span<const MissileTarget> swarm = {}, std::span<const MissileStop> items = {});
     std::vector<EnemyMissileHit> takeHits();
+    /** The blows on safe rocks since the last call. */
+    std::vector<RockHit> takeRockHits();
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     /** The lobs' red lights and their bursts'. */
     void lights(std::vector<PointLight>& out) const;
@@ -211,12 +231,15 @@ private:
         std::vector<Held> swarm;
     };
 
+    bool stopped(const EnemyMissile& missile, std::span<const MissileStop> items, const Vec3& from,
+                 const Vec3& to, f32 radius);
     void stepBursts(f32 seconds, const WorldCollision* collision,
                     std::span<const EnemyView> players, std::span<const MissileTarget> swarm);
 
     std::vector<EnemyMissile> m_missiles;
     std::vector<Burst> m_bursts;
     std::vector<EnemyMissileHit> m_hits;
+    std::vector<RockHit> m_rockHits;
     std::mt19937 m_random;
     f32 m_ricochetIn = 0.0f; ///< before another ricochet is heard
 };

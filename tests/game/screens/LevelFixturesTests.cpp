@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <optional>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -10,9 +12,12 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/EnemyMissiles.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LevelFixtures.h"
 #include "game/world/Chests.h"
+#include "game/world/SafeRocks.h"
+#include "game/world/Traps.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
@@ -425,6 +430,103 @@ TEST_CASE("a barrel holding Death lets him out when it breaks, instead of a pick
     f.fixtures.strikeBarrel(*holding, 10000, -1, {}, f.events);
     CHECK(let >= 0);
     CHECK(f.world.placedItems().size() == items); // nothing dropped in his place
+    f.fixtures.clear();
+}
+
+TEST_CASE("the swarm's missiles are stopped by rocks, bottles and the triggers that are shot",
+          "[game][screens][level-fixtures][enemy-missile-items][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELC3/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELB6/world.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto count = [](const std::vector<MissileStop>& stops, bool rocks) {
+        return std::ranges::count_if(
+            stops, [&](const MissileStop& stop) { return (stop.rock >= 0) == rocks; });
+    };
+    {
+        Fixture f;
+        f.fixtures.clear();
+        REQUIRE(f.world.load(f.device, root, *catalog.byName("C3")));
+        f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+        f.fixtures.setPlayerCount(4);
+        const auto& triggers = f.world.triggers();
+        const auto shootable =
+            std::ranges::count_if(std::views::iota(usize{0}, triggers.size()),
+                                  [&](usize i) { return triggers.trigger(i).shootable; });
+        REQUIRE(shootable > 0);
+        const auto potions =
+            static_cast<std::ptrdiff_t>(f.world.placedItems().shootablePotions().size());
+        const auto stops = f.fixtures.missileStops();
+        CHECK(count(stops, false) ==
+              static_cast<std::ptrdiff_t>(f.fixtures.obstacles().size()) + shootable + potions);
+        CHECK(count(stops, true) == 0);
+        for (const MissileStop& stop : stops) {
+            CHECK(stop.box.solid);
+        }
+        f.fixtures.clear();
+    }
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("B6")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(4);
+    const SafeRocks& rocks = f.fixtures.safeRocks();
+    std::ptrdiff_t standing = 0;
+    for (usize i = 0; i < rocks.size(); ++i) {
+        standing += rocks.standing(i) ? 1 : 0;
+    }
+    REQUIRE(standing > 0);
+    const auto stops = f.fixtures.missileStops();
+    CHECK(count(stops, true) == standing);
+    for (const MissileStop& stop : stops) {
+        if (stop.rock >= 0) {
+            CHECK(stop.rockHealth == rocks.rock(static_cast<usize>(stop.rock)).health);
+            CHECK(stop.rockArmor == rocks.rock(static_cast<usize>(stop.rock)).armor);
+        }
+    }
+    f.fixtures.clear();
+}
+
+TEST_CASE("a tent wall stops the swarm's missiles only while it is raised",
+          "[game][screens][level-fixtures][enemy-missile-items][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELD1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("D1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(4);
+    const Traps& traps = f.fixtures.traps();
+    std::optional<usize> tent;
+    for (usize i = 0; i < traps.size() && !tent; ++i) {
+        if (traps.trap(i).shown && traps.trap(i).subtype == Traps::kTentWall) {
+            tent = i;
+        }
+    }
+    REQUIRE(tent.has_value());
+    const auto raised = [&] {
+        const s32 action = traps.trap(*tent).action;
+        return action == 1 || action == 2;
+    };
+    const auto stopping = [&] {
+        const Obstacle& box = traps.trap(*tent).box;
+        return std::ranges::any_of(f.fixtures.missileStops(), [&](const MissileStop& stop) {
+            return stop.box.centre == box.centre && stop.box.halfAcross == box.halfAcross &&
+                   stop.box.halfAlong == box.halfAlong;
+        });
+    };
+    bool seenDown = false;
+    bool seenUp = false;
+    for (s32 frame = 0; frame < 900 && !(seenDown && seenUp); ++frame) {
+        f.fixtures.update(2, 1.0f / 30, {}, f.events);
+        CHECK(stopping() == raised());
+        (raised() ? seenUp : seenDown) = true;
+    }
+    CHECK(seenUp);
+    CHECK(seenDown);
     f.fixtures.clear();
 }
 

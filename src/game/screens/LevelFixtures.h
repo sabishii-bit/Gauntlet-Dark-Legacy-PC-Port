@@ -7,6 +7,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/enemies/EnemyMissiles.h"
 #include "game/players/MagicPerks.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/world/Breakables.h"
@@ -45,6 +46,10 @@ public:
     void clear();
     void setPlayerCount(s32 count);
     std::vector<Obstacle> obstacles() const;
+    /** What stops the swarm's missiles (fn_8005ED44's candidates): the solid obstacles, the
+     * standing safe rocks as the rocks they are, the bottles lying about, the triggers that
+     * are shot and the tent walls while raised. */
+    std::vector<MissileStop> missileStops() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);

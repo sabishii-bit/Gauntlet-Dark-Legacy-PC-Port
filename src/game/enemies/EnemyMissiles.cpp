@@ -415,9 +415,49 @@ void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
                   [](const Burst& burst) { return burst.stage >= burst.blast.stages.size(); });
 }
 
+/** Whether one of the level's `items` stops `missile` between `from` and `to`, a safe rock
+ * taking its blow (fn_8005ED44, SfxSkipItem, fn_8005C1DC): the rest stop it unharmed, and a
+ * piercing bolt goes through all but a rock left standing (ProcessEffects). */
+bool EnemyMissiles::stopped(const EnemyMissile& missile, std::span<const MissileStop> items,
+                            const Vec3& from, const Vec3& to, f32 radius) {
+    const bool pierces = missile.kind.pierces();
+    for (const MissileStop& item : items) {
+        if (!item.box.solid || !item.box.blocksSegment(from, to, radius)) {
+            continue;
+        }
+        if (item.rock < 0) {
+            if (pierces) {
+                continue;
+            }
+            return true;
+        }
+        // What this update has already dealt it counts against what it has.
+        f32 dealt = 0.0f;
+        for (const RockHit& hit : m_rockHits) {
+            if (static_cast<s32>(hit.rock) == item.rock) {
+                dealt += std::max(1.0f, std::round(hit.damage - static_cast<f32>(item.rockArmor)));
+            }
+        }
+        if (static_cast<f32>(item.rockHealth) <= dealt) {
+            continue; // brought down already: nothing there
+        }
+        const f32 blow =
+            std::max(1.0f, std::round(missile.kind.damage - static_cast<f32>(item.rockArmor)));
+        m_rockHits.push_back(RockHit{static_cast<usize>(item.rock), missile.kind.damage});
+        if (!pierces || static_cast<f32>(item.rockHealth) > dealt + blow) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<RockHit> EnemyMissiles::takeRockHits() {
+    return std::exchange(m_rockHits, {});
+}
+
 void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                            std::span<const EnemyView> players, std::span<const MissileTarget> swarm,
-                           std::span<const Obstacle> items) {
+                           std::span<const MissileStop> items) {
     if (seconds <= 0) {
         return;
     }
@@ -463,11 +503,7 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                     destination.y = floor->y + radius;
                 }
             }
-            // The level's doors, chests, barrels, generators and rocks stop it where it was,
-            // unharmed; a piercing one goes through (fn_8005ED44, SfxSkipItem).
-            if (!struckWorld && !pierces && std::ranges::any_of(items, [&](const Obstacle& item) {
-                    return item.solid && item.blocksSegment(from, to, radius);
-                })) {
+            if (!struckWorld && stopped(missile, items, from, to, radius)) {
                 struckWorld = true;
                 destination = from;
             }
@@ -625,6 +661,7 @@ void EnemyMissiles::clear() {
     m_missiles.clear();
     m_bursts.clear();
     m_hits.clear();
+    m_rockHits.clear();
 }
 
 } // namespace gdl::game

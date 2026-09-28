@@ -49,6 +49,7 @@ public:
     static constexpr s32 kSpikes = 0;                        ///< the subtypes that pierce
     static constexpr s32 kBlade = 3;
     static constexpr s32 kBlades = 4;
+    static constexpr s32 kTentWall = 5;         ///< raised (its first two moves), stops missiles
     static constexpr s32 kTicksPerTimeUnit = 2; ///< the record's times are in half ticks
     static constexpr s32 kStopTimeRest = 30;    ///< held safe, then waits half a second
     static constexpr std::string_view kDisarmedSuffix = "_D";
