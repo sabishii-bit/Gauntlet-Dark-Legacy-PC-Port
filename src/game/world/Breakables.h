@@ -45,6 +45,11 @@ public:
     static constexpr s32 kBreaking = 1;
     static constexpr s32 kBroken = 2;
     static constexpr u32 kSeedStart = 7919; ///< its random picks' own seed
+    static constexpr f32 kTicksPerSecond = 60.0f;
+    static constexpr f32 kFadeFrom = 256.0f; ///< items.c's fade of a breaking barrel
+    static constexpr f32 kFadeRate = 2.83f;  ///< a tick
+    static constexpr f32 kFadeStart = 16.0f; ///< ticks into the break
+    static constexpr f32 kOpaque = 255.0f;
 
     /** One barrel. */
     struct Barrel {
@@ -56,6 +61,7 @@ public:
         s32 count = 0;
         s32 minPlayers = 0;
         s32 state = kWhole;
+        f32 breakingSeconds = 0.0f; ///< since it began to break
         bool shown = true;
         bool gone = false;
         f32 radius = 1.0f;
@@ -80,12 +86,19 @@ public:
     /** A blow of `power` on a standing barrel; nothing for one that no longer stands. */
     std::optional<BreakableStrike> strike(usize index, f32 power);
 
-    void update(f32 seconds);
+    /** Plays the barrels on; the barrels that blew up or gassed and are now gone. */
+    std::vector<usize> update(f32 seconds);
+    /** How solid a barrel shows: one that blew up or gassed fades out as it breaks. */
+    f32 opacityOf(usize index) const;
+    /** Where a barrel stands, as its figure is placed. */
+    const Mat4& transformOf(usize index) const { return m_barrels[index]->figure.transform(); }
     /** The boxes of those still in the way. */
     std::vector<Obstacle> obstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 
 private:
+    static f32 opacity(const Barrel& barrel);
+
     std::vector<std::unique_ptr<Barrel>> m_barrels;
     std::vector<ItemInfo> m_infos;
     u32 m_seed = kSeedStart;

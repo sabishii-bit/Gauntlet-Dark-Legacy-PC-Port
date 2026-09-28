@@ -121,7 +121,8 @@ void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 fl
         targets.opponents.strikeCritter(target.id - kCritterTargetBase, damage, flags, direction,
                                         owner.player(), target.base, false, players);
     } else if (target.id >= kGeneratorTargetBase) {
-        targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, damage, owner.player());
+        targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, damage, owner.player(),
+                                          players);
     } else if (target.id >= kEnemyTargetBase) {
         targets.opponents.strikeEnemy(target.id - kEnemyTargetBase, damage, flags, direction,
                                       owner.player(), players);

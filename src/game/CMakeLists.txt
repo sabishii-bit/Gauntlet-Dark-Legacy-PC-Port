@@ -83,6 +83,8 @@ add_library(game STATIC
     world/MoveStrikes.cpp
     world/Breakables.h
     world/Breakables.cpp
+    world/Rubble.h
+    world/Rubble.cpp
     world/SafeRocks.h
     world/SafeRocks.cpp
     players/LevelWatch.cpp

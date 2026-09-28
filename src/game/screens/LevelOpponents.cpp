@@ -897,12 +897,34 @@ void LevelOpponents::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& dir
     m_critters.hurt(id, hit);
 }
 
+f32 LevelOpponents::generatorPowerScale(s32 level, f32 placeLevel) {
+    constexpr f32 kUnder = 0.01f; ///< softer a level under the place's
+    constexpr f32 kOver = 0.1f;   ///< and harder a level over it
+    if (placeLevel <= 0.0f) {
+        return 1.0f;
+    }
+    const f32 gap = static_cast<f32>(level) - placeLevel;
+    return gap < 0.0f ? 1.0f + kUnder * gap : 1.0f + kOver * gap;
+}
+
 /** A hit on a generator: as it crumbles a state its kind's hit or death effect plays over
  * it to the realm's own sound (`S_GENDAMG`, `S_GENKILLG`), and, gone, its brood is freed of
- * it. */
-void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
+ * it. A player's hit is scaled by their level against the place's, never under one
+ * (fn_8005C1DC's generator ramp). */
+void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
+                                     std::span<const PlayerRuntime> players) {
     if (!m_resources.has_value()) {
         return;
+    }
+    const LevelInfo* level = m_resources->world.level();
+    if (byPlayer >= 0 && level != nullptr) {
+        for (const PlayerRuntime& runtime : players) {
+            if (runtime.actor.player() == byPlayer) {
+                power *= generatorPowerScale(experienceLevel(runtime.actor.save().experience()),
+                                             level->tuning.playerLevel);
+                power = std::max(power, 1.0f);
+            }
+        }
     }
     const auto event = m_generators.strike(id, power, byPlayer);
     if (!event.has_value()) {
@@ -922,7 +944,6 @@ void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
         }
     }
     const std::string& levelName = m_resources->world.ref().name;
-    const auto* level = m_resources->world.level();
     if (!event->destroyed || level == nullptr || level->bossType < 0) {
         const std::string suffix =
             m_resources->world.ref().realmId == 10 && event->kind == 24

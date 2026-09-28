@@ -19,6 +19,13 @@ void PlacedItems::attach(usize index, const Mat4& transform, bool contained) {
     }
 }
 
+void PlacedItems::discard(usize index) {
+    if (index < m_items.size()) {
+        m_items[index].taken = true;
+        m_items[index].visible = false;
+    }
+}
+
 bool PlacedItems::Item::shownTo(s32 players) const {
     if (minPlayers > kExactPlayersMark) {
         return players == minPlayers - kExactPlayersMark;
@@ -203,6 +210,48 @@ bool PlacedItems::replaceFigure(RenderDevice& device, Item& item, std::string_vi
     return true;
 }
 
+/** Item damage (0x8005C1DC) on a bottle: its health less its armour, a hit always counting
+ * for one, not the five-point threshold food and treasure need; broken, it is gone and its
+ * kind comes back. */
+std::optional<s32> PlacedItems::damagePotion(Item& item, const ItemInfo& info, f32 damage) {
+    if (info.armor < 0) {
+        return std::nullopt;
+    }
+    const f32 afterArmor = damage - static_cast<f32>(info.armor);
+    const f32 power = afterArmor <= 0 ? 1.0f : afterArmor;
+    item.health = std::max(0, item.health - static_cast<s32>(std::round(power)));
+    if (item.health != 0) {
+        return std::nullopt;
+    }
+    item.taken = true;
+    item.visible = false;
+    return static_cast<s32>(item.flags & kPotionKind);
+}
+
+std::vector<usize> PlacedItems::shootablePotions() const {
+    std::vector<usize> found;
+    for (usize index = 0; index < m_items.size(); ++index) {
+        const Item& item = m_items[index];
+        if (static_cast<ItemKind>(item.subtype) == ItemKind::Potion && item.takeable() &&
+            !item.thrown && item.info >= 0 && m_infos[static_cast<usize>(item.info)].armor >= 0) {
+            found.push_back(index);
+        }
+    }
+    return found;
+}
+
+std::optional<s32> PlacedItems::strikePotion(usize index, f32 damage) {
+    if (index >= m_items.size()) {
+        return std::nullopt;
+    }
+    Item& item = m_items[index];
+    if (static_cast<ItemKind>(item.subtype) != ItemKind::Potion || !item.takeable() ||
+        item.info < 0) {
+        return std::nullopt;
+    }
+    return damagePotion(item, m_infos[static_cast<usize>(item.info)], damage);
+}
+
 std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, const Vec3& position,
                                                          f32 radius, f32 damage) {
     constexpr f32 kDestroyPower = 5;
@@ -218,19 +267,9 @@ std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, c
         const auto kind = static_cast<ItemKind>(item.subtype);
         const ItemInfo& info = m_infos[static_cast<usize>(item.info)];
         if (kind == ItemKind::Potion) {
-            // Item damage (0x8005C1DC): bottles use health/armor, not the
-            // five-point threshold used by food and treasure. Held chest
-            // contents never reach this branch until released.
-            if (info.armor < 0) {
-                continue;
-            }
-            const f32 afterArmor = damage - static_cast<f32>(info.armor);
-            const f32 power = afterArmor <= 0 ? 1.0f : afterArmor;
-            item.health = std::max(0, item.health - static_cast<s32>(std::round(power)));
-            if (item.health == 0) {
-                item.taken = true;
-                item.visible = false;
-                changes.push_back({item.position, true, static_cast<s32>(item.flags & 0xF)});
+            // Held chest contents never reach this branch until released.
+            if (const auto broken = damagePotion(item, info, damage); broken.has_value()) {
+                changes.push_back({item.position, true, broken});
             }
             continue;
         }

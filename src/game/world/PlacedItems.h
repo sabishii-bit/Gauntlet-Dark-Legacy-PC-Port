@@ -141,6 +141,14 @@ public:
     const Item& item(usize index) const { return m_items[index]; }
     /** Follow a container's animated socket without floor snapping. */
     void attach(usize index, const Mat4& transform, bool contained);
+    /** Item number `index` is gone, as what lay in a chest blown apart is. */
+    void discard(usize index);
+    /** The bottles lying where a thrown weapon can break them (fn_8005EE18: out of any chest,
+     * at rest, and breakable). */
+    std::vector<usize> shootablePotions() const;
+    /** A thrown weapon's `damage` on potion number `index`; its kind when that broke it. */
+    std::optional<s32> strikePotion(usize index, f32 damage);
+    static constexpr u32 kPotionKind = 0xF; ///< of a potion's flags: its colour
     usize visibleCount() const;
     s32 playerCount() const { return m_players; }
 
@@ -209,6 +217,7 @@ public:
 
 private:
     void startEffect(RenderDevice& device, std::string_view tree, const Vec3& position);
+    static std::optional<s32> damagePotion(Item& item, const ItemInfo& info, f32 damage);
 
     std::vector<Item> m_items;
     std::vector<Effect> m_effects;

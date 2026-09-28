@@ -1416,12 +1416,30 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   power less the armour, never under one. `PlayerMissiles::update` takes
   `MissileTarget`s and reports the one an impact stopped against, with the
   missile's damage (5 to 20 by the thrower's stat). Broken, a barrel plays
-  ACTIVE, stops blocking, and leaves its staves (DONE) or, having blown up
-  or gassed, nothing. Sounds are the realm bank's `S_BARREL_WOOD`/`_EXPLO`/
+  ACTIVE and stops blocking; a plain one leaves its staves (DONE), an
+  exploding or poison one fades from its sixteenth tick (256 less 2.83 a
+  tick) and is retired when ACTIVE ends, telling the nearest standing player
+  within 9 help 44 or 45 (shoot red/green barrels from a distance). One
+  holding Death lets him out (`releaseEnemy`) instead of its item. Sounds are the realm bank's `S_BARREL_WOOD`/`_EXPLO`/
   `_GAS` plus the realm's letter, `S_WEAPONHITWOOD` for a blow it survives.
   Only an explosive barrel's detonation emits `DESTSMOKE`, alongside
   `EXPLOSION`; plain and item-holding barrels emit no smoke, and poison
   barrels use `POISONEXP1` instead.
+* Item damage (fn_8005C1DC) beyond barrels: a blast of 5 or more breaks every
+  chest it reaches (a trapped one goes off the next update; a shut one's
+  Death is let out) to `CHESTDEST` and `DESTSMOKE`, destroys the item it
+  held and leaves the `CHESTGEXP0` rubble (`CHESTSEXP0` for a silver chest);
+  blasts also shoot the shootable triggers within their reach less 1.5.
+  `world/Rubble` holds what is left lying: those, `BAREXP0`/`BARPOI0` for
+  blown barrels and `ITEMEXP0` for a pickup a blast destroyed, owned by
+  `LevelFixtures`. A potion lying about is a missile target (ids from 8000):
+  broken, its own magic goes off with nobody's power, then the thrower's at
+  0.8 of theirs, with help 14. Potion magic cannot hurt rocks, walls,
+  switches or any barrel but an item-holding one. A player's hit on a
+  generator is a hundredth softer a level under the place's `playerLevel`
+  and a tenth harder a level over, never under a point. A swing (PlayerGetTarget,
+  fn_8005B274) reaches shootable triggers but never the safe rocks, and a
+  swing on a secret wall (a nameless type-10 item) posts help 20.
 * Help messages (`screens/HelpMessages`): the original's table of message
   ids, each a message of the game's strings (`text/english.json`, whose
   lines are the box's lines) and a narrator line from the `VOICE1` bank,

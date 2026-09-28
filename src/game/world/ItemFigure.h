@@ -75,6 +75,8 @@ public:
     s32 ticksOf(s32 index) const;
     const Vec3& position() const { return m_position; }
     f32 yaw() const { return m_yaw; }
+    /** How the figure is placed in the world. */
+    const Mat4& transform() const { return m_transform; }
     /** The box the item's record gives it, where the figure stands. */
     Obstacle obstacle(const ItemInfo& info) const;
 

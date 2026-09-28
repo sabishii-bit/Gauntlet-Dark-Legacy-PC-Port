@@ -79,7 +79,11 @@ public:
     void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
                        std::optional<Vec3> where, bool close,
                        std::span<const PlayerRuntime> players);
-    void strikeGenerator(s32 id, f32 power, s32 byPlayer);
+    void strikeGenerator(s32 id, f32 power, s32 byPlayer,
+                         std::span<const PlayerRuntime> players = {});
+    /** What a character of `level` hits a generator by at a place meant for `placeLevel`: a
+     * hundredth less a level under it, a tenth more a level over it. */
+    static f32 generatorPowerScale(s32 level, f32 placeLevel);
     Enemies& enemies() { return m_enemies; }
     const Enemies& enemies() const { return m_enemies; }
     Generators& generators() { return m_generators; }
