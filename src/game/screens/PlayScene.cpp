@@ -574,9 +574,18 @@ void PlayScene::updateVictory(s32 ticks, f32 seconds) {
 void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     watchOpponents();
     m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), opponentEvents(),
-                       m_fixtures.missileStops());
+                       m_fixtures.missileStops(), m_fixtures.critterObstacles());
     for (const RockHit& hit : m_opponents.takeRockHits()) {
         m_fixtures.strikeSafeRock(hit.rock, hit.damage);
+    }
+    // A golem's or gargoyle's blow on a barrel is no one's (CritterCollideItems).
+    const std::vector<CombatantRam> rams = m_opponents.takeBarrelRams();
+    for (const CombatantRam& ram : rams) {
+        m_fixtures.strikeBarrel(static_cast<usize>(ram.id), ram.damage, -1, m_players,
+                                fixtureEvents());
+    }
+    if (!rams.empty()) {
+        settleBlasts();
     }
 }
 

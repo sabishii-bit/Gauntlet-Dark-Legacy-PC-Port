@@ -7,6 +7,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/enemies/Combatant.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/players/MagicPerks.h"
 #include "game/screens/PlayerHealth.h"
@@ -50,6 +51,10 @@ public:
      * standing safe rocks as the rocks they are, the bottles lying about, the triggers that
      * are shot and the tent walls while raised. */
     std::vector<MissileStop> missileStops() const;
+    /** What stands where the great ones walk (fn_8005D5C8): the chests, which golems and
+     * gargoyles walk through, the standing barrels, which they break, and the gates and
+     * standing safe rocks, which stop them. */
+    std::vector<CombatantObstacle> critterObstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);

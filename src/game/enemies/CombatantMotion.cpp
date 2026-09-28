@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "engine/core/Types.h"
@@ -99,6 +100,9 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
         }
         to.y = floor->y;
     }
+    if (blockedByItems(critter, to)) {
+        return;
+    }
     for (const Combatant& peer : peers) {
         const Actor& other = peer.m_actor;
         if (&other == &critter || other.state == State::Inactive) {
@@ -126,6 +130,30 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
             hurt(hit);
         }
     }
+}
+
+/** Whether the level's items keep the great one from `to` (CritterCollideItems): a golem
+ * or gargoyle walks through a chest and strikes what is breakable, the level's enemy damage
+ * times its type's, every step it is against it, stopped only while that stands or as it
+ * blows up; everything else solid stops it. */
+bool Combatant::blockedByItems(Actor& critter, const Vec3& to) {
+    const f32 reach = critter.definition->wallRadius();
+    const bool breaks = critter.stock->definition.breaksItems;
+    const f32 blow = critter.definition->itemDamage() * m_scales.damage;
+    return std::ranges::any_of(m_obstacles, [&](const CombatantObstacle& item) {
+        if (!item.box.solid || !item.box.touchedBy(to, reach, 0.0f)) {
+            return false;
+        }
+        if (!breaks || item.kind == CombatantObstacle::Kind::Blocks) {
+            return true;
+        }
+        if (item.kind == CombatantObstacle::Kind::Chest) {
+            return false;
+        }
+        m_rams.push_back(CombatantRam{item.id, blow});
+        const f32 felt = std::max(1.0f, std::round(blow - static_cast<f32>(item.armor)));
+        return item.explodes || static_cast<f32>(item.health) > felt;
+    });
 }
 
 } // namespace gdl::game

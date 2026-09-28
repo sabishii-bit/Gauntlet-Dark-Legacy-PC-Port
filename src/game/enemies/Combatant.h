@@ -6,6 +6,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/core/Types.h"
@@ -21,8 +22,28 @@
 #include "game/enemies/CritterArea.h"
 #include "game/enemies/Enemies.h"
 #include "game/world/HazardSurfaces.h"
+#include "game/world/ItemFigure.h"
 
 namespace gdl::game {
+/** Something of the level's where a great one walks (CritterCollideItems, fn_8005D5C8): it
+ * stops the great one, but a golem or gargoyle walks through a chest and breaks what is
+ * breakable, stopping only while it stands or as it blows up. */
+struct CombatantObstacle {
+    enum class Kind : u8 { Blocks, Chest, Breakable };
+    Obstacle box;
+    Kind kind = Kind::Blocks;
+    s32 id = -1; ///< a breakable's: a barrel's index, or a generator's from 2000
+    s32 health = 0;
+    s32 armor = 0;
+    bool explodes = false;
+};
+
+/** A great one's blow on something it walked into, for the level to deal. */
+struct CombatantRam {
+    s32 id = -1;
+    f32 damage = 0.0f;
+};
+
 /** One fighter. Executes authored moves with family policy, without owning a population.
  * Assets are borrowed and must outlive this actor and any emitted projectiles/effects. */
 class Combatant {
@@ -57,6 +78,9 @@ public:
     /** The level's harmful surfaces, which hurt it where it walks against or onto them
      * (CritterWorldDamage); borrowed, none for nothing. */
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
+    /** What of the level's stands where it walks this update. */
+    void setObstacles(std::span<const CombatantObstacle> items) { m_obstacles = items; }
+    std::vector<CombatantRam> takeRams() { return std::exchange(m_rams, {}); }
     void freeze(s32 ticks);
     void blind(s32 ticks);
     void curb(f32 seconds);
@@ -220,6 +244,7 @@ private:
     void carry(Actor& critter, f32 seconds, const MoveDefinition* move,
                std::span<const EnemyView> players, std::span<const Combatant> peers);
     static void chooseTarget(Actor& critter, std::span<const EnemyView> players);
+    bool blockedByItems(Actor& critter, const Vec3& to);
     static const EnemyView* viewOf(std::span<const EnemyView> players, s32 player);
 
     Actor m_actor;
@@ -228,6 +253,8 @@ private:
     const WorldCollision* m_collision = nullptr;
     const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     EnemyScales m_scales;
+    std::span<const CombatantObstacle> m_obstacles;
+    std::vector<CombatantRam> m_rams;
     char m_realm = 'G';
     std::vector<CombatBlow> m_blows;
     bool m_fullHarm = false;

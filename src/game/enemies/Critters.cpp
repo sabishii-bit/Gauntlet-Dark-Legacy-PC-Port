@@ -31,6 +31,7 @@ void Critters::close() {
     m_cues.clear();
     m_spews.clear();
     m_shots.clear();
+    m_rams.clear();
     m_device = nullptr;
     m_collision = nullptr;
     m_hazards = nullptr;
@@ -108,9 +109,12 @@ void Critters::collect(Combatant& actor) {
     for (auto& event : actor.takeShots()) {
         m_shots.push_back(event);
     }
+    for (const CombatantRam& ram : actor.takeRams()) {
+        m_rams.push_back(ram);
+    }
 }
-void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                      bool timeStopped) {
+void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players, bool timeStopped,
+                      std::span<const CombatantObstacle> items) {
     if (ticks <= 0) {
         return;
     }
@@ -121,7 +125,9 @@ void Critters::update(s32 ticks, f32 seconds, std::span<const EnemyView> players
         stock->textures.step(frames);
     }
     for (auto& actor : m_critters) {
+        actor.setObstacles(items);
         actor.update(ticks, seconds, players, m_critters, timeStopped);
+        actor.setObstacles({});
         collect(actor);
     }
 }

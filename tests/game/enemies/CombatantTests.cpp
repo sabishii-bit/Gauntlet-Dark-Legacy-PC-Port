@@ -510,6 +510,61 @@ TEST_CASE("a general blocks a golem and damage events preserve submission order"
     REQUIRE(losses[1].critter == 0);
 }
 
+TEST_CASE("a golem walks through a chest, breaks a barrel in its way and is stopped by the rest",
+          "[game][combatant][critter-rams]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, 100};
+    const std::array<EnemyView, 1> players{player};
+    Obstacle box;
+    box.centre = Vec3{0, 0, 3};
+    box.halfAcross = 0.5f;
+    box.halfAlong = 0.5f;
+    box.height = 4.0f;
+    const auto walk = [&](CombatantObstacle item, bool golem) {
+        Critters population;
+        population.open(device, root, nullptr, {}, 'G');
+        REQUIRE((golem ? population.spawnGolem({}, 0) : population.spawnGeneral({}, 0)) == 0);
+        const std::array items{item};
+        std::vector<CombatantRam> rams;
+        for (s32 frame = 0; frame < 90; ++frame) {
+            population.update(2, 1.0f / 30, players, false, items);
+            const auto taken = population.takeRams();
+            rams.insert(rams.end(), taken.begin(), taken.end());
+        }
+        return std::pair{population.positionOf(0).z, rams};
+    };
+    const CombatantObstacle chest{.box = box, .kind = CombatantObstacle::Kind::Chest};
+    const auto [past, none] = walk(chest, true);
+    CHECK(past > 4.0f); // through it
+    CHECK(none.empty());
+
+    const CombatantObstacle barrel{
+        .box = box, .kind = CombatantObstacle::Kind::Breakable, .id = 7, .health = 5, .armor = 1};
+    const auto [held, rams] = walk(barrel, true);
+    CHECK(held < 3.0f); // standing, it stops the golem
+    REQUIRE_FALSE(rams.empty());
+    CHECK(rams[0].id == 7);
+
+    const CombatantObstacle gate{.box = box};
+    const auto [stopped, quiet] = walk(gate, true);
+    CHECK(stopped < 3.0f);
+    CHECK(quiet.empty());
+
+    // A general breaks nothing: a chest and a barrel stop it like anything else.
+    CombatantObstacle gone = gate;
+    gone.box.solid = false;
+    CHECK(walk(gone, false).first > 4.0f); // it does walk there when nothing is in the way
+    const auto [generalAtChest, noRam] = walk(chest, false);
+    CHECK(generalAtChest < 3.0f);
+    const auto [generalAtBarrel, noBlow] = walk(barrel, false);
+    CHECK(generalAtBarrel < 3.0f);
+    CHECK(noRam.empty());
+    CHECK(noBlow.empty());
+}
+
 TEST_CASE("boss replacement retains borrowed archives and undrained death events",
           "[game][combatant]") {
     const auto root = familyAssets();

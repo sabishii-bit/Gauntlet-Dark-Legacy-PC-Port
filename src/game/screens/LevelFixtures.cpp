@@ -155,6 +155,39 @@ std::vector<MissileStop> LevelFixtures::missileStops() const {
     return stops;
 }
 
+std::vector<CombatantObstacle> LevelFixtures::critterObstacles() const {
+    std::vector<CombatantObstacle> items;
+    const auto add = [&](const Obstacle& box, CombatantObstacle::Kind kind) {
+        CombatantObstacle item;
+        item.box = box;
+        item.kind = kind;
+        items.push_back(item);
+    };
+    for (const Obstacle& box : m_chests.obstacles()) {
+        add(box, CombatantObstacle::Kind::Chest);
+    }
+    for (const auto& group : {m_gates.obstacles(), m_safeRocks.obstacles()}) {
+        for (const Obstacle& box : group) {
+            add(box, CombatantObstacle::Kind::Blocks);
+        }
+    }
+    for (usize i = 0; i < m_barrels.size(); ++i) {
+        if (!m_barrels.standing(i)) {
+            continue;
+        }
+        const Breakables::Barrel& cask = m_barrels.barrel(i);
+        CombatantObstacle item;
+        item.box = cask.box;
+        item.kind = CombatantObstacle::Kind::Breakable;
+        item.id = static_cast<s32>(i);
+        item.health = cask.health;
+        item.armor = cask.armor;
+        item.explodes = cask.kind == BreakableStrike::Kind::Exploding;
+        items.push_back(item);
+    }
+    return items;
+}
+
 void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                          const CameraFrame* camera) const {
     m_chests.draw(device, clip, lighting);

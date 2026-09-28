@@ -72,6 +72,7 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
         m_radius = type.value("radius", 1.0f);
         m_wallRadius = type.value("wallRadius", 1.0f);
         m_armor = type.value("armor", 0.0f);
+        m_itemDamage = type.value("damageScale", 0.0f);
         m_shieldFlags = type.value("shieldFlags", 0U);
         m_maxHealth = type.value("maxHealth", 1.0f);
         m_experience = type.value("expValue", 0.0f);

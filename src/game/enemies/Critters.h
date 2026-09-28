@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "engine/core/Types.h"
@@ -45,8 +46,9 @@ public:
     std::optional<s32> spawn(CombatantKind kind, const Vec3& position, f32 yaw,
                              std::string_view form = "");
 
+    /** `items` are what of the level's stands where they walk. */
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
-                bool timeStopped = false);
+                bool timeStopped = false, std::span<const CombatantObstacle> items = {});
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatGrab> takeGrabs();
     std::vector<CombatLoss> takeLosses();
@@ -55,6 +57,8 @@ public:
     /** What the deaths since the last call threw out. */
     std::vector<CombatSpew> takeSpews();
     std::vector<CombatShot> takeShots();
+    /** Their blows on what they walked into, since the last call. */
+    std::vector<CombatantRam> takeRams() { return std::exchange(m_rams, {}); }
 
     void hurt(s32 id, const EnemyHit& hit);
     /** Stops it where it stands, its animation with it, for `ticks`. */
@@ -131,6 +135,7 @@ private:
     std::vector<CombatCue> m_cues;
     std::vector<CombatSpew> m_spews;
     std::vector<CombatShot> m_shots;
+    std::vector<CombatantRam> m_rams;
     f32 m_textureFrames = 0;
 };
 } // namespace gdl::game

@@ -649,9 +649,31 @@ void LevelOpponents::applyGrab(const CombatGrab& grab, bool boss,
 /** The generators breed, the swarm goes about its business, and what it lands on the party
  * is taken: a power blow from a tall one is a knock that makes its victim flinch. What the
  * party has done to it is paid in experience. */
+/** What stands where the great ones walk: the fixtures' and the generators, a short one
+ * (three high at most) breakable (fn_8005D5C8). */
+std::vector<CombatantObstacle>
+LevelOpponents::critterObstacles(std::span<const CombatantObstacle> fixtures) const {
+    std::vector<CombatantObstacle> items(fixtures.begin(), fixtures.end());
+    for (s32 g = 0; g < static_cast<s32>(m_generators.count()); ++g) {
+        if (!m_generators.standing(g)) {
+            continue;
+        }
+        CombatantObstacle item;
+        item.box = m_generators.boxOf(g);
+        if (item.box.height <= kShortGenerator) {
+            item.kind = CombatantObstacle::Kind::Breakable;
+            item.id = kGeneratorRamBase + g;
+            item.health = std::numeric_limits<s32>::max(); // it stops them while it stands
+        }
+        items.push_back(item);
+    }
+    return items;
+}
+
 void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                             std::span<const Obstacle> fixtures, const Events& events,
-                            std::span<const MissileStop> stops) {
+                            std::span<const MissileStop> stops,
+                            std::span<const CombatantObstacle> walkedInto) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -697,7 +719,14 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     advanceClouds();
     events.settleBlasts();
-    m_critters.update(ticks, seconds, views, timeStopped);
+    m_critters.update(ticks, seconds, views, timeStopped, critterObstacles(walkedInto));
+    for (const CombatantRam& ram : m_critters.takeRams()) {
+        if (ram.id >= kGeneratorRamBase) {
+            strikeGenerator(ram.id - kGeneratorRamBase, ram.damage, -1, players);
+        } else {
+            m_barrelRams.push_back(ram);
+        }
+    }
     // Boss AI is independent of Stop Time; fired missiles likewise keep moving.
     m_bosses.setArenaAnchors(events.arenaAnchors ? events.arenaAnchors() : std::vector<Mat4>{});
     m_bosses.setArenaTargets(events.arenaTargets ? events.arenaTargets()
