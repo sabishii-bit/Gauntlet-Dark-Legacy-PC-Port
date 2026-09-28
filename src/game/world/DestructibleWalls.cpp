@@ -114,13 +114,26 @@ std::optional<s32> DestructibleWalls::strike(usize index, f32 power, WorldCollis
     return wall.health;
 }
 
+void DestructibleWalls::reveal(usize index) {
+    if (standing(index)) {
+        m_walls[index].blinks = kRevealBlinks;
+    }
+}
+
 void DestructibleWalls::update(f32 seconds) {
     for (auto& wall : m_walls) {
         wall.flash = std::max(0.0f, wall.flash - seconds);
-        if (wall.flash == 0) {
-            wall.model.setMaskedTexture(nullptr);
-            wall.model.setAppearance(false);
+        bool white = wall.flash > 0;
+        if (wall.blinks > 0) {
+            white = white || wall.blinkTicks < kBlinkWhite;
+            wall.blinkTicks += seconds * kTicksPerSecond;
+            if (wall.blinkTicks > kBlinkCycle) {
+                wall.blinkTicks = 0;
+                --wall.blinks;
+            }
         }
+        wall.model.setMaskedTexture(white ? m_white : nullptr);
+        wall.model.setAppearance(white);
     }
 }
 

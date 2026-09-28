@@ -74,6 +74,12 @@ public:
               const WorldCollision* collision, ItemArchive* realmItems = nullptr);
     void clear();
     usize size() const { return m_barrels.size(); }
+    /** Potion magic's perk on what a standing barrel holds (fn_8005BA1C). */
+    void changeContents(usize index, s32 record) {
+        if (index < m_barrels.size() && standing(index)) {
+            m_barrels[index]->contents = record;
+        }
+    }
     const Barrel& barrel(usize index) const { return *m_barrels[index]; }
     void setPlayerCount(s32 players);
 

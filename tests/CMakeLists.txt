@@ -115,6 +115,7 @@ add_executable(tests
     game/screens/AttractSceneTests.cpp
     game/config/GameConfigTests.cpp
     game/players/ClassDataTests.cpp
+    game/players/MagicPerksTests.cpp
     game/players/ProgressionTests.cpp
     game/players/CharacterSaveTests.cpp
     game/players/PartyTests.cpp

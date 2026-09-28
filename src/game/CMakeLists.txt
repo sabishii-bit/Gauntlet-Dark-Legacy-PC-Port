@@ -37,6 +37,8 @@ add_library(game STATIC
     config/GameConfig.h
     config/GameConfig.cpp
     players/ClassData.h
+    players/MagicPerks.h
+    players/MagicPerks.cpp
     players/ClassData.cpp
     players/Progression.h
     players/Progression.cpp

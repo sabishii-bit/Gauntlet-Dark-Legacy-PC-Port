@@ -76,6 +76,10 @@ public:
     const ParticleField& particles() const { return m_particles; }
     /** The pickups the level places: the crystals Sumner keeps for a new party. */
     const PlacedItems& placedItems() const { return m_placedItems; }
+    std::vector<PlacedItems::PerkChange> blessItems(RenderDevice& device, const Vec3& position,
+                                                    f32 radius, MagicPerk perk) {
+        return m_placedItems.bless(device, position, radius, perk);
+    }
     usize poisonFood(RenderDevice& device, const Vec3& position, f32 radius, f32 damage) {
         return m_placedItems.poisonFood(device, position, radius, damage);
     }
@@ -96,6 +100,7 @@ public:
         m_walls.setPlayerCount(players, m_collision);
     }
     const DestructibleWalls& walls() const { return m_walls; }
+    void revealWall(usize index) { m_walls.reveal(index); }
     std::optional<s32> strikeWall(usize index, f32 power, u32 flags = 0) {
         return m_walls.strike(index, power, m_collision, flags);
     }

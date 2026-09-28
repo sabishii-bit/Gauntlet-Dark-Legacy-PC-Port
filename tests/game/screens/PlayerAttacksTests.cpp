@@ -2,6 +2,8 @@
 #include <array>
 #include <numbers>
 #include <optional>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -14,6 +16,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/Damage.h"
+#include "game/players/MagicPerks.h"
+#include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PlayerAttacks.h"
 #include "game/world/Chests.h"
@@ -1041,6 +1045,192 @@ TEST_CASE("potion magic leaves the plain, exploding and gas barrels alone but br
     }
     f.attacks.clear();
     f.fixtures.clear();
+}
+
+/** A level loaded for the class perks, with a caster of `code` at `level` whose potions go
+ * off where they stand. */
+struct PerkLevel : Fixture {
+    std::vector<s32> helps;
+
+    PerkLevel(const std::filesystem::path& root, std::string_view name, std::string_view code,
+              s32 level, s32 party = 1) {
+        LevelCatalog catalog;
+        REQUIRE(catalog.load(root));
+        REQUIRE(world.load(device, root, *catalog.byName(name)));
+        REQUIRE(weapons.load(root / "WEAPONS"));
+        fixtures.bind({device, world, weapons, effects, audio, 1});
+        fixtures.setPlayerCount(party);
+        auto& save = players[0].actor.save();
+        save.character = *classIndexOf(code);
+        save.progress().experience = levelExperience(level);
+        targets.fixtureEvents.help = [this](s32 id, usize player) {
+            CHECK(player == 0);
+            helps.push_back(id);
+            return true;
+        };
+        targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool) {};
+        targets.fixtureEvents.opponents = [](const Vec3&, f32, f32) {};
+    }
+    PerkLevel(const PerkLevel&) = delete;
+    PerkLevel& operator=(const PerkLevel&) = delete;
+    PerkLevel(PerkLevel&&) = delete;
+    PerkLevel& operator=(PerkLevel&&) = delete;
+    ~PerkLevel() {
+        attacks.clear();
+        fixtures.clear();
+    }
+
+    /** Drinks a potion standing beside `where` and lets its wave run out. */
+    void castBeside(const Vec3& where) {
+        players[0].actor.place(where + Vec3{0, 0, 1});
+        players[0].actor.save().progress().inventory.addPotions(1, 1);
+        attacks.usePotion(0, players);
+        for (s32 frame = 0; frame < 60; ++frame) {
+            attacks.updateProjectiles(1.0f / 30, players, targets);
+        }
+    }
+    bool taught(MagicPerkDeed deed) const {
+        return std::ranges::find(helps, HelpMessages::kFirstMagicPerk + static_cast<s32>(deed)) !=
+               helps.end();
+    }
+    std::string_view recordName(s32 record) const {
+        return record >= 0
+                   ? std::string_view{world.layout().itemInfos()[static_cast<usize>(record)].name}
+                   : std::string_view{};
+    }
+};
+
+usize firstShownTrap(const PerkLevel& f) {
+    const Traps& traps = f.fixtures.traps();
+    usize trap = 0;
+    while (trap < traps.size() && !traps.trap(trap).shown) {
+        ++trap;
+    }
+    REQUIRE(trap < traps.size());
+    return trap;
+}
+
+std::filesystem::path perkRoot() {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    return root;
+}
+
+TEST_CASE("the warriors' magic turns the junk in a gold chest into silver, and from 50 gold",
+          "[game][screens][player-attacks][magic-perks][unpacked]") {
+    const auto root = perkRoot();
+    for (const auto& [level, treasure, deed] :
+         {std::tuple{30, "TREAS_SILVER", MagicPerkDeed::JunkToSilver},
+          std::tuple{50, "TREAS_GOLD", MagicPerkDeed::JunkToGold}}) {
+        CAPTURE(level);
+        PerkLevel f(root, "G1", "WAR", level, 4);
+        const Chests& chests = f.fixtures.chests();
+        std::optional<usize> gold;
+        for (usize i = 0; i < chests.size() && !gold; ++i) {
+            if (chests.chest(i).shown && chests.chest(i).subtype == Chests::kGoldChest &&
+                f.recordName(chests.chest(i).contents) == "TREAS_JUNK") {
+                gold = i;
+            }
+        }
+        REQUIRE(gold.has_value());
+        // Junk lying in the open turns as well, to the same treasure.
+        const Vec3 beside = chests.chest(*gold).figure.position();
+        REQUIRE(f.world.placeItem(f.device, "TREAS_JUNK", beside + Vec3{0, 0, 2}));
+        const usize junk = f.world.placedItems().size() - 1;
+        f.castBeside(beside);
+        CHECK(f.world.placedItems().item(junk).name == treasure);
+        CHECK(f.recordName(chests.chest(*gold).contents) == treasure);
+        CHECK(f.taught(deed));
+        CHECK(chests.chest(*gold).figure.hasFigure());
+    }
+}
+
+TEST_CASE("the wizards' magic cleanses spoiled fruit, and from 50 spoiled meat, in barrels",
+          "[game][screens][player-attacks][magic-perks][unpacked]") {
+    const auto root = perkRoot();
+    for (const s32 level : {30, 50}) {
+        CAPTURE(level);
+        // G1's barrel of fruit shows to one player alone, its barrel of meat to three.
+        for (const auto& [spoiled, cleansed, deed, party] :
+             {std::tuple{"GAPPLE", "APPLE", MagicPerkDeed::CleanseFruit, 1},
+              std::tuple{"BADMEAT", "CHICKEN", MagicPerkDeed::CleanseMeat, 4}}) {
+            CAPTURE(spoiled);
+            PerkLevel f(root, "G1", "WIZ", level, party);
+            const Breakables& barrels = f.fixtures.barrels();
+            std::optional<usize> cask;
+            for (usize i = 0; i < barrels.size() && !cask; ++i) {
+                if (barrels.standing(i) && f.recordName(barrels.barrel(i).contents) == spoiled) {
+                    cask = i;
+                }
+            }
+            REQUIRE(cask.has_value());
+            f.castBeside(barrels.barrel(*cask).figure.position());
+            const bool cleanses = level >= 50 || deed == MagicPerkDeed::CleanseFruit;
+            CHECK((f.recordName(barrels.barrel(*cask).contents) == cleansed) == cleanses);
+            CHECK(f.taught(deed) == cleanses);
+        }
+    }
+    // Nobody else's magic touches food.
+    PerkLevel f(root, "G1", "WAR", 50);
+    const Breakables& barrels = f.fixtures.barrels();
+    for (usize i = 0; i < barrels.size(); ++i) {
+        if (barrels.standing(i) && f.recordName(barrels.barrel(i).contents) == "GAPPLE") {
+            f.castBeside(barrels.barrel(i).figure.position());
+            CHECK(f.recordName(barrels.barrel(i).contents) == "GAPPLE");
+            break;
+        }
+    }
+}
+
+TEST_CASE("the valkyries' magic stops traps, and from 50 leaves them disarmed",
+          "[game][screens][player-attacks][magic-perks][unpacked]") {
+    const auto root = perkRoot();
+    {
+        PerkLevel f(root, "G1", "VAL", 30);
+        const usize trap = firstShownTrap(f);
+        f.castBeside(f.fixtures.traps().trap(trap).figure.position());
+        CHECK(f.taught(MagicPerkDeed::StopTrap));
+        CHECK_FALSE(f.fixtures.traps().armed(trap));
+        CHECK_FALSE(f.fixtures.traps().trap(trap).disarmed);
+    }
+    PerkLevel f(root, "G1", "VAL", 50);
+    const usize trap = firstShownTrap(f);
+    f.castBeside(f.fixtures.traps().trap(trap).figure.position());
+    CHECK(f.taught(MagicPerkDeed::DestroyTrap));
+    CHECK(f.fixtures.traps().trap(trap).disarmed);
+    CHECK_FALSE(f.fixtures.traps().trap(trap).gone); // LEVELG has its _D figure
+    CHECK(f.fixtures.traps().trap(trap).figure.hasFigure());
+}
+
+TEST_CASE("the archers' magic shows up secret walls, and from 50 brings them down",
+          "[game][screens][player-attacks][magic-perks][walls][unpacked]") {
+    const auto root = perkRoot();
+    test::unpackedOrSkip("LEVELS/LEVELE1/world.json");
+    {
+        PerkLevel f(root, "E1", "ARC", 30);
+        const auto& walls = f.world.walls();
+        REQUIRE(walls.size() > 0);
+        f.castBeside(Vec3{55, walls.target(0, 0).base.y, -8});
+        CHECK(f.taught(MagicPerkDeed::RevealWall));
+        CHECK(walls.standing(0));
+        CHECK(walls.wall(0).blinks == DestructibleWalls::kRevealBlinks);
+    }
+    PerkLevel f(root, "E1", "ARC", 60);
+    const auto& walls = f.world.walls();
+    f.castBeside(Vec3{55, walls.target(0, 0).base.y, -8});
+    CHECK(f.taught(MagicPerkDeed::DestroyWall));
+    CHECK_FALSE(walls.standing(0));
+}
+
+TEST_CASE("magic under level 25 carries no perk",
+          "[game][screens][player-attacks][magic-perks][unpacked]") {
+    const auto root = perkRoot();
+    PerkLevel f(root, "G1", "VAL", 24);
+    const usize trap = firstShownTrap(f);
+    f.castBeside(f.fixtures.traps().trap(trap).figure.position());
+    CHECK(f.helps.empty());
+    CHECK_FALSE(f.fixtures.traps().trap(trap).disarmed);
 }
 
 TEST_CASE("a wave of potion magic reaches a shut chest and makes an apple of Death in it",

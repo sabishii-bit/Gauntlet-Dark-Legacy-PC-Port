@@ -3,6 +3,7 @@
 #include <memory>
 #include <random>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -50,6 +51,9 @@ public:
     static constexpr s32 kBlades = 4;
     static constexpr s32 kTicksPerTimeUnit = 2; ///< the record's times are in half ticks
     static constexpr s32 kStopTimeRest = 30;    ///< held safe, then waits half a second
+    static constexpr std::string_view kDisarmedSuffix = "_D";
+    static constexpr s32 kStoppedRest = 600;    ///< ticks potion magic holds a trap at rest
+    static constexpr s32 kStopShownUnder = 540; ///< no effect for one held within 60 ticks
 
     /** One trap. */
     struct Trap {
@@ -61,6 +65,8 @@ public:
         s32 ticksLeft = 0;
         s32 minPlayers = 0;
         bool shown = true;
+        bool disarmed = false; ///< still and harmless for good
+        bool gone = false;
         ItemFigure figure;
         Obstacle box;
     };
@@ -76,6 +82,15 @@ public:
     void setPlayerCount(s32 players);
     /** Whether a trap is out of its rest, and hurts. */
     bool armed(usize index) const { return m_traps[index]->action != kResting; }
+
+    /** Potion magic's lesser valkyrie perk (fn_8005BA1C): back to its rest and held there
+     * 600 ticks. True when it shows, which it does not for a trap held within sixty ticks
+     * (540 or more left). */
+    bool stop(usize index);
+    /** The greater: the trap's `<name>_D` figure stands in its place still and harmless for
+     * good, or without one it goes. False for a trap already disarmed. */
+    bool disarm(usize index, RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
+                const WorldCollision* collision, ItemArchive* realmItems = nullptr);
 
     std::vector<TrapHit> update(s32 ticks, f32 seconds, std::span<const TrapVictim> party,
                                 bool timeStopped = false);

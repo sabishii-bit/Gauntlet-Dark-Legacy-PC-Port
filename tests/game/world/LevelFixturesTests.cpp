@@ -509,4 +509,37 @@ TEST_CASE("Stop Time retracts live traps and leaves a half-second rest on releas
     CHECK_FALSE(traps.update(1, 1.0f / 60, party).empty());
     CHECK(traps.armed(0));
 }
+
+TEST_CASE("potion magic stops a trap for 600 ticks, or disarms it for good",
+          "[game][world][fixtures][magic-perks]") {
+    Fixture f("fixtures-time-stop");
+    Traps traps;
+    REQUIRE(traps.bind(f.device, f.layout, f.items, nullptr, 7));
+    traps.setPlayerCount(1);
+    const std::array party{TrapVictim{Vec3{100, 0, 0}, 0.75f}};
+    for (s32 frame = 0; frame < 120 && !traps.armed(0); ++frame) {
+        traps.update(2, 1.0f / 30, party);
+    }
+    REQUIRE(traps.armed(0));
+    CHECK(traps.stop(0)); // out of its rest: it shows
+    CHECK_FALSE(traps.armed(0));
+    CHECK(traps.trap(0).ticksLeft == Traps::kStoppedRest);
+    CHECK_FALSE(traps.stop(0)); // held again within sixty ticks: no show
+    CHECK(traps.update(599, 599.0f / 60, party).empty());
+    CHECK_FALSE(traps.armed(0));
+    traps.update(1, 1.0f / 60, party);
+    CHECK(traps.armed(0));
+
+    // The greater perk: this archive has no SPIKES_D, so the trap goes altogether.
+    REQUIRE(traps.disarm(0, f.device, f.layout, f.items, nullptr));
+    CHECK(traps.trap(0).disarmed);
+    CHECK(traps.trap(0).gone);
+    CHECK_FALSE(traps.disarm(0, f.device, f.layout, f.items, nullptr));
+    CHECK_FALSE(traps.stop(0));
+    traps.setPlayerCount(1);
+    CHECK_FALSE(traps.trap(0).shown);
+    for (s32 frame = 0; frame < 600; ++frame) {
+        REQUIRE(traps.update(2, 1.0f / 30, party).empty());
+    }
+}
 } // namespace
