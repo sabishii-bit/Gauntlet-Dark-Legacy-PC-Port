@@ -47,6 +47,9 @@ public:
               const CameraFrame* camera = nullptr) const;
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     void strikeSafeRock(usize index, f32 power);
+    /** Magic on a shut chest holding Death (fn_8005C1DC): he becomes the level's apple, with
+     * his dying cry, and the chest rocks. False for any other chest. */
+    bool enchantChest(usize index, f32 power);
     void strikeWall(usize index, f32 power, u32 flags = 0);
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
                       const Events& events);

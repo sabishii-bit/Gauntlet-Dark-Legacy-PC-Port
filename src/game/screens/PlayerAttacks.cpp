@@ -11,6 +11,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
+#include "game/world/Chests.h"
 #include "game/world/DynamicLights.h"
 #include "game/world/TargetAssist.h"
 namespace gdl::game {
@@ -856,6 +857,28 @@ void PlayerAttacks::beginPotion(const MissileImpact& impact) {
     m_potions.push_back(std::move(burst));
 }
 
+/** A wave of magic reaches the shut chests too, each once: one holding Death gives him up. */
+void PlayerAttacks::enchantChests(PotionBurst& burst, f32 radius, f32 power,
+                                  const Targets& targets) {
+    const Chests& chests = targets.fixtures.chests();
+    for (usize index = 0; index < chests.size(); ++index) {
+        const Chests::Chest& chest = chests.chest(index);
+        const s32 id = kChestTargetBase + static_cast<s32>(index);
+        if (!chest.shown || chest.gone || chest.state != Chests::kShut ||
+            std::ranges::find(burst.hit, id) != burst.hit.end()) {
+            continue;
+        }
+        const Vec3 offset = chest.box.centre - burst.impact.position;
+        const f32 reach = radius + std::max(chest.box.halfAcross, chest.box.halfAlong);
+        if (std::hypot(offset.x, offset.z) > reach ||
+            std::abs(offset.y) > radius + chest.box.height) {
+            continue;
+        }
+        burst.hit.push_back(id);
+        targets.fixtures.enchantChest(index, power);
+    }
+}
+
 void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                                   const Targets& targets) {
     for (PotionBurst& burst : m_potions) {
@@ -919,6 +942,7 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                                               players, targets.fixtureEvents);
             }
         }
+        enchantChests(burst, radius, power, targets);
     }
     // Broken bottles may append a new wave through the fixture callback, so
     // resolve barrel chains only after iteration over existing waves finishes.

@@ -1435,7 +1435,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `LevelFixtures`. A potion lying about is a missile target (ids from 8000):
   broken, its own magic goes off with nobody's power, then the thrower's at
   0.8 of theirs, with help 14. Potion magic cannot hurt rocks, walls,
-  switches or any barrel but an item-holding one. A player's hit on a
+  switches or any barrel but an item-holding one. A wave of it reaching a
+  shut chest holding Death (`LevelFixtures::enchantChest`) makes him the
+  level's first `APPLE` record (none: the chest is empty), to `S_DEATHDIE`,
+  and rocks the chest three ticks a point of power (a sixteen-tick square
+  wave, 3 degrees of pitch and 4 of yaw a quarter apart, fn_800606FC); the
+  subtype 1 it writes lands in the shared record, so every chest of that
+  kind loses its trapped, gold and silver ways, as retail's do. A player's hit on a
   generator is a hundredth softer a level under the place's `playerLevel`
   and a tenth harder a level over, never under a point. A swing (PlayerGetTarget,
   fn_8005B274) reaches shootable triggers but never the safe rocks, and a

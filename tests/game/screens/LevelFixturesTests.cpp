@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "TestSupport.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LevelFixtures.h"
+#include "game/world/Chests.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
@@ -423,6 +425,53 @@ TEST_CASE("a barrel holding Death lets him out when it breaks, instead of a pick
     f.fixtures.strikeBarrel(*holding, 10000, -1, {}, f.events);
     CHECK(let >= 0);
     CHECK(f.world.placedItems().size() == items); // nothing dropped in his place
+    f.fixtures.clear();
+}
+
+TEST_CASE("magic turns Death in a chest into the level's apple and rocks the chest",
+          "[game][screens][level-fixtures][death-chest][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(4);
+    const auto& infos = f.world.layout().itemInfos();
+    const Chests& chests = f.fixtures.chests();
+    std::optional<usize> death;
+    std::optional<usize> plain;
+    for (usize i = 0; i < chests.size(); ++i) {
+        const s32 inside = chests.chest(i).contents;
+        const bool holdsDeath = inside >= 0 && infos[static_cast<usize>(inside)].name == "DEATH";
+        (holdsDeath ? death : plain) = i;
+    }
+    REQUIRE(death.has_value());
+    REQUIRE(plain.has_value());
+    CHECK_FALSE(f.fixtures.enchantChest(*plain, 10)); // nothing happens to any other chest
+
+    const Mat4 rest = chests.chest(*death).figure.transform();
+    REQUIRE(f.fixtures.enchantChest(*death, 10));
+    // The first record of that name, a food; three ticks of rocking a point of power.
+    CHECK(infos[static_cast<usize>(chests.chest(*death).contents)].name == "APPLE");
+    CHECK(chests.chest(*death).contents == 42);
+    CHECK(chests.chest(*death).wobble == 30.0f);
+    // The subtype lands in the record every chest of that kind shares.
+    for (usize i = 0; i < chests.size(); ++i) {
+        if (chests.chest(i).info == chests.chest(*death).info) {
+            CHECK(chests.chest(i).subtype == Chests::kTransmuted);
+        }
+    }
+    CHECK_FALSE(f.fixtures.enchantChest(*death, 10)); // he is gone
+    f.fixtures.update(2, 1.0f / 30, {}, f.events);
+    CHECK(chests.chest(*death).figure.transform() != rest);
+    for (s32 frame = 0; frame < 20; ++frame) {
+        f.fixtures.update(2, 1.0f / 30, {}, f.events);
+    }
+    CHECK(chests.chest(*death).wobble == 0.0f);
+    CHECK(chests.chest(*death).figure.transform() == rest);
     f.fixtures.clear();
 }
 

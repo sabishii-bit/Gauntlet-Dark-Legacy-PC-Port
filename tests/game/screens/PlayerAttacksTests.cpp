@@ -16,6 +16,7 @@
 #include "game/combat/Damage.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PlayerAttacks.h"
+#include "game/world/Chests.h"
 #include "game/world/SafeRocks.h"
 namespace {
 using namespace gdl;
@@ -1038,6 +1039,38 @@ TEST_CASE("potion magic leaves the plain, exploding and gas barrels alone but br
         }
         CHECK(barrels.standing(*cask) == (kind != BreakableStrike::Kind::Holding));
     }
+    f.attacks.clear();
+    f.fixtures.clear();
+}
+
+TEST_CASE("a wave of potion magic reaches a shut chest and makes an apple of Death in it",
+          "[game][screens][player-attacks][death-chest][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(4);
+    const auto& infos = f.world.layout().itemInfos();
+    const Chests& chests = f.fixtures.chests();
+    std::optional<usize> death;
+    for (usize i = 0; i < chests.size() && !death; ++i) {
+        const s32 inside = chests.chest(i).contents;
+        if (inside >= 0 && infos[static_cast<usize>(inside)].name == "DEATH") {
+            death = i;
+        }
+    }
+    REQUIRE(death.has_value());
+    f.attacks.shatterPotion(1, chests.chest(*death).figure.position() + Vec3{0, 0, 2});
+    for (s32 frame = 0; frame < 60; ++frame) {
+        f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    }
+    CHECK(infos[static_cast<usize>(chests.chest(*death).contents)].name == "APPLE");
+    CHECK(chests.chest(*death).state == Chests::kShut); // magic opens nothing
     f.attacks.clear();
     f.fixtures.clear();
 }

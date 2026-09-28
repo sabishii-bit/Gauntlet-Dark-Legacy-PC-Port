@@ -142,6 +142,7 @@ bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_vie
     }
     m_transform = itemPlacement(m_position, instance.rotation);
     m_yaw = std::atan2(m_transform[2].x, m_transform[2].z);
+    m_placement = m_transform;
     m_tree = nullptr;
     m_index = -1;
     m_player.stop();
@@ -176,6 +177,10 @@ void ItemFigure::gateParticlesOnSequence(bool enabled) {
     // to suppress births, while MBDrawPsys continues aging existing particles.
     m_gateParticles = enabled;
     m_particles.setEmitting(!enabled || m_index != 0);
+}
+
+void ItemFigure::tilt(f32 pitch, f32 yaw) {
+    m_transform = itemPlacement(m_position, Vec3{pitch, m_yaw + yaw, 0.0f});
 }
 
 void ItemFigure::play(s32 index, bool loop) {
