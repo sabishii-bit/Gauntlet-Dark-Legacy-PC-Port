@@ -397,6 +397,8 @@ bool Enemies::clearAt(Enemy& enemy, const Vec3& position, std::span<const EnemyV
 
 void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind& kind) {
     enemy.state = spawn.asleep ? State::Asleep : State::Active;
+    enemy.veil = 0.0f;
+    enemy.veilClock = 0;
     enemy.kind = spawn.kind;
     // A strength past the tiers is a variant: the archer and bomber of the second tier, the
     // suicide of the first, each with its own way unless the placement gives one.
@@ -633,12 +635,46 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             enemy.animator.request(EnemyAction::Walk);
         }
         enemy.animator.update(ticks, seconds, enemy.contact >= 0);
+        if (enemy.kind == kVeilingKind) {
+            veil(enemy, ticks);
+        }
         enemy.threw = enemy.animator.threw();
         if (enemy.threw && missiles != nullptr) {
             shoot(enemy, i, players, *missiles, missileSpeedScale, obstacles);
         }
         decayPush(enemy, seconds);
         touchHazards(enemy, i);
+    }
+}
+
+void Enemies::veil(Enemy& enemy, s32 ticks) {
+    constexpr f32 kVeilStep = 16.0f; ///< a tick
+    constexpr s32 kVeilLeast = 60;   ///< ticks seen or unseen, and as many again at random
+    const EnemyAction action = enemy.animator.action();
+    const auto hold = [this] {
+        return kVeilLeast + static_cast<s32>(m_random() % static_cast<u32>(kVeilLeast));
+    };
+    const f32 step = kVeilStep * static_cast<f32>(ticks);
+    if (action != EnemyAction::Ready && action != EnemyAction::Walk && action != EnemyAction::Run) {
+        enemy.veil = std::max(0.0f, enemy.veil - step);
+        enemy.veilClock = 0;
+        return;
+    }
+    if (enemy.veilClock == 0) {
+        enemy.veil = std::max(0.0f, enemy.veil - step);
+        enemy.veilClock = hold();
+    } else if (enemy.veilClock > 0) {
+        enemy.veil = std::max(0.0f, enemy.veil - step);
+        enemy.veilClock -= ticks;
+        if (enemy.veilClock < 0) {
+            enemy.veilClock = -hold();
+        }
+    } else {
+        enemy.veil = std::min(kVeiled, enemy.veil + step);
+        enemy.veilClock += ticks;
+        if (enemy.veilClock > 0) {
+            enemy.veilClock = 0;
+        }
     }
 }
 
@@ -908,6 +944,7 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
     sense.ticks = ticks;
     sense.target = enemy.target;
     sense.targetDistance = enemy.targetDistance;
+    sense.closeDistance = enemy.weightedDistance;
     sense.recognized = enemy.recognized;
     if (const EnemyView* view = viewOf(players, enemy.target); view != nullptr) {
         sense.targetPosition = view->position;
@@ -993,7 +1030,9 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
             }
             if (threat != nullptr) {
                 f32 offset = 0;
-                if (enemy.blocked && enemy.mind.counter < 8) {
+                if (!enemy.blocked) {
+                    enemy.mind.counter = 0; // each stop starts the nudges over
+                } else if (enemy.mind.counter < 8) {
                     const s32 attempt = enemy.mind.counter++;
                     const s32 pair = attempt / 2 + 1;
                     offset =
@@ -1486,9 +1525,13 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         body.setFrame(player.sequence(), static_cast<s32>(std::lround(player.frame())));
         const Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, enemy.position), enemy.yaw,
                                        Vec3{0.0f, 1.0f, 0.0f});
-        const f32 alpha = enemy.kind == kDeathKind && enemy.killed
-                              ? std::max(0.0f, 1.0f - enemy.deathSeconds / DeathRules::kFadeSeconds)
-                              : 1.0f;
+        f32 alpha = enemy.kind == kDeathKind && enemy.killed
+                        ? std::max(0.0f, 1.0f - enemy.deathSeconds / DeathRules::kFadeSeconds)
+                        : 1.0f;
+        alpha *= 1.0f - enemy.veil / kVeiled;
+        if (alpha <= 0.0f) {
+            continue; // gone from sight altogether
+        }
         if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
             body.draw(device, clip, model, lighting);
         } else {
@@ -1517,7 +1560,10 @@ void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& ey
                 normal = floor->normal;
             }
         }
-        stock->shadows[tier].draw(device, clip, eye, ground, normal, lighting, 1.0f);
+        const f32 shown = 1.0f - enemy.veil / kVeiled;
+        if (shown > 0.0f) {
+            stock->shadows[tier].draw(device, clip, eye, ground, normal, lighting, shown);
+        }
     }
 }
 

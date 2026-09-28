@@ -589,8 +589,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `EnemyMind.cpp`, one class per way of the original's `do_ai` switch,
   looked up by way number through `enemyMindOf` (strangers wander): seek
   (0) straight at the player or the nearest clear sixteenth either side;
-  prowl (2, the rats' and the other small kinds', whatever a generator asks)
-  wandering until a player is within eight, then seeking for good; wander
+  prowl (2, the rats' and the other small kinds', whatever a generator asks, and 4
+  its mirror) seeking only while a player is within eight of its crowded distance,
+  else straight on, a stop held thirty ticks and then turned an eighth of a turn to
+  its own side, the fourth turn changing it for good to the mirrored way; wander
   (5, 6) straight on, an eighth of a turn round at a bump, held thirty
   ticks; chase (7) straight while the way is open, else skirting on the side
   the nearer probe gives (a sixth of a turn either side of the facing), a
@@ -613,7 +615,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   is within sight, then seeking for good; stand-cast (28) standing and
   range-cast (29) keeping between eight and eighteen of its player (backing off,
   still facing it, inside eight until past ten, closing in past eighteen until
-  within sixteen, at four fifths of its pace), both chasing within six and, after a
+  within sixteen, at four fifths of its pace, attacking in place instead after a
+  stop against the world), both chasing within six and, after a
   first wait of up to thirty ticks, asking for the power attack from the third
   strength or else the two attacks in turn whenever its player is seen within sight
   and ten above or below; cast (30, the third-strength
@@ -628,9 +631,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   instead of striking (`Enemies::castsNow`, fn_8004DF58); throw (17, 23) standing, facing its player and throwing
   whenever they are within sight and ten above or below and its wait since
   the last throw (the placement's fourth param in ticks, `idleTicks`) is
-  over; skirmish (16, the archer's) the same, but backing off, weapon up
-  (`RUNATTACK`, which runs on), when the player is within six tenths of its
-  sight until beyond eight tenths; suicide (18) still until someone is in
+  over; skirmish (16, the archer's; 26 with bombs) the same, but backing off,
+  weapon up (`RUNATTACK`, which runs on), when the player is within six tenths
+  of its sight until beyond eight tenths, the wait since its throw running first
+  (it neither throws nor backs off until that is out), nudged off straight for
+  each stop and giving the backing off up after eight; suicide (18) still until someone is in
   sight, sixty ticks of fuse, `READYTOWALK` to light it, then a run at them
   half as fast again, blowing up against them or after two hundred and
   forty ticks: a blast of fifty at the level's enemy damage over the chest
@@ -733,9 +738,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   enemies from 1000 and generators from 2000; strikes and blasts reach them
   too, with the strike row's damage type. gdlunpack's `--only MONSTERS`
   unpacks the seventy-two monster archives (`GENERAL` one folder a realm).
-  Not yet: the other minds (guards 8, milestone routes 10, the ghosts' 19,
-  the kiting of 26/28/29 and the rest), Death, IT, and the poison cloud's harm
-  to items. A suicide goes up as SuicideExplosion does (`explodeSuicide`):
+  Way 9 is seek's (do_ai). The ways still without a mind never run on the shipped
+  levels: 1 and 10 become 0 and 7 at birth, 8, 12, 20, 21 and 22 are no level's, 13
+  is the demo disc's one generator, and 19 is the golem's, which stands as a great one
+  whenever its critter data is loaded (it always is). The warlock (kind 24) comes and
+  goes while it stands, walks or runs (fn_8004D958): seen 60-119 ticks, faded out at
+  16 of 255 a tick, unseen 60-119 ticks, faded back; doing anything else it shows
+  (`Enemies::veil`, body and shadow alike). Not yet: Death, IT, and the poison
+  cloud's harm to items. A suicide goes up as SuicideExplosion does (`explodeSuicide`):
   `EXPLOSION` with a swelling red light of 20 and `EXPRING` at 1.2, a blast of 6
   flagged fire, knock-down and explosion (0x421) over the explosion's life; in the
   town and the sky (G, K) a gas cloud instead, `POISONEXP1`, `POISONEXP2` held two
@@ -1712,8 +1722,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   life (ours: retail swells over the damage window). In a dark level (flag 8) each
   standing player carries a lantern (radius 20, intensity 10, ten over them). The
   colours are `game/world/DynamicLights`; the swarm's lobs and their bursts add theirs
-  (`LevelOpponents::lights`), a suicide's explosion its own. Not yet: a dark level's
-  blacked-out ambient.
+  (`LevelOpponents::lights`), a suicide's explosion its own. The dark flag does nothing
+  else: a dark level's gloom is its own light record (player.c 2499 is its only test).
 * Additive geometry (`WorldObject::kAdditive`: glows, flames, the force
   fields) is drawn unlit (`WorldScene::kUnlit`), as the original never lights
   it; everything else takes `WorldLighting`. The streams' prelit vertex

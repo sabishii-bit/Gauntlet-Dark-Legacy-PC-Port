@@ -252,6 +252,10 @@ public:
     s32 algorithmOf(s32 id) const;
     s32 pushCountOf(s32 id) const;
     s32 variantOf(s32 id) const; ///< the strength it was placed at, four and over for a variant
+    /** How solid it shows: one, or less while a veiling kind fades. */
+    f32 opacityOf(s32 id) const { return 1.0f - m_enemies[static_cast<usize>(id)].veil / kVeiled; }
+    static constexpr s32 kVeilingKind = 24; ///< the warlock (fn_8004D958's type 24)
+    static constexpr f32 kVeiled = 255.0f;
     const EnemyAnimator* animatorOf(s32 id) const;
     const MindMemory& memoryOf(s32 id) const { return m_enemies[static_cast<usize>(id)].mind; }
     bool bumpedWallOf(s32 id) const { return m_enemies[static_cast<usize>(id)].bumpedWall; }
@@ -321,6 +325,8 @@ private:
         bool killed = false;
         bool onScreen = true; ///< in view by a margin (visactive)
         s32 hitCount = 0;
+        f32 veil = 0.0f;   ///< how far a veiling kind has faded out: 255 is gone from sight
+        s32 veilClock = 0; ///< ticks it stays seen (above nought) or unseen (below)
         f32 flashSeconds = 0;
         f32 deathSeconds = 0;
         s32 deathSkinFrames = 0;
@@ -336,6 +342,9 @@ private:
     void initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind& kind);
     void touchHazards(Enemy& enemy, s32 slot);
     static void decayPush(Enemy& enemy, f32 seconds);
+    /** The warlock's coming and going: while it stands, walks or runs it stays seen a while,
+     * fades out, stays unseen a while and fades back; doing anything else it shows. */
+    void veil(Enemy& enemy, s32 ticks);
     void chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                       std::span<f32> crowding);
     /** Whether the swing it has just landed casts its missile rather than striking. */

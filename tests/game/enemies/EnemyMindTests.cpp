@@ -24,6 +24,7 @@ MindSense senseAhead(f32 distance = 20.0f) {
     sense.target = 0;
     sense.targetPosition = Vec3{0.0f, 0.0f, distance};
     sense.targetDistance = distance;
+    sense.closeDistance = distance;
     sense.recognized = true;
     return sense;
 }
@@ -190,7 +191,8 @@ TEST_CASE("the seek tries a sixteenth either side of straight, the prowler pounc
     sense.clear = [](f32) { return false; };
     intent = seek.think(memory, sense);
     REQUIRE(intent.heading == 0.0f);
-    // The prowler wanders until a player is within eight, then seeks for good.
+    // The prowler goes straight on, and seeks only while a player is within eight (its
+    // crowded distance), going back to its business once they are further.
     const EnemyMind& prowl = enemyMindOf(kProwlWay);
     MindMemory rat;
     rat.heading = 1.0f;
@@ -199,7 +201,12 @@ TEST_CASE("the seek tries a sixteenth either side of straight, the prowler pounc
     REQUIRE_FALSE(intent.become.has_value());
     intent = prowl.think(rat, senseAhead(7.0f));
     REQUIRE(intent.heading == 0.0f);
-    REQUIRE(intent.become == kSeekWay);
+    REQUIRE_FALSE(intent.become.has_value());
+    MindSense crowded = senseAhead(7.0f);
+    crowded.closeDistance = 9.0f; // others after the same player keep it off
+    rat.heading = 1.0f;
+    CHECK(prowl.think(rat, crowded).heading == 1.0f);
+    CHECK(enemyMindOf(kSeekAliasWay).name() == "seek");
     // The wanderer keeps straight on, turns an eighth at a bump and holds it thirty ticks,
     // faces a player against it.
     const EnemyMind& wander = enemyMindOf(kWanderWay);
@@ -220,6 +227,99 @@ TEST_CASE("the seek tries a sixteenth either side of straight, the prowler pounc
     touching.contactPosition = Vec3{-5.0f, 0.0f, 0.0f};
     intent = wander.think(roaming, touching);
     REQUIRE(intent.heading == Approx(-kPi / 2.0f));
+}
+
+TEST_CASE("a prowler stopped waits, turns an eighth to its own side, and the fourth turn "
+          "changes it to the mirrored way",
+          "[game][enemies][mind]") {
+    const EnemyMind& prowl = enemyMindOf(kProwlWay);
+    const EnemyMind& mirrored = enemyMindOf(kMirroredProwlWay);
+    MindMemory rat;
+    MindSense alone;
+    alone.ticks = 2;
+    MindSense stopped = alone;
+    stopped.blocked = true;
+    stopped.bumpedWall = true;
+    std::optional<s32> became;
+    for (s32 turn = 1; turn <= 4; ++turn) {
+        // Held after the stop: thirty ticks, fifteen updates of two.
+        prowl.think(rat, stopped);
+        CHECK(rat.deadEnd > 0);
+        MindIntent intent;
+        for (s32 i = 0; i < 15 && rat.deadEnd > 0; ++i) {
+            intent = prowl.think(rat, alone);
+        }
+        CHECK(rat.deadEnd <= 0);
+        CHECK(intent.heading == Approx(wrapAngle(static_cast<f32>(turn) * kPi / 4.0f)));
+        became = intent.become;
+        CHECK(became.has_value() == (turn == 4));
+    }
+    REQUIRE(became == kMirroredProwlWay);
+    CHECK(rat.counter == 0);
+    // The mirrored way turns the other way, and back again after four.
+    MindMemory other;
+    mirrored.think(other, stopped);
+    MindIntent intent;
+    for (s32 i = 0; i < 15 && other.deadEnd > 0; ++i) {
+        intent = mirrored.think(other, alone);
+    }
+    CHECK(intent.heading == Approx(-kPi / 4.0f));
+    // A player against it is faced.
+    MindSense touching = alone;
+    touching.contact = 0;
+    touching.contactPosition = Vec3{5.0f, 0.0f, 0.0f};
+    CHECK(prowl.think(rat, touching).heading == Approx(kPi / 2.0f));
+}
+
+TEST_CASE("the skirmisher waits out its throw before it throws or backs off, is nudged at "
+          "stops and gives up after eight",
+          "[game][enemies][mind]") {
+    const EnemyMind& skirmish = enemyMindOf(kSkirmishWay);
+    MindMemory archer;
+    MindSense close = senseAhead(10.0f); // within six tenths of thirty
+    close.idleTicks = 20;
+    close.threw = true;
+    MindIntent intent = skirmish.think(archer, close);
+    CHECK(archer.keepingOff);
+    CHECK(intent.pace == 0.0f); // the wait runs first
+    close.threw = false;
+    for (s32 i = 0; i < 9; ++i) {
+        intent = skirmish.think(archer, close);
+        CHECK(intent.pace == 0.0f);
+    }
+    intent = skirmish.think(archer, close);
+    CHECK(intent.pace == Approx(0.8f));
+    CHECK(std::abs(intent.heading) == Approx(kPi));
+    CHECK(intent.action == EnemyAction::RunAttack);
+    // Stopped, it is nudged off straight a step at a time; the ninth stop gives it up.
+    MindSense stopped = close;
+    stopped.blocked = true;
+    intent = skirmish.think(archer, stopped);
+    CHECK(std::abs(wrapAngle(intent.heading - kPi)) == Approx(0.0872664601f));
+    for (s32 i = 0; i < 7; ++i) {
+        skirmish.think(archer, stopped);
+    }
+    CHECK(archer.keepingOff);
+    intent = skirmish.think(archer, stopped);
+    CHECK_FALSE(archer.keepingOff);
+    CHECK(intent.throwing); // standing its ground, it throws again
+}
+
+TEST_CASE("a range keeper stopped by the world attacks where it stands instead of stepping",
+          "[game][enemies][mind]") {
+    const EnemyMind& range = enemyMindOf(kRangeCastWay);
+    MindMemory caster;
+    caster.primed = true;
+    caster.fuse = 0;
+    MindSense close = senseAhead(7.0f); // inside eight: backing off
+    close.random = 0;
+    MindIntent intent = range.think(caster, close);
+    REQUIRE(caster.mode == 1);
+    CHECK(intent.pace == Approx(0.8f));
+    MindSense walled = close;
+    walled.bumpedWall = true;
+    intent = range.think(caster, walled);
+    CHECK(intent.pace == 0.0f);
 }
 
 TEST_CASE("the loiterer turns on the spot until its generator is gone, the fleer runs away, the "
