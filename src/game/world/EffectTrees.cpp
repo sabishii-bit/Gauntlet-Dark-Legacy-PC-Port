@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -202,8 +203,8 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
 }
 
 void EffectTrees::lights(std::vector<PointLight>& out) const {
-    for (auto it = m_effects.rbegin(); it != m_effects.rend(); ++it) {
-        const Effect& effect = **it;
+    for (const std::unique_ptr<Effect>& newest : m_effects | std::views::reverse) {
+        const Effect& effect = *newest;
         if (!effect.light.has_value() || effect.retiring || effect.light->radius <= 0.0f) {
             continue;
         }
