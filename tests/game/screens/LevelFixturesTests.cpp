@@ -4,8 +4,10 @@
 #include <optional>
 #include <ranges>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -23,6 +25,10 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+/** A blast's ring on its first step: a third of its reach, and 1.5 x (1 - 0.33) of its harm. */
+constexpr f32 kFirstReach = 0.33f;
+constexpr f32 kFirstStep = 1.5f * (1.0f - 0.33f);
+
 struct Fixture {
     test::FakeRenderDevice device;
     LevelWorld world;
@@ -35,7 +41,7 @@ struct Fixture {
     LevelFixtures::Events events{
         .hurt =
             [this](usize i, f32 damage, HurtKind kind, bool directed) {
-                REQUIRE(damage == 5);
+                REQUIRE(damage == Catch::Approx(kFirstStep * 5));
                 REQUIRE(kind == HurtKind::Blow);
                 REQUIRE(directed);
                 calls.push_back("player" + std::to_string(i));
@@ -47,9 +53,9 @@ struct Fixture {
             },
         .card = [](s32, std::string_view) { FAIL("Empty scenery has no pickup card"); },
         .opponents =
-            [this](const Vec3&, f32 radius, f32 damage) {
-                REQUIRE(radius == 2);
-                REQUIRE(damage == 5);
+            [this](const Vec3&, f32 radius, f32 damage, std::vector<s32>&) {
+                REQUIRE(radius == Catch::Approx(kFirstReach * 2));
+                REQUIRE(damage == Catch::Approx(kFirstStep * 5));
                 calls.emplace_back("opponents");
             },
         .releaseEnemy = {},
@@ -73,6 +79,36 @@ TEST_CASE("fixture explosions resolve live nearby players before opponents and d
     f.fixtures.clear();
     f.fixtures.blast(Vec3{0}, 2, 5, f.players, f.events);
     REQUIRE(f.calls.size() == 2);
+}
+
+TEST_CASE("a blast's ring reaches the further out later and for less, each of them once",
+          "[game][screens][level-fixtures][blast-ring]") {
+    Fixture f;
+    f.players[0].actor.place(Vec3{0});
+    f.players[1].actor.place(Vec3{6, 0, 0}); // out of the first step's four, in the ring's twelve
+    std::vector<std::pair<usize, f32>> hurts;
+    std::vector<f32> reaches;
+    LevelFixtures::Events events = f.events;
+    events.hurt = [&](usize i, f32 damage, HurtKind, bool) { hurts.emplace_back(i, damage); };
+    events.opponents = [&](const Vec3&, f32 radius, f32, std::vector<s32>&) {
+        reaches.push_back(radius);
+    };
+    f.fixtures.blast(Vec3{0}, 12, 30, f.players, events, 1.0f);
+    REQUIRE(hurts.size() == 1);
+    CHECK(hurts[0].first == 0);
+    CHECK(hurts[0].second == Catch::Approx(kFirstStep * 30));
+    for (s32 frame = 0; frame < 40; ++frame) {
+        f.fixtures.update(2, 1.0f / 30, f.players, events);
+    }
+    REQUIRE(hurts.size() == 2); // the second player once, the first never again
+    CHECK(hurts[1].first == 1);
+    CHECK(hurts[1].second < hurts[0].second);
+    CHECK(hurts[1].second > 0.0f);
+    // It grows to its whole reach and stops two thirds through its life.
+    REQUIRE(reaches.size() > 2);
+    CHECK(std::ranges::is_sorted(reaches));
+    CHECK(reaches.back() <= 12.0f);
+    CHECK(reaches.size() < 25);
 }
 
 TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit retail cues",
@@ -100,7 +136,7 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
         ++helpCount;
         return true;
     };
-    f.events.opponents = [](const Vec3&, f32, f32) {};
+    f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&) {};
     const auto party = std::span{f.players}.first(1);
     f.fixtures.blast(origin, 12, 5, party, f.events);
     CHECK(f.world.placedItems().item(first).taken);
@@ -334,7 +370,7 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
         return true;
     };
     f.events.hurt = [](usize, f32, HurtKind, bool) {};
-    f.events.opponents = [](const Vec3&, f32, f32) {};
+    f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&) {};
     f.events.releaseEnemy = [&](s32 record, const Vec3&, s32) {
         released.push_back(record);
         return false;

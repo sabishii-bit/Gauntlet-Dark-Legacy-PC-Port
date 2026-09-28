@@ -6,6 +6,7 @@
 #include <format>
 #include <iterator>
 #include <limits>
+#include <ranges>
 #include <utility>
 
 #include "engine/core/Types.h"
@@ -37,6 +38,18 @@ constexpr std::string_view kDeathDies = "S_DEATHDIE"; ///< his cry as he goes
 constexpr f32 kKnockdownFrom = 1.0f; ///< a blast must do more than this to floor anyone
 constexpr f32 kBehind = 1.5707964f;  ///< a blow from further round than this is from behind
 constexpr f32 kBlastPush = 0.25f;    ///< how hard a blast throws its victim, as a push's length
+constexpr f32 kRingFade = 0.33f;     ///< a blast's ring stops a third of its life from the end
+constexpr f32 kRingGrowth = 1.5f;    ///< and deals this times the phase past that
+constexpr f32 kOneFrame = 1.0f / 30.0f;
+constexpr f32 kRingHeldFrom = 2.0f;  ///< a blow over this is not dealt the same thing again
+constexpr f32 kRingKnockFrom = 5.0f; ///< under this a blast floors nobody
+constexpr f32 kShelterFrom = 10.0f;  ///< past this a wall between shelters a player
+constexpr f32 kShelterProbe = 0.1f;
+constexpr f32 kChestBlastSeconds = 2.5f; ///< EXPCHEST's seventy-five frames
+constexpr s32 kBarrelReached = 0;        ///< a blast's own ids for what it has reached
+constexpr s32 kWallReached = 1000;
+constexpr s32 kRockReached = 2000;
+constexpr s32 kTriggerReached = 3000;
 constexpr std::string_view kWoodHitSound = "S_WEAPONHITWOOD";
 constexpr std::string_view kBarrelBreakSound = "S_BARREL_WOOD"; ///< with the realm's letter
 constexpr std::string_view kBarrelBlastSound = "S_BARREL_EXPLO";
@@ -230,12 +243,14 @@ void LevelFixtures::detonateChest(usize chest, std::optional<usize> opener,
         return;
     }
     const Vec3 position = m_chests.chest(chest).figure.position();
+    f32 seconds = kChestBlastSeconds;
     if (m_resources->weapons.loaded()) {
         EffectTrees::Setting setting;
         setting.light = EffectTrees::Light{DynamicLights::blast(),
                                            DynamicLights::kBlastRadiusScale * kBlastRadius};
-        m_resources->effects.startSet(m_resources->device, m_resources->weapons, kChestBlast,
-                                      position, setting);
+        const u32 id = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                                     kChestBlast, position, setting);
+        seconds = m_resources->effects.remaining(id).value_or(seconds);
     }
     playRealmSound(kBarrelBlastSound);
     m_chests.remove(chest);
@@ -245,7 +260,7 @@ void LevelFixtures::detonateChest(usize chest, std::optional<usize> opener,
     if (told.has_value() && events.help) {
         events.help(HelpMessages::kChestsExplode, *told);
     }
-    blast(position, kBlastRadius, kChestBlastDamage * trapDamageScale(), players, events);
+    blast(position, kBlastRadius, kChestBlastDamage * trapDamageScale(), players, events, seconds);
 }
 
 /** An explosion breaks the chests about it (fn_8005C1DC's container case, at a power of five
@@ -253,7 +268,7 @@ void LevelFixtures::detonateChest(usize chest, std::optional<usize> opener,
  * rest are blown apart, what lay in them with them, leaving their rubble. It also fires the
  * shootable triggers it reaches. */
 void LevelFixtures::blastFixtures(const Vec3& position, f32 radius, f32 damage,
-                                  const Events& events) {
+                                  const Events& events, std::vector<s32>& reached) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -262,7 +277,10 @@ void LevelFixtures::blastFixtures(const Vec3& position, f32 radius, f32 damage,
     for (usize i = 0; i < triggers.size(); ++i) {
         const LevelTrigger& trigger = triggers.trigger(i);
         const Vec3 away = trigger.spot - position;
-        if (trigger.shootable && std::hypot(away.x, away.z) <= reach + trigger.radius) {
+        const s32 id = kTriggerReached + static_cast<s32>(i);
+        if (trigger.shootable && std::hypot(away.x, away.z) <= reach + trigger.radius &&
+            std::ranges::find(reached, id) == reached.end()) {
+            reached.push_back(id);
             m_resources->world.shootTrigger(i);
         }
     }
@@ -467,6 +485,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         events.help(HelpMessages::kTrapsHurt, hit.victim);
     }
     updateClouds(seconds, players, events);
+    advanceBlasts(seconds, players, events);
     for (PlayerRuntime& runtime : players) {
         runtime.hitSoundGap = std::max(runtime.hitSoundGap - ticks, 0);
     }
@@ -716,16 +735,18 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
         m_resources->audio.playNamed(kWoodHitSound);
         return;
     }
-    const auto effect = [&](std::string_view tree) {
-        if (m_resources->weapons.loaded()) {
-            EffectTrees::Setting setting;
-            if (tree == kBarrelBlast) {
-                setting.light = EffectTrees::Light{DynamicLights::blast(),
-                                                   DynamicLights::kBlastRadiusScale * kBlastRadius};
-            }
-            m_resources->effects.startSet(m_resources->device, m_resources->weapons, tree,
-                                          struck->position, setting);
+    const auto effect = [&](std::string_view tree) -> std::optional<f32> {
+        if (!m_resources->weapons.loaded()) {
+            return std::nullopt;
         }
+        EffectTrees::Setting setting;
+        if (tree == kBarrelBlast) {
+            setting.light = EffectTrees::Light{DynamicLights::blast(),
+                                               DynamicLights::kBlastRadiusScale * kBlastRadius};
+        }
+        const u32 id = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                                     tree, struck->position, setting);
+        return m_resources->effects.remaining(id);
     };
     switch (struck->kind) {
     case BreakableStrike::Kind::Plain:
@@ -744,14 +765,20 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
             }
         }
         break;
-    case BreakableStrike::Kind::Exploding:
+    case BreakableStrike::Kind::Exploding: {
         playRealmSound(kBarrelBlastSound);
-        effect(kBarrelBlast);
+        const f32 seconds = effect(kBarrelBlast).value_or(kExplosionSeconds);
         effect(kBarrelSmoke);
         leaveRubble(Rubble::kBlownBarrel, m_barrels.transformOf(barrel));
-        m_blasts.push_back(
-            Blast{struck->position, kBlastRadius, kBarrelBlastDamage * trapDamageScale()});
+        m_blasts.push_back(Blast{.position = struck->position,
+                                 .radius = kBlastRadius,
+                                 .damage = kBarrelBlastDamage * trapDamageScale(),
+                                 .seconds = seconds,
+                                 .players = {},
+                                 .reached = {},
+                                 .opponents = {}});
         break;
+    }
     case BreakableStrike::Kind::Poison: {
         playRealmSound(kBarrelGasSound);
         leaveRubble(Rubble::kGasBarrel, m_barrels.transformOf(barrel));
@@ -776,99 +803,178 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
 /** Whoever is within a blast is hurt by it, and the barrels within it are struck by it (so
  * one that blows up sets off its neighbours). */
 void LevelFixtures::blast(const Vec3& position, f32 radius, f32 damage,
-                          std::span<PlayerRuntime> players, const Events& events) {
+                          std::span<PlayerRuntime> players, const Events& events, f32 seconds) {
     if (!m_resources.has_value()) {
         return;
     }
-    m_blasts.push_back(Blast{position, radius, damage});
+    m_blasts.push_back(Blast{.position = position,
+                             .radius = radius,
+                             .damage = damage,
+                             .seconds = seconds,
+                             .players = {},
+                             .reached = {},
+                             .opponents = {}});
     settleBlasts(players, events);
 }
 
-/** Feels out every blast waiting, and those they set off in turn. */
+/** Starts every blast waiting, and those they set off in turn: each ring's first step, as
+ * the effect's first frame (ProcessEffects, remaining = its whole life). */
 void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events& events) {
     if (!m_resources.has_value()) {
         return;
     }
-    while (!m_blasts.empty()) {
-        const Blast felt = m_blasts.back();
-        m_blasts.pop_back();
-        for (usize i = 0; i < players.size(); ++i) {
-            if (players[i].life != PlayerLife::Standing) {
+    // A step may set more off, appended to be started in their turn.
+    for (auto waiting = std::ranges::find(m_blasts, false, &Blast::started);
+         waiting != m_blasts.end(); waiting = std::ranges::find(m_blasts, false, &Blast::started)) {
+        const auto index = static_cast<usize>(std::distance(m_blasts.begin(), waiting));
+        Blast ring = *waiting;
+        ring.started = true;
+        feel(ring, players, events);
+        m_blasts[index] = std::move(ring);
+    }
+}
+
+/** Grows the rings under way by `seconds`, then starts what they set off; spent ones go. */
+void LevelFixtures::advanceBlasts(f32 seconds, std::span<PlayerRuntime> players,
+                                  const Events& events) {
+    // By index: a step may append what it sets off, which starts below.
+    for (const usize i : std::views::iota(usize{0}, m_blasts.size())) {
+        if (!m_blasts[i].started || m_blasts[i].done) {
+            continue;
+        }
+        Blast ring = m_blasts[i];
+        ring.elapsed += seconds;
+        feel(ring, players, events);
+        m_blasts[i] = std::move(ring);
+    }
+    settleBlasts(players, events);
+    std::erase_if(m_blasts, [](const Blast& ring) { return ring.done; });
+}
+
+void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    const f32 phase = ring.seconds <= kOneFrame
+                          ? 1.0f
+                          : std::clamp(1.0f - ring.elapsed / ring.seconds, 0.0f, 1.0f);
+    if (phase <= kRingFade) {
+        ring.done = true;
+        return;
+    }
+    struct Step {
+        Vec3 position;
+        f32 radius = 0.0f;
+        f32 damage = 0.0f;
+    };
+    const Step felt{ring.position, ring.radius * (kRingFade + (1.0f - phase)),
+                    ring.damage * kRingGrowth * (phase - kRingFade)};
+    const bool holds = felt.damage > kRingHeldFrom;
+    const auto first = [&](std::vector<s32>& reached, s32 id) {
+        if (std::ranges::find(reached, id) != reached.end()) {
+            return false;
+        }
+        if (holds) {
+            reached.push_back(id);
+        }
+        return true;
+    };
+    for (usize i = 0; i < players.size(); ++i) {
+        if (players[i].life != PlayerLife::Standing ||
+            std::ranges::find(ring.players, i) != ring.players.end()) {
+            continue;
+        }
+        const PlayerActor& actor = players[i].actor;
+        const Vec3 offset = actor.followPoint() - felt.position;
+        const f32 across = std::hypot(offset.x, offset.z);
+        if (across <= felt.radius + actor.radius() &&
+            std::abs(offset.y) <= actor.height() * 0.5f + felt.radius) {
+            // Far enough out, a wall between shelters them from it.
+            if (across > kShelterFrom &&
+                EnemyMissiles::walled(m_resources->world.collision(), felt.position,
+                                      actor.followPoint(), kShelterProbe)) {
                 continue;
             }
-            const PlayerActor& actor = players[i].actor;
-            const Vec3 offset = actor.followPoint() - felt.position;
-            if (std::hypot(offset.x, offset.z) <= felt.radius + actor.radius() &&
-                std::abs(offset.y) <= actor.height() * 0.5f + felt.radius) {
-                // A blast that gets through knocks its victim off their feet: onto their face
-                // when it came from behind them, onto their back otherwise.
-                const bool guarding =
-                    players[i].figure != nullptr && players[i].figure->animator().guarding();
-                if (PlayerHealth::guarded(players[i], felt.damage, true) > kKnockdownFrom &&
-                    !PowerupEffects::of(actor.save().progress().inventory).preventsKnockback() &&
-                    !guarding && !m_resources->world.isTower()) {
-                    const Vec3 push = actor.position() - felt.position;
-                    f32 round = std::atan2(push.x, push.z) - actor.yaw();
-                    round = std::remainder(round, 2.0f * kBehind * 2.0f);
-                    players[i].reaction =
-                        std::abs(round) > kBehind ? PlayerDeed::FallBack : PlayerDeed::FallForward;
-                    // And throws them a little way from it (ProcessEffects: a quarter of the
-                    // way out along the ground).
-                    const Vec2 out{push.x, push.z};
-                    if (glm::length(out) > 0.0f) {
-                        const Vec2 away = glm::normalize(out) * kBlastPush;
-                        players[i].knockback.queue(
-                            Vec3{away.x, 0.0f, away.y}, PlayerImpact::kKnockDown,
-                            PlayerHealth::guarded(players[i], felt.damage, true));
-                    }
-                }
-                events.hurt(i, felt.damage, HurtKind::Blow, true);
+            if (holds) {
+                ring.players.push_back(i);
             }
+            // A blast that gets through knocks its victim off their feet: onto their face
+            // when it came from behind them, onto their back otherwise; one of under five
+            // floors nobody.
+            const bool guarding =
+                players[i].figure != nullptr && players[i].figure->animator().guarding();
+            if (felt.damage >= kRingKnockFrom &&
+                PlayerHealth::guarded(players[i], felt.damage, true) > kKnockdownFrom &&
+                !PowerupEffects::of(actor.save().progress().inventory).preventsKnockback() &&
+                !guarding && !m_resources->world.isTower()) {
+                const Vec3 push = actor.position() - felt.position;
+                f32 round = std::atan2(push.x, push.z) - actor.yaw();
+                round = std::remainder(round, 2.0f * kBehind * 2.0f);
+                players[i].reaction =
+                    std::abs(round) > kBehind ? PlayerDeed::FallBack : PlayerDeed::FallForward;
+                // And throws them a little way from it (ProcessEffects: a quarter of the
+                // way out along the ground).
+                const Vec2 out{push.x, push.z};
+                if (glm::length(out) > 0.0f) {
+                    const Vec2 away = glm::normalize(out) * kBlastPush;
+                    players[i].knockback.queue(
+                        Vec3{away.x, 0.0f, away.y}, PlayerImpact::kKnockDown,
+                        PlayerHealth::guarded(players[i], felt.damage, true));
+                }
+            }
+            events.hurt(i, felt.damage, HurtKind::Blow, true);
         }
-        for (const usize barrel : m_barrels.within(felt.position, felt.radius)) {
+    }
+    // ProcessEffects shortens the item query by 1.5 for DMG_EXPLODE: barrels, walls and rocks
+    // are items too.
+    const f32 reach = std::max(0.0f, felt.radius - kItemBlastInset);
+    for (const usize barrel : m_barrels.within(felt.position, reach)) {
+        if (first(ring.reached, kBarrelReached + static_cast<s32>(barrel))) {
             strikeBarrel(barrel, felt.damage, -1, players, events);
         }
-        const auto& walls = m_resources->world.walls();
-        for (usize i = 0; i < walls.size(); ++i) {
-            if (walls.standing(i) && walls.target(i, 0).touches(felt.position, felt.radius)) {
-                strikeWall(i, felt.damage);
-            }
+    }
+    const auto& walls = m_resources->world.walls();
+    for (usize i = 0; i < walls.size(); ++i) {
+        if (walls.standing(i) && walls.target(i, 0).touches(felt.position, reach) &&
+            first(ring.reached, kWallReached + static_cast<s32>(i))) {
+            strikeWall(i, felt.damage);
         }
-        for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
-            if (m_safeRocks.rock(rock).obstacle.touchedBy(felt.position, felt.radius, 0.0f)) {
-                strikeSafeRock(rock, felt.damage);
-            }
+    }
+    for (usize rock = 0; rock < m_safeRocks.size(); ++rock) {
+        if (m_safeRocks.rock(rock).obstacle.touchedBy(felt.position, reach, 0.0f) &&
+            first(ring.reached, kRockReached + static_cast<s32>(rock))) {
+            strikeSafeRock(rock, felt.damage);
         }
-        events.opponents(felt.position, felt.radius, felt.damage);
-        blastFixtures(felt.position, felt.radius, felt.damage, events);
-        // ProcessEffects shortens the item query by 1.5 for DMG_EXPLODE.
-        const auto changes = m_resources->world.blastItems(
-            m_resources->device, felt.position, std::max(0.0f, felt.radius - kItemBlastInset),
-            felt.damage);
-        bool destroyed = false;
-        for (const auto& change : changes) {
-            if (change.potion) {
-                if (events.shatterPotion) {
-                    events.shatterPotion(*change.potion, change.position);
-                }
-                continue; // Magic replaces the bottle; no food-destruction smoke or help.
+    }
+    if (events.opponents) {
+        events.opponents(felt.position, felt.radius, felt.damage, ring.opponents);
+    }
+    blastFixtures(felt.position, felt.radius, felt.damage, events, ring.reached);
+    const auto changes =
+        m_resources->world.blastItems(m_resources->device, felt.position, reach, felt.damage);
+    bool destroyed = false;
+    for (const auto& change : changes) {
+        if (change.potion) {
+            if (events.shatterPotion) {
+                events.shatterPotion(*change.potion, change.position);
             }
-            // The retail effect table maps both CHESTDEST and ITEMDEST to this tree.
-            for (const std::string_view tree : {kChestDestroyed, kBarrelSmoke}) {
-                m_resources->effects.start(m_resources->device, m_resources->weapons, tree,
-                                           change.position);
-            }
-            if (change.destroyed) {
-                leaveRubble(Rubble::kItem, glm::translate(Mat4{1.0f}, change.position));
-            }
-            destroyed |= change.destroyed;
+            continue; // Magic replaces the bottle; no food-destruction smoke or help.
         }
-        if (destroyed && events.help) {
-            for (usize i = 0; i < players.size(); ++i) {
-                if (players[i].life == PlayerLife::Standing) {
-                    events.help(HelpMessages::kBlastsDestroy, i);
-                    break;
-                }
+        // The retail effect table maps both CHESTDEST and ITEMDEST to this tree.
+        for (const std::string_view tree : {kChestDestroyed, kBarrelSmoke}) {
+            m_resources->effects.start(m_resources->device, m_resources->weapons, tree,
+                                       change.position);
+        }
+        if (change.destroyed) {
+            leaveRubble(Rubble::kItem, glm::translate(Mat4{1.0f}, change.position));
+        }
+        destroyed |= change.destroyed;
+    }
+    if (destroyed && events.help) {
+        for (usize i = 0; i < players.size(); ++i) {
+            if (players[i].life == PlayerLife::Standing) {
+                events.help(HelpMessages::kBlastsDestroy, i);
+                break;
             }
         }
     }
