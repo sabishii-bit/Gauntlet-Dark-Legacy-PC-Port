@@ -602,7 +602,7 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         // instead (fn_8004DF58).
         if (castsNow(enemy) && enemy.contact < 0) {
             if (missiles != nullptr) {
-                shoot(enemy, i, players, *missiles, missileSpeedScale);
+                shoot(enemy, i, players, *missiles, missileSpeedScale, obstacles);
             }
             enemy.attackIndex = -1;
         } else {
@@ -635,7 +635,7 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         enemy.animator.update(ticks, seconds, enemy.contact >= 0);
         enemy.threw = enemy.animator.threw();
         if (enemy.threw && missiles != nullptr) {
-            shoot(enemy, i, players, *missiles, missileSpeedScale);
+            shoot(enemy, i, players, *missiles, missileSpeedScale, obstacles);
         }
         decayPush(enemy, seconds);
         touchHazards(enemy, i);
@@ -1237,6 +1237,7 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
             burst.position = bodyCentre(enemy);
             burst.damage = kSuicideDamage * m_scales.damage;
             burst.enemy = id;
+            burst.kind = enemy.kind;
             burst.silencesYell = !hit.selfInflicted;
             m_bursts.push_back(burst);
         }
@@ -1267,7 +1268,7 @@ std::vector<EnemyFeedback> Enemies::takeFeedback() {
 /** A shot or a lob at the player it is after, aimed from its middle at theirs (or twenty
  * ahead with nobody), with the launch sound of what goes (fn_8004E448). */
 void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
-                    EnemyMissiles& missiles, f32 speedScale) {
+                    EnemyMissiles& missiles, f32 speedScale, std::span<const Obstacle> items) {
     constexpr f32 kBlindReach = 20.0f;
     Stock* stock = stockOf(enemy.kind);
     if (stock == nullptr) {
@@ -1305,7 +1306,7 @@ void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
     launch.aimError = m_scales.missileAim;
     launch.model = model;
     launch.shooter = slot;
-    if (!missiles.launch(what, launch, m_collision)) {
+    if (!missiles.launch(what, launch, m_collision, items)) {
         return;
     }
     // The arrow's and the bolt's go off as they leave; a lob goes quietly.

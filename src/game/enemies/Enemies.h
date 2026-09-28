@@ -58,6 +58,7 @@ struct EnemyView {
     bool invisible = false; ///< not a sight target, but still vulnerable to contact and hazards
     EnemyMeleeWard meleeWard = EnemyMeleeWard::None;
     bool antiDeath = false;
+    bool reflects = false; ///< its armour turns the swarm's missiles back
 };
 
 /** A blow an enemy has landed on a player. */
@@ -122,6 +123,7 @@ struct EnemyBurst {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 damage = 0.0f;
     s32 enemy = -1;
+    s32 kind = -1;             ///< whose smoke it goes up in
     bool silencesYell = false; ///< set off by a hit rather than its own fuse
 };
 
@@ -347,7 +349,7 @@ private:
     void think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players,
                std::span<const Obstacle> obstacles);
     void shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players, EnemyMissiles& missiles,
-               f32 speedScale);
+               f32 speedScale, std::span<const Obstacle> items);
     const TreeModel* bodyOf(const Enemy& enemy);
     void move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
               std::span<const EnemyView> players, std::span<const Obstacle> obstacles);

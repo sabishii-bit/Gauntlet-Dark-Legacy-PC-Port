@@ -14,7 +14,7 @@ namespace gdl::game {
 Mat4 EffectTrees::Effect::transform() const {
     Mat4 basis = attachment.value_or(glm::rotate(Mat4{1.0f}, yaw, Vec3{0, 1, 0}));
     basis[3] = Vec4{position, 1.0f};
-    return glm::scale(basis, Vec3{scale});
+    return glm::scale(basis, Vec3{scale} * stretch);
 }
 
 void EffectTrees::placeAt(u32 id, const Mat4& attachment) {
@@ -147,6 +147,8 @@ u32 EffectTrees::startSet(RenderDevice& device, ItemArchive& archive, std::strin
     effect->id = m_nextId++;
     effect->position = position;
     effect->scale = setting.scale;
+    effect->stretch = setting.stretch;
+    effect->fadeSeconds = setting.fadeSeconds;
     effect->yaw = setting.yaw;
     effect->unlit = setting.unlit;
     effect->depthWrite = setting.depthWrite;
@@ -334,7 +336,13 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         const Mat4 placed = effect->transform();
         if (!effect->retiring) {
-            effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), camera);
+            // Its last moments fade it out (ProcessEffects' fxfade).
+            const f32 alpha =
+                effect->fadeSeconds > 0.0f
+                    ? std::clamp(secondsLeftOf(*effect) / effect->fadeSeconds, 0.0f, 1.0f)
+                    : 1.0f;
+            effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), camera,
+                               alpha);
         }
         effect->particles.draw(device, clip, frame.right, frame.up);
         effect->trails.draw(device, clip, frame.right, frame.up);

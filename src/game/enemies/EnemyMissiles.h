@@ -4,6 +4,7 @@
 #include <random>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/core/Types.h"
@@ -14,6 +15,7 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/enemies/Enemies.h"
+#include "game/world/PlayerMissiles.h"
 
 namespace gdl::game {
 
@@ -25,6 +27,7 @@ struct EnemyMissileKind {
     static constexpr u32 kKnockBack = 0x10;
     static constexpr u32 kArrowHit = 0x20000; ///< DMG_ARROW: how a player hears the hit
     static constexpr u32 kBoltHit = 0x40000;  ///< DMG_FBALL
+    static constexpr u32 kPierces = 0x100000; ///< DMG_SUPER: through players and items
 
     s32 slot = kArrow;
     u32 flags = 0;
@@ -44,6 +47,8 @@ struct EnemyMissileKind {
                                  f32 weight = 1.0f);
     /** The flags a player is hurt with: the kind's own and the slot's (arrow or bolt). */
     u32 hitFlags() const;
+    /** Whether it goes through the players it hurts and the items in its way (the garm's). */
+    bool pierces() const { return (flags & kPierces) != 0; }
 };
 
 /** What a kind throws from a slot, as the original's table has it; nullopt for a kind and
@@ -81,6 +86,10 @@ struct EnemyMissile {
     const TreeModel* model = nullptr; ///< must outlive it
     s32 shooter = -1;
     f32 secondsLeft = 0.0f;
+    f32 lived = 0.0f;
+    bool reflected = false; ///< sent back by a player's armour: it now strikes the swarm
+    /** Players a piercing missile has hurt, and how long it leaves each alone. */
+    std::vector<std::pair<s32, f32>> pierced;
 };
 
 /** Where a missile ended, on a player or on the world (a lob bursts either way), or what
@@ -94,10 +103,27 @@ struct EnemyMissileHit {
     Vec3 position{0.0f, 0.0f, 0.0f};
     Vec3 direction{0.0f, 0.0f, 1.0f}; ///< the way its victim is pushed
     bool worldContact = false;        ///< expiry alone is not a surface hit
-    bool fromBurst = false;           ///< a burst's reach rather than the missile itself
-    f32 reach = 0.0f;                 ///< for a burst's hit on the swarm: how far it reaches
+    bool fromBurst = false;           ///< a blast's reach rather than the missile itself
+    bool ricochet = false;            ///< only the sound of a missile turned by armour
+    s32 target = -1; ///< one of the swarm (by the id it was offered under) a blast reached
     std::string_view effect() const;
     std::string_view sound() const;
+};
+
+/** An area one of the swarm's blasts harms as it grows (ProcessEffects' mode 1): in each of
+ * its stages it spreads from a third of its radius to the whole over the first two thirds of
+ * the stage, its harm falling from one and a half times to nothing as it does, and is then
+ * harmless until the next. */
+struct EnemyBlast {
+    static constexpr u32 kGas = 0x800;
+
+    Vec3 position{0.0f};
+    f32 radius = 3.0f;
+    f32 damage = 0.0f;
+    u32 flags = 0;
+    std::vector<f32> stages; ///< how long each lasts
+    s32 spared = -1;         ///< a player it never reaches: the one its lob struck
+    bool lit = false;        ///< the lob's red light rides on it
 };
 
 /**
@@ -121,13 +147,24 @@ public:
     static constexpr f32 kBurstGrowth = 1.5f;
     static constexpr f32 kBurstKnockFrom = 5.0f; ///< under this a burst only hurts
     static constexpr f32 kBurstPush = 0.25f;
+    static constexpr f32 kGasGap = 0.5f;             ///< a gas blast hurts a player this often
+    static constexpr f32 kBlastSlack = 1.0f / 15.0f; ///< past a stage a hit is held off
+    static constexpr f32 kSwarmGap = 1.0f;       ///< at least this before one of the swarm again
+    static constexpr f32 kSightFrom = 10.0f;     ///< past this a wall between shelters a player
+    static constexpr f32 kReflectedMost = 15.0f; ///< what a missile armour sent back can harm
+    static constexpr f32 kReflectedLife = 10.0f; ///< and the longest it then has left
+    static constexpr f32 kRicochetGap = 1.0f;    ///< one ricochet heard a second
+    static constexpr f32 kPierceGap = 0.25f;     ///< a player pierced is hurt again after this
+    static constexpr f32 kGrowth = 1.0f / 3.0f;  ///< a piercing missile grows to size over this
+    static constexpr f32 kSmallest = 0.01f;      ///< from this
 
     explicit EnemyMissiles(u32 seed = 0x4D15u) : m_random(seed) {}
 
     /** Sends one off as `launch` throws it; false when its thrower faces too far off, or a
-     * wall stands between it and the point it leaves from (and nothing goes). */
+     * wall or one of the `items` stands between it and the point it leaves from (and nothing
+     * goes). */
     bool launch(const EnemyMissileKind& kind, const EnemyMissileLaunch& launch,
-                const WorldCollision* collision = nullptr);
+                const WorldCollision* collision = nullptr, std::span<const Obstacle> items = {});
     /** Sends one from `from` at `aim` (a body's middle) with no error, `speedScale` the
      * level's; for a shot along a line already chosen. */
     void launch(const EnemyMissileKind& kind, const Vec3& from, const Vec3& aim, f32 speedScale,
@@ -137,9 +174,17 @@ public:
     static Vec3 heading(const EnemyMissileKind& kind, const Vec3& from, const Vec3& to, f32 speed,
                         f32 error);
     /** A burst a lob left: growing to `radius` as its harm fades over `seconds`, sparing
-     * `spared` (the player the lob itself struck). */
+     * `spared` (the player the lob itself struck), with the lob's light on it. */
     void burst(const Vec3& position, f32 radius, f32 damage, u32 flags, f32 seconds, s32 spared);
-    void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players);
+    /** Sets a blast going. */
+    void blast(EnemyBlast blast);
+    /** Moves everything in flight and grows the blasts over `seconds`. Missiles stop at the
+     * world and at the level's `items` (doors, chests, barrels, generators, rocks), a piercing
+     * one going through the items and the players it hurts; armour that reflects sends one
+     * back, after which it strikes the `swarm`, as the blasts do (each by the id it is offered
+     * under). */
+    void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
+                std::span<const MissileTarget> swarm = {}, std::span<const Obstacle> items = {});
     std::vector<EnemyMissileHit> takeHits();
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     /** The lobs' red lights and their bursts'. */
@@ -153,23 +198,27 @@ public:
     static Vec3 lobVelocity(const Vec3& from, const Vec3& to, f32 speed);
 
 private:
-    struct Burst {
-        Vec3 position{0.0f};
-        f32 radius = 0.0f;
-        f32 damage = 0.0f;
-        u32 flags = 0;
-        f32 seconds = 0.0f;
+    /** Who a blast has reached, and for how long it leaves them alone. */
+    struct Held {
+        s32 id = -1;
         f32 secondsLeft = 0.0f;
-        std::vector<s32> spared; ///< players it has reached, or its lob did
-        bool struckSwarm = false;
+    };
+    struct Burst {
+        EnemyBlast blast;
+        usize stage = 0;
+        f32 stageLeft = 0.0f;
+        std::vector<Held> players;
+        std::vector<Held> swarm;
     };
 
-    void stepBursts(f32 seconds, std::span<const EnemyView> players);
+    void stepBursts(f32 seconds, const WorldCollision* collision,
+                    std::span<const EnemyView> players, std::span<const MissileTarget> swarm);
 
     std::vector<EnemyMissile> m_missiles;
     std::vector<Burst> m_bursts;
     std::vector<EnemyMissileHit> m_hits;
     std::mt19937 m_random;
+    f32 m_ricochetIn = 0.0f; ///< before another ricochet is heard
 };
 
 } // namespace gdl::game

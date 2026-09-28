@@ -1294,4 +1294,122 @@ TEST_CASE("the swarm is heard at full within twenty of the nearest player, gone 
     CHECK(LevelOpponents::attenuation(Vec3{95, 0, 0}, hearers) == 1.0f); // the nearer one
     CHECK(LevelOpponents::attenuation(Vec3{0, 0, 500}, {}) == 1.0f);     // nobody standing
 }
+
+TEST_CASE("a suicide struck down goes up in a burning blast that reaches the party and the swarm "
+          "once",
+          "[level-opponents][suicide]") {
+    const auto root = test::scratchDirectory("suicide-blast");
+    writeMeleeEnemy(root, kGruntKind);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 3}, 0);
+    players[0].actor.save().progress().health = 1000;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 2, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    const auto bomber = opponents.enemies().spawn(
+        EnemySpawn{.kind = kGruntKind, .tier = 1, .algorithm = kSuicideWay, .placed = true}, {});
+    REQUIRE(bomber.has_value());
+    const auto neighbour = opponents.enemies().spawn(
+        EnemySpawn{.kind = kGruntKind, .tier = 1, .position = Vec3{2, 0, 0}, .placed = true}, {});
+    REQUIRE(neighbour.has_value());
+    const f32 before = opponents.enemies().healthOf(*neighbour);
+    std::vector<std::pair<HurtKind, u32>> hurts;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.blast = [](const Vec3&, f32, f32) { FAIL("The suicide's blast is its own now"); };
+    events.hurt = [&](usize, f32 amount, HurtKind kind, bool, const PlayerImpact& hit) {
+        CHECK(amount > 0.0f);
+        hurts.emplace_back(kind, hit.flags);
+    };
+    opponents.strikeEnemy(*bomber, 1000.0f, 0, Vec3{0, 0, 1}, 0, players);
+    for (s32 frame = 0; frame < 45; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    // Fire, a knock down and an explosion (0x421), felt once.
+    REQUIRE(hurts.size() == 1);
+    CHECK(hurts[0].first == HurtKind::Blow);
+    CHECK((hurts[0].second & 0x421u) == 0x421u);
+    CHECK(opponents.enemies().healthOf(*neighbour) < before);
+    CHECK(opponents.missiles().burstCount() == 0);
+    opponents.close();
+}
+
+TEST_CASE("in the town a suicide leaves a poison cloud that turns through its three trees and "
+          "gasses the party while it hangs",
+          "[level-opponents][suicide][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G1")));
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    const Vec3 ground{24.375f, 0.0078125f, 2.5f};
+    players[0].actor.spawn(0, {}, nullptr, ground, 0);
+    players[0].actor.save().progress().health = 1000;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.enemies().loadKind(13));
+    const auto bomber =
+        opponents.enemies().spawn(EnemySpawn{.kind = 13,
+                                             .tier = 1,
+                                             .algorithm = kSuicideWay,
+                                             .position = ground + Vec3{2.0f, 0.0f, 0.0f},
+                                             .placed = true,
+                                             .priority = EnemySpawn::Priority::Visible},
+                                  {});
+    REQUIRE(bomber.has_value());
+    std::vector<HurtKind> hurts;
+    LevelOpponents::Events events;
+    events.hurt = [&](usize, f32, HurtKind kind, bool, const PlayerImpact&) {
+        hurts.push_back(kind);
+    };
+    events.blast = [](const Vec3&, f32, f32) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    opponents.strikeEnemy(*bomber, 1000.0f, 0, Vec3{0, 0, 1}, 0, players);
+    std::vector<std::string> seen;
+    for (s32 frame = 0; frame < 150; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+        effects.update(1.0f / 30);
+        for (usize e = 0; e < effects.count(); ++e) {
+            const std::string& name = effects.effect(e).name;
+            if (std::ranges::find(seen, name) == seen.end()) {
+                seen.push_back(name);
+            }
+        }
+    }
+    for (const std::string_view tree : {"POISONEXP1", "POISONEXP2", "POISONEXP3", "SUICIDEEXP"}) {
+        CHECK(std::ranges::find(seen, tree) != seen.end());
+    }
+    CHECK(std::ranges::find(seen, "EXPLOSION") == seen.end());
+    // Gassed every half second while the cloud harms: more than once, never as a blow.
+    CHECK(hurts.size() >= 3);
+    CHECK(std::ranges::all_of(hurts, [](HurtKind kind) { return kind == HurtKind::Gas; }));
+    opponents.close();
+    effects.clear();
+}
 } // namespace

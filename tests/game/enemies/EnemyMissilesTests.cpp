@@ -666,22 +666,26 @@ TEST_CASE("a lob's burst grows as its harm fades, reaching each player once and 
     CHECK(lights[0].radius == EnemyMissiles::kBombLightRadius);
     CHECK(lights[0].color.x > 0.0f);
     CHECK(lights[0].color.y == 0.0f);
+    // One of the swarm a unit off is reached at once; one far off never.
+    const std::array swarm{MissileTarget{7, {1, 0, 0}, 0.5f, 4.0f},
+                           MissileTarget{8, {30, 0, 0}, 0.5f, 4.0f}};
     std::vector<EnemyMissileHit> hits;
     for (s32 frame = 0; frame < 40; ++frame) {
-        missiles.update(kStep, nullptr, party);
+        missiles.update(kStep, nullptr, party, swarm);
         const auto taken = missiles.takeHits();
         hits.insert(hits.end(), taken.begin(), taken.end());
     }
     CHECK(missiles.burstCount() == 0);
-    s32 swarm = 0;
+    s32 struck = 0;
     s32 reached = 0;
     for (const EnemyMissileHit& hit : hits) {
         REQUIRE(hit.fromBurst);
         CHECK(hit.burstRadius == 0.0f);
         if (hit.player < 0) {
-            ++swarm;
-            CHECK(hit.reach == 3.0f);
+            ++struck;
+            CHECK(hit.target == 7);
             CHECK(hit.damage == Approx(10.0f * 1.5f * (1.0f - 0.33f)));
+            CHECK(hit.direction.x == Approx(1.0f));
             continue;
         }
         ++reached;
@@ -692,7 +696,7 @@ TEST_CASE("a lob's burst grows as its harm fades, reaching each player once and 
         CHECK(hit.direction.x == Approx(EnemyMissiles::kBurstPush));
         CHECK(hit.direction.y == 0.0f);
     }
-    CHECK(swarm == 1);
+    CHECK(struck == 1);
     CHECK(reached == 1);
     // A weak burst only hurts: under five its knock goes.
     missiles.burst({0, 0, 0}, 3.0f, 3.0f, EnemyMissileKind::kKnockBack, 1.0f, -1);
@@ -716,5 +720,191 @@ TEST_CASE("only a lob in flight lights its way", "[game][enemies][enemy-burst]")
     lights.clear();
     missiles.lights(lights);
     CHECK(lights.empty());
+}
+
+TEST_CASE("a gas blast hangs over its stages, hurting players every half second and the swarm "
+          "once a stage",
+          "[game][enemies][enemy-burst]") {
+    EnemyMissiles missiles;
+    EnemyBlast gas;
+    gas.position = Vec3{0, 0, 0};
+    gas.radius = 7.5f;
+    gas.damage = 25.0f;
+    gas.flags = EnemyBlast::kGas;
+    gas.stages = {2.0f / 3.0f, 2.0f};
+    missiles.blast(gas);
+    std::vector<PointLight> lights;
+    missiles.lights(lights);
+    CHECK(lights.empty()); // unlit, unlike a lob's
+    const std::array party{playerAt({1, -3, 0}, 0)};
+    const std::array swarm{MissileTarget{3, {1, 0, 1}, 1.0f, 4.0f}};
+    s32 playerHits = 0;
+    s32 swarmHits = 0;
+    f32 elapsed = 0.0f;
+    std::vector<f32> swarmTimes;
+    while (missiles.burstCount() > 0 && elapsed < 5.0f) {
+        missiles.update(kStep, nullptr, party, swarm);
+        elapsed += kStep;
+        for (const EnemyMissileHit& hit : missiles.takeHits()) {
+            CHECK((hit.flags & EnemyBlast::kGas) != 0);
+            if (hit.player == 0) {
+                ++playerHits;
+            } else if (hit.target == 3) {
+                ++swarmHits;
+                swarmTimes.push_back(elapsed);
+            }
+        }
+    }
+    CHECK(elapsed == Approx(2.0f / 3.0f + 2.0f).margin(2 * kStep));
+    // Harmful for two thirds of each stage: a hit every half second while it is.
+    CHECK(playerHits >= 3);
+    CHECK(playerHits <= 5);
+    // The swarm once in each stage, a second apart at least.
+    REQUIRE(swarmHits == 2);
+    CHECK(swarmTimes[1] - swarmTimes[0] >= EnemyMissiles::kSwarmGap - kStep);
+}
+
+TEST_CASE("a blast does not reach a player sheltered by a wall past ten units",
+          "[game][enemies][enemy-burst]") {
+    WorldCollision wall;
+    wall.build({triangle({-20, -10, 5}, {20, -10, 5}, {0, 40, 5}, {0, 0, -1})});
+    for (const f32 z : {11.0f, 4.0f}) {
+        EnemyMissiles missiles;
+        EnemyBlast blast;
+        blast.radius = 20.0f;
+        blast.damage = 50.0f;
+        blast.stages = {1.0f};
+        missiles.blast(blast);
+        const std::array party{playerAt({0, -3, z}, 0)};
+        s32 hits = 0;
+        for (s32 frame = 0; frame < 40; ++frame) {
+            missiles.update(kStep, &wall, party);
+            hits += static_cast<s32>(missiles.takeHits().size());
+        }
+        CHECK(hits == (z > 10.0f ? 0 : 1));
+    }
+}
+
+TEST_CASE("the level's items stop the swarm's missiles, and one in the way keeps a throw in hand",
+          "[game][enemies][enemy-missile-items]") {
+    Obstacle chest;
+    chest.centre = Vec3{0, 0, 10};
+    chest.halfAcross = 1.0f;
+    chest.halfAlong = 1.0f;
+    chest.height = 6.0f;
+    const std::array items{chest};
+    const std::array party{playerAt({0, 0, 20})};
+    EnemyMissiles missiles;
+    missiles.launch(EnemyMissileKind::bolt(10, 25, 0.3f), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 0);
+    std::vector<EnemyMissileHit> hits;
+    for (s32 frame = 0; frame < 60 && hits.empty(); ++frame) {
+        missiles.update(kStep, nullptr, party, {}, items);
+        hits = missiles.takeHits();
+    }
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].player == -1);
+    CHECK(hits[0].worldContact);
+    CHECK(hits[0].effect() == "SPARKS");
+    CHECK(hits[0].position.z < 9.0f);
+    // An open gate, a broken barrel: not solid, not in the way.
+    Obstacle open = chest;
+    open.solid = false;
+    missiles.launch(EnemyMissileKind::bolt(10, 25, 0.3f), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 0);
+    hits.clear();
+    for (s32 frame = 0; frame < 60 && hits.empty(); ++frame) {
+        missiles.update(kStep, nullptr, party, {}, std::array{open});
+        hits = missiles.takeHits();
+    }
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].player == 0);
+    // An item where the throw would leave from: nothing goes.
+    EnemyMissileLaunch launch;
+    launch.body = Vec3{0, 3, 8};
+    launch.target = Vec3{0, 3, 20};
+    CHECK_FALSE(missiles.launch(EnemyMissileKind::arrow(), launch, nullptr, items));
+    CHECK(missiles.launch(EnemyMissileKind::arrow(), launch, nullptr, {}));
+}
+
+TEST_CASE("reflecting armour sends a missile back, harmless to its wearer, onto the swarm",
+          "[game][enemies][enemy-reflect]") {
+    EnemyMissiles missiles;
+    auto shielded = playerAt({0, 0, 10});
+    shielded.reflects = true;
+    const std::array party{shielded};
+    // The thrower stands behind where the shot came from.
+    const std::array swarm{MissileTarget{4, {0, 0, -5}, 1.0f, 6.0f}};
+    missiles.launch(EnemyMissileKind::bolt(20, 25, 0.3f), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 2);
+    std::vector<EnemyMissileHit> hits;
+    bool turned = false;
+    for (s32 frame = 0; frame < 120 && missiles.count() > 0; ++frame) {
+        missiles.update(kStep, nullptr, party, swarm);
+        if (missiles.count() > 0 && missiles.missile(0).reflected) {
+            turned = true;
+            CHECK(missiles.missile(0).velocity.z < 0.0f);
+            CHECK(missiles.missile(0).kind.damage == EnemyMissiles::kReflectedMost);
+            CHECK(missiles.missile(0).secondsLeft < EnemyMissiles::kLife - 1.0f);
+        }
+        const auto taken = missiles.takeHits();
+        hits.insert(hits.end(), taken.begin(), taken.end());
+    }
+    REQUIRE(turned);
+    REQUIRE(hits.size() == 2);
+    CHECK(hits[0].ricochet);
+    CHECK(hits[0].player == -1);
+    CHECK(hits[1].target == 4); // back onto the swarm
+    CHECK(hits[1].player == -1);
+    CHECK(hits[1].damage == EnemyMissiles::kReflectedMost);
+    // The ricochet is heard at most once a second.
+    missiles.launch(EnemyMissileKind::bolt(20, 25, 0.3f), {0, 3, 0}, {0, 3, 20}, 1, nullptr, 2);
+    s32 rings = 0;
+    for (s32 frame = 0; frame < 20; ++frame) {
+        missiles.update(kStep, nullptr, party);
+        for (const EnemyMissileHit& hit : missiles.takeHits()) {
+            rings += hit.ricochet ? 1 : 0;
+        }
+    }
+    CHECK(rings == 0);
+}
+
+TEST_CASE("the garm's bolt pierces the players it hurts and the items in its way, growing as it "
+          "leaves",
+          "[game][enemies][enemy-pierce]") {
+    const EnemyMissileKind garm = *enemyMissileOf(27, EnemyMissileKind::kBolt);
+    REQUIRE(garm.pierces());
+    CHECK((garm.hitFlags() & EnemyMissileKind::kPierces) != 0);
+    Obstacle chest;
+    chest.centre = Vec3{0, 0, 10};
+    chest.halfAcross = 1.0f;
+    chest.halfAlong = 1.0f;
+    chest.height = 6.0f;
+    const std::array party{playerAt({0, 0, 20}, 0), playerAt({0, 0, 40}, 1)};
+    EnemyMissiles missiles;
+    missiles.launch(garm, {0, 3, 0}, {0, 3, 60}, 1, nullptr, 5);
+    std::vector<EnemyMissileHit> hits;
+    for (s32 frame = 0; frame < 30 && missiles.count() > 0; ++frame) {
+        missiles.update(kStep, nullptr, party, {}, std::array{chest});
+        const auto taken = missiles.takeHits();
+        hits.insert(hits.end(), taken.begin(), taken.end());
+    }
+    REQUIRE(hits.size() >= 2);
+    CHECK(hits[0].player == 0);
+    CHECK(hits[1].player == 1);
+    CHECK(hits[0].damage == 25.0f);
+    for (const EnemyMissileHit& hit : hits) {
+        CHECK_FALSE(hit.worldContact);
+    }
+    // A player the bolt stays in is hurt again only after a quarter of a second.
+    EnemyMissiles slow;
+    EnemyMissileKind crawl = garm;
+    crawl.speed = 1.0f;
+    slow.launch(crawl, {0, 3, 0}, {0, 3, 60}, 1, nullptr, 5);
+    const std::array inside{playerAt({0, 0, 0.5f}, 0)};
+    s32 times = 0;
+    for (s32 frame = 0; frame < 30; ++frame) { // a second
+        slow.update(kStep, nullptr, inside);
+        times += static_cast<s32>(slow.takeHits().size());
+    }
+    CHECK(times == 4);
+    CHECK(slow.missile(0).lived == Approx(1.0f).margin(0.01f));
 }
 } // namespace
