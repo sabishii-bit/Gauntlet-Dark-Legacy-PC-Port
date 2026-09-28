@@ -4,11 +4,13 @@
 #include <array>
 #include <cmath>
 #include <format>
+#include <iterator>
 #include <limits>
 #include <utility>
 
 #include "engine/core/Types.h"
 
+#include "game/enemies/EnemyKinds.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
@@ -17,6 +19,8 @@
 namespace gdl::game {
 namespace {
 constexpr std::string_view kChestSound = "S_CHEST";
+constexpr std::string_view kApple = "APPLE";          ///< what magic makes of Death in a chest
+constexpr std::string_view kDeathDies = "S_DEATHDIE"; ///< his cry as he goes
 constexpr f32 kKnockdownFrom = 1.0f; ///< a blast must do more than this to floor anyone
 constexpr f32 kBehind = 1.5707964f;  ///< a blow from further round than this is from behind
 constexpr f32 kBlastPush = 0.25f;    ///< how hard a blast throws its victim, as a push's length
@@ -369,6 +373,33 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     for (PlayerRuntime& runtime : players) {
         runtime.hitSoundGap = std::max(runtime.hitSoundGap - ticks, 0);
     }
+}
+
+bool LevelFixtures::enchantChest(usize index, f32 power) {
+    if (!m_resources.has_value() || index >= m_chests.size()) {
+        return false;
+    }
+    const auto& infos = m_resources->world.layout().itemInfos();
+    const s32 inside = m_chests.chest(index).contents;
+    if (inside < 0 || static_cast<usize>(inside) >= infos.size()) {
+        return false;
+    }
+    const ItemInfo& held = infos[static_cast<usize>(inside)];
+    if (held.type != ItemInfo::kPlacedEnemy || enemyKindOf(held.name) != kDeathKind) {
+        return false;
+    }
+    // The record found by name, as a pickup of food; without one the chest is left empty.
+    const auto apple = std::ranges::find_if(infos, [](const ItemInfo& info) {
+        return info.type == ItemInfo::kPowerup &&
+               info.subtype == static_cast<s32>(ItemKind::Food) && info.name == kApple;
+    });
+    const s32 record =
+        apple != infos.end() ? static_cast<s32>(std::distance(infos.begin(), apple)) : -1;
+    if (!m_chests.transmute(index, record, power)) {
+        return false;
+    }
+    m_resources->audio.playNamed(kDeathDies);
+    return true;
 }
 
 void LevelFixtures::strikeSafeRock(usize index, f32 power) {

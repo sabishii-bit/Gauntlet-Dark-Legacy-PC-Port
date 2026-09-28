@@ -78,6 +78,7 @@ private:
         std::vector<s32> hit;
     };
     std::vector<PotionBurst> m_potions;
+    static void enchantChests(PotionBurst& burst, f32 radius, f32 power, const Targets& targets);
     s32 m_nextPotionKind = 1;
     std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
     /** What a thrown weapon or a burst can strike: the targets and the shootable switches,
@@ -102,6 +103,7 @@ private:
     static constexpr s32 kSafeRockTargetBase = 5000;
     static constexpr s32 kWallTargetBase = 6000;
     static constexpr s32 kSwitchTargetBase = 7000; ///< the triggers that are shot
+    static constexpr s32 kChestTargetBase = 9000;  ///< chests, which only magic reaches
     static constexpr s32 kPotionTargetBase = 8000; ///< the bottles lying about
     static constexpr f32 kShotMagicShare = 0.8f;   ///< of a shot bottle's magic (lbl_80346310)
     static constexpr f32 kPotionDamage = 40.0f;    ///< start_magic's

@@ -1,6 +1,7 @@
 #include "game/world/Chests.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "engine/core/Log.h"
@@ -94,6 +95,9 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
         }
         chest.figure.update(seconds);
         chest.refusalLeft = std::max(chest.refusalLeft - seconds, 0.0f);
+        if (chest.wobble > 0.0f && chest.state == kShut) {
+            rock(chest, seconds);
+        }
         if (chest.state == kShut) {
             for (usize v = 0; v < party.size(); ++v) {
                 if (!chest.box.touchedBy(party[v].position, party[v].radius)) {
@@ -145,6 +149,40 @@ std::vector<ChestEvent> Chests::update(f32 seconds, std::span<const ChestVisitor
         }
     }
     return events;
+}
+
+bool Chests::transmute(usize index, s32 record, f32 power) {
+    if (index >= m_chests.size()) {
+        return false;
+    }
+    Chest& chest = *m_chests[index];
+    if (!chest.shown || chest.gone || chest.state != kShut) {
+        return false;
+    }
+    chest.contents = record;
+    chest.wobble = std::trunc(kWobblePerPower * power);
+    for (const auto& other : m_chests) {
+        if (other->info == chest.info) {
+            other->subtype = kTransmuted;
+        }
+    }
+    return true;
+}
+
+/** The rock of the item loop (fn_800606FC): a square wave of sixteen ticks, pitched three
+ * degrees and turned four either way a quarter of it apart, until the count runs out. */
+void Chests::rock(Chest& chest, f32 seconds) {
+    chest.wobble = std::max(chest.wobble - seconds * kTicksPerSecond, 0.0f);
+    if (chest.wobble <= 0.0f) {
+        chest.figure.rest();
+        return;
+    }
+    constexpr s32 kHalfWave = 8;
+    constexpr s32 kQuarterWave = 4;
+    const auto ticks = static_cast<s32>(chest.wobble);
+    const f32 pitch = ((ticks + kQuarterWave) & kHalfWave) != 0 ? -kRockPitch : kRockPitch;
+    const f32 yaw = (ticks & kHalfWave) != 0 ? kRockYaw : -kRockYaw;
+    chest.figure.tilt(pitch, yaw);
 }
 
 void Chests::hold(usize chest, s32 item) {

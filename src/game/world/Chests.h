@@ -61,6 +61,11 @@ public:
     static constexpr s32 kOpen = 2;
     static constexpr s32 kSeedStep = 439; ///< what each random pick moves the seed on by
     static constexpr f32 kRefusalSeconds = 2.5f;
+    static constexpr s32 kTransmuted = 1;        ///< the subtype a conversion leaves in the record
+    static constexpr f32 kWobblePerPower = 3.0f; ///< ticks of rocking a point of magic
+    static constexpr f32 kTicksPerSecond = 60.0f;
+    static constexpr f32 kRockPitch = 0.0523599f; ///< three degrees
+    static constexpr f32 kRockYaw = 0.0698132f;   ///< four degrees
 
     /** One chest. */
     struct Chest {
@@ -79,6 +84,7 @@ public:
         bool gone = false; ///< emptied, it is no longer there
         bool revealed = false;
         s32 previewContents = -1;
+        f32 wobble = 0.0f;  ///< ticks it is still to rock for, shut
         ItemFigure preview; ///< visual only: never a collectible or an RNG draw
         ItemFigure figure;
         Obstacle box;
@@ -100,6 +106,10 @@ public:
                      std::span<const ChestVisitor> party, ItemArchive* realmItems = nullptr);
     /** The boxes of the chests in sight, which nothing walks through. */
     std::vector<Obstacle> obstacles() const;
+    /** Magic on a shut chest (fn_8005C1DC): what is in it becomes `record` and it rocks for
+     * three ticks a point of `power`. The subtype the original writes lands in the record
+     * every chest of its kind shares, so they all lose their trapped, gold and silver ways. */
+    bool transmute(usize index, s32 record, f32 power);
     /** What came out of an opened chest lies in it as dropped item number `item`. */
     void hold(usize chest, s32 item);
     /** The open chest `visitor` is against that still holds something (touching it is how
@@ -115,6 +125,8 @@ public:
                                u32& seed);
 
 private:
+    static void rock(Chest& chest, f32 seconds);
+
     std::vector<std::unique_ptr<Chest>> m_chests;
     std::vector<ItemInfo> m_infos;
     u32 m_seed = 0;

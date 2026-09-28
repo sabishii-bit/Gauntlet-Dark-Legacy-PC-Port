@@ -77,6 +77,10 @@ public:
     f32 yaw() const { return m_yaw; }
     /** How the figure is placed in the world. */
     const Mat4& transform() const { return m_transform; }
+    /** Rocks the figure where it stands: pitched by `pitch` and turned `yaw` off its facing. */
+    void tilt(f32 pitch, f32 yaw);
+    /** Stands the figure back as it was placed. */
+    void rest() { m_transform = m_placement; }
     /** The box the item's record gives it, where the figure stands. */
     Obstacle obstacle(const ItemInfo& info) const;
 
@@ -92,6 +96,7 @@ private:
     Vec3 m_position{0.0f, 0.0f, 0.0f};
     f32 m_yaw = 0.0f;
     Mat4 m_transform{1.0f};
+    Mat4 m_placement{1.0f}; ///< the transform `place` gave it
     s32 m_index = -1;
     bool m_loop = false;
     bool m_holdPose = false;
