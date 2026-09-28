@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 #include "engine/core/Types.h"
@@ -19,6 +20,8 @@ constexpr f32 kSimulationStep = 1.0f / 30.0f;
 constexpr f32 kLeastSpatialStep = 0.05f;
 constexpr f32 kFlatEnough = 0.001f;
 constexpr f32 kShotHeight = 2.5f; ///< over the body's middle, for the arrow and the lob
+constexpr f32 kSightProbe = 0.1f; ///< the width of the look a blast takes at a player
+constexpr f32 kHeldFrom = 2.0f;   ///< a blast's hit past this holds its victim off
 
 // The kinds with a launch point of their own (EnemyStartMissile's jump table).
 constexpr s32 kGrunt = 4;
@@ -140,7 +143,9 @@ std::optional<EnemyMissileKind> enemyMissileOf(s32 kind, s32 slot) {
         case kPlague: return EnemyMissileKind::bolt(15.0f, 25.0f, 0.3f);
         case kSorcerer:
         case kWarlock: return EnemyMissileKind::bolt(20.0f, 20.0f, 0.2f, 0x3);
-        case kGarm: return EnemyMissileKind::bolt(25.0f, 80.0f, 2.0f, 0x2, 0.0f);
+        case kGarm:
+            return EnemyMissileKind::bolt(25.0f, 80.0f, 2.0f, 0x2 | EnemyMissileKind::kPierces,
+                                          0.0f);
         default: return std::nullopt;
         }
     }
@@ -233,7 +238,7 @@ Vec3 EnemyMissiles::heading(const EnemyMissileKind& kind, const Vec3& from, cons
 }
 
 bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunch& launch,
-                           const WorldCollision* collision) {
+                           const WorldCollision* collision, std::span<const Obstacle> items) {
     const f32 speed = kind.speed * std::max(launch.speedScale, 0.01f);
     const f32 error =
         launch.aimError *
@@ -247,7 +252,13 @@ bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunc
     Vec3 start = launch.body + Vec3{0.0f, launch.point.height, 0.0f};
     start += Vec3{way.x, 0.0f, way.z} * launch.point.shift;
     const Vec3 from = start + way * kLead;
-    if (collision != nullptr && walled(*collision, start, from, std::max(kind.radius, 0.01f))) {
+    const f32 radius = std::max(kind.radius, 0.01f);
+    if (collision != nullptr && walled(*collision, start, from, radius)) {
+        return false;
+    }
+    if (std::ranges::any_of(items, [&](const Obstacle& item) {
+            return item.solid && item.blocksSegment(start, from, radius);
+        })) {
         return false;
     }
     EnemyMissile missile;
@@ -286,80 +297,137 @@ void EnemyMissiles::launch(const EnemyMissileKind& kind, const Vec3& from, const
 
 void EnemyMissiles::burst(const Vec3& position, f32 radius, f32 damage, u32 flags, f32 seconds,
                           s32 spared) {
-    Burst burst;
-    burst.position = position;
-    burst.radius = radius;
-    burst.damage = damage;
-    burst.flags = flags;
-    burst.seconds = std::max(seconds, kSimulationStep);
-    burst.secondsLeft = burst.seconds;
-    if (spared >= 0) {
-        burst.spared.push_back(spared);
+    EnemyBlast lob;
+    lob.position = position;
+    lob.radius = radius;
+    lob.damage = damage;
+    lob.flags = flags;
+    lob.stages = {seconds};
+    lob.spared = spared;
+    lob.lit = true;
+    blast(std::move(lob));
+}
+
+void EnemyMissiles::blast(EnemyBlast blast) {
+    std::erase_if(blast.stages, [](f32 stage) { return stage <= 0.0f; });
+    if (blast.stages.empty()) {
+        return;
     }
+    Burst burst;
+    burst.stageLeft = blast.stages.front();
+    if (blast.spared >= 0) {
+        burst.players.push_back({blast.spared, std::numeric_limits<f32>::infinity()});
+    }
+    burst.blast = std::move(blast);
     m_bursts.push_back(std::move(burst));
 }
 
-/** A burst grows to its radius as its harm fades, and is harmless over its last third; each
- * player it reaches is struck once, pushed a little away (ProcessEffects' mode 1). */
-void EnemyMissiles::stepBursts(f32 seconds, std::span<const EnemyView> players) {
+/** Each stage the blast grows to its radius as its harm fades, and is harmless over its last
+ * third (ProcessEffects' mode 1). A player it reaches is pushed a little away and left alone
+ * until the stage is out (gas every half second); past ten, a wall between shelters them.
+ * One of the swarm is left alone for the rest of the stage, and a second at least. */
+void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
+                               std::span<const EnemyView> players,
+                               std::span<const MissileTarget> swarm) {
+    const auto held = [](std::vector<Held>& holds, s32 id) {
+        return std::ranges::any_of(holds, [id](const Held& hold) { return hold.id == id; });
+    };
     for (Burst& burst : m_bursts) {
-        const f32 phase = burst.secondsLeft / burst.seconds;
-        burst.secondsLeft = std::max(0.0f, burst.secondsLeft - seconds);
+        for (std::vector<Held>* holds : {&burst.players, &burst.swarm}) {
+            for (Held& hold : *holds) {
+                hold.secondsLeft -= seconds;
+            }
+            std::erase_if(*holds, [](const Held& hold) { return hold.secondsLeft <= 0.0f; });
+        }
+        const EnemyBlast& blast = burst.blast;
+        const f32 stage = blast.stages[burst.stage];
+        const f32 phase = burst.stageLeft / stage;
+        burst.stageLeft -= seconds;
+        if (burst.stageLeft <= 0.0f) {
+            ++burst.stage;
+            burst.stageLeft = burst.stage < blast.stages.size() ? blast.stages[burst.stage] : 0.0f;
+        }
         if (phase <= kBurstFade) {
             continue;
         }
-        const f32 radius = burst.radius * (kBurstFade + (1.0f - phase));
-        const f32 damage = burst.damage * kBurstGrowth * (phase - kBurstFade);
-        u32 flags = burst.flags;
+        const f32 radius = blast.radius * (kBurstFade + (1.0f - phase));
+        const f32 damage = blast.damage * kBurstGrowth * (phase - kBurstFade);
+        const f32 remaining = phase * stage;
+        u32 flags = blast.flags;
         if (damage < kBurstKnockFrom) {
             flags &= ~0x170u;
         }
-        if (!burst.struckSwarm) {
-            burst.struckSwarm = true;
-            EnemyMissileHit hit;
-            hit.fromBurst = true;
-            hit.damage = damage;
-            hit.flags = flags;
-            hit.position = burst.position;
-            hit.reach = burst.radius;
-            m_hits.push_back(hit);
-        }
+        const auto push = [](const Vec3& away) {
+            const Vec2 flat{away.x, away.z};
+            const Vec2 out = glm::length(flat) > 0.0f ? glm::normalize(flat) : Vec2{0.0f};
+            return Vec3{out.x, 0.0f, out.y};
+        };
         for (const EnemyView& view : players) {
-            if (view.hidden || std::ranges::find(burst.spared, view.player) != burst.spared.end()) {
+            if (view.hidden || held(burst.players, view.player)) {
                 continue;
             }
             const Vec3 middle = view.position + Vec3{0.0f, 0.5f * view.height, 0.0f};
-            const Vec3 away = middle - burst.position;
-            if (std::abs(away.y) > 0.5f * view.height + radius ||
-                std::hypot(away.x, away.z) > radius + view.radius) {
+            const Vec3 away = middle - blast.position;
+            const f32 across = std::hypot(away.x, away.z);
+            if (std::abs(away.y) > 0.5f * view.height + radius || across > radius + view.radius) {
                 continue;
             }
-            burst.spared.push_back(view.player);
+            if (across > kSightFrom && collision != nullptr &&
+                walled(*collision, blast.position, middle, kSightProbe)) {
+                continue;
+            }
+            f32 hold = 0.0f;
+            if ((blast.flags & EnemyBlast::kGas) != 0) {
+                hold = kGasGap;
+            } else if (damage > kHeldFrom) {
+                hold = remaining + kBlastSlack;
+            }
+            if (hold > 0.0f) {
+                burst.players.push_back({view.player, hold});
+            }
             EnemyMissileHit hit;
             hit.fromBurst = true;
             hit.player = view.player;
             hit.damage = damage;
             hit.flags = flags;
-            hit.position = burst.position;
-            const Vec2 flat{away.x, away.z};
-            const Vec2 push = glm::length(flat) > 0.0f ? glm::normalize(flat) : Vec2{0.0f};
-            hit.direction = Vec3{push.x, 0.0f, push.y} * kBurstPush;
+            hit.position = blast.position;
+            hit.direction = push(away) * kBurstPush;
+            m_hits.push_back(hit);
+        }
+        for (const MissileTarget& body : swarm) {
+            const Vec3 away = body.base - blast.position;
+            if (held(burst.swarm, body.id) ||
+                std::hypot(away.x, away.z) > radius + std::max(body.radius, 0.0f)) {
+                continue;
+            }
+            burst.swarm.push_back({body.id, std::max(kSwarmGap, remaining + kBlastSlack)});
+            EnemyMissileHit hit;
+            hit.fromBurst = true;
+            hit.target = body.id;
+            hit.damage = damage;
+            hit.flags = flags;
+            hit.position = blast.position;
+            hit.direction = push(away);
             m_hits.push_back(hit);
         }
     }
-    std::erase_if(m_bursts, [](const Burst& burst) { return burst.secondsLeft <= 0.0f; });
+    std::erase_if(m_bursts,
+                  [](const Burst& burst) { return burst.stage >= burst.blast.stages.size(); });
 }
 
 void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
-                           std::span<const EnemyView> players) {
+                           std::span<const EnemyView> players, std::span<const MissileTarget> swarm,
+                           std::span<const Obstacle> items) {
     if (seconds <= 0) {
         return;
     }
-    stepBursts(seconds, players);
+    m_ricochetIn = std::max(0.0f, m_ricochetIn - seconds);
+    stepBursts(seconds, collision, players, swarm);
     for (EnemyMissile& missile : m_missiles) {
         f32 remaining = std::min(seconds, missile.secondsLeft);
         const f32 gravity = std::max(missile.kind.weight, 0.0f);
         const f32 radius = std::max(missile.kind.radius, 0.0f);
+        const bool pierces = missile.kind.pierces();
         while (remaining > 0 && missile.secondsLeft > 0) {
             // Bound travel as well as time: the world collider tests overlaps, not segments.
             const f32 speedBound = glm::length(missile.velocity) + gravity * kSimulationStep;
@@ -372,7 +440,12 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
             missile.velocity += acceleration * dt;
             missile.turned += missile.kind.spin * dt;
             missile.secondsLeft = std::max(0.0f, missile.secondsLeft - dt);
+            missile.lived += dt;
             remaining = std::max(0.0f, remaining - dt);
+            for (auto& [player, left] : missile.pierced) {
+                left -= dt;
+            }
+            std::erase_if(missile.pierced, [](const auto& held) { return held.second <= 0.0f; });
 
             bool struckWorld = false;
             Vec3 destination = to;
@@ -390,6 +463,14 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                     destination.y = floor->y + radius;
                 }
             }
+            // The level's doors, chests, barrels, generators and rocks stop it where it was,
+            // unharmed; a piercing one goes through (fn_8005ED44, SfxSkipItem).
+            if (!struckWorld && !pierces && std::ranges::any_of(items, [&](const Obstacle& item) {
+                    return item.solid && item.blocksSegment(from, to, radius);
+                })) {
+                struckWorld = true;
+                destination = from;
+            }
             const EnemyView* victim = nullptr;
             f32 first = 1;
             if (!struckWorld) {
@@ -405,13 +486,77 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                     }
                 }
             }
-            missile.position = victim != nullptr ? glm::mix(from, to, first) : destination;
+            // Sent back, it strikes the first of the swarm in its way.
+            const MissileTarget* body = nullptr;
+            if (!struckWorld && missile.reflected) {
+                for (const MissileTarget& target : swarm) {
+                    const auto contact = CombatantProjectile::contact(from, to, radius, target.base,
+                                                                      target.radius, target.height);
+                    if (contact && *contact < first) {
+                        first = *contact;
+                        body = &target;
+                        victim = nullptr;
+                    }
+                }
+            }
+            if (victim != nullptr && victim->reflects) {
+                // Armour that reflects turns it straight back, harmless to its wearer, with
+                // less time and harm left (ProcessEffects, fn_8009EF7C).
+                if (m_ricochetIn <= 0.0f) {
+                    m_ricochetIn = kRicochetGap;
+                    EnemyMissileHit ricochet;
+                    ricochet.ricochet = true;
+                    ricochet.position = glm::mix(from, to, first);
+                    m_hits.push_back(ricochet);
+                }
+                missile.velocity = -missile.velocity;
+                missile.position = from;
+                missile.reflected = true;
+                missile.kind.damage = std::min(missile.kind.damage, kReflectedMost);
+                missile.secondsLeft = missile.secondsLeft > kReflectedLife
+                                          ? kReflectedLife
+                                          : std::max(0.0f, missile.secondsLeft - 1.0f);
+                if (missile.secondsLeft <= 0.0f && missile.kind.burstRadius > 0.0f) {
+                    EnemyMissileHit hit;
+                    hit.shooter = missile.shooter;
+                    hit.damage = missile.kind.damage;
+                    hit.flags = missile.kind.hitFlags();
+                    hit.burstRadius = missile.kind.burstRadius;
+                    hit.position = missile.position;
+                    m_hits.push_back(hit);
+                }
+                continue;
+            }
+            if (victim != nullptr && pierces) {
+                // A piercing missile hurts whoever it passes, each at most every quarter of a
+                // second, and flies on.
+                const bool held = std::ranges::any_of(missile.pierced, [&](const auto& pair) {
+                    return pair.first == victim->player;
+                });
+                if (!held) {
+                    missile.pierced.emplace_back(victim->player, kPierceGap);
+                    EnemyMissileHit hit;
+                    hit.player = victim->player;
+                    hit.shooter = missile.shooter;
+                    hit.damage = missile.kind.damage;
+                    hit.flags = missile.kind.hitFlags();
+                    hit.position = glm::mix(from, to, first);
+                    const f32 speed = glm::length(missile.velocity);
+                    hit.direction = speed > 0.001f ? missile.velocity / speed : Vec3{0, 0, 1};
+                    m_hits.push_back(hit);
+                }
+                victim = nullptr;
+            }
+            missile.position =
+                victim != nullptr || body != nullptr ? glm::mix(from, to, first) : destination;
             // A lob that runs out of time bursts where it is; a shot just goes.
             const bool expired = missile.secondsLeft <= 0;
-            if (struckWorld || victim != nullptr || (expired && missile.kind.burstRadius > 0.0f)) {
+            if (struckWorld || victim != nullptr || body != nullptr ||
+                (expired && missile.kind.burstRadius > 0.0f)) {
                 EnemyMissileHit hit;
                 hit.worldContact = struckWorld;
                 hit.player = victim != nullptr ? victim->player : -1;
+                hit.target = body != nullptr ? body->id : -1;
                 hit.shooter = missile.shooter;
                 hit.damage = missile.kind.damage;
                 hit.flags = missile.kind.hitFlags();
@@ -447,6 +592,10 @@ void EnemyMissiles::draw(RenderDevice& device, const Mat4& clip,
         model = glm::rotate(model, pitch, Vec3{1.0f, 0.0f, 0.0f});
         model = glm::rotate(model, missile.turned.y, Vec3{0.0f, 1.0f, 0.0f});
         model = glm::rotate(model, missile.turned.x, Vec3{1.0f, 0.0f, 0.0f});
+        if (missile.kind.pierces() && missile.lived < kGrowth) {
+            const f32 grown = kSmallest + (1.0f - kSmallest) * missile.lived / kGrowth;
+            model = glm::scale(model, Vec3{grown});
+        }
         missile.model->draw(device, clip, model, lighting);
     }
 }
@@ -466,7 +615,9 @@ void EnemyMissiles::lights(std::vector<PointLight>& out) const {
         }
     }
     for (const Burst& burst : m_bursts) {
-        light(burst.position);
+        if (burst.blast.lit) {
+            light(burst.blast.position);
+        }
     }
 }
 

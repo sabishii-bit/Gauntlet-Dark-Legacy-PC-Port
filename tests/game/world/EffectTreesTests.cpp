@@ -184,6 +184,50 @@ TEST_CASE("effect transforms retain pitch roll and scale from a full attachment"
     REQUIRE(effect.transform() == expected);
     effect.yaw = 1; // full attachment replaces the world-yaw path
     REQUIRE(effect.transform() == expected);
+    // A stretch scales each axis on top of the scale.
+    effect.attachment.reset();
+    effect.yaw = 0;
+    effect.stretch = Vec3{2.5f, 1.0f, 2.5f};
+    REQUIRE(effect.transform() ==
+            glm::scale(glm::translate(Mat4{1}, effect.position), Vec3{5.0f, 2.0f, 5.0f}));
+}
+
+TEST_CASE("an effect can tell how long it has left and fade out over its last moments",
+          "[game][world][effects][suicide]") {
+    const auto root = test::scratchDirectory("effect-fade");
+    writeTextFile(root / "tri.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+    writeTextFile(root / "objects.json", R"({"objects":[{"name":"TRI","file":"tri.obj"}]})");
+    writeFile(root / "white.png", test::kTinyPng);
+    writeTextFile(root / "textures.json",
+                  R"({"bitmaps":[{"name":"WHITE","file":"white.png","width":2,"height":2}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"SMOKE","nodes":[{"name":"ROOT","object":"TRI","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"ACTIVE","frames":30,"frameRate":30}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    EffectTrees::Setting setting;
+    setting.emitParticles = false;
+    setting.fadeSeconds = 0.5f;
+    const u32 id = effects.startSet(device, archive, "SMOKE", Vec3{0}, setting);
+    REQUIRE(id != 0);
+    REQUIRE(effects.remaining(id).has_value());
+    CHECK(*effects.remaining(id) == Catch::Approx(1.0f).margin(0.05f));
+    CHECK_FALSE(effects.remaining(id + 1).has_value());
+    const auto drawnAlpha = [&] {
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, WorldLighting{});
+        REQUIRE_FALSE(device.draws.empty());
+        REQUIRE_FALSE(device.draws.back().vertices.empty());
+        return device.draws.back().vertices.front().color.a;
+    };
+    CHECK(drawnAlpha() == 255);
+    effects.update(0.75f); // a quarter of a second left: half way faded
+    CHECK(*effects.remaining(id) == Catch::Approx(0.25f).margin(0.05f));
+    const u8 fading = drawnAlpha();
+    CHECK(fading < 200);
+    CHECK(fading > 60);
 }
 
 TEST_CASE("persistent effects hold their last pose until explicitly released",

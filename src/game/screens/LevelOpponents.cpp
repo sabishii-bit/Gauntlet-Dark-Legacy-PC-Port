@@ -1,6 +1,7 @@
 #include "game/screens/LevelOpponents.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <format>
@@ -13,9 +14,9 @@
 #include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
-#include "game/screens/LevelFixtures.h"
 #include "game/screens/PlayerPowerups.h"
 #include "game/world/BodyCollision.h"
+#include "game/world/DynamicLights.h"
 namespace gdl::game {
 namespace {
 // The swarm's own sounds (sounds_evt.c): a throw going off, a suicide's cry and bang.
@@ -31,6 +32,31 @@ constexpr s32 kDemonKind = 2;
 constexpr f32 kHeardWhole = 1.4f;  ///< how loud a sound is at nobody's distance, before the cap
 constexpr f32 kHeardFade = 50.0f;  ///< and the distance over which it loses all of that
 constexpr f32 kUnseenBurst = 1.0f; ///< a burst's life when its effect cannot be shown
+constexpr std::string_view kRicochetSound = "S_RICOCHET";
+constexpr u32 kReflectingArmor = 0x01020000; ///< reflective armour and armour reflect
+constexpr s32 kCritterIds = 3000;            ///< the swarm's ids past the ordinary enemies
+constexpr s32 kBossIds = 4000;
+// SuicideExplosion (sfx.c): a burning blast, or in the town and the sky a poison cloud, and
+// either way the thrower kind's own smoke.
+constexpr std::string_view kSuicideBlast = "EXPLOSION";
+constexpr std::string_view kSuicideRing = "EXPRING";
+constexpr std::string_view kSuicideSmoke = "SUICIDEEXP";
+constexpr std::array<std::string_view, 3> kSuicideCloud{"POISONEXP1", "POISONEXP2", "POISONEXP3"};
+constexpr f32 kCloudHold = 2.0f; ///< the cloud's second stage lasts this
+constexpr f32 kBlastRadius = 6.0f;
+constexpr f32 kCloudRadius = 7.5f;
+constexpr u32 kBlastFlags = 0x421; ///< fire, knocked down, an explosion
+constexpr f32 kBlastLight = 20.0f;
+constexpr f32 kRingScale = 1.2f;
+constexpr f32 kCloudDrop = 1.0f;
+constexpr Vec3 kCloudStretch{2.5f, 1.0f, 2.5f};
+constexpr f32 kSmokeFade = 0.5f;
+constexpr f32 kBlastSeconds = 1.0f; ///< the blast's and the cloud's first stage without art
+constexpr f32 kCloudSeconds = 2.0f / 3.0f;
+
+bool cloudRealm(const std::string& level) {
+    return !level.empty() && (level.front() == 'G' || level.front() == 'K');
+}
 } // namespace
 
 f32 LevelOpponents::attenuation(const Vec3& at, std::span<const Vec3> hearers) {
@@ -99,21 +125,53 @@ void LevelOpponents::playEnemyCues() {
     }
 }
 
+/** The swarm and the great ones as a missile sent back or a blast reaches them, by id: the
+ * ordinary enemies by their slots, the great ones and the boss past those. */
+std::vector<MissileTarget> LevelOpponents::swarmTargets() const {
+    std::vector<MissileTarget> swarm = m_enemies.targets();
+    for (MissileTarget target : m_critters.targets(true)) {
+        target.id += kCritterIds;
+        swarm.push_back(target);
+    }
+    for (MissileTarget target : m_bosses.targets()) {
+        target.id += kBossIds;
+        swarm.push_back(target);
+    }
+    return swarm;
+}
+
+/** A hit on one of the swarm by its id in `swarmTargets`, credited to nobody. */
+void LevelOpponents::strikeSwarm(s32 id, f32 damage, u32 flags, const Vec3& direction,
+                                 std::span<const PlayerRuntime> players) {
+    if (id >= kBossIds) {
+        EnemyHit hit;
+        hit.damage = damage;
+        hit.flags = flags;
+        hit.direction = direction;
+        m_bosses.hurt(hit, id - kBossIds);
+    } else if (id >= kCritterIds) {
+        strikeCritter(id - kCritterIds, damage, flags, direction, -1, std::nullopt, false, players);
+    } else {
+        strikeEnemy(id, damage, flags, direction, -1, players);
+    }
+}
+
 /** What the throwers let fly lands (ProcessEffects): on a player it hurts as a blow, heard
- * as an arrow or a bolt; on the world a shot leaves its element's spark; a lob bursts where
- * it ends, and the burst grows over its effect's life, reaching each player once and the
- * swarm about it. */
+ * as an arrow or a bolt; armour that reflects rings as it turns one back; on the world or an
+ * item a shot leaves its element's spark; sent back, it hurts the swarm; a lob bursts where
+ * it ends, and the burst grows over its effect's life. A blast's reach hurts whoever it
+ * finds, gas as gas. */
 void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, const Events& events) {
     if (!m_resources.has_value()) {
         return;
     }
     for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
-        if (hit.fromBurst && hit.player < 0) {
-            for (const s32 id : m_enemies.within(hit.position, hit.reach)) {
-                const Vec3 away = m_enemies.positionOf(id) - hit.position;
-                strikeEnemy(id, hit.damage, hit.flags, Vec3{away.x, 0.0f, away.z}, -1, players);
-            }
+        if (hit.ricochet) {
+            playAt(kRicochetSound, kQuietSound, hit.position);
             continue;
+        }
+        if (hit.target >= 0) {
+            strikeSwarm(hit.target, hit.damage, hit.flags, hit.direction, players);
         }
         u32 effect = 0;
         if (const std::string_view tree = hit.effect(); !tree.empty()) {
@@ -132,10 +190,11 @@ void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, const E
             }
         }
         playAt(hit.sound(), kLoudSound, hit.position);
+        const HurtKind kind = (hit.flags & EnemyBlast::kGas) != 0 ? HurtKind::Gas : HurtKind::Blow;
         for (usize i = 0; i < players.size(); ++i) {
             if (hit.player >= 0 && players[i].actor.player() == hit.player &&
                 players[i].life == PlayerLife::Standing) {
-                events.hurt(i, hit.damage, HurtKind::Blow, true, {hit.flags, hit.direction});
+                events.hurt(i, hit.damage, kind, true, {hit.flags, hit.direction});
             }
         }
         if (hit.burstRadius > 0.0f) {
@@ -144,6 +203,107 @@ void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, const E
                                   life > 0.0f ? life : kUnseenBurst, hit.player);
         }
     }
+}
+
+/** A suicide going up (SuicideExplosion): a burning blast of six with its ring and red light,
+ * or in the town and the sky a poison cloud of seven and a half that hangs on, and the
+ * kind's smoke either way, fading out. The blast's harm grows out from it as it fades. */
+void LevelOpponents::explodeSuicide(const EnemyBurst& burst) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    EnemyBlast blast;
+    blast.position = burst.position;
+    blast.damage = burst.damage;
+    const bool cloud = cloudRealm(m_resources->world.ref().name);
+    ItemArchive& weapons = m_resources->weapons;
+    const auto start = [&](std::string_view tree, const Vec3& at,
+                           const EffectTrees::Setting& setting) -> u32 {
+        if (!weapons.loaded() || !weapons.trees.find(tree).has_value()) {
+            return 0;
+        }
+        const u32 id =
+            m_resources->effects.startSet(m_resources->device, weapons, tree, at, setting);
+        if (id != 0) {
+            m_cueEffects.push_back(id);
+        }
+        return id;
+    };
+    if (cloud) {
+        EffectTrees::Setting setting;
+        setting.stretch = kCloudStretch;
+        const Vec3 at = burst.position - Vec3{0.0f, kCloudDrop, 0.0f};
+        const u32 first = start(kSuicideCloud[0], at, setting);
+        m_clouds.push_back(Cloud{first, 1, at});
+        blast.radius = kCloudRadius;
+        blast.flags = EnemyBlast::kGas;
+        blast.stages = {m_resources->effects.remaining(first).value_or(kCloudSeconds), kCloudHold};
+    } else {
+        EffectTrees::Setting setting;
+        setting.light = EffectTrees::Light{DynamicLights::blast(), kBlastLight, true};
+        const u32 fire = start(kSuicideBlast, burst.position, setting);
+        EffectTrees::Setting ring;
+        ring.scale = kRingScale;
+        start(kSuicideRing, burst.position, ring);
+        blast.radius = kBlastRadius;
+        blast.flags = kBlastFlags;
+        blast.stages = {m_resources->effects.remaining(fire).value_or(kBlastSeconds)};
+    }
+    // The smoke is the thrower kind's own, in the first archive that has it.
+    ItemArchive* smoke = m_enemies.archive(burst.kind);
+    if (smoke == nullptr || !smoke->trees.find(kSuicideSmoke).has_value()) {
+        smoke = nullptr;
+        for (s32 kind = 0; kind < kSwarmKindCount && smoke == nullptr; ++kind) {
+            ItemArchive* archive = m_enemies.kindLoaded(kind) ? m_enemies.archive(kind) : nullptr;
+            if (archive != nullptr && archive->trees.find(kSuicideSmoke).has_value()) {
+                smoke = archive;
+            }
+        }
+    }
+    if (smoke != nullptr) {
+        EffectTrees::Setting setting;
+        setting.fadeSeconds = kSmokeFade;
+        const u32 id = m_resources->effects.startSet(m_resources->device, *smoke, kSuicideSmoke,
+                                                     burst.position, setting);
+        if (id != 0) {
+            m_cueEffects.push_back(id);
+        }
+    }
+    m_enemyMissiles.blast(std::move(blast));
+}
+
+/** A poison cloud turns from its first tree to the one that hangs for two seconds, then to
+ * the one it clears in (SfxSetMorph). */
+void LevelOpponents::advanceClouds() {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    ItemArchive& weapons = m_resources->weapons;
+    for (Cloud& cloud : m_clouds) {
+        if (cloud.effect != 0 && m_resources->effects.playing(cloud.effect)) {
+            continue;
+        }
+        cloud.effect = 0;
+        if (cloud.stage >= kSuicideCloud.size() || !weapons.loaded() ||
+            !weapons.trees.find(kSuicideCloud[cloud.stage]).has_value()) {
+            cloud.stage = kSuicideCloud.size();
+            continue;
+        }
+        EffectTrees::Setting setting;
+        setting.stretch = kCloudStretch;
+        if (cloud.stage == 1) {
+            setting.seconds = kCloudHold;
+        }
+        cloud.effect = m_resources->effects.startSet(
+            m_resources->device, weapons, kSuicideCloud[cloud.stage], cloud.position, setting);
+        if (cloud.effect != 0) {
+            m_cueEffects.push_back(cloud.effect);
+        }
+        ++cloud.stage;
+    }
+    std::erase_if(m_clouds, [](const Cloud& cloud) {
+        return cloud.effect == 0 && cloud.stage >= kSuicideCloud.size();
+    });
 }
 
 Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from,
@@ -192,6 +352,7 @@ void LevelOpponents::close() {
     m_generators.clear();
     m_destroyedGenerators.clear();
     m_enemyMissiles.clear();
+    m_clouds.clear();
     m_yells.clear();
     m_hearers.clear();
     m_critters.close();
@@ -378,6 +539,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
         view.invisible = powerups.invisible();
         view.antiDeath = (powerups.armor & DeathRules::kProtection) != 0;
+        view.reflects = (powerups.armor & kReflectingArmor) != 0;
         if ((powerups.special & powerup::kHealthVamp) != 0) {
             view.meleeWard = EnemyMeleeWard::HealthVamp;
         } else if ((powerups.special & powerup::kHandOfDeath) != 0) {
@@ -505,11 +667,11 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     const bool timeStopped = PlayerPowerups::timeStopped(players);
     m_generators.update(ticks, m_enemies, views, boxes, timeStopped);
     m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed, timeStopped);
-    m_enemyMissiles.update(seconds, &m_resources->world.collision(), views);
+    m_enemyMissiles.update(seconds, &m_resources->world.collision(), views, swarmTargets(), boxes);
     landEnemyMissiles(players, events);
     playEnemyCues();
-    // What blows itself up blasts everything about it, with the bomb's bang; one struck down
-    // stops crying out (enemy_dies, AudioKillBySound).
+    // What blows itself up goes up with the bomb's bang; one struck down stops crying out
+    // (enemy_dies, AudioKillBySound).
     for (const EnemyBurst& burst : m_enemies.takeBursts()) {
         if (burst.silencesYell) {
             for (const SoundHandle yell : m_yells) {
@@ -518,8 +680,9 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
             m_yells.clear();
         }
         playAt(kSuicideBombSound, kLoudSound, burst.position);
-        events.blast(burst.position, LevelFixtures::kBlastRadius, burst.damage);
+        explodeSuicide(burst);
     }
+    advanceClouds();
     events.settleBlasts();
     m_critters.update(ticks, seconds, views, timeStopped);
     // Boss AI is independent of Stop Time; fired missiles likewise keep moving.

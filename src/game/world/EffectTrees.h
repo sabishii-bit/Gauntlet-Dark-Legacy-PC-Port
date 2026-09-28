@@ -42,6 +42,8 @@ public:
     /** How an effect is set going, beyond where. */
     struct Setting {
         f32 scale = 1.0f;
+        Vec3 stretch{1.0f, 1.0f, 1.0f};  ///< per axis, on top of the scale
+        f32 fadeSeconds = 0.0f;          ///< over nought, it fades out over this much of its end
         f32 yaw = 0.0f;                  ///< turned about the upright
         Vec3 velocity{0.0f, 0.0f, 0.0f}; ///< carried along, as what a move sends flying is
         f32 seconds = 0.0f; ///< over nought, it repeats for this long instead of playing once
@@ -65,6 +67,8 @@ public:
         u32 id = 0;
         Vec3 position{0.0f, 0.0f, 0.0f};
         f32 scale = 1.0f;
+        Vec3 stretch{1.0f, 1.0f, 1.0f};
+        f32 fadeSeconds = 0.0f;
         f32 yaw = 0.0f;
         Vec3 velocity{0.0f, 0.0f, 0.0f};
         bool repeats = false;

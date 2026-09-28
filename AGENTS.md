@@ -658,7 +658,19 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   lasts its `EXPSMALL` effect, grows to 3 as its harm falls from 1.5 x to
   nothing over the first two thirds, reaches each player once (not the one
   the lob struck) with a quarter-length knockback push, dropped under 5 harm,
-  and strikes the swarm about it once (ours; retail every frame). The
+  and strikes each of the swarm (enemies, great ones, the boss) once as the ring
+  reaches it (its fxhittime: the stage's rest or a second). Blasts are
+  `EnemyBlast` stages; past ten a wall between shelters a player. Missiles stop
+  unharmed at the level's doors, chests, barrels, generators and rocks (the
+  solid `Obstacle`s; SfxSkipItem), and one of those between a thrower and its
+  launch point keeps the throw in hand. Reflective armour (0x20000, 0x1000000)
+  turns a missile straight back, harmless to its wearer, with its harm capped
+  at 15 and a second less to live (ten at most), `S_RICOCHET` at most once a
+  second; sent back it strikes the swarm uncredited. The garm's bolt (DMG_SUPER)
+  goes through players, hurting each at most every quarter second, and through
+  items, growing from a hundredth to full size over its first third of a
+  second. Not yet: chests and safe rocks taking missile damage, potions and
+  shootable triggers as stops, the garm's stop at a live safe rock. The
   models are the kind's `<PREFIX>_ARROW`, `_BOMB` and `_FBALL` trees (the zombies'
   arrow is a pitchfork). `enemyMissileOf(kind, slot)` is the whole table
   (the demons', ghosts', plague's, sorcerers', warlocks' and garm's bolts of
@@ -722,9 +734,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   too, with the strike row's damage type. gdlunpack's `--only MONSTERS`
   unpacks the seventy-two monster archives (`GENERAL` one folder a realm).
   Not yet: the other minds (guards 8, milestone routes 10, the ghosts' 19,
-  the kiting of 26/28/29 and the rest), Death, IT, the missiles' item
-  obstruction, shield reflection and the garm's pass-through, and the suicide's
-  multi-part SuicideExplosion effect. The swarm's own sounds are only these
+  the kiting of 26/28/29 and the rest), Death, IT, and the poison cloud's harm
+  to items. A suicide goes up as SuicideExplosion does (`explodeSuicide`):
+  `EXPLOSION` with a swelling red light of 20 and `EXPRING` at 1.2, a blast of 6
+  flagged fire, knock-down and explosion (0x421) over the explosion's life; in the
+  town and the sky (G, K) a gas cloud instead, `POISONEXP1`, `POISONEXP2` held two
+  seconds, `POISONEXP3`, a unit down and stretched (2.5, 1, 2.5), a blast of 7.5
+  over its first two trees, gassing a player every half second; either way the
+  kind's own `SUICIDEEXP` smoke, fading over its last half second. Neither touches
+  barrels. The swarm's own sounds are only these
   (sounds_evt.c): `S_ENEMYARROW` as an arrow leaves, `S_ENEMYFIREBALL` as a
   bolt does (a demon's the realm's `S_FIREHOLE`, C/D/F lettered), none for a
   lob, `S_SUICIDE_YELL` as a suicide starts its run (stopped only when a hit
@@ -1694,8 +1712,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   life (ours: retail swells over the damage window). In a dark level (flag 8) each
   standing player carries a lantern (radius 20, intensity 10, ten over them). The
   colours are `game/world/DynamicLights`; the swarm's lobs and their bursts add theirs
-  (`LevelOpponents::lights`). Not yet: the suicide bomber's blast light, and a dark
-  level's blacked-out ambient.
+  (`LevelOpponents::lights`), a suicide's explosion its own. Not yet: a dark level's
+  blacked-out ambient.
 * Additive geometry (`WorldObject::kAdditive`: glows, flames, the force
   fields) is drawn unlit (`WorldScene::kUnlit`), as the original never lights
   it; everything else takes `WorldLighting`. The streams' prelit vertex

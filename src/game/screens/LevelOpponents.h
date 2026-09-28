@@ -102,6 +102,18 @@ private:
     SoundHandle playAt(std::string_view name, f32 level, const Vec3& at);
     void landEnemyMissiles(std::span<PlayerRuntime> players, const Events& events);
     void playEnemyCues();
+    std::vector<MissileTarget> swarmTargets() const;
+    void strikeSwarm(s32 id, f32 damage, u32 flags, const Vec3& direction,
+                     std::span<const PlayerRuntime> players);
+    void explodeSuicide(const EnemyBurst& burst);
+    void advanceClouds();
+    /** A suicide's poison cloud, turning from one tree to the next. */
+    struct Cloud {
+        u32 effect = 0;
+        usize stage = 0; ///< the tree to turn to next
+        Vec3 position{0.0f};
+    };
+    std::vector<Cloud> m_clouds;
     void hearFrom(std::span<const PlayerRuntime> players);
     void applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
                         const Events& events);
