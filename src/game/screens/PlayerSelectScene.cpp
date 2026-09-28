@@ -52,7 +52,8 @@ std::string_view PlayerSelectScene::text(std::string_view id) const {
     return m_context.strings != nullptr ? m_context.strings->get(id) : id;
 }
 
-bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s32 startingPlayer) {
+bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
+                             std::span<const PartyMember> party) {
     close();
     m_context = context;
     m_screen = MenuScreen{};
@@ -113,6 +114,11 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_services.menuTextures.glow = m_services.glowSheet;
     for (s32 i = 0; i < kLaneCount; ++i) {
         m_lanes[static_cast<usize>(i)].reset(i, &m_services);
+    }
+    for (const PartyMember& member : party) {
+        if (member.player >= 0 && member.player < kLaneCount) {
+            m_lanes[static_cast<usize>(member.player)].resume(member.save, member.slot);
+        }
     }
     if (startingPlayer >= 0 && startingPlayer < kLaneCount) {
         m_lanes[static_cast<usize>(startingPlayer)].activate();

@@ -131,6 +131,25 @@ void SelectLane::activate() {
     enter(State::TopMenu);
 }
 
+void SelectLane::resume(const CharacterSave& save, std::optional<usize> slot) {
+    m_save = save;
+    m_saved = slot.has_value();
+    m_hasCharacter = true;
+    m_slotInUse = slot;
+    m_pickClass = save.character;
+    m_pickColor = save.color;
+    m_blits = {};
+    Blit& weapon = blit(Sheet::Weapon);
+    weapon.texture = std::format("S12_WEAP_{}", classCode(m_pickClass & (kStartingClassCount - 1)));
+    weapon.visible = true;
+    weapon.opacity = kFullOpacity;
+    Blit& name = blit(Sheet::Name);
+    name.texture = std::format("{}_NAME", classCode(m_pickClass));
+    name.visible = true;
+    name.opacity = kFullOpacity;
+    enter(State::LockedIn);
+}
+
 void SelectLane::play(SelectSound sound) const {
     if (m_services != nullptr && m_services->playSound) {
         m_services->playSound(sound, *this);

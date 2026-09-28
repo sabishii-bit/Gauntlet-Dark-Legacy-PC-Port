@@ -94,6 +94,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   global Escape quit stands down while a lane is typing. It ends when every
   joined player is locked in and nothing is animating, or when the last
   player backs out.
+* Joining: in the tower only (game_main: world 13, no options menu or scripted camera),
+  a Start on a controller the party does not hold (`PlayScene::canJoin`: arrived,
+  nothing scripted running, a place free) brings everyone to the select screen
+  (`Gauntlet::joinTower`, check_active_players/init_player_select(1)): the party is
+  kept (saved) first and stands locked in its lanes (`SelectLane::resume`, Start still
+  changes a character), the joiner chooses, and the tower opens again with the party
+  grown; a character unchanged keeps its session's help. Levels take no one new.
+  Dropping out while dead (the HUD's Wait In Tower / Quit Game prompt) is not done yet.
 * `screens/PlayerRuntime` owns each participant's actor, optional
   figure, entry save/slot, life state, turbo move, reactions and cooldowns.
   Keep per-player state in that record, not in parallel index-aligned vectors.

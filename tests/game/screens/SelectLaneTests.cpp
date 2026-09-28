@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -118,6 +119,30 @@ TEST_CASE("a lane joins on activation and leaves from the first menu", "[game][s
     others.othersActive = true;
     REQUIRE(f.step(press(false, true), 1, others) == SelectLane::Result::Cleared);
     REQUIRE_FALSE(f.lane.active());
+}
+
+TEST_CASE("a character in play resumes its lane locked in, and Start still changes it",
+          "[game][select]") {
+    Fixture f;
+    CharacterSave save;
+    save.name = "PLAYING";
+    save.character = 2;
+    save.color = 3;
+    f.lane.resume(save, std::optional<usize>{4});
+    CHECK(f.lane.lockedIn());
+    CHECK(f.lane.save().name == "PLAYING");
+    CHECK(f.lane.slotInUse() == std::optional<usize>{4});
+    CHECK(f.lane.saved());
+    CHECK(f.lane.boxClass() == 2);
+    CHECK(f.lane.boxColor() == 3);
+    // Unsaved, it is resumed as such.
+    f.lane.resume(save, std::nullopt);
+    CHECK_FALSE(f.lane.saved());
+    // Start takes it back to its save menu, as any locked-in lane.
+    MenuInput start;
+    start.start = true;
+    f.step(start);
+    CHECK(f.lane.state() == SelectLane::State::SaveMenu);
 }
 
 TEST_CASE("a new character is named, given a class and locked in", "[game][select]") {

@@ -1,5 +1,7 @@
+#include <array>
 #include <cmath>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -16,6 +18,7 @@
 #include "TestSupport.h"
 #include "game/config/GameConfig.h"
 #include "game/menu/MenuInput.h"
+#include "game/players/Party.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/PlayerSelectScene.h"
 
@@ -129,6 +132,32 @@ TEST_CASE("the screen finishes once every player is locked in", "[game][select][
     }
     REQUIRE(outcome == SelectOutcome::Done);
     REQUIRE(frames > PlayerSelectScene::kIdleFrames);
+}
+
+TEST_CASE("a player joining a game in progress finds the party locked in beside them",
+          "[game][select][unpacked]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-scene-join");
+    PlayerSelectScene scene;
+    const auto context = f.context();
+    CharacterSave playing;
+    playing.name = "ALREADY";
+    playing.character = 1;
+    const std::array party{PartyMember{1, playing, std::optional<usize>{0}}};
+    REQUIRE(scene.open(device, context, 0, party));
+    CHECK(scene.lane(1).lockedIn());
+    CHECK(scene.lane(1).save().name == "ALREADY");
+    CHECK(scene.lane(1).slotInUse() == std::optional<usize>{0});
+    CHECK(scene.lane(0).state() == SelectLane::State::TopMenu);
+    // The joiner thinking better of it leaves the party as it was.
+    scene.step(1, player(0, false, true));
+    CHECK_FALSE(scene.lane(0).active());
+    SelectOutcome outcome = SelectOutcome::Running;
+    for (s32 frame = 0; frame < 200 && outcome == SelectOutcome::Running; ++frame) {
+        outcome = scene.step(1, nobody());
+    }
+    CHECK(outcome == SelectOutcome::Done);
+    CHECK(scene.lane(1).lockedIn());
 }
 
 TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][select][unpacked]") {

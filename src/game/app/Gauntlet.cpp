@@ -290,8 +290,8 @@ s32 Gauntlet::playerPressingStart() const {
     return 0;
 }
 
-bool Gauntlet::startPlayerSelect(s32 startingPlayer) {
-    if (m_select.open(renderDevice(), context(), startingPlayer)) {
+bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party) {
+    if (m_select.open(renderDevice(), context(), startingPlayer, party)) {
         return true;
     }
     log::warn("Player select unavailable; unpack the game data into {} with gdlunpack",
@@ -313,9 +313,18 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
         const SelectLane& lane = m_select.lane(player);
         if (lane.lockedIn()) {
-            party.push_back(PartyMember{player, lane.save(), lane.slotInUse()});
+            PartyMember member{player, lane.save(), lane.slotInUse()};
+            // Who stayed the same character keeps what it has been told this session.
+            for (const PartyMember& before : m_joining) {
+                if (before.player == player && before.save.name == member.save.name &&
+                    before.save.character == member.save.character) {
+                    member.helpHeard = before.helpHeard;
+                }
+            }
+            party.push_back(std::move(member));
         }
     }
+    m_joining.clear();
     m_select.close();
     if (outcome == SelectOutcome::Done && startTower(party)) {
         return;
@@ -369,7 +378,34 @@ bool Gauntlet::startTower(std::span<const PartyMember> party, const PlayOptions&
     return false;
 }
 
+bool Gauntlet::joinTower(s32 player) {
+    std::vector<PartyMember> party = m_play->scene.party();
+    keepParty();
+    if (!startPlayerSelect(player, party)) {
+        return false;
+    }
+    m_play->scene.close();
+    m_joining = std::move(party);
+    for (auto& controls : m_controls) {
+        controls.reset();
+    }
+    log::info("Player {} comes to join the party", player + 1);
+    return true;
+}
+
 void Gauntlet::updateTower(f64 deltaSeconds) {
+    // Start on a controller the party does not hold, in the tower, brings everyone to the
+    // select screen with that player, and the tower back with the party grown
+    // (check_active_players, init_player_select(1)).
+    for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
+        if (!m_play->scene.canJoin(player)) {
+            continue;
+        }
+        const auto menu = readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
+        if (menu.start && joinTower(player)) {
+            return;
+        }
+    }
     for (s32 player = 0; player < PlayScene::kPlayerCount; ++player) {
         if (!m_play->scene.canPause(player)) {
             continue;

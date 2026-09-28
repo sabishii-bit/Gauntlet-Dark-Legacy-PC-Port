@@ -242,6 +242,7 @@ TEST_CASE("sparse party ids keep their state together across harm and scene reop
     REQUIRE_FALSE(scene.gameOver().active());
     REQUIRE_FALSE(scene.canPause(3));
     REQUIRE(scene.canPause(1));
+    REQUIRE_FALSE(scene.canJoin(0)); // only the tower takes anyone new
     scene.hurtPlayer(1, 10000.0f, HurtKind::Burn);
     REQUIRE_FALSE(scene.gameOver().active());
     REQUIRE_FALSE(scene.canPause(1));
@@ -512,6 +513,7 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     REQUIRE(scene.intro() == PlayScene::Intro::None);
     // Placed by the options, the party is seen from the follow camera from the first frame.
     REQUIRE(scene.spawning());
+    REQUIRE_FALSE(scene.canJoin(1)); // nobody joins while the party arrives
     REQUIRE_FALSE(scene.startCamera().active());
     REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
     const PlayerActor* actor = scene.actor(0);
@@ -533,6 +535,10 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(actor->save().progress().crystals[1] >= 1);
+    // Arrived in the tower, a player not in the party may join; one in it may not.
+    REQUIRE_FALSE(scene.spawning());
+    REQUIRE(scene.canJoin(1));
+    REQUIRE_FALSE(scene.canJoin(0));
     REQUIRE(world.placedItems().visibleCount() < 15);
     REQUIRE_FALSE(world.placedItems().revealing()); // no welcome, nothing was hidden
     // The card rises over the taker's box and the count shows what the gate wants.
