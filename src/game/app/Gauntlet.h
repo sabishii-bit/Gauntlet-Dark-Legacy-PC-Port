@@ -70,7 +70,9 @@ private:
     bool startLevel(const LevelRef& level, std::span<const PartyMember> party,
                     const PlayOptions& options = {});
     bool startScenario(const std::filesystem::path& file);
-    bool startPlayerSelect(s32 startingPlayer);
+    bool startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party = {});
+    /** `player` joins the party in the tower by way of the select screen. */
+    bool joinTower(s32 player);
     s32 playerPressingStart() const;
     GameContext context();
     void applyWindowIcon();
@@ -118,6 +120,7 @@ private:
         bool secret = false;
     };
     std::optional<Journey> m_journey;
+    std::vector<PartyMember> m_joining; ///< the party in play when a player came to join
     void returnFromChallenge(std::span<const PartyMember> party);
     SaveSlots m_saves; ///< where the party in play is kept
     TransitionScreen m_loadingPicture;

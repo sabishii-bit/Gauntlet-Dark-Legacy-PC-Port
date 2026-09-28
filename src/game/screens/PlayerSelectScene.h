@@ -4,6 +4,7 @@
 #include <array>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string_view>
 
 #include "engine/assets/BitmapFont.h"
@@ -20,6 +21,7 @@
 #include "game/menu/MenuInput.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
+#include "game/players/Party.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/SelectLane.h"
 #include "game/screens/StatusBox.h"
@@ -40,8 +42,10 @@ public:
     static constexpr s32 kIdleFrames = 8;
     using Inputs = std::array<MenuInput, kLaneCount>;
 
-    /** Loads the unpacked select assets; `startingPlayer` joins at once. False when absent. */
-    bool open(RenderDevice& device, const GameContext& context, s32 startingPlayer);
+    /** Loads the unpacked select assets; `startingPlayer` joins at once, and the characters
+     * of `party` (a game in progress) stand locked in their lanes. False when absent. */
+    bool open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
+              std::span<const PartyMember> party = {});
     void close();
     bool isOpen() const { return m_open; }
 

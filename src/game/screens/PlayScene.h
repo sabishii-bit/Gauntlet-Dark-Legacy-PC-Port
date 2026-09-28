@@ -224,6 +224,9 @@ public:
     /** Whether the party has gone through a portal and the picture is coming up over it. */
     bool leaving() const { return m_leaving; }
     bool canPause(s32 player) const;
+    /** Whether `player`, not in the party, may join: in the tower, with nothing scripted
+     * running (game_main's MG_PLAY, world 13, no options or scripted camera). */
+    bool canJoin(s32 player) const;
     const GameOver& gameOver() const { return m_gameOver; }
     /** Where the party is bound once update() has said Travel, and the realm it leaves. */
     const LevelRef& destination() const { return m_destination; }

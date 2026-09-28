@@ -1594,6 +1594,14 @@ bool PlayScene::canPause(s32 player) const {
            actor(player) != nullptr && !fallen(player);
 }
 
+bool PlayScene::canJoin(s32 player) const {
+    return m_open && m_world != nullptr && m_world->isTower() && actor(player) == nullptr &&
+           m_players.size() < static_cast<usize>(kPlayerCount) && !m_leaving &&
+           !m_gameOver.active() && !m_switchCutscene.active() && !spawning() &&
+           !m_messages.active() && !m_sumnerVisit.active() && m_intro == Intro::None &&
+           !m_promotion.active() && !relicCeremonyOn();
+}
+
 CameraView PlayScene::cameraView() const {
     CameraView view;
     if (m_context.config != nullptr) {
