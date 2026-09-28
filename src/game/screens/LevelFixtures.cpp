@@ -1,8 +1,11 @@
 #include "game/screens/LevelFixtures.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <format>
+#include <limits>
+#include <utility>
 
 #include "engine/core/Types.h"
 
@@ -25,6 +28,7 @@ constexpr std::string_view kFireTrapSound = "S_FIREHOLE";
 constexpr std::string_view kBarrelBlast = "EXPLOSION";
 constexpr std::string_view kBarrelGas = "POISONEXP1";
 constexpr std::string_view kBarrelSmoke = "DESTSMOKE";
+constexpr std::string_view kChestDestroyed = "CHESTDEST";
 constexpr f32 kChestBlastDamage = 50.0f; ///< each times the level's trap damage
 constexpr f32 kBarrelBlastDamage = 30.0f;
 constexpr f32 kGasDamage = 10.0f;
@@ -62,6 +66,8 @@ void LevelFixtures::clear() {
     m_traps.clear();
     m_barrels.clear();
     m_safeRocks.clear();
+    m_rubble.clear();
+    m_doomedChests.clear();
     m_clouds.clear();
     m_blasts.clear();
     m_resources.reset();
@@ -88,6 +94,106 @@ void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLigh
     m_traps.draw(device, clip, lighting, camera);
     m_barrels.draw(device, clip, lighting);
     m_safeRocks.draw(device, clip, lighting);
+    m_rubble.draw(device, clip, lighting);
+}
+
+void LevelFixtures::leaveRubble(std::string_view object, const Mat4& transform) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    const std::array<ItemArchive*, 2> archives{&m_resources->world.items(),
+                                               &m_resources->world.realmItems()};
+    m_rubble.leave(m_resources->device, archives, object, transform);
+}
+
+std::optional<usize> LevelFixtures::nearestStanding(std::span<const PlayerRuntime> players,
+                                                    const Vec3& position, f32 reach) {
+    std::optional<usize> nearest;
+    f32 best = reach;
+    for (usize i = 0; i < players.size(); ++i) {
+        if (players[i].life != PlayerLife::Standing) {
+            continue;
+        }
+        const f32 distance = glm::distance(players[i].actor.position(), position);
+        if (distance <= best) {
+            best = distance;
+            nearest = i;
+        }
+    }
+    return nearest;
+}
+
+void LevelFixtures::detonateChest(usize chest, std::optional<usize> opener,
+                                  std::span<PlayerRuntime> players, const Events& events) {
+    if (!m_resources.has_value() || chest >= m_chests.size() || m_chests.chest(chest).gone) {
+        return;
+    }
+    const Vec3 position = m_chests.chest(chest).figure.position();
+    if (m_resources->weapons.loaded()) {
+        EffectTrees::Setting setting;
+        setting.light = EffectTrees::Light{DynamicLights::blast(),
+                                           DynamicLights::kBlastRadiusScale * kBlastRadius};
+        m_resources->effects.startSet(m_resources->device, m_resources->weapons, kChestBlast,
+                                      position, setting);
+    }
+    playRealmSound(kBarrelBlastSound);
+    m_chests.remove(chest);
+    const std::optional<usize> told =
+        opener.has_value() ? opener
+                           : nearestStanding(players, position, std::numeric_limits<f32>::max());
+    if (told.has_value() && events.help) {
+        events.help(HelpMessages::kChestsExplode, *told);
+    }
+    blast(position, kBlastRadius, kChestBlastDamage * trapDamageScale(), players, events);
+}
+
+/** An explosion breaks the chests about it (fn_8005C1DC's container case, at a power of five
+ * or more): a trapped one goes up on the next update, one holding Death lets him out, and the
+ * rest are blown apart, what lay in them with them, leaving their rubble. It also fires the
+ * shootable triggers it reaches. */
+void LevelFixtures::blastFixtures(const Vec3& position, f32 radius, f32 damage,
+                                  const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    const f32 reach = std::max(0.0f, radius - kItemBlastInset);
+    const LevelTriggers& triggers = m_resources->world.triggers();
+    for (usize i = 0; i < triggers.size(); ++i) {
+        const LevelTrigger& trigger = triggers.trigger(i);
+        const Vec3 away = trigger.spot - position;
+        if (trigger.shootable && std::hypot(away.x, away.z) <= reach + trigger.radius) {
+            m_resources->world.shootTrigger(i);
+        }
+    }
+    if (damage < kItemBlastPower) {
+        return;
+    }
+    for (usize i = 0; i < m_chests.size(); ++i) {
+        const Chests::Chest& chest = m_chests.chest(i);
+        if (chest.gone || !chest.shown || !chest.box.touchedBy(position, reach, 0.0f) ||
+            std::ranges::find(m_doomedChests, i) != m_doomedChests.end()) {
+            continue;
+        }
+        if (chest.subtype == Chests::kTrappedChest) {
+            m_doomedChests.push_back(i);
+            continue;
+        }
+        const Vec3 at = chest.figure.position();
+        if (chest.state == Chests::kShut && chest.contents >= 0 && events.releaseEnemy) {
+            events.releaseEnemy(chest.contents, at, chest.count);
+        }
+        if (m_resources->weapons.loaded()) {
+            for (const std::string_view tree : {kChestDestroyed, kBarrelSmoke}) {
+                m_resources->effects.start(m_resources->device, m_resources->weapons, tree, at);
+            }
+        }
+        leaveRubble(chest.subtype == Chests::kRandomChest ? Rubble::kSilverChest : Rubble::kChest,
+                    chest.figure.transform());
+        if (chest.held >= 0) {
+            m_resources->world.discardItem(static_cast<usize>(chest.held));
+        }
+        m_chests.remove(i);
+    }
 }
 /** What the level's traps and blasts are scaled by: its own trap damage and the
  * difficulty's gain. */
@@ -120,7 +226,22 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
     boxes.insert(boxes.end(), barred.begin(), barred.end());
     const std::vector<Obstacle> casks = m_barrels.obstacles();
     boxes.insert(boxes.end(), casks.begin(), casks.end());
-    m_barrels.update(seconds);
+    // A barrel that blew up or gassed is gone once it has broken; a player near where it stood
+    // is told to shoot such barrels from afar (items.c's action 2).
+    for (const usize spent : m_barrels.update(seconds)) {
+        const Breakables::Barrel& barrel = m_barrels.barrel(spent);
+        if (const auto near = nearestStanding(players, barrel.figure.position(), kBarrelWarning);
+            near.has_value() && events.help) {
+            events.help(barrel.kind == BreakableStrike::Kind::Exploding
+                            ? HelpMessages::kRedBarrels
+                            : HelpMessages::kGreenBarrels,
+                        *near);
+        }
+    }
+    // Trapped chests a blast set off go up now, one setting off the next in turn.
+    for (const usize chest : std::exchange(m_doomedChests, {})) {
+        detonateChest(chest, std::nullopt, players, events);
+    }
     m_safeRocks.update(seconds);
     const auto cover = m_safeRocks.obstacles();
     boxes.insert(boxes.end(), cover.begin(), cover.end());
@@ -174,18 +295,7 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             break;
         case ChestEvent::Kind::Opened:
             if (event.explodes) {
-                if (m_resources->weapons.loaded()) {
-                    EffectTrees::Setting setting;
-                    setting.light = EffectTrees::Light{
-                        DynamicLights::blast(), DynamicLights::kBlastRadiusScale * kBlastRadius};
-                    m_resources->effects.startSet(m_resources->device, m_resources->weapons,
-                                                  kChestBlast, event.position, setting);
-                }
-                playRealmSound(kBarrelBlastSound);
-                m_chests.remove(event.chest);
-                events.help(HelpMessages::kChestsExplode, event.visitor);
-                blast(event.position, kBlastRadius, kChestBlastDamage * trapDamageScale(), players,
-                      events);
+                detonateChest(event.chest, event.visitor, players, events);
             } else if (event.gold > 0) {
                 takeItem(actor.save(), ItemOffer{static_cast<s32>(ItemKind::Gold), event.gold});
                 events.card(actor.player(), "GOLD");
@@ -312,9 +422,12 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
     case BreakableStrike::Kind::Plain:
     case BreakableStrike::Kind::Holding:
         playRealmSound(kBarrelBreakSound);
+        // What it held comes out: Death himself, or a pickup (fn_8005E90C).
         if (struck->contents >= 0 &&
-            m_resources->world.placeItemRecord(m_resources->device, struck->contents,
-                                               struck->position, struck->count)) {
+            ((events.releaseEnemy &&
+              events.releaseEnemy(struck->contents, struck->position, struck->count)) ||
+             m_resources->world.placeItemRecord(m_resources->device, struck->contents,
+                                                struck->position, struck->count))) {
             for (usize i = 0; i < players.size(); ++i) {
                 if (players[i].actor.player() == byPlayer) {
                     events.help(HelpMessages::kBarrelsHold, i);
@@ -326,11 +439,13 @@ void LevelFixtures::strikeBarrel(usize barrel, f32 power, s32 byPlayer,
         playRealmSound(kBarrelBlastSound);
         effect(kBarrelBlast);
         effect(kBarrelSmoke);
+        leaveRubble(Rubble::kBlownBarrel, m_barrels.transformOf(barrel));
         m_blasts.push_back(
             Blast{struck->position, kBlastRadius, kBarrelBlastDamage * trapDamageScale()});
         break;
     case BreakableStrike::Kind::Poison: {
         playRealmSound(kBarrelGasSound);
+        leaveRubble(Rubble::kGasBarrel, m_barrels.transformOf(barrel));
         // StartExplosion(25): entrance -> sustained gas -> dispersal,
         // with horizontal scale 3.5 and a four-second sustained hazard.
         EffectTrees::Setting setting;
@@ -416,8 +531,8 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
             }
         }
         events.opponents(felt.position, felt.radius, felt.damage);
+        blastFixtures(felt.position, felt.radius, felt.damage, events);
         // ProcessEffects shortens the item query by 1.5 for DMG_EXPLODE.
-        constexpr f32 kItemBlastInset = 1.5f;
         const auto changes = m_resources->world.blastItems(
             m_resources->device, felt.position, std::max(0.0f, felt.radius - kItemBlastInset),
             felt.damage);
@@ -430,9 +545,12 @@ void LevelFixtures::settleBlasts(std::span<PlayerRuntime> players, const Events&
                 continue; // Magic replaces the bottle; no food-destruction smoke or help.
             }
             // The retail effect table maps both CHESTDEST and ITEMDEST to this tree.
-            for (const auto* tree : {"CHESTDEST", "DESTSMOKE"}) {
+            for (const std::string_view tree : {kChestDestroyed, kBarrelSmoke}) {
                 m_resources->effects.start(m_resources->device, m_resources->weapons, tree,
                                            change.position);
+            }
+            if (change.destroyed) {
+                leaveRubble(Rubble::kItem, glm::translate(Mat4{1.0f}, change.position));
             }
             destroyed |= change.destroyed;
         }

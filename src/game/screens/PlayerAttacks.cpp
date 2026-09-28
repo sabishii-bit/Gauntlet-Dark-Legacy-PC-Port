@@ -510,6 +510,26 @@ std::vector<MissileTarget> PlayerAttacks::strikeTargets(const Targets& targets) 
     return all;
 }
 
+std::vector<MissileTarget> PlayerAttacks::meleeTargets(const Targets& targets) const {
+    std::vector<MissileTarget> reachable = strikeTargets(targets);
+    std::erase_if(reachable, [](const MissileTarget& target) {
+        return target.id >= kSafeRockTargetBase && target.id < kWallTargetBase;
+    });
+    return reachable;
+}
+
+bool PlayerAttacks::immuneToMagic(s32 id, const Targets& targets) {
+    if (id >= kSafeRockTargetBase) {
+        return true; // rocks, walls and switches
+    }
+    if (id >= 0 && id < kEnemyTargetBase) {
+        const auto barrel = static_cast<usize>(id);
+        return barrel >= targets.fixtures.barrels().size() ||
+               targets.fixtures.barrels().barrel(barrel).kind != BreakableStrike::Kind::Holding;
+    }
+    return false;
+}
+
 bool PlayerAttacks::strikeSwitch(s32 id, u32 flags) {
     if (id < kSwitchTargetBase) {
         return false;
@@ -591,9 +611,9 @@ PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong,
         return ranged;
     }
     constexpr f32 kCloseReach = 1.0f;
-    const auto target = TargetAssist::melee(
-        actor.position(), actor.height(), actor.facing(), projectileTargets(targets),
-        actor.radius() + kCloseReach, &m_resources->world.collision());
+    const auto target =
+        TargetAssist::melee(actor.position(), actor.height(), actor.facing(), meleeTargets(targets),
+                            actor.radius() + kCloseReach, &m_resources->world.collision());
     if (!target) {
         return ranged;
     }
@@ -612,9 +632,9 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     const PlayerActor& actor = players[index].actor;
     const PlayerAnimator& animator = players[index].figure->animator();
     constexpr f32 kHitReach = 2.0f;
-    const auto target = TargetAssist::melee(actor.position(), actor.height(), actor.facing(),
-                                            projectileTargets(targets), actor.radius() + kHitReach,
-                                            &m_resources->world.collision());
+    const auto target =
+        TargetAssist::melee(actor.position(), actor.height(), actor.facing(), meleeTargets(targets),
+                            actor.radius() + kHitReach, &m_resources->world.collision());
     if (!target) {
         return;
     }
@@ -638,10 +658,14 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     const Vec3 point = target->base + Vec3{0, target->height * 0.5f, 0};
     const Vec3 direction = target->base - actor.position();
     const s32 id = target->id;
+    if (strikeSwitch(id, flags)) {
+        return;
+    }
     if (id >= kWallTargetBase) {
         targets.fixtures.strikeWall(static_cast<usize>(id - kWallTargetBase), damage, flags);
-    } else if (id >= kSafeRockTargetBase) {
-        targets.fixtures.strikeSafeRock(static_cast<usize>(id - kSafeRockTargetBase), damage);
+        if (targets.fixtureEvents.help) {
+            targets.fixtureEvents.help(HelpMessages::kSecretWalls, index);
+        }
     } else if (id >= kBossTargetBase) {
         const EnemyHit hit{
             damage, flags, direction, actor.player(), experienceLevel(actor.save().experience()),
@@ -651,7 +675,8 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         targets.opponents.strikeCritter(id - kCritterTargetBase, damage, flags, direction,
                                         actor.player(), point, true, players);
     } else if (id >= kGeneratorTargetBase) {
-        targets.opponents.strikeGenerator(id - kGeneratorTargetBase, damage, actor.player());
+        targets.opponents.strikeGenerator(id - kGeneratorTargetBase, damage, actor.player(),
+                                          players);
     } else if (id >= kEnemyTargetBase) {
         targets.opponents.strikeEnemy(id - kEnemyTargetBase, damage, flags, direction,
                                       actor.player(), players, true, point);
@@ -667,13 +692,24 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
     if (!m_resources) {
         return;
     }
-    const auto missileTargets = strikeTargets(targets);
+    std::vector<MissileTarget> missileTargets = strikeTargets(targets);
+    const PlacedItems& lying = m_resources->world.placedItems();
+    for (const usize bottle : lying.shootablePotions()) {
+        const PlacedItems::Item& item = lying.item(bottle);
+        missileTargets.push_back(MissileTarget{kPotionTargetBase + static_cast<s32>(bottle),
+                                               item.position, std::max(item.radius, 0.5f),
+                                               std::max(item.height, 1.0f)});
+    }
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),
                                            missileTargets);
     for (const MissileImpact& impact : m_resources->arsenal.missiles().takeImpacts()) {
         m_resources->arsenal.presentImpact(impact);
         if (impact.potion != 0) {
             beginPotion(impact);
+            continue;
+        }
+        if (impact.target >= kPotionTargetBase) {
+            shootPotion(impact, players, targets);
             continue;
         }
         if (strikeSwitch(impact.target, impact.flags)) {
@@ -714,7 +750,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                                             false, players);
         } else if (impact.target >= kGeneratorTargetBase) {
             targets.opponents.strikeGenerator(impact.target - kGeneratorTargetBase, impact.damage,
-                                              impact.owner);
+                                              impact.owner, players);
         } else if (impact.target >= kEnemyTargetBase) {
             // The hit travels the way the weapon flew: out from whoever threw it.
             Vec3 direction{0.0f, 0.0f, 1.0f};
@@ -736,6 +772,39 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
     }
     updatePotions(seconds, players, targets);
     updateItems(seconds, players, targets);
+}
+
+/** A thrown weapon breaks a bottle lying about (fn_8005C1DC, PlayerDamagedItem): its own magic
+ * goes off with nobody's power, then the thrower's at four fifths of theirs, and the thrower is
+ * told that shooting magic does less. */
+void PlayerAttacks::shootPotion(const MissileImpact& impact, std::span<PlayerRuntime> players,
+                                const Targets& targets) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    const auto kind = m_resources->world.strikePotion(
+        static_cast<usize>(impact.target - kPotionTargetBase), impact.damage);
+    if (!kind.has_value()) {
+        return;
+    }
+    shatterPotion(*kind, impact.position);
+    for (usize i = 0; i < players.size(); ++i) {
+        if (players[i].actor.player() != impact.owner) {
+            continue;
+        }
+        const s32 colour = *kind != 0 ? *kind : m_nextPotionKind;
+        MissileImpact own;
+        own.owner = impact.owner;
+        own.position = impact.position;
+        own.potion = colour;
+        own.potency = kShotMagicShare * m_resources->arsenal.magicPowerOf(players[i].actor);
+        own.damage = kShotMagicShare * kPotionDamage;
+        m_resources->arsenal.burstPotion(colour, impact.position, own.potency, true);
+        beginPotion(own);
+        if (targets.fixtureEvents.help) {
+            targets.fixtureEvents.help(HelpMessages::kShotMagic, i);
+        }
+    }
 }
 
 void PlayerAttacks::usePotion(usize index, std::span<PlayerRuntime> players) {
@@ -815,7 +884,7 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
             burst.hit.push_back(target.id);
             direction.y = 0;
             const s32 byPlayer = burst.impact.owner;
-            if (strikeSwitch(target.id, flags)) {
+            if (immuneToMagic(target.id, targets)) {
                 continue;
             }
             if (target.id >= kWallTargetBase) {
@@ -840,8 +909,8 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                 targets.opponents.strikeCritter(target.id - kCritterTargetBase, power, flags,
                                                 direction, byPlayer, target.base, false, players);
             } else if (target.id >= kGeneratorTargetBase) {
-                targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, power,
-                                                  byPlayer);
+                targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, power, byPlayer,
+                                                  players);
             } else if (target.id >= kEnemyTargetBase) {
                 targets.opponents.strikeEnemy(target.id - kEnemyTargetBase, power, flags, direction,
                                               byPlayer, players);

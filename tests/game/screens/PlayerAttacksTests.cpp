@@ -1,5 +1,8 @@
 #include <algorithm>
 #include <array>
+#include <numbers>
+#include <optional>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -11,7 +14,9 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/Damage.h"
+#include "game/screens/HelpMessages.h"
 #include "game/screens/PlayerAttacks.h"
+#include "game/world/SafeRocks.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
@@ -495,6 +500,58 @@ TEST_CASE("Temple wall projectile hits remove the mesh and collision through the
     f.audio.close();
 }
 
+TEST_CASE("a blow on a secret wall tells of multiple hits; a swing passes the safe rocks by",
+          "[game][screens][player-attacks][walls][melee][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELB6/world.json");
+    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto temple = catalog.byName("E1");
+    REQUIRE(temple);
+    REQUIRE(f.world.load(f.device, root, *temple));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+    f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+    REQUIRE(f.players[0].figure);
+    std::vector<s32> helps;
+    f.targets.fixtureEvents.help = [&](s32 id, usize player) {
+        CHECK(player == 0);
+        helps.push_back(id);
+        return true;
+    };
+    // Wall 0 faces +z at z = -10 (see the projectile test above).
+    const auto& walls = f.world.walls();
+    REQUIRE(walls.size() == 5);
+    const s32 health = walls.wall(0).health;
+    PlayerActor& actor = f.players[0].actor;
+    actor.place({55, walls.target(0, 0).base.y, -9});
+    actor.turnTo(std::numbers::pi_v<f32>);
+    CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Melee);
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(walls.wall(0).health < health);
+    CHECK(helps == std::vector<s32>{HelpMessages::kSecretWalls});
+    f.fixtures.clear();
+
+    // The dragon's lair: a swing never picks a rock, so beside one the character throws.
+    const auto lair = catalog.byName("B6");
+    REQUIRE(lair);
+    REQUIRE(f.world.load(f.device, root, *lair));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+    const SafeRocks& rocks = f.fixtures.safeRocks();
+    REQUIRE(rocks.size() > 0);
+    REQUIRE(rocks.standing(0));
+    const Obstacle& cover = rocks.rock(0).obstacle;
+    actor.place(cover.centre + Vec3{0, 0, cover.cylinderRadius + 1});
+    actor.turnTo(std::numbers::pi_v<f32>);
+    CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Attack);
+    const s32 cover0 = rocks.rock(0).health;
+    f.attacks.melee(0, f.players, f.targets);
+    CHECK(rocks.rock(0).health == cover0);
+    f.fixtures.clear();
+}
+
 TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
           "[game][screens][player-attacks][triggers][unpacked]") {
     const auto root =
@@ -897,6 +954,92 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
     f.attacks.clear();
     f.fixtures.clear();
     f.opponents.close();
+}
+
+TEST_CASE("a thrown weapon breaks a bottle lying about: its magic and the thrower's both go off",
+          "[game][screens][player-attacks][shot-potion][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    const Vec3 origin{10000, 0, 10000};
+    const usize bottle = f.world.placedItems().size();
+    REQUIRE(f.world.placeItem(f.device, "POT_BLU", origin));
+    const std::vector<usize> lying = f.world.placedItems().shootablePotions();
+    REQUIRE(std::ranges::find(lying, bottle) != lying.end());
+    std::vector<s32> helps;
+    f.targets.fixtureEvents.help = [&](s32 id, usize player) {
+        CHECK(player == 0);
+        helps.push_back(id);
+        return true;
+    };
+    MissileSpec spec;
+    spec.weight = 0;
+    spec.radius = 0.25f;
+    MissileLaunch launch;
+    launch.owner = f.players[0].actor.player();
+    launch.position = origin + Vec3{0, 0.5f, -6};
+    launch.velocity = Vec3{0, 0, 20};
+    launch.spec = &spec;
+    launch.damage = 10;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(0.5f, f.players, f.targets);
+    CHECK(f.world.placedItems().item(bottle).taken);
+    // The bottle's own blue magic and the thrower's, the thrower told shooting does less.
+    usize bursts = 0;
+    for (usize i = 0; i < f.effects.count(); ++i) {
+        bursts += f.effects.effect(i).name == "MP_ELEC" ? 1 : 0;
+    }
+    CHECK(bursts == 2);
+    CHECK(helps == std::vector<s32>{HelpMessages::kShotMagic});
+    // Magic, hand blows and aiming never take a bottle for a target.
+    CHECK(f.world.placedItems().shootablePotions().empty());
+    f.attacks.clear();
+    f.fixtures.clear();
+}
+
+TEST_CASE("potion magic leaves the plain, exploding and gas barrels alone but breaks one that "
+          "holds something",
+          "[game][screens][player-attacks][magic-immunity][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    f.targets.fixtureEvents.help = [](s32, usize) { return true; };
+    f.targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool) {};
+    f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32) {};
+    const Breakables& barrels = f.fixtures.barrels();
+    for (const auto kind : {BreakableStrike::Kind::Plain, BreakableStrike::Kind::Exploding,
+                            BreakableStrike::Kind::Poison, BreakableStrike::Kind::Holding}) {
+        std::optional<usize> cask;
+        for (usize i = 0; i < barrels.size() && !cask; ++i) {
+            if (barrels.standing(i) && barrels.barrel(i).kind == kind) {
+                cask = i;
+            }
+        }
+        if (!cask.has_value()) {
+            continue;
+        }
+        CAPTURE(kind);
+        f.attacks.shatterPotion(1, barrels.barrel(*cask).figure.position());
+        for (s32 frame = 0; frame < 60; ++frame) { // the wave is spent well within this
+            f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+        }
+        CHECK(barrels.standing(*cask) == (kind != BreakableStrike::Kind::Holding));
+    }
+    f.attacks.clear();
+    f.fixtures.clear();
 }
 
 TEST_CASE("ownerless potions retain their element and cycle only unspecified colors",

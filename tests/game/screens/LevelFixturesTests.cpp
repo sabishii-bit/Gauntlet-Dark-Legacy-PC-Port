@@ -305,6 +305,127 @@ TEST_CASE("barrel smoke belongs to detonations, not ordinary broken containers",
     f.fixtures.clear();
 }
 
+TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spent barrels go "
+          "leaving their rubble",
+          "[game][screens][level-fixtures][rubble][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    std::vector<s32> helps;
+    std::vector<s32> released;
+    f.events.help = [&](s32 id, usize) {
+        helps.push_back(id);
+        return true;
+    };
+    f.events.hurt = [](usize, f32, HurtKind, bool) {};
+    f.events.opponents = [](const Vec3&, f32, f32) {};
+    f.events.releaseEnemy = [&](s32 record, const Vec3&, s32) {
+        released.push_back(record);
+        return false;
+    };
+    // A shut chest in an explosion is blown apart, leaving its rubble.
+    std::optional<usize> plain;
+    for (usize i = 0; i < f.fixtures.chests().size() && !plain; ++i) {
+        const auto& chest = f.fixtures.chests().chest(i);
+        if (chest.shown && !chest.gone && chest.subtype != Chests::kTrappedChest) {
+            plain = i;
+        }
+    }
+    REQUIRE(plain.has_value());
+    const auto party = std::span{f.players}.first(1);
+    f.players[0].actor.place(Vec3{10000, 0, 10000}); // well away
+    const Vec3 at = f.fixtures.chests().chest(*plain).figure.position();
+    const usize before = f.fixtures.rubble().size();
+    f.fixtures.blast(at, LevelFixtures::kBlastRadius, 30, party, f.events);
+    CHECK(f.fixtures.chests().chest(*plain).gone);
+    CHECK(f.fixtures.rubble().size() > before);
+    CHECK(std::ranges::any_of(released, [](s32 record) { return record >= 0; }));
+    // Too weak to break anything apart: under five.
+    std::optional<usize> other;
+    for (usize i = 0; i < f.fixtures.chests().size() && !other; ++i) {
+        const auto& chest = f.fixtures.chests().chest(i);
+        if (chest.shown && !chest.gone && chest.subtype != Chests::kTrappedChest &&
+            glm::distance(chest.figure.position(), at) > 30.0f) {
+            other = i;
+        }
+    }
+    if (other.has_value()) {
+        f.fixtures.blast(f.fixtures.chests().chest(*other).figure.position(), 6, 4, party,
+                         f.events);
+        CHECK_FALSE(f.fixtures.chests().chest(*other).gone);
+    }
+    // A spent exploding barrel leaves its rubble as it breaks and goes once broken; a player
+    // near it is told to shoot such barrels from afar.
+    std::optional<usize> red;
+    for (usize i = 0; i < f.fixtures.barrels().size() && !red; ++i) {
+        if (f.fixtures.barrels().standing(i) &&
+            f.fixtures.barrels().barrel(i).kind == BreakableStrike::Kind::Exploding) {
+            red = i;
+        }
+    }
+    REQUIRE(red.has_value());
+    const Vec3 cask = f.fixtures.barrels().barrel(*red).figure.position();
+    f.players[0].actor.place(cask + Vec3{20, 0, 0}); // outside the blast, inside nine? no
+    const usize heaps = f.fixtures.rubble().size();
+    f.fixtures.strikeBarrel(*red, 10000, -1, party, f.events);
+    CHECK(f.fixtures.rubble().size() > heaps);
+    CHECK(f.fixtures.barrels().opacityOf(*red) == 1.0f);
+    f.players[0].actor.place(cask + Vec3{5, 0, 0});
+    helps.clear();
+    f32 lowest = 1.0f;
+    for (s32 frame = 0; frame < 300 && !f.fixtures.barrels().barrel(*red).gone; ++frame) {
+        f.fixtures.update(2, 1.0f / 30, party, f.events);
+        lowest = std::min(lowest, f.fixtures.barrels().opacityOf(*red));
+    }
+    CHECK(f.fixtures.barrels().barrel(*red).gone);
+    CHECK(lowest < 1.0f); // it faded as it broke
+    CHECK(std::ranges::find(helps, HelpMessages::kRedBarrels) != helps.end());
+    f.fixtures.clear();
+    CHECK(f.fixtures.rubble().size() == 0);
+}
+
+TEST_CASE("a barrel holding Death lets him out when it breaks, instead of a pickup",
+          "[game][screens][level-fixtures][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    std::optional<usize> holding;
+    for (usize i = 0; i < f.fixtures.barrels().size() && !holding; ++i) {
+        if (f.fixtures.barrels().standing(i) &&
+            f.fixtures.barrels().barrel(i).kind == BreakableStrike::Kind::Holding) {
+            holding = i;
+        }
+    }
+    if (!holding.has_value()) {
+        SKIP("G1 has no barrel that holds anything");
+    }
+    s32 let = -1;
+    f.events.help = [](s32, usize) { return true; };
+    f.events.releaseEnemy = [&](s32 record, const Vec3&, s32) {
+        let = record;
+        return true; // as the level's opponents do for Death
+    };
+    const usize items = f.world.placedItems().size();
+    f.fixtures.strikeBarrel(*holding, 10000, -1, {}, f.events);
+    CHECK(let >= 0);
+    CHECK(f.world.placedItems().size() == items); // nothing dropped in his place
+    f.fixtures.clear();
+}
+
 TEST_CASE("poison barrel cloud remains rendered for the damaging lifetime and disperses",
           "[game][screens][level-fixtures][unpacked]") {
     const auto root =
@@ -343,8 +464,9 @@ TEST_CASE("poison barrel cloud remains rendered for the damaging lifetime and di
     CHECK_FALSE(f.effects.playing(id));
     REQUIRE(f.effects.count() == 1);
     CHECK(f.effects.effect(0).name == "POISONEXP3");
-    CHECK_FALSE(f.fixtures.barrels().barrel(barrel).gone);
-    CHECK(f.fixtures.barrels().barrel(barrel).state == Breakables::kBroken);
+    // The barrel itself is gone once broken, its remains (BARPOI0) left lying.
+    CHECK(f.fixtures.barrels().barrel(barrel).gone);
+    CHECK(f.fixtures.rubble().size() == 1);
     f.effects.update(2);
     CHECK(f.effects.count() == 0);
     f.fixtures.clear();

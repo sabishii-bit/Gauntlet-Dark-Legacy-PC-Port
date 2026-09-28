@@ -636,7 +636,7 @@ void PlayScene::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& directio
     m_opponents.strikeCritter(id, power, flags, direction, byPlayer, where, close, m_players);
 }
 void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
-    m_opponents.strikeGenerator(id, power, byPlayer);
+    m_opponents.strikeGenerator(id, power, byPlayer, m_players);
 }
 
 void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,

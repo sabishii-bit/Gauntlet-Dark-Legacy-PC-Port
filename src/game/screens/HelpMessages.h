@@ -58,10 +58,14 @@ public:
     static constexpr s32 kPotionsFull = 3;
     static constexpr s32 kKeysFull = 4;
     static constexpr s32 kNoPotion = 6;
-    static constexpr s32 kTransporter = 9; ///< on arriving by a transporter
+    static constexpr s32 kTransporter = 9;  ///< on arriving by a transporter
+    static constexpr s32 kSecretWalls = 20; ///< a blow on a wall that breaks
     static constexpr s32 kTrapsHurt = 21;
     static constexpr s32 kRandomChest = 23;
+    static constexpr s32 kShotMagic = 14; ///< a bottle shot does less than one drunk
     static constexpr s32 kBarrelsHold = 27;
+    static constexpr s32 kRedBarrels = 44;     ///< near an exploding barrel's end
+    static constexpr s32 kGreenBarrels = 45;   ///< near a poison barrel's
     static constexpr s32 kFirstTurboName = 57; ///< three to a class: none, the lesser, the greater
     static constexpr s32 kLastTurboName = 79;
     static constexpr s32 kAlreadyHaveRune = 90;

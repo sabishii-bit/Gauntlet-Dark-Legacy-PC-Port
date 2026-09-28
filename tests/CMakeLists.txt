@@ -148,6 +148,7 @@ add_executable(tests
     game/screens/PlaySceneSwitchTests.cpp
     game/screens/SwitchCutsceneTests.cpp
     game/world/LevelFixturesTests.cpp
+    game/world/RubbleTests.cpp
     game/world/SafeRocksTests.cpp
     game/players/LevelWatchTests.cpp
     game/enemies/EnemyKindsTests.cpp

@@ -83,8 +83,15 @@ private:
     /** What a thrown weapon or a burst can strike: the targets and the shootable switches,
      * which aiming and hand blows leave alone. */
     std::vector<MissileTarget> strikeTargets(const Targets& targets) const;
+    /** What a swing can reach: what is struck, but not the safe rocks. */
+    std::vector<MissileTarget> meleeTargets(const Targets& targets) const;
     /** Sets off the switch a strike hit, unless it was only gas; true when it was one. */
     bool strikeSwitch(s32 id, u32 flags);
+    /** What magic leaves alone: every barrel but one that holds something, the walls, the
+     * rocks and the switches. */
+    static bool immuneToMagic(s32 id, const Targets& targets);
+    void shootPotion(const MissileImpact& impact, std::span<PlayerRuntime> players,
+                     const Targets& targets);
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
     void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players);
@@ -95,6 +102,9 @@ private:
     static constexpr s32 kSafeRockTargetBase = 5000;
     static constexpr s32 kWallTargetBase = 6000;
     static constexpr s32 kSwitchTargetBase = 7000; ///< the triggers that are shot
+    static constexpr s32 kPotionTargetBase = 8000; ///< the bottles lying about
+    static constexpr f32 kShotMagicShare = 0.8f;   ///< of a shot bottle's magic (lbl_80346310)
+    static constexpr f32 kPotionDamage = 40.0f;    ///< start_magic's
 
     std::optional<Resources> m_resources;
     MoveStrikes m_strikes;

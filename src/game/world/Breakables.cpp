@@ -169,24 +169,46 @@ std::optional<BreakableStrike> Breakables::strike(usize index, f32 power) {
     return result;
 }
 
-void Breakables::update(f32 seconds) {
-    for (const std::unique_ptr<Barrel>& held : m_barrels) {
-        Barrel& barrel = *held;
+std::vector<usize> Breakables::update(f32 seconds) {
+    std::vector<usize> retired;
+    for (usize index = 0; index < m_barrels.size(); ++index) {
+        Barrel& barrel = *m_barrels[index];
         if (!barrel.shown || barrel.gone) {
             continue;
         }
         barrel.figure.update(seconds);
+        if (barrel.state == kBreaking) {
+            barrel.breakingSeconds += seconds;
+        }
         if (barrel.state != kBreaking || !barrel.figure.finished()) {
             continue;
         }
-        // Gas escapes the barrel, but does not consume its broken staves.
-        if (barrel.kind == BreakableStrike::Kind::Exploding) {
+        // One that blew up or gassed is gone once it has broken, its remains left by whoever
+        // broke it (items.c's action 2: KILL_ITEM); a plain one leaves its staves lying.
+        if (barrel.kind == BreakableStrike::Kind::Exploding ||
+            barrel.kind == BreakableStrike::Kind::Poison) {
             barrel.gone = true;
+            retired.push_back(index);
         } else {
             barrel.state = kBroken;
             barrel.figure.play(kBroken, true);
         }
     }
+    return retired;
+}
+
+f32 Breakables::opacityOf(usize index) const {
+    return opacity(*m_barrels[index]);
+}
+
+f32 Breakables::opacity(const Barrel& barrel) {
+    if (barrel.state != kBreaking || (barrel.kind != BreakableStrike::Kind::Exploding &&
+                                      barrel.kind != BreakableStrike::Kind::Poison)) {
+        return 1.0f;
+    }
+    // It fades out as it breaks: 256 less 2.83 a tick from its sixteenth (lbl_803470A0).
+    const f32 ticks = barrel.breakingSeconds * kTicksPerSecond;
+    return std::clamp((kFadeFrom - kFadeRate * (ticks - kFadeStart)) / kOpaque, 0.0f, 1.0f);
 }
 
 std::vector<Obstacle> Breakables::obstacles() const {
@@ -202,7 +224,7 @@ std::vector<Obstacle> Breakables::obstacles() const {
 void Breakables::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const {
     for (const std::unique_ptr<Barrel>& barrel : m_barrels) {
         if (barrel->shown && !barrel->gone) {
-            barrel->figure.draw(device, clip, lighting);
+            barrel->figure.draw(device, clip, lighting, opacity(*barrel));
         }
     }
 }

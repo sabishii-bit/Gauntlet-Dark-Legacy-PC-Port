@@ -10,7 +10,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 88> kSpecs{{
+constexpr std::array<HelpMessageSpec, 92> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kPotionsFull, "FULLOFBOMBS", "S_MAGICFULL"},
@@ -19,15 +19,19 @@ constexpr std::array<HelpMessageSpec, 88> kSpecs{{
     {7, "USEMAGIC2", "S_USEMAGIC2"},
     {8, "SAVEKEYS", "S_SAVEKEYS"},
     {HelpMessages::kTransporter, "TRANSPORTERSMOVEYOU", "S_TRANSPORTER"},
+    {HelpMessages::kShotMagic, "SHOOTPOTIONLESSER", "S_SHOOTINGMAGIC"},
     {15, "EATMEAT", "S_MEATGIVES"},
     {16, "EATFRUIT", "S_FRUITGIVES"},
     {17, "COLLECTGOLD", "S_COLLECTGOLD"},
     {28, "POISONEDFOOD", "S_POISONEDFOOD"},
     {94, "THROWMAGIC", "S_THROWMAGIC"},
     {95, "MAGICSHIELD", "S_SHIELDMAGIC"},
+    {HelpMessages::kSecretWalls, "FOUNDSECRETWALLS", "S_MULTIPLEHITS"},
     {HelpMessages::kTrapsHurt, "AVOIDOBJECTS", "S_AVOID"},
     {HelpMessages::kRandomChest, "RANDOMCHEST", "S_SILVER"},
     {HelpMessages::kBarrelsHold, "WOODBARREL", "S_SOMEBARRELS"},
+    {HelpMessages::kRedBarrels, "REDBARREL", "S_SHOOTRED"},
+    {HelpMessages::kGreenBarrels, "GREENBARREL", "S_SHOOTGREEN"},
     // message.c's descriptor IDs and text indices, resolved against ENGLISH's names.
     {32, "SPEEDUP", "S_XSPEED"},
     {33, "MAGICUP", "S_XMAGIC"},

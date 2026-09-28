@@ -86,6 +86,10 @@ public:
     void attachItem(usize index, const Mat4& transform, bool contained) {
         m_placedItems.attach(index, transform, contained);
     }
+    void discardItem(usize index) { m_placedItems.discard(index); }
+    std::optional<s32> strikePotion(usize index, f32 damage) {
+        return m_placedItems.strikePotion(index, damage);
+    }
     /** Shows the pickups a party of `players` sees; none for the select screen's empty one. */
     void setPlayerCount(s32 players) {
         m_placedItems.setPlayerCount(players);

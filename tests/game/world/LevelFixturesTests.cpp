@@ -482,9 +482,9 @@ TEST_CASE("barrels stand in the way until blows break them, each after its kind"
     REQUIRE_FALSE(barrels.barrel(0).gone);
     REQUIRE(barrels.barrel(1).gone);
     REQUIRE(barrels.strike(2, 100)->broken);
+    // A gas barrel, like one that blew up, is retired once its breaking has played.
     barrels.update(1);
-    CHECK_FALSE(barrels.barrel(2).gone);
-    CHECK(barrels.barrel(2).state == Breakables::kBroken);
+    CHECK(barrels.barrel(2).gone);
     CHECK_FALSE(barrels.barrel(2).box.solid);
 }
 

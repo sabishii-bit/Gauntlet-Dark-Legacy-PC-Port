@@ -1295,6 +1295,15 @@ TEST_CASE("the swarm is heard at full within twenty of the nearest player, gone 
     CHECK(LevelOpponents::attenuation(Vec3{0, 0, 500}, {}) == 1.0f);     // nobody standing
 }
 
+TEST_CASE("a character hits a generator a hundredth softer a level under the place, a tenth "
+          "harder a level over",
+          "[level-opponents][generators]") {
+    CHECK(LevelOpponents::generatorPowerScale(5, 0.0f) == 1.0f); // no level for the place
+    CHECK(LevelOpponents::generatorPowerScale(5, 5.0f) == 1.0f);
+    CHECK(LevelOpponents::generatorPowerScale(1, 11.0f) == Catch::Approx(0.9f));
+    CHECK(LevelOpponents::generatorPowerScale(13, 10.0f) == Catch::Approx(1.3f));
+}
+
 TEST_CASE("a suicide struck down goes up in a burning blast that reaches the party and the swarm "
           "once",
           "[level-opponents][suicide]") {

@@ -13,6 +13,7 @@
 #include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
 #include "game/world/LockedGates.h"
+#include "game/world/Rubble.h"
 #include "game/world/SafeRocks.h"
 #include "game/world/Traps.h"
 namespace gdl::game {
@@ -60,9 +61,23 @@ public:
     const Breakables& barrels() const { return m_barrels; }
     const SafeRocks& safeRocks() const { return m_safeRocks; }
     SafeRocks& safeRocks() { return m_safeRocks; }
+    const Rubble& rubble() const { return m_rubble; }
+    static constexpr f32 kItemBlastInset = 1.5f; ///< DMG_EXPLODE shortens the item query
+    static constexpr f32 kItemBlastPower = 5.0f; ///< the least that breaks an item apart
+    static constexpr f32 kBarrelWarning = 9.0f;  ///< a player this near a spent barrel is told
 
 private:
     void updateClouds(f32 seconds, std::span<PlayerRuntime> players, const Events& events);
+    /** A trapped chest goes up: its burst, its bang and a blast of fifty at the trap scale;
+     * whoever opened it, or else the nearest standing, is told chests may do this. */
+    void detonateChest(usize chest, std::optional<usize> opener, std::span<PlayerRuntime> players,
+                       const Events& events);
+    /** An explosion's work on the chests and the shootable triggers within it. */
+    void blastFixtures(const Vec3& position, f32 radius, f32 damage, const Events& events);
+    /** Leaves `object` as rubble placed by `transform`, from the level's items. */
+    void leaveRubble(std::string_view object, const Mat4& transform);
+    static std::optional<usize> nearestStanding(std::span<const PlayerRuntime> players,
+                                                const Vec3& position, f32 reach);
     void playGateSound(s32 subtype);
     void playRealmSound(std::string_view stem);
     f32 trapDamageScale() const;
@@ -88,5 +103,7 @@ private:
     Traps m_traps;
     Breakables m_barrels;
     SafeRocks m_safeRocks;
+    Rubble m_rubble;
+    std::vector<usize> m_doomedChests; ///< trapped chests a blast set off, to go up next update
 };
 } // namespace gdl::game
