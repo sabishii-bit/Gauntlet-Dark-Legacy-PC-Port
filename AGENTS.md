@@ -382,9 +382,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   hooks retain the interleaving of blasts, legend rites, boss victories and
   player level changes. Clear shared effects before closing the opponent
   archives; the meter and missiles are released before their borrowed assets.
-  Blasts hurt
-  whoever is within their radius and strike the barrels in it (queued, so a
-  barrel that blows up sets off its neighbours without recursion): a trapped
+  A blast is a
+  ring over its explosion's life (EXPLOSION's second, EXPCHEST's two and a
+  half; StartExplosion, ProcessEffects mode 1): each update it reaches
+  R x (1.33 - phase) and deals P x 1.5 x (phase - 0.33), ending two thirds
+  through, so the near are hit at once for about P and the far later for less.
+  It reaches each player (a wall between shelters one past ten; under five it
+  floors nobody), barrel, wall, rock, trigger and opponent once (a blow of two
+  or less may come again), the items 1.5 short of it, and a barrel it breaks
+  starts its own ring in the same step (queued, without recursion): a trapped
   chest 50, an exploding barrel 30, both over 12 units, a poison barrel a
   cloud of 6.5 units that does 10 every half second for four seconds, all
   times the trap damage scale. Cries follow the original's ids: fire `PAIN1`,

@@ -214,6 +214,9 @@ public:
     usize count() const { return m_missiles.size(); }
     usize burstCount() const { return m_bursts.size(); }
     const EnemyMissile& missile(usize index) const { return m_missiles[index]; }
+    /** Whether the world stands between `from` and `to` for a body of `radius`. */
+    static bool walled(const WorldCollision& collision, const Vec3& from, const Vec3& to,
+                       f32 radius);
     /** The velocity a lob leaves with to land `to` from `from` at `speed` along the ground. */
     static Vec3 lobVelocity(const Vec3& from, const Vec3& to, f32 speed);
 

@@ -39,8 +39,10 @@ f32 flatDistance(const Vec3& a, const Vec3& b) {
     return std::sqrt(dx * dx + dz * dz);
 }
 
-/** Whether the world stands between `from` and `to` for a body of `radius`. */
-bool walled(const WorldCollision& collision, const Vec3& from, const Vec3& to, f32 radius) {
+} // namespace
+
+bool EnemyMissiles::walled(const WorldCollision& collision, const Vec3& from, const Vec3& to,
+                           f32 radius) {
     const f32 length = glm::distance(from, to);
     const f32 stride = std::max(radius * 0.5f, kLeastSpatialStep);
     const auto steps = std::max(1, static_cast<s32>(std::ceil(length / stride)));
@@ -53,8 +55,6 @@ bool walled(const WorldCollision& collision, const Vec3& from, const Vec3& to, f
     }
     return false;
 }
-
-} // namespace
 
 std::string_view EnemyMissileHit::effect() const {
     if (burstRadius > 0) {

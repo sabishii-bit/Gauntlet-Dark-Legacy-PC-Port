@@ -498,8 +498,10 @@ LevelFixtures::Events PlayScene::fixtureEvents() {
         .help = [this](s32 id, usize i) { return postHelp(id, i); },
         .card = [this](s32 player,
                        std::string_view name) { m_hud.pickups().addCard(player, name); },
-        .opponents = [this](const Vec3& position, f32 radius,
-                            f32 damage) { hurtOpponentsByBlast(position, radius, damage); },
+        .opponents =
+            [this](const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached) {
+                hurtOpponentsByBlast(position, radius, damage, reached);
+            },
         .releaseEnemy =
             [this](s32 record, const Vec3& position, s32 count) {
                 return m_opponents.releaseDeath(record, position, count);
@@ -516,15 +518,34 @@ void PlayScene::blast(const Vec3& position, f32 radius, f32 damage) {
 void PlayScene::settleBlasts() {
     m_fixtures.settleBlasts(m_players, fixtureEvents());
 }
-void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage) {
+void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage,
+                                     std::vector<s32>& reached) {
+    constexpr f32 kHeldFrom = 2.0f;   ///< a blow over this is not dealt the same one again
+    constexpr s32 kGenerators = 1000; ///< the blast's ids: enemies, then these
+    constexpr s32 kCritters = 2000;
+    constexpr s32 kBoss = 3000;
+    const auto first = [&](s32 id) {
+        if (std::ranges::find(reached, id) != reached.end()) {
+            return false;
+        }
+        if (damage > kHeldFrom) {
+            reached.push_back(id);
+        }
+        return true;
+    };
     for (const s32 enemy : m_opponents.enemies().within(position, radius)) {
+        if (!first(enemy)) {
+            continue;
+        }
         const Vec3 away = m_opponents.enemies().positionOf(enemy) - position;
         strikeEnemy(enemy, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }
     for (const s32 generator : m_opponents.generators().within(position, radius)) {
-        strikeGenerator(generator, damage, -1);
+        if (first(kGenerators + generator)) {
+            strikeGenerator(generator, damage, -1);
+        }
     }
-    if (m_opponents.bosses().within(position, radius)) {
+    if (m_opponents.bosses().within(position, radius) && first(kBoss)) {
         EnemyHit struck;
         struck.damage = damage;
         struck.flags = EnemyHit::kKnockDown;
@@ -534,6 +555,9 @@ void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damag
         m_opponents.bosses().hurt(struck);
     }
     for (const s32 critter : m_opponents.critters().within(position, radius)) {
+        if (!first(kCritters + critter)) {
+            continue;
+        }
         const Vec3 away = m_opponents.critters().positionOf(critter) - position;
         strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
     }

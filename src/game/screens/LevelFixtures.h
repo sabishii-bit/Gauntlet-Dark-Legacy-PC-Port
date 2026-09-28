@@ -27,6 +27,7 @@ namespace gdl::game {
 class LevelFixtures {
 public:
     static constexpr f32 kBlastRadius = 12.0f;
+    static constexpr f32 kExplosionSeconds = 1.0f; ///< EXPLOSION's thirty frames
     struct Resources {
         RenderDevice& device;
         LevelWorld& world;
@@ -39,7 +40,10 @@ public:
         std::function<void(usize, f32, HurtKind, bool)> hurt;
         std::function<bool(s32, usize)> help; ///< whether the message went up
         std::function<void(s32, std::string_view)> card;
-        std::function<void(const Vec3&, f32, f32)> opponents;
+        /** A blast's ring reaching `radius` about a point with `damage`: the swarm, the
+         * great ones, the boss and the generators within it and not yet in the blast's
+         * `reached` (ids of the caller's), which a blow over two joins. */
+        std::function<void(const Vec3&, f32, f32, std::vector<s32>&)> opponents;
         std::function<bool(s32, const Vec3&, s32)> releaseEnemy;
         std::function<void(s32, const Vec3&)> shatterPotion;
     };
@@ -72,9 +76,15 @@ public:
     void strikeWall(usize index, f32 power, u32 flags = 0);
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
                       const Events& events);
+    /** An explosion: a ring over its effect's `seconds` (StartExplosion, ProcessEffects mode
+     * 1) growing from a third of `radius` to the whole as its harm falls from one and a half
+     * times `damage` (a third of the way in) to nothing two thirds through, reaching each
+     * thing once as it gets to it. */
     void blast(const Vec3& position, f32 radius, f32 damage, std::span<PlayerRuntime> players,
-               const Events& events);
+               const Events& events, f32 seconds = kExplosionSeconds);
     void settleBlasts(std::span<PlayerRuntime> players, const Events& events);
+    /** Grows the blasts under way by `seconds` (the update does, after the fixtures). */
+    void advanceBlasts(f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     Chests& chests() { return m_chests; }
     const Chests& chests() const { return m_chests; }
     LockedGates& gates() { return m_gates; }
@@ -95,7 +105,8 @@ private:
     void detonateChest(usize chest, std::optional<usize> opener, std::span<PlayerRuntime> players,
                        const Events& events);
     /** An explosion's work on the chests and the shootable triggers within it. */
-    void blastFixtures(const Vec3& position, f32 radius, f32 damage, const Events& events);
+    void blastFixtures(const Vec3& position, f32 radius, f32 damage, const Events& events,
+                       std::vector<s32>& reached);
     /** Leaves `object` as rubble placed by `transform`, from the level's items. */
     void leaveRubble(std::string_view object, const Mat4& transform);
     static std::optional<usize> nearestStanding(std::span<const PlayerRuntime> players,
@@ -117,7 +128,16 @@ private:
         Vec3 position{0.0f, 0.0f, 0.0f};
         f32 radius = 0.0f;
         f32 damage = 0.0f;
+        f32 seconds = kExplosionSeconds;
+        f32 elapsed = 0.0f;
+        bool started = false;
+        bool done = false;
+        std::vector<usize> players; ///< party indices it has reached
+        std::vector<s32> reached;   ///< the fixtures it has reached
+        std::vector<s32> opponents; ///< the opponents it has, by the scene's ids
     };
+    /** One step of a blast's ring, as it stands `elapsed` into its life. */
+    void feel(Blast& ring, std::span<PlayerRuntime> players, const Events& events);
     std::vector<Blast> m_blasts;
 
     Chests m_chests;
