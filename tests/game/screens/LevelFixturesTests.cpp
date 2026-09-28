@@ -12,6 +12,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/Combatant.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LevelFixtures.h"
@@ -485,6 +486,38 @@ TEST_CASE("the swarm's missiles are stopped by rocks, bottles and the triggers t
             CHECK(stop.rockArmor == rocks.rock(static_cast<usize>(stop.rock)).armor);
         }
     }
+    f.fixtures.clear();
+}
+
+TEST_CASE("the great ones walk through chests and into the barrels they break",
+          "[game][screens][level-fixtures][critter-rams][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(4);
+    const auto items = f.fixtures.critterObstacles();
+    CHECK(items.size() == f.fixtures.obstacles().size());
+    const Breakables& barrels = f.fixtures.barrels();
+    usize breakable = 0;
+    usize chests = 0;
+    for (const CombatantObstacle& item : items) {
+        if (item.kind == CombatantObstacle::Kind::Breakable) {
+            REQUIRE(item.id >= 0);
+            const Breakables::Barrel& cask = barrels.barrel(static_cast<usize>(item.id));
+            CHECK(barrels.standing(static_cast<usize>(item.id)));
+            CHECK(item.health == cask.health);
+            CHECK(item.explodes == (cask.kind == BreakableStrike::Kind::Exploding));
+            ++breakable;
+        }
+        chests += item.kind == CombatantObstacle::Kind::Chest ? 1 : 0;
+    }
+    CHECK(breakable == barrels.obstacles().size());
+    CHECK(chests == f.fixtures.chests().obstacles().size());
     f.fixtures.clear();
 }
 

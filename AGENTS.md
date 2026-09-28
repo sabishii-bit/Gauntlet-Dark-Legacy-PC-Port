@@ -796,7 +796,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `Golem` owns realm-costume selection and five-unit knockback resistance;
   `General` owns its realm-costumed priority-move definition; `Gargoyle` owns
   form-specific assets and the defeated form used for key drops. These definitions
-  do not invent missing patrol/statue behavior. `Critters` owns their shared
+  do not invent missing patrol/statue behavior. Walking, a great one meets the
+  level's items (CritterCollideItems, fn_8005D5C8; `LevelFixtures::critterObstacles`
+  and the generators): golems and gargoyles (`breaksItems`) walk through chests and
+  strike barrels and generators no taller than three for their type's `damageScale`
+  (TYPE +0xB8) times the level's enemy damage every step against one, stopped while
+  it stands or as it blows up (`CombatantRam`, no one's blow); everything else solid,
+  and for a general everything, stops them. Their body's wall radius stands in for
+  the hit nodes golems and gargoyles test. `Critters` owns their shared
   sixteen-slot roster and shared assets, preserving stable ids, cross-family
   collision, slot-order updates and event submission order. Use its typed
   spawnGolem/spawnGeneral/spawnGargoyle entry points; the legacy kind-id adapter

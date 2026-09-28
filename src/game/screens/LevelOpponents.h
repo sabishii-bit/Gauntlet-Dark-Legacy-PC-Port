@@ -3,6 +3,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <utility>
 
 #include "engine/core/Types.h"
 
@@ -60,10 +61,14 @@ public:
      * enemies it comes to see stand (fn_80060114). */
     void watch(const ViewVolume& view, const Vec3& attention);
     usize pendingPlacements() const { return m_pending.size(); }
-    /** `stops` are what else stands in the way of the swarm's missiles. */
+    /** `stops` are what else stands in the way of the swarm's missiles, `walkedInto` what
+     * of the fixtures stands where the great ones walk. */
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                 std::span<const Obstacle> fixtures, const Events& events,
-                std::span<const MissileStop> stops = {});
+                std::span<const MissileStop> stops = {},
+                std::span<const CombatantObstacle> walkedInto = {});
+    /** The great ones' blows on barrels they walked into since the last call (by index). */
+    std::vector<CombatantRam> takeBarrelRams() { return std::exchange(m_barrelRams, {}); }
     /** The swarm's missiles' blows on safe rocks since the last call, for the level. */
     std::vector<RockHit> takeRockHits() { return m_enemyMissiles.takeRockHits(); }
     /** Drain hits from the last projectile/attack phase before a level transition freezes
@@ -147,6 +152,11 @@ private:
     Enemies m_enemies;
     Generators m_generators;
     Critters m_critters;
+    std::vector<CombatantRam> m_barrelRams;
+    static constexpr s32 kGeneratorRamBase = 2000;
+    static constexpr f32 kShortGenerator = 3.0f; ///< a great one breaks one no taller
+    std::vector<CombatantObstacle>
+    critterObstacles(std::span<const CombatantObstacle> fixtures) const;
     Bosses m_bosses;
     BossMeters m_bossMeter;
     EnemyMissiles m_enemyMissiles;

@@ -8,6 +8,7 @@ CombatantDefinition Gargoyle::definition(std::string_view form) {
     CombatantDefinition out;
     out.name = form.empty() ? "GAR_EAGL" : normalizeAssetName(form);
     out.kind = CombatantKind::Gargoyle;
+    out.breaksItems = true;
     const auto underscore = out.name.find('_');
     out.dropForm = underscore == std::string::npos ? out.name : out.name.substr(underscore + 1);
     return out;

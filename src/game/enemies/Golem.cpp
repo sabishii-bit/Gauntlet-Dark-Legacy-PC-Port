@@ -6,6 +6,7 @@ CombatantDefinition Golem::definition() {
     out.kind = CombatantKind::Golem;
     out.realmCostume = true;
     out.knockbackReduction = 5.0f;
+    out.breaksItems = true;
     return out;
 }
 } // namespace gdl::game
