@@ -650,7 +650,8 @@ void LevelOpponents::applyGrab(const CombatGrab& grab, bool boss,
  * is taken: a power blow from a tall one is a knock that makes its victim flinch. What the
  * party has done to it is paid in experience. */
 void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
-                            std::span<const Obstacle> fixtures, const Events& events) {
+                            std::span<const Obstacle> fixtures, const Events& events,
+                            std::span<const MissileStop> stops) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -667,7 +668,19 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     const bool timeStopped = PlayerPowerups::timeStopped(players);
     m_generators.update(ticks, m_enemies, views, boxes, timeStopped);
     m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed, timeStopped);
-    m_enemyMissiles.update(seconds, &m_resources->world.collision(), views, swarmTargets(), boxes);
+    std::vector<MissileStop> inTheWay;
+    for (const Obstacle& box : m_generators.obstacles()) {
+        inTheWay.push_back(MissileStop::of(box));
+    }
+    if (stops.empty()) {
+        for (const Obstacle& box : fixtures) {
+            inTheWay.push_back(MissileStop::of(box));
+        }
+    } else {
+        inTheWay.insert(inTheWay.end(), stops.begin(), stops.end());
+    }
+    m_enemyMissiles.update(seconds, &m_resources->world.collision(), views, swarmTargets(),
+                           inTheWay);
     landEnemyMissiles(players, events);
     playEnemyCues();
     // What blows itself up goes up with the bomb's bang; one struck down stops crying out

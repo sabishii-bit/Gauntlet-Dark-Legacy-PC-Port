@@ -666,16 +666,20 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   and strikes each of the swarm (enemies, great ones, the boss) once as the ring
   reaches it (its fxhittime: the stage's rest or a second). Blasts are
   `EnemyBlast` stages; past ten a wall between shelters a player. Missiles stop
-  unharmed at the level's doors, chests, barrels, generators and rocks (the
-  solid `Obstacle`s; SfxSkipItem), and one of those between a thrower and its
-  launch point keeps the throw in hand. Reflective armour (0x20000, 0x1000000)
+  unharmed at the level's doors, chests, barrels and generators, the bottles
+  lying about, the triggers that are shot (not set off) and tent walls while
+  raised (`LevelFixtures::missileStops`, fn_8005ED44/SfxSkipItem); a standing
+  safe rock takes the blow (`RockHit`, dealt by the scene through
+  `strikeSafeRock`). One of the solid boxes between a thrower and its launch
+  point keeps the throw in hand. Reflective armour (0x20000, 0x1000000)
   turns a missile straight back, harmless to its wearer, with its harm capped
   at 15 and a second less to live (ten at most), `S_RICOCHET` at most once a
   second; sent back it strikes the swarm uncredited. The garm's bolt (DMG_SUPER)
   goes through players, hurting each at most every quarter second, and through
-  items, growing from a hundredth to full size over its first third of a
-  second. Not yet: chests and safe rocks taking missile damage, potions and
-  shootable triggers as stops, the garm's stop at a live safe rock. The
+  items but a safe rock its blow leaves standing, growing from a hundredth to
+  full size over its first third of a second. Not yet: a tent wall knocked to
+  its fourth move by a missile passing near, and the launch check's other
+  candidates (bottles, triggers, tent walls). The
   models are the kind's `<PREFIX>_ARROW`, `_BOMB` and `_FBALL` trees (the zombies'
   arrow is a pitchfork). `enemyMissileOf(kind, slot)` is the whole table
   (the demons', ghosts', plague's, sorcerers', warlocks' and garm's bolts of
