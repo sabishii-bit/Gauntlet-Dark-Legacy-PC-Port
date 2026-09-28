@@ -37,6 +37,7 @@ struct EnemyScales {
     f32 sight = 1.0f;
     f32 damage = 1.0f;
     f32 missileRate = 1.0f;     ///< how long casters wait between casts
+    f32 missileAim = 0.0f;      ///< how far up or down a thrower's aim strays
     f32 playerLevel = 0.0f;     ///< the level the place is meant for; none when nought
     bool bossEncounter = false; ///< applies to every opponent in the arena, not just the boss
     s32 players = 1;            ///< how many are in the game: a boss's share of harm and worth
@@ -97,6 +98,7 @@ struct EnemyHit {
     std::optional<Vec3> where;        ///< where it landed, when that is known
     bool close = false;               ///< a blow struck in the hand, not a missile
     bool antiDeath = false;
+    bool selfInflicted = false; ///< a suicide's own fuse: no cry, burst or death skin
 };
 
 /** Where an enemy is asked to appear: about `position`, facing `direction`. */
@@ -120,6 +122,16 @@ struct EnemyBurst {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 damage = 0.0f;
     s32 enemy = -1;
+    bool silencesYell = false; ///< set off by a hit rather than its own fuse
+};
+
+/** A sound one of the swarm makes other than on being hit: a throw going off (the arrow's
+ * or a bolt's), or a suicide's yell as it starts its run. */
+struct EnemyCue {
+    enum class Kind : u8 { Arrow, Bolt, Yell };
+    Kind kind = Kind::Arrow;
+    s32 enemyKind = 0;
+    Vec3 position{0.0f, 0.0f, 0.0f};
 };
 
 /** The strengths a placement gives past the tiers: the variants. */
@@ -198,6 +210,7 @@ public:
     std::vector<EnemyBlow> takeBlows();
     std::vector<EnemyLoss> takeLosses();
     std::vector<EnemyBurst> takeBursts();
+    std::vector<EnemyCue> takeCues();
     std::vector<EnemyFeedback> takeFeedback();
     std::vector<DeathEvent> takeDeathEvents();
     bool draining(s32 id) const;
@@ -359,6 +372,7 @@ private:
     std::vector<EnemyBlow> m_blows;
     std::vector<EnemyLoss> m_losses;
     std::vector<EnemyBurst> m_bursts;
+    std::vector<EnemyCue> m_cues;
     std::vector<EnemyFeedback> m_feedback;
     std::vector<DeathEvent> m_deathEvents;
     std::mt19937 m_random;

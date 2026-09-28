@@ -71,6 +71,7 @@ LevelInfo parseLevel(const nlohmann::json& json, std::span<const LevelEnemy> ros
         level.tuning.generatorRate = scaled("generatorRate");
         level.tuning.generatorMost = scaled("generatorMost");
         level.tuning.enemyMissileRate = scaled("enemyMissileRate");
+        level.tuning.enemyMissileAim = scaled("enemyMissileAim");
         const f32 missileSpeed = tuning->value("enemyMissileSpeed", 0.0f);
         level.tuning.enemyMissileSpeed = missileSpeed != 0.0f ? missileSpeed : 1.0f;
     }

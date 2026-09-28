@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <format>
 #include <functional>
+#include <limits>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -16,6 +17,135 @@
 #include "game/screens/PlayerPowerups.h"
 #include "game/world/BodyCollision.h"
 namespace gdl::game {
+namespace {
+// The swarm's own sounds (sounds_evt.c): a throw going off, a suicide's cry and bang.
+constexpr std::string_view kArrowSound = "S_ENEMYARROW";
+constexpr std::string_view kBoltSound = "S_ENEMYFIREBALL";
+constexpr std::string_view kDemonBoltSound = "S_FIREHOLE"; ///< the realm's own in C, D and F
+constexpr std::string_view kSuicideYellSound = "S_SUICIDE_YELL";
+constexpr std::string_view kSuicideBombSound = "S_SUICIDE_BOMB";
+constexpr f32 kQuietSound = 127.0f; ///< the levels of 255 they are played at
+constexpr f32 kLoudSound = 224.0f;
+constexpr f32 kFullLevel = 255.0f;
+constexpr s32 kDemonKind = 2;
+constexpr f32 kHeardWhole = 1.4f;  ///< how loud a sound is at nobody's distance, before the cap
+constexpr f32 kHeardFade = 50.0f;  ///< and the distance over which it loses all of that
+constexpr f32 kUnseenBurst = 1.0f; ///< a burst's life when its effect cannot be shown
+} // namespace
+
+f32 LevelOpponents::attenuation(const Vec3& at, std::span<const Vec3> hearers) {
+    if (hearers.empty()) {
+        return 1.0f;
+    }
+    f32 nearest = std::numeric_limits<f32>::max();
+    for (const Vec3& hearer : hearers) {
+        nearest = std::min(nearest, glm::distance(hearer, at));
+    }
+    return std::clamp(kHeardWhole - nearest / kHeardFade, 0.0f, 1.0f);
+}
+
+void LevelOpponents::hearFrom(std::span<const PlayerRuntime> players) {
+    m_hearers.clear();
+    for (const PlayerRuntime& runtime : players) {
+        if (runtime.life == PlayerLife::Standing) {
+            m_hearers.push_back(runtime.actor.followPoint());
+        }
+    }
+}
+
+SoundHandle LevelOpponents::playAt(std::string_view name, f32 level, const Vec3& at) {
+    if (!m_resources.has_value() || name.empty()) {
+        return kNoSound;
+    }
+    const f32 heard = attenuation(at, m_hearers);
+    if (heard <= 0.0f) {
+        return kNoSound;
+    }
+    return m_resources->audio.playNamed(name, level / kFullLevel * heard);
+}
+
+void LevelOpponents::lights(std::vector<PointLight>& out) const {
+    m_enemyMissiles.lights(out);
+}
+
+/** A throw going off sounds as it leaves (fn_8004E448): the arrow's twang, a bolt's (a
+ * demon's the realm's fire-hole roar); a suicide cries out as it starts its run. */
+void LevelOpponents::playEnemyCues() {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    for (const EnemyCue& cue : m_enemies.takeCues()) {
+        switch (cue.kind) {
+        case EnemyCue::Kind::Arrow: playAt(kArrowSound, kQuietSound, cue.position); break;
+        case EnemyCue::Kind::Bolt:
+            if (cue.enemyKind == kDemonKind) {
+                const std::string& level = m_resources->world.ref().name;
+                const char realm = level.empty() ? ' ' : level.front();
+                playAt(realm == 'C' || realm == 'D' || realm == 'F'
+                           ? std::format("{}{}", kDemonBoltSound, realm)
+                           : std::string{kDemonBoltSound},
+                       kQuietSound, cue.position);
+            } else {
+                playAt(kBoltSound, kQuietSound, cue.position);
+            }
+            break;
+        case EnemyCue::Kind::Yell:
+            if (const SoundHandle yell = playAt(kSuicideYellSound, kLoudSound, cue.position);
+                yell != kNoSound) {
+                m_yells.push_back(yell);
+            }
+            break;
+        }
+    }
+}
+
+/** What the throwers let fly lands (ProcessEffects): on a player it hurts as a blow, heard
+ * as an arrow or a bolt; on the world a shot leaves its element's spark; a lob bursts where
+ * it ends, and the burst grows over its effect's life, reaching each player once and the
+ * swarm about it. */
+void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
+        if (hit.fromBurst && hit.player < 0) {
+            for (const s32 id : m_enemies.within(hit.position, hit.reach)) {
+                const Vec3 away = m_enemies.positionOf(id) - hit.position;
+                strikeEnemy(id, hit.damage, hit.flags, Vec3{away.x, 0.0f, away.z}, -1, players);
+            }
+            continue;
+        }
+        u32 effect = 0;
+        if (const std::string_view tree = hit.effect(); !tree.empty()) {
+            EffectTrees::Setting setting;
+            setting.unlit = true;
+            setting.depthWrite = false;
+            if (hit.burstRadius <= 0) {
+                setting.tint.a = 96;
+            }
+            if (m_resources->weapons.loaded()) {
+                effect = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                                       tree, hit.position, setting);
+                if (effect != 0) {
+                    m_cueEffects.push_back(effect);
+                }
+            }
+        }
+        playAt(hit.sound(), kLoudSound, hit.position);
+        for (usize i = 0; i < players.size(); ++i) {
+            if (hit.player >= 0 && players[i].actor.player() == hit.player &&
+                players[i].life == PlayerLife::Standing) {
+                events.hurt(i, hit.damage, HurtKind::Blow, true, {hit.flags, hit.direction});
+            }
+        }
+        if (hit.burstRadius > 0.0f) {
+            const f32 life = m_resources->effects.remaining(effect).value_or(kUnseenBurst);
+            m_enemyMissiles.burst(hit.position, hit.burstRadius, hit.damage, hit.flags,
+                                  life > 0.0f ? life : kUnseenBurst, hit.player);
+        }
+    }
+}
+
 Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from,
                                      const Vec3& to) const {
     auto bodies = m_enemies.targets();
@@ -62,6 +192,8 @@ void LevelOpponents::close() {
     m_generators.clear();
     m_destroyedGenerators.clear();
     m_enemyMissiles.clear();
+    m_yells.clear();
+    m_hearers.clear();
     m_critters.close();
     m_bossMeter.clear();
     m_bosses.close();
@@ -91,6 +223,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         scales.sight = level->tuning.enemySightScale(gain);
         scales.damage = level->tuning.enemyDamage;
         scales.missileRate = level->tuning.enemyMissileRate;
+        scales.missileAim = level->tuning.enemyMissileAim;
         scales.playerLevel = level->tuning.playerLevel;
         scales.bossEncounter = level->bossType >= 0;
         breeding.health = level->tuning.generatorHealth;
@@ -363,6 +496,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         player.breathGap = std::max(0.0f, player.breathGap - std::max(seconds, 0.0f));
         player.effectGap = std::max(0.0f, player.effectGap - std::max(seconds, 0.0f));
     }
+    hearFrom(players);
     const std::vector<EnemyView> views = enemyViews(players);
     std::vector<Obstacle> boxes = m_generators.obstacles();
     boxes.insert(boxes.end(), fixtures.begin(), fixtures.end());
@@ -372,36 +506,18 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     m_generators.update(ticks, m_enemies, views, boxes, timeStopped);
     m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed, timeStopped);
     m_enemyMissiles.update(seconds, &m_resources->world.collision(), views);
-    // What the throwers let fly lands on the party, or bursts where it fell; what blows
-    // itself up blasts everything about it.
-    for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
-        if (const std::string_view tree = hit.effect(); !tree.empty()) {
-            EffectTrees::Setting setting;
-            setting.unlit = true;
-            setting.depthWrite = false;
-            if (hit.burstRadius <= 0) {
-                setting.tint.a = 96;
-            }
-            if (m_resources->weapons.loaded()) {
-                const u32 effect = m_resources->effects.startSet(
-                    m_resources->device, m_resources->weapons, tree, hit.position, setting);
-                if (effect != 0) {
-                    m_cueEffects.push_back(effect);
-                }
-            }
-        }
-        m_resources->audio.playNamed(hit.sound());
-        for (usize i = 0; i < players.size(); ++i) {
-            if (hit.player >= 0 && players[i].actor.player() == hit.player &&
-                players[i].life == PlayerLife::Standing) {
-                events.hurt(i, hit.damage, HurtKind::Pierce, true, {hit.flags, hit.direction});
-            }
-        }
-        if (hit.burstRadius > 0.0f) {
-            events.blast(hit.position, hit.burstRadius, hit.damage);
-        }
-    }
+    landEnemyMissiles(players, events);
+    playEnemyCues();
+    // What blows itself up blasts everything about it, with the bomb's bang; one struck down
+    // stops crying out (enemy_dies, AudioKillBySound).
     for (const EnemyBurst& burst : m_enemies.takeBursts()) {
+        if (burst.silencesYell) {
+            for (const SoundHandle yell : m_yells) {
+                m_resources->audio.stop(yell);
+            }
+            m_yells.clear();
+        }
+        playAt(kSuicideBombSound, kLoudSound, burst.position);
         events.blast(burst.position, LevelFixtures::kBlastRadius, burst.damage);
     }
     events.settleBlasts();
@@ -525,6 +641,7 @@ void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const
     if (!m_resources.has_value()) {
         return;
     }
+    hearFrom(players);
     awardBossLosses(players, events);
     awardCritterLosses(players, events);
     awardEnemyLosses(events);
@@ -537,7 +654,7 @@ void LevelOpponents::awardEnemyLosses(const Events& events) {
     }
     for (const EnemyFeedback& feedback : m_enemies.takeFeedback()) {
         if (const auto* level = m_resources->world.level()) {
-            m_resources->audio.playNamed(feedback.sound(level->enemies, level->bossType));
+            playAt(feedback.sound(level->enemies, level->bossType), kLoudSound, feedback.position);
         }
         const std::string_view tree = feedback.effect();
         ItemArchive* archive = m_enemies.archive(feedback.kind);

@@ -347,6 +347,7 @@ public:
                 intent.action = EnemyAction::ReadyToWalk; // the fuse lit
                 if (sense.action == EnemyAction::Run || sense.action == EnemyAction::ReadyToWalk) {
                     memory.mode = 2;
+                    intent.yell = true; // AudioSuicideYell, as the run starts
                 }
             }
             break;

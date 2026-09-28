@@ -5,6 +5,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/Knockback.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerCapture.h"
 #include "game/players/PlayerTransport.h"
@@ -33,6 +34,7 @@ struct PlayerRuntime {
     f32 surfaceGap = 0.0f;                  ///< seconds before a harmful surface can hurt it again
     s32 hitFlashTicks = 0;                  ///< two 30 Hz frames of the white damage skin
     PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
+    Knockback knockback;                    ///< the pushes of this frame's hits, and the slide
     TurboMeter turbo;
     std::vector<s32> helpHeard; ///< since the character was loaded, distinct from saved help
     TurboMove move;

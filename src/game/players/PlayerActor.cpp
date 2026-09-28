@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "engine/core/Types.h"
 
@@ -65,15 +66,27 @@ void PlayerActor::update(const MoveInput& input, f32 cameraYaw, f32 seconds,
         return;
     }
     const Vec3 direction{std::sin(heading), 0.0f, std::cos(heading)};
-    if (collision == nullptr) {
-        m_position += direction * distance;
+    travel(direction * distance, collision);
+}
+
+void PlayerActor::slide(const Vec3& offset, const WorldCollision* collision) {
+    travel(Vec3{offset.x, 0.0f, offset.z}, collision);
+}
+
+void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
+    const f32 distance = glm::length(offset);
+    if (distance <= 0.0f) {
         return;
     }
-    // Walk in steps no longer than half the body, so no wall is ever stepped clean through.
+    if (collision == nullptr) {
+        m_position += offset;
+        return;
+    }
+    // Go in steps no longer than half the body, so no wall is ever stepped clean through.
     const auto steps = std::max(1, static_cast<s32>(std::ceil(distance / (m_radius * 0.5f))));
-    const f32 stride = distance / static_cast<f32>(steps);
+    const Vec3 stride = offset / static_cast<f32>(steps);
     for (s32 i = 0; i < steps; ++i) {
-        Vec3 target = m_position + direction * stride;
+        Vec3 target = m_position + stride;
         target = collision->resolveWalls(target, m_radius, target.y + kFootClearance,
                                          target.y + m_height - kFootClearance);
         const auto floor = collision->floorAt(target, kStepUp, kDrop);
@@ -83,6 +96,17 @@ void PlayerActor::update(const MoveInput& input, f32 cameraYaw, f32 seconds,
         target.y = floor->y;
         m_position = target;
     }
+}
+
+bool PlayerActor::fall(f32 seconds, const WorldCollision& collision) {
+    const auto floor = collision.floorAt(m_position, kStepUp, kFallReach);
+    if (floor.has_value() && floor->y >= m_position.y) {
+        m_position.y = floor->y; // a floor that rose under it lifts it at once
+        return false;
+    }
+    const f32 lowest = floor.has_value() ? floor->y : -std::numeric_limits<f32>::infinity();
+    m_position.y = std::max(lowest, m_position.y - kFallSpeed * std::max(seconds, 0.0f));
+    return true;
 }
 
 void PlayerActor::settle(const WorldCollision& collision) {

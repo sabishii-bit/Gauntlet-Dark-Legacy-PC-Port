@@ -24,7 +24,6 @@ constexpr f32 kPushFloor = 0.01f;
 constexpr f32 kPushFrameRate = 30.0f; ///< knock-back decays once per game frame
 constexpr f32 kGravity = 100.0f;
 constexpr f32 kDeathSkinRate = 15.0f;
-constexpr f32 kLaunchFacing = 0.707f;  ///< a missile goes only within 45 degrees of the facing
 constexpr f32 kOnScreenMargin = 15.0f; ///< past twice its radius, what still counts as in view
 constexpr f32 kBomberScare = 10.0f;    ///< the swarm keeps this far from a lit suicide bomber
 constexpr f32 kCastTicks = 90.0f;      ///< a caster's least wait, times the level's missile rate
@@ -182,6 +181,8 @@ void Enemies::close() {
     m_stocks.clear();
     m_blows.clear();
     m_losses.clear();
+    m_bursts.clear();
+    m_cues.clear();
     m_feedback.clear();
     m_deathEvents.clear();
     m_device = nullptr;
@@ -1023,9 +1024,15 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
         EnemyHit own;
         own.damage = 999.0f;
         own.player = -1;
+        own.selfInflicted = true;
         hurt(slot, own);
         react(enemy); // dead of it at once
         return;
+    }
+    if (intent.yell) {
+        m_cues.push_back(
+            {EnemyCue::Kind::Yell, enemy.kind,
+             enemy.position + Vec3{0.0f, enemyKind(enemy.kind).attentionHeight, 0.0f}});
     }
     if (intent.throwing) {
         enemy.animator.request(EnemyAction::Throw);
@@ -1211,18 +1218,26 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
                                      : enemy.position + Vec3{0, kind.attentionHeight, 0},
                                  enemy.yaw,
                                  enemy.reach};
-    m_feedback.push_back(feedback);
+    // A suicide's own fuse kills it without a cry, a burst of blood or a death skin
+    // (damage_enemy's play_effects, fn_800945D0's player_index test).
+    if (!hit.selfInflicted) {
+        m_feedback.push_back(feedback);
+    }
     enemy.flashSeconds = killed ? 0.0f : 2.0f / 30.0f;
     if (killed) {
         enemy.killed = true;
-        enemy.deathSkin = feedback.deathSkin();
-        enemy.deathSkinFrames = feedback.deathSkinFrames();
-        // Whatever kills a suicide sets it off, a blast where it stood (enemy_dies).
+        if (!hit.selfInflicted) {
+            enemy.deathSkin = feedback.deathSkin();
+            enemy.deathSkinFrames = feedback.deathSkinFrames();
+        }
+        // Whatever kills a suicide sets it off, a blast where it stood (enemy_dies); only a
+        // hit cuts its yell short.
         if (enemy.algorithm == kSuicideWay) {
             EnemyBurst burst;
             burst.position = bodyCentre(enemy);
             burst.damage = kSuicideDamage * m_scales.damage;
             burst.enemy = id;
+            burst.silencesYell = !hit.selfInflicted;
             m_bursts.push_back(burst);
         }
     }
@@ -1249,16 +1264,17 @@ std::vector<EnemyFeedback> Enemies::takeFeedback() {
     return out;
 }
 
-/** A shot or a lob at the player it is after, from its eyes to their middle. */
+/** A shot or a lob at the player it is after, aimed from its middle at theirs (or twenty
+ * ahead with nobody), with the launch sound of what goes (fn_8004E448). */
 void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
                     EnemyMissiles& missiles, f32 speedScale) {
+    constexpr f32 kBlindReach = 20.0f;
     Stock* stock = stockOf(enemy.kind);
     if (stock == nullptr) {
         return;
     }
-    const EnemyKind& kind = enemyKind(enemy.kind);
-    const Vec3 from = enemy.position + Vec3{0.0f, kind.attentionHeight, 0.0f};
-    Vec3 aim = from + Vec3{std::sin(enemy.yaw), 0.0f, std::cos(enemy.yaw)} * 20.0f;
+    const Vec3 from = bodyCentre(enemy);
+    Vec3 aim = from + Vec3{std::sin(enemy.yaw), 0.0f, std::cos(enemy.yaw)} * kBlindReach;
     if (const EnemyView* view = viewOf(players, enemy.target); view != nullptr) {
         aim = view->position + Vec3{0.0f, 0.5f * view->height, 0.0f};
     }
@@ -1280,13 +1296,28 @@ void Enemies::shoot(Enemy& enemy, s32 slot, std::span<const EnemyView> players,
     if (!model->bound()) {
         return;
     }
-    const Vec2 toward{aim.x - from.x, aim.z - from.z};
-    if (glm::length(toward) > 0.0f &&
-        glm::dot(glm::normalize(toward), Vec2{std::sin(enemy.yaw), std::cos(enemy.yaw)}) <
-            kLaunchFacing) {
+    EnemyMissileLaunch launch;
+    launch.body = from;
+    launch.target = aim;
+    launch.facing = enemy.yaw;
+    launch.point = enemyLaunchPointOf(enemy.kind, which);
+    launch.speedScale = speedScale;
+    launch.aimError = m_scales.missileAim;
+    launch.model = model;
+    launch.shooter = slot;
+    if (!missiles.launch(what, launch, m_collision)) {
         return;
     }
-    missiles.launch(what, from, aim, speedScale, model, slot);
+    // The arrow's and the bolt's go off as they leave; a lob goes quietly.
+    if (which == EnemyMissileKind::kArrow) {
+        m_cues.push_back({EnemyCue::Kind::Arrow, enemy.kind, from});
+    } else if (which == EnemyMissileKind::kBolt) {
+        m_cues.push_back({EnemyCue::Kind::Bolt, enemy.kind, from});
+    }
+}
+
+std::vector<EnemyCue> Enemies::takeCues() {
+    return std::exchange(m_cues, {});
 }
 
 const TreeModel* Enemies::bodyOf(const Enemy& enemy) {

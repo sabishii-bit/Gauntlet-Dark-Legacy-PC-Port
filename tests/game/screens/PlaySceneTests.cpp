@@ -1932,7 +1932,10 @@ TEST_CASE("a character strafes with its facing held, rings itself with a potion,
     for (s32 i = 0; i < 20; ++i) {
         scene.update(1.0 / 60.0, walking);
     }
-    REQUIRE(glm::distance(scene.actor(0)->position(), floored) < 0.05f); // it cannot walk off
+    // It cannot walk off: only the blast throws it, back the way from the blast.
+    const Vec3 thrown = scene.actor(0)->position() - floored;
+    REQUIRE(glm::dot(thrown, ahead) < 0.0f);
+    REQUIRE(glm::length(thrown) < 2.0f);
     for (s32 i = 0; i < 600 && scene.animator(0)->floored(); ++i) {
         scene.update(1.0 / 60.0, still);
     }

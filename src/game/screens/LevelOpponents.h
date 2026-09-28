@@ -91,8 +91,18 @@ public:
     const EnemyMissiles& missiles() const { return m_enemyMissiles; }
     BossMeters& meter() { return m_bossMeter; }
     const BossMeters& meter() const { return m_bossMeter; }
+    /** The lights the swarm's lobs and their bursts give off. */
+    void lights(std::vector<PointLight>& out) const;
+    /** How loud a sound made at `at` is heard: full within twenty of the nearest standing
+     * player, fading to nothing at seventy (sndFxPlay3DAtten). */
+    static f32 attenuation(const Vec3& at, std::span<const Vec3> hearers);
 
 private:
+    /** Plays `name` at `level` of 255 as heard from where the players stand. */
+    SoundHandle playAt(std::string_view name, f32 level, const Vec3& at);
+    void landEnemyMissiles(std::span<PlayerRuntime> players, const Events& events);
+    void playEnemyCues();
+    void hearFrom(std::span<const PlayerRuntime> players);
     void applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
                         const Events& events);
     void awardEnemyLosses(const Events& events);
@@ -144,6 +154,8 @@ private:
     std::array<u32, Enemies::kMost> m_deathEffects{};
     SoundHandle m_deathSound = kNoSound;
     bool m_deathContact = false;
+    std::vector<SoundHandle> m_yells; ///< suicides' cries, cut short when one is struck down
+    std::vector<Vec3> m_hearers;      ///< where the standing players are, for how loud
 
     std::array<f32, 4> m_critterExperienceOwed{};
     std::vector<s32> m_destroyedGenerators; ///< credited IDs, drained on the next update

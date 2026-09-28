@@ -1282,4 +1282,16 @@ TEST_CASE("Stop Time prevents melee releases without stopping incoming damage or
     CHECK(contacts == before);
     opponents.close();
 }
+
+TEST_CASE("the swarm is heard at full within twenty of the nearest player, gone past seventy",
+          "[game][screens][level-opponents][enemy-sound]") {
+    const std::array hearers{Vec3{0, 0, 0}, Vec3{100, 0, 0}};
+    CHECK(LevelOpponents::attenuation(Vec3{10, 0, 0}, hearers) == 1.0f);
+    CHECK(LevelOpponents::attenuation(Vec3{0, 0, 20}, hearers) == Catch::Approx(1.0f));
+    CHECK(LevelOpponents::attenuation(Vec3{0, 0, 45}, hearers) == Catch::Approx(0.5f));
+    CHECK(LevelOpponents::attenuation(Vec3{0, 0, 70}, hearers) ==
+          Catch::Approx(0.0f).margin(1e-6f));
+    CHECK(LevelOpponents::attenuation(Vec3{95, 0, 0}, hearers) == 1.0f); // the nearer one
+    CHECK(LevelOpponents::attenuation(Vec3{0, 0, 500}, {}) == 1.0f);     // nobody standing
+}
 } // namespace

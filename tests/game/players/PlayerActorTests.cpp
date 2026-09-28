@@ -157,4 +157,49 @@ TEST_CASE("a strafing character steps where it is sent without turning to it",
     REQUIRE(actor.yaw() == Catch::Approx(1.5707964f));
 }
 
+TEST_CASE("a knock slides the body along the ground, never through a wall or off an edge",
+          "[game][players][actor][knockback]") {
+    PlayerActor actor;
+    const CharacterSave save;
+    actor.spawn(0, save, nullptr, Vec3{0.0f, 0.0f, 0.0f}, 0.0f);
+    const WorldCollision collision = room();
+    actor.slide(Vec3{0.0f, 3.0f, 2.0f}, &collision);
+    CHECK(actor.position() == Vec3{0.0f, 0.0f, 2.0f}); // along the ground only
+    CHECK(actor.yaw() == 0.0f);                        // a slide does not turn it
+    actor.slide(Vec3{20.0f, 0.0f, 0.0f}, &collision);
+    CHECK(actor.position().x == Approx(5.0f - actor.radius()).margin(0.01f));
+    actor.place(Vec3{-9.5f, 0.0f, 0.0f});
+    actor.slide(Vec3{-5.0f, 0.0f, 0.0f}, &collision);
+    CHECK(actor.position().x > -10.0f);
+    CHECK(actor.position().y == 0.0f);
+    actor.turnTo(1.0f);
+    CHECK(actor.yaw() == 1.0f);
+}
+
+TEST_CASE("a body sinks to a floor gone lower at sixteen a second, and rides one that rose",
+          "[game][players][actor][falling]") {
+    PlayerActor actor;
+    const CharacterSave save;
+    actor.spawn(0, save, nullptr, Vec3{0.0f, 10.0f, 0.0f}, 0.0f);
+    const WorldCollision collision = room();
+    // Ten over its floor: it sinks, no faster than sixteen a second, and lands.
+    CHECK(actor.fall(0.25f, collision));
+    CHECK(actor.position().y == Approx(10.0f - 4.0f));
+    CHECK(actor.fall(0.25f, collision));
+    CHECK(actor.position().y == Approx(2.0f));
+    CHECK(actor.fall(0.25f, collision));
+    CHECK(actor.position().y == 0.0f);
+    CHECK_FALSE(actor.fall(0.25f, collision));
+    CHECK(actor.position().y == 0.0f);
+    // A floor a little above it lifts it at once.
+    actor.place(Vec3{0.0f, -1.0f, 0.0f});
+    CHECK_FALSE(actor.fall(1.0f / 30.0f, collision));
+    CHECK(actor.position().y == 0.0f);
+    // With no floor at all under it, it keeps sinking.
+    actor.place(Vec3{50.0f, 0.0f, 0.0f});
+    CHECK(actor.fall(1.0f, collision));
+    CHECK(actor.position().y == Approx(-PlayerActor::kFallSpeed));
+    CHECK(collision.lowest() == 0.0f);
+}
+
 } // namespace

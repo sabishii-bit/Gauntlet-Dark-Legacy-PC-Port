@@ -23,9 +23,11 @@ public:
     static constexpr f32 kMinSpeed = 5.0f;  ///< units per second with no speed at all
     static constexpr f32 kMaxSpeed = 12.5f; ///< units per second at a speed stat of 1000
     static constexpr f32 kStatScale = 0.001f;
-    static constexpr f32 kMoveLimit = 1.5f; ///< at most this many speeds of travel per second
-    static constexpr f32 kStepUp = 1.5f;    ///< the highest ledge walked up
-    static constexpr f32 kDrop = 3.0f;      ///< the deepest drop walked down
+    static constexpr f32 kMoveLimit = 1.5f;    ///< at most this many speeds of travel per second
+    static constexpr f32 kStepUp = 1.5f;       ///< the highest ledge walked up
+    static constexpr f32 kDrop = 3.0f;         ///< the deepest drop walked down
+    static constexpr f32 kFallSpeed = 16.0f;   ///< how fast a body sinks to a floor gone lower
+    static constexpr f32 kFallReach = 1000.0f; ///< how far under it a floor is looked for
     static constexpr f32 kFootClearance = 0.2f;
     static constexpr f32 kDefaultHeight = 5.0f;
     static constexpr f32 kDefaultWidth = 1.5f;
@@ -49,6 +51,15 @@ public:
     void place(const Vec3& position) { m_position = position; }
     /** Turn in place toward an assisted attack target without moving the feet. */
     void faceToward(const Vec3& point);
+    /** Faces `yaw` at once, as a hit turns the body it knocks. */
+    void turnTo(f32 yaw) { m_yaw = yaw; }
+    /** Carried along the ground by `offset` as a knock slides it: out of walls, and never
+     * over an edge it could not walk off. */
+    void slide(const Vec3& offset, const WorldCollision* collision);
+    /** Follows its floor down when that has gone lower than it, sinking at most sixteen a
+     * second and never faster (PlayerMotion's floor_base); a floor that rose lifts it at
+     * once. True while it is above its floor. */
+    bool fall(f32 seconds, const WorldCollision& collision);
 
     /** Drops the character onto the floor under it, when there is one. */
     void settle(const WorldCollision& collision);
@@ -79,6 +90,9 @@ public:
     Mat4 transform() const;
 
 private:
+    /** Steps the body by `offset` along the ground, as walking and sliding both do. */
+    void travel(const Vec3& offset, const WorldCollision* collision);
+
     s32 m_player = 0;
     CharacterSave m_save;
     Vec3 m_position{0.0f, 0.0f, 0.0f};
