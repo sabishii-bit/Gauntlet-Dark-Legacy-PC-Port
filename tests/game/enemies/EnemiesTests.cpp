@@ -34,6 +34,25 @@ std::filesystem::path unpackedRoot() {
         .parent_path();
 }
 
+/** A one-triangle IT, enough to stand and walk. */
+std::filesystem::path itArchive() {
+    const auto root = test::scratchDirectory("it-enemy");
+    const auto dir = root / "MONSTERS/IT";
+    std::filesystem::create_directories(dir);
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"IT1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":13,"rate":30},
+                     {"name":"WALK1","frames":13,"rate":30}]}]})");
+    return root;
+}
+
 EnemyView playerAt(const Vec3& position, s32 player = 0) {
     EnemyView view;
     view.player = player;
@@ -1023,4 +1042,66 @@ TEST_CASE("a placement past the known variants keeps its tier's body",
     REQUIRE(enemies.animatorOf(*id) != nullptr);
     CHECK(enemies.animatorOf(*id)->has(EnemyAction::Walk));
 }
+TEST_CASE("IT tags the player it touches and is gone unharmed; the swarm seeks who is it",
+          "[game][enemies][it]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, itArchive(), nullptr, 3, {}, 1);
+    REQUIRE(enemies.loadKind(kItKind));
+    const auto it = enemies.spawn({.kind = kItKind, .tier = 1, .placed = true}, {});
+    REQUIRE(it);
+    // Nothing harms IT (damage_enemy).
+    const f32 health = enemies.healthOf(*it);
+    EnemyHit hit;
+    hit.damage = 1000.0f;
+    hit.player = 1;
+    enemies.hurt(*it, hit);
+    CHECK(enemies.healthOf(*it) == health);
+    CHECK(enemies.takeLosses().empty());
+    // A second IT far off goes for who is it, seen or not, over the nearer player.
+    const auto other =
+        enemies.spawn({.kind = kItKind, .tier = 1, .position = {0, 0, -60}, .placed = true}, {});
+    REQUIRE(other);
+    std::array players{playerAt({0, 0, 6}, 1), playerAt({0, 0, -50}, 3)};
+    players[0].it = true;
+    enemies.update(kTicks, kStep, players);
+    CHECK(enemies.targetOf(*other) == 1);
+    players[0].it = false;
+    players[1].position = Vec3{0, 0, -500}; // out of the other's sight
+    // It walks up to the player it sees and, touching, tags them and goes, striking nobody.
+    std::vector<s32> tagged;
+    for (s32 frame = 0; frame < 600 && tagged.empty(); ++frame) {
+        enemies.update(kTicks, kStep, players);
+        const std::vector<s32> now = enemies.takeTagged();
+        tagged.insert(tagged.end(), now.begin(), now.end());
+    }
+    CHECK(tagged == std::vector<s32>{1});
+    CHECK(enemies.takeBlows().empty());
+    const bool standing = enemies.alive(*it) && !enemies.dying(*it);
+    CHECK_FALSE(standing);
+    for (s32 frame = 0; frame < 60; ++frame) {
+        enemies.update(kTicks, kStep, players);
+    }
+    CHECK(enemies.takeTagged().empty()); // once only
+    CHECK(enemies.takeLosses().empty());
+}
+
+TEST_CASE("IT stands with no archive of its own: unseen, and aimed at by nothing",
+          "[game][enemies][it]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, test::scratchDirectory("it-bodiless"), nullptr, 2, {}, 1);
+    REQUIRE(enemies.loadKind(kItKind));
+    CHECK_FALSE(enemies.loadKind(kGruntKind)); // the rest still need theirs
+    const auto it = enemies.spawn({.kind = kItKind, .tier = 1, .placed = true}, {});
+    REQUIRE(it);
+    CHECK(enemies.alive(*it));
+    CHECK(enemies.targets().empty());
+    CHECK_FALSE(enemies.struckBy(Vec3{0, 3, -5}, Vec3{0, 3, 5}, 1.0f).has_value());
+    const std::array players{playerAt({0, 0, 20}, 0)};
+    enemies.update(kTicks, kStep, players);
+    enemies.draw(device, Mat4{1}, WorldLighting{});
+    CHECK(device.draws.empty());
+}
+
 } // namespace

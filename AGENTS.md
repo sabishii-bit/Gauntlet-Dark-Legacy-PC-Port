@@ -537,10 +537,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   taken unguarded by one who never has teaches 125 `LEARNBLOCK` after the
   level's first minute (damage_player, player.c 3400).
   Not yet: damage types (the element,
-  knock-over) doing anything, the directional guards (what selects them was
-  not found; they look like answers to where a blow comes from), and the
-  two player combo (a grab, carry and throw system of its own, help 111
-  with it).
+  knock-over) doing anything and the two player combo (a grab, carry and
+  throw system of its own, help 111 with it). The directional guards
+  (DEFENDLEFT/RIGHT/BACK) are never reached on GC: the control selector
+  (fn_80088938) never returns their motion states, only DEFEND1's.
 * More of what a player can do. Strafing (`strafe`: Left Control, left thumb;
   the original's STRAFE): while it is held and the stick pushed, the
   character steps that way with its facing held (`PlayerActor::update`'s
@@ -568,8 +568,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   again beside another standing player (`PartyMotion::rescueSpot`,
   get_player_pos's sixteen spots) or at the level's start. Not yet, because
   they need something to be aimed at or to come from: pushing, Death's grab,
-  the victory pose, the super shot
-  and the familiars' attacks.
+  the super shot and the familiars' attacks. The victory pose is never played on
+  GC: only a boss index of nought or more asks for it (pmotion.c 1779), and
+  retail only ever stores -1 there (gauntworld.c 1378).
 * Close attacks follow AnimAction. `PlayerAttacks::meleeSense` finds the nearest
   target at any bearing (`TargetAssist::around`: surface distance, vertical overlap,
   a clear line) and bands it: within a swing (radius + 1), a step (radius + 2),
@@ -804,7 +805,23 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   whenever its critter data is loaded (it always is). The warlock (kind 24) comes and
   goes while it stands, walks or runs (fn_8004D958): seen 60-119 ticks, faded out at
   16 of 255 a tick, unseen 60-119 ticks, faded back; doing anything else it shows
-  (`Enemies::veil`, body and shadow alike). Not yet: Death, IT. Death's lessons reach the
+  (`Enemies::veil`, body and shadow alike). IT (kind 31) is tag, placed in fifteen
+  levels for three players or more (G3's: `python scripts/scenario.py level-g3-it`).
+  No archive holds an `IT1`..`IT3` tree, so it goes about unseen (`Stock::unseen`, a
+  stance alone), is no target (PlayerGetTarget), nothing harms it,
+  and touching a player (fn_80046140) makes that player it (`PlayerRuntime::itTicks`,
+  `Enemies::takeTagged`, `EnemyView::it`) and is gone, striking nobody and worth
+  nothing; every enemy then goes for who is it while they can be seen, Death not
+  past a halo (fn_800516F8). Who is it wears the realm items' `IT_SIGN` on the body's
+  root (player.c 5885, `PlayerFigure::drawMarker`) and, once it a second, passes it
+  to another standing player they touch (`PartyMotion::passIt`, pmotion.c 1182) with
+  COMMON's `S_TAGGED` at 180/255; falling ends it. Each new one is told 50
+  (`ISNOWIT`, "<colour> <class>" filled from `PLAYER_COLOR`/`PLAYER_CLASS` as for
+  89 and 93, Pojo named instead while carried: message.c 767; voiced
+  `S_NOWIT` after the name). The "IT" STATIC badge (player.c 1239) is not drawn:
+  its blit's y of -349 lies off the GC screen, so where it shows is unverified.
+  Players do not collide with each other here, so the touch is an overlap of the
+  two bodies. Death's lessons reach the
   player he drains or who strikes him (enemy.c 1831, 5320, 6021): each drain
   128 (`DEATHDRAINEXP`) from his black form, else 130, leaving exhausted 129
   or 131 (130's and 131's texts swapped as shipped), and a blow without magic

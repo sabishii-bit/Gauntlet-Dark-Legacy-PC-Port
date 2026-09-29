@@ -185,6 +185,7 @@ void Enemies::close() {
     m_cues.clear();
     m_feedback.clear();
     m_deathEvents.clear();
+    m_tagged.clear();
     m_device = nullptr;
     m_collision = nullptr;
     m_hazards = nullptr;
@@ -219,8 +220,23 @@ bool Enemies::loadKind(s32 kind) {
     const EnemyKind& info = enemyKind(kind);
     auto stock = std::make_unique<Stock>();
     stock->kind = kind;
-    if (!stock->archive.load(m_root / "MONSTERS" / std::string(info.name))) {
-        return false;
+    const std::filesystem::path directory = m_root / "MONSTERS" / std::string(info.name);
+    const bool bodiless = kind == kItKind && !std::filesystem::exists(directory);
+    if (bodiless || !stock->archive.load(directory)) {
+        if (kind != kItKind) {
+            return false;
+        }
+        // No archive holds IT's trees ("IT1".."IT3"): it goes about with no body to see.
+        stock->unseen.name = info.prefix;
+        TreeSequenceInfo stance;
+        stance.name = "READY";
+        stance.frames = 1;
+        stance.frameRate = 30;
+        stance.repeats = true;
+        stock->unseen.sequences.push_back(stance);
+        stock->trees.fill(&stock->unseen);
+        m_stocks.push_back(std::move(stock));
+        return true;
     }
     for (s32 tier = 1; tier <= 3; ++tier) {
         const auto tree = stock->archive.trees.find(std::format("{}{}", info.prefix, tier));
@@ -730,6 +746,11 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
     if (!anyone) {
         enemy.recognized = false;
     }
+    // Everyone goes for the player IT has tagged while they can be seen (fn_800516F8).
+    const auto tagged = std::ranges::find_if(players, [&](const EnemyView& view) {
+        return view.it && !view.hidden && !view.invisible &&
+               (enemy.kind != kDeathKind || !view.antiDeath);
+    });
     // A mind looks round again every eighth frame, or at once when its player is gone.
     bool look =
         (m_frame % kRetargetEvery) == (static_cast<u32>(slot) % kRetargetEvery) || enemy.target < 0;
@@ -740,7 +761,15 @@ void Enemies::chooseTarget(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
             look = true;
         }
     }
-    if (look) {
+    if (tagged != players.end()) {
+        enemy.targetBefore = enemy.target;
+        enemy.target = tagged->player;
+        enemy.targetDistance = flatDistance(tagged->position, enemy.position);
+        enemy.weightedDistance = enemy.targetDistance;
+        if (tagged->player >= 0 && static_cast<usize>(tagged->player) < crowding.size()) {
+            enemy.weightedDistance += crowding[static_cast<usize>(tagged->player)];
+        }
+    } else if (look) {
         enemy.targetBefore = enemy.target;
         enemy.target = -1;
         enemy.weightedDistance = 100000.0f;
@@ -1142,9 +1171,19 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         if (const EnemyView* view = viewOf(players, enemy.contact); view != nullptr) {
             enemy.mind.route = turnDirection(from, view->position);
         }
-        // Death drains at contact; it has no melee swing or recovery to hold movement.
-        if (enemy.kind != kDeathKind && enemy.state == State::Active &&
-            enemy.algorithm != kLungeWay) {
+        // IT touching a player tags them and is gone, never striking (fn_80046140,
+        // enemy_dies: no reward). Death drains at contact; it has no melee swing or recovery
+        // to hold movement.
+        if (enemy.kind == kItKind) {
+            if (enemy.state == State::Active && !enemy.killed) {
+                m_tagged.push_back(enemy.contact);
+                enemy.health = 0.0f;
+                enemy.killed = true;
+                enemy.state = State::Dying;
+                enemy.animator.request(EnemyAction::Dying);
+            }
+        } else if (enemy.kind != kDeathKind && enemy.state == State::Active &&
+                   enemy.algorithm != kLungeWay) {
             enemy.attackIndex = enemy.contact;
             enemy.animator.request((enemy.attackCount & 7) == 7 ? EnemyAction::PowerAttack
                                                                 : EnemyAction::Attack);
@@ -1225,6 +1264,9 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
         hurtDeath(enemy, id, hit);
         return;
     }
+    if (enemy.kind == kItKind) {
+        return; // nothing harms IT (damage_enemy)
+    }
     const EnemyKind& kind = enemyKind(enemy.kind);
     f32 amount = hit.damage;
     // A character under the level the place is meant for hits a hundredth softer a level;
@@ -1301,6 +1343,12 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
     }
 }
 
+std::vector<s32> Enemies::takeTagged() {
+    std::vector<s32> out;
+    out.swap(m_tagged);
+    return out;
+}
+
 void Enemies::die(Enemy& enemy) {
     enemy = Enemy{};
 }
@@ -1369,7 +1417,7 @@ std::vector<EnemyCue> Enemies::takeCues() {
 
 const TreeModel* Enemies::bodyOf(const Enemy& enemy) {
     Stock* stock = stockOf(enemy.kind);
-    if (stock == nullptr) {
+    if (stock == nullptr || !stock->unseen.sequences.empty()) {
         return nullptr;
     }
     if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
@@ -1408,7 +1456,8 @@ std::vector<MissileTarget> Enemies::targets() const {
     std::vector<MissileTarget> out;
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
-        if (!alive(i)) {
+        // Nothing takes aim at IT (PlayerGetTarget).
+        if (!alive(i) || enemy.kind == kItKind) {
             continue;
         }
         out.push_back(MissileTarget{i, enemy.position, enemy.radius, enemy.height});
@@ -1423,7 +1472,8 @@ std::optional<s32> Enemies::struckBy(const Vec3& from, const Vec3& to, f32 radiu
     const f32 length = glm::length(sweep);
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
-        if (enemy.state != State::Active && enemy.state != State::Asleep) {
+        if ((enemy.state != State::Active && enemy.state != State::Asleep) ||
+            enemy.kind == kItKind) {
             continue;
         }
         const Vec3 centre = bodyCentre(enemy);

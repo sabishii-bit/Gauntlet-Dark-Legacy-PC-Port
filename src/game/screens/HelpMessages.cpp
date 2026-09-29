@@ -1,6 +1,7 @@
 #include "game/screens/HelpMessages.h"
 
 #include <algorithm>
+#include <format>
 
 #include "engine/core/Types.h"
 
@@ -10,7 +11,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 114> kSpecs{{
+constexpr std::array<HelpMessageSpec, 115> kSpecs{{
     {HelpMessages::kUseMagicOnDeath, "USEMAGIC", "S_USEMAGIC"},
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
@@ -62,6 +63,7 @@ constexpr std::array<HelpMessageSpec, 114> kSpecs{{
     {86, "HAMMERMSG", "S_HAMMERVOX"},
     {87, "RAPIDFIREMSG", "S_RAPIDFIREVOX"},
     {88, "GROWTHMSG", "S_GROWTHVOX"},
+    {HelpMessages::kNowIt, "ISNOWIT", "S_NOWIT", HelpRepeat::Always, -1, 40},
     {89, "SHRINKMSG", "S_SHRINKVOX"},
     {91, "FIRESHIELDMSG", "S_FIREWALLSHVOX"},
     {92, "ELECSHIELDMSG", "S_LGHTNGSHVOX"},
@@ -133,6 +135,12 @@ constexpr std::array<HelpMessageSpec, 114> kSpecs{{
     {HelpMessages::kHealingMagic, "MAGIC99", "S_MAGICHEAL", HelpRepeat::OncePerPlayer},
 }};
 
+/** The string lists a message naming a player is filled from (message.c 769). */
+constexpr std::string_view kColorNames = "PLAYER_COLOR";
+constexpr std::string_view kClassNames = "PLAYER_CLASS";
+constexpr std::string_view kPojoName = "POJO";
+constexpr std::string_view kNamesSlot = "%s %s";
+
 /** The original's ink for players one to four: dark yellow, blue, red and green. */
 constexpr std::array<Color, 4> kInks{Color::rgba(0x1F, 0x1F, 0x00), Color::rgba(0x00, 0x00, 0x1F),
                                      Color::rgba(0x1F, 0x00, 0x00), Color::rgba(0x00, 0x1F, 0x00)};
@@ -158,10 +166,10 @@ bool HelpMessages::gameplayTip(s32 id) {
 }
 
 HelpMessages::VoiceLead HelpMessages::voiceLead(s32 id, bool multiplayer) {
-    if (id == 93) {
+    if (id == kNowPojo || id == kNowIt) {
         return VoiceLead::PlayerName;
     }
-    if (id == kLevelUp || id == 89) {
+    if (id == kLevelUp || id == kShrunk) {
         return VoiceLead::PlayerHas;
     }
     if (multiplayer) {
@@ -199,8 +207,30 @@ void HelpMessages::clear() {
     m_posted = 0;
 }
 
+std::string_view HelpMessages::listEntry(std::string_view list, s32 entry) const {
+    const auto found = m_strings->find(list);
+    if (!found.has_value() || entry < 0) {
+        return {};
+    }
+    const MessageInfo& info = m_strings->message(*found);
+    return static_cast<usize>(entry) < info.pages.size() ? info.pages[static_cast<usize>(entry)]
+                                                         : std::string_view{};
+}
+
+std::string HelpMessages::speakerLine(s32 id, s32 player, HelpSpeaker speaker) const {
+    if (speaker.pojo && id != kNowPojo) {
+        return std::string{listEntry(kPojoName, 0)};
+    }
+    const std::string_view color = listEntry(kColorNames, player);
+    const std::string_view name = listEntry(kClassNames, speaker.character);
+    if (name.empty()) {
+        return std::string{color}; // a class the list does not name
+    }
+    return std::format("{} {}", color, name);
+}
+
 const HelpMessageSpec* HelpMessages::post(s32 id, s32 player, std::span<const HelpReader> party,
-                                          s32 number) {
+                                          s32 number, HelpSpeaker speaker) {
     const HelpMessageSpec* spec = specOf(id);
     if (spec == nullptr || m_strings == nullptr) {
         return nullptr;
@@ -243,6 +273,12 @@ const HelpMessageSpec* HelpMessages::post(s32 id, s32 player, std::span<const He
             // A number the message asks for ("LEVEL %d") is filled in.
             if (const auto at = line.find("%d"); at != std::string::npos && number >= 0) {
                 line.replace(at, 2, std::to_string(number));
+            }
+            // So is the colour and class of the one a message names.
+            if (line == kNamesSlot && speaker.character >= 0) {
+                if (std::string named = speakerLine(id, player, speaker); !named.empty()) {
+                    line = std::move(named);
+                }
             }
             lines.push_back(std::move(line));
         }

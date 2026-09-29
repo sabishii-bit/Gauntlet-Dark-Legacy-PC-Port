@@ -59,6 +59,7 @@ struct EnemyView {
     EnemyMeleeWard meleeWard = EnemyMeleeWard::None;
     bool antiDeath = false;
     bool reflects = false; ///< its armour turns the swarm's missiles back
+    bool it = false;       ///< tagged by IT: every enemy that can see it goes for it
 };
 
 /** A blow an enemy has landed on a player. */
@@ -218,6 +219,8 @@ public:
     std::vector<EnemyCue> takeCues();
     std::vector<EnemyFeedback> takeFeedback();
     std::vector<DeathEvent> takeDeathEvents();
+    /** The players IT has touched since last asked, in turn: each is now it. */
+    std::vector<s32> takeTagged();
     bool draining(s32 id) const;
     /** Death departs after taking its victim's last health. */
     void finishDeath(s32 id, s32 player = -1);
@@ -283,6 +286,7 @@ private:
         TreeModel fireball; ///< the third slot's shot
         std::array<TreeModel, 2> deathStatues;
         std::array<BlobShadow, 3> shadows; ///< SHADOW1L1..3L1, by tier
+        TreeInfo unseen; ///< the stance alone, for a kind with no body on the disc (IT)
     };
 
     struct Enemy {
@@ -392,6 +396,7 @@ private:
     std::vector<EnemyCue> m_cues;
     std::vector<EnemyFeedback> m_feedback;
     std::vector<DeathEvent> m_deathEvents;
+    std::vector<s32> m_tagged;
     std::mt19937 m_random;
     s32 m_bomber = -1; ///< the lit suicide bomber the rest run from this tick
     std::optional<ViewVolume> m_view;

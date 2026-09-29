@@ -62,6 +62,10 @@ public:
      * powerup archive must outlive this figure, like its other borrowed draw resources. */
     void drawHeadwear(RenderDevice& device, ItemArchive& powerups, const PowerupEffects& worn,
                       const Mat4& clip, const Mat4& body, const WorldLighting& lighting, f32 alpha);
+    /** An object of `archive` hung on the body's root, as the sign of who is it; the archive
+     * must outlive this figure. */
+    void drawMarker(RenderDevice& device, ItemArchive& archive, std::string_view object,
+                    const Mat4& clip, const Mat4& body, const WorldLighting& lighting, f32 alpha);
     /** A posed hand, if available; callers choose their own fallback attachment. */
     std::optional<Vec3> handPosition(const Mat4& body) const;
     std::optional<Mat4> attachment(const Mat4& body, std::string_view objectSuffix) const;
@@ -108,6 +112,8 @@ private:
     TreeModel m_weapon;
     TreeInfo m_headwearTree;
     TreeModel m_headwear;
+    TreeInfo m_markerTree;
+    TreeModel m_marker;
     BlobShadow m_shadow;
     s32 m_handNode = -1;
     std::vector<s32> m_classNodeOfNode;

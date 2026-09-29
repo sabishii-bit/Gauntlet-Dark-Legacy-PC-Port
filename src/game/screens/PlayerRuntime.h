@@ -35,6 +35,7 @@ struct PlayerRuntime {
     std::optional<Vec3> fixtureSpot; ///< where the fixtures last saw it, for its step
     f32 surfaceGap = 0.0f;           ///< seconds before a harmful surface can hurt it again
     s32 hitFlashTicks = 0;           ///< two 30 Hz frames of the white damage skin
+    s32 itTicks = 0;                 ///< since IT tagged this player; none when not it
     PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
     Knockback knockback;                    ///< the pushes of this frame's hits, and the slide
     TurboMeter turbo;

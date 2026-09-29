@@ -537,4 +537,35 @@ TEST_CASE("a body lost under the world stands again beside another, or at the st
     CHECK(f.players[1].actor.position() == Vec3{7, 0, 7});
     CHECK_FALSE(PartyMotion::rescueSpot(f.players, 1, f.collision).has_value());
 }
+TEST_CASE("it passes to a player touched once it has been held a second, and not past a fall",
+          "[game][screens][party-motion][it]") {
+    Fixture f;
+    std::vector<usize> tagged;
+    f.events.perform = [&](usize i, PartyMotion::Action action) {
+        if (action == PartyMotion::Action::Tagged) {
+            tagged.push_back(i);
+        }
+    };
+    f.players[0].itTicks = 1;
+    f.players[1].actor.place(Vec3{0.5f, 0.0f, 0.0f});
+    PartyMotion::passIt(f.players, 2, f.events);
+    CHECK(tagged.empty()); // held too short a while to pass on
+    CHECK(f.players[0].itTicks == 3);
+    f.players[0].itTicks = PartyMotion::kItHold + 1;
+    PartyMotion::passIt(f.players, 2, f.events);
+    CHECK(tagged == std::vector<usize>{1});
+    CHECK(f.players[0].itTicks == 0);
+    CHECK(f.players[1].itTicks == 3);
+    // Apart, it stays where it is.
+    f.players[1].actor.place(Vec3{10.0f, 0.0f, 0.0f});
+    f.players[1].itTicks = 100;
+    PartyMotion::passIt(f.players, 2, f.events);
+    CHECK(tagged.size() == 1);
+    CHECK(f.players[1].itTicks == 102);
+    // The fallen are it no more.
+    f.players[1].life = PlayerLife::InTower;
+    PartyMotion::passIt(f.players, 2, f.events);
+    CHECK(f.players[1].itTicks == 0);
+}
+
 } // namespace

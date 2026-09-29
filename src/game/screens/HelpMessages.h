@@ -36,6 +36,12 @@ struct HelpMessageSpec {
     bool commonVoice = false; ///< crystal pickup cue, not a narrator recording
 };
 
+/** Who a message names, for the messages that begin with the player's colour and class. */
+struct HelpSpeaker {
+    s32 character = -1; ///< the class; none leaves the names out
+    bool pojo = false;  ///< carrying Pojo, who is named instead
+};
+
 /** Someone a message can be for: the player, and the messages their character has seen. */
 struct HelpReader {
     s32 player = 0;
@@ -96,6 +102,9 @@ public:
     static constexpr s32 kFirstMagicPerk = 139;
     static constexpr s32 kHealingMagic = 147; ///< from level 75 magic heals as it harms
     static constexpr s32 kLevelUp = 34;       ///< "LEVEL %d", the number filled in
+    static constexpr s32 kNowIt = 50;         ///< "<colour> <class> IS NOW IT"
+    static constexpr s32 kShrunk = 89;        ///< "<colour> <class> HAS SHRUNK ENEMIES"
+    static constexpr s32 kNowPojo = 93;       ///< "<colour> <class> IS NOW POJO"
 
     static constexpr s32 kTicksPerLine = 60;
     static constexpr s32 kTicksOver = 30;
@@ -122,9 +131,10 @@ public:
     void clear();
 
     /** Posts message `id` for `player` unless it has been seen, another is up, or the pause
-     * since the last is not over; marks it seen. The spec when it went up, for its voice. */
+     * since the last is not over; marks it seen. The spec when it went up, for its voice.
+     * `number` fills a "%d"; `speaker` the colour and class a message names. */
     const HelpMessageSpec* post(s32 id, s32 player, std::span<const HelpReader> party,
-                                s32 number = -1);
+                                s32 number = -1, HelpSpeaker speaker = {});
     void update(s32 ticks);
 
     bool showing() const { return m_ticksLeft > 0; }
@@ -139,6 +149,11 @@ public:
     Rect areaFor(const TextPainter& text, const Vec2& head) const;
 
 private:
+    /** The line naming `player`: their colour and class, or Pojo when carried (message.c
+     * 767); empty when the strings lack the names. */
+    std::string speakerLine(s32 id, s32 player, HelpSpeaker speaker) const;
+    std::string_view listEntry(std::string_view list, s32 entry) const;
+
     const MessageTable* m_strings = nullptr;
     std::vector<std::string> m_lines;
     s32 m_id = -1;

@@ -48,7 +48,8 @@ public:
         FirstFoot,
         SecondFoot,
         Melee,
-        Fallen ///< its death played out, it is gone from the level
+        Fallen, ///< its death played out, it is gone from the level
+        Tagged  ///< it is now it, touched by the one who was
     };
     struct Events {
         std::function<void(usize, Action)> perform;
@@ -70,6 +71,7 @@ public:
     };
     static constexpr f32 kLostDepth = 4.5f;   ///< under the world's lowest point a body is lost
     static constexpr f32 kTurnFrames = 30.0f; ///< the rate a partial turn is taken at, a second
+    static constexpr s32 kItHold = 60; ///< ticks it stays with a player before a touch passes it
     static constexpr s32 kRescueSpots = 16;
     static constexpr f32 kRescueGap = 0.5f;  ///< how far from the rescuer's side it stands
     static constexpr f32 kRescueRise = 6.0f; ///< how far above or below the rescuer's floor
@@ -85,5 +87,8 @@ public:
     static StrafeWay strafeWayOf(f32 heading, f32 facing);
     static MoveInput chargeInput(const PlayerActor& actor, const MoveInput& stick, f32 cameraYaw);
     static PlayerDeed turboDeed(const PlayerRuntime& runtime, const PlayInput& input);
+    /** It goes to the first other player standing against the one who is it, once that one
+     * has been it a second (PlayerMotion, pmotion.c 1182); the fallen are it no more. */
+    static void passIt(std::span<PlayerRuntime> players, s32 ticks, const Events& events);
 };
 } // namespace gdl::game

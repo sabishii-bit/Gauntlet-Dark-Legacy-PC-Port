@@ -470,7 +470,8 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         if (*kind == kItKind && playerCount <= 1) {
             continue;
         }
-        if ((*kind >= kSwarmKindCount && *kind != kDeathKind) || !m_enemies.loadKind(*kind)) {
+        if ((*kind >= kSwarmKindCount && *kind != kDeathKind && *kind != kItKind) ||
+            !m_enemies.loadKind(*kind)) {
             continue;
         }
         EnemySpawn& spawn = placement.spawn;
@@ -559,6 +560,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
             view.meleeWard = EnemyMeleeWard::HandOfDeath;
         }
         view.captured = player.capture.held();
+        view.it = player.itTicks > 0;
         views.push_back(view);
     }
     return views;
@@ -852,6 +854,22 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         applyEnemyBlow(blow, players, events);
     }
     updateDeaths(players, events);
+    // IT's touch makes its player it, whoever was before (fn_80046140).
+    for (const s32 tagged : m_enemies.takeTagged()) {
+        for (usize i = 0; i < players.size(); ++i) {
+            if (players[i].actor.player() != tagged) {
+                continue;
+            }
+            for (PlayerRuntime& other : players) {
+                other.itTicks = 0;
+            }
+            players[i].itTicks = 1;
+            log::info("Player {} is now it", tagged + 1);
+            if (events.help) {
+                events.help(HelpMessages::kNowIt, i);
+            }
+        }
+    }
     awardEnemyLosses(events);
 }
 
