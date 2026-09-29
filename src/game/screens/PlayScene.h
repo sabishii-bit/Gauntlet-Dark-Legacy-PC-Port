@@ -37,6 +37,7 @@
 #include "game/screens/PartyFigures.h"
 #include "game/screens/PartyHud.h"
 #include "game/screens/PartyMotion.h"
+#include "game/screens/PartyNames.h"
 #include "game/screens/PartyPickups.h"
 #include "game/screens/PartyRecords.h"
 #include "game/screens/PlayerAttacks.h"
@@ -207,6 +208,15 @@ public:
     StatusBoxView status(s32 player) const { return PartyHud::status(player, m_players); }
     /** The turbo meter of `player`'s character, or null when that player is not in. */
     const TurboMeter* turboMeter(s32 player) const;
+    /** `player`'s record in this level, or null when that player is not in. */
+    const PlayerRuntime* runtime(s32 player) const {
+        for (const PlayerRuntime& runtime : m_players) {
+            if (runtime.actor.player() == player) {
+                return &runtime;
+            }
+        }
+        return nullptr;
+    }
     /** Whether `player`'s character has fallen (dying or gone to the tower). */
     bool fallen(s32 player) const;
     /** Hurts `player`'s character, as anything in the level does. */
@@ -282,6 +292,7 @@ private:
     u32 acceptedPlayers(const Inputs& inputs) const;
     std::vector<TriggerVisitor> visitors() const;
     PartyPickups::Services pickupServices();
+    void praiseStreaks(f32 seconds);
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     void updateTransporters(s32 ticks, f32 seconds, bool held);
@@ -381,6 +392,7 @@ private:
     bool m_leaving = false;
     PortalDeparture m_departure;
     PartyFigures m_figures;
+    PartyNames m_names;
 };
 
 } // namespace gdl::game

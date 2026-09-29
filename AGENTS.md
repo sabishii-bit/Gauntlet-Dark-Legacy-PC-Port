@@ -131,7 +131,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   welcome (scroll, then the crystal cut). `screens/TriggerCues` answers the
   triggers' lessons, refusals, openings, camera cues and turntable sounds.
   `screens/PartyRecords` awards experience and builds the party handed on, the
-  abandoned party and the level results. `LevelOpponents::blast` routes a blast's
+  abandoned party and the level results. `screens/PartyNames` writes each player's
+  name over the head as a level opens (name_timer 240, WriteName: six letters,
+  `_` as a space, the `initials` font at half size), its ticks held by messages,
+  cuts and Sumner's ceremonies (player.c 2521); the start camera does not hold it. `LevelOpponents::blast` routes a blast's
   ring to the swarm, generators, great ones and boss. The scene's own routing is
   split by concern into `PlaySceneMotion` (movement events and actions),
   `PlaySceneHarm` (hurts, hazards, tower prompts, named announcements) and
@@ -260,7 +263,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   screen to the bar over the taker's box, holding ninety ticks, falling away)
   and the three-second counts (a `SM_CRYSTAL_*` icon and "have/need") that
   `StatusBoxPainter::drawCard` and `drawCount` paint; `PartyPickups::collect`
-  feeds it and `render` draws it over the boxes, under the scroll.
+  feeds it and `render` draws it over the boxes, under the scroll. Along each
+  standing player's box the runestones held show as STATIC's `SM_RUNE_<colour>_0<n>`
+  (a colour a trio, blue, red, yellow, green; 15 in, 8 a rune and a pixel a trio, at
+  306), and for 300 ticks as a level opens (not a secret one) and after a runestone
+  is found the bosses' keys (`Relics::shards` bits 0 to 7, `SM_KEY_<colour>` blue to
+  green twice, 12 in and 12 apart at 300: ShowRuneStones, player.c 5125;
+  `StatusBoxPainter::drawRelics`, `PartyHud::showRelics`). The thirteenth rune's
+  `RUNE13` icon is not drawn: what shows it (lbl_80344824) is unknown.
 * Ambience: `game/world/AmbientSounds` runs the level's sound items (type
   13): a loop named by the instance, found in the level's bank or the
   tower's `TOWAMB`, full within its radius (the first parameter word, a
@@ -300,7 +310,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   resets the 45-tick wait until everyone arrives; left alone it plays ACTIVE3 out to
   IDLE. One standing still on it while the rest of a party of more than one
   has yet to come is told 11 `HOWTOEXIT` (DoExit, pmotion.c 3932; not where a
-  boss is fought). `PlayScene::update` then returns `PlayOutcome::Travel` with
+  boss is fought); kept waiting ten seconds, and every nine after, it is named and
+  heard to wait (`players/ExitWait`, AudioPlayerBreath: VOICE2's `S_WAITING`, the
+  tower's `S_WAITINGL` of TOWAMB, which `LevelSoundscape::queueNarration` finds in the
+  level's own banks). `PlayScene::update` then returns `PlayOutcome::Travel` with
   `destination()` and `party()`; `Gauntlet::startLevel` reloads the one
   `LevelWorld` and reopens the scene with `PlayOptions::arrivalWorld` (the
   realm left, which picks the tower's start marker for it). A portal whose
@@ -514,7 +527,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   special (asked for every tick, the light falls a quarter a 30 Hz frame,
   and once unasked what was wanted fades to three fifths a frame while the
   light climbs back a twentieth), and `LevelWorld::setAmbientOffset` applies
-  it to everything lit: the level's geometry, whose light is baked into its
+  it to everything lit (the striker excepted: it blazes at a `BodyGlow` of 2 set
+  every frame of the strike, fading to nine tenths a 30 Hz frame after, added to its
+  ambient: PlyrSfxDoDamage, PlayerProcessScale): the level's geometry, whose light is baked into its
   vertices, through `WorldScene::setDarken` and `DrawState::darken` (a
   multiply in the fragment shader, additive parts left alone), everything
   lit as it is drawn through `lighting()`; effects are drawn by
@@ -648,7 +663,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   quarter; the knight and sorceress rooted, and for ATTPWRAMED the jester and
   sorceress rooted, the wizard and archer a quarter), ATTPWRALOW a quarter. A
   turbo move cuts any close attack off. ATTQ3TOSTEP1 is not reached: what
-  selects it was not found.
+  selects it was not found. The slow swing, the spin and the middle power swing leave
+  ghosts of the held weapon (`world/WeaponTrail`, PlayerDoWeapTrail: a copy where the
+  weapon is each frame it has moved a tenth, eight at most, each fading 32 of 255 a
+  tick; `PlayerFigure::updateTrail`, fed by `PartyMotion` with the body's placement). A run of close blows is praised (`players/MeleeStreak`,
+  pmotion.c 2695, player.c 2553): each on an enemy taller than four, a great one or
+  the boss counts one, three when it kills or is not taken; two seconds after the
+  last, thirty queue VOICE1's `S_HEROIC` and forty-five `S_BRAVERY` (a 3 s wait at
+  most), silent once the boss's wizard has begun to come (good_wiz_state past 2).
 * The swarm (`game/enemies`). `EnemyKinds` is the original's per-kind table
   (thirty-four rows: size, pace, damage, health, armour, the experience a hit
   and a kill are worth, the way each goes about, all of it its own, none of
@@ -1113,8 +1135,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   billboard nodes and draws code-created trails from moving effect roots.
   The projectile trail (34/35/38) emits thirty particles a second for three
   seconds, at one unit a second, width two, with a one-second life and
-  one-second alpha fade; the axe uses STATIC's `PARTICLE1_A`. Not yet: the
-  bearer's own glow (`MBTreeSetAmbientAdd 0x1FF`), the charge's dynamic light,
+  one-second alpha fade; the axe uses STATIC's `PARTICLE1_A`. Through the
+  rite's dark the bearer shines (`players/BodyGlow` at 2, the ambient add 0x1FF)
+  and the rest of the party at 0.8 (player.c 2508). Not yet: the charge's dynamic light,
   the fade of the set
   effect's last seconds (gauntworld.c 1333), the spider's `0xFF40FF40`
   tint, the genie's `LEGEND1` for 28 s,

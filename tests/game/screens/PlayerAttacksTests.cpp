@@ -1015,6 +1015,12 @@ TEST_CASE("a melee contact routes damage sound and impact once through level opp
     }
     REQUIRE(contacts == 1);
     CHECK(enemies.healthOf(*id) < health);
+    // The blow counts one towards the narrator's praise, when the body is not a short one.
+    const auto bodies = enemies.targets();
+    const auto body =
+        std::ranges::find_if(bodies, [&](const MissileTarget& target) { return target.id == *id; });
+    REQUIRE(body != bodies.end());
+    CHECK(f.players[0].streak.count() == (body->height > PlayerAttacks::kLowEnemy ? 1 : 0));
     const f32 afterHit = enemies.healthOf(*id);
     f.players[0].actor.place({0, 0, -20});
     f.attacks.melee(0, f.players, f.targets);

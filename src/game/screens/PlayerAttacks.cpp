@@ -641,7 +641,12 @@ void PlayerAttacks::updateTurbo(usize index, s32 ticks, f32 seconds,
     }
     move.advance(body.action(), body.player().frame(), players[index].actor.facing(), stats, meter,
                  {.announce = [&help, index](s32 id) { help(id, index); },
-                  .dim = [this](f32 amount) { m_resources->dimmer.ask(amount); },
+                  .dim =
+                      [this, index, players](f32 amount) {
+                          // The striker blazes against the dark it brings (PlyrSfxDoDamage).
+                          m_resources->dimmer.ask(amount);
+                          players[index].glow.raise(BodyGlow::kStrike);
+                      },
                   .volley =
                       [this, index, players](const Vec3& direction) {
                           m_resources->arsenal.launchWeapon(players[index].actor,
@@ -895,16 +900,32 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         const EnemyHit hit{
             damage, flags, direction, actor.player(), experienceLevel(actor.save().experience()),
             point,  true};
-        targets.opponents.bosses().hurt(hit, id - kBossTargetBase);
+        Bosses& bosses = targets.opponents.bosses();
+        const BossView before = bosses.view();
+        bosses.hurt(hit, id - kBossTargetBase);
+        // A blow a sleeping boss does not take, or the last, tells for three.
+        players[index].streak.record(!before.alive || !before.awake || !bosses.view().alive);
     } else if (id >= kCritterTargetBase) {
-        targets.opponents.strikeCritter(id - kCritterTargetBase, damage, flags, direction,
-                                        actor.player(), point, true, players);
+        const s32 critter = id - kCritterTargetBase;
+        const Critters& critters = targets.opponents.critters();
+        const bool standing = critters.alive(critter) && !critters.dying(critter);
+        targets.opponents.strikeCritter(critter, damage, flags, direction, actor.player(), point,
+                                        true, players);
+        players[index].streak.record(!standing || !critters.alive(critter) ||
+                                     critters.dying(critter));
     } else if (id >= kGeneratorTargetBase) {
         targets.opponents.strikeGenerator(id - kGeneratorTargetBase, damage, actor.player(),
                                           players);
     } else if (id >= kEnemyTargetBase) {
-        targets.opponents.strikeEnemy(id - kEnemyTargetBase, damage, flags, direction,
-                                      actor.player(), players, true, point);
+        const s32 enemy = id - kEnemyTargetBase;
+        const Enemies& enemies = targets.opponents.enemies();
+        const bool standing = enemies.alive(enemy);
+        targets.opponents.strikeEnemy(enemy, damage, flags, direction, actor.player(), players,
+                                      true, point);
+        // Only a blow on something taller than the short counts towards the run (hht > 2).
+        if (target->height > kLowEnemy) {
+            players[index].streak.record(!standing || !enemies.alive(enemy));
+        }
     } else {
         targets.fixtures.strikeBarrel(static_cast<usize>(id), damage, actor.player(), players,
                                       targets.fixtureEvents);

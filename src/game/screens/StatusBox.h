@@ -40,6 +40,9 @@ struct StatusBoxView {
     bool inTower = false;     ///< fallen: the box says so in place of what is carried
     bool towerPrompt = false; ///< fallen outside the tower: wait there, or quit the game
     std::optional<TurboMeterLook> turbo; ///< the turbo meter over the box, when it has one
+    u16 runes = 0;                       ///< the runestones held, a bit each (retail's shards)
+    u16 bossKeys = 0;                    ///< the bosses' keys, a bit per realm in the tower's order
+    bool keysShown = false;              ///< the keys show only a while after a level opens
 };
 
 /**
@@ -73,6 +76,18 @@ public:
         "POTION_ICON_RED", "POTION_ICON_RED", "POTION_ICON_BLU", "POTION_ICON_YEL",
         "POTION_ICON_GRE"};
     static std::string_view potionIcon(s32 kind);
+    // The relic strip (ShowRuneStones, player.c 5125): twelve runestones and eight keys.
+    static constexpr s32 kRuneCount = 12;
+    static constexpr s32 kRuneX = 15; ///< the first rune within the box, then 8 on, a pixel a trio
+    static constexpr s32 kRuneStep = 8;
+    static constexpr s32 kRunesInColour = 3;
+    static constexpr s32 kRuneY = 306;
+    static constexpr s32 kKeyCount = 8;
+    static constexpr s32 kKeyX = 12;
+    static constexpr s32 kKeyStep = 12;
+    static constexpr s32 kKeyY = 300;
+    /** The colours the runes run through, three each, and the keys, blue to green twice. */
+    static constexpr std::array<std::string_view, 4> kRelicColours{"BLU", "RED", "YEL", "GRE"};
     static constexpr s32 kWidth = 128;
     static constexpr s32 kY = 320;
     static constexpr s32 kHeight = 64;
@@ -94,6 +109,9 @@ public:
     /** The turbo meter over a box: the bar behind, the front colour grown from its middle,
      * the glint, the glow of a full one and the gleam of a change. */
     void drawTurbo(Canvas& canvas, s32 slot, const TurboMeterLook& look);
+    /** The runestones held (`SM_RUNE_<colour>_0<n>`) and, when `keys`, the bosses' keys
+     * (`SM_KEY_<colour>`) along the top of slot `slot`'s box. */
+    void drawRelics(Canvas& canvas, s32 slot, u16 runes, std::optional<u16> keys);
     /** Draws a pickup count above slot `slot`: the STATIC `icon`, then "count/total". */
     void drawCount(Canvas& canvas, s32 slot, std::string_view icon, s32 count, s32 total);
     void setCountTextures(TextureSet* textures) { m_countTextures = textures; }

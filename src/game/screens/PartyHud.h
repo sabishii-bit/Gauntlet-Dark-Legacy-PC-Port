@@ -19,6 +19,7 @@ namespace gdl::game {
 class PartyHud {
 public:
     static constexpr s32 kPlayerCount = 4;
+    static constexpr s32 kRelicTicks = 300; ///< welcome_timer: the keys show this long
     PartyHud() = default;
     ~PartyHud() = default;
     PartyHud(const PartyHud&) = delete;
@@ -35,6 +36,10 @@ public:
                   s32 number = -1);
     static StatusBoxView status(s32 player, std::span<const PlayerRuntime> players);
     void drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players);
+    /** Shows the bosses' keys in the boxes a while (a level opening, a runestone found). */
+    void showRelics() { m_relicTicks = kRelicTicks; }
+    void stepRelics(s32 ticks) { m_relicTicks = std::max(m_relicTicks - ticks, 0); }
+    bool relicsShown() const { return m_relicTicks > 0; }
     void drawSelectors(Canvas& canvas, const TextPainter& text, const StringTable* strings,
                        std::span<const PlayerRuntime> players) const;
     void drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textures,
@@ -56,5 +61,6 @@ private:
     MessageTable m_strings;
     std::array<PowerupSelector, kPlayerCount> m_selectors;
     const Texture* m_glowSheet = nullptr;
+    s32 m_relicTicks = 0;
 };
 } // namespace gdl::game

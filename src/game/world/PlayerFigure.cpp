@@ -1,5 +1,6 @@
 #include "game/world/PlayerFigure.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <span>
@@ -262,6 +263,16 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
     }
 }
 
+void PlayerFigure::updateTrail(const Mat4& body, s32 ticks) {
+    const PlayerAnimator::Action action = m_animator.action();
+    const bool swinging = action == PlayerAnimator::Action::SlowSwing ||
+                          action == PlayerAnimator::Action::Spin ||
+                          action == PlayerAnimator::Action::PowerMed;
+    const auto hand = static_cast<usize>(std::max(m_handNode, 0));
+    const Mat4 wrist = hand < m_transforms.size() ? m_transforms[hand] : Mat4{1.0f};
+    m_trail.step(ticks, body * wrist, swinging && heldWeaponBound());
+}
+
 void PlayerFigure::setCompanionPowerups(RenderDevice& device, ItemArchive& powerups,
                                         const Inventory& inventory, ItemArchive* weapons) {
     const bool shieldRunning = m_animator.action() == PlayerAnimator::Action::ShieldRun;
@@ -329,6 +340,14 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
                                ? m_transforms[hand]
                                : glm::translate(Mat4{1.0f}, m_costume->worldPosition(hand));
         m_weapon.draw(device, clip, body * wrist, lighting, {}, nullptr, alpha);
+    }
+    if (heldWeaponBound()) {
+        for (const WeaponTrail::Ghost& ghost : m_trail.ghosts()) {
+            if (ghost.shown) {
+                m_weapon.draw(device, clip, ghost.placement, lighting, {}, nullptr,
+                              alpha * ghost.alpha());
+            }
+        }
     }
 }
 

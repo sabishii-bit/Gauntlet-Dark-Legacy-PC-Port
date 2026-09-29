@@ -11,6 +11,7 @@
 #include "game/menu/ScrollBox.h"
 #include "game/players/PickupVoices.h"
 #include "game/players/Progression.h"
+#include "game/screens/PartyNames.h"
 namespace gdl::game {
 namespace {
 constexpr std::string_view kScrollTexture = "SCROLL_A";
@@ -39,13 +40,16 @@ void PartyHud::clear() {
         selector.close();
     }
     m_glowSheet = nullptr;
+    m_relicTicks = 0;
     m_help.clear();
     m_pickups.clear();
     m_boxes.release();
 }
 void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players) {
     for (s32 player = 0; player < kPlayerCount; ++player) {
-        m_boxes.draw(canvas, player, status(player, players), true);
+        StatusBoxView view = status(player, players);
+        view.keysShown = relicsShown();
+        m_boxes.draw(canvas, player, view, true);
     }
     m_pickups.draw(canvas, m_boxes);
 }
@@ -138,6 +142,8 @@ StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> player
     view.keys = save.progress().inventory.keys;
     view.potions = static_cast<s32>(save.progress().inventory.potions.size());
     view.potionKind = save.progress().inventory.nextPotion();
+    view.runes = save.progress().relics.runes;
+    view.bossKeys = save.progress().relics.shards;
     return view;
 }
 
@@ -183,11 +189,7 @@ void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textur
         if (actor.player() != m_help.player()) {
             continue;
         }
-        const Vec4 point = clip * Vec4{actor.followPoint(), 1.0f};
-        if (point.w > 1e-4f) {
-            head = Vec2{(point.x / point.w * 0.5f + 0.5f) * width,
-                        (0.5f - point.y / point.w * 0.5f) * height};
-        }
+        head = PartyNames::screenOf(clip, actor.followPoint(), width, height).value_or(head);
     }
     const auto sheet = textures.loaded() ? textures.find(kScrollTexture) : std::nullopt;
     const Texture* scroll = nullptr;

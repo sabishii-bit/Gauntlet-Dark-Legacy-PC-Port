@@ -7,8 +7,11 @@
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
 
+#include "game/players/BodyGlow.h"
+#include "game/players/ExitWait.h"
 #include "game/players/HeadGem.h"
 #include "game/players/Knockback.h"
+#include "game/players/MeleeStreak.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerCapture.h"
 #include "game/players/PlayerTransport.h"
@@ -71,7 +74,11 @@ struct PlayerRuntime {
         std::optional<Mat4> placement;
     };
     Floor floor;
-    HeadGem gem; ///< a hand of death's or health vampire's gem on the head
+    HeadGem gem;        ///< a hand of death's or health vampire's gem on the head
+    BodyGlow glow;      ///< shining through a darkening strike or the legend's rite
+    MeleeStreak streak; ///< close blows landed, towards the narrator's praise
+    ExitWait exitWait;  ///< standing still on an exit for the rest of the party
+    s32 nameTicks = 0;  ///< while over nought the name shows over the head (name_timer)
 };
 
 } // namespace gdl::game

@@ -107,6 +107,22 @@ void writeSecondBank(const std::filesystem::path& root, std::string_view bank,
                               sounds));
 }
 
+TEST_CASE("a narrator line the tower's ambience keeps is queued from there",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-ambient-line");
+    writeSecondBank(root, "VOICE1", {"LINE"});
+    writeSecondBank(root, "TOWAMB", {"S_WAITINGL"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    REQUIRE(soundscape.queueNarration("S_WAITINGL", LevelSoundscape::Narrator::Primary) ==
+            kNoSound);
+    REQUIRE(soundscape.queueNarration("S_WAITINGL") != kNoSound);
+    REQUIRE(soundscape.narrationBacklog() == Catch::Approx(1.0));
+    soundscape.close();
+}
+
 TEST_CASE("the narrator's queue plays lines in turn and turns away what would wait too long",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-queue");

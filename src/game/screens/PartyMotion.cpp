@@ -277,6 +277,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
                         : StrafeWay::None);
         }
+        players[i].glow.step(seconds);
         // Riding a moving floor, the body goes where the floor took it (PlayerCheckFloor).
         if (!down) {
             FloorRiding::carry(players[i], collision);
@@ -383,6 +384,13 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 players[i].figure->setMelee(events.meleeSense(i, attackHeld));
             }
             players[i].figure->animate(move.magnitude, ticks, seconds, deed);
+            {
+                const f32 size = PlayerFigure::bodyScale(actor.save(), powerups);
+                players[i].figure->updateTrail(
+                    glm::scale(players[i].capture.body().value_or(actor.transform()),
+                               Vec3{size, size, size}),
+                    ticks);
+            }
             events.advanceTurbo(i, ticks, seconds);
             if (players[i].figure->familiarReleased()) {
                 events.perform(i, Action::FamiliarShot);

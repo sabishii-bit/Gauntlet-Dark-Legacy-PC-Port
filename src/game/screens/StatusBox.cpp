@@ -150,6 +150,10 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         }
         return;
     }
+    if (view.mode == StatusBoxView::Mode::Status) {
+        drawRelics(canvas, slot, view.runes,
+                   view.keysShown ? std::optional<u16>{view.bossKeys} : std::nullopt);
+    }
     const auto icon = [&](std::string_view name, s32 x) {
         if (const Texture* texture = staticTexture(name)) {
             canvas.draw(*texture, Rect{static_cast<f32>(left + x), static_cast<f32>(kIconY),
@@ -199,6 +203,36 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
     nameStyle.scale = kNameScale;
     nameStyle.color = tint;
     m_initials.draw(canvas, centerX, kNameY, view.name, nameStyle);
+}
+
+void StatusBoxPainter::drawRelics(Canvas& canvas, s32 slot, u16 runes, std::optional<u16> keys) {
+    const s32 left = slot * kWidth;
+    const auto place = [&](std::string_view name, s32 x, s32 y) {
+        if (const Texture* texture = staticTexture(name)) {
+            canvas.draw(*texture, Rect{static_cast<f32>(left + x), static_cast<f32>(y),
+                                       static_cast<f32>(texture->width()),
+                                       static_cast<f32>(texture->height())});
+        }
+    };
+    for (s32 rune = 0; rune < kRuneCount; ++rune) {
+        if ((runes & (1U << static_cast<u32>(rune))) == 0) {
+            continue;
+        }
+        const s32 trio = rune / kRunesInColour;
+        place(std::format("SM_RUNE_{}_{:02}", kRelicColours[static_cast<usize>(trio)],
+                          rune % kRunesInColour + 1),
+              kRuneX + rune * kRuneStep + trio, kRuneY);
+    }
+    if (!keys.has_value()) {
+        return;
+    }
+    for (s32 key = 0; key < kKeyCount; ++key) {
+        if ((*keys & (1U << static_cast<u32>(key))) != 0) {
+            place(std::format("SM_KEY_{}",
+                              kRelicColours[static_cast<usize>(key) % kRelicColours.size()]),
+                  kKeyX + key * kKeyStep, kKeyY);
+        }
+    }
 }
 
 void StatusBoxPainter::drawTurbo(Canvas& canvas, s32 slot, const TurboMeterLook& look) {

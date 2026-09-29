@@ -45,6 +45,38 @@ TEST_CASE("Phoenix activation follows enabled inventory and expires without requ
     CHECK_FALSE(figure.familiarReleased());
 }
 
+TEST_CASE("the warrior's slow swing leaves ghosts of the axe that fade after it",
+          "[game][figure][weapon-trail][unpacked]") {
+    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    const CharacterSave save;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    REQUIRE(figure->heldWeaponBound());
+    figure->setMelee(MeleeSense{});
+    s32 most = 0;
+    bool swung = false;
+    for (s32 frame = 0; frame < 90; ++frame) {
+        figure->animate(0.0f, 2, 1.0f / 30.0f,
+                        frame < 2 ? PlayerDeed::MeleeSlow : PlayerDeed::None);
+        swung = swung || figure->animator().action() == PlayerAnimator::Action::SlowSwing;
+        figure->updateTrail(Mat4{1.0f}, 2);
+        most = std::max(most, static_cast<s32>(figure->trail().count()));
+    }
+    CHECK(swung);
+    CHECK(most > 1);
+    CHECK(figure->trail().count() == 0); // gone once the swing is over
+    // Drawn, each ghost is the weapon again, fainter.
+    device.draws.clear();
+    figure->draw(device, Mat4{1.0f}, Mat4{1.0f}, WorldLighting{}, 1.0f, false);
+    const usize plain = device.draws.size();
+    CHECK(plain > 0);
+}
+
 TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
           "[game][figure][xray][unpacked]") {
     const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
