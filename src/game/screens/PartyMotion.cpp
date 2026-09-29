@@ -7,10 +7,14 @@
 #include "engine/core/Types.h"
 
 #include "game/players/PowerupEffects.h"
+#include "game/screens/PartyCollision.h"
 namespace gdl::game {
 namespace {
 constexpr f32 kChargeStick = 0.25f;
-}
+/** A shoved body moving less than this a second shows no push (0.01 a 30 Hz frame,
+ * pmotion.c 2042). */
+constexpr f32 kPushedStep = 0.3f;
+} // namespace
 PlayerDeed PartyMotion::turboDeed(const PlayerRuntime& runtime, const PlayInput& in) {
     if (runtime.figure == nullptr) {
         return PlayerDeed::None;
@@ -308,6 +312,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (!down && events.resolveMovement) {
             actor.place(events.resolveMovement(i, before, actor.position()));
         }
+        if (!down) {
+            PartyCollision::step(players, i, before, seconds);
+        }
         if (events.allowMovement && !events.allowMovement(before, actor.position())) {
             actor.place(Vec3{before.x, actor.position().y, before.z});
         }
@@ -352,6 +359,14 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             players[i].figure->setAttackSpeed((powerups.weapon & powerup::kRapidFire) != 0,
                                               (powerups.special & powerup::kSpeedBoost) != 0);
             players[i].figure->setShielded((powerups.armor & powerup::kShields) != 0);
+            // Shoved and moving, it shows being pushed, facing the way it goes.
+            const Vec3 moved = actor.position() - before;
+            const bool pushed = !down && players[i].knockback.pushed() &&
+                                std::hypot(moved.x, moved.z) > kPushedStep * seconds;
+            if (pushed) {
+                actor.turnTo(std::atan2(moved.x, moved.z));
+            }
+            players[i].figure->setPushed(pushed);
             // The close attack sees where the nearest thing to strike lies as it decides.
             const bool attackHeld = !held && !down && player < inputs.size() &&
                                     (inputs[player].attack || inputs[player].strongAttack);
@@ -404,6 +419,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
         }
         subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
+    }
+    for (PlayerRuntime& runtime : players) {
+        runtime.knockback.endFrame();
     }
     passIt(players, ticks, events);
     return subjects;

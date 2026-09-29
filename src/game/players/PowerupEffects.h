@@ -57,12 +57,21 @@ struct PowerupEffects {
     static constexpr f32 kGrowthScale = 1.3f;
     static constexpr f32 kInvisibleAlpha = 95.0f / 255.0f; ///< how solid an unseen body shows
     static constexpr f32 kInvisibleWaver = 16.0f / 255.0f; ///< and how much that wavers
+    static constexpr f32 kWarningSeconds = 3.0f; ///< the last of a powerup, shown by blinking
+    static constexpr f32 kBlinkRate = 8.0f;      ///< eighths of a second, on and off
+
+    /** The chrome skin invulnerability shows (PlayerProcessPowerups). */
+    enum class Chrome : u8 { None, Silver, Gold };
 
     u32 weapon = 0;
     u32 armor = 0;
     u32 special = 0;
     f32 paceAdd = 0.0f; ///< units a second onto the character's pace
     f32 magicAdd = 0.0f;
+    /** The invisibility and invulnerability left, by the original's rule over the slots
+     * (alpha_time, weapon_time): the longest, or one for good (under none) met before it. */
+    f32 invisibleLeft = 0.0f;
+    f32 invulnerableLeft = 0.0f;
 
     static PowerupEffects of(const Inventory& inventory);
 
@@ -78,8 +87,13 @@ struct PowerupEffects {
     bool xray() const { return (special & powerup::kXRay) != 0; }
     bool grown() const { return (special & powerup::kGrowth) != 0; }
     bool preventsKnockback() const { return (armor & 0x150000) != 0; }
-    /** How solid the body is drawn `seconds` into the level. */
-    f32 bodyAlpha(f32 seconds) const;
+    /** How solid the body is drawn: unseen, wavering with the time left, and shown whole
+     * every other eighth of a second in the last three. */
+    f32 bodyAlpha() const;
+    /** The chrome skin shown, none while it blinks off in its last three seconds. */
+    Chrome chrome() const;
+    /** Whether a powerup with `left` seconds is blinked off this moment. */
+    static bool blinkedOff(f32 left);
 };
 
 /** The text id of a powerup's name for the selector, by its kind and flags: the first of the

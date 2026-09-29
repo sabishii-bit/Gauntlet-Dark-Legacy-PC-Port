@@ -120,6 +120,23 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Scene rendering retains canvas/overlay order; HUD methods consume party
   snapshots without reaching back into PlayScene. Clear before releasing the
   borrowed glow texture supplied by Sumner's presentation.
+* PlayScene is the level's composition root: it owns the subsystems, orders their
+  phases and routes events between them; the rules live in the classes it holds.
+  `screens/PartyPickups` takes what the party touches (cards, lessons, gestures, food
+  voices, theft complaints, shared runestones, crystal counts and gate announcements)
+  and drops a fallen player's keys; it borrows the scene per call through `Services`.
+  `screens/PartyFigures` draws the party's figures, arm items, headwear, IT's sign and
+  shadows, and adds dark-level lanterns; it keeps nothing between frames.
+  `screens/TowerWelcome` owns Sumner's beam, the spot before him and a new party's
+  welcome (scroll, then the crystal cut). `screens/TriggerCues` answers the
+  triggers' lessons, refusals, openings, camera cues and turntable sounds.
+  `screens/PartyRecords` awards experience and builds the party handed on, the
+  abandoned party and the level results. `LevelOpponents::blast` routes a blast's
+  ring to the swarm, generators, great ones and boss. The scene's own routing is
+  split by concern into `PlaySceneMotion` (movement events and actions),
+  `PlaySceneHarm` (hurts, hazards, tower prompts, named announcements) and
+  `PlaySceneCamera`, beside the older partial files. New rules go into such classes,
+  not into PlayScene.
 * `world/PlayerFigure` owns costume selection, mesh/animation/voice archives,
   while `world/PlayerArsenal` owns active missiles and thrown-potion models.
   Bind the arsenal to borrowed level services after loading the shared weapon
@@ -228,7 +245,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   nodes (`TreeNodeInfo::particle` names one of the archive's own templates,
   `direction` the way it emits), run in a `ParticleField` for the sequence's
   length. A crystal's value indexes `kCrystalRealms` for the realm it counts
-  towards; `PlayScene::collectItems` gives every party member one, up to what
+  towards; `PartyPickups::collect` gives every party member one, up to what
   the gate wants, and plays the common bank's pickup chime. Crystal counts live
   in `ClassProgress::crystals` (one per realm, in the save's JSON). Every item
   plays its first sequence on a loop (`Item::player`, `pose`: the crystals
@@ -242,7 +259,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   STATIC card such as `CRYSTAL` under it, rising a pixel a tick from under the
   screen to the bar over the taker's box, holding ninety ticks, falling away)
   and the three-second counts (a `SM_CRYSTAL_*` icon and "have/need") that
-  `StatusBoxPainter::drawCard` and `drawCount` paint; `PlayScene::collectItems`
+  `StatusBoxPainter::drawCard` and `drawCount` paint; `PartyPickups::collect`
   feeds it and `render` draws it over the boxes, under the scroll.
 * Ambience: `game/world/AmbientSounds` runs the level's sound items (type
   13): a loop named by the instance, found in the level's bank or the
@@ -371,7 +388,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   snaps the facing along or against the push. The slide is horizontal, decays by
   0.667 per 30 Hz frame, travels per axis at most 40/s the frame after a
   0x18160 kick and 1.5 x pace otherwise, and walls and edges stop it as they stop
-  walking (`PlayerActor::slide`). Airborne/whirlwind physics remain unfinished.
+  walking (`PlayerActor::slide`). Nothing is lifted (the push's rise is clamped to
+  none); a whirlwind (0x10000, the genie's wind) outranks every other knock and plays
+  `FLYUP` once, then `GETUP` (`PlayerDeed::Whirled`, pmotion.c 1532, action.c 1270).
 * Level tuning: each level record of a realm's data wad holds seventeen
   floats from +0x9C (`LevelTuningRecord`, unpacked as `tuning`): the player
   level it is meant for, experience and damage multipliers, the difficulty,
@@ -408,13 +427,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `S_PLAYERDIES` and `DIE2`. Under a point of health the character plays
   `DEATH` and is then "in the tower" (`StatusBoxView::inTower`, the text
   `hud.inTower`): unseen, untouchable, out of the camera's view and not
-  waited for by portals. `PlayScene::party()` hands the fallen on as they
+  waited for by portals. `PartyRecords::members` hands the fallen on as they
   came into the level (`PartyMember::fallen`, the entry snapshot, keeping
   only the help they saw); they stand again when the party is next in the
   tower, and stay fallen through any other level. As the death plays out the
   keys it carried fall where it lay for the others, a `KEY` for one and a
   `KEYRING` holding them all for more (player_dies; not in the tower or a
-  boss's level: `PlayScene::dropKeys`). With everyone fallen, the
+  boss's level: `PartyPickups::dropKeys`). With everyone fallen, the
   last body gone and the announcer done, the party travels to the tower with
   its entry saves (game_main's all-dead case, then PlayerRestoreState); it is
   not a game over. Quitting the game from the tower (`PlayScene::startGameOver`,
@@ -566,9 +585,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   most 16 a second, with no landing animation, sound or damage
   (`PlayerActor::fall`); under the world's lowest point less 4.5 it stands
   again beside another standing player (`PartyMotion::rescueSpot`,
-  get_player_pos's sixteen spots) or at the level's start. Not yet, because
-  they need something to be aimed at or to come from: pushing,
-  the super shot and the familiars' attacks. A halo wearer (armour 0x80000) whose
+  get_player_pos's sixteen spots) or at the level's start. Members keep out
+  of one another (`screens/PartyCollision`, PlayerCollidePlayers): a step
+  into another standing member ends at their radii's sum from them, and the
+  one run into is shoved by the step as it was meant (`Knockback::shove`,
+  the push velocity: at most half its pace, fading by a third a frame); the
+  frame after, standing, walking or running, it plays `PUSHED` facing the
+  way it goes (`PlayerAnimator::setPushed`, pmotion.c 1157 and 2042). Not
+  yet: the super shot and the familiars' attacks. A halo wearer (armour 0x80000) whose
   nearest thing ahead within thirty is Death (PlayerGetTarget: a cone of 0.707, 0.5
   for the Death already held) holds him (pmotion.c 1621, `PlayerAttacks::grabDeath`,
   `PartyMotion`'s `grabDeath` event): standing, facing him and heeding no button, it
@@ -1209,7 +1233,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   body-origin fallback used for targeting/hit positions. Lich START's GENFX has
   no node and zero offset: adding TYPE.originOffset incorrectly raised the gravel
   ten units. Synthetic attachment tests and the retail START cue cover this.
-  Remaining combat work includes Lich grabs/sticky hands, whirlwind player motion,
+  Remaining combat work includes Lich grabs/sticky hands,
   effect-owned impact damage/trails and SFXX camera shakes. Playing a move or its visual
   is not evidence these gameplay paths are implemented.
 * Spider Queen's `[spider]` coverage includes all thirteen attack families,
@@ -1693,7 +1717,16 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   worn) into weapon, armour and special flags plus pace and magic adds; so
   far the scene applies speed (`PlayerActor::setPaceBonus`), three and five
   way shots (`PlayerMissiles::spread`, 15 degrees apart), invisibility (body
-  alpha 95/255 wavering) and growth (1.3; an ogre is 1.6, level 99 1.2).
+  alpha 95/255 wavering with the time left) and growth (1.3; an ogre is 1.6,
+  level 99 1.2). Invulnerability wears WEAPONS' `CHROMESILVER`, or
+  `CHROMEGOLD` for armour 0x100000, full-bright over the costume
+  (`PartyFigures::skinOf`, after the portal's skin and the damage flash).
+  Invisibility and invulnerability show whole, and plain, every other eighth
+  of a second in their last three (`PowerupEffects::blinkedOff`, player.c
+  5521-5552, over the time left the original picks: `invisibleLeft`,
+  `invulnerableLeft`). Retail's chrome uses skin mode -3 (every texture
+  replaced, flag 0x80000 on); that flag's rendering is not reconstructed, and
+  the costume's cut-outs are kept.
   `Inventory::spendKey` is the rule for locks; chests and doors come with
   the realm levels (the tower's archives hold no chest or door). Scenarios
   take `powerups`; `tests/scenarios/tower-powerups.json` carries a set. The
@@ -1746,11 +1779,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * `screens/SumnerVisit` owns hint artwork, greeting/visit timing, the scroll's
   input owner and localized hint answers. It borrows artwork and the text
   painter; clear it before their owners release them. It cannot move because
-  its menu points at its own arrow sprite. PlayScene retains proximity checks,
-  owner-input routing, audio and Sumner's gestures. The greeting countdown
+  its menu points at its own arrow sprite. `TowerWelcome::visitorOf` finds the
+  visitor; PlayScene retains owner-input routing, audio and Sumner's gestures. The greeting countdown
   continues while the spot is empty; its current visitor receives the scroll.
 * Sumner's hints: a player inside the trigger before him (id 240,
-  `PlayScene::kSumnerSpot`) is greeted at once (`SumnerFigure::play`, the
+  `TowerWelcome::kSumnerSpot`) is greeted at once (`SumnerFigure::play`, the
   original's sequence indices: 3 WELCOME, 4 GOAWAY, 6 GESTRIGHT) and handed
   `menu/HintMenu` two seconds on, once a visit (leaving the spot starts a new
   one). The scroll holds play like a message scroll; its owner's menu input
@@ -1769,7 +1802,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `data/text/en.json`; `tests/scenarios/tower-sumner.json` starts before him.
 * Sumner's beam (`L1XPLIGHTRAY01`) starts unseen and comes up over 180 ticks
   while a player is within `kBeamRadius` of him, going again once they
-  leave (`PlayScene::updateBeam`). The stained-glass light through the
+  leave (`TowerWelcome::updateBeam`). The stained-glass light through the
   window over the door (`kTempleLights`) starts dark until TowerRelics restores
   the party's completed eight-piece window.
 * The welcome's cut to the crystals is letterboxed as the original's
@@ -1794,7 +1827,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `audio->enterSound`) belongs to the loading screen and is not played here.
 * Gate messages: `LevelTriggers::takeRefusals` reports a player stood in a
   requirement trigger without what it wants (once per 2.5625 s per trigger)
-  and `takeOpenings` the targets that opened; `PlayScene::handleTriggerEvents`
+  and `takeOpenings` the targets that opened; `TriggerCues::handle`
   opens the `NEEDCRYSTALS` page for the realm or the `NEEDGARGITEMS` page for
   the gargoyle tier (the trigger id less `kIconTierBase`, 101) from
   `text/scroll_e.json`. A target opening before the party sounds by the
@@ -2220,7 +2253,7 @@ keeps a visible retryable error on failure; difficulty is sampled on the next le
 Controls remains disabled and unimplemented; do not restore the discarded binding-capture
 screen. Gameplay bindings remain configurable through the settings file.
 Quit Level gives up what the level gave: every member leaves as it came in, keeping
-only its lessons and save slot (`PlayScene::abandonedParty`; retail's kill_player and
+only its lessons and save slot (`PartyRecords::abandoned`; retail's kill_player and
 PlayerRestoreState). Retail's tally and shop before the tower are not run on that path.
 Title Options and Pause share `MenuDefinition::parchment()`: precolored red parchment
 labels, purple focus glow, and no nonselectable Back/Select footer. Keep menu styling

@@ -231,7 +231,13 @@ add_library(game STATIC
     screens/LegendPresentation.cpp
     screens/PlayScene.h
     screens/PartyMotion.cpp
+    screens/PartyCollision.cpp
+    screens/PartyFigures.cpp
     screens/PartyHud.cpp
+    screens/PartyRecords.cpp
+    screens/TriggerCues.cpp
+    screens/TowerWelcome.cpp
+    screens/PartyPickups.cpp
     screens/LevelFixtures.cpp
     screens/LevelOpponents.cpp
     screens/PlayerAttacks.cpp
@@ -240,6 +246,9 @@ add_library(game STATIC
     screens/PlayerHealth.cpp
     screens/PlayScene.cpp
     screens/PlaySceneTransport.cpp
+    screens/PlaySceneMotion.cpp
+    screens/PlaySceneHarm.cpp
+    screens/PlaySceneCamera.cpp
     screens/PlaySceneSwitch.cpp
     screens/SwitchCutscene.cpp
     screens/SwitchCutscene.h)

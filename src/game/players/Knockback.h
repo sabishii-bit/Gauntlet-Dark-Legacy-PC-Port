@@ -14,6 +14,11 @@ namespace gdl::game {
  * push or against it, whichever is nearer. The slide then decays by a third of itself a
  * frame, travelling at most forty a second the frame after a fall's kick and one and a half
  * times the character's pace otherwise. It is along the ground only.
+ *
+ * Apart from the slide, another member walking into the character shoves it by the step it
+ * meant (the push velocity, player +0x864): what a frame's shoves add up to carries the body
+ * on at most half its pace, decaying by a third a frame, and the frame after one the
+ * character shows it is being pushed (hud_flags 4, then 8; do_players, player.c 2300).
  */
 class Knockback {
 public:
@@ -33,7 +38,8 @@ public:
     static constexpr f32 kFastLimit = 40.0f; ///< units a second
     static constexpr f32 kPaceLimit = 1.5f;  ///< of the character's pace
     static constexpr f32 kFrameRate = 30.0f;
-    static constexpr f32 kStill = 0.01f; ///< a slide slower than this is over
+    static constexpr f32 kStill = 0.01f;     ///< a slide slower than this is over
+    static constexpr f32 kShoveLimit = 0.5f; ///< of the character's pace, a shove's most
 
     /** A hit's push (the way it travels, as long as its maker gave it) and its flags. */
     void queue(const Vec3& push, u32 flags, f32 damage);
@@ -43,6 +49,13 @@ public:
     /** Where the slide carries the body over `seconds` at a character's `pace`, the slide
      * decaying after. */
     Vec3 step(f32 seconds, f32 pace);
+    /** Another member's step of `seconds` ran into the character: it is shoved by it, as
+     * by the step a 30 Hz frame would have made. */
+    void shove(const Vec3& displacement, f32 seconds);
+    /** The frame is over: what shoved the character this frame shows it next. */
+    void endFrame();
+    /** Whether the character was shoved in the last frame. */
+    bool pushed() const { return m_pushed; }
     void clear();
 
     const Vec3& velocity() const { return m_velocity; }
@@ -55,6 +68,9 @@ private:
     f32 m_damage = 0.0f;
     Vec3 m_velocity{0.0f};
     bool m_fast = false; ///< the frame after a fall's kick travels freely
+    Vec3 m_shove{0.0f};  ///< units a second
+    bool m_shoved = false;
+    bool m_pushed = false;
 };
 
 } // namespace gdl::game

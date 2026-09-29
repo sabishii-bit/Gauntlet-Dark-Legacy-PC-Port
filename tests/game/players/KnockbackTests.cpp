@@ -117,4 +117,38 @@ TEST_CASE("a slide decays by a third a frame, held to the character's pace, and 
     CHECK(whole.velocity() == Vec3{0.0f});
     CHECK(whole.step(kFrame, kPace) == Vec3{0.0f});
 }
+TEST_CASE("a shove carries the body at most half its pace and fades by a third a frame",
+          "[game][players][knockback]") {
+    constexpr f32 kFrame = 1.0f / 30.0f;
+    Knockback knock;
+    CHECK_FALSE(knock.pushed());
+    knock.shove(Vec3{3.0f, 5.0f, 0.0f}, kFrame); // along the ground only
+    knock.endFrame();
+    CHECK(knock.pushed());
+    // As the original adds it, a step of three a frame carries three a second.
+    Vec3 moved = knock.step(kFrame, 10.0f);
+    CHECK(moved.x == Approx(3.0f * kFrame));
+    CHECK(moved.y == 0.0f);
+    // At most half the pace: of ten, five.
+    Knockback hard;
+    hard.shove(Vec3{30.0f, 0.0f, 0.0f}, kFrame);
+    CHECK(hard.step(kFrame, 10.0f).x == Approx(5.0f * kFrame));
+    // A frame at 60 Hz shoves as much as its half of a 30 Hz frame's step.
+    Knockback fine;
+    fine.shove(Vec3{0.05f, 0.0f, 0.0f}, kFrame / 2.0f);
+    moved = fine.step(kFrame, 100.0f);
+    CHECK(moved.x == Approx(0.1f * kFrame));
+    // The next frame's first shove starts afresh; unshoved, it is no longer pushed.
+    knock.shove(Vec3{0.1f, 0.0f, 0.0f}, kFrame);
+    moved = knock.step(kFrame, 10.0f);
+    CHECK(moved.x == Approx(0.1f * kFrame));
+    knock.endFrame();
+    knock.endFrame();
+    CHECK_FALSE(knock.pushed());
+    for (s32 i = 0; i < 30; ++i) {
+        knock.step(kFrame, 10.0f);
+    }
+    CHECK(knock.step(kFrame, 10.0f) == Vec3{0.0f});
+}
+
 } // namespace

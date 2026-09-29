@@ -199,7 +199,13 @@ add_executable(tests
     game/screens/LegendPresentationTests.cpp
     game/screens/PlaySceneTests.cpp
     game/screens/PartyMotionTests.cpp
+    game/screens/PartyCollisionTests.cpp
+    game/screens/PartyFiguresTests.cpp
     game/screens/PartyHudTests.cpp
+    game/screens/PartyRecordsTests.cpp
+    game/screens/TriggerCuesTests.cpp
+    game/screens/TowerWelcomeTests.cpp
+    game/screens/PartyPickupsTests.cpp
     game/screens/LevelFixturesTests.cpp
     game/screens/LevelOpponentsTests.cpp
     game/screens/PlayerHealthTests.cpp

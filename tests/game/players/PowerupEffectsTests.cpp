@@ -26,7 +26,7 @@ TEST_CASE("worn powerups add up to what they do", "[game][players][powerups]") {
     REQUIRE(effects.shots() == 1);
     REQUIRE_FALSE(effects.invisible());
     REQUIRE_FALSE(effects.grown());
-    REQUIRE(effects.bodyAlpha(0.3f) == 1.0f);
+    REQUIRE(effects.bodyAlpha() == 1.0f);
     REQUIRE(effects.paceAdd == 0.0f);
 
     inventory.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0.0f, 30.0f);
@@ -49,10 +49,13 @@ TEST_CASE("worn powerups add up to what they do", "[game][players][powerups]") {
     REQUIRE(smaller.magicPower(500) == Approx(25.0f));
     REQUIRE(effects.invisible());
     REQUIRE(effects.grown());
-    // Unseen, the body shows about a third solid, wavering over each second.
-    REQUIRE(effects.bodyAlpha(0.0f) == Approx(95.0f / 255.0f));
-    REQUIRE(effects.bodyAlpha(0.25f) == Approx(79.0f / 255.0f));
-    REQUIRE(effects.bodyAlpha(0.75f) == Approx(111.0f / 255.0f));
+    // Unseen, the body shows about a third solid, wavering with each second left.
+    REQUIRE(effects.invisibleLeft == 30.0f);
+    REQUIRE(effects.bodyAlpha() == Approx(95.0f / 255.0f));
+    effects.invisibleLeft = 20.25f;
+    REQUIRE(effects.bodyAlpha() == Approx(79.0f / 255.0f));
+    effects.invisibleLeft = 20.75f;
+    REQUIRE(effects.bodyAlpha() == Approx(111.0f / 255.0f));
     // Five ways beats three; one taken off does nothing.
     inventory.addPowerup(powerup::kWeapon, powerup::kFiveWayShot, 0.0f, 30.0f);
     REQUIRE(PowerupEffects::of(inventory).shots() == 5);
@@ -130,4 +133,37 @@ TEST_CASE("charged powerups expire on the final use and disabled items cannot be
     CHECK_FALSE(inventory.powerups[0].held());
     CHECK_FALSE(inventory.spendPowerup(5, 0x100000));
 }
+TEST_CASE("an ending powerup blinks, and invulnerability shows its chrome",
+          "[game][players][powerups]") {
+    // The last three seconds show whole every other eighth (player.c 5526, 5542).
+    REQUIRE_FALSE(PowerupEffects::blinkedOff(3.1f));
+    REQUIRE(PowerupEffects::blinkedOff(3.0f)); // eight times three is even
+    REQUIRE_FALSE(PowerupEffects::blinkedOff(2.9f));
+    REQUIRE(PowerupEffects::blinkedOff(2.6f));
+    REQUIRE(PowerupEffects::blinkedOff(0.1f));
+    REQUIRE_FALSE(PowerupEffects::blinkedOff(-1.0f)); // for good never blinks
+
+    Inventory inventory;
+    inventory.addPowerup(powerup::kSpecial, powerup::kInvisible, 0.0f, 2.6f);
+    PowerupEffects effects = PowerupEffects::of(inventory);
+    REQUIRE(effects.invisibleLeft == Approx(2.6f));
+    REQUIRE(effects.bodyAlpha() == 1.0f);
+    effects.invisibleLeft = 2.9f;
+    REQUIRE(effects.bodyAlpha() < 0.5f);
+
+    REQUIRE(PowerupEffects{}.chrome() == PowerupEffects::Chrome::None);
+    inventory.addPowerup(powerup::kArmor, powerup::kInvulnerable, 0.0f, 20.0f);
+    effects = PowerupEffects::of(inventory);
+    REQUIRE(effects.invulnerableLeft == 20.0f);
+    REQUIRE(effects.chrome() == PowerupEffects::Chrome::Silver);
+    // The gold one (INVULGICON, 0x110000) is gold whatever else is worn.
+    inventory.addPowerup(powerup::kArmor, powerup::kGoldInvulnerable | powerup::kInvulnerable, 0.0f,
+                         25.0f);
+    effects = PowerupEffects::of(inventory);
+    REQUIRE(effects.invulnerableLeft == 25.0f);
+    REQUIRE(effects.chrome() == PowerupEffects::Chrome::Gold);
+    effects.invulnerableLeft = 0.1f;
+    REQUIRE(effects.chrome() == PowerupEffects::Chrome::None);
+}
+
 } // namespace

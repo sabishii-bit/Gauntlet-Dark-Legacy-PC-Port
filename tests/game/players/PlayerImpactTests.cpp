@@ -1,9 +1,12 @@
+#include <filesystem>
 #include <numbers>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
 
+#include "TestSupport.h"
+#include "game/enemies/CritterData.h"
 #include "game/players/PlayerImpact.h"
 
 namespace {
@@ -44,6 +47,36 @@ TEST_CASE("heavy blows fall with their direction and guards downgrade them to kn
         REQUIRE(impact.reaction(10, 0, false) == PlayerDeed::FallForward);
         REQUIRE(impact.reaction(10, 2 * std::numbers::pi_v<f32>, false) == PlayerDeed::FallForward);
     }
+}
+
+TEST_CASE("a whirlwind sweeps the player up before any other knock",
+          "[game][players][player-impact]") {
+    // PlayerKnockback tests 0x10000 first: with a knock down too, it is still the whirlwind.
+    const PlayerImpact impact{PlayerImpact::kWhirlwind | PlayerImpact::kKnockDown, {0, 0, -1}};
+    REQUIRE(impact.reaction(10, 0, false) == PlayerDeed::Whirled);
+    REQUIRE(impact.reaction(10, std::numbers::pi_v<f32>, false) == PlayerDeed::Whirled);
+    REQUIRE(impact.reaction(10, 0, true) == PlayerDeed::Flinch); // a guard takes it down
+    REQUIRE(impact.reaction(2, 0, false) == PlayerDeed::None);
+    REQUIRE(PlayerImpact::combine(PlayerDeed::FallBack, PlayerDeed::Whirled) ==
+            PlayerDeed::Whirled);
+    REQUIRE(PlayerImpact::combine(PlayerDeed::Whirled, PlayerDeed::FallForward) ==
+            PlayerDeed::Whirled);
+}
+
+TEST_CASE("the genie's wind is the whirlwind", "[game][players][player-impact][unpacked]") {
+    const std::filesystem::path file = test::unpackedOrSkip("critter/DJINN.json");
+    CritterData djinn;
+    REQUIRE(djinn.load(file));
+    s32 winds = 0;
+    for (const AttackDefinition& attack : djinn.damages()) {
+        if ((attack.flags & PlayerImpact::kWhirlwind) != 0) {
+            ++winds;
+            const PlayerImpact impact{attack.flags, Vec3{0, 0, 1}};
+            REQUIRE(impact.reaction(attack.damage > 2.0f ? attack.damage : 10.0f, 0, false) ==
+                    PlayerDeed::Whirled);
+        }
+    }
+    REQUIRE(winds >= 2); // DAMG records 13 and 14
 }
 
 TEST_CASE("a lesser contact cannot erase a queued knockdown", "[game][players][player-impact]") {
