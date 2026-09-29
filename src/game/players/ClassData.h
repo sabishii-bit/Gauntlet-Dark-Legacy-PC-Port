@@ -94,6 +94,10 @@ struct MoveStrike {
 
 /** The moves a class's data names, each by its first strike (-1 when the class lacks it). */
 struct ClassMoves {
+    s32 turboAClose = -1; ///< the first power swing of a chain
+    s32 turboALow = -1;   ///< the first at something short
+    s32 turboAStep = -1;  ///< the second
+    s32 turboA360 = -1;   ///< the spin, the third
     s32 turboAThrow = -1; ///< the strong attack with nothing in reach
     s32 turboB = -1;
     s32 turboC1 = -1;

@@ -96,6 +96,32 @@ TEST_CASE("turbo without class rows pays immediately but strong throws stay free
     REQUIRE(f.meter.held() == 60);
 }
 
+TEST_CASE("the power swings and the spin play their own strong-attack rows for nothing",
+          "[game][players][turbo-move][melee]") {
+    struct Case {
+        Action action;
+        s32 ClassMoves::*row;
+    };
+    for (const Case& c : {Case{Action::PowerClose, &ClassMoves::turboAClose},
+                          Case{Action::PowerLow, &ClassMoves::turboALow},
+                          Case{Action::PowerMed, &ClassMoves::turboAStep},
+                          Case{Action::Spin, &ClassMoves::turboA360}}) {
+        Fixture f;
+        f.stats.moves.turboB = -1;
+        f.stats.moves.*c.row = 1;
+        REQUIRE(f.move.begin(c.action, &f.stats, f.meter).empty());
+        f.advance(2, c.action);
+        CHECK(f.calls == std::vector<std::string>{"strike1"});
+        CHECK(f.meter.held() == 100);
+        CHECK(f.move.owed() == 0);
+        // Its rows go with the action: the recovery plays none of them.
+        f.move.begin(c.action, &f.stats, f.meter);
+        f.calls.clear();
+        f.advance(2, Action::PowerCloseRecover);
+        CHECK(f.calls.empty());
+    }
+}
+
 TEST_CASE("full turbo combines both chains and pays only once", "[game][players][turbo-move]") {
     Fixture f;
     f.stats.moves.turboC1 = 0;

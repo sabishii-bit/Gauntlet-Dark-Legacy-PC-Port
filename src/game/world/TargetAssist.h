@@ -21,9 +21,12 @@ public:
                                       const WorldCollision* collision = nullptr);
     /** Pass through the selected point at unchanged horizontal speed. */
     static Vec3 velocity(const Vec3& origin, const Vec3& target, f32 speed, f32 gravity);
-    /** Nearest reachable body in the facing cone, using surface distance and vertical overlap. */
-    static std::optional<MissileTarget> melee(const Vec3& feet, f32 height, const Vec3& facing,
-                                              std::span<const MissileTarget> targets, f32 reach,
-                                              const WorldCollision* collision = nullptr);
+    /** Nearest reachable body at any bearing, by surface distance, with vertical overlap and a
+     * clear line to it. */
+    static std::optional<MissileTarget> around(const Vec3& feet, f32 height,
+                                               std::span<const MissileTarget> targets, f32 reach,
+                                               const WorldCollision* collision = nullptr);
+    /** How far a body's surface lies from the middle of one standing at `feet`. */
+    static f32 distanceTo(const Vec3& feet, f32 height, const MissileTarget& target);
 };
 } // namespace gdl::game

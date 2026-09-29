@@ -50,6 +50,25 @@ enum class PlayerDeed : u8 {
     FireRight
 };
 
+/** How far the nearest thing to strike lies: within a swing, within a step, or beyond. */
+enum class MeleeRange : u8 { Beyond, Step, Swing };
+
+/** What a close attack knows of the nearest thing to strike (AnimAction's collision bits). */
+struct MeleeSense {
+    MeleeRange range = MeleeRange::Swing;
+    bool low = false; ///< short enough, and near enough, for a low strike
+    f32 yaw = 0.0f;   ///< the way to it against the facing, from -pi to pi
+};
+
+/** What a completed swing does to what it strikes. */
+enum class MeleeBlow : u8 {
+    None,
+    Plain, ///< the character's own harm
+    Heavy, ///< twice it, knocking back
+    Kick,  ///< its own harm, knocking a short body down
+    Power  ///< three times it, knocking down
+};
+
 /** Which way a strafing character steps, against the way it faces. */
 enum class StrafeWay : u8 { None, Forward, Back, Left, Right };
 
@@ -138,6 +157,39 @@ public:
         Low1,
         Low2,
         LowRecover,
+        // The quick swings turned to a side or behind, in the table's own order: the first
+        // of each pair follows the first and third swings, the second follows the second.
+        Right,
+        Right2,
+        RightRecover,
+        Right2Recover,
+        Left,
+        Left2,
+        LeftRecover,
+        Left2Recover,
+        Turn,
+        Turn2,
+        TurnRecover,
+        Turn2Recover,
+        TurnLeft,
+        TurnLeft2,
+        TurnLeftRecover,
+        TurnLeft2Recover,
+        Spin, ///< the third strong press of a chain
+        SpinRecover,
+        Step1, ///< a swing that steps into what is a pace away
+        Step2,
+        Step3,
+        Step2Recover,
+        Step3Recover,
+        WalkStrike, ///< the step cut in from a second half of walking or running
+        WalkStrikeRecover,
+        PowerClose, ///< a strong press after the first swing of a chain
+        PowerCloseRecover,
+        PowerMed, ///< after the second
+        PowerMedRecover,
+        PowerLow, ///< the close one at something short
+        PowerLowRecover,
         SpecialShotRepeat,
         Hammer,
         HammerRecover,
@@ -150,7 +202,7 @@ public:
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 77;
+    static constexpr usize kActionCount = 108;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -165,9 +217,15 @@ public:
         "SSHOT1",       "SSHOTR",       "SPIKEHIT",     "GRABBED",      "WEBREACT",
         "ATTQUICK1",    "ATTQUICK2",    "ATTQUICK3",    "ATTQUICK2R",   "ATTQUICK3R",
         "ATTSTART",     "ATTSLOW1",     "ATTSLOW1R",    "ATTLOWK",      "ATTLOWKR",
-        "ATTLOW1",      "ATTLOW2",      "ATTLOWR",      "SSHOT2",       "ATTCHOP",
-        "ATTCHOPR",     "ATTBREATHE",   "ATTBREATHER",  "ATTFIREL",     "ATTFIRELR",
-        "ATTFIRER",     "ATTFIRERR"};
+        "ATTLOW1",      "ATTLOW2",      "ATTLOWR",      "ATTQ3RIGHT",   "ATTQ2RIGHT",
+        "ATTQ3RIGHTR",  "ATTQ2RIGHTR",  "ATTQ3LEFT",    "ATTQ2LEFT",    "ATTQ3LEFTR",
+        "ATTQ2LEFTR",   "ATTQ2180",     "ATTQ3180",     "ATTQ2180R",    "ATTQ3180R",
+        "ATTQ2180L",    "ATTQ3180L",    "ATTQ2180LR",   "ATTQ3180LR",   "ATT360",
+        "ATT360R",      "ATTSTEP1",     "ATTSTEP2",     "ATTSTEP3",     "ATTSTEP2R",
+        "ATTSTEP3R",    "ATTWALK2",     "ATTWALK2R",    "ATTPWRACLOSE", "ATTPWRACLOSER",
+        "ATTPWRAMED",   "ATTPWRAMEDR",  "ATTPWRALOW",   "ATTPWRALOWR",  "SSHOT2",
+        "ATTCHOP",      "ATTCHOPR",     "ATTBREATHE",   "ATTBREATHER",  "ATTFIREL",
+        "ATTFIRELR",    "ATTFIRER",     "ATTFIRERR"};
     static constexpr f32 kReleaseFrame = 2.0f;        ///< of the wind-up, from which it gives way
     static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
     static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
@@ -186,6 +244,10 @@ public:
         update(motion, ticks, seconds, attack ? PlayerDeed::Attack : PlayerDeed::None);
     }
     void update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed);
+    /** What the close attack knows of its nearest target, set before each update. */
+    void setMelee(const MeleeSense& sense) { m_melee = sense; }
+    /** The character whose body this is: some classes keep their feet in the power swings. */
+    void setCharacter(s32 character) { m_character = character; }
     /** Which way the character strafes from now on (none: it walks and runs as ever). Set
      * before each update: moving, it steps that way with its facing held, and an attack asked
      * of it is made as it goes. */
@@ -223,11 +285,16 @@ public:
     }
     /** Whether this tick's step ended a release: the moment the weapon flies. */
     bool released() const { return m_released; }
-    bool meleeing() const { return m_current >= Action::Quick1 && m_current <= Action::LowRecover; }
+    bool meleeing() const { return isMelee(m_current); }
     /** One contact at the completed swing, never a projectile release. */
-    bool meleeStruck() const { return m_meleeStruck; }
-    bool meleePower() const { return m_meleePower; }
-    bool meleeKick() const { return m_meleeKick; }
+    bool meleeStruck() const { return m_meleeBlow != MeleeBlow::None; }
+    /** What this tick's completed swing does to what it strikes. */
+    MeleeBlow meleeBlow() const { return m_meleeBlow; }
+    /** Strikes counted into the current chain of close attacks (none outside one). */
+    s32 meleeChain() const { return m_chain; }
+    static bool isMelee(Action action) {
+        return action >= Action::Quick1 && action <= Action::PowerLowRecover;
+    }
     /** How long the attack had been going when the weapon was let go. */
     f32 attackSeconds() const { return m_attackSeconds; }
     /** The arrival is pending or still playing; player input must wait. */
@@ -243,8 +310,8 @@ public:
         if (shoving()) {
             return kChargePace; // the charge rushes on, faster than a run
         }
-        if (quickMeleeing()) {
-            return kQuickMeleePace;
+        if (meleeing()) {
+            return meleePace();
         }
         if (running()) {
             return kRunPace;
@@ -266,7 +333,15 @@ public:
     bool quickMeleeing() const {
         return m_current >= Action::Quick1 && m_current <= Action::Quick3Recover;
     }
+    /** How far the current action lets the body turn toward the stick: none, part of the way
+     * each 30 Hz frame, or all of it. */
+    f32 turnScale() const;
     bool running() const { return m_current == Action::Run1 || m_current == Action::Run2; }
+    /** Whether the body is in a stepping swing or recovering from one: it carries on at half
+     * its pace with the stick let go. */
+    bool lunging() const {
+        return m_current >= Action::Step1 && m_current <= Action::WalkStrikeRecover;
+    }
     /** Web contact suppresses attacks, but leaves a slow escape walk. */
     bool webbed() const { return m_current == Action::WebReact; }
     /** Whether the guard is coming up, up or going down; the feet stay put throughout. */
@@ -351,6 +426,16 @@ private:
         return action >= Action::Throw && action <= Action::ThrowMovingRecover;
     }
     Decision decide(Action requested) const;
+    f32 meleePace() const;
+    Action meleeRequest(PlayerDeed deed, bool moved) const;
+    Action chainAfter(Action swing) const;
+    Action refine(Action action) const;
+    static Action powerOf(s32 chain);
+    bool playable(Action action) const;
+    /** A strong press buffered within a chain: the next swing is a power one. */
+    bool buffered() const { return m_strongPress && m_chain != 0; }
+    static Action recoveryOf(Action swing);
+    static MeleeBlow blowOf(Action swing);
     void play(const Decision& decision, f32 seconds);
 
     const TreeInfo* m_tree = nullptr;
@@ -359,9 +444,15 @@ private:
     Foot m_footfall = Foot::None;
     bool m_entered = true; ///< the entrance has played (or was not asked for)
     bool m_released = false;
-    bool m_meleeStruck = false;
-    bool m_meleePower = false;
-    bool m_meleeKick = false;
+    MeleeBlow m_meleeBlow = MeleeBlow::None;
+    MeleeSense m_melee;
+    s32 m_character = -1;
+    s32 m_chain = 0;            ///< strikes in the current chain, each on a fresh press
+    bool m_quickPress = false;  ///< a fresh press of the attack since the last strike began
+    bool m_strongPress = false; ///< of the strong attack
+    bool m_quickHeld = false;   ///< last update's buttons, to tell a press
+    bool m_strongHeld = false;
+    bool m_moved = false; ///< the stick asked for movement this update
     bool m_potionUsed = false;
     bool m_potionThrown = false;
     bool m_dead = false;

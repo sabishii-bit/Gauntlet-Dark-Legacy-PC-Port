@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <array>
+#include <utility>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -856,8 +858,7 @@ TEST_CASE("held close attacks chain quick swings without ever throwing a weapon"
         if (animator.meleeStruck()) {
             ++hits;
             CHECK(animator.action() == (hits % 2 != 0 ? Action::Quick2 : Action::Quick3));
-            CHECK_FALSE(animator.meleePower());
-            CHECK_FALSE(animator.meleeKick());
+            CHECK(animator.meleeBlow() == MeleeBlow::Plain);
         }
     }
     REQUIRE(hits >= 3);
@@ -883,8 +884,13 @@ TEST_CASE("slow and low melee contacts occur once per completed swing and cancel
             animator.update(PlayerMotion::Stand, kTicks, kStep);
             if (animator.meleeStruck()) {
                 ++contacts;
-                CHECK(animator.meleePower() == (deed == PlayerDeed::MeleeSlow));
-                CHECK(animator.meleeKick() == (deed == PlayerDeed::MeleeLow));
+                MeleeBlow expected = MeleeBlow::Plain;
+                if (deed == PlayerDeed::MeleeSlow) {
+                    expected = MeleeBlow::Heavy;
+                } else if (deed == PlayerDeed::MeleeLow) {
+                    expected = MeleeBlow::Kick;
+                }
+                CHECK(animator.meleeBlow() == expected);
             }
             CHECK_FALSE(animator.released());
             CHECK_FALSE(animator.strongReleased());
@@ -900,6 +906,205 @@ TEST_CASE("slow and low melee contacts occur once per completed swing and cancel
         CHECK_FALSE(animator.meleeStruck());
         CHECK_FALSE(animator.meleeing());
     }
+}
+
+/** Steps with `deed` until the body leaves `action`, at most `limit` updates. */
+Action playOut(PlayerAnimator& animator, Action action, PlayerDeed deed, s32 limit = 30) {
+    for (s32 frame = 0; frame < limit && animator.action() == action; ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, deed);
+    }
+    return animator.action();
+}
+
+TEST_CASE("a strong press within a chain of swings makes the chain's power swing",
+          "[game][players][animation][melee]") {
+    const TreeInfo tree = meleeTree();
+    // First swing, then a strong press: the close power swing, three times the harm.
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+    REQUIRE(animator.action() == Action::Quick1);
+    CHECK(animator.meleeChain() == 1);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
+    REQUIRE(playOut(animator, Action::Quick1, PlayerDeed::None) == Action::PowerClose);
+    CHECK(animator.turboBegan());
+    CHECK(animator.meleeBlow() == MeleeBlow::Plain); // the swing that gave way to it
+    CHECK(animator.moveScale() == Approx(0.5f));
+    s32 power = 0;
+    for (s32 frame = 0; frame < 30; ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep);
+        power += animator.meleeBlow() == MeleeBlow::Power ? 1 : 0;
+    }
+    CHECK(power == 1);
+    CHECK(animator.action() == Action::Ready);
+    CHECK(animator.meleeChain() == 0);
+
+    // Tapped: each fresh press counts, so the second strong press makes the medium one and
+    // the third the spin.
+    for (const auto& [taps, expected] :
+         {std::pair{2, Action::PowerMed}, std::pair{3, Action::Spin}}) {
+        PlayerAnimator tapped;
+        REQUIRE(tapped.bind(tree, false));
+        tapped.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+        for (s32 tap = 1; tap < taps; ++tap) {
+            const Action swing = tapped.action();
+            tapped.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::None);
+            tapped.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+            REQUIRE(playOut(tapped, swing, PlayerDeed::Melee) != swing);
+        }
+        CHECK(tapped.meleeChain() == taps);
+        tapped.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::None);
+        tapped.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
+        CHECK(playOut(tapped, tapped.action(), PlayerDeed::None) == expected);
+    }
+
+    // Held without pressing again, the chain starts over and a strong press is not buffered:
+    // it only carries the swings on.
+    PlayerAnimator held;
+    REQUIRE(held.bind(tree, false));
+    held.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+    REQUIRE(playOut(held, Action::Quick1, PlayerDeed::Melee) == Action::Quick2);
+    CHECK(held.meleeChain() == 0);
+    held.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
+    CHECK(playOut(held, Action::Quick2, PlayerDeed::None) == Action::Quick3);
+    CHECK(held.meleeChain() == 1);
+
+    // A buffered strong press after a kick makes the low power swing.
+    PlayerAnimator kick;
+    REQUIRE(kick.bind(tree, false));
+    kick.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeLow);
+    REQUIRE(kick.action() == Action::LowKick);
+    kick.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
+    CHECK(playOut(kick, Action::LowKick, PlayerDeed::None) == Action::PowerLow);
+}
+
+TEST_CASE("swings turn to where their target lies", "[game][players][animation][melee]") {
+    const TreeInfo tree = meleeTree();
+    struct Case {
+        f32 yaw;
+        Action first;  ///< from the first swing
+        Action second; ///< in place of the second
+    };
+    for (const Case& c :
+         {Case{2.5f, Action::Turn, Action::Turn2}, Case{-2.5f, Action::TurnLeft, Action::TurnLeft2},
+          Case{1.2f, Action::Right, Action::Right2}, Case{-1.2f, Action::Left, Action::Left2},
+          Case{0.5f, Action::Quick1, Action::Quick2}}) {
+        CAPTURE(c.yaw);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.setMelee(MeleeSense{MeleeRange::Swing, false, c.yaw});
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+        CHECK(animator.action() == c.first);
+        CHECK(animator.turnScale() == Approx(c.first == Action::Quick1 ? 0.0f : 1.0f));
+        s32 plain = 0;
+        for (s32 frame = 0; frame < 30; ++frame) {
+            animator.update(PlayerMotion::Stand, kTicks, kStep);
+            plain += animator.meleeBlow() == MeleeBlow::Plain ? 1 : 0;
+        }
+        CHECK(plain == 1);
+        CHECK(animator.action() == Action::Ready);
+        // The second swing of a chain turns with its own sequences.
+        animator.setMelee(MeleeSense{});
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+        animator.setMelee(MeleeSense{MeleeRange::Swing, false, c.yaw});
+        const Action first = animator.action();
+        CHECK(playOut(animator, first, PlayerDeed::Melee) == c.second);
+    }
+}
+
+TEST_CASE("a step carries a swing to what is a pace away", "[game][players][animation][melee]") {
+    const TreeInfo tree = meleeTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.setMelee(MeleeSense{MeleeRange::Step, false, 0.0f});
+    // Standing still, a thing a pace away is not stepped to.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+    CHECK(animator.action() == Action::Quick1);
+    PlayerAnimator stepping;
+    REQUIRE(stepping.bind(tree, false));
+    stepping.setMelee(MeleeSense{MeleeRange::Step, false, 0.0f});
+    stepping.update(PlayerMotion::Walk, kTicks, kStep, PlayerDeed::Melee);
+    REQUIRE(stepping.action() == Action::Step1);
+    CHECK(stepping.lunging());
+    CHECK(stepping.moveScale() == Approx(1.0f));
+    CHECK(stepping.turnScale() == Approx(0.25f));
+    stepping.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+    CHECK(stepping.moveScale() == Approx(0.5f)); // on at half pace with the stick let go
+    // Still a pace away, the chain steps again; within a swing it swings.
+    CHECK(playOut(stepping, Action::Step1, PlayerDeed::Melee) == Action::Step2);
+    CHECK(stepping.meleeBlow() == MeleeBlow::Heavy);
+    stepping.setMelee(MeleeSense{});
+    CHECK(playOut(stepping, Action::Step2, PlayerDeed::Melee) == Action::Quick3);
+
+    // Cut in from the second half of a walk, the step is the walking strike.
+    PlayerAnimator walker;
+    REQUIRE(walker.bind(tree, false));
+    walker.update(PlayerMotion::Walk, kTicks, kStep);
+    for (s32 frame = 0; frame < 30 && walker.action() != Action::Walk2; ++frame) {
+        walker.update(PlayerMotion::Walk, kTicks, kStep);
+    }
+    REQUIRE(walker.action() == Action::Walk2);
+    walker.setMelee(MeleeSense{MeleeRange::Step, false, 0.0f});
+    walker.update(PlayerMotion::Walk, kTicks, kStep, PlayerDeed::Melee);
+    CHECK(walker.action() == Action::WalkStrike);
+}
+
+TEST_CASE("power swings pace the classes as they did, and the low one borrows the close one's",
+          "[game][players][animation][melee]") {
+    TreeInfo tree = meleeTree();
+    const auto lowFirst = std::ranges::find(tree.sequences, "ATTPWRALOW", &TreeSequenceInfo::name);
+    REQUIRE(lowFirst != tree.sequences.end());
+    tree.sequences.erase(lowFirst, lowFirst + 2); // ATTPWRALOW and ATTPWRALOWR, as the knight
+    struct Case {
+        s32 character;
+        f32 pace;
+        f32 turn;
+    };
+    // Warrior, wizard, knight, sorceress.
+    for (const Case& c :
+         {Case{0, 0.5f, 1.0f}, Case{2, 0.25f, 1.0f}, Case{5, 0.0f, 0.0f}, Case{6, 0.0f, 0.0f}}) {
+        CAPTURE(c.character);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.setCharacter(c.character);
+        animator.setMelee(MeleeSense{MeleeRange::Swing, true, 0.0f});
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
+        REQUIRE(playOut(animator, Action::Quick1, PlayerDeed::None) == Action::PowerLow);
+        CHECK(animator.sequenceOf(Action::PowerLow) == animator.sequenceOf(Action::PowerClose));
+        CHECK(animator.moveScale() == Approx(0.25f));
+        CHECK(animator.turnScale() == Approx(1.0f));
+        PlayerAnimator close;
+        REQUIRE(close.bind(tree, false));
+        close.setCharacter(c.character);
+        close.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+        close.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::MeleeSlow);
+        REQUIRE(playOut(close, Action::Quick1, PlayerDeed::None) == Action::PowerClose);
+        CHECK(close.moveScale() == Approx(c.pace));
+        CHECK(close.turnScale() == Approx(c.turn));
+    }
+}
+
+TEST_CASE("a turbo move cuts a close attack off", "[game][players][animation][melee]") {
+    const TreeInfo tree = meleeTree();
+    TreeInfo withTurbo = tree;
+    TreeSequenceInfo turbo;
+    turbo.name = "ATTPWRB";
+    turbo.frames = 20;
+    turbo.frameRate = 30;
+    turbo.trackOfNode = {-1};
+    withTurbo.sequences.push_back(turbo);
+    turbo.name = "ATTPWRATHROW";
+    withTurbo.sequences.push_back(turbo);
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(withTurbo, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Melee);
+    REQUIRE(animator.meleeing());
+    CHECK(animator.canBegin(PlayerDeed::TurboStrong));
+    CHECK_FALSE(animator.canBegin(PlayerDeed::StrongAttack));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::TurboStrong);
+    CHECK(animator.action() == Action::TurboStrong);
+    CHECK_FALSE(animator.meleeStruck());
 }
 
 } // namespace

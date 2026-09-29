@@ -811,6 +811,54 @@ TEST_CASE("close attacks resolve to melee while distant attacks still throw",
     enemies.close();
 }
 
+TEST_CASE("the melee sees what is near at any bearing, within a swing or a step",
+          "[game][screens][player-attacks][melee][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    Fixture f;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.tier = 3;
+    spawn.placed = true;
+    spawn.position = {0, 0, 2.5f};
+    REQUIRE(enemies.spawn(spawn, {}));
+    PlayerActor& actor = f.players[0].actor;
+    // Behind the character: still within a swing, which turns to it.
+    actor.place({0, 0, 5});
+    actor.turnTo(0.0f);
+    const MeleeSense behind = f.attacks.meleeSense(actor, true, f.targets);
+    CHECK(behind.range == MeleeRange::Swing);
+    CHECK(std::abs(behind.yaw) == Approx(std::numbers::pi_v<f32>).margin(0.01f));
+    const PlayerDeed close = f.attacks.attackDeed(actor, false, f.targets);
+    CHECK((close == PlayerDeed::Melee || close == PlayerDeed::MeleeLow));
+    // Backing off: a step away, it is stepped to only while the stick moves.
+    bool stepped = false;
+    for (f32 z = 5.0f; z < 12.0f && !stepped; z += 0.1f) {
+        actor.place({0, 0, z});
+        const MeleeSense sense = f.attacks.meleeSense(actor, true, f.targets);
+        if (sense.range != MeleeRange::Step) {
+            continue;
+        }
+        stepped = true;
+        CHECK(f.attacks.attackDeed(actor, false, f.targets) == PlayerDeed::Attack);
+        CHECK(f.attacks.attackDeed(actor, false, f.targets, true) ==
+              (sense.low ? PlayerDeed::Attack : PlayerDeed::Melee));
+        CHECK(f.attacks.attackDeed(actor, true, f.targets, true) ==
+              (sense.low ? PlayerDeed::StrongAttack : PlayerDeed::MeleeSlow));
+        // Let go of, the attack reaches a unit less.
+        CHECK(f.attacks.meleeSense(actor, false, f.targets).range != MeleeRange::Swing);
+    }
+    CHECK(stepped);
+    actor.place({0, 0, 20});
+    CHECK(f.attacks.meleeSense(actor, true, f.targets).range == MeleeRange::Beyond);
+    enemies.close();
+}
+
 TEST_CASE("a melee contact routes damage sound and impact once through level opponents",
           "[game][screens][player-attacks][melee][enemy-feedback][unpacked]") {
     const auto root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")

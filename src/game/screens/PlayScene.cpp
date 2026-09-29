@@ -1418,8 +1418,16 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 return CameraMovementLimit::allows(before, after, attention, camera, cameraView());
             },
         .attackDeed =
-            [this](usize i, bool strong) {
-                return m_attacks.attackDeed(m_players[i].actor, strong, attackTargets());
+            [this](usize i, bool strong, bool moved) {
+                const s32 chain = m_players[i].figure != nullptr
+                                      ? m_players[i].figure->animator().meleeChain()
+                                      : 0;
+                return m_attacks.attackDeed(m_players[i].actor, strong, attackTargets(), moved,
+                                            chain);
+            },
+        .meleeSense =
+            [this](usize i, bool held) {
+                return m_attacks.meleeSense(m_players[i].actor, held, attackTargets());
             },
         .resolveMovement =
             [this](usize i, const Vec3& from, const Vec3& to) {

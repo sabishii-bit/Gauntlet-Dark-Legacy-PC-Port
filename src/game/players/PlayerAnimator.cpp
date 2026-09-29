@@ -1,5 +1,7 @@
 #include "game/players/PlayerAnimator.h"
 
+#include <numbers>
+
 #include "engine/core/Types.h"
 
 namespace gdl::game {
@@ -9,6 +11,26 @@ namespace {
 constexpr usize index(PlayerAnimator::Action action) {
     return static_cast<usize>(action);
 }
+
+// The classes whose power swings keep their feet, in ClassData's table order.
+constexpr s32 kWizardClass = 2;
+constexpr s32 kArcherClass = 3;
+constexpr s32 kKnightClass = 5;
+constexpr s32 kSorceressClass = 6;
+constexpr s32 kJesterClass = 7;
+
+// AnimAction's refinement of a swing by the way to its target against the facing.
+constexpr f32 kBehind = 3.0f * std::numbers::pi_v<f32> / 4.0f;
+constexpr f32 kAside = std::numbers::pi_v<f32> / 3.0f;
+
+// How much of its pace and turn a close attack leaves the body (AnimAction's move and turn
+// scales by action).
+constexpr f32 kPowerPace = 0.5f;
+constexpr f32 kWizardPowerPace = 0.25f;
+constexpr f32 kSpinPace = 0.5f;
+constexpr f32 kIdleStepPace = 0.5f;
+constexpr f32 kPowerLowPace = 0.25f;
+constexpr f32 kStepTurn = 0.25f;
 
 /** Whether the deed is a legend item's gesture. */
 constexpr bool isLegend(PlayerDeed deed) {
@@ -44,9 +66,13 @@ void PlayerAnimator::unbind() {
     m_stillTicks = 0;
     m_fidgetTicks = 0;
     m_released = false;
-    m_meleeStruck = false;
-    m_meleePower = false;
-    m_meleeKick = false;
+    m_meleeBlow = MeleeBlow::None;
+    m_chain = 0;
+    m_quickPress = false;
+    m_strongPress = false;
+    m_quickHeld = false;
+    m_strongHeld = false;
+    m_moved = false;
     m_potionUsed = false;
     m_potionThrown = false;
     m_potionLatch = false;
@@ -107,8 +133,11 @@ bool PlayerAnimator::canBegin(PlayerDeed deed) const {
     if (action == Action::Ready) {
         return false;
     }
+    // A turbo move cuts a close attack off; nothing else does.
+    const bool cutsMelee = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
+                           deed == PlayerDeed::Shove;
     return bound() && m_sequences[index(action)] >= 0 && !entering() && !throwing() &&
-           !meleeing() && !conjuring() && !reacting() && !turboing() && !dying();
+           (!meleeing() || cutsMelee) && !conjuring() && !reacting() && !turboing() && !dying();
 }
 
 PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
@@ -119,17 +148,34 @@ PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
 }
 
 u32 PlayerAnimator::sequenceOf(Action action) const {
-    const s32 sequence = m_sequences[index(action)];
+    s32 sequence = m_sequences[index(action)];
+    // A class without the low power swing makes the close one.
+    if (sequence < 0 && action == Action::PowerLow) {
+        sequence = m_sequences[index(Action::PowerClose)];
+    } else if (sequence < 0 && action == Action::PowerLowRecover) {
+        sequence = m_sequences[index(Action::PowerCloseRecover)];
+    }
     return sequence >= 0 ? static_cast<u32>(sequence)
                          : static_cast<u32>(m_sequences[index(Action::Ready)]);
 }
 
 void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed) {
-    m_meleeStruck = false;
-    m_meleePower = false;
-    m_meleeKick = false;
+    m_meleeBlow = MeleeBlow::None;
     if (!bound()) {
         return;
+    }
+    // A press is a button going down; it stays fresh until the next strike begins.
+    const bool quickHeld =
+        deed == PlayerDeed::Attack || deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow;
+    const bool strongHeld = deed == PlayerDeed::StrongAttack || deed == PlayerDeed::MeleeSlow ||
+                            deed == PlayerDeed::MeleeSlowLow;
+    m_quickPress = m_quickPress || (quickHeld && !m_quickHeld);
+    m_strongPress = m_strongPress || (strongHeld && !m_strongHeld);
+    m_quickHeld = quickHeld;
+    m_strongHeld = strongHeld;
+    m_moved = motion != PlayerMotion::Stand;
+    if (!meleeing()) {
+        m_chain = 0;
     }
     m_footfall = Foot::None;
     m_released = false;
@@ -228,8 +274,13 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // The guard: up at once when asked for, held for as long as it is, then let down. A
     // class without the sequences does not guard.
-    const bool free =
-        !entering() && !throwing() && !meleeing() && !conjuring() && !reacting() && !turboing();
+    // The guard also cuts into the recovery from a quick or stepping swing.
+    const bool recovering =
+        m_current == Action::Quick2Recover || m_current == Action::Quick3Recover ||
+        m_current == Action::Step2Recover || m_current == Action::Step3Recover ||
+        m_current == Action::WalkStrikeRecover;
+    const bool free = !entering() && !throwing() && (!meleeing() || recovering) && !conjuring() &&
+                      !reacting() && !turboing();
     const bool asked =
         deed == PlayerDeed::Defend && free && m_sequences[index(Action::Defend)] >= 0;
     if (asked || guarding()) {
@@ -266,15 +317,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         motion = PlayerMotion::Stand;
     }
     bool attack = deed == PlayerDeed::Attack;
-    Action melee = Action::Ready;
-    switch (deed) {
-    case PlayerDeed::Melee: melee = Action::Quick1; break;
-    case PlayerDeed::MeleeLow: melee = Action::LowKick; break;
-    case PlayerDeed::MeleeSlow: melee = Action::SlowStart; break;
-    case PlayerDeed::MeleeSlowLow: melee = Action::Low1; break;
-    default: break;
-    }
-    if (m_sequences[index(melee)] < 0) {
+    Action melee = meleeRequest(deed, m_moved);
+    if (!playable(melee)) {
         melee = Action::Ready;
     }
     // A class without a deed's sequences does not do it.
@@ -412,24 +456,42 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::Quick1:
     case Action::Quick2:
     case Action::Quick3:
-        if (requested == Action::Quick1) {
-            d.action = m_current == Action::Quick2 ? Action::Quick3 : Action::Quick2;
-        } else {
-            d.action = m_current == Action::Quick2 ? Action::Quick2Recover : Action::Quick3Recover;
-        }
-        break;
+    case Action::Step1:
+    case Action::Step2:
+    case Action::Step3:
+    case Action::WalkStrike: d.action = chainAfter(m_current); break;
     case Action::Quick2Recover:
     case Action::Quick3Recover:
-        if (requested == Action::Quick1) {
-            d.action = m_current == Action::Quick2Recover ? Action::Quick3 : Action::Quick2;
-            if (m_player.frame() <= kReleaseFrame) {
-                d.cut = Cut::IfDifferent;
-            }
+    case Action::Step2Recover:
+    case Action::Step3Recover:
+    case Action::WalkStrikeRecover:
+        // A strong press buffered in the chain makes a power swing once recovered; a fresh
+        // press early in the recovery swings again at once.
+        if (buffered()) {
+            d.action = powerOf(m_chain);
+        } else if ((m_quickPress || m_strongPress) && m_player.frame() <= kReleaseFrame &&
+                   m_melee.range == MeleeRange::Swing) {
+            const bool second =
+                m_current == Action::Quick2Recover || m_current == Action::Step2Recover;
+            d.action = second ? Action::Quick3 : Action::Quick2;
+            d.cut = Cut::IfDifferent;
         }
         break;
+    case Action::Spin: d.action = buffered() ? Action::PowerMed : Action::SpinRecover; break;
+    case Action::LowKick: d.action = buffered() ? Action::PowerLow : Action::LowKickRecover; break;
     case Action::SlowStart: d.action = Action::SlowSwing; break;
-    case Action::SlowSwing: d.action = Action::SlowRecover; break;
-    case Action::LowKick: d.action = Action::LowKickRecover; break;
+    case Action::SlowSwing:
+    case Action::Right:
+    case Action::Right2:
+    case Action::Left:
+    case Action::Left2:
+    case Action::Turn:
+    case Action::Turn2:
+    case Action::TurnLeft:
+    case Action::TurnLeft2:
+    case Action::PowerClose:
+    case Action::PowerMed:
+    case Action::PowerLow: d.action = recoveryOf(m_current); break;
     case Action::Low1:
     case Action::Low2:
         d.action = Action::LowRecover;
@@ -439,7 +501,19 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         break;
     case Action::LowRecover:
     case Action::SlowRecover:
-    case Action::LowKickRecover: d.cut = Cut::WhenDone; break;
+    case Action::LowKickRecover:
+    case Action::RightRecover:
+    case Action::Right2Recover:
+    case Action::LeftRecover:
+    case Action::Left2Recover:
+    case Action::TurnRecover:
+    case Action::Turn2Recover:
+    case Action::TurnLeftRecover:
+    case Action::TurnLeft2Recover:
+    case Action::SpinRecover:
+    case Action::PowerCloseRecover:
+    case Action::PowerMedRecover:
+    case Action::PowerLowRecover: d.cut = Cut::WhenDone; break;
     case Action::Throw:
     case Action::ThrowMoving:
         // The wind-up gives way to the release at its end, or at once from its second frame.
@@ -513,14 +587,227 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
             d.action = Action::ThrowMoving;
         }
     }
-    if (requested >= Action::Quick1 && requested <= Action::LowRecover && d.action == requested &&
-        !meleeing() && !throwing() && !conjuring() && !reacting() && !turboing() && !entering()) {
+    if (isMelee(requested) && d.action == requested && !meleeing() && !throwing() && !conjuring() &&
+        !reacting() && !turboing() && !entering()) {
         d.cut = Cut::IfDifferent;
     }
     if (d.action == Action::Ready && m_current != Action::Ready) {
         d.transition = kStanceBlend;
     }
+    if (d.action != m_current) {
+        d.action = refine(d.action);
+    }
     return d;
+}
+
+/** The close attack a deed asks for (AnimAction's requests): a step into what is a pace
+ * away while the stick moves, else a swing, a kick or a low strike at what is short, the
+ * strong one making the slow swing, or a slow swing at anything within reach mid-chain. */
+PlayerAnimator::Action PlayerAnimator::meleeRequest(PlayerDeed deed, bool moved) const {
+    const bool quick = deed == PlayerDeed::Melee || deed == PlayerDeed::MeleeLow;
+    const bool strong = deed == PlayerDeed::MeleeSlow || deed == PlayerDeed::MeleeSlowLow;
+    if (!quick && !strong) {
+        return Action::Ready;
+    }
+    const bool low = deed == PlayerDeed::MeleeLow || deed == PlayerDeed::MeleeSlowLow;
+    const bool lunge = m_melee.range == MeleeRange::Step && !low && moved;
+    if (strong && m_chain != 0 && moved && m_melee.range != MeleeRange::Beyond) {
+        return Action::SlowStart;
+    }
+    if (lunge && playable(Action::Step1)) {
+        return Action::Step1;
+    }
+    if (quick) {
+        return low ? Action::LowKick : Action::Quick1;
+    }
+    return low ? Action::Low1 : Action::SlowStart;
+}
+
+/** What follows a quick or stepping swing: a buffered strong press makes the chain's power
+ * swing; a press or a held button swings on, stepping at what is a pace away; else the
+ * swing recovers. */
+PlayerAnimator::Action PlayerAnimator::chainAfter(Action swing) const {
+    if (buffered()) {
+        if (const Action power = powerOf(m_chain); playable(power)) {
+            return power;
+        }
+    }
+    const bool second = swing == Action::Quick2 || swing == Action::Step2;
+    const bool asked = m_quickPress || m_strongPress || m_quickHeld || m_strongHeld;
+    if (asked && m_melee.range == MeleeRange::Step &&
+        playable(second ? Action::Step3 : Action::Step2)) {
+        return second ? Action::Step3 : Action::Step2;
+    }
+    if (asked && m_melee.range == MeleeRange::Swing) {
+        return second ? Action::Quick3 : Action::Quick2;
+    }
+    return recoveryOf(swing);
+}
+
+/** A swing turned the way its target lies, cut in from a walk, or made low at something
+ * short (AnimAction's refinement pass). */
+PlayerAnimator::Action PlayerAnimator::refine(Action action) const {
+    Action refined = action;
+    const f32 yaw = m_melee.yaw;
+    if (action == Action::Quick1 || action == Action::Quick3 || action == Action::Step3 ||
+        action == Action::Quick2 || action == Action::Step2) {
+        const bool second = action == Action::Quick2 || action == Action::Step2;
+        if (yaw > kBehind) {
+            refined = second ? Action::Turn2 : Action::Turn;
+        } else if (yaw < -kBehind) {
+            refined = second ? Action::TurnLeft2 : Action::TurnLeft;
+        } else if (yaw > kAside) {
+            refined = second ? Action::Right2 : Action::Right;
+        } else if (yaw < -kAside) {
+            refined = second ? Action::Left2 : Action::Left;
+        }
+    } else if (action == Action::Step1 &&
+               (m_current == Action::Walk2 || m_current == Action::Run2)) {
+        refined = Action::WalkStrike;
+    } else if (action == Action::PowerClose && m_melee.low) {
+        refined = Action::PowerLow;
+    }
+    return playable(refined) ? refined : action;
+}
+
+/** The power swing a buffered strong press makes, by how far into the chain it comes. */
+PlayerAnimator::Action PlayerAnimator::powerOf(s32 chain) {
+    constexpr s32 kSpinChain = 3;
+    if (chain >= kSpinChain) {
+        return Action::Spin;
+    }
+    return chain == 1 ? Action::PowerClose : Action::PowerMed;
+}
+
+bool PlayerAnimator::playable(Action action) const {
+    if (action == Action::PowerLow) {
+        return m_sequences[index(action)] >= 0 || m_sequences[index(Action::PowerClose)] >= 0;
+    }
+    return m_sequences[index(action)] >= 0;
+}
+
+PlayerAnimator::Action PlayerAnimator::recoveryOf(Action swing) {
+    switch (swing) {
+    case Action::Quick2: return Action::Quick2Recover;
+    case Action::Quick1:
+    case Action::Quick3: return Action::Quick3Recover;
+    case Action::Step2: return Action::Step2Recover;
+    case Action::Step1:
+    case Action::Step3: return Action::Step3Recover;
+    case Action::WalkStrike: return Action::WalkStrikeRecover;
+    case Action::SlowSwing: return Action::SlowRecover;
+    case Action::LowKick: return Action::LowKickRecover;
+    case Action::Low1:
+    case Action::Low2: return Action::LowRecover;
+    case Action::Right: return Action::RightRecover;
+    case Action::Right2: return Action::Right2Recover;
+    case Action::Left: return Action::LeftRecover;
+    case Action::Left2: return Action::Left2Recover;
+    case Action::Turn: return Action::TurnRecover;
+    case Action::Turn2: return Action::Turn2Recover;
+    case Action::TurnLeft: return Action::TurnLeftRecover;
+    case Action::TurnLeft2: return Action::TurnLeft2Recover;
+    case Action::Spin: return Action::SpinRecover;
+    case Action::PowerClose: return Action::PowerCloseRecover;
+    case Action::PowerMed: return Action::PowerMedRecover;
+    case Action::PowerLow: return Action::PowerLowRecover;
+    default: return Action::Ready;
+    }
+}
+
+/** What a completed swing does: the quick, turned, spinning and low ones the character's
+ * own harm; the slow swing and the steps twice it, knocking back; the kick knocking a short
+ * body down; the power swings three times it, knocking down. */
+MeleeBlow PlayerAnimator::blowOf(Action swing) {
+    switch (swing) {
+    case Action::Quick1:
+    case Action::Quick2:
+    case Action::Quick3:
+    case Action::Right:
+    case Action::Right2:
+    case Action::Left:
+    case Action::Left2:
+    case Action::Turn:
+    case Action::Turn2:
+    case Action::TurnLeft:
+    case Action::TurnLeft2:
+    case Action::Spin:
+    case Action::Low1:
+    case Action::Low2: return MeleeBlow::Plain;
+    case Action::SlowSwing:
+    case Action::Step1:
+    case Action::Step2:
+    case Action::Step3:
+    case Action::WalkStrike: return MeleeBlow::Heavy;
+    case Action::LowKick: return MeleeBlow::Kick;
+    case Action::PowerClose:
+    case Action::PowerMed:
+    case Action::PowerLow: return MeleeBlow::Power;
+    default: return MeleeBlow::None;
+    }
+}
+
+f32 PlayerAnimator::meleePace() const {
+    const bool rooted = m_character == kKnightClass || m_character == kSorceressClass;
+    switch (m_current) {
+    case Action::SlowStart:
+    case Action::SlowSwing:
+    case Action::SlowRecover: return 0.0f;
+    case Action::PowerClose:
+    case Action::PowerCloseRecover:
+    case Action::PowerMedRecover:
+        if (rooted) {
+            return 0.0f;
+        }
+        return m_character == kWizardClass ? kWizardPowerPace : kPowerPace;
+    case Action::PowerMed:
+        if (m_character == kJesterClass || m_character == kSorceressClass) {
+            return 0.0f;
+        }
+        return m_character == kWizardClass || m_character == kArcherClass ? kWizardPowerPace
+                                                                          : kPowerPace;
+    case Action::Quick1:
+    case Action::Quick2:
+    case Action::Quick3:
+    case Action::Quick2Recover:
+    case Action::Quick3Recover: return kQuickMeleePace;
+    case Action::Spin:
+    case Action::SpinRecover: return kSpinPace;
+    case Action::Step1:
+    case Action::Step2:
+    case Action::Step3:
+    case Action::Step2Recover:
+    case Action::Step3Recover:
+    case Action::WalkStrike:
+    case Action::WalkStrikeRecover: return m_moved ? 1.0f : kIdleStepPace;
+    case Action::PowerLow:
+    case Action::PowerLowRecover: return kPowerLowPace;
+    default: return 1.0f; // the turned swings, the low strikes and the kick
+    }
+}
+
+f32 PlayerAnimator::turnScale() const {
+    switch (m_current) {
+    case Action::PowerClose:
+    case Action::PowerCloseRecover:
+    case Action::PowerMedRecover:
+        return m_character == kKnightClass || m_character == kSorceressClass ? 0.0f : 1.0f;
+    case Action::PowerMed:
+        return m_character == kJesterClass || m_character == kSorceressClass ? 0.0f : 1.0f;
+    case Action::Quick1:
+    case Action::Quick2:
+    case Action::Quick3:
+    case Action::Quick2Recover:
+    case Action::Quick3Recover: return 0.0f;
+    case Action::Step1:
+    case Action::Step2:
+    case Action::Step3:
+    case Action::Step2Recover:
+    case Action::Step3Recover:
+    case Action::WalkStrike:
+    case Action::WalkStrikeRecover: return kStepTurn;
+    default: return 1.0f;
+    }
 }
 
 void PlayerAnimator::play(const Decision& decision, f32 seconds) {
@@ -580,12 +867,20 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
         decision.action != Action::Stun && decision.action != Action::SpikeHit &&
         decision.action != Action::FallBack && decision.action != Action::FallForward &&
         decision.action != Action::Grabbed && decision.action != Action::WebReact) {
-        m_meleeStruck = m_current == Action::Quick1 || m_current == Action::Quick2 ||
-                        m_current == Action::Quick3 || m_current == Action::SlowSwing ||
-                        m_current == Action::LowKick || m_current == Action::Low1 ||
-                        m_current == Action::Low2;
-        m_meleePower = m_current == Action::SlowSwing;
-        m_meleeKick = m_current == Action::LowKick;
+        m_meleeBlow = blowOf(m_current);
+    }
+    // A strike beginning counts into the chain when a press came since the last one, and
+    // starts the chain over when none did; either way the presses are spent.
+    if ((blowOf(decision.action) != MeleeBlow::None && decision.action != Action::SlowSwing) ||
+        decision.action == Action::SlowStart) {
+        m_chain = m_quickPress || m_strongPress ? m_chain + 1 : 0;
+        m_quickPress = false;
+        m_strongPress = false;
+    }
+    // The spin and the power swings play their class's strong-attack rows.
+    if (decision.action == Action::Spin || decision.action == Action::PowerClose ||
+        decision.action == Action::PowerMed || decision.action == Action::PowerLow) {
+        m_turboBegan = true;
     }
     // A legend item leaves the hand where a potion's magic would go off, the strong throw's
     // weapon would fly or the special shot's wind-up ends.

@@ -83,7 +83,8 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
     const auto dir = test::scratchDirectory("class-moves");
     writeTextFile(dir / "WAR.json", R"({"fight": [600, 999], "speed": [350, 750],
   "armor": [300, 700], "magic": [100, 500], "height": 5, "width": 1.5,
-  "moves": {"turboAThrow": 2, "turboB": 0, "turboC1": 1, "turboC2": 2, "combo1": -1},
+  "moves": {"turboAClose": 0, "turboALow": 1, "turboAStep": 2, "turboA360": 1,
+            "turboAThrow": 2, "turboB": 0, "turboC1": 1, "turboC2": 2, "combo1": -1},
   "moveEffects": [
     {"next": 1, "tree": "WAR_POWERB", "sound": "S_WARTURBOB", "offset": [0, 5, 0], "scale": 2},
     {"next": -1, "tree": "NULLFX", "sound": ""},
@@ -100,6 +101,10 @@ TEST_CASE("a class's moves load with its stats, each a chain of strikes", "[game
     REQUIRE(war != nullptr);
     REQUIRE(war->moves.turboB == 0);
     REQUIRE(war->moves.turboAThrow == 2);
+    REQUIRE(war->moves.turboAClose == 0);
+    REQUIRE(war->moves.turboALow == 1);
+    REQUIRE(war->moves.turboAStep == 2);
+    REQUIRE(war->moves.turboA360 == 1);
     REQUIRE(war->moveStrikes[0].hitEffect == 1);
     REQUIRE(war->moveStrikes[0].damageType == 257U);
     REQUIRE(war->moveStrikes[0].help == 57);

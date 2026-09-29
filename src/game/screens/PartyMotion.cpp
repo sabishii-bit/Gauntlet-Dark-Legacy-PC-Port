@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 #include "engine/core/Types.h"
 
@@ -172,11 +173,13 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             } else if (in.throwPotion && carrying) {
                 deed = PlayerDeed::ThrowPotion;
             } else if (in.strongAttack && players[i].figure != nullptr) {
-                deed = events.attackDeed ? events.attackDeed(i, true) : PlayerDeed::StrongAttack;
+                deed = events.attackDeed ? events.attackDeed(i, true, move.any())
+                                         : PlayerDeed::StrongAttack;
             } else if (in.turbo) {
                 deed = PlayerDeed::Defend; // held by itself, the turbo button is the guard
             } else if (in.attack) {
-                deed = events.attackDeed ? events.attackDeed(i, false) : PlayerDeed::Attack;
+                deed = events.attackDeed ? events.attackDeed(i, false, move.any())
+                                         : PlayerDeed::Attack;
             }
             events.select(i, in.selector, ticks);
         }
@@ -189,11 +192,13 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         const bool itemAttack = deed == PlayerDeed::SuperShot || deed == PlayerDeed::Hammer ||
                                 deed == PlayerDeed::Breathe || deed == PlayerDeed::FireLeft ||
                                 deed == PlayerDeed::FireRight;
-        if (closeAttack && deed == PlayerDeed::Melee) {
+        // A close attack under way paces the body by its own action.
+        const bool swingStarts = closeAttack && (animator == nullptr || !animator->meleeing());
+        if (swingStarts && deed == PlayerDeed::Melee) {
             // The first input frame moves before the animation changes. Do not
             // bypass an existing reaction/arrival lock to start a quick swing.
             actionPace = std::min(actionPace, PlayerAnimator::kQuickMeleePace);
-        } else if (closeAttack || itemAttack || deed == PlayerDeed::StrongAttack) {
+        } else if (swingStarts || itemAttack || deed == PlayerDeed::StrongAttack) {
             actionPace = 0;
         }
         const f32 pace = webbed ? PlayerAnimator::kWebPace : actionPace;
@@ -218,11 +223,25 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
         }
         MoveInput attackMove = move;
-        if (move.any() &&
-            (deed == PlayerDeed::Melee || (animator != nullptr && animator->quickMeleeing()))) {
-            // AnimAction gives quick melee a quarter pace and no steering.
+        // AnimAction turns a close attack to the stick only part of the way, or not at all
+        // (the quick swings); a step carries on along the facing with the stick let go.
+        const bool quickStarts = deed == PlayerDeed::Melee && swingStarts;
+        f32 turn = animator != nullptr ? animator->turnScale() : 1.0f;
+        if (quickStarts) {
+            turn = 0.0f;
+        }
+        if (move.any() && turn < 1.0f) {
+            const f32 wanted = PlayerActor::headingOf(move, cameraYaw);
+            const f32 share = 1.0f - std::pow(1.0f - turn, seconds * kTurnFrames);
+            const f32 heading =
+                actor.yaw() +
+                std::remainder(wanted - actor.yaw(), 2.0f * std::numbers::pi_v<f32>) * share;
+            attackMove.direction =
+                Vec2{std::sin(heading - cameraYaw), std::cos(heading - cameraYaw)};
+        } else if (!move.any() && animator != nullptr && animator->lunging() && !held && !down &&
+                   !immobilized) {
             const f32 heading = actor.yaw() - cameraYaw;
-            attackMove.direction = Vec2{std::sin(heading), std::cos(heading)};
+            attackMove = MoveInput{Vec2{std::sin(heading), std::cos(heading)}, 1.0f};
         }
         actor.update(charging ? chargeInput(actor, move, cameraYaw) : attackMove, cameraYaw,
                      seconds, &collision, pace, strafes);
@@ -269,6 +288,12 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (players[i].figure != nullptr) {
             players[i].figure->setAttackSpeed((powerups.weapon & powerup::kRapidFire) != 0,
                                               (powerups.special & powerup::kSpeedBoost) != 0);
+            // The close attack sees where the nearest thing to strike lies as it decides.
+            const bool attackHeld = !held && !down && player < inputs.size() &&
+                                    (inputs[player].attack || inputs[player].strongAttack);
+            if (events.meleeSense && (attackHeld || players[i].figure->animator().meleeing())) {
+                players[i].figure->setMelee(events.meleeSense(i, attackHeld));
+            }
             players[i].figure->animate(move.magnitude, ticks, seconds, deed);
             events.advanceTurbo(i, ticks, seconds);
             if (players[i].figure->familiarReleased()) {

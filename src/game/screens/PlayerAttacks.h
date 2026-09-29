@@ -51,7 +51,19 @@ public:
     void cry(usize index, std::string_view which, std::span<PlayerRuntime> players);
     std::optional<Vec3> aim(const PlayerActor& actor, const Vec3& facing,
                             const Targets& targets) const;
-    PlayerDeed attackDeed(const PlayerActor& actor, bool strong, const Targets& targets) const;
+    /** What the attack buttons ask of a character: a close attack when something is within
+     * a swing, or within a step while the stick moves, else a throw. `chain` is how far into
+     * a chain of close attacks it is. */
+    PlayerDeed attackDeed(const PlayerActor& actor, bool strong, const Targets& targets,
+                          bool moved = false, s32 chain = 0) const;
+    /** Where the nearest thing to strike lies (AnimAction's collision bits): a held attack
+     * button reaches a unit further. */
+    MeleeSense meleeSense(const PlayerActor& actor, bool held, const Targets& targets) const;
+    static constexpr f32 kSwingReach = 1.0f; ///< past the body's radius, within a swing
+    static constexpr f32 kStepReach = 2.0f;  ///< within a step
+    static constexpr f32 kHeldReach = 1.0f;  ///< added while an attack button is held
+    static constexpr f32 kLowEnemy = 4.0f;   ///< the height under which an enemy is short
+    static constexpr f32 kLowThing = 3.5f;   ///< and anything else
     void melee(usize index, std::span<PlayerRuntime> players, const Targets& targets);
     const MoveStrikes& strikes() const { return m_strikes; }
     usize shieldCount() const { return m_shields.size(); }
@@ -107,6 +119,7 @@ private:
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
     void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players);
+    static bool isCreature(s32 id);
     static constexpr s32 kEnemyTargetBase = 1000;
     static constexpr s32 kGeneratorTargetBase = 2000;
     static constexpr s32 kCritterTargetBase = 3000;

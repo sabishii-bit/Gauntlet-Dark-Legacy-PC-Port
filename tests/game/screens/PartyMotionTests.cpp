@@ -45,6 +45,7 @@ struct Fixture {
         .aim = {},
         .allowMovement = {},
         .attackDeed = {},
+        .meleeSense = {},
         .resolveMovement = {},
         .startPoint = {}};
 
@@ -139,13 +140,13 @@ TEST_CASE("quick melee creeps forward from its first input frame while slow mele
     Fixture f;
     f.inputs[3].attack = true;
     f.inputs[3].move = MoveInput{Vec2{1, 0}, 1};
-    f.events.attackDeed = [](usize, bool) { return PlayerDeed::Melee; };
+    f.events.attackDeed = [](usize, bool, bool) { return PlayerDeed::Melee; };
     f.step();
     const Vec3 quick = f.players[0].actor.position();
     CHECK(quick.z > 0);
     CHECK(quick.x == Approx(0).margin(0.0001f));
     CHECK(f.players[0].actor.yaw() == Approx(0));
-    f.events.attackDeed = [](usize, bool) { return PlayerDeed::MeleeSlow; };
+    f.events.attackDeed = [](usize, bool, bool) { return PlayerDeed::MeleeSlow; };
     f.step();
     CHECK(f.players[0].actor.position() == quick);
 }
@@ -466,7 +467,7 @@ TEST_CASE("held close attack input advances slowly and dispatches melee contacts
     s32 contacts = 0;
     s32 missiles = 0;
     f.events.advanceTurbo = [](usize, s32, f32) {};
-    f.events.attackDeed = [](usize, bool strong) {
+    f.events.attackDeed = [](usize, bool strong, bool) {
         return strong ? PlayerDeed::MeleeSlow : PlayerDeed::Melee;
     };
     f.events.perform = [&](usize, PartyMotion::Action action) {

@@ -58,14 +58,18 @@ public:
         std::function<std::optional<Vec3>(usize)> aim;
         /** Consulted after collision, before attack events; false blocks the horizontal step. */
         std::function<bool(const Vec3&, const Vec3&)> allowMovement;
-        std::function<PlayerDeed(usize, bool)> attackDeed;
+        /** What the attack buttons ask: strong or not, and whether the stick moves. */
+        std::function<PlayerDeed(usize, bool, bool)> attackDeed;
+        /** Where the nearest thing to strike lies, an attack button held or not. */
+        std::function<MeleeSense(usize, bool)> meleeSense;
         /** Dynamic creature collision, before the camera limit and action events. */
         std::function<Vec3(usize, const Vec3&, const Vec3&)> resolveMovement;
         /** Where a body fallen out of the world with nobody to stand beside goes: the
          * level's start, when there is one. */
         std::function<std::optional<Vec3>()> startPoint;
     };
-    static constexpr f32 kLostDepth = 4.5f; ///< under the world's lowest point a body is lost
+    static constexpr f32 kLostDepth = 4.5f;   ///< under the world's lowest point a body is lost
+    static constexpr f32 kTurnFrames = 30.0f; ///< the rate a partial turn is taken at, a second
     static constexpr s32 kRescueSpots = 16;
     static constexpr f32 kRescueGap = 0.5f;  ///< how far from the rescuer's side it stands
     static constexpr f32 kRescueRise = 6.0f; ///< how far above or below the rescuer's floor

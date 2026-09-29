@@ -524,9 +524,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   weapon leaving as it ends at twice the size and the harm
   (`MissileLaunch::scale`), then `ATTPWRATHROWR` with the hand empty; its
   rows (`turboAThrow`) give its sound, and it costs the meter nothing. Its
-  melee variants (close, low, step, 360: `turboAClose` and the rest, at
-  half to one and a half times the character's own harm) need something in
-  reach, so they wait for enemies. `PlayScene::awardExperience` is the
+  power swings play their own rows the same way (below). `PlayScene::awardExperience` is the
   original's award: scaled by the level (`LevelTuning::experienceScale`:
   the place's own scale, G1's 2.85, less the further the character is past
   the level it is meant for), a kill's feeding the meter 0.025 of what was
@@ -538,7 +536,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the player as one who blocks, and a blow over 15 with knock flags (0x10160)
   taken unguarded by one who never has teaches 125 `LEARNBLOCK` after the
   level's first minute (damage_player, player.c 3400).
-  Not yet: directional/stepping strong melee variants, damage types (the element,
+  Not yet: damage types (the element,
   knock-over) doing anything, the directional guards (what selects them was
   not found; they look like answers to where a blow comes from), and the
   two player combo (a grab, carry and throw system of its own, help 111
@@ -569,18 +567,49 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (`PlayerActor::fall`); under the world's lowest point less 4.5 it stands
   again beside another standing player (`PartyMotion::rescueSpot`,
   get_player_pos's sixteen spots) or at the level's start. Not yet, because
-  they need something to be aimed at or to come from: directional/stepping
-  melee variants, pushing, Death's grab, the victory pose, the super shot
+  they need something to be aimed at or to come from: pushing, Death's grab,
+  the victory pose, the super shot
   and the familiars' attacks.
-* Close normal attacks use `TargetAssist::melee` (horizontal surface reach,
-  vertical overlap, facing and walls), then `PlayerAttacks::attackDeed` selects
-  the quick/slow or low-body action. `PlayerAnimator` plays ATTQUICK1 then
-  alternating ATTQUICK2/3 with their recoveries; slow attacks use ATTSTART,
-  ATTSLOW1/R; low bodies use ATTLOWK/R or ATTLOW1/2/R. Completed swings emit
-  one contact; interruptions do not. `PartyMotion` plants the feet and routes
-  contacts to `PlayerAttacks::melee`, which rechecks reach, damages one live
-  target and never launches a missile. Distant attacks retain their throws.
-  Directional/step melee and attack-input buffering remain separate work.
+* Close attacks follow AnimAction. `PlayerAttacks::meleeSense` finds the nearest
+  target at any bearing (`TargetAssist::around`: surface distance, vertical overlap,
+  a clear line) and bands it: within a swing (radius + 1), a step (radius + 2),
+  or beyond, a held attack button reaching one unit further; short targets
+  (creatures of height 4 or less, anything else 3.5, within radius + 2) are low,
+  and `yaw` is its bearing against the facing. `attackDeed` asks for a close
+  attack within a swing, or within a step while the stick moves (never at
+  something low; mid-chain the strong one anywhere in reach), else a throw. `PartyMotion` hands the sense to the animator every update while an
+  attack button is held or a swing is under way. `PlayerAnimator` requests QUICK
+  (ATTQUICK1) or KICK at something low, SLOW (ATTSTART, ATTSLOW1/R) or LOW
+  (ATTLOW1/2/R) for the strong button, and STEP (ATTSTEP1; ATTWALK2 cut in from a
+  second walk or run half) at a step's distance. A quick or step swing ends into
+  the next while a button is pressed or held: another step while still a step
+  away (the second swings into STEP3, the rest into STEP2), else QUICK2/QUICK3 in
+  turn; with nothing in reach, or nothing asked, its recovery, where a fresh
+  press in the first two frames within a swing swings again at once and the
+  guard may cut in. Each strike counts into a chain when a button was freshly
+  pressed since the last (`meleeChain`), else starts it over; a fresh strong
+  press within a chain buffers the power swing that replaces the next: the
+  close one (ATTPWRACLOSE, ATTPWRALOW at something low, falling back to the
+  close one's sequences) after the first strike, ATTPWRAMED after the second,
+  ATT360 after more; the spin and the kick also give way to it. Swings chosen
+  from QUICK/QUICK3/STEP3 turn to a target over 60 degrees aside or 135 behind
+  (ATTQ3RIGHT/LEFT, ATTQ2180/ATTQ2180L; from QUICK2/STEP2 the other set, the
+  table's own crossed names). A completed swing is one contact
+  (`meleeBlow`): quick, turned, spin and low strikes the character's harm;
+  slow and steps twice it with knock-back; the kick knocks down a short
+  creature; power swings three times it, knocking down; doubled again while
+  grown. `PlayerAttacks::melee` strikes the nearest target within radius + 2
+  at any bearing and never launches a missile. The spin and power swings play
+  the class's `turboA360`/`turboAClose`/`turboALow`/`turboAStep` rows
+  through `TurboMove` while their action lasts, for nothing. Paces and turns
+  are AnimAction's: quick swings a quarter pace without turning, steps full
+  pace (half with the stick let go, carrying on along the facing) turning a
+  quarter of the way a 30 Hz frame, turned swings, low strikes and kicks full,
+  the spin half, the slow swing planted; power swings half (the wizard a
+  quarter; the knight and sorceress rooted, and for ATTPWRAMED the jester and
+  sorceress rooted, the wizard and archer a quarter), ATTPWRALOW a quarter. A
+  turbo move cuts any close attack off. ATTQ3TOSTEP1 is not reached: what
+  selects it was not found.
 * The swarm (`game/enemies`). `EnemyKinds` is the original's per-kind table
   (thirty-four rows: size, pace, damage, health, armour, the experience a hit
   and a kill are worth, the way each goes about, all of it its own, none of

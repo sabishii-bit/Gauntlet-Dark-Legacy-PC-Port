@@ -66,6 +66,10 @@ ClassStats parseClassStats(std::string_view text) {
         return values.size() == 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f};
     };
     if (const auto moves = root.find("moves"); moves != root.end() && moves->is_object()) {
+        stats.moves.turboAClose = moves->value("turboAClose", -1);
+        stats.moves.turboALow = moves->value("turboALow", -1);
+        stats.moves.turboAStep = moves->value("turboAStep", -1);
+        stats.moves.turboA360 = moves->value("turboA360", -1);
         stats.moves.turboAThrow = moves->value("turboAThrow", -1);
         stats.moves.turboB = moves->value("turboB", -1);
         stats.moves.turboC1 = moves->value("turboC1", -1);

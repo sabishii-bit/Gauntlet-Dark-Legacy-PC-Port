@@ -42,8 +42,8 @@ TEST_CASE("Mesh targets use triangle faces and edges rather than enclosing cylin
     WorldCollision collision;
     collision.build({triangle});
     const std::array targets{target};
-    CHECK(TargetAssist::melee({0, 0, 3}, 6, {0, 0, 1}, targets, 3, &collision));
-    CHECK_FALSE(TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 3, &collision));
+    CHECK(TargetAssist::around({0, 0, 3}, 6, targets, 3, &collision));
+    CHECK_FALSE(TargetAssist::around({0, 0, 0}, 6, targets, 3, &collision));
     CHECK(TargetAssist::select({0, 3, 0}, {0, 0, 1}, targets, 30, &collision));
 
     // An ordinary wall in front still obstructs aiming at the destructible one.
