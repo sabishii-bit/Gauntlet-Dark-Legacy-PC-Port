@@ -1,4 +1,8 @@
+#include <algorithm>
 #include <array>
+#include <limits>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -169,6 +173,75 @@ TEST_CASE("tower wizard exports include and render his animated body",
     for (const auto& draw : device.draws) {
         REQUIRE(draw.blend() == BlendMode::Additive);
         REQUIRE_FALSE(draw.state.depthWrite);
+    }
+}
+
+TEST_CASE("the tower wizard's posed head and hands ride above his robe",
+          "[game][promotion][unpacked]") {
+    const auto root = test::unpackedOrSkip("ITEMS/LEVELL/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    REQUIRE(items.load(root / "ITEMS/LEVELL"));
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
+    std::array<PlayerRuntime, 1> party;
+    spawn(party[0], 0, 30, 29);
+    MessageTable strings;
+    texts(strings);
+    TowerPromotion promotion;
+    promotion.begin(party, strings);
+    promotion.bind(device, items, layout, party);
+    const auto wizard = items.trees.find("WIZARD");
+    REQUIRE(wizard.has_value());
+    const auto& tree = items.trees.tree(*wizard);
+    // A piece's textures, by the node that wears it.
+    const auto texturesOf = [&](std::string_view node) {
+        const auto index = tree.findNode(node);
+        REQUIRE(index.has_value());
+        const auto model = items.models.find(tree.nodes[*index].object);
+        REQUIRE(model.has_value());
+        std::vector<const Texture*> textures;
+        for (const auto& part : items.models.mesh(*model).parts) {
+            textures.push_back(&items.textures.texture(device, part.texture));
+        }
+        return textures;
+    };
+    const auto head = texturesOf("BODY1_NEC");
+    const auto abdomen = texturesOf("BODY1_ABD");
+    const auto hand = texturesOf("BODY1_L_W");
+    const Vec3 feet{promotion.wizardTransform()[3]};
+    // The lowest point drawn with a piece's textures, over the wizard's feet.
+    const auto lowest = [&](const std::vector<const Texture*>& textures) {
+        f32 low = std::numeric_limits<f32>::max();
+        for (const auto& draw : device.draws) {
+            if (std::ranges::find(textures, draw.texture) == textures.end()) {
+                continue;
+            }
+            for (const auto& v : draw.vertices) {
+                low = std::min(low, v.position.y - feet.y);
+            }
+        }
+        REQUIRE(low < std::numeric_limits<f32>::max());
+        return low;
+    };
+    // BODY1 hangs the rigid pieces ten units up the tree; the robe reaches the floor.
+    constexpr f32 kBodyHeight = 10.0f;
+    constexpr f32 kHem = 5.0f;
+    for (s32 step = 0; step < 4; ++step) {
+        device.draws.clear();
+        promotion.draw(device, Mat4{1}, {});
+        f32 hem = std::numeric_limits<f32>::max();
+        for (const auto& draw : device.draws) {
+            hem = std::min(hem, test::minCorner(draw).y - feet.y);
+        }
+        REQUIRE(hem < kHem);
+        REQUIRE(lowest(abdomen) > kBodyHeight);
+        REQUIRE(lowest(head) > lowest(abdomen));
+        REQUIRE(lowest(hand) > kBodyHeight);
+        promotion.animate(0.5f);
     }
 }
 } // namespace
