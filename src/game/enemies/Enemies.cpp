@@ -546,11 +546,17 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         return;
     }
     ++m_frame;
-    // What is on screen, by twice its radius and fifteen more (do_enemies' visactive).
+    // What is on screen, by twice its radius and fifteen more (do_enemies' visactive), and how
+    // many are in view by twice their radius alone (its visible count).
+    m_inView = 0;
     for (s32 i = 0; i < m_most; ++i) {
         Enemy& enemy = m_enemies[static_cast<usize>(i)];
         enemy.onScreen = enemy.state == State::Inactive || !m_view.has_value() ||
                          m_view->sees(bodyCentre(enemy), (2.0f * enemy.radius) + kOnScreenMargin);
+        if (enemy.state != State::Inactive &&
+            (!m_view.has_value() || m_view->sees(bodyCentre(enemy), 2.0f * enemy.radius))) {
+            ++m_inView;
+        }
     }
     // The first suicide bomber on screen running at the party is one the rest keep away from.
     m_bomber = -1;

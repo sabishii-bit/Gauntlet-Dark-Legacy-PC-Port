@@ -62,7 +62,8 @@ public:
     static constexpr s32 kSecretWalls = 20; ///< a blow on a wall that breaks
     static constexpr s32 kTrapsHurt = 21;
     static constexpr s32 kRandomChest = 23;
-    static constexpr s32 kShotMagic = 14; ///< a bottle shot does less than one drunk
+    static constexpr s32 kShotMagic = 14;   ///< a bottle shot does less than one drunk
+    static constexpr s32 kWastedMagic = 18; ///< a caster's magic struck nothing
     static constexpr s32 kBarrelsHold = 27;
     static constexpr s32 kRedBarrels = 44;     ///< near an exploding barrel's end
     static constexpr s32 kGreenBarrels = 45;   ///< near a poison barrel's
@@ -83,7 +84,8 @@ public:
      * order: junk to silver and to gold, traps stopped and destroyed, fruit and meat
      * cleansed, secret walls revealed and destroyed. */
     static constexpr s32 kFirstMagicPerk = 139;
-    static constexpr s32 kLevelUp = 34; ///< "LEVEL %d", the number filled in
+    static constexpr s32 kHealingMagic = 147; ///< from level 75 magic heals as it harms
+    static constexpr s32 kLevelUp = 34;       ///< "LEVEL %d", the number filled in
 
     static constexpr s32 kTicksPerLine = 60;
     static constexpr s32 kTicksOver = 30;

@@ -453,7 +453,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   in particular (a trap underfoot, which then does not stun either); a
   charge halves either. A special pickup with flag 0x80000 fills the meter,
   `awardExperience` adds 0.025 of what is won (nothing awards any until
-  there are enemies), reaching full posts help 110, dying empties it, and it
+  there are enemies), reaching full posts help 110 while fifteen of the
+  swarm stand in view (`Enemies::inView`, pmotion.c 1756), dying empties it, and it
   starts every level empty (a scenario member may give a `turbo`).
 * What a turbo attack does is the class's own data (`formats/PlayerDataWad`:
   the wad's SFXX and DAMG sections and the twelve move indices of its
@@ -1486,8 +1487,13 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Each change plays `LEVELUP_YEL`/`BLU`/`RED` there (walls none; a trap held
   again within 60 ticks none) and teaches the caster lessons 139-146
   (`WARMAGIC1`..`ARCMAGIC2`) once per character; a potion shield carries it
-  too, every half second it harms. Not yet: an open chest or gold (whose
-  value retail rewrites) is left alone. A player's hit on a
+  too, every half second it harms. From level 75 a caster's magic also heals
+  as it harms the swarm, great ones or boss (do_heal_players): the caster a
+  tenth of the harm, 0.016 more a level past 75, the other standing players
+  within their magic's power half that, never past their most, with
+  `LEVELUP_GRE` over the one harmed and lesson 147 (`MAGIC99`); a caster's
+  wave that struck nothing tells them 18 (`DONTWASTEMAGIC`). Not yet: an open
+  chest or gold (whose value retail rewrites) is left alone. A player's hit on a
   generator is a hundredth softer a level under the place's `playerLevel`
   and a tenth harder a level over, never under a point. A swing (PlayerGetTarget,
   fn_8005B274) reaches shootable triggers but never the safe rocks, and a

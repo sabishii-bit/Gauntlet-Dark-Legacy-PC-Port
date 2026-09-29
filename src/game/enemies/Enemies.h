@@ -183,6 +183,9 @@ public:
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
     /** What the camera takes in, for what is on screen; none takes everything in. */
     void setView(std::optional<ViewVolume> view) { m_view = view; }
+    /** How many stand in view by twice their radius, as of the last update (do_enemies);
+     * without a view, all of them. */
+    s32 inView() const { return m_inView; }
     /** The lookouts its patrollers walk between. */
     void setLookouts(LookoutRoute lookouts) { m_lookouts = std::move(lookouts); }
 
@@ -389,6 +392,7 @@ private:
     std::mt19937 m_random;
     s32 m_bomber = -1; ///< the lit suicide bomber the rest run from this tick
     std::optional<ViewVolume> m_view;
+    s32 m_inView = 0;
     u32 m_frame = 0;
 };
 

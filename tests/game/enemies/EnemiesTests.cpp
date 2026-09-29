@@ -437,12 +437,14 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
     watching.position = strong.positionOf(0) - Vec3{0, 0, 20};
     strong.setView(watching);
     strong.update(kTicks, kStep, {});
+    CHECK(strong.inView() == 1); // do_enemies' visible count, for the turbo lesson
     REQUIRE_FALSE(strong.spawn(spawn, {}).has_value());
     REQUIRE(strong.tierOf(0) == 3);
     ViewVolume away = watching;
     away.forward = Vec3{0, 0, -1};
     strong.setView(away);
     strong.update(kTicks, kStep, {});
+    CHECK(strong.inView() == 0);
     REQUIRE(strong.spawn(spawn, {}).has_value()); // strength is not replacement importance
     REQUIRE(strong.tierOf(0) == 1);
     REQUIRE(strong.spawn(great, {}).has_value());

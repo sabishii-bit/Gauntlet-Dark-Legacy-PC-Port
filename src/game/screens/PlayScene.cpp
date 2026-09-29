@@ -28,6 +28,7 @@ namespace {
 constexpr std::string_view kBeamObject = "L1XPLIGHTRAY01"; ///< the light on Sumner's lectern
 constexpr std::string_view kWeaponsArchive = "WEAPONS";
 constexpr std::string_view kDroppedKey = "KEY"; ///< what a fallen player's keys lie as
+constexpr s32 kTurboCrowd = 15;                 ///< the swarm in view for the turbo lesson
 constexpr std::string_view kDroppedKeyRing = "KEYRING";
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
@@ -1330,8 +1331,13 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             },
         .advanceTurbo =
             [this](usize i, s32 elapsed, f32 duration) {
-                m_attacks.updateTurbo(i, elapsed, duration, m_players,
-                                      [this](s32 id, usize index) { postHelp(id, index); });
+                m_attacks.updateTurbo(i, elapsed, duration, m_players, [this](s32 id, usize index) {
+                    // The meter full, the lesson waits for fifteen in view (pmotion.c 1756).
+                    if (id != HelpMessages::kUseTurbo ||
+                        m_opponents.enemies().inView() >= kTurboCrowd) {
+                        postHelp(id, index);
+                    }
+                });
             },
         .thrownImpact = [this](usize i, f32 damage) { hurt(i, damage, HurtKind::Blow, true); },
         .aim =
