@@ -43,6 +43,7 @@ struct Pickup {
     u32 flags = 0;       ///< its record's properties: a potion's kind, a powerup's which
     f32 strength = 0.0f; ///< a powerup's
     Vec3 position{0.0f, 0.0f, 0.0f};
+    s32 opener = -1; ///< the player who let it out of what held it, if any
 };
 
 /** What the game makes of a touched item: nothing to leave it lying, else how much of its
@@ -111,6 +112,7 @@ public:
         Vec3 velocity{0.0f, 0.0f, 0.0f}; ///< while thrown
         bool thrown = false;             ///< in the air or rolling, not yet at rest
         bool carried = false;            ///< held by one of the great ones, unseen
+        s32 opener = -1;                 ///< the player who let it out of a chest or barrel
         f32 noGrabSeconds = 0.0f;        ///< over nought, no one can take it yet
 
         /** Whether a party of `players` sees it. */
@@ -207,6 +209,12 @@ public:
     /** The pickup nearest `position` within `reach` along the ground and `rise` up or down
      * that nothing yet holds, now held and unseen (fn_8005D0C4: a great one's to carry). */
     std::optional<usize> claim(const Vec3& position, f32 reach, f32 rise);
+    /** Who let item `index` out of the chest or barrel that held it (the item's opener). */
+    void setOpener(usize index, s32 player) {
+        if (index < m_items.size()) {
+            m_items[index].opener = player;
+        }
+    }
     /** Lets a held pickup go from `position` at `velocity`, as `throwItem` throws one. */
     bool release(usize index, const Vec3& position, const Vec3& velocity,
                  const WorldCollision* collision, f32 noGrabSeconds);

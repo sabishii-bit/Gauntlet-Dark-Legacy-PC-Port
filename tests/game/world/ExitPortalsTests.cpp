@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -136,6 +137,15 @@ TEST_CASE("a portal runs through with the whole party on it and waits for stragg
     const std::array<PortalVisitor, 2> split{on, off};
     REQUIRE_FALSE(f.run(split, 200).has_value());
     REQUIRE(f.portals.portal(0).action == ExitPortals::kWaiting);
+    // Moving on it, nobody is told to wait; standing still, the one on it is.
+    CHECK(f.portals.takeWaiting().empty());
+    PortalVisitor waiting = on;
+    waiting.party = 1;
+    waiting.still = true;
+    f.run(std::array<PortalVisitor, 2>{waiting, off}, 1);
+    CHECK(f.portals.takeWaiting() == std::vector<s32>{1});
+    f.run(std::array<PortalVisitor, 1>{waiting}, 1); // alone, there is nobody to wait for
+    CHECK(f.portals.takeWaiting().empty());
     // The other arrives: transport starts with the raised glow still held.
     const std::array<PortalVisitor, 2> together{on, PortalVisitor{Vec3{9.0f, 0.0f, 11.0f}, 0.75f}};
     const auto left = f.run(together, 200);

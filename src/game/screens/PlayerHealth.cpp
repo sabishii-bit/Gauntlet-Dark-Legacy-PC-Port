@@ -70,6 +70,10 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     }
     if (runtime.figure != nullptr && runtime.figure->animator().defending()) {
         events.block(unguarded - damage, damage);
+    } else if (unguarded > kBlockLessonFrom && (received.flags & kHeavyFlags) != 0 &&
+               !runtime.blocked && events.learnBlock) {
+        // A heavy blow taken in the face teaches the guard (damage_player, player.c 3400).
+        events.learnBlock();
     }
     if (damage <= 0.0f) {
         return;

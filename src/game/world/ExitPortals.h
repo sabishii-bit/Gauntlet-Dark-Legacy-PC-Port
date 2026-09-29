@@ -5,6 +5,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -27,6 +28,8 @@ namespace gdl::game {
 struct PortalVisitor {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.75f;
+    s32 party = -1;     ///< who it is, by place in the party
+    bool still = false; ///< standing without moving
 };
 
 /**
@@ -82,6 +85,9 @@ public:
     /** Steps every portal by `ticks` (`seconds` long); returns the portal ready to transport
      * the whole party, retaining its raised glow while the departure plays. */
     std::optional<usize> update(s32 ticks, f32 seconds, std::span<const PortalVisitor> party);
+    /** Who stood still this update on a portal the rest of a party of more than one had yet
+     * to reach (DoExit's wait), by place in the party. */
+    std::vector<s32> takeWaiting() { return std::exchange(m_waiting, {}); }
     /** Continues the selected sequences while gameplay is held for transportation. */
     void animate(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
@@ -95,6 +101,7 @@ private:
 
     const TreeInfo* m_tree = nullptr;
     std::array<s32, kSequences.size()> m_sequences{-1, -1, -1, -1, -1};
+    std::vector<s32> m_waiting;
     std::vector<Portal> m_portals;
 };
 

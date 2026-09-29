@@ -130,6 +130,7 @@ public:
         return m_placedItems.placeRecord(device, record, position,
                                          m_collision.loaded() ? &m_collision : nullptr, amount);
     }
+    void setItemOpener(usize index, s32 player) { m_placedItems.setOpener(index, player); }
     /** A pickup near `position` for one of the great ones to carry (PlacedItems::claim). */
     std::optional<usize> claimItem(const Vec3& position, f32 reach, f32 rise) {
         return m_placedItems.claim(position, reach, rise);

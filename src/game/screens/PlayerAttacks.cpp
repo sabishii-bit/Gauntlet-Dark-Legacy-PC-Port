@@ -428,6 +428,7 @@ void PlayerAttacks::showBlock(usize index, f32 taken, f32 left, std::span<Player
     }
     const f32 shown = std::clamp(kBlockPerDamage * left, kBlockLeast, kBlockMost);
     players[index].blockLeft = shown;
+    players[index].blocked = true;
     if (m_resources->weapons.loaded() &&
         m_resources->weapons.trees.find(kBlockEffect).has_value()) {
         EffectTrees::Setting setting;

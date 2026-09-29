@@ -156,6 +156,12 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
                 advance(portal, portal.action == kLast ? 1 : portal.action + 1);
             }
         } else if (on > 0) {
+            // Those standing on it, waiting, are told everyone must come (pmotion.c 3932).
+            for (const PortalVisitor& visitor : party) {
+                if (party.size() > 1 && visitor.still && standsOn(portal, visitor, extra)) {
+                    m_waiting.push_back(visitor.party);
+                }
+            }
             // Some of the party: up to the waiting sequence, and back round from past it.
             if (ready && portal.action < kWaiting) {
                 advance(portal, portal.action + 1);

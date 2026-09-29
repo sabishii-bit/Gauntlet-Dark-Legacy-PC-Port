@@ -25,7 +25,9 @@ struct Fixture {
         .block = [](f32, f32) { FAIL("No figure means no guard presentation"); },
         .sound = [this](std::string_view cue) { sounds.emplace_back(cue); },
         .cry = [this](std::string_view cue) { cries.emplace_back(cue); },
-        .named = [this](std::string_view cue, f32) { named.emplace_back(cue); }};
+        .named = [this](std::string_view cue, f32) { named.emplace_back(cue); },
+        .learnBlock = [this] { ++blockLessons; }};
+    s32 blockLessons = 0;
     Fixture() {
         player.actor.spawn(3, {}, nullptr, Vec3{0}, 0);
         player.actor.save().progress().health = 1000;
@@ -93,6 +95,23 @@ TEST_CASE("player health respects tower immunity and scales only substantial dam
     f.hit(2, HurtKind::Blow, false, 4);
     REQUIRE(f.player.actor.save().health() == 991);
     REQUIRE(f.sounds == std::vector<std::string>{"S_PLYRDMG"});
+}
+
+TEST_CASE("a heavy blow taken unguarded teaches the guard to one who never blocked",
+          "[game][screens][player-health]") {
+    Fixture f;
+    const auto heavy = [&](f32 damage, u32 flags) {
+        f.health.hurt(f.player, damage, HurtKind::Blow, true, false, 1, f.events,
+                      PlayerImpact{.flags = flags});
+    };
+    heavy(15, PlayerImpact::kKnockDown); // not over fifteen
+    heavy(40, 0);                        // not heavy
+    CHECK(f.blockLessons == 0);
+    heavy(40, PlayerImpact::kKnockDown);
+    CHECK(f.blockLessons == 1);
+    f.player.blocked = true; // one who has blocked needs no lesson
+    heavy(40, PlayerImpact::kKnockDown);
+    CHECK(f.blockLessons == 1);
 }
 
 TEST_CASE("ordinary enemy damage flashes the skin without inventing a stagger",

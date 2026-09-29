@@ -29,6 +29,8 @@ constexpr std::string_view kBeamObject = "L1XPLIGHTRAY01"; ///< the light on Sum
 constexpr std::string_view kWeaponsArchive = "WEAPONS";
 constexpr std::string_view kDroppedKey = "KEY"; ///< what a fallen player's keys lie as
 constexpr s32 kTurboCrowd = 15;                 ///< the swarm in view for the turbo lesson
+constexpr s32 kSumnerVoice = 2;                 ///< change_player makes Sumner a wizard
+constexpr f32 kBlockLessonAfter = 60.0f;        ///< the guard is taught only after a minute
 constexpr std::string_view kDroppedKeyRing = "KEYRING";
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
@@ -726,7 +728,13 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
          .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
          .cry = [this, index](std::string_view voice) { m_attacks.cry(index, voice, m_players); },
          .named = [this, index](std::string_view line,
-                                f32 wait) { sayWithName(index, line, wait); }},
+                                f32 wait) { sayWithName(index, line, wait); },
+         .learnBlock =
+             [this, index] {
+                 if (m_playSeconds > kBlockLessonAfter) {
+                     postHelp(HelpMessages::kLearnBlock, index);
+                 }
+             }},
         impact, level != nullptr && level->bossType >= 0,
         m_classes.stats(m_players[index].actor.save().character));
 }
@@ -866,6 +874,27 @@ f32 PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effect
 /** Hands a touched item to whoever touched it, by the original's rules: their card slides
  * up, the item's sound (or their own eating) plays, and what they cannot carry stays lying
  * where it is. Crystals are the party's and are dealt with once taken. */
+/** Whoever opened the chest a pickup came out of says so when another takes it
+ * (fn_8009F748: the class's S_<CLS>STEAL, the unlockables their shadow's, Sumner a
+ * wizard's; not while Pojo is carried), in the narrator's turn. */
+void PlayScene::complainOfTheft(s32 opener, s32 taker) {
+    if (opener < 0 || opener == taker) {
+        return;
+    }
+    for (const PlayerRuntime& runtime : m_players) {
+        const CharacterSave& save = runtime.actor.save();
+        if (runtime.actor.player() != opener || runtime.figure == nullptr ||
+            PickupVoices::carriesPojo(save)) {
+            continue;
+        }
+        const s32 voice =
+            save.character == kSumnerClass ? kSumnerVoice : save.character % kStartingClassCount;
+        m_audio.queueNarrationFrom(runtime.figure->voice(),
+                                   std::format("S_{}STEAL", classCode(voice)));
+        return;
+    }
+}
+
 std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     if (pickup.realm > 0) {
         return 0;
@@ -895,6 +924,7 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
     if (pickup.subtype == kSpecialPowerup && (static_cast<u32>(pickup.flags) & kTurboFlag) != 0) {
         m_players[pickup.collector].turbo.add(TurboMeter::kFull);
     }
+    complainOfTheft(pickup.opener, actor.player());
     switch (static_cast<ItemKind>(pickup.subtype)) {
     case ItemKind::Gold:
         collectChallengeCoin(pickup.item);
@@ -1417,8 +1447,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         standing.reserve(m_players.size());
         for (usize i = 0; i < m_players.size(); ++i) {
             if (!isDown(i)) {
-                standing.push_back(
-                    PortalVisitor{m_players[i].actor.position(), m_players[i].actor.radius()});
+                standing.push_back(PortalVisitor{m_players[i].actor.position(),
+                                                 m_players[i].actor.radius(), static_cast<s32>(i),
+                                                 !m_players[i].actor.moving()});
             }
         }
         // With everyone fallen, the last death played out and the announcer done, the party
@@ -1431,8 +1462,14 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             log::info("All players have fallen; back to the tower");
             return PlayOutcome::Travel;
         }
-        if (const auto portal = m_portals.update(ticks, seconds, standing);
-            portal.has_value() && leaveBy(*portal)) {
+        const std::optional<usize> reached = m_portals.update(ticks, seconds, standing);
+        const LevelInfo* level = m_world->level();
+        for (const s32 waiting : m_portals.takeWaiting()) {
+            if (level == nullptr || level->bossType < 0) {
+                postHelp(HelpMessages::kEveryoneToExit, static_cast<usize>(waiting));
+            }
+        }
+        if (const auto portal = reached; portal.has_value() && leaveBy(*portal)) {
             m_opponents.settleRewards(m_players, opponentEvents());
             if (m_portals.portal(*portal).secret) {
                 m_secretTravel = true;

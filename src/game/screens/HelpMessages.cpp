@@ -10,7 +10,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 112> kSpecs{{
+constexpr std::array<HelpMessageSpec, 114> kSpecs{{
     {HelpMessages::kUseMagicOnDeath, "USEMAGIC", "S_USEMAGIC"},
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
@@ -20,6 +20,7 @@ constexpr std::array<HelpMessageSpec, 112> kSpecs{{
     {7, "USEMAGIC2", "S_USEMAGIC2"},
     {8, "SAVEKEYS", "S_SAVEKEYS"},
     {HelpMessages::kTransporter, "TRANSPORTERSMOVEYOU", "S_TRANSPORTER"},
+    {HelpMessages::kEveryoneToExit, "HOWTOEXIT", "S_SAMEEXIT"},
     {HelpMessages::kShotMagic, "SHOOTPOTIONLESSER", "S_SHOOTINGMAGIC"},
     {HelpMessages::kWastedMagic, "DONTWASTEMAGIC", "S_DONTWASTE"},
     {15, "EATMEAT", "S_MEATGIVES"},
@@ -110,6 +111,7 @@ constexpr std::array<HelpMessageSpec, 112> kSpecs{{
     {HelpMessages::kLevelUp, "LEVELUP", "S_GAINEDLEVEL", HelpRepeat::Always},
     {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS"},
     {HelpMessages::kGasSpoils, "GASPOISON", "S_GASFOODBAD"},
+    {HelpMessages::kLearnBlock, "LEARNBLOCK", "S_LEARNBLOCK", HelpRepeat::OncePerPlayer},
     {HelpMessages::kAllOnPlatform, "ALLPLATFORM", "S_ALLPLATFRM", HelpRepeat::OncePerSession},
     {HelpMessages::kAllOnTrigger, "ALLTRIGGER", "S_TRIGGERVOX", HelpRepeat::OncePerSession},
     {HelpMessages::kDeathDrainsExperience, "DEATHDRAINEXP", "S_DEATHDRAINXP"},
