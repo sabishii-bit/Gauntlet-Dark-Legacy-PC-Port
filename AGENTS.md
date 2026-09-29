@@ -1837,7 +1837,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (`PowerupEffects::magicPower`, 8 to 32 by the magic stat, at most 1), or
   throws the bottle (`POT_<COL>_TW`) as a `PlayerMissiles` missile from 4 up
   and 2 ahead at 5 x 0.707 up and forwards, bursting at 0.75 of that power
-  where it lands (`MissileImpact::potion`). `players/PowerupEffects` gathers
+  where it lands (`MissileImpact::potion`). A potion of the caster's own
+  colour (`damage::colourBonus`, DamageColor: yellow's light, blue's
+  lightning, red's fire, green's acid) goes off a tenth stronger in power
+  and in harm, used, thrown, shot or as the shield (start_magic, player.c
+  2062); a bottle the caster shot goes off at 0.8 of their power
+  (lbl_80346310) for the whole forty of harm. `players/PowerupEffects` gathers
   the worn slots (`PowerupSlot::on`, toggled by `screens/PowerupSelector`:
   up opens after a 128-unit slide at 4 a tick, left and right go round, up
   switches, down closes; its label is `powerupTextId`'s text, glowing while

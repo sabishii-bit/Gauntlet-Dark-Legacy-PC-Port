@@ -50,6 +50,10 @@ public:
     /** Present a collision once, without applying target damage or expiry effects. */
     void presentImpact(const MissileImpact& impact);
     f32 magicPowerOf(const PlayerActor& actor) const;
+    /** The power a potion of `kind` goes off with from `actor`: their magic's, a tenth more
+     * for a potion of their own colour. */
+    f32 potionPowerOf(const PlayerActor& actor, s32 kind) const;
+    static constexpr f32 kPotionDamage = 40.0f; ///< start_magic's, before the colour bonus
     PlayerMissiles& missiles() { return m_missiles; }
     const PlayerMissiles& missiles() const { return m_missiles; }
 

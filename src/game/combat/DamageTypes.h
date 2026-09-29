@@ -48,4 +48,10 @@ std::string_view colourOf(u32 element);
  * lightning, red's fire, green's acid; nought for a colour that is none's. */
 u32 elementOfColour(s32 color);
 
+/** A potion of the caster's own colour goes off a tenth stronger, in power and in harm
+ * (start_magic, player.c 2062): what to scale a potion of `element` by for a caster of
+ * `color`. */
+inline constexpr f32 kOwnColourBonus = 1.1f;
+f32 colourBonus(s32 color, u32 element);
+
 } // namespace gdl::game::damage
