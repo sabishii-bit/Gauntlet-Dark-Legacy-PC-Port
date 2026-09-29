@@ -170,7 +170,8 @@ struct HealthMeterDefinition {
     s32 rightInset = 0;
     bool shown = false;
     bool backed = false;
-    std::string name; ///< TYPE suffix; empty for an ordinary boss, EAGLE/LION/SNAKE for heads
+    bool inWorld = false; ///< the GMETER bar hangs over the body
+    std::string name;     ///< TYPE suffix; empty for an ordinary boss, EAGLE/LION/SNAKE for heads
     Vec3 barOffset{0.0f, 0.0f, 0.0f}; ///< where the in-world bar hangs
 };
 

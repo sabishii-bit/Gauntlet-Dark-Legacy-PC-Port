@@ -123,8 +123,11 @@ public:
     /** Its shadow on the floor under it, when its type lies one. */
     void drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye,
                     const WorldLighting& lighting) const;
+    /** Its body, and the bar over it when its type hangs one, turned to `camera`. */
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const Texture* frozenTexture = nullptr) const;
+              const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr) const;
+    /** The GMETER bar's placement and its nodes' matrices, while it hangs over the body. */
+    std::optional<std::pair<Mat4, std::vector<Mat4>>> meterPose(const CameraFrame* camera) const;
     std::vector<CombatBlow> takeBlows();
     std::vector<CombatGrab> takeGrabs();
     std::vector<CombatLoss> takeLosses();

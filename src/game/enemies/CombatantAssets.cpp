@@ -12,6 +12,8 @@ namespace gdl::game {
 namespace {
 /** Every instance is made with subtype nought: the first of SHADOW1L1..3L1. */
 constexpr std::string_view kShadowObject = "SHADOW1L1";
+constexpr std::string_view kMeterTree = "GMETER";
+constexpr std::string_view kMeterFill = "RED_FILLE";
 } // namespace
 
 CombatantAssets::~CombatantAssets() {
@@ -19,6 +21,9 @@ CombatantAssets::~CombatantAssets() {
 }
 void CombatantAssets::clear() {
     children.clear();
+    meter.clear();
+    meterTree = nullptr;
+    meterFill = -1;
     shadow.clear();
     textures.clear();
     body.clear();
@@ -72,6 +77,16 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     textures.bind(archive.trees.textureAnimations(), archive.textures, device);
     if (data.shadowed()) {
         shadow.bind(device, archive, kShadowObject);
+    }
+    if (data.meter().inWorld) {
+        if (const auto found = archive.trees.find(kMeterTree); found.has_value()) {
+            meterTree = &archive.trees.tree(*found);
+            if (!meter.bind(*meterTree, archive.models, archive.textures, device)) {
+                meterTree = nullptr;
+            } else if (const auto fill = meterTree->findNode(kMeterFill); fill.has_value()) {
+                meterFill = static_cast<s32>(*fill);
+            }
+        }
     }
     return true;
 }

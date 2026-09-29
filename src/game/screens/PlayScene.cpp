@@ -1733,7 +1733,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting());
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_hitFlashTexture, &m_weapons);
-    m_opponents.critters().draw(device, clip, m_world->lighting());
+    m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera);
     // The boss stands out in the level's own light while the rite darkens the rest.
     m_opponents.bosses().draw(device, clip,
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
