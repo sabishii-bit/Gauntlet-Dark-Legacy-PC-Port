@@ -4,6 +4,7 @@
 #include <array>
 #include <format>
 
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/EnemyKinds.h"
 
 namespace gdl::game {
@@ -104,25 +105,17 @@ std::string EnemyFeedback::sound(std::span<const LevelEnemy> roster, s32 bossTyp
 }
 
 std::string_view EnemyFeedback::effect() const {
-    constexpr u32 kNoImpact = 0x1000000;
-    if ((flags & kNoImpact) != 0) {
+    if (!damage::marks(flags)) {
         return {};
     }
-    constexpr std::array<std::string_view, 5> kHits{"BLOODFX1", "FIREHIT", "HITCOL", "HITCOL",
-                                                    "HITCOL"};
-    constexpr std::array<std::string_view, 5> kDeaths{"BLOODFX2", "FIREDIE", "ELECDIE", "LIGHTDIE",
-                                                      "ACIDDIE"};
-    const u32 element = flags & 0xF;
-    if (element >= kHits.size()) {
-        return {};
-    }
+    const u32 element = damage::element(flags);
     if (element == 0 && kind == 5) {
         return killed ? "HITDIE" : "HITCOL";
     }
     if (element == 0 && (kind == 11 || kind == 21)) {
         return killed ? "TREEDIE" : "TREEHIT";
     }
-    return killed ? kDeaths[element] : kHits[element];
+    return damage::hitEffect(element, killed);
 }
 
 f32 EnemyFeedback::effectScale() const {

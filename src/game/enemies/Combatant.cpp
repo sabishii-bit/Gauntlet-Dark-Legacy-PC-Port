@@ -9,6 +9,7 @@
 #include "engine/core/Types.h"
 
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 namespace gdl::game {
 namespace {
 constexpr f32 kDrop = 6.0f;
@@ -414,10 +415,25 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     if (const f32 length = glm::length(hit.direction); length > 0.001f) {
         critter.hurtDirection = hit.direction / length;
     }
-    // Where it was struck, its own mark of a hit: a blow's or a missile's.
-    const s32 mark =
-        hit.close && data.hitSoundClose() >= 0 ? data.hitSoundClose() : data.hitSoundFar();
-    cue(critter, id, mark, hit.where.value_or(partPosition(critter, {})));
+    // Where it was struck, its own mark of a hit: a missile's when it has one, else a blow's
+    // (CritterDamage's sfxIndex1 for source 2); an elemental hit shows the element's burst
+    // instead (fn_800945D0, half the creature's reach, turned its way), and a hit flagged
+    // not to mark shows nothing.
+    const Vec3 where = hit.where.value_or(partPosition(critter, {}));
+    const u32 element = damage::element(flags);
+    if (damage::marks(flags) && element != 0) {
+        CombatCue burst;
+        burst.critter = id;
+        burst.tree = damage::hitEffect(element, false);
+        burst.position = where;
+        burst.yaw = critter.yaw;
+        burst.scale = damage::kHitEffectScale * data.radius() * critter.scale;
+        m_cues.push_back(std::move(burst));
+    } else if (damage::marks(flags)) {
+        const s32 mark =
+            !hit.close && data.hitSoundFar() >= 0 ? data.hitSoundFar() : data.hitSoundClose();
+        cue(critter, id, mark, where);
+    }
     // Every hit is worth its share of the creature's value to the one who dealt it (a boss's
     // times the players); then a character under the level the place is meant for does a
     // fiftieth less a level to anything but a boss (CritterDamage).
