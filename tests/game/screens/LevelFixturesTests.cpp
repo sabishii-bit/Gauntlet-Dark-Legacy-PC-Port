@@ -804,6 +804,8 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     REQUIRE(chest.state == Chests::kOpening);
     REQUIRE(chest.held >= 0);
     const auto held = static_cast<usize>(chest.held);
+    // It remembers who let it out, whose line it is when another takes it (fn_8009F748).
+    CHECK(f.world.placedItems().item(held).opener == f.players[0].actor.player());
     const usize count = f.world.placedItems().size();
     REQUIRE_FALSE(f.world.placedItems().item(held).takeable());
     for (s32 frame = 0; frame < 300 && chest.state != Chests::kOpen; ++frame) {

@@ -40,6 +40,7 @@ struct PlayerRuntime {
     TurboMove move;
     std::vector<usize> rammed; ///< barrels already hit by the current charge
     f32 blockLeft = 0.0f;      ///< seconds before another block effect
+    bool blocked = false;      ///< its guard has shown a block this level (hud_flags 0x2000)
     f32 cloudGap = 0.0f;       ///< seconds before gas can harm this participant again
     f32 breathGap = 0.0f; ///< the great ones' shared hit gap (fxhittime): breath and blows alike
     f32 effectGap = 0.0f; ///< shared attached-area damage gate, independent of breath

@@ -416,8 +416,9 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             if (event.contents >= 0 && m_resources->world.placeItemRecord(
                                            m_resources->device, event.contents, event.position,
                                            m_chests.chest(event.chest).count)) {
-                m_chests.hold(event.chest,
-                              static_cast<s32>(m_resources->world.placedItems().size()) - 1);
+                const usize held = m_resources->world.placedItems().size() - 1;
+                m_chests.hold(event.chest, static_cast<s32>(held));
+                m_resources->world.setItemOpener(held, actor.player());
             }
             break;
         case ChestEvent::Kind::Opened:

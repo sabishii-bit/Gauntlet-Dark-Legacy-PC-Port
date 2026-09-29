@@ -277,7 +277,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   IDLE, READY, ACTIVE1, ACTIVE2 (held 45 ticks), then signals transportation
   while retaining the raised ACTIVE2 glow; with only some it loops ACTIVE2 without restarting ACTIVE1 and
   resets the 45-tick wait until everyone arrives; left alone it plays ACTIVE3 out to
-  IDLE. `PlayScene::update` then returns `PlayOutcome::Travel` with
+  IDLE. One standing still on it while the rest of a party of more than one
+  has yet to come is told 11 `HOWTOEXIT` (DoExit, pmotion.c 3932; not where a
+  boss is fought). `PlayScene::update` then returns `PlayOutcome::Travel` with
   `destination()` and `party()`; `Gauntlet::startLevel` reloads the one
   `LevelWorld` and reopens the scene with `PlayOptions::arrivalWorld` (the
   realm left, which picks the tower's start marker for it). A portal whose
@@ -327,7 +329,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   asks for it; a silver chest falls back to its own hint; a gate ignores a
   body backing away from it, `ChestVisitor::step`); a chest plays ACTIVE then OPEN to `S_CHEST`, and what it held lies in it,
   reached by touching the open chest as the original does (the player cannot
-  reach its middle), after which the emptied chest goes. A gold chest pays
+  reach its middle), after which the emptied chest goes. What comes out remembers who opened it
+  (`Pickup::opener`); when another takes it, the opener says the class's
+  `S_<CLS>STEAL` in the narrator's turn (fn_8009F748; the unlockables their
+  shadow's, Sumner a wizard's, not while carrying Pojo). A barrel's opens for
+  nobody (items.c 1133). A gold chest pays
   its opener, a trapped one blows up (`EXPCHEST`, a blast of 50). The
   chest tree's `NULL1` node is where the original hangs the contents; it is
   a marker and `TreeModel` never draws it. Gates (type 7) play ACTIV to the
@@ -524,7 +530,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   generators ever award any, so nothing calls it yet. A guard that takes
   more than 2 off a hurt shows `BLOCKFX` for 0.01 s a point that got
   through (a third of a second to one), and not again until it is over
-  (untinted: the original colours it by class at a quarter alpha).
+  (untinted: the original colours it by class at a quarter alpha); showing it marks
+  the player as one who blocks, and a blow over 15 with knock flags (0x10160)
+  taken unguarded by one who never has teaches 125 `LEARNBLOCK` after the
+  level's first minute (damage_player, player.c 3400).
   Not yet: directional/stepping strong melee variants, damage types (the element,
   knock-over) doing anything, the directional guards (what selects them was
   not found; they look like answers to where a blow comes from), and the

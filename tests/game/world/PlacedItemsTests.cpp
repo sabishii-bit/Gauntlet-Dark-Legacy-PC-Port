@@ -319,9 +319,11 @@ TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world
     on.radius = 0.75f;
     REQUIRE(items.collect(device, std::array{on}).empty());
     on.radius = 1.5f;
+    items.setOpener(gem, 2); // as though a chest had held it
     const std::vector<Pickup> pickups = items.collect(device, std::array{on});
     REQUIRE(pickups.size() == 1);
     REQUIRE(pickups[0].item == gem);
+    CHECK(pickups[0].opener == 2);
     REQUIRE(pickups[0].collector == 0);
     REQUIRE(pickups[0].subtype == ItemInfo::kCrystal);
     REQUIRE(pickups[0].realm == 1);

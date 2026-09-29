@@ -510,6 +510,7 @@ std::vector<Pickup> PlacedItems::collect(RenderDevice& device,
         pickup.flags = item.flags;
         pickup.strength = item.strength;
         pickup.position = item.position;
+        pickup.opener = item.opener;
         if (judge) {
             const std::optional<s32> left = judge(pickup);
             if (!left.has_value()) {

@@ -64,8 +64,9 @@ public:
     static constexpr s32 kTrapsHurt = 21;
     static constexpr s32 kDestroyGenerators = 22; ///< ten hits on what generators bred
     static constexpr s32 kRandomChest = 23;
-    static constexpr s32 kShotMagic = 14;   ///< a bottle shot does less than one drunk
-    static constexpr s32 kWastedMagic = 18; ///< a caster's magic struck nothing
+    static constexpr s32 kEveryoneToExit = 11; ///< one waits on an exit the rest have not reached
+    static constexpr s32 kShotMagic = 14;      ///< a bottle shot does less than one drunk
+    static constexpr s32 kWastedMagic = 18;    ///< a caster's magic struck nothing
     static constexpr s32 kBarrelsHold = 27;
     static constexpr s32 kRedBarrels = 44;     ///< near an exploding barrel's end
     static constexpr s32 kGreenBarrels = 45;   ///< near a poison barrel's
@@ -84,6 +85,7 @@ public:
     static constexpr s32 kDeathLeavesExperience = 129;
     static constexpr s32 kDeathDrainsHealth = 130; ///< the others; its text and 131's as shipped
     static constexpr s32 kDeathLeavesHealth = 131;
+    static constexpr s32 kLearnBlock = 125;    ///< a heavy blow taken without a guard
     static constexpr s32 kAllOnPlatform = 126; ///< a platform the whole party must stand on
     static constexpr s32 kAllOnTrigger = 127;  ///< a trigger the whole party must
     static constexpr s32 kChestsExplode = 137;

@@ -32,7 +32,11 @@ public:
         std::function<void(std::string_view)> sound;
         std::function<void(std::string_view)> cry;
         std::function<void(std::string_view, f32)> named; ///< a line after the name, its wait
+        /** A heavy blow taken unguarded by one who has never blocked. */
+        std::function<void()> learnBlock;
     };
+    static constexpr f32 kBlockLessonFrom = 15.0f; ///< over this a blow teaches the guard
+    static constexpr u32 kHeavyFlags = 0x10160;    ///< knock-back, knock-down and knock-over
     void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed, bool inTower,
               f32 damageScale, const Events& events, const PlayerImpact& impact = {},
               bool bossEncounter = false, const ClassStats* stats = nullptr);
