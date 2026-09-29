@@ -71,6 +71,8 @@ public:
     std::vector<CombatantRam> takeBarrelRams() { return std::exchange(m_barrelRams, {}); }
     /** The swarm's missiles' blows on safe rocks since the last call, for the level. */
     std::vector<RockHit> takeRockHits() { return m_enemyMissiles.takeRockHits(); }
+    /** Where the swarm's gas reached since the last call, for the level's food. */
+    std::vector<GasReach> takeGasReaches() { return m_enemyMissiles.takeGasReaches(); }
     /** Drain hits from the last projectile/attack phase before a level transition freezes
      * simulation. No AI, collision, or time advances, and each reward is consumed once. */
     void settleRewards(std::span<const PlayerRuntime> players, const Events& events);

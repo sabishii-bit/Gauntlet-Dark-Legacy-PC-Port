@@ -353,6 +353,9 @@ void EnemyMissiles::stepBursts(f32 seconds, const WorldCollision* collision,
         const f32 radius = blast.radius * (kBurstFade + (1.0f - phase));
         const f32 damage = blast.damage * kBurstGrowth * (phase - kBurstFade);
         const f32 remaining = phase * stage;
+        if ((blast.flags & EnemyBlast::kGas) != 0) {
+            m_gasReaches.push_back(GasReach{blast.position, radius, damage});
+        }
         u32 flags = blast.flags;
         if (damage < kBurstKnockFrom) {
             flags &= ~0x170u;
@@ -662,6 +665,7 @@ void EnemyMissiles::clear() {
     m_bursts.clear();
     m_hits.clear();
     m_rockHits.clear();
+    m_gasReaches.clear();
 }
 
 } // namespace gdl::game
