@@ -1162,4 +1162,23 @@ TEST_CASE("a shield on the arm has its own stance and a gait at a run's pace",
     CHECK(playOut(animator, Action::ShieldRun, PlayerDeed::None) == Action::Ready);
 }
 
+TEST_CASE("a halo reaches out to Death, holds him in a loop and lets go",
+          "[game][players][animation][death]") {
+    const TreeInfo tree = meleeTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Walk, kTicks, kStep, PlayerDeed::DeathGrab);
+    REQUIRE(animator.action() == Action::DeathGrabStart); // at once, from anything
+    CHECK(animator.grabbingDeath());
+    CHECK(animator.moveScale() == 0.0f);
+    CHECK(playOut(animator, Action::DeathGrabStart, PlayerDeed::DeathGrab) == Action::DeathGrab);
+    for (s32 frame = 0; frame < 20; ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::DeathGrab);
+        CHECK(animator.action() == Action::DeathGrab);
+    }
+    animator.update(PlayerMotion::Stand, kTicks, kStep);
+    CHECK(animator.action() == Action::DeathGrabRelease);
+    CHECK(playOut(animator, Action::DeathGrabRelease, PlayerDeed::None) == Action::Ready);
+}
+
 } // namespace

@@ -17,6 +17,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/Damage.h"
+#include "game/enemies/DeathTestSupport.h"
 #include "game/players/MagicPerks.h"
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
@@ -809,6 +810,52 @@ TEST_CASE("close attacks resolve to melee while distant attacks still throw",
     }
     CHECK(contacted);
     enemies.close();
+}
+
+TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws him off",
+          "[game][screens][player-attacks][death][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    Fixture f;
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& enemies = f.opponents.enemies();
+    EnemyScales scales;
+    scales.health = 20;
+    enemies.open(f.device, test::deathArchive(), nullptr, 2, scales, 1);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    const auto death =
+        enemies.spawn({.kind = kDeathKind, .tier = 1, .position = {0, 0, 10}, .placed = true}, {});
+    REQUIRE(death);
+    PlayerActor& actor = f.players[0].actor;
+    actor.turnTo(0.0f); // facing him
+    // Without a halo there is no hold.
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets).has_value());
+    actor.save().progress().inventory.addPowerup(powerup::kArmor, DeathRules::kProtection, 0, 60);
+    const f32 full = enemies.healthOf(*death);
+    const auto held = f.attacks.grabDeath(0, 2, true, f.players, f.targets);
+    REQUIRE(held.has_value());
+    CHECK(*held == enemies.positionOf(*death));
+    CHECK(f.players[0].deathHeld == *death);
+    CHECK(f.effects.count() == 1); // his drain, about the one holding him
+    for (s32 frame = 0; frame < 9; ++frame) {
+        REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets).has_value());
+    }
+    CHECK(enemies.healthOf(*death) == full - 10); // a point a 30 Hz frame
+    const auto cues = enemies.takeDeathEvents();
+    CHECK(std::ranges::count_if(cues, [](const DeathEvent& cue) {
+              return cue.kind == DeathEvent::Kind::Return;
+          }) == 10);
+    // Turned away, or not allowed, the hold is let go.
+    actor.turnTo(std::numbers::pi_v<f32>);
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets).has_value());
+    CHECK(f.players[0].deathHeld == -1);
+    actor.turnTo(0.0f);
+    REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets).has_value());
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, false, f.players, f.targets).has_value());
+    f.opponents.close();
 }
 
 TEST_CASE("fire and lightning shields harm the creature their bearer stands against",

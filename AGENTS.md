@@ -567,8 +567,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (`PlayerActor::fall`); under the world's lowest point less 4.5 it stands
   again beside another standing player (`PartyMotion::rescueSpot`,
   get_player_pos's sixteen spots) or at the level's start. Not yet, because
-  they need something to be aimed at or to come from: pushing, Death's grab,
-  the super shot and the familiars' attacks. The victory pose is never played on
+  they need something to be aimed at or to come from: pushing,
+  the super shot and the familiars' attacks. A halo wearer (armour 0x80000) whose
+  nearest thing ahead within thirty is Death (PlayerGetTarget: a cone of 0.707, 0.5
+  for the Death already held) holds him (pmotion.c 1621, `PlayerAttacks::grabDeath`,
+  `PartyMotion`'s `grabDeath` event): standing, facing him and heeding no button, it
+  draws a point off him each 30 Hz frame through the halo branch of his hurt (health
+  back, or experience from the black form), in `DEATHGRABS`, `DEATHGRAB` looped and
+  `DEATHGRABR`; `S_HALO` as the hold begins, `S_DEATHDIE` while he is held, and his
+  drain effect and `S_DEATHSUCK` about the holder (player.c 5869). The victory pose is never played on
   GC: only a boss index of nought or more asks for it (pmotion.c 1779), and
   retail only ever stores -1 there (gauntworld.c 1378).
 * Close attacks follow AnimAction. `PlayerAttacks::meleeSense` finds the nearest

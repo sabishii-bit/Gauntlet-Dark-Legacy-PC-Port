@@ -63,6 +63,9 @@ public:
         std::function<PlayerDeed(usize, bool, bool)> attackDeed;
         /** Where the nearest thing to strike lies, an attack button held or not. */
         std::function<MeleeSense(usize, bool)> meleeSense;
+        /** Where the Death a halo wearer holds stands, when one is held this step (ticks, and
+         * whether a hold may be made at all). */
+        std::function<std::optional<Vec3>(usize, s32, bool)> grabDeath;
         /** Dynamic creature collision, before the camera limit and action events. */
         std::function<Vec3(usize, const Vec3&, const Vec3&)> resolveMovement;
         /** Where a body fallen out of the world with nobody to stand beside goes: the

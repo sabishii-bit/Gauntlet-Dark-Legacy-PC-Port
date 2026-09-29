@@ -46,6 +46,7 @@ struct Fixture {
         .allowMovement = {},
         .attackDeed = {},
         .meleeSense = {},
+        .grabDeath = {},
         .resolveMovement = {},
         .startPoint = {}};
 
@@ -591,6 +592,27 @@ TEST_CASE("a body retches while gas lasts with the stick let go, heeding no butt
     CHECK(f.players[0].gesture == PlayerDeed::Pick); // kept while something else is asked
     f.step();
     CHECK(f.players[0].gesture == PlayerDeed::None);
+}
+
+TEST_CASE("a halo wearer holding Death stands facing him and heeds no button",
+          "[game][screens][party-motion][death]") {
+    Fixture f;
+    std::vector<bool> allowed;
+    f.events.grabDeath = [&](usize i, s32, bool may) -> std::optional<Vec3> {
+        if (i != 0) {
+            return std::nullopt;
+        }
+        allowed.push_back(may);
+        return Vec3{10, 0, 0};
+    };
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.inputs[3].attack = true;
+    f.step();
+    CHECK(f.players[0].actor.position() == Vec3{0, 0, 0});                  // no step taken
+    CHECK(f.players[0].actor.yaw() == Approx(std::numbers::pi_v<f32> / 2)); // facing him
+    CHECK(std::ranges::find(f.calls, "select0") == f.calls.end());
+    f.step(true);
+    CHECK(allowed == std::vector<bool>{true, false}); // held, no hold may be made
 }
 
 } // namespace

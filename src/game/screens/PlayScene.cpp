@@ -1463,6 +1463,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             [this](usize i, bool held) {
                 return m_attacks.meleeSense(m_players[i].actor, held, attackTargets());
             },
+        .grabDeath =
+            [this](usize i, s32 ticks, bool allowed) {
+                return m_attacks.grabDeath(i, ticks, allowed, m_players, attackTargets());
+            },
         .resolveMovement =
             [this](usize i, const Vec3& from, const Vec3& to) {
                 return m_opponents.resolveMovement(m_players[i].actor, from, to);

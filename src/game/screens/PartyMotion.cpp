@@ -178,8 +178,14 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             (animator != nullptr && animator->reacting() && !animator->webbed());
         const bool entering =
             players[i].figure != nullptr && players[i].figure->animator().entering();
+        // A halo wearer holding Death stands facing him, heeding no button (PlayerMotion,
+        // pmotion.c 1621).
+        std::optional<Vec3> deathHeld;
+        if (events.grabDeath) {
+            deathHeld = events.grabDeath(i, ticks, !held && !down && !reeling && !entering);
+        }
         const MoveInput& move =
-            !held && !down && !immobilized && !entering && player < inputs.size()
+            !held && !down && !immobilized && !entering && !deathHeld && player < inputs.size()
                 ? inputs[player].move
                 : MoveInput{};
         // What the buttons ask: a potion first, when one is carried, then the attack.
@@ -195,8 +201,12 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (gagging) {
             deed = PlayerDeed::Gag;
         }
+        if (deathHeld) {
+            deed = PlayerDeed::DeathGrab;
+        }
         players[i].reaction = PlayerDeed::None;
-        if (!held && !down && !reeling && !entering && !gagging && player < inputs.size()) {
+        if (!held && !down && !reeling && !entering && !gagging && !deathHeld &&
+            player < inputs.size()) {
             const PlayInput& in = inputs[player];
             const bool carrying = !actor.save().progress().inventory.potions.empty();
             if ((in.usePotion || in.throwPotion) && !carrying) {
@@ -329,6 +339,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             if (const auto target = events.aim(i)) {
                 actor.faceToward(*target);
             }
+        }
+        if (deathHeld) {
+            actor.faceToward(*deathHeld);
         }
         if (charging) {
             events.perform(i, Action::Ram);

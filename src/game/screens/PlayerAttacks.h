@@ -48,6 +48,14 @@ public:
     void updateProjectiles(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateStrikes(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateShields(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
+    /** A halo wearer whose nearest thing ahead is Death holds him, drawing a point off him a
+     * frame; where he is while held, else nothing (and the hold let go). `allowed` false
+     * lets any hold go. */
+    std::optional<Vec3> grabDeath(usize index, s32 ticks, bool allowed,
+                                  std::span<PlayerRuntime> players, const Targets& targets);
+    static constexpr f32 kGrabReach = 30.0f; ///< PlayerGetTarget's reach
+    static constexpr f32 kGrabCone = 0.707f; ///< how far ahead a new target must lie
+    static constexpr f32 kHeldCone = 0.5f;   ///< and one already held
     /** The fire and lightning shields harm the creature their bearer stands against. */
     void updateArmour(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     static constexpr f32 kArmourReach = 1.0f;      ///< past the body's radius
