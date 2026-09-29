@@ -246,6 +246,13 @@ f32 ItemFigure::progress() const {
                : 1.0f;
 }
 
+const TreeSequenceInfo* ItemFigure::sequenceInfo(s32 index) const {
+    if (m_tree == nullptr || index < 0 || static_cast<usize>(index) >= m_tree->sequences.size()) {
+        return nullptr;
+    }
+    return &m_tree->sequences[static_cast<usize>(index)];
+}
+
 s32 ItemFigure::ticksOf(s32 index) const {
     if (m_tree == nullptr || index < 0 || static_cast<usize>(index) >= m_tree->sequences.size()) {
         return 0;

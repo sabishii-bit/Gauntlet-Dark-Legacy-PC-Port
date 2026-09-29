@@ -98,7 +98,8 @@ struct LevelTrigger {
     static constexpr u32 kOnTarget = 0x100;
     static constexpr u32 kWholeParty = 0x400;
     static constexpr u32 kKeepContact = 0x80;
-    static constexpr u32 kStaysSolid = 0x8; ///< the target keeps blocking while it moves
+    static constexpr u32 kStaysSolid = 0x8;     ///< the target keeps blocking while it moves
+    static constexpr u32 kWakesStatue = 0x2000; ///< going active wakes the nearest statue
     static constexpr s32 kShootableSubtype = 31;
 };
 
@@ -159,6 +160,9 @@ public:
     std::vector<TriggerOpening> takeOpenings();
     std::vector<TriggerOpening> takeSettled();
     std::vector<TriggerCameraCue> takeCameraCues();
+    /** The spots of the triggers flagged to wake a statue that went active since the last
+     * call (fn_800606FC's 0x2000: the nearest placed enemy within ten is woken). */
+    std::vector<Vec3> takeWakes() { return std::exchange(m_wakes, {}); }
 
 private:
     std::vector<std::unique_ptr<ItemFigure>> m_figures;
@@ -204,6 +208,7 @@ private:
     std::vector<TriggerOpening> m_openings;
     std::vector<TriggerOpening> m_settled;
     std::vector<TriggerCameraCue> m_cameraCues;
+    std::vector<Vec3> m_wakes;
     f32 m_frameRemainder = 0.0f;
     f32 m_emptyToggleDelay = 0.0f;
 };

@@ -755,6 +755,11 @@ std::vector<MissileTarget> PlayerAttacks::projectileTargets(const Targets& targe
         target.id += kBossTargetBase;
         missileTargets.push_back(target);
     }
+    // A statue takes the blow that wakes it (fn_8005EE18 finds the placed enemies too).
+    for (MissileTarget target : targets.opponents.statues().targets()) {
+        target.id += kStatueTargetBase;
+        missileTargets.push_back(target);
+    }
     for (usize g = 0; g < targets.opponents.generators().count(); ++g) {
         if (targets.opponents.generators().standing(static_cast<s32>(g))) {
             const Obstacle& box = targets.opponents.generators().boxOf(static_cast<s32>(g));
@@ -968,6 +973,10 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         m_resources->arsenal.presentImpact(impact);
         if (impact.potion != 0) {
             beginPotion(impact);
+            continue;
+        }
+        if (impact.target >= kStatueTargetBase) {
+            targets.opponents.wakeStatue(static_cast<usize>(impact.target - kStatueTargetBase));
             continue;
         }
         if (impact.target >= kPotionTargetBase) {

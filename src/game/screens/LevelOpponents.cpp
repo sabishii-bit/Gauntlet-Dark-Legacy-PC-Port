@@ -60,6 +60,8 @@ constexpr f32 kCarryRise = 3.0f;    ///< and up or down
 constexpr f32 kBagSpeed = 20.0f;    ///< its bag leaves straight up this fast
 constexpr f32 kBagSeconds = 1.25f;  ///< about the bag's flight, when the pickup can be taken
 constexpr f32 kCloudSeconds = 2.0f / 3.0f;
+constexpr f32 kPlacementReach = 50.0f;     ///< a placement stands seen from no further off
+constexpr f32 kPlacementWakeReach = 10.0f; ///< a trigger wakes the placed enemy nearest within
 
 bool cloudRealm(const std::string& level) {
     return !level.empty() && (level.front() == 'G' || level.front() == 'K');
@@ -353,6 +355,8 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
 
 void LevelOpponents::close() {
     m_pending.clear();
+    m_statues.clear();
+    m_view.reset();
     clearDeaths();
     if (m_resources.has_value()) {
         m_combatantProjectiles.clear(m_resources->effects);
@@ -476,6 +480,29 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         if (great) {
             // fn_8005D04C: each claims the pickup lying nearest it, to carry until slain.
             placement.carried = world.claimItem(instance.position, kCarryReach, kCarryRise);
+            // A golem or gargoyle stands as a statue until woken (SetItem, items.c 6798).
+            CombatantKind family = CombatantKind::Unknown;
+            if (*kind == kGolemEnemyKind) {
+                family = CombatantKind::Golem;
+            } else if (*kind == kGargoyleEnemyKind) {
+                family = CombatantKind::Gargoyle;
+            }
+            if (family != CombatantKind::Unknown) {
+                CritterStatues::Placement statue;
+                statue.kind = family;
+                statue.instance = instance;
+                statue.radius = info.radius;
+                statue.height = info.height;
+                statue.viewRadius = placement.viewRadius;
+                statue.sight = placement.sight;
+                statue.activeOn = info.activeOn;
+                statue.carried = placement.carried;
+                ItemArchive* archive = m_critters.archiveFor(family);
+                if (archive != nullptr &&
+                    m_statues.add(device, *archive, statue, &world.collision())) {
+                    continue;
+                }
+            }
             m_pending.push_back(placement);
             continue;
         }
@@ -509,14 +536,64 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
 void LevelOpponents::watch(const ViewVolume& view, const Vec3& attention) {
     m_enemies.setView(view);
     m_generators.setView(view);
+    m_view = view;
+    m_attention = attention;
     standPlacements(view, attention);
+}
+
+bool LevelOpponents::inView(const Vec3& at, f32 radius) const {
+    return !m_view.has_value() ||
+           (m_view->sees(at, radius) && glm::distance(m_attention, at) <= kPlacementReach);
+}
+
+void LevelOpponents::wakeStatueNear(const Vec3& spot) {
+    // fn_80062FF0 finds the nearest placed enemy of any kind within ten (the statues, and
+    // the swarm's placements yet to stand); only a statue is changed by the waking.
+    const auto statue = m_statues.nearestAsleep(spot);
+    if (!statue.has_value() || statue->second >= kPlacementWakeReach) {
+        return;
+    }
+    for (const Placement& pending : m_pending) {
+        if (glm::distance(pending.spawn.position, spot) < statue->second) {
+            return;
+        }
+    }
+    m_statues.wake(statue->first);
+}
+
+void LevelOpponents::updateStatues(s32 ticks, f32 seconds, std::span<PlayerRuntime> players) {
+    if (m_statues.count() == 0) {
+        return;
+    }
+    // A player walking into one is stopped by it, and wakes it (fn_8005D730).
+    for (PlayerRuntime& player : players) {
+        if (player.life == PlayerLife::Standing) {
+            PlayerActor& actor = player.actor;
+            actor.place(m_statues.touch(actor.position(), actor.radius()));
+        }
+    }
+    for (const Vec3& spot : m_resources->world.takeTriggerWakes()) {
+        wakeStatueNear(spot);
+    }
+    m_statues.update(ticks, seconds,
+                     [this](const Vec3& at, f32 radius) { return inView(at, radius); });
+    for (const CritterStatues::Placement& risen : m_statues.takeRisen()) {
+        const Mat4 stood = itemPlacement(risen.instance.position, risen.instance.rotation);
+        Placement placement;
+        placement.kind = risen.kind == CombatantKind::Golem ? kGolemEnemyKind : kGargoyleEnemyKind;
+        placement.facing = std::atan2(stood[2][0], stood[2][2]);
+        placement.viewRadius = risen.viewRadius;
+        placement.sight = risen.sight;
+        placement.carried = risen.carried;
+        placement.spawn.position = risen.instance.position;
+        stand(placement);
+    }
 }
 
 /** Each placed enemy stands once the camera sees its spot, by its size, looking from no more
  * than fifty away (fn_80060114); seen, it is gone from the waiting list whether or not the
  * swarm had room for it. With no view, all stand. */
 void LevelOpponents::standPlacements(std::optional<ViewVolume> view, const Vec3& attention) {
-    constexpr f32 kPlacementReach = 50.0f;
     std::erase_if(m_pending, [&](const Placement& placement) {
         const Vec3& at = placement.spawn.position;
         if (view.has_value() && (!view->sees(at, placement.viewRadius) ||
@@ -749,6 +826,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     advanceClouds();
     events.settleBlasts();
+    updateStatues(ticks, seconds, players);
     m_critters.update(ticks, seconds, views, timeStopped, critterObstacles(walkedInto));
     for (const CombatantRam& ram : m_critters.takeRams()) {
         if (ram.id >= kGeneratorRamBase) {

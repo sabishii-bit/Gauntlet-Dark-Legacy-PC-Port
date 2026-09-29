@@ -9,6 +9,7 @@
 #include "engine/core/Types.h"
 
 #include "game/enemies/Bosses.h"
+#include "game/enemies/CritterStatues.h"
 #include "game/enemies/Critters.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMissiles.h"
@@ -108,6 +109,13 @@ public:
     const Generators& generators() const { return m_generators; }
     Critters& critters() { return m_critters; }
     const Critters& critters() const { return m_critters; }
+    /** The golems and gargoyles still standing as statues. */
+    const CritterStatues& statues() const { return m_statues; }
+    /** A blow on a statue wakes it (fn_8005C1DC's placed-enemy case). */
+    void wakeStatue(usize index) { m_statues.wake(index); }
+    /** A trigger flagged to wake a statue went active at `spot`: the placed enemy nearest it
+     * within ten, statue or not, is woken, which only a statue takes any notice of. */
+    void wakeStatueNear(const Vec3& spot);
     Bosses& bosses() { return m_bosses; }
     const Bosses& bosses() const { return m_bosses; }
     const EnemyMissiles& missiles() const { return m_enemyMissiles; }
@@ -158,7 +166,15 @@ private:
     };
     void standPlacements(std::optional<ViewVolume> view, const Vec3& attention);
     void stand(const Placement& placement);
+    /** Whether the camera sees a sphere from close enough for a placement to stand. */
+    bool inView(const Vec3& at, f32 radius) const;
+    /** Stands the statues woken and seen whose ACTIVE has played out as the great ones they
+     * are, and wakes what the triggers ask. */
+    void updateStatues(s32 ticks, f32 seconds, std::span<PlayerRuntime> players);
     std::vector<Placement> m_pending;
+    CritterStatues m_statues;
+    std::optional<ViewVolume> m_view; ///< what the camera last took in, and from where
+    Vec3 m_attention{0.0f};
     /** What each of the great ones carries, by its place in the pool. */
     std::array<std::optional<usize>, Critters::kMost> m_carried{};
     /** A great one slain lets what it carried go, a gargoyle its piece of the wings if it
