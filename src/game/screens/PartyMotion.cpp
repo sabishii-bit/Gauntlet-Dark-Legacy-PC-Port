@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 
 #include "game/players/PowerupEffects.h"
+#include "game/screens/FloorRiding.h"
 #include "game/screens/PartyCollision.h"
 namespace gdl::game {
 namespace {
@@ -276,6 +277,12 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 strafes ? strafeWayOf(PlayerActor::headingOf(move, cameraYaw), actor.yaw())
                         : StrafeWay::None);
         }
+        // Riding a moving floor, the body goes where the floor took it (PlayerCheckFloor).
+        if (!down) {
+            FloorRiding::carry(players[i], collision);
+        } else {
+            players[i].floor = {};
+        }
         const Vec3 before = actor.position();
         // A knock slides the body on, then what hit it last frame kicks it, turning it to
         // face along the push or against it (PlayerMotion, PlayerKnockback).
@@ -314,6 +321,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         if (!down) {
             PartyCollision::step(players, i, before, seconds);
+            FloorRiding::land(players, i, before, collision);
         }
         if (events.allowMovement && !events.allowMovement(before, actor.position())) {
             actor.place(Vec3{before.x, actor.position().y, before.z});
@@ -331,6 +339,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             if (spot.has_value()) {
                 actor.place(*spot);
                 players[i].knockback.clear();
+                players[i].floor = {};
             }
         }
         // Stationary normal attacks face the assisted target. The stick, strafe,

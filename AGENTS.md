@@ -591,8 +591,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   one run into is shoved by the step as it was meant (`Knockback::shove`,
   the push velocity: at most half its pace, fading by a third a frame); the
   frame after, standing, walking or running, it plays `PUSHED` facing the
-  way it goes (`PlayerAnimator::setPushed`, pmotion.c 1157 and 2042). Not
-  yet: the super shot and the familiars' attacks. A halo wearer (armour 0x80000) whose
+  way it goes (`PlayerAnimator::setPushed`, pmotion.c 1157 and 2042).
+  Members ride moving floors (`screens/FloorRiding`, PlayerCheckFloor): the
+  floor a member ends a step on is noted (`PlayerRuntime::floor`) and, when
+  flagged to move (0x1000), the body follows how it moved by the next step,
+  place and facing, as though parented to it (`WorldCollision::
+  objectTransform`). A step onto a moving floor is refused while another
+  standing member is on a different floor flagged 0x4000
+  (OtherPlayerOnOtherMovingObject). Not yet: the super shot and the
+  familiars' attacks. A halo wearer (armour 0x80000) whose
   nearest thing ahead within thirty is Death (PlayerGetTarget: a cone of 0.707, 0.5
   for the Death already held) holds him (pmotion.c 1621, `PlayerAttacks::grabDeath`,
   `PartyMotion`'s `grabDeath` event): standing, facing him and heeding no button, it
@@ -1726,7 +1733,22 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   5521-5552, over the time left the original picks: `invisibleLeft`,
   `invulnerableLeft`). Retail's chrome uses skin mode -3 (every texture
   replaced, flag 0x80000 on); that flag's rendering is not reconstructed, and
-  the costume's cut-outs are kept.
+  the costume's cut-outs are kept. A hand of death (special 0x200000) or a
+  health vampire (0x400000) sets its gem on the head beside any headwear
+  (`HEAD_HANDOFDEAT`, `HEAD_HEALTHVAMP` of POWERUPS; `players/HeadGem`,
+  `PlayerFigure::drawGem`), the hand first, bursting `GETGEMORANGE` about
+  the wearer as it appears (StartGemFX effect 70, `PartyFigures::greetGems`).
+  As in player.c 5625, each is greeted once until neither is worn, and the
+  object only changes as one appears. One powerup companion at a time
+  (`world/PowerupCompanion`, player.c 5789): `POJO` (special 0x400), the
+  fire shield's `FW_SHLD_ACTIVE` of WEAPONS while its bearer is in
+  `SHIELD_RUN`, `PHOENIX` (0x80), `HEAD_BREATHEF`/`A`/`E` (0x10/0x20/0x40)
+  on the head, then `WINGS` (0x1) on the root's first child's first child.
+  Pojo acts out the body (`pojoSequenceOf`: RUN, HIT, DEATH, ATTPWR for
+  ATTBREATHE, ATTACK as a swing or throw lands); the phoenix plays its
+  attack as it spits. It fades over the last second of the powerups that
+  bring companions (0x7004F1 specials and the fire shield). The earned
+  familiar is its own skin tree (PlayerProcessSkinFX) and shows beside it.
   `Inventory::spendKey` is the rule for locks; chests and doors come with
   the realm levels (the tower's archives hold no chest or door). Scenarios
   take `powerups`; `tests/scenarios/tower-powerups.json` carries a set. The

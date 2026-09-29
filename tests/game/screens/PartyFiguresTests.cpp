@@ -95,4 +95,29 @@ TEST_CASE("the portal's skin, then the damage flash, then the chrome is worn",
     powerups.release();
 }
 
+TEST_CASE("a head gem appearing bursts once about its wearer",
+          "[game][screens][figures][unpacked]") {
+    const auto powerupsDirectory = test::unpackedOrSkip("POWERUPS/textures.json").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive powerups;
+    REQUIRE(powerups.load(powerupsDirectory));
+    REQUIRE(powerups.trees.find(HeadGem::kAppearEffect).has_value());
+    REQUIRE(powerups.models.find(HeadGem::kHandOfDeath).has_value());
+    REQUIRE(powerups.models.find(HeadGem::kHealthVamp).has_value());
+    EffectTrees effects;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, CharacterSave{}, nullptr, Vec3{0.0f}, 0.0f);
+    PartyFigures::greetGems(device, players, powerups, effects);
+    CHECK(effects.count() == 0);
+    players[0].actor.save().progress().inventory.addPowerup(powerup::kSpecial,
+                                                            powerup::kHandOfDeath, 0.0f, 30.0f);
+    PartyFigures::greetGems(device, players, powerups, effects);
+    CHECK(effects.count() == 1);
+    CHECK(players[0].gem.shown() == HeadGem::kHandOfDeath);
+    PartyFigures::greetGems(device, players, powerups, effects);
+    CHECK(effects.count() == 1);
+    effects.clear();
+    powerups.release();
+}
+
 } // namespace

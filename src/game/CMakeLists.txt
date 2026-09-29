@@ -232,6 +232,7 @@ add_library(game STATIC
     screens/PlayScene.h
     screens/PartyMotion.cpp
     screens/PartyCollision.cpp
+    screens/FloorRiding.cpp
     screens/PartyFigures.cpp
     screens/PartyHud.cpp
     screens/PartyRecords.cpp
@@ -243,6 +244,8 @@ add_library(game STATIC
     screens/PlayerAttacks.cpp
     screens/PlayerItemAttacks.cpp
     players/ItemAttack.cpp
+    players/HeadGem.cpp
+    world/PowerupCompanion.cpp
     screens/PlayerHealth.cpp
     screens/PlayScene.cpp
     screens/PlaySceneTransport.cpp

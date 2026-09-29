@@ -20,6 +20,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/world/BlobShadow.h"
 #include "game/world/PlayerFamiliar.h"
+#include "game/world/PowerupCompanion.h"
 
 namespace gdl::game {
 
@@ -45,10 +46,11 @@ public:
     static std::filesystem::path costumeDirectory(const std::filesystem::path& root,
                                                   const CharacterSave& save);
     void animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDeed deed = PlayerDeed::None);
-    /** Synchronize the temporary companion before animation. The powerup archive must
-     * outlive this figure; switching off does not invalidate missiles already in flight. */
+    /** Synchronize the temporary companion before animation (the fire shield's blaze comes
+     * from `weapons`). The archives must outlive this figure; switching off does not
+     * invalidate missiles already in flight. */
     void setCompanionPowerups(RenderDevice& device, ItemArchive& powerups,
-                              const Inventory& inventory);
+                              const Inventory& inventory, ItemArchive* weapons = nullptr);
     bool hasShadow() const { return m_shadow.bound(); }
     /** The costume's shadow, unscaled, lying on the floor at `ground` along its `normal`. */
     void drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& eye, const Vec3& ground,
@@ -62,6 +64,10 @@ public:
      * powerup archive must outlive this figure, like its other borrowed draw resources. */
     void drawHeadwear(RenderDevice& device, ItemArchive& powerups, const PowerupEffects& worn,
                       const Mat4& clip, const Mat4& body, const WorldLighting& lighting, f32 alpha);
+    /** The gem `object` of the powerup archive on the head beside the headwear (gem_object on
+     * the head node), none when empty; the archive must outlive this figure. */
+    void drawGem(RenderDevice& device, ItemArchive& powerups, std::string_view object,
+                 const Mat4& clip, const Mat4& body, const WorldLighting& lighting, f32 alpha);
     /** An object of `archive` hung on the body's root, as the sign of who is it; the archive
      * must outlive this figure. */
     void drawMarker(RenderDevice& device, ItemArchive& archive, std::string_view object,
@@ -77,7 +83,8 @@ public:
     std::optional<Mat4> attachment(const Mat4& body, std::string_view objectSuffix) const;
     bool heldWeaponBound() const { return m_handNode >= 0 && m_weapon.bound(); }
     s32 familiarTier() const { return m_familiar.tier(); }
-    bool phoenixActive() const { return m_phoenixActive; }
+    bool phoenixActive() const { return m_companion.kind() == PowerupCompanion::Kind::Phoenix; }
+    const PowerupCompanion& companion() const { return m_companion; }
     bool familiarReleased() const { return m_familiarReleased; }
     const TreeModel& familiarMissile() const { return m_familiarMissile; }
     const std::filesystem::path& directory() const { return m_directory; }
@@ -109,6 +116,9 @@ private:
     void loadMissile(const std::filesystem::path& root, const CharacterSave& save,
                      RenderDevice& device);
     void loadActions(const std::filesystem::path& root, const CharacterSave& save, bool enter);
+    /** Binds `object` of `archive` as the lone node of `tree` into `model` when it changed. */
+    static void bindObject(RenderDevice& device, ItemArchive& archive, std::string_view object,
+                           TreeInfo& tree, TreeModel& model);
 
     ItemArchive m_costumeArchive;
     AnimationSet m_actions;
@@ -120,6 +130,8 @@ private:
     TreeModel m_weapon;
     TreeInfo m_headwearTree;
     TreeModel m_headwear;
+    TreeInfo m_gemTree;
+    TreeModel m_gem;
     TreeInfo m_markerTree;
     TreeModel m_marker;
     TreeInfo m_armTree;
@@ -133,9 +145,9 @@ private:
     std::vector<Mat4> m_transforms;
     ItemArchive m_effects;
     PlayerFamiliar m_familiar;
-    PlayerFamiliar m_phoenix;
-    bool m_phoenixActive = false;
-    f32 m_phoenixAlpha = 1;
+    PowerupCompanion m_companion;
+    f32 m_companionAlpha = 1;
+    s32 m_backNode = -1; ///< what wings hang from: the root's first child's first child
     TreeModel m_familiarMissile;
     bool m_familiarPending = false;
     bool m_familiarReleased = false;

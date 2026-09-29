@@ -13,6 +13,7 @@
 #include "game/players/PowerupEffects.h"
 #include "game/screens/PlayerRuntime.h"
 #include "game/screens/PortalDeparture.h"
+#include "game/world/EffectTrees.h"
 #include "game/world/LevelWorld.h"
 
 namespace gdl::game {
@@ -53,6 +54,10 @@ public:
 
     void draw(RenderDevice& device, std::span<const PlayerRuntime> players, const Scene& scene,
               const Mat4& clip, const CameraFrame& camera) const;
+    /** Follows each member's head gem, bursting GETGEMORANGE about them as one appears
+     * (StartGemFX, player.c 5633). */
+    static void greetGems(RenderDevice& device, std::span<PlayerRuntime> players,
+                          ItemArchive& powerups, EffectTrees& effects);
     static void drawShadows(RenderDevice& device, std::span<const PlayerRuntime> players,
                             const Scene& scene, const Mat4& clip, const Vec3& eye);
     /** Adds the lanterns the standing carry when `level` is dark (player.c 2499). */

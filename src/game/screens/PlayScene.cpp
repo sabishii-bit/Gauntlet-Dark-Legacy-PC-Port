@@ -729,6 +729,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
     }
     PlayerPowerups::update(m_players, seconds, powerupClock);
+    if (m_device != nullptr) {
+        PartyFigures::greetGems(*m_device, m_players, m_world->powerups(), m_effects);
+    }
     m_world->update(seconds, PlayerPowerups::timeStopped(m_players));
     m_world->revealCrystals(seconds);
     m_hud.pickups().step(ticks, seconds);
@@ -736,7 +739,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     for (auto& player : m_players) {
         if (player.figure != nullptr) {
             player.figure->setCompanionPowerups(*m_device, m_world->powerups(),
-                                                player.actor.save().progress().inventory);
+                                                player.actor.save().progress().inventory,
+                                                &m_weapons);
         }
     }
     updateTransporters(ticks, seconds, held);

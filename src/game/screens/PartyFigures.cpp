@@ -108,12 +108,24 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
         figure.draw(device, clip, body, world.lighting(), alpha, runtime.move.weaponHidden(),
                     &camera);
         figure.drawHeadwear(device, world.powerups(), worn, clip, body, world.lighting(), alpha);
+        figure.drawGem(device, world.powerups(), runtime.gem.shown(), clip, body, world.lighting(),
+                       alpha);
         // Who is it wears the realm's sign on their back (player.c 5885).
         if (runtime.itTicks > 0) {
             figure.drawMarker(device, world.realmItems(), kItSign, clip, body, world.lighting(),
                               alpha);
         }
         figure.setSkinTexture(nullptr);
+    }
+}
+
+void PartyFigures::greetGems(RenderDevice& device, std::span<PlayerRuntime> players,
+                             ItemArchive& powerups, EffectTrees& effects) {
+    for (PlayerRuntime& runtime : players) {
+        const u32 special = PowerupEffects::of(runtime.actor.save().progress().inventory).special;
+        if (runtime.gem.update(special) && powerups.loaded()) {
+            effects.start(device, powerups, HeadGem::kAppearEffect, runtime.actor.followPoint());
+        }
     }
 }
 

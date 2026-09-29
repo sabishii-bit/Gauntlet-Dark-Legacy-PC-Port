@@ -69,6 +69,8 @@ public:
     void setSolid(s32 object, bool solid);
     bool solid(s32 object) const;
     bool moving(s32 object) const;
+    /** Where a moving object was last placed; none for a still one. */
+    std::optional<Mat4> objectTransform(s32 object) const;
     usize movingObjectCount() const { return m_moving.size(); }
 
     void clear();
@@ -96,6 +98,7 @@ private:
         std::vector<CollisionTriangle> placed; ///< in the world, as last placed
         Vec3 boundsMin{0.0f, 0.0f, 0.0f};
         Vec3 boundsMax{0.0f, 0.0f, 0.0f};
+        Mat4 world{1.0f}; ///< as last placed
 
         bool overlaps(f32 minX, f32 minZ, f32 maxX, f32 maxZ) const {
             return boundsMax.x >= minX && boundsMin.x <= maxX && boundsMax.z >= minZ &&
