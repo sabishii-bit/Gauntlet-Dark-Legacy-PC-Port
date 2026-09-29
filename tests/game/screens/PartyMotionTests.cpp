@@ -24,9 +24,14 @@ struct Fixture {
     std::array<PlayInput, 4> inputs;
     WorldCollision collision;
     std::vector<std::string> calls;
+    std::vector<usize> fallen; ///< who the step reported gone
     PartyMotion::Events events{
         .perform =
             [this](usize i, PartyMotion::Action action) {
+                if (action == PartyMotion::Action::Fallen) {
+                    fallen.push_back(i);
+                    return;
+                }
                 REQUIRE(action == PartyMotion::Action::NoPotion);
                 calls.push_back("help" + std::to_string(i));
             },
@@ -87,6 +92,11 @@ TEST_CASE("transport holds only its own player and clears on death",
     CHECK(std::ranges::find(f.calls, "help0") == f.calls.end());
     f.players[0].life = PlayerLife::Dying;
     f.step();
+    // With no figure to play its death, it is gone at once, and says so once.
+    CHECK(f.players[0].life == PlayerLife::InTower);
+    CHECK(f.fallen == std::vector<usize>{0});
+    f.step();
+    CHECK(f.fallen == std::vector<usize>{0});
     CHECK_FALSE(f.players[0].transport.active());
     CHECK(f.players[0].transport.alpha() == 1.0f);
 }
