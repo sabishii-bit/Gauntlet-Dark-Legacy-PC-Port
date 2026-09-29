@@ -136,9 +136,9 @@ TEST_CASE("pickup help text and recordings resolve in the extracted retail banks
     REQUIRE(primary.load(primaryDirectory));
     REQUIRE(secondary.load(secondaryDirectory));
     REQUIRE(common.load(commonDirectory));
-    const std::array ids{3,  7,  9,  15, 16, 28, 32, 33, 35, 36,  37,  38,  39,  40,  41,
-                         42, 43, 47, 48, 49, 51, 52, 53, 54, 81,  82,  83,  84,  86,  87,
-                         88, 89, 91, 92, 93, 94, 95, 98, 99, 100, 113, 132, 148, 149, 150};
+    const std::array ids{3,  7,  9,  15, 16, 28, 32, 33, 35,  36,  37,  38,  39,  40, 41, 42,
+                         43, 47, 48, 49, 50, 51, 52, 53, 54,  81,  82,  83,  84,  86, 87, 88,
+                         89, 91, 92, 93, 94, 95, 98, 99, 100, 113, 132, 148, 149, 150};
     for (const s32 id : ids) {
         CAPTURE(id);
         const HelpMessageSpec* spec = HelpMessages::specOf(id);
@@ -354,6 +354,56 @@ TEST_CASE("a turbo attack is named once a session, over whatever lesson is up", 
     const std::array<HelpReader, 2> pair{HelpReader{0, &seen, &fresh},
                                          HelpReader{1, &none, &newcomerHeard}};
     REQUIRE(help.post(57, 1, pair) == nullptr);
+}
+
+TEST_CASE("a message naming a player fills in their colour and class, or Pojo carried",
+          "[game][help][it]") {
+    const auto dir = test::scratchDirectory("help-named");
+    writeTextFile(dir / "english.json", R"({
+  "fonts": ["font32"],
+  "messages": [
+    {"name": "PLAYER_COLOR", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["YELLOW", "BLUE", "RED", "GREEN"]},
+    {"name": "PLAYER_CLASS", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["WARRIOR", "VALKYRIE", "WIZARD", "ARCHER", "DWARF", "KNIGHT"]},
+    {"name": "POJO", "font": 0, "scale": 1, "shadowScale": 1, "lines": ["POJO"]},
+    {"name": "ISNOWIT", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["%s %s", "IS NOW IT"]},
+    {"name": "POJOMSG", "font": 0, "scale": 1, "shadowScale": 1,
+     "lines": ["%s %s", "IS NOW POJO"]}],
+  "lists": []
+})");
+    MessageTable strings;
+    REQUIRE(strings.load(dir / "english.json"));
+    const HelpMessageSpec* spec = HelpMessages::specOf(HelpMessages::kNowIt);
+    REQUIRE(spec != nullptr);
+    CHECK(spec->voice == "S_NOWIT");
+    CHECK(spec->repeat == HelpRepeat::Always);
+    CHECK(spec->priority == 40);
+    CHECK(HelpMessages::voiceLead(HelpMessages::kNowIt, false) ==
+          HelpMessages::VoiceLead::PlayerName);
+    std::vector<s32> seen;
+    std::vector<s32> heard;
+    const std::array party{HelpReader{2, &seen, &heard}};
+    HelpMessages help;
+    help.setTexts(&strings);
+    // The colour is the player's own, the class the character's (message.c 767).
+    REQUIRE(help.post(HelpMessages::kNowIt, 2, party, -1, HelpSpeaker{5, false}) != nullptr);
+    CHECK(help.lines() == std::vector<std::string>{"RED KNIGHT", "IS NOW IT"});
+    help.clear();
+    help.setTexts(&strings);
+    // Carrying Pojo, Pojo is named, but not by Pojo's own message.
+    REQUIRE(help.post(HelpMessages::kNowIt, 2, party, -1, HelpSpeaker{5, true}) != nullptr);
+    CHECK(help.lines() == std::vector<std::string>{"POJO", "IS NOW IT"});
+    help.clear();
+    help.setTexts(&strings);
+    REQUIRE(help.post(HelpMessages::kNowPojo, 0, party, -1, HelpSpeaker{2, true}) != nullptr);
+    CHECK(help.lines() == std::vector<std::string>{"YELLOW WIZARD", "IS NOW POJO"});
+    help.clear();
+    help.setTexts(&strings);
+    // A class the list lacks leaves the colour alone.
+    REQUIRE(help.post(HelpMessages::kNowIt, 1, party, -1, HelpSpeaker{12, false}) != nullptr);
+    CHECK(help.lines().front() == "BLUE");
 }
 
 } // namespace

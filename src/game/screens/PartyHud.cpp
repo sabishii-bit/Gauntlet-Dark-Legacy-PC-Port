@@ -61,7 +61,10 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
                                          &player.helpHeard});
         }
     }
-    const HelpMessageSpec* spec = m_help.post(id, players[index].actor.player(), readers, number);
+    const CharacterSave& named = players[index].actor.save();
+    const HelpSpeaker speaker{named.character, PickupVoices::carriesPojo(named)};
+    const HelpMessageSpec* spec =
+        m_help.post(id, players[index].actor.player(), readers, number, speaker);
     if (spec == nullptr) {
         return false;
     }

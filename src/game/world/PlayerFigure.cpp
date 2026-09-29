@@ -325,4 +325,22 @@ void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
     m_headwear.draw(device, clip, *head, lighting, {}, nullptr, alpha);
 }
 
+void PlayerFigure::drawMarker(RenderDevice& device, ItemArchive& archive, std::string_view object,
+                              const Mat4& clip, const Mat4& body, const WorldLighting& lighting,
+                              f32 alpha) {
+    if (!archive.loaded() || !archive.models.find(object).has_value()) {
+        return;
+    }
+    if (m_markerTree.name != object) {
+        m_markerTree = {};
+        m_markerTree.name = object;
+        TreeNodeInfo node;
+        node.name = object;
+        node.object = object;
+        m_markerTree.nodes.push_back(node);
+        m_marker.bind(m_markerTree, archive.models, archive.textures, device);
+    }
+    m_marker.draw(device, clip, body, lighting, {}, nullptr, alpha);
+}
+
 } // namespace gdl::game

@@ -32,6 +32,9 @@ constexpr s32 kTurboCrowd = 15;                 ///< the swarm in view for the t
 constexpr s32 kSumnerVoice = 2;                 ///< change_player makes Sumner a wizard
 constexpr f32 kBlockLessonAfter = 60.0f;        ///< the guard is taught only after a minute
 constexpr std::string_view kDroppedKeyRing = "KEYRING";
+constexpr std::string_view kItSign = "IT_SIGN"; ///< on the back of who is it
+constexpr std::string_view kTaggedSound = "S_TAGGED";
+constexpr f32 kTaggedVolume = 180.0f / 255.0f; ///< fn_8009DCB4
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
 constexpr std::array<std::string_view, 2> kTempleLights{"L1XPLOWERLIGHTR", "L1XPUPPERLIGHTR"};
@@ -1374,6 +1377,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 case PartyMotion::Action::Melee:
                     m_attacks.melee(i, m_players, attackTargets());
                     break;
+                case PartyMotion::Action::Tagged:
+                    postHelp(HelpMessages::kNowIt, i);
+                    m_audio.playNamed(kTaggedSound, kTaggedVolume);
+                    break;
                 case PartyMotion::Action::Fallen:
                     dropKeys(i);
                     // Out of the tower the fallen may wait there or leave (inactivate_player).
@@ -1673,6 +1680,12 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                         runtime.move.weaponHidden(), &companionCamera);
             figure.drawHeadwear(device, m_world->powerups(), worn, clip, body, m_world->lighting(),
                                 worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha());
+            // Who is it wears the realm's sign on their back (player.c 5885).
+            if (runtime.itTicks > 0) {
+                figure.drawMarker(device, m_world->realmItems(), kItSign, clip, body,
+                                  m_world->lighting(),
+                                  worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha());
+            }
             figure.setSkinTexture(nullptr);
         }
     }

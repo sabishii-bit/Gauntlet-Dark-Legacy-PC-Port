@@ -461,6 +461,42 @@ TEST_CASE("mountain creatures stop a player in melee range and release collision
     }
 }
 
+TEST_CASE("the town's IT stands for a party of three, with no body of its own",
+          "[level-opponents][it][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG3/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G3");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const auto countIt = [](const LevelOpponents& opponents) {
+        s32 found = 0;
+        for (s32 id = 0; id < Enemies::kMost; ++id) {
+            if (opponents.enemies().alive(id) && opponents.enemies().kindOf(id) == kItKind) {
+                ++found;
+            }
+        }
+        return found;
+    };
+    for (const usize party : {usize{1}, usize{3}}) {
+        CAPTURE(party);
+        ItemArchive weapons;
+        EffectTrees effects;
+        LevelSoundscape audio;
+        std::vector<PlayerRuntime> players(party);
+        for (usize i = 0; i < party; ++i) {
+            players[i].actor.spawn(static_cast<s32>(i), {}, nullptr, Vec3{0, 0, 0}, 0);
+        }
+        LevelOpponents opponents;
+        opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+        CHECK(countIt(opponents) == (party >= 3 ? 1 : 0));
+        opponents.close();
+    }
+}
+
 TEST_CASE("the placed enemies stand only once the camera comes to see them",
           "[level-opponents][unpacked]") {
     const auto root =
@@ -1399,6 +1435,49 @@ TEST_CASE("Stop Time prevents melee releases without stopping incoming damage or
     }
     CHECK(enemies.count() == 0);
     CHECK(contacts == before);
+    opponents.close();
+}
+
+TEST_CASE("IT's touch makes its player it, taking it from whoever was, and says so",
+          "[level-opponents][it]") {
+    const auto root = test::scratchDirectory("opponents-it");
+    writeMeleeEnemy(root, kItKind);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 2> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, -80}, 0);
+    players[1].actor.spawn(2, {}, nullptr, Vec3{0, 0, 2}, 0); // against IT
+    players[0].itTicks = 50;
+    const auto views = LevelOpponents::enemyViews(players);
+    CHECK(views[0].it);
+    CHECK_FALSE(views[1].it);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    auto& enemies = opponents.enemies();
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kItKind));
+    REQUIRE(enemies.spawn(EnemySpawn{.kind = kItKind, .tier = 1, .placed = true}, {}));
+    std::vector<std::pair<s32, usize>> helps;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) { FAIL("IT is worth nothing"); };
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) { FAIL("IT never strikes"); };
+    events.help = [&](s32 id, usize index) {
+        helps.emplace_back(id, index);
+        return true;
+    };
+    for (s32 frame = 0; frame < 300 && helps.empty(); ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    CHECK(helps == std::vector<std::pair<s32, usize>>{{HelpMessages::kNowIt, 1}});
+    CHECK(players[0].itTicks == 0);
+    CHECK(players[1].itTicks == 1);
     opponents.close();
 }
 

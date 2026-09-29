@@ -79,6 +79,34 @@ TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
     CHECK(device.draws.empty());
 }
 
+TEST_CASE("the sign of who is it hangs on the body's root from the realm's items",
+          "[game][figure][it][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("ITEMS/LEVELG/objects.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("PLAYERS/JES/YEL/animations.json");
+    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    REQUIRE(items.load(root / "ITEMS/LEVELG"));
+    CharacterSave save;
+    save.character = 7;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
+    figure->drawMarker(device, items, "IT_SIGN", Mat4{1}, body, {}, 1);
+    REQUIRE_FALSE(device.draws.empty());
+    const auto object = items.models.find("IT_SIGN");
+    REQUIRE(object);
+    const auto& mesh = items.models.mesh(*object);
+    const Vec3 drawn = device.draws.front().vertices.front().position;
+    CHECK(std::ranges::any_of(mesh.vertices, [&](const auto& vertex) {
+        return glm::distance(drawn, Vec3{body * Vec4{vertex.position, 1}}) < 0.0001f;
+    }));
+    device.draws.clear();
+    figure->drawMarker(device, items, "NO_SUCH_SIGN", Mat4{1}, body, {}, 1);
+    CHECK(device.draws.empty());
+}
+
 TEST_CASE("Every headwear powerup names an object of the powerups archive",
           "[game][figure][headwear][unpacked]") {
     const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();

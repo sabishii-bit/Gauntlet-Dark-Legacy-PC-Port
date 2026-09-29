@@ -1,0 +1,37 @@
+{
+  "screen": "tower",
+  "level": "G3",
+  "party": [
+    {
+      "player": 0,
+      "class": "WAR",
+      "color": "YEL",
+      "name": "ONE",
+      "level": 1,
+      "health": 400
+    },
+    {
+      "player": 1,
+      "class": "VAL",
+      "color": "BLU",
+      "name": "TWO",
+      "level": 1,
+      "health": 400
+    },
+    {
+      "player": 2,
+      "class": "WIZ",
+      "color": "RED",
+      "name": "THREE",
+      "level": 1,
+      "health": 400
+    }
+  ],
+  "position": [
+    51.2,
+    -19.8,
+    -207.2
+  ],
+  "yaw": -2.1,
+  "welcome": false
+}

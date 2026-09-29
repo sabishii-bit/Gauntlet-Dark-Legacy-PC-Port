@@ -90,6 +90,39 @@ StrafeWay PartyMotion::strafeWayOf(f32 heading, f32 facing) {
     return off < -kEighth ? StrafeWay::Left : StrafeWay::Forward;
 }
 
+void PartyMotion::passIt(std::span<PlayerRuntime> players, s32 ticks, const Events& events) {
+    for (usize i = 0; i < players.size(); ++i) {
+        PlayerRuntime& it = players[i];
+        if (it.itTicks <= 0) {
+            continue;
+        }
+        if (it.life != PlayerLife::Standing || it.departed) {
+            it.itTicks = 0;
+            continue;
+        }
+        if (it.itTicks > kItHold) {
+            for (usize j = 0; j < players.size(); ++j) {
+                const PlayerActor& other = players[j].actor;
+                const Vec3 gap = other.position() - it.actor.position();
+                if (j == i || players[j].life != PlayerLife::Standing || players[j].departed ||
+                    std::hypot(gap.x, gap.z) >= other.radius() + it.actor.radius() ||
+                    std::abs(gap.y) >= std::max(other.height(), it.actor.height())) {
+                    continue;
+                }
+                players[j].itTicks = 1;
+                it.itTicks = 0;
+                if (events.perform) {
+                    events.perform(j, Action::Tagged);
+                }
+                break;
+            }
+        }
+        if (it.itTicks > 0) {
+            it.itTicks += ticks;
+        }
+    }
+}
+
 std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                                              std::span<const PlayInput> inputs, bool held,
                                              f32 cameraYaw, s32 ticks, f32 seconds,
@@ -341,6 +374,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
     }
+    passIt(players, ticks, events);
     return subjects;
 }
 } // namespace gdl::game
