@@ -339,12 +339,12 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
         return;
     }
     const auto look = static_cast<usize>(std::clamp(kind, 0, 4));
-    const f32 power = m_resources->arsenal.magicPowerOf(actor);
+    const f32 power = m_resources->arsenal.potionPowerOf(actor, kind);
     const f32 size = std::min(PlayerArsenal::kBurstPerPower * power, 1.0f);
     PotionShield shield;
     shield.actor = index;
     shield.radius = kShieldPotency * power;
-    shield.damage = kShieldDamage;
+    shield.damage = kShieldDamage * damage::colourBonus(actor.save().color, static_cast<u32>(look));
     shield.flags = EnemyHit::kMagic | static_cast<u32>(kind) |
                    damage::magicHeal(experienceLevel(actor.save().experience()));
     shield.secondsLeft = kShieldSeconds;
@@ -1087,8 +1087,10 @@ void PlayerAttacks::shootPotion(const MissileImpact& impact, std::span<PlayerRun
         own.owner = impact.owner;
         own.position = impact.position;
         own.potion = colour;
-        own.potency = kShotMagicShare * m_resources->arsenal.magicPowerOf(players[i].actor);
-        own.damage = kShotMagicShare * kPotionDamage;
+        own.potency =
+            kShotMagicShare * m_resources->arsenal.potionPowerOf(players[i].actor, colour);
+        own.damage = kPotionDamage *
+                     damage::colourBonus(players[i].actor.save().color, static_cast<u32>(colour));
         own.flags = damage::magicHeal(experienceLevel(players[i].actor.save().experience()));
         m_resources->arsenal.burstPotion(colour, impact.position, own.potency, true);
         beginPotion(own);

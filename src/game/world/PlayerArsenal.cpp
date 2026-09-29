@@ -349,18 +349,24 @@ f32 PlayerArsenal::magicPowerOf(const PlayerActor& actor) const {
     return PowerupEffects::of(save.progress().inventory).magicPower(magic);
 }
 
+f32 PlayerArsenal::potionPowerOf(const PlayerActor& actor, s32 kind) const {
+    return magicPowerOf(actor) *
+           damage::colourBonus(actor.save().color, static_cast<u32>(std::clamp(kind, 0, 4)));
+}
+
 std::optional<MissileImpact> PlayerArsenal::usePotion(PlayerActor& actor) {
     if (!m_resources.has_value()) {
         return std::nullopt;
     }
     if (const s32 kind = actor.save().progress().inventory.takePotion(); kind != 0) {
-        burstPotion(kind, actor.position(), magicPowerOf(actor));
+        const f32 bonus = damage::colourBonus(actor.save().color, static_cast<u32>(kind));
+        burstPotion(kind, actor.position(), potionPowerOf(actor, kind));
         MissileImpact burst;
         burst.position = actor.position();
         burst.owner = actor.player();
         burst.potion = kind;
-        burst.potency = magicPowerOf(actor);
-        burst.damage = 40.0f; // start_magic: fixed damage, magic stat controls radius.
+        burst.potency = potionPowerOf(actor, kind);
+        burst.damage = kPotionDamage * bonus; // start_magic: the magic stat sets the radius.
         burst.flags = damage::magicHeal(experienceLevel(actor.save().experience()));
         return burst;
     }
@@ -384,8 +390,8 @@ void PlayerArsenal::throwPotion(PlayerActor& actor) {
     launch.velocity =
         Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} * kPotionToss;
     launch.potion = kind;
-    launch.potency = kThrownShare * magicPowerOf(actor);
-    launch.damage = 40.0f;
+    launch.potency = kThrownShare * potionPowerOf(actor, kind);
+    launch.damage = kPotionDamage * damage::colourBonus(actor.save().color, static_cast<u32>(kind));
     launch.flags = damage::magicHeal(experienceLevel(actor.save().experience()));
     launch.spec = &MissileSpec::potion();
     launch.model = &m_potionModels[static_cast<usize>(

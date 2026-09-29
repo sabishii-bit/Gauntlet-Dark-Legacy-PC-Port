@@ -40,6 +40,10 @@ std::string_view colourOf(u32 element) {
     return element < kElementCount ? kColours[element] : std::string_view{};
 }
 
+f32 colourBonus(s32 color, u32 element) {
+    return element != 0 && elementOfColour(color) == element ? kOwnColourBonus : 1.0f;
+}
+
 u32 elementOfColour(s32 color) {
     if (color < 0 || static_cast<usize>(color) >= kColourElements.size()) {
         return 0;

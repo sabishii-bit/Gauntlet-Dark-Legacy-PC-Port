@@ -67,6 +67,12 @@ TEST_CASE("the elements are named by the player colours they belong to", "[game]
     }
     CHECK(damage::elementOfColour(-1) == 0);
     CHECK(damage::elementOfColour(4) == 0);
+    // A potion of the caster's own colour is a tenth stronger (start_magic).
+    CHECK(damage::colourBonus(2, damage::kFire) == Approx(1.1f));
+    CHECK(damage::colourBonus(0, damage::kLight) == Approx(1.1f));
+    CHECK(damage::colourBonus(0, damage::kFire) == 1.0f);
+    CHECK(damage::colourBonus(2, 0) == 1.0f);
+    CHECK(damage::colourBonus(-1, damage::kFire) == 1.0f);
 }
 
 TEST_CASE("the great ones' affinities come from their data and meet the element rules",

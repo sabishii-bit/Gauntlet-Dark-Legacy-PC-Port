@@ -366,6 +366,31 @@ TEST_CASE("player arsenal throws the next potion from its owner's hand",
     CHECK((usedLater->flags & damage::kHeal) != 0);
 }
 
+TEST_CASE("a potion of the caster's own colour goes off a tenth stronger",
+          "[game][world][player-arsenal][damage-types]") {
+    Fixture f;
+    // The first colour is yellow, whose element is light (potion kind 3).
+    f.actor.save().color = 0;
+    const f32 power = f.arsenal.magicPowerOf(f.actor);
+    f.actor.save().progress().inventory.addPotions(1, 1);
+    f.actor.save().progress().inventory.addPotions(3, 1);
+    const auto own = f.arsenal.usePotion(f.actor);
+    REQUIRE(own.has_value());
+    CHECK(own->potion == 3);
+    CHECK(own->potency == Approx(1.1f * power));
+    CHECK(own->damage == Approx(44.0f));
+    const auto other = f.arsenal.usePotion(f.actor);
+    REQUIRE(other.has_value());
+    CHECK(other->potion == 1);
+    CHECK(other->potency == Approx(power));
+    CHECK(other->damage == Approx(40.0f));
+    f.actor.save().progress().inventory.addPotions(3, 1);
+    f.arsenal.throwPotion(f.actor);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    CHECK(f.arsenal.missiles().missile(0).potency == Approx(0.75f * 1.1f * power));
+    CHECK(f.arsenal.missiles().missile(0).damage == Approx(44.0f));
+}
+
 TEST_CASE("assisted weapon launch aims from its actual muzzle without retaining a lock",
           "[game][world][player-arsenal][target-assist]") {
     Fixture f;

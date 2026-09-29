@@ -747,6 +747,44 @@ TEST_CASE("only a hit carrying DMG_HEAL feeds the healing: the shield does, a tu
     f.opponents.close();
 }
 
+TEST_CASE("a potion shield of the caster's own colour harms a tenth more",
+          "[game][screens][player-attacks][damage-types]") {
+    const auto root = turboAssets();
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    auto& save = f.players[0].actor.save();
+    save.color = 0; // yellow: light, potion kind 3
+    save.progress().inventory.addPotions(1, 1);
+    save.progress().inventory.addPotions(3, 1);
+    EnemyScales scales;
+    scales.health = 100;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 3};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    // Twenty-five of magic (no armour off it), one and a half times for an element the
+    // swarm has no shield against; the own colour's a tenth over that.
+    const f32 whole = enemies.healthOf(*id);
+    f.attacks.shieldPotion(0, f.players);
+    f.attacks.updateShields(0.1f, f.players, f.targets);
+    CHECK(whole - enemies.healthOf(*id) == Approx(25.0f * 1.1f * 1.5f));
+    // The first shield waits half a second before harming again; a second, of the other
+    // potion, harms at once.
+    const f32 again = enemies.healthOf(*id);
+    f.attacks.shieldPotion(0, f.players);
+    REQUIRE(f.attacks.shieldCount() == 2);
+    f.attacks.updateShields(0.1f, f.players, f.targets);
+    CHECK(again - enemies.healthOf(*id) == Approx(25.0f * 1.5f));
+    f.attacks.clear();
+    f.opponents.close();
+}
+
 TEST_CASE("a caster whose magic strikes nothing is told not to waste it",
           "[game][screens][player-attacks][healing-magic]") {
     Fixture f;
