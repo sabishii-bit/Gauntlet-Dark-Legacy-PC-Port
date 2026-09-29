@@ -601,8 +601,14 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
                                 &m_resources->world.collision());
 }
 
-PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong,
-                                     const Targets& targets) const {
+/** Whether a target id is a creature: an enemy, a great one or a boss, not a thing. */
+bool PlayerAttacks::isCreature(s32 id) {
+    return id >= kEnemyTargetBase && id < kSafeRockTargetBase &&
+           (id < kGeneratorTargetBase || id >= kCritterTargetBase);
+}
+
+PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong, const Targets& targets,
+                                     bool moved, s32 chain) const {
     if (const auto item =
             ItemAttack::select(PowerupEffects::of(actor.save().progress().inventory))) {
         return item->deed;
@@ -611,19 +617,45 @@ PlayerDeed PlayerAttacks::attackDeed(const PlayerActor& actor, bool strong,
     if (!m_resources) {
         return ranged;
     }
-    constexpr f32 kCloseReach = 1.0f;
-    const auto target =
-        TargetAssist::melee(actor.position(), actor.height(), actor.facing(), meleeTargets(targets),
-                            actor.radius() + kCloseReach, &m_resources->world.collision());
-    if (!target) {
+    const MeleeSense sense = meleeSense(actor, true, targets);
+    // What is a step away is struck only by stepping to it (never at something low), or
+    // mid-chain by the slow swing.
+    const bool steps = sense.range == MeleeRange::Step && moved && !sense.low;
+    const bool slowInChain = strong && chain != 0 && moved && sense.range != MeleeRange::Beyond;
+    if (sense.range != MeleeRange::Swing && !steps && !slowInChain) {
         return ranged;
     }
-    constexpr f32 kLowHeight = 4.0f;
-    const bool low = target->height <= kLowHeight;
     if (strong) {
-        return low ? PlayerDeed::MeleeSlowLow : PlayerDeed::MeleeSlow;
+        return sense.low ? PlayerDeed::MeleeSlowLow : PlayerDeed::MeleeSlow;
     }
-    return low ? PlayerDeed::MeleeLow : PlayerDeed::Melee;
+    return sense.low ? PlayerDeed::MeleeLow : PlayerDeed::Melee;
+}
+
+MeleeSense PlayerAttacks::meleeSense(const PlayerActor& actor, bool held,
+                                     const Targets& targets) const {
+    MeleeSense sense;
+    sense.range = MeleeRange::Beyond;
+    if (!m_resources) {
+        return sense;
+    }
+    const f32 bias = held ? kHeldReach : 0.0f;
+    const auto target =
+        TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
+                             actor.radius() + kStepReach + bias, &m_resources->world.collision());
+    if (!target) {
+        return sense;
+    }
+    const f32 distance = TargetAssist::distanceTo(actor.position(), actor.height(), *target);
+    sense.range =
+        distance < actor.radius() + kSwingReach + bias ? MeleeRange::Swing : MeleeRange::Step;
+    sense.low = distance < actor.radius() + kStepReach &&
+                target->height <= (isCreature(target->id) ? kLowEnemy : kLowThing);
+    const Vec3 toward = target->base - actor.position();
+    if (std::hypot(toward.x, toward.z) > 1e-5f) {
+        const f32 bearing = std::atan2(toward.x, toward.z) - actor.yaw();
+        sense.yaw = std::remainder(bearing, 2.0f * std::numbers::pi_v<f32>);
+    }
+    return sense;
 }
 
 void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const Targets& targets) {
@@ -632,10 +664,11 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     }
     const PlayerActor& actor = players[index].actor;
     const PlayerAnimator& animator = players[index].figure->animator();
-    constexpr f32 kHitReach = 2.0f;
+    // The blow lands on whatever is nearest within a step, whichever way it lies: the
+    // swing has already turned to it.
     const auto target =
-        TargetAssist::melee(actor.position(), actor.height(), actor.facing(), meleeTargets(targets),
-                            actor.radius() + kHitReach, &m_resources->world.collision());
+        TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
+                             actor.radius() + kStepReach, &m_resources->world.collision());
     if (!target) {
         return;
     }
@@ -650,11 +683,23 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     if (worn.grown()) {
         damage *= 2;
     }
-    if (animator.meleePower()) {
-        damage *= 2;
+    constexpr f32 kHeavyScale = 2.0f;
+    constexpr f32 kPowerScale = 3.0f;
+    switch (animator.meleeBlow()) {
+    case MeleeBlow::Heavy:
+        damage *= kHeavyScale;
         flags |= EnemyHit::kKnockBack;
-    } else if (animator.meleeKick() && target->height <= 4.0f) {
+        break;
+    case MeleeBlow::Kick:
+        if (isCreature(target->id) && target->height <= kLowEnemy) {
+            flags |= EnemyHit::kKnockDown;
+        }
+        break;
+    case MeleeBlow::Power:
+        damage *= kPowerScale;
         flags |= EnemyHit::kKnockDown;
+        break;
+    default: break;
     }
     const Vec3 point = target->base + Vec3{0, target->height * 0.5f, 0};
     const Vec3 direction = target->base - actor.position();

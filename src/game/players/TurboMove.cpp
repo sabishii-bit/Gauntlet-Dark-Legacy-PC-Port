@@ -7,7 +7,26 @@
 namespace gdl::game {
 namespace {
 constexpr f32 kMoveNamedFrame = 1.0f;
+
+/** The strong-attack row a free move plays: the strong throw, the power swings, the spin. */
+s32 freeMoveOf(PlayerAnimator::Action action, const ClassMoves& moves) {
+    switch (action) {
+    case PlayerAnimator::Action::StrongThrow: return moves.turboAThrow;
+    case PlayerAnimator::Action::PowerClose: return moves.turboAClose;
+    case PlayerAnimator::Action::PowerLow: return moves.turboALow;
+    case PlayerAnimator::Action::PowerMed: return moves.turboAStep;
+    case PlayerAnimator::Action::Spin: return moves.turboA360;
+    default: return -1;
+    }
 }
+
+bool isFreeMove(PlayerAnimator::Action action) {
+    return action == PlayerAnimator::Action::StrongThrow ||
+           action == PlayerAnimator::Action::PowerClose ||
+           action == PlayerAnimator::Action::PowerLow ||
+           action == PlayerAnimator::Action::PowerMed || action == PlayerAnimator::Action::Spin;
+}
+} // namespace
 std::string_view TurboMove::begin(PlayerAnimator::Action action, const ClassStats* known,
                                   TurboMeter& meter) {
     m_pending.clear();
@@ -17,10 +36,11 @@ std::string_view TurboMove::begin(PlayerAnimator::Action action, const ClassStat
     const bool full = action == PlayerAnimator::Action::TurboFull;
     m_weaponHidden = false;
     m_volleysShot.clear();
-    if (action == PlayerAnimator::Action::StrongThrow) {
-        // The strong throw costs nothing; its strikes are only what it shows and sounds.
+    if (isFreeMove(action)) {
+        // The strong throw, the power swings and the spin cost nothing; their rows play only
+        // while their own action does.
         if (known != nullptr) {
-            m_pending = known->strikesOf(known->moves.turboAThrow);
+            m_pending = known->strikesOf(freeMoveOf(action, known->moves));
             m_all = m_pending;
             m_volleysShot.assign(m_all.size(), 0);
         }
@@ -52,8 +72,7 @@ std::string_view TurboMove::begin(PlayerAnimator::Action action, const ClassStat
 void TurboMove::advance(PlayerAnimator::Action action, f32 frame, const Vec3& facing,
                         const ClassStats* stats, TurboMeter& meter, const Events& events) {
     const bool attacking = action == PlayerAnimator::Action::TurboFull ||
-                           action == PlayerAnimator::Action::TurboStrong ||
-                           action == PlayerAnimator::Action::StrongThrow;
+                           action == PlayerAnimator::Action::TurboStrong || isFreeMove(action);
     if (!attacking) {
         m_pending.clear();
         m_all.clear();

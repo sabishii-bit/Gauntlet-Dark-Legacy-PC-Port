@@ -4,9 +4,16 @@
 #include <cmath>
 
 namespace gdl::game {
-std::optional<MissileTarget> TargetAssist::melee(const Vec3& feet, f32 height, const Vec3& facing,
-                                                 std::span<const MissileTarget> targets, f32 reach,
-                                                 const WorldCollision* collision) {
+f32 TargetAssist::distanceTo(const Vec3& feet, f32 height, const MissileTarget& target) {
+    const Vec3 middle = feet + Vec3{0, height * 0.5f, 0};
+    return target.surface.empty()
+               ? std::hypot(target.base.x - feet.x, target.base.z - feet.z) - target.radius
+               : glm::distance(target.pointNear(middle), middle);
+}
+
+std::optional<MissileTarget> TargetAssist::around(const Vec3& feet, f32 height,
+                                                  std::span<const MissileTarget> targets, f32 reach,
+                                                  const WorldCollision* collision) {
     std::optional<MissileTarget> nearest;
     f32 best = reach;
     for (const MissileTarget& target : targets) {
@@ -14,11 +21,7 @@ std::optional<MissileTarget> TargetAssist::melee(const Vec3& feet, f32 height, c
             target.base.y >= feet.y + height || target.base.y + target.height <= feet.y) {
             continue;
         }
-        const Vec3 surfacePoint = target.pointNear(feet + Vec3{0, height * 0.5f, 0});
-        const f32 distance =
-            target.surface.empty()
-                ? std::hypot(target.base.x - feet.x, target.base.z - feet.z) - target.radius
-                : glm::distance(surfacePoint, feet + Vec3{0, height * 0.5f, 0});
+        const f32 distance = distanceTo(feet, height, target);
         if (distance >= best) {
             continue;
         }
@@ -26,11 +29,12 @@ std::optional<MissileTarget> TargetAssist::melee(const Vec3& feet, f32 height, c
             feet.x,
             std::clamp(feet.y + height * 0.5f, target.base.y, target.base.y + target.height),
             feet.z};
-        // At an overlapping centre there is no bearing to normalize. Contact is
-        // already established; do not turn a close attack into a ranged throw.
-        const bool coincident = std::hypot(target.base.x - feet.x, target.base.z - feet.z) < 1e-5f;
-        if (!coincident &&
-            !select(origin, facing, std::span{&target, 1}, kBossRange, collision).has_value()) {
+        // Facing it, the line to it must be clear of walls.
+        const Vec3 toward = target.pointNear(origin) - origin;
+        const bool coincident = std::hypot(toward.x, toward.z) < 1e-5f;
+        if (!coincident && !select(origin, Vec3{toward.x, 0.0f, toward.z}, std::span{&target, 1},
+                                   kBossRange, collision)
+                                .has_value()) {
             continue;
         }
         nearest = target;

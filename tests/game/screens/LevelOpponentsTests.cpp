@@ -448,8 +448,8 @@ TEST_CASE("mountain creatures stop a player in melee range and release collision
         }
         CAPTURE(static_cast<s32>(kind), stop.x, stop.y, stop.z);
         REQUIRE(contacted);
-        const auto target = TargetAssist::melee(
-            stop, player.height(), {0, 0, 1}, opponents.critters().targets(), player.radius() + 1);
+        const auto target = TargetAssist::around(
+            stop, player.height(), opponents.critters().targets(), player.radius() + 1);
         REQUIRE(target);
         CHECK(target->id == *id);
         EnemyHit hit;

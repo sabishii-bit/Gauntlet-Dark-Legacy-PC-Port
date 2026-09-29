@@ -189,6 +189,7 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
                   directory.string());
         return;
     }
+    m_animator.setCharacter(save.character);
     const TreeInfo& actions = m_actions.tree(*tree);
     m_classNodeOfNode.clear();
     for (const TreeNodeInfo& node : m_costume->nodes) {

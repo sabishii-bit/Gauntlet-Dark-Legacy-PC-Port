@@ -72,6 +72,7 @@ public:
     const TreeModel& familiarMissile() const { return m_familiarMissile; }
     const std::filesystem::path& directory() const { return m_directory; }
     void setStrafe(StrafeWay way) { m_animator.setStrafe(way); }
+    void setMelee(const MeleeSense& sense) { m_animator.setMelee(sense); }
     void setAttackSpeed(bool rapid, bool speed) { m_animator.setAttackSpeed(rapid, speed); }
     const PlayerAnimator& animator() const { return m_animator; }
     const TreeModel& missile() const { return m_missile; }

@@ -14,9 +14,9 @@ using Catch::Approx;
 TEST_CASE("overlapping enemy centres still select melee without a spurious aim direction",
           "[game][target-assist][melee]") {
     const std::array targets{MissileTarget{0, {0, 0, 0}, 2, 8}};
-    REQUIRE(TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 3));
+    REQUIRE(TargetAssist::around({0, 0, 0}, 6, targets, 3));
     REQUIRE_FALSE(TargetAssist::select({0, 3, 0}, {0, 0, 1}, targets, 30));
-    REQUIRE_FALSE(TargetAssist::melee({0, 9, 0}, 6, {0, 0, 1}, targets, 3));
+    REQUIRE_FALSE(TargetAssist::around({0, 9, 0}, 6, targets, 3));
 }
 
 TEST_CASE("target assist chooses the nearest forward surface without targeting behind",
@@ -57,17 +57,22 @@ TEST_CASE("assisted shots reach raised and lowered targets without changing hori
     }
     REQUIRE(TargetAssist::velocity(origin, origin, 20, 8) == Vec3{0});
 }
-TEST_CASE("melee reach uses horizontal surfaces with vertical overlap and wall visibility",
+TEST_CASE("melee reach uses horizontal surfaces at any bearing, with vertical overlap and "
+          "wall visibility",
           "[game][target-assist][melee]") {
     std::array targets{MissileTarget{0, {0, 0, 5}, 3, 18}, MissileTarget{1, {0, 10, 1}, 1, 4},
                        MissileTarget{2, {0, 0, -2}, 1, 4}};
-    const auto selected = TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 3);
+    // The nearest surface wins whichever way it lies; the one overhead is out of reach.
+    const auto selected = TargetAssist::around({0, 0, 0}, 6, targets, 3);
     REQUIRE(selected);
-    CHECK(selected->id == 0);
-    CHECK_FALSE(TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 1));
+    CHECK(selected->id == 2);
+    CHECK(TargetAssist::distanceTo({0, 0, 0}, 6, targets[2]) == Approx(1.0f));
+    CHECK_FALSE(TargetAssist::around({0, 0, 0}, 6, targets, 1));
     targets[0] = {0, {0, 0, 5}, 1, 6};
+    targets[2] = {2, {0, 0, -20}, 1, 4};
+    CHECK(TargetAssist::around({0, 0, 0}, 6, targets, 6));
     WorldCollision collision;
     collision.build({{{0, 0, -1}, {Vec3{-10, 0, 2}, Vec3{10, 0, 2}, Vec3{0, 20, 2}}}});
-    CHECK_FALSE(TargetAssist::melee({0, 0, 0}, 6, {0, 0, 1}, targets, 6, &collision));
+    CHECK_FALSE(TargetAssist::around({0, 0, 0}, 6, targets, 6, &collision));
 }
 } // namespace
