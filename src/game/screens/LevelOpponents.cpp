@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <format>
 #include <functional>
 #include <limits>
@@ -62,6 +63,16 @@ constexpr f32 kCloudSeconds = 2.0f / 3.0f;
 
 bool cloudRealm(const std::string& level) {
     return !level.empty() && (level.front() == 'G' || level.front() == 'K');
+}
+
+/** A placed enemy's sight radius: the float after its strength and way (SetItem's +0xC). */
+f32 sightParamOf(const ItemInstance& instance) {
+    constexpr usize kSightOffset = 4;
+    f32 sight = 0.0f;
+    if (instance.params.size() >= kSightOffset + sizeof(sight)) {
+        std::memcpy(&sight, &instance.params[kSightOffset], sizeof(sight));
+    }
+    return sight;
 }
 } // namespace
 
@@ -406,6 +417,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     m_critters.open(device, resources.root, &world.collision(), scales,
                     levelName.empty() ? 'G' : levelName.front());
     m_critters.setHazards(&world.hazards());
+    m_critters.setLookouts(LookoutRoute::of(world.layout().locators()));
     m_bosses.open(device, resources.root, &world.collision(), scales,
                   levelName.empty() ? 'G' : levelName.front());
     m_critterExperienceOwed.fill(0.0f);
@@ -457,6 +469,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         placement.kind = *kind;
         placement.facing = std::atan2(stood[2][0], stood[2][2]);
         placement.viewRadius = 2.0f * std::max(info.radius, info.height);
+        placement.sight = sightParamOf(instance);
         placement.spawn.position = instance.position;
         const bool great =
             *kind == kGolemEnemyKind || *kind == kGeneralEnemyKind || *kind == kGargoyleEnemyKind;
@@ -530,7 +543,9 @@ void LevelOpponents::stand(const Placement& placement) {
     };
     switch (placement.kind) {
     case kGolemEnemyKind: carry(m_critters.spawnGolem(at, placement.facing)); return;
-    case kGeneralEnemyKind: carry(m_critters.spawnGeneral(at, placement.facing)); return;
+    case kGeneralEnemyKind:
+        carry(m_critters.spawnGeneral(at, placement.facing, placement.sight));
+        return;
     case kGargoyleEnemyKind: carry(m_critters.spawnGargoyle(at, placement.facing)); return;
     default: m_enemies.spawn(placement.spawn, {}, m_generators.obstacles()); return;
     }

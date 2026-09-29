@@ -40,11 +40,18 @@ public:
               const WorldCollision* collision, const EnemyScales& scales, char realm);
     void close();
 
+    /** The level's lookouts, for the kinds that walk a round of them (the generals). */
+    void setLookouts(LookoutRoute lookouts) { m_lookouts = std::move(lookouts); }
+    const LookoutRoute& lookouts() const { return m_lookouts; }
+
     /** Stands one of `kind` (a golem, a general, or a gargoyle by its form: "GAR_EAGL")
-     * at `position` facing `yaw`. Bosses use their own encounter owner. Nullopt when its data or
-     * archive is missing or there is no room. */
+     * at `position` facing `yaw`. `sight` is its placement's sight radius, which at the
+     * level's sight scale bounds the players a general takes on its round. Bosses use their
+     * own encounter owner. Nullopt when its data or archive is missing or there is no room. */
     std::optional<s32> spawn(CombatantKind kind, const Vec3& position, f32 yaw,
-                             std::string_view form = "");
+                             std::string_view form = "", f32 sight = 0.0f);
+    /** The archive one of `kind` comes from (loaded if need be), or null without it. */
+    ItemArchive* archiveFor(CombatantKind kind, std::string_view form = "");
 
     /** `items` are what of the level's stands where they walk. */
     void update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
@@ -114,12 +121,17 @@ public:
     std::string formOf(s32 id) const;
 
     std::optional<s32> spawnGolem(const Vec3& position, f32 yaw);
-    std::optional<s32> spawnGeneral(const Vec3& position, f32 yaw);
+    std::optional<s32> spawnGeneral(const Vec3& position, f32 yaw, f32 sight = 0.0f);
     std::optional<s32> spawnGargoyle(const Vec3& position, f32 yaw, std::string_view form = {});
+    /** Whether it is on its round of the lookouts, and which it makes for. */
+    bool patrolling(s32 id) const;
+    s32 lookoutOf(s32 id) const;
 
 private:
-    std::optional<s32> spawn(const CombatantDefinition& definition, const Vec3& position, f32 yaw);
+    std::optional<s32> spawn(const CombatantDefinition& definition, const Vec3& position, f32 yaw,
+                             f32 sight = 0.0f);
     CombatantAssets* stockFor(const CombatantDefinition& definition);
+    static CombatantDefinition definitionOf(CombatantKind kind, std::string_view form);
     void collect(Combatant& actor);
     RenderDevice* m_device = nullptr;
     std::filesystem::path m_root;
@@ -127,6 +139,7 @@ private:
     const HazardSurfaces* m_hazards = nullptr; ///< borrowed from the level
     EnemyScales m_scales;
     char m_realm = 'G';
+    LookoutRoute m_lookouts; ///< the level's, borrowed by the generals' rounds
     std::vector<std::unique_ptr<CombatantAssets>> m_stocks;
     std::array<Combatant, kMost> m_critters;
     std::vector<CombatBlow> m_blows;

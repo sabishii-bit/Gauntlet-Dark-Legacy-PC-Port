@@ -46,6 +46,14 @@ void Combatant::carry(Actor& critter, f32 seconds, const MoveDefinition* move,
             move->turnRate * seconds * (critter.blindTicks > 0 ? kBlindTurnShare : 1.0f);
         critter.yaw =
             wrapAngle(std::abs(d) <= step ? wanted : critter.yaw + (d > 0.0f ? step : -step));
+    } else if (move != nullptr && move->turnRate > 0.0f && view == nullptr &&
+               critter.patrolAim.has_value() && critter.grabbed < 0) {
+        // With no player, it turns to the lookout it makes for, unbounded by the facing
+        // limit (CritterRotate's waypoint branch).
+        const f32 d = wrapAngle(yawBetween(critter.position, *critter.patrolAim) - critter.yaw);
+        const f32 step =
+            move->turnRate * seconds * (critter.blindTicks > 0 ? kBlindTurnShare : 1.0f);
+        critter.yaw = wrapAngle(critter.yaw + std::clamp(d, -step, step));
     }
     if (bounded && movement.roamRadius <= 0.0f) {
         return; // Zero-radius bosses may turn, but neither locomotion nor knockback moves them.

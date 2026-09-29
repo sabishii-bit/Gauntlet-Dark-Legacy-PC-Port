@@ -158,6 +158,8 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         return;
     }
     if (critter.state == State::Active) {
+        // The lookout it makes for, gone on from any reached (CritterGetTarget).
+        critter.patrolAim = critter.patrol.aim(critter.position);
         chooseTarget(critter, players);
         if (critter.blindTicks > 0) {
             critter.blindTicks = std::max(critter.blindTicks - ticks, 0);
@@ -396,6 +398,9 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     if (amount <= 0.0f) {
         return;
     }
+    // Hurt, it gives up its round of the lookouts (CritterDamage).
+    critter.patrol.end();
+    critter.patrolAim.reset();
     critter.hurtPending += amount;
     critter.hurtFlags |= flags;
     critter.roarOwed += amount;
@@ -501,6 +506,13 @@ std::vector<CombatShot> Combatant::takeShots() {
 }
 std::vector<CombatArenaActivation> Combatant::takeArenaActivations() {
     return std::exchange(m_arenaActivations, {});
+}
+
+void Combatant::startPatrol(const LookoutRoute* route, f32 sight) {
+    if (Actor* critter = present() ? &m_actor : nullptr; critter != nullptr) {
+        critter->patrol.start(route, critter->position, sight);
+        critter->patrolAim = critter->patrol.aim(critter->position);
+    }
 }
 
 void Combatant::freeze(s32 ticks) {

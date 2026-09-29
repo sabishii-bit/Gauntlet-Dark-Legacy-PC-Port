@@ -54,26 +54,41 @@ CombatantAssets* Critters::stockFor(const CombatantDefinition& definition) {
     m_stocks.push_back(std::move(stock));
     return m_stocks.back().get();
 }
+CombatantDefinition Critters::definitionOf(CombatantKind kind, std::string_view form) {
+    switch (kind) {
+    case CombatantKind::Golem: return Golem::definition();
+    case CombatantKind::General: return General::definition();
+    case CombatantKind::Gargoyle: return Gargoyle::definition(form);
+    default: return CombatantDefinition{};
+    }
+}
 std::optional<s32> Critters::spawnGolem(const Vec3& position, f32 yaw) {
     return spawn(Golem::definition(), position, yaw);
 }
-std::optional<s32> Critters::spawnGeneral(const Vec3& position, f32 yaw) {
-    return spawn(General::definition(), position, yaw);
+std::optional<s32> Critters::spawnGeneral(const Vec3& position, f32 yaw, f32 sight) {
+    return spawn(General::definition(), position, yaw, sight);
 }
 std::optional<s32> Critters::spawnGargoyle(const Vec3& position, f32 yaw, std::string_view form) {
     return spawn(Gargoyle::definition(form), position, yaw);
 }
 std::optional<s32> Critters::spawn(CombatantKind kind, const Vec3& position, f32 yaw,
-                                   std::string_view form) {
-    switch (kind) {
-    case CombatantKind::Golem: return spawnGolem(position, yaw);
-    case CombatantKind::General: return spawnGeneral(position, yaw);
-    case CombatantKind::Gargoyle: return spawnGargoyle(position, yaw, form);
-    default: return std::nullopt;
+                                   std::string_view form, f32 sight) {
+    const CombatantDefinition definition = definitionOf(kind, form);
+    if (definition.kind == CombatantKind::Unknown) {
+        return std::nullopt;
     }
+    return spawn(definition, position, yaw, sight);
+}
+ItemArchive* Critters::archiveFor(CombatantKind kind, std::string_view form) {
+    const CombatantDefinition definition = definitionOf(kind, form);
+    if (definition.kind == CombatantKind::Unknown) {
+        return nullptr;
+    }
+    CombatantAssets* stock = stockFor(definition);
+    return stock != nullptr ? &stock->archive : nullptr;
 }
 std::optional<s32> Critters::spawn(const CombatantDefinition& definition, const Vec3& position,
-                                   f32 yaw) {
+                                   f32 yaw, f32 sight) {
     auto* stock = stockFor(definition);
     if (stock == nullptr) {
         return std::nullopt;
@@ -83,12 +98,23 @@ std::optional<s32> Critters::spawn(const CombatantDefinition& definition, const 
         if (!actor.present()) {
             if (actor.spawn(*stock, id, position, yaw, m_collision, m_scales, m_realm)) {
                 actor.setHazards(m_hazards);
+                // A general takes up its round of the lookouts where it is placed, seeing
+                // only as far as its placement allows meanwhile (visrad at the level's scale).
+                if (definition.patrols && !m_lookouts.empty()) {
+                    actor.startPatrol(&m_lookouts, sight * m_scales.sight);
+                }
                 return id;
             }
             return std::nullopt;
         }
     }
     return std::nullopt;
+}
+bool Critters::patrolling(s32 id) const {
+    return id >= 0 && id < kMost ? m_critters[static_cast<usize>(id)].patrolling() : false;
+}
+s32 Critters::lookoutOf(s32 id) const {
+    return id >= 0 && id < kMost ? m_critters[static_cast<usize>(id)].lookout() : -1;
 }
 void Critters::collect(Combatant& actor) {
     for (auto& event : actor.takeGrabs()) {

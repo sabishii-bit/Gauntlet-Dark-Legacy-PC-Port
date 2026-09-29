@@ -169,6 +169,7 @@ add_executable(tests
     game/enemies/CritterAttackSelectionTests.cpp
     game/enemies/CritterAreaTests.cpp
     game/enemies/CritterMovementTests.cpp
+    game/enemies/CritterPatrolTests.cpp
     game/enemies/CombatantBreathTests.cpp
     game/enemies/CombatantProjectileTests.cpp
     formats/CritterWadTests.cpp
