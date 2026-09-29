@@ -1223,6 +1223,38 @@ TEST_CASE("the archers' magic shows up secret walls, and from 50 brings them dow
     CHECK_FALSE(walls.standing(0));
 }
 
+TEST_CASE("a potion shield carries the perk too, and spares the plain barrels",
+          "[game][screens][player-attacks][magic-perks][unpacked]") {
+    const auto root = perkRoot();
+    PerkLevel f(root, "G1", "VAL", 30);
+    const usize trap = firstShownTrap(f);
+    f.players[0].actor.place(f.fixtures.traps().trap(trap).figure.position() + Vec3{0, 0, 1});
+    f.players[0].actor.save().progress().inventory.addPotions(1, 1);
+    f.attacks.shieldPotion(0, f.players);
+    REQUIRE(f.attacks.shieldCount() == 1);
+    for (s32 frame = 0; frame < 30; ++frame) {
+        f.attacks.updateShields(1.0f / 30, f.players, f.targets);
+    }
+    CHECK(f.taught(MagicPerkDeed::StopTrap));
+    CHECK_FALSE(f.fixtures.traps().armed(trap));
+
+    const Breakables& barrels = f.fixtures.barrels();
+    std::optional<usize> plain;
+    for (usize i = 0; i < barrels.size() && !plain; ++i) {
+        if (barrels.standing(i) && barrels.barrel(i).kind == BreakableStrike::Kind::Plain) {
+            plain = i;
+        }
+    }
+    REQUIRE(plain.has_value());
+    const s32 before = barrels.barrel(*plain).health;
+    f.players[0].actor.place(barrels.barrel(*plain).figure.position() + Vec3{0, 0, 1});
+    for (s32 frame = 0; frame < 60; ++frame) {
+        f.attacks.updateShields(1.0f / 30, f.players, f.targets);
+    }
+    CHECK(barrels.standing(*plain));
+    CHECK(barrels.barrel(*plain).health == before);
+}
+
 TEST_CASE("magic under level 25 carries no perk",
           "[game][screens][player-attacks][magic-perks][unpacked]") {
     const auto root = perkRoot();

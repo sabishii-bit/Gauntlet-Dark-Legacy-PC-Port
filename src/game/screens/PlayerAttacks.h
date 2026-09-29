@@ -141,6 +141,7 @@ private:
         f32 damage = 0.0f;
         f32 secondsLeft = 0.0f;
         f32 harmIn = 0.0f;
+        std::vector<s32> blessed; ///< what its bearer's class perk has reached
     };
     std::vector<PotionShield> m_shields;
 };
