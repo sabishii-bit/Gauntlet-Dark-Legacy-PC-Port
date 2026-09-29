@@ -50,6 +50,9 @@ struct CombatCue {
     s32 critter = -1;
     std::string tree;  ///< of the critter's own archive; empty for a sound alone
     std::string sound; ///< empty for an effect alone
+    /** Whether the sound fades with the players' distance: a death's does not (CritterDoSfx
+     * plays it through sndFxPlay3D rather than sndFxPlay3DAtten). */
+    bool attenuated = true;
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 yaw = 0.0f;
     f32 scale = 1.0f;
