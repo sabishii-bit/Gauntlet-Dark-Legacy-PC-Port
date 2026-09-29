@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <numbers>
 #include <optional>
 #include <string_view>
@@ -642,6 +643,76 @@ TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
     }
     CHECK(shot);
     f.fixtures.clear();
+}
+
+TEST_CASE("from level 75 magic heals its caster by a share of the harm it does",
+          "[game][screens][player-attacks][healing-magic]") {
+    const auto root = turboAssets();
+    for (const s32 level : {74, 80}) {
+        CAPTURE(level);
+        Fixture f;
+        REQUIRE(f.classes.load(root / "pdata"));
+        f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+        std::vector<s32> helps;
+        f.targets.fixtureEvents.help = [&](s32 id, usize player) {
+            CHECK(player == 0);
+            helps.push_back(id);
+            return true;
+        };
+        auto& save = f.players[0].actor.save();
+        save.progress().experience = levelExperience(level);
+        save.progress().health = 100;
+        save.progress().inventory.addPotions(1, 1);
+        EnemyScales scales;
+        scales.health = 100;
+        auto& enemies = f.opponents.enemies();
+        enemies.open(f.device, root, nullptr, 8, scales, 1);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        EnemySpawn spawn;
+        spawn.kind = kGruntKind;
+        spawn.placed = true;
+        spawn.position = Vec3{0, 0, 2};
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id);
+        const f32 before = enemies.healthOf(*id);
+        f.attacks.usePotion(0, f.players);
+        for (s32 frame = 0; frame < 60; ++frame) {
+            f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+        }
+        const f32 harm = before - enemies.healthOf(*id);
+        REQUIRE(harm > 0.0f);
+        const bool heals = level >= 75;
+        // A tenth of the harm, and 0.016 more a level past 75.
+        const auto expected = static_cast<s32>(std::lround(harm * (0.1f + 0.016f * 5.0f)));
+        CHECK(save.health() == (heals ? 100 + expected : 100));
+        CHECK((std::ranges::find(helps, HelpMessages::kHealingMagic) != helps.end()) == heals);
+        CHECK(std::ranges::find(helps, HelpMessages::kWastedMagic) == helps.end());
+        f.attacks.clear();
+        f.opponents.close();
+    }
+}
+
+TEST_CASE("a caster whose magic strikes nothing is told not to waste it",
+          "[game][screens][player-attacks][healing-magic]") {
+    Fixture f;
+    std::vector<s32> helps;
+    f.targets.fixtureEvents.help = [&](s32 id, usize) {
+        helps.push_back(id);
+        return true;
+    };
+    f.players[0].actor.save().progress().inventory.addPotions(1, 1);
+    f.attacks.usePotion(0, f.players);
+    for (s32 frame = 0; frame < 60; ++frame) {
+        f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    }
+    CHECK(helps == std::vector<s32>{HelpMessages::kWastedMagic});
+    // A bottle a blast broke is nobody's: nobody is told.
+    helps.clear();
+    f.attacks.shatterPotion(1, Vec3{0});
+    for (s32 frame = 0; frame < 60; ++frame) {
+        f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    }
+    CHECK(helps.empty());
 }
 
 TEST_CASE("player shields consume one potion and expire even without artwork",

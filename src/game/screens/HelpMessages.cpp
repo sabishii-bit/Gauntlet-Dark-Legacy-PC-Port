@@ -10,7 +10,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 102> kSpecs{{
+constexpr std::array<HelpMessageSpec, 104> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kPotionsFull, "FULLOFBOMBS", "S_MAGICFULL"},
@@ -20,6 +20,7 @@ constexpr std::array<HelpMessageSpec, 102> kSpecs{{
     {8, "SAVEKEYS", "S_SAVEKEYS"},
     {HelpMessages::kTransporter, "TRANSPORTERSMOVEYOU", "S_TRANSPORTER"},
     {HelpMessages::kShotMagic, "SHOOTPOTIONLESSER", "S_SHOOTINGMAGIC"},
+    {HelpMessages::kWastedMagic, "DONTWASTEMAGIC", "S_DONTWASTE"},
     {15, "EATMEAT", "S_MEATGIVES"},
     {16, "EATFRUIT", "S_FRUITGIVES"},
     {17, "COLLECTGOLD", "S_COLLECTGOLD"},
@@ -119,6 +120,7 @@ constexpr std::array<HelpMessageSpec, 102> kSpecs{{
     {HelpMessages::kFirstMagicPerk + 5, "WIZMAGIC2", "S_MAGCLMEAT", HelpRepeat::OncePerPlayer},
     {HelpMessages::kFirstMagicPerk + 6, "ARCMAGIC1", "S_MAGSHOWWALLS", HelpRepeat::OncePerPlayer},
     {HelpMessages::kFirstMagicPerk + 7, "ARCMAGIC2", "S_MAGDSTWLLS", HelpRepeat::OncePerPlayer},
+    {HelpMessages::kHealingMagic, "MAGIC99", "S_MAGICHEAL", HelpRepeat::OncePerPlayer},
 }};
 
 /** The original's ink for players one to four: dark yellow, blue, red and green. */

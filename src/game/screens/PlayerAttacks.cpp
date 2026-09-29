@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 
 #include "game/combat/Damage.h"
+#include "game/players/ItemPickup.h"
 #include "game/players/MagicPerks.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
@@ -937,6 +938,7 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
             if (immuneToMagic(target.id, targets)) {
                 continue;
             }
+            burst.struck = true;
             if (target.id >= kWallTargetBase) {
                 targets.fixtures.strikeWall(static_cast<usize>(target.id - kWallTargetBase), power,
                                             flags);
@@ -954,16 +956,26 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                         hit.level = experienceLevel(player.actor.save().experience());
                     }
                 }
+                const f32 before = targets.opponents.bosses().view().health;
                 targets.opponents.bosses().hurt(hit, target.id - kBossTargetBase);
+                healFrom(byPlayer, before - targets.opponents.bosses().view().health, target.base,
+                         players, targets);
             } else if (target.id >= kCritterTargetBase) {
-                targets.opponents.strikeCritter(target.id - kCritterTargetBase, power, flags,
-                                                direction, byPlayer, target.base, false, players);
+                const s32 id = target.id - kCritterTargetBase;
+                const f32 before = targets.opponents.critters().healthOf(id);
+                targets.opponents.strikeCritter(id, power, flags, direction, byPlayer, target.base,
+                                                false, players);
+                healFrom(byPlayer, before - targets.opponents.critters().healthOf(id), target.base,
+                         players, targets);
             } else if (target.id >= kGeneratorTargetBase) {
                 targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, power, byPlayer,
                                                   players);
             } else if (target.id >= kEnemyTargetBase) {
-                targets.opponents.strikeEnemy(target.id - kEnemyTargetBase, power, flags, direction,
-                                              byPlayer, players);
+                const s32 id = target.id - kEnemyTargetBase;
+                const f32 before = targets.opponents.enemies().healthOf(id);
+                targets.opponents.strikeEnemy(id, power, flags, direction, byPlayer, players);
+                healFrom(byPlayer, before - targets.opponents.enemies().healthOf(id), target.base,
+                         players, targets);
             } else {
                 targets.fixtures.strikeBarrel(static_cast<usize>(target.id), power, byPlayer,
                                               players, targets.fixtureEvents);
@@ -974,8 +986,66 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
     // Broken bottles may append a new wave through the fixture callback, so
     // resolve barrel chains only after iteration over existing waves finishes.
     targets.fixtures.settleBlasts(players, targets.fixtureEvents);
+    // A caster's magic that struck nothing at all is wasted, and they are told so.
+    for (const PotionBurst& burst : m_potions) {
+        if (burst.elapsed < burst.duration || burst.struck || !targets.fixtureEvents.help) {
+            continue;
+        }
+        for (usize i = 0; i < players.size(); ++i) {
+            if (players[i].actor.player() == burst.impact.owner) {
+                targets.fixtureEvents.help(HelpMessages::kWastedMagic, i);
+            }
+        }
+    }
     std::erase_if(m_potions,
                   [](const PotionBurst& burst) { return burst.elapsed >= burst.duration; });
+}
+
+/** From level 75 a caster's magic heals as it harms (do_heal_players, reached through
+ * DMG_HEAL): they take a tenth of what it took, more by 0.016 a level past 75, and every other
+ * standing player within their magic's power half that, none past their most; it shows over
+ * what was harmed and teaches them so. */
+void PlayerAttacks::healFrom(s32 owner, f32 harm, const Vec3& at, std::span<PlayerRuntime> players,
+                             const Targets& targets) {
+    if (!m_resources.has_value() || harm <= 0.0f) {
+        return;
+    }
+    const auto caster = std::ranges::find_if(players, [owner](const PlayerRuntime& runtime) {
+        return runtime.actor.player() == owner && runtime.life == PlayerLife::Standing;
+    });
+    if (caster == players.end()) {
+        return;
+    }
+    const s32 level = experienceLevel(caster->actor.save().experience());
+    if (level < kHealingLevel) {
+        return;
+    }
+    const auto heal = [](PlayerRuntime& runtime, f32 amount) {
+        CharacterSave& save = runtime.actor.save();
+        const s32 most = mostHealth(experienceLevel(save.experience()));
+        if (save.health() < most) {
+            save.progress().health =
+                std::min(most, save.health() + static_cast<s32>(std::lround(amount)));
+        }
+    };
+    const f32 given =
+        harm * (kHealingShare + kHealingShareALevel * static_cast<f32>(level - kHealingLevel));
+    heal(*caster, given);
+    const f32 reach = m_resources->arsenal.magicPowerOf(caster->actor);
+    for (PlayerRuntime& other : players) {
+        const Vec3 apart = other.actor.position() - caster->actor.position();
+        if (&other != &*caster && other.life == PlayerLife::Standing &&
+            std::hypot(apart.x, apart.z) < reach) {
+            heal(other, given * kHealingOthers);
+        }
+    }
+    if (m_resources->weapons.loaded()) {
+        m_resources->effects.start(m_resources->device, m_resources->weapons, kHealingEffect, at);
+    }
+    if (targets.fixtureEvents.help) {
+        targets.fixtureEvents.help(HelpMessages::kHealingMagic,
+                                   static_cast<usize>(std::distance(players.begin(), caster)));
+    }
 }
 
 } // namespace gdl::game

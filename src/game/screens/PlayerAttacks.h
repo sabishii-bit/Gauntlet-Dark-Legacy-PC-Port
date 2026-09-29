@@ -77,9 +77,17 @@ private:
         f32 duration = 1;
         std::vector<s32> hit;
         std::vector<s32> blessed; ///< what its caster's class perk has reached
+        bool struck = false;      ///< whether it has harmed anything
     };
     std::vector<PotionBurst> m_potions;
     static void enchantChests(PotionBurst& burst, f32 radius, f32 power, const Targets& targets);
+    void healFrom(s32 owner, f32 harm, const Vec3& at, std::span<PlayerRuntime> players,
+                  const Targets& targets);
+    static constexpr s32 kHealingLevel = 75;   ///< from here magic heals as it harms
+    static constexpr f32 kHealingShare = 0.1f; ///< of the harm, to the caster
+    static constexpr f32 kHealingShareALevel = 0.016f;
+    static constexpr f32 kHealingOthers = 0.5f; ///< of that, to the others near
+    static constexpr std::string_view kHealingEffect = "LEVELUP_GRE"; ///< FX_HEALENEMY
     static void bless(PotionBurst& burst, f32 radius, std::span<const PlayerRuntime> players,
                       const Targets& targets);
     s32 m_nextPotionKind = 1;
