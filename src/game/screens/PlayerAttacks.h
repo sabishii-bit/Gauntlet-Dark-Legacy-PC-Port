@@ -144,6 +144,7 @@ private:
     static constexpr s32 kItemStopBase = 7500;     ///< chests, gates: stop a weapon unharmed
     static constexpr s32 kChestTargetBase = 9000;  ///< chests, which only magic reaches
     static constexpr s32 kPotionTargetBase = 8000; ///< the bottles lying about
+    static constexpr s32 kStatueTargetBase = 9500; ///< the statues a blow wakes
     static constexpr f32 kShotMagicShare = 0.8f;   ///< of a shot bottle's magic (lbl_80346310)
     static constexpr f32 kPotionDamage = 40.0f;    ///< start_magic's
 

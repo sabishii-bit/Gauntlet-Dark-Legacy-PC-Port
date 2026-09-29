@@ -17,6 +17,7 @@
 #include "../../engine/world/SampleLevel.h"
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/CritterStatues.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
 
@@ -82,6 +83,30 @@ TEST_CASE("switch camera cues occur on activation and expose target completion",
     }
     CHECK(f.triggers.settled(0));
     CHECK(f.triggers.takeCameraCues().empty());
+}
+
+TEST_CASE("a pad flagged to wake a statue reports its spot once as it goes active",
+          "[triggers][critter-statues]") {
+    // The castle's pad at the gargoyle's feet: no target, opens once, wakes (flags 0x2002).
+    SwitchFixture f(R"({"info":0,"position":[-75.25,0,32.5],
+      "params":[254,255,2,32,12,0,10,0,0,0,0,0]})");
+    REQUIRE(f.triggers.size() == 1);
+    CHECK((f.triggers.trigger(0).flags & LevelTrigger::kWakesStatue) != 0);
+    CHECK(f.triggers.takeWakes().empty());
+    const std::array party{TriggerVisitor{.position = Vec3{-75.25f, 0, 32.5f}}};
+    f.step(kStep, party);
+    const auto wakes = f.triggers.takeWakes();
+    REQUIRE(wakes.size() == 1);
+    CHECK(wakes[0] == Vec3{-75.25f, 0, 32.5f});
+    f.step(kStep, party);
+    CHECK(f.triggers.takeWakes().empty());
+    // Off it and back on, a pad that opens once has gone active once for good.
+    f.step(kStep, {});
+    f.step(kStep, party);
+    CHECK(f.triggers.takeWakes().empty());
+    CHECK(CritterStatues::activeTicks(85, 30) == 170); // the gargoyle's ACTIVE
+    CHECK(CritterStatues::activeTicks(15, 60) == 60);  // the golem's
+    CHECK(CritterStatues::activeTicks(0, 30) == 0);
 }
 
 TEST_CASE("closing and opening switches can reuse the same lift", "[game][world][triggers]") {

@@ -978,6 +978,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_transporters.draw(device, clip, m_world->lighting());
     const CameraFrame effectCamera = companionCamera;
     m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera);
+    m_opponents.statues().draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting());
     m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons);
     m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera);

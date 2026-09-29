@@ -101,6 +101,7 @@ add_library(game STATIC
     enemies/CritterData.cpp
     enemies/CritterMovement.cpp
     enemies/CritterPatrol.cpp
+    enemies/CritterStatues.cpp
     enemies/CombatantBreath.cpp
     enemies/CombatantProjectile.cpp
     world/CombatantProjectiles.cpp

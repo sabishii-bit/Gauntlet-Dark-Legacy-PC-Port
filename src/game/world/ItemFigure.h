@@ -73,6 +73,8 @@ public:
     usize sequenceCount() const { return m_tree != nullptr ? m_tree->sequences.size() : 0; }
     /** How long the sequence number `index` lasts, in ticks of a sixtieth. */
     s32 ticksOf(s32 index) const;
+    /** The sequence number `index` itself, or null without one. */
+    const TreeSequenceInfo* sequenceInfo(s32 index) const;
     const Vec3& position() const { return m_position; }
     f32 yaw() const { return m_yaw; }
     /** How the figure is placed in the world. */

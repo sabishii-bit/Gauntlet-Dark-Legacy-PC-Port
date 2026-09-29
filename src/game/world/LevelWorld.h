@@ -69,6 +69,7 @@ public:
     std::vector<RotatorCue> takeRotatorCues() { return std::exchange(m_rotatorCues, {}); }
     const HazardSurfaces& hazards() const { return m_hazards; }
     std::vector<TriggerCameraCue> takeTriggerCameraCues() { return m_triggers.takeCameraCues(); }
+    std::vector<Vec3> takeTriggerWakes() { return m_triggers.takeWakes(); }
 
     const WorldLayout& layout() const { return m_layout; }
     const WorldScene& scene() const { return m_scene; }

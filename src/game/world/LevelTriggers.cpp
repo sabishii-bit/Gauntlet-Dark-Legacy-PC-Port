@@ -148,6 +148,7 @@ void LevelTriggers::clear() {
     m_openings.clear();
     m_settled.clear();
     m_cameraCues.clear();
+    m_wakes.clear();
     m_frameRemainder = 0.0f;
 }
 
@@ -354,6 +355,9 @@ void LevelTriggers::fire(usize index, bool active, bool atOnce, WorldAnimator& a
         }
         if (trigger.fired && !wasFired && contact && !atOnce) {
             m_cameraCues.push_back({trigger.id, trigger.target});
+            if ((trigger.flags & LevelTrigger::kWakesStatue) != 0) {
+                m_wakes.push_back(trigger.spot);
+            }
         }
         if (trigger.fired != wasFired && static_cast<usize>(at) < m_figures.size() &&
             m_figures[static_cast<usize>(at)]) {

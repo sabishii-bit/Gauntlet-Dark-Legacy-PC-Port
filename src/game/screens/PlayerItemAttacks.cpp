@@ -100,6 +100,10 @@ void PlayerAttacks::strikeTarget(const MissileTarget& target, f32 damage, u32 fl
                                  const PlayerActor& owner, std::span<PlayerRuntime> players,
                                  const Targets& targets) {
     const Vec3 direction = target.base - owner.position();
+    if (target.id >= kStatueTargetBase) {
+        targets.opponents.wakeStatue(static_cast<usize>(target.id - kStatueTargetBase));
+        return;
+    }
     if (strikeSwitch(target.id, flags)) {
         return;
     }

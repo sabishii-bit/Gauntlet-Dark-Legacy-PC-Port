@@ -632,6 +632,111 @@ TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
     opponents.close();
 }
 
+TEST_CASE("the castle's golem and gargoyle stand as statues until walked into, struck or woken "
+          "by the pad at the gargoyle's feet, then come alive where they stood",
+          "[level-opponents][critter-statues][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELA1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELA/animations.json");
+    test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("A1")));
+    world.setPlayerCount(1);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    const Vec3 golem{112.75f, 26.125f, 90.25f};
+    const Vec3 gargoyle{-74.9765625f, 0.1015625f, 32.671875f};
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, golem + Vec3{20.0f, 0.0f, 0.0f}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    // For one player, the level's golem and gargoyle: neither stands as itself yet (its
+    // generals, which have no statue, do).
+    const auto standing = [&](CombatantKind kind) {
+        std::optional<s32> found;
+        for (s32 id = 0; id < Critters::kMost; ++id) {
+            if (opponents.critters().alive(id) && opponents.critters().kindOf(id) == kind) {
+                found = id;
+            }
+        }
+        return found;
+    };
+    REQUIRE(opponents.statues().count() == 2);
+    CHECK_FALSE(standing(CombatantKind::Golem).has_value());
+    CHECK_FALSE(standing(CombatantKind::Gargoyle).has_value());
+    const usize generals = opponents.critters().count();
+    const auto statueNear = [&](const Vec3& at) {
+        for (usize i = 0; i < opponents.statues().count(); ++i) {
+            if (glm::distance(opponents.statues().positionOf(i), at) < 2.0f) {
+                return std::optional<usize>{i};
+            }
+        }
+        return std::optional<usize>{};
+    };
+    REQUIRE(statueNear(golem).has_value());
+    REQUIRE(statueNear(gargoyle).has_value());
+    CHECK(opponents.statues().placement(*statueNear(golem)).kind == CombatantKind::Golem);
+    CHECK(opponents.statues().placement(*statueNear(gargoyle)).kind == CombatantKind::Gargoyle);
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    const auto step = [&] { opponents.update(2, 1.0f / 30, players, {}, events); };
+    // Standing well off, nothing changes. Walking into the golem's statue (its record's
+    // radius of four) stops the player at it and wakes it.
+    step();
+    CHECK_FALSE(opponents.statues().woken(*statueNear(golem)));
+    players[0].actor.place(golem + Vec3{4.5f, 0.0f, 0.0f});
+    step();
+    CHECK(opponents.statues().woken(*statueNear(golem)));
+    CHECK(players[0].actor.position().x > golem.x + 4.5f);
+    // Its ACTIVE sequence (fifteen frames at fifteen a second) plays out, and the golem
+    // stands in its place, facing as the statue was placed.
+    s32 rose = 0;
+    for (s32 frame = 0; frame < 40 && opponents.statues().count() == 2; ++frame) {
+        step();
+        ++rose;
+    }
+    REQUIRE(opponents.statues().count() == 1);
+    CHECK(rose == 30); // sixty ticks, two a step
+    REQUIRE(opponents.critters().count() == generals + 1);
+    const auto risen = standing(CombatantKind::Golem);
+    REQUIRE(risen.has_value());
+    CHECK(glm::distance(opponents.critters().positionOf(*risen), golem) < 2.0f);
+    CHECK(opponents.critters().moveOf(*risen) == "START");
+    // The pad at the gargoyle's feet (flagged 0x2002, chained after the pad thirty units
+    // south of it) wakes it as a player steps on the first; the eighty-five frames of its
+    // ACTIVE sequence later the gargoyle stands.
+    players[0].actor.place(gargoyle + Vec3{40.0f, 0.0f, 0.0f});
+    step();
+    CHECK_FALSE(opponents.statues().woken(*statueNear(gargoyle)));
+    const std::array pad{TriggerVisitor{.position = Vec3{-83.75f, 0.2578125f, 3.796875f},
+                                        .radius = players[0].actor.radius()}};
+    world.updateTriggers(1.0f / 30, pad);
+    step();
+    CHECK(opponents.statues().woken(*statueNear(gargoyle)));
+    for (s32 frame = 0; frame < 120 && opponents.statues().count() == 1; ++frame) {
+        step();
+    }
+    CHECK(opponents.statues().count() == 0);
+    CHECK(standing(CombatantKind::Gargoyle).has_value());
+    // A blow wakes one too.
+    opponents.close();
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.statues().count() == 2);
+    opponents.wakeStatue(*statueNear(gargoyle));
+    CHECK(opponents.statues().woken(*statueNear(gargoyle)));
+    CHECK_FALSE(opponents.statues().woken(*statueNear(golem)));
+    opponents.close();
+}
+
 TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
           "[level-opponents][carried][unpacked]") {
     const auto root =
