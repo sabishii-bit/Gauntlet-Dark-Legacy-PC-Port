@@ -42,6 +42,10 @@ inline constexpr u32 kHealthVamp = 0x00400000;   ///< special: return melee as m
 inline constexpr u32 kPojo = 0x00000400;         ///< special: Pojo speaks for the character
 inline constexpr u32 kInvulnerable = 0x00010000; ///< armor
 inline constexpr u32 kGoldInvulnerable = 0x00100000; ///< armor
+inline constexpr u32 kReflectShield = 0x00020000; ///< armor: turns missiles back, borne on the arm
+inline constexpr u32 kFireShield = 0x00200000;    ///< armor: burns what its bearer is against
+inline constexpr u32 kLightningShield = 0x00400000; ///< armor: shocks what its bearer is against
+inline constexpr u32 kShields = kReflectShield | kFireShield | kLightningShield;
 } // namespace powerup
 
 /**

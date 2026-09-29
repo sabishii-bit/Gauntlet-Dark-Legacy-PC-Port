@@ -151,6 +151,27 @@ TEST_CASE("authored fades hide only their subtree and reset on the next pose",
     REQUIRE(device.draws[1].vertices[0].color.a == 255);
 }
 
+TEST_CASE("a node's own mesh can go unseen while what hangs from it stays", "[world][model]") {
+    const auto dir = sampleFigure("tree-model-mesh-alpha");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    figure.setMeshAlpha(1, 0.0f); // the body; the banner hangs from it
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].texture == &textures.texture(device, 1));
+    device.draws.clear();
+    figure.setMeshAlpha(1, 1.0f);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    CHECK(device.draws.size() == 2);
+}
+
 TEST_CASE("alternate skin preserves base coverage and the original opaque or translucent material",
           "[world][model]") {
     const auto dir = sampleFigure("tree-model-masked");

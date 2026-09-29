@@ -201,12 +201,14 @@ public:
         FireLeftRecover,
         FireRight,
         FireRightRecover,
-        Pick, ///< a hand to the ground for what was taken, at full pace
-        Gag   ///< STUN2, looped while it lasts
+        Pick,        ///< a hand to the ground for what was taken, at full pace
+        Gag,         ///< STUN2, looped while it lasts
+        ShieldReady, ///< the stance with a shield on the arm
+        ShieldRun    ///< and its gait, walking or running
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 110;
+    static constexpr usize kActionCount = 112;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -229,7 +231,8 @@ public:
         "ATTSTEP3R",    "ATTWALK2",     "ATTWALK2R",    "ATTPWRACLOSE", "ATTPWRACLOSER",
         "ATTPWRAMED",   "ATTPWRAMEDR",  "ATTPWRALOW",   "ATTPWRALOWR",  "SSHOT2",
         "ATTCHOP",      "ATTCHOPR",     "ATTBREATHE",   "ATTBREATHER",  "ATTFIREL",
-        "ATTFIRELR",    "ATTFIRER",     "ATTFIRERR",    "PICK",         "STUN2"};
+        "ATTFIRELR",    "ATTFIRER",     "ATTFIRERR",    "PICK",         "STUN2",
+        "SHIELD_READY", "SHIELD_RUN"};
     static constexpr f32 kReleaseFrame = 2.0f;     ///< of the wind-up, from which it gives way
     static constexpr f32 kGagHold = 10.0f;         ///< frames of retching before anything cuts in
     static constexpr s32 kFidgetTicks = 1800;      ///< standing still before the first fidget
@@ -251,6 +254,8 @@ public:
     void update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed);
     /** What the close attack knows of its nearest target, set before each update. */
     void setMelee(const MeleeSense& sense) { m_melee = sense; }
+    /** Whether a shield is borne on the arm: the stance and gait are the shield's. */
+    void setShielded(bool shielded) { m_shielded = shielded; }
     /** The character whose body this is: some classes keep their feet in the power swings. */
     void setCharacter(s32 character) { m_character = character; }
     /** Which way the character strafes from now on (none: it walks and runs as ever). Set
@@ -318,7 +323,7 @@ public:
         if (meleeing()) {
             return meleePace();
         }
-        if (running()) {
+        if (running() || m_current == Action::ShieldRun) {
             return kRunPace;
         }
         if (strafing()) {
@@ -458,6 +463,7 @@ private:
     bool m_quickHeld = false;   ///< last update's buttons, to tell a press
     bool m_strongHeld = false;
     bool m_moved = false; ///< the stick asked for movement this update
+    bool m_shielded = false;
     bool m_potionUsed = false;
     bool m_potionThrown = false;
     bool m_dead = false;

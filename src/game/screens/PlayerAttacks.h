@@ -48,6 +48,12 @@ public:
     void updateProjectiles(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateStrikes(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateShields(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
+    /** The fire and lightning shields harm the creature their bearer stands against. */
+    void updateArmour(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
+    static constexpr f32 kArmourReach = 1.0f;      ///< past the body's radius
+    static constexpr f32 kFireShieldDamage = 3.0f; ///< a 30 Hz frame, never waiting
+    static constexpr f32 kLightningShieldDamage = 20.0f;
+    static constexpr f32 kShockGap = 1.0f; ///< seconds before the lightning strikes one again
     void cry(usize index, std::string_view which, std::span<PlayerRuntime> players);
     std::optional<Vec3> aim(const PlayerActor& actor, const Vec3& facing,
                             const Targets& targets) const;

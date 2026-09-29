@@ -79,6 +79,43 @@ TEST_CASE("X-Ray glasses draw at the posed head only while equipped",
     CHECK(device.draws.empty());
 }
 
+TEST_CASE("a shield is borne on the second hand, and the jester's hand goes meanwhile",
+          "[game][figure][shield][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/objects.json").parent_path().parent_path();
+    test::unpackedOrSkip("PLAYERS/JES/YEL/animations.json");
+    test::unpackedOrSkip("PLAYERS/JES/ANIM/animations.json");
+    test::FakeRenderDevice device;
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    CharacterSave save;
+    save.character = 7;
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
+    REQUIRE(figure->armAttachment(body).has_value());
+    figure->draw(device, Mat4{1}, body, {}, 1, false);
+    const usize bare = device.draws.size();
+    device.draws.clear();
+    figure->holdOnArm(device, &weapons, "L_SHLD");
+    figure->draw(device, Mat4{1}, body, {}, 1, false);
+    const auto object = weapons.models.find("L_SHLD");
+    REQUIRE(object);
+    const auto& mesh = weapons.models.mesh(*object);
+    const Mat4 arm = *figure->armAttachment(body);
+    CHECK(std::ranges::any_of(device.draws, [&](const auto& draw) {
+        return std::ranges::any_of(mesh.vertices, [&](const auto& vertex) {
+            return glm::distance(draw.vertices.front().position,
+                                 Vec3{arm * Vec4{vertex.position, 1}}) < 0.0001f;
+        });
+    }));
+    const usize shielded = device.draws.size();
+    device.draws.clear();
+    figure->holdOnArm(device, &weapons, {});
+    figure->draw(device, Mat4{1}, body, {}, 1, false);
+    CHECK(device.draws.size() == bare);
+    CHECK(shielded != bare); // the shield came, the hand went
+}
+
 TEST_CASE("the sign of who is it hangs on the body's root from the realm's items",
           "[game][figure][it][unpacked]") {
     const auto root =

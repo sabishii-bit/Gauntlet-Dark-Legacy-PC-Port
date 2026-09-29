@@ -389,6 +389,13 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     } else if (motion == PlayerMotion::Walk) {
         requested = Action::Walk1;
     }
+    // A shield on the arm has a stance and a gait of its own (AnimAction, action.c 1296).
+    if (m_shielded && requested == Action::Ready && playable(Action::ShieldReady)) {
+        requested = Action::ShieldReady;
+    } else if (m_shielded && (requested == Action::Walk1 || requested == Action::Run1) &&
+               playable(Action::ShieldRun)) {
+        requested = Action::ShieldRun;
+    }
     play(decide(requested), seconds);
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
     if (m_player.transitioning()) {
@@ -568,6 +575,11 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::GetUpBack:
     case Action::GetUpForward:
     case Action::Pick: break; // plays through, then whatever is asked
+    case Action::ShieldReady:
+        d.repeat = requested == Action::ShieldReady;
+        d.cut = Cut::IfDifferent;
+        break;
+    case Action::ShieldRun: d.repeat = requested == Action::ShieldRun; break;
     case Action::Gag:
         // Looped while asked for; let go of, it ends its cycle, and past its first frames
         // anything else cuts in (P_DEATH_REACT).

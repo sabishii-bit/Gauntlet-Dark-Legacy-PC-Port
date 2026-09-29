@@ -1687,8 +1687,22 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `Inventory::spendKey` is the rule for locks; chests and doors come with
   the realm levels (the tower's archives hold no chest or door). Scenarios
   take `powerups`; `tests/scenarios/tower-powerups.json` carries a set. The
-  shield potion, the other powerups' effects and the full-screen inventory
-  are still to come.
+  shield armours (reflecting 0x20000, fire 0x200000, lightning 0x400000) are borne on
+  the second hand, the node whose object ends in `L_WRIST` or `LEFTHAND` (tb_info's
+  second table): WEAPONS' `RF_SHLD`, `FW_SHLD` or `L_SHLD`, the left gauntlet's POWERUPS
+  `BOSSGAUNTL` before them (`PlayerFigure::holdOnArm`, PlayerProcessPowerups); the
+  valkyrie's and knight's own shield (that node's parent) and the jester's hand are
+  hidden meanwhile (`TreeModel::setMeshAlpha`). Any of the three makes the stance
+  `SHIELD_READY` and the gait `SHIELD_RUN`, at a run's pace whether walking or running
+  (AnimAction). Against a creature within a unit of the body, a bearer free to go about
+  burns it 3 a 30 Hz frame, never waiting, with the fire shield, or with the lightning
+  one shocks it for 20 (lightning, knocking down) at most once a second per bearer,
+  WEAPONS' `L_SHLD_ACTIVE` (fx 55) reaching from the shield to it (pmotion.c 1641,
+  `PlayerAttacks::updateArmour`, `PlayerRuntime::shockGaps`); doubled while grown. Not
+  yet: `FW_SHLD_ACTIVE` about the fire shield's bearer as it runs, the fire shield
+  turning a standing bearer's state to walking, and a shocking or burning frame
+  skipping that frame's attack. `tests/scenarios/level-g1-shields.json` carries both.
+  The full-screen inventory is still to come.
 * Attacks (first slice, the throw): `PlayBindings::attack`/`padAttack`
   (Space, A) held is `PlayInput::attack`. `PlayerAnimator` ports the
   original's throw actions: the wind-up (`THROW1S`, or `THROW2S` cut in from a

@@ -20,6 +20,11 @@ constexpr s32 kLevelsPerTier = 10;
 constexpr s32 kWeaponTierTwoLevel = 10;
 constexpr s32 kWeaponTierThreeLevel = 50;
 constexpr std::array<std::string_view, 3> kHandObjects{"R_WRIST", "RIGHTHAN", "RHEND"};
+/** The second hand's object, by class (tb_info's second table): what shields hang from. */
+constexpr std::array<std::string_view, 2> kArmObjects{"L_WRIST", "LEFTHAND"};
+constexpr s32 kValkyrieClass = 1; ///< these two bear shields of their own, on the arm's parent
+constexpr s32 kKnightClass = 5;
+constexpr s32 kJesterClass = 7; ///< whose hand goes
 constexpr std::string_view kHeldWeapon = "WEAP_HOLD";
 constexpr std::string_view kClassAnimations = "ANIM";
 constexpr std::string_view kSoundDirectory = "audio";
@@ -190,6 +195,22 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
         return;
     }
     m_animator.setCharacter(save.character);
+    // The second hand, and what a shield borne on it hides (player.c 4512, 5604).
+    m_armNode = -1;
+    m_armHidden = -1;
+    for (usize n = 0; n < m_costume->nodes.size() && m_armNode < 0; ++n) {
+        for (const std::string_view suffix : kArmObjects) {
+            if (m_costume->nodes[n].object.ends_with(suffix)) {
+                m_armNode = static_cast<s32>(n);
+                break;
+            }
+        }
+    }
+    if (m_armNode >= 0 && (save.character == kValkyrieClass || save.character == kKnightClass)) {
+        m_armHidden = m_costume->nodes[static_cast<usize>(m_armNode)].parent;
+    } else if (m_armNode >= 0 && save.character == kJesterClass) {
+        m_armHidden = m_armNode;
+    }
     const TreeInfo& actions = m_actions.tree(*tree);
     m_classNodeOfNode.clear();
     for (const TreeNodeInfo& node : m_costume->nodes) {
@@ -284,6 +305,11 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
     }
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;
+    if (m_armHeld) {
+        if (const auto arm = armAttachment(body)) {
+            m_arm.draw(device, clip, *arm, lighting, {}, nullptr, alpha);
+        }
+    }
     if (heldWeaponBound() && !hideWeapon && (!thrown || m_staysInHand)) {
         const auto hand = static_cast<usize>(m_handNode);
         const Mat4 wrist = hand < m_transforms.size()
@@ -323,6 +349,32 @@ void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
         m_headwear.bind(m_headwearTree, powerups.models, powerups.textures, device);
     }
     m_headwear.draw(device, clip, *head, lighting, {}, nullptr, alpha);
+}
+
+void PlayerFigure::holdOnArm(RenderDevice& device, ItemArchive* archive, std::string_view object) {
+    const bool held = archive != nullptr && archive->loaded() && !object.empty() &&
+                      m_armNode >= 0 && archive->models.find(object).has_value();
+    if (held && m_armTree.name != object) {
+        m_armTree = {};
+        m_armTree.name = object;
+        TreeNodeInfo node;
+        node.name = object;
+        node.object = object;
+        m_armTree.nodes.push_back(node);
+        m_arm.bind(m_armTree, archive->models, archive->textures, device);
+    }
+    m_armHeld = held && m_arm.bound();
+    if (m_armHidden >= 0) {
+        m_model.setMeshAlpha(static_cast<usize>(m_armHidden), m_armHeld ? 0.0f : 1.0f);
+    }
+}
+
+std::optional<Mat4> PlayerFigure::armAttachment(const Mat4& body) const {
+    const auto arm = static_cast<usize>(m_armNode);
+    if (m_armNode < 0 || arm >= m_transforms.size()) {
+        return std::nullopt;
+    }
+    return body * m_transforms[arm];
 }
 
 void PlayerFigure::drawMarker(RenderDevice& device, ItemArchive& archive, std::string_view object,

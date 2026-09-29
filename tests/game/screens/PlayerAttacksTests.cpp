@@ -811,6 +811,67 @@ TEST_CASE("close attacks resolve to melee while distant attacks still throw",
     enemies.close();
 }
 
+TEST_CASE("fire and lightning shields harm the creature their bearer stands against",
+          "[game][screens][player-attacks][shield][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G1");
+    REQUIRE(level);
+    for (const u32 shield : {powerup::kFireShield, powerup::kLightningShield}) {
+        CAPTURE(shield);
+        Fixture f;
+        REQUIRE(f.world.load(f.device, root, *level));
+        REQUIRE(f.weapons.load(root / "WEAPONS"));
+        f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+        f.players[0].figure = PlayerFigure::load(f.device, root, f.players[0].actor.save(), false);
+        REQUIRE(f.players[0].figure);
+        auto& enemies = f.opponents.enemies();
+        EnemyScales scales;
+        scales.health = 100.0f;
+        enemies.open(f.device, root, nullptr, 4, scales, 7);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        const auto id = enemies.spawn(
+            {.kind = kGruntKind, .tier = 3, .position = {0, 0, 2.5f}, .placed = true}, {});
+        REQUIRE(id);
+        const f32 full = enemies.healthOf(*id);
+        // Unshielded, standing against it harms nothing.
+        f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
+        CHECK(enemies.healthOf(*id) == full);
+        f.players[0].actor.save().progress().inventory.addPowerup(powerup::kArmor, shield, 0, 60);
+        f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
+        const f32 once = enemies.healthOf(*id);
+        CHECK(once < full);
+        f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
+        if (shield == powerup::kFireShield) {
+            CHECK(enemies.healthOf(*id) < once); // every frame, never waiting
+            CHECK(f.effects.count() == 0);
+        } else {
+            CHECK(enemies.healthOf(*id) == once); // once a second
+            CHECK(f.effects.count() == 1);        // the spark, from the shield to it
+            for (s32 frame = 0; frame < 30; ++frame) {
+                f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
+            }
+            CHECK(enemies.healthOf(*id) < once);
+        }
+        // Out of reach, it harms nothing.
+        f.players[0].actor.place({0, 0, -20});
+        const f32 away = enemies.healthOf(*id);
+        for (s32 frame = 0; frame < 40; ++frame) {
+            f.attacks.updateArmour(1.0f / 30, f.players, f.targets);
+        }
+        CHECK(enemies.healthOf(*id) == away);
+        f.attacks.clear();
+        f.opponents.close();
+    }
+}
+
 TEST_CASE("the melee sees what is near at any bearing, within a swing or a step",
           "[game][screens][player-attacks][melee][unpacked]") {
     const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")

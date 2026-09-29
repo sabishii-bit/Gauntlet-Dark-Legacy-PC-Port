@@ -66,6 +66,12 @@ public:
      * must outlive this figure. */
     void drawMarker(RenderDevice& device, ItemArchive& archive, std::string_view object,
                     const Mat4& clip, const Mat4& body, const WorldLighting& lighting, f32 alpha);
+    /** Bears `object` of `archive` on the second hand (a shield, the left gauntlet) from now
+     * on, none when empty; the valkyrie's and knight's own shield and the jester's hand are
+     * hidden meanwhile (PlayerProcessPowerups). The archive must outlive this figure. */
+    void holdOnArm(RenderDevice& device, ItemArchive* archive, std::string_view object);
+    /** Where the second hand is, when the body has one. */
+    std::optional<Mat4> armAttachment(const Mat4& body) const;
     /** A posed hand, if available; callers choose their own fallback attachment. */
     std::optional<Vec3> handPosition(const Mat4& body) const;
     std::optional<Mat4> attachment(const Mat4& body, std::string_view objectSuffix) const;
@@ -78,6 +84,7 @@ public:
     void setStrafe(StrafeWay way) { m_animator.setStrafe(way); }
     void setMelee(const MeleeSense& sense) { m_animator.setMelee(sense); }
     void setAttackSpeed(bool rapid, bool speed) { m_animator.setAttackSpeed(rapid, speed); }
+    void setShielded(bool shielded) { m_animator.setShielded(shielded); }
     const PlayerAnimator& animator() const { return m_animator; }
     const TreeModel& missile() const { return m_missile; }
     ItemArchive* missileArchive() { return m_missileArchive; }
@@ -114,6 +121,11 @@ private:
     TreeModel m_headwear;
     TreeInfo m_markerTree;
     TreeModel m_marker;
+    TreeInfo m_armTree;
+    TreeModel m_arm;
+    s32 m_armNode = -1;   ///< the second hand, found as the costume loads
+    s32 m_armHidden = -1; ///< what a borne shield hides: the class's own shield, or the hand
+    bool m_armHeld = false;
     BlobShadow m_shadow;
     s32 m_handNode = -1;
     std::vector<s32> m_classNodeOfNode;

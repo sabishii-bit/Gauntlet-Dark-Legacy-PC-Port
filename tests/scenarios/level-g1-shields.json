@@ -1,0 +1,35 @@
+{
+  "screen": "tower",
+  "level": "G1",
+  "party": [
+    {
+      "player": 0,
+      "class": "VAL",
+      "color": "BLU",
+      "name": "FIRE",
+      "level": 1,
+      "health": 400,
+      "powerups": [
+        {"kind": 6, "flags": 2097152}
+      ]
+    },
+    {
+      "player": 1,
+      "class": "WAR",
+      "color": "RED",
+      "name": "SHOCK",
+      "level": 1,
+      "health": 400,
+      "powerups": [
+        {"kind": 6, "flags": 4194304}
+      ]
+    }
+  ],
+  "position": [
+    100.0,
+    10.2,
+    -72.5
+  ],
+  "yaw": 1.57,
+  "welcome": false
+}

@@ -53,6 +53,8 @@ public:
     void setNodeTextureOffset(usize root, const Vec2& offset, const Vec2& scale);
     /** Sets opacity throughout one subtree; resetTextures restores opaque nodes. */
     void setNodeAlpha(usize root, f32 alpha);
+    /** How solid tree node `node`'s own mesh draws, leaving what hangs from it alone. */
+    void setMeshAlpha(usize node, f32 alpha);
     void resetTextures();
     /** Applies an alternate appearance without making solid skin translucent or filling
      * its cutouts. Cleared by resetTextures(). */
