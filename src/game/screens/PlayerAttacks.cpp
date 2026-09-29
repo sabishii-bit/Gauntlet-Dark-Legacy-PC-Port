@@ -699,6 +699,12 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                                                item.position, std::max(item.radius, 0.5f),
                                                std::max(item.height, 1.0f)});
     }
+    // Chests, shut gates and raised tent walls stop it and take nothing (SfxSkipItem).
+    s32 stop = kItemStopBase;
+    for (const Obstacle& box : targets.fixtures.inertStops()) {
+        missileTargets.push_back(
+            MissileTarget{stop++, box.centre, std::max(box.halfAcross, box.halfAlong), box.height});
+    }
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),
                                            missileTargets);
     for (const MissileImpact& impact : m_resources->arsenal.missiles().takeImpacts()) {
@@ -709,6 +715,9 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         }
         if (impact.target >= kPotionTargetBase) {
             shootPotion(impact, players, targets);
+            continue;
+        }
+        if (impact.target >= kItemStopBase) {
             continue;
         }
         if (strikeSwitch(impact.target, impact.flags)) {

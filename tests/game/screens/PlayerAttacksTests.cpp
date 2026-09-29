@@ -557,6 +557,45 @@ TEST_CASE("a blow on a secret wall tells of multiple hits; a swing passes the sa
     f.fixtures.clear();
 }
 
+TEST_CASE("a thrown weapon stops at a chest and does it no harm",
+          "[game][screens][player-attacks][item-stops][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    Fixture f;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(4);
+    const Chests& chests = f.fixtures.chests();
+    std::optional<usize> shut;
+    for (usize i = 0; i < chests.size() && !shut; ++i) {
+        if (chests.chest(i).shown && chests.chest(i).state == Chests::kShut) {
+            shut = i;
+        }
+    }
+    REQUIRE(shut.has_value());
+    const Obstacle& box = chests.chest(*shut).box;
+    const s32 inside = chests.chest(*shut).contents;
+    MissileSpec spec;
+    spec.weight = 0;
+    spec.radius = 0.25f;
+    MissileLaunch launch;
+    launch.position = box.centre + Vec3{0, 1, 4};
+    launch.velocity = Vec3{0, 0, -20};
+    launch.spec = &spec;
+    launch.damage = 20;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    for (s32 frame = 0; frame < 10; ++frame) {
+        f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    }
+    CHECK(f.arsenal.missiles().count() == 0); // it went no further
+    CHECK(chests.chest(*shut).state == Chests::kShut);
+    CHECK(chests.chest(*shut).contents == inside);
+    CHECK_FALSE(chests.chest(*shut).gone);
+    f.fixtures.clear();
+}
+
 TEST_CASE("a thrown weapon sets off a target on the wall, but gas does not",
           "[game][screens][player-attacks][triggers][unpacked]") {
     const auto root =

@@ -47,7 +47,8 @@ public:
         ThrowPotion,
         FirstFoot,
         SecondFoot,
-        Melee
+        Melee,
+        Fallen ///< its death played out, it is gone from the level
     };
     struct Events {
         std::function<void(usize, Action)> perform;
