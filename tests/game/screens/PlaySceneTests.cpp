@@ -1169,6 +1169,53 @@ TEST_CASE("in the fields harm is the level's own: help is given, barrels break, 
     scene.close();
 }
 
+TEST_CASE("a fallen player's keys lie where they fell for the rest of the party",
+          "[game][screens][keys][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    for (const s32 keys : {1, 3}) {
+        CAPTURE(keys);
+        CharacterSave save;
+        save.name = "AB";
+        save.progress().health = 300;
+        save.progress().inventory.keys = keys;
+        PlayOptions options;
+        options.welcome = false;
+        options.position = Vec3{-36.2f, 26.5f, -125.3f}; // the death scenario's open ground
+        PlayScene scene;
+        const std::vector<PartyMember> party{PartyMember{0, save, 3}};
+        REQUIRE(scene.open(device, context, world, party, options));
+        const usize lying = world.placedItems().size();
+        const PlayScene::Inputs still{};
+        scene.hurtPlayer(0, 5000.0f, HurtKind::Burn);
+        REQUIRE(scene.fallen(0));
+        for (s32 i = 0; i < 600 && world.placedItems().size() == lying; ++i) {
+            scene.update(1.0 / 60.0, still);
+        }
+        REQUIRE(world.placedItems().size() == lying + 1);
+        const PlacedItems::Item& dropped = world.placedItems().item(lying);
+        CHECK(dropped.name == (keys == 1 ? "KEY" : "KEYRING"));
+        CHECK(dropped.value == keys);
+        CHECK(glm::distance(Vec2{dropped.position.x, dropped.position.z}, Vec2{-36.2f, -125.3f}) <
+              1.0f);
+        CHECK(scene.actor(0)->save().progress().inventory.keys == 0);
+        // Its save still goes back to how it came in.
+        CHECK(scene.party()[0].save.progress().inventory.keys == keys);
+        scene.close();
+    }
+}
+
 TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
     test::unpackedOrSkip("LEVELS/LEVELG1/world.json");

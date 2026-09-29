@@ -401,7 +401,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   waited for by portals. `PlayScene::party()` hands the fallen on as they
   came into the level (`PartyMember::fallen`, the entry snapshot, keeping
   only the help they saw); they stand again when the party is next in the
-  tower, and stay fallen through any other level. With everyone fallen, the
+  tower, and stay fallen through any other level. As the death plays out the
+  keys it carried fall where it lay for the others, a `KEY` for one and a
+  `KEYRING` holding them all for more (player_dies; not in the tower or a
+  boss's level: `PlayScene::dropKeys`). With everyone fallen, the
   last body gone and the announcer done, the party travels to the tower with
   its entry saves (game_main's all-dead case, then PlayerRestoreState); it is
   not a game over. Quitting the game from the tower (`PlayScene::startGameOver`,
@@ -1619,6 +1622,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `gdlunpack --only PDATA`) and 2 ahead, lobbed to land 0.5 under its start at
   a reach of 15 (+200 per second held past 0.27 s, at most 0.1 s), stopped by
   walls and floors (`takeImpacts`, nothing drawn for them yet) or after 3 s.
+  Chests, shut gates and raised tent walls stop one unharmed
+  (`LevelFixtures::inertStops`, SfxSkipItem).
   The throw sound is `S_<FAMILY>THROW` from the class family's bank. Melee,
   damage, targets, aim assist, streaks, spread shots and impact effects are
   still to come.

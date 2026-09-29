@@ -299,6 +299,7 @@ private:
     LevelFixtures::Events fixtureEvents();
     LevelOpponents::Events opponentEvents();
     PlayerAttacks::Targets attackTargets();
+    void dropKeys(usize index);
     void hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage,
                               std::vector<s32>& reached);
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false,

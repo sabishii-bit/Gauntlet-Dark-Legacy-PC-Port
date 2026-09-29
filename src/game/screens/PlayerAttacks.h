@@ -106,6 +106,7 @@ private:
     static constexpr s32 kSafeRockTargetBase = 5000;
     static constexpr s32 kWallTargetBase = 6000;
     static constexpr s32 kSwitchTargetBase = 7000; ///< the triggers that are shot
+    static constexpr s32 kItemStopBase = 7500;     ///< chests, gates: stop a weapon unharmed
     static constexpr s32 kChestTargetBase = 9000;  ///< chests, which only magic reaches
     static constexpr s32 kPotionTargetBase = 8000; ///< the bottles lying about
     static constexpr f32 kShotMagicShare = 0.8f;   ///< of a shot bottle's magic (lbl_80346310)

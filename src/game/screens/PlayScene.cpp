@@ -27,6 +27,8 @@ namespace {
 
 constexpr std::string_view kBeamObject = "L1XPLIGHTRAY01"; ///< the light on Sumner's lectern
 constexpr std::string_view kWeaponsArchive = "WEAPONS";
+constexpr std::string_view kDroppedKey = "KEY"; ///< what a fallen player's keys lie as
+constexpr std::string_view kDroppedKeyRing = "KEYRING";
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
 constexpr std::array<std::string_view, 2> kTempleLights{"L1XPLOWERLIGHTR", "L1XPUPPERLIGHTR"};
@@ -560,6 +562,35 @@ void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damag
         }
         const Vec3 away = m_opponents.critters().positionOf(critter) - position;
         strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
+    }
+}
+
+/** A player's death played out, the keys they carried fall where they lay, one as a KEY and
+ * more as a KEYRING holding them all, for the rest of the party (player_dies); not in the
+ * tower nor where a boss is fought. */
+void PlayScene::dropKeys(usize index) {
+    if (index >= m_players.size() || m_world == nullptr || m_device == nullptr ||
+        m_world->isTower()) {
+        return;
+    }
+    const LevelInfo* level = m_world->level();
+    if (level != nullptr && level->bossType >= 0) {
+        return;
+    }
+    Inventory& inventory = m_players[index].actor.save().progress().inventory;
+    if (inventory.keys <= 0) {
+        return;
+    }
+    const std::string_view name = inventory.keys == 1 ? kDroppedKey : kDroppedKeyRing;
+    const auto& infos = m_world->layout().itemInfos();
+    const auto record = std::ranges::find_if(infos, [&](const ItemInfo& info) {
+        return info.type == ItemInfo::kPowerup &&
+               info.subtype == static_cast<s32>(ItemKind::Keys) && info.name == name;
+    });
+    if (record != infos.end() &&
+        m_world->placeItemRecord(*m_device, static_cast<s32>(std::distance(infos.begin(), record)),
+                                 m_players[index].actor.position(), inventory.keys)) {
+        inventory.keys = 0;
     }
 }
 
@@ -1289,6 +1320,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 case PartyMotion::Action::Melee:
                     m_attacks.melee(i, m_players, attackTargets());
                     break;
+                case PartyMotion::Action::Fallen: dropKeys(i); break;
                 }
             },
         .select =

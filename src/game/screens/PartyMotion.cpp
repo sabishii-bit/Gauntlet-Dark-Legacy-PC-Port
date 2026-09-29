@@ -279,6 +279,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
             if (players[i].life == PlayerLife::Dying && players[i].figure->animator().dead()) {
                 players[i].life = PlayerLife::InTower; // the body goes; its box says where
+                events.perform(i, Action::Fallen);
             }
             if (players[i].figure->animator().released()) {
                 events.perform(i, Action::ThrowWeapon);
@@ -309,6 +310,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         }
         if (players[i].figure == nullptr && players[i].life == PlayerLife::Dying) {
             players[i].life = PlayerLife::InTower; // nothing to play: gone at once
+            if (events.perform) {
+                events.perform(i, Action::Fallen);
+            }
         }
         subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
     }

@@ -117,12 +117,29 @@ std::vector<Obstacle> LevelFixtures::obstacles() const {
     }
     return result;
 }
+std::vector<Obstacle> LevelFixtures::inertStops() const {
+    std::vector<Obstacle> stops = m_chests.obstacles();
+    const std::vector<Obstacle> gates = m_gates.obstacles();
+    stops.insert(stops.end(), gates.begin(), gates.end());
+    for (usize i = 0; i < m_traps.size(); ++i) {
+        const Traps::Trap& trap = m_traps.trap(i);
+        if (trap.shown && !trap.disarmed && trap.subtype == Traps::kTentWall &&
+            (trap.action == kTentRaising || trap.action == kTentRaised)) {
+            Obstacle box = trap.box;
+            box.solid = true;
+            stops.push_back(box);
+        }
+    }
+    return stops;
+}
+
 std::vector<MissileStop> LevelFixtures::missileStops() const {
     std::vector<MissileStop> stops;
-    for (const auto& group : {m_chests.obstacles(), m_gates.obstacles(), m_barrels.obstacles()}) {
-        for (const Obstacle& box : group) {
-            stops.push_back(MissileStop::of(box));
-        }
+    for (const Obstacle& box : inertStops()) {
+        stops.push_back(MissileStop::of(box));
+    }
+    for (const Obstacle& box : m_barrels.obstacles()) {
+        stops.push_back(MissileStop::of(box));
     }
     for (usize i = 0; i < m_safeRocks.size(); ++i) {
         if (m_safeRocks.standing(i)) {
@@ -154,15 +171,6 @@ std::vector<MissileStop> LevelFixtures::missileStops() const {
             if (trigger.shootable) {
                 stops.push_back(upright(trigger.spot, trigger.radius, trigger.height));
             }
-        }
-    }
-    for (usize i = 0; i < m_traps.size(); ++i) {
-        const Traps::Trap& trap = m_traps.trap(i);
-        if (trap.shown && !trap.disarmed && trap.subtype == Traps::kTentWall &&
-            (trap.action == kTentRaising || trap.action == kTentRaised)) {
-            Obstacle box = trap.box;
-            box.solid = true;
-            stops.push_back(MissileStop::of(box));
         }
     }
     return stops;
