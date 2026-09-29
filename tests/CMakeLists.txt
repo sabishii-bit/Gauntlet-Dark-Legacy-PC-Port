@@ -8,6 +8,7 @@ add_executable(tests
     game/world/DestructibleWallsTests.cpp
     game/world/MissileTargetTests.cpp
     game/combat/DamageTests.cpp
+    game/combat/DamageTypesTests.cpp
     game/screens/PlayerPowerupsTests.cpp
     game/menu/SettingsMenuTests.cpp
     game/menu/CompassHudTests.cpp

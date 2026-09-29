@@ -570,9 +570,26 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the player as one who blocks, and a blow over 15 with knock flags (0x10160)
   taken unguarded by one who never has teaches 125 `LEARNBLOCK` after the
   level's first minute (damage_player, player.c 3400).
-  Not yet: damage types (the element,
-  knock-over) doing anything and the two player combo (a grab, carry and
-  throw system of its own, help 111 with it). The directional guards
+  Damage types (`combat/DamageTypes`, effect.h's DMG_ bits): a hit's low
+  nibble is its element (fire 1, lightning 2, light 3, acid 4: the amulets'
+  weapon flags, the turbo rows' `damageType`, a potion's colour), and
+  `Damage::modify` is ModifyDamage (combat.c 410): the target's armour comes
+  off first (never off magic or gas), then an element does one and a half
+  times (1.25 wherever a boss is fought) unless the target's shield flags
+  (`CritterData::shieldFlags`, TYPE +0xE0; the swarm's `enemy_armortype` are
+  all nought) hold its own bit (half; three quarters in an arena), its
+  immunity bit (nothing) or its opposite's (twice; 1.5): the dragon shrugs
+  off fire and fears lightning, the lich acid and light, the golems take
+  three quarters of magic (0x10), Skorne's temple form none of it (0x1000).
+  The marks: the swarm shows `damage::hitEffect` (BLOODFX1, FIREHIT, else
+  HITCOL; dying BLOODFX2, FIREDIE, ELECDIE, LIGHTDIE, ACIDDIE; the knights'
+  and tree folk's own for no element: fn_800945D0) in the element's death
+  skin, and a great one or boss struck with an element shows the same burst
+  at half its reach, turned its way, in place of its own hit record
+  (CritterDamage); DMG_NOHITFX (0x1000000) withholds either. The knock bits
+  are above (0x10160 floors the swarm; 0x100, 0x20 and 0x10 move the great
+  ones). Not yet: the two player combo (a grab, carry and throw system of
+  its own, help 111 with it). The directional guards
   (DEFENDLEFT/RIGHT/BACK) are never reached on GC: the control selector
   (fn_80088938) never returns their motion states, only DEFEND1's.
 * More of what a player can do. Strafing (`strafe`: Left Control, left thumb;
@@ -1535,8 +1552,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   flags, link) and set off as `CombatCue`s: a move's at its `sfxFrame`
   (its own effect sequence supplies the wind-up), a strike's
   (`AttackDefinition::sound`) at the part it strikes
-  with, a hit's mark (`hitSoundClose` @0xF4 for a blow, `hitSoundFar` @0xF6
-  for a missile) where it landed (`EnemyHit::where/close`). The scene plays
+  with, a hit's mark (`hitSoundFar` @0xF6 for a missile when it has one, else
+  `hitSoundClose` @0xF4; an elemental hit the element's burst instead) where
+  it landed (`EnemyHit::where/close`). The scene plays
   the trees from the creature's archive or the weapons' (`HITDIE`), the
   sounds from the level's bank (a boss level's is the boss's own).
 * The end of a boss fight (`screens/BossVictory`, the original's

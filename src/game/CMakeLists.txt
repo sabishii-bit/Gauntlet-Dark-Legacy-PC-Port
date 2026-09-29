@@ -58,6 +58,7 @@ add_library(game STATIC
     players/PickupVoices.cpp
     combat/Damage.h
     combat/Damage.cpp
+    combat/DamageTypes.cpp
     screens/PlayerPowerups.h
     screens/PlayerPowerups.cpp
     players/PowerupEffects.h

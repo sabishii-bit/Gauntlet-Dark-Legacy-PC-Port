@@ -94,6 +94,71 @@ TEST_CASE("combatants preserve elemental immunity and sub-one damage", "[combata
     }
 }
 
+TEST_CASE("an elemental hit on a great one bursts with its element instead of the own mark",
+          "[combatant][damage][damage-types]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/GAR_EAGL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GAR_EAGL","type":7}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":3,"hitSoundClose":0,"hitSoundFar":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60}],
+      "sounds":[{"name":"OWNHIT"},{"name":"OWNHITFAR"}]})");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0.5f, nullptr, {}, 'G'));
+    EnemyHit hit;
+    hit.damage = 5;
+    hit.player = 0;
+    hit.where = Vec3{1, 2, 3};
+    const auto only = [&](const EnemyHit& given) {
+        actor.hurt(given);
+        auto cues = actor.takeCues();
+        REQUIRE(cues.size() == 1);
+        return cues.front();
+    };
+    // A blow shows the close mark, a missile the far one (CritterDamage's sfxIndex1 for
+    // source 2), and a missile the close one when the type has no far mark.
+    hit.close = true;
+    CHECK(only(hit).tree == "OWNHIT");
+    hit.close = false;
+    CHECK(only(hit).tree == "OWNHITFAR");
+    // An elemental hit shows the element's burst (fn_800945D0): half the reach, turned the
+    // creature's way, where it landed, without the creature's own sound.
+    hit.flags = 2;
+    const CombatCue burst = only(hit);
+    CHECK(burst.tree == "HITCOL");
+    CHECK(burst.sound.empty());
+    CHECK(burst.scale == Approx(1.5f));
+    CHECK(burst.yaw == Approx(0.5f));
+    CHECK(burst.position == Vec3{1, 2, 3});
+    hit.flags = 1 | 0x10;
+    CHECK(only(hit).tree == "FIREHIT");
+    // A hit flagged DMG_NOHITFX shows nothing, elemental or not.
+    hit.flags = 0x1000000 | 1;
+    actor.hurt(hit);
+    CHECK(actor.takeCues().empty());
+    hit.flags = 0x1000000;
+    actor.hurt(hit);
+    CHECK(actor.takeCues().empty());
+    CHECK(actor.health() < 100);
+    writeTextFile(root / "critter/GAR_EAGL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GAR_EAGL","type":7}],
+      "types":[{"moveCount":1,"maxHealth":100,"radius":3,"hitSoundClose":0,"hitSoundFar":-1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60}],
+      "sounds":[{"name":"OWNHIT"}]})");
+    CombatantAssets closeOnly;
+    REQUIRE(closeOnly.load(device, root, Gargoyle::definition(), 'G'));
+    Combatant other;
+    REQUIRE(other.spawn(closeOnly, 0, {}, 0, nullptr, {}, 'G'));
+    hit.flags = 0;
+    hit.close = false;
+    other.hurt(hit);
+    auto cues = other.takeCues();
+    REQUIRE(cues.size() == 1);
+    CHECK(cues.front().tree == "OWNHIT");
+}
+
 TEST_CASE("combatant elemental multipliers follow the encounter not the creature family",
           "[combatant][damage]") {
     for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
