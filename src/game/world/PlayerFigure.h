@@ -85,6 +85,7 @@ public:
     void setMelee(const MeleeSense& sense) { m_animator.setMelee(sense); }
     void setAttackSpeed(bool rapid, bool speed) { m_animator.setAttackSpeed(rapid, speed); }
     void setShielded(bool shielded) { m_animator.setShielded(shielded); }
+    void setPushed(bool pushed) { m_animator.setPushed(pushed); }
     const PlayerAnimator& animator() const { return m_animator; }
     const TreeModel& missile() const { return m_missile; }
     ItemArchive* missileArchive() { return m_missileArchive; }

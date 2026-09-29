@@ -48,9 +48,10 @@ enum class PlayerDeed : u8 {
     Breathe,
     FireLeft,
     FireRight,
-    Pick,     ///< the gesture of an item picked up
-    Gag,      ///< retching at gas, Death's touch or food gone bad
-    DeathGrab ///< a halo's hold on Death, drawing him off
+    Pick,      ///< the gesture of an item picked up
+    Gag,       ///< retching at gas, Death's touch or food gone bad
+    DeathGrab, ///< a halo's hold on Death, drawing him off
+    Whirled    ///< swept up by a whirlwind
 };
 
 /** How far the nearest thing to strike lies: within a swing, within a step, or beyond. */
@@ -202,17 +203,19 @@ public:
         FireLeftRecover,
         FireRight,
         FireRightRecover,
-        Pick,            ///< a hand to the ground for what was taken, at full pace
-        Gag,             ///< STUN2, looped while it lasts
-        ShieldReady,     ///< the stance with a shield on the arm
-        ShieldRun,       ///< and its gait, walking or running
-        DeathGrabStart,  ///< the hands going out to Death
-        DeathGrab,       ///< held on him, looped
-        DeathGrabRelease ///< and let go
+        Pick,             ///< a hand to the ground for what was taken, at full pace
+        Gag,              ///< STUN2, looped while it lasts
+        ShieldReady,      ///< the stance with a shield on the arm
+        ShieldRun,        ///< and its gait, walking or running
+        DeathGrabStart,   ///< the hands going out to Death
+        DeathGrab,        ///< held on him, looped
+        DeathGrabRelease, ///< and let go
+        Whirled,          ///< flung up by a whirlwind (P_WHIRLWIND), then up again
+        Pushed            ///< shoved by another member, in place of standing or walking
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 115;
+    static constexpr usize kActionCount = 117;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -236,7 +239,8 @@ public:
         "ATTPWRAMED",   "ATTPWRAMEDR",  "ATTPWRALOW",   "ATTPWRALOWR",  "SSHOT2",
         "ATTCHOP",      "ATTCHOPR",     "ATTBREATHE",   "ATTBREATHER",  "ATTFIREL",
         "ATTFIRELR",    "ATTFIRER",     "ATTFIRERR",    "PICK",         "STUN2",
-        "SHIELD_READY", "SHIELD_RUN",   "DEATHGRABS",   "DEATHGRAB",    "DEATHGRABR"};
+        "SHIELD_READY", "SHIELD_RUN",   "DEATHGRABS",   "DEATHGRAB",    "DEATHGRABR",
+        "FLYUP",        "PUSHED"};
     static constexpr f32 kReleaseFrame = 2.0f;     ///< of the wind-up, from which it gives way
     static constexpr f32 kGagHold = 10.0f;         ///< frames of retching before anything cuts in
     static constexpr s32 kFidgetTicks = 1800;      ///< standing still before the first fidget
@@ -264,6 +268,9 @@ public:
     }
     /** Whether a shield is borne on the arm: the stance and gait are the shield's. */
     void setShielded(bool shielded) { m_shielded = shielded; }
+    /** Whether another member is pushing the body along: standing, walking or running, it
+     * shows being pushed instead (P_PUSHED, pmotion.c 2042). Set before each update. */
+    void setPushed(bool pushed) { m_pushed = pushed; }
     /** The character whose body this is: some classes keep their feet in the power swings. */
     void setCharacter(s32 character) { m_character = character; }
     /** Which way the character strafes from now on (none: it walks and runs as ever). Set
@@ -276,7 +283,8 @@ public:
     }
     /** Whether the body is off its feet or getting back onto them. */
     bool floored() const {
-        return m_current >= Action::FallBack && m_current <= Action::GetUpForward;
+        return (m_current >= Action::FallBack && m_current <= Action::GetUpForward) ||
+               m_current == Action::Whirled;
     }
     /** Whether this tick's step began a shield potion's release. */
     bool potionShielded() const { return m_potionShielded; }
@@ -475,6 +483,7 @@ private:
     bool m_strongHeld = false;
     bool m_moved = false; ///< the stick asked for movement this update
     bool m_shielded = false;
+    bool m_pushed = false;
     bool m_potionUsed = false;
     bool m_potionThrown = false;
     bool m_dead = false;

@@ -15,7 +15,7 @@
 #include "game/players/PickupVoices.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
-#include "game/screens/PlayScene.h"
+#include "game/screens/PartyPickups.h"
 
 namespace {
 
@@ -165,7 +165,7 @@ TEST_CASE("pickup help text and recordings resolve in the extracted retail banks
     }
     REQUIRE(primary.find("S_POJO2").has_value());
     for (s32 count = 1; count <= 12; ++count) {
-        for (const std::string& name : PlayScene::runeCountVoices(count)) {
+        for (const std::string& name : PartyPickups::runeCountVoices(count)) {
             CAPTURE(count, name);
             CHECK(primary.find(name).has_value());
         }

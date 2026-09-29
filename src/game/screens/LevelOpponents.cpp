@@ -1001,6 +1001,54 @@ f32 LevelOpponents::generatorPowerScale(s32 level, f32 placeLevel) {
  * it to the realm's own sound (`S_GENDAMG`, `S_GENKILLG`), and, gone, its brood is freed of
  * it. A player's hit is scaled by their level against the place's, never under one
  * (fn_8005C1DC's generator ramp). */
+/** A blast's ring reaching the swarm, the generators, the boss and the great ones, each once
+ * a blast unless the blow is slight enough to come again; thrown down away from its centre. */
+void LevelOpponents::blast(const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached,
+                           std::span<const PlayerRuntime> players) {
+    constexpr f32 kHeldFrom = 2.0f;   ///< a blow over this is not dealt the same one again
+    constexpr s32 kGenerators = 1000; ///< the blast's ids: enemies, then these
+    constexpr s32 kCritters = 2000;
+    constexpr s32 kBoss = 3000;
+    const auto first = [&](s32 id) {
+        if (std::ranges::find(reached, id) != reached.end()) {
+            return false;
+        }
+        if (damage > kHeldFrom) {
+            reached.push_back(id);
+        }
+        return true;
+    };
+    for (const s32 enemy : enemies().within(position, radius)) {
+        if (!first(enemy)) {
+            continue;
+        }
+        const Vec3 away = enemies().positionOf(enemy) - position;
+        strikeEnemy(enemy, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1, players);
+    }
+    for (const s32 generator : generators().within(position, radius)) {
+        if (first(kGenerators + generator)) {
+            strikeGenerator(generator, damage, -1, players);
+        }
+    }
+    if (bosses().within(position, radius) && first(kBoss)) {
+        EnemyHit struck;
+        struck.damage = damage;
+        struck.flags = EnemyHit::kKnockDown;
+        if (const Vec3* at = bosses().position(); at != nullptr) {
+            struck.direction = Vec3{at->x - position.x, 0.0f, at->z - position.z};
+        }
+        bosses().hurt(struck);
+    }
+    for (const s32 critter : critters().within(position, radius)) {
+        if (!first(kCritters + critter)) {
+            continue;
+        }
+        const Vec3 away = critters().positionOf(critter) - position;
+        strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1,
+                      std::nullopt, false, players);
+    }
+}
+
 void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
                                      std::span<const PlayerRuntime> players) {
     if (!m_resources.has_value()) {

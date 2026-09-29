@@ -615,4 +615,30 @@ TEST_CASE("a halo wearer holding Death stands facing him and heeds no button",
     CHECK(allowed == std::vector<bool>{true, false}); // held, no hold may be made
 }
 
+TEST_CASE("a member walking into another is stopped and shoves them along",
+          "[game][screens][party-motion][party-collision]") {
+    Fixture f;
+    f.players[1].actor.place(Vec3{0, 0, 3});
+    const f32 reach = f.players[0].actor.radius() + f.players[1].actor.radius();
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    for (s32 i = 0; i < 30; ++i) {
+        f.step();
+        const f32 apart =
+            glm::distance(f.players[0].actor.position(), f.players[1].actor.position());
+        CHECK(apart >= reach - 0.01f);
+    }
+    // It yields to the shoves, slowly, and knows it is pushed.
+    CHECK(f.players[1].actor.position().z > 3.0f);
+    CHECK(f.players[1].actor.position().z < 3.0f + 30.0f * f.players[1].actor.speed() / 30.0f);
+    CHECK(f.players[1].knockback.pushed());
+    CHECK_FALSE(f.players[0].knockback.pushed());
+    // Let go of, the shove fades.
+    f.inputs[3].move = MoveInput{};
+    for (s32 i = 0; i < 30; ++i) {
+        f.step();
+    }
+    CHECK_FALSE(f.players[1].knockback.pushed());
+    CHECK_FALSE(f.players[1].knockback.sliding());
+}
+
 } // namespace

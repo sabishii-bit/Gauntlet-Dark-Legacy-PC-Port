@@ -2692,9 +2692,9 @@ TEST_CASE("potions burst about the character or where they land, and powerups sh
     plain.name = "CD";
     PlayerActor bare;
     bare.spawn(0, plain, nullptr, Vec3{0.0f}, 0.0f);
-    REQUIRE(PlayScene::bodyScale(scene.actor(0)->save(), PowerupEffects::of(now)) ==
+    REQUIRE(PlayerFigure::bodyScale(scene.actor(0)->save(), PowerupEffects::of(now)) ==
             PowerupEffects::kGrowthScale);
-    REQUIRE(PlayScene::bodyScale(plain, PowerupEffects{}) == 1.0f);
+    REQUIRE(PlayerFigure::bodyScale(plain, PowerupEffects{}) == 1.0f);
 
     // The green potion, taken last, is used first: its acid bursts about the character.
     PlayScene::Inputs use{};
@@ -2989,14 +2989,6 @@ TEST_CASE("quitting a level gives up what it gave, keeping lessons and save slot
     CHECK(left[0].slot == std::optional<usize>{4});
     CHECK_FALSE(left[0].fallen);
     scene.close();
-}
-
-TEST_CASE("the narrator counts the party's runestones as the original does", "[game][screens]") {
-    CHECK(PlayScene::runeCountVoices(0).empty());
-    CHECK(PlayScene::runeCountVoices(1) == std::vector<std::string>{"S_RUNEFOUND1"});
-    CHECK(PlayScene::runeCountVoices(2) == std::vector<std::string>{"S_RUNE2", "S_RUNEFOUND2"});
-    CHECK(PlayScene::runeCountVoices(12) == std::vector<std::string>{"S_RUNE12", "S_RUNEFOUND2"});
-    CHECK(PlayScene::runeCountVoices(13).empty()); // AudioNumRunesFound has no thirteenth
 }
 
 TEST_CASE("the tower scene refuses to open without the level", "[game][screens]") {

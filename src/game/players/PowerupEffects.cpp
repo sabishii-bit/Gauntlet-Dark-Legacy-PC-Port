@@ -98,6 +98,16 @@ constexpr std::array<PowerupName, 74> kNames{{
 
 } // namespace
 
+namespace {
+
+/** The original's choice of the time a powerup shows (PlayerProcessPowerups): a slot for good
+ * (under none) or with longer left replaces what was found so far. */
+f32 longerOf(f32 found, f32 left) {
+    return left < 0.0f || left > found ? left : found;
+}
+
+} // namespace
+
 PowerupEffects PowerupEffects::of(const Inventory& inventory) {
     PowerupEffects effects;
     f32 elementTime = -1;
@@ -115,13 +125,23 @@ PowerupEffects PowerupEffects::of(const Inventory& inventory) {
             }
             effects.weapon |= slot.flags & ~0xFU;
             break;
-        case powerup::kArmor: effects.armor |= slot.flags; break;
+        case powerup::kArmor:
+            effects.armor |= slot.flags;
+            if ((slot.flags & powerup::kInvulnerable) != 0) {
+                effects.invulnerableLeft = longerOf(effects.invulnerableLeft, slot.strength);
+            }
+            break;
         case powerup::kSpeed:
             effects.paceAdd += slot.charge;
             effects.special |= powerup::kSpeedBoost;
             break;
         case powerup::kMagic: effects.magicAdd += slot.charge; break;
-        case powerup::kSpecial: effects.special |= slot.flags; break;
+        case powerup::kSpecial:
+            effects.special |= slot.flags;
+            if ((slot.flags & powerup::kInvisible) != 0) {
+                effects.invisibleLeft = longerOf(effects.invisibleLeft, slot.strength);
+            }
+            break;
         default: break;
         }
     }
@@ -145,11 +165,25 @@ s32 PowerupEffects::shots() const {
     return (weapon & powerup::kThreeWayShot) != 0 ? 3 : 1;
 }
 
-f32 PowerupEffects::bodyAlpha(f32 seconds) const {
-    if (!invisible()) {
+bool PowerupEffects::blinkedOff(f32 left) {
+    return left >= 0.0f && left <= kWarningSeconds &&
+           (static_cast<s32>(kBlinkRate * left) & 1) == 0;
+}
+
+f32 PowerupEffects::bodyAlpha() const {
+    if (!invisible() || blinkedOff(invisibleLeft)) {
         return 1.0f;
     }
-    return kInvisibleAlpha - kInvisibleWaver * std::sin(2.0f * std::numbers::pi_v<f32> * seconds);
+    return kInvisibleAlpha -
+           kInvisibleWaver * std::sin(2.0f * std::numbers::pi_v<f32> * invisibleLeft);
+}
+
+PowerupEffects::Chrome PowerupEffects::chrome() const {
+    if ((armor & (powerup::kGoldInvulnerable | powerup::kInvulnerable)) == 0 ||
+        blinkedOff(invulnerableLeft)) {
+        return Chrome::None;
+    }
+    return (armor & powerup::kGoldInvulnerable) != 0 ? Chrome::Gold : Chrome::Silver;
 }
 
 std::string_view powerupTextId(s32 kind, u32 flags) {

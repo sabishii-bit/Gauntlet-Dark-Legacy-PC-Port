@@ -231,7 +231,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     }
     // A hit cuts into anything at once, unless one is already being reeled from; while it
     // plays nothing else is asked of the body.
-    const bool felled = deed == PlayerDeed::FallBack || deed == PlayerDeed::FallForward;
+    const bool felled = deed == PlayerDeed::FallBack || deed == PlayerDeed::FallForward ||
+                        deed == PlayerDeed::Whirled;
     const bool struck = deed == PlayerDeed::Flinch || deed == PlayerDeed::Reel ||
                         deed == PlayerDeed::Spike || deed == PlayerDeed::Webbed || felled;
     if (struck && !floored() &&
@@ -245,6 +246,9 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         }
         if (felled) {
             reaction = deed == PlayerDeed::FallBack ? Action::FallBack : Action::FallForward;
+        }
+        if (deed == PlayerDeed::Whirled) {
+            reaction = Action::Whirled;
         }
         if (m_sequences[index(reaction)] >= 0) {
             Decision reel;
@@ -397,6 +401,12 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     } else if (m_shielded && (requested == Action::Walk1 || requested == Action::Run1) &&
                playable(Action::ShieldRun)) {
         requested = Action::ShieldRun;
+    }
+    const bool afoot = requested == Action::Ready || requested == Action::ShieldReady ||
+                       requested == Action::Walk1 || requested == Action::Run1 ||
+                       requested == Action::ShieldRun;
+    if (m_pushed && afoot && playable(Action::Pushed)) {
+        requested = Action::Pushed;
     }
     play(decide(requested), seconds);
     m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
@@ -572,7 +582,8 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::BreatheRecover:
     case Action::FireLeftRecover:
     case Action::FireRightRecover: break;
-    case Action::FallBack: d.action = Action::GetUpBack; break;
+    case Action::FallBack:
+    case Action::Whirled: d.action = Action::GetUpBack; break; // action.c 1270
     case Action::FallForward: d.action = Action::GetUpForward; break;
     case Action::GetUpBack:
     case Action::GetUpForward:
@@ -582,6 +593,11 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         d.cut = Cut::IfDifferent;
         break;
     case Action::ShieldRun: d.repeat = requested == Action::ShieldRun; break;
+    // Pushed loops while it is asked for (action.c 1197).
+    case Action::Pushed:
+        d.repeat = requested == Action::Pushed;
+        d.cut = Cut::IfDifferent;
+        break;
     // Reached out, the hold loops while Death is held, then lets go at once (action.c 1220).
     case Action::DeathGrabStart:
         d.action =
@@ -913,7 +929,8 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     if (done && decision.action != Action::Death && decision.action != Action::HitReact &&
         decision.action != Action::Stun && decision.action != Action::SpikeHit &&
         decision.action != Action::FallBack && decision.action != Action::FallForward &&
-        decision.action != Action::Grabbed && decision.action != Action::WebReact) {
+        decision.action != Action::Whirled && decision.action != Action::Grabbed &&
+        decision.action != Action::WebReact) {
         m_meleeBlow = blowOf(m_current);
     }
     // A strike beginning counts into the chain when a press came since the last one, and

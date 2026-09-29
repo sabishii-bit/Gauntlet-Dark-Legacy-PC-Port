@@ -679,6 +679,28 @@ TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and 
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::GetUpBack, 120) < 120);
 }
 
+TEST_CASE("a whirlwind flings the body up once and it gets up after (action.c 1270)",
+          "[game][players][animation]") {
+    TreeInfo tree = classTree();
+    for (const char* name : {"FLYUP", "GETUP"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 8;
+        tree.sequences.push_back(sequence);
+    }
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Whirled);
+    REQUIRE(animator.action() == Action::Whirled);
+    REQUIRE(animator.floored());
+    REQUIRE(animator.reacting());
+    REQUIRE(animator.moveScale() == 0.0f);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Whirled); // not restarted
+    REQUIRE(animator.action() == Action::Whirled);
+    REQUIRE(stepsUntilAttack(animator, Action::GetUpBack, 120) < 120);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 120) < 120);
+}
+
 TEST_CASE("a shield potion is raised with the gesture of a potion used, and told apart",
           "[game][players][animation]") {
     const TreeInfo tree = classTree();
@@ -1179,6 +1201,29 @@ TEST_CASE("a halo reaches out to Death, holds him in a loop and lets go",
     animator.update(PlayerMotion::Stand, kTicks, kStep);
     CHECK(animator.action() == Action::DeathGrabRelease);
     CHECK(playOut(animator, Action::DeathGrabRelease, PlayerDeed::None) == Action::Ready);
+}
+
+TEST_CASE("a body pushed along shows it instead of standing or walking",
+          "[game][players][animation]") {
+    TreeInfo tree = classTree();
+    TreeSequenceInfo sequence = tree.sequences.front();
+    sequence.name = "PUSHED";
+    sequence.frames = 8;
+    tree.sequences.push_back(sequence);
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.setPushed(true);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Walk, Action::Pushed, 60) < 60);
+    for (s32 i = 0; i < 30; ++i) { // looped while it lasts
+        animator.update(PlayerMotion::Stand, kTicks, kStep);
+        REQUIRE(animator.action() == Action::Pushed);
+    }
+    REQUIRE(animator.moveScale() == 1.0f);
+    // A throw is not pushed aside.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, true);
+    REQUIRE(animator.throwing());
+    animator.setPushed(false);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 120) < 120);
 }
 
 } // namespace

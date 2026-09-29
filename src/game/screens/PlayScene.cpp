@@ -2,9 +2,7 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
-#include <exception>
 #include <format>
 #include <numbers>
 
@@ -14,68 +12,24 @@
 
 #include "game/menu/CompassHud.h"
 #include "game/players/ClassData.h"
-#include "game/players/ItemPickup.h"
-#include "game/players/PickupVoices.h"
 #include "game/players/Progression.h"
 #include "game/screens/PlayerPowerups.h"
-#include "game/world/CameraMovementLimit.h"
-#include "game/world/DynamicLights.h"
 
 namespace gdl::game {
 
 namespace {
 
-constexpr std::string_view kBeamObject = "L1XPLIGHTRAY01"; ///< the light on Sumner's lectern
 constexpr std::string_view kWeaponsArchive = "WEAPONS";
-constexpr std::string_view kDroppedKey = "KEY"; ///< what a fallen player's keys lie as
-constexpr s32 kTurboCrowd = 15;                 ///< the swarm in view for the turbo lesson
-constexpr s32 kSumnerVoice = 2;                 ///< change_player makes Sumner a wizard
-constexpr f32 kBlockLessonAfter = 60.0f;        ///< the guard is taught only after a minute
-constexpr std::string_view kDroppedKeyRing = "KEYRING";
-constexpr std::string_view kItSign = "IT_SIGN"; ///< on the back of who is it
-constexpr std::string_view kGauntletObject = "BOSSGAUNTL";
 
-/** The shield an armour bears on the arm, none without one: reflecting, fire, then
- * lightning, as PlayerProcessPowerups tries them. */
-std::string_view shieldObjectOf(u32 armor) {
-    if ((armor & powerup::kReflectShield) != 0) {
-        return "RF_SHLD";
-    }
-    if ((armor & powerup::kFireShield) != 0) {
-        return "FW_SHLD";
-    }
-    if ((armor & powerup::kLightningShield) != 0) {
-        return "L_SHLD";
-    }
-    return {};
-}
-constexpr std::string_view kTaggedSound = "S_TAGGED";
-constexpr f32 kTaggedVolume = 180.0f / 255.0f; ///< fn_8009DCB4
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
 constexpr std::array<std::string_view, 2> kTempleLights{"L1XPLOWERLIGHTR", "L1XPUPPERLIGHTR"};
 constexpr f32 kCutBarTop = 48.0f / 384.0f;    ///< the cut's black bars, as the original's trigger
 constexpr f32 kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares of the height
-constexpr std::string_view kNeedCrystals = "NEEDCRYSTALS";
-constexpr std::string_view kNeedIcons = "NEEDGARGITEMS";
-constexpr std::string_view kUnlockLevel = "UNLOCKLEVEL";
-constexpr s32 kIconTierBase = 101; ///< a gargoyle gate's trigger id less this is its tier
 
 constexpr std::string_view kClassDataDirectory = "pdata";
-constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 constexpr std::string_view kScrollBurnSound = "S_OPTMENUSCROLL"; ///< the options menu's, too
-constexpr std::string_view kFirstRuneVoice = "S_RUNEFOUND1";
-constexpr std::string_view kRuneVoicePrefix = "S_RUNE"; ///< then S_RUNE2 to S_RUNE12
-constexpr std::string_view kRunesFoundVoice = "S_RUNEFOUND2";
-constexpr s32 kMostRunesCounted = 12;
-constexpr std::string_view kLevelScrollPrefix = "SCROLLS"; ///< a level's scroll pages
 constexpr f32 kLevelUpEffectSeconds = 3.0f; ///< the fanfare's ring about the character
-constexpr f32 kStrongThrowScale = 2.0f; ///< a strong throw's weapon: twice the size and the harm
-constexpr s32 kSpecialPowerup = 9;      ///< the pickup subtype of the specials
-constexpr f32 kShadowReach =
-    1.0f; ///< a player's shadow looks for its floor from this over the feet
-constexpr f32 kShadowDrop = 100.0f; ///< and this far under them
-constexpr u32 kTurboFlag = 0x80000; ///< of them, the one that fills the turbo meter
 const Vec3 kNowhere{0.0f, -1.0e6f, 0.0f};
 
 constexpr std::string_view kMenuMoveSound = "S_OPTMENUMOVVRT";
@@ -100,18 +54,12 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         return false;
     }
     m_classes.load(context.unpackedRoot / kClassDataDirectory);
-    if (const auto white = world.powerups().textures.find("AAAWHITE")) {
-        try {
-            m_hitFlashTexture = &world.powerups().textures.texture(device, *white);
-        } catch (const std::exception& e) {
-            log::warn("Player damage skin: {}", e.what());
-        }
-    }
     m_audio.open(context.unpackedRoot, context.sounds, world.audio(),
                  world.ref().name.empty() ? 'L' : world.ref().name.front(),
                  world.level() != nullptr && world.level()->bossType >= 0);
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
     m_weapons.load(context.unpackedRoot / kWeaponsArchive);
+    m_figures.loadSkins(device, world.powerups(), m_weapons);
     const std::array<TextureSet*, 5> effectTextures{&m_weapons.textures, &world.items().textures,
                                                     &world.realmItems().textures,
                                                     &world.powerups().textures, &m_staticTextures};
@@ -138,16 +86,10 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         m_transition.cover();
         m_transition.clearAway();
     }
-    // Sumner's beam waits for the party; the window light is restored from
-    // the collection after the party has been loaded.
-    m_beam = -1;
-    m_beamAlpha = 0.0f;
+    // The window light is restored from the collection after the party has been loaded.
     for (usize i = 0; i < world.layout().objects().size(); ++i) {
-        const std::string& name = world.layout().objects()[i].name;
-        if (name == kBeamObject) {
-            m_beam = static_cast<s32>(i);
-            world.setObjectAlpha(i, 0.0f);
-        } else if (std::ranges::find(kTempleLights, name) != kTempleLights.end()) {
+        if (std::ranges::find(kTempleLights, world.layout().objects()[i].name) !=
+            kTempleLights.end()) {
             world.setObjectAlpha(i, 0.0f);
         }
     }
@@ -191,12 +133,10 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     m_audio.startMusic(context.assets,
                        world.level() != nullptr ? world.level()->musicVolume : 1.0f);
-    m_intro = Intro::None;
-    // The party materialises first; Sumner's welcome, when it is due, follows.
-    m_welcomePending = world.isTower() && options.welcome.value_or(freshParty(party));
-    if (m_welcomePending) {
-        m_world->hideCrystals(); // Sumner reveals them once the scroll has gone
-    }
+    // The party materialises first; Sumner's welcome, when it is due, follows, and his beam
+    // waits for the party.
+    m_welcome.open(world,
+                   world.isTower() && options.welcome.value_or(TowerWelcome::freshParty(party)));
     // The start camera holds at the level's entrance and rides in to a party that stands
     // there; one back among a realm's portals (as when it has fallen, or come out of a level)
     // materialises with the follow camera already on it.
@@ -244,7 +184,7 @@ void PlayScene::close() {
     m_fixtures.clear();
     m_transition.release();
     m_departure.clear();
-    m_hitFlashTexture = nullptr;
+    m_figures.clear(); // before the archives whose skins it borrows
     m_leaving = false;
     m_attacks.clear();
     m_arsenal.clear(); // before the figures whose models they fly
@@ -254,7 +194,7 @@ void PlayScene::close() {
     m_playSeconds = 0.0f;
     m_hud.clear(); // before the static texture borrowed for selector glow
     m_staticTextures.releaseTextures();
-    m_intro = Intro::None;
+    m_welcome.clear();
     m_dimmer.reset();
     if (m_world != nullptr) {
         m_world->setAmbientOffset(0.0f);
@@ -265,7 +205,6 @@ void PlayScene::close() {
     m_players.clear();
     m_arrival.clear();
     m_weapons.release(); // its textures must go before the device does
-    m_welcomePending = false;
     m_world = nullptr;
     m_device = nullptr;
     m_open = false;
@@ -353,80 +292,17 @@ bool PlayScene::weaponHeld(s32 player) const {
     return false;
 }
 
-/** Sumner's beam comes up over three seconds while a player is near him and goes again once
- * they leave. */
-void PlayScene::updateBeam(s32 ticks) {
-    if (m_beam < 0) {
-        return;
-    }
-    bool near = false;
-    for (const PlayerRuntime& runtime : m_players) {
-        const PlayerActor& actor = runtime.actor;
-        near = near || glm::distance(actor.position(), m_sumner.position()) <= kBeamRadius;
-    }
-    const f32 step = static_cast<f32>(ticks) / static_cast<f32>(kBeamFadeTicks);
-    const f32 alpha = std::clamp(m_beamAlpha + (near ? step : -step), 0.0f, 1.0f);
-    if (alpha != m_beamAlpha) {
-        m_beamAlpha = alpha;
-        m_world->setObjectAlpha(static_cast<usize>(m_beam), alpha);
-    }
-}
-
-/** Takes what the party stands on: a crystal counts for everyone, towards its realm's gate,
- * up to what the gate wants; the taker's box gets the card, every box the count. */
-void PlayScene::collectItems() {
-    if (m_device == nullptr) {
-        return;
-    }
-    std::vector<Collector> collectors;
-    collectors.reserve(m_players.size());
-    for (const PlayerRuntime& runtime : m_players) {
-        const PlayerActor& actor = runtime.actor;
-        // Against an open chest, a character reaches what lies in it.
-        const Vec3 here = presenceOf(collectors.size());
-        const s32 chest = m_fixtures.chests().holdingTouchedBy(ChestVisitor{here, actor.radius()});
-        Vec3 from = here;
-        if (chest >= 0) {
-            const s32 held = m_fixtures.chests().chest(static_cast<usize>(chest)).held;
-            from = m_world->placedItems().item(static_cast<usize>(held)).position;
-        }
-        collectors.push_back(Collector{from, actor.reach(), actor.height() * 0.5f});
-    }
-    const std::vector<Pickup> pickups = m_world->collect(
-        *m_device, collectors, [this](const Pickup& pickup) { return takePickup(pickup); });
-    for (usize chest = 0; chest < m_fixtures.chests().size(); ++chest) {
-        const s32 held = m_fixtures.chests().chest(chest).held;
-        if (held >= 0 && m_world->placedItems().item(static_cast<usize>(held)).taken) {
-            m_fixtures.chests().remove(chest);
-        }
-    }
-    for (const Pickup& pickup : pickups) {
-        if (pickup.realm <= 0) {
-            continue; // handed over as it was judged
-        }
-        if (pickup.realm > 0 && static_cast<usize>(pickup.realm) < kRealmCount) {
-            const s32 wanted = LevelTriggers::crystalsNeeded(pickup.realm);
-            bool enough = wanted > 0;
-            for (PlayerRuntime& runtime : m_players) {
-                PlayerActor& actor = runtime.actor;
-                s32& count = actor.save().progress().crystals[static_cast<usize>(pickup.realm)];
-                if (wanted <= 0 || count < wanted) {
-                    ++count;
-                }
-                enough = enough && count >= wanted;
-                m_hud.pickups().showCount(actor.player(), PickupHud::crystalIcon(pickup.realm),
-                                          count, wanted);
-            }
-            if (pickup.collector < m_players.size()) {
-                m_hud.pickups().addCard(m_players[pickup.collector].actor.player(),
-                                        PickupHud::kCrystalCard);
-            }
-            if (enough) {
-                announceUnlock(pickup.realm);
-            }
-        }
-        m_audio.playPickup();
-    }
+PartyPickups::Services PlayScene::pickupServices() {
+    return {.world = *m_world,
+            .fixtures = m_fixtures,
+            .hud = m_hud,
+            .audio = m_audio,
+            .classes = m_classes,
+            .sounds = m_context.sounds,
+            .help = [this](s32 id, usize index) { return postHelp(id, index); },
+            .openMessage = [this](std::string_view name,
+                                  usize page) { return openMessage(name, page); },
+            .challengeCoin = [this](usize item) { collectChallengeCoin(item); }};
 }
 
 Vec3 PlayScene::presenceOf(usize index) const {
@@ -443,18 +319,6 @@ bool PlayScene::fallen(s32 player) const {
     return false;
 }
 
-void PlayScene::hurtPlayer(s32 player, f32 damage, HurtKind kind, bool directed) {
-    for (usize i = 0; i < m_players.size(); ++i) {
-        if (m_players[i].actor.player() == player) {
-            hurt(i, damage, kind, directed);
-        }
-    }
-}
-
-/** What a guard or a shove leaves of a hurt over a point, by the original's rules as it
- * shipped: a raised guard halves what comes from somewhere and takes all of what comes from
- * nowhere in particular (a trap underfoot); a shove halves either. */
-
 const TurboMeter* PlayScene::turboMeter(s32 player) const {
     for (const PlayerRuntime& runtime : m_players) {
         if (runtime.actor.player() == player) {
@@ -464,46 +328,12 @@ const TurboMeter* PlayScene::turboMeter(s32 player) const {
     return nullptr;
 }
 
-/** Experience won, as the original awards it: scaled by the level (its own scale, less the
- * further the character is past the level the place is meant for); what a kill wins also
- * feeds the turbo meter, unless the character is in the middle of a turbo move. */
-void PlayScene::harm(s32 player, f32 damage, HurtKind kind) {
-    for (usize i = 0; i < m_players.size(); ++i) {
-        if (m_players[i].actor.player() == player) {
-            hurt(i, damage, kind);
-        }
-    }
-}
-
 void PlayScene::awardExperience(s32 player, s32 amount, bool kill) {
-    for (usize i = 0; i < m_players.size(); ++i) {
-        if (m_players[i].actor.player() != player || isDown(i)) {
-            continue;
-        }
-        if (kill) {
-            ++m_players[i].levelKills;
-        }
-        if (amount <= 0) {
-            continue;
-        }
-        CharacterSave& save = m_players[i].actor.save();
-        const LevelInfo* level = m_world->level();
-        const f32 scale = level != nullptr
-                              ? level->tuning.experienceScale(experienceLevel(save.experience()))
-                              : 1.0f;
-        const auto won = static_cast<s32>(static_cast<f32>(amount) * scale);
-        save.progress().experience += won;
-        const bool busy =
-            m_players[i].figure != nullptr && m_players[i].figure->animator().turboing();
-        if (kill && !busy) {
-            m_players[i].turbo.add(TurboMeter::kPerExperience * static_cast<f32>(won));
-        }
-    }
+    PartyRecords::award(m_players, player, amount, kill, m_world->level());
 }
 
 /** Puts a help message up over a character, the narrator saying it, unless the party has
  * seen it. */
-
 bool PlayScene::postHelp(s32 id, usize index, s32 number) {
     if (m_world != nullptr && m_world->isTower() && HelpMessages::gameplayTip(id)) {
         return false;
@@ -524,7 +354,7 @@ LevelFixtures::Events PlayScene::fixtureEvents() {
                        std::string_view name) { m_hud.pickups().addCard(player, name); },
         .opponents =
             [this](const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached) {
-                hurtOpponentsByBlast(position, radius, damage, reached);
+                m_opponents.blast(position, radius, damage, reached, m_players);
             },
         .releaseEnemy =
             [this](s32 record, const Vec3& position, s32 count) {
@@ -542,99 +372,6 @@ void PlayScene::blast(const Vec3& position, f32 radius, f32 damage) {
 void PlayScene::settleBlasts() {
     m_fixtures.settleBlasts(m_players, fixtureEvents());
 }
-void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage,
-                                     std::vector<s32>& reached) {
-    constexpr f32 kHeldFrom = 2.0f;   ///< a blow over this is not dealt the same one again
-    constexpr s32 kGenerators = 1000; ///< the blast's ids: enemies, then these
-    constexpr s32 kCritters = 2000;
-    constexpr s32 kBoss = 3000;
-    const auto first = [&](s32 id) {
-        if (std::ranges::find(reached, id) != reached.end()) {
-            return false;
-        }
-        if (damage > kHeldFrom) {
-            reached.push_back(id);
-        }
-        return true;
-    };
-    for (const s32 enemy : m_opponents.enemies().within(position, radius)) {
-        if (!first(enemy)) {
-            continue;
-        }
-        const Vec3 away = m_opponents.enemies().positionOf(enemy) - position;
-        strikeEnemy(enemy, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
-    }
-    for (const s32 generator : m_opponents.generators().within(position, radius)) {
-        if (first(kGenerators + generator)) {
-            strikeGenerator(generator, damage, -1);
-        }
-    }
-    if (m_opponents.bosses().within(position, radius) && first(kBoss)) {
-        EnemyHit struck;
-        struck.damage = damage;
-        struck.flags = EnemyHit::kKnockDown;
-        if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
-            struck.direction = Vec3{at->x - position.x, 0.0f, at->z - position.z};
-        }
-        m_opponents.bosses().hurt(struck);
-    }
-    for (const s32 critter : m_opponents.critters().within(position, radius)) {
-        if (!first(kCritters + critter)) {
-            continue;
-        }
-        const Vec3 away = m_opponents.critters().positionOf(critter) - position;
-        strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1);
-    }
-}
-
-/** A fallen player asked to wait in the tower or quit answers with their own buttons
- * (player.c 2452): accept waits, back leaves the game (abort_player), out of the party. */
-void PlayScene::answerTowerPrompts(const Inputs& inputs) {
-    for (PlayerRuntime& runtime : m_players) {
-        const auto player = static_cast<usize>(runtime.actor.player());
-        if (!runtime.towerPrompt || runtime.life != PlayerLife::InTower ||
-            player >= inputs.size()) {
-            continue;
-        }
-        if (inputs[player].menu.back) {
-            runtime.towerPrompt = false;
-            runtime.departed = true;
-            log::info("Player {} has left the game", player + 1);
-        } else if (inputs[player].menu.select) {
-            runtime.towerPrompt = false;
-        }
-    }
-}
-
-/** A player's death played out, the keys they carried fall where they lay, one as a KEY and
- * more as a KEYRING holding them all, for the rest of the party (player_dies); not in the
- * tower nor where a boss is fought. */
-void PlayScene::dropKeys(usize index) {
-    if (index >= m_players.size() || m_world == nullptr || m_device == nullptr ||
-        m_world->isTower()) {
-        return;
-    }
-    const LevelInfo* level = m_world->level();
-    if (level != nullptr && level->bossType >= 0) {
-        return;
-    }
-    Inventory& inventory = m_players[index].actor.save().progress().inventory;
-    if (inventory.keys <= 0) {
-        return;
-    }
-    const std::string_view name = inventory.keys == 1 ? kDroppedKey : kDroppedKeyRing;
-    const auto& infos = m_world->layout().itemInfos();
-    const auto record = std::ranges::find_if(infos, [&](const ItemInfo& info) {
-        return info.type == ItemInfo::kPowerup &&
-               info.subtype == static_cast<s32>(ItemKind::Keys) && info.name == name;
-    });
-    if (record != infos.end() &&
-        m_world->placeItemRecord(*m_device, static_cast<s32>(std::distance(infos.begin(), record)),
-                                 m_players[index].actor.position(), inventory.keys)) {
-        inventory.keys = 0;
-    }
-}
-
 /** A level gained heals and announces immediately; tower promotions award the new appearance. */
 void PlayScene::updateLevels() {
     for (usize i = 0; i < m_players.size(); ++i) {
@@ -752,59 +489,6 @@ void PlayScene::strikeGenerator(s32 id, f32 power, s32 byPlayer) {
     m_opponents.strikeGenerator(id, power, byPlayer, m_players);
 }
 
-void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
-                     const PlayerImpact& impact) {
-    if (index >= m_players.size()) {
-        return;
-    }
-    const LevelInfo* level = m_world->level();
-    m_health.hurt(
-        m_players[index], damage, kind, directed, m_world->isTower(),
-        level != nullptr ? level->tuning.damage : 1.0f,
-        {.block = [this, index](f32 taken,
-                                f32 left) { m_attacks.showBlock(index, taken, left, m_players); },
-         .sound = [this](std::string_view sound) { m_audio.playNamed(sound); },
-         .cry = [this, index](std::string_view voice) { m_attacks.cry(index, voice, m_players); },
-         .named = [this, index](std::string_view line,
-                                f32 wait) { sayWithName(index, line, wait); },
-         .learnBlock =
-             [this, index] {
-                 if (m_playSeconds > kBlockLessonAfter) {
-                     postHelp(HelpMessages::kLearnBlock, index);
-                 }
-             }},
-        impact, level != nullptr && level->bossType >= 0,
-        m_classes.stats(m_players[index].actor.save().character));
-}
-
-/** Burning floors, rollers and carts hurt whoever is against or on them, at most once a
- * second each (PlayerMotion_FloorFX); the heaviest jolt the mines' carts sound. */
-void PlayScene::updateHazardSurfaces(f32 seconds) {
-    constexpr f32 kSurfaceGap = 1.0f;
-    constexpr s32 kMineRealm = 9;
-    constexpr std::string_view kMineCartSound = "S_MINECARPHIT"; ///< AudioWorldHitPlyr's
-    for (usize i = 0; i < m_players.size(); ++i) {
-        PlayerRuntime& runtime = m_players[i];
-        runtime.surfaceGap = std::max(runtime.surfaceGap - seconds, 0.0f);
-        if (runtime.life != PlayerLife::Standing || runtime.capture.held() ||
-            runtime.surfaceGap > 0.0f) {
-            continue;
-        }
-        const PlayerActor& actor = runtime.actor;
-        const auto touch = m_world->hazards().touching(m_world->collision(), actor.position(),
-                                                       actor.radius(), actor.height());
-        if (!touch) {
-            continue;
-        }
-        runtime.surfaceGap = kSurfaceGap;
-        if (touch->harm.jolts && m_world->ref().realmId == kMineRealm) {
-            m_audio.playNamed(kMineCartSound);
-        }
-        hurt(i, touch->harm.damage, HurtKind::Blow, true,
-             PlayerImpact{touch->harm.impact, touch->away});
-    }
-}
-
 void PlayScene::startGameOver() {
     std::string_view caption;
     if (const auto message = m_hud.strings().find(GameOver::kMessage)) {
@@ -819,19 +503,6 @@ void PlayScene::startGameOver() {
     m_gameOver.begin(caption);
     m_audio.stopCues();
     log::info("The game is being quit; game over");
-}
-
-/** The narrator names the character ("Red Warrior", from the class's own bank) and says
- * `line` after: what the original's announcements by name do. */
-void PlayScene::sayWithName(usize index, std::string_view line, f32 wait) {
-    PlayerFigure* body = index < m_players.size() ? m_players[index].figure.get() : nullptr;
-    if (body == nullptr || m_context.sounds == nullptr) {
-        return;
-    }
-    const CharacterSave& save = m_players[index].actor.save();
-    const std::array lines{line};
-    m_audio.announce(body->voice(), PickupVoices::nameOf(save.character, save.color),
-                     PickupVoices::carriesPojo(save), lines, wait);
 }
 
 /** The whole party has gone through a portal: where to? Its own level when that is unpacked;
@@ -861,230 +532,19 @@ bool PlayScene::leaveBy(usize portal) {
 }
 
 std::vector<LevelResults> PlayScene::levelResults() const {
-    std::vector<LevelResults> results;
-    for (usize i = 0; i < m_players.size(); ++i) {
-        const auto& runtime = m_players[i];
-        if (!isDown(i)) {
-            results.push_back(LevelResults::between(runtime.actor.player(), runtime.entrySave,
-                                                    runtime.actor.save(), runtime.levelKills));
-        }
-    }
-    return results;
+    return PartyRecords::results(m_players);
 }
 
 std::vector<PartyMember> PlayScene::party() const {
-    std::vector<PartyMember> members;
-    members.reserve(m_players.size());
-    // The fallen go on as they came into the level, less what it gave them (but what they
-    // were taught stays taught).
-    for (usize i = 0; i < m_players.size(); ++i) {
-        const PlayerRuntime& runtime = m_players[i];
-        if (runtime.departed) {
-            continue; // gone from the game
-        }
-        const bool down = isDown(i);
-        PartyMember member{runtime.actor.player(), down ? runtime.entrySave : runtime.actor.save(),
-                           runtime.slot, down};
-        member.save.helpSeen = runtime.actor.save().helpSeen;
-        member.helpHeard = runtime.helpHeard;
-        members.push_back(std::move(member));
-    }
-    return members;
+    return PartyRecords::members(m_players);
 }
 
 std::vector<PartyMember> PlayScene::abandonedParty(std::span<const PartyMember> party) const {
-    std::vector<PartyMember> members(party.begin(), party.end());
-    for (PartyMember& member : members) {
-        for (const PlayerRuntime& runtime : m_players) {
-            if (runtime.actor.player() != member.player) {
-                continue;
-            }
-            std::vector<s32> taught = std::move(member.save.helpSeen);
-            member.save = runtime.entrySave;
-            member.save.helpSeen = std::move(taught);
-            member.fallen = false;
-        }
-    }
-    return members;
-}
-
-f32 PlayScene::bodyScale(const CharacterSave& save, const PowerupEffects& effects) {
-    return PlayerFigure::bodyScale(save, effects);
-}
-
-/** Hands a touched item to whoever touched it, by the original's rules: their card slides
- * up, the item's sound (or their own eating) plays, and what they cannot carry stays lying
- * where it is. Crystals are the party's and are dealt with once taken. */
-/** Whoever opened the chest a pickup came out of says so when another takes it
- * (fn_8009F748: the class's S_<CLS>STEAL, the unlockables their shadow's, Sumner a
- * wizard's; not while Pojo is carried), in the narrator's turn. */
-void PlayScene::complainOfTheft(s32 opener, s32 taker) {
-    if (opener < 0 || opener == taker) {
-        return;
-    }
-    for (const PlayerRuntime& runtime : m_players) {
-        const CharacterSave& save = runtime.actor.save();
-        if (runtime.actor.player() != opener || runtime.figure == nullptr ||
-            PickupVoices::carriesPojo(save)) {
-            continue;
-        }
-        const s32 voice =
-            save.character == kSumnerClass ? kSumnerVoice : save.character % kStartingClassCount;
-        m_audio.queueNarrationFrom(runtime.figure->voice(),
-                                   std::format("S_{}STEAL", classCode(voice)));
-        return;
-    }
-}
-
-std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
-    if (pickup.realm > 0) {
-        return 0;
-    }
-    if (pickup.collector >= m_players.size()) {
-        return std::nullopt;
-    }
-    const bool secretCoin =
-        pickup.subtype == static_cast<s32>(ItemKind::Gold) && m_world->ref().isSecret();
-    PlayerActor& actor = m_players[pickup.collector].actor;
-    const ClassStats* stats = m_classes.stats(actor.save().character);
-    const ItemTaking taking = takeItem(
-        actor.save(), ItemOffer{pickup.subtype, pickup.amount, pickup.flags, pickup.strength},
-        stats != nullptr ? stats->powerupTime : 1.0f);
-    if (!taking.took()) {
-        if (taking.outcome == ItemTaking::Outcome::KeysFull) {
-            postHelp(HelpMessages::kKeysFull, pickup.collector);
-        } else if (taking.outcome == ItemTaking::Outcome::PotionsFull) {
-            postHelp(HelpMessages::kPotionsFull, pickup.collector);
-        } else if (taking.outcome == ItemTaking::Outcome::HealthFull) {
-            postHelp(HelpMessages::kHealthFull, pickup.collector);
-        } else if (taking.outcome == ItemTaking::Outcome::AlreadyHeld) {
-            postHelp(HelpMessages::kAlreadyHaveRune, pickup.collector);
-        }
-        return std::nullopt;
-    }
-    if (pickup.subtype == kSpecialPowerup && (static_cast<u32>(pickup.flags) & kTurboFlag) != 0) {
-        m_players[pickup.collector].turbo.add(TurboMeter::kFull);
-    }
-    complainOfTheft(pickup.opener, actor.player());
-    // Gold, keys, potions, good food and powerups are picked up with a gesture, out of the
-    // tower; bad food is gagged on anywhere (items.c 3157-3385).
-    const auto kind = static_cast<ItemKind>(pickup.subtype);
-    if (taking.hurt) {
-        m_players[pickup.collector].gesture = PlayerDeed::Gag;
-    } else if (!m_world->isTower() &&
-               (kind == ItemKind::Gold || kind == ItemKind::Keys || kind == ItemKind::Food ||
-                kind == ItemKind::Potion ||
-                (kind >= ItemKind::WeaponPowerup && kind <= ItemKind::SpecialPowerup))) {
-        m_players[pickup.collector].gesture = PlayerDeed::Pick;
-    }
-    switch (kind) {
-    case ItemKind::Gold:
-        collectChallengeCoin(pickup.item);
-        if (!m_world->ref().isSecret() && pickup.amount >= 25) {
-            postHelp(17, pickup.collector);
-        }
-        break;
-    case ItemKind::Keys:
-        postHelp(m_fixtures.gates().size() > 0 ? 8 : HelpMessages::kChestNeedsKey,
-                 pickup.collector);
-        break;
-    case ItemKind::Potion:
-        // Retail tries the next lesson only when the previous one could not be posted.
-        if (!postHelp(7, pickup.collector) && !postHelp(94, pickup.collector)) {
-            postHelp(95, pickup.collector);
-        }
-        break;
-    case ItemKind::Runestone: shareRune(pickup.amount); break;
-    case ItemKind::Legend:
-        postHelp(HelpMessages::kFirstLegendName + taking.count, pickup.collector);
-        break;
-    case ItemKind::Scroll:
-        if (const LevelInfo* level = m_world->level(); level != nullptr && taking.count >= 0) {
-            openMessage(std::format("{}{}", kLevelScrollPrefix, level->name),
-                        static_cast<usize>(taking.count));
-        }
-        break;
-    default: break;
-    }
-    if (!taking.card.empty()) {
-        // Retail do_got_it selects COINHUD in realm 12 before testing gold value.
-        m_hud.pickups().addCard(actor.player(), secretCoin ? "COINHUD" : taking.card);
-    }
-    if (taking.message >= 0) {
-        postHelp(taking.message, pickup.collector);
-    }
-    if (!taking.sound.empty()) {
-        if (secretCoin) {
-            m_audio.playNamed(PickupVoices::bonusGold(actor.player(), pickup.amount));
-        } else {
-            m_audio.playNamed(taking.sound);
-        }
-    } else if (PlayerFigure* figure = m_players[pickup.collector].figure.get();
-               (taking.ate || taking.hurt) && figure != nullptr && m_context.sounds != nullptr) {
-        const bool pojo =
-            (PowerupEffects::of(actor.save().progress().inventory).special & 0x400) != 0;
-        const PickupVoice cue =
-            m_pickupVoices.food(actor.save().character,
-                                m_world->placedItems().item(pickup.item).name, taking.hurt, pojo);
-        if (cue.common) {
-            m_audio.playNamed(cue.sound);
-        } else {
-            m_audio.playFrom(figure->voice(), cue.sound);
-        }
-    }
-    return taking.left;
-}
-
-/** A runestone found is everyone's: each character in play gets it, and the narrator counts
- * what the party holds. */
-void PlayScene::shareRune(s32 rune) {
-    u16 held = 0;
-    for (PlayerRuntime& runtime : m_players) {
-        PlayerActor& actor = runtime.actor;
-        Relics& relics = actor.save().progress().relics;
-        relics.addRune(rune);
-        held |= relics.runes;
-    }
-    for (const std::string& voice : runeCountVoices(std::popcount(held))) {
-        m_audio.queueNarration(voice, LevelSoundscape::Narrator::Primary);
-    }
-}
-
-std::vector<std::string> PlayScene::runeCountVoices(s32 count) {
-    if (count <= 0 || count > kMostRunesCounted) {
-        return {};
-    }
-    if (count == 1) {
-        return {std::string(kFirstRuneVoice)};
-    }
-    return {std::format("{}{}", kRuneVoicePrefix, count), std::string(kRunesFoundVoice)};
-}
-
-/** The first of the party standing in the spot before Sumner, or null. */
-const PlayerActor* PlayScene::visitorOfSumner() const {
-    const LevelTriggers& triggers = m_world->triggers();
-    for (usize i = 0; i < triggers.size(); ++i) {
-        const LevelTrigger& spot = triggers.trigger(i);
-        if (spot.id != kSumnerSpot) {
-            continue;
-        }
-        for (const PlayerRuntime& runtime : m_players) {
-            const PlayerActor& actor = runtime.actor;
-            const Vec3 away = actor.position() - spot.spot;
-            const f32 reach = spot.radius + actor.radius();
-            if (away.x * away.x + away.z * away.z <= reach * reach &&
-                std::abs(away.y) <= LevelTriggers::kReach) {
-                return &actor;
-            }
-        }
-    }
-    return nullptr;
+    return PartyRecords::abandoned(m_players, party);
 }
 
 void PlayScene::updateSumnerVisit(f32 seconds) {
-    const PlayerActor* visitor = visitorOfSumner();
-    const std::optional<s32> player =
-        visitor != nullptr ? std::optional<s32>{visitor->player()} : std::nullopt;
+    const std::optional<s32> player = TowerWelcome::visitorOf(m_world->triggers(), m_players);
     if (m_sumnerVisit.visit(seconds, player, m_sumner.loaded(), m_messages.text(), m_context.config,
                             m_context.strings)) {
         m_sumner.play(SumnerFigure::kWelcomeIndex);
@@ -1118,43 +578,6 @@ void PlayScene::updateHints(const Inputs& inputs, s32 ticks) {
     }
 }
 
-/** A party is new to the tower while no class of any of its characters has experience. */
-bool PlayScene::freshParty(std::span<const PartyMember> party) {
-    return !party.empty() && std::ranges::all_of(party, [](const PartyMember& member) {
-        return std::ranges::none_of(member.save.classes, [](const ClassProgress& progress) {
-            return progress.experience > 0;
-        });
-    });
-}
-
-/** Opens Sumner's welcome scroll; without it the welcome goes straight to the crystals. */
-void PlayScene::beginIntro(RenderDevice& device) {
-    if (m_messages.open(device, kWelcomeMessage, m_context.strings)) {
-        m_intro = Intro::Scroll;
-        return;
-    }
-    log::warn("Tower: no welcome scroll to show; on to the crystals");
-    startCrystalCut();
-}
-
-/** Sumner gestures at the crystals while the camera cuts to them from the level's marker. */
-void PlayScene::startCrystalCut() {
-    m_sumner.gesture();
-    const WorldLocator* marker =
-        m_world->layout().findLocator(LocatorKind::TriggerCamera, kCrystalCamera);
-    if (marker == nullptr) {
-        log::warn("Tower: no crystal camera marker {}", kCrystalCamera);
-        m_intro = Intro::Done;
-        return;
-    }
-    m_cutCamera = WorldCamera{};
-    m_cutCamera.position = marker->position;
-    m_cutCamera.pitch = marker->rotation.x;
-    m_cutCamera.yaw = marker->rotation.y;
-    m_cutTicks = kCrystalTicks;
-    m_intro = Intro::Crystal;
-}
-
 /** A bit per party member whose player pressed their button this frame. */
 u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
     u32 accepted = 0;
@@ -1168,53 +591,6 @@ u32 PlayScene::acceptedPlayers(const Inputs& inputs) const {
     return accepted;
 }
 
-WorldCamera PlayScene::viewCamera() const {
-    if (const auto& camera = m_switchCutscene.camera();
-        m_switchCutscene.showing() && camera.has_value()) {
-        return *camera;
-    }
-    if (m_arrival.camera().active()) {
-        return m_arrival.camera().camera();
-    }
-    if (m_intro == Intro::Crystal) {
-        return m_cutCamera;
-    }
-    if (!spawning() && m_promotion.active() && m_promotion.camera().has_value()) {
-        return *m_promotion.camera();
-    }
-    if (relicCeremonyOn() && m_towerRelics.camera()) {
-        return *m_towerRelics.camera();
-    }
-    return bossCameraOn() ? m_shake.apply(m_bossCamera.camera(), m_bossCamera.attention())
-                          : m_shake.apply(m_camera.camera(), m_camera.attention());
-}
-
-/** A boss level with a boss camera record frames the fight with it while the boss stands. */
-bool PlayScene::bossCameraOn() const {
-    const LevelInfo* level = m_world != nullptr ? m_world->level() : nullptr;
-    return level != nullptr && level->bossCamera.has_value() &&
-           (m_opponents.bosses().present() || m_bossSequence.victory().state().running());
-}
-
-/** The boss as the camera sees it; once it has fallen, the wizard in its place. */
-BossCameraSubject PlayScene::bossSubject() const {
-    BossCameraSubject subject;
-    if (m_bossSequence.victory().state().running()) {
-        return m_bossSequence.victorySubject();
-    }
-    if (const Vec3* at = m_opponents.bosses().position(); at != nullptr) {
-        subject.position = *at;
-    }
-    subject.facing = m_opponents.bosses().facing();
-    subject.radius = m_opponents.bosses().radius();
-    subject.height = m_opponents.bosses().height();
-    subject.attentionOffset = m_opponents.bosses().cameraOffset();
-    subject.baseAttention = m_opponents.bosses().cameraBase();
-    subject.awake = m_opponents.bosses().view().awake;
-    return subject;
-}
-
-/** Whether any party member's player pressed a button this frame. */
 bool PlayScene::anyButton(const Inputs& inputs) const {
     return std::ranges::any_of(m_players, [&inputs](const PlayerRuntime& runtime) {
         const PlayerActor& actor = runtime.actor;
@@ -1267,8 +643,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         if (cues.burnSound) {
             m_audio.playNamed(kScrollBurnSound);
         }
-        if (!m_messages.active() && m_intro == Intro::Scroll) {
-            startCrystalCut();
+        if (!m_messages.active()) {
+            m_welcome.scrollClosed(m_world->layout(), m_sumner);
         }
         return PlayOutcome::Running;
     }
@@ -1319,16 +695,16 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
         m_world->update(seconds);
         updateAmbience();
-        updateBeam(ticks);
+        m_welcome.updateBeam(*m_world, m_players, m_sumner.position(), ticks);
         m_arrival.advance(ticks, anyButton(inputs), m_camera.camera().position,
                           m_camera.attention());
-        if (!spawning() && m_welcomePending) {
-            m_welcomePending = false;
-            beginIntro(*m_device);
+        if (!spawning()) {
+            m_welcome.arrived(*m_device, m_messages, m_context.strings, m_world->layout(),
+                              m_sumner);
         }
         return PlayOutcome::Running;
     }
-    if (m_promotion.active() && m_intro != Intro::Crystal) {
+    if (m_promotion.active() && !m_welcome.cutting()) {
         updatePromotion(ticks, seconds);
         return PlayOutcome::Running;
     }
@@ -1336,17 +712,11 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         updateTowerRelics(ticks, seconds);
         return PlayOutcome::Running;
     }
-    const bool held = m_intro == Intro::Crystal;
+    const bool held = m_welcome.hold(ticks);
     if (!held && updateChallenge(seconds)) {
         m_destination = LevelRef::tower(); // the application restores the parent when present
         m_secretTravel = true;
         return PlayOutcome::Travel;
-    }
-    if (held) {
-        m_cutTicks -= ticks;
-        if (m_cutTicks <= 0) {
-            m_intro = Intro::Done;
-        }
     }
     auto powerupClock = PlayerPowerups::Clock::Paused;
     if (!held && !m_world->isTower()) {
@@ -1369,118 +739,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                                                 player.actor.save().progress().inventory);
         }
     }
-    const PartyMotion::Events movementEvents{
-        .perform =
-            [this](usize i, PartyMotion::Action action) {
-                switch (action) {
-                case PartyMotion::Action::NoPotion: postHelp(HelpMessages::kNoPotion, i); break;
-                case PartyMotion::Action::Ram:
-                    m_attacks.ramBarrels(i, m_players, attackTargets());
-                    break;
-                case PartyMotion::Action::ThrowWeapon: throwWeapon(m_players[i].actor); break;
-                case PartyMotion::Action::FamiliarShot:
-                    m_arsenal.launchFamiliar(m_players[i].actor, m_players[i].figure.get(),
-                                             m_attacks.aim(m_players[i].actor,
-                                                           m_players[i].actor.facing(),
-                                                           attackTargets()));
-                    break;
-                case PartyMotion::Action::StrongThrow:
-                    launchWeapon(i, m_players[i].actor.facing(), kStrongThrowScale, true);
-                    break;
-                case PartyMotion::Action::SuperShot:
-                    m_arsenal.launchSuperShot(m_players[i].actor, m_players[i].figure.get(),
-                                              m_attacks.aim(m_players[i].actor,
-                                                            m_players[i].actor.facing(),
-                                                            attackTargets()));
-                    break;
-                case PartyMotion::Action::ShieldPotion: m_attacks.shieldPotion(i, m_players); break;
-                case PartyMotion::Action::ItemAttack: m_attacks.useItemAttack(i, m_players); break;
-                case PartyMotion::Action::UsePotion: m_attacks.usePotion(i, m_players); break;
-                case PartyMotion::Action::ThrowPotion:
-                    m_arsenal.throwPotion(m_players[i].actor);
-                    break;
-                case PartyMotion::Action::FirstFoot: m_audio.playFootstep(false); break;
-                case PartyMotion::Action::SecondFoot: m_audio.playFootstep(true); break;
-                case PartyMotion::Action::Melee:
-                    m_attacks.melee(i, m_players, attackTargets());
-                    break;
-                case PartyMotion::Action::Tagged:
-                    postHelp(HelpMessages::kNowIt, i);
-                    m_audio.playNamed(kTaggedSound, kTaggedVolume);
-                    break;
-                case PartyMotion::Action::Fallen:
-                    dropKeys(i);
-                    // Out of the tower the fallen may wait there or leave (inactivate_player).
-                    m_players[i].towerPrompt = !m_world->isTower();
-                    break;
-                }
-            },
-        .select =
-            [this](usize i, const SelectorInput& input, s32 elapsed) {
-                m_hud.stepSelector(m_players[i].actor, input, elapsed, m_audio);
-            },
-        .advanceTurbo =
-            [this](usize i, s32 elapsed, f32 duration) {
-                m_attacks.updateTurbo(i, elapsed, duration, m_players, [this](s32 id, usize index) {
-                    // The meter full, the lesson waits for fifteen in view (pmotion.c 1756).
-                    if (id != HelpMessages::kUseTurbo ||
-                        m_opponents.enemies().inView() >= kTurboCrowd) {
-                        postHelp(id, index);
-                    }
-                });
-            },
-        .thrownImpact = [this](usize i, f32 damage) { hurt(i, damage, HurtKind::Blow, true); },
-        .aim =
-            [this](usize i) {
-                const PlayerActor& actor = m_players[i].actor;
-                return m_attacks.aim(actor, actor.facing(), attackTargets());
-            },
-        .allowMovement =
-            [this](const Vec3& before, const Vec3& after) {
-                // A lone player's follow camera can travel with them. The shared
-                // view must constrain separation; fixed boss views also need bounds.
-                if (!bossCameraOn() &&
-                    std::ranges::count_if(m_players, [](const PlayerRuntime& player) {
-                        return player.life == PlayerLife::Standing;
-                    }) <= 1) {
-                    return true;
-                }
-                // Use the unshaken gameplay camera, never the promotion/victory cut.
-                const auto& camera = bossCameraOn() ? m_bossCamera.camera() : m_camera.camera();
-                const auto& attention =
-                    bossCameraOn() ? m_bossCamera.attention() : m_camera.attention();
-                return CameraMovementLimit::allows(before, after, attention, camera, cameraView());
-            },
-        .attackDeed =
-            [this](usize i, bool strong, bool moved) {
-                const s32 chain = m_players[i].figure != nullptr
-                                      ? m_players[i].figure->animator().meleeChain()
-                                      : 0;
-                return m_attacks.attackDeed(m_players[i].actor, strong, attackTargets(), moved,
-                                            chain);
-            },
-        .meleeSense =
-            [this](usize i, bool held) {
-                return m_attacks.meleeSense(m_players[i].actor, held, attackTargets());
-            },
-        .grabDeath =
-            [this](usize i, s32 ticks, bool allowed) {
-                return m_attacks.grabDeath(i, ticks, allowed, m_players, attackTargets());
-            },
-        .resolveMovement =
-            [this](usize i, const Vec3& from, const Vec3& to) {
-                return m_opponents.resolveMovement(m_players[i].actor, from, to);
-            },
-        .startPoint = [this]() -> std::optional<Vec3> {
-            if (const WorldLocator* start = m_world->startPoint(0)) {
-                return start->position;
-            }
-            return std::nullopt;
-        }};
     updateTransporters(ticks, seconds, held);
     const std::vector<CameraSubject> subjects = PartyMotion::step(
         m_players, inputs, held, bossCameraOn() ? m_bossCamera.yaw() : m_camera.yaw(), ticks,
-        seconds, m_world->collision(), movementEvents);
+        seconds, m_world->collision(), motionEvents());
     m_playSeconds += seconds;
     m_shake.update(ticks);
     m_hud.help().update(ticks);
@@ -1503,8 +765,10 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_dimmer.update(seconds);
     m_world->setAmbientOffset(m_dimmer.offset());
     m_effects.update(seconds);
-    collectItems();
-    updateBeam(ticks);
+    if (m_device != nullptr) {
+        m_pickups.collect(*m_device, m_players, pickupServices());
+    }
+    m_welcome.updateBeam(*m_world, m_players, m_sumner.position(), ticks);
     m_world->updateTriggers(seconds, visitors());
     handleTriggerEvents();
     if (m_switchCutscene.active()) {
@@ -1629,45 +893,19 @@ void PlayScene::gatherLights() {
     m_lights.clear();
     m_effects.lights(m_lights);
     m_opponents.lights(m_lights);
-    const LevelInfo* level = m_world->level();
-    if (level != nullptr && (level->flags & DynamicLights::kDarkLevel) != 0) {
-        for (const PlayerRuntime& runtime : m_players) {
-            if (runtime.life != PlayerLife::Standing) {
-                continue;
-            }
-            PointLight lantern;
-            lantern.position =
-                runtime.actor.followPoint() + Vec3{0.0f, DynamicLights::kLanternLift, 0.0f};
-            lantern.color = DynamicLights::lantern(runtime.actor.save().color);
-            lantern.radius = DynamicLights::kLanternRadius;
-            lantern.intensity = DynamicLights::kLanternIntensity;
-            m_lights.push_back(lantern);
-        }
-    }
+    PartyFigures::addLanterns(m_lights, m_players, m_world->level());
     if (m_lights.size() > WorldLighting::kMostPoints) {
         m_lights.resize(WorldLighting::kMostPoints);
     }
     m_world->setPointLights(m_lights);
 }
 
-void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) const {
-    for (const PlayerRuntime& runtime : m_players) {
-        if (runtime.figure == nullptr || runtime.life == PlayerLife::InTower ||
-            m_departure.finished() || !m_world->ref().playerShadows()) {
-            continue;
-        }
-        // It lies on the floor under the body, even while the body is thrown or sinks
-        // (PlayerMotion keeps its height at the floor, not the feet).
-        const Vec3 feet{
-            m_departure.transform(runtime.capture.body().value_or(runtime.actor.transform()))[3]};
-        if (const auto floor = m_world->collision().floorAt(feet, kShadowReach, kShadowDrop)) {
-            const PowerupEffects worn =
-                PowerupEffects::of(runtime.actor.save().progress().inventory);
-            runtime.figure->drawShadow(device, clip, eye, Vec3{feet.x, floor->y, feet.z},
-                                       floor->normal, m_world->lighting(),
-                                       worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha());
-        }
-    }
+PartyFigures::Scene PlayScene::figureScene() {
+    return {.world = *m_world, .weapons = m_weapons, .departure = m_departure};
+}
+
+void PlayScene::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) {
+    PartyFigures::drawShadows(device, m_players, figureScene(), clip, eye);
     m_opponents.enemies().drawShadows(device, clip, eye, m_world->lighting());
     m_opponents.critters().drawShadows(device, clip, eye, m_world->lighting());
     m_opponents.bosses().drawShadow(device, clip, eye, m_world->lighting());
@@ -1692,47 +930,13 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     if (!spawning()) {
         m_promotion.draw(device, clip, m_world->lighting());
     }
-    for (const PlayerRuntime& runtime : m_players) {
-        if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower &&
-            !m_departure.finished()) {
-            PlayerFigure& figure = *runtime.figure;
-            const PowerupEffects worn =
-                PowerupEffects::of(runtime.actor.save().progress().inventory);
-            const f32 size = bodyScale(runtime.actor.save(), worn);
-            const Mat4 body = glm::scale(
-                m_departure.transform(runtime.capture.body().value_or(runtime.actor.transform())),
-                Vec3{size, size, size});
-            const Texture* skin = m_departure.skin();
-            if (!m_departure.started() && runtime.hitFlashTicks > 0) {
-                skin = m_hitFlashTexture;
-            }
-            figure.setSkinTexture(skin);
-            // On the second hand: the left gauntlet, else a shield (PlayerProcessPowerups).
-            if ((worn.special & powerup::kLeftGauntlet) != 0) {
-                figure.holdOnArm(device, &m_world->powerups(), kGauntletObject);
-            } else {
-                figure.holdOnArm(device, &m_weapons, shieldObjectOf(worn.armor));
-            }
-            figure.draw(device, clip, body, m_world->lighting(),
-                        worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha(),
-                        runtime.move.weaponHidden(), &companionCamera);
-            figure.drawHeadwear(device, m_world->powerups(), worn, clip, body, m_world->lighting(),
-                                worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha());
-            // Who is it wears the realm's sign on their back (player.c 5885).
-            if (runtime.itTicks > 0) {
-                figure.drawMarker(device, m_world->realmItems(), kItSign, clip, body,
-                                  m_world->lighting(),
-                                  worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha());
-            }
-            figure.setSkinTexture(nullptr);
-        }
-    }
+    m_figures.draw(device, m_players, figureScene(), clip, companionCamera);
     m_portals.draw(device, clip, m_world->lighting());
     m_transporters.draw(device, clip, m_world->lighting());
     const CameraFrame effectCamera = companionCamera;
     m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting());
-    m_opponents.enemies().draw(device, clip, m_world->lighting(), m_hitFlashTexture, &m_weapons);
+    m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons);
     m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera);
     // The boss stands out in the level's own light while the rite darkens the rest.
     m_opponents.bosses().draw(device, clip,
@@ -1757,7 +961,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     }
     // The welcome's cut is letterboxed the way the original's trigger cameras are: black
     // bars top and bottom, the status boxes hidden beneath the lower one.
-    const bool cut = m_intro == Intro::Crystal || (m_promotion.active() && !spawning()) ||
+    const bool cut = m_welcome.cutting() || (m_promotion.active() && !spawning()) ||
                      relicCeremonyOn() || m_switchCutscene.showing();
     m_transition.draw(m_canvas, width); // over the view, under the boxes
     if (!cut) {
@@ -1814,18 +1018,8 @@ bool PlayScene::canJoin(s32 player) const {
     return m_open && m_world != nullptr && m_world->isTower() && actor(player) == nullptr &&
            m_players.size() < static_cast<usize>(kPlayerCount) && !m_leaving &&
            !m_gameOver.active() && !m_switchCutscene.active() && !spawning() &&
-           !m_messages.active() && !m_sumnerVisit.active() && m_intro == Intro::None &&
+           !m_messages.active() && !m_sumnerVisit.active() && m_welcome.intro() == Intro::None &&
            !m_promotion.active() && !relicCeremonyOn();
-}
-
-CameraView PlayScene::cameraView() const {
-    CameraView view;
-    if (m_context.config != nullptr) {
-        view.horizontalFov = m_context.config->horizontalFovRadians();
-        view.aspect = static_cast<f32>(m_context.config->display.frameWidth) /
-                      static_cast<f32>(m_context.config->display.frameHeight);
-    }
-    return view;
 }
 
 const PlayerActor* PlayScene::actor(s32 player) const {
@@ -1873,89 +1067,15 @@ bool PlayScene::openMessage(std::string_view name, usize page) {
     return m_device != nullptr && m_messages.open(*m_device, name, m_context.strings, page);
 }
 
-/** Congratulates the party once its crystals open a realm's gate: the scroll for the realm,
- * its announcing voice, and the save remembers so it is not said twice. */
-void PlayScene::announceUnlock(s32 realm) {
-    if (realm <= 0 || static_cast<usize>(realm) >= kRealmCount) {
-        return;
-    }
-    const u32 bit = 1U << static_cast<u32>(realm);
-    bool fresh = false;
-    for (PlayerRuntime& runtime : m_players) {
-        PlayerActor& actor = runtime.actor;
-        ClassProgress& progress = actor.save().progress();
-        fresh = fresh || (progress.unlocked & bit) == 0;
-        progress.unlocked |= bit;
-    }
-    if (!fresh) {
-        return;
-    }
-    openMessage(kUnlockLevel, static_cast<usize>(realm));
-    if (static_cast<usize>(realm) < kUnlockVoices.size()) {
-        m_audio.speakOverScroll(kUnlockVoices[static_cast<usize>(realm)]);
-    }
-}
-
 /** Tells a refused party what a gate wants; a target opening before them (a gate's field, a
  * lift, a gate) sounds its slot's note until it is done, then the note of its end. */
 /** A turntable grinds as it turns and thuds as it stops (fn_8009D7E4): stone in the castle,
  * metal in the mines, nothing elsewhere. */
-void PlayScene::handleRotatorCues() {
-    constexpr s32 kCastleRealm = 1;
-    constexpr s32 kMineRealm = 9;
-    const s32 realm = m_world->ref().realmId;
-    std::string_view turning;
-    std::string_view stopping;
-    if (realm == kCastleRealm) {
-        turning = "S_ROCKROTATE";
-        stopping = "S_ROCKSTOP";
-    } else if (realm == kMineRealm) {
-        turning = "S_METLROTATE";
-        stopping = "S_METLROTATESTO";
-    }
-    for (const RotatorCue& cue : m_world->takeRotatorCues()) {
-        if (turning.empty() || m_context.sounds == nullptr) {
-            continue;
-        }
-        if (cue.kind == RotatorCue::Kind::Turning) {
-            if (!m_context.sounds->isPlaying(m_rotatorSound)) {
-                m_rotatorSound = m_audio.playNamed(turning);
-            }
-        } else {
-            m_audio.stop(m_rotatorSound);
-            m_rotatorSound = kNoSound;
-            m_audio.playNamed(stopping);
-        }
-    }
-}
-
 void PlayScene::handleTriggerEvents() {
-    handleRotatorCues();
-    for (const TriggerLesson& lesson : m_world->takeTriggerLessons()) {
-        if (lesson.party >= 0) {
-            postHelp(lesson.platform ? HelpMessages::kAllOnPlatform : HelpMessages::kAllOnTrigger,
-                     static_cast<usize>(lesson.party));
-        }
-    }
-    // One scroll at a time: the frame's first refusal.
-    if (const std::vector<TriggerRefusal> refusals = m_world->takeTriggerRefusals();
-        !refusals.empty()) {
-        const TriggerRefusal& refusal = refusals.front();
-        if (refusal.crystals) {
-            openMessage(kNeedCrystals, static_cast<usize>(refusal.id));
-        } else if (const s32 tier = refusal.id - kIconTierBase; tier >= 0) {
-            openMessage(kNeedIcons, static_cast<usize>(tier));
-        }
-    }
-    for (const TriggerOpening& opening : m_world->takeTriggerOpenings()) {
-        m_audio.opening(opening);
-    }
-    for (const TriggerOpening& settled : m_world->takeTriggerSettled()) {
-        m_audio.settled(settled);
-    }
-    for (const TriggerCameraCue& cue : m_world->takeTriggerCameraCues()) {
-        m_switchCutscene.begin(cue, m_world->layout(), m_world->isTower());
-    }
+    m_triggerCues.handle(*m_world, m_audio, m_context.sounds, m_switchCutscene,
+                         {.help = [this](s32 id, usize index) { return postHelp(id, index); },
+                          .openMessage = [this](std::string_view name,
+                                                usize page) { return openMessage(name, page); }});
 }
 
 } // namespace gdl::game

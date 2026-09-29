@@ -22,7 +22,6 @@
 #include "game/players/LevelResults.h"
 #include "game/players/LevelWatch.h"
 #include "game/players/Party.h"
-#include "game/players/PickupVoices.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerAnimator.h"
 #include "game/players/PowerupEffects.h"
@@ -35,8 +34,11 @@
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelMessages.h"
 #include "game/screens/LevelOpponents.h"
+#include "game/screens/PartyFigures.h"
 #include "game/screens/PartyHud.h"
 #include "game/screens/PartyMotion.h"
+#include "game/screens/PartyPickups.h"
+#include "game/screens/PartyRecords.h"
 #include "game/screens/PlayerAttacks.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/screens/PortalDeparture.h"
@@ -44,7 +46,9 @@
 #include "game/screens/SwitchCutscene.h"
 #include "game/screens/TowerPromotion.h"
 #include "game/screens/TowerRelics.h"
+#include "game/screens/TowerWelcome.h"
 #include "game/screens/TransitionScreen.h"
+#include "game/screens/TriggerCues.h"
 #include "game/world/BossCamera.h"
 #include "game/world/CameraShake.h"
 #include "game/world/EffectTrees.h"
@@ -117,24 +121,13 @@ class PlayScene {
 public:
     static constexpr s32 kPlayerCount = 4;
     static constexpr f32 kSpawnSpacing = 2.0f; ///< between party members at the entrance
-    static constexpr u32 kCrystalCamera = 198; ///< the trigger camera the welcome cuts to
-    static constexpr f32 kBeamRadius = 12.0f;  ///< how near Sumner his beam of light comes on
     static constexpr s32 kSpawnTicks = LevelArrivalPresentation::kSpawnTicks;
-    /** The voice that announces each realm's gate opening, by realm. */
-    static constexpr std::array<std::string_view, 9> kUnlockVoices{
-        "",           "S_CRYS4TWN", "S_CRYS4MNT", "S_CRYS4CST", "S_CRYS4SKY",
-        "S_CRYS4FOR", "S_CRYS4DES", "S_CRYS4ICE", "S_CRYS4DRM"};
-    static constexpr s32 kBeamFadeTicks = 180; ///< and how long it takes to come up or go
-    static constexpr s32 kCrystalTicks = 300;  ///< fifty frames of six ticks
-    static constexpr s32 kSumnerSpot = 240;    ///< the id of the trigger before him
+    static constexpr s32 kBeamFadeTicks = TowerWelcome::kBeamFadeTicks;
+    static constexpr s32 kCrystalTicks = TowerWelcome::kCrystalTicks;
     static constexpr f32 kGreetingSeconds = SumnerVisit::kGreetingSeconds;
     using Inputs = std::array<PlayInput, kPlayerCount>;
-    /** What the narrator says of the party's runestones, in order (AudioNumRunesFound): the
-     * first found, or the count and "runestones found"; nothing past twelve. */
-    static std::vector<std::string> runeCountVoices(s32 count);
 
-    /** Where a new party's welcome has got to. */
-    enum class Intro : u8 { None, Scroll, Crystal, Done };
+    using Intro = TowerWelcome::Intro;
 
     /** Brings the party into `world` (loading it when needed); false when the level or the
      * status boxes are not unpacked. */
@@ -167,7 +160,7 @@ public:
     /** The sound of the target that opened before the party most recently and is still
      * opening (a gate's force field humming as it thins, a lift, a gate), kNoSound otherwise. */
     SoundHandle fieldSound() const { return m_audio.fieldSound(); }
-    Intro intro() const { return m_intro; }
+    Intro intro() const { return m_welcome.intro(); }
     const ScrollBox& scroll() const { return m_messages.scroll(); }
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
     const PlayerMissiles& missiles() const { return m_arsenal.missiles(); }
@@ -252,12 +245,11 @@ public:
     /** The powerup selector over `player`'s box. */
     const PowerupSelector& selector(s32 player) const { return m_hud.selector(player); }
     /** How large a character is drawn: an ogre, one grown by a powerup, one of level 99. */
-    static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
     const SumnerHints& hintTexts() const { return m_sumnerVisit.texts(); }
     const PickupHud& pickups() const { return m_hud.pickups(); }
     const AmbientSounds& ambience() const { return m_audio.ambience(); }
     /** How far Sumner's beam of light has come up, 0 to 1. */
-    f32 beamAlpha() const { return m_beamAlpha; }
+    f32 beamAlpha() const { return m_welcome.beamAlpha(); }
     /** Whether the party is still materialising: held under the level's title until the start
      * camera has ridden in, or for the effect's life when there is no start camera. */
     bool spawning() const { return m_arrival.active(); }
@@ -278,7 +270,8 @@ public:
 
 private:
     /** The bodies' shadows, after all of the level's floors (some of which are translucent). */
-    void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye) const;
+    PartyFigures::Scene figureScene();
+    void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye);
     void watchOpponents();
     void gatherLights();
     void beginChallenge();
@@ -286,12 +279,9 @@ private:
     bool updateChallenge(f32 seconds);
     void spawnParty(std::span<const PartyMember> party, const PlayOptions& options);
     void throwWeapon(const PlayerActor& actor);
-    static bool freshParty(std::span<const PartyMember> party);
-    void beginIntro(RenderDevice& device);
-    void startCrystalCut();
     u32 acceptedPlayers(const Inputs& inputs) const;
     std::vector<TriggerVisitor> visitors() const;
-    void collectItems();
+    PartyPickups::Services pickupServices();
     bool leaveBy(usize portal);
     void updateFixtures(s32 ticks, f32 seconds);
     void updateTransporters(s32 ticks, f32 seconds, bool held);
@@ -299,11 +289,7 @@ private:
     LevelFixtures::Events fixtureEvents();
     LevelOpponents::Events opponentEvents();
     PlayerAttacks::Targets attackTargets();
-    void dropKeys(usize index);
     void answerTowerPrompts(const Inputs& inputs);
-    void complainOfTheft(s32 opener, s32 taker);
-    void hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage,
-                              std::vector<s32>& reached);
     void hurt(usize index, f32 damage, HurtKind kind, bool directed = false,
               const PlayerImpact& impact = {});
     void updateEnemies(s32 ticks, f32 seconds);
@@ -324,23 +310,20 @@ private:
     static constexpr f32 kLevelUpHealth = 100.0f;
     void sayWithName(usize index, std::string_view line, f32 wait);
     void updateHazardSurfaces(f32 seconds);
-    void handleRotatorCues();
     void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
     bool isDown(usize index) const {
         return index < m_players.size() && m_players[index].life != PlayerLife::Standing;
     }
     /** Where the level finds a character: nowhere once it has fallen. */
     Vec3 presenceOf(usize index) const;
-    std::optional<s32> takePickup(const Pickup& pickup);
-    void shareRune(s32 rune);
     void updateAmbience();
-    void updateBeam(s32 ticks);
     void beginSpawn(RenderDevice& device, bool ride);
     bool anyButton(const Inputs& inputs) const;
     bool openMessage(std::string_view name, usize page);
-    void announceUnlock(s32 realm);
     void handleTriggerEvents();
-    const PlayerActor* visitorOfSumner() const;
+    PartyMotion::Events motionEvents();
+    void perform(usize index, PartyMotion::Action action);
+    bool allowsStep(const Vec3& before, const Vec3& after) const;
     void updateSumnerVisit(f32 seconds);
     void updateHints(const Inputs& inputs, s32 ticks);
     CameraView cameraView() const;
@@ -368,7 +351,7 @@ private:
     LevelTransporters m_transporters;
     SwitchCutscene m_switchCutscene;
     PlayerHealth m_health;
-    PickupVoices m_pickupVoices;
+    PartyPickups m_pickups;
     AmbientDimmer m_dimmer;
     PlayerAttacks m_attacks;
     LevelFixtures m_fixtures;
@@ -386,23 +369,18 @@ private:
     TowerRelics m_towerRelics;
     SoundHandle m_relicVoice = kNoSound;
     SoundHandle m_promotionVoice = kNoSound;
-    SoundHandle m_rotatorSound = kNoSound; ///< a turntable turning
+    TriggerCues m_triggerCues;
     std::vector<std::unique_ptr<PlayerFigure>>
         m_promotionFigures; ///< retain borrowed voice/effect clips until close
-    WorldCamera m_cutCamera;
     CameraShake m_shake;
-    s32 m_cutTicks = 0;
-    s32 m_beam = -1; ///< the level object that is Sumner's beam of light
-    f32 m_beamAlpha = 0.0f;
+    TowerWelcome m_welcome;
 
     ItemArchive m_weapons;              ///< shared weapon and effect assets
     LevelArrivalPresentation m_arrival; ///< borrows the weapons archive
     bool m_open = false;
-    bool m_welcomePending = false;
     bool m_leaving = false;
     PortalDeparture m_departure;
-    const Texture* m_hitFlashTexture = nullptr; ///< borrowed from the world's powerup archive
-    Intro m_intro = Intro::None;
+    PartyFigures m_figures;
 };
 
 } // namespace gdl::game

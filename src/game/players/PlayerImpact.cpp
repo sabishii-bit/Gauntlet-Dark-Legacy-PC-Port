@@ -20,6 +20,10 @@ PlayerDeed PlayerImpact::reaction(f32 damage, f32 facing, bool braced) const {
         return PlayerDeed::None;
     }
     const u32 effective = this->effective(damage, braced);
+    // A whirlwind outranks every other knock (PlayerKnockback's first test).
+    if ((effective & kWhirlwind) != 0) {
+        return PlayerDeed::Whirled;
+    }
     if ((effective & (kKnockDown | kBlownAway | kKnockOver)) != 0) {
         const f32 away = std::atan2(direction.x, direction.z);
         const f32 delta = std::remainder(away - facing, 2.0f * std::numbers::pi_v<f32>);
@@ -41,6 +45,7 @@ PlayerDeed PlayerImpact::reaction(f32 damage, f32 facing, bool braced) const {
 PlayerDeed PlayerImpact::combine(PlayerDeed pending, PlayerDeed incoming) {
     const auto rank = [](PlayerDeed deed) {
         switch (deed) {
+        case PlayerDeed::Whirled: return 5;
         case PlayerDeed::FallBack:
         case PlayerDeed::FallForward: return 4;
         case PlayerDeed::Flinch: return 3;

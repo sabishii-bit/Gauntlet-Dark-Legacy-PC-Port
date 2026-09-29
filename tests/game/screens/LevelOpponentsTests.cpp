@@ -309,6 +309,43 @@ TEST_CASE("Chimera arena binds and updates head health meters through the oppone
     REQUIRE_FALSE(opponents.meter().bound());
 }
 
+TEST_CASE("a blast reaches a generator once, unless its blow is slight enough to come again",
+          "[level-opponents][generators][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("E1")));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    REQUIRE(opponents.generators().count() > 0);
+    const Vec3 at = opponents.generators().positionOf(0);
+    const f32 full = opponents.generators().healthOf(0);
+    std::vector<s32> reached;
+    opponents.blast(at, 1.0f, 2.0f, reached, players);
+    const f32 once = opponents.generators().healthOf(0);
+    CHECK(once < full);
+    CHECK(reached.empty()); // two or less may come again
+    opponents.blast(at, 1.0f, 2.0f, reached, players);
+    CHECK(opponents.generators().healthOf(0) < once);
+    const f32 twice = opponents.generators().healthOf(0);
+    opponents.blast(at, 1.0f, 3.0f, reached, players);
+    CHECK(reached == std::vector<s32>{1000});
+    const f32 thrice = opponents.generators().healthOf(0);
+    CHECK(thrice < twice);
+    opponents.blast(at, 1.0f, 3.0f, reached, players);
+    CHECK(opponents.generators().healthOf(0) == thrice);
+    opponents.close();
+}
+
 TEST_CASE("Temple generator damage plays realm particles and each accepted hit sounds",
           "[level-opponents][generators][enemy-feedback][unpacked]") {
     const auto root =
