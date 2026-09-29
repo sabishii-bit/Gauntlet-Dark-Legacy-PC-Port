@@ -568,4 +568,29 @@ TEST_CASE("it passes to a player touched once it has been held a second, and not
     CHECK(f.players[1].itTicks == 0);
 }
 
+TEST_CASE("a body retches while gas lasts with the stick let go, heeding no button; a pickup's "
+          "gesture waits for nothing else to be asked",
+          "[game][screens][party-motion][pickup]") {
+    Fixture f;
+    f.players[0].gagSeconds = 0.5f;
+    f.inputs[3].attack = true;
+    f.step();
+    const auto selected = [&] { return std::ranges::find(f.calls, "select0") != f.calls.end(); };
+    CHECK_FALSE(selected()); // retching: the buttons are not read
+    CHECK(f.players[0].gagSeconds == Approx(0.5f - 1.0f / 30.0f));
+    // Moving, it does not retch, and the buttons are read again.
+    f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+    f.step();
+    CHECK(selected());
+    f.calls.clear();
+    f.inputs[3] = {};
+    f.players[0].gagSeconds = 0.0f;
+    f.players[0].gesture = PlayerDeed::Pick;
+    f.players[0].reaction = PlayerDeed::Flinch;
+    f.step();
+    CHECK(f.players[0].gesture == PlayerDeed::Pick); // kept while something else is asked
+    f.step();
+    CHECK(f.players[0].gesture == PlayerDeed::None);
+}
+
 } // namespace

@@ -47,7 +47,9 @@ enum class PlayerDeed : u8 {
     Hammer,
     Breathe,
     FireLeft,
-    FireRight
+    FireRight,
+    Pick, ///< the gesture of an item picked up
+    Gag   ///< retching at gas, Death's touch or food gone bad
 };
 
 /** How far the nearest thing to strike lies: within a swing, within a step, or beyond. */
@@ -198,11 +200,13 @@ public:
         FireLeft,
         FireLeftRecover,
         FireRight,
-        FireRightRecover
+        FireRightRecover,
+        Pick, ///< a hand to the ground for what was taken, at full pace
+        Gag   ///< STUN2, looped while it lasts
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 108;
+    static constexpr usize kActionCount = 110;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -225,11 +229,12 @@ public:
         "ATTSTEP3R",    "ATTWALK2",     "ATTWALK2R",    "ATTPWRACLOSE", "ATTPWRACLOSER",
         "ATTPWRAMED",   "ATTPWRAMEDR",  "ATTPWRALOW",   "ATTPWRALOWR",  "SSHOT2",
         "ATTCHOP",      "ATTCHOPR",     "ATTBREATHE",   "ATTBREATHER",  "ATTFIREL",
-        "ATTFIRELR",    "ATTFIRER",     "ATTFIRERR"};
-    static constexpr f32 kReleaseFrame = 2.0f;        ///< of the wind-up, from which it gives way
-    static constexpr s32 kFidgetTicks = 1800;         ///< standing still before the first fidget
-    static constexpr s32 kSecondFidgetTicks = 600;    ///< after the first before the second
-    static constexpr f32 kRunMagnitude = 0.75f;       ///< stick beyond this runs
+        "ATTFIRELR",    "ATTFIRER",     "ATTFIRERR",    "PICK",         "STUN2"};
+    static constexpr f32 kReleaseFrame = 2.0f;     ///< of the wind-up, from which it gives way
+    static constexpr f32 kGagHold = 10.0f;         ///< frames of retching before anything cuts in
+    static constexpr s32 kFidgetTicks = 1800;      ///< standing still before the first fidget
+    static constexpr s32 kSecondFidgetTicks = 600; ///< after the first before the second
+    static constexpr f32 kRunMagnitude = 0.75f;    ///< stick beyond this runs
     static constexpr f32 kStanceBlend = 2.0f / 30.0f; ///< seconds a body eases back into its stance
 
     /** Takes the class tree's sequences; false when it has no stance. With `enter` the

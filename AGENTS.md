@@ -1630,7 +1630,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the gold and health. Scenarios take `gold`, `health`, `keys`, `potions` and
   `legends` (the realms whose bosses' items are carried) per member and
   `items` (`name`, `position`); `tests/scenarios/tower-items.json`
-  lays a spread out. Powerup timers do not run in the tower (nor did the
+  lays a spread out. Out of the tower, gold, keys, potions, good food and powerups are
+  taken with the `PICK` gesture (items.c 3157-3385: speak_kind 1, `PlayerRuntime::gesture`),
+  made once nothing else is asked, at full pace, finishing before an attack; from a
+  walk it starts only as a half cycle ends, as retail's one-frame request does. Bad
+  food anywhere is gagged on (`STUN2`, P_DEATH_REACT), as is gas for a second and
+  Death's touch for a frame while the stick is let go (`gagSeconds`, damage_player's
+  field_898, PlayerMotion's reaction 100): no button is heeded meanwhile, the loop
+  plays while it lasts and past its first ten frames a walk cuts in. Powerup timers do not run in the tower (nor did the
   original's).
 * The rest of the pickups (`players/Relics`, in each `ClassProgress`, saved
   under `relics`): subtype 10 is a runestone (its record's `value` the rune,

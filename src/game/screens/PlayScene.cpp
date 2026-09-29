@@ -950,7 +950,18 @@ std::optional<s32> PlayScene::takePickup(const Pickup& pickup) {
         m_players[pickup.collector].turbo.add(TurboMeter::kFull);
     }
     complainOfTheft(pickup.opener, actor.player());
-    switch (static_cast<ItemKind>(pickup.subtype)) {
+    // Gold, keys, potions, good food and powerups are picked up with a gesture, out of the
+    // tower; bad food is gagged on anywhere (items.c 3157-3385).
+    const auto kind = static_cast<ItemKind>(pickup.subtype);
+    if (taking.hurt) {
+        m_players[pickup.collector].gesture = PlayerDeed::Gag;
+    } else if (!m_world->isTower() &&
+               (kind == ItemKind::Gold || kind == ItemKind::Keys || kind == ItemKind::Food ||
+                kind == ItemKind::Potion ||
+                (kind >= ItemKind::WeaponPowerup && kind <= ItemKind::SpecialPowerup))) {
+        m_players[pickup.collector].gesture = PlayerDeed::Pick;
+    }
+    switch (kind) {
     case ItemKind::Gold:
         collectChallengeCoin(pickup.item);
         if (!m_world->ref().isSecret() && pickup.amount >= 25) {
