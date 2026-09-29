@@ -933,8 +933,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   not in shared attack execution. Keep raw serialized descriptor numbers intact.
   `Golem` owns realm-costume selection and five-unit knockback resistance;
   `General` owns its realm-costumed priority-move definition; `Gargoyle` owns
-  form-specific assets and the defeated form used for key drops. These definitions
-  do not invent missing patrol/statue behavior. Walking, a great one meets the
+  form-specific assets and the defeated form used for key drops. `General`'s
+  `patrols` is the round of the lookouts below; the golem's and gargoyle's statues
+  are `CritterStatues`, not a family policy. Walking, a great one meets the
   level's items (CritterCollideItems, fn_8005D5C8; `LevelFixtures::critterObstacles`
   and the generators): golems and gargoyles (`breaksItems`) walk through chests and
   strike barrels and generators no taller than three for their type's `damageScale`
@@ -1142,9 +1143,55 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   effect's last seconds (gauntworld.c 1333), the spider's `0xFF40FF40`
   tint, the genie's `LEGEND1` for 28 s,
   the patterns (PTRN), phases, cameras, children (the chimera's heads),
-  projectile moves, the general's waypoint patrol, the gargoyle's
-  fireball, per-part damage and breaking, the critters' sounds, the
-  statue's waking, and a boss level unpacked (`--only levelG5`).
+  projectile moves, per-part damage and breaking (`NODE` records with flag 2:
+  a part's own health, its `<PREFIX>D<node>` replacement object and the
+  sub-tree it sheds), and a boss level unpacked (`--only levelG5`).
+* A general's round (`enemies/CritterPatrol`, `CombatantDefinition::patrols`):
+  placed, it takes the chained lookout (sentry or event locator naming another)
+  nearest it within ten (CritterNewInst, FindClosestWaypoint) and, with nobody
+  in its sights, walks to it in the first step move of the walk family that goes
+  anywhere (types 48..57, not the one to a point, which wants a player; the
+  WALK, before any cooldown or distance test, CritterLookForReady), turning to
+  it at the move's rate unbounded by the facing limit (CritterRotate); within a
+  unit of a lookout it goes on to the one it names (CritterGetTarget,
+  NextWaypoint: none for a negative next or itself). Meanwhile it takes only a
+  player whose target score (the distance over the dot when squarely ahead,
+  else twice the distance, CritterCalcTargetScore) is within its placement's
+  sight parameter (the float at +0xC of the enemy data) at the level's enemy
+  sight scale (visrad, fn_80060114); a player taken, or a blow that gets
+  through, ends the round for good. Every castle and mountain general stands
+  by two posts naming each other (`LEVELA1`'s at (-30.9, 0, 33.8)). `Critters`
+  holds the level's `LookoutRoute` and starts the round at spawn;
+  `LevelOpponents` reads the sight parameter. `[critter-patrol]` covers it.
+* Statues (`enemies/CritterStatues`, SetItem items.c 6798, fn_80060114): a
+  placed golem or gargoyle stands as its own archive's `GOL_STATUE` or
+  `GAR_STATUE` tree (idle) where the level puts it, an upright cylinder of its
+  record's radius that stops the players, until woken: by a player walking into
+  it when its sight parameter is not under nought (fn_8005D730), by a thrown
+  weapon, strike or shield blow (fn_8005C1DC through `PlayerAttacks`'
+  `kStatueTargetBase`; magic leaves it be, unverified), or by a trigger flagged
+  0x2000 going active (`LevelTrigger::kWakesStatue`, fn_800606FC: the placed
+  enemy nearest its spot within ten, statue or swarm placement yet to stand,
+  which only a statue takes notice of; `LEVELA1`'s gargoyle has one at its
+  feet, chained after the pad thirty units south). Woken and in the camera's
+  view by twice its size from within fifty (as a placement stands), it plays
+  ACTIVE, held for the record's `activeOn` in half ticks or else the
+  sequence's frames at its rate over thirty, rounded, times two (ProcessItems'
+  activetime: the eagle's 85 frames 170 ticks, the golem's 15 at rate 60
+  sixty), pausing out of view; that over, the great one stands in its place
+  facing as it was placed, START first, carrying what the statue claimed.
+  `LevelOpponents` owns them, `PlayScene` draws them with the fixtures. Not
+  yet: one released from a container (items.c 1158, woken at once) and Death's
+  statue by this path (`Enemies` keeps its own). `[critter-statues]` covers it.
+* The great ones' sounds are heard at 224 of 255 as far off as they are
+  (CritterDoSfx: AudioPlay3DSel, sndFxPlay3DAtten's fade past twenty, gone
+  at seventy, through `LevelOpponents::playAt`), except a dying one's, which
+  carry whole (its DEATH move's are played through sndFxPlay3D;
+  `CombatCue::attenuated`). The eagle gargoyle's fireball is the shared
+  projectile path: FBALL (type 132, a player squarely ahead from ten to fifty)
+  throws damage record 5 (twenty, 50..75 a second, ballistic) as `FBALL_LOOP`
+  with `S_GRG<L>FBALL`, bursting as `FBALL_EXP`; BREATH (131) breathes to
+  twenty. `[gargoyle]` covers both against the real archive.
   Dragon breath's collision and effect use the active animated node. The
   unflagged FIRE move cue attaches there at `sfxFrame` (38 for BREATH), not
   the later damage frame (49). `EffectTrees::placeAt` preserves its full
