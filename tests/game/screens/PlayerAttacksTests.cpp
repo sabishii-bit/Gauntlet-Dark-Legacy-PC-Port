@@ -86,6 +86,105 @@ std::filesystem::path turboAssets() {
     return root;
 }
 
+/** The warrior's costume colour's effects with the fire weapon's glow and throw trees, and a
+ * wizard costume beside the warrior's. */
+void addElementalEffects(const std::filesystem::path& root) {
+    for (const auto* name :
+         {"PLAYERS/WAR/YEL", "PLAYERS/WAR/SFXYEL", "PLAYERS/WIZ/YEL", "PLAYERS/WIZ/SFXYEL"}) {
+        const auto dir = root / name;
+        std::filesystem::create_directories(dir);
+        writeTextFile(dir / "body.obj",
+                      "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+        // The costumes have a weapon hand and the weapon it holds.
+        writeTextFile(dir / "objects.json", R"({"objects":[
+          {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
+          {"index":1,"name":"R_WRIST","file":"body.obj","meshTriangles":1},
+          {"index":2,"name":"WEAP_YEL_HD1","file":"body.obj","meshTriangles":1}]})");
+        writeFile(dir / "skin.png", test::kTinyPng);
+        writeTextFile(dir / "textures.json", R"({"bitmaps":[
+          {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    }
+    for (const auto* cls : {"WAR", "WIZ"}) {
+        writeTextFile(root / "PLAYERS" / cls / "YEL/animations.json",
+                      std::string{R"({"trees":[{"name":")"} + cls + R"(_YEL",
+          "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]},
+                   {"name":"HAND","object":"R_WRIST","parent":0,"position":[1,2,3]}],
+          "sequences":[]}]})");
+    }
+    for (const auto* name : {"PLAYERS/WAR/SFXYEL", "PLAYERS/WIZ/SFXYEL"}) {
+        writeTextFile(root / name / "animations.json", R"({"trees":[
+          {"name":"WEAP_HOLD_RED",
+           "nodes":[{"name":"XN","object":"BODY","parent":-1,"position":[0,0,0]}],
+           "sequences":[{"name":"ACTIVE","frames":0,"rate":30}]},
+          {"name":"WEAP_TW_R",
+           "nodes":[{"name":"XN","object":"BODY","parent":-1,"position":[0,0,0]}],
+           "sequences":[{"name":"ACTIVE","frames":0,"rate":30}]}]})");
+    }
+    writeTextFile(root / "pdata/WIZ.json", R"({"height":6,"width":2,
+      "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600]})");
+}
+
+TEST_CASE("an elemental weapon glows in the hand while it is worn",
+          "[game][screens][player-attacks][weapon-glow][damage-types]") {
+    const auto root = turboAssets();
+    addElementalEffects(root);
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    auto& inventory = player.actor.save().progress().inventory;
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    CHECK(f.effects.count() == 0);
+    CHECK(player.weaponGlow.effect() == 0);
+    inventory.addPowerup(powerup::kWeapon, 1, 0, 1); // a fire amulet
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(player.weaponGlow.element() == 1);
+    CHECK(player.weaponGlow.effect() != 0);
+    const u32 lit = player.weaponGlow.effect();
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    CHECK(f.effects.count() == 1);
+    CHECK(player.weaponGlow.effect() == lit);
+    // The super shot fills the hand instead; taking the amulet off puts the glow out.
+    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 3, 1);
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    CHECK(f.effects.count() == 0);
+    inventory.powerups[1].on = false;
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    CHECK(f.effects.count() == 1);
+    inventory.powerups[0].on = false;
+    f.attacks.updateProjectiles(1.0f / 30, f.players, f.targets);
+    CHECK(f.effects.count() == 0);
+    CHECK(player.weaponGlow.effect() == 0);
+    f.attacks.clear();
+}
+
+TEST_CASE("an elemental weapon's throw carries its effect, the wizard's the effect alone",
+          "[game][screens][player-attacks][weapon-glow][damage-types]") {
+    const auto root = turboAssets();
+    addElementalEffects(root);
+    for (const s32 character : {0, 2}) {
+        CAPTURE(character);
+        Fixture f;
+        REQUIRE(f.classes.load(root / "pdata"));
+        auto& player = f.players[0];
+        player.actor.save().character = character;
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        f.arsenal.launchWeapon(player.actor, player.figure.get(), Vec3{0, 0, 1}, 1, false);
+        REQUIRE(f.arsenal.missiles().count() == 1);
+        CHECK(f.arsenal.missiles().missile(0).rider == 0);
+        player.actor.save().progress().inventory.addPowerup(powerup::kWeapon, 1, 0, 1);
+        f.arsenal.launchWeapon(player.actor, player.figure.get(), Vec3{0, 0, 1}, 1, false);
+        REQUIRE(f.arsenal.missiles().count() == 2);
+        const auto& thrown = f.arsenal.missiles().missile(1);
+        CHECK(thrown.rider != 0);
+        CHECK((thrown.model == nullptr) == (character == 2));
+        f.attacks.clear();
+    }
+}
+
 TEST_CASE("turbo contacts damage nearby enemies in every direction and reject distant floors",
           "[game][screens][player-attacks][turbo-contacts]") {
     const auto root = turboAssets();

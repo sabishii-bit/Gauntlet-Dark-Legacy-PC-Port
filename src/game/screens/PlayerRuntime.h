@@ -18,6 +18,7 @@
 #include "game/players/TurboMeter.h"
 #include "game/players/TurboMove.h"
 #include "game/world/PlayerFigure.h"
+#include "game/world/WeaponGlow.h"
 
 namespace gdl::game {
 enum class PlayerLife : u8 { Standing, Dying, InTower };
@@ -74,11 +75,12 @@ struct PlayerRuntime {
         std::optional<Mat4> placement;
     };
     Floor floor;
-    HeadGem gem;        ///< a hand of death's or health vampire's gem on the head
-    BodyGlow glow;      ///< shining through a darkening strike or the legend's rite
-    MeleeStreak streak; ///< close blows landed, towards the narrator's praise
-    ExitWait exitWait;  ///< standing still on an exit for the rest of the party
-    s32 nameTicks = 0;  ///< while over nought the name shows over the head (name_timer)
+    HeadGem gem;           ///< a hand of death's or health vampire's gem on the head
+    BodyGlow glow;         ///< shining through a darkening strike or the legend's rite
+    WeaponGlow weaponGlow; ///< an elemental weapon powerup's effect in the hand
+    MeleeStreak streak;    ///< close blows landed, towards the narrator's praise
+    ExitWait exitWait;     ///< standing still on an exit for the rest of the party
+    s32 nameTicks = 0;     ///< while over nought the name shows over the head (name_timer)
 };
 
 } // namespace gdl::game

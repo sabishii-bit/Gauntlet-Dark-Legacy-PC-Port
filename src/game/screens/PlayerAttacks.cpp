@@ -20,6 +20,7 @@
 #include "game/world/Chests.h"
 #include "game/world/DynamicLights.h"
 #include "game/world/TargetAssist.h"
+#include "game/world/WeaponGlow.h"
 namespace gdl::game {
 namespace {
 constexpr std::string_view kNoEffectTree = "NULLFX"; ///< a move's effect row that shows nothing
@@ -954,11 +955,44 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     healHit(actor.player(), flags, id, before, point, players, targets);
 }
 
+void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players) {
+    if (!m_resources) {
+        return;
+    }
+    for (PlayerRuntime& runtime : players) {
+        const CharacterSave& save = runtime.actor.save();
+        const PowerupEffects worn = PowerupEffects::of(save.progress().inventory);
+        std::optional<Mat4> hand;
+        if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower) {
+            const f32 size = PlayerFigure::bodyScale(save, worn);
+            const Mat4 body = glm::scale(runtime.capture.body().value_or(runtime.actor.transform()),
+                                         Vec3{size, size, size});
+            hand = runtime.figure->handAttachment(body);
+        }
+        const u32 element = hand.has_value() ? WeaponGlow::elementOf(worn) : 0;
+        Vec3 offset{0.0f};
+        Vec3 scale{0.0f};
+        if (const ClassStats* stats = m_resources->classes.stats(save.character);
+            stats != nullptr) {
+            const usize tier = WeaponGlow::tierOf(experienceLevel(save.experience()));
+            offset = stats->weaponGlowOffsets[tier];
+            scale = stats->weaponGlowScales[tier];
+        }
+        // The effects archive is asked for only with an element, so that a missing one is
+        // not tried again every frame.
+        ItemArchive* archive =
+            element != 0 && runtime.figure != nullptr ? runtime.figure->effects() : nullptr;
+        runtime.weaponGlow.update(m_resources->device, m_resources->effects, archive, element,
+                                  hand.value_or(Mat4{1.0f}), offset, scale);
+    }
+}
+
 void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> players,
                                       const Targets& targets) {
     if (!m_resources) {
         return;
     }
+    glowWeapons(players);
     std::vector<MissileTarget> missileTargets = strikeTargets(targets);
     const PlacedItems& lying = m_resources->world.placedItems();
     for (const usize bottle : lying.shootablePotions()) {

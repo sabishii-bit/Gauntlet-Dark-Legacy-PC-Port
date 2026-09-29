@@ -19,6 +19,8 @@ constexpr usize kStrikeSize = 0x58;
 constexpr usize kRecordSize = 0x180;
 constexpr usize kRangesOffset = 0x28;
 constexpr usize kBodyOffset = 0x48;
+constexpr usize kGlowOffsets = 0x68;
+constexpr usize kGlowScales = 0xE0;
 constexpr usize kFamiliarOffset = 0x164;
 constexpr usize kFamiliarShotOffset = 0x170;
 
@@ -59,6 +61,15 @@ PlayerClassRecord parsePlayerDataWad(std::span<const u8> bytes) {
     record.powerupTime = readWadF32(bytes, body + 16, kWhat);
     for (usize axis = 0; axis < record.weaponOffset.size(); ++axis) {
         record.weaponOffset[axis] = readWadF32(bytes, body + 20 + axis * 4, kWhat);
+    }
+    for (usize tier = 0; tier < PlayerClassRecord::kGlowTiers; ++tier) {
+        for (usize axis = 0; axis < 3; ++axis) {
+            const usize at = (tier * 3 + axis) * 4;
+            record.weaponGlowOffsets[tier][axis] =
+                readWadF32(bytes, offset + kGlowOffsets + at, kWhat);
+            record.weaponGlowScales[tier][axis] =
+                readWadF32(bytes, offset + kGlowScales + at, kWhat);
+        }
     }
     const auto s16At = [&](usize at) { return static_cast<s16>(readWadU16(bytes, at, kWhat)); };
     for (usize move = 0; move < record.moves.size(); ++move) {

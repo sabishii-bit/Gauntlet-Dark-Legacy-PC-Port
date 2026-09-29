@@ -39,7 +39,9 @@ TEST_CASE("class stats load from their files", "[game][players]") {
     const auto dir = test::scratchDirectory("class-data");
     writeTextFile(dir / "WAR.json", R"({"code": "WAR", "fight": [600, 999], "speed": [350, 750],
         "armor": [300, 700], "magic": [100, 500], "height": 5.0, "width": 1.5, "collisionY": 2.5,
-        "weaponOffset": [-0.5, 0.5, 1.5]})");
+        "weaponOffset": [-0.5, 0.5, 1.5],
+        "weaponGlowOffsets": [[0, -0.35, 0.75], [0, -0.2, 0.55]],
+        "weaponGlowScales": [[0.45, 0.55, 0.55], [0.55, 0.75, 0.7], [1, 2]]})");
     writeTextFile(dir / "WIZ.json", R"({"fight": [250, 650], "speed": [350, 750],
         "armor": [150, 550], "magic": [600, 999]})");
     writeTextFile(dir / "VAL.json", "{broken");
@@ -52,6 +54,12 @@ TEST_CASE("class stats load from their files", "[game][players]") {
     REQUIRE(classes.stats(0)->collisionY == 2.5f);
     REQUIRE(classes.stats(0)->weaponOffset == Vec3{-0.5f, 0.5f, 1.5f});
     REQUIRE(classes.stats(2)->weaponOffset == Vec3{0.0f, 0.0f, 0.0f}); // a file without one
+    REQUIRE(classes.stats(0)->weaponGlowOffsets[0] == Vec3{0.0f, -0.35f, 0.75f});
+    REQUIRE(classes.stats(0)->weaponGlowOffsets[1] == Vec3{0.0f, -0.2f, 0.55f});
+    REQUIRE(classes.stats(0)->weaponGlowOffsets[2] == Vec3{0.0f});
+    REQUIRE(classes.stats(0)->weaponGlowScales[1] == Vec3{0.55f, 0.75f, 0.7f});
+    REQUIRE(classes.stats(0)->weaponGlowScales[2] == Vec3{0.0f}); // not three values
+    REQUIRE(classes.stats(2)->weaponGlowScales[0] == Vec3{0.0f});
     REQUIRE(classes.stats(2)->magicMax == 999.0f);
     REQUIRE(classes.stats(1) == nullptr);
     REQUIRE(classes.stats(kSumnerClass) == nullptr);

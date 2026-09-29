@@ -1874,6 +1874,22 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   attack as it spits. It fades over the last second of the powerups that
   bring companions (0x7004F1 specials and the fire shield). The earned
   familiar is its own skin tree (PlayerProcessSkinFX) and shows beside it.
+  An elemental weapon (the amulets: fire 1, lightning 2, light 3, acid 4 in
+  the weapon flags) glows in the weapon hand (`world/WeaponGlow`, one in
+  `PlayerRuntime::weaponGlow`, set at the hand each frame by
+  `PlayerAttacks::glowWeapons`): the costume colour's `PLAYERS/<CLS>/SFX<COL>`
+  archive's `WEAP_HOLD_<RED|BLU|YEL|GRE>` by the element's colour, moved and
+  sized by the class's `weaponGlowOffsets`/`weaponGlowScales` for the tier
+  of ten levels (PDAT +0x68 and +0xE0, in `pdata/<CLASS>.json` after
+  `gdlunpack --only PDATA` is run again; without them it sits at the wrist),
+  put out while the right gauntlet, the super shot or the thunder hammer
+  fills the hand (PlayerProcessPowerups, player.c 5715-5790); the throw
+  carries `WEAP_TW_<R|B|Y|G>` riding the weapon (`MissileLaunch::riderArchive`,
+  PlayerStartMissile, combat.c 1030-1060), and the wizards, sorceresses and
+  the unlockables that shadow them throw that effect alone, their weapon
+  unseen. Not yet: the retail effect flags of either (0x81880, 0x800000 on
+  the fire throw), and the hand's own held objects (SUPERXBOW, HAMMER_HD,
+  BOSSGAUNTR), which are not drawn.
   `Inventory::spendKey` is the rule for locks; chests and doors come with
   the realm levels (the tower's archives hold no chest or door). Scenarios
   take `powerups`; `tests/scenarios/tower-powerups.json` carries a set. The

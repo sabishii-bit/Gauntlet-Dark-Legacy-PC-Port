@@ -53,6 +53,15 @@ std::vector<u8> sampleWad() {
     putF32(bytes, record + 0x5C, -0.5f);
     putF32(bytes, record + 0x60, 0.5f);
     putF32(bytes, record + 0x64, 1.5f);
+    putF32(bytes, record + 0x68, 0.0f); // the first tier's glow offset and scale
+    putF32(bytes, record + 0x6C, -0.35f);
+    putF32(bytes, record + 0x70, 0.75f);
+    putF32(bytes, record + 0xE0, 0.45f);
+    putF32(bytes, record + 0xE4, 0.55f);
+    putF32(bytes, record + 0xE8, 0.55f);
+    constexpr usize kTenthTier = usize{9} * 12;
+    putF32(bytes, record + 0x68 + kTenthTier + 4, -0.5f); // the tenth tier's offset, y
+    putF32(bytes, record + 0xE0 + kTenthTier + 8, 0.9f);  // and scale, z
     putF32(bytes, record + 0x164, -1.0f);
     putF32(bytes, record + 0x168, 5.0f);
     putF32(bytes, record + 0x16C, 0.75f);
@@ -85,6 +94,11 @@ TEST_CASE("a class record parses from its wad", "[formats][pdata]") {
     REQUIRE(record.weaponOffset == std::array<f32, 3>{-0.5f, 0.5f, 1.5f});
     REQUIRE(record.familiarOffset == std::array<f32, 3>{-1.0f, 5.0f, 0.75f});
     REQUIRE(record.familiarShotOffset == std::array<f32, 3>{1.25f, 6.0f, -0.5f});
+    REQUIRE(record.weaponGlowOffsets[0] == std::array<f32, 3>{0.0f, -0.35f, 0.75f});
+    REQUIRE(record.weaponGlowScales[0] == std::array<f32, 3>{0.45f, 0.55f, 0.55f});
+    REQUIRE(record.weaponGlowOffsets[9] == std::array<f32, 3>{0.0f, -0.5f, 0.0f});
+    REQUIRE(record.weaponGlowScales[9] == std::array<f32, 3>{0.0f, 0.0f, 0.9f});
+    REQUIRE(record.weaponGlowOffsets[4] == std::array<f32, 3>{0.0f, 0.0f, 0.0f});
 }
 
 TEST_CASE("damaged class wads are rejected", "[formats][pdata]") {

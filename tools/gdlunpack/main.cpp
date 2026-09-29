@@ -1090,6 +1090,16 @@ void unpackClassData(const std::filesystem::path& file, const std::filesystem::p
         json.value(axis);
     }
     json.endArray();
+    json.key("weaponGlowOffsets").beginArray();
+    for (const auto& tier : record.weaponGlowOffsets) {
+        json.numbers(tier);
+    }
+    json.endArray();
+    json.key("weaponGlowScales").beginArray();
+    for (const auto& tier : record.weaponGlowScales) {
+        json.numbers(tier);
+    }
+    json.endArray();
     json.key("moves").beginObject();
     for (usize move = 0; move < record.moves.size(); ++move) {
         json.key(PlayerClassRecord::kMoveNames[move]).value(static_cast<int>(record.moves[move]));

@@ -45,7 +45,14 @@ public:
     void showBlock(usize index, f32 taken, f32 left, std::span<PlayerRuntime> players);
     void updateTurbo(usize index, s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                      const std::function<void(s32, usize)>& help);
+    /** Missiles, potion waves and item attacks fly on; first the elemental weapons' glow is
+     * set at each hand for the frame. */
     void updateProjectiles(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
+    /** The elemental weapon's glow in each hand (PlayerProcessPowerups, player.c 5749): worn,
+     * its element's WEAP_HOLD effect of the costume colour's effects rides the weapon hand at
+     * the class's offset and scale for the character's tier; put out with the powerup, or
+     * while the right gauntlet, the super shot or the thunder hammer fills the hand. */
+    void glowWeapons(std::span<PlayerRuntime> players);
     void updateStrikes(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     void updateShields(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
     /** A halo wearer whose nearest thing ahead is Death holds him, drawing a point off him a

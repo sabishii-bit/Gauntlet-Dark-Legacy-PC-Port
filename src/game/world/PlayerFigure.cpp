@@ -296,6 +296,16 @@ std::optional<Vec3> PlayerFigure::handPosition(const Mat4& body) const {
     return Vec3{body * m_transforms[static_cast<usize>(m_handNode)] * Vec4{0.0f, 0.0f, 0.0f, 1.0f}};
 }
 
+std::optional<Mat4> PlayerFigure::handAttachment(const Mat4& body) const {
+    if (m_handNode < 0 || m_costume == nullptr) {
+        return std::nullopt;
+    }
+    const auto hand = static_cast<usize>(m_handNode);
+    return body * (hand < m_transforms.size()
+                       ? m_transforms[hand]
+                       : glm::translate(Mat4{1.0f}, m_costume->worldPosition(hand)));
+}
+
 std::optional<Mat4> PlayerFigure::attachment(const Mat4& body,
                                              std::string_view objectSuffix) const {
     if (m_costume != nullptr) {
