@@ -336,4 +336,18 @@ TEST_CASE("a hit that knocks pushes its victim the way it came, as guarding and 
     tower.health.hurt(tower.player, 10, HurtKind::Blow, true, true, 1, tower.events, knock);
     CHECK_FALSE(tower.player.knockback.pending());
 }
+TEST_CASE("gas leaves its victim retching a second, Death's touch a frame",
+          "[game][screens][player-health][pickup]") {
+    Fixture f;
+    f.health.hurt(f.player, 10, HurtKind::Gas, false, false, 1, f.events, {});
+    CHECK(f.player.gagSeconds == Approx(1.0f));
+    f.player.gagSeconds = 0.0f;
+    f.health.hurt(f.player, 10, HurtKind::Blow, false, false, 1, f.events,
+                  PlayerImpact{.flags = 0x1000});
+    CHECK(f.player.gagSeconds == Approx(1.0f / 15.0f));
+    f.player.gagSeconds = 0.0f;
+    f.health.hurt(f.player, 10, HurtKind::Blow, false, false, 1, f.events, {});
+    CHECK(f.player.gagSeconds == 0.0f);
+}
+
 } // namespace

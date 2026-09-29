@@ -187,8 +187,16 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (!down && players[i].reaction != PlayerDeed::None) {
             deed = players[i].reaction;
         }
+        // Still, a body retches while gas or Death's touch lasts, heeding no button
+        // (PlayerMotion's reaction 100, pmotion.c 1485).
+        players[i].gagSeconds = std::max(players[i].gagSeconds - seconds, 0.0f);
+        const bool gagging =
+            !down && deed == PlayerDeed::None && players[i].gagSeconds > 0.0f && !move.any();
+        if (gagging) {
+            deed = PlayerDeed::Gag;
+        }
         players[i].reaction = PlayerDeed::None;
-        if (!held && !down && !reeling && !entering && player < inputs.size()) {
+        if (!held && !down && !reeling && !entering && !gagging && player < inputs.size()) {
             const PlayInput& in = inputs[player];
             const bool carrying = !actor.save().progress().inventory.potions.empty();
             if ((in.usePotion || in.throwPotion) && !carrying) {
@@ -215,6 +223,15 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                                          : PlayerDeed::Attack;
             }
             events.select(i, in.selector, ticks);
+        }
+        // A pickup's gesture, or a gag at food gone bad, is made when nothing else is asked
+        // (speak_kind, pmotion.c 1722).
+        if (down) {
+            players[i].gesture = PlayerDeed::None;
+        } else if (players[i].gesture != PlayerDeed::None && deed == PlayerDeed::None && !reeling &&
+                   !held) {
+            deed = players[i].gesture;
+            players[i].gesture = PlayerDeed::None;
         }
         const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
         actor.setPaceBonus(powerups.paceAdd);

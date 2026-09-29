@@ -376,6 +376,9 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         requested = Action::ThrowPotion;
     } else if (melee != Action::Ready) {
         requested = melee;
+    } else if ((deed == PlayerDeed::Pick && playable(Action::Pick)) ||
+               (deed == PlayerDeed::Gag && playable(Action::Gag))) {
+        requested = deed == PlayerDeed::Pick ? Action::Pick : Action::Gag;
     } else if (m_strafe != StrafeWay::None && motion != PlayerMotion::Stand &&
                m_sequences[index(strafeStep(m_strafe, false))] >= 0) {
         requested = strafeStep(m_strafe, false);
@@ -563,7 +566,15 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     case Action::FallBack: d.action = Action::GetUpBack; break;
     case Action::FallForward: d.action = Action::GetUpForward; break;
     case Action::GetUpBack:
-    case Action::GetUpForward: break;
+    case Action::GetUpForward:
+    case Action::Pick: break; // plays through, then whatever is asked
+    case Action::Gag:
+        // Looped while asked for; let go of, it ends its cycle, and past its first frames
+        // anything else cuts in (P_DEATH_REACT).
+        d.repeat = requested == Action::Gag;
+        d.cut = requested == Action::Ready || m_player.frame() < kGagHold ? Cut::WhenDoneIfDifferent
+                                                                          : Cut::IfDifferent;
+        break;
     default:
         // A strafing step gives way to its other half while the same way is kept.
         if (strafing() && requested == firstHalfOf(m_current)) {
@@ -572,15 +583,17 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         break;
     }
     // A potion cuts into standing, walking and running at once, as an attack does.
+    // Nothing cuts the pickup's gesture short (P_PICKUP waits for its end).
+    const bool picking = m_current == Action::Pick;
     if ((requested == Action::UsePotion || requested == Action::ThrowPotion) &&
         d.action == requested && !isThrow(m_current) && !conjuring() &&
-        m_current != Action::Start) {
+        m_current != Action::Start && !picking) {
         d.cut = Cut::IfDifferent;
     }
     // An attack cuts into walking and running at once, and from their first halves takes the
     // moving wind-up.
     if (requested == Action::Throw && d.action == Action::Throw && !isThrow(m_current)) {
-        if (m_current != Action::Start && !meleeing()) {
+        if (m_current != Action::Start && !meleeing() && !picking) {
             d.cut = Cut::IfDifferent;
         }
         if (m_current == Action::Walk1 || m_current == Action::Run1) {
@@ -588,7 +601,7 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         }
     }
     if (isMelee(requested) && d.action == requested && !meleeing() && !throwing() && !conjuring() &&
-        !reacting() && !turboing() && !entering()) {
+        !reacting() && !turboing() && !entering() && !picking) {
         d.cut = Cut::IfDifferent;
     }
     if (d.action == Action::Ready && m_current != Action::Ready) {

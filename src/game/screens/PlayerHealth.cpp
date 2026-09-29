@@ -26,6 +26,9 @@ constexpr std::string_view kLifeForceLine = "S_LIFEFORCE";
 constexpr std::string_view kAboutToDieLine = "S_ABOUT";
 constexpr f32 kLowHealthWait = 1.0f; ///< seconds a line waits behind narration (fn_8009FFF4)
 constexpr f32 kAboutToDieWait = 0.5f;
+constexpr u32 kDrainFlag = 0x1000;             ///< Death's touch
+constexpr f32 kGasGagSeconds = 1.0f;           ///< retching after gas
+constexpr f32 kDrainGagSeconds = 1.0f / 15.0f; ///< and after Death's touch
 } // namespace
 f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directed) {
     const PlayerFigure* figure = runtime.figure.get();
@@ -80,6 +83,14 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
     }
     if (damage > 1.0f) {
         runtime.hitFlashTicks = kHitFlashTicks;
+    }
+    // Gas leaves its victim retching a second, Death's touch a frame (damage_player,
+    // player.c 3442).
+    if ((received.flags & Damage::kGas) != 0) {
+        runtime.gagSeconds = kGasGagSeconds;
+    }
+    if ((received.flags & kDrainFlag) != 0) {
+        runtime.gagSeconds = kDrainGagSeconds;
     }
     CharacterSave& save = runtime.actor.save();
     const s32 left = save.health() - static_cast<s32>(std::lround(damage));

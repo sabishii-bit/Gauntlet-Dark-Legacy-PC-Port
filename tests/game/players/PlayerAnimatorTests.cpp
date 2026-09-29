@@ -1107,4 +1107,36 @@ TEST_CASE("a turbo move cuts a close attack off", "[game][players][animation][me
     CHECK_FALSE(animator.meleeStruck());
 }
 
+TEST_CASE("a pickup's gesture plays through at full pace; a gag loops while it lasts",
+          "[game][players][animation][pickup]") {
+    const TreeInfo tree = meleeTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Pick);
+    REQUIRE(animator.action() == Action::Pick);
+    CHECK(animator.moveScale() == Approx(1.0f));
+    CHECK_FALSE(animator.reacting());
+    // An attack waits for the gesture's end (P_PICKUP).
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Attack);
+    CHECK(animator.action() == Action::Pick);
+    CHECK(playOut(animator, Action::Pick, PlayerDeed::Attack) == Action::Throw);
+
+    // Retching loops while asked for and, let go of, ends its cycle.
+    PlayerAnimator gag;
+    REQUIRE(gag.bind(tree, false));
+    gag.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Gag);
+    REQUIRE(gag.action() == Action::Gag);
+    for (s32 frame = 0; frame < 20; ++frame) {
+        gag.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Gag);
+        CHECK(gag.action() == Action::Gag);
+    }
+    CHECK(playOut(gag, Action::Gag, PlayerDeed::None) == Action::Ready);
+    // A walk cuts in only past its first frames.
+    PlayerAnimator walker;
+    REQUIRE(walker.bind(tree, false));
+    walker.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Gag);
+    walker.update(PlayerMotion::Walk, kTicks, kStep);
+    CHECK(walker.action() == Action::Gag);
+}
+
 } // namespace
