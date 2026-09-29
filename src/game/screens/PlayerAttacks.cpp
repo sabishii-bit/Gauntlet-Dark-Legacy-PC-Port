@@ -366,13 +366,13 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             continue;
         }
         shield.harmIn = kShieldHarmEvery;
-        const auto& walls = m_resources->world.walls();
-        for (usize i = 0; i < walls.size(); ++i) {
-            if (walls.standing(i) && walls.target(i, 0).touches(at, shield.radius)) {
-                targets.fixtures.strikeWall(i, shield.damage, shield.flags);
-            }
-        }
         const auto& actor = players[shield.actor].actor;
+        // Its magic carries its bearer's class perk as a burst's does (start_magic's shield).
+        if (const auto perk =
+                MagicPerk::of(actor.save().character, experienceLevel(actor.save().experience()))) {
+            targets.fixtures.bless(at, shield.radius, *perk, shield.actor, shield.blessed,
+                                   targets.fixtureEvents);
+        }
         for (const s32 id : targets.opponents.enemies().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
             targets.opponents.strikeEnemy(id, shield.damage, shield.flags,
@@ -397,15 +397,12 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             hit.direction = *targets.opponents.bosses().position() - at;
             targets.opponents.bosses().hurt(hit);
         }
+        // Magic leaves the walls, the rocks and every barrel but one holding something alone.
         for (const usize barrel : targets.fixtures.barrels().within(at, shield.radius)) {
-            targets.fixtures.strikeBarrel(barrel, shield.damage,
-                                          players[shield.actor].actor.player(), players,
-                                          targets.fixtureEvents);
-        }
-        for (usize rock = 0; rock < targets.fixtures.safeRocks().size(); ++rock) {
-            if (targets.fixtures.safeRocks().rock(rock).obstacle.touchedBy(at, shield.radius,
-                                                                           0.0f)) {
-                targets.fixtures.strikeSafeRock(rock, shield.damage);
+            if (!immuneToMagic(static_cast<s32>(barrel), targets)) {
+                targets.fixtures.strikeBarrel(barrel, shield.damage,
+                                              players[shield.actor].actor.player(), players,
+                                              targets.fixtureEvents);
             }
         }
     }

@@ -540,7 +540,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `MS_FIRE|ELEC|LIGHT|ACID` tree rings the character for three seconds,
   going about with it (`EffectTrees::moveTo`), sized like a burst, to
   `S_SHIELD1..4`, and harms what it touches for a quarter of the magic power
-  every half second (ours: the original's is an effect with a damage radius;
+  every half second (magic, so never walls, rocks or a barrel holding nothing) (ours: the original's is an effect with a damage radius;
   it takes nothing off what the character is dealt). A blast that gets more
   than a point through and finds no guard floors its victim: onto its face
   (`FALLFRNT`, then `GETUP2`) when it came from behind the way it faces,
@@ -1475,8 +1475,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   cycle, `DestructibleWalls::reveal`) or, greater, brings it down with 9999.
   Each change plays `LEVELUP_YEL`/`BLU`/`RED` there (walls none; a trap held
   again within 60 ticks none) and teaches the caster lessons 139-146
-  (`WARMAGIC1`..`ARCMAGIC2`) once per character. Not yet: the shield's
-  perk, and an open chest or gold (whose value retail rewrites) left alone. A player's hit on a
+  (`WARMAGIC1`..`ARCMAGIC2`) once per character; a potion shield carries it
+  too, every half second it harms. Not yet: an open chest or gold (whose
+  value retail rewrites) is left alone. A player's hit on a
   generator is a hundredth softer a level under the place's `playerLevel`
   and a tenth harder a level over, never under a point. A swing (PlayerGetTarget,
   fn_8005B274) reaches shootable triggers but never the safe rocks, and a
