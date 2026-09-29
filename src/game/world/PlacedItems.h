@@ -110,6 +110,7 @@ public:
         bool contained = false;          ///< opening chest owns it; not yet collectible
         Vec3 velocity{0.0f, 0.0f, 0.0f}; ///< while thrown
         bool thrown = false;             ///< in the air or rolling, not yet at rest
+        bool carried = false;            ///< held by one of the great ones, unseen
         f32 noGrabSeconds = 0.0f;        ///< over nought, no one can take it yet
 
         /** Whether a party of `players` sees it. */
@@ -203,6 +204,12 @@ public:
     bool throwItem(RenderDevice& device, std::string_view name, const Vec3& position,
                    const Vec3& velocity, const WorldCollision* collision, f32 noGrabSeconds,
                    std::optional<f32> strength = std::nullopt);
+    /** The pickup nearest `position` within `reach` along the ground and `rise` up or down
+     * that nothing yet holds, now held and unseen (fn_8005D0C4: a great one's to carry). */
+    std::optional<usize> claim(const Vec3& position, f32 reach, f32 rise);
+    /** Lets a held pickup go from `position` at `velocity`, as `throwItem` throws one. */
+    bool release(usize index, const Vec3& position, const Vec3& velocity,
+                 const WorldCollision* collision, f32 noGrabSeconds);
     /** Whether any gold lies untaken. */
     bool goldLeft() const;
     /** Turns the figures, flies what was thrown and plays the bursts on by `seconds`. */

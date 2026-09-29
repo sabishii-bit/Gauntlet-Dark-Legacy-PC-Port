@@ -16,6 +16,7 @@
 #include "TestSupport.h"
 #include "game/combat/Damage.h"
 #include "game/players/PowerupEffects.h"
+#include "game/screens/HelpMessages.h"
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelOpponents.h"
 #include "game/screens/PlayerHealth.h"
@@ -510,6 +511,72 @@ TEST_CASE("the placed enemies stand only once the camera comes to see them",
     opponents.close();
 }
 
+TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
+          "[level-opponents][carried][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GENERAL/LEVELG/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("G1")));
+    world.setPlayerCount(4);
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {24.375f, 0.0078125f, 2.5f}, 0);
+    // G1 stands a general on a banana (items.c fn_8005D0C4: within two along, three up).
+    const Vec3 post{5.6015625f, 9.8984375f, -112.3515625f};
+    const PlacedItems& items = world.placedItems();
+    std::optional<usize> held;
+    for (usize i = 0; i < items.size(); ++i) {
+        const Vec3 at = items.item(i).position;
+        if (items.item(i).name == "BANANNA" && std::hypot(at.x - post.x, at.z - post.z) < 2.0f) {
+            held = i;
+        }
+    }
+    REQUIRE(held.has_value());
+    REQUIRE(items.item(*held).visible);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    CHECK(items.item(*held).carried);
+    CHECK_FALSE(items.item(*held).visible);
+    std::optional<s32> general;
+    for (s32 id = 0; id < Critters::kMost; ++id) {
+        if (opponents.critters().alive(id) &&
+            glm::distance(opponents.critters().positionOf(id), post) < 3.0f) {
+            general = id;
+        }
+    }
+    REQUIRE(general.has_value());
+    std::vector<s32> helps;
+    LevelOpponents::Events events;
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.help = [&](s32 id, usize) {
+        helps.push_back(id);
+        return true;
+    };
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 1000000;
+    opponents.critters().hurt(*general, hit);
+    opponents.settleRewards(players, events);
+    CHECK_FALSE(items.item(*held).carried);
+    CHECK(items.item(*held).visible);
+    CHECK(items.item(*held).thrown); // it goes up in its bag and comes down
+    CHECK(helps == std::vector<s32>{HelpMessages::kGeneralsCarry});
+    for (s32 frame = 0; frame < 120; ++frame) {
+        world.update(1.0f / 30);
+    }
+    CHECK(items.item(*held).takeable());
+    CHECK(std::hypot(items.item(*held).position.x - post.x, items.item(*held).position.z - post.z) <
+          3.0f);
+    opponents.close();
+}
+
 TEST_CASE("Forsaken Province entrance generators breed with the placed enemy roster loaded",
           "[level-opponents][generators][unpacked]") {
     const auto root =
@@ -880,7 +947,8 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
         .arenaAnchors = {},
         .arenaTargets = {},
         .activateArena = {},
-        .shake = {}};
+        .shake = {},
+        .help = {}};
     opponents.update(6, 0.1f, {}, {}, events);
     REQUIRE(phases.empty());
     opponents.open({device, world, weapons, effects, audio, root, 1}, {});

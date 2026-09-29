@@ -899,8 +899,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   is doing (CritterDoKnockback: 20 dead, 10 for 0x10140, 7.5 for 0x20, 5 for
   0x10, a golem five less, a boss never); dead it plays
   DEATH, fades a second and is gone, a fifth of its value going to everyone.
-  A gargoyle slain leaves the key its form is named by (`GARGEAGL`) where
-  it fell. The bosses (`game/enemies/Bosses`) are their own thing, though
+  As the level opens each golem, general and gargoyle claims the pickup lying
+  nearest it, within two along the ground and three up or down, and holds it
+  unseen (fn_8005D0C4, `PlacedItems::claim`); slain, it lets that go, or a
+  gargoyle carrying nothing the piece its form is named by (`GARGEAGL`),
+  thrown straight up at 20 as StartBagFX's bag is, landing where it fell
+  (`LevelOpponents::dropCarried`, CritterDropItem), with lesson 134
+  (`GENSCARRY`) for a general or 138 (`DEFEATGAR`) for a gargoyle. The bag's
+  own tree is not drawn: the pickup flies in its place. The bosses (`game/enemies/Bosses`) are their own thing, though
   the original keeps them in the critter pool as type 4: one to a level,
   named by kind (`bossNameOf(bossType)`, the dragon 34 to the garm 44;
   archive `MONSTERS/<NAME>`, tree prefix plus suffix, `LICH`), stood at the

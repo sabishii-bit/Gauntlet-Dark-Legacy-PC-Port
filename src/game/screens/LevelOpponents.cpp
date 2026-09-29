@@ -14,6 +14,7 @@
 #include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
+#include "game/screens/HelpMessages.h"
 #include "game/screens/PlayerPowerups.h"
 #include "game/world/BodyCollision.h"
 #include "game/world/DynamicLights.h"
@@ -52,6 +53,10 @@ constexpr f32 kCloudDrop = 1.0f;
 constexpr Vec3 kCloudStretch{2.5f, 1.0f, 2.5f};
 constexpr f32 kSmokeFade = 0.5f;
 constexpr f32 kBlastSeconds = 1.0f; ///< the blast's and the cloud's first stage without art
+constexpr f32 kCarryReach = 2.0f;   ///< how far along the ground a great one's pickup may lie
+constexpr f32 kCarryRise = 3.0f;    ///< and up or down
+constexpr f32 kBagSpeed = 20.0f;    ///< its bag leaves straight up this fast
+constexpr f32 kBagSeconds = 1.25f;  ///< about the bag's flight, when the pickup can be taken
 constexpr f32 kCloudSeconds = 2.0f / 3.0f;
 
 bool cloudRealm(const std::string& level) {
@@ -455,6 +460,8 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         const bool great =
             *kind == kGolemEnemyKind || *kind == kGeneralEnemyKind || *kind == kGargoyleEnemyKind;
         if (great) {
+            // fn_8005D04C: each claims the pickup lying nearest it, to carry until slain.
+            placement.carried = world.claimItem(instance.position, kCarryReach, kCarryRise);
             m_pending.push_back(placement);
             continue;
         }
@@ -514,10 +521,15 @@ void LevelOpponents::standPlacements(std::optional<ViewVolume> view, const Vec3&
 
 void LevelOpponents::stand(const Placement& placement) {
     const Vec3& at = placement.spawn.position;
+    const auto carry = [&](std::optional<s32> id) {
+        if (id.has_value() && *id >= 0 && static_cast<usize>(*id) < m_carried.size()) {
+            m_carried[static_cast<usize>(*id)] = placement.carried;
+        }
+    };
     switch (placement.kind) {
-    case kGolemEnemyKind: m_critters.spawnGolem(at, placement.facing); return;
-    case kGeneralEnemyKind: m_critters.spawnGeneral(at, placement.facing); return;
-    case kGargoyleEnemyKind: m_critters.spawnGargoyle(at, placement.facing); return;
+    case kGolemEnemyKind: carry(m_critters.spawnGolem(at, placement.facing)); return;
+    case kGeneralEnemyKind: carry(m_critters.spawnGeneral(at, placement.facing)); return;
+    case kGargoyleEnemyKind: carry(m_critters.spawnGargoyle(at, placement.facing)); return;
     default: m_enemies.spawn(placement.spawn, {}, m_generators.obstacles()); return;
     }
 }
@@ -1172,6 +1184,45 @@ void LevelOpponents::awardBossLosses(std::span<const PlayerRuntime> players, con
     }
 }
 
+void LevelOpponents::dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,
+                                 const Events& events) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    // It comes out in a bag thrown straight up, and lies where the bag lands (StartBagFX).
+    const Vec3 up{0.0f, kBagSpeed, 0.0f};
+    bool dropped = false;
+    if (loss.critter >= 0 && static_cast<usize>(loss.critter) < m_carried.size()) {
+        std::optional<usize>& carried = m_carried[static_cast<usize>(loss.critter)];
+        if (carried.has_value()) {
+            dropped = m_resources->world.releaseItem(*carried, loss.position, up, kBagSeconds);
+            carried.reset();
+        }
+    }
+    if (!dropped && loss.kind == CombatantKind::Gargoyle && !loss.form.empty()) {
+        // A gargoyle carrying nothing leaves the piece its form is named by.
+        dropped = m_resources->world.throwItem(m_resources->device, "GARG" + loss.form,
+                                               loss.position, up, kBagSeconds);
+    }
+    if (!dropped || !events.help) {
+        return;
+    }
+    s32 lesson = 0;
+    if (loss.kind == CombatantKind::General) {
+        lesson = HelpMessages::kGeneralsCarry;
+    } else if (loss.kind == CombatantKind::Gargoyle) {
+        lesson = HelpMessages::kGargoylesRelease;
+    } else {
+        return;
+    }
+    for (usize i = 0; i < players.size(); ++i) {
+        if (players[i].life == PlayerLife::Standing) {
+            events.help(lesson, i);
+            return;
+        }
+    }
+}
+
 /** What the great ones are worth: a share to whoever hurt one, whole points as they add
  * up, and a kill's share to everyone. */
 void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
@@ -1180,9 +1231,8 @@ void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
         return;
     }
     for (const CombatLoss& loss : m_critters.takeLosses()) {
-        // A gargoyle slain leaves the key its form is named by where it fell.
-        if (loss.killed && loss.kind == CombatantKind::Gargoyle && !loss.form.empty()) {
-            m_resources->world.placeItem(m_resources->device, "GARG" + loss.form, loss.position);
+        if (loss.killed) {
+            dropCarried(loss, players, events);
         }
         for (const PlayerRuntime& runtime : players) {
             const PlayerActor& actor = runtime.actor;

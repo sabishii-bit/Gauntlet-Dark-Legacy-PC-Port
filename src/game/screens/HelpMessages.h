@@ -76,7 +76,9 @@ public:
     static constexpr s32 kHealthFull = 133;
     static constexpr s32 kBlastsDestroy = 135;
     static constexpr s32 kGasSpoils = 136;
+    static constexpr s32 kGeneralsCarry = 134; ///< a general slain let an item go
     static constexpr s32 kChestsExplode = 137;
+    static constexpr s32 kGargoylesRelease = 138; ///< a gargoyle slain did
     /** The first of the eight lessons of a class family's potion magic, in `MagicPerkDeed`'s
      * order: junk to silver and to gold, traps stopped and destroyed, fruit and meat
      * cleansed, secret walls revealed and destroyed. */
