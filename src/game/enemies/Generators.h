@@ -39,6 +39,12 @@ struct GeneratorEvent {
     bool destroyed = false;
 };
 
+/** What a player's blow on a generator of `kind` (the kind it breeds) earns
+ * (PlayerDamagedItem, combat.c 338): five times its row of the original's tables, the
+ * destroying blow's (lbl_8011BBA8) or a hit's (lbl_8011BB20); the unknown kinds -2 and -3
+ * count as the second and third, any other below nought as the first. */
+s32 generatorExperience(s32 kind, bool destroyed);
+
 /**
  * The level's generators: the huts and pits that breed the swarm. Each holds a kind and a
  * strength (the tier it breeds and how much it can take), keeps up to its count of enemies

@@ -94,6 +94,13 @@ TEST_CASE("party HUD hides carried goods and health while a character falls",
     REQUIRE_FALSE(dying.turbo.has_value());
     players[0].life = PlayerLife::InTower;
     REQUIRE(PartyHud::status(2, players).inTower);
+    REQUIRE_FALSE(PartyHud::status(2, players).towerPrompt);
+    // Fallen out of the tower, the box asks whether to wait there or quit; gone, it is empty.
+    players[0].towerPrompt = true;
+    REQUIRE(PartyHud::status(2, players).towerPrompt);
+    players[0].towerPrompt = false;
+    players[0].departed = true;
+    REQUIRE_FALSE(PartyHud::status(2, players).active);
 }
 
 TEST_CASE("party HUD clears transient presentation without altering participants",

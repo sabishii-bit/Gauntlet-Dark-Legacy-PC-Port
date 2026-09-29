@@ -1216,6 +1216,77 @@ TEST_CASE("a fallen player's keys lie where they fell for the rest of the party"
     }
 }
 
+TEST_CASE("the fallen are asked to wait in the tower or quit, and the last to quit ends the game",
+          "[game][screens][tower-prompt][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("G1")));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave first;
+    first.name = "AB";
+    first.progress().health = 300;
+    CharacterSave second = first;
+    second.name = "CD";
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{-36.2f, 26.5f, -125.3f};
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, first, 3}, PartyMember{1, second, 2}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    PlayScene::Inputs still{};
+    const auto fall = [&](s32 player) {
+        scene.hurtPlayer(player, 5000.0f, HurtKind::Burn);
+        for (s32 i = 0; i < 600 && !scene.status(player).inTower; ++i) {
+            scene.update(1.0 / 60.0, still);
+        }
+        REQUIRE(scene.status(player).inTower);
+    };
+    // The first falls: asked, and answers that it waits in the tower.
+    fall(0);
+    CHECK(scene.status(0).towerPrompt);
+    PlayScene::Inputs wait{};
+    wait[0].menu.select = true;
+    scene.update(1.0 / 60.0, wait);
+    CHECK_FALSE(scene.status(0).towerPrompt);
+    CHECK(scene.status(0).inTower);
+    CHECK(scene.party().size() == 2);
+    // The second falls and quits: out of the party; with one still waiting, the game goes on.
+    fall(1);
+    PlayScene::Inputs quit{};
+    quit[1].menu.back = true;
+    scene.update(1.0 / 60.0, quit);
+    CHECK_FALSE(scene.status(1).active);
+    REQUIRE(scene.party().size() == 1);
+    CHECK(scene.party()[0].player == 0);
+    scene.close();
+
+    // Alone, a player who quits ends the game (game_main's no active players).
+    PlayScene alone;
+    REQUIRE(alone.open(device, context, world, std::vector<PartyMember>{party[0]}, options));
+    alone.hurtPlayer(0, 5000.0f, HurtKind::Burn);
+    for (s32 i = 0; i < 600 && !alone.status(0).towerPrompt; ++i) {
+        alone.update(1.0 / 60.0, still);
+    }
+    REQUIRE(alone.status(0).towerPrompt);
+    PlayScene::Inputs leave{};
+    leave[0].menu.back = true;
+    PlayOutcome outcome = alone.update(1.0 / 60.0, leave);
+    for (s32 i = 0; i < 600 && outcome == PlayOutcome::Running; ++i) {
+        outcome = alone.update(1.0 / 60.0, still);
+    }
+    CHECK(outcome == PlayOutcome::GameOver);
+    alone.close();
+}
+
 TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
     test::unpackedOrSkip("LEVELS/LEVELG1/world.json");

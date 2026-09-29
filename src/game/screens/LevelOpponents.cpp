@@ -356,7 +356,7 @@ void LevelOpponents::close() {
     m_moveEffects.clear();
     m_cueEffects.clear();
     m_generators.clear();
-    m_destroyedGenerators.clear();
+    m_generatorRewards.clear();
     m_enemyMissiles.clear();
     m_clouds.clear();
     m_yells.clear();
@@ -905,10 +905,10 @@ void LevelOpponents::awardEnemyLosses(const Events& events) {
     for (const EnemyLoss& loss : m_enemies.takeLosses()) {
         events.award(loss.player, loss.experience, loss.killed);
     }
-    for (const s32 player : m_destroyedGenerators) {
-        events.award(player, 0, true);
+    for (const GeneratorReward& reward : m_generatorRewards) {
+        events.award(reward.player, reward.experience, reward.destroyed);
     }
-    m_destroyedGenerators.clear();
+    m_generatorRewards.clear();
 }
 
 /** A hit on one of the swarm, from a player or the world. */
@@ -1024,9 +1024,12 @@ void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
         m_resources->audio.playNamed(
             std::format("{}{}", event->destroyed ? "S_GENKILL" : "S_GENDAM", suffix));
     }
+    if (byPlayer >= 0) {
+        m_generatorRewards.push_back(
+            {byPlayer, generatorExperience(event->kind, event->destroyed), event->destroyed});
+    }
     if (event->destroyed) {
         m_enemies.generatorGone(id);
-        m_destroyedGenerators.push_back(byPlayer);
         if (byPlayer >= 0 && static_cast<usize>(byPlayer) < m_hitStreak.size()) {
             m_hitStreak[static_cast<usize>(byPlayer)] = 0;
         }

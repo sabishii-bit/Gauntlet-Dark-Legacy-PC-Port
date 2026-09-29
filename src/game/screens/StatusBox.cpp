@@ -120,6 +120,26 @@ void StatusBoxPainter::draw(Canvas& canvas, s32 slot, const StatusBoxView& view,
         drawTurbo(canvas, slot, *view.turbo);
     }
     const Color tint = playerColor(color);
+    if (view.towerPrompt) {
+        // The fallen player's choice, in white beside its buttons (player.c 1397).
+        const auto button = [&](std::string_view name, s32 y) {
+            if (const Texture* texture = staticTexture(name)) {
+                canvas.draw(*texture, Rect{static_cast<f32>(left + kPromptIconX),
+                                           static_cast<f32>(y), static_cast<f32>(kPromptIconSize),
+                                           static_cast<f32>(kPromptIconSize)});
+            }
+        };
+        button("BUTTON_X", kWaitIconY);
+        button("BUTTON_TRI", kQuitIconY);
+        if (m_smallCaps.ready()) {
+            TextStyle style;
+            style.scale = kInTowerScale;
+            m_smallCaps.draw(canvas, left + kPromptTextX, kWaitTextY, text("hud.waitInTower"),
+                             style);
+            m_smallCaps.draw(canvas, left + kPromptTextX, kQuitTextY, text("hud.quitGame"), style);
+        }
+        return;
+    }
     if (view.inTower) {
         // The original hides all but the words.
         if (m_smallCaps.ready()) {
