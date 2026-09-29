@@ -986,14 +986,14 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                               m_opponents.bosses().legend().darkens() ? m_world->fullLighting()
                                                                       : m_world->lighting(),
                               m_bossSequence.frozenTexture());
-    m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
     m_world->drawDeferred(device, clip, camera);
     drawShadows(device, clip, camera.position);
-    // The ceremony's wizard adds onto the frame without writing depth, so the translucent
-    // scenery behind him (the portals' horizon sheets) must be down first or it paints over him.
+    // The wizards add onto the frame without writing depth, so the translucent scenery behind
+    // them (the portals' horizon sheets) must be down first or it paints over them.
     if (!spawning()) {
         m_promotion.draw(device, clip, m_world->lighting());
     }
+    m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.missiles().draw(device, clip, m_world->lighting());
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
