@@ -74,7 +74,7 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
         CombatBlow blow;
         blow.player = view.player;
         blow.critter = id;
-        blow.damage = damage->damage * m_scales.damage;
+        blow.damage = dealt(damage->damage * m_scales.damage);
         blow.breath = breath.has_value();
         blow.gated = gated;
         blow.flags = damage->flags;

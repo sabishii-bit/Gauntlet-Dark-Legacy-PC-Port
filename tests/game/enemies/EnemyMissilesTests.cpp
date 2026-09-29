@@ -981,4 +981,39 @@ TEST_CASE("a gas blast's ring tells where it reaches, for the level's food; fire
     missiles.clear();
     CHECK(missiles.takeGasReaches().empty());
 }
+
+TEST_CASE("while the swarm is shrunk what it throws is that size and does half, and what was "
+          "thrown before keeps its harm",
+          "[game][enemies][shrink]") {
+    EnemyMissiles missiles;
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 20.0f})};
+    const EnemyMissileKind arrow = EnemyMissileKind::arrow();
+    missiles.launch(arrow, Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 3.0f, 20.0f}, 1.0f, nullptr, 2);
+    missiles.setShrink(0.667f);
+    CHECK(missiles.shrink() == Approx(0.667f));
+    missiles.launch(arrow, Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 3.0f, 20.0f}, 1.0f, nullptr, 3);
+    REQUIRE(missiles.count() == 2);
+    CHECK(missiles.missile(0).kind.damage == Approx(arrow.damage));
+    CHECK(missiles.missile(0).scale == 1.0f);
+    CHECK(missiles.missile(1).kind.damage == Approx(0.5f * arrow.damage));
+    CHECK(missiles.missile(1).scale == Approx(0.667f));
+    std::vector<EnemyMissileHit> hits;
+    for (s32 i = 0; i < 90 && hits.size() < 2; ++i) {
+        missiles.update(kStep, nullptr, party);
+        for (const EnemyMissileHit& hit : missiles.takeHits()) {
+            hits.push_back(hit);
+        }
+    }
+    REQUIRE(hits.size() == 2);
+    for (const EnemyMissileHit& hit : hits) {
+        CHECK(hit.player == 0);
+        CHECK(hit.damage == Approx(hit.shooter == 2 ? arrow.damage : 0.5f * arrow.damage));
+    }
+    // Whole again, the next throw is whole.
+    missiles.setShrink(1.0f);
+    missiles.launch(arrow, Vec3{0.0f, 4.0f, 0.0f}, Vec3{0.0f, 3.0f, 20.0f}, 1.0f, nullptr, 4);
+    REQUIRE(missiles.count() == 1);
+    CHECK(missiles.missile(0).kind.damage == Approx(arrow.damage));
+    CHECK(missiles.missile(0).scale == 1.0f);
+}
 } // namespace

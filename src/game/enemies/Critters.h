@@ -76,6 +76,8 @@ public:
      * nought; nought lifts the curb. */
     void curb(s32 id, f32 seconds);
     void resize(s32 id, f32 scale);
+    /** The scale the party's enemy shrinkers hold every one of them at (`EnemyShrink`). */
+    void setShrink(f32 scale);
     /** Keeps it to its stance between moves while `held`. */
     void hold(s32 id, bool held);
     /** Has it roar as soon as its move is over. */

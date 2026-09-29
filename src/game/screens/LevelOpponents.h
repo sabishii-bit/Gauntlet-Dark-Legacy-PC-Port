@@ -226,6 +226,11 @@ private:
     bool m_deathContact = false;
     std::vector<SoundHandle> m_yells; ///< suicides' cries, cut short when one is struck down
     std::vector<Vec3> m_hearers;      ///< where the standing players are, for how loud
+    /** The scale the party's enemy shrinkers held the swarm at last update, for the sound
+     * of it rising back (SetPlayerVars). */
+    f32 m_shrink = 1.0f;
+    /** Holds the swarm, the great ones and their missiles at the shrinkers' scale. */
+    void shrinkOpponents(std::span<const PlayerRuntime> players);
 
     std::array<f32, 4> m_critterExperienceOwed{};
     /** What players' blows on generators earned: who, how much, whether destroyed; drained

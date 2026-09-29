@@ -129,6 +129,7 @@ add_executable(tests
     game/players/RelicsTests.cpp
     game/players/ItemPickupTests.cpp
     game/players/PowerupEffectsTests.cpp
+    game/players/EnemyShrinkTests.cpp
     game/screens/PowerupSelectorTests.cpp
     game/screens/TransitionScreenTests.cpp
     game/screens/LevelLoadingScreenTests.cpp

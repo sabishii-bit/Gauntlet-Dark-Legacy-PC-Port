@@ -1,5 +1,6 @@
 #include <array>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "game/players/PowerupEffects.h"
@@ -8,6 +9,7 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+using Catch::Approx;
 TEST_CASE("powerup clocks pause and boss combat spends three seconds per second",
           "[game][items][powerups]") {
     std::array<PlayerRuntime, 1> players;
@@ -64,5 +66,30 @@ TEST_CASE("Stop Time is shared only by standing players with a working item",
     CHECK(PlayerPowerups::timeStopped(players));
     PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
     CHECK_FALSE(PlayerPowerups::timeStopped(players));
+}
+
+TEST_CASE("the shrinkers counted are the standing players with a working slot switched on, and "
+          "the scale they leave is two thirds a wearer outside a boss's arena",
+          "[powerups][shrink]") {
+    std::array<PlayerRuntime, 3> players;
+    CHECK(PlayerPowerups::enemyShrinkers(players) == 0);
+    CHECK(PlayerPowerups::enemyShrink(players, false) == 1.0f);
+    auto& first = players[0].actor.save().progress().inventory;
+    auto& second = players[1].actor.save().progress().inventory;
+    first.addPowerup(powerup::kSpecial, powerup::kEnemyShrink, 0, 2);
+    CHECK(PlayerPowerups::enemyShrinkers(players) == 1);
+    CHECK(PlayerPowerups::enemyShrink(players, false) == Approx(0.667f));
+    CHECK(PlayerPowerups::enemyShrink(players, true) == 1.0f);
+    first.powerups[0].on = false;
+    CHECK(PlayerPowerups::enemyShrinkers(players) == 0);
+    first.powerups[0].on = true;
+    second.addPowerup(powerup::kSpecial, powerup::kEnemyShrink | powerup::kGrowth, 0, -1);
+    CHECK(PlayerPowerups::enemyShrinkers(players) == 2);
+    CHECK(PlayerPowerups::enemyShrink(players, false) == Approx(0.667f * 0.667f));
+    players[1].life = PlayerLife::Dying;
+    CHECK(PlayerPowerups::enemyShrinkers(players) == 1);
+    players[1].life = PlayerLife::Standing;
+    PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
+    CHECK(PlayerPowerups::enemyShrinkers(players) == 1); // the timed one has run out
 }
 } // namespace

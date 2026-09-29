@@ -87,6 +87,7 @@ struct EnemyMissile {
     s32 shooter = -1;
     f32 secondsLeft = 0.0f;
     f32 lived = 0.0f;
+    f32 scale = 1.0f;       ///< the enemy shrinkers' scale as it was thrown
     bool reflected = false; ///< sent back by a player's armour: it now strikes the swarm
     /** Players a piercing missile has hurt, and how long it leaves each alone. */
     std::vector<std::pair<s32, f32>> pierced;
@@ -186,6 +187,11 @@ public:
 
     explicit EnemyMissiles(u32 seed = 0x4D15u) : m_random(seed) {}
 
+    /** The scale the party's enemy shrinkers hold the swarm at (`EnemyShrink`): what is thrown
+     * meanwhile is that size and does half (EnemyStartMissile). */
+    void setShrink(f32 scale) { m_shrink = scale; }
+    f32 shrink() const { return m_shrink; }
+
     /** Sends one off as `launch` throws it; false when its thrower faces too far off, or a
      * wall or one of the `items` stands between it and the point it leaves from (and nothing
      * goes). */
@@ -230,6 +236,8 @@ public:
     static Vec3 lobVelocity(const Vec3& from, const Vec3& to, f32 speed);
 
 private:
+    /** `kind` as the shrinkers leave it: its harm halved while the swarm is shrunk. */
+    EnemyMissileKind thrown(const EnemyMissileKind& kind) const;
     /** Who a blast has reached, and for how long it leaves them alone. */
     struct Held {
         s32 id = -1;
@@ -254,6 +262,7 @@ private:
     std::vector<RockHit> m_rockHits;
     std::vector<GasReach> m_gasReaches;
     std::mt19937 m_random;
+    f32 m_shrink = 1.0f;
     f32 m_ricochetIn = 0.0f; ///< before another ricochet is heard
 };
 

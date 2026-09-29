@@ -63,6 +63,8 @@ add_library(game STATIC
     screens/PlayerPowerups.cpp
     players/PowerupEffects.h
     players/PowerupEffects.cpp
+    players/EnemyShrink.h
+    players/EnemyShrink.cpp
     players/PlayerControls.h
     players/PlayerControls.cpp
     players/PlayerActor.h

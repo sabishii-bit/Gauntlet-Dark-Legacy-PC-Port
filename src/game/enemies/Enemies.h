@@ -184,6 +184,10 @@ public:
     void setHazards(const HazardSurfaces* hazards) { m_hazards = hazards; }
     /** What the camera takes in, for what is on screen; none takes everything in. */
     void setView(std::optional<ViewVolume> view) { m_view = view; }
+    /** The scale the party's enemy shrinkers hold the swarm at (`EnemyShrink`): shown and
+     * shadowed at it, taking double and dealing half while under one. */
+    void setShrink(f32 scale) { m_shrink = scale; }
+    f32 shrink() const { return m_shrink; }
     /** How many stand in view by twice their radius, as of the last update (do_enemies);
      * without a view, all of them. */
     s32 inView() const { return m_inView; }
@@ -402,6 +406,7 @@ private:
     std::optional<ViewVolume> m_view;
     s32 m_inView = 0;
     u32 m_frame = 0;
+    f32 m_shrink = 1.0f;
 };
 
 } // namespace gdl::game

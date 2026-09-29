@@ -177,7 +177,7 @@ void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> p
             CombatBlow blow;
             blow.player = player.player;
             blow.critter = id;
-            blow.damage = area.currentDamage();
+            blow.damage = dealt(area.currentDamage());
             blow.flags = area.flags;
             if (blow.damage < 5) {
                 constexpr u32 kHeavyHitFlags = 0x170;

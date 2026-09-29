@@ -13,6 +13,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/players/EnemyShrink.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
@@ -391,6 +392,7 @@ void LevelOpponents::close() {
 void LevelOpponents::open(const Resources& resources, std::span<const PlayerRuntime> players) {
     close();
     m_resources.emplace(resources);
+    m_shrink = EnemyShrink::kWhole;
     RenderDevice& device = resources.device;
     LevelWorld& world = resources.world;
     const LevelInfo* level = world.level();
@@ -628,6 +630,24 @@ void LevelOpponents::stand(const Placement& placement) {
     }
 }
 
+/** Every standing shrinker worn holds the swarm and the great ones at two thirds again, where
+ * no boss is fought; the scale rising back is heard (SetPlayerVars, gamemain.c 1269). */
+void LevelOpponents::shrinkOpponents(std::span<const PlayerRuntime> players) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    const LevelInfo* level = m_resources->world.level();
+    const f32 scale =
+        PlayerPowerups::enemyShrink(players, level != nullptr && level->bossType >= 0);
+    if (EnemyShrink::rises(m_shrink, scale)) {
+        m_resources->audio.playNamed(EnemyShrink::kUnshrinkSound);
+    }
+    m_shrink = scale;
+    m_enemies.setShrink(scale);
+    m_critters.setShrink(scale);
+    m_enemyMissiles.setShrink(scale);
+}
+
 /** The party as the swarm sees it: where each stands, how big, how seasoned; the fallen and
  * those in the tower are not seen. */
 std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime> players) {
@@ -789,6 +809,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         player.effectGap = std::max(0.0f, player.effectGap - std::max(seconds, 0.0f));
     }
     hearFrom(players);
+    shrinkOpponents(players);
     const std::vector<EnemyView> views = enemyViews(players);
     std::vector<Obstacle> boxes = m_generators.obstacles();
     boxes.insert(boxes.end(), fixtures.begin(), fixtures.end());
