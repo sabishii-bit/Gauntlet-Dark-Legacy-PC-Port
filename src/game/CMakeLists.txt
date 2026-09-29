@@ -157,6 +157,7 @@ add_library(game STATIC
     world/BlobShadow.cpp
     world/PlayerFigure.cpp
     world/PlayerFamiliar.cpp
+    world/WeaponGlow.cpp
     world/CameraMovementLimit.cpp
     world/SkorneArena.cpp
     world/FallingPiece.cpp

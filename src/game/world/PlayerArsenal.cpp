@@ -12,6 +12,7 @@
 #include "game/players/Progression.h"
 #include "game/world/DynamicLights.h"
 #include "game/world/TargetAssist.h"
+#include "game/world/WeaponGlow.h"
 namespace gdl::game {
 namespace {
 struct PotionLook {
@@ -112,6 +113,21 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
     launch.model = &figure.missile();
     launch.archive = figure.missileArchive();
     launch.tree = figure.missileTree();
+    // An elemental weapon's throw carries the element's WEAP_TW effect of the costume
+    // colour's effects (PlayerStartMissile, combat.c 1030); the wizards and sorceresses
+    // throw that effect alone, their weapon unseen.
+    const std::string rider =
+        WeaponGlow::throwTree(WeaponGlow::elementOf(PowerupEffects::of(save.progress().inventory)));
+    if (ItemArchive* effects = rider.empty() ? nullptr : figure.effects();
+        effects != nullptr && effects->trees.find(rider).has_value()) {
+        launch.riderArchive = effects;
+        launch.riderTree = rider;
+        if (WeaponGlow::throwsEffectAlone(save.character)) {
+            launch.model = nullptr;
+            launch.archive = nullptr;
+            launch.tree = {};
+        }
+    }
     // An obstructed muzzle still produces a world impact, without a flying weapon.
     const f32 radius = launch.spec->radius;
     const Vec3 clear = m_resources->collision.resolveWalls(launch.position, radius,

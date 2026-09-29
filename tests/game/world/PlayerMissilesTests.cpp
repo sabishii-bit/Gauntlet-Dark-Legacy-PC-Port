@@ -1,11 +1,13 @@
 #include <array>
 #include <cmath>
+#include <filesystem>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -85,6 +87,50 @@ TEST_CASE("gauntlet missiles own independent moving particle trees and retire wi
         REQUIRE(missiles.visuals().count() == 0);
         missiles.clear();
     }
+}
+
+TEST_CASE("an effect riding a missile goes with it and is finished with it",
+          "[game][world][missiles][damage-types]") {
+    const auto root = test::scratchDirectory("missile-rider");
+    std::filesystem::create_directories(root / "models");
+    std::filesystem::create_directories(root / "textures");
+    writeTextFile(root / "models/glow.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(root / "objects.json", R"({"objects":[
+      {"index":0,"name":"GLOW","file":"models/glow.obj","meshTriangles":1}]})");
+    writeFile(root / "textures/skin.png", test::kTinyPng);
+    writeTextFile(root / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    writeTextFile(root / "animations.json", R"({"trees":[
+      {"name":"WEAP_TW_R",
+       "nodes":[{"name":"XN","object":"GLOW","parent":-1,"position":[0,0,0]}],
+       "sequences":[{"name":"ACTIVE","frames":0,"rate":30}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    PlayerMissiles missiles;
+    missiles.bindVisuals(device);
+    MissileLaunch launch;
+    launch.spec = &MissileSpec::superShot();
+    launch.position = Vec3{0, 20, 0};
+    launch.velocity = Vec3{0, 0, 30};
+    launch.riderArchive = &archive;
+    launch.riderTree = "WEAP_TW_R";
+    REQUIRE(missiles.launch(launch));
+    REQUIRE(missiles.count() == 1);
+    REQUIRE(missiles.missile(0).rider != 0);
+    CHECK(missiles.missile(0).effect == 0); // the weapon itself is a model, not an effect
+    REQUIRE(missiles.visuals().count() == 1);
+    missiles.update(1.0f, nullptr);
+    REQUIRE(missiles.visuals().count() == 1);
+    CHECK(missiles.visuals().effect(0).position == missiles.missile(0).position);
+    CHECK(missiles.visuals().effect(0).position.z == Approx(30.0f));
+    // Stopped, the missile takes its rider with it: a mesh alone leaves nothing behind.
+    const std::array<MissileTarget, 1> targets{{{7, {0, 0, 0}, 100, 100}}};
+    missiles.update(1.0f / 30, nullptr, targets);
+    REQUIRE(missiles.count() == 0);
+    CHECK(missiles.visuals().count() == 0);
+    missiles.clear();
 }
 
 TEST_CASE("super shots pierce bodies once and ignore walls", "[game][items][missiles]") {

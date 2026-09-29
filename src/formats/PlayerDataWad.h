@@ -67,6 +67,11 @@ struct PlayerClassRecord {
     std::array<f32, 3> weaponOffset{};   ///< where a thrown weapon leaves the body, in its space
     std::array<f32, 3> familiarOffset{}; ///< class-specific permanent familiar attachment
     std::array<f32, 3> familiarShotOffset{}; ///< projectile origin in player-local space
+    /** Where an elemental weapon's glow sits in the hand and how large it is, one a tier of
+     * ten levels (0x68, 0xE0); a scale of nought is none. */
+    static constexpr usize kGlowTiers = 10;
+    std::array<std::array<f32, 3>, kGlowTiers> weaponGlowOffsets{};
+    std::array<std::array<f32, 3>, kGlowTiers> weaponGlowScales{};
     /** The first strike of each move, in the record's order; -1 for a move the class lacks. */
     static constexpr usize kMoveCount = 12;
     static constexpr std::array<std::string_view, kMoveCount> kMoveNames{

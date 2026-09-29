@@ -82,6 +82,7 @@ add_executable(tests
     game/world/BlobShadowTests.cpp
     game/world/PlayerFigureTests.cpp
     game/world/PlayerFamiliarTests.cpp
+    game/world/WeaponGlowTests.cpp
     game/world/CameraMovementLimitTests.cpp
     game/world/SkorneArenaTests.cpp
     game/world/FallingPieceTests.cpp

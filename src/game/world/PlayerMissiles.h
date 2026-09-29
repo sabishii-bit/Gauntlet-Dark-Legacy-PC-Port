@@ -56,11 +56,13 @@ struct MissileLaunch {
     ItemArchive* archive = nullptr;   ///< optional full tree playback; outlives clear()
     std::string_view tree;
     TextureSet* textureLender = nullptr; ///< the shooter's SFX textures, outlive clear()
-    std::optional<Vec3> velocity;        ///< set, it flies off at this instead of being lobbed
-    s32 potion = 0;                      ///< the kind of potion it is, which bursts where it lands
-    f32 potency = 0.0f;                  ///< the magic power its burst goes off with
-    f32 damage = 0.0f;                   ///< what it does to what it hits
-    f32 scale = 1.0f;                    ///< how large it is drawn: a strong throw's is doubled
+    ItemArchive* riderArchive = nullptr; ///< an effect that rides the missile; outlives clear()
+    std::string_view riderTree;
+    std::optional<Vec3> velocity; ///< set, it flies off at this instead of being lobbed
+    s32 potion = 0;               ///< the kind of potion it is, which bursts where it lands
+    f32 potency = 0.0f;           ///< the magic power its burst goes off with
+    f32 damage = 0.0f;            ///< what it does to what it hits
+    f32 scale = 1.0f;             ///< how large it is drawn: a strong throw's is doubled
     MissileWallSound wallSound = MissileWallSound::Level;
     u32 flags = 0;
 };
@@ -128,6 +130,7 @@ public:
         const MissileSpec* spec = nullptr;
         const TreeModel* model = nullptr;
         u32 effect = 0;
+        u32 rider = 0; ///< the effect riding it, moved with it and finished with it
         MissileWallSound wallSound = MissileWallSound::Level;
         u32 flags = 0;
         std::vector<s32> pierced;

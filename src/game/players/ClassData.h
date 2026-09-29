@@ -122,7 +122,12 @@ struct ClassStats {
     Vec3 weaponOffset{0.0f, 0.0f, 0.0f}; ///< where a thrown weapon leaves, from the centre
     Vec3 familiarOffset{0.0f};     ///< permanent familiar attachment in the player's local space
     Vec3 familiarShotOffset{0.0f}; ///< separate projectile origin from PDAT
-    f32 powerupTime = 1.0f;        ///< how much longer (or shorter) powerups last this class
+    /** Where an elemental weapon's glow sits in the hand and how large, a tier of ten levels
+     * each (`weaponGlowOffsets`, `weaponGlowScales`; nought for no scale). */
+    static constexpr usize kGlowTiers = 10;
+    std::array<Vec3, kGlowTiers> weaponGlowOffsets{};
+    std::array<Vec3, kGlowTiers> weaponGlowScales{};
+    f32 powerupTime = 1.0f; ///< how much longer (or shorter) powerups last this class
     ClassMoves moves;
     std::vector<MoveEffect> moveEffects;
     std::vector<MoveStrike> moveStrikes;

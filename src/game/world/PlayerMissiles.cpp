@@ -122,6 +122,15 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
             launch.textureLender != nullptr ? std::span{lenders} : std::span<TextureSet* const>{});
         m_visuals.placeAt(missile.effect, transformOf(missile));
     }
+    if (m_device != nullptr && launch.riderArchive != nullptr && !launch.riderTree.empty()) {
+        EffectTrees::Setting setting;
+        setting.persistent = true;
+        const std::array<TextureSet*, 1> lenders{launch.textureLender};
+        missile.rider = m_visuals.startSet(
+            *m_device, *launch.riderArchive, launch.riderTree, missile.position, setting,
+            launch.textureLender != nullptr ? std::span{lenders} : std::span<TextureSet* const>{});
+        m_visuals.placeAt(missile.rider, transformOf(missile));
+    }
     m_missiles.push_back(missile);
     return true;
 }
@@ -223,8 +232,10 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
     }
     for (const Missile& missile : m_missiles) {
         m_visuals.placeAt(missile.effect, transformOf(missile));
+        m_visuals.placeAt(missile.rider, transformOf(missile));
         if (missile.age >= kLifeSeconds) {
             m_visuals.finish(missile.effect);
+            m_visuals.finish(missile.rider);
         }
     }
     m_visuals.update(seconds);

@@ -65,6 +65,16 @@ ClassStats parseClassStats(std::string_view text) {
         const auto values = object.value(key, std::vector<f32>{});
         return values.size() == 3 ? Vec3{values[0], values[1], values[2]} : Vec3{0.0f};
     };
+    const auto tiers = [&](const char* key, std::array<Vec3, ClassStats::kGlowTiers>& out) {
+        const auto rows = root.value(key, std::vector<std::vector<f32>>{});
+        for (usize tier = 0; tier < rows.size() && tier < out.size(); ++tier) {
+            if (rows[tier].size() == 3) {
+                out[tier] = Vec3{rows[tier][0], rows[tier][1], rows[tier][2]};
+            }
+        }
+    };
+    tiers("weaponGlowOffsets", stats.weaponGlowOffsets);
+    tiers("weaponGlowScales", stats.weaponGlowScales);
     if (const auto moves = root.find("moves"); moves != root.end() && moves->is_object()) {
         stats.moves.turboAClose = moves->value("turboAClose", -1);
         stats.moves.turboALow = moves->value("turboALow", -1);
