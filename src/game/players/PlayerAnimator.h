@@ -48,8 +48,9 @@ enum class PlayerDeed : u8 {
     Breathe,
     FireLeft,
     FireRight,
-    Pick, ///< the gesture of an item picked up
-    Gag   ///< retching at gas, Death's touch or food gone bad
+    Pick,     ///< the gesture of an item picked up
+    Gag,      ///< retching at gas, Death's touch or food gone bad
+    DeathGrab ///< a halo's hold on Death, drawing him off
 };
 
 /** How far the nearest thing to strike lies: within a swing, within a step, or beyond. */
@@ -201,14 +202,17 @@ public:
         FireLeftRecover,
         FireRight,
         FireRightRecover,
-        Pick,        ///< a hand to the ground for what was taken, at full pace
-        Gag,         ///< STUN2, looped while it lasts
-        ShieldReady, ///< the stance with a shield on the arm
-        ShieldRun    ///< and its gait, walking or running
+        Pick,            ///< a hand to the ground for what was taken, at full pace
+        Gag,             ///< STUN2, looped while it lasts
+        ShieldReady,     ///< the stance with a shield on the arm
+        ShieldRun,       ///< and its gait, walking or running
+        DeathGrabStart,  ///< the hands going out to Death
+        DeathGrab,       ///< held on him, looped
+        DeathGrabRelease ///< and let go
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 112;
+    static constexpr usize kActionCount = 115;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -232,7 +236,7 @@ public:
         "ATTPWRAMED",   "ATTPWRAMEDR",  "ATTPWRALOW",   "ATTPWRALOWR",  "SSHOT2",
         "ATTCHOP",      "ATTCHOPR",     "ATTBREATHE",   "ATTBREATHER",  "ATTFIREL",
         "ATTFIRELR",    "ATTFIRER",     "ATTFIRERR",    "PICK",         "STUN2",
-        "SHIELD_READY", "SHIELD_RUN"};
+        "SHIELD_READY", "SHIELD_RUN",   "DEATHGRABS",   "DEATHGRAB",    "DEATHGRABR"};
     static constexpr f32 kReleaseFrame = 2.0f;     ///< of the wind-up, from which it gives way
     static constexpr f32 kGagHold = 10.0f;         ///< frames of retching before anything cuts in
     static constexpr s32 kFidgetTicks = 1800;      ///< standing still before the first fidget
@@ -254,6 +258,10 @@ public:
     void update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed);
     /** What the close attack knows of its nearest target, set before each update. */
     void setMelee(const MeleeSense& sense) { m_melee = sense; }
+    /** Whether the body is holding Death, or reaching for him or letting him go. */
+    bool grabbingDeath() const {
+        return m_current >= Action::DeathGrabStart && m_current <= Action::DeathGrabRelease;
+    }
     /** Whether a shield is borne on the arm: the stance and gait are the shield's. */
     void setShielded(bool shielded) { m_shielded = shielded; }
     /** The character whose body this is: some classes keep their feet in the power swings. */
@@ -316,6 +324,9 @@ public:
         }
         if (webbed()) {
             return kWebPace;
+        }
+        if (grabbingDeath()) {
+            return 0.0f;
         }
         if (shoving()) {
             return kChargePace; // the charge rushes on, faster than a run

@@ -5,9 +5,12 @@
 #include <format>
 #include <numbers>
 
+#include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 
 #include "game/combat/Damage.h"
+#include "game/enemies/DeathRules.h"
+#include "game/enemies/EnemyKinds.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/MagicPerks.h"
 #include "game/players/PowerupEffects.h"
@@ -39,6 +42,12 @@ constexpr u32 kFireElement = 1;    ///< the fire shield's harm
 constexpr u32 kShockFlags = 0x22;  ///< the lightning shield's: lightning, knocking down
 constexpr f32 kFramesPerSecond = 30.0f;
 constexpr std::string_view kShockEffect = "L_SHLD_ACTIVE"; ///< fx 55, from shield to struck
+constexpr std::string_view kHaloSound = "S_HALO";          ///< once as Death is taken hold of
+constexpr std::string_view kDeathCry = "S_DEATHDIE";       ///< while he is held
+constexpr std::string_view kDeathSuck = "S_DEATHSUCK";     ///< about the one holding him
+constexpr f32 kHaloVolume = 224.0f / 255.0f;
+constexpr f32 kDeathVolume = 127.0f / 255.0f;
+constexpr s32 kTicksPerFrame = 2; ///< of 60 Hz, in one 30 Hz frame
 
 } // namespace
 void PlayerAttacks::bind(const Resources& resources) {
@@ -352,6 +361,99 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
 }
 
 /** The rings follow their bearers and harm nearby creatures and breakable fixtures. */
+/** The halo's hold on Death (PlayerMotion, pmotion.c 1621): with Death the nearest thing
+ * ahead within thirty (PlayerGetTarget; one already held while he is anywhere in the half
+ * ahead), the wearer stands facing him and, each 30 Hz frame, draws a point off him as a hit
+ * would (damage_enemy's halo branch: health back, or experience from the black form).
+ * S_HALO sounds as the hold begins, S_DEATHDIE while he is held, and his drain effect and
+ * S_DEATHSUCK follow the one holding him (player.c 5869). */
+std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowed,
+                                             std::span<PlayerRuntime> players,
+                                             const Targets& targets) {
+    if (!m_resources.has_value() || index >= players.size()) {
+        return std::nullopt;
+    }
+    PlayerRuntime& runtime = players[index];
+    const auto release = [&]() -> std::optional<Vec3> {
+        runtime.deathHeld = -1;
+        runtime.deathHeldTicks = 0;
+        m_resources->effects.stop(runtime.deathHeldEffect);
+        runtime.deathHeldEffect = 0;
+        m_resources->audio.stop(runtime.deathHeldSuck);
+        runtime.deathHeldSuck = kNoSound;
+        return std::nullopt;
+    };
+    const PlayerActor& actor = runtime.actor;
+    const auto worn = PowerupEffects::of(actor.save().progress().inventory);
+    if (!allowed || runtime.life != PlayerLife::Standing ||
+        (worn.armor & DeathRules::kProtection) == 0) {
+        return release();
+    }
+    const Vec3 facing = actor.facing();
+    const f32 facingLength = std::hypot(facing.x, facing.z);
+    std::optional<MissileTarget> nearest;
+    f32 best = kGrabReach;
+    for (const MissileTarget& target : projectileTargets(targets)) {
+        const Vec3 toward = target.base - actor.position();
+        const f32 flat = std::hypot(toward.x, toward.z);
+        if (flat < 1e-4f || facingLength < 1e-4f) {
+            continue;
+        }
+        const bool held = target.id == kEnemyTargetBase + runtime.deathHeld;
+        const f32 dot = (toward.x * facing.x + toward.z * facing.z) / (flat * facingLength);
+        if (dot < (held ? kHeldCone : kGrabCone)) {
+            continue;
+        }
+        if (const f32 distance = TargetAssist::distanceTo(actor.position(), actor.height(), target);
+            distance < best) {
+            best = distance;
+            nearest = target;
+        }
+    }
+    Enemies& enemies = targets.opponents.enemies();
+    if (!nearest || nearest->id < kEnemyTargetBase || nearest->id >= kGeneratorTargetBase) {
+        return release();
+    }
+    const s32 slot = nearest->id - kEnemyTargetBase;
+    if (enemies.kindOf(slot) != kDeathKind || !enemies.alive(slot) || enemies.dying(slot)) {
+        return release();
+    }
+    if (runtime.deathHeld != slot) {
+        release();
+        runtime.deathHeld = slot;
+        m_resources->audio.playNamed(kHaloSound, kHaloVolume);
+    }
+    const Vec3 at = enemies.positionOf(slot);
+    runtime.deathHeldTicks += ticks;
+    while (runtime.deathHeldTicks >= kTicksPerFrame && enemies.alive(slot) &&
+           !enemies.dying(slot)) {
+        runtime.deathHeldTicks -= kTicksPerFrame;
+        targets.opponents.strikeEnemy(slot, 0.0f, 0, at - actor.position(), actor.player(),
+                                      players);
+    }
+    SoundPlayer* sounds = m_resources->sounds;
+    if (sounds == nullptr || !sounds->isPlaying(runtime.deathHeldCry)) {
+        runtime.deathHeldCry = m_resources->audio.playNamed(kDeathCry, kDeathVolume);
+    }
+    if (sounds == nullptr || !sounds->isPlaying(runtime.deathHeldSuck)) {
+        runtime.deathHeldSuck = m_resources->audio.playNamed(kDeathSuck, kDeathVolume);
+    }
+    if (runtime.deathHeldEffect == 0) {
+        if (ItemArchive* archive = enemies.archive(kDeathKind); archive != nullptr) {
+            EffectTrees::Setting settings;
+            settings.persistent = true;
+            settings.depthWrite = false;
+            runtime.deathHeldEffect = m_resources->effects.startSet(
+                m_resources->device, *archive,
+                DeathRules::effect(DeathRules::form(enemies.tierOf(slot))), actor.position(),
+                settings);
+        }
+    } else {
+        m_resources->effects.moveTo(runtime.deathHeldEffect, actor.position());
+    }
+    return at;
+}
+
 /** The fire and lightning shields (PlayerMotion, pmotion.c 1641): against a creature within
  * a unit of the body, a bearer free to go about burns it 3 a 30 Hz frame, never waiting, or
  * shocks it for 20 (lightning, knocking down) at most once a second, the spark reaching

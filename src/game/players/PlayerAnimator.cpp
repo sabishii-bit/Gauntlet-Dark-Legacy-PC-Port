@@ -376,6 +376,8 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         requested = Action::ThrowPotion;
     } else if (melee != Action::Ready) {
         requested = melee;
+    } else if (deed == PlayerDeed::DeathGrab && playable(Action::DeathGrabStart)) {
+        requested = Action::DeathGrabStart;
     } else if ((deed == PlayerDeed::Pick && playable(Action::Pick)) ||
                (deed == PlayerDeed::Gag && playable(Action::Gag))) {
         requested = deed == PlayerDeed::Pick ? Action::Pick : Action::Gag;
@@ -580,6 +582,21 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         d.cut = Cut::IfDifferent;
         break;
     case Action::ShieldRun: d.repeat = requested == Action::ShieldRun; break;
+    // Reached out, the hold loops while Death is held, then lets go at once (action.c 1220).
+    case Action::DeathGrabStart:
+        d.action =
+            requested == Action::DeathGrabStart ? Action::DeathGrab : Action::DeathGrabRelease;
+        break;
+    case Action::DeathGrab:
+        if (requested == Action::DeathGrabStart) {
+            d.action = Action::DeathGrab;
+            d.repeat = true;
+        } else {
+            d.action = Action::DeathGrabRelease;
+            d.cut = Cut::IfDifferent;
+        }
+        break;
+    case Action::DeathGrabRelease: break;
     case Action::Gag:
         // Looped while asked for; let go of, it ends its cycle, and past its first frames
         // anything else cuts in (P_DEATH_REACT).
@@ -614,6 +631,11 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
     }
     if (isMelee(requested) && d.action == requested && !meleeing() && !throwing() && !conjuring() &&
         !reacting() && !turboing() && !entering() && !picking) {
+        d.cut = Cut::IfDifferent;
+    }
+    // Death is taken hold of at once (P_DEATHGRAB's mode 2).
+    if (requested == Action::DeathGrabStart && d.action == requested && !grabbingDeath() &&
+        !entering() && !reacting()) {
         d.cut = Cut::IfDifferent;
     }
     if (d.action == Action::Ready && m_current != Action::Ready) {

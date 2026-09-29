@@ -3,6 +3,7 @@
 #include <optional>
 #include <vector>
 
+#include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 
 #include "game/players/Knockback.h"
@@ -44,6 +45,11 @@ struct PlayerRuntime {
         f32 seconds = 0.0f;
     };
     std::vector<ShockGap> shockGaps;
+    s32 deathHeld = -1;      ///< the Death a halo holds, by enemy slot; none when -1
+    s32 deathHeldTicks = 0;  ///< ticks toward the next 30 Hz frame of the hold
+    u32 deathHeldEffect = 0; ///< Death's drain effect on the one holding him
+    SoundHandle deathHeldCry = kNoSound;
+    SoundHandle deathHeldSuck = kNoSound;
     PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
     Knockback knockback;                    ///< the pushes of this frame's hits, and the slide
     TurboMeter turbo;
