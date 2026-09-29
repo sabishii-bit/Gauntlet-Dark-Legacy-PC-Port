@@ -82,7 +82,7 @@ public:
     void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
                      const WorldLighting& lighting) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const Texture* frozenTexture = nullptr) const;
+              const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr) const;
 
     usize count() const;
     bool alive(s32 id) const;

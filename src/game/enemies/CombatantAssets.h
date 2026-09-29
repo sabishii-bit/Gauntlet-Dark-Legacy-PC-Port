@@ -21,6 +21,10 @@ struct CombatantAssets {
     TreeModel body;
     TextureAnimator textures;
     BlobShadow shadow; ///< SHADOW1L1 of its archive, when its type lies one
+    /** The GMETER bar over the body, when its type hangs one (CritterAddHealthMeter). */
+    const TreeInfo* meterTree = nullptr;
+    TreeModel meter;
+    s32 meterFill = -1; ///< RED_FILLE, stretched across by the health left
     CombatantAssets() = default;
     CombatantAssets(const CombatantAssets&) = delete;
     CombatantAssets& operator=(const CombatantAssets&) = delete;

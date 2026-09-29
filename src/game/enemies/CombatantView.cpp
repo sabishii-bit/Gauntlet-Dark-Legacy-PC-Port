@@ -19,6 +19,7 @@ namespace {
 constexpr s32 kThawBlinkTicks = 180;
 constexpr s32 kThawBlinkBit = 8;
 constexpr f32 kShadowReach = 1.0f; ///< its shadow finds the floor within this of the anchor
+constexpr u32 kMeterFacing = 2;    ///< MBTreeSetFlags 0x02000000: turned about the upright
 } // namespace
 Mat4 Combatant::modelTransform(const Actor& critter) {
     // The original places the root at floor Y + floorOffset, then transforms originOffset
@@ -128,8 +129,39 @@ void Combatant::drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& e
                                critter.scale);
 }
 
+/** The bar hangs from the body's node at the type's offset, turned to the camera about the
+ * upright; RED_FILLE is stretched across by the health left of the full (CritterAddHealthMeter,
+ * ProcessCritter). It goes with the last of the health. */
+std::optional<std::pair<Mat4, std::vector<Mat4>>>
+Combatant::meterPose(const CameraFrame* camera) const {
+    const Actor& critter = m_actor;
+    if (critter.state != State::Active || critter.stock == nullptr ||
+        critter.stock->meterTree == nullptr || critter.health <= 0.0f ||
+        critter.definition == nullptr) {
+        return std::nullopt;
+    }
+    Mat4 placement = glm::translate(modelTransform(critter), critter.definition->meter().barOffset);
+    if (camera != nullptr) {
+        placement = camera->face(placement, kMeterFacing);
+    }
+    const TreeInfo& tree = *critter.stock->meterTree;
+    const f32 left = std::clamp(critter.health / std::max(critter.maxHealth, 1.0f), 0.0f, 1.0f);
+    std::vector<Mat4> matrices(tree.nodes.size(), Mat4{1.0f});
+    for (usize n = 0; n < tree.nodes.size(); ++n) {
+        const TreeNodeInfo& node = tree.nodes[n];
+        Mat4 local = glm::translate(Mat4{1.0f}, node.position);
+        if (static_cast<s32>(n) == critter.stock->meterFill) {
+            local = glm::scale(local, Vec3{left, 1.0f, 1.0f});
+        }
+        matrices[n] = node.parent >= 0 && static_cast<usize>(node.parent) < n
+                          ? matrices[static_cast<usize>(node.parent)] * local
+                          : local;
+    }
+    return std::pair{placement, std::move(matrices)};
+}
+
 void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                     const Texture* frozenTexture) const {
+                     const Texture* frozenTexture, const CameraFrame* camera) const {
     const Actor& critter = m_actor;
     if (critter.state == State::Inactive || critter.stock == nullptr) {
         return;
@@ -161,6 +193,10 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
     }
     critter.stock->body.draw(device, clip, modelTransform(critter), lighting, pose.matrices(),
                              nullptr, critter.alpha);
+    if (const auto meter = meterPose(camera)) {
+        critter.stock->meter.draw(device, clip, meter->first, lighting, meter->second, nullptr,
+                                  critter.alpha);
+    }
 }
 
 std::optional<f32> Combatant::contactDistance(const Vec3& from, const Vec3& to, f32 radius) const {

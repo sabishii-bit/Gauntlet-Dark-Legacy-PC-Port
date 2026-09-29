@@ -18,6 +18,7 @@
 #include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterData.h"
 #include "game/enemies/Critters.h"
+#include "game/enemies/Golem.h"
 
 namespace {
 
@@ -1109,6 +1110,49 @@ TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",
         }
     }
     REQUIRE(droppedRock);
+}
+
+TEST_CASE("a golem's health hangs over it on its GMETER bar, turned to the camera",
+          "[game][enemies][meter][unpacked]") {
+    const std::filesystem::path root = unpackedRoot();
+    test::unpackedOrSkip("MONSTERS/GOLEM/LEVELG/animations.json");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Golem::definition(), 'G'));
+    REQUIRE(assets.data.meter().inWorld);
+    REQUIRE(assets.meterTree != nullptr);
+    REQUIRE(assets.meterFill >= 0);
+    Combatant golem;
+    REQUIRE(golem.spawn(assets, 0, Vec3{0.0f}, 0.0f, nullptr, EnemyScales{}, 'G'));
+    // Full, the fill runs its whole length, ten over the body (TYPE +0xD0).
+    const CameraFrame eye = CameraFrame::at(Vec3{50.0f, 10.0f, 0.0f});
+    auto meter = golem.meterPose(&eye);
+    REQUIRE(meter.has_value());
+    const auto fill = static_cast<usize>(assets.meterFill);
+    CHECK(glm::length(Vec3{meter->second[fill][0]}) == Approx(1.0f));
+    CHECK(meter->first[3].y == Approx(assets.data.floorOffset() + 10.0f));
+    // It is turned about the upright toward the eye, standing off along x.
+    CHECK(std::abs(meter->first[2].x) == Approx(1.0f).margin(0.01f));
+    CHECK(meter->first[1].y == Approx(1.0f).margin(0.01f));
+    // Hurt, the fill shrinks by the share of the health lost.
+    EnemyHit hit;
+    hit.damage = golem.maxHealth() * 0.5f;
+    hit.player = 0;
+    golem.hurt(hit);
+    meter = golem.meterPose(&eye);
+    REQUIRE(meter.has_value());
+    CHECK(glm::length(Vec3{meter->second[fill][0]}) ==
+          Approx(golem.health() / golem.maxHealth()).margin(0.001f));
+    // Drawn, its fill and glass come after the body.
+    golem.draw(device, Mat4{1.0f}, {}, nullptr, &eye);
+    const auto fillMesh = assets.archive.models.find("GMETERRED_FILLE");
+    REQUIRE(fillMesh.has_value());
+    CHECK(device.draws.size() >= 2);
+    // Gone with the last of its health.
+    hit.damage = golem.maxHealth() * 10.0f;
+    golem.hurt(hit);
+    CHECK_FALSE(golem.meterPose(&eye).has_value());
+    golem.clear();
 }
 
 } // namespace

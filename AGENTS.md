@@ -974,6 +974,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   is doing (CritterDoKnockback: 20 dead, 10 for 0x10140, 7.5 for 0x20, 5 for
   0x10, a golem five less, a boss never); dead it plays
   DEATH, fades a second and is gone, a fifth of its value going to everyone.
+  A type flagged 0x800 (the golems and gargoyles) hangs its archive's `GMETER` bar
+  over the body at its `healthBarOffset` (CritterAddHealthMeter), turned to the camera
+  about the upright (MB flag 0x02000000, facing mode 2), its `RED_FILLE` stretched
+  across by the health left of the full and gone with the last of it (ProcessCritter;
+  `CombatantAssets::meter`, `Combatant::meterPose`).
   As the level opens each golem, general and gargoyle claims the pickup lying
   nearest it, within two along the ground and three up or down, and holds it
   unseen (fn_8005D0C4, `PlacedItems::claim`); slain, it lets that go, or a
@@ -1081,9 +1086,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   bearer's own glow (`MBTreeSetAmbientAdd 0x1FF`), the charge's dynamic light,
   the fade of the set
   effect's last seconds (gauntworld.c 1333), the spider's `0xFF40FF40`
-  tint, the genie's `LEGEND1` for 28 s, the
-  in-world bar (`typeFlags & 0x800`, the `GMETER` tree hung at the type's
-  `healthBarOffset`),
+  tint, the genie's `LEGEND1` for 28 s,
   the patterns (PTRN), phases, cameras, children (the chimera's heads),
   projectile moves, the general's waypoint patrol, the gargoyle's
   fireball, per-part damage and breaking, the critters' sounds, the
