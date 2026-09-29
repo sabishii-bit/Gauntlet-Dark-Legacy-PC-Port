@@ -107,10 +107,18 @@ TEST_CASE("toggle lifts require everyone on the target and repeat after their de
           "[game][world][triggers]") {
     SwitchFixture f(R"({"info":0,"position":[0,0,0],
       "params":[0,0,4,5,2,255,0,0,236,255,0,0]})");
-    std::array party{TriggerVisitor{.position = Vec3{0}, .floorObject = 0},
-                     TriggerVisitor{.position = Vec3{0}, .floorObject = -1}};
+    std::array party{TriggerVisitor{.position = Vec3{0}, .floorObject = 0, .party = 0},
+                     TriggerVisitor{.position = Vec3{0}, .floorObject = -1, .party = 1}};
     f.step(0.5f, party);
     CHECK_FALSE(f.triggers.opened(0));
+    // The first onto it, alone, is told everyone must stand on the platform; only as it
+    // comes to be occupied.
+    const auto lessons = f.triggers.takeLessons();
+    REQUIRE(lessons.size() == 1);
+    CHECK(lessons[0].party == 0);
+    CHECK(lessons[0].platform);
+    f.step(0.5f, party);
+    CHECK(f.triggers.takeLessons().empty());
     party[1].floorObject = 0;
     f.step(0.5f, party);
     CHECK(f.triggers.opened(0));

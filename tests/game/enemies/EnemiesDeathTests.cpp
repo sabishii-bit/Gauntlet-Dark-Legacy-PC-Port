@@ -95,6 +95,11 @@ TEST_CASE("Anti Death repels Death and returns its resource, while magic kills o
     CHECK(enemies.healthOf(*slot) == 99);
     CHECK(enemies.takeFeedback().empty());
     CHECK(enemies.takeLosses().empty());
+    // Struck without protection or magic, it is unmoved, and the striker is told (msgPost 0).
+    const auto unmoved = enemies.takeDeathEvents();
+    REQUIRE(unmoved.size() == 1);
+    CHECK(unmoved[0].kind == DeathEvent::Kind::Unmoved);
+    CHECK(unmoved[0].player == 3);
     hit.antiDeath = true;
     enemies.hurt(*slot, hit);
     auto cues = enemies.takeDeathEvents();

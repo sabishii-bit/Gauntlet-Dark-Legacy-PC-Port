@@ -412,6 +412,7 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     const bool mirrored = smallKind(spawn.kind) && (m_random() & 1U) != 0;
     enemy.algorithm = resolvedWayOf(spawn.kind, spawn.tier, spawn.algorithm, mirrored);
     enemy.generator = spawn.generator;
+    enemy.bred = spawn.generator >= 0;
     enemy.radius = kind.radius;
     enemy.height = kind.height;
     enemy.reach = 0.5f * kind.height;
@@ -1597,6 +1598,10 @@ s32 Enemies::kindOf(s32 id) const {
 s32 Enemies::tierOf(s32 id) const {
     return m_enemies[static_cast<usize>(id)].tier;
 }
+bool Enemies::bred(s32 id) const {
+    return id >= 0 && id < m_most && m_enemies[static_cast<usize>(id)].bred;
+}
+
 s32 Enemies::generatorOf(s32 id) const {
     return m_enemies[static_cast<usize>(id)].generator;
 }

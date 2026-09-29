@@ -29,7 +29,7 @@ void Enemies::drain(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
         {DeathEvent::Kind::Drain, slot, victim->player, form, amount, enemy.position});
     enemy.health -= fightOf(enemy);
     if (enemy.health < 0) {
-        finishDeath(slot);
+        finishDeath(slot, victim->player);
     }
 }
 
@@ -51,6 +51,10 @@ void Enemies::hurtDeath(Enemy& enemy, s32 slot, const EnemyHit& hit) {
         return;
     } else {
         enemy.health -= 1;
+        if (hit.player >= 0 && !hit.antiDeath) {
+            m_deathEvents.push_back(
+                {DeathEvent::Kind::Unmoved, slot, hit.player, form, 0, enemy.position});
+        }
         if (hit.player >= 0 && hit.antiDeath) {
             const f32 amount = form == DeathForm::Black
                                    ? static_cast<f32>(DeathRules::experience(hit.level, false))
@@ -75,13 +79,13 @@ bool Enemies::draining(s32 id) const {
     return alive(id) && m_enemies[static_cast<usize>(id)].draining;
 }
 
-void Enemies::finishDeath(s32 id) {
+void Enemies::finishDeath(s32 id, s32 player) {
     if (!alive(id) || kindOf(id) != kDeathKind) {
         return;
     }
     Enemy& enemy = m_enemies[static_cast<usize>(id)];
     m_deathEvents.push_back(
-        {DeathEvent::Kind::Exhausted, id, -1, DeathRules::form(enemy.tier), 0, enemy.position});
+        {DeathEvent::Kind::Exhausted, id, player, DeathRules::form(enemy.tier), 0, enemy.position});
     enemy.health = 0;
     enemy.state = State::Dying;
     enemy.killed = true;

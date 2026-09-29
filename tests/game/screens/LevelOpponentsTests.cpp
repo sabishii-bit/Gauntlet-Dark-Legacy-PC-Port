@@ -511,6 +511,54 @@ TEST_CASE("the placed enemies stand only once the camera comes to see them",
     opponents.close();
 }
 
+TEST_CASE("the tenth hit on what generators bred teaches to destroy generators",
+          "[game][screens][level-opponents][help]") {
+    const auto root = test::scratchDirectory("hit-streak");
+    writeMeleeEnemy(root, kGruntKind);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(2, {}, nullptr, {0, 0, 20}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 2, {.health = 1000}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    const auto bred = opponents.enemies().spawn(
+        EnemySpawn{.kind = kGruntKind, .tier = 1, .generator = 0, .placed = true}, {});
+    const auto placed = opponents.enemies().spawn(
+        EnemySpawn{.kind = kGruntKind, .tier = 1, .position = {5, 0, 0}, .placed = true}, {});
+    REQUIRE(bred.has_value());
+    REQUIRE(placed.has_value());
+    CHECK(opponents.enemies().bred(*bred));
+    CHECK_FALSE(opponents.enemies().bred(*placed));
+    std::vector<s32> helps;
+    LevelOpponents::Events events;
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.help = [&](s32 id, usize player) {
+        CHECK(player == 0);
+        helps.push_back(id);
+        return true;
+    };
+    const auto hit = [&](s32 id) {
+        opponents.strikeEnemy(id, 5.0f, 0, {0, 0, 1}, 2, players);
+        opponents.settleRewards(players, events);
+    };
+    for (s32 i = 0; i < 20; ++i) {
+        hit(*placed); // what a level placed does not count
+    }
+    for (s32 i = 0; i < 9; ++i) {
+        hit(*bred);
+    }
+    CHECK(helps.empty());
+    hit(*bred);
+    CHECK(helps == std::vector<s32>{HelpMessages::kDestroyGenerators});
+    opponents.close();
+}
+
 TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
           "[level-opponents][carried][unpacked]") {
     const auto root =

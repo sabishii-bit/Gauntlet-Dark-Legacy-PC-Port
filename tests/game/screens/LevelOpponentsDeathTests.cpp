@@ -12,6 +12,7 @@
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/players/PowerupEffects.h"
+#include "game/screens/HelpMessages.h"
 #include "game/screens/LevelOpponents.h"
 #include "game/screens/PlayerHealth.h"
 
@@ -106,9 +107,19 @@ void verifyDeathTransfers(s32 tier, bool realAssets) {
         CHECK(kind == HurtKind::DeathDrain);
         health.hurt(players[player], amount, kind, directed, false, 1, healthEvents, impact);
     };
+    std::vector<s32> helps;
+    events.help = [&](s32 help, usize player) {
+        CHECK(player == 1);
+        helps.push_back(help);
+        return true;
+    };
     for (s32 i = 0; i < 90 && progress.health == 2000 && progress.experience == experience; ++i) {
         opponents.update(2, 1.0f / 30, players, {}, events);
     }
+    // Each drain tells its victim what Death takes (enemy.c 1831): experience from the black.
+    REQUIRE_FALSE(helps.empty());
+    CHECK(helps[0] ==
+          (tier == 2 ? HelpMessages::kDeathDrainsExperience : HelpMessages::kDeathDrainsHealth));
     CHECK(progress.health == (tier == 1 ? 1999 : 2000));
     CHECK(progress.experience == experience - (tier == 2 ? 27 : 0));
     REQUIRE(effects.count() == 1);

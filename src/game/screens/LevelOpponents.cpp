@@ -7,6 +7,7 @@
 #include <format>
 #include <functional>
 #include <limits>
+#include <utility>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -858,6 +859,13 @@ void LevelOpponents::settleRewards(std::span<const PlayerRuntime> players, const
     if (!m_resources.has_value()) {
         return;
     }
+    for (const auto& [lesson, player] : std::exchange(m_lessons, {})) {
+        for (usize i = 0; i < players.size() && events.help; ++i) {
+            if (players[i].actor.player() == player) {
+                events.help(lesson, i);
+            }
+        }
+    }
     hearFrom(players);
     awardBossLosses(players, events);
     awardCritterLosses(players, events);
@@ -925,7 +933,17 @@ void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direc
                              DeathRules::kProtection) != 0;
         }
     }
+    const f32 before = m_enemies.healthOf(id);
     m_enemies.hurt(id, hit);
+    // A player hitting what generators breed is taught, the tenth time, to go for them
+    // instead (combat.c:307; not where a boss is fought).
+    const LevelInfo* level = m_resources->world.level();
+    if (byPlayer >= 0 && static_cast<usize>(byPlayer) < m_hitStreak.size() && m_enemies.bred(id) &&
+        before > 0.0f && m_enemies.healthOf(id) < before &&
+        (level == nullptr || level->bossType < 0) &&
+        ++m_hitStreak[static_cast<usize>(byPlayer)] >= kStreakLesson) {
+        m_lessons.emplace_back(HelpMessages::kDestroyGenerators, byPlayer);
+    }
 }
 
 /** A hit on one of the great ones. */
@@ -1009,6 +1027,9 @@ void LevelOpponents::strikeGenerator(s32 id, f32 power, s32 byPlayer,
     if (event->destroyed) {
         m_enemies.generatorGone(id);
         m_destroyedGenerators.push_back(byPlayer);
+        if (byPlayer >= 0 && static_cast<usize>(byPlayer) < m_hitStreak.size()) {
+            m_hitStreak[static_cast<usize>(byPlayer)] = 0;
+        }
     }
 }
 

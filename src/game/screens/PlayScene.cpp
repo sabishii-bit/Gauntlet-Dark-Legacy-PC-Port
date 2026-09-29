@@ -1496,6 +1496,7 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
         visitor.crystals = actor.save().progress().crystals;
         visitor.gargoylePieces = actor.save().progress().relics.gargoylePieces;
         visitor.sumner = actor.save().character == kSumnerClass;
+        visitor.party = static_cast<s32>(i);
         if (const auto floor = m_world->collision().floorAt(visitor.position, 0.5f, 1.0f)) {
             visitor.floorObject = floor->object;
         }
@@ -1801,6 +1802,12 @@ void PlayScene::handleRotatorCues() {
 
 void PlayScene::handleTriggerEvents() {
     handleRotatorCues();
+    for (const TriggerLesson& lesson : m_world->takeTriggerLessons()) {
+        if (lesson.party >= 0) {
+            postHelp(lesson.platform ? HelpMessages::kAllOnPlatform : HelpMessages::kAllOnTrigger,
+                     static_cast<usize>(lesson.party));
+        }
+    }
     // One scroll at a time: the frame's first refusal.
     if (const std::vector<TriggerRefusal> refusals = m_world->takeTriggerRefusals();
         !refusals.empty()) {
