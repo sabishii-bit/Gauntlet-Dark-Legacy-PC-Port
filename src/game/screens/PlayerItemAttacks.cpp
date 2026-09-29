@@ -9,8 +9,8 @@ namespace gdl::game {
 namespace {
 Mat4 attachmentOf(const PlayerRuntime& player, bool head) {
     const auto worn = PowerupEffects::of(player.actor.save().progress().inventory);
-    const Mat4 body = glm::scale(player.actor.transform(),
-                                 Vec3{PlayerFigure::bodyScale(player.actor.save(), worn)});
+    const Mat4 body =
+        PlayerFigure::bodyPlacement(player.actor.transform(), player.actor.save(), worn);
     if (head && player.figure != nullptr) {
         if (const auto at = player.figure->attachment(body, "HEAD")) {
             return *at;

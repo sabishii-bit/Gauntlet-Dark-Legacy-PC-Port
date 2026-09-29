@@ -11,6 +11,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/players/PowerupEffects.h"
 #include "game/screens/LevelOpponents.h"
 #include "game/screens/PartyMotion.h"
 
@@ -641,4 +642,35 @@ TEST_CASE("a member walking into another is stopped and shoves them along",
     CHECK_FALSE(f.players[1].knockback.sliding());
 }
 
+TEST_CASE("a levitating body walks without a footfall", "[game][screens][party-motion][unpacked]") {
+    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    for (const bool levitating : {false, true}) {
+        CAPTURE(levitating);
+        Fixture f;
+        test::FakeRenderDevice device;
+        f.players[0].figure = PlayerFigure::load(device, root, f.players[0].actor.save(), false);
+        REQUIRE(f.players[0].figure);
+        auto& inventory = f.players[0].actor.save().progress().inventory;
+        inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 60);
+        inventory.powerups[0].on = levitating;
+        s32 footfalls = 0;
+        f.events.advanceTurbo = [](usize, s32, f32) {};
+        f.events.perform = [&](usize, PartyMotion::Action action) {
+            footfalls += action == PartyMotion::Action::FirstFoot ||
+                                 action == PartyMotion::Action::SecondFoot
+                             ? 1
+                             : 0;
+        };
+        f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
+        for (s32 frame = 0; frame < 120; ++frame) {
+            f.step();
+        }
+        CHECK(f.players[0].actor.position().z > 0);
+        CHECK((footfalls > 0) == !levitating);
+    }
+}
 } // namespace

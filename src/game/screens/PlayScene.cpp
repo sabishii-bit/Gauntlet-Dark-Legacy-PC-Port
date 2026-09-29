@@ -754,7 +754,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             powerupClock = PlayerPowerups::Clock::BossFight;
         }
     }
-    PlayerPowerups::update(m_players, seconds, powerupClock);
+    for (const PowerupEnding& ending : PlayerPowerups::update(m_players, seconds, powerupClock)) {
+        m_audio.playNamed(ending.sound);
+    }
     praiseStreaks(seconds);
     if (m_device != nullptr) {
         PartyFigures::greetGems(*m_device, m_players, m_world->powerups(), m_effects);

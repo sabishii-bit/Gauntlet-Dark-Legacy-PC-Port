@@ -384,13 +384,10 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 players[i].figure->setMelee(events.meleeSense(i, attackHeld));
             }
             players[i].figure->animate(move.magnitude, ticks, seconds, deed);
-            {
-                const f32 size = PlayerFigure::bodyScale(actor.save(), powerups);
-                players[i].figure->updateTrail(
-                    glm::scale(players[i].capture.body().value_or(actor.transform()),
-                               Vec3{size, size, size}),
-                    ticks);
-            }
+            players[i].figure->updateTrail(
+                PlayerFigure::bodyPlacement(players[i].capture.body().value_or(actor.transform()),
+                                            actor.save(), powerups),
+                ticks);
             events.advanceTurbo(i, ticks, seconds);
             if (players[i].figure->familiarReleased()) {
                 events.perform(i, Action::FamiliarShot);
@@ -423,8 +420,9 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             } else if (players[i].figure->animator().potionThrown()) {
                 events.perform(i, Action::ThrowPotion);
             }
+            // A levitating body's feet make no sound (pmotion.c 2931).
             if (const PlayerAnimator::Foot foot = players[i].figure->animator().footfall();
-                foot != PlayerAnimator::Foot::None) {
+                foot != PlayerAnimator::Foot::None && !powerups.levitating()) {
                 events.perform(i, foot == PlayerAnimator::Foot::Second ? Action::SecondFoot
                                                                        : Action::FirstFoot);
             }

@@ -6,6 +6,8 @@
 
 #include "game/players/EnemyShrink.h"
 #include "game/players/PowerupEffects.h"
+#include "game/players/PowerupEndings.h"
+#include "game/world/PlayerFigure.h"
 
 namespace gdl::game {
 namespace {
@@ -32,8 +34,11 @@ f32 PlayerPowerups::enemyShrink(std::span<const PlayerRuntime> players, bool bos
     return EnemyShrink::scaleOf(enemyShrinkers(players), bossEncounter);
 }
 
-void PlayerPowerups::update(std::span<PlayerRuntime> players, f32 seconds, Clock clock) {
-    for (auto& player : players) {
+std::vector<PowerupEnding> PlayerPowerups::update(std::span<PlayerRuntime> players, f32 seconds,
+                                                  Clock clock) {
+    std::vector<PowerupEnding> endings;
+    for (usize i = 0; i < players.size(); ++i) {
+        PlayerRuntime& player = players[i];
         if (player.life != PlayerLife::Standing) {
             continue;
         }
@@ -50,6 +55,14 @@ void PlayerPowerups::update(std::span<PlayerRuntime> players, f32 seconds, Clock
                 }
             }
         }
+        const PowerupEffects worn = PowerupEffects::of(inventory);
+        const bool plainSize = PlayerFigure::bodyScale(player.actor.save(), worn) == 1.0f;
+        for (const std::string_view sound :
+             PowerupEndings::soundsOf(player.wornSpecial, worn.special, plainSize)) {
+            endings.push_back({i, sound});
+        }
+        player.wornSpecial = worn.special;
     }
+    return endings;
 }
 } // namespace gdl::game

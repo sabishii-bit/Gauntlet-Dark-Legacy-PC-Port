@@ -56,6 +56,7 @@ inline constexpr u32 kShields = kReflectShield | kFireShield | kLightningShield;
  */
 struct PowerupEffects {
     static constexpr f32 kGrowthScale = 1.3f;
+    static constexpr f32 kLevitationLift = 1.5f;           ///< how high a levitating body is held
     static constexpr f32 kInvisibleAlpha = 95.0f / 255.0f; ///< how solid an unseen body shows
     static constexpr f32 kInvisibleWaver = 16.0f / 255.0f; ///< and how much that wavers
     static constexpr f32 kWarningSeconds = 3.0f; ///< the last of a powerup, shown by blinking
@@ -87,6 +88,10 @@ struct PowerupEffects {
     bool invisible() const { return (special & powerup::kInvisible) != 0; }
     bool xray() const { return (special & powerup::kXRay) != 0; }
     bool grown() const { return (special & powerup::kGrowth) != 0; }
+    bool levitating() const { return (special & powerup::kLevitation) != 0; }
+    /** How far over the floor the body is held: the wings' lift (PlayerMotion, pmotion.c
+     * 2908), else nothing. */
+    f32 lift() const { return levitating() ? kLevitationLift : 0.0f; }
     bool preventsKnockback() const { return (armor & 0x150000) != 0; }
     /** How solid the body is drawn: unseen, wavering with the time left, and shown whole
      * every other eighth of a second in the last three. */

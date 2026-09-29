@@ -43,6 +43,13 @@ f32 PlayerFigure::bodyScale(const CharacterSave& save, const PowerupEffects& eff
     return save.progress().appearanceLevel() >= kMaxLevel ? kMasterScale : 1.0f;
 }
 
+Mat4 PlayerFigure::bodyPlacement(const Mat4& base, const CharacterSave& save,
+                                 const PowerupEffects& effects) {
+    const f32 size = bodyScale(save, effects);
+    return glm::translate(Mat4{1.0f}, Vec3{0.0f, effects.lift(), 0.0f}) *
+           glm::scale(base, Vec3{size, size, size});
+}
+
 std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path& unpackedRoot,
                                                      const CharacterSave& save) {
     const std::string_view cls = classCode(save.character);
