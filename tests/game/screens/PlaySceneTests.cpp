@@ -3011,4 +3011,80 @@ TEST_CASE("the tower scene refuses to open without the level", "[game][screens]"
     REQUIRE_FALSE(scene.isOpen());
 }
 
+TEST_CASE("the promotion wizard is drawn after the tower's translucent scenery",
+          "[game][screens][promotion][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("L1")));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.progress().experience = levelExperience(30);
+    save.progress().promotedLevel = 29;
+    const std::vector<PartyMember> party{PartyMember{3, save}};
+    PlayOptions options;
+    options.welcome = false;
+    // Back from the town: the wizard stands among its portals, inside their horizon sheet,
+    // which the level draws translucent after everything solid.
+    options.arrivalWorld = 7;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.promotion().active());
+    const PlayScene::Inputs still{};
+    for (s32 frame = 0; frame < 500 && awaitingEntrance(scene); ++frame) {
+        scene.update(1.0 / 60.0, still);
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    REQUIRE(scene.promotion().active());
+    // The wizard's head, by the texture its node's mesh wears.
+    ItemArchive& items = world.items();
+    const auto wizard = items.trees.find("WIZARD");
+    REQUIRE(wizard.has_value());
+    const auto& tree = items.trees.tree(*wizard);
+    const auto neck = tree.findNode("BODY1_NEC");
+    REQUIRE(neck.has_value());
+    const auto neckModel = items.models.find(tree.nodes[*neck].object);
+    REQUIRE(neckModel.has_value());
+    const Texture* head =
+        &items.textures.texture(device, items.models.mesh(*neckModel).parts.front().texture);
+    // What the level's translucent pass paints with, taken from that pass alone.
+    test::FakeRenderDevice deferred;
+    world.scene().drawDeferred(deferred, Mat4{1}, CameraFrame::of(scene.viewCamera()));
+    std::vector<const Texture*> scenery;
+    for (const auto& draw : deferred.draws) {
+        if (draw.blend() != BlendMode::Additive) {
+            scenery.push_back(draw.texture);
+        }
+    }
+    REQUIRE_FALSE(scenery.empty());
+    device.draws.clear();
+    scene.render(device, makeScreenProjection(640.0f, 448.0f), 640.0f, 448.0f);
+    std::optional<usize> firstHead;
+    std::optional<usize> lastScenery;
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        const Texture* texture = device.draws[i].texture;
+        if (texture == head && !firstHead.has_value()) {
+            firstHead = i;
+        }
+        if (std::ranges::find(scenery, texture) != scenery.end()) {
+            lastScenery = i;
+        }
+    }
+    REQUIRE(firstHead.has_value());
+    REQUIRE(lastScenery.has_value());
+    // He adds onto the frame without writing depth: scenery blended after him covers him.
+    REQUIRE(*lastScenery < *firstHead);
+    scene.close();
+}
 } // namespace
