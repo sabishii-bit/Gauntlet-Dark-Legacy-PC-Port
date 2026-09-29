@@ -739,7 +739,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   archive, the kind's GENHIT/GENDIE trees over it) and crumbles a state at each
   record of health; a crumble also becomes the strength it breeds at, doubles
   its count and turns a caster brood (28-30) to seeking (fn_8005C1DC); gone it
-  frees its brood. A way of nought is filled in by kind and strength, the
+  frees its brood. A player's tenth hit on what generators bred (`Enemies::bred`, birth_style
+  0) since they last destroyed one teaches 22 (`KILLGENERATORS`), not where a
+  boss is fought (combat.c:307). A way of nought is filled in by kind and strength, the
   small kinds prowl either way (2 or 4) and ways 1/10 become 0/7
   (`resolvedWayOf`: fn_8004F87C, init_enemy_vars); Garm's minions always
   lunge (31) and IT always lurks (27). Level placements (type 4) wait until the
@@ -758,7 +760,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   whenever its critter data is loaded (it always is). The warlock (kind 24) comes and
   goes while it stands, walks or runs (fn_8004D958): seen 60-119 ticks, faded out at
   16 of 255 a tick, unseen 60-119 ticks, faded back; doing anything else it shows
-  (`Enemies::veil`, body and shadow alike). Not yet: Death, IT. Its gas spoils the
+  (`Enemies::veil`, body and shadow alike). Not yet: Death, IT. Death's lessons reach the
+  player he drains or who strikes him (enemy.c 1831, 5320, 6021): each drain
+  128 (`DEATHDRAINEXP`) from his black form, else 130, leaving exhausted 129
+  or 131 (130's and 131's texts swapped as shipped), and a blow without magic
+  or protection 0 (`USEMAGIC`). A suicide's gas spoils the
   food each step of its ring reaches, as a gas barrel's does (`GasReach`,
   `LevelFixtures::spoilFood`). A suicide goes up as SuicideExplosion does (`explodeSuicide`):
   `EXPLOSION` with a swelling red light of 20 and `EXPRING` at 1.2, a blast of 6
@@ -1778,7 +1784,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   qualifies; `openMet` opens at level start whatever the party qualifies for;
   fading targets lose their collision (`WorldCollision::setSolid`) and thin
   out through `WorldScene::setObjectAlpha`. `PlayScene` passes the party as
-  `TriggerVisitor`s each frame.
+  `TriggerVisitor`s each frame. The first of a party of more than one onto a
+  spot the whole party must share is told so (`TriggerLesson`: 126
+  `ALLPLATFORM` when it must be stood on, else 127 `ALLTRIGGER`, once a
+  session; items.c 3017-3049).
 * Collision follows animation: level files keep the triangles of any object
   flagged to move (`WorldObject::kAnimated`, set on the animated and on the
   force fields that only fade) in the object's own space, the rest in world

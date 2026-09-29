@@ -10,7 +10,8 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 104> kSpecs{{
+constexpr std::array<HelpMessageSpec, 112> kSpecs{{
+    {HelpMessages::kUseMagicOnDeath, "USEMAGIC", "S_USEMAGIC"},
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kPotionsFull, "FULLOFBOMBS", "S_MAGICFULL"},
@@ -29,6 +30,7 @@ constexpr std::array<HelpMessageSpec, 104> kSpecs{{
     {95, "MAGICSHIELD", "S_SHIELDMAGIC"},
     {HelpMessages::kSecretWalls, "FOUNDSECRETWALLS", "S_MULTIPLEHITS"},
     {HelpMessages::kTrapsHurt, "AVOIDOBJECTS", "S_AVOID"},
+    {HelpMessages::kDestroyGenerators, "KILLGENERATORS", "S_DESTROY"},
     {HelpMessages::kRandomChest, "RANDOMCHEST", "S_SILVER"},
     {HelpMessages::kBarrelsHold, "WOODBARREL", "S_SOMEBARRELS"},
     {HelpMessages::kRedBarrels, "REDBARREL", "S_SHOOTRED"},
@@ -108,6 +110,12 @@ constexpr std::array<HelpMessageSpec, 104> kSpecs{{
     {HelpMessages::kLevelUp, "LEVELUP", "S_GAINEDLEVEL", HelpRepeat::Always},
     {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS"},
     {HelpMessages::kGasSpoils, "GASPOISON", "S_GASFOODBAD"},
+    {HelpMessages::kAllOnPlatform, "ALLPLATFORM", "S_ALLPLATFRM", HelpRepeat::OncePerSession},
+    {HelpMessages::kAllOnTrigger, "ALLTRIGGER", "S_TRIGGERVOX", HelpRepeat::OncePerSession},
+    {HelpMessages::kDeathDrainsExperience, "DEATHDRAINEXP", "S_DEATHDRAINXP"},
+    {HelpMessages::kDeathLeavesExperience, "DEATHDIEEXP", "S_DIESAFTERXP"},
+    {HelpMessages::kDeathDrainsHealth, "DEATHDRAINHEALTH", "S_DEATHDRAINS"},
+    {HelpMessages::kDeathLeavesHealth, "DEATHDIEHEALTH", "S_DIESAFTER"},
     {HelpMessages::kGeneralsCarry, "GENSCARRY", "S_GENSCARRY"},
     {HelpMessages::kChestsExplode, "CHESTSEXPL", "S_CHESTSEXPL"},
     {HelpMessages::kGargoylesRelease, "DEFEATGAR", "S_DEFGRG4GLD"},

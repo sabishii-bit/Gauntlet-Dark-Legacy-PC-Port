@@ -165,6 +165,13 @@ private:
     Generators m_generators;
     Critters m_critters;
     std::vector<CombatantRam> m_barrelRams;
+    /** Each player's hits on the swarm a generator bred since they last destroyed one (the
+     * original's hit_streak), by player id. */
+    static constexpr usize kPlayerIds = 4; ///< players are numbered 0 to 3
+    std::array<s32, kPlayerIds> m_hitStreak{};
+    /** Lessons waiting for the next settling: which, and for which player id. */
+    std::vector<std::pair<s32, s32>> m_lessons;
+    static constexpr s32 kStreakLesson = 10; ///< this many hits teach to destroy generators
     static constexpr s32 kGeneratorRamBase = 2000;
     static constexpr f32 kShortGenerator = 3.0f; ///< a great one breaks one no taller
     std::vector<CombatantObstacle>

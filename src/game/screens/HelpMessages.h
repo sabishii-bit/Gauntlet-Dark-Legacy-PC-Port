@@ -53,6 +53,7 @@ struct HelpReader {
  */
 class HelpMessages {
 public:
+    static constexpr s32 kUseMagicOnDeath = 0; ///< nothing but magic harms him
     static constexpr s32 kDoorNeedsKey = 1;
     static constexpr s32 kChestNeedsKey = 2;
     static constexpr s32 kPotionsFull = 3;
@@ -61,6 +62,7 @@ public:
     static constexpr s32 kTransporter = 9;  ///< on arriving by a transporter
     static constexpr s32 kSecretWalls = 20; ///< a blow on a wall that breaks
     static constexpr s32 kTrapsHurt = 21;
+    static constexpr s32 kDestroyGenerators = 22; ///< ten hits on what generators bred
     static constexpr s32 kRandomChest = 23;
     static constexpr s32 kShotMagic = 14;   ///< a bottle shot does less than one drunk
     static constexpr s32 kWastedMagic = 18; ///< a caster's magic struck nothing
@@ -77,7 +79,13 @@ public:
     static constexpr s32 kHealthFull = 133;
     static constexpr s32 kBlastsDestroy = 135;
     static constexpr s32 kGasSpoils = 136;
-    static constexpr s32 kGeneralsCarry = 134; ///< a general slain let an item go
+    static constexpr s32 kGeneralsCarry = 134;         ///< a general slain let an item go
+    static constexpr s32 kDeathDrainsExperience = 128; ///< Death's black form, draining
+    static constexpr s32 kDeathLeavesExperience = 129;
+    static constexpr s32 kDeathDrainsHealth = 130; ///< the others; its text and 131's as shipped
+    static constexpr s32 kDeathLeavesHealth = 131;
+    static constexpr s32 kAllOnPlatform = 126; ///< a platform the whole party must stand on
+    static constexpr s32 kAllOnTrigger = 127;  ///< a trigger the whole party must
     static constexpr s32 kChestsExplode = 137;
     static constexpr s32 kGargoylesRelease = 138; ///< a gargoyle slain did
     /** The first of the eight lessons of a class family's potion magic, in `MagicPerkDeed`'s

@@ -5,12 +5,12 @@
 
 #include "game/players/PickupVoices.h"
 #include "game/players/Progression.h"
+#include "game/screens/HelpMessages.h"
 #include "game/screens/LevelOpponents.h"
 
 namespace gdl::game {
 namespace {
 constexpr f32 kLostLevelWait = 3.0f; ///< seconds the line waits behind narration (AudioExp)
-constexpr f32 kDrainLineWait = 0.5f; ///< as a help message's voice
 } // namespace
 
 bool LevelOpponents::releaseDeath(s32 record, const Vec3& position, s32 count) {
@@ -51,11 +51,29 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
         return;
     }
     auto& resources = *m_resources;
+    // Death's lessons go to the player he drains or who strikes him (enemy.c 1831, 5320,
+    // 6021): his black form's are of experience, the rest of health.
+    const auto teach = [&](const DeathEvent& cue, s32 experience, s32 health) {
+        for (usize i = 0; i < players.size() && events.help; ++i) {
+            if (players[i].actor.player() == cue.player) {
+                events.help(cue.form == DeathForm::Black ? experience : health, i);
+            }
+        }
+    };
     const auto consume = [&](const DeathEvent& cue) {
         switch (cue.kind) {
         case DeathEvent::Kind::Killed: resources.audio.playNamed("S_DEATHDIE"); return;
-        case DeathEvent::Kind::Exhausted: resources.audio.playNamed("S_DEATHLAUGH"); return;
+        case DeathEvent::Kind::Exhausted:
+            resources.audio.playNamed("S_DEATHLAUGH");
+            teach(cue, HelpMessages::kDeathLeavesExperience, HelpMessages::kDeathLeavesHealth);
+            return;
         case DeathEvent::Kind::Awakened: resources.audio.playNamed("S_DEATHSHATTER"); return;
+        case DeathEvent::Kind::Unmoved:
+            teach(cue, HelpMessages::kUseMagicOnDeath, HelpMessages::kUseMagicOnDeath);
+            return;
+        case DeathEvent::Kind::Drain:
+            teach(cue, HelpMessages::kDeathDrainsExperience, HelpMessages::kDeathDrainsHealth);
+            break;
         default: break;
         }
         for (usize i = 0; i < players.size(); ++i) {
@@ -90,7 +108,7 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
                 events.hurt(i, cue.amount, HurtKind::DeathDrain, true,
                             PlayerImpact{.flags = 0x1000});
                 if (player.life != PlayerLife::Standing) {
-                    m_enemies.finishDeath(cue.enemy);
+                    m_enemies.finishDeath(cue.enemy, cue.player);
                 }
             }
             break;
@@ -122,10 +140,6 @@ void LevelOpponents::updateDeaths(std::span<PlayerRuntime> players, const Events
                     resources.device, *archive,
                     DeathRules::effect(DeathRules::form(m_enemies.tierOf(i))),
                     m_enemies.positionOf(i), settings);
-            }
-            if (!m_deathContact && resources.audio.narrationRoom(kDrainLineWait)) {
-                resources.audio.queueNarration(m_enemies.tierOf(i) == 2 ? "S_DEATHDRAINXP"
-                                                                        : "S_DEATHDRAINS");
             }
         }
         const Mat4 transform = glm::rotate(glm::translate(Mat4{1}, m_enemies.positionOf(i)),

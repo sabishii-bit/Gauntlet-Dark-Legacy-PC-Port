@@ -22,7 +22,8 @@ struct DeathRules {
 
 /** Resource transfers and presentation cues emitted by a Death, not ordinary hit rewards. */
 struct DeathEvent {
-    enum class Kind : u8 { Drain, Return, MagicHeal, Killed, Exhausted, Awakened };
+    /** Unmoved: a player without protection struck it with no magic. */
+    enum class Kind : u8 { Drain, Return, MagicHeal, Killed, Exhausted, Awakened, Unmoved };
     Kind kind = Kind::Drain;
     s32 enemy = -1;
     s32 player = -1;

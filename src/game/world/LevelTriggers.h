@@ -3,6 +3,7 @@
 #include <array>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "engine/assets/WorldLayout.h"
@@ -50,6 +51,14 @@ struct TriggerVisitor {
     std::array<s32, Relics::kGargoyleKinds> gargoylePieces{};
     bool sumner = false; ///< Sumner passes every crystal gate
     s32 floorObject = -1;
+    s32 party = -1; ///< who it is, by place in the party
+};
+
+/** A player stepped alone onto a spot the whole party must stand on (items.c 3017-3049):
+ * which of the party, and whether it is a platform (it must be stood on) or a trigger. */
+struct TriggerLesson {
+    s32 party = -1;
+    bool platform = false;
 };
 
 /** One of a level's triggers: a spot that, stepped into, opens the world object it names
@@ -72,6 +81,7 @@ struct LevelTrigger {
     bool shootable = false; ///< a target on the wall, set off by what hits it
     f32 height = 0.0f;      ///< how tall it stands to what is thrown at it
     bool shot = false;      ///< hit since the last update
+    bool occupied = false;  ///< someone was on it the last update
 
     /** Whether it wants every visitor to carry a realm's crystals first. */
     bool needsCrystals() const { return (flags & kRequirement) != 0 && id < kGargoyleIds; }
@@ -145,6 +155,7 @@ public:
      * opening before the party (faded to nothing or run to the end of their animation); each is
      * handed out once. */
     std::vector<TriggerRefusal> takeRefusals();
+    std::vector<TriggerLesson> takeLessons() { return std::exchange(m_lessons, {}); }
     std::vector<TriggerOpening> takeOpenings();
     std::vector<TriggerOpening> takeSettled();
     std::vector<TriggerCameraCue> takeCameraCues();
@@ -176,6 +187,7 @@ private:
     static void applyAlpha(const Target& target, WorldScene& scene, WorldCollision* collision);
     static bool qualifies(const LevelTrigger& trigger, std::span<const TriggerVisitor> visitors);
     /** Whether anyone stands in the trigger's spot, `radius` wide. */
+    bool reaches(const LevelTrigger& trigger, f32 radius, const TriggerVisitor& visitor) const;
     bool visited(const LevelTrigger& trigger, f32 radius,
                  std::span<const TriggerVisitor> visitors) const;
     void fire(usize index, bool active, bool atOnce, WorldAnimator& animator, WorldScene& scene,
@@ -188,6 +200,7 @@ private:
     std::vector<Target> m_targets;
     std::vector<s32> m_parents;
     std::vector<TriggerRefusal> m_refusals;
+    std::vector<TriggerLesson> m_lessons;
     std::vector<TriggerOpening> m_openings;
     std::vector<TriggerOpening> m_settled;
     std::vector<TriggerCameraCue> m_cameraCues;

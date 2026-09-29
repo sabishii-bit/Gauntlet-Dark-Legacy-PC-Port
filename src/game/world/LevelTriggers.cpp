@@ -364,23 +364,28 @@ void LevelTriggers::fire(usize index, bool active, bool atOnce, WorldAnimator& a
     }
 }
 
+bool LevelTriggers::reaches(const LevelTrigger& trigger, f32 radius,
+                            const TriggerVisitor& visitor) const {
+    if ((trigger.flags & LevelTrigger::kOnTarget) != 0) {
+        const s32 floor = visitor.floorObject;
+        if (floor != trigger.target &&
+            (floor < 0 || static_cast<usize>(floor) >= m_parents.size() ||
+             m_parents[static_cast<usize>(floor)] != trigger.target)) {
+            return false;
+        }
+    }
+    const Vec3 away = visitor.position - trigger.spot;
+    const f32 reach = radius + visitor.radius;
+    return away.x * away.x + away.z * away.z <= reach * reach && std::abs(away.y) <= kReach;
+}
+
 bool LevelTriggers::visited(const LevelTrigger& trigger, f32 radius,
                             std::span<const TriggerVisitor> visitors) const {
     if (visitors.empty()) {
         return false;
     }
     const auto inRange = [&](const TriggerVisitor& visitor) {
-        if ((trigger.flags & LevelTrigger::kOnTarget) != 0) {
-            const s32 floor = visitor.floorObject;
-            if (floor != trigger.target &&
-                (floor < 0 || static_cast<usize>(floor) >= m_parents.size() ||
-                 m_parents[static_cast<usize>(floor)] != trigger.target)) {
-                return false;
-            }
-        }
-        const Vec3 away = visitor.position - trigger.spot;
-        const f32 reach = radius + visitor.radius;
-        return away.x * away.x + away.z * away.z <= reach * reach && std::abs(away.y) <= kReach;
+        return reaches(trigger, radius, visitor);
     };
     return (trigger.flags & LevelTrigger::kWholeParty) != 0
                ? std::ranges::all_of(visitors, inRange)
@@ -442,6 +447,17 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         const bool qualified = qualifies(trigger, visitors);
         const f32 radius =
             trigger.needsCrystals() && qualified ? trigger.radius * kMetReach : trigger.radius;
+        // The first onto a spot the whole party must share is told so, with others about.
+        if ((trigger.flags & LevelTrigger::kWholeParty) != 0) {
+            const auto on = std::ranges::find_if(visitors, [&](const TriggerVisitor& visitor) {
+                return reaches(trigger, radius, visitor);
+            });
+            if (on != visitors.end() && !trigger.occupied && visitors.size() > 1) {
+                m_lessons.push_back(
+                    TriggerLesson{on->party, (trigger.flags & LevelTrigger::kOnTarget) != 0});
+            }
+            trigger.occupied = on != visitors.end();
+        }
         if (!visited(trigger, radius, visitors)) {
             fire(i, false, false, animator, scene, collision);
             continue;

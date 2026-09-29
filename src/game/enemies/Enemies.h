@@ -220,7 +220,7 @@ public:
     std::vector<DeathEvent> takeDeathEvents();
     bool draining(s32 id) const;
     /** Death departs after taking its victim's last health. */
-    void finishDeath(s32 id);
+    void finishDeath(s32 id, s32 player = -1);
 
     /** Deals a hit to an enemy; what it is worth comes back as a loss. */
     void hurt(s32 id, const EnemyHit& hit);
@@ -246,6 +246,8 @@ public:
     s32 kindOf(s32 id) const;
     s32 tierOf(s32 id) const;
     s32 generatorOf(s32 id) const;
+    /** Whether a generator bred it, even one since gone (the original's birth_style 0). */
+    bool bred(s32 id) const;
     f32 healthOf(s32 id) const;
     const Vec3& positionOf(s32 id) const;
     f32 yawOf(s32 id) const;
@@ -292,6 +294,7 @@ private:
         s32 idleTicks = 120;
         bool threw = false;
         s32 generator = -1;
+        bool bred = false; ///< a generator bred it
         f32 health = 0.0f;
         f32 fullHealth = 0.0f;
         f32 sight = kBaseSight;

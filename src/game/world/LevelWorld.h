@@ -182,6 +182,7 @@ public:
     }
     /** What the triggers refused or opened since last asked. */
     std::vector<TriggerRefusal> takeTriggerRefusals() { return m_triggers.takeRefusals(); }
+    std::vector<TriggerLesson> takeTriggerLessons() { return m_triggers.takeLessons(); }
     std::vector<TriggerOpening> takeTriggerOpenings() { return m_triggers.takeOpenings(); }
     std::vector<TriggerOpening> takeTriggerSettled() { return m_triggers.takeSettled(); }
     bool hasLevelData() const { return m_level != nullptr; }
