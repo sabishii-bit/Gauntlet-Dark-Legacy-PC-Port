@@ -81,6 +81,7 @@ struct PlayerRuntime {
     MeleeStreak streak;    ///< close blows landed, towards the narrator's praise
     ExitWait exitWait;     ///< standing still on an exit for the rest of the party
     s32 nameTicks = 0;     ///< while over nought the name shows over the head (name_timer)
+    u32 wornSpecial = 0;   ///< the special flags worn last update, for their endings (old_flags)
 };
 
 } // namespace gdl::game

@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/world/PlayerArsenal.h"
 #include "game/world/PlayerFigure.h"
@@ -478,5 +479,20 @@ TEST_CASE("a player figure maps animation nodes by name and poses its held weapo
         REQUIRE(draw.state.blend == BlendMode::Alpha);
         REQUIRE_FALSE(draw.state.depthWrite);
     }
+}
+
+TEST_CASE("the body is placed at its scale and lifted by levitation, its shadow's feet apart",
+          "[game][world][figure]") {
+    const CharacterSave save;
+    const Mat4 base = glm::translate(Mat4{1.0f}, Vec3{1.0f, 2.0f, 3.0f});
+    const Mat4 plain = PlayerFigure::bodyPlacement(base, save, {});
+    CHECK(Vec3{plain[3]} == Vec3{1.0f, 2.0f, 3.0f});
+    CHECK(plain[0].x == 1.0f);
+    PowerupEffects wings;
+    wings.special = powerup::kLevitation | powerup::kGrowth;
+    const Mat4 lifted = PlayerFigure::bodyPlacement(base, save, wings);
+    CHECK(Vec3{lifted[3]} == Vec3{1.0f, 2.0f + PowerupEffects::kLevitationLift, 3.0f});
+    CHECK(lifted[0].x == PowerupEffects::kGrowthScale); // the lift is not scaled
+    CHECK(lifted[1].y == PowerupEffects::kGrowthScale);
 }
 } // namespace

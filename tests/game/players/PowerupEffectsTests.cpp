@@ -166,4 +166,16 @@ TEST_CASE("an ending powerup blinks, and invulnerability shows its chrome",
     REQUIRE(effects.chrome() == PowerupEffects::Chrome::None);
 }
 
+TEST_CASE("levitation holds the body a unit and a half over the floor",
+          "[game][players][powerups]") {
+    Inventory inventory;
+    CHECK_FALSE(PowerupEffects::of(inventory).levitating());
+    CHECK(PowerupEffects::of(inventory).lift() == 0.0f);
+    inventory.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 30);
+    CHECK(PowerupEffects::of(inventory).levitating());
+    CHECK(PowerupEffects::of(inventory).lift() == PowerupEffects::kLevitationLift);
+    CHECK(PowerupEffects::kLevitationLift == 1.5f);
+    inventory.powerups[0].on = false;
+    CHECK(PowerupEffects::of(inventory).lift() == 0.0f);
+}
 } // namespace

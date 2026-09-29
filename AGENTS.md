@@ -1886,6 +1886,21 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   attack as it spits. It fades over the last second of the powerups that
   bring companions (0x7004F1 specials and the fire shield). The earned
   familiar is its own skin tree (PlayerProcessSkinFX) and shows beside it.
+  Levitation (special 1) holds the drawn body, and everything hung on it,
+  a unit and a half over where it stands (`PowerupEffects::lift`,
+  `PlayerFigure::bodyPlacement`, the one placement `PartyFigures`,
+  `PartyMotion`'s trail, the weapon glow and the item attacks share;
+  pmotion.c 2908), the shadow staying on the floor, and its feet make no
+  sound (pmotion.c 2931); traps pass under it and low blows do nothing to
+  it. A special wearing off, or switched off, is heard once against the
+  flags worn last update (`players/PowerupEndings`, reported by
+  `PlayerPowerups::update` from `PlayerRuntime::wornSpecial`,
+  PlayerProcessPowerups' old_flags): `S_UNPOJO`, `S_UNGROW` (only as the
+  body goes back to its plain size: never an ogre's nor a level 99's) and
+  `S_LEVITATEDOWN`. Specials with no retail effect found: `health` (0x20000)
+  and `dummy` (0x40000), which nothing reads; `mikey` (0x100000) is
+  PlayerProcessMikeyPUP's own companion (`MIKEYPUP_ON`), not reconstructed;
+  the armour `armorProtect` (0x800000) is read by nothing either.
   An elemental weapon (the amulets: fire 1, lightning 2, light 3, acid 4 in
   the weapon flags) glows in the weapon hand (`world/WeaponGlow`, one in
   `PlayerRuntime::weaponGlow`, set at the hand each frame by

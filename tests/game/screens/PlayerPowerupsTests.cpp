@@ -92,4 +92,46 @@ TEST_CASE("the shrinkers counted are the standing players with a working slot sw
     PlayerPowerups::update(players, 2, PlayerPowerups::Clock::Level);
     CHECK(PlayerPowerups::enemyShrinkers(players) == 1); // the timed one has run out
 }
+
+TEST_CASE("a special wearing off, or switched off, is heard once against the flags worn last "
+          "update",
+          "[powerups][endings]") {
+    std::array<PlayerRuntime, 3> players;
+    auto& first = players[0].actor.save().progress().inventory;
+    auto& second = players[1].actor.save().progress().inventory;
+    players[2].actor.save().character = 12; // an ogre, whose progress is its own class's
+    auto& ogre = players[2].actor.save().progress().inventory;
+    first.addPowerup(powerup::kSpecial, powerup::kLevitation, 0, 1);
+    second.addPowerup(powerup::kSpecial, powerup::kGrowth | powerup::kPojo, 0, -1);
+    ogre.addPowerup(powerup::kSpecial, powerup::kGrowth | powerup::kPojo, 0, -1);
+    // Coming on is no ending.
+    CHECK(PlayerPowerups::update(players, 0.5f, PlayerPowerups::Clock::Level).empty());
+    CHECK(players[0].wornSpecial == powerup::kLevitation);
+    CHECK(players[1].wornSpecial == (powerup::kGrowth | powerup::kPojo));
+    CHECK(players[2].wornSpecial == (powerup::kGrowth | powerup::kPojo));
+    // The wings run out; Pojo's for good is switched off.
+    second.powerups[0].on = false;
+    const auto endings = PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level);
+    REQUIRE(endings.size() == 3);
+    CHECK(endings[0].player == 0);
+    CHECK(endings[0].sound == "S_LEVITATEDOWN");
+    CHECK(endings[1].player == 1);
+    CHECK(endings[1].sound == "S_UNPOJO");
+    CHECK(endings[2].player == 1);
+    CHECK(endings[2].sound == "S_UNGROW");
+    CHECK(PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level).empty());
+    // An ogre never goes back to a plain size, so its growth ends unheard.
+    ogre.powerups[0].on = false;
+    const auto unheard = PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level);
+    REQUIRE(unheard.size() == 1);
+    CHECK(unheard[0].player == 2);
+    CHECK(unheard[0].sound == "S_UNPOJO");
+    // The fallen keep their flags for when they stand again.
+    second.powerups[0].on = true;
+    PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level);
+    players[1].life = PlayerLife::InTower;
+    second.powerups[0].on = false;
+    CHECK(PlayerPowerups::update(players, 1.0f, PlayerPowerups::Clock::Level).empty());
+    CHECK(players[1].wornSpecial == (powerup::kGrowth | powerup::kPojo));
+}
 } // namespace

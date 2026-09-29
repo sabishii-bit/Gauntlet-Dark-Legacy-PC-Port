@@ -93,10 +93,9 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
         }
         PlayerFigure& figure = *runtime.figure;
         const PowerupEffects worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
-        const f32 size = PlayerFigure::bodyScale(runtime.actor.save(), worn);
-        const Mat4 body = glm::scale(
+        const Mat4 body = PlayerFigure::bodyPlacement(
             scene.departure.transform(runtime.capture.body().value_or(runtime.actor.transform())),
-            Vec3{size, size, size});
+            runtime.actor.save(), worn);
         figure.setSkinTexture(skinOf(runtime, worn, scene.departure));
         // On the second hand: the left gauntlet, else a shield (PlayerProcessPowerups).
         if ((worn.special & powerup::kLeftGauntlet) != 0) {

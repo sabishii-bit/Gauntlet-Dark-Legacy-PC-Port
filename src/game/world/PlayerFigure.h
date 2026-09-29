@@ -33,6 +33,10 @@ public:
     PlayerFigure() = default;
     /** Character size shared by body rendering and posed-hand attachments. */
     static f32 bodyScale(const CharacterSave& save, const PowerupEffects& effects);
+    /** Where the body is drawn and its parts hang: `base` (the actor's transform, or the
+     * capture's) at `bodyScale`, lifted by what the powerups hold it up by. */
+    static Mat4 bodyPlacement(const Mat4& base, const CharacterSave& save,
+                              const PowerupEffects& effects);
     // Bound models and animation poses refer into these archives: their owner stays put.
     PlayerFigure(const PlayerFigure&) = delete;
     PlayerFigure& operator=(const PlayerFigure&) = delete;

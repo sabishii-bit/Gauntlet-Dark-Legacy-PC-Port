@@ -130,6 +130,7 @@ add_executable(tests
     game/players/ItemPickupTests.cpp
     game/players/PowerupEffectsTests.cpp
     game/players/EnemyShrinkTests.cpp
+    game/players/PowerupEndingsTests.cpp
     game/screens/PowerupSelectorTests.cpp
     game/screens/TransitionScreenTests.cpp
     game/screens/LevelLoadingScreenTests.cpp

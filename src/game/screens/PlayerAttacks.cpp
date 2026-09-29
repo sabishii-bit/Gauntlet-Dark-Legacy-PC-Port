@@ -964,9 +964,8 @@ void PlayerAttacks::glowWeapons(std::span<PlayerRuntime> players) {
         const PowerupEffects worn = PowerupEffects::of(save.progress().inventory);
         std::optional<Mat4> hand;
         if (runtime.figure != nullptr && runtime.life != PlayerLife::InTower) {
-            const f32 size = PlayerFigure::bodyScale(save, worn);
-            const Mat4 body = glm::scale(runtime.capture.body().value_or(runtime.actor.transform()),
-                                         Vec3{size, size, size});
+            const Mat4 body = PlayerFigure::bodyPlacement(
+                runtime.capture.body().value_or(runtime.actor.transform()), save, worn);
             hand = runtime.figure->handAttachment(body);
         }
         const u32 element = hand.has_value() ? WeaponGlow::elementOf(worn) : 0;
