@@ -232,7 +232,13 @@ SoundHandle LevelSoundscape::queueNarration(std::string_view name, Narrator whic
             return queue(*bank, *found);
         }
         if (which == Narrator::Primary) {
-            break;
+            return kNoSound;
+        }
+    }
+    // Some of the narrator's lines live in the level's own banks (the tower's S_WAITINGL).
+    for (SoundSet* bank : {&m_level, &m_common, &m_ambient}) {
+        if (const auto found = bank->find(name); found.has_value()) {
+            return queue(*bank, *found);
         }
     }
     return kNoSound;

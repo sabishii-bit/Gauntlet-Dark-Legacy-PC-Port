@@ -234,6 +234,7 @@ add_library(game STATIC
     screens/PartyCollision.cpp
     screens/FloorRiding.cpp
     screens/PartyFigures.cpp
+    screens/PartyNames.cpp
     screens/PartyHud.cpp
     screens/PartyRecords.cpp
     screens/TriggerCues.cpp
@@ -245,7 +246,11 @@ add_library(game STATIC
     screens/PlayerItemAttacks.cpp
     players/ItemAttack.cpp
     players/HeadGem.cpp
+    players/BodyGlow.cpp
+    players/MeleeStreak.cpp
+    players/ExitWait.cpp
     world/PowerupCompanion.cpp
+    world/WeaponTrail.cpp
     screens/PlayerHealth.cpp
     screens/PlayScene.cpp
     screens/PlaySceneTransport.cpp

@@ -1586,12 +1586,16 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::TurboStrong);
     bool struck = false;
     f32 darkest = 0.0f;
+    f32 brightest = 0.0f;
     for (s32 i = 0; i < 300 && scene.barrels().standing(barrel); ++i) {
         scene.update(1.0 / 60.0, still);
         struck = struck || scene.strikes().count() > 0;
         darkest = std::min(darkest, world.ambientOffset());
+        brightest = std::max(brightest, scene.runtime(0)->glow.level());
     }
     REQUIRE(struck);
+    // The striker blazes against the dark it brings (PlyrSfxDoDamage's pulse of 2).
+    REQUIRE(brightest == BodyGlow::kStrike);
     // Its name was announced as it came out, and the party carries that on with it, so that
     // it is not said again next level.
     REQUIRE(scene.help().id() == 57);
@@ -1607,6 +1611,7 @@ TEST_CASE("in the fields a turbo attack breaks what is about it, a charge rams, 
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE(world.ambientOffset() == 0.0f); // and light again once it is over
+    REQUIRE(scene.runtime(0)->glow.level() == 0.0f);
     scene.close();
 
     // A charge rushes on with no hand on the stick, faster than a run could, and what it runs
@@ -2240,6 +2245,8 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     // the level's own light: its figure is drawn brighter than the dimmed light would.
     REQUIRE(scene.bosses().legend().darkens());
     REQUIRE(scene.dimmer().offset() <= LegendRite::kDarkening + 0.1f);
+    // The bearer shines through the rite (player.c 2508).
+    REQUIRE(scene.runtime(scene.bosses().legend().player())->glow.level() == BodyGlow::kBearer);
     {
         const auto brightness = [](const std::vector<test::RecordedDraw>& draws,
                                    const std::set<const Texture*>& of) {

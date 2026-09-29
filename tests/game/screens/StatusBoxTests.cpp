@@ -1,4 +1,6 @@
 #include <filesystem>
+#include <optional>
+#include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -105,6 +107,38 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot",
 
     painter.release();
     REQUIRE_FALSE(painter.loaded());
+}
+
+TEST_CASE("the runestones held line the box, the bosses' keys a while as a level opens",
+          "[game][screens][relic-strip][unpacked]") {
+    const std::filesystem::path root =
+        test::unpackedOrSkip("STATIC/textures.json").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    StatusBoxPainter painter;
+    REQUIRE(painter.load(device, root, nullptr));
+    const auto corners = [&](u16 runes, std::optional<u16> keys) {
+        device.draws.clear();
+        Canvas canvas;
+        canvas.begin(device, Mat4{1.0f});
+        painter.drawRelics(canvas, 1, runes, keys);
+        canvas.end();
+        std::vector<Vec2> found;
+        found.reserve(device.draws.size());
+        for (const test::RecordedDraw& draw : device.draws) {
+            found.push_back(test::minCorner(draw));
+        }
+        return found;
+    };
+    // Runes 1, 5 and 12 of the second box: 15 in, 8 a rune and a pixel a colour (player.c 5133).
+    const std::vector<Vec2> runes = corners(0x0811, std::nullopt);
+    CHECK(runes == std::vector<Vec2>{{128.0f + 15.0f, 306.0f},
+                                     {128.0f + 15.0f + 32.0f + 1.0f, 306.0f},
+                                     {128.0f + 15.0f + 88.0f + 3.0f, 306.0f}});
+    // The second key, 12 in and 12 a key, at 300; none when they are not shown.
+    const std::vector<Vec2> keys = corners(0, u16{0x2});
+    CHECK(keys == std::vector<Vec2>{{128.0f + 24.0f, 300.0f}});
+    CHECK(corners(0, std::nullopt).empty());
+    painter.release();
 }
 
 TEST_CASE("status boxes need the unpacked panels", "[game][screens]") {

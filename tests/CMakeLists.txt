@@ -201,9 +201,14 @@ add_executable(tests
     game/screens/PartyMotionTests.cpp
     game/screens/PartyCollisionTests.cpp
     game/players/HeadGemTests.cpp
+    game/players/BodyGlowTests.cpp
+    game/players/MeleeStreakTests.cpp
+    game/players/ExitWaitTests.cpp
     game/world/PowerupCompanionTests.cpp
+    game/world/WeaponTrailTests.cpp
     game/screens/FloorRidingTests.cpp
     game/screens/PartyFiguresTests.cpp
+    game/screens/PartyNamesTests.cpp
     game/screens/PartyHudTests.cpp
     game/screens/PartyRecordsTests.cpp
     game/screens/TriggerCuesTests.cpp

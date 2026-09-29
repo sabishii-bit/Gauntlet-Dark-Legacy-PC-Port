@@ -58,6 +58,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                  world.ref().name.empty() ? 'L' : world.ref().name.front(),
                  world.level() != nullptr && world.level()->bossType >= 0);
     m_messages.load(device, m_staticTextures, m_context.unpackedRoot, m_context.strings);
+    m_names.load(device, m_context.unpackedRoot, m_staticTextures);
     m_weapons.load(context.unpackedRoot / kWeaponsArchive);
     m_figures.loadSkins(device, world.powerups(), m_weapons);
     const std::array<TextureSet*, 5> effectTextures{&m_weapons.textures, &world.items().textures,
@@ -94,6 +95,12 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         }
     }
     spawnParty(party, options);
+    PartyNames::show(m_players);
+    // The bosses' keys show in the boxes as a level opens, but for a secret one (gamemain.c
+    // 1990's music track 12).
+    if (!world.ref().isSecret()) {
+        m_hud.showRelics();
+    }
     m_transporters.bind(device, world.layout(), world.items(), static_cast<s32>(m_players.size()),
                         &world.realmItems());
     for (const DroppedItem& item : options.items) {
@@ -192,7 +199,8 @@ void PlayScene::close() {
     m_effects.clear(); // and before the archive whose trees they play
     m_opponents.close();
     m_playSeconds = 0.0f;
-    m_hud.clear(); // before the static texture borrowed for selector glow
+    m_hud.clear();   // before the static texture borrowed for selector glow
+    m_names.clear(); // before the static sheet its font borrows
     m_staticTextures.releaseTextures();
     m_welcome.clear();
     m_dimmer.reset();
@@ -290,6 +298,18 @@ bool PlayScene::weaponHeld(s32 player) const {
         }
     }
     return false;
+}
+
+/** A run of close blows is praised once it pauses (player.c 2553), unless the boss's wizard
+ * has begun his visit (good_wiz_state past 2). */
+void PlayScene::praiseStreaks(f32 seconds) {
+    const bool wizard = m_bossSequence.victory().state().stage() >= BossVictory::Stage::Appearing;
+    for (PlayerRuntime& runtime : m_players) {
+        const std::string_view praise = runtime.streak.step(seconds);
+        if (!praise.empty() && !wizard && m_audio.narrationRoom(MeleeStreak::kWait)) {
+            m_audio.queueNarration(praise, LevelSoundscape::Narrator::Primary);
+        }
+    }
 }
 
 PartyPickups::Services PlayScene::pickupServices() {
@@ -616,6 +636,12 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     const BossVictory::Stage victory = m_bossSequence.victory().state().stage();
     m_audio.holdNarration(victory != BossVictory::Stage::None &&
                           victory != BossVictory::Stage::Waiting);
+    m_hud.stepRelics(ticks);
+    // The names over the heads run down unless a message, a cut or Sumner holds play.
+    m_names.step(m_players, ticks,
+                 m_gameOver.active() || m_switchCutscene.active() || m_messages.active() ||
+                     m_welcome.cutting() || m_sumnerVisit.active() || m_promotion.active() ||
+                     relicCeremonyOn());
     if (m_gameOver.active()) {
         // The world remains behind the caption, but no player input, portal,
         // reward or victory ceremony can restart the finished session.
@@ -729,6 +755,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
     }
     PlayerPowerups::update(m_players, seconds, powerupClock);
+    praiseStreaks(seconds);
     if (m_device != nullptr) {
         PartyFigures::greetGems(*m_device, m_players, m_world->powerups(), m_effects);
     }
@@ -765,6 +792,12 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     // The level goes dark for the legend item's rite, as for a great move.
     if (m_opponents.bosses().legend().darkens()) {
         m_dimmer.ask(LegendRite::kDarkening);
+        // The bearer shines through the rite, the rest of the party less (player.c 2508).
+        for (PlayerRuntime& runtime : m_players) {
+            runtime.glow.raise(runtime.actor.player() == m_opponents.bosses().legend().player()
+                                   ? BodyGlow::kBearer
+                                   : BodyGlow::kOthers);
+        }
     }
     m_dimmer.update(seconds);
     m_world->setAmbientOffset(m_dimmer.offset());
@@ -812,9 +845,18 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
         const std::optional<usize> reached = m_portals.update(ticks, seconds, standing);
         const LevelInfo* level = m_world->level();
-        for (const s32 waiting : m_portals.takeWaiting()) {
+        const std::vector<s32> waiting = m_portals.takeWaiting();
+        for (const s32 index : waiting) {
             if (level == nullptr || level->bossType < 0) {
-                postHelp(HelpMessages::kEveryoneToExit, static_cast<usize>(waiting));
+                postHelp(HelpMessages::kEveryoneToExit, static_cast<usize>(index));
+            }
+        }
+        // Kept waiting, one is named and heard to wait (AudioPlayerBreath, player.c 2487).
+        for (usize i = 0; i < m_players.size(); ++i) {
+            const bool still = std::ranges::find(waiting, static_cast<s32>(i)) != waiting.end();
+            if (m_players[i].exitWait.step(still, ticks)) {
+                sayWithName(i, m_world->isTower() ? ExitWait::kTowerVoice : ExitWait::kVoice,
+                            ExitWait::kWait);
             }
         }
         if (const auto portal = reached; portal.has_value() && leaveBy(*portal)) {
@@ -968,6 +1010,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     const bool cut = m_welcome.cutting() || (m_promotion.active() && !spawning()) ||
                      relicCeremonyOn() || m_switchCutscene.showing();
     m_transition.draw(m_canvas, width); // over the view, under the boxes
+    m_names.draw(m_canvas, m_players, clip, width, height);
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
         if (m_challenge.state() != SecretChallenge::State::Inactive) {

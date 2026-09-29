@@ -21,6 +21,7 @@
 #include "game/world/BlobShadow.h"
 #include "game/world/PlayerFamiliar.h"
 #include "game/world/PowerupCompanion.h"
+#include "game/world/WeaponTrail.h"
 
 namespace gdl::game {
 
@@ -93,6 +94,10 @@ public:
     void setAttackSpeed(bool rapid, bool speed) { m_animator.setAttackSpeed(rapid, speed); }
     void setShielded(bool shielded) { m_animator.setShielded(shielded); }
     void setPushed(bool pushed) { m_animator.setPushed(pushed); }
+    /** Leaves the swing's ghosts of the weapon behind the body placed at `body` (the slow
+     * swing, the spin and the middle power swing: action.c 816, 951, 976). */
+    void updateTrail(const Mat4& body, s32 ticks);
+    const WeaponTrail& trail() const { return m_trail; }
     const PlayerAnimator& animator() const { return m_animator; }
     const TreeModel& missile() const { return m_missile; }
     ItemArchive* missileArchive() { return m_missileArchive; }
@@ -146,6 +151,7 @@ private:
     ItemArchive m_effects;
     PlayerFamiliar m_familiar;
     PowerupCompanion m_companion;
+    WeaponTrail m_trail;
     f32 m_companionAlpha = 1;
     s32 m_backNode = -1; ///< what wings hang from: the root's first child's first child
     TreeModel m_familiarMissile;

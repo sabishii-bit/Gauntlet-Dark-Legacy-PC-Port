@@ -230,6 +230,7 @@ void PartyPickups::shareRune(s32 rune, std::span<PlayerRuntime> players, const S
         relics.addRune(rune);
         held |= relics.runes;
     }
+    services.hud.showRelics(); // welcome_timer again (items.c 3402)
     for (const std::string& voice : runeCountVoices(std::popcount(held))) {
         services.audio.queueNarration(voice, LevelSoundscape::Narrator::Primary);
     }

@@ -57,8 +57,9 @@ public:
     static constexpr usize kMostNarration = 16;
     static constexpr f32 kAlwaysRoom = -1.0f;
     bool narrationRoom(f32 maxWait) const;
-    /** Queues a narrator line, or a name clip of a character's own bank; kNoSound when the
-     * sound is missing or the queue is full. */
+    /** Queues a narrator line (with `Either`, one the level's own banks keep as well), or a
+     * name clip of a character's own bank; kNoSound when the sound is missing or the queue is
+     * full. */
     SoundHandle queueNarration(std::string_view name, Narrator which = Narrator::Either);
     SoundHandle queueNarrationFrom(SoundSet& bank, std::string_view name);
     static constexpr std::string_view kPojoName = "S_POJO2"; ///< Pojo's name before a line
