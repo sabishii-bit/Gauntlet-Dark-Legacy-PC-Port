@@ -83,6 +83,8 @@ add_executable(tests
     game/world/PlayerFamiliarTests.cpp
     game/world/CameraMovementLimitTests.cpp
     game/world/SkorneArenaTests.cpp
+    game/world/FallingPieceTests.cpp
+    game/world/FallingSceneryTests.cpp
     game/enemies/SkorneTests.cpp
     game/enemies/SpiderQueenTests.cpp
     game/world/PlayerArsenalTests.cpp

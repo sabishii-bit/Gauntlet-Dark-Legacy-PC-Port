@@ -272,6 +272,7 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
             continue;
         }
         const MoveStrike& row = stats->moveStrikes[static_cast<usize>(source->row)];
+        targets.fixtures.shootScenery(hit.centre, hit.radius);
         for (const MissileTarget& target : strikeTargets(targets)) {
             if (!target.reachedBy(hit)) {
                 continue;
@@ -853,6 +854,8 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     const auto target =
         TargetAssist::around(actor.position(), actor.height(), meleeTargets(targets),
                              actor.radius() + kStepReach, &m_resources->world.collision());
+    // The swing's sweep brings down the SHOOTFALL scenery within it (combat.c's item query).
+    targets.fixtures.shootScenery(actor.position(), actor.radius() + kStepReach);
     if (!target) {
         return;
     }
@@ -954,6 +957,13 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
     }
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),
                                            missileTargets);
+    // A weapon still flying brings down the SHOOTFALL scenery it passes (fn_8005EE18).
+    const PlayerMissiles& flying = m_resources->arsenal.missiles();
+    for (usize i = 0; i < flying.count(); ++i) {
+        const PlayerMissiles::Missile& missile = flying.missile(i);
+        targets.fixtures.shootScenery(missile.position,
+                                      missile.spec != nullptr ? missile.spec->radius : 1.0f);
+    }
     for (const MissileImpact& impact : m_resources->arsenal.missiles().takeImpacts()) {
         m_resources->arsenal.presentImpact(impact);
         if (impact.potion != 0) {
@@ -1163,6 +1173,7 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
         }
         const f32 radius = burst.impact.potency * (1.33f - phase);
         const f32 power = burst.impact.damage * 1.5f * (phase - 0.33f);
+        targets.fixtures.shootScenery(burst.impact.position, radius);
         const u32 flags = EnemyHit::kMagic | static_cast<u32>(burst.impact.potion);
         // The perk goes first: a barrel it cleanses may break under the same wave.
         bless(burst, radius, players, targets);

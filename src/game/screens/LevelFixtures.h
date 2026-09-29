@@ -14,6 +14,7 @@
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
 #include "game/world/EffectTrees.h"
+#include "game/world/FallingScenery.h"
 #include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
 #include "game/world/LockedGates.h"
@@ -77,6 +78,10 @@ public:
     void bless(const Vec3& position, f32 radius, MagicPerk perk, usize caster,
                std::vector<s32>& reached, const Events& events);
     void strikeWall(usize index, f32 power, u32 flags = 0);
+    /** A player's shot or blow of `radius` at `position` (a missile in flight, a strike's
+     * ring, a swing, a potion's wave) bringing down the level's SHOOTFALL scenery
+     * (fn_8005EE18), which then sounds the realm's break. */
+    void shootScenery(const Vec3& position, f32 radius);
     void strikeBarrel(usize barrel, f32 power, s32 byPlayer, std::span<PlayerRuntime> players,
                       const Events& events);
     /** An explosion: a ring over its effect's `seconds` (StartExplosion, ProcessEffects mode
@@ -120,6 +125,8 @@ private:
                                                 const Vec3& position, f32 reach);
     void playGateSound(s32 subtype);
     void playRealmSound(std::string_view stem);
+    /** Sounds the scenery that gave way (fn_8009D8CC, fn_8009D91C). */
+    void playFallingCues(std::span<const FallingCue> cues);
     f32 trapDamageScale() const;
     std::optional<Resources> m_resources;
     /** Gas a poison barrel left hanging. */
