@@ -153,6 +153,7 @@ private:
         s32 kind = -1;
         f32 facing = 0.0f;
         f32 viewRadius = 0.0f;
+        f32 sight = 0.0f;             ///< the placement's sight radius, a great one's visrad
         std::optional<usize> carried; ///< the pickup a great one holds, as the level opens
     };
     void standPlacements(std::optional<ViewVolume> view, const Vec3& attention);

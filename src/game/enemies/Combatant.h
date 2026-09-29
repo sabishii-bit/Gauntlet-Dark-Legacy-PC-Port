@@ -20,6 +20,7 @@
 #include "game/enemies/CombatantAssets.h"
 #include "game/enemies/CombatantProjectile.h"
 #include "game/enemies/CritterArea.h"
+#include "game/enemies/CritterPatrol.h"
 #include "game/enemies/Enemies.h"
 #include "game/world/HazardSurfaces.h"
 #include "game/world/ItemFigure.h"
@@ -81,6 +82,14 @@ public:
     /** What of the level's stands where it walks this update. */
     void setObstacles(std::span<const CombatantObstacle> items) { m_obstacles = items; }
     std::vector<CombatantRam> takeRams() { return std::exchange(m_rams, {}); }
+    /** Sets it walking the level's lookouts from the chained one nearest it, within ten
+     * (CritterNewInst's round for a general); with `sight` over nought it takes only a player
+     * whose target score is within it meanwhile (the placement's radius at the level's sight
+     * scale, CritterGetSingleTargetPlayer). `route` is borrowed for the round. */
+    void startPatrol(const LookoutRoute* route, f32 sight = 0.0f);
+    bool patrolling() const { return m_actor.patrol.active(); }
+    /** The lookout it makes for, by its place in the route; -1 for none. */
+    s32 lookout() const { return m_actor.patrol.lookout(); }
     void freeze(s32 ticks);
     void blind(s32 ticks);
     void curb(f32 seconds);
@@ -170,6 +179,7 @@ private:
         std::vector<CritterArea> areas;
         std::vector<Mat4> arenaAnchors;
         std::vector<CombatArenaTarget> arenaTargets;
+        CritterPatrol patrol;     ///< its round of the lookouts, while it has one
         s32 lastArenaTarget = -1; ///< position in the collected stage roster, not the item id
         bool arenaCollected = false;
         f32 hurtPending = 0.0f;
@@ -189,6 +199,7 @@ private:
         s32 shotFrame = -1;
         std::optional<Vec3> attackTarget; ///< captured by a targeted-area move, not a homing point
         std::optional<Vec3> stepTarget;   ///< latest ready-step target, retained if sight is lost
+        std::optional<Vec3> patrolAim;    ///< the lookout it makes for this update
         s32 grabbed = -1;
         s32 grabMove = -1;
         std::string grabNode;
@@ -210,6 +221,12 @@ private:
     void loseHealth(f32 amount);
     void chooseMove(Actor& critter, std::span<const EnemyView> players);
     static std::optional<usize> bestMove(const Actor& critter, std::span<const EnemyView> players);
+    /** The first step move that goes anywhere, for a round of the lookouts with no player in
+     * sight (CritterLookForReady's waypoint pick). */
+    static std::optional<usize> patrolStep(const Actor& critter);
+    /** How a player scores as a target: its distance, doubled unless it lies squarely ahead
+     * (CritterCalcTargetScore). */
+    static f32 targetScore(const Actor& critter, const Vec3& position);
     bool choosePatternAttack(Actor& critter, std::span<const EnemyView> players);
     static s32 attackTarget(const Actor& critter, const TargetCriteria& criteria,
                             std::span<const EnemyView> players);

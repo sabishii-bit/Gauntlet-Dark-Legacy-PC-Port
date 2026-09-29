@@ -87,11 +87,48 @@ void Combatant::chooseTarget(Actor& critter, std::span<const EnemyView> players)
         if (!sight.allows(distance, 0.0f, view.position.y - critter.position.y)) {
             continue;
         }
+        // On its round of the lookouts it takes only a player within its placement's sight
+        // (CritterGetSingleTargetPlayer's visrad).
+        if (critter.patrol.active() && critter.patrol.sight() > 0.0f &&
+            targetScore(critter, view.position) > critter.patrol.sight()) {
+            continue;
+        }
         if (distance < critter.targetDistance) {
             critter.targetDistance = distance;
             critter.target = view.player;
         }
     }
+    // A player found ends the round for good.
+    if (critter.target >= 0 && critter.patrol.active()) {
+        critter.patrol.end();
+        critter.patrolAim.reset();
+    }
+}
+
+f32 Combatant::targetScore(const Actor& critter, const Vec3& position) {
+    constexpr f32 kSquarelyAhead = 0.5f;
+    const f32 distance = flatDistance(position, critter.position);
+    const f32 dot = std::cos(wrapAngle(yawBetween(critter.position, position) - critter.yaw));
+    return dot > kSquarelyAhead ? distance / dot : 2.0f * distance;
+}
+
+std::optional<usize> Combatant::patrolStep(const Actor& critter) {
+    if (!critter.patrolAim.has_value()) {
+        return std::nullopt;
+    }
+    constexpr u32 kLinkedOnly = 4;
+    const std::span<const MoveDefinition> moves = critter.definition->moves();
+    for (usize i = 0; i < moves.size(); ++i) {
+        const MoveDefinition& move = moves[i];
+        // The steps of the walk family; the one to a point wants a player.
+        const bool step =
+            move.type >= MoveDefinition::kStepFrom && move.type <= MoveDefinition::kStepLast;
+        if (step && move.type != MoveDefinition::kStepToPoint && (move.flags & kLinkedOnly) == 0 &&
+            move.speed > 0.0f) {
+            return i;
+        }
+    }
+    return std::nullopt;
 }
 
 std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const EnemyView> players) {
@@ -104,6 +141,12 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
         distance = critter.targetDistance;
         bearing = wrapAngle(yawBetween(critter.position, view->position) - critter.yaw);
         vertical = view->position.y - critter.position.y;
+    }
+    // With nobody in its sights, one on its round walks to the next lookout.
+    if (view == nullptr) {
+        if (const auto step = patrolStep(critter); step.has_value()) {
+            return step;
+        }
     }
     std::optional<usize> best;
     s32 bestPriority = -1;

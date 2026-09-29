@@ -16,6 +16,7 @@ struct CombatantDefinition {
     bool boundsToHome = false;
     f32 knockbackReduction = 0;
     bool breaksItems = false; ///< walks through chests and breaks barrels (fn_8005D5C8)
+    bool patrols = false; ///< walks the level's lookouts until it finds a player (CritterNewInst)
     std::string dropForm;
 };
 } // namespace gdl::game
