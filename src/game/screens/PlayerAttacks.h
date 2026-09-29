@@ -116,6 +116,12 @@ private:
     static constexpr std::string_view kHealingEffect = "LEVELUP_GRE"; ///< FX_HEALENEMY
     static void bless(PotionBurst& burst, f32 radius, std::span<const PlayerRuntime> players,
                       const Targets& targets);
+    /** What target `id` has left, for measuring what a hit took off it; none for what keeps
+     * no health a hit could feed the healing. */
+    static f32 healthOf(s32 id, const Targets& targets);
+    /** A hit that carries DMG_HEAL feeds its dealer's healing with what it took off `id`. */
+    void healHit(s32 owner, u32 flags, s32 id, f32 before, const Vec3& at,
+                 std::span<PlayerRuntime> players, const Targets& targets);
     s32 m_nextPotionKind = 1;
     std::vector<MissileTarget> projectileTargets(const Targets& targets) const;
     /** What a thrown weapon or a burst can strike: the targets and the shootable switches,

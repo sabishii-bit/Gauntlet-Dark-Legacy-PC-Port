@@ -9,6 +9,7 @@
 #include "engine/core/Types.h"
 
 #include "game/combat/Damage.h"
+#include "game/combat/DamageTypes.h"
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/EnemyKinds.h"
 #include "game/players/ItemPickup.h"
@@ -344,7 +345,8 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
     shield.actor = index;
     shield.radius = kShieldPotency * power;
     shield.damage = kShieldDamage;
-    shield.flags = EnemyHit::kMagic | static_cast<u32>(kind);
+    shield.flags = EnemyHit::kMagic | static_cast<u32>(kind) |
+                   damage::magicHeal(experienceLevel(actor.save().experience()));
     shield.secondsLeft = kShieldSeconds;
     if (m_resources->weapons.loaded() &&
         m_resources->weapons.trees.find(kShieldTrees[look]).has_value()) {
@@ -556,15 +558,21 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
         }
         for (const s32 id : targets.opponents.enemies().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
-            targets.opponents.strikeEnemy(id, shield.damage, shield.flags,
-                                          targets.opponents.enemies().positionOf(id) - at,
+            const Vec3 struck = targets.opponents.enemies().positionOf(id);
+            const f32 before = healthOf(kEnemyTargetBase + id, targets);
+            targets.opponents.strikeEnemy(id, shield.damage, shield.flags, struck - at,
                                           actor.player(), players);
+            healHit(actor.player(), shield.flags, kEnemyTargetBase + id, before, struck, players,
+                    targets);
         }
         for (const s32 id : targets.opponents.critters().reachedBy(
                  at, shield.radius, std::numbers::pi_v<f32>, {0, 0, 1})) {
-            targets.opponents.strikeCritter(id, shield.damage, shield.flags,
-                                            targets.opponents.critters().positionOf(id) - at,
+            const Vec3 struck = targets.opponents.critters().positionOf(id);
+            const f32 before = healthOf(kCritterTargetBase + id, targets);
+            targets.opponents.strikeCritter(id, shield.damage, shield.flags, struck - at,
                                             actor.player(), std::nullopt, false, players);
+            healHit(actor.player(), shield.flags, kCritterTargetBase + id, before, struck, players,
+                    targets);
         }
         for (const s32 id : targets.opponents.generators().within(at, shield.radius)) {
             targets.opponents.strikeGenerator(id, shield.damage, actor.player());
@@ -576,7 +584,10 @@ void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
             hit.player = actor.player();
             hit.level = experienceLevel(actor.save().experience());
             hit.direction = *targets.opponents.bosses().position() - at;
+            const f32 before = healthOf(kBossTargetBase, targets);
             targets.opponents.bosses().hurt(hit);
+            healHit(actor.player(), shield.flags, kBossTargetBase, before,
+                    *targets.opponents.bosses().position(), players, targets);
         }
         // Magic leaves the walls, the rocks and every barrel but one holding something alone.
         for (const usize barrel : targets.fixtures.barrels().within(at, shield.radius)) {
@@ -899,6 +910,7 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
     if (strikeSwitch(id, flags)) {
         return;
     }
+    const f32 before = healthOf(id, targets);
     if (id >= kWallTargetBase) {
         targets.fixtures.strikeWall(static_cast<usize>(id - kWallTargetBase), damage, flags);
         if (targets.fixtureEvents.help) {
@@ -939,6 +951,7 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
                                       targets.fixtureEvents);
         targets.fixtures.settleBlasts(players, targets.fixtureEvents);
     }
+    healHit(actor.player(), flags, id, before, point, players, targets);
 }
 
 void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> players,
@@ -989,6 +1002,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         if (strikeSwitch(impact.target, impact.flags)) {
             continue;
         }
+        const f32 before = healthOf(impact.target, targets);
         if (impact.target >= kWallTargetBase) {
             targets.fixtures.strikeWall(static_cast<usize>(impact.target - kWallTargetBase),
                                         impact.damage, impact.flags);
@@ -1043,6 +1057,8 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                                           impact.owner, players, targets.fixtureEvents);
             targets.fixtures.settleBlasts(players, targets.fixtureEvents);
         }
+        healHit(impact.owner, impact.flags, impact.target, before, impact.position, players,
+                targets);
     }
     updatePotions(seconds, players, targets);
     updateItems(seconds, players, targets);
@@ -1073,6 +1089,7 @@ void PlayerAttacks::shootPotion(const MissileImpact& impact, std::span<PlayerRun
         own.potion = colour;
         own.potency = kShotMagicShare * m_resources->arsenal.magicPowerOf(players[i].actor);
         own.damage = kShotMagicShare * kPotionDamage;
+        own.flags = damage::magicHeal(experienceLevel(players[i].actor.save().experience()));
         m_resources->arsenal.burstPotion(colour, impact.position, own.potency, true);
         beginPotion(own);
         if (targets.fixtureEvents.help) {
@@ -1183,7 +1200,8 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
         const f32 radius = burst.impact.potency * (1.33f - phase);
         const f32 power = burst.impact.damage * 1.5f * (phase - 0.33f);
         targets.fixtures.shootScenery(burst.impact.position, radius);
-        const u32 flags = EnemyHit::kMagic | static_cast<u32>(burst.impact.potion);
+        const u32 flags = EnemyHit::kMagic | static_cast<u32>(burst.impact.potion) |
+                          (burst.impact.flags & damage::kHeal);
         // The perk goes first: a barrel it cleanses may break under the same wave.
         bless(burst, radius, players, targets);
         for (const MissileTarget& target : strikeTargets(targets)) {
@@ -1222,26 +1240,23 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                         hit.level = experienceLevel(player.actor.save().experience());
                     }
                 }
-                const f32 before = targets.opponents.bosses().view().health;
+                const f32 before = healthOf(target.id, targets);
                 targets.opponents.bosses().hurt(hit, target.id - kBossTargetBase);
-                healFrom(byPlayer, before - targets.opponents.bosses().view().health, target.base,
-                         players, targets);
+                healHit(byPlayer, flags, target.id, before, target.base, players, targets);
             } else if (target.id >= kCritterTargetBase) {
                 const s32 id = target.id - kCritterTargetBase;
-                const f32 before = targets.opponents.critters().healthOf(id);
+                const f32 before = healthOf(target.id, targets);
                 targets.opponents.strikeCritter(id, power, flags, direction, byPlayer, target.base,
                                                 false, players);
-                healFrom(byPlayer, before - targets.opponents.critters().healthOf(id), target.base,
-                         players, targets);
+                healHit(byPlayer, flags, target.id, before, target.base, players, targets);
             } else if (target.id >= kGeneratorTargetBase) {
                 targets.opponents.strikeGenerator(target.id - kGeneratorTargetBase, power, byPlayer,
                                                   players);
             } else if (target.id >= kEnemyTargetBase) {
                 const s32 id = target.id - kEnemyTargetBase;
-                const f32 before = targets.opponents.enemies().healthOf(id);
+                const f32 before = healthOf(target.id, targets);
                 targets.opponents.strikeEnemy(id, power, flags, direction, byPlayer, players);
-                healFrom(byPlayer, before - targets.opponents.enemies().healthOf(id), target.base,
-                         players, targets);
+                healHit(byPlayer, flags, target.id, before, target.base, players, targets);
             } else {
                 targets.fixtures.strikeBarrel(static_cast<usize>(target.id), power, byPlayer,
                                               players, targets.fixtureEvents);
@@ -1267,10 +1282,34 @@ void PlayerAttacks::updatePotions(f32 seconds, std::span<PlayerRuntime> players,
                   [](const PotionBurst& burst) { return burst.elapsed >= burst.duration; });
 }
 
-/** From level 75 a caster's magic heals as it harms (do_heal_players, reached through
- * DMG_HEAL): they take a tenth of what it took, more by 0.016 a level past 75, and every other
- * standing player within their magic's power half that, none past their most; it shows over
- * what was harmed and teaches them so. */
+f32 PlayerAttacks::healthOf(s32 id, const Targets& targets) {
+    if (id >= kSafeRockTargetBase) {
+        return 0.0f;
+    }
+    if (id >= kBossTargetBase) {
+        return targets.opponents.bosses().view().health;
+    }
+    if (id >= kCritterTargetBase) {
+        return targets.opponents.critters().healthOf(id - kCritterTargetBase);
+    }
+    if (id >= kEnemyTargetBase && id < kGeneratorTargetBase) {
+        return targets.opponents.enemies().healthOf(id - kEnemyTargetBase);
+    }
+    return 0.0f;
+}
+
+void PlayerAttacks::healHit(s32 owner, u32 flags, s32 id, f32 before, const Vec3& at,
+                            std::span<PlayerRuntime> players, const Targets& targets) {
+    if (damage::heals(flags)) {
+        healFrom(owner, before - healthOf(id, targets), at, players, targets);
+    }
+}
+
+/** From level 75 a hit that carries DMG_HEAL (a caster's magic from 25, the healing weapon)
+ * heals as it harms (do_heal_players, damage_enemy and CritterDamage): they take a tenth of
+ * what it took, more by 0.016 a level past 75, and every other standing player within their
+ * magic's power half that, none past their most; it shows over what was harmed and teaches
+ * them so. */
 void PlayerAttacks::healFrom(s32 owner, f32 harm, const Vec3& at, std::span<PlayerRuntime> players,
                              const Targets& targets) {
     if (!m_resources.has_value() || harm <= 0.0f) {
