@@ -1252,8 +1252,12 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
                               cue.nodeOffset, cue.rootAttachment, cue.pitchYaw});
         }
     }
-    if (!cue.sound.empty()) {
-        m_resources->audio.playNamed(cue.sound);
+    // The great ones' sounds play at 224 of 255 as heard from where the players stand
+    // (CritterDoSfx: AudioPlay3DSel, sndFxPlay3DAtten); a death's at that level whole.
+    if (!cue.sound.empty() && cue.attenuated) {
+        playAt(cue.sound, kLoudSound, cue.position);
+    } else if (!cue.sound.empty()) {
+        m_resources->audio.playNamed(cue.sound, kLoudSound / kFullLevel);
     }
 }
 

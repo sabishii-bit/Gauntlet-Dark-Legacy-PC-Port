@@ -465,6 +465,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     usize rings = 0;
     for (const CombatCue& cue : cues) {
         REQUIRE(cue.critter == *id);
+        REQUIRE(cue.attenuated); // heard as far off as it is (AudioPlay3DSel's attenuated way)
         steps += cue.sound == "S_GENGSTEP1" || cue.sound == "S_GENGSTEP2" ? 1U : 0U;
         swishes += cue.sound == "S_GOLGSWING" ? 1U : 0U;
         if (cue.sound == "S_GOLGSTOMP") {
@@ -555,6 +556,13 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     REQUIRE(critters.targets().empty());
     critters.update(kTicks, kStep, party);
     REQUIRE(critters.moveOf(*id) == "DEATH");
+    // Its dying cry (the DEATH move's second sound, at its first frame) carries whole,
+    // wherever the players stand (CritterDoSfx plays a death's through sndFxPlay3D).
+    critters.update(kTicks, kStep, party);
+    const std::vector<CombatCue> dying = critters.takeCues();
+    const auto cry = std::ranges::find(dying, "S_GOLGKILLCLOSE", &CombatCue::sound);
+    REQUIRE(cry != dying.end());
+    REQUIRE_FALSE(cry->attenuated);
     s32 gone = 0;
     while (critters.count() > 0 && gone < 600) {
         critters.update(kTicks, kStep, party);

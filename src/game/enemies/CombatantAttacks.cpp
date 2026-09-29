@@ -137,6 +137,9 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         out.critter = id;
         out.tree = record->shows() ? record->tree : std::string{};
         out.sound = record->soundFor(m_realm);
+        // A dying great one's sounds carry whole; the rest fade with distance.
+        out.attenuated = critter.move < 0 || data.moves()[static_cast<usize>(critter.move)].type !=
+                                                 MoveDefinition::kDeath;
         // Explicit positions are already world-space. Only a parent transform
         // rotates an offset; impact marks must not inherit the attacker's yaw.
         out.position = position + record->offset * critter.scale;
