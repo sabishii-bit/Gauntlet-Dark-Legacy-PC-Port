@@ -28,7 +28,7 @@ Mat4 Combatant::modelTransform(const Actor& critter) {
     const Vec3 root = critter.position + Vec3{0.0f, critter.definition->floorOffset(), 0.0f};
     const Mat4 model =
         glm::rotate(glm::translate(Mat4{1.0f}, root), critter.yaw, Vec3{0.0f, 1.0f, 0.0f});
-    return glm::scale(model, Vec3{critter.scale});
+    return glm::scale(model, Vec3{critter.scale * critter.shrink});
 }
 
 Vec3 Combatant::partPosition(const Actor& critter, std::string_view node) {
@@ -126,7 +126,7 @@ void Combatant::drawShadow(RenderDevice& device, const Mat4& clip, const Vec3& e
         }
     }
     critter.stock->shadow.draw(device, clip, eye, ground, normal, lighting, critter.alpha,
-                               critter.scale);
+                               critter.scale * critter.shrink);
 }
 
 /** The bar hangs from the body's node at the type's offset, turned to the camera about the

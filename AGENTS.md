@@ -1850,7 +1850,19 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   far the scene applies speed (`PlayerActor::setPaceBonus`), three and five
   way shots (`PlayerMissiles::spread`, 15 degrees apart), invisibility (body
   alpha 95/255 wavering with the time left) and growth (1.3; an ogre is 1.6,
-  level 99 1.2). Invulnerability wears WEAPONS' `CHROMESILVER`, or
+  level 99 1.2). The enemy shrinker (special 0x200, `players/EnemyShrink`,
+  SetPlayerVars): every standing wearer holds the swarm and the great ones at
+  two thirds again where no boss is fought (`PlayerPowerups::enemyShrink`,
+  handed each update to `Enemies`, `Critters` and `EnemyMissiles` by
+  `LevelOpponents::shrinkOpponents`); at that scale they are drawn and cast
+  their shadows (a great one's hit nodes go with its body, as retail's scaled
+  node does), take double (after armour, before a character's point:
+  damage_enemy, CritterDamage) and deal half, the swarm's blows landing low
+  and without their power blow's growth or knock-back (fn_8004DF58), what they
+  throw thrown small (EnemyStartMissile); a boss's level leaves everything
+  whole, and the scale rising back is heard as `S_UNSHRINK` (fn_8009D530).
+  Not established: whether the swarm's own contact radius shrinks with it (the
+  body's radius is kept here). Invulnerability wears WEAPONS' `CHROMESILVER`, or
   `CHROMEGOLD` for armour 0x100000, full-bright over the costume
   (`PartyFigures::skinOf`, after the portal's skin and the damage flash).
   Invisibility and invulnerability show whole, and plain, every other eighth

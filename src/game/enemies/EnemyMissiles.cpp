@@ -9,6 +9,7 @@
 #include "engine/core/Types.h"
 
 #include "game/enemies/CombatantProjectile.h"
+#include "game/players/EnemyShrink.h"
 #include "game/world/DynamicLights.h"
 
 namespace gdl::game {
@@ -237,6 +238,12 @@ Vec3 EnemyMissiles::heading(const EnemyMissileKind& kind, const Vec3& from, cons
     return way;
 }
 
+EnemyMissileKind EnemyMissiles::thrown(const EnemyMissileKind& kind) const {
+    EnemyMissileKind out = kind;
+    out.damage = EnemyShrink::harmDealt(m_shrink, kind.damage);
+    return out;
+}
+
 bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunch& launch,
                            const WorldCollision* collision, std::span<const Obstacle> items) {
     const f32 speed = kind.speed * std::max(launch.speedScale, 0.01f);
@@ -262,7 +269,8 @@ bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunc
         return false;
     }
     EnemyMissile missile;
-    missile.kind = kind;
+    missile.kind = thrown(kind);
+    missile.scale = m_shrink;
     missile.position = from;
     missile.velocity = way * speed;
     missile.model = launch.model;
@@ -275,7 +283,8 @@ bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunc
 void EnemyMissiles::launch(const EnemyMissileKind& kind, const Vec3& from, const Vec3& aim,
                            f32 speedScale, const TreeModel* model, s32 shooter) {
     EnemyMissile missile;
-    missile.kind = kind;
+    missile.kind = thrown(kind);
+    missile.scale = m_shrink;
     missile.position = from;
     missile.model = model;
     missile.shooter = shooter;
@@ -634,6 +643,9 @@ void EnemyMissiles::draw(RenderDevice& device, const Mat4& clip,
         if (missile.kind.pierces() && missile.lived < kGrowth) {
             const f32 grown = kSmallest + (1.0f - kSmallest) * missile.lived / kGrowth;
             model = glm::scale(model, Vec3{grown});
+        }
+        if (missile.scale != 1.0f) {
+            model = glm::scale(model, Vec3{missile.scale});
         }
         missile.model->draw(device, clip, model, lighting);
     }

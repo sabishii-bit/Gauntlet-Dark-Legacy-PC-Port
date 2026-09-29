@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -808,5 +809,78 @@ TEST_CASE("Stop Time holds living ordinary combatants but damage and death still
         }
         CHECK_FALSE(actor.present());
     }
+}
+
+TEST_CASE("shrunk, a great one is drawn at the shrinkers' scale, takes double and deals half; a "
+          "boss takes and deals as it is",
+          "[game][combatant][shrink]") {
+    const auto root = familyAssets();
+    test::FakeRenderDevice device;
+    for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
+        CAPTURE(definition.name);
+        const bool boss = definition.kind == CombatantKind::Boss;
+        CombatantAssets assets;
+        REQUIRE(assets.load(device, root, definition, 'G'));
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        CHECK(actor.shrink() == 1.0f);
+        actor.setShrink(0.5f);
+        CHECK(actor.shrink() == 0.5f);
+        CHECK(actor.scale() == 1.0f); // its own size is another matter
+        EnemyHit hit;
+        hit.player = 2;
+        hit.damage = 12;
+        actor.hurt(hit);
+        CHECK(actor.health() == Approx(boss ? 88.0f : 76.0f));
+        // The one-triangle body, a unit along x, is drawn half a unit long.
+        device.draws.clear();
+        actor.draw(device, Mat4{1.0f}, {});
+        REQUIRE_FALSE(device.draws.empty());
+        f32 longest = 0.0f;
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                longest = std::max(longest, vertex.position.x);
+            }
+        }
+        CHECK(longest == Approx(0.5f));
+        actor.setShrink(1.0f);
+        device.draws.clear();
+        actor.draw(device, Mat4{1.0f}, {});
+        longest = 0.0f;
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                longest = std::max(longest, vertex.position.x);
+            }
+        }
+        CHECK(longest == Approx(1.0f));
+    }
+    // The gargoyle's claw of ten lands for five, from where its shrunken body puts it.
+    writeTextFile(root / "critter/GAR_EAGL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GAR_EAGL","type":7}],
+      "types":[{"moveCount":2,"maxHealth":100,"radius":3}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":60},
+               {"name":"CLAW","anim":"STEP","type":128,"priority":20,
+                "colnode":"BODY","target":{"maxDistance":50},
+                "frameStart":0,"frameEnd":2,"damage0":0}],
+      "damages":[{"type":0,"radius":3,"maxDistance":1,"damage":10,"offset":[0,0,8]}]})");
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {0, 0, 0}, 3.14159265f, nullptr, {}, 'G'));
+    actor.setShrink(0.667f);
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, 0, -8 * 0.667f};
+    player.radius = 0.75f;
+    player.height = 5.0f;
+    const std::array players{player};
+    std::vector<CombatBlow> blows;
+    for (s32 i = 0; i < 10 && blows.empty(); ++i) {
+        actor.update(2, 1.0f / 30, players);
+        blows = actor.takeBlows();
+    }
+    REQUIRE(blows.size() == 1);
+    CHECK(blows[0].damage == Approx(5.0f));
+    CHECK(blows[0].origin.z == Approx(-8 * 0.667f).margin(0.01f));
 }
 } // namespace

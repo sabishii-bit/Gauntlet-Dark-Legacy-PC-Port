@@ -185,6 +185,11 @@ void Critters::resize(s32 id, f32 scale) {
         m_critters[static_cast<usize>(id)].resize(scale);
     }
 }
+void Critters::setShrink(f32 scale) {
+    for (auto& actor : m_critters) {
+        actor.setShrink(scale);
+    }
+}
 void Critters::hold(s32 id, bool held) {
     if (id >= 0 && id < kMost) {
         m_critters[static_cast<usize>(id)].hold(held);

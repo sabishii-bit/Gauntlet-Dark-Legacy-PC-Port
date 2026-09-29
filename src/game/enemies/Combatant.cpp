@@ -10,6 +10,7 @@
 
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
+#include "game/players/EnemyShrink.h"
 namespace gdl::game {
 namespace {
 constexpr f32 kDrop = 6.0f;
@@ -396,6 +397,11 @@ void Combatant::hurtActor(const EnemyHit& hit) {
         Damage::modify(amount, flags, data.shieldFlags(), data.armor(), m_scales.bossEncounter);
     flags = modified.flags;
     amount = modified.amount;
+    // Shrunk, a great one takes double (CritterDamage); a boss never shrinks.
+    const bool boss = data.kind() == CombatantKind::Boss;
+    if (!boss) {
+        amount = EnemyShrink::harmTaken(critter.shrink, amount);
+    }
     if (amount <= 0.0f) {
         return;
     }
@@ -407,7 +413,6 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     critter.roarOwed += amount;
     // A boss takes less the more there are to fight it, outside a legend item's rite
     // (CritterDamage's damage_mul).
-    const bool boss = data.kind() == CombatantKind::Boss;
     const s32 players = std::clamp(m_scales.players, 0, static_cast<s32>(kBossShares.size()) - 1);
     if (boss && !m_fullHarm) {
         amount *= kBossShares[static_cast<usize>(players)];
@@ -555,6 +560,20 @@ void Combatant::resize(f32 scale) {
     if (Actor* critter = present() ? &m_actor : nullptr; critter != nullptr && scale > 0.0f) {
         critter->scale = scale;
     }
+}
+
+void Combatant::setShrink(f32 scale) {
+    if (scale <= 0.0f) {
+        return;
+    }
+    m_actor.shrink = scale;
+    for (auto& child : m_children) {
+        child->m_actor.shrink = scale;
+    }
+}
+
+f32 Combatant::dealt(f32 amount) const {
+    return kind() == CombatantKind::Boss ? amount : EnemyShrink::harmDealt(m_actor.shrink, amount);
 }
 
 void Combatant::hold(bool held) {

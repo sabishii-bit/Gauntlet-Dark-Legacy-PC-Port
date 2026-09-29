@@ -9,6 +9,7 @@
 
 #include "game/combat/Damage.h"
 #include "game/enemies/EnemyMissiles.h"
+#include "game/players/EnemyShrink.h"
 
 namespace gdl::game {
 
@@ -847,14 +848,20 @@ void Enemies::resolveBlows(Enemy& enemy, s32 slot, std::span<const EnemyView> pl
         blow.kind = enemy.kind;
         blow.tier = enemy.tier;
         blow.damage = fightOf(enemy);
-        if (enemy.reach <= kKnockBackHeight) {
-            blow.flags |= Damage::kLow;
-        }
         blow.power = enemy.animator.powerStruck();
-        if (blow.power) {
-            blow.damage *= kBlowGrowth;
-            if (enemy.reach > kKnockBackHeight) {
-                blow.flags |= EnemyHit::kKnockBack;
+        // Shrunk, it deals half, as a low blow, and its power blow is no more (fn_8004DF58).
+        if (EnemyShrink::shrunk(m_shrink)) {
+            blow.damage = EnemyShrink::harmDealt(m_shrink, blow.damage);
+            blow.flags |= Damage::kLow;
+        } else {
+            if (enemy.reach <= kKnockBackHeight) {
+                blow.flags |= Damage::kLow;
+            }
+            if (blow.power) {
+                blow.damage *= kBlowGrowth;
+                if (enemy.reach > kKnockBackHeight) {
+                    blow.flags |= EnemyHit::kKnockBack;
+                }
             }
         }
         const Vec3 toward = victim->position - enemy.position;
@@ -1277,7 +1284,8 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
     }
     const Damage modified =
         Damage::modify(amount, hit.flags, 0, kind.armor, m_scales.bossEncounter);
-    amount = std::max(modified.amount, hit.player >= 0 ? 1.0f : 0.0f);
+    amount =
+        std::max(EnemyShrink::harmTaken(m_shrink, modified.amount), hit.player >= 0 ? 1.0f : 0.0f);
     if (amount <= 0.0f) {
         return;
     }
@@ -1580,8 +1588,9 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
         // The flip-book kinds change their whole mesh with the frame; the rest are posed.
         const AnimationPlayer& player = enemy.animator.player();
         body.setFrame(player.sequence(), static_cast<s32>(std::lround(player.frame())));
-        const Mat4 model = glm::rotate(glm::translate(Mat4{1.0f}, enemy.position), enemy.yaw,
-                                       Vec3{0.0f, 1.0f, 0.0f});
+        const Mat4 model = glm::scale(glm::rotate(glm::translate(Mat4{1.0f}, enemy.position),
+                                                  enemy.yaw, Vec3{0.0f, 1.0f, 0.0f}),
+                                      Vec3{m_shrink});
         f32 alpha = enemy.kind == kDeathKind && enemy.killed
                         ? std::max(0.0f, 1.0f - enemy.deathSeconds / DeathRules::kFadeSeconds)
                         : 1.0f;
@@ -1619,7 +1628,7 @@ void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& ey
         }
         const f32 shown = 1.0f - enemy.veil / kVeiled;
         if (shown > 0.0f) {
-            stock->shadows[tier].draw(device, clip, eye, ground, normal, lighting, shown);
+            stock->shadows[tier].draw(device, clip, eye, ground, normal, lighting, shown, m_shrink);
         }
     }
 }

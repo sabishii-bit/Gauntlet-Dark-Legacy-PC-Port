@@ -1761,4 +1761,76 @@ TEST_CASE("in the town a suicide leaves a poison cloud that turns through its th
     opponents.close();
     effects.clear();
 }
+
+TEST_CASE("a shrinker worn shrinks the swarm: their blows land low for half without a power "
+          "blow's growth or knock-back, their missiles are thrown small, and hits on them count "
+          "double; a boss's arena leaves them whole",
+          "[level-opponents][enemy-melee][shrink]") {
+    const bool shrinking = GENERATE(false, true);
+    const auto root = test::scratchDirectory("enemy-melee-shrink");
+    writeMeleeEnemy(root, kGruntKind);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(2, {}, nullptr, Vec3{0, 0, 2}, 0);
+    auto& progress = players[0].actor.save().progress();
+    progress.health = 1000;
+    progress.inventory.addPowerup(powerup::kSpecial, powerup::kEnemyShrink, 0, 60);
+    progress.inventory.powerups[0].on = shrinking;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    const auto id =
+        opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind, .tier = 1, .placed = true}, {});
+    REQUIRE(id.has_value());
+    std::vector<f32> amounts;
+    std::vector<u32> flags;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [&](usize i, f32 amount, HurtKind, bool, const PlayerImpact& hit) {
+        CHECK(i == 0);
+        amounts.push_back(amount);
+        flags.push_back(hit.flags);
+    };
+    for (s32 frame = 0; frame < 300 && amounts.size() < 8; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    REQUIRE(amounts.size() == 8);
+    const f32 scale = shrinking ? 0.667f : 1.0f;
+    CHECK(opponents.enemies().shrink() == Catch::Approx(scale));
+    CHECK(opponents.critters().count() == 0);
+    CHECK(opponents.missiles().shrink() == Catch::Approx(scale));
+    // The grunt strikes for its fight, the eighth blow a power blow half as much again with
+    // a knock-back; shrunk, every blow is half, low, and no more than the rest.
+    const f32 fight = amounts[0] / (shrinking ? 0.5f : 1.0f);
+    for (usize i = 0; i < amounts.size(); ++i) {
+        CAPTURE(i);
+        const bool power = i == 7;
+        if (shrinking) {
+            CHECK(amounts[i] == Catch::Approx(0.5f * fight));
+            CHECK((flags[i] & Damage::kLow) != 0);
+            CHECK((flags[i] & PlayerImpact::kKnockBack) == 0);
+        } else {
+            CHECK(amounts[i] == Catch::Approx(power ? 1.5f * fight : fight));
+            CHECK((flags[i] & Damage::kLow) == 0);
+            CHECK(((flags[i] & PlayerImpact::kKnockBack) != 0) == power);
+        }
+    }
+    // A hit on it counts double while it is shrunk.
+    const f32 before = opponents.enemies().healthOf(*id);
+    opponents.strikeEnemy(*id, 4.0f, 0, Vec3{0, 0, -1}, 0, players);
+    const f32 through = 4.0f - enemyKind(kGruntKind).armor;
+    REQUIRE(through > 1.0f);
+    CHECK(before - opponents.enemies().healthOf(*id) ==
+          Catch::Approx(shrinking ? 2.0f * through : through));
+    opponents.close();
+}
 } // namespace

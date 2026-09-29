@@ -2,15 +2,34 @@
 
 #include <algorithm>
 
+#include "engine/core/Types.h"
+
+#include "game/players/EnemyShrink.h"
 #include "game/players/PowerupEffects.h"
 
 namespace gdl::game {
+namespace {
+/** Whether a standing player wears a working special carrying `flag`. */
+bool wearsSpecial(const PlayerRuntime& player, u32 flag) {
+    return player.life == PlayerLife::Standing &&
+           (PowerupEffects::of(player.actor.save().progress().inventory).special & flag) != 0;
+}
+} // namespace
+
 bool PlayerPowerups::timeStopped(std::span<const PlayerRuntime> players) {
     return std::ranges::any_of(players, [](const PlayerRuntime& player) {
-        return player.life == PlayerLife::Standing &&
-               (PowerupEffects::of(player.actor.save().progress().inventory).special &
-                powerup::kStopTime) != 0;
+        return wearsSpecial(player, powerup::kStopTime);
     });
+}
+
+s32 PlayerPowerups::enemyShrinkers(std::span<const PlayerRuntime> players) {
+    return static_cast<s32>(std::ranges::count_if(players, [](const PlayerRuntime& player) {
+        return wearsSpecial(player, powerup::kEnemyShrink);
+    }));
+}
+
+f32 PlayerPowerups::enemyShrink(std::span<const PlayerRuntime> players, bool bossEncounter) {
+    return EnemyShrink::scaleOf(enemyShrinkers(players), bossEncounter);
 }
 
 void PlayerPowerups::update(std::span<PlayerRuntime> players, f32 seconds, Clock clock) {

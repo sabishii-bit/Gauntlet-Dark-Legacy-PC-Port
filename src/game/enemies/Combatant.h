@@ -94,6 +94,10 @@ public:
     void blind(s32 ticks);
     void curb(f32 seconds);
     void resize(f32 scale);
+    /** The scale the party's enemy shrinkers hold it at (`EnemyShrink`): drawn and shadowed
+     * at it over its own size; a great one, never a boss, then takes double and deals half. */
+    void setShrink(f32 scale);
+    f32 shrink() const { return m_actor.shrink; }
     void tint(Color color) { m_actor.tint = color; }
     void hold(bool held);
     /** While a legend item's rite runs, a boss takes its harm whole, however many play. */
@@ -149,13 +153,13 @@ private:
     enum class State : u8 { Inactive, Active, Dying };
     struct Actor {
         State state = State::Inactive;
+        bool hidden = false;
+        bool forcedPattern = false;
+        bool childrenIntact = true;
         CombatantAssets* stock = nullptr;
         const CritterData* definition = nullptr;
         const Combatant* parent = nullptr;
         std::optional<usize> branch;
-        bool hidden = false;
-        bool forcedPattern = false;
-        bool childrenIntact = true;
         f32 health = 0.0f;
         f32 maxHealth = 1.0f;
         Vec3 position{0.0f, 0.0f, 0.0f};
@@ -167,12 +171,11 @@ private:
         s32 target = -1;
         f32 targetDistance = 100000.0f;
         s32 move = -1; ///< the move playing
-        bool moveDone = false;
+        s32 pattern = -1;
         f32 finishedSeconds = 0.0f;
         f32 age = 0.0f;
         std::vector<f32> moveTimes;
         std::vector<f32> patternTimes;
-        s32 pattern = -1;
         usize patternStep = 0;
         std::vector<f32> cooldowns;      ///< seconds left before each move may be chosen again
         std::vector<s32> struckThisMove; ///< players already hurt by the move playing
@@ -181,7 +184,6 @@ private:
         std::vector<CombatArenaTarget> arenaTargets;
         CritterPatrol patrol;     ///< its round of the lookouts, while it has one
         s32 lastArenaTarget = -1; ///< position in the collected stage roster, not the item id
-        bool arenaCollected = false;
         f32 hurtPending = 0.0f;
         u32 hurtFlags = 0;
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
@@ -189,13 +191,16 @@ private:
         f32 alpha = 1.0f;
         Color tint = Color::white();
         f32 scale = 1.0f;
+        f32 shrink = 1.0f;       ///< the enemy shrinkers' scale on top of its own
         s32 frozenTicks = 0;     ///< a legend item's: it stands still this long
         s32 blindTicks = 0;      ///< and finds no one this long
         f32 curbSeconds = 0.0f;  ///< over nought, its curbed attacks are refused
         bool held = false;       ///< keeps to its stance between moves
         bool roarWanted = false; ///< roars as soon as it may
-        u32 soundsGiven = 0;     ///< bits: the move's sound, its second, each strike's
         bool moveEffect = false; ///< an emitted effect needs cancellation on the next move
+        bool moveDone = false;
+        u32 soundsGiven = 0; ///< bits: the move's sound, its second, each strike's
+        bool arenaCollected = false;
         s32 shotFrame = -1;
         std::optional<Vec3> attackTarget; ///< captured by a targeted-area move, not a homing point
         std::optional<Vec3> stepTarget;   ///< latest ready-step target, retained if sight is lost
@@ -209,6 +214,8 @@ private:
     };
 
     bool startMove(Actor& critter, usize index, bool recordUse = true);
+    /** What it deals of `amount`: half while shrunk, unless it is a boss. */
+    f32 dealt(f32 amount) const;
     bool spawnActor(CombatantAssets& stock, const CritterData& definition, s32 id,
                     const Vec3& position, f32 yaw, const WorldCollision* collision,
                     const EnemyScales& scales, char realm);
