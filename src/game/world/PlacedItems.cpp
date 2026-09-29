@@ -137,7 +137,7 @@ usize PlacedItems::visibleCount() const {
 void PlacedItems::setPlayerCount(s32 players) {
     m_players = players;
     for (Item& item : m_items) {
-        item.visible = !item.taken && item.shownTo(players);
+        item.visible = !item.taken && !item.carried && item.shownTo(players);
     }
 }
 
@@ -429,6 +429,47 @@ bool PlacedItems::throwItem(RenderDevice& device, std::string_view name, const V
     if (collision != nullptr) {
         item.position = position;
         item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
+        item.velocity = velocity;
+        item.thrown = true;
+        m_collision = collision;
+    }
+    return true;
+}
+
+std::optional<usize> PlacedItems::claim(const Vec3& position, f32 reach, f32 rise) {
+    std::optional<usize> nearest;
+    f32 best = reach;
+    for (usize i = 0; i < m_items.size(); ++i) {
+        const Item& item = m_items[i];
+        if (item.taken || item.carried || item.contained || item.thrown || item.minPlayers > 1 ||
+            std::abs(item.position.y - position.y) >= rise) {
+            continue;
+        }
+        const f32 along = std::hypot(item.position.x - position.x, item.position.z - position.z);
+        if (along < best) {
+            best = along;
+            nearest = i;
+        }
+    }
+    if (nearest.has_value()) {
+        m_items[*nearest].carried = true;
+        m_items[*nearest].visible = false;
+    }
+    return nearest;
+}
+
+bool PlacedItems::release(usize index, const Vec3& position, const Vec3& velocity,
+                          const WorldCollision* collision, f32 noGrabSeconds) {
+    if (index >= m_items.size() || !m_items[index].carried) {
+        return false;
+    }
+    Item& item = m_items[index];
+    item.carried = false;
+    item.visible = !item.taken && item.shownTo(m_players);
+    item.position = position;
+    item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
+    item.noGrabSeconds = noGrabSeconds;
+    if (collision != nullptr) {
         item.velocity = velocity;
         item.thrown = true;
         m_collision = collision;

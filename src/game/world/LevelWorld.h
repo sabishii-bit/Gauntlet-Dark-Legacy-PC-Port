@@ -130,6 +130,15 @@ public:
         return m_placedItems.placeRecord(device, record, position,
                                          m_collision.loaded() ? &m_collision : nullptr, amount);
     }
+    /** A pickup near `position` for one of the great ones to carry (PlacedItems::claim). */
+    std::optional<usize> claimItem(const Vec3& position, f32 reach, f32 rise) {
+        return m_placedItems.claim(position, reach, rise);
+    }
+    /** Lets a carried pickup go, thrown from `position` at `velocity`. */
+    bool releaseItem(usize index, const Vec3& position, const Vec3& velocity, f32 noGrabSeconds) {
+        return m_placedItems.release(index, position, velocity,
+                                     m_collision.loaded() ? &m_collision : nullptr, noGrabSeconds);
+    }
     /** Throws one of the level's items by its record's name from `position`, as a boss
      * spews its coins; it lands on the floor and cannot be taken for `noGrabSeconds`. */
     bool throwItem(RenderDevice& device, std::string_view name, const Vec3& position,

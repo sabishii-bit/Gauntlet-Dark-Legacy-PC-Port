@@ -1,4 +1,5 @@
 #pragma once
+#include <array>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -54,6 +55,8 @@ public:
         std::function<std::vector<CombatArenaTarget>()> arenaTargets;
         std::function<void(const CombatArenaActivation&)> activateArena;
         std::function<void()> shake;
+        /** A lesson for the whole party, over the first standing player. */
+        std::function<bool(s32, usize)> help;
     };
     void open(const Resources& resources, std::span<const PlayerRuntime> players);
     void close();
@@ -146,10 +149,17 @@ private:
         s32 kind = -1;
         f32 facing = 0.0f;
         f32 viewRadius = 0.0f;
+        std::optional<usize> carried; ///< the pickup a great one holds, as the level opens
     };
     void standPlacements(std::optional<ViewVolume> view, const Vec3& attention);
     void stand(const Placement& placement);
     std::vector<Placement> m_pending;
+    /** What each of the great ones carries, by its place in the pool. */
+    std::array<std::optional<usize>, Critters::kMost> m_carried{};
+    /** A great one slain lets what it carried go, a gargoyle its piece of the wings if it
+     * carried nothing (CritterDropItem), with the lesson its kind teaches. */
+    void dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,
+                     const Events& events);
     std::optional<Resources> m_resources;
     Enemies m_enemies;
     Generators m_generators;

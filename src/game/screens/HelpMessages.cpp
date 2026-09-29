@@ -10,7 +10,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 100> kSpecs{{
+constexpr std::array<HelpMessageSpec, 102> kSpecs{{
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kPotionsFull, "FULLOFBOMBS", "S_MAGICFULL"},
@@ -107,7 +107,9 @@ constexpr std::array<HelpMessageSpec, 100> kSpecs{{
     {HelpMessages::kLevelUp, "LEVELUP", "S_GAINEDLEVEL", HelpRepeat::Always},
     {HelpMessages::kBlastsDestroy, "EXPDESTROY", "S_EXPDSTITMS"},
     {HelpMessages::kGasSpoils, "GASPOISON", "S_GASFOODBAD"},
+    {HelpMessages::kGeneralsCarry, "GENSCARRY", "S_GENSCARRY"},
     {HelpMessages::kChestsExplode, "CHESTSEXPL", "S_CHESTSEXPL"},
+    {HelpMessages::kGargoylesRelease, "DEFEATGAR", "S_DEFGRG4GLD"},
     // What a class family's potion magic learns at levels 25 and 50 (fn_8005BA1C).
     {HelpMessages::kFirstMagicPerk + 0, "WARMAGIC1", "S_MAGJNK2SILV", HelpRepeat::OncePerPlayer},
     {HelpMessages::kFirstMagicPerk + 1, "WARMAGIC2", "S_MAGJNK2GLD", HelpRepeat::OncePerPlayer},

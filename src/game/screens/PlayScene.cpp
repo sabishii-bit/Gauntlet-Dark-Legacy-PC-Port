@@ -697,7 +697,8 @@ LevelOpponents::Events PlayScene::opponentEvents() {
             [this](const CombatArenaActivation& activation) {
                 m_fixtures.safeRocks().scheduleActivation(activation.index, activation.delay);
             },
-        .shake = [this] { m_shake.start(); }};
+        .shake = [this] { m_shake.start(); },
+        .help = [this](s32 id, usize i) { return postHelp(id, i); }};
 }
 void PlayScene::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer) {
     m_opponents.strikeEnemy(id, power, flags, direction, byPlayer, m_players);
