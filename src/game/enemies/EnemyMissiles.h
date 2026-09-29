@@ -139,6 +139,13 @@ struct MissileStop {
     static MissileStop of(const Obstacle& box) { return MissileStop{.box = box}; }
 };
 
+/** Where a gas blast's ring stands this step, for the level's food. */
+struct GasReach {
+    Vec3 position{0.0f};
+    f32 radius = 0.0f;
+    f32 damage = 0.0f;
+};
+
 /** A missile's blow on a safe rock, for the level to deal. */
 struct RockHit {
     usize rock = 0;
@@ -206,6 +213,8 @@ public:
     std::vector<EnemyMissileHit> takeHits();
     /** The blows on safe rocks since the last call. */
     std::vector<RockHit> takeRockHits();
+    /** Where the gas blasts reached since the last call. */
+    std::vector<GasReach> takeGasReaches() { return std::exchange(m_gasReaches, {}); }
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     /** The lobs' red lights and their bursts'. */
     void lights(std::vector<PointLight>& out) const;
@@ -243,6 +252,7 @@ private:
     std::vector<Burst> m_bursts;
     std::vector<EnemyMissileHit> m_hits;
     std::vector<RockHit> m_rockHits;
+    std::vector<GasReach> m_gasReaches;
     std::mt19937 m_random;
     f32 m_ricochetIn = 0.0f; ///< before another ricochet is heard
 };

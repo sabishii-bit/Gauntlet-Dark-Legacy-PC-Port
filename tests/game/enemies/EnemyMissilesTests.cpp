@@ -954,4 +954,31 @@ TEST_CASE("a standing safe rock takes a missile's blow, and stops even the garm'
     REQUIRE_FALSE(through.empty());
     CHECK(through[0].player == 0);
 }
+TEST_CASE("a gas blast's ring tells where it reaches, for the level's food; fire does not",
+          "[game][enemies][enemy-gas]") {
+    EnemyMissiles missiles;
+    EnemyBlast gas;
+    gas.position = Vec3{0, 0, 0};
+    gas.radius = 7.5f;
+    gas.damage = 10.0f;
+    gas.flags = EnemyBlast::kGas;
+    gas.stages = {1.0f};
+    missiles.blast(gas);
+    EnemyBlast fire = gas;
+    fire.flags = 0;
+    missiles.blast(fire);
+    std::vector<GasReach> reaches;
+    for (s32 frame = 0; frame < 30; ++frame) {
+        missiles.update(kStep, nullptr, {});
+        const auto taken = missiles.takeGasReaches();
+        reaches.insert(reaches.end(), taken.begin(), taken.end());
+    }
+    REQUIRE(reaches.size() > 2);
+    CHECK(reaches.front().damage == Approx(15.0f * (1.0f - 0.33f)).margin(0.5f));
+    CHECK(reaches.back().radius > reaches.front().radius);
+    CHECK(reaches.back().radius <= 7.5f);
+    CHECK(reaches.size() < 30); // only the gas, and it stops two thirds through
+    missiles.clear();
+    CHECK(missiles.takeGasReaches().empty());
+}
 } // namespace

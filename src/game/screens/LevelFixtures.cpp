@@ -980,6 +980,23 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
     }
 }
 
+void LevelFixtures::spoilFood(const Vec3& position, f32 radius, f32 damage,
+                              std::span<const PlayerRuntime> players, const Events& events) {
+    if (!m_resources.has_value() ||
+        m_resources->world.poisonFood(m_resources->device, position, radius, damage) == 0 ||
+        !events.help) {
+        return;
+    }
+    // Retail posts msgPost(0x88, -1, 0): party-wide help, not credited to whoever let the gas
+    // out. Present it over the first standing player.
+    for (usize i = 0; i < players.size(); ++i) {
+        if (players[i].life == PlayerLife::Standing) {
+            events.help(HelpMessages::kGasSpoils, i);
+            return;
+        }
+    }
+}
+
 /** Gas hangs for a while and hurts whoever stands in it, every half second. */
 void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
                                  const Events& events) {
@@ -999,18 +1016,7 @@ void LevelFixtures::updateClouds(f32 seconds, std::span<PlayerRuntime> players,
                 id, glm::scale(glm::translate(Mat4{1}, cloud.position), Vec3{3.5f, 1, 3.5f}));
             continue;
         }
-        if (m_resources->world.poisonFood(m_resources->device, cloud.position, kGasRadius,
-                                          cloud.damage) > 0 &&
-            events.help) {
-            // Retail posts msgPost(0x88, -1, 0): party-wide help, not credited to
-            // the barrel's attacker. Present it over the first standing player.
-            for (usize i = 0; i < players.size(); ++i) {
-                if (players[i].life == PlayerLife::Standing) {
-                    events.help(HelpMessages::kGasSpoils, i);
-                    break;
-                }
-            }
-        }
+        spoilFood(cloud.position, kGasRadius, cloud.damage, players, events);
         for (usize i = 0; i < players.size(); ++i) {
             if ((players[i].life != PlayerLife::Standing) || players[i].cloudGap > 0.0f) {
                 continue;

@@ -83,6 +83,10 @@ public:
     void blast(const Vec3& position, f32 radius, f32 damage, std::span<PlayerRuntime> players,
                const Events& events, f32 seconds = kExplosionSeconds);
     void settleBlasts(std::span<PlayerRuntime> players, const Events& events);
+    /** Gas reaching `radius` about a point with `damage` spoils the food lying there
+     * (fn_8005C1DC's DMG_POISONGAS: over two), telling the party once it has. */
+    void spoilFood(const Vec3& position, f32 radius, f32 damage,
+                   std::span<const PlayerRuntime> players, const Events& events);
     /** Grows the blasts under way by `seconds` (the update does, after the fixtures). */
     void advanceBlasts(f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     Chests& chests() { return m_chests; }

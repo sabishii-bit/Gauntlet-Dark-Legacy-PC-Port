@@ -602,6 +602,9 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     for (const RockHit& hit : m_opponents.takeRockHits()) {
         m_fixtures.strikeSafeRock(hit.rock, hit.damage);
     }
+    for (const GasReach& gas : m_opponents.takeGasReaches()) {
+        m_fixtures.spoilFood(gas.position, gas.radius, gas.damage, m_players, fixtureEvents());
+    }
     // A golem's or gargoyle's blow on a barrel is no one's (CritterCollideItems).
     const std::vector<CombatantRam> rams = m_opponents.takeBarrelRams();
     for (const CombatantRam& ram : rams) {

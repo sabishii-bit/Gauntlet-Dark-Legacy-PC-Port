@@ -557,6 +557,36 @@ TEST_CASE("the great ones walk through chests and into the barrels they break",
     f.fixtures.clear();
 }
 
+TEST_CASE("gas from anywhere spoils the food it reaches and tells the party once",
+          "[game][screens][level-fixtures][enemy-gas][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    Fixture f;
+    f.fixtures.clear();
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("G1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    std::vector<s32> helps;
+    LevelFixtures::Events events = f.events;
+    events.help = [&](s32 id, usize) {
+        helps.push_back(id);
+        return true;
+    };
+    const Vec3 spot{200, 0, 200};
+    REQUIRE(f.world.placeItem(f.device, "APPLE", spot));
+    const usize apple = f.world.placedItems().size() - 1;
+    f.fixtures.spoilFood(spot, 3, 2, f.players, events); // two or less spoils nothing
+    CHECK(f.world.placedItems().item(apple).name == "APPLE");
+    CHECK(helps.empty());
+    f.fixtures.spoilFood(spot, 3, 10, f.players, events);
+    CHECK(f.world.placedItems().item(apple).name == "GAPPLE");
+    CHECK(helps == std::vector<s32>{HelpMessages::kGasSpoils});
+    f.fixtures.spoilFood(spot, 3, 10, f.players, events); // spoiled already
+    CHECK(helps.size() == 1);
+    f.fixtures.clear();
+}
+
 TEST_CASE("a tent wall stops the swarm's missiles only while it is raised",
           "[game][screens][level-fixtures][enemy-missile-items][unpacked]") {
     const auto root =

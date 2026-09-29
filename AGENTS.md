@@ -754,8 +754,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   whenever its critter data is loaded (it always is). The warlock (kind 24) comes and
   goes while it stands, walks or runs (fn_8004D958): seen 60-119 ticks, faded out at
   16 of 255 a tick, unseen 60-119 ticks, faded back; doing anything else it shows
-  (`Enemies::veil`, body and shadow alike). Not yet: Death, IT, and the poison
-  cloud's harm to items. A suicide goes up as SuicideExplosion does (`explodeSuicide`):
+  (`Enemies::veil`, body and shadow alike). Not yet: Death, IT. Its gas spoils the
+  food each step of its ring reaches, as a gas barrel's does (`GasReach`,
+  `LevelFixtures::spoilFood`). A suicide goes up as SuicideExplosion does (`explodeSuicide`):
   `EXPLOSION` with a swelling red light of 20 and `EXPRING` at 1.2, a blast of 6
   flagged fire, knock-down and explosion (0x421) over the explosion's life; in the
   town and the sky (G, K) a gas cloud instead, `POISONEXP1`, `POISONEXP2` held two
