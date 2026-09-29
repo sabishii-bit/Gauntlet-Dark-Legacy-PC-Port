@@ -11,7 +11,9 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "formats/WavWriter.h"
+#include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
+#include "game/players/Progression.h"
 #include "game/world/PlayerArsenal.h"
 namespace {
 using namespace gdl;
@@ -347,9 +349,21 @@ TEST_CASE("player arsenal throws the next potion from its owner's hand",
     REQUIRE(missile.potency == Approx(0.75f * f.arsenal.magicPowerOf(f.actor)));
     REQUIRE(missile.model != nullptr);
     REQUIRE(f.actor.save().progress().inventory.nextPotion() == 2);
-    f.arsenal.usePotion(f.actor);
+    const auto used = f.arsenal.usePotion(f.actor);
+    REQUIRE(used.has_value());
     REQUIRE(f.actor.save().progress().inventory.potions.empty());
     REQUIRE(f.arsenal.missiles().count() == 1); // Immediate potion doesn't launch a bottle.
+    // A caster under 25 casts without DMG_HEAL; from 25 the magic carries it, thrown or used.
+    CHECK(missile.flags == 0);
+    CHECK(used->flags == 0);
+    f.actor.save().progress().experience = levelExperience(25);
+    f.actor.save().progress().inventory.addPotions(1, 2);
+    f.arsenal.throwPotion(f.actor);
+    REQUIRE(f.arsenal.missiles().count() == 2);
+    CHECK((f.arsenal.missiles().missile(1).flags & damage::kHeal) != 0);
+    const auto usedLater = f.arsenal.usePotion(f.actor);
+    REQUIRE(usedLater.has_value());
+    CHECK((usedLater->flags & damage::kHeal) != 0);
 }
 
 TEST_CASE("assisted weapon launch aims from its actual muzzle without retaining a lock",

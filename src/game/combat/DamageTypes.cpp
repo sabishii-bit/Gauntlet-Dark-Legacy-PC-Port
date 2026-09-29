@@ -21,6 +21,10 @@ bool heals(u32 flags) {
     return (flags & kHeal) != 0;
 }
 
+u32 magicHeal(s32 casterLevel) {
+    return casterLevel >= kMagicHealsFrom ? kHeal : 0;
+}
+
 bool marks(u32 flags) {
     return (flags & kNoHitEffect) == 0;
 }

@@ -7,6 +7,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/combat/DamageTypes.h"
 #include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
 #include "game/world/DynamicLights.h"
@@ -360,6 +361,7 @@ std::optional<MissileImpact> PlayerArsenal::usePotion(PlayerActor& actor) {
         burst.potion = kind;
         burst.potency = magicPowerOf(actor);
         burst.damage = 40.0f; // start_magic: fixed damage, magic stat controls radius.
+        burst.flags = damage::magicHeal(experienceLevel(actor.save().experience()));
         return burst;
     }
     return std::nullopt;
@@ -384,6 +386,7 @@ void PlayerArsenal::throwPotion(PlayerActor& actor) {
     launch.potion = kind;
     launch.potency = kThrownShare * magicPowerOf(actor);
     launch.damage = 40.0f;
+    launch.flags = damage::magicHeal(experienceLevel(actor.save().experience()));
     launch.spec = &MissileSpec::potion();
     launch.model = &m_potionModels[static_cast<usize>(
         std::clamp(kind, 0, static_cast<s32>(m_potionModels.size()) - 1))];

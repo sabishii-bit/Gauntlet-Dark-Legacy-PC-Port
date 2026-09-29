@@ -27,6 +27,11 @@ TEST_CASE("a damage type carries its element, its healing and whether it marks",
     CHECK(damage::heals(damage::kHeal | 0x200));
     CHECK(damage::marks(0x101));
     CHECK_FALSE(damage::marks(damage::kNoHitEffect | 0x100));
+    // A caster's magic carries DMG_HEAL from level 25 (start_magic).
+    CHECK(damage::magicHeal(1) == 0);
+    CHECK(damage::magicHeal(24) == 0);
+    CHECK(damage::magicHeal(25) == damage::kHeal);
+    CHECK(damage::magicHeal(99) == damage::kHeal);
 }
 
 TEST_CASE("the common hit marks are blood or the element's burst, and the deaths their own",

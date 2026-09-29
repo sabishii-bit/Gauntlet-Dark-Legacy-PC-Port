@@ -693,6 +693,60 @@ TEST_CASE("from level 75 magic heals its caster by a share of the harm it does",
     }
 }
 
+TEST_CASE("only a hit carrying DMG_HEAL feeds the healing: the shield does, a turbo strike not",
+          "[game][screens][player-attacks][healing-magic][damage-types]") {
+    const auto root = turboAssets();
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+    std::vector<s32> helps;
+    f.targets.fixtureEvents.help = [&](s32 id, usize) {
+        helps.push_back(id);
+        return true;
+    };
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    auto& save = player.actor.save();
+    save.progress().experience = levelExperience(80);
+    save.progress().health = 100;
+    save.progress().inventory.addPotions(1, 1);
+    EnemyScales scales;
+    scales.health = 100;
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 8, scales, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 5};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    // The warrior's turbo rows carry no DMG_HEAL: the strike harms and heals nothing.
+    const f32 whole = enemies.healthOf(*id);
+    player.turbo.add(100);
+    for (s32 frame = 0; frame < 30; ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30,
+                               frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+        f.attacks.updateStrikes(1.0f / 30, f.players, f.targets);
+    }
+    REQUIRE(enemies.healthOf(*id) < whole);
+    CHECK(save.health() == 100);
+    CHECK(std::ranges::find(helps, HelpMessages::kHealingMagic) == helps.end());
+    // The potion shield's magic carries it from 25 (start_magic's mode 1 shares the flags).
+    const f32 before = enemies.healthOf(*id);
+    f.attacks.shieldPotion(0, f.players);
+    f.attacks.updateShields(0.1f, f.players, f.targets);
+    const f32 harm = before - enemies.healthOf(*id);
+    REQUIRE(harm > 0.0f);
+    const auto expected = static_cast<s32>(std::lround(harm * (0.1f + 0.016f * 5.0f)));
+    CHECK(save.health() == 100 + expected);
+    CHECK(std::ranges::find(helps, HelpMessages::kHealingMagic) != helps.end());
+    f.attacks.clear();
+    f.opponents.close();
+}
+
 TEST_CASE("a caster whose magic strikes nothing is told not to waste it",
           "[game][screens][player-attacks][healing-magic]") {
     Fixture f;

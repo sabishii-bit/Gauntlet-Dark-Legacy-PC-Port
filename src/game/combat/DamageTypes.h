@@ -24,6 +24,11 @@ u32 element(u32 flags);
  * weapon): only such a hit reaches do_heal_players. */
 bool heals(u32 flags);
 
+/** The level from which a caster's magic carries DMG_HEAL (start_magic, player.c 2066): the
+ * flag the magic of a caster of `level` goes off with, or none. */
+inline constexpr s32 kMagicHealsFrom = 25;
+u32 magicHeal(s32 casterLevel);
+
 /** Whether a hit leaves a mark where it lands (DMG_NOHITFX withholds it). */
 bool marks(u32 flags);
 
