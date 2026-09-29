@@ -2367,6 +2367,47 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     }
     REQUIRE(scene.victory().stage() == BossVictory::Stage::Defeat);
     REQUIRE(scene.victory().caption()->message == "LICH_SPEECH");
+    {
+        // The wizard adds onto the frame without writing depth, like the tower's: the
+        // level's translucent scenery must be down before any of him.
+        const auto wizard = world.items().trees.find("WIZARD");
+        REQUIRE(wizard.has_value());
+        std::vector<const Texture*> his;
+        for (const TreeNodeInfo& node : world.items().trees.tree(*wizard).nodes) {
+            if (const auto model = world.items().models.find(node.object)) {
+                for (const auto& part : world.items().models.mesh(*model).parts) {
+                    his.push_back(&world.items().textures.texture(device, part.texture));
+                }
+            }
+        }
+        REQUIRE_FALSE(his.empty());
+        test::FakeRenderDevice deferred;
+        world.scene().drawDeferred(deferred, Mat4{1}, CameraFrame::of(scene.viewCamera()));
+        std::vector<const Texture*> scenery;
+        for (const auto& draw : deferred.draws) {
+            if (draw.blend() != BlendMode::Additive &&
+                std::ranges::find(his, draw.texture) == his.end()) {
+                scenery.push_back(draw.texture);
+            }
+        }
+        device.draws.clear();
+        scene.render(device, makeScreenProjection(640.0f, 448.0f), 640.0f, 448.0f);
+        std::optional<usize> firstWizard;
+        std::optional<usize> lastScenery;
+        for (usize i = 0; i < device.draws.size(); ++i) {
+            const Texture* texture = device.draws[i].texture;
+            if (!firstWizard.has_value() && std::ranges::find(his, texture) != his.end()) {
+                firstWizard = i;
+            }
+            if (std::ranges::find(scenery, texture) != scenery.end()) {
+                lastScenery = i;
+            }
+        }
+        REQUIRE(firstWizard.has_value());
+        if (lastScenery.has_value()) {
+            REQUIRE(*lastScenery < *firstWizard);
+        }
+    }
     REQUIRE(scene.bossCameraOn()); // the camera stays the fight's, on the wizard
     // Movement follows the camera the player actually sees after the focus changes.
     const Vec3 beforeStep = scene.actor(0)->position();
