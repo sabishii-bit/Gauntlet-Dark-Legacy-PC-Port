@@ -99,6 +99,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     if (m_level != nullptr && m_level->bossType == 42) {
         m_skorneArena.bind(device, m_layout, m_models, m_textures);
     }
+    m_fallingScenery.bind(device, m_layout, m_models, m_textures, m_ref.name);
     m_worldAnimator.apply(m_scene);
     m_textureAnimator.bind(m_animations.textureAnimations(), m_textures, device, lent);
     m_textureAnimator.apply(m_scene);
@@ -190,6 +191,7 @@ void LevelWorld::update(f32 seconds, bool timeStopped) {
     }
     m_worldAnimator.step(seconds, m_scene, timeStopped);
     m_skorneArena.update(seconds);
+    m_fallingScenery.update(seconds);
     m_walls.update(seconds);
     syncCollision();
     m_particles.step(seconds);
@@ -233,6 +235,7 @@ void LevelWorld::loadLevelData(const std::filesystem::path& unpackedRoot) {
 void LevelWorld::clear() {
     m_walls.clear();
     m_skorneArena.clear();
+    m_fallingScenery.clear();
     m_scene.clear();
     m_worldAnimator.clear();
     m_textureAnimator.clear();

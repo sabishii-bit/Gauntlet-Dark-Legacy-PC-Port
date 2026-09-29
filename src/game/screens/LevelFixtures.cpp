@@ -339,6 +339,21 @@ void LevelFixtures::playRealmSound(std::string_view stem) {
     const std::string& name = m_resources->world.ref().name;
     m_resources->audio.playNamed(std::format("{}{}", stem, name.empty() ? 'G' : name.front()));
 }
+void LevelFixtures::playFallingCues(std::span<const FallingCue> cues) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    for (const FallingCue& cue : cues) {
+        if (!cue.sound.empty()) {
+            m_resources->audio.playNamed(cue.sound, FallingScenery::kSoundVolume);
+        }
+    }
+}
+void LevelFixtures::shootScenery(const Vec3& position, f32 radius) {
+    if (m_resources.has_value()) {
+        playFallingCues(m_resources->world.fallingScenery().shoot(position, radius));
+    }
+}
 /** The level's chests, gates and traps under the party: nobody walks through a chest or a
  * gate that is shut; against one, a key carried is spent and it opens (a chest's sound is
  * the common one, a gate's its realm's); an opened chest drops what it held, pays its gold
@@ -389,6 +404,8 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
             position = box.pushOut(position, actor.radius());
         }
         actor.place(position);
+        // The rocks and leaves that give way to a body brushing them (fn_8005D730's case 10).
+        playFallingCues(m_resources->world.fallingScenery().touch(position, actor.radius()));
         const PowerupEffects worn = PowerupEffects::of(actor.save().progress().inventory);
         const Vec3 step = player.fixtureSpot ? position - *player.fixtureSpot : Vec3{0.0f};
         player.fixtureSpot = position;

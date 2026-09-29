@@ -1584,6 +1584,32 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   Only an explosive barrel's detonation emits `DESTSMOKE`, alongside
   `EXPLOSION`; plain and item-holding barrels emit no smoke, and poison
   barrels use `POISONEXP1` instead.
+* Falling scenery (`world/FallingScenery`, owned by `LevelWorld` beside
+  `SkorneArena`, whose masonry shares `world/FallingPiece`): the nameless
+  type-10 items of subtypes 40 (ROCKFALL), 49 (LEAFFALL), 52 (SHOOTFALL) and
+  53 (ROCKSINK), item models of the level's own archive; F1 places 92. They
+  are in nobody's way and no floor: the player, enemy and critter item
+  classifiers (fn_8005D730, fn_8005D3D8, fn_8005D5C8), PlayerCollideItems and
+  the missile stop filter (fn_8005EE18) all pass them, and retail's floor
+  comes only from the world grid, so nothing rides a sinking rock. A body
+  within the record's cylinder grown by its radius (fn_8005F0F4: radius 15,
+  height 20 in F1) starts 40, 49 and 53 once (`touch`, fn_8005D730's case
+  10); a player's missile in flight, strike ring, swing or potion wave within
+  it starts 52 (`shoot`; `LevelFixtures::shootScenery`, called by
+  `PlayerAttacks`). Retail starts SHOOTFALL as soon as the shot's grid sweep
+  reaches it, before any distance test, so ours is the stricter reading.
+  Started, a piece loses 2 of vertical velocity a 30 Hz frame (1 for a leaf)
+  and pitches and rolls by the table {-4..4} at its instance index at 20
+  degrees a second (a leaf 10, a sinking rock 1), and is done with 200 under
+  the world's floor sentinel (items.c 4680-4725). The cue names the realm's
+  sound (sounds_evt.c lbl_80123AAC/lbl_80123AE4 by realm letter, F1's
+  `S_ROCKBREAKF2` and I4's `S_ICEBREAKY` instead; leaves only in D and I),
+  played by `LevelFixtures` at 224/255 without the original's positional
+  attenuation. Not done: the on-screen gate (retail touches and updates an
+  item only while `active & 0x4000`, its visibility), and a coltype-4 piece
+  is touched by its record's cylinder rather than its triangle list.
+  `[falling]` covers the profiles, a touch once with its cue, a shot's
+  pieces only, gravity, spin, retirement and F1's ninety-two.
 * Item damage (fn_8005C1DC) beyond barrels: a blast of 5 or more breaks every
   chest it reaches (a trapped one goes off the next update; a shut one's
   Death is let out) to `CHESTDEST` and `DESTSMOKE`, destroys the item it

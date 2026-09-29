@@ -8,6 +8,8 @@
 #include "engine/world/TreeModel.h"
 #include "engine/world/WorldLighting.h"
 
+#include "game/world/FallingPiece.h"
+
 namespace gdl::game {
 /** The altar's loose masonry, jolted twice then scattered by Skorne's entrance.
  * Borrows level meshes/textures; clear before their archives are released. */
@@ -21,17 +23,13 @@ public:
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     usize size() const { return m_rocks.size(); }
     s32 phase() const { return m_phase; }
-    Vec3 position(usize index) const { return m_rocks.at(index).position; }
-    bool visible(usize index) const { return m_rocks.at(index).visible; }
+    Vec3 position(usize index) const { return m_rocks.at(index).motion.position; }
+    bool visible(usize index) const { return m_rocks.at(index).motion.visible; }
 
 private:
     struct Rock {
         TreeModel model;
-        Vec3 position{0};
-        Vec3 rotation{0};
-        Vec3 velocity{0};
-        usize instance = 0;
-        bool visible = true;
+        FallingPiece motion;
     };
     std::vector<Rock> m_rocks;
     std::mt19937 m_random{0x534b4f52U};

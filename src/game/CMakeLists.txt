@@ -156,6 +156,8 @@ add_library(game STATIC
     world/PlayerFamiliar.cpp
     world/CameraMovementLimit.cpp
     world/SkorneArena.cpp
+    world/FallingPiece.cpp
+    world/FallingScenery.cpp
     screens/TowerPromotion.cpp
     screens/TowerRelics.cpp
     screens/PlaySceneRelics.cpp

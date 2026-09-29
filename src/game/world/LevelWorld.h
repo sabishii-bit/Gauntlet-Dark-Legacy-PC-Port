@@ -24,6 +24,7 @@
 #include "engine/world/WorldScene.h"
 
 #include "game/world/DestructibleWalls.h"
+#include "game/world/FallingScenery.h"
 #include "game/world/HazardSurfaces.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
@@ -98,6 +99,7 @@ public:
     void setPlayerCount(s32 players) {
         m_placedItems.setPlayerCount(players);
         m_walls.setPlayerCount(players, m_collision);
+        m_fallingScenery.setPlayerCount(players);
     }
     const DestructibleWalls& walls() const { return m_walls; }
     void revealWall(usize index) { m_walls.reveal(index); }
@@ -112,6 +114,9 @@ public:
     bool setObjectVisible(std::string_view name, bool visible);
     void bossArenaCue(const Vec3& boss) { m_skorneArena.cue(boss); }
     const SkorneArena& skorneArena() const { return m_skorneArena; }
+    /** The rocks and leaves that give way to a touch or a shot. */
+    FallingScenery& fallingScenery() { return m_fallingScenery; }
+    const FallingScenery& fallingScenery() const { return m_fallingScenery; }
     /** Hides the crystals until revealCrystals() brings them in. */
     void hideCrystals() { m_placedItems.hideCrystals(); }
     void revealCrystals(f32 seconds) { m_placedItems.reveal(seconds); }
@@ -213,6 +218,7 @@ public:
         const CameraFrame frame = CameraFrame::of(camera);
         m_scene.drawOpaque(device, clip, frame);
         m_skorneArena.draw(device, clip, m_litNow);
+        m_fallingScenery.draw(device, clip, m_litNow);
         m_walls.draw(device, clip, m_litNow);
         m_triggers.draw(device, clip, m_litNow);
         m_rotators.draw(device, clip, m_litNow);
@@ -237,6 +243,7 @@ private:
     ItemArchive m_powerups;
     PlacedItems m_placedItems;
     SkorneArena m_skorneArena;
+    FallingScenery m_fallingScenery;
     DestructibleWalls m_walls;
     WorldLayout m_layout;
     WorldScene m_scene;
