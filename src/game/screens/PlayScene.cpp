@@ -33,6 +33,22 @@ constexpr s32 kSumnerVoice = 2;                 ///< change_player makes Sumner 
 constexpr f32 kBlockLessonAfter = 60.0f;        ///< the guard is taught only after a minute
 constexpr std::string_view kDroppedKeyRing = "KEYRING";
 constexpr std::string_view kItSign = "IT_SIGN"; ///< on the back of who is it
+constexpr std::string_view kGauntletObject = "BOSSGAUNTL";
+
+/** The shield an armour bears on the arm, none without one: reflecting, fire, then
+ * lightning, as PlayerProcessPowerups tries them. */
+std::string_view shieldObjectOf(u32 armor) {
+    if ((armor & powerup::kReflectShield) != 0) {
+        return "RF_SHLD";
+    }
+    if ((armor & powerup::kFireShield) != 0) {
+        return "FW_SHLD";
+    }
+    if ((armor & powerup::kLightningShield) != 0) {
+        return "L_SHLD";
+    }
+    return {};
+}
 constexpr std::string_view kTaggedSound = "S_TAGGED";
 constexpr f32 kTaggedVolume = 180.0f / 255.0f; ///< fn_8009DCB4
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
@@ -1475,6 +1491,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     m_attacks.updateProjectiles(seconds, m_players, attackTargets());
     m_attacks.updateStrikes(seconds, m_players, attackTargets());
     m_attacks.updateShields(seconds, m_players, attackTargets());
+    m_attacks.updateArmour(seconds, m_players, attackTargets());
     // The level goes dark for the legend item's rite, as for a great move.
     if (m_opponents.bosses().legend().darkens()) {
         m_dimmer.ask(LegendRite::kDarkening);
@@ -1686,6 +1703,12 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                 skin = m_hitFlashTexture;
             }
             figure.setSkinTexture(skin);
+            // On the second hand: the left gauntlet, else a shield (PlayerProcessPowerups).
+            if ((worn.special & powerup::kLeftGauntlet) != 0) {
+                figure.holdOnArm(device, &m_world->powerups(), kGauntletObject);
+            } else {
+                figure.holdOnArm(device, &m_weapons, shieldObjectOf(worn.armor));
+            }
             figure.draw(device, clip, body, m_world->lighting(),
                         worn.bodyAlpha(m_playSeconds) * runtime.transport.alpha(),
                         runtime.move.weaponHidden(), &companionCamera);

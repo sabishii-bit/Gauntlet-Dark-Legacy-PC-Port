@@ -1139,4 +1139,27 @@ TEST_CASE("a pickup's gesture plays through at full pace; a gag loops while it l
     CHECK(walker.action() == Action::Gag);
 }
 
+TEST_CASE("a shield on the arm has its own stance and a gait at a run's pace",
+          "[game][players][animation][shield]") {
+    const TreeInfo tree = meleeTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.setShielded(true);
+    animator.update(PlayerMotion::Stand, kTicks, kStep);
+    CHECK(animator.action() == Action::ShieldReady);
+    for (s32 frame = 0; frame < 20; ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep);
+        CHECK(animator.action() == Action::ShieldReady); // looping, never fidgeting
+    }
+    animator.update(PlayerMotion::Walk, kTicks, kStep);
+    CHECK(animator.action() == Action::ShieldRun);
+    CHECK(animator.moveScale() == Approx(PlayerAnimator::kRunPace));
+    for (s32 frame = 0; frame < 20; ++frame) {
+        animator.update(PlayerMotion::Walk, kTicks, kStep);
+        CHECK(animator.action() == Action::ShieldRun);
+    }
+    animator.setShielded(false);
+    CHECK(playOut(animator, Action::ShieldRun, PlayerDeed::None) == Action::Ready);
+}
+
 } // namespace

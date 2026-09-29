@@ -270,6 +270,14 @@ void TreeModel::setNodeAlpha(usize root, f32 alpha) {
     }
 }
 
+void TreeModel::setMeshAlpha(usize node, f32 alpha) {
+    for (Node& part : m_nodes) {
+        if (part.index == node) {
+            part.alpha = std::clamp(alpha, 0.0f, 1.0f);
+        }
+    }
+}
+
 void TreeModel::setNodeTextureFrame(usize root, u32 slot, const Texture* frame) {
     for (Node& node : m_nodes) {
         if (std::ranges::find(node.ancestors, root) == node.ancestors.end()) {

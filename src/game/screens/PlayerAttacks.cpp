@@ -35,6 +35,10 @@ constexpr f32 kBlockMost = 1.0f;
 constexpr f32 kRamDamage = 3.0f;   ///< what a charge does to what it runs into
 constexpr f32 kChargeBlow = 32.0f; ///< and to an enemy or a great one (PlayerMotion's anim 8)
 constexpr f32 kRamReach = 0.3f;    ///< how near counts as run into
+constexpr u32 kFireElement = 1;    ///< the fire shield's harm
+constexpr u32 kShockFlags = 0x22;  ///< the lightning shield's: lightning, knocking down
+constexpr f32 kFramesPerSecond = 30.0f;
+constexpr std::string_view kShockEffect = "L_SHLD_ACTIVE"; ///< fx 55, from shield to struck
 
 } // namespace
 void PlayerAttacks::bind(const Resources& resources) {
@@ -348,6 +352,79 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
 }
 
 /** The rings follow their bearers and harm nearby creatures and breakable fixtures. */
+/** The fire and lightning shields (PlayerMotion, pmotion.c 1641): against a creature within
+ * a unit of the body, a bearer free to go about burns it 3 a 30 Hz frame, never waiting, or
+ * shocks it for 20 (lightning, knocking down) at most once a second, the spark reaching
+ * from the shield to it; the fire shield first. Doubled while grown. */
+void PlayerAttacks::updateArmour(f32 seconds, std::span<PlayerRuntime> players,
+                                 const Targets& targets) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    std::vector<MissileTarget> creatures;
+    for (usize i = 0; i < players.size(); ++i) {
+        PlayerRuntime& runtime = players[i];
+        for (PlayerRuntime::ShockGap& gap : runtime.shockGaps) {
+            gap.seconds -= seconds;
+        }
+        std::erase_if(runtime.shockGaps,
+                      [](const PlayerRuntime::ShockGap& gap) { return gap.seconds <= 0.0f; });
+        if (runtime.life != PlayerLife::Standing || runtime.figure == nullptr) {
+            continue;
+        }
+        const auto worn = PowerupEffects::of(runtime.actor.save().progress().inventory);
+        const bool fire = (worn.armor & powerup::kFireShield) != 0;
+        const bool lightning = (worn.armor & powerup::kLightningShield) != 0;
+        const PlayerAnimator& body = runtime.figure->animator();
+        if ((!fire && !lightning) || body.meleeing() || body.throwing() || body.conjuring() ||
+            body.reacting() || body.turboing() || body.dying()) {
+            continue;
+        }
+        if (creatures.empty()) {
+            creatures = strikeTargets(targets);
+            std::erase_if(creatures,
+                          [](const MissileTarget& target) { return !isCreature(target.id); });
+        }
+        const PlayerActor& actor = runtime.actor;
+        const auto target =
+            TargetAssist::around(actor.position(), actor.height(), creatures,
+                                 actor.radius() + kArmourReach, &m_resources->world.collision());
+        if (!target) {
+            continue;
+        }
+        const f32 grown = worn.grown() ? 2.0f : 1.0f;
+        if (fire) {
+            strikeTarget(*target, kFireShieldDamage * seconds * kFramesPerSecond * grown,
+                         kFireElement, actor, players, targets);
+            continue;
+        }
+        if (std::ranges::any_of(runtime.shockGaps, [&](const PlayerRuntime::ShockGap& gap) {
+                return gap.target == target->id;
+            })) {
+            continue;
+        }
+        strikeTarget(*target, kLightningShieldDamage * grown, kShockFlags, actor, players, targets);
+        runtime.shockGaps.push_back({target->id, kShockGap});
+        // The spark leaves the shield on the arm and points at what it struck.
+        const Mat4 placed = actor.transform();
+        const Vec3 from = Vec3{runtime.figure->armAttachment(placed).value_or(placed)[3]};
+        const Vec3 toward = target->base + Vec3{0.0f, target->height * 0.5f, 0.0f} - from;
+        if (glm::length(toward) > 1e-4f) {
+            const Vec3 forward = glm::normalize(toward);
+            const Vec3 side = std::abs(forward.y) > 0.99f
+                                  ? Vec3{1.0f, 0.0f, 0.0f}
+                                  : glm::normalize(glm::cross(Vec3{0.0f, 1.0f, 0.0f}, forward));
+            const Vec3 up = glm::cross(forward, side);
+            if (const u32 spark = m_resources->effects.startSet(
+                    m_resources->device, m_resources->weapons, kShockEffect, from, {});
+                spark != 0) {
+                m_resources->effects.placeAt(spark, Mat4{Vec4{side, 0.0f}, Vec4{up, 0.0f},
+                                                         Vec4{forward, 0.0f}, Vec4{from, 1.0f}});
+            }
+        }
+    }
+}
+
 void PlayerAttacks::updateShields(f32 seconds, std::span<PlayerRuntime> players,
                                   const Targets& targets) {
     if (!m_resources.has_value()) {

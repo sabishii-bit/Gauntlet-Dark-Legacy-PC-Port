@@ -38,6 +38,12 @@ struct PlayerRuntime {
     s32 itTicks = 0;                 ///< since IT tagged this player; none when not it
     PlayerDeed gesture = PlayerDeed::None; ///< a pickup's or bad food's, played when free
     f32 gagSeconds = 0.0f; ///< retching at the stick let go for this long (field_898)
+    /** A creature the lightning shield shocked, and how long before it may again. */
+    struct ShockGap {
+        s32 target = -1;
+        f32 seconds = 0.0f;
+    };
+    std::vector<ShockGap> shockGaps;
     PlayerDeed reaction = PlayerDeed::None; ///< hit or gesture requested for the next update
     Knockback knockback;                    ///< the pushes of this frame's hits, and the slide
     TurboMeter turbo;

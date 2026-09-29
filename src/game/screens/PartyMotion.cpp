@@ -338,6 +338,7 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         if (players[i].figure != nullptr) {
             players[i].figure->setAttackSpeed((powerups.weapon & powerup::kRapidFire) != 0,
                                               (powerups.special & powerup::kSpeedBoost) != 0);
+            players[i].figure->setShielded((powerups.armor & powerup::kShields) != 0);
             // The close attack sees where the nearest thing to strike lies as it decides.
             const bool attackHeld = !held && !down && player < inputs.size() &&
                                     (inputs[player].attack || inputs[player].strongAttack);
