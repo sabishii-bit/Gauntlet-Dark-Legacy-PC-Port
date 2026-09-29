@@ -1,6 +1,7 @@
 #include "game/enemies/Generators.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <format>
@@ -8,6 +9,36 @@
 #include "engine/core/Types.h"
 
 namespace gdl::game {
+
+namespace {
+constexpr usize kGeneratorKinds = 34;
+/** lbl_8011BB20: a hit, by the kind bred. */
+constexpr std::array<s32, kGeneratorKinds> kHitWorth{1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3,
+                                                     1, 2, 2, 1, 2, 3, 1, 2, 3, 1, 1, 2,
+                                                     3, 3, 3, 1, 0, 2, 1, 1, 2, 2};
+/** lbl_8011BBA8: the destroying blow. */
+constexpr std::array<s32, kGeneratorKinds> kDestroyedWorth{1, 2, 3, 1,  2, 3,  1, 2, 3,   1, 2, 3,
+                                                           1, 2, 2, 1,  2, 3,  1, 2, 3,   1, 1, 2,
+                                                           3, 3, 3, 15, 0, 30, 1, 2, 300, 30};
+constexpr s32 kExperienceShare = 5;
+} // namespace
+
+s32 generatorExperience(s32 kind, bool destroyed) {
+    constexpr s32 kSecondUnknown = -2;
+    constexpr s32 kThirdUnknown = -3;
+    if (kind == kSecondUnknown) {
+        kind = 1;
+    } else if (kind == kThirdUnknown) {
+        kind = 2;
+    } else if (kind < 0) {
+        kind = 0;
+    }
+    if (static_cast<usize>(kind) >= kGeneratorKinds) {
+        return 0;
+    }
+    const auto& worth = destroyed ? kDestroyedWorth : kHitWorth;
+    return kExperienceShare * worth[static_cast<usize>(kind)];
+}
 
 namespace {
 

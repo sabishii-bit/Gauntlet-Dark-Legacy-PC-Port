@@ -298,6 +298,8 @@
   "select.empty": "Empty",
   "select.level": "Level {}",
   "hud.inTower": "IN TOWER",
+  "hud.waitInTower": "Wait In Tower",
+  "hud.quitGame": "Quit Game",
   "select.levelShort": "LV {}",
   "select.newLevel": "NEW",
   "select.strength": "Strength",

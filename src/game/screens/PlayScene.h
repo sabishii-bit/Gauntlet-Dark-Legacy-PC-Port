@@ -300,6 +300,7 @@ private:
     LevelOpponents::Events opponentEvents();
     PlayerAttacks::Targets attackTargets();
     void dropKeys(usize index);
+    void answerTowerPrompts(const Inputs& inputs);
     void complainOfTheft(s32 opener, s32 taker);
     void hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damage,
                               std::vector<s32>& reached);

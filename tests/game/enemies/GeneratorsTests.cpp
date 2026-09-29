@@ -467,4 +467,16 @@ TEST_CASE("a generator's record gives its strength, way, count and interval, or 
     REQUIRE(Generators::kDefaultInterval[2] == 15);
 }
 
+TEST_CASE("a player's blow on a generator earns five times its kind's row of the tables",
+          "[game][enemies][generators]") {
+    CHECK(generatorExperience(0, false) == 5);
+    CHECK(generatorExperience(2, true) == 15);
+    CHECK(generatorExperience(27, false) == 5); // lbl_8011BB20
+    CHECK(generatorExperience(27, true) == 75); // lbl_8011BBA8
+    CHECK(generatorExperience(32, true) == 1500);
+    CHECK(generatorExperience(-2, true) == 10);  // the unknown kinds count as the second
+    CHECK(generatorExperience(-3, false) == 15); // and the third
+    CHECK(generatorExperience(-7, true) == 5);   // any other below nought as the first
+    CHECK(generatorExperience(34, true) == 0);
+}
 } // namespace

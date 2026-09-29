@@ -207,6 +207,13 @@ private:
     std::vector<Vec3> m_hearers;      ///< where the standing players are, for how loud
 
     std::array<f32, 4> m_critterExperienceOwed{};
-    std::vector<s32> m_destroyedGenerators; ///< credited IDs, drained on the next update
+    /** What players' blows on generators earned: who, how much, whether destroyed; drained
+     * on the next settling. */
+    struct GeneratorReward {
+        s32 player = -1;
+        s32 experience = 0;
+        bool destroyed = false;
+    };
+    std::vector<GeneratorReward> m_generatorRewards;
 };
 } // namespace gdl::game

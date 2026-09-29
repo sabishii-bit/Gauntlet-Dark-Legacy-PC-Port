@@ -568,6 +568,25 @@ void PlayScene::hurtOpponentsByBlast(const Vec3& position, f32 radius, f32 damag
     }
 }
 
+/** A fallen player asked to wait in the tower or quit answers with their own buttons
+ * (player.c 2452): accept waits, back leaves the game (abort_player), out of the party. */
+void PlayScene::answerTowerPrompts(const Inputs& inputs) {
+    for (PlayerRuntime& runtime : m_players) {
+        const auto player = static_cast<usize>(runtime.actor.player());
+        if (!runtime.towerPrompt || runtime.life != PlayerLife::InTower ||
+            player >= inputs.size()) {
+            continue;
+        }
+        if (inputs[player].menu.back) {
+            runtime.towerPrompt = false;
+            runtime.departed = true;
+            log::info("Player {} has left the game", player + 1);
+        } else if (inputs[player].menu.select) {
+            runtime.towerPrompt = false;
+        }
+    }
+}
+
 /** A player's death played out, the keys they carried fall where they lay, one as a KEY and
  * more as a KEYRING holding them all, for the rest of the party (player_dies); not in the
  * tower nor where a boss is fought. */
@@ -841,6 +860,9 @@ std::vector<PartyMember> PlayScene::party() const {
     // were taught stays taught).
     for (usize i = 0; i < m_players.size(); ++i) {
         const PlayerRuntime& runtime = m_players[i];
+        if (runtime.departed) {
+            continue; // gone from the game
+        }
         const bool down = isDown(i);
         PartyMember member{runtime.actor.player(), down ? runtime.entrySave : runtime.actor.save(),
                            runtime.slot, down};
@@ -1352,7 +1374,11 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
                 case PartyMotion::Action::Melee:
                     m_attacks.melee(i, m_players, attackTargets());
                     break;
-                case PartyMotion::Action::Fallen: dropKeys(i); break;
+                case PartyMotion::Action::Fallen:
+                    dropKeys(i);
+                    // Out of the tower the fallen may wait there or leave (inactivate_player).
+                    m_players[i].towerPrompt = !m_world->isTower();
+                    break;
                 }
             },
         .select =
@@ -1440,6 +1466,13 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     }
     if (!held && !m_messages.active() && m_world->isTower()) {
         updateSumnerVisit(seconds);
+    }
+    answerTowerPrompts(inputs);
+    if (!m_players.empty() && std::ranges::all_of(m_players, [](const PlayerRuntime& runtime) {
+            return runtime.departed;
+        })) {
+        startGameOver(); // nobody is left in the game
+        return PlayOutcome::Running;
     }
     if (!held) {
         // A portal waits for everyone still on their feet.

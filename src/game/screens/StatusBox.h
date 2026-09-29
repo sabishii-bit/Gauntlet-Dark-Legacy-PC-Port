@@ -36,8 +36,9 @@ struct StatusBoxView {
     s32 health = 0;
     s32 keys = 0; ///< shown with their icon when any are carried
     s32 potions = 0;
-    s32 potionKind = 0;   ///< of the potion thrown next, which picks the icon's colour
-    bool inTower = false; ///< fallen: the box says so in place of what is carried
+    s32 potionKind = 0;       ///< of the potion thrown next, which picks the icon's colour
+    bool inTower = false;     ///< fallen: the box says so in place of what is carried
+    bool towerPrompt = false; ///< fallen outside the tower: wait there, or quit the game
     std::optional<TurboMeterLook> turbo; ///< the turbo meter over the box, when it has one
 };
 
@@ -53,6 +54,13 @@ public:
     static constexpr s32 kGleamY = 310;
     static constexpr s32 kInTowerY = 340; ///< where a fallen character's box says so
     static constexpr f32 kInTowerScale = 1.2f;
+    static constexpr s32 kPromptIconX = 6; ///< the prompt's buttons, within the box
+    static constexpr s32 kPromptTextX = 20;
+    static constexpr s32 kPromptIconSize = 14;
+    static constexpr s32 kWaitIconY = 332; ///< BUTTON_X, to wait in the tower
+    static constexpr s32 kWaitTextY = 336;
+    static constexpr s32 kQuitIconY = 352; ///< BUTTON_TRI, to quit the game
+    static constexpr s32 kQuitTextY = 356;
     static constexpr s32 kCarriedY = 323; ///< the key and potion icons' top
     static constexpr s32 kCarriedTextY = 327;
     static constexpr s32 kKeyIconX = 8;

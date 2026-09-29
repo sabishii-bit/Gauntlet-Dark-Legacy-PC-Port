@@ -112,7 +112,7 @@ StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> player
     const auto found = std::ranges::find_if(players, [player](const PlayerRuntime& runtime) {
         return runtime.actor.player() == player;
     });
-    if (found == players.end()) {
+    if (found == players.end() || found->departed) {
         return view;
     }
     const PlayerActor* actor = &found->actor;
@@ -126,6 +126,7 @@ StatusBoxView PartyHud::status(s32 player, std::span<const PlayerRuntime> player
     view.gold = save.gold;
     if (found->life != PlayerLife::Standing) {
         view.inTower = found->life == PlayerLife::InTower;
+        view.towerPrompt = view.inTower && found->towerPrompt;
         view.health = 0;
         return view;
     }

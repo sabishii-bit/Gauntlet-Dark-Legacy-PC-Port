@@ -101,7 +101,11 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   kept (saved) first and stands locked in its lanes (`SelectLane::resume`, Start still
   changes a character), the joiner chooses, and the tower opens again with the party
   grown; a character unchanged keeps its session's help. Levels take no one new.
-  Dropping out while dead (the HUD's Wait In Tower / Quit Game prompt) is not done yet.
+  Dropping out while dead: a player whose death plays out away from the tower is
+  asked in its box (`BUTTON_X` Wait In Tower, `BUTTON_TRI` Quit Game, the retail
+  strings of player.c 1397 in white at 1.2 in place of the gold and health); its own
+  accept keeps it waiting, its back leaves the game (abort_player): `departed`, out
+  of `party()` and so never kept, its box empty.
 * `screens/PlayerRuntime` owns each participant's actor, optional
   figure, entry save/slot, life state, turbo move, reactions and cooldowns.
   Keep per-player state in that record, not in parallel index-aligned vectors.
@@ -420,7 +424,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   FONT32 at y=120. The complete line is centred before revealing its prefix.
   `PlayOutcome::GameOver` then closes gameplay and selects the one-shot `fail`
   movie before resuming attract mode. Retail's other road there, every player
-  dropping out with Back while dead, waits on drop-in/out.
+  dropping out with Back while dead, does the same (game_main 1418).
   Fallen players cannot pause; the defeat sequence cannot enter idle mode.
   The failure movie is excluded from ordinary attract rotation. Nobody
   is hurt in the tower. Crossing 150 health says the name (`S_<COL><CLS>2`,
@@ -750,7 +754,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   its count and turns a caster brood (28-30) to seeking (fn_8005C1DC); gone it
   frees its brood. A player's tenth hit on what generators bred (`Enemies::bred`, birth_style
   0) since they last destroyed one teaches 22 (`KILLGENERATORS`), not where a
-  boss is fought (combat.c:307). A way of nought is filled in by kind and strength, the
+  boss is fought (combat.c:307). Each player blow a generator takes earns five times the bred
+  kind's row of retail's tables, the destroying blow's own (`generatorExperience`,
+  PlayerDamagedItem), through the ordinary award. A way of nought is filled in by kind and strength, the
   small kinds prowl either way (2 or 4) and ways 1/10 become 0/7
   (`resolvedWayOf`: fn_8004F87C, init_enemy_vars); Garm's minions always
   lunge (31) and IT always lurks (27). Level placements (type 4) wait until the

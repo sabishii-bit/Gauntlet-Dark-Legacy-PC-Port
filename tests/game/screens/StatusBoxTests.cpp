@@ -62,6 +62,26 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot",
     REQUIRE(StatusBoxPainter::potionIcon(4) == "POTION_ICON_GRE");
     REQUIRE(StatusBoxPainter::potionIcon(77) == "POTION_ICON_RED");
 
+    // Fallen out of the tower: BUTTON_X beside waiting in the tower, BUTTON_TRI beside quitting,
+    // in place of the gold and health (player.c 1397).
+    StatusBoxView fallen = view;
+    fallen.inTower = true;
+    fallen.towerPrompt = true;
+    device.draws.clear();
+    canvas.begin(device, Mat4{1.0f});
+    painter.draw(canvas, 1, fallen, true);
+    canvas.end();
+    bool wait = false;
+    bool quit = false;
+    for (const test::RecordedDraw& draw : device.draws) {
+        const Vec2 corner = test::minCorner(draw);
+        wait = wait || corner == Vec2{128.0f + 6.0f, 332.0f};
+        quit = quit || corner == Vec2{128.0f + 6.0f, 352.0f};
+        CHECK(corner != Vec2{128.0f + 8.0f, 323.0f}); // no key icon
+    }
+    CHECK(wait);
+    CHECK(quit);
+
     // A pickup card at the bar over the box, and a count above it.
     device.draws.clear();
     canvas.begin(device, Mat4{1.0f});

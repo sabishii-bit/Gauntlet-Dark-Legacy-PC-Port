@@ -726,10 +726,13 @@ TEST_CASE("exit settlement credits a last-frame generator kill once without adva
     }
     REQUIRE(generator >= 0);
     s32 credited = 0;
+    // The destroying blow earns five times the bred kind's row (PlayerDamagedItem).
+    const s32 worth = generatorExperience(opponents.generators().kindOf(generator), true);
+    CHECK(worth > 0);
     LevelOpponents::Events events;
     events.award = [&](s32 player, s32 amount, bool killed) {
         REQUIRE(player == 3);
-        REQUIRE(amount == 0);
+        REQUIRE(amount == worth);
         REQUIRE(killed);
         ++credited;
     };
