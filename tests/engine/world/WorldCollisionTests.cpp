@@ -156,6 +156,12 @@ TEST_CASE("a moving object's triangles stay in its own space and follow its tran
     REQUIRE(collision.solid(3));
     REQUIRE(collision.resolveWalls(centre, 0.5f, 2.2f, 3.0f) != centre);
     collision.setObjectTransform(9, Mat4{1.0f}); // not moving: ignored
+    // Where a moving object stands can be asked; a still one has no placement.
+    const auto placed = collision.objectTransform(3);
+    REQUIRE(placed.has_value());
+    REQUIRE(Vec3{(*placed)[3]} == Vec3{-5.0f, 2.0f, -5.0f});
+    REQUIRE_FALSE(collision.objectTransform(1).has_value());
+    REQUIRE_FALSE(collision.objectTransform(9).has_value());
     collision.clear();
     REQUIRE(collision.movingObjectCount() == 0);
 }

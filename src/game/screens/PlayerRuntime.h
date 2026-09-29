@@ -5,7 +5,9 @@
 
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
+#include "engine/math/Math.h"
 
+#include "game/players/HeadGem.h"
 #include "game/players/Knockback.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerCapture.h"
@@ -61,6 +63,15 @@ struct PlayerRuntime {
     f32 cloudGap = 0.0f;       ///< seconds before gas can harm this participant again
     f32 breathGap = 0.0f; ///< the great ones' shared hit gap (fxhittime): breath and blows alike
     f32 effectGap = 0.0f; ///< shared attached-area damage gate, independent of breath
+    /** The floor it stood on at the end of the last frame (floor_name2), and where a moving
+     * one then was: the body rides it as though parented to it. */
+    struct Floor {
+        s32 object = -1;
+        u32 flags = 0;
+        std::optional<Mat4> placement;
+    };
+    Floor floor;
+    HeadGem gem; ///< a hand of death's or health vampire's gem on the head
 };
 
 } // namespace gdl::game

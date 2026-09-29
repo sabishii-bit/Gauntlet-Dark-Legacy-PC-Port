@@ -146,6 +146,7 @@ void WorldCollision::append(std::span<const CollisionTriangle> triangles) {
 }
 
 void WorldCollision::MovingObject::place(const Mat4& world) {
+    this->world = world;
     const Mat3 rotation{world};
     bool first = true;
     for (usize i = 0; i < local.size(); ++i) {
@@ -210,6 +211,12 @@ bool WorldCollision::solid(s32 object) const {
 bool WorldCollision::moving(s32 object) const {
     return std::ranges::any_of(m_moving,
                                [&](const MovingObject& mover) { return mover.object == object; });
+}
+
+std::optional<Mat4> WorldCollision::objectTransform(s32 object) const {
+    const auto found = std::ranges::find_if(
+        m_moving, [&](const MovingObject& mover) { return mover.object == object; });
+    return found != m_moving.end() ? std::optional<Mat4>{found->world} : std::nullopt;
 }
 
 usize WorldCollision::triangleCount() const {

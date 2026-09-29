@@ -9,10 +9,6 @@ bool PlayerFamiliar::bind(RenderDevice& device, ItemArchive& archive, s32 level,
     m_tier = tierFor(level);
     return bindTree(device, archive, m_tier > 0 ? std::format("FAMILIAR{}", m_tier) : "", offset);
 }
-bool PlayerFamiliar::bindPhoenix(RenderDevice& device, ItemArchive& archive) {
-    m_tier = 0;
-    return bindTree(device, archive, "PHOENIX", Vec3{0});
-}
 bool PlayerFamiliar::bindTree(RenderDevice& device, ItemArchive& archive, std::string_view name,
                               const Vec3& offset) {
     m_tree = nullptr;

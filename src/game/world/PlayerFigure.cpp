@@ -1,6 +1,5 @@
 #include "game/world/PlayerFigure.h"
 
-#include <algorithm>
 #include <array>
 #include <format>
 #include <span>
@@ -211,6 +210,19 @@ void PlayerFigure::loadActions(const std::filesystem::path& root, const Characte
     } else if (m_armNode >= 0 && save.character == kJesterClass) {
         m_armHidden = m_armNode;
     }
+    // Wings hang from p->node->child->child: the root's first child's first child.
+    m_backNode = -1;
+    const auto firstChildOf = [this](s32 parent) {
+        for (usize n = 0; n < m_costume->nodes.size(); ++n) {
+            if (m_costume->nodes[n].parent == parent) {
+                return static_cast<s32>(n);
+            }
+        }
+        return -1;
+    };
+    if (const s32 child = firstChildOf(0); child >= 0) {
+        m_backNode = firstChildOf(child);
+    }
     const TreeInfo& actions = m_actions.tree(*tree);
     m_classNodeOfNode.clear();
     for (const TreeNodeInfo& node : m_costume->nodes) {
@@ -229,16 +241,17 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
         return;
     }
     m_animator.update(PlayerAnimator::motionFor(stickMagnitude), ticks, seconds, deed);
+    const bool phoenix = phoenixActive();
     m_familiarPending =
-        (m_phoenixActive || familiarTier() > 0) &&
+        (phoenix || familiarTier() > 0) &&
         (m_animator.released() || m_animator.strongReleased() || m_animator.superReleased() ||
          m_animator.itemReleased() == PlayerDeed::FireLeft ||
          m_animator.itemReleased() == PlayerDeed::FireRight);
-    if (m_phoenixActive) {
-        m_phoenix.update(seconds, m_familiarPending);
-    } else {
-        m_familiar.update(seconds, m_familiarPending);
-    }
+    // A swing's or throw's moment sets Pojo attacking (pmotion.c 2715); the phoenix spits as
+    // its bearer's shot leaves, as the earned familiar does without it.
+    const bool swung = m_animator.meleeStruck() || m_animator.released();
+    m_companion.update(seconds, m_animator.action(), swung, phoenix && m_familiarPending);
+    m_familiar.update(seconds, !phoenix && m_familiarPending);
     const std::span<const Mat4> matrices = m_animator.pose().matrices();
     m_transforms.resize(m_costume->nodes.size());
     for (usize n = 0; n < m_transforms.size(); ++n) {
@@ -250,22 +263,12 @@ void PlayerFigure::animate(f32 stickMagnitude, s32 ticks, f32 seconds, PlayerDee
 }
 
 void PlayerFigure::setCompanionPowerups(RenderDevice& device, ItemArchive& powerups,
-                                        const Inventory& inventory) {
-    const bool active = (PowerupEffects::of(inventory).special & powerup::kPhoenix) != 0;
-    if (active && !m_phoenixActive) {
-        m_phoenix.bindPhoenix(device, powerups);
-    }
-    m_phoenixActive = active;
-    // The shared companion fades over the last second of its contributing powerups.
-    f32 remaining = 0;
-    constexpr u32 kCompanionFlags = 0x7004F1;
-    for (const auto& slot : inventory.powerups) {
-        if (slot.working() && slot.kind == powerup::kSpecial &&
-            (slot.flags & kCompanionFlags) != 0) {
-            remaining = std::max(remaining, slot.strength < 0 ? 1.0f : slot.strength);
-        }
-    }
-    m_phoenixAlpha = std::clamp(remaining, 0.0f, 1.0f);
+                                        const Inventory& inventory, ItemArchive* weapons) {
+    const bool shieldRunning = m_animator.action() == PlayerAnimator::Action::ShieldRun;
+    m_companion.choose(device,
+                       PowerupCompanion::choose(PowerupEffects::of(inventory), shieldRunning),
+                       powerups, weapons);
+    m_companionAlpha = PowerupCompanion::fadeOf(inventory);
 }
 
 ItemArchive* PlayerFigure::effects() {
@@ -298,10 +301,20 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
                         const WorldLighting& lighting, f32 alpha, bool hideWeapon,
                         const CameraFrame* camera) const {
     m_model.draw(device, clip, body, lighting, m_transforms, nullptr, alpha);
-    if (m_phoenixActive) {
-        m_phoenix.draw(device, clip, body, lighting, alpha * m_phoenixAlpha, camera);
-    } else {
-        m_familiar.draw(device, clip, body, lighting, alpha, camera);
+    // The earned familiar is its own skin tree (PlayerProcessSkinFX), beside any companion.
+    m_familiar.draw(device, clip, body, lighting, alpha, camera);
+    std::optional<Mat4> mount = body;
+    switch (PowerupCompanion::mountOf(m_companion.kind())) {
+    case PowerupCompanion::Mount::Head: mount = attachment(body, "HEAD"); break;
+    case PowerupCompanion::Mount::Back:
+        mount = m_backNode >= 0 && static_cast<usize>(m_backNode) < m_transforms.size()
+                    ? std::optional<Mat4>{body * m_transforms[static_cast<usize>(m_backNode)]}
+                    : std::nullopt;
+        break;
+    case PowerupCompanion::Mount::Body: break;
+    }
+    if (mount.has_value()) {
+        m_companion.draw(device, clip, *mount, lighting, alpha * m_companionAlpha, camera);
     }
     const bool thrown = m_animator.recovering() ||
                         m_animator.action() == PlayerAnimator::Action::StrongThrowRecover;
@@ -339,16 +352,33 @@ void PlayerFigure::drawHeadwear(RenderDevice& device, ItemArchive& powerups,
     if (object.empty() || !head || !powerups.loaded()) {
         return;
     }
-    if (m_headwearTree.name != object) {
-        m_headwearTree = {};
-        m_headwearTree.name = object;
-        TreeNodeInfo node;
-        node.name = object;
-        node.object = object;
-        m_headwearTree.nodes.push_back(node);
-        m_headwear.bind(m_headwearTree, powerups.models, powerups.textures, device);
-    }
+    bindObject(device, powerups, object, m_headwearTree, m_headwear);
     m_headwear.draw(device, clip, *head, lighting, {}, nullptr, alpha);
+}
+
+void PlayerFigure::drawGem(RenderDevice& device, ItemArchive& powerups, std::string_view object,
+                           const Mat4& clip, const Mat4& body, const WorldLighting& lighting,
+                           f32 alpha) {
+    const auto head = attachment(body, "HEAD");
+    if (object.empty() || !head || !powerups.loaded()) {
+        return;
+    }
+    bindObject(device, powerups, object, m_gemTree, m_gem);
+    m_gem.draw(device, clip, *head, lighting, {}, nullptr, alpha);
+}
+
+void PlayerFigure::bindObject(RenderDevice& device, ItemArchive& archive, std::string_view object,
+                              TreeInfo& tree, TreeModel& model) {
+    if (tree.name == object) {
+        return;
+    }
+    tree = {};
+    tree.name = object;
+    TreeNodeInfo node;
+    node.name = object;
+    node.object = object;
+    tree.nodes.push_back(node);
+    model.bind(tree, archive.models, archive.textures, device);
 }
 
 void PlayerFigure::holdOnArm(RenderDevice& device, ItemArchive* archive, std::string_view object) {

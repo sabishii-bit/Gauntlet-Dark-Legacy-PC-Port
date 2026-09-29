@@ -11,7 +11,7 @@
 #include "engine/world/WorldCamera.h"
 
 namespace gdl::game {
-/** Animated companion borrowing its permanent-class or temporary-powerup archive. */
+/** The familiar a character earns at thirty and eighty, animated from its class archive. */
 class PlayerFamiliar {
 public:
     static s32 tierFor(s32 level) {
@@ -21,7 +21,6 @@ public:
         return level >= 30 ? 1 : 0;
     }
     bool bind(RenderDevice& device, ItemArchive& archive, s32 level, const Vec3& offset);
-    bool bindPhoenix(RenderDevice& device, ItemArchive& archive);
     bool bound() const { return m_tree != nullptr; }
     void update(f32 seconds, bool attack);
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& body,
