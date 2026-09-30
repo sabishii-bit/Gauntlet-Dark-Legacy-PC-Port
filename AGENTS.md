@@ -1060,8 +1060,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   whole mesh or add a separate guessed beam lifetime.
   This is not complete boss fidelity: damaging impact areas/status effects,
   linked custom SFXX callbacks (including Dragon's fireball trail), generated
-  stage hazards/minions, grabs (7), full attack interruptions
-  and Chimera child-head control still need reconstruction.
+  stage hazards/minions, grabs (7) and full attack interruptions
+  still need reconstruction (the Chimera's heads are in their own paragraph).
   A hit takes the armour off (a point always through for a character), a
   block lets a quarter through and shrugs off the throw, and is worth
   amount / (1 + health) of the value to the hitter (the harm credited no more
@@ -1329,7 +1329,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   stay inside TYPE.roamRadius; they are not unrestricted pursuit. CritterInitHeader
   derives the ready-search flag 0x10000 from MOVE types 48..57, so the raw TYPE
   flags alone do not establish that stepping is disabled. Non-player waypoint
-  producers and Chimera child-head logic remain separate reconstruction work.
+  producers remain separate reconstruction work.
   `[boss-movement]` tests cover bounds, facing, direction,
   legacy/new export keys, synthetic near/far encounters and the eight retail tables.
 * Boss attack selection (`enemies/CombatantPatterns.cpp`) consumes PTRN
@@ -1455,14 +1455,42 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   `[chimera]` covers the curve, synthetic execution without assets, and actual
   SUPER/fire cues. `python scripts/scenario.py chimera` loads A5; unpack LEVELA5
   (world and items), LEVELA (realm textures), and MONSTERS/CHIMERA first.
-  **Chimera is not behavior-complete:** the current actor loads TYPE row zero
-  only. Retail CritterNewInst (0x8003e048) walks children EAGLE/LION/SNAKE,
-  sharing CHIM's tree but detaching BODY1_EAGLE/LION/SNAKE animation subtrees.
-  Each has 15 local moves, its own health/collision nodes and damage bindings.
-  CritterBossAI (0x80039ad8) synchronizes them with body patterns or body SYNC;
-  outside those windows they copy the body's sequence/frame. Independent
-  unsynchronized actors are not an equivalent implementation. Head hit routing,
-  death/stumps, legend-item head removal and type-56 repositioning remain open.
+  The Chimera's heads (CritterNewInst 0x8003e048, critter.c 2117): the root's
+  TYPE names a chain of child types (EAGLE, LION, SNAKE) that share CHIM's tree,
+  each animating its own `rootNode` subtree (BODY1_EAGLE/LION/SNAKE), with its own
+  fifteen moves, one pattern, one hit node, health (1200/1500/1200) and HUD meter.
+  `Combatant` owns them as child fighters (`CombatantAssets::children`, ids body+1..)
+  and `CombatantParts.cpp` schedules them as CritterBossAI (0x80039ad8, 4218-4291)
+  does: the body chooses first; while it runs a pattern each head plays the same
+  step of its own pattern table (the volleys: root pattern 0, READY twice past 35,
+  drives EBALL/FBALL/ABALL), the step's move starting over each time it ends
+  (AnimateTree's restart-when-done, its harm rearmed); the body idle, a head picks
+  its own attack or pattern and the body holds SYNC while one is under way
+  (linked children); otherwise a head copies the body's sequence and frame
+  (CritterCopyParentAnimation). Hits land on whichever part's hit cylinder the
+  player's contact finds (`bodyTargets`); a head's hurt passes to the body, the
+  body's is halved and split among the living heads, a killing blow on a head is
+  not passed on, and the body's fall sets the heads to a point (CritterDamage
+  5192-5219, CritterKill). A dead head plays its DEATH (HIT2) with the STUMPE/L/S
+  cue of its sfx2, is hidden by that record's flag 0x400 (CritterDoSfx 2344), takes
+  no more hits and stays attached; with its last head dead the body falls
+  (ProcessCritter 4834-4848). The scimitar (pmotion.c 2238, sfx.c 3283) homes on
+  the second child, the lion, for 1.5 times its current health (the double at
+  0x80347B88) on impact; it never takes a share of the body. Move flag 2 keeps the
+  body's SUPER attacks to a whole set of heads. Heads and bodies turn their look
+  nodes to their target (`CombatantGaze`, CritterLookAtPlayer 0x80035D08 and
+  NodeLookAtPos 0x80035E48; TYPE +0x20/+0x30 and +0x60..+0x74, exported as
+  `lookNode0/1` and the rates, TYPE flag 0x10 turning the node's parent): a tracked
+  bearing chases the target's a quarter turn a second, the node is turned toward it
+  from its animated pose, afresh each frame, by at most its limit (the eagle's 45
+  degrees), none through START/INIT, back
+  to the animation through DEATH, a move flagged 1, frozen or blinded; a head with
+  no target takes the body's (CritterGetTargetSub). Older manifests warn and turn
+  nothing: `gdlunpack <assets> <out> --only CRITTER`. Not established here: the
+  hit-node scoring of aimed attacks (NODE targetScoreScale/maxTargetDistance,
+  CritterLineRootColSub), the sharing of one player among the heads
+  (CritterResolveMultipleTargets and the anger ledger), the cut of a head's attack
+  when the body's SYNC cycle ends, and what pose HIT2 leaves a dead head in.
   A5 also has three tier-1 SAFEROCK instances and only SAFEROCK1L1 artwork.
   The current loader warns about absent optional tiers 0/2/3; those warnings
   do not mean the initial tier-1 cover mesh is missing. Do not copy Dragon's

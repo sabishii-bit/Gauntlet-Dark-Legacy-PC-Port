@@ -11,6 +11,7 @@
 #include "TestSupport.h"
 #include "game/enemies/Bosses.h"
 #include "game/enemies/CombatantFixture.h"
+#include "game/enemies/HeadedBodyFixture.h"
 
 namespace {
 using namespace gdl;
@@ -33,6 +34,90 @@ struct ChimeraFixture {
     }
     void step() { fight.update(2, 1.0f / 30.0f, players); }
 };
+
+/** The synthetic two-headed body of HeadedBodyFixture, spawned and ready to fight. */
+struct HeadedFixture {
+    test::FakeRenderDevice renderer;
+    test::CombatantFixture fight;
+    std::array<EnemyView, 1> players;
+    HeadedFixture() {
+        fight.open(renderer, test::headedBodyAssets(), nullptr, {}, 'A');
+        REQUIRE(fight.spawn("CHIMERA", Vec3{0}, 0));
+        players[0].player = 0;
+        players[0].position = Vec3{0, 0, 40};
+        players[0].height = 6;
+        players[0].radius = 1;
+    }
+    void step() { fight.update(2, 1.0f / 30.0f, players); }
+};
+
+TEST_CASE("the body's pattern drives the heads' own pattern step, whose move starts over each "
+          "time it ends while the body's step lasts",
+          "[game][chimera][combatant]") {
+    HeadedFixture fixture;
+    Combatant& body = fixture.fight.actor;
+    // Past its entrance the body, with the player thirty or more away, runs its pattern: two
+    // stances, each a second, while each head spits on its own step of its pattern.
+    s32 stepStarts = 0;
+    s32 spits = 0;
+    std::string lastStep;
+    for (s32 frame = 0; frame < 45; ++frame) {
+        fixture.step();
+        for (const auto& cue : body.takeCues()) {
+            spits += cue.critter == 1 && cue.tree == "SPITFX" ? 1 : 0;
+        }
+        if (body.moveName() == "READYP" && lastStep != "READYP") {
+            ++stepStarts;
+        }
+        lastStep = std::string{body.moveName()};
+        if (stepStarts > 0 && body.moveName() != "READYP") {
+            break;
+        }
+    }
+    REQUIRE(stepStarts == 1);
+    REQUIRE(body.moveName() == "READYP");
+    REQUIRE(body.child(1)->moveName() == "SPIT");
+    // A six-frame spit within a thirty-frame step: started over four times at the least.
+    REQUIRE(spits >= 4);
+    // Its own use is not recorded (CritterMoveDone leaves a pattern's child alone): the head
+    // spits again by its own choice once the body's pattern is over.
+    bool ownSpit = false;
+    for (s32 frame = 0; frame < 120 && !ownSpit; ++frame) {
+        fixture.step();
+        body.takeCues();
+        ownSpit = body.moveName() != "READYP" && body.child(1)->moveName() == "SPIT";
+    }
+    REQUIRE(ownSpit);
+    REQUIRE(body.moveType() == 1); // and the body keeps to SYNC while a head attacks
+}
+
+TEST_CASE("the body falls with its last head, after each head's own fall",
+          "[game][chimera][combatant]") {
+    HeadedFixture fixture;
+    Combatant& body = fixture.fight.actor;
+    for (s32 frame = 0; frame < 10; ++frame) {
+        fixture.step();
+        body.takeCues();
+    }
+    body.takeLosses();
+    EnemyHit hit;
+    hit.damage = 1000;
+    body.hurt(hit, 1);
+    REQUIRE_FALSE(body.child(1)->alive());
+    REQUIRE(body.alive());
+    fixture.step();
+    REQUIRE(body.alive()); // one head standing keeps it up
+    body.hurt(hit, 2);
+    REQUIRE_FALSE(body.child(2)->alive());
+    REQUIRE(body.alive()); // the lethal hit on a head is not passed on; it falls next frame
+    fixture.step();
+    REQUIRE(body.dying());
+    REQUIRE(body.health() < 0);
+    const auto losses = body.takeLosses();
+    REQUIRE(std::ranges::count_if(losses, [](const auto& loss) { return loss.killed; }) == 3);
+    REQUIRE(std::ranges::count_if(
+                losses, [](const auto& loss) { return loss.killed && loss.critter == 0; }) == 1);
+}
 
 TEST_CASE("Chimera loads and runs all three head move tables", "[game][chimera][unpacked]") {
     ChimeraFixture fixture;

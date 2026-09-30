@@ -92,6 +92,7 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
         alive() && !m_actor.held && (moveType() == kSync || moveType() == MoveDefinition::kReady);
     bool busy = false;
     bool intact = true;
+    bool anyAlive = false;
     for (auto& part : m_children) {
         Actor& actor = part->m_actor;
         actor.position = position();
@@ -105,12 +106,17 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
         } else if (forced) {
             const auto& pattern = part->data()->patterns()[static_cast<usize>(m_actor.pattern)];
             if (m_actor.patternStep < pattern.moves.size()) {
+                const auto step = static_cast<usize>(pattern.moves[m_actor.patternStep]);
                 if (!actor.forcedPattern || actor.pattern != m_actor.pattern ||
                     actor.patternStep != m_actor.patternStep) {
-                    part->startMove(actor, static_cast<usize>(pattern.moves[m_actor.patternStep]),
-                                    false);
+                    part->startMove(actor, step, false);
                     actor.pattern = m_actor.pattern;
                     actor.patternStep = m_actor.patternStep;
+                } else if (actor.moveDone) {
+                    // The step's move is asked for again every frame, so it starts over each
+                    // time it ends while the body's step lasts (CritterAnimate, AnimateTree's
+                    // restart-when-done), its harm rearmed (CritterMoveSetup).
+                    part->startMove(actor, step, false);
                 }
                 actor.forcedPattern = true;
                 part->update(ticks, seconds, players);
@@ -129,10 +135,22 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
             part->aimGaze(actor, seconds, players); // its head still turns (CritterLookAtPlayer)
         }
         intact &= part->alive();
-        busy |= part->alive() && !actor.moveDone && part->moveType() != MoveDefinition::kReady;
+        anyAlive |= part->alive();
+        // A head at an attack of its own, or in a pattern, keeps the body in SYNC
+        // (CritterBossAI's linked children); a flinch or a roar does not.
+        busy |=
+            part->alive() && !actor.moveDone &&
+            (actor.pattern >= 0 ||
+             (actor.move >= 0 && part->data()->moves()[static_cast<usize>(actor.move)].attack()));
         collectChildEvents(*part);
     }
     m_actor.childrenIntact = intact;
+    // With its last head dead the body falls with it (ProcessCritter: its health set under
+    // nought, then CritterKill).
+    if (alive() && !anyAlive) {
+        loseHealth(m_actor.health + 1.0f);
+        return;
+    }
     if (independent && busy && moveType() != kSync && m_actor.pattern < 0) {
         if (const auto sync = data()->moveOfType(kSync)) {
             startMove(m_actor, *sync);
