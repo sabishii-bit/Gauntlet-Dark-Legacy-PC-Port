@@ -144,6 +144,17 @@ private:
         Vec3 position{0.0f};
     };
     std::vector<Cloud> m_clouds;
+    /** The garm brood's death shot: its burst, then the shot that flies on from it. */
+    struct DeathShot {
+        u32 burst = 0; ///< the effect held where the corpse lay; nought once it is over
+        s32 kind = kGarmBroodKind;
+        Vec3 position{0.0f};
+        Vec3 velocity{0.0f};
+        bool flying = false; ///< the shot's own effect has been sent on its way
+    };
+    std::vector<DeathShot> m_deathShots;
+    void fireDeathShot(const EnemyDeathShot& shot);
+    void advanceDeathShots();
     void hearFrom(std::span<const PlayerRuntime> players);
     void applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRuntime> players,
                         const Events& events);

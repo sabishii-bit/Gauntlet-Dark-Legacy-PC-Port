@@ -763,8 +763,12 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   the knock-down (the grunts have no DEATH). `Enemies` is the pool of
   twenty-five (a level's `maxEnemies` of them: G1 thirteen), the body: it
   chooses a target every eighth frame from the players within sight (thirty
-  at a sight scale of one, each mind choosing adding two to that player's
-  distance for the next, so a party is shared out), gathers a `MindSense`
+  at a sight scale of one, or a placement's own radius, the float after its
+  strength and way, at that scale: `EnemySpawn::sight`, SetItem items.c 5569,
+  which is what its throws, backing off, lurking and off-screen waiting go by;
+  what a generator breeds always sees thirty; each mind choosing adding two to
+  that player's distance for the next, so a party is shared out), gathers a
+  `MindSense`
   (where it is, what it sees, what it bumped, two probes: `clear`, whether a
   step crosses anything, and `open`, whether a step keeps the body off the
   walls) and carries out the `MindIntent` its mind returns (a heading, a
@@ -883,7 +887,19 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   in, scaled a hundredth softer a level under the place's `playerLevel` and a
   tenth harder a level over; it flinches or is thrown back (forty a small
   body, twenty a tall one, capped at forty, decaying by 0.8 a 30 Hz frame) and gets
-  up, and dead plays out its fall and is gone. Experience is the kind's hit
+  up, and dead plays out its fall and is gone; the acid blob (`EnemyKind::rooted`,
+  fn_8004DC2C's E_ACID cases) is thrown down where it stands and a plain
+  knock-back leaves it as it was (retail only marks its flag1, which none of its
+  ways read). The scorpion's default action is the walk (`EnemyKind::idle`,
+  do_enemies' daction 3, asked at the tick's top so that the stance and, as loud, a
+  run are refused): it never stands in READY. Garm's brood's corpse goes as
+  StartEnemyDeathFX has it (`EnemyDeathShot`, `EnemyMissileKind::deathShot`,
+  `LevelOpponents::fireDeathShot`): the GRM archive's `DEATHFX1` bursts where it lay,
+  held there for its sequence by the morph flag, then `DEATHFX2` flies on at 20 a
+  second (0x803480F0) for the 3 s morph time (0x803480F8) at its player, else the
+  first standing, as an unseen missile 3 wide of 50 (0x803480FC) with 0x100020: through
+  the players it hurts (each again a quarter second on while within it), walls and
+  items alike, no sound or spark of its own. Experience is the kind's hit
   or kill share through `awardExperience`. A slot is found first empty, else
   the least worth keeping (the furthest from its player, a dying or sleeping
   one a hundredth of that, otherwise an unseen one ten thousand dearer).
@@ -923,7 +939,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   lunge (31) and IT always lurks (27). Level placements (type 4) wait until the
   camera, looking from no more than fifty off, sees their spot by twice their
   larger size (fn_80060114; `Resources::standOnSight`, all at once without a
-  view), then stand where put, asleep at nought; IT never with one player. Level tuning's enemy and generator
+  view), then stand where put, asleep at nought, and one of strength one to three
+  stands still its first thirty ticks (`Enemies::kPlacedStun`, items.c 5564; the
+  variants and a sleeper woken do not); IT never with one player. Level tuning's enemy and generator
   columns are in `LevelTuning` (`enemyHealth`, `enemySpeedScale(gain)` and so
   on: what they take and deal is the level's own, speed, sight, rate and
   count grow with the gain). Missile targets are the barrels by their ids,
