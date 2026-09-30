@@ -906,7 +906,13 @@ std::optional<Vec3> PlayerAttacks::aim(const PlayerActor& actor, const Vec3& fac
     if (!m_resources) {
         return std::nullopt;
     }
-    return TargetAssist::select(actor.followPoint(), facing, projectileTargets(targets),
+    auto candidates = projectileTargets(targets);
+    // PlayerGetTarget's item probe excludes subtype-41 cover. It still belongs
+    // to the projectile collision list, so a directly aimed shot can hit it.
+    std::erase_if(candidates, [](const MissileTarget& target) {
+        return target.id >= kSafeRockTargetBase && target.id < kWallTargetBase;
+    });
+    return TargetAssist::select(actor.followPoint(), facing, candidates,
                                 targets.opponents.bosses().view().alive ? TargetAssist::kBossRange
                                                                         : TargetAssist::kRange,
                                 &m_resources->world.collision());

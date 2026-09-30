@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -59,6 +60,39 @@ TEST_CASE("boss health gates use exclusive upper bounds only above the lower bou
     target.maxHomeDistance = 10;
     REQUIRE(target.allowsPhase(5, 10));
     REQUIRE_FALSE(target.allowsPhase(5, 10.01f));
+}
+
+TEST_CASE(
+    "Dragon claws stay inside their authored range while distant players receive ranged attacks",
+    "[game][boss-attacks][unpacked][dragon-ranges]") {
+    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'B');
+    for (const f32 distance : {15.0f, 25.0f, 45.0f}) {
+        REQUIRE(fixture.spawn("DRAGON", Vec3{0}, 0));
+        const std::array party{targetAt(distance)};
+        bool attacked = false;
+        bool clawed = false;
+        std::string previous;
+        for (s32 frame = 0; frame < 30 * 90; ++frame) {
+            fixture.update(2, 1.0f / 30, party);
+            const std::string current(fixture.actor.moveName());
+            if (current != previous) {
+                const bool claw = current == "CLAWL" || current == "CLAWR";
+                CAPTURE(distance, current);
+                CHECK_FALSE((claw && distance > 20));
+                clawed = clawed || claw;
+                attacked = attacked || fixture.actor.moveType() >= MoveDefinition::kAttackFrom;
+                previous = current;
+            }
+        }
+        CHECK(attacked);
+        if (distance < 20) {
+            CHECK(clawed);
+        }
+    }
 }
 
 TEST_CASE("held players carry into the first other eligible grab despite cooldown and range",

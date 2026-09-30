@@ -51,6 +51,40 @@ std::filesystem::path sampleFigure(std::string_view name) {
     return dir;
 }
 
+TEST_CASE("tree effects can composite after scenery without redrawing depth-writing parts",
+          "[world][model][effect-pass]") {
+    const auto dir = sampleFigure("tree-model-passes");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    TreeInfo tree = trees.tree(0);
+    tree.nodes[2].objectFlags = TreeNodeInfo::kAdditiveFlag | TreeNodeInfo::kNoDepthWriteFlag;
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(tree, models, textures, device));
+    const auto draw = [&](TreeModel::Pass pass, f32 alpha) {
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, Mat4{1}, {}, {}, nullptr, alpha, pass);
+    };
+    draw(TreeModel::Pass::DepthWriting, 1);
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].state.depthWrite);
+    draw(TreeModel::Pass::Effects, 1);
+    REQUIRE(device.draws.size() == 1);
+    CHECK_FALSE(device.draws[0].state.depthWrite);
+    CHECK(device.draws[0].state.depthTest); // opaque walls must still hide the glow
+    CHECK(device.draws[0].state.blend == BlendMode::Additive);
+    draw(TreeModel::Pass::All, 1);
+    CHECK(device.draws.size() == 2);
+    draw(TreeModel::Pass::DepthWriting, 0.5f);
+    CHECK(device.draws.empty());
+    draw(TreeModel::Pass::Effects, 0.5f);
+    CHECK(device.draws.size() == 2);
+}
+
 TEST_CASE("a tree model stands its meshes in the world, lit, opaque parts first",
           "[world][model]") {
     const auto dir = sampleFigure("tree-model");

@@ -344,7 +344,9 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
             if (const AttackDefinition* harm = data.damage(move->damage0);
                 harm != nullptr && harm->type == AttackDefinition::kSpew) {
                 critter.soundsGiven |= 32U;
-                m_spews.push_back(CombatSpew{i, critter.position, harm->spewVelocity(critter.yaw),
+                // CritterDoDamage passes the active move node's world origin, not the floor.
+                m_spews.push_back(CombatSpew{i, partPosition(critter, move->colnode),
+                                             harm->spewVelocity(critter.yaw),
                                              harm->spewHalfAngle()});
             }
         }

@@ -10,6 +10,7 @@
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/render/RenderDevice.h"
+#include "engine/world/TreeModel.h"
 #include "engine/world/WorldCollision.h"
 #include "engine/world/WorldLighting.h"
 
@@ -98,7 +99,8 @@ public:
     std::vector<TrapHit> update(s32 ticks, f32 seconds, std::span<const TrapVictim> party,
                                 bool timeStopped = false);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr) const;
+              const CameraFrame* camera = nullptr,
+              TreeModel::Pass pass = TreeModel::Pass::All) const;
 
 private:
     s32 restTicks(const Trap& trap);

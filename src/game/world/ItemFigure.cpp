@@ -265,12 +265,14 @@ s32 ItemFigure::ticksOf(s32 index) const {
 }
 
 void ItemFigure::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                      f32 alpha, f32 scale, const CameraFrame* camera) const {
+                      f32 alpha, f32 scale, const CameraFrame* camera, TreeModel::Pass pass) const {
     if (m_tree != nullptr) {
         m_model.draw(device, clip, glm::scale(m_transform, Vec3{scale}), lighting,
-                     m_pose.matrices(), camera, alpha);
-        const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
-        m_particles.draw(device, clip, frame.right, frame.up);
+                     m_pose.matrices(), camera, alpha, pass);
+        if (pass != TreeModel::Pass::DepthWriting) {
+            const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
+            m_particles.draw(device, clip, frame.right, frame.up);
+        }
     }
 }
 

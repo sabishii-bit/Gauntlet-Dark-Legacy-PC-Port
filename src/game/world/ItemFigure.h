@@ -57,7 +57,8 @@ public:
     void play(s32 index, bool loop);
     void update(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              f32 alpha = 1.0f, f32 scale = 1.0f, const CameraFrame* camera = nullptr) const;
+              f32 alpha = 1.0f, f32 scale = 1.0f, const CameraFrame* camera = nullptr,
+              TreeModel::Pass pass = TreeModel::Pass::All) const;
     /** Traps suppress emission in OFF without killing their live particle tails. */
     void gateParticlesOnSequence(bool enabled);
     const TreeParticles& particles() const { return m_particles; }

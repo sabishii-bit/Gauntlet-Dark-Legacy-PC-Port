@@ -17,6 +17,7 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/world/ParticleField.h"
 #include "engine/world/TextureAnimator.h"
+#include "engine/world/TreeModel.h"
 #include "engine/world/WorldAnimator.h"
 #include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
@@ -239,11 +240,12 @@ public:
         m_walls.draw(device, clip, m_litNow);
         m_triggers.draw(device, clip, m_litNow);
         m_rotators.draw(device, clip, m_litNow);
-        m_placedItems.draw(device, clip, m_litNow, &frame);
+        m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::DepthWriting);
     }
     void drawDeferred(RenderDevice& device, const Mat4& clip, const WorldCamera& camera) const {
         const CameraFrame frame = CameraFrame::of(camera);
         m_scene.drawDeferred(device, clip, frame);
+        m_placedItems.draw(device, clip, m_litNow, &frame, TreeModel::Pass::Effects);
         m_particles.draw(device, clip, frame.right, frame.up);
     }
 

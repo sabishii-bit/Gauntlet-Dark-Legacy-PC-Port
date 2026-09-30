@@ -1,6 +1,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -280,6 +281,23 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
     }
     REQUIRE(glowing);
 
+    const usize allDraws = device.draws.size();
+    device.draws.clear();
+    items.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::DepthWriting);
+    const usize solidDraws = device.draws.size();
+    REQUIRE(solidDraws > 0);
+    for (const auto& draw : device.draws) {
+        CHECK(draw.state.depthWrite);
+    }
+    device.draws.clear();
+    items.draw(device, Mat4{1}, {}, nullptr, TreeModel::Pass::Effects);
+    REQUIRE_FALSE(device.draws.empty());
+    for (const auto& draw : device.draws) {
+        CHECK_FALSE(draw.state.depthWrite);
+        CHECK(draw.state.depthTest);
+    }
+    CHECK(solidDraws + device.draws.size() == allDraws);
+
     items.setPlayerCount(0);
     device.draws.clear();
     items.draw(device, Mat4{1.0f}, WorldLighting{});
@@ -484,6 +502,55 @@ TEST_CASE("the crystals can start unseen and be revealed from the origin outward
     }
     items.reveal(1.0f); // nothing left to reveal
     REQUIRE_FALSE(items.revealing());
+}
+
+TEST_CASE("thrown coins cross gaps and fast landings but are removed below the level",
+          "[game][world][coin-flight]") {
+    const auto dir = test::scratchDirectory("coin-flight");
+    writeTextFile(dir / "coin.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json",
+                  R"({"objects":[{"index":0,"name":"COIN","file":"coin.obj","meshTriangles":1}]})");
+    writeFile(dir / "coin.png", test::kTinyPng);
+    writeTextFile(
+        dir / "textures.json",
+        R"({"bitmaps":[{"index":0,"name":"COIN","file":"coin.png","width":2,"height":2}]})");
+    writeTextFile(
+        dir / "animations.json",
+        R"({"trees":[{"name":"COIN","nodes":[{"object":"COIN","parent":-1,"position":[0,0,0]}]}]})");
+    writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":1,"subtype":6,"name":"COIN","value":100}],"itemInstances":[]})");
+    WorldLayout layout;
+    ItemArchive archive;
+    REQUIRE(layout.load(dir));
+    REQUIRE(archive.load(dir));
+    // The landing starts at z=2; nothing supports the flight before then.
+    std::vector<CollisionTriangle> triangles(2);
+    triangles[0].vertices = {Vec3{-20, 0, 2}, Vec3{20, 0, 30}, Vec3{20, 0, 2}};
+    triangles[1].vertices = {Vec3{-20, 0, 2}, Vec3{-20, 0, 30}, Vec3{20, 0, 30}};
+    WorldCollision collision;
+    collision.build(triangles);
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive};
+    items.bind(device, layout, &collision, archives);
+    items.setPlayerCount(1);
+    REQUIRE(items.throwItem(device, "COIN", Vec3{0, 4, 0}, Vec3{0, -1, 10}, &collision, 0));
+    REQUIRE(items.throwItem(device, "COIN", Vec3{0, 2, 5}, Vec3{0, -180, 0}, &collision, 0));
+    REQUIRE(items.throwItem(device, "COIN", Vec3{50, 4, 0}, Vec3{0, -1, 0}, &collision, 0));
+    items.update(1.0f / 30);
+    CHECK(items.item(0).visible); // still airborne above the gap
+    CHECK(items.item(1).visible);
+    CHECK(items.item(1).position.y == Approx(PlacedItems::kThrownFloorLift));
+    CHECK(items.item(1).velocity.y > 0); // swept landing bounces instead of tunnelling
+    for (s32 frame = 0; frame < 300; ++frame) {
+        items.update(1.0f / 30);
+    }
+    CHECK(items.item(0).visible);
+    CHECK_FALSE(items.item(0).thrown);
+    CHECK(items.item(0).position.y == Approx(PlacedItems::kThrownFloorLift));
+    CHECK_FALSE(items.item(2).visible);
+    CHECK(items.item(2).taken);
 }
 
 TEST_CASE("a thrown item sails out, bounces to rest on the floor and can be taken only after "

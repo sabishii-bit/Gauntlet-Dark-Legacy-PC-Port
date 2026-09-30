@@ -167,10 +167,10 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
 }
 
 void Traps::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                 const CameraFrame* camera) const {
+                 const CameraFrame* camera, TreeModel::Pass pass) const {
     for (const std::unique_ptr<Trap>& trap : m_traps) {
         if (trap->shown) {
-            trap->figure.draw(device, clip, lighting, 1, 1, camera);
+            trap->figure.draw(device, clip, lighting, 1, 1, camera, pass);
         }
     }
 }

@@ -148,20 +148,24 @@ void TreeModel::selectFrame(Node& node, u32 sequence, s32 frame) {
 
 void TreeModel::draw(RenderDevice& device, const Mat4& clip, const Mat4& model,
                      const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
-                     const CameraFrame* camera, f32 alpha) const {
+                     const CameraFrame* camera, f32 alpha, Pass pass) const {
     if (alpha <= 0.0f) {
         return;
     }
-    drawParts(device, clip, model, lighting, nodeTransforms, camera, alpha, false);
-    drawParts(device, clip, model, lighting, nodeTransforms, camera, alpha, true);
+    drawParts(device, clip, model, lighting, nodeTransforms, camera, alpha, false, pass);
+    drawParts(device, clip, model, lighting, nodeTransforms, camera, alpha, true, pass);
 }
 
 void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& model,
                           const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
-                          const CameraFrame* camera, f32 alpha, bool translucent) const {
+                          const CameraFrame* camera, f32 alpha, bool translucent, Pass pass) const {
     for (const Node& node : m_nodes) {
         const f32 opacity = alpha * node.alpha;
         const bool fading = opacity < 1.0f;
+        const bool depthWrite = node.depthWrite && m_depthWrite && !fading;
+        if ((pass == Pass::DepthWriting && !depthWrite) || (pass == Pass::Effects && depthWrite)) {
+            continue;
+        }
         if (node.shape.mesh == nullptr || opacity <= 0.0f) {
             continue;
         }
@@ -210,7 +214,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             }
             state.maskedTexture = mask;
             state.alphaTest = blended ? DrawState::kTranslucentAlphaTest : 0.0f;
-            state.depthWrite = node.depthWrite && m_depthWrite && !fading;
+            state.depthWrite = depthWrite;
             state.depthTest = node.depthTest;
             state.uvOffset = textureOffset(shape.slots[p]);
             state.uvScale = textureScale(shape.slots[p]);

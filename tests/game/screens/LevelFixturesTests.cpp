@@ -275,6 +275,29 @@ TEST_CASE("Dragon arena vents retain the realm's figures alongside boss-specific
         {fixture.device, fixture.world, fixture.weapons, fixture.effects, fixture.audio, 1});
     const Traps& traps = fixture.fixtures.traps();
     REQUIRE(traps.size() == 10);
+    {
+        ItemFigure fire;
+        const ItemInstance placement;
+        REQUIRE(
+            fire.place(fixture.device, fixture.world.realmItems(), "FLAMEV", placement, nullptr));
+        fire.play(2, true); // ON: flame particles and the ground crack
+        fire.update(1.0f / 30);
+        REQUIRE(fire.particles().field().particleCount() > 0);
+        fixture.device.draws.clear();
+        fire.draw(fixture.device, Mat4{1}, {}, 1, 1, nullptr, TreeModel::Pass::DepthWriting);
+        REQUIRE_FALSE(fixture.device.draws.empty());
+        for (const auto& draw : fixture.device.draws) {
+            CHECK(draw.state.depthWrite);
+        }
+        fixture.device.draws.clear();
+        fire.draw(fixture.device, Mat4{1}, {}, 1, 1, nullptr, TreeModel::Pass::Effects);
+        REQUIRE_FALSE(fixture.device.draws.empty());
+        for (const auto& draw : fixture.device.draws) {
+            CHECK_FALSE(draw.state.depthWrite);
+            CHECK(draw.state.depthTest);
+            CHECK(draw.state.blend == BlendMode::Additive);
+        }
+    }
     for (usize i = 0; i < traps.size(); ++i) {
         const ItemFigure& vent = traps.trap(i).figure;
         REQUIRE(vent.hasFigure());
