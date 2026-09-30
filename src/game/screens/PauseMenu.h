@@ -37,6 +37,7 @@ private:
     void showMain();
     void showManage();
     void showFiles();
+    void showQuit();
     MenuDefinition backdrop() const;
     std::string text(std::string_view id) const;
     GameContext m_context;

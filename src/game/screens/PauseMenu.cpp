@@ -9,6 +9,14 @@
 #include "engine/core/Types.h"
 
 namespace gdl::game {
+namespace {
+// The yes/no OPTMENU records: title scale 1.2, text x -256, SCROLL_A at (-1, 64) 320 by 220.
+constexpr f32 kQuitTitleScale = 1.2f;
+constexpr s32 kQuitTextX = -256;
+constexpr s32 kQuitBackdropY = 64;
+constexpr s32 kQuitBackdropWidth = 320;
+constexpr s32 kQuitBackdropHeight = 220;
+} // namespace
 std::string PauseMenu::text(std::string_view id) const {
     return std::string(m_context.strings != nullptr ? m_context.strings->get(id) : id);
 }
@@ -112,6 +120,25 @@ void PauseMenu::showFiles() {
     menu.scale = 0.5f;
     m_menu.open(menu, m_text, m_screen);
 }
+/** The retail yes/no dialogs (0x8011EB1C "Quit Game?", 0x8011E8E0 "Abort Level?"): a small
+ * centred parchment fading in, with only the title and No then Yes, No first. */
+void PauseMenu::showQuit() {
+    m_page = Page::Quit;
+    auto menu = backdrop();
+    menu.title = text(m_inTower ? "pause.quitConfirm" : "pause.abortConfirm");
+    menu.titleScale = kQuitTitleScale;
+    menu.x = kQuitTextX;
+    menu.backdropX = -1;
+    menu.backdropY = kQuitBackdropY;
+    menu.backdropWidth = kQuitBackdropWidth;
+    menu.backdropHeight = kQuitBackdropHeight;
+    menu.parchmentFont = true;
+    menu.fades = true;
+    menu.prompts = false;
+    menu.playerLabel.clear();
+    menu.items = {{text("pause.no"), 0}, {text("pause.yes"), 1}};
+    m_menu.open(menu, m_text, m_screen);
+}
 PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
     if (!m_open) {
         return PauseOutcome::Running;
@@ -187,31 +214,7 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
     } else if (event.code == 7) {
         return PauseOutcome::Inventory;
     } else if (event.code == 4) {
-        m_page = Page::Quit;
-        auto menu = backdrop();
-        menu.title = text(m_inTower ? "pause.quitConfirm" : "pause.abortConfirm");
-        menu.titleScale = 0.667f;
-        menu.body = {text("files.quitWarning")};
-        menu.bodyY = 215;
-        menu.bodyScale = 0.4f;
-        menu.items = {{text("files.no"), 0}, {text("files.yes"), 1}};
-        if (!m_inTower) {
-            // The retail abort dialog is a small centred parchment, with only
-            // its title and No/Yes. Character-file warnings belong to quitting.
-            menu.titleScale = 1.2f;
-            menu.x = -256;
-            menu.backdropX = -1;
-            menu.backdropY = 64;
-            menu.backdropWidth = 320;
-            menu.backdropHeight = 220;
-            menu.parchmentFont = true;
-            menu.fades = true;
-            menu.prompts = false;
-            menu.playerLabel.clear();
-            menu.body.clear();
-            menu.items = {{text("pause.no"), 0}, {text("pause.yes"), 1}};
-        }
-        m_menu.open(menu, m_text, m_screen);
+        showQuit();
     }
     return PauseOutcome::Running;
 }
