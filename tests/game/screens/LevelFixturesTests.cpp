@@ -139,6 +139,17 @@ TEST_CASE("ice world explosion uses its authored art and poison ring without kno
     REQUIRE(f.effects.count() == 1);
     CHECK(f.effects.effect(0).name == "WORLD_EXP");
     CHECK(f.effects.effect(0).stretch == Vec3{1});
+    f.effects.draw(f.device, Mat4{1}, WorldLighting{});
+    REQUIRE_FALSE(f.device.draws.empty());
+    REQUIRE_FALSE(f.device.draws.front().vertices.empty());
+    const Vec3 firstVertex = f.device.draws.front().vertices.front().position;
+    const auto firstDraws = f.device.draws.size();
+    f.device.draws.clear();
+    f.effects.update(0.3f);
+    f.effects.draw(f.device, Mat4{1}, WorldLighting{});
+    REQUIRE(f.device.draws.size() >= firstDraws);
+    CHECK(glm::distance(f.device.draws.front().vertices.front().position, firstVertex) > 0.1f);
+    f.device.draws.clear();
     CHECK(hits == 1);
     f.fixtures.advanceBlasts(0.49f, f.players, f.events);
     CHECK(hits == 1);

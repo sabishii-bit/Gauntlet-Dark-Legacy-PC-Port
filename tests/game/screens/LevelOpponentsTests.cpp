@@ -1695,6 +1695,124 @@ TEST_CASE("a suicide struck down goes up in a burning blast that reaches the par
     opponents.close();
 }
 
+TEST_CASE("a detonated suicide stops drawing its body but ordinary enemies retain their fall",
+          "[level-opponents][suicide]") {
+    const auto root = test::scratchDirectory("suicide-body-removal");
+    writeMeleeEnemy(root, kGruntKind);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const s32 way = GENERATE(kSuicideWay, kChaseWay);
+    const auto id =
+        enemies.spawn(EnemySpawn{.kind = kGruntKind, .algorithm = way, .placed = true}, {});
+    REQUIRE(id);
+    enemies.draw(device, Mat4{1}, WorldLighting{});
+    REQUIRE_FALSE(device.draws.empty());
+    device.draws.clear();
+    EnemyHit hit;
+    hit.damage = 1000;
+    enemies.hurt(*id, hit);
+    enemies.draw(device, Mat4{1}, WorldLighting{});
+    CHECK(device.draws.empty() == (way == kSuicideWay));
+    const auto bursts = enemies.takeBursts();
+    CHECK(bursts.size() == (way == kSuicideWay ? 1 : 0));
+    device.draws.clear();
+    enemies.update(2, 1.0f / 30, {});
+    enemies.draw(device, Mat4{1}, WorldLighting{});
+    CHECK(device.draws.empty() == (way == kSuicideWay));
+    CHECK(enemies.takeBursts().empty());
+}
+
+TEST_CASE("a running suicide cries audibly and scatters animated fragments when its fuse ends",
+          "[level-opponents][suicide][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/ICE/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("audio/COMMON/sounds.json");
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    EffectTrees effects;
+    AudioMixer mixer(48000);
+    SoundPlayer sound(mixer);
+    LevelSoundscape audio;
+    audio.open(root, &sound, nullptr);
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 12}, 0);
+    players[0].actor.save().progress().health = 1000;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(16));
+    const auto bomber = opponents.enemies().spawn(
+        EnemySpawn{.kind = 16, .tier = kSuicideStrength, .algorithm = 0, .placed = true}, {});
+    REQUIRE(bomber);
+    opponents.enemies().draw(device, Mat4{1}, WorldLighting{});
+    REQUIRE_FALSE(device.draws.empty());
+    device.draws.clear();
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    for (s32 frame = 0; frame < 120 && sound.voiceCount() == 0; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    REQUIRE(opponents.enemies().alive(*bomber));
+    REQUIRE(sound.voiceCount() == 1);
+    std::array<f32, 8192> samples{};
+    mixer.mix(samples);
+    CHECK(std::ranges::any_of(samples, [](f32 value) { return value != 0; }));
+    SECTION("detonates on contact or fuse expiry") {}
+    SECTION("a lethal player hit detonates it instead of dissolving its body") {
+        EnemyHit hit;
+        hit.damage = 1000;
+        hit.player = 0;
+        opponents.enemies().hurt(*bomber, hit);
+        opponents.enemies().draw(device, Mat4{1}, WorldLighting{}, nullptr, &weapons);
+        CHECK(device.draws.empty());
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    for (s32 frame = 0; frame < 300 && opponents.enemies().alive(*bomber); ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    REQUIRE_FALSE(opponents.enemies().alive(*bomber));
+    REQUIRE(sound.voiceCount() >= 2);
+    opponents.enemies().draw(device, Mat4{1}, WorldLighting{}, nullptr, &weapons);
+    CHECK(device.draws.empty());
+    opponents.enemies().drawShadows(device, Mat4{1}, Vec3{0, 10, 20}, WorldLighting{});
+    CHECK(device.draws.empty());
+    const EffectTrees::Effect* fragments = nullptr;
+    for (usize i = 0; i < effects.count(); ++i) {
+        if (effects.effect(i).name == "SUICIDEEXP") {
+            fragments = &effects.effect(i);
+        }
+    }
+    REQUIRE(fragments != nullptr);
+    fragments->model.draw(device, Mat4{1}, fragments->transform(), WorldLighting{},
+                          fragments->pose.matrices());
+    REQUIRE_FALSE(device.draws.empty());
+    REQUIRE_FALSE(device.draws.front().vertices.empty());
+    const Vec3 firstVertex = device.draws.front().vertices.front().position;
+    device.draws.clear();
+    effects.update(0.3f);
+    fragments->model.draw(device, Mat4{1}, fragments->transform(), WorldLighting{},
+                          fragments->pose.matrices());
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(glm::distance(device.draws.front().vertices.front().position, firstVertex) > 0.1f);
+    effects.clear();
+    opponents.close();
+    audio.close();
+    mixer.mix(samples);
+    sound.update();
+}
+
 TEST_CASE("in the town a suicide leaves a poison cloud that turns through its three trees and "
           "gasses the party while it hangs",
           "[level-opponents][suicide][unpacked]") {
