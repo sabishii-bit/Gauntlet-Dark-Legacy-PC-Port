@@ -65,11 +65,29 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
             step(down);
         }
         step(select);
+        // The retail dialog (0x8011EB1C) is the abort dialog's parchment with its own
+        // title: No first, Yes, and nothing else on it.
+        const auto& dialog = menu.menu().definition();
+        CHECK(dialog.title == "Quit Game?");
+        REQUIRE(dialog.items.size() == 2);
+        CHECK(dialog.items[0].text == "No");
+        CHECK(dialog.items[1].text == "Yes");
+        CHECK(dialog.body.empty());
+        CHECK(dialog.playerLabel.empty());
+        CHECK_FALSE(dialog.prompts);
+        CHECK(dialog.parchmentFont);
+        CHECK(dialog.fades);
+        CHECK(dialog.x == -256);
+        CHECK(dialog.backdropY == 64);
+        CHECK(dialog.backdropWidth == 320);
+        CHECK(dialog.backdropHeight == 220);
+        menu.update(1, {});
         CHECK(step(select) == PauseOutcome::Running); // default No
         for (s32 i = 0; i < 4; ++i) {
             step(down);
         }
         step(select);
+        menu.update(1, {});
         step(down);
         CHECK(step(select) == PauseOutcome::Title);
     }

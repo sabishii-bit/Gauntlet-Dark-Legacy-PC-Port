@@ -21,7 +21,6 @@
   "files.overwrite": "REPLACE THIS SAVE?",
   "files.loadConfirm": "LOAD CHARACTER?",
   "files.loadWarning": "THE PARTY RETURNS TO THE TOWER.\nUNSAVED LEVEL PROGRESS IS LOST.",
-  "files.quitWarning": "SAVED CHARACTERS WILL BE UPDATED.\nCHARACTERS WITHOUT A SLOT WILL BE LOST.",
   "files.saved": "CHARACTER SAVED",
   "files.loaded": "CHARACTER LOADED",
   "files.yes": "YES",
