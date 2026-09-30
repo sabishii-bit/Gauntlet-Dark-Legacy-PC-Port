@@ -323,6 +323,7 @@ private:
     void sayWithName(usize index, std::string_view line, f32 wait);
     void updateHazardSurfaces(f32 seconds);
     void launchWeapon(usize index, const Vec3& direction, f32 scale, bool spreads);
+    usize standingCount() const;
     bool isDown(usize index) const {
         return index < m_players.size() && m_players[index].life != PlayerLife::Standing;
     }

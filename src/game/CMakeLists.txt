@@ -79,6 +79,8 @@ add_library(game STATIC
     players/PlayerCapture.cpp
     players/ComboMove.h
     players/ComboMove.cpp
+    screens/PartyCombo.h
+    screens/PartyCombo.cpp
     players/PlayerTransport.h
     players/PlayerTransport.cpp
     players/PlayerAnimator.h

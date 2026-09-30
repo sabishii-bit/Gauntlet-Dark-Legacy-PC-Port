@@ -27,15 +27,20 @@ PartyMotion::Events PlayScene::motionEvents() {
                 },
             .advanceTurbo =
                 [this](usize i, s32 elapsed, f32 duration) {
-                    m_attacks.updateTurbo(i, elapsed, duration, m_players,
-                                          [this](s32 id, usize index) {
-                                              // The meter full, the lesson waits for fifteen in
-                                              // view (pmotion.c 1756).
-                                              if (id != HelpMessages::kUseTurbo ||
-                                                  m_opponents.enemies().inView() >= kTurboCrowd) {
-                                                  postHelp(id, index);
-                                              }
-                                          });
+                    m_attacks.updateTurbo(
+                        i, elapsed, duration, m_players, [this](s32 id, usize index) {
+                            // The meter full, the lesson waits for fifteen in
+                            // view (pmotion.c 1756); the combo's for a party
+                            // of more than one besides (pmotion.c 1760).
+                            const bool crowd = m_opponents.enemies().inView() >= kTurboCrowd;
+                            if (id == HelpMessages::kUseCombo) {
+                                if (crowd && standingCount() > 1) {
+                                    postHelp(id, index);
+                                }
+                            } else if (id != HelpMessages::kUseTurbo || crowd) {
+                                postHelp(id, index);
+                            }
+                        });
                 },
             .thrownImpact = [this](usize i, f32 damage) { hurt(i, damage, HurtKind::Blow, true); },
             .aim =
@@ -70,7 +75,18 @@ PartyMotion::Events PlayScene::motionEvents() {
                     return start->position;
                 }
                 return std::nullopt;
-            }};
+            },
+            .comboImpact =
+                [this](usize flier, usize thrower, f32 blow) {
+                    return m_attacks.comboImpact(flier, thrower, blow, m_players, attackTargets());
+                }};
+}
+
+/** How many of the party stand in the level. */
+usize PlayScene::standingCount() const {
+    return static_cast<usize>(std::ranges::count_if(m_players, [](const PlayerRuntime& player) {
+        return player.life == PlayerLife::Standing;
+    }));
 }
 
 /** Carries out what a member's movement set off: a throw, a swing, a potion, a footstep. */
@@ -103,6 +119,7 @@ void PlayScene::perform(usize i, PartyMotion::Action action) {
         postHelp(HelpMessages::kNowIt, i);
         m_audio.playNamed(kTaggedSound, kTaggedVolume);
         break;
+    case PartyMotion::Action::ComboStart: m_attacks.comboStart(i, m_players); break;
     case PartyMotion::Action::Fallen:
         if (m_device != nullptr) {
             PartyPickups::dropKeys(*m_device, *m_world, m_players[i]);

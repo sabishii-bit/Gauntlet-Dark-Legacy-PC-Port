@@ -31,6 +31,14 @@ void PartyRecords::award(std::span<PlayerRuntime> players, s32 player, s32 amoun
         if (kill && !busy) {
             runtime.turbo.add(TurboMeter::kPerExperience * static_cast<f32>(won));
         }
+        // A combo partner shares in what is won, its meter left alone (AddExp's partner
+        // share, player.c 1962).
+        const s32 partner = runtime.combo.partner;
+        if (runtime.combo.active() && partner >= 0 &&
+            static_cast<usize>(partner) < players.size() &&
+            players[static_cast<usize>(partner)].life == PlayerLife::Standing) {
+            players[static_cast<usize>(partner)].actor.save().progress().experience += won;
+        }
     }
 }
 
