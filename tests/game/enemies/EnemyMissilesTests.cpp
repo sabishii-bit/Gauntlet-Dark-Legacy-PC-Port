@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <vector>
@@ -906,6 +907,78 @@ TEST_CASE("the garm's bolt pierces the players it hurts and the items in its way
     }
     CHECK(times == 4);
     CHECK(slow.missile(0).lived == Approx(1.0f).margin(0.01f));
+}
+
+TEST_CASE("the brood's death shot is held where it starts for its burst, then flies at twenty a "
+          "second through players, walls and items for three seconds",
+          "[game][enemies][death-shot]") {
+    // StartEnemyDeathFX: velocity 20 (0x803480F0), collision radius and morph time 3
+    // (0x803480F8), power 50 (0x803480FC), damage type 0x100020, effect flags 0x8C01 (no
+    // world or item collision); the morph flag holds it still until DEATHFX2 takes over.
+    EnemyMissileKind kind = EnemyMissileKind::deathShot();
+    CHECK(kind.slot == EnemyMissileKind::kDeathShot);
+    CHECK(kind.damage == 50.0f);
+    CHECK(kind.speed == 20.0f);
+    CHECK(kind.radius == 3.0f);
+    CHECK(kind.weight == 0.0f);
+    CHECK(kind.throughWorld);
+    CHECK(kind.pierces());
+    CHECK(kind.hitFlags() == 0x100020u);
+    kind.held = 0.5f;
+    // A floor with a wall across it at z 10, a chest at z 15, players on the corpse, at 20
+    // and at 40.
+    std::vector<CollisionTriangle> level = floor();
+    level.push_back(triangle({-12, 0, 10}, {12, 8, 10}, {12, 0, 10}, {0, 0, -1}));
+    level.push_back(triangle({-12, 0, 10}, {-12, 8, 10}, {12, 8, 10}, {0, 0, -1}));
+    WorldCollision collision;
+    collision.build(level);
+    Obstacle chest;
+    chest.centre = Vec3{0, 0, 15};
+    chest.halfAcross = 2.0f;
+    chest.halfAlong = 1.0f;
+    chest.height = 6.0f;
+    const std::array party{playerAt({0, 0, 2}, 0), playerAt({0, 0, 20}, 1),
+                           playerAt({0, 0, 40}, 2)};
+    EnemyMissiles missiles;
+    missiles.launch(kind, {0, 0, 0}, {0, 0, 1}, 1, nullptr, -1);
+    REQUIRE(missiles.count() == 1);
+    CHECK(missiles.missile(0).heldLeft == 0.5f);
+    CHECK(missiles.missile(0).secondsLeft == 3.5f);
+    std::vector<EnemyMissileHit> hits;
+    const auto run = [&](s32 frames) {
+        for (s32 frame = 0; frame < frames; ++frame) {
+            missiles.update(kStep, &collision, party, {}, std::array{MissileStop::of(chest)});
+            const auto taken = missiles.takeHits();
+            hits.insert(hits.end(), taken.begin(), taken.end());
+        }
+    };
+    run(15); // half a second: held, striking the one standing in it every quarter second
+    REQUIRE(missiles.count() == 1);
+    CHECK(missiles.missile(0).position == Vec3{0, 0, 0});
+    CHECK(hits.size() == 2);
+    for (const EnemyMissileHit& hit : hits) {
+        CHECK(hit.player == 0);
+        CHECK(hit.damage == 50.0f);
+        CHECK(hit.flags == 0x100020u);
+        CHECK_FALSE(hit.worldContact);
+    }
+    run(15); // through the wall
+    REQUIRE(missiles.count() == 1);
+    CHECK(missiles.missile(0).position.z == Approx(10.0f).margin(0.05f));
+    run(60); // past the chest and both players
+    REQUIRE(missiles.count() == 1);
+    CHECK(missiles.missile(0).position.z == Approx(50.0f).margin(0.05f));
+    // Each is hurt as it is reached and again a quarter of a second on, still within it:
+    // three units of shot and one of player make eight of overlap, two fifths of a second.
+    const auto struck = [&](s32 player) {
+        return std::ranges::count_if(
+            hits, [&](const EnemyMissileHit& hit) { return hit.player == player; });
+    };
+    CHECK(struck(1) == 2);
+    CHECK(struck(2) == 2);
+    CHECK(std::ranges::none_of(hits, [](const EnemyMissileHit& hit) { return hit.worldContact; }));
+    run(16); // its three seconds of flight are up
+    CHECK(missiles.count() == 0);
 }
 
 TEST_CASE("a standing safe rock takes a missile's blow, and stops even the garm's bolt while it "

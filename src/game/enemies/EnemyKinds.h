@@ -7,6 +7,8 @@
 #include "engine/assets/WorldData.h"
 #include "engine/core/Types.h"
 
+#include "game/enemies/EnemyAnimator.h"
+
 namespace gdl::game {
 
 /** What is known of a kind of enemy before any is seen: its size, pace, strength and worth. */
@@ -26,6 +28,12 @@ struct EnemyKind {
     s32 experienceKill; ///< and by the one that kills it
     s32 algorithm;      ///< the way it goes about when a generator gives it none
     f32 turnRate;       ///< radians a tick
+    /** What the body does when nothing else is asked of it: the stance, or for the scorpion
+     * the walk (do_enemies' default action, enemy.c 5262). */
+    EnemyAction idle = EnemyAction::Ready;
+    /** Rooted where it stands, as the acid blob is (fn_8004DC2C): a knock-back leaves it as it
+     * was and a floor hit throws it down without moving it. */
+    bool rooted = false;
 
     /** The tier's share of the full health: a third of it a tier, up to three tiers. */
     f32 healthAtTier(s32 tier) const;

@@ -646,6 +646,208 @@ std::filesystem::path routingAssets() {
     return root;
 }
 
+/** An acid blob of a stance and the two hit reactions. */
+std::filesystem::path blobAssets() {
+    const auto root = test::scratchDirectory("enemy-blob");
+    const auto archive = root / "MONSTERS/ACI";
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"ACI1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":10,"rate":30},
+                     {"name":"HIT1","frames":6,"rate":30},
+                     {"name":"HIT2","frames":12,"rate":30}]}]})");
+    return root;
+}
+
+TEST_CASE("a placement sees as far as it says at the level's scale, else thirty, and Death "
+          "without end",
+          "[game][enemies][enemy-sight]") {
+    // SetItem (items.c 5566-5569) against init_enemy_vars' thirty times the level's visrad.
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    EnemyScales scales;
+    scales.sight = 1.5f;
+    enemies.open(device, routingAssets(), nullptr, 6, scales, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn told;
+    told.algorithm = kLurkWay;
+    told.placed = true;
+    told.sight = 12.0f;
+    EnemySpawn untold = told;
+    untold.sight = 0.0f;
+    untold.position = Vec3{10.0f, 0.0f, 0.0f};
+    const auto near = enemies.spawn(told, {});
+    const auto far = enemies.spawn(untold, {});
+    REQUIRE(near.has_value());
+    REQUIRE(far.has_value());
+    CHECK(enemies.sightOf(*near) == Approx(18.0f));
+    CHECK(enemies.sightOf(*far) == Approx(45.0f));
+    // A lurker wakes only for a player within its sight: twenty off, the short-sighted one
+    // stands where it was placed while the other comes.
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 20.0f})};
+    for (s32 i = 0; i < 120; ++i) {
+        enemies.update(kTicks, kStep, party);
+    }
+    CHECK(enemies.positionOf(*near) == told.position);
+    CHECK(enemies.positionOf(*far) != untold.position);
+    CHECK(enemies.animatorOf(*near)->action() == EnemyAction::Ready);
+    CHECK(enemies.animatorOf(*far)->action() != EnemyAction::Ready);
+    // What a generator breeds is given no sight of its own.
+    EnemySpawn bred;
+    bred.generator = 0;
+    bred.position = Vec3{-20.0f, 0.0f, 0.0f};
+    const auto born = enemies.spawn(bred, {});
+    REQUIRE(born.has_value());
+    CHECK(enemies.sightOf(*born) == Approx(45.0f));
+}
+
+TEST_CASE("a placement of ordinary strength stands still thirty ticks on appearing; the "
+          "variants, a sleeper and what generators breed do not",
+          "[game][enemies][enemy-stun]") {
+    // SetItem, items.c 5560-5564: stun_timer 30 under strength four, unless it sleeps first.
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, routingAssets(), nullptr, 10, {}, 3);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    const auto placedAt = [&](s32 tier, f32 x, bool asleep = false) {
+        EnemySpawn spawn;
+        spawn.tier = tier;
+        spawn.algorithm = kChaseWay;
+        spawn.placed = true;
+        spawn.asleep = asleep;
+        spawn.position = Vec3{x, 0.0f, 0.0f};
+        const auto id = enemies.spawn(spawn, {});
+        REQUIRE(id.has_value());
+        return *id;
+    };
+    const s32 ordinary = placedAt(2, 0.0f);
+    const s32 strongest = placedAt(3, 5.0f);
+    const s32 archer = placedAt(kArcherStrength, 10.0f);
+    const s32 suicide = placedAt(kSuicideStrength, 15.0f);
+    const s32 sleeper = placedAt(1, 20.0f, true);
+    EnemySpawn bred;
+    bred.tier = 1;
+    bred.algorithm = kChaseWay;
+    bred.generator = 0;
+    bred.position = Vec3{-10.0f, 0.0f, 0.0f};
+    const auto born = enemies.spawn(bred, {});
+    REQUIRE(born.has_value());
+    CHECK(enemies.stunTicksOf(ordinary) == Enemies::kPlacedStun);
+    CHECK(enemies.stunTicksOf(strongest) == Enemies::kPlacedStun);
+    CHECK(enemies.stunTicksOf(archer) == 0);
+    CHECK(enemies.stunTicksOf(suicide) == 0);
+    CHECK(enemies.stunTicksOf(sleeper) == 0);
+    CHECK(enemies.stunTicksOf(*born) == 0);
+    enemies.wake(sleeper);
+    CHECK(enemies.stunTicksOf(sleeper) == 0);
+    // Through its thirty ticks the stunned one stays put with a player before it, and the
+    // bred one is already on its way.
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 20.0f})};
+    const Vec3 start = enemies.positionOf(ordinary);
+    const Vec3 bornAt = enemies.positionOf(*born);
+    for (s32 i = 0; i < Enemies::kPlacedStun / kTicks; ++i) {
+        enemies.update(kTicks, kStep, party);
+        CHECK(enemies.positionOf(ordinary) == start);
+    }
+    CHECK(enemies.stunTicksOf(ordinary) == 0);
+    CHECK(enemies.positionOf(*born) != bornAt);
+    enemies.update(kTicks, kStep, party);
+    CHECK(enemies.positionOf(ordinary) != start);
+}
+
+TEST_CASE("the acid blob is rooted: a knock-back leaves it as it was and a floor hit throws it "
+          "down where it stands",
+          "[game][enemies][enemy-rooted]") {
+    // fn_8004DC2C's E_ACID cases (enemy.c 5573-5610): no flinch or push for a knock-back, a
+    // knock-down with a push of nought.
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, blobAssets(), nullptr, 4, {}, 3);
+    constexpr s32 kAcidKind = 21;
+    REQUIRE(enemies.loadKind(kAcidKind));
+    EnemySpawn spawn;
+    spawn.kind = kAcidKind;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 20.0f})};
+    enemies.update(kTicks, kStep, party);
+    EnemyHit knock;
+    knock.damage = 1.0f;
+    knock.flags = EnemyHit::kKnockBack;
+    knock.player = 0;
+    knock.direction = Vec3{0.0f, 0.0f, -1.0f};
+    enemies.hurt(*id, knock);
+    enemies.update(kTicks, kStep, party);
+    CHECK(enemies.animatorOf(*id)->action() == EnemyAction::Ready);
+    CHECK(enemies.pushCountOf(*id) == 0);
+    CHECK(enemies.healthOf(*id) < enemyKind(kAcidKind).healthAtTier(1));
+    EnemyHit floor = knock;
+    floor.flags = EnemyHit::kKnockDown;
+    enemies.hurt(*id, floor);
+    enemies.update(kTicks, kStep, party);
+    CHECK(enemies.animatorOf(*id)->action() == EnemyAction::HitReact2);
+    CHECK(enemies.pushCountOf(*id) == 0);
+    for (s32 i = 0; i < 10; ++i) {
+        enemies.update(kTicks, kStep, party);
+        CHECK(enemies.positionOf(*id) == spawn.position);
+    }
+}
+
+TEST_CASE("the garm brood sends its death shot from its corpse at its player as the body goes",
+          "[game][enemies][unpacked][death-shot]") {
+    // kill_enemy's fn_8004F1DC: toward its target, else the first standing player; nobody
+    // standing, nothing.
+    test::unpackedOrSkip("MONSTERS/GRM/animations.json");
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 4, {}, 5);
+    REQUIRE(enemies.loadKind(kGarmBroodKind));
+    EnemySpawn spawn;
+    spawn.kind = kGarmBroodKind;
+    spawn.tier = 3;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    const std::vector<EnemyView> party{playerAt(Vec3{0.0f, 0.0f, 25.0f}, 2)};
+    for (s32 i = 0; i < 10; ++i) {
+        enemies.update(kTicks, kStep, party);
+    }
+    EnemyHit slay;
+    slay.damage = 1000.0f;
+    slay.player = 2;
+    enemies.hurt(*id, slay);
+    enemies.update(kTicks, kStep, party);
+    REQUIRE(enemies.dying(*id));
+    CHECK(enemies.takeDeathShots().empty()); // not before the body is gone
+    const Vec3 lay = enemies.positionOf(*id);
+    REQUIRE(stepsUntil(enemies, party, [&] { return enemies.count() == 0; }, 300) < 300);
+    const auto shots = enemies.takeDeathShots();
+    REQUIRE(shots.size() == 1);
+    CHECK(shots[0].enemy == *id);
+    CHECK(shots[0].kind == kGarmBroodKind);
+    CHECK(glm::distance(shots[0].position, lay) < 1.0f);
+    const Vec3 way = glm::normalize(party[0].position - shots[0].position);
+    CHECK(glm::distance(shots[0].direction, way) < 0.01f);
+    CHECK(enemies.takeDeathShots().empty());
+    // With nobody standing there is nothing to aim at.
+    const auto again = enemies.spawn(spawn, {});
+    REQUIRE(again.has_value());
+    enemies.update(kTicks, kStep, party);
+    enemies.hurt(*again, slay);
+    std::vector<EnemyView> fallen = party;
+    fallen[0].hidden = true;
+    REQUIRE(stepsUntil(enemies, fallen, [&] { return enemies.count() == 0; }, 300) < 300);
+    CHECK(enemies.takeDeathShots().empty());
+}
+
 TEST_CASE("the warlock comes and goes: seen a while, faded out, unseen a while, back again",
           "[game][enemies][veil]") {
     const auto root = test::scratchDirectory("enemy-veil");
@@ -913,6 +1115,11 @@ TEST_CASE("an item that cancels a walking step reports a blocked body to its min
     REQUIRE(id.has_value());
     const std::array obstacles{
         Obstacle{.centre = Vec3{0, 0, 3}, .halfAcross = 4, .halfAlong = 1, .height = 8}};
+    // A placement stands still its first thirty ticks, touching nothing.
+    while (enemies.stunTicksOf(*id) > 0) {
+        enemies.update(kTicks, kStep, {}, obstacles);
+        CHECK_FALSE(enemies.blockedOf(*id));
+    }
     enemies.update(kTicks, kStep, {}, obstacles);
     CHECK(enemies.positionOf(*id) == spawn.position);
     CHECK(enemies.bumpedWallOf(*id));

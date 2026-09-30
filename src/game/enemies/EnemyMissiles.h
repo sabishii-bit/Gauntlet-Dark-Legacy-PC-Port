@@ -21,10 +21,12 @@ namespace gdl::game {
 
 /** What the original's table says of a kind's missile: its harm, pace, size and flight. */
 struct EnemyMissileKind {
-    static constexpr s32 kArrow = 0; ///< the slot a shot takes
-    static constexpr s32 kBomb = 1;  ///< and a lob
-    static constexpr s32 kBolt = 2;  ///< and a kind's own shot
+    static constexpr s32 kArrow = 0;     ///< the slot a shot takes
+    static constexpr s32 kBomb = 1;      ///< and a lob
+    static constexpr s32 kBolt = 2;      ///< and a kind's own shot
+    static constexpr s32 kDeathShot = 3; ///< the garm brood's burst, with no sound or spark
     static constexpr u32 kKnockBack = 0x10;
+    static constexpr u32 kKnockDown = 0x20;
     static constexpr u32 kArrowHit = 0x20000; ///< DMG_ARROW: how a player hears the hit
     static constexpr u32 kBoltHit = 0x40000;  ///< DMG_FBALL
     static constexpr u32 kPierces = 0x100000; ///< DMG_SUPER: through players and items
@@ -37,6 +39,12 @@ struct EnemyMissileKind {
     f32 burstRadius = 0.0f;      ///< of the blast it ends in, none for nought
     Vec3 spin{0.0f, 0.0f, 0.0f}; ///< turns a second about each axis
     f32 weight = 30.0f;          ///< its fall a second a second: nought flies flat
+    /** Seconds it stays where it starts before it flies, striking what stands in it meanwhile
+     * (the brood's death burst, held for its sequence before its morph moves). */
+    f32 held = 0.0f;
+    /** Whether it goes through walls, floors and the level's items alike (an effect without
+     * the world-collision flag). */
+    bool throughWorld = false;
 
     /** The medium kinds' shot and lob, as the original's table has them. */
     static EnemyMissileKind arrow();
@@ -45,6 +53,10 @@ struct EnemyMissileKind {
      * the garm's, each its own. */
     static EnemyMissileKind bolt(f32 damage, f32 speed, f32 radius, u32 flags = 0,
                                  f32 weight = 1.0f);
+    /** The garm brood's death shot (StartEnemyDeathFX): twenty a second and weightless for
+     * three seconds, three units wide, fifty of harm with knock-down, through the players it
+     * hurts and through the world; `held` is the launcher's, the burst's length. */
+    static EnemyMissileKind deathShot();
     /** The flags a player is hurt with: the kind's own and the slot's (arrow or bolt). */
     u32 hitFlags() const;
     /** Whether it goes through the players it hurts and the items in its way (the garm's). */
@@ -87,6 +99,7 @@ struct EnemyMissile {
     s32 shooter = -1;
     f32 secondsLeft = 0.0f;
     f32 lived = 0.0f;
+    f32 heldLeft = 0.0f;    ///< seconds it still stays where it started
     f32 scale = 1.0f;       ///< the enemy shrinkers' scale as it was thrown
     bool reflected = false; ///< sent back by a player's armour: it now strikes the swarm
     /** Players a piercing missile has hurt, and how long it leaves each alone. */
@@ -161,7 +174,7 @@ struct RockHit {
  */
 class EnemyMissiles {
 public:
-    static constexpr f32 kLife = 3.0f;     ///< StartMissile's lifetime
+    static constexpr f32 kLife = 3.0f;     ///< StartMissile's lifetime, and a death shot's flight
     static constexpr f32 kGravity = 40.0f; ///< the fall a straight lobVelocity assumes
     static constexpr f32 kLeastFlight = 0.3f;
     static constexpr f32 kLead = 3.0f;       ///< how far ahead of its launch point it starts

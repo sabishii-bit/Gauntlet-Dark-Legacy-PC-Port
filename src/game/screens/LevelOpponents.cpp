@@ -45,6 +45,8 @@ constexpr s32 kBossIds = 4000;
 constexpr std::string_view kSuicideBlast = "EXPLOSION";
 constexpr std::string_view kSuicideRing = "EXPRING";
 constexpr std::string_view kSuicideSmoke = "SUICIDEEXP";
+constexpr std::string_view kDeathBurst = "DEATHFX1"; ///< the brood's burst, held where it lay
+constexpr std::string_view kDeathShot = "DEATHFX2";  ///< and the shot that flies on from it
 constexpr std::array<std::string_view, 3> kSuicideCloud{"POISONEXP1", "POISONEXP2", "POISONEXP3"};
 constexpr f32 kCloudHold = 2.0f; ///< the cloud's second stage lasts this
 constexpr f32 kBlastRadius = 6.0f;
@@ -326,6 +328,60 @@ void LevelOpponents::advanceClouds() {
     });
 }
 
+/** The garm brood's death shot (StartEnemyDeathFX): its archive's DEATHFX1 bursts where the
+ * corpse lay and is held there for its sequence, striking what stands in it, then DEATHFX2
+ * flies on from it at the player for three seconds; the harm rides an unseen missile, held as
+ * long as the burst and then flying with the shot, through players, walls and items alike. */
+void LevelOpponents::fireDeathShot(const EnemyDeathShot& shot) {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    EnemyMissileKind kind = EnemyMissileKind::deathShot();
+    DeathShot pending;
+    pending.kind = shot.kind;
+    pending.position = shot.position;
+    pending.velocity = shot.direction * kind.speed;
+    ItemArchive* archive = m_enemies.archive(shot.kind);
+    if (archive != nullptr && archive->trees.find(kDeathBurst).has_value()) {
+        pending.burst = m_resources->effects.startSet(m_resources->device, *archive, kDeathBurst,
+                                                      shot.position, EffectTrees::Setting{});
+        if (pending.burst != 0) {
+            m_cueEffects.push_back(pending.burst);
+            kind.held = m_resources->effects.remaining(pending.burst).value_or(0.0f);
+        }
+    }
+    m_enemyMissiles.launch(kind, shot.position, shot.position + shot.direction, 1.0f, nullptr, -1);
+    m_deathShots.push_back(pending);
+}
+
+/** Once a death shot's burst has played out, its shot flies on from where it was, holding its
+ * last pose for its three seconds (SfxSetMorph, ChangeEffect: oneshot). */
+void LevelOpponents::advanceDeathShots() {
+    if (!m_resources.has_value()) {
+        return;
+    }
+    for (DeathShot& shot : m_deathShots) {
+        if (shot.burst != 0 && m_resources->effects.playing(shot.burst)) {
+            continue;
+        }
+        shot.flying = true;
+        ItemArchive* archive = m_enemies.archive(shot.kind);
+        if (archive == nullptr || !archive->trees.find(kDeathShot).has_value()) {
+            continue;
+        }
+        EffectTrees::Setting setting;
+        setting.velocity = shot.velocity;
+        setting.seconds = EnemyMissiles::kLife;
+        setting.loop = false;
+        const u32 id = m_resources->effects.startSet(m_resources->device, *archive, kDeathShot,
+                                                     shot.position, setting);
+        if (id != 0) {
+            m_cueEffects.push_back(id);
+        }
+    }
+    std::erase_if(m_deathShots, [](const DeathShot& shot) { return shot.flying; });
+}
+
 Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from,
                                      const Vec3& to) const {
     auto bodies = m_enemies.targets();
@@ -375,6 +431,7 @@ void LevelOpponents::close() {
     m_generatorRewards.clear();
     m_enemyMissiles.clear();
     m_clouds.clear();
+    m_deathShots.clear();
     m_yells.clear();
     m_hearers.clear();
     m_critters.close();
@@ -525,6 +582,7 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         }
         spawn.position = instance.position;
         spawn.direction = Vec3{stood[2][0], 0.0f, stood[2][2]};
+        spawn.sight = placement.sight;
         spawn.placed = true;
         spawn.priority = EnemySpawn::Priority::Visible;
         spawn.asleep = strength == 0 && *kind != kDeathKind;
@@ -846,6 +904,10 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         explodeSuicide(burst);
     }
     advanceClouds();
+    for (const EnemyDeathShot& shot : m_enemies.takeDeathShots()) {
+        fireDeathShot(shot);
+    }
+    advanceDeathShots();
     events.settleBlasts();
     updateStatues(ticks, seconds, players);
     m_critters.update(ticks, seconds, views, timeStopped, critterObstacles(walkedInto));

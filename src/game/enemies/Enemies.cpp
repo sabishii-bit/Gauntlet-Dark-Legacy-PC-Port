@@ -186,6 +186,7 @@ void Enemies::close() {
     m_cues.clear();
     m_feedback.clear();
     m_deathEvents.clear();
+    m_deathShots.clear();
     m_tagged.clear();
     m_device = nullptr;
     m_collision = nullptr;
@@ -433,7 +434,13 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     enemy.radius = kind.radius;
     enemy.height = kind.height;
     enemy.reach = 0.5f * kind.height;
-    enemy.sight = kBaseSight * m_scales.sight;
+    // A placement sees as far as it says, else thirty, at the level's scale (SetItem,
+    // init_enemy_vars); what a generator breeds always thirty.
+    enemy.sight = (spawn.sight > 0.0f ? spawn.sight : kBaseSight) * m_scales.sight;
+    // A placement of ordinary strength stands still thirty ticks on appearing (SetItem, items.c
+    // 5564; do_enemy_move zeroes its step): not the variants, nor one that sleeps first.
+    enemy.stunTicks =
+        spawn.placed && !spawn.asleep && spawn.tier < kArcherStrength ? kPlacedStun : 0;
     // Death alone is not scaled by the level; the swarm has a third of its kind's health a
     // tier, and hits softer as it loses its kind's full share.
     const f32 scale = spawn.kind != kDeathKind ? m_scales.health : 1.0f;
@@ -449,7 +456,6 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     if (spawn.kind == kDeathKind) {
         enemy.sight = 100000.0f;
         enemy.endurance = spawn.placed ? 1 : 0;
-        enemy.stunTicks = spawn.placed ? 30 : 0;
     }
 }
 
@@ -612,6 +618,9 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
                 !enemy.deathSkin.empty() &&
                 enemy.deathSeconds * kDeathSkinRate >= static_cast<f32>(enemy.deathSkinFrames);
             if (dissolved || enemy.animator.dead() || !enemy.animator.reacting()) {
+                if (enemy.kind == kGarmBroodKind) {
+                    aimDeathShot(enemy, i, players);
+                }
                 die(enemy);
             }
             continue;
@@ -646,6 +655,9 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             decayPush(enemy, seconds);
             continue;
         }
+        // The tick's default action (do_enemies' daction): the stance, or for the scorpion
+        // the walk, which then also refuses the stance and, as loud, a run.
+        enemy.animator.request(enemyKind(enemy.kind).idle);
         think(enemy, i, ticks, players, obstacles);
         if (enemy.kind == kDeathKind) {
             drain(enemy, i, ticks, players);
@@ -892,13 +904,20 @@ void Enemies::react(Enemy& enemy) { // NOLINT(readability-convert-member-functio
     }
     const bool floors = (enemy.hurtFlags & EnemyHit::kFloors) != 0 ||
                         (enemy.hurtPending > 10.0f && (enemy.hurtFlags & EnemyHit::kMagic) != 0);
+    // A rooted kind (the acid blob) is thrown down where it stands and never shoved; a
+    // knock-back alone leaves it as it was (fn_8004DC2C's E_ACID cases).
+    const bool rooted = enemyKind(enemy.kind).rooted;
     f32 scale = 0.0f;
     if (floors) {
         enemy.animator.request(EnemyAction::HitReact2);
-        scale = enemy.reach <= kKnockBackHeight ? 40.0f : 20.0f;
+        if (!rooted) {
+            scale = enemy.reach <= kKnockBackHeight ? 40.0f : 20.0f;
+        }
     } else if ((enemy.hurtFlags & EnemyHit::kKnockBack) != 0) {
-        enemy.animator.request(EnemyAction::HitReact1);
-        scale = 8.0f;
+        if (!rooted) {
+            enemy.animator.request(EnemyAction::HitReact1);
+            scale = 8.0f;
+        }
     } else {
         enemy.animator.request(EnemyAction::HitReact1);
     }
@@ -1040,9 +1059,6 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
  * turn toward it, the action asked of the animator, and perhaps a change of mind. */
 void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players,
                     std::span<const Obstacle> obstacles) {
-    if (enemy.stunTicks > 0) {
-        enemy.stunTicks -= ticks;
-    }
     MindSense sensed = sense(enemy, slot, ticks, players, obstacles);
     sensed.random = m_random();
     sensed.tier = enemy.tier;
@@ -1143,12 +1159,17 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
 void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
                    std::span<const EnemyView> players, std::span<const Obstacle> obstacles) {
     Vec3 translation = step;
-    // Nothing of its own while stunned, reacting or swinging (a running attack runs on); a
-    // push moves it regardless.
+    // Nothing of its own while stunned (the stun running down with the step it stops,
+    // do_enemy_move), reacting or swinging (a running attack runs on); a push moves it
+    // regardless.
+    const bool stunned = enemy.stunTicks > 0;
+    if (stunned) {
+        enemy.stunTicks -= ticks;
+    }
     const EnemyAction doing = enemy.animator.action();
     const bool runningAttack = doing == EnemyAction::RunAttack || doing == EnemyAction::RunAttack2;
-    if (enemy.stunTicks > 0 || enemy.animator.reacting() ||
-        (enemy.animator.swinging() && !runningAttack) || enemy.animator.entering()) {
+    if (stunned || enemy.animator.reacting() || (enemy.animator.swinging() && !runningAttack) ||
+        enemy.animator.entering()) {
         translation = Vec3{0.0f, 0.0f, 0.0f};
     }
     translation += enemy.push * seconds;
@@ -1355,6 +1376,36 @@ std::vector<s32> Enemies::takeTagged() {
     std::vector<s32> out;
     out.swap(m_tagged);
     return out;
+}
+
+std::vector<EnemyDeathShot> Enemies::takeDeathShots() {
+    std::vector<EnemyDeathShot> out;
+    out.swap(m_deathShots);
+    return out;
+}
+
+void Enemies::aimDeathShot(const Enemy& enemy, s32 slot, std::span<const EnemyView> players) {
+    const EnemyView* at = viewOf(players, enemy.target);
+    if (at == nullptr) {
+        for (const EnemyView& view : players) {
+            if (!view.hidden) {
+                at = &view;
+                break;
+            }
+        }
+    }
+    if (at == nullptr) {
+        return;
+    }
+    EnemyDeathShot shot;
+    shot.enemy = slot;
+    shot.kind = enemy.kind;
+    shot.position = enemy.position;
+    const Vec3 way = at->position - enemy.position;
+    const f32 length = glm::length(way);
+    shot.direction =
+        length > 0.001f ? way / length : Vec3{std::sin(enemy.yaw), 0.0f, std::cos(enemy.yaw)};
+    m_deathShots.push_back(shot);
 }
 
 void Enemies::die(Enemy& enemy) {
@@ -1688,6 +1739,15 @@ s32 Enemies::algorithmOf(s32 id) const {
 s32 Enemies::pushCountOf(s32 id) const {
     return m_enemies[static_cast<usize>(id)].pushes;
 }
+
+f32 Enemies::sightOf(s32 id) const {
+    return alive(id) ? m_enemies[static_cast<usize>(id)].sight : 0.0f;
+}
+
+s32 Enemies::stunTicksOf(s32 id) const {
+    return alive(id) ? std::max(0, m_enemies[static_cast<usize>(id)].stunTicks) : 0;
+}
+
 s32 Enemies::variantOf(s32 id) const {
     return m_enemies[static_cast<usize>(id)].variant;
 }

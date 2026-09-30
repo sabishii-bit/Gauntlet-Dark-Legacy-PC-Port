@@ -55,6 +55,17 @@ TEST_CASE("the enemy kinds are known by name, in tiers of health", "[game][enemi
     REQUIRE(enemyKind(99).name == enemyKind(kEnemyKindCount - 1).name);
 }
 
+TEST_CASE("the scorpion alone walks when nothing else is asked, and the acid blob alone is rooted",
+          "[game][enemies]") {
+    // do_enemies' default action (enemy.c 5262) and fn_8004DC2C's E_ACID cases.
+    for (s32 kind = 0; kind < kEnemyKindCount; ++kind) {
+        CHECK(enemyKind(kind).idle == (kind == 0 ? EnemyAction::Walk : EnemyAction::Ready));
+        CHECK(enemyKind(kind).rooted == (kind == 21));
+    }
+    CHECK(enemyKindOf("SCO") == 0);
+    CHECK(enemyKindOf("ACI") == 21);
+}
+
 TEST_CASE("a level breeds its roster's kinds for the classes its generators name",
           "[game][enemies]") {
     // The fields: zombies for the medium, maggots for the small, and no large at all.

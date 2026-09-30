@@ -140,6 +140,22 @@ TEST_CASE("an enemy walks in, is asked by priority, and lands its blow as the sw
     REQUIRE(until >= 5);
 }
 
+TEST_CASE("a walk pending as the tick's default refuses the stance and, as loud, a run",
+          "[game][enemies][animation]") {
+    // The scorpion's default action is the walk (do_enemies), which RequestEnemyAction's
+    // priorities then hold against the stance and a run, though not against an attack.
+    const TreeInfo tree = gruntTree();
+    EnemyAnimator animator;
+    REQUIRE(animator.bind(tree, true));
+    animator.request(Action::Walk);
+    animator.request(Action::Ready);
+    CHECK(animator.requested() == Action::Walk);
+    animator.request(Action::Run);
+    CHECK(animator.requested() == Action::Walk);
+    animator.request(Action::Attack);
+    CHECK(animator.requested() == Action::Attack);
+}
+
 TEST_CASE("a body idling after a throw refuses to attack, and a tree without a stance is refused",
           "[game][enemies][animation]") {
     TreeInfo tree = gruntTree();

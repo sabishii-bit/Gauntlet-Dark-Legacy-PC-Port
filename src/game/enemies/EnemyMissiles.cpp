@@ -106,6 +106,21 @@ EnemyMissileKind EnemyMissileKind::bolt(f32 damage, f32 speed, f32 radius, u32 f
     return kind;
 }
 
+EnemyMissileKind EnemyMissileKind::deathShot() {
+    constexpr f32 kDamage = 50.0f; ///< 0x803480FC
+    constexpr f32 kSpeed = 20.0f;  ///< 0x803480F0
+    constexpr f32 kRadius = 3.0f;  ///< 0x803480F8
+    EnemyMissileKind kind;
+    kind.slot = kDeathShot;
+    kind.flags = kPierces | kKnockDown; // SetEnemyDeathParams' 0x100020
+    kind.damage = kDamage;
+    kind.speed = kSpeed;
+    kind.radius = kRadius;
+    kind.weight = 0.0f;
+    kind.throughWorld = true;
+    return kind;
+}
+
 u32 EnemyMissileKind::hitFlags() const {
     switch (slot) {
     case kArrow: return flags | kArrowHit;
@@ -239,6 +254,10 @@ Vec3 EnemyMissiles::heading(const EnemyMissileKind& kind, const Vec3& from, cons
 }
 
 EnemyMissileKind EnemyMissiles::thrown(const EnemyMissileKind& kind) const {
+    // Only what EnemyStartMissile throws is thrown small; a death shot is its own size.
+    if (kind.slot == EnemyMissileKind::kDeathShot) {
+        return kind;
+    }
     EnemyMissileKind out = kind;
     out.damage = EnemyShrink::harmDealt(m_shrink, kind.damage);
     return out;
@@ -275,7 +294,8 @@ bool EnemyMissiles::launch(const EnemyMissileKind& kind, const EnemyMissileLaunc
     missile.velocity = way * speed;
     missile.model = launch.model;
     missile.shooter = launch.shooter;
-    missile.secondsLeft = kLife;
+    missile.secondsLeft = kLife + kind.held;
+    missile.heldLeft = kind.held;
     m_missiles.push_back(missile);
     return true;
 }
@@ -288,7 +308,8 @@ void EnemyMissiles::launch(const EnemyMissileKind& kind, const Vec3& from, const
     missile.position = from;
     missile.model = model;
     missile.shooter = shooter;
-    missile.secondsLeft = kLife;
+    missile.secondsLeft = kLife + kind.held;
+    missile.heldLeft = kind.held;
     const f32 speed = kind.speed * std::max(speedScale, 0.01f);
     if (kind.slot != EnemyMissileKind::kBolt && kind.weight > 0.0f) {
         // Exactly onto the aim under its own weight.
@@ -484,13 +505,18 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
             // Bound travel as well as time: the world collider tests overlaps, not segments.
             const f32 speedBound = glm::length(missile.velocity) + gravity * kSimulationStep;
             const f32 spatialStep = std::max(radius * 0.5f, kLeastSpatialStep);
-            const f32 dt =
-                std::min({remaining, kSimulationStep, spatialStep / std::max(speedBound, 1.0f)});
+            // Held where it started, it stays put for the while, striking what stands in it.
+            const bool resting = missile.heldLeft > 0.0f;
+            const f32 dt = resting ? std::min({remaining, kSimulationStep, missile.heldLeft})
+                                   : std::min({remaining, kSimulationStep,
+                                               spatialStep / std::max(speedBound, 1.0f)});
             const Vec3 from = missile.position;
-            const Vec3 acceleration{0, -gravity, 0};
-            const Vec3 to = from + missile.velocity * dt + acceleration * (0.5f * dt * dt);
+            const Vec3 acceleration{0, resting ? 0.0f : -gravity, 0};
+            const Vec3 to =
+                resting ? from : from + missile.velocity * dt + acceleration * (0.5f * dt * dt);
             missile.velocity += acceleration * dt;
             missile.turned += missile.kind.spin * dt;
+            missile.heldLeft = std::max(0.0f, missile.heldLeft - dt);
             missile.secondsLeft = std::max(0.0f, missile.secondsLeft - dt);
             missile.lived += dt;
             remaining = std::max(0.0f, remaining - dt);
@@ -501,7 +527,7 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
 
             bool struckWorld = false;
             Vec3 destination = to;
-            if (collision != nullptr) {
+            if (collision != nullptr && !missile.kind.throughWorld) {
                 const Vec3 pushed =
                     collision->resolveWalls(to, radius, to.y - radius, to.y + radius);
                 struckWorld = glm::distance(pushed, to) > 0.001f;
@@ -515,7 +541,8 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                     destination.y = floor->y + radius;
                 }
             }
-            if (!struckWorld && stopped(missile, items, from, to, radius)) {
+            if (!struckWorld && !missile.kind.throughWorld &&
+                stopped(missile, items, from, to, radius)) {
                 struckWorld = true;
                 destination = from;
             }

@@ -117,6 +117,18 @@ struct EnemySpawn {
     bool asleep = false;                     ///< a placement of no strength waits to be woken
     s32 idleTicks = 120;                     ///< a thrower's wait between throws
     Priority priority = Priority::Offscreen; ///< replacement permission, independent of strength
+    /** A placement's own sight radius, before the level's scale (the float after its strength
+     * and way, SetItem items.c 5569); nought for the kind's thirty. */
+    f32 sight = 0.0f;
+};
+
+/** The garm brood's death shot (kill_enemy, fn_8004F1DC): as the corpse goes, its burst is
+ * sent from where it lay toward the player it was after, else the first standing. */
+struct EnemyDeathShot {
+    s32 enemy = -1;
+    s32 kind = kGarmBroodKind;
+    Vec3 position{0.0f, 0.0f, 0.0f};  ///< where the body lay
+    Vec3 direction{0.0f, 0.0f, 1.0f}; ///< toward the player, unit length
 };
 
 /** A blast one of the swarm goes up in. */
@@ -167,6 +179,7 @@ public:
     static constexpr f32 kKnockBackHeight = 2.0f; ///< a body reaching above this can knock back
     static constexpr f32 kSuicideDamage = 50.0f;  ///< at the level's enemy damage
     static constexpr s32 kTicksPerSecond = 60;
+    static constexpr s32 kPlacedStun = 30; ///< ticks a placement of ordinary strength stands still
 
     Enemies() = default;
     Enemies(const Enemies&) = delete;
@@ -223,6 +236,8 @@ public:
     std::vector<EnemyCue> takeCues();
     std::vector<EnemyFeedback> takeFeedback();
     std::vector<DeathEvent> takeDeathEvents();
+    /** The garm brood's death shots since last asked, one as each corpse goes. */
+    std::vector<EnemyDeathShot> takeDeathShots();
     /** The players IT has touched since last asked, in turn: each is now it. */
     std::vector<s32> takeTagged();
     bool draining(s32 id) const;
@@ -263,7 +278,9 @@ public:
     s32 targetOf(s32 id) const;
     s32 algorithmOf(s32 id) const;
     s32 pushCountOf(s32 id) const;
-    s32 variantOf(s32 id) const; ///< the strength it was placed at, four and over for a variant
+    s32 variantOf(s32 id) const;   ///< the strength it was placed at, four and over for a variant
+    f32 sightOf(s32 id) const;     ///< how far it sees, at the level's scale
+    s32 stunTicksOf(s32 id) const; ///< ticks it still stands still after appearing
     /** How solid it shows: one, or less while a veiling kind fades. */
     f32 opacityOf(s32 id) const { return 1.0f - m_enemies[static_cast<usize>(id)].veil / kVeiled; }
     static constexpr s32 kVeilingKind = 24; ///< the warlock (fn_8004D958's type 24)
@@ -367,6 +384,9 @@ private:
     void drain(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players);
     void hurtDeath(Enemy& enemy, s32 slot, const EnemyHit& hit);
     static void react(Enemy& enemy);
+    /** Sends the brood's death shot from the corpse at its player, else the first standing;
+     * nobody standing, none goes (fn_8004F1DC). */
+    void aimDeathShot(const Enemy& enemy, s32 slot, std::span<const EnemyView> players);
     MindSense sense(const Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players,
                     std::span<const Obstacle> obstacles) const;
     void think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView> players,
@@ -400,6 +420,7 @@ private:
     std::vector<EnemyCue> m_cues;
     std::vector<EnemyFeedback> m_feedback;
     std::vector<DeathEvent> m_deathEvents;
+    std::vector<EnemyDeathShot> m_deathShots;
     std::vector<s32> m_tagged;
     std::mt19937 m_random;
     s32 m_bomber = -1; ///< the lit suicide bomber the rest run from this tick

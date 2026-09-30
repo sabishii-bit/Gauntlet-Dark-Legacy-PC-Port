@@ -2,6 +2,8 @@
 #include <array>
 #include <filesystem>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -1758,6 +1760,94 @@ TEST_CASE("in the town a suicide leaves a poison cloud that turns through its th
     // Gassed every half second while the cloud harms: more than once, never as a blow.
     CHECK(hurts.size() >= 3);
     CHECK(std::ranges::all_of(hurts, [](HurtKind kind) { return kind == HurtKind::Gas; }));
+    opponents.close();
+    effects.clear();
+}
+
+TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at the party",
+          "[level-opponents][death-shot][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/GRM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 14}, 0);
+    players[0].actor.save().progress().health = 1000;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 2, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGarmBroodKind));
+    const auto brood = opponents.enemies().spawn(
+        EnemySpawn{.kind = kGarmBroodKind, .tier = 3, .placed = true}, {});
+    REQUIRE(brood.has_value());
+    std::vector<std::pair<f32, u32>> hurts;
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [&](usize, f32 amount, HurtKind kind, bool, const PlayerImpact& hit) {
+        CHECK(kind == HurtKind::Blow);
+        hurts.emplace_back(amount, hit.flags);
+    };
+    const auto step = [&] {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+        effects.update(1.0f / 30);
+    };
+    const auto showing = [&](std::string_view tree) {
+        for (usize e = 0; e < effects.count(); ++e) {
+            if (effects.effect(e).name == tree) {
+                return true;
+            }
+        }
+        return false;
+    };
+    step();
+    opponents.strikeEnemy(*brood, 1000.0f, 0, Vec3{0, 0, 1}, 0, players);
+    s32 frames = 0;
+    while (opponents.enemies().count() > 0 && frames < 300) {
+        step();
+        ++frames;
+    }
+    REQUIRE(frames < 300);
+    // As the corpse goes its burst is held where it lay and the unseen shot with it.
+    REQUIRE(opponents.missiles().count() == 1);
+    CHECK(opponents.missiles().missile(0).heldLeft > 0.0f);
+    CHECK(showing("DEATHFX1"));
+    CHECK_FALSE(showing("DEATHFX2"));
+    const Vec3 lay = opponents.missiles().missile(0).position;
+    while (showing("DEATHFX1") && frames < 400) {
+        step();
+        ++frames;
+    }
+    REQUIRE(frames < 400);
+    // The burst over, the shot is still where it lay; it then flies on toward the party at
+    // twenty a second, hurting the one it passes through for fifty with a knock-down, as it
+    // reaches them and again a quarter of a second on, still within it.
+    REQUIRE(opponents.missiles().count() == 1);
+    CHECK(opponents.missiles().missile(0).position == lay);
+    CHECK(hurts.empty());
+    step();
+    CHECK(showing("DEATHFX2"));
+    for (s32 frame = 0; frame < 30; ++frame) {
+        step();
+    }
+    REQUIRE(hurts.size() == 2);
+    for (const auto& [amount, flags] : hurts) {
+        CHECK(amount == 50.0f);
+        CHECK(flags == 0x100020u);
+    }
+    for (s32 frame = 0; frame < 90; ++frame) {
+        step();
+    }
+    CHECK(opponents.missiles().count() == 0);
+    CHECK_FALSE(showing("DEATHFX2"));
     opponents.close();
     effects.clear();
 }

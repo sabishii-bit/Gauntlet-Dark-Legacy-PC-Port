@@ -15,10 +15,12 @@ namespace {
 constexpr f32 kTurn = std::numbers::pi_v<f32> / 64.0f;
 
 // name, prefix, height, radius, attention, collision, pace, damage, armor, health, generator
-// armor, experience for a hit and for a kill, algorithm, turn rate. The twenty-ninth row is
-// the original's sentinel between the swarm and the great ones.
+// armor, experience for a hit and for a kill, algorithm, turn rate, then the idle action and
+// rootedness where they are not the usual. The twenty-ninth row is the original's sentinel
+// between the swarm and the great ones.
 constexpr std::array<EnemyKind, kEnemyKindCount> kKinds{{
-    {"SCO", "SCO", 3.0f, 1.5f, 2.0f, 1.5f, 0.1f, 12.0f, 0.0f, 21.0f, 3.0f, 1, 2, 2, kTurn},
+    {"SCO", "SCO", 3.0f, 1.5f, 2.0f, 1.5f, 0.1f, 12.0f, 0.0f, 21.0f, 3.0f, 1, 2, 2, kTurn,
+     EnemyAction::Walk},
     {"TRO", "TRO", 6.0f, 1.5f, 3.8f, 3.0f, 0.1f, 15.0f, 0.0f, 30.0f, 3.0f, 2, 4, 7, kTurn},
     {"DEM", "DEM", 6.0f, 1.8f, 3.8f, 3.0f, 0.12f, 18.0f, 0.0f, 46.0f, 3.0f, 3, 6, 7, kTurn},
     {"RAT", "RAT", 3.0f, 1.5f, 2.0f, 1.5f, 0.1f, 12.0f, 0.0f, 21.0f, 3.0f, 1, 2, 2, kTurn},
@@ -39,7 +41,8 @@ constexpr std::array<EnemyKind, kEnemyKindCount> kKinds{{
     {"DOG", "DOG", 3.0f, 1.5f, 2.0f, 1.5f, 0.1f, 12.0f, 0.0f, 21.0f, 3.0f, 1, 2, 7, kTurn},
     {"SKE", "SKE", 6.0f, 1.5f, 3.8f, 3.0f, 0.1f, 15.0f, 0.0f, 30.0f, 3.0f, 2, 4, 7, kTurn},
     {"GHO", "GHO", 6.0f, 1.8f, 3.8f, 3.0f, 0.1f, 18.0f, 0.0f, 46.0f, 3.0f, 3, 6, 7, kTurn},
-    {"ACI", "ACI", 3.0f, 0.75f, 0.5f, 1.5f, 0.02f, 12.0f, 0.0f, 21.0f, 3.0f, 1, 2, 7, kTurn},
+    {"ACI", "ACI", 3.0f, 0.75f, 0.5f, 1.5f, 0.02f, 12.0f, 0.0f, 21.0f, 3.0f, 1, 2, 7, kTurn,
+     EnemyAction::Ready, true},
     {"HAN", "HAN", 3.0f, 0.75f, 0.5f, 1.5f, 0.05f, 12.0f, 0.0f, 21.0f, 3.0f, 1, 2, 7, kTurn},
     {"IMP", "IMP", 6.0f, 2.0f, 3.8f, 3.0f, 0.1f, 15.0f, 0.0f, 30.0f, 3.0f, 2, 4, 7, kTurn},
     {"WAR", "WAR", 6.0f, 2.0f, 3.8f, 3.0f, 0.1f, 15.0f, 0.0f, 46.0f, 3.0f, 3, 6, 7, kTurn},
