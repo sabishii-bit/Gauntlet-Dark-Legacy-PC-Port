@@ -140,6 +140,38 @@ TEST_CASE("a shot flies straight at its mark and a lob falls on it; a player in 
     REQUIRE(leave.y == Approx(0.5f * EnemyMissiles::kGravity * 2.0f));
 }
 
+TEST_CASE(
+    "swarm projectiles retain solid and liquid collision owners without inventing expiry hits",
+    "[projectile-impact][enemies]") {
+    const bool water = GENERATE(false, true);
+    auto triangles = floor();
+    for (auto& surface : triangles) {
+        surface.object = 73;
+        surface.objectFlags = water ? WorldCollision::kLiquidSurface : WorldObject::kFloor;
+    }
+    WorldCollision collision;
+    collision.build(triangles);
+    EnemyMissiles missiles;
+    missiles.launch(EnemyMissileKind::bomb(), {0, 4, 0}, {0, 0, 10}, 1, nullptr, 2);
+    missiles.update(2, &collision, {});
+    const auto hits = missiles.takeHits();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits.front().worldObject == 73);
+    CHECK(hits.front().worldContact);
+    CHECK(hits.front().liquid == water);
+    CHECK(hits.front().sound() == (water ? "S_SPLASH" : "S_LOBBER_BOMB"));
+    CHECK(hits.front().effect() == "EXPSMALL");
+    CHECK(missiles.takeHits().empty());
+
+    missiles.launch(EnemyMissileKind::bomb(), {0, 4, 0}, {0, 0, 10}, 1, nullptr, 2);
+    missiles.update(4, nullptr, {});
+    const auto expiry = missiles.takeHits();
+    REQUIRE(expiry.size() == 1);
+    CHECK(expiry.front().worldObject == -1);
+    CHECK_FALSE(expiry.front().liquid);
+    CHECK_FALSE(expiry.front().worldContact);
+}
+
 TEST_CASE("enemy wall contacts choose their element effect without inventing bolt sounds",
           "[game][enemies][projectile-impact]") {
     WorldCollision collision;

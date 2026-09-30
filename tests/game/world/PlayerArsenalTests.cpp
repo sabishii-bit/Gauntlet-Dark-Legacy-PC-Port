@@ -202,6 +202,8 @@ std::filesystem::path impactAssets() {
       {"index":1,"name":"S_3WAYAXE","duration":-1,"volume":127,
        "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]},
       {"index":2,"name":"S_5WAYAXE","duration":-1,"volume":127,
+       "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]},
+      {"index":3,"name":"S_SPLASH","duration":-1,"volume":127,
        "sequence":[{"sample":0,"loopStart":true,"loopBack":true}]}],
       "samples":[{"index":0,"name":"tone","file":"sample.wav","sampleRate":48000,"frames":4}]})");
     return root;
@@ -242,6 +244,22 @@ TEST_CASE("weapon wall impacts render once and use the level-selected sound",
         CHECK(f.effects.effect(0).name == "EXPSMALL");
         CHECK(f.effects.effect(0).tint.a == 255);
         CHECK(sounds.voiceCount() == 1);
+    }
+    SECTION("water replaces even a silent side shot's wall sound without changing its effect") {
+        impact.liquid = true;
+        impact.wallSound = MissileWallSound::Silent;
+        f.arsenal.presentImpact(impact);
+        CHECK(f.effects.count() == 1);
+        CHECK(sounds.voiceCount() == 1);
+        std::array<f32, 256> output{};
+        mixer.mix(output);
+        CHECK(output.back() > 0);
+    }
+    SECTION("a distant water impact stays inaudible") {
+        impact.liquid = true;
+        f.arsenal.presentImpact(impact, 100);
+        CHECK(f.effects.count() == 1);
+        CHECK(sounds.voiceCount() == 0);
     }
     SECTION("target hits do not acquire extra wall feedback") {
         impact.target = 1000;

@@ -119,7 +119,9 @@ struct EnemyMissileHit {
     bool worldContact = false;        ///< expiry alone is not a surface hit
     bool fromBurst = false;           ///< a blast's reach rather than the missile itself
     bool ricochet = false;            ///< only the sound of a missile turned by armour
-    s32 target = -1; ///< one of the swarm (by the id it was offered under) a blast reached
+    s32 target = -1;      ///< one of the swarm (by the id it was offered under) a blast reached
+    s32 worldObject = -1; ///< actual collision owner, never an item or creature id
+    bool liquid = false;  ///< replaces impact audio with the water cue
     std::string_view effect() const;
     std::string_view sound() const;
 };

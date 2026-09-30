@@ -85,6 +85,8 @@ public:
     std::optional<FloorHit> floorAt(const Vec3& position, f32 above, f32 below) const;
     /** Highest secondary-channel surface in the probe range. It never supports a body. */
     std::optional<FloorHit> liquidAt(const Vec3& position, f32 above, f32 below) const;
+    /** Highest solid or liquid surface for a weapon; liquids never support walking bodies. */
+    std::optional<FloorHit> projectileFloorAt(const Vec3& position, f32 above, f32 below) const;
 
     /**
      * Pushes a vertical cylinder of `radius` standing from `bottom` to `top` out of the walls

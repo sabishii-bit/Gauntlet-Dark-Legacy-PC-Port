@@ -192,7 +192,8 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                 missile.position, radius, missile.position.y - radius * 0.5f,
                 missile.position.y + radius * 0.5f, &contacts);
             const bool wall = glm::distance(pushed, missile.position) > 1e-4f;
-            const auto floor = collision->floorAt(missile.position, radius, radius * 0.5f);
+            const auto floor =
+                collision->projectileFloorAt(missile.position, radius, radius * 0.5f);
             if (wall || floor.has_value()) {
                 s32 object = floor ? floor->object : -1;
                 if (wall && !contacts.empty()) {
@@ -229,10 +230,11 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                     }
                     continue;
                 }
-                m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
-                                                  missile.potency, missile.damage, -1,
-                                                  missile.spec->impactTree, missile.wallSound,
-                                                  missile.flags, -1, object});
+                m_impacts.push_back(MissileImpact{
+                    missile.position, missile.owner, missile.potion, missile.potency,
+                    missile.damage, -1, missile.spec->impactTree, missile.wallSound, missile.flags,
+                    -1, object,
+                    !wall && floor && (floor->objectFlags & WorldCollision::kLiquidSurface) != 0});
                 missile.age = kLifeSeconds;
             }
         }

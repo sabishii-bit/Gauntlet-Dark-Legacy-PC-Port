@@ -22,6 +22,41 @@ using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
 
+TEST_CASE("weapons strike water above the floor without making water walkable",
+          "[missiles][projectile-impact]") {
+    WorldCollision collision;
+    CollisionTriangle water;
+    water.object = 42;
+    water.objectFlags = WorldCollision::kLiquidSurface;
+    water.vertices = {Vec3{-100, 2, -100}, Vec3{100, 2, -100}, Vec3{0, 2, 100}};
+    CollisionTriangle floor = water;
+    floor.object = 19;
+    floor.objectFlags = WorldObject::kFloor;
+    for (auto& vertex : floor.vertices) {
+        vertex.y = 0;
+    }
+    collision.build({water, floor});
+    REQUIRE(collision.floorAt({0, 3, 0}, 1, 5));
+    CHECK(collision.floorAt({0, 3, 0}, 1, 5)->object == 19);
+    REQUIRE(collision.projectileFloorAt({0, 3, 0}, 1, 5));
+    CHECK(collision.projectileFloorAt({0, 3, 0}, 1, 5)->object == 42);
+    PlayerMissiles missiles;
+    MissileLaunch shot;
+    shot.spec = &MissileSpec::of(0);
+    shot.position = {0, 5, 0};
+    shot.velocity = Vec3{0, -10, 0};
+    REQUIRE(missiles.launch(shot));
+    missiles.update(0.5f, &collision);
+    const auto hits = missiles.takeImpacts();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits.front().liquid);
+    CHECK(hits.front().worldObject == 42);
+    CHECK(hits.front().target == -1);
+    CHECK(missiles.count() == 0);
+    collision.setSolid(42, false);
+    CHECK(collision.projectileFloorAt({0, 3, 0}, 1, 5)->object == 19);
+}
+
 TEST_CASE("gauntlet missiles own independent moving particle trees and retire with live tails",
           "[game][missiles][effects][unpacked]") {
     const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();

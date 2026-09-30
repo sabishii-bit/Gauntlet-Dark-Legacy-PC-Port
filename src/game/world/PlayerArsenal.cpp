@@ -332,12 +332,16 @@ void PlayerArsenal::burstPotion(s32 kind, const Vec3& position, f32 power, bool 
     }
 }
 
-void PlayerArsenal::presentImpact(const MissileImpact& impact) {
+void PlayerArsenal::presentImpact(const MissileImpact& impact, f32 playerDistance) {
     if (!m_resources) {
         return;
     }
     if (impact.potion != 0) {
-        burstPotion(impact.potion, impact.position, impact.potency);
+        burstPotion(impact.potion, impact.position, impact.potency, !impact.liquid);
+        if (impact.liquid) {
+            m_resources->audio.playAt("S_SPLASH", impact.position, playerDistance,
+                                      LevelSoundscape::kSplashLevel / 255.0f);
+        }
         return;
     }
     if (impact.target >= 0) {
@@ -352,6 +356,11 @@ void PlayerArsenal::presentImpact(const MissileImpact& impact) {
         }
         m_resources->effects.startSet(m_resources->device, m_resources->weapons, impact.effect,
                                       impact.position, setting);
+    }
+    if (impact.liquid) {
+        m_resources->audio.playAt("S_SPLASH", impact.position, playerDistance,
+                                  LevelSoundscape::kSplashLevel / 255.0f);
+        return;
     }
     switch (impact.wallSound) {
     case MissileWallSound::Level: m_resources->audio.playNamed(m_resources->wallHitSound); break;

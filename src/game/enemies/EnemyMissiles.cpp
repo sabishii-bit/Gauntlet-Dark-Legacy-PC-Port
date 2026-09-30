@@ -68,6 +68,9 @@ std::string_view EnemyMissileHit::effect() const {
 }
 
 std::string_view EnemyMissileHit::sound() const {
+    if (liquid) {
+        return "S_SPLASH";
+    }
     // Ordinary enemy bolts have no wall sound; the lobber's bomb supplies its own.
     return burstRadius > 0 ? "S_LOBBER_BOMB" : std::string_view{};
 }
@@ -526,19 +529,27 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
             std::erase_if(missile.pierced, [](const auto& held) { return held.second <= 0.0f; });
 
             bool struckWorld = false;
+            s32 worldObject = -1;
+            bool liquid = false;
             Vec3 destination = to;
             if (collision != nullptr && !missile.kind.throughWorld) {
+                std::vector<WallContact> contacts;
                 const Vec3 pushed =
-                    collision->resolveWalls(to, radius, to.y - radius, to.y + radius);
+                    collision->resolveWalls(to, radius, to.y - radius, to.y + radius, &contacts);
                 struckWorld = glm::distance(pushed, to) > 0.001f;
                 if (struckWorld) {
                     destination = pushed;
-                } else if (const auto floor = collision->floorAt(
+                    if (!contacts.empty()) {
+                        worldObject = contacts.front().object;
+                    }
+                } else if (const auto floor = collision->projectileFloorAt(
                                to, std::abs(to.y - from.y) + radius, radius + kFootClearance);
                            floor && to.y <= floor->y + radius &&
                            glm::dot(missile.velocity, floor->normal) < 0) {
                     struckWorld = true;
                     destination.y = floor->y + radius;
+                    worldObject = floor->object;
+                    liquid = (floor->objectFlags & WorldCollision::kLiquidSurface) != 0;
                 }
             }
             if (!struckWorld && !missile.kind.throughWorld &&
@@ -630,6 +641,8 @@ void EnemyMissiles::update(f32 seconds, const WorldCollision* collision,
                 (expired && missile.kind.burstRadius > 0.0f)) {
                 EnemyMissileHit hit;
                 hit.worldContact = struckWorld;
+                hit.worldObject = worldObject;
+                hit.liquid = liquid;
                 hit.player = victim != nullptr ? victim->player : -1;
                 hit.target = body != nullptr ? body->id : -1;
                 hit.shooter = missile.shooter;
