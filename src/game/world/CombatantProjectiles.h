@@ -4,6 +4,7 @@
 #include <random>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -23,6 +24,13 @@ struct CombatantProjectileHit {
     f32 repeatGap = 0.0f; ///< shared player effect immunity after damage above two
 };
 
+/** A world impact, including a rebound that does not end the projectile. */
+struct CombatantWorldHit {
+    Vec3 position{0};
+    s32 object = -1;
+    bool splash = false; ///< only a terminating liquid hit plays the water sound
+};
+
 /** Launched attacks and planted traps, independent of their creature's animation.
  * Archives and attack tables are borrowed until clear(). Effects must outlive this object.
  * Capturing and attached-area attacks are separate from this path. */
@@ -36,6 +44,7 @@ public:
                 RenderDevice& device, EffectTrees& effects, const PlaySound& sound);
     void clear(EffectTrees& effects);
     std::vector<CombatantProjectileHit> takeHits();
+    std::vector<CombatantWorldHit> takeWorldHits() { return std::exchange(m_worldHits, {}); }
     /** Expired SFXX 0x20000 effects leave a stage-owned BOSSGEN at this placement. */
     std::vector<Mat4> takeGenerators();
     /** SFXX 0x400000 invokes the boss summon callback on collision or expiration. */
@@ -69,6 +78,7 @@ private:
     std::vector<Flying> m_flying;
     std::vector<u32> m_emittedEffects; ///< impacts and end effects still borrow the launch archive
     std::vector<CombatantProjectileHit> m_hits;
+    std::vector<CombatantWorldHit> m_worldHits;
     std::vector<Mat4> m_generators;
     std::vector<Mat4> m_summons;
     std::mt19937 m_random;

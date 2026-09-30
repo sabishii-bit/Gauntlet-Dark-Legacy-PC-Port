@@ -189,6 +189,9 @@ void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, const E
         return;
     }
     for (const EnemyMissileHit& hit : m_enemyMissiles.takeHits()) {
+        if (hit.worldObject >= 0) {
+            m_resources->world.explodeObject(hit.worldObject, hit.position);
+        }
         if (hit.ricochet) {
             playAt(kRicochetSound, kQuietSound, hit.position);
             continue;
@@ -212,7 +215,7 @@ void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, const E
                 }
             }
         }
-        playAt(hit.sound(), kLoudSound, hit.position);
+        playAt(hit.sound(), hit.liquid ? LevelSoundscape::kSplashLevel : kLoudSound, hit.position);
         const HurtKind kind = (hit.flags & EnemyBlast::kGas) != 0 ? HurtKind::Gas : HurtKind::Blow;
         for (usize i = 0; i < players.size(); ++i) {
             if (hit.player >= 0 && players[i].actor.player() == hit.player &&
@@ -969,6 +972,14 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     }
     m_combatantProjectiles.update(seconds, &m_resources->world.collision(), views,
                                   m_resources->device, m_resources->effects, shotSound);
+    for (const CombatantWorldHit& hit : m_combatantProjectiles.takeWorldHits()) {
+        if (hit.object >= 0) {
+            m_resources->world.explodeObject(hit.object, hit.position);
+        }
+        if (hit.splash) {
+            playAt("S_SPLASH", LevelSoundscape::kSplashLevel, hit.position);
+        }
+    }
     for (const Mat4& placement : m_combatantProjectiles.takeGenerators()) {
         if (level == nullptr || level->enemies.empty() || !m_bosses.view().alive) {
             continue;

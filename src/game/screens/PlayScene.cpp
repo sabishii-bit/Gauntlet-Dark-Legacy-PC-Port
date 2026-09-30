@@ -477,6 +477,9 @@ void PlayScene::updateEnemies(s32 ticks, f32 seconds) {
     watchOpponents();
     m_opponents.update(ticks, seconds, m_players, m_fixtures.obstacles(), opponentEvents(),
                        m_fixtures.missileStops(), m_fixtures.critterObstacles());
+    for (const Vec3& position : m_world->takeWorldExplosions()) {
+        m_fixtures.worldExplosion(position, m_players, fixtureEvents());
+    }
     for (const RockHit& hit : m_opponents.takeRockHits()) {
         m_fixtures.strikeSafeRock(hit.rock, hit.damage);
     }

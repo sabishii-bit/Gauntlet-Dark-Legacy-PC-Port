@@ -13,6 +13,7 @@
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
+#include "engine/world/SampleLevel.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -48,6 +49,55 @@ void writeMeleeEnemy(const std::filesystem::path& root, s32 kind) {
                      {"name":"ATTACK3R","frames":2,"rate":30},
                      {"name":"HIT1","frames":10,"rate":30},
                      {"name":"HIT2","frames":10,"rate":30}]}]})");
+}
+
+TEST_CASE("an archer's world hit detonates explosive scenery once without player credit",
+          "[level-opponents][projectile-impact][world-destruction][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/GRU/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    const auto stage = test::sampleLevel("enemy-world-shot");
+    writeTextFile(stage / "world.json", R"({"objects":[
+        {"name":"WALL","position":[0,0,0],"next":-1,"child":-1,
+         "flags":327682}]})");
+    writeTextFile(stage / "collision.json", R"({"objects":[{"object":0,
+        "normals":[0,0,-1],"vertices":[-100,-100,12,100,-100,12,0,100,12]}]})");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    LevelRef level;
+    level.name = "test";
+    level.items = "missing";
+    REQUIRE(world.load(device, stage, level));
+    constexpr s32 kCart = 0;
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 25}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.enemies().open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(opponents.enemies().loadKind(kGruntKind));
+    REQUIRE(
+        opponents.enemies().spawn(EnemySpawn{.kind = kGruntKind, .tier = 4, .algorithm = 23}, {}));
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) { FAIL("world hits do not award player credit"); };
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    for (s32 frame = 0; frame < 180 && world.scene().objectVisible(kCart); ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    CHECK_FALSE(world.scene().objectVisible(kCart));
+    CHECK_FALSE(world.collision().solid(kCart));
+    const auto explosions = world.takeWorldExplosions();
+    REQUIRE(explosions.size() == 1);
+    CHECK(explosions.front().z < 12);
+    CHECK(world.takeWorldExplosions().empty());
+    opponents.close();
 }
 
 TEST_CASE("Levitation avoids low enemy melee but not tall enemies or disabled protection",

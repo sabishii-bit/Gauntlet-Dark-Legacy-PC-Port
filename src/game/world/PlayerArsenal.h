@@ -48,7 +48,7 @@ public:
     void throwPotion(PlayerActor& actor);
     void burstPotion(s32 kind, const Vec3& position, f32 power, bool castSound = true);
     /** Present a collision once, without applying target damage or expiry effects. */
-    void presentImpact(const MissileImpact& impact);
+    void presentImpact(const MissileImpact& impact, f32 playerDistance = 0);
     f32 magicPowerOf(const PlayerActor& actor) const;
     /** The power a potion of `kind` goes off with from `actor`: their magic's, a tenth more
      * for a potion of their own colour. */

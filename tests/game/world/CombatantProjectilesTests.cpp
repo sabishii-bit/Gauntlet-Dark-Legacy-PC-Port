@@ -126,6 +126,37 @@ TEST_CASE("planted hand traps hold a fixed position, allow escape, and end their
     REQUIRE(f.effects.count() == 0);
 }
 
+TEST_CASE("boss projectiles report water hits but rebounds do not play impact sounds",
+          "[boss-projectiles][projectile-impact]") {
+    const bool reflects = GENERATE(false, true);
+    Fixture f;
+    WorldCollision world;
+    CollisionTriangle water;
+    water.object = 73;
+    water.objectFlags = WorldCollision::kLiquidSurface;
+    water.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}};
+    world.build({water});
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = reflects ? 1 : 0;
+    shot.origin = {0, 1, 0};
+    shot.target = Vec3{0, -1, 10};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    std::vector<CombatantWorldHit> hits;
+    for (s32 frame = 0; frame < 60 && hits.empty(); ++frame) {
+        f.step(1.0f / 120, {}, &world);
+        hits = f.projectiles.takeWorldHits();
+    }
+    REQUIRE_FALSE(hits.empty());
+    CHECK(hits.front().object == 73);
+    CHECK(hits.front().splash == !reflects);
+    CHECK(std::ranges::find(f.sounds, "S_HIT") == f.sounds.end());
+    CHECK(f.projectiles.count() == (reflects ? 1 : 0));
+    CHECK(f.projectiles.takeWorldHits().empty());
+    f.projectiles.clear(f.effects);
+    CHECK(f.projectiles.takeWorldHits().empty());
+}
+
 TEST_CASE("generator shots leave one stage placement on expiry, but never on clear",
           "[boss-projectiles][spider]") {
     Fixture f;

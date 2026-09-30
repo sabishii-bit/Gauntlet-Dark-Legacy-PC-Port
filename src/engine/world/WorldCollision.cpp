@@ -326,6 +326,13 @@ std::optional<FloorHit> WorldCollision::liquidAt(const Vec3& position, f32 above
     return surfaceAt(position, above, below, true);
 }
 
+std::optional<FloorHit> WorldCollision::projectileFloorAt(const Vec3& position, f32 above,
+                                                          f32 below) const {
+    const auto floor = floorAt(position, above, below);
+    const auto liquid = liquidAt(position, above, below);
+    return liquid && (!floor || liquid->y > floor->y) ? liquid : floor;
+}
+
 std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 above, f32 below,
                                                   bool liquid) const {
     std::optional<FloorHit> best;

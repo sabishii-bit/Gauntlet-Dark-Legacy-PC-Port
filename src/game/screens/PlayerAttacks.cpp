@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <limits>
 #include <numbers>
 
 #include "engine/audio/SoundPlayer.h"
@@ -1132,7 +1133,14 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                 }
             }
         }
-        m_resources->arsenal.presentImpact(impact);
+        f32 playerDistance = std::numeric_limits<f32>::max();
+        for (const PlayerRuntime& player : players) {
+            if (player.life == PlayerLife::Standing) {
+                playerDistance = std::min(
+                    playerDistance, glm::distance(player.actor.followPoint(), impact.position));
+            }
+        }
+        m_resources->arsenal.presentImpact(impact, playerDistance);
         if (impact.potion != 0) {
             beginPotion(impact);
             continue;

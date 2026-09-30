@@ -208,26 +208,34 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             flying.velocity += acceleration * dt;
             flying.rotation += flying.spin * dt;
             bool wall = false;
+            s32 worldObject = -1;
+            bool liquid = false;
             Vec3 normal{0};
             Vec3 destination = to;
             if (collision != nullptr &&
                 (damage.behaviorFlags & CombatantProjectile::kIgnoreWorld) == 0) {
                 // WeaponWallCollide uses half the player-contact radius.
                 const f32 worldRadius = 0.5f * radius;
+                std::vector<WallContact> contacts;
                 const Vec3 pushed = collision->resolveWalls(to, worldRadius, to.y - worldRadius,
-                                                            to.y + worldRadius);
+                                                            to.y + worldRadius, &contacts);
                 wall = glm::length(pushed - to) > kWallTolerance;
                 if (wall) {
                     normal = glm::normalize(pushed - to);
                     destination = pushed;
+                    if (!contacts.empty()) {
+                        worldObject = contacts.front().object;
+                    }
                 }
-                const auto floor = collision->floorAt(to, std::abs(to.y - from.y) + worldRadius,
-                                                      worldRadius + kFloorClearance);
+                const auto floor = collision->projectileFloorAt(
+                    to, std::abs(to.y - from.y) + worldRadius, worldRadius + kFloorClearance);
                 if (floor.has_value() && to.y <= floor->y + worldRadius &&
                     glm::dot(flying.velocity, floor->normal) < 0) {
                     wall = true;
                     normal = floor->normal;
                     destination.y = floor->y + worldRadius;
+                    worldObject = floor->object;
+                    liquid = (floor->objectFlags & WorldCollision::kLiquidSurface) != 0;
                     // Floor objects lift effect impacts off the hit plane. Without this
                     // clearance, a shallow rebound hits again on every physics substep.
                     if ((floor->objectFlags & WorldObject::kFloor) != 0) {
@@ -255,6 +263,10 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             // A blocking world overlap owns this small step; do not hit through its wall.
             if (wall || victim != nullptr) {
                 flying.position = wall ? destination : glm::mix(from, to, nearest);
+                if (wall) {
+                    m_worldHits.push_back(
+                        {flying.position, worldObject, liquid && (damage.flags & kReflect) == 0});
+                }
                 summon(flying);
                 if (wall && (damage.flags & kReflect) != 0) {
                     if (glm::dot(flying.velocity, normal) < 0) {
@@ -290,6 +302,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         continue;
                     }
                 }
+                const PlaySound impactSound = liquid ? PlaySound{} : sound;
                 effects.stop(flying.effect);
                 if ((damage.flags & kSticky) != 0 && damage.hitSound >= 0) {
                     flying.stuck = true;
@@ -307,10 +320,10 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         }
                     }
                     flying.effect =
-                        show(flying, damage.hitSound, device, effects, sound, kStickyLife);
+                        show(flying, damage.hitSound, device, effects, impactSound, kStickyLife);
                     break;
                 }
-                const u32 impact = show(flying, damage.hitSound, device, effects, sound);
+                const u32 impact = show(flying, damage.hitSound, device, effects, impactSound);
                 if (flying.leavesGenerator) {
                     flying.settled = true;
                     flying.effect = impact;
@@ -358,6 +371,7 @@ void CombatantProjectiles::clear(EffectTrees& effects) {
     m_emittedEffects.clear();
     m_flying.clear();
     m_hits.clear();
+    m_worldHits.clear();
     m_generators.clear();
     m_summons.clear();
 }

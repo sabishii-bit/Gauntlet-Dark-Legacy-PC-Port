@@ -94,6 +94,7 @@ public:
     /** A one-shot attenuated from the nearest player and panned from the latest ambience ear. */
     SoundHandle playAt(std::string_view name, const Vec3& position, f32 playerDistance,
                        f32 volume = 1.0f);
+    static constexpr f32 kSplashLevel = 180.0f; ///< byte volume of a projectile's water impact
     SoundHandle playFrom(SoundSet& bank, std::string_view name, f32 volume = 1.0f);
     SoundHandle playPromotion(std::string_view name, SoundHandle after = kNoSound);
     /** How long a named sound of the level's banks plays, in seconds; nought when unknown. */
