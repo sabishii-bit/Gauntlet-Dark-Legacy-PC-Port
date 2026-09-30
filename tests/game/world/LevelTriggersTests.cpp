@@ -109,6 +109,31 @@ TEST_CASE("a pad flagged to wake a statue reports its spot once as it goes activ
     CHECK(CritterStatues::activeTicks(0, 30) == 0);
 }
 
+TEST_CASE("the tower's lifts are opened at once by trigger id, the pads left alone",
+          "[game][world][triggers][tower-access]") {
+    // A lift pad with the tower's id 104, its target closed at 0 and open at -10.
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,2,0,0,4,104,0,0,0,156,255]})");
+    f.triggers.takeOpenings();
+    f.triggers.openAtOnce(std::array<s32, 1>{7}, f.animator, f.scene, nullptr);
+    CHECK_FALSE(f.triggers.opened(0));
+    CHECK(f.triggers.takeOpenings().empty());
+    CHECK(f.height() == Approx(10.0f)); // where the layout put it
+    f.triggers.openAtOnce(std::array<s32, 2>{104, 199}, f.animator, f.scene, nullptr);
+    CHECK(f.triggers.opened(0));
+    CHECK(f.triggers.settled(0));
+    CHECK(f.height() == Approx(0.0f)); // ten down at once, its open height
+    CHECK_FALSE(f.triggers.trigger(0).fired);
+    const auto openings = f.triggers.takeOpenings();
+    REQUIRE(openings.size() == 1);
+    CHECK(openings[0].target == 0);
+    CHECK(openings[0].atOnce);
+    CHECK(openings[0].sound == 4);
+    // Asked again, it is open already: nothing more is reported.
+    f.triggers.openAtOnce(std::array<s32, 1>{104}, f.animator, f.scene, nullptr);
+    CHECK(f.triggers.takeOpenings().empty());
+}
+
 TEST_CASE("closing and opening switches can reuse the same lift", "[game][world][triggers]") {
     SwitchFixture f(R"(
       {"info":0,"position":[0,0,0],"params":[0,0,2,0,2,255,0,0,0,0,0,0]},

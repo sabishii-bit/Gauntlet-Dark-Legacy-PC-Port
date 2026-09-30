@@ -4,6 +4,7 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include "engine/core/Log.h"
@@ -90,6 +91,14 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
             }
         }
     }
+    // The tower's portal glows are put out one by one for the portals it keeps shut.
+    if (m_ref.isTower()) {
+        for (usize i = 0; i < m_layout.objects().size(); ++i) {
+            if (TowerAccess::isGlowObject(m_layout.objects()[i].name)) {
+                controlledObjects.push_back(i);
+            }
+        }
+    }
     if (!m_scene.build(m_layout, m_models, m_textures, device, m_lighting, lent,
                        controlledObjects)) {
         clear();
@@ -165,7 +174,17 @@ bool LevelWorld::setObjectVisible(std::string_view name, bool visible) {
     return false;
 }
 
-void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
+bool LevelWorld::shutPortalGlow(s32 world, s32 gate) {
+    const std::string name = TowerAccess::glowObjectName(world, gate);
+    if (setObjectVisible(name, false)) {
+        return true;
+    }
+    log::info("Level: no {} to put out for the shut portal", name);
+    return false;
+}
+
+void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors,
+                               const TowerAccess* access) {
     // The province uses crystal gate index 1, not its realm id (7). Retail omits
     // these tower-only pickups if any active character has earned that gate.
     if (isTower() && std::ranges::any_of(visitors, [](const TriggerVisitor& visitor) {
@@ -174,6 +193,9 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors) {
         m_placedItems.retireCrystals();
     }
     m_triggers.openMet(visitors, m_worldAnimator, m_scene, &m_collision);
+    if (isTower() && access != nullptr && access->liftsOpen()) {
+        m_triggers.openAtOnce(TowerAccess::kLiftTriggers, m_worldAnimator, m_scene, &m_collision);
+    }
     m_worldAnimator.apply(m_scene);
     syncCollision();
 }
@@ -304,8 +326,10 @@ u32 LevelWorld::towerMarkerOf(u32 realm) {
     return realm < kMarkers.size() ? kMarkers[realm] : 0;
 }
 
-const WorldLocator* LevelWorld::arrivalPoint(u32 realm) const {
-    const WorldLocator* marker = isTower() ? startPoint(towerMarkerOf(realm)) : nullptr;
+const WorldLocator* LevelWorld::arrivalPoint(u32 realm, const TowerAccess* access) const {
+    const u32 index =
+        access != nullptr ? access->startMarker(towerMarkerOf(realm)) : towerMarkerOf(realm);
+    const WorldLocator* marker = isTower() ? startPoint(index) : nullptr;
     return marker != nullptr ? marker : startPoint(0);
 }
 

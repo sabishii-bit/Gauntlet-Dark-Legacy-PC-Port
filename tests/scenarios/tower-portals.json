@@ -1,0 +1,8 @@
+{
+  "welcome": false,
+  "arrivalWorld": 7,
+  "party": [
+    { "class": "WAR", "color": "YEL", "level": 12, "crystals": [0, 15],
+      "beaten": ["g1"] }
+  ]
+}

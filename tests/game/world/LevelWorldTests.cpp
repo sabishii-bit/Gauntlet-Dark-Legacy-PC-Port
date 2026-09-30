@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -17,8 +19,10 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/players/PlayerActor.h"
+#include "game/players/Progression.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelWorld.h"
+#include "game/world/TowerAccess.h"
 
 namespace {
 
@@ -411,6 +415,55 @@ TEST_CASE("boss arenas can borrow torch particles from the realm beside their ow
     world.clear();
     REQUIRE(world.particles().size() == 0);
     REQUIRE_FALSE(world.realmItems().loaded());
+}
+
+TEST_CASE("the tower puts out a shut portal's glow, opens the lifts and stands a party back "
+          "from a shut world at the entrance",
+          "[game][world][tower-access][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld tower;
+    REQUIRE(tower.load(device, root));
+    const auto objectNamed = [&](std::string_view name) {
+        const auto& objects = tower.layout().objects();
+        for (usize i = 0; i < objects.size(); ++i) {
+            if (objects[i].name == name) {
+                return i;
+            }
+        }
+        FAIL("no object " << name);
+        return usize{0};
+    };
+    // Each glow is a unit of its own that the tower can hide, leaving its neighbours lit.
+    REQUIRE(tower.shutPortalGlow(7, 2));
+    REQUIRE_FALSE(tower.scene().objectVisible(objectNamed("L1NSNCG3_ACTIVE")));
+    REQUIRE(tower.scene().objectVisible(objectNamed("L1NSNCG2_ACTIVE")));
+    REQUIRE(tower.scene().objectVisible(objectNamed("L1NSNCG4_ACTIVE")));
+    REQUIRE_FALSE(tower.shutPortalGlow(5, 0)); // the temple's portal has no glow object
+    // A party back from the town stands among its portals only while the town is open to it.
+    std::vector<ClassProgress> party(1);
+    const TowerAccess shut{party};
+    REQUIRE(tower.startPoint(1) != nullptr);
+    REQUIRE(tower.arrivalPoint(7, &shut) == tower.startPoint(0));
+    party[0].crystals[1] = 15;
+    const TowerAccess open{party};
+    REQUIRE(tower.arrivalPoint(7, &open) == tower.startPoint(1));
+    REQUIRE(tower.arrivalPoint(7) == tower.startPoint(1));
+    // The lifts down to the battlefield's portals stand open once its first level is beaten.
+    const usize lift = objectNamed("L1LIFT01");
+    const usize elevator = objectNamed("L1ELEV02");
+    tower.setPlayerCount(1);
+    std::array<TriggerVisitor, 1> visitors;
+    visitors[0].crystals = party[0].crystals;
+    tower.startTriggers(visitors, &open);
+    REQUIRE_FALSE(tower.triggers().opened(static_cast<s32>(lift)));
+    REQUIRE_FALSE(tower.triggers().opened(static_cast<s32>(elevator)));
+    party[0].levels.recordBeaten(8, 0);
+    const TowerAccess lifts{party};
+    tower.startTriggers(visitors, &lifts);
+    REQUIRE(tower.triggers().opened(static_cast<s32>(lift)));
+    REQUIRE(tower.triggers().opened(static_cast<s32>(elevator)));
 }
 
 } // namespace

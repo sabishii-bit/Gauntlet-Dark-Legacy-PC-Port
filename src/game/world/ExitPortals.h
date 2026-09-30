@@ -21,6 +21,7 @@
 
 #include "game/world/ItemFigure.h"
 #include "game/world/LevelCatalog.h"
+#include "game/world/TowerAccess.h"
 
 namespace gdl::game {
 
@@ -56,6 +57,7 @@ public:
         s32 instance = -1;
         bool secret = false;
         bool consumed = false;
+        bool shut = false; ///< the tower has not opened it: it wears EXIT_OFF and takes nobody
         std::optional<Vec3> departurePosition;
         s32 minPlayers = 1;
         ItemFigure icon;
@@ -71,16 +73,26 @@ public:
         AnimationPlayer player;
     };
 
+    /** A portal the tower keeps shut, by the world and level (from nought) it leads to. */
+    struct ShutGate {
+        s32 world = -1;
+        s32 gate = -1;
+        bool operator==(const ShutGate&) const = default;
+    };
+
     /** Stands a portal at every exit item of the layout, its figure from `items` (which must
      * outlive them), falling back to `realmItems` for missing trees; true when the level has any.
-     * Both archives must outlive the portals. */
+     * Both archives must outlive the portals. With `access` (the tower's), a portal the party
+     * may not pass wears the EXIT_OFF figure instead and takes nobody (fn_8005B5B8). */
     bool bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
               const LevelCatalog& catalog, const WorldCollision* collision,
-              ItemArchive* realmItems = nullptr);
+              ItemArchive* realmItems = nullptr, const TowerAccess* access = nullptr);
     void clear();
     usize size() const { return m_portals.size(); }
     const Portal& portal(usize index) const { return m_portals[index]; }
     void consume(usize index) { m_portals[index].consumed = true; }
+    /** The gates of the portals bound shut, whose glows the tower puts out. */
+    std::vector<ShutGate> shutGates() const;
 
     /** Steps every portal by `ticks` (`seconds` long); returns the portal ready to transport
      * the whole party, retaining its raised glow while the departure plays. */
@@ -94,9 +106,13 @@ public:
 
     /** The two characters of an exit's parameters that name where it leads. */
     static std::string tagOf(const ItemInstance& instance);
+    /** The level a tag's digit counts to, from nought ("g1" is 0); -1 for no digit. */
+    static s32 gateOf(std::string_view tag);
 
 private:
     void advance(Portal& portal, s32 action);
+    static void shut(RenderDevice& device, Portal& portal, ItemArchive& items,
+                     ItemArchive* realmItems);
     static bool standsOn(const Portal& portal, const PortalVisitor& visitor, f32 extra);
 
     const TreeInfo* m_tree = nullptr;

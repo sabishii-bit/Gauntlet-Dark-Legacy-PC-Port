@@ -322,7 +322,37 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   is ours, not the original's. Only the tower and `G1` (with `ITEMS/LEVELG`)
   are unpacked here: `gdlunpack <assets> <out> --only levelG1`, then
   `--only levelG`. Scenarios take `level` (`tests/scenarios/level-g1.json`).
-  Still to come for other levels: which portals a save has opened.
+* Which portals the tower opens is `world/TowerAccess`, the original's rules
+  over every joined character together (fn_8005B5B8, items.c 750; WorldOpen,
+  tower.c 384): a realm's first portal always stands, each after it wants the
+  level before beaten; the temple's (world 5) wants the eight realms' shards,
+  the underworld's (6) the temple's too and twelve runestones, the
+  battlefield's (8) the underworld's too, and its fourth (Garm) all thirteen
+  runestones; the rest of the worlds open by the crystal gate of
+  `kWorldGates`, as their doors do. A shut portal (`ExitPortals::Portal::shut`)
+  wears the item archive's lone `EXIT_OFF` mesh, never wakes and takes nobody,
+  and `LevelWorld::shutPortalGlow` hides its `L1NSNC<letter><n>_ACTIVE` glow
+  (retail's MBTreeSetFlags 2, which the draw walk skips with its subtree; the
+  temple's and underworld's have none). A Sumner in the party passes every
+  gate. Back from a realm whose world is shut the party stands at the entrance
+  (SetPlayerStartPos), and the tower's lift triggers 104 and 199 (down to the
+  battlefield's portals) stand open at once (`LevelTriggers::openAtOnce`) once
+  its first level is beaten (items.c 6956). The record is
+  `players/LevelRecord` in each `ClassProgress` (saved under `levels`; older
+  saves load as nothing beaten): a bit per level of each realm (retail's
+  `waves[character][realm]`), the runestone and legend-item levels beaten once
+  and again (`level_masks`) and the boss levels died on once and again
+  (`boss_attempt1/2`). `Gauntlet` records a level for every member not fallen
+  as it leaves by its exit or its boss's fall (game_main 1508; a quit level or
+  a party all dead records nothing), and `PlayScene::hurt` records a death on
+  a realm's last level (`LevelCatalog::isLastLevel`) into the entry save the
+  fallen go on with (inactivate_player into the checkpoint copy). Sumner's
+  `HintKnowledge::ofParty` reads all of it. Scenarios take `beaten` (exit
+  tags, `["g1", "g2"]`); `tests/scenarios/tower-portals.json` opens G2 and
+  shuts G3. Not established: retail's next_boss_hint tests `PlayerHasRune`
+  by realm id against the order-keyed shard mask (the hints here go by the
+  shard of each world's order), and what a lift opened at once does when its
+  pad is stepped on again.
 * Portal departure is `screens/PortalDeparture`: a 50-tick held-control exit,
   with ten DEATHLIGHT skin frames, a sinking spin and the S_TUNNEL one-shot
   (S_EXITFLAME is a different, looping sound). The camera follows the body's

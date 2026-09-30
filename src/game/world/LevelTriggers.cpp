@@ -423,6 +423,21 @@ void LevelTriggers::openMet(std::span<const TriggerVisitor> visitors, WorldAnima
     }
 }
 
+void LevelTriggers::openAtOnce(std::span<const s32> ids, WorldAnimator& animator, WorldScene& scene,
+                               WorldCollision* collision) {
+    for (const LevelTrigger& trigger : m_triggers) {
+        if (std::ranges::find(ids, trigger.id) == ids.end()) {
+            continue;
+        }
+        Target* target = targetOf(trigger.target);
+        if (target != nullptr && openTarget(*target, true, true, animator, scene, collision)) {
+            target->spot = trigger.spot;
+            target->sound = trigger.sound;
+            m_openings.push_back(openingOf(*target, true));
+        }
+    }
+}
+
 void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors,
                            WorldAnimator& animator, WorldScene& scene, WorldCollision* collision) {
     m_emptyToggleDelay = visitors.empty() ? 0.0f : static_cast<f32>(visitors.size() - 1);

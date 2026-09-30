@@ -74,9 +74,15 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                            m_context.strings);
         m_sumner.load(device, world.items(), world.layout());
     }
+    // What the tower opens to this party: its portals, their glows, its lifts and where it
+    // stands coming back (fn_8005B5B8, SetPlayerStartPos).
+    m_towerAccess = world.isTower() ? TowerAccess{party} : TowerAccess{};
     if (context.levels != nullptr) {
         m_portals.bind(device, world.layout(), world.items(), *context.levels, &world.collision(),
-                       &world.realmItems());
+                       &world.realmItems(), world.isTower() ? &m_towerAccess : nullptr);
+        for (const ExitPortals::ShutGate& gate : m_portals.shutGates()) {
+            world.shutPortalGlow(gate.world, gate.gate);
+        }
     }
     m_fixtures.bind({device, world, m_weapons, m_effects, m_audio,
                      context.config != nullptr ? context.config->difficulty.gain() : 1.0f});
@@ -125,7 +131,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         const PlayerActor& actor = runtime.actor;
         m_levels.observe(actor.player(), experienceLevel(actor.save().experience()));
     }
-    world.startTriggers(visitors());
+    world.startTriggers(visitors(), &m_towerAccess);
     m_audio.bindAmbience(world.layout());
     std::vector<CameraSubject> subjects;
     subjects.reserve(m_players.size());
@@ -147,7 +153,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     // The start camera holds at the level's entrance and rides in to a party that stands
     // there; one back among a realm's portals (as when it has fallen, or come out of a level)
     // materialises with the follow camera already on it.
-    const bool atEntrance = world.arrivalPoint(options.arrivalWorld) == world.startPoint(0);
+    const bool atEntrance =
+        world.arrivalPoint(options.arrivalWorld, &m_towerAccess) == world.startPoint(0);
     beginSpawn(device, !options.position.has_value() && atEntrance);
     m_arsenal.bind({device, m_classes, m_weapons, world.collision(), m_effects, m_audio,
                     context.sounds, world.wallHitSound(), world.isTower(),
@@ -222,7 +229,7 @@ void PlayScene::close() {
  * heading points back out of the door. */
 void PlayScene::spawnParty(std::span<const PartyMember> party, const PlayOptions& options) {
     // Arriving from a realm the party stands where the level marks that realm's way in.
-    const WorldLocator* start = m_world->arrivalPoint(options.arrivalWorld);
+    const WorldLocator* start = m_world->arrivalPoint(options.arrivalWorld, &m_towerAccess);
     Vec3 origin{0.0f, 0.0f, 0.0f};
     f32 yaw = 0.0f;
     if (start != nullptr) {
