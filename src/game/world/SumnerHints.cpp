@@ -5,7 +5,10 @@
 
 #include "engine/core/Types.h"
 
-#include "game/world/LevelTriggers.h"
+#include "game/players/LevelRecord.h"
+#include "game/players/Relics.h"
+#include "game/world/LevelCatalog.h"
+#include "game/world/TowerAccess.h"
 
 namespace gdl::game {
 
@@ -19,10 +22,6 @@ constexpr std::string_view kGuardianTitles = "BOSSHINTDESC";
 constexpr std::string_view kLegendTitles = "LEGENDHINTDESCS";
 constexpr std::string_view kRunestoneTitles = "RUNEHINTDESCS";
 constexpr s32 kLastGeneralList = 3;
-constexpr s32 kTowerWorld = 13;
-/** The realm whose crystals open each world; worlds 5, 6 and 8 want runestones instead. */
-constexpr std::array<s32, 14> kWorldCrystals{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
-constexpr std::array<s32, 3> kRunestoneWorlds{5, 6, 8};
 
 u32 bitOf(s32 index) {
     return 1U << static_cast<u32>(index);
@@ -32,18 +31,34 @@ u32 bitOf(s32 index) {
 
 HintKnowledge HintKnowledge::ofParty(std::span<const ClassProgress> party) {
     HintKnowledge knowledge;
-    for (s32 world = 0; world < static_cast<s32>(kWorldCrystals.size()); ++world) {
-        if (std::ranges::find(kRunestoneWorlds, world) != kRunestoneWorlds.end()) {
-            continue; // runestones are not gathered yet
-        }
-        const s32 realm = kWorldCrystals[static_cast<usize>(world)];
-        s32 best = 0;
-        for (const ClassProgress& progress : party) {
-            best = std::max(best, progress.crystals[static_cast<usize>(realm)]);
-        }
-        if (world == kTowerWorld ||
-            (!party.empty() && best >= LevelTriggers::crystalsNeeded(realm))) {
+    const TowerAccess access(party);
+    for (const s32 world : SumnerHints::kWorldOrder) {
+        if (world > 0 && access.worldOpen(world)) {
             knowledge.worldsOpen |= bitOf(world);
+        }
+    }
+    for (const ClassProgress& progress : party) {
+        const Relics& relics = progress.relics;
+        // A guardian is beaten when its realm's shard is held (given by the tower's order).
+        for (s32 at = 1; at < SumnerHints::kGuardianCount; ++at) {
+            const s32 world = SumnerHints::kWorldOrder[static_cast<usize>(at)];
+            if (relics.hasShard(LevelRef::orderOf(world))) {
+                knowledge.guardiansBeaten |= bitOf(world);
+            }
+        }
+        knowledge.legendsFound |= relics.legends;
+        knowledge.runestonesFound |= relics.runes;
+        // A wing's icons: a count marked complete, or the whole of what the statue wants
+        // (towerAllPlayersMetLevelReq).
+        for (usize kind = 0; kind < knowledge.wingsOpen.size(); ++kind) {
+            const s32 pieces = relics.gargoylePieces[kind];
+            knowledge.wingsOpen[kind] = knowledge.wingsOpen[kind] || pieces < 0 ||
+                                        relics.gargoyleComplete(static_cast<s32>(kind));
+        }
+        for (usize pass = 0; pass < LevelRecord::kPasses; ++pass) {
+            knowledge.guardianTries[pass] |= progress.levels.bossDeaths[pass];
+            knowledge.legendTries[pass] |= progress.levels.legendLevels[pass];
+            knowledge.runestoneTries[pass] |= progress.levels.runeLevels[pass];
         }
     }
     return knowledge;
