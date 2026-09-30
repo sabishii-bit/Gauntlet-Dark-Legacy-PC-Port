@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 #include <vector>
 
@@ -164,8 +165,44 @@ TEST_CASE("a party's crystals say which worlds are open", "[game][world][hints]"
     const HintKnowledge knowledge = HintKnowledge::ofParty(party);
     REQUIRE((knowledge.worldsOpen & worlds({7})) != 0);
     REQUIRE((knowledge.worldsOpen & worlds({2})) == 0);
-    REQUIRE((knowledge.worldsOpen & worlds({5, 6, 8})) == 0); // those want runestones
+    REQUIRE((knowledge.worldsOpen & worlds({5, 6, 8})) == 0); // those want shards and runestones
     REQUIRE((knowledge.worldsOpen & worlds({13})) != 0);
+    REQUIRE(knowledge.guardiansBeaten == 0);
+    REQUIRE(knowledge.wingsOpen == std::array<bool, 3>{false, false, false});
+}
+
+TEST_CASE("a party's shards, items, runestones and record fill in what the hints go by",
+          "[game][world][hints][tower-access]") {
+    std::vector<ClassProgress> party(2);
+    party[0].relics.addShard(1); // the town's guardian, first in the tower's order
+    party[1].relics.addShard(3); // the castle's, third
+    party[0].relics.addLegend(9);
+    party[1].relics.addRune(0);
+    party[1].relics.addRune(8);
+    party[0].relics.gargoylePieces[0] = 12;
+    party[1].relics.gargoylePieces[2] = -1; // marked complete
+    party[0].levels.recordBossDeath(2);
+    party[0].levels.recordBossDeath(2);
+    party[1].levels.recordBeaten(7, 2, 0, 9); // G3 holds the ice's legend item
+    party[1].levels.recordBeaten(7, 0, 8, 0); // G1 holds the eighth runestone
+    party[0].levels.recordBeaten(7, 0, 8, 0);
+    const HintKnowledge knowledge = HintKnowledge::ofParty(party);
+    REQUIRE(knowledge.guardiansBeaten == worlds({7, 1}));
+    REQUIRE(knowledge.legendsFound == worlds({9}));
+    REQUIRE(knowledge.runestonesFound == ((1U << 0U) | (1U << 8U)));
+    REQUIRE(knowledge.wingsOpen == std::array<bool, 3>{true, false, true});
+    REQUIRE(knowledge.guardianTries == std::array<u32, 2>{worlds({2}), worlds({2})});
+    REQUIRE(knowledge.legendTries == std::array<u32, 2>{worlds({9}), 0});
+    REQUIRE(knowledge.runestoneTries == std::array<u32, 2>{1U << 7U, 0});
+    // The temple opens by the eight shards, the underworld by the temple's and twelve
+    // runestones, the battlefield by the underworld's too.
+    party[0].relics.shards = 0x1FE;
+    REQUIRE((HintKnowledge::ofParty(party).worldsOpen & worlds({5, 6, 8})) == worlds({5}));
+    party[0].relics.shards = 0x3FE;
+    party[1].relics.runes = 0xFFF;
+    REQUIRE((HintKnowledge::ofParty(party).worldsOpen & worlds({5, 6, 8})) == worlds({5, 6}));
+    party[1].relics.shards = 0x7FE;
+    REQUIRE((HintKnowledge::ofParty(party).worldsOpen & worlds({5, 6, 8})) == worlds({5, 6, 8}));
 }
 
 TEST_CASE("the unpacked hints name the Lich first and tell of the green gas",

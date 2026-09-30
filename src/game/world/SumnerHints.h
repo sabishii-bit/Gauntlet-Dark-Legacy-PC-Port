@@ -30,7 +30,10 @@ struct HintKnowledge {
     std::array<u32, 2> legendTries{};
     std::array<u32, 2> runestoneTries{};
 
-    /** What a party knows from its members' progress: the worlds their crystals open. */
+    /** What a party knows from its members' progress, as the hints read it: the worlds open
+     * to it (WorldOpen), the guardians beaten (their shards), the legend items found, the
+     * runestones held, the gargoyle gates its icons open, and the tries: the boss levels died
+     * on, the legend-item and runestone levels beaten, once and again. */
     static HintKnowledge ofParty(std::span<const ClassProgress> party);
 };
 
