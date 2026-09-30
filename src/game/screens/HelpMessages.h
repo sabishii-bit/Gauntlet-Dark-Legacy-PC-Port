@@ -79,7 +79,12 @@ public:
     static constexpr s32 kFirstTurboName = 57; ///< three to a class: none, the lesser, the greater
     static constexpr s32 kLastTurboName = 79;
     static constexpr s32 kAlreadyHaveRune = 90;
+    /** The classes' two-player combos by name, one to a class in class order: the warrior's
+     * pinball to the jester's cannonball, the lines of the COMBOS text. */
+    static constexpr s32 kFirstComboName = 102;
+    static constexpr s32 kLastComboName = 109;
     static constexpr s32 kUseTurbo = 110;
+    static constexpr s32 kUseCombo = 111; ///< with two fifths of the meter and a partner
     /** A legend item's name is this plus the realm it is for, one to eleven. */
     static constexpr s32 kFirstLegendName = 113;
     static constexpr s32 kLastLegendName = 124;

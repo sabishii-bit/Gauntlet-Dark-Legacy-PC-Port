@@ -11,7 +11,7 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 115> kSpecs{{
+constexpr std::array<HelpMessageSpec, 124> kSpecs{{
     {HelpMessages::kUseMagicOnDeath, "USEMAGIC", "S_USEMAGIC"},
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
@@ -94,7 +94,26 @@ constexpr std::array<HelpMessageSpec, 115> kSpecs{{
     {78, "JES_TURBO", "S_TURB_JES", HelpRepeat::OncePerSession, 1, 60, true},
     {79, "JES_TURBO", "S_TURC_JES", HelpRepeat::OncePerSession, 2, 70, true},
     {HelpMessages::kAlreadyHaveRune, "ALREADYHAVERUNE", "S_ALREADYRUNE", HelpRepeat::Always},
+    // The classes' two-player combos by name, from the COMBOS lines, once a character, in
+    // the class's own bank (message.c 216: category 2, priority 70).
+    {HelpMessages::kFirstComboName + 0, "COMBOS", "S_PINBALL", HelpRepeat::OncePerPlayer, 0, 70,
+     true},
+    {HelpMessages::kFirstComboName + 1, "COMBOS", "S_SPINKICK", HelpRepeat::OncePerPlayer, 1, 70,
+     true},
+    {HelpMessages::kFirstComboName + 2, "COMBOS", "S_DOPPEL", HelpRepeat::OncePerPlayer, 2, 70,
+     true},
+    {HelpMessages::kFirstComboName + 3, "COMBOS", "S_AERIAL", HelpRepeat::OncePerPlayer, 3, 70,
+     true},
+    {HelpMessages::kFirstComboName + 4, "COMBOS", "S_SCHARGE", HelpRepeat::OncePerPlayer, 4, 70,
+     true},
+    {HelpMessages::kFirstComboName + 5, "COMBOS", "S_DBOMBER", HelpRepeat::OncePerPlayer, 5, 70,
+     true},
+    {HelpMessages::kFirstComboName + 6, "COMBOS", "S_BIGFOOT", HelpRepeat::OncePerPlayer, 6, 70,
+     true},
+    {HelpMessages::kFirstComboName + 7, "COMBOS", "S_CANNONBALL", HelpRepeat::OncePerPlayer, 7, 70,
+     true},
     {HelpMessages::kUseTurbo, "USETURBO", "S_USETURBO"},
+    {HelpMessages::kUseCombo, "USECOMBO", "S_USECOMBO"},
     // The legend items by name as they are found, one to a realm: the castle's scimitar to
     // the sky's javelin. The underworld's and the battlefield's have no item; their rows keep
     // the realm numbering.
@@ -162,7 +181,7 @@ Color HelpMessages::inkOf(s32 player) {
 
 bool HelpMessages::gameplayTip(s32 id) {
     return (id >= kDoorNeedsKey && id <= 28) || id == 94 || id == 95 || id == kUseTurbo ||
-           (id >= kBlastsDestroy && id <= kChestsExplode);
+           id == kUseCombo || (id >= kBlastsDestroy && id <= kChestsExplode);
 }
 
 HelpMessages::VoiceLead HelpMessages::voiceLead(s32 id, bool multiplayer) {

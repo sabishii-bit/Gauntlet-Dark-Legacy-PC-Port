@@ -434,6 +434,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         in.strafe = buttons.strafe;
         in.strongAttack = buttons.strongAttack;
         in.turbo = buttons.turbo;
+        in.combo = buttons.combo;
         in.chargePressed = buttons.chargePressed;
         in.attackPressed = buttons.attackPressed;
         in.turboAttackPressed = buttons.turboAttackPressed;

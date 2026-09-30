@@ -178,6 +178,7 @@ void GameConfig::mergeJson(std::string_view json) {
                 readKeys(k, "strongAttack", play.strongAttack);
                 readKeys(k, "turbo", play.turbo);
                 readKeys(k, "charge", play.charge);
+                readKeys(k, "combo", play.combo);
                 readKeys(k, "selectorUp", play.selectorUp);
                 readKeys(k, "selectorDown", play.selectorDown);
                 readKeys(k, "selectorLeft", play.selectorLeft);
@@ -197,6 +198,7 @@ void GameConfig::mergeJson(std::string_view json) {
                 readButtons(p, "strongAttack", play.padStrongAttack);
                 readButtons(p, "turbo", play.padTurbo);
                 readButtons(p, "charge", play.padCharge);
+                readButtons(p, "combo", play.padCombo);
                 readButtons(p, "selectorUp", play.padSelectorUp);
                 readButtons(p, "selectorDown", play.padSelectorDown);
                 readButtons(p, "selectorLeft", play.padSelectorLeft);
@@ -273,6 +275,7 @@ std::string GameConfig::toJson() const {
                             {"strongAttack", keyNames(play.strongAttack)},
                             {"turbo", keyNames(play.turbo)},
                             {"charge", keyNames(play.charge)},
+                            {"combo", keyNames(play.combo)},
                             {"selectorUp", keyNames(play.selectorUp)},
                             {"selectorDown", keyNames(play.selectorDown)},
                             {"selectorLeft", keyNames(play.selectorLeft)},
@@ -290,6 +293,7 @@ std::string GameConfig::toJson() const {
                             {"strongAttack", buttonNames(play.padStrongAttack)},
                             {"turbo", buttonNames(play.padTurbo)},
                             {"charge", buttonNames(play.padCharge)},
+                            {"combo", buttonNames(play.padCombo)},
                             {"selectorUp", buttonNames(play.padSelectorUp)},
                             {"selectorDown", buttonNames(play.padSelectorDown)},
                             {"selectorLeft", buttonNames(play.padSelectorLeft)},

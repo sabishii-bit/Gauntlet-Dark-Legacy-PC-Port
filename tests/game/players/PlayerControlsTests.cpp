@@ -133,17 +133,20 @@ TEST_CASE("turbo is held; the charge and the attack are known the frame they go 
     input.setKey(Key::R, true);
     input.setKey(Key::C, true);
     input.setKey(Key::LeftControl, true);
+    input.setKey(Key::V, true);
     PlayButtons buttons = readPlayButtons(input, PlayBindings{}, true, kNoPad);
     REQUIRE(buttons.strongAttack);
     REQUIRE(buttons.shieldPotion);
     REQUIRE(buttons.strafe);
     REQUIRE(buttons.turbo);
+    REQUIRE(buttons.combo);
     REQUIRE(buttons.chargePressed);
     REQUIRE_FALSE(buttons.attackPressed);
     input.beginPoll();
     input.setKey(Key::Space, true);
     buttons = readPlayButtons(input, PlayBindings{}, true, kNoPad);
     REQUIRE(buttons.turbo);
+    REQUIRE(buttons.combo);               // held, like the turbo
     REQUIRE_FALSE(buttons.chargePressed); // still held, no longer new
     REQUIRE(buttons.attack);
     REQUIRE(buttons.attackPressed);
@@ -154,9 +157,11 @@ TEST_CASE("turbo is held; the charge and the attack are known the frame they go 
     PadSnapshot pad;
     pad.connected = true;
     pad.buttons[static_cast<usize>(PadButton::B)] = true;
+    pad.buttons[static_cast<usize>(PadButton::RightBumper)] = true;
     pad.axes[static_cast<usize>(PadAxis::LeftTrigger)] = 1.0f;
     input.setPad(0, pad);
     REQUIRE(readPlayButtons(input, PlayBindings{}, false, 0).turbo);
+    REQUIRE(readPlayButtons(input, PlayBindings{}, false, 0).combo);
     REQUIRE(readPlayButtons(input, PlayBindings{}, false, 0).chargePressed);
 }
 

@@ -109,6 +109,10 @@ struct PlayBindings {
     std::vector<PadButton> padTurbo{PadButton::B};
     std::vector<Key> charge{Key::F}; ///< the shove that runs the turbo meter down
     std::vector<PadButton> padCharge{PadButton::LeftTrigger};
+    /** Held: takes hold of a partner ahead for the two-player combo (the original's
+     * S_COMBO_MOVE, its second right shoulder button on every scheme). */
+    std::vector<Key> combo{Key::V};
+    std::vector<PadButton> padCombo{PadButton::RightBumper};
     std::vector<Key> selectorUp{Key::I};
     std::vector<Key> selectorDown{Key::K};
     std::vector<Key> selectorLeft{Key::J};
