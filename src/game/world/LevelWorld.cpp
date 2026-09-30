@@ -56,6 +56,9 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     }
     const std::span<TextureSet* const> lent{lenders};
     std::vector<usize> controlledObjects;
+    m_destruction.bind(m_layout);
+    controlledObjects.assign(m_destruction.controlledObjects().begin(),
+                             m_destruction.controlledObjects().end());
     // Fading trigger targets are not always flagged as animated. Keep their
     // complete subtree individually drawable rather than baking it into a batch.
     for (const auto& instance : m_layout.itemInstances()) {
@@ -226,6 +229,7 @@ void LevelWorld::update(f32 seconds, bool timeStopped) {
         return;
     }
     m_worldAnimator.step(seconds, m_scene, timeStopped);
+    m_destruction.update(m_worldAnimator.cycleEvents(), m_scene, m_collision);
     m_skorneArena.update(seconds);
     m_fallingScenery.update(seconds);
     m_walls.update(seconds);
@@ -274,6 +278,7 @@ void LevelWorld::clear() {
     m_fallingScenery.clear();
     m_scene.clear();
     m_worldAnimator.clear();
+    m_destruction.clear();
     m_textureAnimator.clear();
     m_particles.clear();
     m_triggers.clear();

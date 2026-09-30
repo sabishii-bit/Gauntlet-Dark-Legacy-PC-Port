@@ -158,6 +158,7 @@ add_library(game STATIC
     world/LevelTransporters.cpp
     world/LevelWorld.h
     world/LevelWorld.cpp
+    world/WorldDestruction.cpp
     world/TowerCamera.h
     world/TowerCamera.cpp
     world/BossCamera.h

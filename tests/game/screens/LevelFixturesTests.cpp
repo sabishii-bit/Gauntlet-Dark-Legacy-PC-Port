@@ -57,7 +57,7 @@ struct Fixture {
             },
         .card = [](s32, std::string_view) { FAIL("Empty scenery has no pickup card"); },
         .opponents =
-            [this](const Vec3&, f32 radius, f32 damage, std::vector<s32>&) {
+            [this](const Vec3&, f32 radius, f32 damage, std::vector<s32>&, u32) {
                 REQUIRE(radius == Catch::Approx(kFirstReach * 2));
                 REQUIRE(damage == Catch::Approx(kFirstStep * 5));
                 calls.emplace_back("opponents");
@@ -85,6 +85,86 @@ TEST_CASE("fixture explosions resolve live nearby players before opponents and d
     REQUIRE(f.calls.size() == 2);
 }
 
+TEST_CASE("world explosion fallback keeps its retail radius damage and fire flags",
+          "[level-fixtures][world-destruction]") {
+    Fixture f;
+    usize hits = 0;
+    f.events.hurt = [&](usize player, f32 damage, HurtKind kind, bool) {
+        CHECK(player == 0);
+        CHECK(damage == Catch::Approx(50 * kFirstStep));
+        CHECK(kind == HurtKind::Blow);
+        ++hits;
+    };
+    f.events.opponents = [&](const Vec3&, f32 radius, f32 damage, std::vector<s32>&, u32 flags) {
+        CHECK(radius == Catch::Approx(5 * kFirstReach));
+        CHECK(damage == Catch::Approx(50 * kFirstStep));
+        CHECK(flags == 0x21);
+    };
+    f.fixtures.worldExplosion({}, f.players, f.events);
+    CHECK(hits == 1);
+}
+
+TEST_CASE("ice world explosion uses its authored art and poison ring without knockdown",
+          "[level-fixtures][world-destruction][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELI1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELI/animations.json");
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("I1");
+    REQUIRE(level);
+    REQUIRE(f.world.load(f.device, root, *level));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    const Vec3 position{10000, 0, 10000};
+    f.players[0].actor.place(position);
+    usize hits = 0;
+    usize opponentHits = 0;
+    f.events.hurt = [&](usize player, f32 damage, HurtKind kind, bool) {
+        CHECK(player == 0);
+        CHECK(damage > 0);
+        CHECK(kind == HurtKind::Gas);
+        ++hits;
+    };
+    f.events.opponents = [&](const Vec3&, f32 radius, f32, std::vector<s32>& reached, u32 flags) {
+        CHECK(flags == 0x800);
+        CHECK(radius <= 6);
+        if (std::ranges::find(reached, 42) == reached.end()) {
+            reached.push_back(42);
+            ++opponentHits;
+        }
+    };
+    f.fixtures.worldExplosion(position, f.players, f.events);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "WORLD_EXP");
+    CHECK(f.effects.effect(0).stretch == Vec3{1});
+    CHECK(hits == 1);
+    f.fixtures.advanceBlasts(0.49f, f.players, f.events);
+    CHECK(hits == 1);
+    CHECK(opponentHits == 1);
+    f.fixtures.advanceBlasts(0.02f, f.players, f.events);
+    CHECK(hits == 2);
+    CHECK(opponentHits == 2);
+    f.fixtures.advanceBlasts(2, f.players, f.events);
+    CHECK(hits == 2);
+    // Exercise LevelWorld's real authored cart, not just a synthetic animation event.
+    constexpr usize kCart = 709;
+    REQUIRE(f.world.layout().objects()[kCart].name == "I1MINECART#0");
+    for (s32 frame = 0; frame < 184; ++frame) {
+        f.world.update(1.0f / 30.0f);
+    }
+    CHECK_FALSE(f.world.scene().objectVisible(kCart));
+    CHECK_FALSE(f.world.collision().solid(static_cast<s32>(kCart)));
+    const auto bursts = f.world.takeWorldExplosions();
+    REQUIRE(bursts.size() == 1);
+    CHECK(bursts[0] == Vec3{f.world.scene().worldTransform(kCart)[3]});
+    f.world.update(1.0f / 30.0f);
+    CHECK(f.world.scene().objectVisible(kCart));
+    CHECK(f.world.collision().solid(static_cast<s32>(kCart)));
+    CHECK(f.world.takeWorldExplosions().empty());
+}
+
 TEST_CASE("a blast's ring reaches the further out later and for less, each of them once",
           "[game][screens][level-fixtures][blast-ring]") {
     Fixture f;
@@ -94,7 +174,7 @@ TEST_CASE("a blast's ring reaches the further out later and for less, each of th
     std::vector<f32> reaches;
     LevelFixtures::Events events = f.events;
     events.hurt = [&](usize i, f32 damage, HurtKind, bool) { hurts.emplace_back(i, damage); };
-    events.opponents = [&](const Vec3&, f32 radius, f32, std::vector<s32>&) {
+    events.opponents = [&](const Vec3&, f32 radius, f32, std::vector<s32>&, u32) {
         reaches.push_back(radius);
     };
     f.fixtures.blast(Vec3{0}, 12, 30, f.players, events, 1.0f);
@@ -140,7 +220,7 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
         ++helpCount;
         return true;
     };
-    f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&) {};
+    f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     const auto party = std::span{f.players}.first(1);
     f.fixtures.blast(origin, 12, 5, party, f.events);
     CHECK(f.world.placedItems().item(first).taken);
@@ -374,7 +454,7 @@ TEST_CASE("explosions blow chests apart, trapped ones going up in turn, and spen
         return true;
     };
     f.events.hurt = [](usize, f32, HurtKind, bool) {};
-    f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&) {};
+    f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     f.events.releaseEnemy = [&](s32 record, const Vec3&, s32) {
         released.push_back(record);
         return false;

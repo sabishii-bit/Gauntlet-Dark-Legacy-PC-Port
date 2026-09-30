@@ -293,7 +293,8 @@ std::optional<s32> PlacedItems::strikePotion(usize index, f32 damage) {
 }
 
 std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, const Vec3& position,
-                                                         f32 radius, f32 damage) {
+                                                         f32 radius, f32 damage,
+                                                         bool destroysPickups) {
     constexpr f32 kDestroyPower = 5;
     constexpr s32 kJunkValue = 10;
     std::vector<BlastChange> changes;
@@ -314,6 +315,9 @@ std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, c
             continue;
         }
         const bool treasure = kind == ItemKind::Gold;
+        if (!destroysPickups) {
+            continue; // fn_8005C1DC requires DMG_EXPLODE, not merely fire, for this destruction.
+        }
         const bool destructible =
             kind == ItemKind::Food || kind == ItemKind::WeaponPowerup ||
             kind == ItemKind::ArmorPowerup || kind == ItemKind::SpeedPowerup ||

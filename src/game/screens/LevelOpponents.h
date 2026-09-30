@@ -100,7 +100,7 @@ public:
     /** A blast of `damage` over `radius` reaching what it has not yet (`reached`, its ids:
      * enemies, generators from 1000, critters from 2000, the boss 3000). */
     void blast(const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached,
-               std::span<const PlayerRuntime> players);
+               std::span<const PlayerRuntime> players, u32 flags = EnemyHit::kKnockDown);
     /** What a character of `level` hits a generator by at a place meant for `placeLevel`: a
      * hundredth less a level under it, a tenth more a level over it. */
     static f32 generatorPowerScale(s32 level, f32 placeLevel);

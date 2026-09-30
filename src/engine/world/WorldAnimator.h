@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "engine/assets/AnimationSet.h"
@@ -43,6 +44,11 @@ public:
     void apply(WorldScene& scene) const;
     /** Poses every object, then moves `seconds` on. */
     void step(f32 seconds, WorldScene& scene, bool pauseLoops = false);
+    struct CycleEvent {
+        s32 object = -1;
+        bool wrapped = false; ///< loop endpoint, otherwise the first frames of a new pass
+    };
+    std::span<const CycleEvent> cycleEvents() const { return m_cycleEvents; }
 
 private:
     struct Track {
@@ -60,6 +66,7 @@ private:
     static void pose(const Track& track, WorldScene& scene);
 
     std::vector<Track> m_tracks;
+    std::vector<CycleEvent> m_cycleEvents;
 };
 
 } // namespace gdl

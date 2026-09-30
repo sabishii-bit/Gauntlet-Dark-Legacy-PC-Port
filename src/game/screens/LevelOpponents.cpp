@@ -1192,7 +1192,7 @@ f32 LevelOpponents::generatorPowerScale(s32 level, f32 placeLevel) {
 /** A blast's ring reaching the swarm, the generators, the boss and the great ones, each once
  * a blast unless the blow is slight enough to come again; thrown down away from its centre. */
 void LevelOpponents::blast(const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached,
-                           std::span<const PlayerRuntime> players) {
+                           std::span<const PlayerRuntime> players, u32 flags) {
     constexpr f32 kHeldFrom = 2.0f;   ///< a blow over this is not dealt the same one again
     constexpr s32 kGenerators = 1000; ///< the blast's ids: enemies, then these
     constexpr s32 kCritters = 2000;
@@ -1211,17 +1211,17 @@ void LevelOpponents::blast(const Vec3& position, f32 radius, f32 damage, std::ve
             continue;
         }
         const Vec3 away = enemies().positionOf(enemy) - position;
-        strikeEnemy(enemy, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1, players);
+        strikeEnemy(enemy, damage, flags, Vec3{away.x, 0.0f, away.z}, -1, players);
     }
     for (const s32 generator : generators().within(position, radius)) {
-        if (first(kGenerators + generator)) {
+        if ((flags & 0x800) == 0 && first(kGenerators + generator)) {
             strikeGenerator(generator, damage, -1, players);
         }
     }
     if (bosses().within(position, radius) && first(kBoss)) {
         EnemyHit struck;
         struck.damage = damage;
-        struck.flags = EnemyHit::kKnockDown;
+        struck.flags = flags;
         if (const Vec3* at = bosses().position(); at != nullptr) {
             struck.direction = Vec3{at->x - position.x, 0.0f, at->z - position.z};
         }
@@ -1232,8 +1232,8 @@ void LevelOpponents::blast(const Vec3& position, f32 radius, f32 damage, std::ve
             continue;
         }
         const Vec3 away = critters().positionOf(critter) - position;
-        strikeCritter(critter, damage, EnemyHit::kKnockDown, Vec3{away.x, 0.0f, away.z}, -1,
-                      std::nullopt, false, players);
+        strikeCritter(critter, damage, flags, Vec3{away.x, 0.0f, away.z}, -1, std::nullopt, false,
+                      players);
     }
 }
 

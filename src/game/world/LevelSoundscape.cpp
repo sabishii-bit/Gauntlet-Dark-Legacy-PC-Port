@@ -72,6 +72,7 @@ void LevelSoundscape::bindAmbience(const WorldLayout& layout) {
 
 void LevelSoundscape::updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear,
                                      f32 volume, bool ducked) {
+    m_ear = ear;
     if (m_output != nullptr) {
         m_ambience.update(*m_output, listeners, ear, volume,
                           ducked ? std::optional<f32>{kDuckedLevel} : std::nullopt);
@@ -308,6 +309,7 @@ void LevelSoundscape::suspend() {
 
 void LevelSoundscape::close() {
     suspend();
+    m_ear = {};
     m_ambience.clear();
     m_areas.clear();
     m_objectFlags.clear();
@@ -370,6 +372,19 @@ SoundHandle LevelSoundscape::playNamed(std::string_view name, f32 volume) {
         log::warn("Tower: sound {}: {}", name, e.what());
         return kNoSound;
     }
+}
+
+SoundHandle LevelSoundscape::playAt(std::string_view name, const Vec3& position, f32 playerDistance,
+                                    f32 volume) {
+    const f32 heard = volume * attenuation(playerDistance);
+    if (heard <= 0 || m_output == nullptr) {
+        return kNoSound;
+    }
+    const auto handle = playNamed(name, heard);
+    if (handle != kNoSound) {
+        m_output->setPan(handle, AmbientSounds::panOf(position, m_ear));
+    }
+    return handle;
 }
 
 f32 LevelSoundscape::lengthOf(std::string_view name) {

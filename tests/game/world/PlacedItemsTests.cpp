@@ -102,6 +102,10 @@ TEST_CASE("explosions destroy exposed food and powerups but preserve quest picku
     items.attach(held, items.item(held).transform, true);
     REQUIRE(items.place(device, "APPLE", origin + Vec3{0, 20, 0}, nullptr));
     REQUIRE(items.place(device, "APPLE", origin + Vec3{20, 0, 0}, nullptr));
+    // WorldExplosion's fallback carries fire/knockdown, not DMG_EXPLODE.
+    CHECK(items.blast(device, origin, 6, 50, false).empty());
+    CHECK_FALSE(items.item(first).taken);
+    CHECK(items.item(first + 2).name == "TREAS_GOLD");
     REQUIRE(items.blast(device, origin, 6, 4.99f).empty());
     const auto changes = items.blast(device, origin, 6, 5);
     REQUIRE(changes.size() == 3);

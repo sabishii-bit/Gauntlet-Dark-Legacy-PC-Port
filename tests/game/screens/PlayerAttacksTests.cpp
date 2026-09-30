@@ -1450,7 +1450,7 @@ TEST_CASE("explosions shatter world potions into ownerless magic without consumi
     auto& inventory = f.players[0].actor.save().progress().inventory;
     inventory.addPotions(1, 1);
     usize releases = 0;
-    f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&) {};
+    f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     f.targets.fixtureEvents.help = [](s32, usize) {
         FAIL("A bottle is not destroyed food");
         return false;
@@ -1556,7 +1556,7 @@ TEST_CASE("potion magic leaves the plain, exploding and gas barrels alone but br
     f.fixtures.setPlayerCount(1);
     f.targets.fixtureEvents.help = [](s32, usize) { return true; };
     f.targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool) {};
-    f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&) {};
+    f.targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     const Breakables& barrels = f.fixtures.barrels();
     for (const auto kind : {BreakableStrike::Kind::Plain, BreakableStrike::Kind::Exploding,
                             BreakableStrike::Kind::Poison, BreakableStrike::Kind::Holding}) {
@@ -1602,7 +1602,7 @@ struct PerkLevel : Fixture {
             return true;
         };
         targets.fixtureEvents.hurt = [](usize, f32, HurtKind, bool) {};
-        targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&) {};
+        targets.fixtureEvents.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     }
     PerkLevel(const PerkLevel&) = delete;
     PerkLevel& operator=(const PerkLevel&) = delete;
