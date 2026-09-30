@@ -559,6 +559,25 @@ TEST_CASE("reopening a level clears bank and common sound identities",
     soundscape.close();
 }
 
+TEST_CASE("world one-shots attenuate from players and pan from the active camera",
+          "[soundscape][world-destruction]") {
+    const auto root = test::scratchDirectory("soundscape-world-explosion");
+    writeBank(root, "LEVEL", {"S_MINECAREXPLO"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    const LevelAudioInfo info{.bank = "LEVEL", .stream = {}};
+    soundscape.open(root, &player, &info);
+    soundscape.updateAmbience({}, {Vec3{0}, Vec3{1, 0, 0}}, 1);
+    CHECK(soundscape.playAt("S_MINECAREXPLO", Vec3{10, 0, 0}, 70, 127.0f / 255) == kNoSound);
+    REQUIRE(soundscape.playAt("S_MINECAREXPLO", Vec3{10, 0, 0}, 45, 127.0f / 255) != kNoSound);
+    std::array<f32, 1024> output{};
+    mixer.mix(output);
+    CHECK(output[output.size() - 2] < output.back());
+    CHECK(output.back() > 0);
+    soundscape.close();
+}
+
 TEST_CASE("Temple heavy doors use the realm ICE slot rather than Tower sounds",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-temple-door");

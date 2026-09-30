@@ -1,0 +1,10 @@
+{
+  "screen": "tower",
+  "level": "I1",
+  "party": [
+    {"player": 0, "class": "WAR", "color": "BLU", "name": "TEST", "level": 30, "health": 2000}
+  ],
+  "position": [133, 11, -151],
+  "yaw": 3.14,
+  "welcome": false
+}

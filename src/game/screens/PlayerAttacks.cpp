@@ -1125,6 +1125,13 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
                                       missile.spec != nullptr ? missile.spec->radius : 1.0f);
     }
     for (const MissileImpact& impact : m_resources->arsenal.missiles().takeImpacts()) {
+        if (impact.worldObject >= 0) {
+            if (m_resources->world.explodeObject(impact.worldObject, impact.position)) {
+                for (const Vec3& position : m_resources->world.takeWorldExplosions()) {
+                    targets.fixtures.worldExplosion(position, players, targets.fixtureEvents);
+                }
+            }
+        }
         m_resources->arsenal.presentImpact(impact);
         if (impact.potion != 0) {
             beginPotion(impact);

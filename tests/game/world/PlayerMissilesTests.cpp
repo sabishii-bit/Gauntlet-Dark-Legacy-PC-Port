@@ -175,6 +175,7 @@ TEST_CASE("reflective weapons rebound without creating a damaging wall hit",
     launch.damage = 10;
     REQUIRE(missiles.launch(launch));
     CollisionTriangle wall;
+    wall.object = 73;
     wall.normal = {0, 0, -1};
     wall.vertices = {Vec3{-50, -10, 10}, Vec3{50, -10, 10}, Vec3{0, 50, 10}};
     WorldCollision collision;
@@ -186,6 +187,7 @@ TEST_CASE("reflective weapons rebound without creating a damaging wall hit",
     REQUIRE(hits.size() == 1);
     CHECK(hits[0].damage == 0);
     CHECK(hits[0].effect.empty());
+    CHECK(hits[0].worldObject == 73);
     missiles.update(3, &collision);
     CHECK(missiles.count() == 0);
 }
@@ -294,6 +296,7 @@ TEST_CASE("a missile is lobbed to come down half a unit under its start at its r
 TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][missiles]") {
     // A wall across z = 10 facing the thrower, and a floor far below.
     CollisionTriangle wall;
+    wall.object = 42;
     wall.normal = Vec3{0.0f, 0.0f, -1.0f};
     wall.vertices = {Vec3{-20.0f, -5.0f, 10.0f}, Vec3{20.0f, -5.0f, 10.0f},
                      Vec3{0.0f, 40.0f, 10.0f}};
@@ -313,10 +316,12 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
     REQUIRE(impacts[0].potion == 0);
     REQUIRE(impacts[0].effect == "SPARKS");
     REQUIRE(impacts[0].wallSound == MissileWallSound::Level);
+    CHECK(impacts[0].worldObject == 42);
     REQUIRE(missiles.takeImpacts().empty());
 
     // Over a floor, the lob comes down onto it.
     CollisionTriangle floor;
+    floor.object = 19;
     floor.normal = Vec3{0.0f, 1.0f, 0.0f};
     floor.vertices = {Vec3{-50.0f, 0.0f, -50.0f}, Vec3{0.0f, 0.0f, 100.0f},
                       Vec3{50.0f, 0.0f, -50.0f}};
@@ -329,6 +334,7 @@ TEST_CASE("walls and floors stop a missile where it strikes", "[game][world][mis
     REQUIRE(missiles.count() == 0);
     const std::vector<MissileImpact> landed = missiles.takeImpacts();
     REQUIRE(landed.size() == 1);
+    CHECK(landed[0].worldObject == 19);
     REQUIRE(landed[0].position.z > 15.0f); // past its reach, the floor lower than its drop
     REQUIRE(landed[0].position.y < 1.5f);
     // A potion flies off at the velocity it is given and says what it was where it lands.

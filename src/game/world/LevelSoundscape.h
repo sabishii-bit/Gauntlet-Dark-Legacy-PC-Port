@@ -91,6 +91,9 @@ public:
 
     /** Search level, common, then ambient banks; a broken first match stays silent. */
     SoundHandle playNamed(std::string_view name, f32 volume = 1.0f);
+    /** A one-shot attenuated from the nearest player and panned from the latest ambience ear. */
+    SoundHandle playAt(std::string_view name, const Vec3& position, f32 playerDistance,
+                       f32 volume = 1.0f);
     SoundHandle playFrom(SoundSet& bank, std::string_view name, f32 volume = 1.0f);
     SoundHandle playPromotion(std::string_view name, SoundHandle after = kNoSound);
     /** How long a named sound of the level's banks plays, in seconds; nought when unknown. */
@@ -239,6 +242,7 @@ private:
     SoundSet m_narratorSecond;
     SoundSet m_promotions;
     AmbientSounds m_ambience; ///< cleared before its borrowed banks
+    AmbientEar m_ear;
     MusicAreas m_areas;
     std::vector<u32> m_objectFlags; ///< the level's objects' flags, by object
     std::optional<u32> m_pickup;

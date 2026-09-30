@@ -62,6 +62,7 @@ add_executable(tests
     engine/world/WorldSceneTests.cpp
     engine/world/TextureAnimatorTests.cpp
     engine/world/WorldAnimatorTests.cpp
+    game/world/WorldDestructionTests.cpp
     engine/world/ParticleSystemTests.cpp
     engine/world/ParticleFieldTests.cpp
     engine/world/TreeParticlesTests.cpp

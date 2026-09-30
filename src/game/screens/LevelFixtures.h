@@ -3,6 +3,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/core/Types.h"
@@ -44,7 +45,7 @@ public:
         /** A blast's ring reaching `radius` about a point with `damage`: the swarm, the
          * great ones, the boss and the generators within it and not yet in the blast's
          * `reached` (ids of the caller's), which a blow over two joins. */
-        std::function<void(const Vec3&, f32, f32, std::vector<s32>&)> opponents;
+        std::function<void(const Vec3&, f32, f32, std::vector<s32>&, u32)> opponents;
         std::function<bool(s32, const Vec3&, s32)> releaseEnemy;
         std::function<void(s32, const Vec3&)> shatterPotion;
     };
@@ -91,6 +92,9 @@ public:
     void blast(const Vec3& position, f32 radius, f32 damage, std::span<PlayerRuntime> players,
                const Events& events, f32 seconds = kExplosionSeconds);
     void settleBlasts(std::span<PlayerRuntime> players, const Events& events);
+    /** WorldExplosion: realm-specific art and damage, at an animated or shot world object. */
+    void worldExplosion(const Vec3& position, std::span<PlayerRuntime> players,
+                        const Events& events);
     /** Gas reaching `radius` about a point with `damage` spoils the food lying there
      * (fn_8005C1DC's DMG_POISONGAS: over two), telling the party once it has. */
     void spoilFood(const Vec3& position, f32 radius, f32 damage,
@@ -117,8 +121,8 @@ private:
     void detonateChest(usize chest, std::optional<usize> opener, std::span<PlayerRuntime> players,
                        const Events& events);
     /** An explosion's work on the chests and the shootable triggers within it. */
-    void blastFixtures(const Vec3& position, f32 radius, f32 damage, const Events& events,
-                       std::vector<s32>& reached);
+    void blastFixtures(const Vec3& position, f32 reach, f32 damage, const Events& events,
+                       std::vector<s32>& reached, bool destroysContainers);
     /** Leaves `object` as rubble placed by `transform`, from the level's items. */
     void leaveRubble(std::string_view object, const Mat4& transform);
     static std::optional<usize> nearestStanding(std::span<const PlayerRuntime> players,
@@ -144,11 +148,14 @@ private:
         f32 damage = 0.0f;
         f32 seconds = kExplosionSeconds;
         f32 elapsed = 0.0f;
+        u32 flags = 0x420; ///< ordinary explosion + knockdown; world effects supply their own
         bool started = false;
         bool done = false;
         std::vector<usize> players; ///< party indices it has reached
         std::vector<s32> reached;   ///< the fixtures it has reached
         std::vector<s32> opponents; ///< the opponents it has, by the scene's ids
+        std::vector<std::pair<usize, f32>> playerReady; ///< poison repeats after 0.5s
+        std::vector<std::pair<s32, f32>> opponentReady;
     };
     /** One step of a blast's ring, as it stands `elapsed` into its life. */
     void feel(Blast& ring, std::span<PlayerRuntime> players, const Events& events);

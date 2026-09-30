@@ -33,6 +33,7 @@
 #include "game/world/SkorneArena.h"
 #include "game/world/TowerAccess.h"
 #include "game/world/TowerCamera.h"
+#include "game/world/WorldDestruction.h"
 
 namespace gdl::game {
 
@@ -76,6 +77,10 @@ public:
     void shootTrigger(usize index) { m_triggers.shoot(index); }
     const Rotators& rotators() const { return m_rotators; }
     std::vector<RotatorCue> takeRotatorCues() { return std::exchange(m_rotatorCues, {}); }
+    std::vector<Vec3> takeWorldExplosions() { return m_destruction.takeExplosions(); }
+    bool explodeObject(s32 object, const Vec3& position) {
+        return m_destruction.explode(object, position, m_scene, m_collision);
+    }
     const HazardSurfaces& hazards() const { return m_hazards; }
     std::vector<TriggerCameraCue> takeTriggerCameraCues() { return m_triggers.takeCameraCues(); }
     std::vector<Vec3> takeTriggerWakes() { return m_triggers.takeWakes(); }
@@ -95,8 +100,9 @@ public:
         return m_placedItems.poisonFood(device, position, radius, damage);
     }
     std::vector<PlacedItems::BlastChange> blastItems(RenderDevice& device, const Vec3& position,
-                                                     f32 radius, f32 damage) {
-        return m_placedItems.blast(device, position, radius, damage);
+                                                     f32 radius, f32 damage,
+                                                     bool destroysPickups = true) {
+        return m_placedItems.blast(device, position, radius, damage, destroysPickups);
     }
     void attachItem(usize index, const Mat4& transform, bool contained) {
         m_placedItems.attach(index, transform, contained);
@@ -259,6 +265,7 @@ private:
     WorldLayout m_layout;
     WorldScene m_scene;
     WorldAnimator m_worldAnimator;
+    WorldDestruction m_destruction;
     TextureAnimator m_textureAnimator;
     ParticleField m_particles;
     LevelTriggers m_triggers;

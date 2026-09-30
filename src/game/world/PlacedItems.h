@@ -184,7 +184,7 @@ public:
     /** Explosions destroy exposed food/powerups and reduce treasure to junk.
      * Quest pickups are protected; shattered potions request an ownerless magic wave. */
     std::vector<BlastChange> blast(RenderDevice& device, const Vec3& position, f32 radius,
-                                   f32 damage);
+                                   f32 damage, bool destroysPickups = true);
     /** Takes whatever the collectors touch and starts its burst; the pickups are returned
      * for the game to hand out. With a `judge`, each touched item is its to take, take part
      * of or leave; only those it took from are returned. */

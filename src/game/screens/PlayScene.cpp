@@ -405,8 +405,9 @@ LevelFixtures::Events PlayScene::fixtureEvents() {
         .card = [this](s32 player,
                        std::string_view name) { m_hud.pickups().addCard(player, name); },
         .opponents =
-            [this](const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached) {
-                m_opponents.blast(position, radius, damage, reached, m_players);
+            [this](const Vec3& position, f32 radius, f32 damage, std::vector<s32>& reached,
+                   u32 flags) {
+                m_opponents.blast(position, radius, damage, reached, m_players, flags);
             },
         .releaseEnemy =
             [this](s32 record, const Vec3& position, s32 count) {

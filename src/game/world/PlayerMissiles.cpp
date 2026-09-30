@@ -187,12 +187,17 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
             if (collision == nullptr || penetrates) {
                 continue;
             }
-            const Vec3 pushed = collision->resolveWalls(missile.position, radius,
-                                                        missile.position.y - radius * 0.5f,
-                                                        missile.position.y + radius * 0.5f);
+            std::vector<WallContact> contacts;
+            const Vec3 pushed = collision->resolveWalls(
+                missile.position, radius, missile.position.y - radius * 0.5f,
+                missile.position.y + radius * 0.5f, &contacts);
             const bool wall = glm::distance(pushed, missile.position) > 1e-4f;
             const auto floor = collision->floorAt(missile.position, radius, radius * 0.5f);
             if (wall || floor.has_value()) {
+                s32 object = floor ? floor->object : -1;
+                if (wall && !contacts.empty()) {
+                    object = contacts.front().object;
+                }
                 if (missile.potion == 0 && (missile.flags & powerup::kReflect) != 0) {
                     const Vec3 normal =
                         wall ? glm::normalize(pushed - missile.position) : floor->normal;
@@ -215,7 +220,9 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                                              {},
                                              m_ricochetIn <= 0 ? MissileWallSound::Ricochet
                                                                : MissileWallSound::Silent,
-                                             missile.flags});
+                                             missile.flags,
+                                             -1,
+                                             object});
                         if (m_ricochetIn <= 0) {
                             m_ricochetIn = 1.0f;
                         }
@@ -225,7 +232,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                 m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
                                                   missile.potency, missile.damage, -1,
                                                   missile.spec->impactTree, missile.wallSound,
-                                                  missile.flags});
+                                                  missile.flags, -1, object});
                 missile.age = kLifeSeconds;
             }
         }

@@ -95,6 +95,7 @@ struct MissileImpact {
     MissileWallSound wallSound = MissileWallSound::Level;
     u32 flags = 0;
     s32 node = -1;
+    s32 worldObject = -1; ///< struck collision owner, independent of a creature target
 };
 
 /**

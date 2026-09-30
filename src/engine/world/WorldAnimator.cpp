@@ -37,6 +37,7 @@ void WorldAnimator::bind(const WorldLayout& layout) {
 
 void WorldAnimator::clear() {
     m_tracks.clear();
+    m_cycleEvents.clear();
 }
 
 std::optional<usize> WorldAnimator::trackOf(s32 object) const {
@@ -103,11 +104,19 @@ void WorldAnimator::apply(WorldScene& scene) const {
 }
 
 void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
+    m_cycleEvents.clear();
     const f32 advance = seconds * kFramesPerSecond;
     for (Track& track : m_tracks) {
         pose(track, scene);
-        if (track.finished || (pauseLoops && !track.once && !track.reverse)) {
+        if (seconds <= 0 || track.finished || (pauseLoops && !track.once && !track.reverse)) {
             continue;
+        }
+        // Retail reveals a spent cart in its first two 30-Hz frames. Emit the
+        // restart before advancing as well, so a slow rendered frame cannot jump
+        // over that window and leave the cart hidden for every later cycle.
+        const bool restarted = !track.reverse && track.frame == 0.0f;
+        if (restarted) {
+            m_cycleEvents.push_back({track.object, false});
         }
         const auto last = static_cast<f32>(track.frames - 1);
         if (track.reverse) {
@@ -115,6 +124,8 @@ void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
             if (track.frame <= 0.0f) {
                 track.frame = 0.0f;
                 track.finished = true;
+            } else if (std::floor(track.frame) >= last - 1) {
+                m_cycleEvents.push_back({track.object, false});
             }
             continue;
         }
@@ -123,9 +134,14 @@ void WorldAnimator::step(f32 seconds, WorldScene& scene, bool pauseLoops) {
             if (track.frame >= last) {
                 track.frame = last;
                 track.finished = true;
+            } else if (!restarted && std::floor(track.frame) <= 1) {
+                m_cycleEvents.push_back({track.object, false});
             }
         } else if (std::floor(track.frame) >= last) {
             track.frame = 0.0f;
+            m_cycleEvents.push_back({track.object, true});
+        } else if (!restarted && std::floor(track.frame) <= 1) {
+            m_cycleEvents.push_back({track.object, false});
         }
     }
 }
