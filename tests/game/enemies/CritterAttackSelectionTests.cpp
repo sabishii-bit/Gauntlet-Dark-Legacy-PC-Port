@@ -61,6 +61,41 @@ TEST_CASE("boss health gates use exclusive upper bounds only above the lower bou
     REQUIRE_FALSE(target.allowsPhase(5, 10.01f));
 }
 
+TEST_CASE("held players carry into the first other eligible grab despite cooldown and range",
+          "[game][boss-attacks][combatant-grab]") {
+    const auto root = attackTable(R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":5,"maxHealth":100}],
+      "moves":[{"name":"READY","anim":"STEP","type":32},
+        {"name":"GRAB","anim":"STEP","type":129,"priority":10,"colnode":"BODY",
+         "frameStart":0,"frameEnd":1,"damage0":0},
+        {"name":"DISABLED_GRAB","anim":"STEP","type":129,"flags":4},
+        {"name":"MISSING_NODE_GRAB","anim":"STEP","type":129,"flags":16,"colnode":"MISSING"},
+        {"name":"GRABAGAIN","anim":"STEP","type":129,"priority":10,"cooldown":100,
+         "colnode":"BODY","frameStart2":2,"frameEnd2":2,"damage1":0,
+         "target":{"minDistance":1000,"minRateScale":4}}],
+      "damages":[{"type":7,"maxDistance":5,"damage":50,"minSpeed":5}]})");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    const std::vector<EnemyView> party{targetAt(2)};
+    fixture.update(6, 0.1f, party); // READY ends
+    fixture.update(2, 1.0f / 30, party);
+    REQUIRE(fixture.actor.moveName() == "GRAB");
+    REQUIRE(fixture.actor.takeGrabs().front().attachment.has_value());
+    fixture.update(4, 2.0f / 30, party);
+    fixture.actor.takeGrabs();
+    fixture.update(2, 1.0f / 30, party);
+    REQUIRE(fixture.actor.moveName() == "GRABAGAIN");
+    const auto held = fixture.actor.takeGrabs();
+    REQUIRE(held.size() == 1);
+    REQUIRE(held.front().attachment.has_value());
+    fixture.update(2, 1.0f / 30, party);
+    const auto released = fixture.actor.takeGrabs();
+    REQUIRE_FALSE(released.back().attachment.has_value());
+    REQUIRE(released.back().damage == 50);
+}
+
 TEST_CASE("boss attack rotation does not starve equal-priority attacks", "[game][boss-attacks]") {
     const auto root = attackTable(R"({"descriptors":[{"prefix":"DJINN","type":4}],
       "types":[{"moveCount":4,"maxHealth":100}],

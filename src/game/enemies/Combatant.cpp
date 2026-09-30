@@ -185,8 +185,13 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     }
     if (critter.grabbed >= 0 &&
         (critter.state != State::Active || critter.grabMove != critter.move)) {
-        m_grabs.push_back({critter.grabbed, i, std::nullopt, Vec3{0}, 0});
-        critter.grabbed = -1;
+        if (critter.state == State::Active && critter.move >= 0 &&
+            data.moves()[static_cast<usize>(critter.move)].type == MoveDefinition::kGrab) {
+            critter.grabMove = critter.move;
+        } else {
+            m_grabs.push_back({critter.grabbed, i, std::nullopt, Vec3{0}, 0});
+            critter.grabbed = -1;
+        }
     }
     const MoveDefinition* move =
         critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
@@ -262,6 +267,14 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                     if ((critter.soundsGiven & bit) == 0) {
                         critter.soundsGiven |= bit;
                         eruptArena(critter, i, *harm, players);
+                    }
+                    return;
+                }
+                constexpr u32 kSticky = 0x4000000;
+                if (targeted && (harm->flags & kSticky) != 0) {
+                    if ((critter.soundsGiven & bit) == 0) {
+                        critter.soundsGiven |= bit;
+                        plant(critter, i, index);
                     }
                     return;
                 }

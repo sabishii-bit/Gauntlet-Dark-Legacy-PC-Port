@@ -958,13 +958,13 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     for (const CombatShot& shot : m_bosses.takeShots()) {
         if (ItemArchive* archive = m_bosses.archive(); archive != nullptr) {
             m_combatantProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
-                                          shotSound);
+                                          shotSound, &m_resources->world.collision());
         }
     }
     for (const CombatShot& shot : m_critters.takeShots()) {
         if (ItemArchive* archive = m_critters.archiveOf(shot.critter); archive != nullptr) {
             m_combatantProjectiles.launch(shot, *archive, m_resources->device, m_resources->effects,
-                                          shotSound);
+                                          shotSound, &m_resources->world.collision());
         }
     }
     m_combatantProjectiles.update(seconds, &m_resources->world.collision(), views,
@@ -1030,7 +1030,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         }
         showCritterCue(cue, m_critters.archiveOf(cue.critter), false);
     }
-    followCritterEffects();
+    followCritterEffects(players);
     finishSummons(views);
     for (const CombatBlow& blow : m_critters.takeBlows()) {
         applyCritterBlow(blow, players, events);
@@ -1340,10 +1340,10 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
         }
         if (effect != 0 && cue.follows) {
             const Vec3* at = ofBoss ? m_bosses.position() : &m_critters.positionOf(cue.critter);
-            m_critterEffects.push_back(
-                CritterEffect{effect, cue.critter, ofBoss,
-                              at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}, cue.node,
-                              cue.nodeOffset, cue.rootAttachment, cue.pitchYaw});
+            m_critterEffects.push_back(CritterEffect{
+                effect, cue.critter, ofBoss,
+                at != nullptr ? cue.position - *at : Vec3{0.0f, 0.0f, 0.0f}, cue.node,
+                cue.nodeOffset, cue.rootAttachment, cue.pitchYaw, cue.playerAttachment});
         }
     }
     // The great ones' sounds play at 224 of 255 as heard from where the players stand
@@ -1386,7 +1386,7 @@ void LevelOpponents::finishSummons(std::span<const EnemyView> players) {
 }
 
 /** Effects riding on the great ones go where they go, and are let go of when they end. */
-void LevelOpponents::followCritterEffects() {
+void LevelOpponents::followCritterEffects(std::span<const PlayerRuntime> players) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -1397,6 +1397,23 @@ void LevelOpponents::followCritterEffects() {
     });
     for (usize i = 0; i < m_critterEffects.size();) {
         const CritterEffect& riding = m_critterEffects[i];
+        if (riding.playerAttachment.has_value()) {
+            const auto player = std::ranges::find_if(players, [&](const PlayerRuntime& runtime) {
+                return runtime.actor.player() == *riding.playerAttachment &&
+                       runtime.life == PlayerLife::Standing;
+            });
+            if (player == players.end() || !m_resources->effects.playing(riding.effect)) {
+                m_resources->effects.stop(riding.effect);
+                m_critterEffects.erase(m_critterEffects.begin() + static_cast<std::ptrdiff_t>(i));
+                continue;
+            }
+            m_resources->effects.placeAt(
+                riding.effect,
+                CritterArea::placement(player->capture.body().value_or(player->actor.transform()),
+                                       riding.nodeOffset, riding.pitchYaw));
+            ++i;
+            continue;
+        }
         const bool alive =
             riding.ofBoss ? m_bosses.present()
                           : m_critters.alive(riding.critter) || m_critters.dying(riding.critter);

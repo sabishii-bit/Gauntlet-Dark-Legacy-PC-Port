@@ -67,7 +67,8 @@ struct CombatCue {
     Vec3 nodeOffset{0.0f};
     Vec2 pitchYaw{0.0f}; ///< local effect rotation, independent of its attachment offset
     bool loop = true;
-    std::optional<Mat4> placement; ///< complete world placement for a static arena effect
+    std::optional<Mat4> placement;       ///< complete world placement for a static arena effect
+    std::optional<s32> playerAttachment; ///< player input id, independent of the captor's pose
 };
 
 /** A dying critter's death throwing something out (the coins a boss spews): from where,

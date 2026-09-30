@@ -64,10 +64,12 @@ void CombatantProjectiles::place(const Flying& flying, EffectTrees& effects) {
 
 void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
                                   RenderDevice& device, EffectTrees& effects,
-                                  const PlaySound& sound) {
+                                  const PlaySound& sound, const WorldCollision* collision) {
     const AttackDefinition* damage =
         shot.data != nullptr ? shot.data->damage(shot.damageIndex) : nullptr;
-    if (damage == nullptr || damage->type != AttackDefinition::kProjectile) {
+    const bool planted = damage != nullptr && damage->type == AttackDefinition::kTargetArea &&
+                         (damage->flags & kSticky) != 0;
+    if (damage == nullptr || (!planted && damage->type != AttackDefinition::kProjectile)) {
         return;
     }
     const CombatEffectDefinition* cue = shot.data->sound(damage->sound);
@@ -88,6 +90,27 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
     flying.leavesGenerator = (cue->flags & 0x20000U) != 0;
     flying.summonsEnemies = (cue->flags & 0x400000U) != 0;
     flying.position = flying.shot.origin;
+    if (planted) {
+        flying.planted = true;
+        flying.stuck = true;
+        if (collision != nullptr && (cue->flags & 0x10U) != 0) {
+            const f32 radius = std::max(0.0f, damage->radius * shot.scale);
+            if (const auto floor =
+                    collision->floorAt(flying.position, 1 + radius * 0.5f, 5 + radius * 0.5f)) {
+                flying.position.y = floor->y + kFloorClearance;
+                flying.rotation.x = std::atan2(floor->normal.z, floor->normal.y);
+                flying.rotation.z =
+                    -std::atan2(floor->normal.x, std::hypot(floor->normal.y, floor->normal.z));
+            }
+        }
+        flying.effect = show(flying, damage->sound, device, effects, sound, shot.birthLife);
+        flying.phaseSeconds = effects.remaining(flying.effect).value_or(0);
+        if (flying.effect != 0) {
+            place(flying, effects);
+            m_flying.push_back(flying);
+        }
+        return;
+    }
     flying.velocity = CombatantProjectile::velocity(*damage, flying.shot, spread(m_random));
     flying.rotation.y = std::atan2(flying.velocity.x, flying.velocity.z);
     if ((cue->flags & kSpin) != 0) {
@@ -110,6 +133,33 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
     }
     for (Flying& flying : m_flying) {
         const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
+        if (flying.planted) {
+            // Damage ends with the hold, not with the last lingering particle of
+            // the disappearance effect. Carry coarse updates across both phases.
+            f32 remaining = seconds;
+            while (remaining > 0 && flying.effect != 0) {
+                const f32 active = std::min(remaining, flying.phaseSeconds);
+                stickyContacts(flying, active, players);
+                remaining -= active;
+                flying.phaseSeconds -= active;
+                if (flying.phaseSeconds > 0) {
+                    break;
+                }
+                effects.finish(flying.effect);
+                if (!flying.morphed && damage.morph >= 0) {
+                    flying.morphed = true;
+                    flying.phaseSeconds = damage.morphLife > 0 ? damage.morphLife : kMorphLife;
+                    flying.effect =
+                        show(flying, damage.morph, device, effects, sound, flying.phaseSeconds);
+                    place(flying, effects);
+                } else {
+                    flying.effect = show(flying, damage.morphEnd, device, effects, sound);
+                    place(flying, effects);
+                    flying.effect = 0;
+                }
+            }
+            continue;
+        }
         if (!effects.playing(flying.effect)) {
             if (!flying.stuck && !flying.settled && !flying.morphed && damage.morph >= 0) {
                 flying.morphed = true;
@@ -141,20 +191,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
         }
         const f32 radius = std::max(0.0f, damage.radius * flying.shot.scale);
         if (flying.stuck) {
-            constexpr f32 kContactStep = 1.0f / 30.0f;
-            flying.contactSeconds += seconds;
-            const f32 reach = std::max(0.0f, damage.maxDistance * flying.shot.scale);
-            while (flying.contactSeconds >= kContactStep) {
-                flying.contactSeconds -= kContactStep;
-                for (const EnemyView& player : players) {
-                    if (!player.hidden && CombatantProjectile::contact(
-                                              flying.position, flying.position, reach,
-                                              player.position, player.radius, player.height)) {
-                        m_hits.push_back({player.player, damage.damage * flying.shot.damageScale,
-                                          damage.flags, Vec3{0}, 0});
-                    }
-                }
-            }
+            stickyContacts(flying, seconds, players);
             continue;
         }
         std::vector<s32> contacted;
@@ -293,6 +330,25 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
     }
     std::erase_if(m_flying, [](const Flying& flying) { return flying.effect == 0; });
     std::erase_if(m_emittedEffects, [&](u32 effect) { return !effects.playing(effect); });
+}
+
+void CombatantProjectiles::stickyContacts(Flying& flying, f32 seconds,
+                                          std::span<const EnemyView> players) {
+    constexpr f32 kContactStep = 1.0f / 30.0f;
+    const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
+    flying.contactSeconds += seconds;
+    const f32 reach = std::max(0.0f, damage.maxDistance * flying.shot.scale);
+    while (flying.contactSeconds >= kContactStep) {
+        flying.contactSeconds -= kContactStep;
+        for (const EnemyView& player : players) {
+            if (!player.hidden &&
+                CombatantProjectile::contact(flying.position, flying.position, reach,
+                                             player.position, player.radius, player.height)) {
+                m_hits.push_back({player.player, damage.damage * flying.shot.damageScale,
+                                  damage.flags, Vec3{0}, 0});
+            }
+        }
+    }
 }
 
 void CombatantProjectiles::clear(EffectTrees& effects) {

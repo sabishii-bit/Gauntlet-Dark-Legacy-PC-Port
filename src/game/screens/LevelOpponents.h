@@ -163,7 +163,7 @@ private:
     void awardBossLosses(std::span<const PlayerRuntime> players, const Events& events);
     void awardCritterLosses(std::span<const PlayerRuntime> players, const Events& events);
     void showCritterCue(const CombatCue& cue, ItemArchive* archive, bool ofBoss);
-    void followCritterEffects();
+    void followCritterEffects(std::span<const PlayerRuntime> players);
     void updateDeaths(std::span<PlayerRuntime> players, const Events& events);
     void clearDeaths();
     void finishSummons(std::span<const EnemyView> players);
@@ -224,6 +224,7 @@ private:
         Vec3 nodeOffset{0.0f};
         bool rootAttachment = false;
         Vec2 pitchYaw{0.0f};
+        std::optional<s32> playerAttachment;
     };
     std::vector<CritterEffect> m_critterEffects;
     struct MoveEffect {

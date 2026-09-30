@@ -265,7 +265,7 @@ private:
     /** Sets off sound record `index` (and what it links to) at `position`. */
     void cue(Actor& critter, s32 id, s32 index, const Vec3& position,
              std::optional<std::string_view> node = std::nullopt,
-             const AttackDefinition* damage = nullptr);
+             const AttackDefinition* damage = nullptr, std::optional<s32> player = std::nullopt);
 
     std::vector<CombatCue> m_cues;
     std::vector<CombatGrab> m_grabs;
@@ -277,6 +277,7 @@ private:
     std::vector<CombatArenaActivation> m_arenaActivations;
     void shoot(const Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
                std::span<const EnemyView> players);
+    void plant(const Actor& critter, s32 id, s32 damageIndex);
     void strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s32 damageIndex,
                     std::span<const EnemyView> players);
     static Vec3 partPosition(const Actor& critter, std::string_view node);

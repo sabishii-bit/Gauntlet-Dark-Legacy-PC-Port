@@ -114,6 +114,7 @@ struct MoveDefinition {
     static constexpr s32 kKnockBack = 65;
     static constexpr s32 kKnockDown = 66;
     static constexpr s32 kAttackFrom = 128; ///< attacks are this and over
+    static constexpr s32 kGrab = 129;
     static constexpr s32 kTargetArea = 136; ///< snapshots the target before emitting its effects
     static constexpr s32 kCutsIn = 0xF00; ///< bypasses priority comparison, not interrupt immunity
 

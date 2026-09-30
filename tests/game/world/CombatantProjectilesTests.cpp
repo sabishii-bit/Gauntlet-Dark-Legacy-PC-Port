@@ -59,7 +59,9 @@ struct Fixture {
                 {"type":1,"flags":1,"behaviorFlags":9,"radius":0.5,"damage":20,
                  "minSpeed":30,"maxSpeed":30,"sfxIndex":4,"sfx":2},
                 {"type":1,"flags":0,"behaviorFlags":9,"radius":0.5,"damage":0,
-                 "minSpeed":30,"maxSpeed":30,"sfxIndex":5,"sfx":2}],
+                 "minSpeed":30,"maxSpeed":30,"sfxIndex":5,"sfx":2},
+                {"type":8,"flags":67108864,"radius":3,"maxDistance":3,"damage":1,
+                 "sfxIndex":0,"morph":1,"morphEnd":2,"morphLife":5}],
             "sounds":[{"name":"SHOT","levelFormat":"S_%cSHOT"},{"name":"LOOP"},
                       {"name":"HIT","flags":16,"levelFormat":"S_%cHIT"},{"name":"LOOP","life":100},
                       {"name":"SHOT","flags":131072},{"name":"SHOT","flags":4194304}]})");
@@ -83,6 +85,47 @@ struct Fixture {
     }
 };
 
+TEST_CASE("planted hand traps hold a fixed position, allow escape, and end their damage",
+          "[boss-projectiles][lich]") {
+    const s32 frameRate = GENERATE(30, 60, 120);
+    const f32 dt = 1.0f / static_cast<f32>(frameRate);
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 6;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{80, 3, 80}; // never a velocity destination
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    REQUIRE(f.projectiles.count() == 1);
+    std::array<EnemyView, 1> players{{{0, {0, 0, 0}, 1, 6}}};
+    usize hits = 0;
+    for (s32 frame = 0; frame < frameRate; ++frame) {
+        f.step(dt, players);
+        for (const auto& hit : f.projectiles.takeHits()) {
+            REQUIRE(hit.damage == 1);
+            REQUIRE(hit.flags == PlayerImpact::kSticky);
+            REQUIRE(hit.direction == Vec3{0});
+            ++hits;
+        }
+    }
+    REQUIRE(hits >= 29);
+    REQUIRE(hits <= 30);
+    players[0].position.x = 20;
+    f.step(1, players);
+    REQUIRE(f.projectiles.takeHits().empty());
+    players[0].position.x = 0;
+    f.step(0.5f, players);
+    REQUIRE_FALSE(f.projectiles.takeHits().empty());
+    f.step(4, players); // coarse frame crosses the hold's end
+    REQUIRE(f.projectiles.count() == 0);
+    REQUIRE(f.projectiles.takeHits().size() <= 79); // only the remaining 2.6 seconds
+    REQUIRE(f.sounds.size() == 2);                  // birth and end; LOOP has no cue
+    f.step(1, players);
+    REQUIRE(f.projectiles.takeHits().empty());
+    f.projectiles.clear(f.effects);
+    REQUIRE(f.effects.count() == 0);
+}
+
 TEST_CASE("generator shots leave one stage placement on expiry, but never on clear",
           "[boss-projectiles][spider]") {
     Fixture f;
@@ -103,6 +146,54 @@ TEST_CASE("generator shots leave one stage placement on expiry, but never on cle
     f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
     f.projectiles.clear(f.effects);
     REQUIRE(f.projectiles.takeGenerators().empty());
+}
+
+TEST_CASE("Lich's shipped hand trap aligns to the floor and morphs for five seconds",
+          "[boss-projectiles][lich][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    Fixture f;
+    REQUIRE(f.data.load(root / "critter/LICH.json"));
+    REQUIRE(f.archive.load(root / "MONSTERS/LICH"));
+    WorldCollision floor;
+    CollisionTriangle triangle;
+    triangle.normal = {0, 1, 0};
+    triangle.vertices = {Vec3{-100, 0, -100}, Vec3{0, 0, 100}, Vec3{100, 0, -100}};
+    floor.build({triangle});
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 17;
+    shot.origin = {0, 3, 0};
+    REQUIRE(f.data.damage(17)->type == AttackDefinition::kTargetArea);
+    REQUIRE(f.data.damage(17)->flags == PlayerImpact::kSticky);
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound, &floor);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.effect(0).name == "ATK14GENFX");
+    REQUIRE(f.effects.effect(0).position.y == Approx(0.1f));
+    const f32 birth = *f.effects.remaining(f.effects.effect(0).id);
+    REQUIRE(birth > 0);
+    f.step(birth + 0.01f);
+    REQUIRE(f.projectiles.count() == 1);
+    bool foundLoop = false;
+    for (usize i = 0; i < f.effects.count(); ++i) {
+        if (f.effects.effect(i).name == "ATK14LPFX") {
+            foundLoop = true;
+            REQUIRE(f.effects.effect(i).position.y == Approx(0.1f));
+        }
+    }
+    REQUIRE(foundLoop);
+    f.step(4.98f);
+    REQUIRE(f.projectiles.count() == 1);
+    f.step(0.02f);
+    REQUIRE(f.projectiles.count() == 0);
+    bool foundEnd = false;
+    for (usize i = 0; i < f.effects.count(); ++i) {
+        foundEnd = foundEnd || f.effects.effect(i).name == "ATK14ENDFX";
+    }
+    REQUIRE(foundEnd);
+    REQUIRE(f.sounds == std::vector<std::string>{"S_LICHCONJ", "S_LICHHAND"});
+    f.projectiles.clear(f.effects);
+    REQUIRE(f.effects.count() == 0);
 }
 
 TEST_CASE("summoning shots invoke one callback on contact or expiration, never on clear",

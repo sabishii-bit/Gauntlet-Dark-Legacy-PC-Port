@@ -47,6 +47,9 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
         actor.grabMove = actor.move;
         actor.grabNode = move.colnode;
         actor.grabOffset = damage.offset;
+        if (damage.hitSound >= 0) {
+            cue(actor, m_id, damage.hitSound, centre, std::nullopt, nullptr, actor.grabbed);
+        }
     }
 }
 void Combatant::carryGrab(Actor& actor, std::span<const EnemyView> players) {

@@ -122,8 +122,33 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
     m_shots.push_back(shot);
 }
 
+/** Where the target stood when the move looked, the record's offset turned with the body
+ * (CritterDoTexmodNode with c->targetPos); the level's projectiles keep it as a web. */
+void Combatant::plant(const Actor& critter, s32 id, s32 damageIndex) {
+    if (!critter.attackTarget.has_value()) {
+        return;
+    }
+    const AttackDefinition* damage = critter.definition->damage(damageIndex);
+    if (damage == nullptr) {
+        return;
+    }
+    CombatShot shot;
+    shot.data = critter.definition;
+    shot.critter = id;
+    shot.damageIndex = damageIndex;
+    shot.origin =
+        *critter.attackTarget + Vec3{modelTransform(critter) * Vec4{damage->offset, 0.0f}};
+    shot.forward = Vec3{std::sin(critter.yaw), 0.0f, std::cos(critter.yaw)};
+    shot.rate = attackRate(critter);
+    shot.scale = critter.scale;
+    shot.damageScale = m_scales.damage;
+    shot.realm = m_realm;
+    m_shots.push_back(shot);
+}
+
 void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
-                    std::optional<std::string_view> node, const AttackDefinition* damage) {
+                    std::optional<std::string_view> node, const AttackDefinition* damage,
+                    std::optional<s32> player) {
     const CritterData& data = *critter.definition;
     for (s32 at = index, guard = 0; at >= 0 && guard < 8; ++guard) {
         const CombatEffectDefinition* record = data.sound(at);
@@ -196,6 +221,15 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
             const Mat4 parent = out.rootAttachment ? modelTransform(critter)
                                                    : attachmentTransform(critter, *out.node);
             out.placement = CritterArea::placement(parent, out.nodeOffset, out.pitchYaw);
+        }
+        if (player.has_value()) {
+            out.playerAttachment = player;
+            out.node.reset();
+            out.rootAttachment = false;
+            out.placement.reset();
+            out.nodeOffset = record->offset;
+            out.scale = record->scale;
+            out.follows = true;
         }
         if (!out.tree.empty() || !out.sound.empty() || out.shakes || out.arena) {
             m_cues.push_back(std::move(out));

@@ -47,7 +47,8 @@ struct Fixture {
                                                       attack + R"(,
             {"name":"DEATH","type":17,"anim":"GRAB","priority":4096}],
           "damages":[{"type":7,"radius":3,"maxDistance":9,"offset":[2,-3,1],
-            "damage":100,"minSpeed":1000}]})");
+            "damage":100,"minSpeed":1000,"sfx":0}],
+          "sounds":[{"name":"GRIP","offset":[0,4,0]}]})");
         fighter.open(device, root, nullptr, {}, 'I');
         REQUIRE(fighter.spawn("YETI", Vec3{0}, 0));
         players[0].player = 3;
@@ -71,6 +72,12 @@ TEST_CASE("grab catches one nearest player then releases only at the second dama
     REQUIRE(events[0].attachment.has_value());
     REQUIRE(Vec3{(*events[0].attachment)[3]} == Vec3{2, 7, 1});
     REQUIRE(f.fighter.actor.takeBlows().empty()); // holding does not do ordinary melee damage
+    const auto cues = f.fighter.actor.takeCues();
+    REQUIRE(cues.size() == 1);
+    REQUIRE(cues[0].playerAttachment == 3);
+    REQUIRE(cues[0].nodeOffset == Vec3{0, 4, 0});
+    REQUIRE_FALSE(cues[0].node.has_value());
+    REQUIRE_FALSE(cues[0].placement.has_value());
     f.fighter.actor.freeze(10);
     f.fighter.update(2, 1.0f / 30, f.players);
     REQUIRE(f.fighter.actor.takeGrabs().front().attachment.has_value());
@@ -87,6 +94,7 @@ TEST_CASE("grab catches one nearest player then releases only at the second dama
     REQUIRE(events.back().velocity.y < 0);
     f.fighter.update(2, 1.0f / 30, f.players);
     REQUIRE(f.fighter.actor.takeGrabs().empty());
+    REQUIRE(f.fighter.actor.takeCues().empty()); // grip is created once, not every held frame
 }
 
 TEST_CASE("missed grabs do not throw and death frees a held player without damage",
