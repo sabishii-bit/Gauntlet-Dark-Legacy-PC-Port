@@ -63,6 +63,15 @@ void TowerCamera::reset(std::span<const CameraSubject> subjects,
     }
 }
 
+void TowerCamera::snapAttention(std::span<const CameraSubject> subjects, const CameraRange& range) {
+    if (subjects.empty()) {
+        return;
+    }
+    m_attention = middleOf(subjects, range);
+    m_ringPositions.fill(m_attention);
+    place();
+}
+
 bool TowerCamera::update(std::span<const CameraSubject> subjects,
                          std::span<const WorldLocator> markers, const CameraRange& range,
                          const CameraView& view, f32 seconds) {

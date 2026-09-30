@@ -357,8 +357,19 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             PartyCollision::step(players, i, before, seconds);
             FloorRiding::land(players, i, before, collision);
         }
-        if (events.allowMovement && !events.allowMovement(before, actor.position())) {
-            actor.place(Vec3{before.x, actor.position().y, before.z});
+        if (!down && events.limitMovement) {
+            const Vec3 limited = events.limitMovement(i, before, actor.position());
+            if (glm::distance(limited, actor.position()) > 1.0e-5f) {
+                actor.place(before);
+                actor.slide(limited - before, &collision);
+                if (events.resolveMovement) {
+                    actor.place(events.resolveMovement(i, before, actor.position()));
+                }
+                Vec3 position = actor.position();
+                PartyCollision::resolve(players, i, before, position);
+                actor.place(position);
+                FloorRiding::land(players, i, before, collision);
+            }
         }
         // A floor gone from under it lets it sink; lost under the world, it stands again
         // beside another, or at the start.

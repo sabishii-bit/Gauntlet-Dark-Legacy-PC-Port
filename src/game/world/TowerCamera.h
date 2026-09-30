@@ -57,6 +57,8 @@ public:
     /** Follows `subjects` for `seconds`; true while anything is still moving. */
     bool update(std::span<const CameraSubject> subjects, std::span<const WorldLocator> markers,
                 const CameraRange& range, const CameraView& view, f32 seconds);
+    /** End a trigger-camera hold at the current party target, without re-aiming the view. */
+    void snapAttention(std::span<const CameraSubject> subjects, const CameraRange& range);
 
     const WorldCamera& camera() const { return m_camera; }
     f32 yaw() const { return m_camera.yaw; }

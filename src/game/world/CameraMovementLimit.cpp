@@ -1,5 +1,6 @@
 #include "game/world/CameraMovementLimit.h"
 
+#include <array>
 #include <cmath>
 
 #include "engine/core/Types.h"
@@ -26,6 +27,38 @@ bool worsens(f32 before, f32 after, f32 low, f32 high) {
     return (after < low && after < before) || (after > high && after > before);
 }
 } // namespace
+
+Vec3 CameraMovementLimit::constrain(const Vec3& before, const Vec3& after, const Vec3& attention,
+                                    const WorldCamera& camera, const CameraView& projection,
+                                    const Vec3& anchorOffset) {
+    const Vec3 forward = camera.forward();
+    if (glm::dot(before - camera.position, forward) <= kNearDepth ||
+        glm::dot(after - camera.position, forward) <= kNearDepth) {
+        return glm::distance(after, attention) <= glm::distance(before, attention)
+                   ? after
+                   : Vec3{before.x, after.y, before.z};
+    }
+    const f32 tanX = std::tan(projection.horizontalFov * 0.5f);
+    const f32 tanY = tanX / projection.aspect;
+    const std::array planes{-camera.right() + (2 * kLeft - 1) * tanX * forward,
+                            camera.right() - (2 * kRight - 1) * tanX * forward,
+                            camera.up() - (1 - 2 * kTop) * tanY * forward,
+                            -camera.up() + (1 - 2 * kBottom) * tanY * forward};
+    Vec3 step = after - before;
+    for (usize i = 0; i < planes.size(); ++i) {
+        const Vec3 normal = planes[i];
+        const Vec3 anchor = before + step + (i == 3 ? Vec3{0} : anchorOffset);
+        if (glm::dot(anchor - camera.position, normal) <= 0 || glm::dot(step, normal) <= 0) {
+            continue;
+        }
+        const Vec3 horizontal{normal.x, 0, normal.z};
+        const f32 length = glm::dot(horizontal, horizontal);
+        if (length > 1.0e-8f) {
+            step -= horizontal * (glm::dot(step, horizontal) / length);
+        }
+    }
+    return before + step;
+}
 
 bool CameraMovementLimit::allows(const Vec3& before, const Vec3& after, const Vec3& attention,
                                  const WorldCamera& camera, const CameraView& projection) {

@@ -9,6 +9,7 @@
 #include "game/players/ItemAttack.h"
 #include "game/screens/LevelFixtures.h"
 #include "game/screens/LevelOpponents.h"
+#include "game/world/CameraShake.h"
 #include "game/world/MoveStrikes.h"
 #include "game/world/PlayerArsenal.h"
 namespace gdl::game {
@@ -28,6 +29,7 @@ public:
         SoundPlayer* sounds;
         PlayerArsenal& arsenal;
         AmbientDimmer& dimmer;
+        CameraShake* shake = nullptr;
     };
     struct Targets {
         LevelOpponents& opponents;

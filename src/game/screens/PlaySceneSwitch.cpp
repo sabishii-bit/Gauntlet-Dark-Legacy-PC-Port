@@ -13,6 +13,15 @@ void PlayScene::updateSwitchCutscene(s32 ticks, f32 seconds) {
     m_transporters.animate(seconds);
     handleTriggerEvents();
     m_switchCutscene.update(ticks, m_world->triggers().settled(m_switchCutscene.target()));
+    if (!m_switchCutscene.active()) {
+        std::vector<CameraSubject> subjects;
+        for (const auto& player : m_players) {
+            if (player.life == PlayerLife::Standing) {
+                subjects.push_back({player.actor.position(), player.actor.followPoint()});
+            }
+        }
+        m_camera.snapAttention(subjects, m_world->cameraRange());
+    }
     updateAmbience();
 }
 } // namespace gdl::game

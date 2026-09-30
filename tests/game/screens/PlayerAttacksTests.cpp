@@ -37,6 +37,7 @@ struct Fixture {
     EffectTrees effects;
     LevelSoundscape audio;
     AmbientDimmer dimmer;
+    CameraShake shake;
     PlayerArsenal arsenal;
     LevelOpponents opponents;
     LevelFixtures fixtures;
@@ -45,7 +46,8 @@ struct Fixture {
     PlayerAttacks::Targets targets{opponents, fixtures, {}};
     Fixture() {
         arsenal.bind({device, classes, weapons, world.collision(), effects, audio, nullptr, {}});
-        attacks.bind({device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer});
+        attacks.bind(
+            {device, classes, world, weapons, effects, audio, nullptr, arsenal, dimmer, &shake});
         players[0].actor.spawn(3, {}, nullptr, Vec3{0}, 0);
     }
 };
@@ -225,6 +227,30 @@ TEST_CASE("turbo contacts damage nearby enemies in every direction and reject di
     CHECK(player.turbo.held() == 60);
     f.attacks.clear();
     f.opponents.close();
+}
+
+TEST_CASE("authored player effects shake the camera without requiring an effect mesh",
+          "[game][player-attacks][camera-shake]") {
+    const auto root = turboAssets();
+    writeTextFile(root / "pdata/WAR.json", R"({"height":6,"width":2,
+      "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
+      "moves":{"turboB":0},"moveStrikes":[
+      {"type":4,"startFrame":1,"radius":12,"arc":-1,"delay":0.1,"amount":50,"effect":0}],
+      "moveEffects":[{"flags":2,"tree":"NONE"}]})");
+    Fixture f;
+    REQUIRE(f.classes.load(root / "pdata"));
+    auto& player = f.players[0];
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    player.turbo.add(100);
+    for (s32 frame = 0; frame < 4; ++frame) {
+        player.figure->animate(0, 2, 1.0f / 30,
+                               frame == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+        f.attacks.updateTurbo(0, 2, 1.0f / 30, f.players, [](s32, usize) {});
+    }
+    CHECK(f.shake.active());
+    CHECK(glm::length(f.shake.offset()) == Approx(0.1f));
+    CHECK(f.effects.count() == 0);
 }
 
 TEST_CASE("a charge throws down the enemy it runs into, once a charge",
@@ -435,6 +461,10 @@ TEST_CASE("retail item attacks play authored effects and spend one charge on the
         }
         REQUIRE(player.figure->animator().itemReleased() == deed);
         f.attacks.useItemAttack(0, f.players);
+        CHECK(f.shake.active() == hammer);
+        if (hammer) {
+            CHECK(glm::length(f.shake.offset()) == Approx(0.3f));
+        }
         REQUIRE(f.effects.count() == 1);
         CHECK(f.effects.effect(0).name == item->tree);
         CHECK(f.effects.effect(0).attachment.has_value());

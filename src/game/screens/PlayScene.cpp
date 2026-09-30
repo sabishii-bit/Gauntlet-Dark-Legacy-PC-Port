@@ -161,7 +161,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
                     world.level() != nullptr && world.level()->bossType >= 0},
                    effectTextures);
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
-                    m_arsenal, m_dimmer});
+                    m_arsenal, m_dimmer, &m_shake});
     m_bossSequence.bind(
         {device, world, m_weapons, m_staticTextures, m_effects, m_audio, context.levels});
     m_open = true;

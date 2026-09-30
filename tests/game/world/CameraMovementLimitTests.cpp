@@ -1,6 +1,7 @@
 #include <array>
 #include <cmath>
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Types.h"
@@ -10,6 +11,31 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+using Catch::Approx;
+
+TEST_CASE("camera boundaries retain tangential steps and permit returning into view",
+          "[game][camera-limit]") {
+    WorldCamera camera;
+    camera.position = Vec3{0, 15, -25};
+    camera.pitch = std::atan2(15.0f, 25.0f);
+    const CameraView projection;
+    const Vec3 before{30, 0, 0};
+    const Vec3 after = before + Vec3{1, 0, 1};
+    const Vec3 result = CameraMovementLimit::constrain(before, after, Vec3{0}, camera, projection);
+    CHECK(glm::distance(result, before) > 0.1f);
+    CHECK(glm::distance(result, after) > 0.1f);
+    const Vec3 normal = camera.right() - (1.0f - 60.0f / 640.0f) *
+                                             std::tan(projection.horizontalFov / 2) *
+                                             camera.forward();
+    CHECK(glm::dot(result - before, normal) == Approx(0).margin(1.0e-5));
+    CHECK(CameraMovementLimit::constrain(before, before - Vec3{1, 0, 0}, Vec3{0}, camera,
+                                         projection) == before - Vec3{1, 0, 0});
+    CHECK(CameraMovementLimit::constrain(Vec3{0}, Vec3{1, 0, 1}, Vec3{0}, camera, projection) ==
+          Vec3{1, 0, 1});
+    const Vec3 elevated =
+        CameraMovementLimit::constrain(before, after + Vec3{0, 1, 0}, Vec3{0}, camera, projection);
+    CHECK(elevated.y == 1);
+}
 
 TEST_CASE("camera boundaries allow recovery and block further separation", "[game][camera-limit]") {
     WorldCamera camera;

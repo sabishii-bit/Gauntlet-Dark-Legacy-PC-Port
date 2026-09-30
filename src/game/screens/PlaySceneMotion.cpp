@@ -48,8 +48,8 @@ PartyMotion::Events PlayScene::motionEvents() {
                     const PlayerActor& actor = m_players[i].actor;
                     return m_attacks.aim(actor, actor.facing(), attackTargets());
                 },
-            .allowMovement = [this](const Vec3& before,
-                                    const Vec3& after) { return allowsStep(before, after); },
+            .limitMovement = [this](usize index, const Vec3& before,
+                                    const Vec3& after) { return limitStep(index, before, after); },
             .attackDeed =
                 [this](usize i, bool strong, bool moved) {
                     const s32 chain = m_players[i].figure != nullptr
@@ -131,18 +131,20 @@ void PlayScene::perform(usize i, PartyMotion::Action action) {
 }
 
 /** Whether a step keeps the party within the shared view. */
-bool PlayScene::allowsStep(const Vec3& before, const Vec3& after) const {
+Vec3 PlayScene::limitStep(usize index, const Vec3& before, const Vec3& after) const {
     // A lone player's follow camera can travel with them. The shared
     // view must constrain separation; fixed boss views also need bounds.
     if (!bossCameraOn() && std::ranges::count_if(m_players, [](const PlayerRuntime& player) {
                                return player.life == PlayerLife::Standing;
                            }) <= 1) {
-        return true;
+        return after;
     }
     // Use the unshaken gameplay camera, never the promotion/victory cut.
     const auto& camera = bossCameraOn() ? m_bossCamera.camera() : m_camera.camera();
     const auto& attention = bossCameraOn() ? m_bossCamera.attention() : m_camera.attention();
-    return CameraMovementLimit::allows(before, after, attention, camera, cameraView());
+    const auto& actor = m_players[index].actor;
+    return CameraMovementLimit::constrain(before, after, attention, camera, cameraView(),
+                                          actor.followPoint() - actor.position());
 }
 
 } // namespace gdl::game
