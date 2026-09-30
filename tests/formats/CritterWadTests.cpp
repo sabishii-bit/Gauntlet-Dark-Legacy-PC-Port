@@ -1,4 +1,5 @@
 #include <bit>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -79,6 +80,52 @@ TEST_CASE("critter TYPE decodes home radius separately from MOVE speed",
     REQUIRE(file.types[0].defaultPos[1] == 999);
     REQUIRE(file.types[0].roamRadius == 22);
     REQUIRE(file.types[0].turnLimit == 0.5f);
+}
+
+TEST_CASE("critter TYPE decodes the head and eye look-at nodes and their rates",
+          "[formats][combatant][gaze]") {
+    constexpr usize kRecord = 16;
+    constexpr usize kDirectory = kRecord + 0x140;
+    std::vector<u8> bytes(kDirectory + 16);
+    const auto put = [&](usize at, u32 value) {
+        for (usize byte = 0; byte < 4; ++byte) {
+            bytes[at + byte] = static_cast<u8>(value >> (byte * 8));
+        }
+    };
+    put(0, kDirectory);
+    put(4, 1);
+    put(kDirectory, 0x54595045); // TYPE
+    put(kDirectory + 4, kRecord);
+    put(kDirectory + 8, 1);
+    put(kDirectory + 12, 1);
+    const auto text = [&](usize at, std::string_view name) {
+        for (usize i = 0; i < name.size(); ++i) {
+            bytes[at + i] = static_cast<u8>(name[i]);
+        }
+    };
+    text(kRecord + 0x20, "BODY1_ESTEVE");
+    text(kRecord + 0x30, "EYES");
+    text(kRecord + 0x40, "AOFIRE");
+    put(kRecord + 0x5C, 0x10);
+    put(kRecord + 0x60, std::bit_cast<u32>(0.785f));
+    put(kRecord + 0x64, std::bit_cast<u32>(0.25f));
+    put(kRecord + 0x68, std::bit_cast<u32>(0.5f));
+    put(kRecord + 0x6C, std::bit_cast<u32>(0.125f));
+    put(kRecord + 0x70, std::bit_cast<u32>(-0.349f));
+    put(kRecord + 0x74, std::bit_cast<u32>(0.1f));
+    const auto file = parseCritterWad(bytes);
+    REQUIRE(file.types.size() == 1);
+    const auto& type = file.types[0];
+    REQUIRE(type.lookNode0 == "BODY1_ESTEVE");
+    REQUIRE(type.lookNode1 == "EYES");
+    REQUIRE(type.noSkinNode == "AOFIRE");
+    REQUIRE(type.typeFlags == 0x10);
+    REQUIRE(type.lookYawRate0 == 0.785f);
+    REQUIRE(type.lookYawRate1 == 0.25f);
+    REQUIRE(type.lookPitchRate0 == 0.5f);
+    REQUIRE(type.lookPitchRate1 == 0.125f);
+    REQUIRE(type.lookPitchBias0 == -0.349f);
+    REQUIRE(type.lookPitchBias1 == 0.1f);
 }
 
 TEST_CASE("critter patterns preserve all eight signed slots and phase gates",

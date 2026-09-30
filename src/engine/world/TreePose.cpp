@@ -189,6 +189,38 @@ void TreePose::overlaySubtree(const TreePose& from, usize root) {
     compose();
 }
 
+Vec3 TreePose::readAngles(usize node) const {
+    GDL_VERIFY(node < m_poses.size(), "node out of range");
+    NodePose unscaled = m_poses[node];
+    unscaled.scale = Vec3{1.0f, 1.0f, 1.0f};
+    unscaled.position = Vec3{0.0f, 0.0f, 0.0f};
+    return readAngles(localMatrix(unscaled, Vec3{0.0f, 0.0f, 0.0f}));
+}
+
+void TreePose::setPitchYawRoll(usize node, const Vec3& angles) {
+    GDL_VERIFY(node < m_poses.size(), "node out of range");
+    m_poses[node].rotation = wrapAngles(angles);
+    m_poses[node].pitchYawRoll = true;
+    compose();
+}
+
+Vec3 TreePose::readAngles(const Mat4& rotation) {
+    constexpr f32 kLockedYaw = 0.0001f;
+    const std::span<const f32, 16> m(glm::value_ptr(rotation), 16);
+    if (std::abs(1.0f - std::abs(m[2])) < kLockedYaw) {
+        // Looking straight along the side: pitch and roll fold together, roll left at nought.
+        return Vec3{std::atan2(m[9], m[5]), m[2] > 0.0f ? -kHalfPi : kHalfPi, 0.0f};
+    }
+    const f32 pitch = std::atan2(-m[6], m[10]);
+    const f32 magnitude = std::cos(pitch);
+    if (magnitude == 0.0f) {
+        return pitch > 0.0f ? Vec3{pitch, std::atan2(-m[2], -m[6]), std::atan2(-m[8], -m[9])}
+                            : Vec3{pitch, std::atan2(-m[2], m[6]), std::atan2(m[8], m[9])};
+    }
+    const f32 scaled = m[10] / magnitude;
+    return Vec3{pitch, std::atan2(-m[2], scaled), std::atan2(-m[1] / scaled, m[0] / scaled)};
+}
+
 void TreePose::compose() {
     m_matrices.resize(m_poses.size());
     for (usize n = 0; n < m_poses.size(); ++n) {

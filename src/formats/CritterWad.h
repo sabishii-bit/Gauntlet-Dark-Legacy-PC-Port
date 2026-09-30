@@ -116,6 +116,15 @@ struct CritterSoundRecord {
 struct CritterTypeRecord {
     std::string suffix; ///< appended to the prefix for its tree ("1": GOLEM1)
     std::string rootNode;
+    std::string lookNode0;   ///< the node turned to the target, the head (TYPE +0x20)
+    std::string lookNode1;   ///< a second, the eyes (+0x30)
+    std::string noSkinNode;  ///< the node left out of the skin effects (+0x40)
+    f32 lookYawRate0 = 0.0f; ///< how far a tick the head turns (+0x60)
+    f32 lookYawRate1 = 0.0f;
+    f32 lookPitchRate0 = 0.0f;
+    f32 lookPitchRate1 = 0.0f;
+    f32 lookPitchBias0 = 0.0f; ///< pitch added to where the head looks (+0x70)
+    f32 lookPitchBias1 = 0.0f;
     s16 descriptorIndex = 0;
     s16 subtype = 0;
     u32 typeFlags = 0;

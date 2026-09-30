@@ -178,9 +178,18 @@ CritterFile parseCritterWad(std::span<const u8> bytes) {
         CritterTypeRecord type;
         type.suffix = readWadText(bytes, at, kNameWidth, kWhat);
         type.rootNode = readWadText(bytes, at + 0x10, kNameWidth, kWhat);
+        type.lookNode0 = readWadText(bytes, at + 0x20, kNameWidth, kWhat);
+        type.lookNode1 = readWadText(bytes, at + 0x30, kNameWidth, kWhat);
+        type.noSkinNode = readWadText(bytes, at + 0x40, kNameWidth, kWhat);
         type.descriptorIndex = readS16(bytes, at + 0x50);
         type.subtype = readS16(bytes, at + 0x52);
         type.typeFlags = readWadU32(bytes, at + 0x5C, kWhat);
+        type.lookYawRate0 = readWadF32(bytes, at + 0x60, kWhat);
+        type.lookYawRate1 = readWadF32(bytes, at + 0x64, kWhat);
+        type.lookPitchRate0 = readWadF32(bytes, at + 0x68, kWhat);
+        type.lookPitchRate1 = readWadF32(bytes, at + 0x6C, kWhat);
+        type.lookPitchBias0 = readWadF32(bytes, at + 0x70, kWhat);
+        type.lookPitchBias1 = readWadF32(bytes, at + 0x74, kWhat);
         type.radius = readWadF32(bytes, at + 0x78, kWhat);
         type.wallRadius = readWadF32(bytes, at + 0x7C, kWhat);
         type.target = readTarget(bytes, at + 0x80);

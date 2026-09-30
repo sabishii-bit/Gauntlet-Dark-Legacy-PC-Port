@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <set>
 #include <string>
 
@@ -161,6 +162,38 @@ TEST_CASE("Chimera scimitar removes the lion only on impact, without subtracting
         }
     }
     REQUIRE(stump);
+}
+
+TEST_CASE("Chimera's heads turn to the party from their necks", "[game][chimera][unpacked]") {
+    ChimeraFixture fixture;
+    auto& body = fixture.fight.actor;
+    if (body.child(1)->data()->looks()[0].node.empty()) {
+        SKIP("critter manifest predates the look-at nodes; re-run gdlunpack --only CRITTER");
+    }
+    REQUIRE(body.child(1)->data()->looks()[0].node == "BODY1_ESTEVE");
+    REQUIRE(body.child(2)->data()->looks()[0].node == "BODY1_LSTEVE");
+    REQUIRE(body.child(3)->data()->looks()[0].node == "BODY1_SHEAD");
+    REQUIRE(body.child(1)->data()->looks()[0].yawRate == Approx(0.785f).margin(1e-3f));
+    REQUIRE(body.data()->looks()[0].node.empty());
+    // Held to its stance the body animates the same whoever stands where; the heads' necks
+    // differ only by where they turn to look. The eagle's neck comes out of the stance turned
+    // well to the left of a player straight ahead, so ahead it is at its limit and only a
+    // player round to the left is within it: the two settle apart.
+    const auto neckYaw = [](ChimeraFixture& given, const Vec3& player, const char* node) {
+        given.players[0].position = player;
+        given.fight.actor.hold(true);
+        for (s32 frame = 0; frame < 120; ++frame) {
+            given.step();
+            given.fight.actor.takeCues();
+        }
+        const Mat4 world = *given.fight.actor.nodeTransform(node);
+        return std::atan2(world[2].x, world[2].z);
+    };
+    ChimeraFixture other;
+    const f32 ahead = neckYaw(fixture, Vec3{0, 0, 40}, "BODY1_ESTEVE");
+    const f32 beside = neckYaw(other, Vec3{-40, 0, 10}, "BODY1_ESTEVE");
+    CAPTURE(ahead, beside);
+    REQUIRE(beside < ahead - 0.3f);
 }
 
 TEST_CASE("Chimera shared death stops surviving heads and emits only body reward",
