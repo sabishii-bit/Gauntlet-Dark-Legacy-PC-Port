@@ -1,3 +1,4 @@
+#include <array>
 #include <filesystem>
 
 #include <catch2/catch_test_macros.hpp>
@@ -32,6 +33,10 @@ CharacterSave sampleSave() {
     save.classes[2].inventory.addPowerup(9, 0x8000, 2.0f, 45.0f);
     save.classes[2].inventory.addPowerup(5, 0x80000, 0.0f, 30.0f);
     save.classes[2].inventory.powerups[1].on = false; // taken off in the selector
+    save.classes[2].levels.recordBeaten(7, 0, 8, 0);
+    save.classes[2].levels.recordBeaten(7, 0, 8, 0);
+    save.classes[2].levels.recordBeaten(7, 2, 0, 9);
+    save.classes[2].levels.recordBossDeath(2);
     return save;
 }
 
@@ -39,6 +44,13 @@ TEST_CASE("a character round-trips through JSON", "[game][players][save]") {
     const CharacterSave save = sampleSave();
     const CharacterSave loaded = CharacterSave::fromJson(save.toJson());
     REQUIRE(loaded.progress().crystals[1] == 15);
+    // The levels beaten and the boss deaths come back whole; a save without them (and any
+    // other class) has beaten nothing.
+    REQUIRE(loaded.progress().levels == save.progress().levels);
+    REQUIRE(loaded.progress().levels.hasBeaten(7, 2));
+    REQUIRE(loaded.progress().levels.runeLevels == std::array<u16, 2>{1U << 7U, 1U << 7U});
+    REQUIRE(loaded.progress().levels.bossDeaths == std::array<u16, 2>{1U << 2U, 0});
+    REQUIRE(loaded.classes[9].levels == LevelRecord{});
     REQUIRE(loaded.progress().unlocked == 0b10);
     REQUIRE(loaded.progress().crystals[2] == 0);
     REQUIRE(loaded.name == "PELE");
@@ -67,6 +79,7 @@ TEST_CASE("a character round-trips through JSON", "[game][players][save]") {
     REQUIRE(old.classes[0].inventory.keys == Inventory::kMostKeys);
     REQUIRE(old.classes[0].inventory.potions.size() == 9);
     REQUIRE(old.classes[1].inventory == Inventory{});
+    REQUIRE(old.classes[0].levels == LevelRecord{}); // from before the record: nothing beaten
 }
 
 TEST_CASE("pending and awarded promotions survive saves independently per class",

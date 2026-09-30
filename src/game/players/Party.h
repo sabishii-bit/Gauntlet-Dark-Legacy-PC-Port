@@ -26,4 +26,9 @@ struct PartyMember {
 /** Writes every member that has a slot back into it; how many were written. */
 usize saveParty(SaveSlots& slots, std::span<const PartyMember> party);
 
+/** Records level `level` (from nought) of `realm` beaten, with the runestone and the legend
+ * item's realm it holds, by every member still standing (towerRecordLevelBeaten's states 1,
+ * 4 and 5: never the fallen, who go on as they came in); how many recorded it. */
+usize recordLevelBeaten(std::span<PartyMember> party, s32 realm, s32 level, s32 rune, s32 legend);
+
 } // namespace gdl::game

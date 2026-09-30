@@ -19,6 +19,8 @@ struct LevelRef {
     std::string directory; ///< under the unpacked root, such as LEVELS/LEVELG1
     std::string items;     ///< the realm's item archive, such as ITEMS/LEVELG
     std::string ownItems;  ///< the level's own, such as ITEMS/LEVELG5, which boss levels have
+    s32 index = 0;         ///< its place in the realm's order, from nought (an exit tag's digit
+                           ///< less one), which the tower's records go by
 
     static constexpr s32 kTowerRealm = 13;
     static constexpr s32 kSecretRealm = 12;
@@ -69,6 +71,11 @@ public:
     std::optional<LevelRef> byName(std::string_view name) const;
     /** The runestones a realm's levels hold (the realm by its file, "TOWN"), from one. */
     std::vector<s32> runesOf(std::string_view realmFile) const;
+    /** How many levels a realm has; nought for a realm not in the catalogue. */
+    usize levelCount(s32 realmId) const;
+    /** Whether the level is the last of its realm's order: the one its boss is fought in,
+     * which is where a death counts as a try at the boss (playerGiveGargItem). */
+    bool isLastLevel(const LevelRef& level) const;
     /** Whether the level's files are unpacked under `unpackedRoot`. */
     static bool unpacked(const std::filesystem::path& unpackedRoot, const LevelRef& level);
 

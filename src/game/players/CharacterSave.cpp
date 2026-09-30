@@ -1,9 +1,12 @@
 #include "game/players/CharacterSave.h"
 
 #include <algorithm>
+#include <array>
 #include <exception>
 #include <format>
+#include <string_view>
 #include <system_error>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -78,6 +81,36 @@ Relics relicsFromJson(const Json& object) {
     return relics;
 }
 
+Json levelsJson(const LevelRecord& levels) {
+    return Json{{"beaten", levels.beaten},
+                {"runeLevels", levels.runeLevels},
+                {"legendLevels", levels.legendLevels},
+                {"bossDeaths", levels.bossDeaths}};
+}
+
+/** Reads a pair of pass masks: the first time, and the second. */
+std::array<u16, LevelRecord::kPasses> passesFromJson(const Json& object, std::string_view key) {
+    std::array<u16, LevelRecord::kPasses> passes{};
+    const auto values = object.value(key, std::vector<u32>{});
+    for (usize i = 0; i < passes.size() && i < values.size(); ++i) {
+        passes[i] = static_cast<u16>(values[i]);
+    }
+    return passes;
+}
+
+/** A save from before the record loads as nothing beaten and no boss died on. */
+LevelRecord levelsFromJson(const Json& object) {
+    LevelRecord levels;
+    const auto beaten = object.value("beaten", std::vector<u32>{});
+    for (usize realm = 0; realm < levels.beaten.size() && realm < beaten.size(); ++realm) {
+        levels.beaten[realm] = static_cast<u8>(beaten[realm]);
+    }
+    levels.runeLevels = passesFromJson(object, "runeLevels");
+    levels.legendLevels = passesFromJson(object, "legendLevels");
+    levels.bossDeaths = passesFromJson(object, "bossDeaths");
+    return levels;
+}
+
 Json progressJson(const ClassProgress& progress) {
     return Json{{"experience", progress.experience},
                 {"promotedLevel", progress.appearanceLevel()},
@@ -89,7 +122,8 @@ Json progressJson(const ClassProgress& progress) {
                 {"crystals", progress.crystals},
                 {"unlocked", progress.unlocked},
                 {"inventory", inventoryJson(progress.inventory)},
-                {"relics", relicsJson(progress.relics)}};
+                {"relics", relicsJson(progress.relics)},
+                {"levels", levelsJson(progress.levels)}};
 }
 
 ClassProgress progressFromJson(const Json& object) {
@@ -109,6 +143,9 @@ ClassProgress progressFromJson(const Json& object) {
     }
     if (object.contains("relics")) {
         progress.relics = relicsFromJson(object.at("relics"));
+    }
+    if (object.contains("levels")) {
+        progress.levels = levelsFromJson(object.at("levels"));
     }
     const auto crystals = object.value("crystals", std::vector<s32>{});
     for (usize realm = 0; realm < progress.crystals.size() && realm < crystals.size(); ++realm) {

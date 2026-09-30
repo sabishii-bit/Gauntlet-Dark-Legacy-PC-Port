@@ -15,4 +15,16 @@ usize saveParty(SaveSlots& slots, std::span<const PartyMember> party) {
     return written;
 }
 
+usize recordLevelBeaten(std::span<PartyMember> party, s32 realm, s32 level, s32 rune, s32 legend) {
+    usize recorded = 0;
+    for (PartyMember& member : party) {
+        if (member.fallen) {
+            continue;
+        }
+        member.save.progress().levels.recordBeaten(realm, level, rune, legend);
+        ++recorded;
+    }
+    return recorded;
+}
+
 } // namespace gdl::game

@@ -53,6 +53,8 @@ add_library(game STATIC
     players/Inventory.cpp
     players/Relics.h
     players/Relics.cpp
+    players/LevelRecord.h
+    players/LevelRecord.cpp
     players/ItemPickup.h
     players/ItemPickup.cpp
     players/PickupVoices.cpp

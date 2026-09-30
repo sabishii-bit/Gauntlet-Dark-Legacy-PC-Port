@@ -58,8 +58,10 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
         return;
     }
     const LevelInfo* level = m_world->level();
+    PlayerRuntime& runtime = m_players[index];
+    const bool stood = runtime.life == PlayerLife::Standing;
     m_health.hurt(
-        m_players[index], damage, kind, directed, m_world->isTower(),
+        runtime, damage, kind, directed, m_world->isTower(),
         level != nullptr ? level->tuning.damage : 1.0f,
         {.block = [this, index](f32 taken,
                                 f32 left) { m_attacks.showBlock(index, taken, left, m_players); },
@@ -74,7 +76,13 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
                  }
              }},
         impact, level != nullptr && level->bossType >= 0,
-        m_classes.stats(m_players[index].actor.save().character));
+        m_classes.stats(runtime.actor.save().character));
+    // A death on a realm's last level is a try at its boss, kept in the entry save the fallen
+    // go on with (inactivate_player, then playerGiveGargItem into the checkpoint copy).
+    if (stood && runtime.life == PlayerLife::Dying && m_context.levels != nullptr &&
+        m_context.levels->isLastLevel(m_world->ref())) {
+        runtime.entrySave.progress().levels.recordBossDeath(m_world->ref().realmId);
+    }
 }
 
 /** Burning floors, rollers and carts hurt whoever is against or on them, at most once a

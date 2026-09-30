@@ -463,7 +463,6 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         }
         // The party goes on with all it carries; back in the tower it arrives at the way in
         // of the realm it left.
-        keepParty();
         Journey journey;
         journey.secret = m_play->scene.secretTravel();
         journey.destination = m_play->scene.destination();
@@ -472,6 +471,17 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         journey.options.arriving = true;
         journey.options.arrivalWorld = static_cast<u32>(std::max(m_play->world.ref().realmId, 0));
         const bool completedLevel = !journey.secret && !m_play->world.isTower();
+        // A level left by its exit (or its boss's fall) is beaten by everyone still standing,
+        // as game_main records it before the shop (towerRecordLevelBeaten); a party all
+        // fallen records nothing.
+        if (completedLevel) {
+            const LevelRef& left = m_play->world.ref();
+            const LevelInfo* level = m_play->world.level();
+            recordLevelBeaten(journey.party, left.realmId, left.index,
+                              level != nullptr ? level->rune : 0,
+                              level != nullptr ? level->legend : 0);
+        }
+        keepParty(journey.party);
         const auto results = m_play->scene.levelResults();
         if (journey.secret && !m_play->world.ref().isSecret()) {
             m_play->scene.suspendForChallenge();
