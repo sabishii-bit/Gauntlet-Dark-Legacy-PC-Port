@@ -88,13 +88,30 @@ void SoundPlayer::setCategoryVolume(SoundCategory category, f32 volume) {
     }
 }
 
+void SoundPlayer::setCategoryScale(SoundCategory category, f32 scale) {
+    f32& current = m_categoryScales[static_cast<usize>(category)];
+    const f32 next = std::clamp(scale, 0.0f, 1.0f);
+    if (current == next) {
+        return;
+    }
+    current = next;
+    for (Voice& voice : m_voices) {
+        applyVolume(voice);
+    }
+}
+
 f32 SoundPlayer::categoryVolume(SoundCategory category) const {
     return m_categoryVolumes[static_cast<usize>(category)];
 }
 
+f32 SoundPlayer::categoryScale(SoundCategory category) const {
+    return m_categoryScales[static_cast<usize>(category)];
+}
+
 void SoundPlayer::applyVolume(Voice& voice) const {
-    voice.stream->setVolume(
-        std::clamp(m_masterVolume * categoryVolume(voice.category) * voice.volume, 0.0f, 1.0f));
+    voice.stream->setVolume(std::clamp(m_masterVolume * categoryVolume(voice.category) *
+                                           categoryScale(voice.category) * voice.volume,
+                                       0.0f, 1.0f));
 }
 
 void SoundPlayer::setVolume(SoundHandle handle, f32 volume) {

@@ -2564,7 +2564,11 @@ black duplicate shell that fades out this way, leaving the stone mesh intact.
 `screens/PauseMenu` owns the paused overlay and takes a party snapshot. `SaveMenu`
 is its pure file-operation/confirmation controller; it updates that snapshot only
 after success and protects other joined players' slots. `Gauntlet` freezes scene
-updates while paused; audio keeps playing so Audio settings can be previewed.
+updates while paused; the music ducks to silence under the menu, 8 of 255 a 30 Hz
+frame (`app/MusicDuck`, options.c 813 and AudioMusicVolUpdate), except on the
+Audio page (984) where it plays so its slider can be heard, and climbs back the same
+way on resume; effects play on. The duck is `SoundPlayer::setCategoryScale`, over
+the volume the player set. Retail's 0.1 s grace before the climb is not kept.
 On resume it applies successful slot
 assignments without reopening the scene; on load it closes the old scene without
 autosaving it and restores the snapshot in the tower. Shutdown while paused saves

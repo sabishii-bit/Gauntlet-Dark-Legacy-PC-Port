@@ -42,11 +42,16 @@ public:
     SoundHandle playStream(std::shared_ptr<StreamSource> source, bool loop, f32 volume = 1.0f,
                            SoundCategory category = SoundCategory::Music);
 
-    /** Volumes in [0, 1]; a voice plays at master x category x its own volume. */
+    /** Volumes in [0, 1]; a voice plays at master x category x the category's scale x its
+     * own volume. */
     void setMasterVolume(f32 volume);
     void setCategoryVolume(SoundCategory category, f32 volume);
+    /** A scale over a category's volume for what the game does to it for a while (the
+     * music ducked under a menu), leaving the volume the player set alone. */
+    void setCategoryScale(SoundCategory category, f32 scale);
     f32 masterVolume() const { return m_masterVolume; }
     f32 categoryVolume(SoundCategory category) const;
+    f32 categoryScale(SoundCategory category) const;
 
     /** Changes a playing voice's own volume (0..1) or pan (-1..1); unknown handles are
      * ignored. */
@@ -100,6 +105,7 @@ private:
     SoundHandle m_nextHandle = 1;
     f32 m_masterVolume = 1.0f;
     std::array<f32, static_cast<usize>(SoundCategory::Count)> m_categoryVolumes{1.0f, 1.0f};
+    std::array<f32, static_cast<usize>(SoundCategory::Count)> m_categoryScales{1.0f, 1.0f};
 };
 
 } // namespace gdl

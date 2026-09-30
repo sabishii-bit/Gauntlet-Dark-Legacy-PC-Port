@@ -141,6 +141,37 @@ TEST_CASE("category and master volumes scale voices, live and on start", "[audio
     REQUIRE(out[out.size() - 2] == Approx(0.25f));
 }
 
+TEST_CASE("a category's scale ducks its voices under the volume the player set",
+          "[audio][player]") {
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const SoundClip clip = tone(48000, 4000, 1.0f);
+    SoundSequence sequence;
+    sequence.steps.push_back(SoundSequenceStep{&clip, false, false});
+    player.setCategoryVolume(SoundCategory::Music, 0.5f);
+    player.play(sequence, 0.5f, SoundCategory::Music);
+    player.play(sequence, 0.25f, SoundCategory::Effects);
+    std::vector<f32> out = pull(mixer, 10);
+    REQUIRE(out[0] == Approx(0.5f));
+
+    player.setCategoryScale(SoundCategory::Music, 0.0f);
+    REQUIRE(player.categoryScale(SoundCategory::Music) == 0.0f);
+    REQUIRE(player.categoryVolume(SoundCategory::Music) == 0.5f);
+    REQUIRE(player.categoryScale(SoundCategory::Effects) == 1.0f);
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.25f));
+
+    // The scale rides over a volume change and is undone without touching it.
+    player.setCategoryVolume(SoundCategory::Music, 1.0f);
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.25f));
+    player.setCategoryScale(SoundCategory::Music, 1.5f);
+    out = pull(mixer, kRampFrames);
+    REQUIRE(out[out.size() - 2] == Approx(0.75f));
+    REQUIRE(player.categoryScale(SoundCategory::Music) == 1.0f);
+    REQUIRE(player.categoryVolume(SoundCategory::Music) == 1.0f);
+}
+
 TEST_CASE("looping sequences keep feeding and stop on request", "[audio][player]") {
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);

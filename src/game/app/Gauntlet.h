@@ -18,6 +18,7 @@
 
 #include "game/app/AttractSequencer.h"
 #include "game/app/CommandLine.h"
+#include "game/app/MusicDuck.h"
 #include "game/config/GameConfig.h"
 #include "game/players/PlayerControls.h"
 #include "game/screens/AfterLevelScene.h"
@@ -105,6 +106,7 @@ private:
     std::unique_ptr<PlaySession> m_play = std::make_unique<PlaySession>();
     std::unique_ptr<PlaySession> m_parent; ///< stage retained during a secret challenge
     PauseMenu m_pause;
+    MusicDuck m_musicDuck; ///< the music under the pause menu
     AfterLevelScene m_afterLevel;
     LevelExitSpeech m_exitSpeech;
     /** A journey between levels: the picture is drawn over an empty view for a frame, so
