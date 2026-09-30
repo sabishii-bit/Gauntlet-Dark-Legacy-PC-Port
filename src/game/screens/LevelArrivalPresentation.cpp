@@ -29,7 +29,8 @@ void LevelArrivalPresentation::clear() {
 
 void LevelArrivalPresentation::begin(RenderDevice& device, ItemArchive& weapons,
                                      std::span<const Vec3> positions,
-                                     const std::optional<WorldCamera>& marker) {
+                                     const std::optional<WorldCamera>& marker,
+                                     StartCamera::Mode mode) {
     clear();
     m_ticks = kSpawnTicks;
     m_titleSlide = kTitleSlideStart;
@@ -41,7 +42,7 @@ void LevelArrivalPresentation::begin(RenderDevice& device, ItemArchive& weapons,
         if (!positions.empty()) {
             centre /= static_cast<f32>(positions.size());
         }
-        m_camera.start(*marker, centre);
+        m_camera.start(*marker, centre, mode);
     }
     const auto tree = weapons.loaded() ? weapons.trees.find(kSpawnEffect) : std::nullopt;
     if (!tree.has_value()) {

@@ -87,6 +87,9 @@ struct CombatEffectDefinition {
     f32 life = 0.0f;
     f32 scale = 1.0f;
 
+    f32 particleRate = 0.0f;  ///< custom emitter births per 30 Hz frame
+    f32 particleSpeed = 0.0f; ///< custom emitter speed in world units per second
+
     bool shows() const { return !tree.empty() && tree != "NULLFX"; }
     bool follows() const { return (flags & kFollows) != 0; }
     /** The sound's name for a level whose name starts with `letter`. */

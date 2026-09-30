@@ -70,6 +70,9 @@ public:
     /** Whether an object's triangles block anything; all do until told otherwise. */
     void setSolid(s32 object, bool solid);
     bool solid(s32 object) const;
+    /** Temporarily prevent a rider from crossing this floor's boundary. */
+    void setFloorExitBlocked(s32 object, bool blocked);
+    bool floorExitBlocked(s32 object) const;
     bool moving(s32 object) const;
     /** Where a moving object was last placed; none for a still one. */
     std::optional<Mat4> objectTransform(s32 object) const;
@@ -124,6 +127,7 @@ private:
     std::vector<CollisionTriangle> m_triangles;
     std::vector<MovingObject> m_moving;
     std::vector<s32> m_hidden; ///< objects told not to block
+    std::vector<s32> m_blockedFloorExits;
     Vec3 m_min{0.0f, 0.0f, 0.0f};
     Vec3 m_max{0.0f, 0.0f, 0.0f};
     u32 m_columns = 0;

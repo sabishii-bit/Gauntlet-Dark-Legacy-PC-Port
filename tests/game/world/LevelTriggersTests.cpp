@@ -41,13 +41,13 @@ struct SwitchFixture {
     explicit SwitchFixture(
         std::string_view instances,
         std::string_view objects = R"({"name":"WALL","position":[0,10,0],"flags":4096})",
-        s32 subtype = 24) {
+        s32 subtype = 24, std::string_view animations = "") {
         const auto dir = test::sampleLevel("switch-modes");
         writeTextFile(dir / "world.json", std::format(R"({{
           "objects":[{}],
           "itemInfos":[{{"type":5,"subtype":{},"name":"BRIDGEPAD","radius":1}}],
-          "itemInstances":[{}]}})",
-                                                      objects, subtype, instances));
+          "itemInstances":[{}],"animations":[{}]}})",
+                                                      objects, subtype, instances, animations));
         REQUIRE(layout.load(dir));
         REQUIRE(models.load(dir));
         REQUIRE(textures.load(dir));
@@ -224,6 +224,60 @@ TEST_CASE("toggle lifts require everyone on the target and repeat after their de
     f.step(1.5f, party);
     CHECK_FALSE(f.triggers.opened(0));
     CHECK(f.height() == Approx(8));
+}
+
+TEST_CASE("a whole-party lift releases its floor boundary at the endpoint",
+          "[game][world][triggers][floor-riding]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,12,5,2,255,0,0,236,255,0,0]})");
+    WorldCollision collision;
+    std::array party{TriggerVisitor{.floorObject = 0, .party = 0},
+                     TriggerVisitor{.floorObject = -1, .party = 1}};
+    f.triggers.update(0.1f, party, f.animator, f.scene, &collision);
+    CHECK_FALSE(collision.floorExitBlocked(0));
+    party[1].floorObject = 0;
+    f.triggers.update(0.1f, party, f.animator, f.scene, &collision);
+    REQUIRE_FALSE(f.triggers.settled(0));
+    REQUIRE(collision.floorExitBlocked(0));
+    f.triggers.update(0.4f, party, f.animator, f.scene, &collision);
+    REQUIRE(f.triggers.settled(0));
+    CHECK_FALSE(collision.floorExitBlocked(0));
+    CHECK(f.height() == Approx(10));
+    // Later travel locks again; an immediate forced endpoint must also release it.
+    f.triggers.update(2.0f, {}, f.animator, f.scene, &collision);
+    f.triggers.update(0.1f, party, f.animator, f.scene, &collision);
+    REQUIRE(collision.floorExitBlocked(0));
+    f.triggers.activate(0, true, f.animator, f.scene, &collision);
+    CHECK_FALSE(collision.floorExitBlocked(0));
+}
+
+TEST_CASE("animated lifts retain the party only while everyone is aboard and travel is active",
+          "[game][world][triggers][floor-riding]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,10,5,2,255,0,0,0,0,0,0]})",
+                    R"({"name":"WALL","position":[0,10,0],"flags":4096})", 24,
+                    R"({"object":0,"frames":4,"state":257,"start":0,
+                        "track":{"flags":2,"frames":[0,3],"values":[0,1]}})");
+    WorldCollision collision;
+    std::array party{TriggerVisitor{.floorObject = 0, .party = 0},
+                     TriggerVisitor{.floorObject = -1, .party = 1}};
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    CHECK_FALSE(collision.floorExitBlocked(0));
+    party[1].floorObject = 0;
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    REQUIRE(collision.floorExitBlocked(0));
+    REQUIRE_FALSE(f.triggers.settled(0));
+    // Losing a rider clears whole-party readiness, even before the track ends.
+    party[1].floorObject = -1;
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    CHECK_FALSE(collision.floorExitBlocked(0));
+    party[1].floorObject = 0;
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    REQUIRE(collision.floorExitBlocked(0));
+    f.animator.step(1.0f, f.scene);
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    REQUIRE(f.triggers.settled(0));
+    CHECK_FALSE(collision.floorExitBlocked(0));
 }
 
 TEST_CASE("pressure targets return when vacated", "[game][world][triggers]") {

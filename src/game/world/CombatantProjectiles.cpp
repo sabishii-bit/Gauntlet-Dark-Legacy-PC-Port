@@ -7,6 +7,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/world/ParticleSystem.h"
 
 namespace gdl::game {
 namespace {
@@ -25,6 +26,27 @@ constexpr u32 kPassThrough = 0x100000;
 constexpr u32 kSticky = 0x4000000;
 constexpr f32 kStickyLife = 20.0f;
 constexpr f32 kProjectileHitGap = 0.25f;
+
+ParticleDescriptor fireTrail(const CombatEffectDefinition& cue) {
+    // CritterDoParticle's kind 2 modifies allocPsys defaults, not a preset.
+    ParticleDescriptor trail;
+    trail.texture = cue.tree;
+    trail.emitFrames = cue.life < 0
+                           ? ParticleDescriptor::kEndless
+                           : static_cast<u32>(std::clamp(cue.life * 30.0f, 1.0f, 65535.0f));
+    trail.fadeFrames = 1;
+    trail.particleLife = 6;
+    trail.particleFade = 6;
+    trail.angle = ParticleDescriptor::kSphere;
+    trail.rate.fill(std::max(cue.particleRate, 0.0f));
+    trail.speed = cue.particleSpeed / ParticleDescriptor::kFrameRate;
+    trail.red = trail.green = trail.blue = {255, 255, 255, 255};
+    trail.alpha = {255, 255, 255, 0};
+    trail.width = {0.5f, 0.5f, 0.5f, 0.5f};
+    trail.additive = true;
+    trail.depthWrite = false;
+    return trail;
+}
 } // namespace
 
 u32 CombatantProjectiles::show(Flying& flying, s32 index, RenderDevice& device,
@@ -50,6 +72,41 @@ u32 CombatantProjectiles::show(Flying& flying, s32 index, RenderDevice& device,
         effects.startSet(device, *flying.archive, cue->tree, flying.position, setting);
     if (effect != 0) {
         m_emittedEffects.push_back(effect);
+        // The only shipped projectile SFXX link is a custom emitter parented
+        // to the preceding effect. Keep malformed chains from cycling forever.
+        std::vector<s32> visited{index};
+        for (s32 at = cue->link; at >= 0;) {
+            if (std::ranges::find(visited, at) != visited.end()) {
+                log::warn("combatant {}: cyclic projectile effect link {}",
+                          flying.shot.data->name(), at);
+                break;
+            }
+            visited.push_back(at);
+            const auto* linked = flying.shot.data->sound(at);
+            if (linked == nullptr) {
+                break;
+            }
+            if ((linked->flags & (kCustomEffect | 0x4000U)) == 0x02004000U &&
+                linked->offset == Vec3{0}) {
+                if (const auto texture = flying.archive->textures.find(linked->tree)) {
+                    effects.attachTrail(effect, fireTrail(*linked),
+                                        flying.archive->textures.texture(device, *texture));
+                } else {
+                    log::warn("combatant {}: missing projectile trail texture {}",
+                              flying.shot.data->name(), linked->tree);
+                }
+            } else {
+                log::warn("combatant {}: unsupported linked projectile effect {}",
+                          flying.shot.data->name(), linked->tree);
+            }
+            if (sound) {
+                const std::string name = linked->soundFor(flying.shot.realm);
+                if (!name.empty()) {
+                    sound(name);
+                }
+            }
+            at = linked->link;
+        }
     }
     return effect;
 }

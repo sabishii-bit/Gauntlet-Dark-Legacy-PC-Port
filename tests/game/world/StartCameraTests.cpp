@@ -1,3 +1,4 @@
+#include <cmath>
 #include <numbers>
 
 #include <catch2/catch_approx.hpp>
@@ -30,7 +31,7 @@ void requireNear(const Vec3& actual, const Vec3& expected, f32 margin = 1e-3f) {
     REQUIRE(actual.z == Approx(expected.z).margin(margin));
 }
 
-TEST_CASE("the start camera holds at the marker, then rides at its pace to the follow camera",
+TEST_CASE("the legacy start camera holds at the marker, then rides at its pace",
           "[game][world][camera]") {
     const WorldCamera marker = markerAbove();
     const Vec3 party{0.0f, 0.0f, -30.0f};
@@ -40,10 +41,10 @@ TEST_CASE("the start camera holds at the marker, then rides at its pace to the f
     REQUIRE_FALSE(camera.active());
     REQUIRE_FALSE(camera.update(1, false, followPosition, followAttention));
 
-    camera.start(marker, party);
+    camera.start(marker, party, StartCamera::Mode::Legacy);
     REQUIRE(camera.active());
     REQUIRE(camera.phase() == StartCamera::Phase::Hold);
-    REQUIRE(camera.ticksLeft() == StartCamera::kHoldTicks);
+    REQUIRE(camera.ticksLeft() == StartCamera::kLegacyHoldTicks);
     // It stands at the marker, level, looking the marker's way as far off as the party.
     requireNear(camera.camera().position, marker.position);
     REQUIRE(camera.camera().pitch == Approx(0.5f));
@@ -56,7 +57,7 @@ TEST_CASE("the start camera holds at the marker, then rides at its pace to the f
 
     // The hold counts down; a button means nothing until most of it has passed.
     REQUIRE(camera.update(2, true, followPosition, followAttention));
-    REQUIRE(camera.ticksLeft() == StartCamera::kHoldTicks - 2);
+    REQUIRE(camera.ticksLeft() == StartCamera::kLegacyHoldTicks - 2);
     REQUIRE(camera.phase() == StartCamera::Phase::Hold);
     requireNear(camera.camera().position, marker.position);
     REQUIRE(camera.update(camera.ticksLeft() - StartCamera::kSkipBelow, true, followPosition,
@@ -96,15 +97,15 @@ TEST_CASE("the start camera holds at the marker, then rides at its pace to the f
     REQUIRE_FALSE(camera.update(1, false, followPosition, followAttention));
 }
 
-TEST_CASE(
-    "the start camera's hold runs its course without a button and it rides faster from far off",
-    "[game][world][camera]") {
+TEST_CASE("the legacy camera's hold runs its course and it rides faster from far off",
+          "[game][world][camera]") {
     const WorldCamera marker = markerAbove();
     const Vec3 followPosition{0.0f, 14.0f, -300.0f};
     const Vec3 followAttention{0.0f, 2.5f, -320.0f};
     StartCamera camera;
-    camera.start(marker, Vec3{0.0f, 0.0f, -30.0f});
-    REQUIRE(camera.update(StartCamera::kHoldTicks - 1, false, followPosition, followAttention));
+    camera.start(marker, Vec3{0.0f, 0.0f, -30.0f}, StartCamera::Mode::Legacy);
+    REQUIRE(
+        camera.update(StartCamera::kLegacyHoldTicks - 1, false, followPosition, followAttention));
     REQUIRE(camera.ticksLeft() == 1);
     REQUIRE(camera.phase() == StartCamera::Phase::Hold);
     REQUIRE(camera.update(1, false, followPosition, followAttention));
@@ -127,11 +128,62 @@ TEST_CASE(
                 .margin(1e-3f));
     // A late frame's ticks cover that many paces, never past the target.
     camera.stop();
-    camera.start(marker, Vec3{0.0f, 0.0f, -30.0f});
-    camera.update(StartCamera::kHoldTicks, false, followPosition, followAttention);
+    camera.start(marker, Vec3{0.0f, 0.0f, -30.0f}, StartCamera::Mode::Legacy);
+    camera.update(StartCamera::kLegacyHoldTicks, false, followPosition, followAttention);
     const Vec3 near{0.0f, 20.0f, -0.5f};
     camera.update(4, false, near, camera.attention());
     requireNear(camera.camera().position, near);
+}
+
+TEST_CASE("normal arrival holds three seconds despite buttons and interpolates angles and radius",
+          "[camera][arrival]") {
+    WorldCamera marker;
+    marker.position = {0, 15, 0};
+    marker.yaw = 170 * kPi / 180;
+    marker.pitch = 0.2f;
+    WorldCamera target;
+    target.yaw = -170 * kPi / 180;
+    target.pitch = 0.6f;
+    const Vec3 attention{5, 2, -20};
+    target.position = attention - target.forward() * 40.0f;
+    StartCamera camera;
+    camera.start(marker, {0, 0, -20});
+    const Vec3 initialAttention = camera.attention();
+    const f32 initialDistance = glm::distance(marker.position, initialAttention);
+    REQUIRE(camera.update(179, true, target.position, attention));
+    REQUIRE(camera.phase() == StartCamera::Phase::Hold);
+    requireNear(camera.camera().position, marker.position);
+    REQUIRE(camera.update(1, true, target.position, attention));
+    REQUIRE(camera.phase() == StartCamera::Phase::Ride);
+    REQUIRE(camera.update(10, false, target.position, attention));
+    CHECK(std::abs(camera.camera().yaw) == Approx(kPi));
+    CHECK(camera.camera().pitch == Approx(0.4f));
+    requireNear(camera.attention(), (initialAttention + attention) * 0.5f);
+    CHECK(glm::distance(camera.camera().position, camera.attention()) ==
+          Approx((initialDistance + 40) * 0.5f));
+    // Rates are fixed at the start of the handoff, not retargeted every frame.
+    CHECK_FALSE(camera.update(10, false, Vec3{999}, Vec3{888}));
+    requireNear(camera.camera().position, target.position);
+    requireNear(camera.attention(), attention);
+}
+
+TEST_CASE("arrival timing carries coarse frames across the hold and ends without overshoot",
+          "[camera][arrival]") {
+    const Vec3 position{0, 12, -5};
+    const Vec3 attention{0, 0, -30};
+    for (const s32 step : {1, 2, 4, 5, 10, 25, 200}) {
+        INFO(step);
+        StartCamera camera;
+        camera.start(markerAbove(), attention);
+        CHECK(camera.update(0, true, position, attention));
+        CHECK(camera.ticksLeft() == 180);
+        for (s32 elapsed = 0; elapsed < 200; elapsed += step) {
+            camera.update(step, true, position, attention);
+        }
+        CHECK_FALSE(camera.active());
+        requireNear(camera.camera().position, position);
+        requireNear(camera.attention(), attention);
+    }
 }
 
 } // namespace

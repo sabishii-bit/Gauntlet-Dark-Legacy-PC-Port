@@ -46,6 +46,13 @@ void FloorRiding::land(std::span<PlayerRuntime> players, usize index, const Vec3
     PlayerRuntime& runtime = players[index];
     PlayerActor& actor = runtime.actor;
     std::optional<FloorHit> hit = collision.floorAt(actor.position(), kProbeAbove, kProbeBelow);
+    // PlayerNewFloor: an active lift keeps its riders on that same floor.
+    // `from` already includes carry(), so refusing a step does not undo lift travel.
+    if (collision.floorExitBlocked(runtime.floor.object) &&
+        (!hit.has_value() || hit->object != runtime.floor.object)) {
+        actor.place(from);
+        return;
+    }
     if (hit.has_value() && (hit->objectFlags & kMoving) != 0 &&
         keptApart(players, index, hit->object)) {
         actor.place(Vec3{from.x, actor.position().y, from.z});

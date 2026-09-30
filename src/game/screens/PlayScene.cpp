@@ -777,6 +777,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         m_world->update(seconds);
         updateAmbience();
         m_welcome.updateBeam(*m_world, m_players, m_sumner.position(), ticks);
+        const bool cameraHandoff = m_arrival.camera().active();
         m_arrival.advance(ticks, anyButton(inputs), m_camera.camera().position,
                           m_camera.attention());
         if (m_arrival.takeTitleLanded()) {
@@ -786,6 +787,18 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             }
         }
         if (!spawning()) {
+            if (cameraHandoff && m_arrival.camera().mode() == StartCamera::Mode::Standard) {
+                std::vector<CameraSubject> subjects;
+                for (const auto& player : m_players) {
+                    if (player.life == PlayerLife::Standing) {
+                        subjects.push_back({player.actor.position(), player.actor.followPoint()});
+                    }
+                }
+                for (s32 i = 0; i < StartCamera::kWarmSteps; ++i) {
+                    m_camera.update(subjects, m_world->cameraMarkers(), m_world->cameraRange(),
+                                    cameraView(), 1.0f / TowerCamera::kStepRate);
+                }
+            }
             m_welcome.arrived(*m_device, m_messages, m_context.strings, m_world->layout(),
                               m_sumner);
         }
@@ -1199,7 +1212,8 @@ void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
     for (const PlayerRuntime& runtime : m_players) {
         positions.push_back(runtime.actor.position());
     }
-    m_arrival.begin(device, m_weapons, positions, marker);
+    m_arrival.begin(device, m_weapons, positions, marker,
+                    bossCameraOn() ? StartCamera::Mode::Legacy : StartCamera::Mode::Standard);
     if (!positions.empty()) {
         m_audio.playEntrance();
     }
