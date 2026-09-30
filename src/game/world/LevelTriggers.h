@@ -41,6 +41,7 @@ struct TriggerOpening {
 struct TriggerCameraCue {
     s32 id = 0;
     s32 target = -1;
+    bool shakes = false;
 };
 
 /** An active participant's position, supporting floor and progression requirements. */
@@ -78,10 +79,12 @@ struct LevelTrigger {
     f32 radius = 0.0f;
     s32 sound = -1; ///< the slot of the sounds the target makes as it opens, or -1
     bool fired = false;
-    bool shootable = false; ///< a target on the wall, set off by what hits it
-    f32 height = 0.0f;      ///< how tall it stands to what is thrown at it
-    bool shot = false;      ///< hit since the last update
-    bool occupied = false;  ///< someone was on it the last update
+    bool shootable = false;      ///< a target on the wall, set off by what hits it
+    f32 height = 0.0f;           ///< how tall it stands to what is thrown at it
+    bool shot = false;           ///< hit since the last update
+    bool occupied = false;       ///< someone was on it the last update
+    bool movementLesson = false; ///< subtype 23's lesson, posted while its target exists
+    bool forced = false;         ///< a special trigger remains activated without a visitor
 
     /** Whether it wants every visitor to carry a realm's crystals first. */
     bool needsCrystals() const { return (flags & kRequirement) != 0 && id < kGargoyleIds; }
@@ -155,6 +158,9 @@ public:
      * as they are. */
     void openAtOnce(std::span<const s32> ids, WorldAnimator& animator, WorldScene& scene,
                     WorldCollision* collision);
+    /** Permanently activates an id and its chain, animated or already at the endpoint. */
+    void activate(s32 id, bool atOnce, WorldAnimator& animator, WorldScene& scene,
+                  WorldCollision* collision);
     /** Fires the triggers visitors stand in and carries the fades on by `seconds`. */
     void update(f32 seconds, std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                 WorldScene& scene, WorldCollision* collision);
@@ -180,6 +186,7 @@ private:
         bool settled = true;
         bool pressed = false;   ///< contact combined across all switches naming this target
         bool returning = false; ///< descending half of an oscillating height target
+        bool forced = false;
         f32 alpha = 1.0f;
         Vec3 origin{0.0f};
         f32 height = 0.0f;

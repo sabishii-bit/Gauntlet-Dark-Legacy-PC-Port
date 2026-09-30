@@ -70,7 +70,19 @@ void TriggerCues::handle(LevelWorld& world, LevelSoundscape& audio, SoundPlayer*
         audio.settled(settled);
     }
     for (const TriggerCameraCue& cue : world.takeTriggerCameraCues()) {
+        if (cue.shakes && events.shake) {
+            events.shake();
+        }
         cutscene.begin(cue, world.layout(), world.isTower());
+    }
+    if (!cutscene.active() && !world.isTower() && events.helpAt) {
+        const auto& triggers = world.triggers();
+        for (usize i = 0; i < triggers.size(); ++i) {
+            if (triggers.trigger(i).movementLesson &&
+                events.helpAt(HelpMessages::kTrapsMove, triggers.trigger(i).spot)) {
+                break;
+            }
+        }
     }
 }
 

@@ -1135,10 +1135,16 @@ bool PlayScene::openMessage(std::string_view name, usize page) {
 /** A turntable grinds as it turns and thuds as it stops (fn_8009D7E4): stone in the castle,
  * metal in the mines, nothing elsewhere. */
 void PlayScene::handleTriggerEvents() {
-    m_triggerCues.handle(*m_world, m_audio, m_context.sounds, m_switchCutscene,
-                         {.help = [this](s32 id, usize index) { return postHelp(id, index); },
-                          .openMessage = [this](std::string_view name,
-                                                usize page) { return openMessage(name, page); }});
+    m_triggerCues.handle(
+        *m_world, m_audio, m_context.sounds, m_switchCutscene,
+        {.help = [this](s32 id, usize index) { return postHelp(id, index); },
+         .openMessage = [this](std::string_view name,
+                               usize page) { return openMessage(name, page); },
+         .shake = [this] { m_shake.start(CameraShake::Target::Attention, 0, 180, 0.1f, 100); },
+         .helpAt =
+             [this](s32 id, const Vec3& position) {
+                 return m_hud.postHelp(id, 0, m_players, m_audio, -1, position);
+             }});
 }
 
 } // namespace gdl::game

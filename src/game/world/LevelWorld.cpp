@@ -196,6 +196,20 @@ void LevelWorld::startTriggers(std::span<const TriggerVisitor> visitors,
     if (isTower() && access != nullptr && access->liftsOpen()) {
         m_triggers.openAtOnce(TowerAccess::kLiftTriggers, m_worldAnimator, m_scene, &m_collision);
     }
+    if (isTower() && std::ranges::any_of(visitors, [](const TriggerVisitor& visitor) {
+            return visitor.sumner || visitor.gargoylePieces[2] < 0 ||
+                   visitor.gargoylePieces[2] >= Relics::kGargoyleNeeded[2];
+        })) {
+        for (const s32 id : TowerAccess::kLiftTriggers) {
+            m_triggers.activate(id, true, m_worldAnimator, m_scene, &m_collision);
+        }
+    }
+    m_worldAnimator.apply(m_scene);
+    syncCollision();
+}
+
+void LevelWorld::activateTrigger(s32 id, bool atOnce) {
+    m_triggers.activate(id, atOnce, m_worldAnimator, m_scene, &m_collision);
     m_worldAnimator.apply(m_scene);
     syncCollision();
 }

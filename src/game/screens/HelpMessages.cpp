@@ -11,12 +11,13 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::array<HelpMessageSpec, 124> kSpecs{{
+constexpr std::array<HelpMessageSpec, 125> kSpecs{{
     {HelpMessages::kUseMagicOnDeath, "USEMAGIC", "S_USEMAGIC"},
     {HelpMessages::kDoorNeedsKey, "USEKEYOPENDOOR", "S_USEKEY"},
     {HelpMessages::kChestNeedsKey, "USEKEYOPENCHEST", "S_USEKEY2"},
     {HelpMessages::kPotionsFull, "FULLOFBOMBS", "S_MAGICFULL"},
     {HelpMessages::kKeysFull, "FULLOFKEYS", "S_KEYFULL"},
+    {HelpMessages::kTrapsMove, "TRAPMOVE", "S_TRAPSMAKE"},
     {HelpMessages::kNoPotion, "COLLECTMAGICFIRST", "S_COLLECTPOT"},
     {7, "USEMAGIC2", "S_USEMAGIC2"},
     {8, "SAVEKEYS", "S_SAVEKEYS"},
