@@ -95,6 +95,9 @@ TEST_CASE("arrival camera frames the party and outlasts the spawn effects",
     arrival.drawEffects(device, Mat4{1.0f}, {});
     REQUIRE(device.draws.empty());
     arrival.advance(1, true, follow, attention);
+    REQUIRE(arrival.camera().phase() == StartCamera::Phase::Hold);
+    arrival.advance(StartCamera::kHoldTicks - LevelArrivalPresentation::kSpawnTicks - 1, false,
+                    follow, attention);
     REQUIRE(arrival.camera().phase() == StartCamera::Phase::Ride);
     for (s32 ticks = 0; ticks < 300 && arrival.active(); ++ticks) {
         arrival.advance(1, false, follow, attention);
@@ -212,9 +215,9 @@ TEST_CASE("arrival title slides during the hold and disappears when the arrival 
     arrival.drawTitle(canvas, unavailable, "A", 512);
     canvas.end();
     REQUIRE(device.draws.empty());
-    arrival.advance(11, false, Vec3{0.0f}, Vec3{0.0f});
+    arrival.advance(100, true, Vec3{0.0f}, Vec3{0.0f});
     REQUIRE(arrival.camera().phase() == StartCamera::Phase::Ride);
-    arrival.advance(1, false, Vec3{0.0f}, Vec3{0.0f});
+    arrival.advance(StartCamera::kRideTicks, false, Vec3{0.0f}, Vec3{0.0f});
     REQUIRE_FALSE(arrival.active());
     draw("A");
     REQUIRE(device.draws.empty());

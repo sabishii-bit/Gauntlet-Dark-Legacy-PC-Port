@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <string>
@@ -84,6 +85,83 @@ struct Fixture {
         projectiles.update(seconds, collision, players, device, effects, sound);
     }
 };
+
+TEST_CASE("linked projectile fire emits behind its moving parent and stops at the authored time",
+          "[boss-projectiles][projectile-trail]") {
+    Fixture f;
+    const auto root = test::scratchDirectory("linked-projectile-data");
+    writeTextFile(root / "critter.json", R"({"types":[{"moveCount":1}],"moves":[{}],
+        "descriptors":[{}],"damages":[{"type":1,"minSpeed":30,"maxSpeed":30,
+        "sfxIndex":0,"behaviorFlags":9}],"sounds":[{"name":"LOOP","life":3,"link":1},
+        {"name":"WHITE","flags":33570816,"life":1,"rate":5,"custom1":500,"link":-1}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    f.launch();
+    REQUIRE(f.effects.count() == 1);
+    const auto& trail = f.effects.effect(0).trails;
+    REQUIRE(trail.size() == 1);
+    const auto& emitter = trail.emitter(0);
+    const auto& d = emitter.descriptor();
+    CHECK(d.rate[0] == 5);
+    CHECK(d.speed == Approx(5.0f / 30));
+    CHECK(d.emitFrames == 30);
+    CHECK(d.fadeFrames == 1);
+    CHECK(d.particleLife == 6);
+    CHECK(d.particleFade == 6);
+    CHECK(d.width.lifeStart == 0.5f);
+    CHECK(d.alpha.fadeEnd == 0);
+    CHECK(d.additive);
+    CHECK_FALSE(d.depthWrite);
+    CHECK_FALSE(d.dynamic);
+    f.step(1.0f / 30);
+    REQUIRE(trail.particleCount() == 5);
+    const Vec3 born = emitter.particles().front().origin;
+    f.step(1.0f / 30);
+    CHECK(emitter.particles().front().origin == born);
+    CHECK(Vec3{emitter.node()[3]}.z > born.z);
+    for (s32 frame = 2; frame < 44; ++frame) {
+        f.step(1.0f / 30);
+    }
+    CHECK(trail.particleCount() == 0);
+    CHECK(f.projectiles.count() == 1);
+    f.projectiles.clear(f.effects);
+    CHECK(f.effects.count() == 0);
+}
+
+TEST_CASE("Dragon fireball records attach their actual linked particle texture",
+          "[boss-projectiles][projectile-trail][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    CritterData data;
+    ItemArchive archive;
+    REQUIRE(data.load(root / "critter/DRAGON.json"));
+    REQUIRE(archive.load(root / "MONSTERS/DRAGON"));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    CombatantProjectiles projectiles;
+    s32 covered = 0;
+    for (s32 i = 0; data.damage(i) != nullptr; ++i) {
+        const auto* damage = data.damage(i);
+        if (damage->type != AttackDefinition::kProjectile || damage->sound != 11) {
+            continue;
+        }
+        CombatShot shot;
+        shot.data = &data;
+        shot.damageIndex = i;
+        shot.origin = {0, 10, 0};
+        shot.target = Vec3{0, 10, 30};
+        projectiles.launch(shot, archive, device, effects, {});
+        REQUIRE(projectiles.count() == 1);
+        REQUIRE(effects.effect(0).trails.size() == 1);
+        const auto texture = archive.textures.find("FBALL_LP00");
+        REQUIRE(texture);
+        CHECK(effects.effect(0).trails.textureOf(0) == &archive.textures.texture(device, *texture));
+        effects.update(1.0f / 30);
+        CHECK(effects.effect(0).trails.particleCount() == 5);
+        projectiles.clear(effects);
+        ++covered;
+    }
+    CHECK(covered == 7);
+}
 
 TEST_CASE("planted hand traps hold a fixed position, allow escape, and end their damage",
           "[boss-projectiles][lich]") {

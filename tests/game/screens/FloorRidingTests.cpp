@@ -109,4 +109,45 @@ TEST_CASE("a member may not step onto a moving floor while another rides one kep
     CHECK(players[0].floor.object == kLift);
 }
 
+TEST_CASE("a travelling lift keeps riders aboard without freezing movement on its deck",
+          "[game][screens][floor-riding]") {
+    WorldCollision collision;
+    auto triangles = square({-5, -5}, {0, 5}, 0, 7, kFloorQuery);
+    const auto adjacent = square({0, -5}, {5, 5}, 0, 8, kFloorQuery);
+    triangles.insert(triangles.end(), adjacent.begin(), adjacent.end());
+    collision.build(triangles);
+    std::array<PlayerRuntime, 1> players;
+    auto& actor = players[0].actor;
+    actor.spawn(0, {}, nullptr, Vec3{-2, 0, 0}, 0);
+    FloorRiding::land(players, 0, actor.position(), collision);
+    REQUIRE(players[0].floor.object == 7);
+    collision.setFloorExitBlocked(7, true);
+    collision.setFloorExitBlocked(7, true); // idempotent
+    actor.place(Vec3{-1, 0, 0});
+    FloorRiding::land(players, 0, Vec3{-2, 0, 0}, collision);
+    CHECK(actor.position() == Vec3{-1, 0, 0});
+    const Vec3 from = actor.position();
+    SECTION("a different floor") {
+        actor.place(Vec3{1, 0, 0});
+    }
+    SECTION("no floor") {
+        actor.place(Vec3{-6, 0, 0});
+    }
+    FloorRiding::land(players, 0, from, collision);
+    CHECK(actor.position() == from);
+    CHECK(players[0].floor.object == 7);
+    collision.setFloorExitBlocked(7, false);
+    actor.place(Vec3{1, 0, 0});
+    FloorRiding::land(players, 0, from, collision);
+    CHECK(actor.position() == Vec3{1, 0, 0});
+    CHECK(players[0].floor.object == 8);
+    collision.setFloorExitBlocked(7, true);
+    collision.setSolid(7, false);
+    CHECK_FALSE(collision.floorExitBlocked(7));
+    collision.setSolid(7, true);
+    CHECK(collision.floorExitBlocked(7));
+    collision.clear();
+    CHECK_FALSE(collision.floorExitBlocked(7));
+}
+
 } // namespace

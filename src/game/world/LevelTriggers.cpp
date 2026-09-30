@@ -287,6 +287,9 @@ bool LevelTriggers::openTarget(Target& target, bool open, bool atOnce, WorldAnim
     target.open = open;
     target.returning = false;
     target.settled = atOnce; // only an opening before the party is worth reporting done
+    if (atOnce && collision != nullptr) {
+        collision->setFloorExitBlocked(target.object, false);
+    }
     if (target.animated) {
         if (!target.forced && (target.kind & LevelTrigger::kOscillates) != 0 && !atOnce) {
             animator.cycle(target.object, open);
@@ -323,6 +326,9 @@ void LevelTriggers::fire(usize index, bool active, bool atOnce, WorldAnimator& a
         const bool wasFired = trigger.fired;
         if (Target* target = targetOf(trigger.target); target != nullptr) {
             target->pressed = target->pressed || contact;
+            if ((trigger.flags & LevelTrigger::kWholeParty) != 0) {
+                target->wholePartyReady = target->wholePartyReady || active;
+            }
             bool open = target->open;
             if ((trigger.flags & LevelTrigger::kCloses) != 0) {
                 if (contact && target->settled) {
@@ -473,6 +479,7 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
     m_emptyToggleDelay = visitors.empty() ? 0.0f : static_cast<f32>(visitors.size() - 1);
     for (Target& target : m_targets) {
         target.pressed = false;
+        target.wholePartyReady = false;
     }
     for (usize i = 0; i < m_triggers.size(); ++i) {
         LevelTrigger& trigger = m_triggers[i];
@@ -604,6 +611,15 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
         }
         if (collision != nullptr && (target.kind & LevelTrigger::kStaysSolid) == 0) {
             collision->setSolid(target.object, target.settled);
+        }
+    }
+    if (collision != nullptr) {
+        for (const Target& target : m_targets) {
+            // ProcessItemWobjs / PlayerNewFloor: active height targets, or animated
+            // lifts carrying the whole party, prohibit changing floors until stopped.
+            const bool heightTarget = !target.animated && (target.kind & LevelTrigger::kFades) == 0;
+            collision->setFloorExitBlocked(
+                target.object, !target.settled && (heightTarget || target.wholePartyReady));
         }
     }
 }

@@ -204,6 +204,20 @@ void WorldCollision::setSolid(s32 object, bool solid) {
     }
 }
 
+void WorldCollision::setFloorExitBlocked(s32 object, bool blocked) {
+    const auto found = std::ranges::find(m_blockedFloorExits, object);
+    if (!blocked && found != m_blockedFloorExits.end()) {
+        m_blockedFloorExits.erase(found);
+    } else if (blocked && object >= 0 && found == m_blockedFloorExits.end()) {
+        m_blockedFloorExits.push_back(object);
+    }
+}
+
+bool WorldCollision::floorExitBlocked(s32 object) const {
+    return object >= 0 && solid(object) &&
+           std::ranges::find(m_blockedFloorExits, object) != m_blockedFloorExits.end();
+}
+
 bool WorldCollision::solid(s32 object) const {
     return std::ranges::find(m_hidden, object) == m_hidden.end();
 }
@@ -250,6 +264,7 @@ void WorldCollision::clear() {
     m_triangles.clear();
     m_moving.clear();
     m_hidden.clear();
+    m_blockedFloorExits.clear();
     m_cells.clear();
     m_columns = 0;
     m_rows = 0;

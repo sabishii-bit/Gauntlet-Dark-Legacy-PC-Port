@@ -187,7 +187,8 @@ private:
         bool animated = false;
         bool open = false;
         bool settled = true;
-        bool pressed = false;   ///< contact combined across all switches naming this target
+        bool pressed = false; ///< contact combined across all switches naming this target
+        bool wholePartyReady = false;
         bool returning = false; ///< descending half of an oscillating height target
         bool forced = false;
         f32 alpha = 1.0f;

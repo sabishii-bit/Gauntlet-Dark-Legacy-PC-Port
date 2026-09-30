@@ -30,7 +30,8 @@ public:
 
     /** Starts at fixed party positions; without a marker the follow camera is used. */
     void begin(RenderDevice& device, ItemArchive& weapons, std::span<const Vec3> positions,
-               const std::optional<WorldCamera>& marker = std::nullopt);
+               const std::optional<WorldCamera>& marker = std::nullopt,
+               StartCamera::Mode mode = StartCamera::Mode::Standard);
     void clear();
 
     /** Advance visuals before the world and its listener update. */

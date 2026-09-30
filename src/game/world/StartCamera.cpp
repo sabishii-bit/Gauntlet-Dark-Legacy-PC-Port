@@ -2,20 +2,40 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 #include "engine/core/Types.h"
 
 namespace gdl::game {
 
-void StartCamera::start(const WorldCamera& marker, const Vec3& party) {
+namespace {
+f32 wrap(f32 angle) {
+    constexpr f32 kHalfTurn = std::numbers::pi_v<f32>;
+    while (angle > kHalfTurn) {
+        angle -= 2 * kHalfTurn;
+    }
+    while (angle <= -kHalfTurn) {
+        angle += 2 * kHalfTurn;
+    }
+    return angle;
+}
+} // namespace
+
+void StartCamera::start(const WorldCamera& marker, const Vec3& party, Mode mode) {
     m_camera = marker;
     m_camera.roll = 0.0f;
     m_attention = marker.position + m_camera.forward() * glm::distance(marker.position, party);
-    m_ticks = kHoldTicks;
+    m_mode = mode;
+    m_ticks = mode == Mode::Standard ? kHoldTicks : kLegacyHoldTicks;
+    m_rideTicks = 0;
     m_phase = Phase::Hold;
 }
 
 bool StartCamera::update(s32 ticks, bool skip, const Vec3& position, const Vec3& attention) {
+    ticks = std::max(ticks, 0);
+    if (m_mode == Mode::Standard) {
+        return standard(ticks, position, attention);
+    }
     switch (m_phase) {
     case Phase::Off: return false;
     case Phase::Hold:
@@ -39,6 +59,43 @@ bool StartCamera::update(s32 ticks, bool skip, const Vec3& position, const Vec3&
     }
     }
     return false;
+}
+
+bool StartCamera::standard(s32 ticks, const Vec3& position, const Vec3& attention) {
+    if (m_phase == Phase::Off) {
+        return false;
+    }
+    if (m_phase == Phase::Hold) {
+        const s32 held = std::min(ticks, m_ticks);
+        m_ticks -= held;
+        ticks -= held;
+        if (m_ticks > 0) {
+            return true;
+        }
+        m_phase = Phase::Ride;
+        m_from = m_camera;
+        m_fromAttention = m_attention;
+        m_toAttention = attention;
+        m_fromDistance = glm::distance(m_camera.position, m_attention);
+        const Vec3 ahead = attention - position;
+        m_toDistance = glm::length(ahead);
+        const f32 yaw = m_toDistance > 0 ? std::atan2(ahead.x, ahead.z) : m_camera.yaw;
+        const f32 pitch =
+            m_toDistance > 0 ? std::atan2(-ahead.y, std::hypot(ahead.x, ahead.z)) : m_camera.pitch;
+        m_yawDelta = wrap(yaw - m_camera.yaw);
+        m_pitchDelta = wrap(pitch - m_camera.pitch);
+    }
+    m_rideTicks = std::min(m_rideTicks + ticks, kRideTicks);
+    const f32 t = static_cast<f32>(m_rideTicks) / kRideTicks;
+    m_camera.yaw = wrap(m_from.yaw + t * m_yawDelta);
+    m_camera.pitch = wrap(m_from.pitch + t * m_pitchDelta);
+    m_attention = glm::mix(m_fromAttention, m_toAttention, t);
+    const f32 distance = glm::mix(m_fromDistance, m_toDistance, t);
+    m_camera.position = m_attention - m_camera.forward() * distance;
+    if (m_rideTicks == kRideTicks) {
+        m_phase = Phase::Off;
+    }
+    return active();
 }
 
 bool StartCamera::approach(Vec3& point, const Vec3& target, f32 reach, s32 ticks) {
