@@ -38,9 +38,10 @@ bool Combatant::nodeAvailable(const Actor& actor, std::string_view name) {
 
 void Combatant::holdBrokenPoses(Actor& actor) {
     for (usize i = 0; i < actor.hitNodes.size(); ++i) {
-        if (actor.hitNodes[i].heldPose) {
+        const auto& heldPose = actor.hitNodes[i].heldPose;
+        if (heldPose) {
             if (const auto node = actor.stock->tree->findNode(actor.definition->parts()[i].node)) {
-                actor.pose.setNodePose(*node, *actor.hitNodes[i].heldPose);
+                actor.pose.setNodePose(*node, *heldPose);
             }
         }
     }
@@ -57,7 +58,8 @@ f32 Combatant::damageNode(s32 index, f32 amount, u32 flags) {
     }
     HitNode& state = actor.hitNodes[at];
     const CritterPart& part = data()->parts()[at];
-    if (state.health <= 0 || !nodeAvailable(actor, part.node)) {
+    const auto node = actor.stock->tree->findNode(part.node);
+    if (!node || state.health <= 0 || !nodeAvailable(actor, part.node)) {
         return 0;
     }
     amount *= part.damageScale;
@@ -66,10 +68,9 @@ f32 Combatant::damageNode(s32 index, f32 amount, u32 flags) {
     amount = std::clamp(amount, 0.0f, state.health);
     state.health -= amount;
     if (overrun && (part.flags & CritterPart::kBreakable) != 0) {
-        const auto node = *actor.stock->tree->findNode(part.node);
         const Vec3 origin{attachmentTransform(actor, part.node) * Vec4{part.position, 1}};
         state.broken = true;
-        state.heldPose = actor.pose.poses()[node];
+        state.heldPose = actor.pose.poses()[*node];
         if (const AttackDefinition* damage = data()->damage(part.damageEffect)) {
             if (damage->type == AttackDefinition::kProjectile) {
                 CombatShot shot;
