@@ -186,6 +186,8 @@ add_library(game STATIC
     world/PlacedItems.cpp
     world/AmbientSounds.h
     world/AmbientSounds.cpp
+    world/MusicAreas.h
+    world/MusicAreas.cpp
     world/LevelTriggers.h
     world/LevelTriggers.cpp
     world/HazardSurfaces.h

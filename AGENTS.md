@@ -278,6 +278,30 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   right hand (`SoundPlayer::setVolume`/`setPan`, `AudioStream::setPan`), at
   `kPeak` (224/255) times the level's sound volume. `PlayScene` binds it
   once the world is loaded and updates it after the camera each frame.
+  Music areas: a sound item whose second parameter word names an area (from
+  one; 77 nameless zones in fifteen levels) plays nothing itself but is a
+  zone of `world/MusicAreas` (items.c 4514-4522, 4733-4736): each update the
+  highest area whose radius holds the nearest player is asked for when it
+  is not the area asked for already (sMusicSubIndex), so a crossing tells
+  once and open ground changes nothing. The realm audio record's `areas` is
+  its count of streams, `<stem><a..k>` (the stem alone with one area), each
+  with `parts[area]` numbered parts (`_1`, `_2`), the last of which loops.
+  The zone's third word is the way over (sMusicSubState): 0 when the part
+  playing ends (its loop point too; `StreamPlaylist::follow` takes the new
+  parts over at that boundary), 1 after a fade, 2 at once. The soundscape's
+  `updateMusic` is AudioMusicVolUpdate at 30 frames a second: a fade takes
+  the level down 3 a frame from 255 to 3 (AudioSetupLevelStreams then
+  starts the new area's first part at that level, clearing the request's
+  way) and back up 8 a frame; a level of one area ignores every request. A
+  boss waking asks for the second area with a fade (BossActivate, boss.c
+  695; `bossAwake` edge-detects the `BossView`). Not done: a zone riding an
+  animated world node (FindWorldAnimNode), the cut-over retail makes when a
+  part ends during a fade (here the fade runs out first), retail's silence
+  when a stream is missing at a part-end switch (the old area plays on; all
+  shipped streams exist), the flyby's camera-as-listener rule, the music's
+  duck under speech and the ambient items' drop to 16 during Sumner's
+  speech and trigger cameras (sounds.c 909), and the rune pickup halving the
+  music (sounds_evt.c 1948). Tests: `[music-areas]`.
 * Lighting: the level files carry a colour block per vertex (five bits a
   channel, the lighting the level was built with), which the decoder reads
   into `MeshVertex::color` and marks the mesh `prelit`; gdlunpack writes it
@@ -1421,8 +1445,8 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   unit-length replacement axes erase its growth. WDATA audio exports include per-area
   part counts: J5's dream5 has two parts, plays DREAM5_1 once, then loops DREAM5_2.
   Regenerate older realm manifests with `gdlunpack <assets> <out> --only WDATA`.
-  LevelSoundscape resolves first-area names and parts; changing music areas mid-level
-  remains separate work. Player arrival blocks movement, turning and buttons until
+  LevelSoundscape resolves every area's names and parts (see the music areas under
+  Ambience). Player arrival blocks movement, turning and buttons until
   START ends, independently of the camera ride and materialisation-effect lifetime.
   Projectile DMG_SUPER passes through players, with the shared player effect-gap
   gating repeat damage. DMG_SUPER+DMG_REFLECT spends its pass-through on contact

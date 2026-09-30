@@ -95,6 +95,7 @@ add_executable(tests
     game/menu/HintMenuTests.cpp
     game/world/PlacedItemsTests.cpp
     game/world/AmbientSoundsTests.cpp
+    game/world/MusicAreasTests.cpp
     engine/world/WorldLightingTests.cpp
     engine/ui/CanvasTests.cpp
     engine/ui/TextPainterTests.cpp

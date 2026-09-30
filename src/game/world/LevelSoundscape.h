@@ -2,6 +2,7 @@
 
 #include <array>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -11,11 +12,14 @@
 #include "engine/assets/SoundSet.h"
 #include "engine/assets/WorldData.h"
 #include "engine/audio/SoundPlayer.h"
+#include "engine/audio/StreamPlaylist.h"
+#include "engine/audio/StreamSource.h"
 #include "engine/core/Types.h"
 #include "engine/io/AssetLocator.h"
 
 #include "game/world/AmbientSounds.h"
 #include "game/world/LevelTriggers.h"
+#include "game/world/MusicAreas.h"
 
 namespace gdl::game {
 
@@ -32,9 +36,38 @@ public:
 
     void open(const std::filesystem::path& root, SoundPlayer* output, const LevelAudioInfo* info,
               char realm = 'L', bool boss = false);
+    /** Binds the level's ambient loops and its music zones. */
     void bindAmbience(const WorldLayout& layout);
     void updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear, f32 volume);
+    /** Lets the zones ask for the area holding the party (items.c 4514-4522, 4733-4736). */
+    void updateMusicAreas(std::span<const Vec3> listeners);
+    /** Starts the first area's stream at `volume`, the level's; `assets` is borrowed for the
+     * other areas' streams until the music stops. */
     void startMusic(const AssetLocator* assets, f32 volume);
+    /** Asks for an area's stream and how to go over to it (sMusicSubIndex and sMusicSubState);
+     * `updateMusic` carries it out. A level with one area ignores it. */
+    void selectMusicArea(s32 area, MusicSwitch how);
+    /** Told every frame whether the boss is awake: its waking asks for the second area with
+     * a fade (BossActivate, boss.c 695). */
+    void bossAwake(bool awake);
+    /** The original's per-frame music service (AudioMusicVolUpdate, thirty a second of game
+     * time): a fade of `kFadeStep` a frame down to `kFadedLevel`, the switch, and the rise of
+     * `kRiseStep` a frame back to `kFullLevel`. */
+    void updateMusic(f32 seconds);
+    static constexpr s32 kFullLevel = 255;
+    static constexpr s32 kFadedLevel = 3;
+    static constexpr s32 kFadeStep = 3;
+    static constexpr s32 kRiseStep = 8;
+    static constexpr f32 kMusicRate = 30.0f;
+    /** The area whose stream plays (sSelectStreamState), -1 before the music starts. */
+    s32 musicArea() const { return m_playingArea; }
+    /** The area asked for (sMusicSubIndex). */
+    s32 musicRequest() const { return m_musicArea; }
+    /** The music's level, kFullLevel but for a fade. */
+    s32 musicLevel() const { return m_musicLevel; }
+    /** The area a switch at the part's end waits for, -1 when none does. */
+    s32 musicFollowing() const { return m_followArea; }
+    const MusicAreas& musicAreas() const { return m_areas; }
     /** Stop scene cues early in teardown, leaving ambient loops until close(). */
     void stopCues();
     /** Silence a suspended stage without releasing banks borrowed by its actors. */
@@ -99,6 +132,20 @@ private:
     SoundHandle playOpening(s32 slot, bool settled);
     SoundHandle queue(SoundSet& bank, u32 sound);
     void clearNarration();
+    /** The stream's file name for an area's part: the stem, the area's letter past one area,
+     * the part's number past one part. */
+    std::string streamName(s32 area, s32 part) const;
+    s32 partsOf(s32 area) const;
+    /** Opens an area's parts, or nothing (with a warning) when one is missing. */
+    std::vector<std::unique_ptr<StreamSource>> openArea(s32 area) const;
+    /** One frame of AudioMusicVolUpdate: the switch, then the level's step. */
+    void stepMusic();
+    /** AudioSetupLevelStreams: switches the stream when the request differs in its way. */
+    void setupStreams();
+    /** Replaces the stream with an area's, from its first part, at the level of the moment. */
+    void playArea(s32 area);
+    f32 musicVolume() const;
+    void stopMusic();
 
     SoundPlayer* m_output = nullptr;
     SoundSet m_common;
@@ -108,12 +155,27 @@ private:
     SoundSet m_narratorSecond;
     SoundSet m_promotions;
     AmbientSounds m_ambience; ///< cleared before its borrowed banks
+    MusicAreas m_areas;
     std::array<std::optional<u32>, 2> m_steps{};
     std::optional<u32> m_pickup;
     std::string m_stream;
-    s32 m_streamParts = 1;
+    s32 m_streamAreas = 1;
+    std::array<s32, 8> m_streamParts{}; ///< a part count per area
     char m_realm = 'L';
     bool m_boss = false;
+    const AssetLocator* m_assets = nullptr; ///< borrowed while the music runs
+    std::shared_ptr<StreamPlaylist> m_playlist;
+    f32 m_musicVolume = 1.0f;   ///< the level's
+    bool m_musicOn = false;     ///< started and not stopped (sSelectStreamHandle held)
+    bool m_musicSilent = false; ///< the area asked for had no stream: silent until another
+    s32 m_musicArea = 0;        ///< sMusicSubIndex
+    MusicSwitch m_musicSwitch = MusicSwitch::AtPartEnd; ///< sMusicSubState
+    s32 m_playingArea = -1;                             ///< sSelectStreamState
+    s32 m_followArea = -1;                              ///< the area waiting for the part's end
+    usize m_followsTaken = 0; ///< the playlist's continuations seen through
+    s32 m_musicLevel = kFullLevel;
+    f32 m_musicFrames = 0.0f; ///< game time owed to the music, in its frames
+    bool m_bossAwake = false;
     SoundHandle m_music = kNoSound;
     SoundHandle m_voice = kNoSound;
     std::vector<Opening> m_openings;
