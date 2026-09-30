@@ -43,6 +43,7 @@
 #include "game/screens/PlayerAttacks.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/screens/PortalDeparture.h"
+#include "game/screens/RuneMeter.h"
 #include "game/screens/SumnerVisit.h"
 #include "game/screens/SwitchCutscene.h"
 #include "game/screens/TowerPromotion.h"
@@ -258,6 +259,7 @@ public:
     /** How large a character is drawn: an ogre, one grown by a powerup, one of level 99. */
     const SumnerHints& hintTexts() const { return m_sumnerVisit.texts(); }
     const PickupHud& pickups() const { return m_hud.pickups(); }
+    const RuneMeter& runeMeter() const { return m_runeMeter; }
     const AmbientSounds& ambience() const { return m_audio.ambience(); }
     /** How far Sumner's beam of light has come up, 0 to 1. */
     f32 beamAlpha() const { return m_welcome.beamAlpha(); }
@@ -354,6 +356,10 @@ private:
     LevelSoundscape m_audio;
     SecretChallenge m_challenge;
     ChallengeHud m_challengeHud;
+    RuneMeter m_runeMeter;
+    std::optional<usize> m_runeItem;
+    const Texture* m_runeFrame = nullptr;
+    const Texture* m_runeColumn = nullptr;
     bool m_secretTravel = false;
     Vec3 m_secretReturnPosition{0.0f};
     SumnerFigure m_sumner;

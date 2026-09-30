@@ -153,6 +153,36 @@ TEST_CASE("character barks have a separate bounded queue and the retail gain",
     CHECK(soundscape.barkBacklog() == 0);
 }
 
+TEST_CASE("runestone hints use the primary narrator, gain and bounded queue",
+          "[game][world][soundscape][rune-meter]") {
+    const auto root = test::scratchDirectory("soundscape-runestone");
+    writeSecondBank(root, "VOICE1", {"S_UGETCLOSER", "S_RUNENEAR", "LINE"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    SECTION("hints play at 224 and queue behind each other") {
+        REQUIRE(soundscape.announceRune(false, Vec3{0, 0, 10}, {}) != kNoSound);
+        std::array<f32, 512> samples{};
+        mixer.mix(samples);
+        CHECK(samples.back() == Catch::Approx(0.125f * 224.0f / 255.0f));
+        REQUIRE(soundscape.announceRune(true, Vec3{0, 0, 10}, {}) != kNoSound);
+        CHECK(soundscape.narrationBacklog() == Catch::Approx(2));
+    }
+    SECTION("Sumner holds both hints") {
+        soundscape.holdNarration(true);
+        CHECK(soundscape.announceRune(false, Vec3{0}, {}) == kNoSound);
+        CHECK(soundscape.announceRune(true, Vec3{0}, {}) == kNoSound);
+    }
+    SECTION("more than three seconds waiting refuses a hint") {
+        for (s32 i = 0; i < 4; ++i) {
+            REQUIRE(soundscape.queueNarration("LINE") != kNoSound);
+        }
+        CHECK(soundscape.announceRune(false, Vec3{0}, {}) == kNoSound);
+    }
+    soundscape.close();
+}
+
 TEST_CASE("footstep variants and entrance play at their authored volumes",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-footsteps");

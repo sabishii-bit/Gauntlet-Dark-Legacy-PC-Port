@@ -564,6 +564,24 @@ void LevelSoundscape::announceTitle(u32 levelFlags) {
     }
 }
 
+SoundHandle LevelSoundscape::announceRune(bool nearby, const Vec3& attention,
+                                          const AmbientEar& ear) {
+    constexpr f32 kWait = 3.0f;
+    constexpr f32 kVolume = 224.0f / 255.0f;
+    if (!narrationRoom(kWait) || m_output == nullptr) {
+        return kNoSound;
+    }
+    const auto sound = m_narrator.find(nearby ? "S_RUNENEAR" : "S_UGETCLOSER");
+    if (!sound) {
+        return kNoSound;
+    }
+    const auto handle = track(m_narration.queue(m_narrator.sequence(*sound), kVolume));
+    if (handle != kNoSound) {
+        m_output->setPan(handle, AmbientSounds::panOf(attention, ear));
+    }
+    return handle;
+}
+
 void LevelSoundscape::placeLoop(PlacedLoop& loop, const std::optional<Vec3>& spot,
                                 const AmbientEar& ear) {
     if (!spot.has_value() || m_output == nullptr) {

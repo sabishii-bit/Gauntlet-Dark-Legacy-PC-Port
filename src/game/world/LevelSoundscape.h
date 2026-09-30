@@ -160,6 +160,9 @@ public:
      * level flagged kStunLevel (willing to wait ten seconds), S_GRAB for one flagged kGrabLevel
      * (one second), both from VOICE1. */
     void announceTitle(u32 levelFlags);
+    /** Runestone finder lines (fn_8009FF54 / fn_8009FFA4): VOICE1, volume 224,
+     * at most three seconds behind queued narration; silent while Sumner holds it. */
+    SoundHandle announceRune(bool nearby, const Vec3& attention, const AmbientEar& ear);
     static constexpr u32 kStunLevel = 1;
     static constexpr u32 kGrabLevel = 4;
     static constexpr f32 kStunWait = 10.0f;
