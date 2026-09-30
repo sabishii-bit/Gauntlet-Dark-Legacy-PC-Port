@@ -112,7 +112,8 @@ TEST_CASE("Manage Character opens its player's save menu with the rest of the pa
     second.name = "SECOND";
     second.gold = 456;
     const std::array party{PartyMember{1, first, 0}, PartyMember{3, second, 2}};
-    REQUIRE(scene.open(device, f.context(), 3, party, true));
+    const auto context = f.context();
+    REQUIRE(scene.open(device, context, 3, party, true));
     REQUIRE(scene.lane(1).lockedIn());
     REQUIRE(scene.lane(1).save().toJson() == first.toJson());
     REQUIRE(scene.lane(1).slotInUse() == 0);
