@@ -247,6 +247,8 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
             part.position = vecOf(n, "position");
             part.radius = n.value("radius", 0.0f);
             part.damageScale = n.value("damageScale", 1.0f);
+            part.healthScale = n.value("healthScale", 1.0f);
+            part.damageEffect = n.value("sfxIndex", -1);
             part.flags = n.value("flags", 0U);
             m_parts.push_back(part);
         }

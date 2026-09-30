@@ -387,7 +387,7 @@ TEST_CASE("what stands in a missile's way stops it and learns what hit it",
     // A barrel ahead and one off to the side, which it passes.
     const std::array<MissileTarget, 2> targets{
         MissileTarget{4, Vec3{6.0f, 0.0f, 5.0f}, 1.0f, 3.0f},
-        MissileTarget{9, Vec3{0.0f, 0.0f, 8.0f}, 1.0f, 3.0f}};
+        MissileTarget{9, Vec3{0.0f, 0.0f, 8.0f}, 1.0f, 3.0f, {}, 7}};
     std::vector<MissileImpact> impacts;
     for (s32 i = 0; i < 120 && impacts.empty(); ++i) {
         missiles.update(kStep, nullptr, targets);
@@ -395,6 +395,7 @@ TEST_CASE("what stands in a missile's way stops it and learns what hit it",
     }
     REQUIRE(impacts.size() == 1);
     REQUIRE(impacts[0].target == 9);
+    REQUIRE(impacts[0].node == 7);
     REQUIRE(impacts[0].damage == 11.0f);
     REQUIRE(impacts[0].owner == 1);
     REQUIRE(impacts[0].position.z < 8.0f);

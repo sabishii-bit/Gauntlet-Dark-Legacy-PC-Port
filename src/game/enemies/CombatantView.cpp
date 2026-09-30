@@ -91,14 +91,17 @@ std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
         return out;
     }
     const auto& actor = m_actor;
-    for (const auto& part : data()->parts()) {
+    for (usize i = 0; i < data()->parts().size(); ++i) {
+        const auto& part = data()->parts()[i];
         if (part.radius <= 0 || (solidOnly && (part.flags & CritterPart::kSolid) == 0) ||
-            !actor.stock->tree->findNode(part.node).has_value()) {
+            !nodeAvailable(actor, part.node) || actor.hitNodes[i].health <= 0) {
             continue;
         }
         const Vec3 centre{attachmentTransform(actor, part.node) * Vec4{part.position, 1}};
         const f32 radius = part.radius * actor.scale;
-        out.push_back({id(), centre - Vec3{0, radius, 0}, radius, 2 * radius});
+        MissileTarget target{id(), centre - Vec3{0, radius, 0}, radius, 2 * radius};
+        target.node = static_cast<s32>(i);
+        out.push_back(target);
     }
     if (data()->parts().empty()) {
         out.push_back({id(), position(), radius() * actor.scale, 8 * actor.scale});
@@ -185,6 +188,7 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
         critter.stock->body.setMaskedTexture(frozenTexture);
     }
     TreePose pose = critter.pose;
+    drawNodeState(critter, hitFlash);
     for (const auto& part : m_children) {
         const Actor& branch = part->m_actor;
         if (branch.branch.has_value()) {
@@ -194,10 +198,23 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
             if (branch.hidden) {
                 critter.stock->body.setNodeAlpha(*branch.branch, 0.0f);
             }
+            if (branch.flashTicks > 0 && hitFlash != nullptr) {
+                critter.stock->body.setNodeMaskedTexture(*branch.branch, hitFlash);
+            }
+            drawNodeState(branch, hitFlash);
         }
     }
     critter.stock->body.draw(device, clip, modelTransform(critter), lighting, pose.matrices(),
                              nullptr, critter.alpha);
+    const Texture* brokenFrozen =
+        critter.frozenTicks > 0 && (critter.frozenTicks >= kThawBlinkTicks ||
+                                    (critter.frozenTicks & kThawBlinkBit) == 0)
+            ? frozenTexture
+            : nullptr;
+    drawBrokenModels(critter, device, clip, lighting, brokenFrozen, hitFlash);
+    for (const auto& part : m_children) {
+        drawBrokenModels(part->m_actor, device, clip, lighting, brokenFrozen, hitFlash);
+    }
     if (const auto meter = meterPose(camera)) {
         critter.stock->meter.draw(device, clip, meter->first, lighting, meter->second, nullptr,
                                   critter.alpha);

@@ -55,6 +55,9 @@ public:
     void setNodeAlpha(usize root, f32 alpha);
     /** How solid tree node `node`'s own mesh draws, leaving what hangs from it alone. */
     void setMeshAlpha(usize node, f32 alpha);
+    /** White hit flashes may affect one mesh or an independently animated subtree. */
+    void setMeshMaskedTexture(usize index, const Texture* texture);
+    void setNodeMaskedTexture(usize root, const Texture* texture);
     void resetTextures();
     /** Applies an alternate appearance without making solid skin translucent or filling
      * its cutouts. Cleared by resetTextures(). */
@@ -117,6 +120,7 @@ private:
         std::optional<Vec2> uvOffset;
         Vec2 uvScale{1.0f};
         f32 alpha = 1.0f;
+        const Texture* maskedTexture = nullptr;
     };
 
     static Shape makeShape(const Mesh& mesh, TextureSet& textures, RenderDevice& device);

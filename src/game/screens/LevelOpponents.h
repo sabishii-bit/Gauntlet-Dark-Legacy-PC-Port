@@ -94,7 +94,7 @@ public:
                      std::optional<Vec3> where = std::nullopt);
     void strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction, s32 byPlayer,
                        std::optional<Vec3> where, bool close,
-                       std::span<const PlayerRuntime> players);
+                       std::span<const PlayerRuntime> players, s32 node = -1);
     void strikeGenerator(s32 id, f32 power, s32 byPlayer,
                          std::span<const PlayerRuntime> players = {});
     /** A blast of `damage` over `radius` reaching what it has not yet (`reached`, its ids:

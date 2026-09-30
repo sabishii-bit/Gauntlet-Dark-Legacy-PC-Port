@@ -44,6 +44,8 @@ public:
     /** Turns node `node` to `angles` (pitch, yaw, roll, applied in that order) and rebuilds
      * the matrices under it. */
     void setPitchYawRoll(usize node, const Vec3& angles);
+    /** Replaces one local pose while allowing its ancestors to keep animating. */
+    void setNodePose(usize node, const NodePose& pose);
 
     bool posed() const { return m_tree != nullptr; }
     usize size() const { return m_poses.size(); }

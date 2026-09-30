@@ -47,6 +47,10 @@ bool Combatant::startMove(Actor& critter, usize index, bool recordUse) {
         return false;
     }
     const MoveDefinition& move = data.moves()[index];
+    constexpr u32 kRequiresNode = 0x10;
+    if ((move.flags & kRequiresNode) != 0 && !nodeAvailable(critter, move.colnode)) {
+        return false;
+    }
     const auto sequence = critter.stock->tree->findSequence(move.anim);
     if (!sequence.has_value()) {
         return false;

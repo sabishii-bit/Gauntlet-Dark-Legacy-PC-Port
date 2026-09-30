@@ -101,6 +101,7 @@ struct EnemyHit {
     bool close = false;               ///< a blow struck in the hand, not a missile
     bool antiDeath = false;
     bool selfInflicted = false; ///< a suicide's own fuse: no cry, burst or death skin
+    s32 node = -1;              ///< authored collision-part index within the struck combatant
 };
 
 /** Where an enemy is asked to appear: about `position`, facing `direction`. */

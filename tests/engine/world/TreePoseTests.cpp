@@ -50,6 +50,19 @@ bool near(const Vec3& a, const Vec3& b) {
     return glm::all(glm::epsilonEqual(a, b, 1e-5f));
 }
 
+TEST_CASE("a held node pose keeps following its animated parent", "[world][pose]") {
+    const TreeInfo tree = sampleTree();
+    TreePose pose;
+    pose.rest(tree);
+    NodePose held = pose.poses()[1];
+    held.position = {0, 3, 0};
+    pose.evaluate(tree, 0, 4);
+    pose.setNodePose(1, held);
+    REQUIRE(near(Vec3{pose.matrices()[1][3]}, Vec3{3, 5, 0}));
+    pose.setNodePose(999, held);
+    REQUIRE(pose.size() == 2);
+}
+
 bool near(const Mat4& a, const Mat4& b) {
     for (s32 c = 0; c < 4; ++c) {
         if (!glm::all(glm::epsilonEqual(a[c], b[c], 1e-5f))) {

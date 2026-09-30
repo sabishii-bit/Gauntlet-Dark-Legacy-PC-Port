@@ -1154,7 +1154,7 @@ void LevelOpponents::strikeEnemy(s32 id, f32 power, u32 flags, const Vec3& direc
 /** A hit on one of the great ones. */
 void LevelOpponents::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& direction,
                                    s32 byPlayer, std::optional<Vec3> where, bool close,
-                                   std::span<const PlayerRuntime> players) {
+                                   std::span<const PlayerRuntime> players, s32 node) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -1165,6 +1165,7 @@ void LevelOpponents::strikeCritter(s32 id, f32 power, u32 flags, const Vec3& dir
     hit.player = byPlayer;
     hit.where = where;
     hit.close = close;
+    hit.node = node;
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         if (actor.player() == byPlayer) {
