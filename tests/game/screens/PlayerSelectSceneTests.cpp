@@ -100,6 +100,30 @@ TEST_CASE("the starting player joins and others join on Start", "[game][select][
     REQUIRE_FALSE(scene.isOpen());
 }
 
+TEST_CASE("Manage Character opens its player's save menu with the rest of the party retained",
+          "[game][select][pause][unpacked]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-scene-manage");
+    PlayerSelectScene scene;
+    CharacterSave first;
+    first.name = "FIRST";
+    first.gold = 123;
+    CharacterSave second;
+    second.name = "SECOND";
+    second.gold = 456;
+    const std::array party{PartyMember{1, first, 0}, PartyMember{3, second, 2}};
+    REQUIRE(scene.open(device, f.context(), 3, party, true));
+    REQUIRE(scene.lane(1).lockedIn());
+    REQUIRE(scene.lane(1).save().toJson() == first.toJson());
+    REQUIRE(scene.lane(1).slotInUse() == 0);
+    REQUIRE(scene.lane(3).state() == SelectLane::State::SaveMenu);
+    REQUIRE(scene.lane(3).save().toJson() == second.toJson());
+    REQUIRE(scene.lane(3).slotInUse() == 2);
+    REQUIRE_FALSE(scene.lane(0).active());
+    REQUIRE(scene.step(1, nobody()) == SelectOutcome::Running);
+    scene.close();
+}
+
 TEST_CASE("backing out of the last lane cancels the screen", "[game][select][unpacked]") {
     test::FakeRenderDevice device;
     const Fixture f("select-scene-cancel");

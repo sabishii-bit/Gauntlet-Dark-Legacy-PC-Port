@@ -103,6 +103,8 @@ public:
     /** A character already in play takes the lane, locked in and quiet, as the party is
      * when a player joins in the tower (init_player_select: live players SELECTED). */
     void resume(const CharacterSave& save, std::optional<usize> slot);
+    /** Reopen the existing character's save/load menu without replacing its save. */
+    void manage();
 
     Result update(const MenuInput& input, s32 ticks, const Frame& frame);
 

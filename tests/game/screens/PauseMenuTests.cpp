@@ -22,7 +22,8 @@ TEST_CASE("pause menu refuses absent artwork or a player outside the party", "[p
     CHECK_FALSE(menu.open(device, context, party, 0));
     CHECK_FALSE(menu.isOpen());
 }
-TEST_CASE("pause menus save then load without mutating the live party", "[pause][unpacked]") {
+TEST_CASE("pause menus route character management and preserve the live party",
+          "[pause][unpacked]") {
     test::FakeRenderDevice device;
     GameConfig config;
     config.save.directory = test::scratchDirectory("pause-files").string();
@@ -125,20 +126,12 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
         step(back);
         CHECK(step(back) == PauseOutcome::Resume);
     }
-    SECTION("save and reload") {
+    SECTION("character management returns to party selection") {
         step(down);
-        step(select);
-        step(select); // manage -> save
-        step(select); // save -> slot 1
-        REQUIRE(menu.party()[0].slot == 0);
+        CHECK(step(select) == PauseOutcome::Manage);
+        REQUIRE_FALSE(menu.party()[0].slot.has_value());
         CHECK_FALSE(party[0].slot.has_value());
-        CHECK(step(select) == PauseOutcome::Running); // acknowledge saved
-        step(down);
-        step(select);
-        step(select); // load -> slot: kept in one, the character needs no confirmation
-        CHECK(menu.menu().definition().title == strings.get("files.loaded"));
         CHECK(menu.party()[0].save.gold == 123);
-        CHECK(step(back) == PauseOutcome::Reload);
     }
     menu.close();
     CHECK_FALSE(menu.isOpen());

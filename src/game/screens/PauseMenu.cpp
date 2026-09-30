@@ -60,7 +60,6 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
         if (const auto parchment = m_textures.find("FONT32_PARCH")) {
             m_art.parchment = &m_textures.texture(device, *parchment);
         }
-        m_slots.open(config.saveDirectory(), config.save.slots);
         showMain();
         m_open = true;
         return true;
@@ -100,26 +99,6 @@ void PauseMenu::showMain() {
         {text(m_inTower ? "pause.quit" : "pause.quitLevel"), 4, 0, m_inTower || !m_inSecretWorld});
     m_menu.open(menu, m_text, m_screen);
 }
-void PauseMenu::showManage() {
-    m_page = Page::Manage;
-    auto menu = backdrop();
-    menu.title = text("pause.manage");
-    // Character files are a PC implementation of management, not a mid-level save.
-    menu.items = {{text("select.save"), 1}, {text("select.load"), 2}};
-    m_menu.open(menu, m_text, m_screen);
-}
-void PauseMenu::showFiles() {
-    const auto files = m_files.definition();
-    auto menu = backdrop();
-    menu.title = files.title;
-    menu.titleScale = 0.667f;
-    menu.items = files.items;
-    menu.body = files.body;
-    menu.bodyY = 215;
-    menu.bodyScale = 0.4f;
-    menu.scale = 0.5f;
-    m_menu.open(menu, m_text, m_screen);
-}
 /** The retail yes/no dialogs (0x8011EB1C "Quit Game?", 0x8011E8E0 "Abort Level?"): a small
  * centred parchment fading in, with only the title and No then Yes, No first. */
 void PauseMenu::showQuit() {
@@ -155,27 +134,6 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
     auto mapped = input;
     mapped.back |= input.escape;
     const auto event = m_menu.update(mapped, ticks);
-    if (m_page == Page::Files) {
-        if (event.action == MenuAction::Back) {
-            m_files.back();
-        } else if (event.action == MenuAction::Choice) {
-            m_files.choose(event.code);
-        } else {
-            return PauseOutcome::Running;
-        }
-        if (m_files.succeeded()) {
-            m_party = m_files.party();
-        }
-        if (m_files.state() == SaveMenu::State::Done) {
-            if (m_files.succeeded() && m_files.mode() == SaveMenu::Mode::Load) {
-                return PauseOutcome::Reload;
-            }
-            showManage();
-        } else {
-            showFiles();
-        }
-        return PauseOutcome::Running;
-    }
     if (m_page == Page::Quit) {
         if (event.action == MenuAction::Choice && event.code == 1) {
             return m_inTower ? PauseOutcome::Title : PauseOutcome::ReturnTower;
@@ -185,30 +143,20 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
         }
         return PauseOutcome::Running;
     }
-    if (m_page == Page::Manage && event.action == MenuAction::Back) {
-        showMain();
-        return PauseOutcome::Running;
-    }
     if (event.action == MenuAction::Back || (input.start && !input.select)) {
         return PauseOutcome::Resume;
     }
     if (event.action != MenuAction::Choice) {
         return PauseOutcome::Running;
     }
-    if (event.code == 1 || event.code == 2) {
-        m_files.open(m_slots, m_party, m_player,
-                     event.code == 1 ? SaveMenu::Mode::Save : SaveMenu::Mode::Load,
-                     m_context.strings);
-        m_page = Page::Files;
-        showFiles();
-    } else if (event.code == 3) {
+    if (event.code == 3) {
         m_page = Page::Options;
         m_settings.open(m_context.config != nullptr ? *m_context.config : GameConfig{},
                         m_context.strings, m_context.saveSettings, m_text, m_screen, backdrop(),
                         m_inTower ? SettingsMenu::Scope::Tower : SettingsMenu::Scope::Level,
                         m_context.previewAudio);
     } else if (event.code == 5) {
-        showManage();
+        return PauseOutcome::Manage;
     } else if (event.code == 6) {
         return PauseOutcome::Shop;
     } else if (event.code == 7) {

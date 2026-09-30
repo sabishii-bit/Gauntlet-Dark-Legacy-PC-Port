@@ -293,8 +293,9 @@ s32 Gauntlet::playerPressingStart() const {
     return 0;
 }
 
-bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party) {
-    if (m_select.open(renderDevice(), context(), startingPlayer, party)) {
+bool Gauntlet::startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party,
+                                 bool manage) {
+    if (m_select.open(renderDevice(), context(), startingPlayer, party, manage)) {
         return true;
     }
     log::warn("Player select unavailable; unpack the game data into {} with gdlunpack",
@@ -493,7 +494,7 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         } else {
             m_play->scene.close();
         }
-        if (completedLevel) {
+        if (completedLevel && journey.destination.isTower()) {
             const auto* level = m_play->world.level();
             const auto maxima =
                 level != nullptr ? level->shopMaxima : std::array<s32, 3>{1000, 100, 1000};
@@ -556,19 +557,20 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         return;
     }
     auto party = m_pause.party();
-    // Only successful saves attach the running characters to new slots. A loaded
-    // character belongs to the replacement scene, never the one being discarded.
-    if (outcome != PauseOutcome::Reload) {
-        for (const auto& member : party) {
-            m_play->scene.setSaveSlot(member.player, member.slot);
-        }
-    }
     m_pause.close();
     m_audio->mixer().setPaused(false);
     for (auto& controls : m_controls) {
         controls.reset();
     }
     if (outcome == PauseOutcome::Resume) {
+        return;
+    }
+    if (outcome == PauseOutcome::Manage) {
+        keepParty(party);
+        if (startPlayerSelect(source.pad, party, true)) {
+            m_play->scene.close();
+            m_joining = std::move(party);
+        }
         return;
     }
     if (outcome == PauseOutcome::Title) {
@@ -601,16 +603,25 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         // Quitting a level gives up what it gave, as dying in it does.
         party = m_play->scene.abandonedParty(party);
         keepParty(party);
-    }
-    // Loading restores characters in the tower, not a snapshot of transient enemies.
-    // Do not autosave the discarded level over the character just loaded.
-    m_play->scene.close();
-    PlayOptions options;
-    options.welcome = false;
-    options.arriving = true;
-    options.arrivalWorld = static_cast<u32>(std::max(m_play->world.ref().realmId, 0));
-    if (!startTower(party, options) && !startTitleScreen()) {
-        startNextAttractScreen();
+        Journey journey;
+        journey.destination = LevelRef::tower();
+        journey.party = party;
+        journey.options.welcome = false;
+        journey.options.arriving = true;
+        journey.options.arrivalWorld = static_cast<u32>(std::max(m_play->world.ref().realmId, 0));
+        const auto* level = m_play->world.level();
+        const auto maxima =
+            level != nullptr ? level->shopMaxima : std::array<s32, 3>{1000, 100, 1000};
+        // The rolled-back saves own no rewards from the aborted level. Empty
+        // results prevent its old deltas from fabricating a level-up in the tally.
+        if (!m_afterLevel.open(renderDevice(), context(), party, {}, maxima,
+                               m_play->world.ref().name)) {
+            log::warn("Abort-level tally unavailable; returning to the tower.");
+        }
+        m_play->scene.close();
+        m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);
+        m_loadingPicture.cover();
+        m_journey = std::move(journey);
     }
 }
 

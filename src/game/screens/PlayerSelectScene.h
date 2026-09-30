@@ -45,7 +45,7 @@ public:
     /** Loads the unpacked select assets; `startingPlayer` joins at once, and the characters
      * of `party` (a game in progress) stand locked in their lanes. False when absent. */
     bool open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
-              std::span<const PartyMember> party = {});
+              std::span<const PartyMember> party = {}, bool manage = false);
     void close();
     bool isOpen() const { return m_open; }
 
