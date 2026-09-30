@@ -49,7 +49,8 @@ struct Fixture {
         .meleeSense = {},
         .grabDeath = {},
         .resolveMovement = {},
-        .startPoint = {}};
+        .startPoint = {},
+        .comboImpact = {}};
 
     Fixture() {
         CollisionTriangle first;
@@ -672,5 +673,83 @@ TEST_CASE("a levitating body walks without a footfall", "[game][screens][party-m
         CHECK(f.players[0].actor.position().z > 0);
         CHECK((footfalls > 0) == !levitating);
     }
+}
+
+TEST_CASE("the combo button with half the meter lifts a warrior's partner ahead, flings it at "
+          "frame thirty and lets it go four seconds on",
+          "[game][screens][party-motion][combo][unpacked]") {
+    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    Fixture f;
+    test::FakeRenderDevice device;
+    for (PlayerRuntime& player : f.players) {
+        player.figure = PlayerFigure::load(device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+    }
+    f.players[1].actor.place(Vec3{0, 0, 3}); // three ahead of player 3's warrior, facing +z
+    std::vector<std::string> impacts;
+    f.events.advanceTurbo = [](usize, s32, f32) {};
+    f.events.perform = [&](usize i, PartyMotion::Action action) {
+        if (action == PartyMotion::Action::ComboStart) {
+            f.calls.push_back("combo" + std::to_string(i));
+        }
+    };
+    f.events.comboImpact = [&](usize flier, usize thrower, f32 blow) {
+        impacts.push_back(std::to_string(flier) + "by" + std::to_string(thrower) + "for" +
+                          std::to_string(static_cast<s32>(blow)));
+        return false;
+    };
+    f.inputs[3].combo = true;
+    // Without half the meter nothing happens; with it the pair are tied.
+    f.step();
+    CHECK_FALSE(f.players[0].combo.active());
+    f.players[0].turbo.add(ComboMove::kMeterNeeded);
+    f.step();
+    REQUIRE(f.players[0].combo.role == ComboRole::Grabber);
+    REQUIRE(f.players[1].combo.role == ComboRole::Held);
+    CHECK(f.calls == std::vector<std::string>{"select0", "select1", "combo0", "select0"});
+    CHECK(f.players[0].figure->animator().action() == PlayerAnimator::Action::ComboAct1);
+    CHECK(f.players[1].combo.riding);
+    // The partner hangs on the warrior's DUMMY node (which rides the root's own motion
+    // through the move) and plays COMBOWAR1, heeding nothing.
+    f.inputs[1].move = MoveInput{Vec2{1, 0}, 1};
+    f.inputs[1].attack = true;
+    f.step();
+    CHECK(f.players[1].figure->animator().action() == PlayerAnimator::Action::ComboWar1);
+    CHECK(f.players[1].actor.position().x == Approx(0.0f).margin(0.5f));
+    CHECK(glm::distance(f.players[1].actor.position(), f.players[0].actor.position()) < 4.0f);
+    // Frame thirty lets it fly along the warrior's facing; the warrior's move plays on.
+    s32 frames = 2;
+    while (f.players[1].combo.role == ComboRole::Held && frames < 60) {
+        f.step();
+        ++frames;
+    }
+    REQUIRE(f.players[1].combo.role == ComboRole::Thrown);
+    CHECK(frames == 31);
+    CHECK_FALSE(f.players[1].combo.riding);
+    CHECK(ComboMove::flies(f.players[1].combo));
+    const f32 before = f.players[1].actor.position().z;
+    f.step();
+    CHECK(f.players[1].figure->animator().action() == PlayerAnimator::Action::ComboWar2);
+    CHECK(f.players[1].actor.position().z ==
+          Approx(before + ComboMove::kFlightSpeed / 30.0f).margin(0.01f));
+    CHECK(impacts.back() == "1by0for50");
+    // Four seconds on the pair are let go of; the pinball lands and stands again.
+    s32 ticks = 2; // the step just taken flew too
+    while (f.players[1].combo.active() && ticks < 600) {
+        f.step();
+        ticks += 2;
+    }
+    CHECK(ticks == ComboMove::kFlightTicks);
+    CHECK_FALSE(f.players[0].combo.active());
+    CHECK(f.players[1].figure->animator().action() == PlayerAnimator::Action::ComboWar3);
+    for (s32 i = 0; i < 30; ++i) {
+        f.step();
+    }
+    CHECK(f.players[1].figure->animator().action() != PlayerAnimator::Action::ComboWar3);
+    CHECK(f.players[1].actor.position().x > 0.5f); // its own stick again
 }
 } // namespace

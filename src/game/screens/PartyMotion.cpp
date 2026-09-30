@@ -6,9 +6,11 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/ComboMove.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/FloorRiding.h"
 #include "game/screens/PartyCollision.h"
+#include "game/screens/PartyCombo.h"
 namespace gdl::game {
 namespace {
 constexpr f32 kChargeStick = 0.25f;
@@ -170,6 +172,27 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             subjects.push_back({actor.position(), actor.followPoint()});
             continue;
         }
+        // A body its partner's combo has aside goes where the combo takes it and plays what
+        // it asks: hung on the partner, flying as a pinball or steered as a charger.
+        if (!down && PartyCombo::aside(players[i])) {
+            players[i].knockback.clear();
+            const PartyCombo::Events comboEvents{events.comboImpact, events.advanceTurbo};
+            if (ComboMove::flies(players[i].combo)) {
+                PartyCombo::fly(players, i, ticks, seconds, collision, comboEvents);
+            } else if (ComboMove::ridden(players[i].combo)) {
+                const auto dwarf = static_cast<usize>(std::max(players[i].combo.partner, 0));
+                const auto steering = dwarf < players.size()
+                                          ? static_cast<usize>(players[dwarf].actor.player())
+                                          : inputs.size();
+                PartyCombo::ride(players, i,
+                                 !held && steering < inputs.size() ? inputs[steering].move
+                                                                   : MoveInput{},
+                                 cameraYaw, ticks, seconds, collision, comboEvents);
+            }
+            PartyCombo::animate(players, i, ticks, seconds, comboEvents);
+            subjects.push_back({actor.position(), actor.followPoint()});
+            continue;
+        }
         // Webs own the reaction animation and buttons, but allow a slow escape walk.
         const PlayerAnimator* animator =
             players[i].figure != nullptr ? &players[i].figure->animator() : nullptr;
@@ -236,6 +259,16 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             } else if (in.attack) {
                 deed = events.attackDeed ? events.attackDeed(i, false, move.any())
                                          : PlayerDeed::Attack;
+            }
+            // The combo button with half the meter takes hold of a partner ahead, over
+            // anything else the buttons ask (fn_80088938, pmotion.c 4656).
+            if (in.combo && players[i].turbo.held() >= ComboMove::kMeterNeeded &&
+                animator != nullptr && animator->canBegin(PlayerDeed::Combo)) {
+                if (const auto partner = PartyCombo::partnerFor(players, i)) {
+                    PartyCombo::begin(players, i, *partner);
+                    deed = PlayerDeed::Combo;
+                    events.perform(i, Action::ComboStart);
+                }
             }
             events.select(i, in.selector, ticks);
         }
@@ -383,12 +416,17 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             if (events.meleeSense && (attackHeld || players[i].figure->animator().meleeing())) {
                 players[i].figure->setMelee(events.meleeSense(i, attackHeld));
             }
+            players[i].figure->setCombo(players[i].combo.grabberClass, players[i].combo.rideAsked);
             players[i].figure->animate(move.magnitude, ticks, seconds, deed);
             players[i].figure->updateTrail(
                 PlayerFigure::bodyPlacement(players[i].capture.body().value_or(actor.transform()),
                                             actor.save(), powerups),
                 ticks);
             events.advanceTurbo(i, ticks, seconds);
+            // A grabber's move goes on: its partner taken up, let fly or set down.
+            if (players[i].combo.role == ComboRole::Grabber) {
+                PartyCombo::advance(players, i, ticks);
+            }
             if (players[i].figure->familiarReleased()) {
                 events.perform(i, Action::FamiliarShot);
             }
@@ -434,6 +472,14 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
             }
         }
         subjects.push_back(CameraSubject{actor.position(), actor.followPoint()});
+    }
+    // Every rider hangs on its carrier's node as posed this frame; the camera sees it there.
+    PartyCombo::carry(players);
+    for (usize i = 0; i < players.size() && i < subjects.size(); ++i) {
+        if (players[i].combo.riding) {
+            subjects[i] =
+                CameraSubject{players[i].actor.position(), players[i].actor.followPoint()};
+        }
     }
     for (PlayerRuntime& runtime : players) {
         runtime.knockback.endFrame();

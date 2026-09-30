@@ -33,8 +33,10 @@ std::optional<usize> PartyCollision::resolve(std::span<const PlayerRuntime> play
     f32 best = 0.0f;
     for (usize i = 0; i < players.size(); ++i) {
         const PlayerRuntime& other = players[i];
-        // Only the standing count, and not one carried off (hud_flags 0x20).
-        if (i == mover || other.life != PlayerLife::Standing || other.capture.held()) {
+        // Only the standing count, and not one carried off or hung on a partner (hud_flags
+        // 0x20).
+        if (i == mover || other.life != PlayerLife::Standing || other.capture.held() ||
+            other.combo.riding) {
             continue;
         }
         const Vec3& centre = other.actor.position();

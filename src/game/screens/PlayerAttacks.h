@@ -45,6 +45,16 @@ public:
     void showBlock(usize index, f32 taken, f32 left, std::span<PlayerRuntime> players);
     void updateTurbo(usize index, s32 ticks, f32 seconds, std::span<PlayerRuntime> players,
                      const std::function<void(s32, usize)>& help);
+    /** The combo's start (StartComboFX, pmotion.c 3173): the sphere of the weapons archive
+     * tinted the partner's colour and lit in it, and the burst of the grabber's own colour,
+     * about the grabber. */
+    void comboStart(usize index, std::span<PlayerRuntime> players);
+    /** A flier or charger against the level's items (PlayerMotion_HitTarget, pmotion.c
+     * 1302): each barrel, wall, rock and generator its body touches takes `blow` once a
+     * flight, knocked down, and the thrower's combo-hit row bursts where it struck. True
+     * when it struck anything. */
+    bool comboImpact(usize flier, usize thrower, f32 blow, std::span<PlayerRuntime> players,
+                     const Targets& targets);
     /** Missiles, potion waves and item attacks fly on; first the elemental weapons' glow is
      * set at each hand for the frame. */
     void updateProjectiles(f32 seconds, std::span<PlayerRuntime> players, const Targets& targets);
@@ -145,7 +155,9 @@ private:
                      const Targets& targets);
     static ItemArchive* moveEffectsOf(usize index, std::span<PlayerRuntime> players);
     f32 ownDamageOf(usize index, std::span<PlayerRuntime> players) const;
-    void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players);
+    /** One strike of `index`'s class, set going where the character stands, or at `at`. */
+    void fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players,
+                    std::optional<Vec3> at = std::nullopt);
     static bool isCreature(s32 id);
     static constexpr s32 kEnemyTargetBase = 1000;
     static constexpr s32 kGeneratorTargetBase = 2000;

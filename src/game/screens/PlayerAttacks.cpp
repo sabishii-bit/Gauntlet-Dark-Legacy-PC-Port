@@ -12,6 +12,7 @@
 #include "game/combat/DamageTypes.h"
 #include "game/enemies/DeathRules.h"
 #include "game/enemies/EnemyKinds.h"
+#include "game/enemies/LegendItems.h"
 #include "game/players/ItemPickup.h"
 #include "game/players/MagicPerks.h"
 #include "game/players/PowerupEffects.h"
@@ -145,6 +146,94 @@ void PlayerAttacks::ramBarrels(usize index, std::span<PlayerRuntime> players,
     targets.fixtures.settleBlasts(players, targets.fixtureEvents);
 }
 
+void PlayerAttacks::comboStart(usize index, std::span<PlayerRuntime> players) {
+    if (!m_resources.has_value() || index >= players.size() || !m_resources->weapons.loaded()) {
+        return;
+    }
+    const PlayerRuntime& grabber = players[index];
+    const s32 partner = grabber.combo.partner;
+    const s32 partnerColor = partner >= 0 && static_cast<usize>(partner) < players.size()
+                                 ? players[static_cast<usize>(partner)].actor.save().color
+                                 : grabber.actor.save().color;
+    const Vec3 at = grabber.actor.position();
+    // The sphere takes the partner's colour and lights the ground in it; the burst is the
+    // grabber's own (StartComboFX: the type by the grabber, the colour by the partner).
+    EffectTrees::Setting sphere;
+    sphere.unlit = true;
+    sphere.depthWrite = false;
+    sphere.tint = LegendShow::chargeTint(partnerColor);
+    sphere.light =
+        EffectTrees::Light{DynamicLights::ofCostume(partnerColor), DynamicLights::kChargeRadius};
+    m_resources->effects.startSet(m_resources->device, m_resources->weapons, LegendShow::kAuraTree,
+                                  at, sphere);
+    EffectTrees::Setting burst;
+    burst.unlit = true;
+    burst.depthWrite = false;
+    m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                  LegendShow::chargeTree(grabber.actor.save().color), at, burst);
+}
+
+bool PlayerAttacks::comboImpact(usize flier, usize thrower, f32 blow,
+                                std::span<PlayerRuntime> players, const Targets& targets) {
+    if (!m_resources.has_value() || flier >= players.size()) {
+        return false;
+    }
+    const PlayerActor& actor = players[flier].actor;
+    std::vector<usize>& struck = players[flier].rammed;
+    bool hit = false;
+    const auto once = [&](usize key, const auto& strike) {
+        if (std::ranges::find(struck, key) != struck.end()) {
+            return;
+        }
+        struck.push_back(key);
+        strike();
+        hit = true;
+    };
+    const auto& walls = m_resources->world.walls();
+    for (usize i = 0; i < walls.size(); ++i) {
+        if (walls.standing(i) &&
+            walls.target(i, 0).touches(actor.followPoint(), actor.radius() + kRamReach)) {
+            once(static_cast<usize>(kWallTargetBase) + i,
+                 [&] { targets.fixtures.strikeWall(i, blow, EnemyHit::kKnockDown); });
+        }
+    }
+    for (usize barrel = 0; barrel < targets.fixtures.barrels().size(); ++barrel) {
+        if (targets.fixtures.barrels().standing(barrel) &&
+            targets.fixtures.barrels().barrel(barrel).box.touchedBy(actor.position(),
+                                                                    actor.radius(), kRamReach)) {
+            once(barrel, [&] {
+                targets.fixtures.strikeBarrel(barrel, blow, actor.player(), players,
+                                              targets.fixtureEvents);
+            });
+        }
+    }
+    for (usize rock = 0; rock < targets.fixtures.safeRocks().size(); ++rock) {
+        if (targets.fixtures.safeRocks().standing(rock) &&
+            targets.fixtures.safeRocks().rock(rock).obstacle.touchedBy(actor.position(),
+                                                                       actor.radius(), kRamReach)) {
+            once(rock + static_cast<usize>(kSafeRockTargetBase),
+                 [&] { targets.fixtures.strikeSafeRock(rock, blow); });
+        }
+    }
+    const Generators& generators = targets.opponents.generators();
+    for (usize g = 0; g < generators.count(); ++g) {
+        const auto id = static_cast<s32>(g);
+        if (generators.standing(id) &&
+            generators.boxOf(id).touchedBy(actor.position(), actor.radius(), kRamReach)) {
+            once(static_cast<usize>(kGeneratorTargetBase) + g,
+                 [&] { targets.opponents.strikeGenerator(id, blow, actor.player(), players); });
+        }
+    }
+    if (hit && thrower < players.size()) {
+        // The thrower's combo-hit row bursts where its partner struck (pmotion.c 1306).
+        if (const ClassStats* stats =
+                m_resources->classes.stats(players[thrower].actor.save().character)) {
+            fireStrike(thrower, stats->moves.comboHit, players, actor.position());
+        }
+    }
+    return hit;
+}
+
 /** The costume colour's effects, which hold the trees a class's moves show; loaded when
  * first wanted. */
 ItemArchive* PlayerAttacks::moveEffectsOf(usize index, std::span<PlayerRuntime> players) {
@@ -170,7 +259,8 @@ f32 PlayerAttacks::ownDamageOf(usize index, std::span<PlayerRuntime> players) co
 
 /** One strike of a move: its effects show and sound where the character stands, the meter
  * pays what the move still owes if the strike does harm, and the harm is set going. */
-void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players) {
+void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRuntime> players,
+                               std::optional<Vec3> at) {
     if (!m_resources.has_value() || index >= players.size() || players[index].figure == nullptr) {
         return;
     }
@@ -182,6 +272,7 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
     const MoveStrike& strike = stats->moveStrikes[static_cast<usize>(strikeIndex)];
     const PlayerActor& actor = players[index].actor;
     const Vec3 facing = actor.facing();
+    const Vec3 base = at.value_or(actor.position());
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
     u32 id = 0;
     if (strike.harms()) {
@@ -189,11 +280,10 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
         if (strike.effect >= 0 && static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
             volume.offset += stats->moveEffects[static_cast<usize>(strike.effect)].offset;
         }
-        id = m_strikes.start(volume, actor.player(), actor.position(), facing,
-                             ownDamageOf(index, players));
+        id = m_strikes.start(volume, actor.player(), base, facing, ownDamageOf(index, players));
         m_strikeSources.push_back(StrikeSource{id, index, strikeIndex, {}});
     }
-    const Vec3 origin = MoveStrikes::originOf(strike, actor.position(), facing);
+    const Vec3 origin = MoveStrikes::originOf(strike, base, facing);
     const MoveStrikes::Strike* started = m_strikes.find(id);
     ItemArchive* archive = moveEffectsOf(index, players);
     // An effect may bring another with it.
@@ -672,6 +762,12 @@ void PlayerAttacks::updateTurbo(usize index, s32 ticks, f32 seconds,
     } else if (players[index].life == PlayerLife::Standing && !body.turboing() &&
                meter.fill(seconds)) {
         help(HelpMessages::kUseTurbo, index);
+    }
+    // With two fifths of the meter, and less than all of it, the combo is suggested
+    // (pmotion.c 1760; the scene waits for a party and a crowd).
+    if (players[index].life == PlayerLife::Standing && !body.turboing() &&
+        meter.held() >= TurboMeter::kStrongCost && meter.held() < TurboMeter::kFull) {
+        help(HelpMessages::kUseCombo, index);
     }
     meter.step(ticks);
 }

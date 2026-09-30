@@ -642,10 +642,45 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   at half its reach, turned its way, in place of its own hit record
   (CritterDamage); DMG_NOHITFX (0x1000000) withholds either. The knock bits
   are above (0x10160 floors the swarm; 0x100, 0x20 and 0x10 move the great
-  ones). Not yet: the two player combo (a grab, carry and throw system of
-  its own, help 111 with it). The directional guards
+  ones). The directional guards
   (DEFENDLEFT/RIGHT/BACK) are never reached on GC: the control selector
   (fn_80088938) never returns their motion states, only DEFEND1's.
+* The two-player combo (`players/ComboMove` decides, `screens/PartyCombo`
+  applies it, `PartyMotion` routes; per-player state in `PlayerRuntime::combo`).
+  The combo button (`combo`: V, right bumper; retail's S_COMBO_MOVE is the
+  R2 record bit 0x00800000 on every scheme, SpecialData row 9, and which
+  GameCube button fills that record is unestablished: joyGetStatus is not
+  decompiled) held with the meter at 50 (fn_80088938 4656, lbl_80347BB8)
+  takes hold of the nearest other standing member within 5 ahead, in a cone
+  of 0.707, no more than 3 up or down (fn_80088EF4: not held or thrown, not
+  in a power-low swing, a turbo move, a potion, a guard, a reaction, death or
+  a combo, neither carrying Pojo), costs 50 (coll_score, paid as the pair are
+  tied: pmotion.c 2953) and plays `COMBOACT1` (the dwarf's `COMBOACT2` looped
+  while it rides, then `COMBOACT3`), running the class's `combo1` rows through
+  it (the names are help 102-109, the `COMBOS` lines "PINBALL LEGEND" to
+  "CANNONBALL", voiced from the class bank, once a character) with the
+  `COMBO_SPH` sphere tinted the partner's colour and the grabber's colour
+  burst at the start (StartComboFX, pmotion.c 3173). The partner plays the
+  grabber's class's `COMBO<CLS>` once and heeds nothing; both are unhurtable
+  (player_can_be_damaged) and share experience won (AddExp, player.c 1962).
+  By the grabber's class (pmotion.c 2960-3125): a wizard, knight or sorceress
+  lifts its partner on its `DUMMY` node for the move and sets it back down;
+  a jester for one frame; a valkyrie or archer is lifted by its partner, who
+  turns its back to it; a warrior lifts it and at frame 30 (lbl_80347C88)
+  lets it fly for 240 ticks as `COMBOWAR2` at 30 a second along its facing
+  (pmotion.c 1071), turned 3pi/4 by an item or a member it runs into (not
+  its thrower for 1.5 s), reflected off walls, once in ten ticks, striking
+  items for 50 with knock-down and the thrower's `comboHit` row where it hit
+  (pmotion.c 1302), then `COMBOWAR3`; a dwarf climbs on its partner's back
+  and for 240 ticks steers it as `COMBODWF2` with its own stick at 1.5 pace,
+  turning half way a frame, striking items for 10, then `COMBODWF3`. Help
+  111 (`USECOMBO`, "TRY USING YOUR COMBO ATTACKS", S_USECOMBO) comes with
+  the meter between 40 and 100, more than one standing and fifteen of the
+  swarm in view (pmotion.c 1760). Not established, so not done: whether a
+  flier's body strikes the swarm (PlayerCollideEnemies walks the items), the
+  floor flag 0x1000 that forbids a grab, how the partner's own pickups and
+  the enemies' targeting treat a held body, and S_COMBONOW (no caller).
+  `tests/scenarios/tower-combo.json` stands two warriors for it.
 * More of what a player can do. Strafing (`strafe`: Left Control, left thumb;
   the original's STRAFE): while it is held and the stick pushed, the
   character steps that way with its facing held (`PlayerActor::update`'s
