@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,7 +13,9 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/players/Progression.h"
 #include "game/world/ExitPortals.h"
+#include "game/world/TowerAccess.h"
 
 namespace {
 
@@ -283,6 +287,110 @@ TEST_CASE("a secret icon takes one toucher, keeps its authored radius, and is co
     CHECK(portals.portal(0).departurePosition == touching[0].position);
     portals.consume(0);
     CHECK_FALSE(portals.update(2, 1.0f / 30, touching));
+}
+
+TEST_CASE("a portal the tower keeps shut never wakes and takes nobody",
+          "[game][world][portals][tower-access]") {
+    Fixture f("portals-shut");
+    // The sample's "g1" is the town's first portal, which stands whatever has been beaten.
+    std::vector<ClassProgress> party(1);
+    TowerAccess access{party};
+    REQUIRE(f.portals.bind(f.device, f.layout, f.items, f.catalog, nullptr, nullptr, &access));
+    REQUIRE_FALSE(f.portals.portal(0).shut); // a realm's first portal always stands
+    REQUIRE(f.portals.shutGates().empty());
+    REQUIRE(ExitPortals::gateOf("g1") == 0);
+    REQUIRE(ExitPortals::gateOf("b6") == 5);
+    REQUIRE(ExitPortals::gateOf("g") == -1);
+    // A second level's portal with the first not beaten: shut, and inert to the whole party.
+    const auto dir = sampleLevel("portals-shut-second");
+    writeTextFile(dir / "wdata/TOWN.json", R"({"realm": 7, "prefix": "levelG", "levels": [
+      {"name": "G1", "title": "Fields"}, {"name": "G2", "title": "Farm"}]})");
+    writeTextFile(dir / "world.json", R"({
+  "objects": [{"name": "GROUND", "position": [0, 0, 0], "next": -1, "child": -1}],
+  "itemInfos": [{"type": 9, "subtype": 0, "name": "EXIT_PORTAL", "radius": 3, "height": 2}],
+  "itemInstances": [
+    {"info": 0, "minPlayers": 1, "position": [10, 0, 10], "rotation": [0, 0, 0],
+     "params": [0, 0, 0, 0, 103, 50, 0, 0, 0, 0, 0, 0]}]})");
+    REQUIRE(f.layout.load(dir));
+    REQUIRE(f.catalog.load(dir));
+    REQUIRE(f.portals.bind(f.device, f.layout, f.items, f.catalog, nullptr, nullptr, &access));
+    REQUIRE(f.portals.portal(0).tag == "g2");
+    REQUIRE(f.portals.portal(0).shut);
+    REQUIRE(f.portals.shutGates() == std::vector{ExitPortals::ShutGate{7, 1}});
+    const std::array on{PortalVisitor{Vec3{10, 0, 10}, 0.75f}};
+    REQUIRE_FALSE(f.run(on, 400).has_value());
+    REQUIRE(f.portals.portal(0).action == 0);
+    REQUIRE(f.portals.takeWaiting().empty());
+    // With the first beaten it opens like any other.
+    party[0].levels.recordBeaten(7, 0);
+    access = TowerAccess{party};
+    REQUIRE(f.portals.bind(f.device, f.layout, f.items, f.catalog, nullptr, nullptr, &access));
+    REQUIRE_FALSE(f.portals.portal(0).shut);
+    REQUIRE(f.run(on, 400) == 0);
+}
+
+TEST_CASE("the real tower shuts the portals past what the party has beaten, wearing EXIT_OFF",
+          "[game][world][portals][tower-access][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+    const auto archive = test::unpackedOrSkip("ITEMS/LEVELL/animations.json").parent_path();
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    LevelCatalog catalog;
+    ItemArchive items;
+    REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
+    REQUIRE(catalog.load(root));
+    REQUIRE(items.load(archive));
+    REQUIRE(items.models.find(TowerAccess::kOffFigure).has_value());
+    std::vector<ClassProgress> party(1);
+    party[0].levels.recordBeaten(7, 0); // the town's first: its second opens, its third not
+    const TowerAccess access{party};
+    ExitPortals portals;
+    REQUIRE(portals.bind(device, layout, items, catalog, nullptr, nullptr, &access));
+    const auto named = [&](std::string_view tag) -> const ExitPortals::Portal& {
+        for (usize i = 0; i < portals.size(); ++i) {
+            if (portals.portal(i).tag == tag) {
+                return portals.portal(i);
+            }
+        }
+        FAIL("no portal " << tag);
+        return portals.portal(0);
+    };
+    CHECK_FALSE(named("g1").shut);
+    CHECK_FALSE(named("g2").shut);
+    CHECK(named("g3").shut);
+    CHECK(named("g3").model.bound());
+    CHECK_FALSE(named("b1").shut);
+    CHECK(named("b2").shut);
+    CHECK(named("e1").shut); // the temple, the underworld and the battlefield want the shards
+    CHECK(named("f1").shut);
+    CHECK(named("h1").shut);
+    const auto gates = portals.shutGates();
+    CHECK(std::ranges::find(gates, ExitPortals::ShutGate{7, 2}) != gates.end());
+    CHECK(std::ranges::find(gates, ExitPortals::ShutGate{5, 0}) != gates.end());
+    CHECK(std::ranges::find(gates, ExitPortals::ShutGate{7, 1}) == gates.end());
+    CHECK(gates.size() == portals.size() - 9); // the first portals of the eight crystal realms, g2
+    // The shut one draws the lone EXIT_OFF mesh where it stands, unposed.
+    device.draws.clear();
+    portals.draw(device, Mat4{1}, {});
+    const Vec3 spot = named("g3").position;
+    bool drawn = false;
+    for (const auto& draw : device.draws) {
+        for (const auto& vertex : draw.vertices) {
+            drawn = drawn || glm::distance(vertex.position, spot) < 6.0f;
+        }
+    }
+    CHECK(drawn);
+    // Standing on it does nothing; the open one beside it wakes.
+    const std::array on{PortalVisitor{named("g3").position, 0.75f}};
+    for (s32 i = 0; i < 100; ++i) {
+        CHECK_FALSE(portals.update(2, 1.0f / 30, on).has_value());
+    }
+    CHECK(named("g3").action == 0);
+    const std::array beside{PortalVisitor{named("g2").position, 0.75f}};
+    portals.update(2, 1.0f / 30, beside);
+    CHECK(named("g2").action == 1);
+    portals.clear();
 }
 
 } // namespace

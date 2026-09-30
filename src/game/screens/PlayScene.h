@@ -62,6 +62,7 @@
 #include "game/world/SecretChallenge.h"
 #include "game/world/StartCamera.h"
 #include "game/world/SumnerFigure.h"
+#include "game/world/TowerAccess.h"
 #include "game/world/TowerCamera.h"
 
 namespace gdl::game {
@@ -370,7 +371,8 @@ private:
     LevelWatch m_levels;
     TransitionScreen m_transition;
     LevelRef m_destination;
-    s32 m_refusedPortal = -1; ///< the portal last found to lead nowhere, not to say so twice
+    s32 m_refusedPortal = -1;  ///< the portal last found to lead nowhere, not to say so twice
+    TowerAccess m_towerAccess; ///< what the tower opens to this party; empty elsewhere
     EffectTrees m_effects;
     std::vector<PointLight> m_lights; ///< this frame's, gathered before it is drawn
     BossSequence m_bossSequence;

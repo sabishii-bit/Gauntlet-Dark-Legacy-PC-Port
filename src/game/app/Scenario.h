@@ -32,6 +32,8 @@ struct ScenarioMember {
     std::vector<s32> shards;           ///< installed window pieces, tower realm order 1..8
     std::vector<s32> newRunes;         ///< awaiting the return ceremony
     std::vector<s32> newShards;
+    std::vector<std::string> beaten; ///< levels beaten, by exit tag ("g1"): the tower opens
+                                     ///< each realm's next portal by the one before
 };
 
 /**

@@ -139,6 +139,8 @@ add_library(game STATIC
     world/LockedGates.cpp
     world/Traps.h
     world/Traps.cpp
+    world/TowerAccess.h
+    world/TowerAccess.cpp
     world/ExitPortals.h
     world/ExitPortals.cpp
     world/LevelTransporters.h

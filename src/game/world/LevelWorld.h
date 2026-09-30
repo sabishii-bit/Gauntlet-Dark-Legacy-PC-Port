@@ -31,6 +31,7 @@
 #include "game/world/PlacedItems.h"
 #include "game/world/Rotators.h"
 #include "game/world/SkorneArena.h"
+#include "game/world/TowerAccess.h"
 #include "game/world/TowerCamera.h"
 
 namespace gdl::game {
@@ -59,8 +60,15 @@ public:
     /** Moves the level's animated objects (and the collision that rides on them) and steps
      * its texture animations by `seconds`. */
     void update(f32 seconds, bool timeStopped = false);
-    /** Opens at once the gates a party already qualifies for, as the level starts. */
-    void startTriggers(std::span<const TriggerVisitor> visitors);
+    /** Opens at once the gates a party already qualifies for, as the level starts; in the
+     * tower, with `access`, the lifts down to the battlefield's portals too once its first
+     * level is beaten (items.c 6956). */
+    void startTriggers(std::span<const TriggerVisitor> visitors,
+                       const TowerAccess* access = nullptr);
+    /** Puts out the tower's glow at the portal to level `gate` of `world` (its
+     * L1NSNC<letter><n>_ACTIVE object hidden, fn_8005B5B8's MBTreeSetFlags 2); false, with a
+     * note, when the level has no such object, as the temple's and underworld's have none. */
+    bool shutPortalGlow(s32 world, s32 gate);
     /** Fires the triggers the visitors stand in and carries the fields' fades on. */
     void updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors);
     const LevelTriggers& triggers() const { return m_triggers; }
@@ -203,8 +211,9 @@ public:
      * among that realm's portals, by the original's table; the entrance for any other. */
     static u32 towerMarkerOf(u32 realm);
     /** Where a party arriving from realm `realm` stands: in the tower among that realm's
-     * portals, anywhere else at the level's entrance. */
-    const WorldLocator* arrivalPoint(u32 realm) const;
+     * portals (at the entrance instead when `access` says that realm's world is shut to it,
+     * SetPlayerStartPos), anywhere else at the level's entrance. */
+    const WorldLocator* arrivalPoint(u32 realm, const TowerAccess* access = nullptr) const;
 
     /** The game camera markers the follow camera takes its angles from. */
     const std::vector<WorldLocator>& cameraMarkers() const { return m_markers; }

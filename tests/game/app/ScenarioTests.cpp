@@ -8,6 +8,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/app/Scenario.h"
+#include "game/players/LevelRecord.h"
 #include "game/players/Progression.h"
 #include "game/world/LevelWorld.h"
 
@@ -31,6 +32,29 @@ TEST_CASE("Desecrated Temple scenario starts an unsaved level 60 Jester at the e
     REQUIRE_FALSE(scenario.tower.position.has_value());
     REQUIRE_FALSE(scenario.tower.yaw.has_value());
     REQUIRE_FALSE(scenario.afterLevel);
+}
+
+TEST_CASE("a scenario's beaten levels go into the record by their exit tags",
+          "[game][scenario][tower-access]") {
+    const auto file = test::dataDirectory().parent_path() / "tests/scenarios/tower-portals.json";
+    const auto scenario = Scenario::load(file);
+    REQUIRE(scenario.tower.arrivalWorld == 7);
+    const auto party = scenario.partyMembers();
+    REQUIRE(party.size() == 1);
+    const LevelRecord& levels = party[0].save.progress().levels;
+    REQUIRE(levels.hasBeaten(7, 0));
+    REQUIRE_FALSE(levels.hasBeaten(7, 1));
+    REQUIRE(party[0].save.progress().crystals[1] == 15);
+    const auto parsed = Scenario::fromJson(
+        R"({"party": [{"class": "WAR", "color": "RED", "beaten": ["b1", "B2", "k5"]}]})");
+    const auto members = parsed.partyMembers();
+    const LevelRecord& more = members[0].save.progress().levels;
+    REQUIRE(more.hasBeaten(2, 0));
+    REQUIRE(more.hasBeaten(2, 1));
+    REQUIRE(more.hasBeaten(11, 4));
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{"beaten": ["g0"]}]})"), FormatError);
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{"beaten": ["z1"]}]})"), FormatError);
+    REQUIRE_THROWS_AS(Scenario::fromJson(R"({"party": [{"beaten": ["g10"]}]})"), FormatError);
 }
 
 TEST_CASE("mountain creature scenarios provide unsaved level 99 green knights",

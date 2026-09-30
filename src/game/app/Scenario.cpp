@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <exception>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
@@ -11,6 +12,8 @@
 
 #include "game/players/ClassData.h"
 #include "game/players/Progression.h"
+#include "game/world/ExitPortals.h"
+#include "game/world/TowerAccess.h"
 
 namespace gdl::game {
 
@@ -72,12 +75,18 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.shards = entry.value("shards", std::vector<s32>{});
         member.newRunes = entry.value("newRunes", std::vector<s32>{});
         member.newShards = entry.value("newShards", std::vector<s32>{});
+        member.beaten = entry.value("beaten", std::vector<std::string>{});
         const auto invalidRune = [](s32 rune) { return rune < 0 || rune >= Relics::kRuneCount; };
         const auto invalidShard = [](s32 shard) { return shard < 1 || shard > 8; };
+        const auto invalidLevel = [](const std::string& tag) {
+            return tag.size() != 2 || TowerAccess::worldOfLetter(tag[0]) < 0 ||
+                   ExitPortals::gateOf(tag) < 0;
+        };
         if (std::ranges::any_of(member.runes, invalidRune) ||
             std::ranges::any_of(member.newRunes, invalidRune) ||
             std::ranges::any_of(member.shards, invalidShard) ||
-            std::ranges::any_of(member.newShards, invalidShard)) {
+            std::ranges::any_of(member.newShards, invalidShard) ||
+            std::ranges::any_of(member.beaten, invalidLevel)) {
             throw FormatError("scenario: a tower collectible is out of range");
         }
         for (const Json& powerup : entry.value("powerups", Json::array())) {
@@ -165,6 +174,10 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         }
         for (const s32 shard : member.newShards) {
             progress.relics.addShard(shard);
+        }
+        for (const std::string& tag : member.beaten) {
+            progress.levels.recordBeaten(TowerAccess::worldOfLetter(tag[0]),
+                                         ExitPortals::gateOf(tag));
         }
         for (const PowerupSlot& slot : member.powerups) {
             progress.inventory.addPowerup(slot.kind, slot.flags, slot.charge, slot.strength);

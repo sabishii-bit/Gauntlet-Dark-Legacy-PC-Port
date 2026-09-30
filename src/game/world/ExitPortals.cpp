@@ -2,6 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <initializer_list>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
@@ -27,9 +31,37 @@ std::string ExitPortals::tagOf(const ItemInstance& instance) {
     return tag;
 }
 
+s32 ExitPortals::gateOf(std::string_view tag) {
+    return tag.size() >= 2 && tag[1] >= '1' && tag[1] <= '9' ? tag[1] - '1' : -1;
+}
+
+/** Puts the EXIT_OFF figure (a lone mesh of the item archives) in a portal's place and marks
+ * it shut, as the original swaps the object and inactivates the item. */
+void ExitPortals::shut(RenderDevice& device, Portal& portal, ItemArchive& items,
+                       ItemArchive* realmItems) {
+    portal.shut = true;
+    for (ItemArchive* archive : {&items, realmItems}) {
+        if (archive == nullptr || !archive->loaded() ||
+            !archive->models.find(TowerAccess::kOffFigure).has_value()) {
+            continue;
+        }
+        TreeInfo tree;
+        tree.name = std::string(TowerAccess::kOffFigure);
+        TreeNodeInfo node;
+        node.name = tree.name;
+        node.object = tree.name;
+        tree.nodes.push_back(node);
+        if (portal.model.bind(tree, archive->models, archive->textures, device)) {
+            return;
+        }
+    }
+    log::warn("Exit portals: no {} figure; the shut portal {} stands unseen",
+              TowerAccess::kOffFigure, portal.tag);
+}
+
 bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& items,
                        const LevelCatalog& catalog, const WorldCollision* collision,
-                       ItemArchive* realmItems) {
+                       ItemArchive* realmItems, const TowerAccess* access) {
     clear();
     ItemArchive& art = itemArchiveForTree(items, kFigure, realmItems);
     const auto tree = art.loaded() ? art.trees.find(kFigure) : std::nullopt;
@@ -69,6 +101,9 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
             ItemArchive& iconArt = itemArchiveForTree(items, info.name, realmItems);
             portal.icon.place(device, iconArt, info.name, instance, collision);
             portal.icon.play(0, true);
+        } else if (access != nullptr && portal.destination.has_value() &&
+                   !access->portalOpen(portal.destination->realmId, gateOf(portal.tag))) {
+            shut(device, portal, items, realmItems);
         } else if (m_tree != nullptr &&
                    portal.model.bind(*m_tree, art.models, art.textures, device)) {
             portal.pose.rest(*m_tree);
@@ -76,7 +111,7 @@ bool ExitPortals::bind(RenderDevice& device, const WorldLayout& layout, ItemArch
         m_portals.push_back(std::move(portal));
     }
     for (Portal& portal : m_portals) {
-        if (!portal.secret) {
+        if (!portal.secret && !portal.shut) {
             advance(portal, 0);
         }
         portal.ticksLeft = 0;
@@ -92,6 +127,16 @@ void ExitPortals::clear() {
     m_portals.clear();
     m_tree = nullptr;
     m_sequences.fill(-1);
+}
+
+std::vector<ExitPortals::ShutGate> ExitPortals::shutGates() const {
+    std::vector<ShutGate> gates;
+    for (const Portal& portal : m_portals) {
+        if (portal.shut && portal.destination.has_value()) {
+            gates.push_back(ShutGate{portal.destination->realmId, gateOf(portal.tag)});
+        }
+    }
+    return gates;
 }
 
 /** Starts a portal's sequence; it may not move on until the sequence has played (the waiting
@@ -128,7 +173,7 @@ std::optional<usize> ExitPortals::update(s32 ticks, f32 seconds,
     const f32 extra = party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
     for (usize index = 0; index < m_portals.size(); ++index) {
         Portal& portal = m_portals[index];
-        if (portal.consumed) {
+        if (portal.consumed || portal.shut) {
             continue;
         }
         if (portal.secret) {
@@ -213,7 +258,12 @@ void ExitPortals::draw(RenderDevice& device, const Mat4& clip,
             }
             continue;
         }
-        if (portal.model.bound()) {
+        if (!portal.model.bound()) {
+            continue;
+        }
+        if (portal.shut) {
+            portal.model.draw(device, clip, portal.transform, lighting);
+        } else {
             portal.model.draw(device, clip, portal.transform, lighting, portal.pose.matrices());
         }
     }

@@ -149,6 +149,12 @@ public:
      * update too, as ProcessItems does; spawning inside one must not disable it. */
     void openMet(std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                  WorldScene& scene, WorldCollision* collision);
+    /** Opens at once, as the level starts, the targets of the triggers with these ids (the
+     * tower's lifts once the battlefield is entered, items.c 6956: the object is marked
+     * activated and its animation put at its last frame); the triggers themselves are left
+     * as they are. */
+    void openAtOnce(std::span<const s32> ids, WorldAnimator& animator, WorldScene& scene,
+                    WorldCollision* collision);
     /** Fires the triggers visitors stand in and carries the fades on by `seconds`. */
     void update(f32 seconds, std::span<const TriggerVisitor> visitors, WorldAnimator& animator,
                 WorldScene& scene, WorldCollision* collision);
