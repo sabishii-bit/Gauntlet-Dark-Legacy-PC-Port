@@ -42,10 +42,10 @@ constexpr u32 kReflectingArmor = 0x01020000; ///< reflective armour and armour r
 constexpr s32 kCritterIds = 3000;            ///< the swarm's ids past the ordinary enemies
 constexpr s32 kBossIds = 4000;
 // SuicideExplosion (sfx.c): a burning blast, or in the town and the sky a poison cloud, and
-// either way the thrower kind's own smoke.
+// either way the thrower kind's own fragments.
 constexpr std::string_view kSuicideBlast = "EXPLOSION";
 constexpr std::string_view kSuicideRing = "EXPRING";
-constexpr std::string_view kSuicideSmoke = "SUICIDEEXP";
+constexpr std::string_view kSuicideFragments = "SUICIDEEXP";
 constexpr std::string_view kDeathBurst = "DEATHFX1"; ///< the brood's burst, held where it lay
 constexpr std::string_view kDeathShot = "DEATHFX2";  ///< and the shot that flies on from it
 constexpr std::array<std::string_view, 3> kSuicideCloud{"POISONEXP1", "POISONEXP2", "POISONEXP3"};
@@ -230,7 +230,7 @@ void LevelOpponents::landEnemyMissiles(std::span<PlayerRuntime> players, const E
 
 /** A suicide going up (SuicideExplosion): a burning blast of six with its ring and red light,
  * or in the town and the sky a poison cloud of seven and a half that hangs on, and the
- * kind's smoke either way, fading out. The blast's harm grows out from it as it fades. */
+ * kind's fragments either way, fading out. The blast's harm grows out from it as it fades. */
 void LevelOpponents::explodeSuicide(const EnemyBurst& burst) {
     if (!m_resources.has_value()) {
         return;
@@ -272,22 +272,22 @@ void LevelOpponents::explodeSuicide(const EnemyBurst& burst) {
         blast.flags = kBlastFlags;
         blast.stages = {m_resources->effects.remaining(fire).value_or(kBlastSeconds)};
     }
-    // The smoke is the thrower kind's own, in the first archive that has it.
-    ItemArchive* smoke = m_enemies.archive(burst.kind);
-    if (smoke == nullptr || !smoke->trees.find(kSuicideSmoke).has_value()) {
-        smoke = nullptr;
-        for (s32 kind = 0; kind < kSwarmKindCount && smoke == nullptr; ++kind) {
+    // The fragments are the thrower kind's own, in the first archive that has them.
+    ItemArchive* fragments = m_enemies.archive(burst.kind);
+    if (fragments == nullptr || !fragments->trees.find(kSuicideFragments).has_value()) {
+        fragments = nullptr;
+        for (s32 kind = 0; kind < kSwarmKindCount && fragments == nullptr; ++kind) {
             ItemArchive* archive = m_enemies.kindLoaded(kind) ? m_enemies.archive(kind) : nullptr;
-            if (archive != nullptr && archive->trees.find(kSuicideSmoke).has_value()) {
-                smoke = archive;
+            if (archive != nullptr && archive->trees.find(kSuicideFragments).has_value()) {
+                fragments = archive;
             }
         }
     }
-    if (smoke != nullptr) {
+    if (fragments != nullptr) {
         EffectTrees::Setting setting;
         setting.fadeSeconds = kSmokeFade;
-        const u32 id = m_resources->effects.startSet(m_resources->device, *smoke, kSuicideSmoke,
-                                                     burst.position, setting);
+        const u32 id = m_resources->effects.startSet(m_resources->device, *fragments,
+                                                     kSuicideFragments, burst.position, setting);
         if (id != 0) {
             m_cueEffects.push_back(id);
         }

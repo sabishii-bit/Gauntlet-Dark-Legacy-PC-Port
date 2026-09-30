@@ -137,7 +137,7 @@ struct EnemyBurst {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 damage = 0.0f;
     s32 enemy = -1;
-    s32 kind = -1;             ///< whose smoke it goes up in
+    s32 kind = -1;             ///< whose fragments scatter when it explodes
     bool silencesYell = false; ///< set off by a hit rather than its own fuse
 };
 

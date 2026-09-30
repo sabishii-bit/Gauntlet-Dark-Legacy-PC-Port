@@ -598,6 +598,11 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         if (enemy.state == State::Inactive || enemy.state == State::Asleep) {
             continue;
         }
+        // Detonation replaces the bomber's whole body with its separate fragment effect.
+        if (enemy.killed && enemy.algorithm == kSuicideWay) {
+            die(enemy);
+            continue;
+        }
         enemy.flashSeconds = std::max(0.0f, enemy.flashSeconds - seconds);
         if (enemy.state == State::Dying) {
             enemy.deathSeconds += seconds;
@@ -1599,7 +1604,8 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
                    const Texture* hitFlash, ItemArchive* weapons) {
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
-        if (enemy.state == State::Inactive || !enemy.animator.bound()) {
+        if (enemy.state == State::Inactive || !enemy.animator.bound() ||
+            (enemy.killed && enemy.algorithm == kSuicideWay)) {
             continue;
         }
         const TreeModel* found = bodyOf(enemy);
@@ -1665,7 +1671,8 @@ void Enemies::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& ey
         const Stock* stock = stockOf(enemy.kind);
         // It lies on the floor under the body, but not while the body rises (UpdateEnemy).
         if (enemy.state == State::Inactive || !enemy.animator.bound() || stock == nullptr ||
-            enemy.animator.action() == EnemyAction::Start) {
+            enemy.animator.action() == EnemyAction::Start ||
+            (enemy.killed && enemy.algorithm == kSuicideWay)) {
             continue;
         }
         const auto tier = static_cast<usize>(std::clamp(enemy.tier, 1, 3) - 1);
