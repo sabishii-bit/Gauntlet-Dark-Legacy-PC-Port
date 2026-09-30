@@ -81,6 +81,19 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
         step(down);
         CHECK(step(select) == PauseOutcome::Inventory);
     }
+    SECTION("music under the menu") {
+        // options.c 813 ducks the music every frame the menu is up; 984 lets it play on
+        // the Audio page, where its slider is set.
+        CHECK_FALSE(menu.musicAudible());
+        step(select);
+        CHECK_FALSE(menu.musicAudible());
+        step(select); // settings -> audio
+        CHECK(menu.musicAudible());
+        step(back);
+        CHECK_FALSE(menu.musicAudible());
+        step(back);
+        CHECK(step(back) == PauseOutcome::Resume);
+    }
     SECTION("shared settings") {
         step(select);
         step(select); // settings -> audio

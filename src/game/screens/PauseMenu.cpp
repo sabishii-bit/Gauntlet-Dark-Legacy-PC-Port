@@ -215,6 +215,9 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
     }
     return PauseOutcome::Running;
 }
+bool PauseMenu::musicAudible() const {
+    return m_open && m_page == Page::Options && m_settings.page() == SettingsMenu::Page::Audio;
+}
 void PauseMenu::render(RenderDevice& device, const Mat4& projection, f32 width, f32 height) {
     if (!m_open) {
         return;

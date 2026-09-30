@@ -26,6 +26,9 @@ public:
     s32 player() const { return m_player; }
     const std::vector<PartyMember>& party() const { return m_party; }
     PauseOutcome update(f64 seconds, const MenuInput& input);
+    /** Whether the music plays on under the menu: only on the Audio page, so that its
+     * slider can be heard (options.c 984); every other page ducks it (813). */
+    bool musicAudible() const;
     void render(RenderDevice& device, const Mat4& projection, f32 width, f32 height);
     const OptionMenu& menu() const { return m_menu; }
 

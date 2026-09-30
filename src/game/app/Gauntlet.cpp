@@ -195,6 +195,9 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
     } else if (m_play->scene.isOpen()) {
         updateTower(deltaSeconds);
     }
+    // The music ducks under the pause menu and comes back once it is left.
+    m_musicDuck.update(deltaSeconds, m_pause.isOpen() && !m_pause.musicAudible());
+    m_sounds->setCategoryScale(SoundCategory::Music, m_musicDuck.level());
     m_sounds->update();
 
     m_fpsAccumulator += deltaSeconds;
@@ -413,7 +416,6 @@ void Gauntlet::updateTower(f64 deltaSeconds) {
         const auto menu = readMenuInput(input(), m_config.menu, MenuInputSource::forPlayer(player));
         if (!m_play->scene.leaving() && ((menu.start && !menu.select) || menu.escape) &&
             m_pause.open(renderDevice(), context(), m_play->scene.party(), player)) {
-            // Music continues in menus, including while adjusting its volume.
             for (auto& controls : m_controls) {
                 controls.reset();
             }
