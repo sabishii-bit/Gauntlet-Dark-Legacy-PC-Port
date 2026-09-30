@@ -1,12 +1,16 @@
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <numbers>
+#include <random>
 #include <string>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/ItemArchive.h"
+#include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 #include "engine/world/WorldCollision.h"
@@ -14,11 +18,13 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "formats/CritterWad.h"
+#include "game/enemies/BossCoins.h"
 #include "game/enemies/CombatantBreath.h"
 #include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterData.h"
 #include "game/enemies/Critters.h"
 #include "game/enemies/Golem.h"
+#include "game/world/PlacedItems.h"
 
 namespace {
 
@@ -230,6 +236,59 @@ TEST_CASE("the dragon's animated root sits above its floor anchor, including hit
     const auto* sound = data->sound(data->hitSoundFar());
     REQUIRE(sound != nullptr);
     REQUIRE(cues.front().position.y == Approx(18.5f + data->originOffset().y + sound->offset.y));
+}
+
+TEST_CASE("Dragon death coins leave the animated node and survive their flight over the arena",
+          "[game][enemies][unpacked][dragon-coins]") {
+    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELB6/collision.json");
+    test::unpackedOrSkip("ITEMS/LEVELB6/animations.json");
+    WorldLayout layout;
+    WorldCollision collision;
+    REQUIRE(layout.load(root / "LEVELS/LEVELB6"));
+    REQUIRE(collision.load(root / "LEVELS/LEVELB6", layout));
+    const auto* mark = layout.findLocator(LocatorKind::Boss);
+    REQUIRE(mark != nullptr);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, &collision, {}, 'B');
+    REQUIRE(fixture.spawn("DRAGON", mark->position, mark->rotation.y));
+    EnemyHit kill;
+    kill.damage = 100000;
+    fixture.actor.hurt(kill);
+    std::vector<CombatSpew> spews;
+    for (s32 tick = 0; tick < 240 && spews.empty(); ++tick) {
+        fixture.update(2, kStep, {});
+        spews = fixture.actor.takeSpews();
+    }
+    REQUIRE(spews.size() == 1);
+    const auto node = fixture.actor.nodeTransform("NODE#00");
+    REQUIRE(node.has_value());
+    CHECK(glm::length(spews[0].origin - Vec3{(*node)[3]}) < 0.001f);
+
+    ItemArchive archive;
+    REQUIRE(archive.load(root / "ITEMS/LEVELB6"));
+    PlacedItems items;
+    const std::array<ItemArchive*, 1> archives{&archive};
+    items.bind(device, layout, &collision, archives);
+    items.setPlayerCount(1);
+    const usize first = items.size();
+    std::mt19937 random(7);
+    const auto coins = BossCoins::spray(2, 1, spews[0].velocity, spews[0].halfAngle, random);
+    REQUIRE(coins.size() == 5);
+    for (const auto& coin : coins) {
+        REQUIRE(items.throwItem(device, coin.name, spews[0].origin, coin.velocity, &collision,
+                                BossCoins::kNoGrabSeconds));
+    }
+    for (s32 tick = 0; tick < 600; ++tick) {
+        items.update(kStep);
+        for (usize i = first; i < items.size(); ++i) {
+            const auto& coin = items.item(i);
+            CAPTURE(tick, i, coin.position.x, coin.position.y, coin.position.z);
+            REQUIRE(coin.visible);
+            REQUIRE_FALSE(coin.taken);
+        }
+    }
 }
 
 TEST_CASE("the dragon wears its ice texture while frozen and restores its skin when thawing",

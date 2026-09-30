@@ -66,6 +66,9 @@ public:
     std::vector<CombatantObstacle> critterObstacles() const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const CameraFrame* camera = nullptr) const;
+    /** Trap flames composite after deferred scenery, with solid-world depth testing. */
+    void drawEffects(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                     const CameraFrame* camera = nullptr) const;
     void update(s32 ticks, f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     void strikeSafeRock(usize index, f32 power);
     /** Magic on a shut chest holding Death (fn_8005C1DC): he becomes the level's apple, with

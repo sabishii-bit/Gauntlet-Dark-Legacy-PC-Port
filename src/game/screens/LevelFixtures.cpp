@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "engine/core/Types.h"
+#include "engine/world/TreeModel.h"
 
 #include "game/enemies/EnemyKinds.h"
 #include "game/players/ItemPickup.h"
@@ -217,10 +218,15 @@ void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLigh
                          const CameraFrame* camera) const {
     m_chests.draw(device, clip, lighting);
     m_gates.draw(device, clip, lighting);
-    m_traps.draw(device, clip, lighting, camera);
+    m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::DepthWriting);
     m_barrels.draw(device, clip, lighting);
     m_safeRocks.draw(device, clip, lighting);
     m_rubble.draw(device, clip, lighting);
+}
+
+void LevelFixtures::drawEffects(RenderDevice& device, const Mat4& clip,
+                                const WorldLighting& lighting, const CameraFrame* camera) const {
+    m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::Effects);
 }
 
 void LevelFixtures::leaveRubble(std::string_view object, const Mat4& transform) {

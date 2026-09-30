@@ -1088,6 +1088,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                                                       : m_world->lighting(),
                               m_bossSequence.frozenTexture());
     m_world->drawDeferred(device, clip, camera);
+    m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera);
     drawShadows(device, clip, camera.position);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind
     // them (the portals' horizon sheets) must be down first or it paints over them.

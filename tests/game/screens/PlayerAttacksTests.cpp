@@ -676,6 +676,57 @@ TEST_CASE("Temple wall projectile hits remove the mesh and collision through the
     f.audio.close();
 }
 
+TEST_CASE("arena cover is not an aim target but still intercepts thrown weapons",
+          "[game][screens][player-attacks][target-assist][safe-rocks]") {
+    const auto root = turboAssets();
+    writeTextFile(root / "world.json", R"({"objects":[{"name":"ROOT","position":[0,0,0]}],
+      "itemInfos":[
+      {"type":10,"subtype":41,"name":"ROCK","collisionType":1,
+       "radius":2.3,"height":5,"hitPoints":40,"armor":10}],
+      "itemInstances":[{"info":0,"position":[0,0,6],
+       "params":[41,0,3,0,0,0,0,0,0,0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    Fixture f;
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio});
+    ItemArchive missing;
+    auto& rocks = f.fixtures.safeRocks();
+    REQUIRE(rocks.bind(f.device, layout, missing));
+    REQUIRE(rocks.standing(0));
+    const auto& actor = f.players[0].actor;
+    CHECK_FALSE(f.attacks.aim(actor, Vec3{0, 0, 1}, f.targets));
+
+    // Aim eligibility must not remove the barrier from collision/damage targets.
+    const MissileSpec spec;
+    MissileLaunch launch;
+    launch.spec = &spec;
+    launch.owner = actor.player();
+    launch.position = {0, 2.5f, 0};
+    launch.velocity = {0, 0, 30};
+    launch.damage = 20;
+    REQUIRE(f.arsenal.missiles().launch(launch));
+    f.attacks.updateProjectiles(0.3f, f.players, f.targets);
+    CHECK(f.arsenal.missiles().count() == 0);
+    CHECK(rocks.rock(0).health == 110);
+    CHECK(rocks.obstacles().size() == 1);
+    CHECK(rocks.blocksBreath({0, 2, 0}, {0, 2, 12}));
+
+    // An off-axis creature remains eligible despite the closer cover ahead.
+    auto& enemies = f.opponents.enemies();
+    enemies.open(f.device, root, nullptr, 4, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.kind = kGruntKind;
+    spawn.placed = true;
+    spawn.position = {3, 0, 14};
+    REQUIRE(enemies.spawn(spawn, {}));
+    const auto aim = f.attacks.aim(actor, Vec3{0, 0, 1}, f.targets);
+    REQUIRE(aim);
+    CHECK(aim->x == Approx(3));
+    CHECK(aim->z == Approx(14));
+    f.fixtures.clear();
+}
+
 TEST_CASE("a blow on a secret wall tells of multiple hits; a swing passes the safe rocks by",
           "[game][screens][player-attacks][walls][melee][unpacked]") {
     const auto root =
@@ -725,6 +776,14 @@ TEST_CASE("a blow on a secret wall tells of multiple hits; a swing passes the sa
     const s32 cover0 = rocks.rock(0).health;
     f.attacks.melee(0, f.players, f.targets);
     CHECK(rocks.rock(0).health == cover0);
+    REQUIRE(rocks.size() == 6);
+    for (usize i = 0; i < rocks.size(); ++i) {
+        CAPTURE(i);
+        REQUIRE(rocks.standing(i));
+        const Obstacle& barrier = rocks.rock(i).obstacle;
+        actor.place(barrier.centre + Vec3{0, 0, barrier.cylinderRadius + 1});
+        CHECK_FALSE(f.attacks.aim(actor, Vec3{0, 0, -1}, f.targets));
+    }
     f.fixtures.clear();
 }
 

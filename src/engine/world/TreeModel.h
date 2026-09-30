@@ -27,6 +27,8 @@ namespace gdl {
  */
 class TreeModel {
 public:
+    /** Depthless effects composite after scenery; solid parts still occlude actors. */
+    enum class Pass : u8 { All, DepthWriting, Effects };
     /** Gathers the tree's meshes and textures; false (with a warning) when any is missing. */
     bool bind(const TreeInfo& tree, ModelSet& models, TextureSet& textures, RenderDevice& device);
 
@@ -88,7 +90,7 @@ public:
      * one blends every part that much (writing no depth); at zero nothing is drawn. */
     void draw(RenderDevice& device, const Mat4& clip, const Mat4& model,
               const WorldLighting& lighting = {}, std::span<const Mat4> nodeTransforms = {},
-              const CameraFrame* camera = nullptr, f32 alpha = 1.0f) const;
+              const CameraFrame* camera = nullptr, f32 alpha = 1.0f, Pass pass = Pass::All) const;
 
 private:
     /** A mesh and how its parts draw. */
@@ -130,7 +132,7 @@ private:
 
     void drawParts(RenderDevice& device, const Mat4& clip, const Mat4& model,
                    const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
-                   const CameraFrame* camera, f32 alpha, bool translucent) const;
+                   const CameraFrame* camera, f32 alpha, bool translucent, Pass pass) const;
 
     std::vector<Node> m_nodes;
     const Texture* m_maskedTexture = nullptr;

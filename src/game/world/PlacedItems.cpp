@@ -625,27 +625,33 @@ void PlacedItems::applyTextureMotion() {
  * slows a little in the air and much more on touching down, and stops once it has all but
  * stopped. */
 void PlacedItems::fly(Item& item, f32 seconds) {
+    const f32 previousY = item.position.y;
     item.position += item.velocity * seconds;
     f32 over = kThrownFloorReach;
     f32 drag = kAirDrag * seconds;
     if (item.velocity.y <= 0.0f && m_collision != nullptr) {
-        const auto floor = m_collision->floorAt(item.position, kFloorReachAbove, kThrownFloorReach);
-        if (!floor.has_value()) {
-            // Falling with no floor under it, it has left the level and is lost.
+        // Include the downward step: a fast coin can cross the floor between updates.
+        const f32 above = std::max(kFloorReachAbove, previousY - item.position.y);
+        const auto floor = m_collision->floorAt(item.position, above, kThrownFloorReach);
+        if (!floor && item.position.y < m_collision->lowest() - kThrownFloorReach) {
+            // A missing floor while airborne can just be a crack. Retire it only after
+            // falling below the level, not while its horizontal flight can reach land.
             item.visible = false;
             item.taken = true;
             item.thrown = false;
             return;
         }
-        const f32 rest = floor->y + kThrownFloorLift;
-        over = item.position.y - rest;
-        if (over < kRestHeight) {
-            item.velocity.y = -kBounce * item.velocity.y;
-            if (item.velocity.y * item.velocity.y < 2.0f * kGravity * kRestHeight) {
-                item.velocity.y = 0.0f;
+        if (floor) {
+            const f32 rest = floor->y + kThrownFloorLift;
+            over = item.position.y - rest;
+            if (over < kRestHeight) {
+                item.velocity.y = -kBounce * item.velocity.y;
+                if (item.velocity.y * item.velocity.y < 2.0f * kGravity * kRestHeight) {
+                    item.velocity.y = 0.0f;
+                }
+                item.position.y = rest;
+                drag = kGroundDrag * seconds;
             }
-            item.position.y = rest;
-            drag = kGroundDrag * seconds;
         }
     }
     if (over >= kRestHeight) {
@@ -725,15 +731,17 @@ void PlacedItems::update(f32 seconds) {
 }
 
 void PlacedItems::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                       const CameraFrame* camera) const {
+                       const CameraFrame* camera, TreeModel::Pass pass) const {
     for (const Item& item : m_items) {
         if (item.visible) {
             item.model.draw(device, clip, item.transform, lighting, item.pose.matrices(), camera,
-                            item.alpha);
+                            item.alpha, pass);
         }
     }
-    const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
-    m_bursts.draw(device, clip, frame.right, frame.up);
+    if (pass != TreeModel::Pass::DepthWriting) {
+        const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
+        m_bursts.draw(device, clip, frame.right, frame.up);
+    }
 }
 
 void PlacedItems::hideCrystals() {

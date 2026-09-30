@@ -242,7 +242,8 @@ public:
     /** Particles alive over every burst. */
     usize burstParticleCount() const { return m_bursts.particleCount(); }
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const CameraFrame* camera = nullptr) const;
+              const CameraFrame* camera = nullptr,
+              TreeModel::Pass pass = TreeModel::Pass::All) const;
 
 private:
     void startEffect(RenderDevice& device, std::string_view tree, const Vec3& position);
