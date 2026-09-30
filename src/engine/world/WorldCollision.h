@@ -47,6 +47,8 @@ public:
     // FloorCollide / PlayerWallCollide / EnemyWallCollide pass these masks to WorldCollide.
     static constexpr u32 kFloorQueryFlags = 0x23C;
     static constexpr u32 kWallQueryFlags = 0x13A;
+    /** WorldObjCollide's secondary channel, not the solid floor result. */
+    static constexpr u32 kLiquidSurface = 0x200;
 
     /** Reads `directory/collision.json`, whose triangles are already in world space, leaving
      * out the objects `layout` marks as decoration; false (with a warning) when missing or
@@ -81,6 +83,8 @@ public:
 
     /** The highest floor under `position`, from `above` over it down to `below` under it. */
     std::optional<FloorHit> floorAt(const Vec3& position, f32 above, f32 below) const;
+    /** Highest secondary-channel surface in the probe range. It never supports a body. */
+    std::optional<FloorHit> liquidAt(const Vec3& position, f32 above, f32 below) const;
 
     /**
      * Pushes a vertical cylinder of `radius` standing from `bottom` to `top` out of the walls
@@ -91,6 +95,8 @@ public:
                       std::vector<WallContact>* contacts = nullptr) const;
 
 private:
+    std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below,
+                                      bool liquid) const;
     /** An object whose triangles move with it. */
     struct MovingObject {
         s32 object = -1;

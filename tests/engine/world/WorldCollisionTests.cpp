@@ -88,7 +88,7 @@ TEST_CASE("world query flags distinguish walkable surfaces from wall-only geomet
         collision.build({floor});
         CHECK_FALSE(collision.floorAt({0, 0, 0}, 6, 6));
     }
-    for (const u32 flags : {4U, 8U, 0x10U, 0x20U, 0x200U}) {
+    for (const u32 flags : {4U, 8U, 0x10U, 0x20U}) {
         CAPTURE(flags);
         floor.objectFlags = flags;
         collision.build({floor});
@@ -109,6 +109,42 @@ TEST_CASE("world query flags distinguish walkable surfaces from wall-only geomet
     collision.setMovingObjects(std::array<s32, 1>{3});
     collision.setObjectTransform(3, glm::translate(Mat4{1}, Vec3{0, 5, 0}));
     CHECK_FALSE(collision.floorAt({0, 0, 0}, 6, 6));
+}
+
+TEST_CASE("water has its own surface without replacing the solid floor", "[world][collision]") {
+    auto floor = triangle({-10, -2, -10}, {10, -2, -10}, {0, -2, 10}, {0, 1, 0}, 1);
+    auto water = triangle({-10, 1, -10}, {10, 1, -10}, {0, 1, 10}, {0, 1, 0}, 2);
+    // Mixed solid flags do not bypass the secondary-channel rule either.
+    for (const auto flags : {0x200U, 0x206U}) {
+        water.objectFlags = flags;
+        WorldCollision collision;
+        collision.build({floor, water});
+        const auto solid = collision.floorAt(Vec3{0}, 5, 5);
+        const auto surface = collision.liquidAt(Vec3{0}, 5, 5);
+        REQUIRE(solid);
+        REQUIRE(surface);
+        CHECK(solid->object == 1);
+        CHECK(solid->y == -2);
+        CHECK(surface->object == 2);
+        CHECK(surface->y == 1);
+        CHECK_FALSE(collision.liquidAt(Vec3{0}, 0.5f, 0.5f));
+        collision.setSolid(2, false);
+        CHECK_FALSE(collision.liquidAt(Vec3{0}, 5, 5));
+        collision.setSolid(2, true);
+        collision.setMovingObjects(std::array<s32, 1>{2});
+        collision.setObjectTransform(2, glm::translate(Mat4{1}, Vec3{0, 2, 0}));
+        REQUIRE(collision.liquidAt(Vec3{0}, 5, 5));
+        CHECK(collision.liquidAt(Vec3{0}, 5, 5)->y == 3);
+        CHECK(collision.floorAt(Vec3{0}, 5, 5)->y == -2);
+    }
+    WorldCollision collision;
+    collision.build({water});
+    CHECK_FALSE(collision.floorAt(Vec3{0}, 5, 5));
+    auto wall = triangle({5, 0, -10}, {5, 3, -10}, {5, 3, 10}, {-1, 0, 0}, 3);
+    wall.objectFlags = 0x202;
+    collision.build({wall});
+    const Vec3 centre{4.8f, 0, 1};
+    CHECK(collision.resolveWalls(centre, 0.5f, 0.2f, 2.8f) == centre);
 }
 
 TEST_CASE("a moving object's triangles stay in its own space and follow its transform",

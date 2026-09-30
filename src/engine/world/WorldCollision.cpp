@@ -319,12 +319,22 @@ std::vector<u32> WorldCollision::candidates(f32 minX, f32 minZ, f32 maxX, f32 ma
 }
 
 std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above, f32 below) const {
+    return surfaceAt(position, above, below, false);
+}
+
+std::optional<FloorHit> WorldCollision::liquidAt(const Vec3& position, f32 above, f32 below) const {
+    return surfaceAt(position, above, below, true);
+}
+
+std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 above, f32 below,
+                                                  bool liquid) const {
     std::optional<FloorHit> best;
     const f32 highest = position.y + above;
     const f32 lowest = position.y - below;
     eachTriangle(
         position.x, position.z, position.x, position.z, [&](const CollisionTriangle& triangle) {
             if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
+                ((triangle.objectFlags & kLiquidSurface) != 0) != liquid ||
                 triangle.normal.y < kFloorNormalY || !insideXZ(triangle, position.x, position.z)) {
                 return;
             }
@@ -351,6 +361,7 @@ Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f3
         eachTriangle(out.x - reach, out.z - reach, out.x + reach, out.z + reach,
                      [&](const CollisionTriangle& triangle) {
                          if ((triangle.objectFlags & kWallQueryFlags) == 0 ||
+                             (triangle.objectFlags & kLiquidSurface) != 0 ||
                              std::abs(triangle.normal.y) >= kFloorNormalY) {
                              return; // a floor or a ceiling
                          }
