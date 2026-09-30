@@ -58,10 +58,13 @@ TEST_CASE("arrival without art still holds the party for the spawn interval",
     REQUIRE_FALSE(arrival.camera().active());
     REQUIRE(arrival.effectCount() == 0);
     arrival.advance(LevelArrivalPresentation::kSpawnTicks - 1, true, Vec3{0.0f}, Vec3{0.0f});
+    CHECK(arrival.takeTitleLanded());
+    CHECK_FALSE(arrival.takeTitleLanded());
     REQUIRE(arrival.active());
     arrival.advance(1, true, Vec3{0.0f}, Vec3{0.0f});
     REQUIRE_FALSE(arrival.active());
     arrival.begin(device, missing, {});
+    CHECK_FALSE(arrival.takeTitleLanded());
     REQUIRE(arrival.active());
     arrival.clear();
     arrival.clear();

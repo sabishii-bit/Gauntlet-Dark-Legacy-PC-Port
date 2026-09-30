@@ -191,9 +191,9 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
         const PickupVoice cue = m_pickupVoices.food(
             actor.save().character, world.placedItems().item(pickup.item).name, taking.hurt, pojo);
         if (cue.common) {
-            services.audio.playNamed(cue.sound);
+            services.audio.barkNamed(cue.sound);
         } else {
-            services.audio.playFrom(figure->voice(), cue.sound);
+            services.audio.bark(figure->voice(), cue.sound);
         }
     }
     return taking.left;
@@ -201,7 +201,7 @@ std::optional<s32> PartyPickups::take(const Pickup& pickup, std::span<PlayerRunt
 
 /** Whoever opened the chest a pickup came out of says so when another takes it
  * (fn_8009F748: the class's S_<CLS>STEAL, the unlockables their shadow's, Sumner a
- * wizard's; not while Pojo is carried), in the narrator's turn. */
+ * wizard's; not while Pojo is carried), in the characters' turn. */
 void PartyPickups::complainOfTheft(s32 opener, s32 taker, std::span<const PlayerRuntime> players,
                                    const Services& services) {
     if (opener < 0 || opener == taker) {
@@ -215,8 +215,7 @@ void PartyPickups::complainOfTheft(s32 opener, s32 taker, std::span<const Player
         }
         const s32 voice =
             save.character == kSumnerClass ? kSumnerVoice : save.character % kStartingClassCount;
-        services.audio.queueNarrationFrom(runtime.figure->voice(),
-                                          std::format("S_{}STEAL", classCode(voice)));
+        services.audio.bark(runtime.figure->voice(), std::format("S_{}STEAL", classCode(voice)));
         return;
     }
 }
@@ -231,6 +230,9 @@ void PartyPickups::shareRune(s32 rune, std::span<PlayerRuntime> players, const S
         held |= relics.runes;
     }
     services.hud.showRelics(); // welcome_timer again (items.c 3402)
+    services.audio.duckMusic(services.audio.lengthOf("S_PICKUPRUNE") -
+                                 LevelSoundscape::kRuneMusicLead,
+                             LevelSoundscape::kRuneMusicScale);
     for (const std::string& voice : runeCountVoices(std::popcount(held))) {
         services.audio.queueNarration(voice, LevelSoundscape::Narrator::Primary);
     }

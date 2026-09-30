@@ -100,6 +100,8 @@ public:
     /** Who stood still this update on a portal the rest of a party of more than one had yet
      * to reach (DoExit's wait), by place in the party. */
     std::vector<s32> takeWaiting() { return std::exchange(m_waiting, {}); }
+    /** The first still visitor on an open exit, for its continuous flame sound. */
+    std::optional<Vec3> flamePosition(std::span<const PortalVisitor> party) const;
     /** Continues the selected sequences while gameplay is held for transportation. */
     void animate(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;

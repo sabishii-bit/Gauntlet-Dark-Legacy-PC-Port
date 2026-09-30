@@ -16,6 +16,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "formats/WavWriter.h"
 #include "game/combat/Damage.h"
 #include "game/enemies/DeathTestSupport.h"
 #include "game/players/MagicPerks.h"
@@ -184,6 +185,45 @@ TEST_CASE("an elemental weapon's throw carries its effect, the wizard's the effe
         CHECK(thrown.rider != 0);
         CHECK((thrown.model == nullptr) == (character == 2));
         f.attacks.clear();
+    }
+}
+
+TEST_CASE("weapon throw audio follows the worn amulet or special shot",
+          "[game][player-attacks][play-audio]") {
+    const auto root = turboAssets();
+    const auto bank = root / "audio/COMMON";
+    std::filesystem::create_directories(bank);
+    const std::vector<s16> tone(48000, 8192);
+    writeFile(bank / "tone.wav", formats::encodeWav(tone, 48000, 1));
+    const std::array names{"S_AMULETFIRE", "S_AMULETLIGHTNI", "S_AMULETLIGHT", "S_AMULETACID",
+                           "S_SUPERSHOT"};
+    for (usize i = 0; i < names.size(); ++i) {
+        CAPTURE(i);
+        writeTextFile(bank / "sounds.json",
+                      std::string{R"({"sounds":[{"index":0,"name":")"} + names[i] +
+                          R"(","id":0,"volume":127,"sequence":[{"sample":0}]}],
+          "samples":[{"index":0,"file":"tone.wav"}]})");
+        AudioMixer mixer(48000);
+        SoundPlayer sounds(mixer);
+        Fixture f;
+        REQUIRE(f.classes.load(root / "pdata"));
+        f.audio.open(root, &sounds, nullptr);
+        auto& player = f.players[0];
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        const u32 flag = i == 4 ? powerup::kSuperShot : static_cast<u32>(i + 1);
+        player.actor.save().progress().inventory.addPowerup(powerup::kWeapon, flag, 3, 1);
+        if (i == 4) {
+            f.arsenal.launchSuperShot(player.actor, player.figure.get());
+        } else {
+            f.arsenal.launchWeapon(player.actor, player.figure.get(), Vec3{0, 0, 1}, 1, false);
+        }
+        CHECK(sounds.voiceCount() == 1);
+        std::array<f32, 512> samples{};
+        mixer.mix(samples);
+        CHECK(samples.back() == Approx(0.25f * LevelSoundscape::kStepVolume));
+        f.attacks.clear();
+        f.audio.close();
     }
 }
 

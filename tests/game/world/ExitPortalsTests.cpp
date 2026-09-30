@@ -87,6 +87,20 @@ TEST_CASE("a level's exit items become portals that know where they lead",
     REQUIRE(f.portals.size() == 0);
 }
 
+TEST_CASE("exit flame follows only a still visitor on a usable portal", "[game][world][portals]") {
+    Fixture f("portals-flame");
+    std::array<PortalVisitor, 1> party{{{.position = Vec3{10, 0, 10}, .party = 0, .still = false}}};
+    CHECK_FALSE(f.portals.flamePosition(party));
+    party[0].still = true;
+    REQUIRE(f.portals.flamePosition(party));
+    CHECK(*f.portals.flamePosition(party) == party[0].position);
+    party[0].position.y = 30;
+    CHECK_FALSE(f.portals.flamePosition(party));
+    party[0].position.y = 0;
+    f.portals.consume(0);
+    CHECK_FALSE(f.portals.flamePosition(party));
+}
+
 TEST_CASE("exit portal artwork retains authored yaw pitch and roll", "[portals][item-rotation]") {
     const auto dir = sampleLevel("portals-rotation");
     writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],

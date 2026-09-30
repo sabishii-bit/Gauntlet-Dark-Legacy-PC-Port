@@ -3,6 +3,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -43,6 +44,7 @@ public:
     bool active() const { return m_camera.active() || m_ticks > 0; }
     const StartCamera& camera() const { return m_camera; }
     usize effectCount() const { return m_spawns.size(); }
+    bool takeTitleLanded() { return std::exchange(m_titleLanded, false); }
 
 private:
     /** One character's materialisation at its entry position. */
@@ -59,6 +61,7 @@ private:
     f32 m_frames = 0.0f;
     StartCamera m_camera;
     f32 m_titleSlide = 0.0f;
+    bool m_titleLanded = false;
 };
 
 } // namespace gdl::game

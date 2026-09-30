@@ -186,6 +186,7 @@ add_library(game STATIC
     screens/PlayScenePromotion.cpp
     world/PlayerArsenal.cpp
     world/LevelSoundscape.cpp
+    world/VoiceQueue.cpp
     world/EffectTrees.h
     world/DynamicLights.cpp
     world/EffectTrees.cpp

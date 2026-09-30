@@ -112,8 +112,14 @@ void PlayScene::perform(usize i, PartyMotion::Action action) {
     case PartyMotion::Action::ItemAttack: m_attacks.useItemAttack(i, m_players); break;
     case PartyMotion::Action::UsePotion: m_attacks.usePotion(i, m_players); break;
     case PartyMotion::Action::ThrowPotion: m_arsenal.throwPotion(m_players[i].actor); break;
-    case PartyMotion::Action::FirstFoot: m_audio.playFootstep(false); break;
-    case PartyMotion::Action::SecondFoot: m_audio.playFootstep(true); break;
+    case PartyMotion::Action::FirstFoot:
+    case PartyMotion::Action::SecondFoot:
+        m_audio.playFootstep(
+            action == PartyMotion::Action::SecondFoot,
+            LevelSoundscape::footingOf(
+                m_players[i].floor.flags,
+                PowerupEffects::of(m_players[i].actor.save().progress().inventory).armor));
+        break;
     case PartyMotion::Action::Melee: m_attacks.melee(i, m_players, attackTargets()); break;
     case PartyMotion::Action::Tagged:
         postHelp(HelpMessages::kNowIt, i);

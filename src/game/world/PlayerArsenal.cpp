@@ -157,10 +157,20 @@ void PlayerArsenal::launchWeapon(const PlayerActor& actor, PlayerFigure* body,
         m_missiles.launch(launch);
         launch.wallSound = MissileWallSound::Silent;
     }
-    if (const auto sound = figure.throwSound();
-        m_resources->sounds != nullptr && sound.has_value()) {
+    const u32 weapon = PowerupEffects::of(save.progress().inventory).weapon;
+    constexpr std::array<std::string_view, 5> kElementThrows{"", "S_AMULETFIRE", "S_AMULETLIGHTNI",
+                                                             "S_AMULETLIGHT", "S_AMULETACID"};
+    constexpr u32 kSpecialThrows =
+        powerup::kThreeWayShot | powerup::kFiveWayShot | powerup::kSuperShot;
+    const auto element = static_cast<usize>(weapon & 0xFU);
+    if ((weapon & kSpecialThrows) != 0) {
+        m_resources->audio.playNamed("S_SUPERSHOT", LevelSoundscape::kStepVolume);
+    } else if (element > 0 && element < kElementThrows.size()) {
+        m_resources->audio.playNamed(kElementThrows[element], LevelSoundscape::kStepVolume);
+    } else if (const auto sound = figure.throwSound();
+               m_resources->sounds != nullptr && sound.has_value()) {
         try {
-            m_resources->sounds->play(figure.voice().sequence(*sound), 1.0f,
+            m_resources->sounds->play(figure.voice().sequence(*sound), LevelSoundscape::kStepVolume,
                                       SoundCategory::Effects);
         } catch (const std::exception& e) {
             log::warn("Tower: throw sound: {}", e.what());
@@ -203,9 +213,7 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
         launch.velocity = direction * launch.speed;
         m_missiles.launch(launch);
     }
-    if (const auto sound = body->throwSound(); m_resources->sounds && sound) {
-        m_resources->sounds->play(body->voice().sequence(*sound), 1, SoundCategory::Effects);
-    }
+    m_resources->audio.playNamed("S_SUPERSHOT", LevelSoundscape::kStepVolume);
 }
 
 void PlayerArsenal::launchFamiliar(const PlayerActor& actor, PlayerFigure* body,

@@ -734,6 +734,12 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         m_welcome.updateBeam(*m_world, m_players, m_sumner.position(), ticks);
         m_arrival.advance(ticks, anyButton(inputs), m_camera.camera().position,
                           m_camera.attention());
+        if (m_arrival.takeTitleLanded()) {
+            if (const LevelInfo* level = m_world->level();
+                level != nullptr && !m_world->isTower()) {
+                m_audio.announceTitle(level->flags);
+            }
+        }
         if (!spawning()) {
             m_welcome.arrived(*m_device, m_messages, m_context.strings, m_world->layout(),
                               m_sumner);
@@ -856,6 +862,8 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             return PlayOutcome::Travel;
         }
         const std::optional<usize> reached = m_portals.update(ticks, seconds, standing);
+        const CameraFrame ear = CameraFrame::of(viewCamera());
+        m_audio.updateExitFlame(m_portals.flamePosition(standing), {ear.position, ear.right});
         const LevelInfo* level = m_world->level();
         const std::vector<s32> waiting = m_portals.takeWaiting();
         for (const s32 index : waiting) {
@@ -918,7 +926,18 @@ void PlayScene::updateAmbience() {
     const CameraFrame frame = CameraFrame::of(viewCamera());
     const LevelInfo* level = m_world->level();
     m_audio.updateAmbience(listeners, AmbientEar{frame.position, frame.right},
-                           level != nullptr ? level->soundVolume : 1.0f);
+                           level != nullptr ? level->soundVolume : 1.0f,
+                           m_switchCutscene.active() || m_promotion.active() || relicCeremonyOn());
+    std::optional<Vec3> hourglass;
+    for (const auto& runtime : m_players) {
+        if (runtime.life == PlayerLife::Standing &&
+            (PowerupEffects::of(runtime.actor.save().progress().inventory).special &
+             powerup::kStopTime) != 0) {
+            hourglass = runtime.actor.position();
+            break;
+        }
+    }
+    m_audio.updateHourglass(hourglass, {frame.position, frame.right});
     m_audio.updateMusicAreas(listeners);
 }
 
@@ -1123,6 +1142,9 @@ void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
         positions.push_back(runtime.actor.position());
     }
     m_arrival.begin(device, m_weapons, positions, marker);
+    if (!positions.empty()) {
+        m_audio.playEntrance();
+    }
 }
 
 /** Opens one page of a scroll message over the tower: the party reads it and presses on. */

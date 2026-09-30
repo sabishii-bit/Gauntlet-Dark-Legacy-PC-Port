@@ -87,6 +87,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         m_triggers.push_back(trigger);
         if (trigger.target >= 0 && targetOf(trigger.target) == nullptr) {
             Target target;
+            target.subtype = info.subtype;
             target.object = trigger.target;
             for (usize node = 0; node < m_parents.size(); ++node) {
                 auto at = static_cast<s32>(node);
@@ -200,8 +201,9 @@ bool LevelTriggers::settled(s32 object) const {
 }
 
 TriggerOpening LevelTriggers::openingOf(const Target& target, bool atOnce) {
-    return TriggerOpening{target.object, target.spot, (target.kind & LevelTrigger::kFades) != 0,
-                          atOnce, target.sound};
+    return TriggerOpening{target.object, target.spot,  (target.kind & LevelTrigger::kFades) != 0,
+                          atOnce,        target.sound, target.subtype,
+                          !target.open};
 }
 
 LevelTriggers::Target* LevelTriggers::targetOf(s32 object) {
