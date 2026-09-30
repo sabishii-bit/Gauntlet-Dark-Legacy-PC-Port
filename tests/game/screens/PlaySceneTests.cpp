@@ -29,6 +29,7 @@
 #include "game/players/Progression.h"
 #include "game/screens/GameContext.h"
 #include "game/screens/PlayScene.h"
+#include "game/world/LevelTriggers.h"
 #include "game/world/LevelWorld.h"
 
 namespace {
@@ -1353,6 +1354,8 @@ TEST_CASE("a party back from a realm materialises among its portals, the camera 
     context.unpackedRoot = root;
     CharacterSave save;
     save.name = "AB";
+    // The town's gate is met: a party whose realm is shut is dropped at the entrance.
+    save.progress().crystals[1] = LevelTriggers::crystalsNeeded(1);
     PartyMember member{0, save};
     member.fallen = true; // it died out there: in the tower it stands again
     const std::vector<PartyMember> party{member};
