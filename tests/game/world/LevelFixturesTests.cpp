@@ -358,8 +358,15 @@ TEST_CASE("a trap rests, comes out to hurt whoever is in it, and rests again",
     s32 hits = 0;
     s32 armedFrames = 0;
     bool restedAgain = false;
+    s32 wakes = 0;
     for (s32 i = 0; i < 400; ++i) {
+        const bool wasArmed = traps.armed(0);
         const std::vector<TrapHit> caught = traps.update(2, 1.0f / 30.0f, party);
+        CHECK(traps.wakes().size() == (!wasArmed && traps.armed(0) ? 1 : 0));
+        if (!traps.wakes().empty()) {
+            CHECK(traps.wakes().front() == 0);
+            ++wakes;
+        }
         for (const TrapHit& hit : caught) {
             REQUIRE(hit.victim == 0); // the one standing in it
             REQUIRE(hit.damage == 20.0f);
@@ -373,6 +380,11 @@ TEST_CASE("a trap rests, comes out to hurt whoever is in it, and rests again",
     REQUIRE(armedFrames > 0);
     REQUIRE(restedAgain);
     REQUIRE(hits <= armedFrames); // no oftener than its gap allows
+    CHECK(wakes > 1);
+    traps.update(100, 1, party, true);
+    CHECK(traps.wakes().empty());
+    traps.clear();
+    CHECK(traps.wakes().empty());
 }
 
 TEST_CASE("traps prefer level-specific figures and fall back to the realm archive",

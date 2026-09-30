@@ -20,6 +20,8 @@
 namespace gdl::game {
 namespace {
 constexpr std::string_view kChestSound = "S_CHEST";
+constexpr std::string_view kChestFuseSound = "S_TICKY";
+constexpr f32 kChestFuseVolume = 224.0f / 255.0f;
 constexpr std::string_view kApple = "APPLE"; ///< what magic makes of Death in a chest
 constexpr std::string_view kChicken = "CHICKEN";
 constexpr std::string_view kTreasureGold = "TREAS_GOLD";
@@ -426,6 +428,9 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
                 actor.save().progress().inventory.spendKey();
             }
             m_resources->audio.playNamed(kChestSound);
+            if (m_chests.chest(event.chest).subtype == Chests::kTrappedChest) {
+                m_resources->audio.playNamed(kChestFuseSound, kChestFuseVolume);
+            }
             if (events.releaseEnemy && events.releaseEnemy(event.contents, event.position,
                                                            m_chests.chest(event.chest).count)) {
                 break;

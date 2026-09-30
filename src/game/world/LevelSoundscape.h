@@ -152,6 +152,9 @@ public:
     /** S_ENTRANCE as the party materialises (fn_8009D288 beside StartEnterFX, gauntworld.c
      * 1131), at kEntranceVolume. */
     void playEntrance();
+    /** A serpent trap waking within forty units of the camera's attention. */
+    SoundHandle playSerpent(const Vec3& position, const Vec3& attention, f32 playerDistance,
+                            const AmbientEar& ear);
     static constexpr f32 kEntranceVolume = 224.0f / 255.0f;
     /** The narrator's word as the level's title lands (camera.c 5047-5057): S_SHOTSSTUN for a
      * level flagged kStunLevel (willing to wait ten seconds), S_GRAB for one flagged kGrabLevel

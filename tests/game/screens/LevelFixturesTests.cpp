@@ -10,10 +10,14 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/audio/AudioMixer.h"
+#include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "formats/WavWriter.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/screens/HelpMessages.h"
@@ -823,6 +827,57 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     f.fixtures.update(60, 1, std::span{f.players}.first(1), f.events);
     CHECK(f.world.placedItems().item(held).position == openedPosition);
     f.fixtures.clear();
+}
+
+TEST_CASE("a trapped chest sounds its fuse once on opening, not on a keyless touch",
+          "[game][screens][level-fixtures][chest-fuse][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    const auto soundRoot = test::scratchDirectory("chest-fuse-audio");
+    const auto bank = soundRoot / "audio/COMMON";
+    std::filesystem::create_directories(bank);
+    const std::vector<s16> tone(48000, 8192);
+    writeFile(bank / "tone.wav", formats::encodeWav(tone, 48000, 1));
+    writeTextFile(
+        bank / "sounds.json",
+        R"({"sounds":[{"index":0,"name":"S_TICKY","id":0,"sequence":[{"sample":0}]}],"samples":[{"index":0,"file":"tone.wav"}]})");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    Fixture f;
+    f.fixtures.clear();
+    f.audio.open(soundRoot, &sounds, nullptr);
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("E1")));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    f.events.help = [](s32, usize) { return true; };
+    usize index = 0;
+    while (index < f.fixtures.chests().size()) {
+        const auto& chest = f.fixtures.chests().chest(index);
+        if (chest.shown && chest.locked && chest.subtype == Chests::kTrappedChest) {
+            break;
+        }
+        ++index;
+    }
+    REQUIRE(index < f.fixtures.chests().size());
+    const auto& chest = f.fixtures.chests().chest(index);
+    f.players[0].actor.place(chest.box.centre);
+    const auto party = std::span{f.players}.first(1);
+    f.fixtures.update(1, 1.0f / 60, party, f.events);
+    CHECK(chest.state == Chests::kShut);
+    CHECK(sounds.voiceCount() == 0);
+    f.players[0].actor.save().progress().inventory.keys = 1;
+    f.fixtures.update(1, 1.0f / 60, party, f.events);
+    REQUIRE(chest.state == Chests::kOpening);
+    CHECK(sounds.voiceCount() == 1);
+    std::array<f32, 1024> output{};
+    mixer.mix(output);
+    CHECK(output.back() == Catch::Approx(0.25f * 224.0f / 255.0f));
+    f.fixtures.update(1, 1.0f / 60, party, f.events);
+    CHECK(sounds.voiceCount() == 1);
+    f.fixtures.clear();
+    f.audio.close();
 }
 
 TEST_CASE("X-Ray builds visible chest contents without spawning a collectible",
