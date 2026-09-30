@@ -23,14 +23,15 @@ struct CombatantProjectileHit {
     f32 repeatGap = 0.0f; ///< shared player effect immunity after damage above two
 };
 
-/** Moving attack effects, independent of the creature's animation after launch.
+/** Launched attacks and planted traps, independent of their creature's animation.
  * Archives and attack tables are borrowed until clear(). Effects must outlive this object.
- * Stage generators and grab/attached-area attacks are separate from this projectile path. */
+ * Capturing and attached-area attacks are separate from this path. */
 class CombatantProjectiles {
 public:
     using PlaySound = std::function<void(std::string_view)>;
     void launch(const CombatShot& shot, ItemArchive& archive, RenderDevice& device,
-                EffectTrees& effects, const PlaySound& sound);
+                EffectTrees& effects, const PlaySound& sound,
+                const WorldCollision* collision = nullptr);
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
                 RenderDevice& device, EffectTrees& effects, const PlaySound& sound);
     void clear(EffectTrees& effects);
@@ -52,6 +53,8 @@ private:
         u32 effect = 0;
         bool morphed = false;
         bool stuck = false;   ///< stationary sticky impact, no longer a flying missile
+        bool planted = false; ///< stationary DAMG area, with birth/hold/end phases
+        f32 phaseSeconds = 0;
         bool settled = false; ///< generator projectile's impact is finishing before placement
         bool leavesGenerator = false;
         bool summonsEnemies = false;
@@ -61,6 +64,7 @@ private:
     u32 show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
              const PlaySound& sound, f32 life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
+    void stickyContacts(Flying& flying, f32 seconds, std::span<const EnemyView> players);
     void summon(Flying& flying);
     std::vector<Flying> m_flying;
     std::vector<u32> m_emittedEffects; ///< impacts and end effects still borrow the launch archive

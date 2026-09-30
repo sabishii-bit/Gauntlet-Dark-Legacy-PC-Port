@@ -88,8 +88,7 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
         constexpr u32 kRequiresNode = 0x10;
         if (static_cast<s32>(i) == critter.move || !move.attack() ||
             ((move.flags & 2U) != 0 && !critter.childrenIntact) ||
-            (move.flags & kLinkedOnly) != 0 || !available(static_cast<s32>(i)) ||
-            (move.cooldown > 0.0f && critter.age < critter.moveTimes[i] + move.cooldown)) {
+            (move.flags & kLinkedOnly) != 0 || !available(static_cast<s32>(i))) {
             continue;
         }
         const auto hasNode = [&](const MoveDefinition& m) {
@@ -99,6 +98,18 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
             (!hasNode(move) ||
              (move.link >= 0 && (static_cast<usize>(move.link) >= data.moves().size() ||
                                  !hasNode(data.moves()[static_cast<usize>(move.link)]))))) {
+            continue;
+        }
+        // Holding a player, it takes the first grab move there is, whatever its cooldown
+        // or target (CritterLookForCriticalMove's GRABAGAIN); the shipped grabs let go
+        // within their own animation, so this is reached only by a grab cut short.
+        if (critter.grabbed >= 0 && move.type == MoveDefinition::kGrab) {
+            patternChoice = -1;
+            moveChoice = static_cast<s32>(i);
+            playerChoice = critter.grabbed;
+            break;
+        }
+        if (move.cooldown > 0.0f && critter.age < critter.moveTimes[i] + move.cooldown) {
             continue;
         }
         const s32 target = attackTarget(critter, move.target, players);
