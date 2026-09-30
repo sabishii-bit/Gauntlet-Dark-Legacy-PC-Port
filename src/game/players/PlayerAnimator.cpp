@@ -89,8 +89,32 @@ void PlayerAnimator::unbind() {
     m_rapid = false;
     m_speed = false;
     m_strafe = StrafeWay::None;
+    m_comboClass = -1;
+    m_comboRide = false;
     m_attackSeconds = 0.0f;
     m_player.stop();
+}
+
+PlayerAnimator::Action PlayerAnimator::comboHeldActionOf(s32 grabberClass) {
+    switch (grabberClass) {
+    case 0: return Action::ComboWar1;
+    case 1: return Action::ComboVal;
+    case 2: return Action::ComboWiz;
+    case 3: return Action::ComboArc;
+    case 4: return Action::ComboDwf1;
+    case 5: return Action::ComboKni;
+    case 6: return Action::ComboSor;
+    case 7: return Action::ComboJes;
+    default: return Action::Ready;
+    }
+}
+
+PlayerAnimator::Action PlayerAnimator::comboThrownActionOf(s32 grabberClass) {
+    switch (grabberClass) {
+    case 0: return Action::ComboWar2;
+    case 4: return Action::ComboDwf2;
+    default: return Action::Ready;
+    }
 }
 
 PlayerAnimator::Action PlayerAnimator::strafeStep(StrafeWay way, bool shooting) {
@@ -124,6 +148,7 @@ PlayerAnimator::Action PlayerAnimator::turboActionOf(PlayerDeed deed) {
     case PlayerDeed::Breathe: return Action::Breathe;
     case PlayerDeed::FireLeft: return Action::FireLeft;
     case PlayerDeed::FireRight: return Action::FireRight;
+    case PlayerDeed::Combo: return Action::ComboAct1;
     default: return Action::Ready;
     }
 }
@@ -135,9 +160,10 @@ bool PlayerAnimator::canBegin(PlayerDeed deed) const {
     }
     // A turbo move cuts a close attack off; nothing else does.
     const bool cutsMelee = deed == PlayerDeed::TurboStrong || deed == PlayerDeed::TurboFull ||
-                           deed == PlayerDeed::Shove;
+                           deed == PlayerDeed::Shove || deed == PlayerDeed::Combo;
     return bound() && m_sequences[index(action)] >= 0 && !entering() && !throwing() &&
-           (!meleeing() || cutsMelee) && !conjuring() && !reacting() && !turboing() && !dying();
+           (!meleeing() || cutsMelee) && !conjuring() && !reacting() && !turboing() &&
+           !comboBound() && !dying();
 }
 
 PlayerMotion PlayerAnimator::motionFor(f32 stickMagnitude) {
@@ -228,6 +254,25 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
         Decision freed;
         freed.cut = Cut::Now;
         play(freed, 0);
+    }
+    // A partner's combo owns the body: held, it plays the grabber's class's sequence once
+    // and holds; let go of, the warrior's pinball or the dwarf's charger loops until the
+    // flight or the ride is over, then lands (fn_80088938's forced actions 38 and 39).
+    if (deed == PlayerDeed::ComboHeld || deed == PlayerDeed::ComboThrown) {
+        const Action asked = deed == PlayerDeed::ComboHeld ? comboHeldActionOf(m_comboClass)
+                                                           : comboThrownActionOf(m_comboClass);
+        if (asked != Action::Ready && playable(asked)) {
+            play(decide(asked), seconds);
+        }
+        m_released = false;
+        m_strongReleased = false;
+        m_potionUsed = false;
+        m_potionThrown = false;
+        m_potionShielded = false;
+        m_legendAsked = false;
+        m_shieldAsked = false;
+        m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());
+        return;
     }
     // A hit cuts into anything at once, unless one is already being reeled from; while it
     // plays nothing else is asked of the body.
@@ -620,12 +665,63 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         d.cut = requested == Action::Ready || m_player.frame() < kGagHold ? Cut::WhenDoneIfDifferent
                                                                           : Cut::IfDifferent;
         break;
+    // The combo move (action.c 998): COMBOACT1 gives way when done to COMBOACT2, else to
+    // COMBOACT3, else to whatever is asked; COMBOACT2 loops while the ride goes on and then
+    // COMBOACT3 (or whatever is asked) cuts in at once; COMBOACT3 plays through.
+    case Action::ComboAct1:
+        if (playable(Action::ComboAct2)) {
+            d.action = Action::ComboAct2;
+            d.cut = Cut::WhenDone;
+        } else if (playable(Action::ComboAct3)) {
+            d.action = Action::ComboAct3;
+            d.cut = Cut::WhenDone;
+        }
+        break;
+    case Action::ComboAct2:
+        if (m_comboRide) {
+            d.action = Action::ComboAct2;
+            d.repeat = true;
+        } else {
+            d.action = playable(Action::ComboAct3) ? Action::ComboAct3 : requested;
+            d.cut = Cut::IfDifferent;
+        }
+        break;
+    // The pinball and the charger loop while they are asked for, then land at once.
+    case Action::ComboWar2:
+    case Action::ComboDwf2:
+        if (requested == m_current) {
+            d.repeat = true;
+        } else {
+            const Action landing =
+                m_current == Action::ComboWar2 ? Action::ComboWar3 : Action::ComboDwf3;
+            d.action = playable(landing) ? landing : requested;
+            d.cut = Cut::IfDifferent;
+        }
+        break;
+    case Action::ComboAct3:
+    case Action::ComboWar1:
+    case Action::ComboWar3:
+    case Action::ComboVal:
+    case Action::ComboWiz:
+    case Action::ComboArc:
+    case Action::ComboDwf1:
+    case Action::ComboDwf3:
+    case Action::ComboKni:
+    case Action::ComboSor:
+    case Action::ComboJes: break; // plays through and holds; whatever is asked follows
     default:
         // A strafing step gives way to its other half while the same way is kept.
         if (strafing() && requested == firstHalfOf(m_current)) {
             d.action = otherHalfOf(m_current);
         }
         break;
+    }
+    // A partner's combo takes the body at once (action.c 558's mode 2 for P_FALL_DOWN to
+    // P_GRABBED), once and not looped.
+    if (requested >= Action::ComboWar1 && requested <= Action::ComboJes && d.action == requested &&
+        !comboBound()) {
+        d.cut = Cut::IfDifferent;
+        d.repeat = false;
     }
     // A potion cuts into standing, walking and running at once, as an attack does.
     // Nothing cuts the pickup's gesture short (P_PICKUP waits for its end).
@@ -850,6 +946,13 @@ f32 PlayerAnimator::meleePace() const {
 }
 
 f32 PlayerAnimator::turnScale() const {
+    constexpr f32 kChargerTurn = 0.5f; // COMBODWF2's turn scale (action.c 1804)
+    if (m_current == Action::ComboDwf2) {
+        return kChargerTurn;
+    }
+    if (comboing() || comboBound()) {
+        return 0.0f;
+    }
     switch (m_current) {
     case Action::PowerClose:
     case Action::PowerCloseRecover:

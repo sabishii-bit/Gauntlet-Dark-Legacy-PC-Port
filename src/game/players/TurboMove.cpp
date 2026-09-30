@@ -4,6 +4,8 @@
 #include <cmath>
 
 #include "engine/core/Types.h"
+
+#include "game/players/ComboMove.h"
 namespace gdl::game {
 namespace {
 constexpr f32 kMoveNamedFrame = 1.0f;
@@ -46,6 +48,17 @@ std::string_view TurboMove::begin(PlayerAnimator::Action action, const ClassStat
         }
         return {};
     }
+    if (action == PlayerAnimator::Action::ComboAct1) {
+        // The two-player combo runs its class's combo rows through COMBOACT1 and is paid
+        // for as the partner is taken hold of (pmotion.c 2953), whatever its rows do.
+        meter.spend(ComboMove::kCost);
+        if (known != nullptr) {
+            m_pending = known->strikesOf(known->moves.combo1);
+            m_all = m_pending;
+            m_volleysShot.assign(m_all.size(), 0);
+        }
+        return {};
+    }
     if (!full && action != PlayerAnimator::Action::TurboStrong) {
         return {};
     }
@@ -72,7 +85,8 @@ std::string_view TurboMove::begin(PlayerAnimator::Action action, const ClassStat
 void TurboMove::advance(PlayerAnimator::Action action, f32 frame, const Vec3& facing,
                         const ClassStats* stats, TurboMeter& meter, const Events& events) {
     const bool attacking = action == PlayerAnimator::Action::TurboFull ||
-                           action == PlayerAnimator::Action::TurboStrong || isFreeMove(action);
+                           action == PlayerAnimator::Action::TurboStrong || isFreeMove(action) ||
+                           action == PlayerAnimator::Action::ComboAct1;
     if (!attacking) {
         m_pending.clear();
         m_all.clear();

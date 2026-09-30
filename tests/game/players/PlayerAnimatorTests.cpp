@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <string>
 #include <utility>
 
 #include <catch2/catch_approx.hpp>
@@ -8,6 +9,7 @@
 #include "engine/assets/AnimationSet.h"
 #include "engine/core/Types.h"
 
+#include "TestSupport.h"
 #include "game/players/PlayerAnimator.h"
 
 namespace {
@@ -1224,6 +1226,193 @@ TEST_CASE("a body pushed along shows it instead of standing or walking",
     REQUIRE(animator.throwing());
     animator.setPushed(false);
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::Ready, 120) < 120);
+}
+
+/** The class tree with the combo sequences of the given lengths. */
+TreeInfo comboTree(bool secondAct) {
+    TreeInfo tree = classTree();
+    const auto add = [&tree](const char* name, s32 frames, bool repeats = false) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = frames;
+        sequence.repeats = repeats;
+        tree.sequences.push_back(sequence);
+    };
+    add("COMBOACT1", 12);
+    if (secondAct) {
+        add("COMBOACT2", 6, true);
+        add("COMBOACT3", 8);
+    }
+    add("COMBOWAR1", 12);
+    add("COMBOWAR2", 4, true);
+    add("COMBOWAR3", 6);
+    add("COMBOVAL", 12);
+    add("COMBODWF1", 12);
+    add("COMBODWF2", 4, true);
+    add("COMBODWF3", 6);
+    return tree;
+}
+
+TEST_CASE("the combo move cuts in, plays its acts through unheeding, and the dwarf's second act "
+          "loops while the ride lasts",
+          "[game][players][animation][combo]") {
+    const TreeInfo warrior = comboTree(false);
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(warrior, false));
+    REQUIRE(animator.canBegin(PlayerDeed::Combo));
+    REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 10) < 10);
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Combo);
+    REQUIRE(animator.action() == Action::ComboAct1);
+    REQUIRE(animator.turboBegan());
+    REQUIRE(animator.comboing());
+    REQUIRE(animator.turboing());
+    REQUIRE(animator.moveScale() == 0.0f);
+    REQUIRE(animator.turnScale() == 0.0f);
+    REQUIRE_FALSE(animator.canBegin(PlayerDeed::TurboFull));
+    REQUIRE_FALSE(animator.comboTakeable());
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+    REQUIRE(animator.action() == Action::ComboAct1);
+    // With no second act it ends into whatever is asked.
+    REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 30) < 30);
+    REQUIRE(animator.comboTakeable());
+    // The dwarf's: the first act gives way to the second, which loops while the ride is
+    // asked for and then cuts to the third at once.
+    const TreeInfo dwarf = comboTree(true);
+    PlayerAnimator rider;
+    REQUIRE(rider.bind(dwarf, false));
+    rider.setCombo(-1, true);
+    rider.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::Combo);
+    REQUIRE(rider.action() == Action::ComboAct1);
+    REQUIRE(stepsUntil(rider, PlayerMotion::Stand, Action::ComboAct2, 30) < 30);
+    for (s32 i = 0; i < 20; ++i) {
+        rider.update(PlayerMotion::Stand, kTicks, kStep);
+        REQUIRE(rider.action() == Action::ComboAct2);
+    }
+    rider.setCombo(-1, false);
+    rider.update(PlayerMotion::Stand, kTicks, kStep);
+    REQUIRE(rider.action() == Action::ComboAct3);
+    REQUIRE(rider.comboing());
+    REQUIRE(stepsUntil(rider, PlayerMotion::Stand, Action::Ready, 30) < 30);
+    // A class without COMBOACT1 has no combo.
+    const TreeInfo plain = classTree();
+    PlayerAnimator none;
+    REQUIRE(none.bind(plain, false));
+    REQUIRE_FALSE(none.canBegin(PlayerDeed::Combo));
+}
+
+TEST_CASE("a partner held plays the grabber's class sequence once, thrown loops its flight and "
+          "lands when let go",
+          "[game][players][animation][combo]") {
+    const TreeInfo tree = comboTree(false);
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 10) < 10);
+    animator.setCombo(0, false); // in a warrior's hands
+    animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::ComboHeld);
+    REQUIRE(animator.action() == Action::ComboWar1);
+    REQUIRE(animator.comboBound());
+    REQUIRE(animator.moveScale() == 0.0f);
+    REQUIRE_FALSE(animator.comboTakeable());
+    REQUIRE_FALSE(animator.canBegin(PlayerDeed::Combo));
+    // Held on to its end, the sequence holds its last frame.
+    for (s32 i = 0; i < 30; ++i) {
+        animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::ComboHeld);
+        REQUIRE(animator.action() == Action::ComboWar1);
+    }
+    // Let fly, it loops the pinball; let go of, it lands at once and then stands.
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboThrown);
+    REQUIRE(animator.action() == Action::ComboWar2);
+    REQUIRE(animator.comboThrown());
+    for (s32 i = 0; i < 20; ++i) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboThrown);
+        REQUIRE(animator.action() == Action::ComboWar2);
+    }
+    animator.update(PlayerMotion::Run, kTicks, kStep);
+    REQUIRE(animator.action() == Action::ComboWar3);
+    REQUIRE(stepsUntil(animator, PlayerMotion::Run, Action::Run1, 30) < 30);
+    // Which sequence is by the grabber's class; a class with no thrown sequence is only held.
+    animator.setCombo(1, false);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboHeld);
+    REQUIRE(animator.action() == Action::ComboVal);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboThrown);
+    REQUIRE(animator.action() == Action::ComboVal);
+    REQUIRE(PlayerAnimator::comboHeldActionOf(4) == Action::ComboDwf1);
+    REQUIRE(PlayerAnimator::comboThrownActionOf(4) == Action::ComboDwf2);
+    REQUIRE(PlayerAnimator::comboThrownActionOf(7) == Action::Ready);
+    REQUIRE(PlayerAnimator::comboHeldActionOf(9) == Action::Ready);
+    REQUIRE(animator.turnScale() == 0.0f);
+    // The held sequence plays out before the flight takes over (action.c 1008's mode 0).
+    animator.setCombo(4, false);
+    s32 frames = 0;
+    while (animator.action() == Action::ComboVal && frames < 30) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboThrown);
+        ++frames;
+    }
+    REQUIRE(animator.action() == Action::ComboDwf2);
+    REQUIRE(frames > 0);
+    REQUIRE(frames <= 12);
+    REQUIRE(animator.turnScale() == Approx(0.5f));
+}
+
+TEST_CASE("the real class trees carry the combo sequences the original's table names",
+          "[game][players][animation][combo][unpacked]") {
+    struct Expected {
+        const char* code;
+        Action held;
+        bool thrown;
+    };
+    const std::array<Expected, 8> classes{{{"WAR", Action::ComboWar1, true},
+                                           {"VAL", Action::ComboVal, false},
+                                           {"WIZ", Action::ComboWiz, false},
+                                           {"ARC", Action::ComboArc, false},
+                                           {"DWF", Action::ComboDwf1, true},
+                                           {"KNI", Action::ComboKni, false},
+                                           {"SOR", Action::ComboSor, false},
+                                           {"JES", Action::ComboJes, false}}};
+    for (usize c = 0; c < classes.size(); ++c) {
+        const auto path = test::unpackedOrSkip(std::string("PLAYERS/") + classes[c].code +
+                                               "/ANIM/animations.json");
+        AnimationSet actions;
+        REQUIRE(actions.load(path.parent_path()));
+        const auto found = actions.find(classes[c].code);
+        REQUIRE(found.has_value());
+        const TreeInfo& tree = actions.tree(*found);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        REQUIRE(animator.canBegin(PlayerDeed::Combo));
+        REQUIRE(animator.sequenceOf(Action::ComboAct1) != animator.sequenceOf(Action::Ready));
+        // Only the dwarf has the second and third acts.
+        const bool dwarf = std::string(classes[c].code) == "DWF";
+        REQUIRE((animator.sequenceOf(Action::ComboAct2) != animator.sequenceOf(Action::Ready)) ==
+                dwarf);
+        animator.setCombo(static_cast<s32>(c), false);
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboHeld);
+        REQUIRE(animator.action() == classes[c].held);
+        // Let fly, the held sequence plays out and then the flight loops, for the warrior's
+        // and the dwarf's partners alone.
+        for (s32 frame = 0; frame < 100 && !animator.comboThrown(); ++frame) {
+            animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboThrown);
+        }
+        REQUIRE(animator.comboThrown() == classes[c].thrown);
+    }
+    // The warrior's partner is let fly once COMBOWAR1 has played (its thirty frames).
+    const auto path = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    AnimationSet actions;
+    REQUIRE(actions.load(path.parent_path()));
+    const auto warrior = actions.find("WAR");
+    REQUIRE(warrior.has_value());
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(actions.tree(*warrior), false));
+    animator.setCombo(0, false);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboHeld);
+    REQUIRE(animator.action() == Action::ComboWar1);
+    s32 frames = 0;
+    while (animator.action() == Action::ComboWar1 && frames < 60) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ComboThrown);
+        ++frames;
+    }
+    REQUIRE(animator.action() == Action::ComboWar2);
+    REQUIRE(frames == 30);
 }
 
 } // namespace
