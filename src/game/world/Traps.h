@@ -80,6 +80,8 @@ public:
     void clear();
     usize size() const { return m_traps.size(); }
     const Trap& trap(usize index) const { return *m_traps[index]; }
+    /** Traps that left their resting sequence during the latest update. */
+    std::span<const usize> wakes() const { return m_wakes; }
     void setPlayerCount(s32 players);
     /** Whether a trap is out of its rest, and hurts. */
     bool armed(usize index) const { return m_traps[index]->action != kResting; }
@@ -102,6 +104,7 @@ private:
     s32 restTicks(const Trap& trap);
 
     std::vector<std::unique_ptr<Trap>> m_traps;
+    std::vector<usize> m_wakes;
     std::vector<f32> m_gaps; ///< per victim, seconds before they can be hurt again
     std::minstd_rand m_random{1};
     f32 m_timeScale = 1.0f;

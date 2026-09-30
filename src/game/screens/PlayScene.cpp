@@ -392,6 +392,22 @@ LevelFixtures::Events PlayScene::fixtureEvents() {
 }
 void PlayScene::updateFixtures(s32 ticks, f32 seconds) {
     m_fixtures.update(ticks, seconds, m_players, fixtureEvents());
+    const CameraFrame ear = CameraFrame::of(viewCamera());
+    const Vec3 attention = bossCameraOn() ? m_bossCamera.attention() : m_camera.attention();
+    for (const usize index : m_fixtures.traps().wakes()) {
+        const auto& trap = m_fixtures.traps().trap(index);
+        if (trap.subtype == Traps::kBlades) {
+            f32 nearest = LevelSoundscape::kAttenuationFar;
+            for (const auto& player : m_players) {
+                if (player.life == PlayerLife::Standing) {
+                    nearest = std::min(
+                        nearest, glm::distance(trap.figure.position(), player.actor.position()));
+                }
+            }
+            m_audio.playSerpent(trap.figure.position(), attention, nearest,
+                                {ear.position, ear.right});
+        }
+    }
 }
 void PlayScene::blast(const Vec3& position, f32 radius, f32 damage) {
     m_fixtures.blast(position, radius, damage, m_players, fixtureEvents());

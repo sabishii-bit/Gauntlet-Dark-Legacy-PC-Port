@@ -52,6 +52,7 @@ bool Traps::bind(RenderDevice& device, const WorldLayout& layout, ItemArchive& i
 
 void Traps::clear() {
     m_traps.clear();
+    m_wakes.clear();
     m_gaps.clear();
 }
 
@@ -112,6 +113,7 @@ s32 Traps::restTicks(const Trap& trap) {
 std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapVictim> party,
                                    bool timeStopped) {
     std::vector<TrapHit> hits;
+    m_wakes.clear();
     m_gaps.resize(party.size(), 0.0f);
     for (f32& gap : m_gaps) {
         gap = std::max(gap - seconds, 0.0f);
@@ -137,6 +139,9 @@ std::vector<TrapHit> Traps::update(s32 ticks, f32 seconds, std::span<const TrapV
         trap.figure.update(seconds);
         trap.ticksLeft -= ticks;
         if (trap.ticksLeft <= 0) {
+            if (trap.action == kResting) {
+                m_wakes.push_back(index);
+            }
             // On to the next sequence, and from the last back to the rest.
             const auto count = static_cast<s32>(std::max<usize>(trap.figure.sequenceCount(), 2));
             trap.action = trap.action + 1 >= count ? kResting : trap.action + 1;

@@ -479,6 +479,26 @@ TEST_CASE("opening sounds stop by target and play the settled cue", "[game][worl
     soundscape.close();
 }
 
+TEST_CASE("serpent wake audio requires nearby attention and attenuates at the nearest player",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-serpent");
+    writeBank(root, "LEVEL", {"S_SERPENT"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    const LevelAudioInfo info{.bank = "LEVEL", .stream = {}};
+    soundscape.open(root, &player, &info);
+    const AmbientEar ear{Vec3{0, 0, -45}, Vec3{1, 0, 0}};
+    CHECK(soundscape.playSerpent(Vec3{0}, Vec3{40, 0, 0}, 0, ear) == kNoSound);
+    CHECK(soundscape.playSerpent(Vec3{0}, Vec3{0}, 70, ear) == kNoSound);
+    CHECK(player.voiceCount() == 0);
+    CHECK(soundscape.playSerpent(Vec3{0}, Vec3{39, 0, 0}, 45, ear) != kNoSound);
+    std::array<f32, 1024> output{};
+    mixer.mix(output);
+    CHECK(output.back() == Catch::Approx(0.25f * LevelSoundscape::kMotionVolume * 0.5f));
+    soundscape.close();
+}
+
 TEST_CASE("reopening a level clears bank and common sound identities",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-reopen");

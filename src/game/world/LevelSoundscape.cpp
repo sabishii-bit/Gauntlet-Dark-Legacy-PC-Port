@@ -535,6 +535,23 @@ void LevelSoundscape::playEntrance() {
     playNamed(kEntranceSound, kEntranceVolume);
 }
 
+SoundHandle LevelSoundscape::playSerpent(const Vec3& position, const Vec3& attention,
+                                         f32 playerDistance, const AmbientEar& ear) {
+    constexpr f32 kWakeDistance = 40.0f;
+    if (glm::distance(position, attention) >= kWakeDistance || m_output == nullptr) {
+        return kNoSound;
+    }
+    const f32 heard = attenuation(playerDistance);
+    if (heard <= 0.0f) {
+        return kNoSound;
+    }
+    const auto handle = playNamed("S_SERPENT", kMotionVolume * heard);
+    if (handle != kNoSound) {
+        m_output->setPan(handle, AmbientSounds::panOf(position, ear));
+    }
+    return handle;
+}
+
 void LevelSoundscape::announceTitle(u32 levelFlags) {
     if ((levelFlags & kStunLevel) != 0) {
         if (narrationRoom(kStunWait)) {
