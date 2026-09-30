@@ -1,3 +1,4 @@
+#include <cmath>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -173,6 +174,64 @@ TEST_CASE("a tree pose composes each node with its ancestors, mirrors and blends
     b.evaluate(turning, 0, 0.0f);
     b.blend(a, 0.5f);
     REQUIRE(std::abs(b.poses()[0].rotation.y) == Approx(kPi).margin(1e-4f));
+}
+
+TEST_CASE("the angles read off a node's rotation are those of the yaw-pitch-roll order, and "
+          "set them back pitch first",
+          "[world][animation][pose][gaze]") {
+    // Built yaw-pitch-roll, the angles read back rebuild the same matrix; within a right
+    // angle of yaw they are the angles that went in (past it, the equivalent triple).
+    for (const Vec3 angles : {Vec3{0.4f, 0.7f, -0.3f}, Vec3{-1.2f, 2.5f, 0.9f},
+                              Vec3{0.0f, -0.6f, 0.0f}, Vec3{0.3f, 3.0f, -2.8f}}) {
+        NodePose pose;
+        pose.rotation = angles;
+        const Mat4 built = TreePose::localMatrix(pose, Vec3{0.0f});
+        const Vec3 read = TreePose::readAngles(built);
+        NodePose again = pose;
+        again.rotation = read;
+        const Mat4 rebuilt = TreePose::localMatrix(again, Vec3{0.0f});
+        CAPTURE(angles.x, angles.y, angles.z, read.x, read.y, read.z);
+        for (s32 c = 0; c < 4; ++c) {
+            REQUIRE(glm::all(glm::epsilonEqual(rebuilt[c], built[c], 1e-4f)));
+        }
+        if (std::abs(angles.y) < kHalfPi) {
+            REQUIRE(near(read, angles));
+        }
+    }
+    // A yaw of a right angle folds pitch and roll together: the roll is left at nought.
+    NodePose locked;
+    locked.rotation = Vec3{0.5f, kHalfPi, 0.0f};
+    const Vec3 read = TreePose::readAngles(TreePose::localMatrix(locked, Vec3{0.0f}));
+    REQUIRE(read.z == 0.0f);
+    REQUIRE(read.y == Approx(kHalfPi));
+    REQUIRE(read.x == Approx(0.5f));
+
+    // A node's read angles set back pitch first keep a single turn as it was; the original
+    // rebuilds its look nodes this way (NodeLookAtPos), whatever order their tracks key.
+    TreeInfo tree = sampleTree();
+    tree.sequences[0].tracks.push_back(track(1, 1, {0}, {0.7f}));
+    tree.sequences[0].trackOfNode = {0, 1};
+    TreePose pose;
+    pose.evaluate(tree, 0, 0.0f);
+    REQUIRE_FALSE(pose.poses()[1].pitchYawRoll);
+    const Mat4 before = pose.matrices()[1];
+    const Vec3 angles = pose.readAngles(1);
+    REQUIRE(near(angles, Vec3{0.0f, 0.7f, 0.0f}));
+    pose.setPitchYawRoll(1, angles);
+    REQUIRE(pose.poses()[1].pitchYawRoll);
+    REQUIRE(near(pose.matrices()[1], before));
+    // Turned further about the upright, the node's matrix follows and keeps its place.
+    pose.setPitchYawRoll(1, angles + Vec3{0.0f, 0.5f, 0.0f});
+    REQUIRE(near(Vec3{pose.matrices()[1][3]}, Vec3{before[3]}));
+    REQUIRE_FALSE(near(pose.matrices()[1], before));
+    REQUIRE(pose.readAngles(1).y == Approx(angles.y + 0.5f));
+    // A pitch-first pose reads back as itself only for a turn about one axis; with two the
+    // read is the other order's, as the original's is.
+    NodePose pitched;
+    pitched.rotation = Vec3{0.4f, 0.0f, 0.0f};
+    pitched.pitchYawRoll = true;
+    REQUIRE(
+        near(TreePose::readAngles(TreePose::localMatrix(pitched, Vec3{0.0f})), pitched.rotation));
 }
 
 } // namespace

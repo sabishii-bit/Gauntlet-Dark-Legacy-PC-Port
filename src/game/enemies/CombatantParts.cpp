@@ -47,6 +47,32 @@ void Combatant::synchronizeChild() {
     m_actor.areas.clear();
 }
 
+void Combatant::aimGaze(Actor& critter, f32 seconds, std::span<const EnemyView> players) {
+    const CritterData& data = *critter.definition;
+    const MoveDefinition* move =
+        critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
+    if (move != nullptr &&
+        (move->type == MoveDefinition::kStart || move->type == MoveDefinition::kInit)) {
+        return;
+    }
+    constexpr u32 kHeadHeld = 1; ///< the move keeps the head to its animation
+    const bool held = (move != nullptr &&
+                       (move->type == MoveDefinition::kDeath || (move->flags & kHeadHeld) != 0)) ||
+                      critter.frozenTicks > 0 || critter.blindTicks > 0;
+    std::optional<Vec3> target;
+    if (!held) {
+        s32 who = critter.target;
+        if (who < 0 && critter.parent != nullptr) {
+            who = critter.parent->m_actor.target; // CritterGetTargetSub falls back to the parent
+        }
+        if (const EnemyView* view = viewOf(players, who)) {
+            target = view->position + Vec3{0.0f, 0.5f * view->height, 0.0f};
+        }
+    }
+    critter.gaze.aim(critter.pose, *critter.stock->tree, modelTransform(critter), data.looks(),
+                     target, seconds);
+}
+
 void Combatant::collectChildEvents(Combatant& part) {
     append(m_cues, part.m_cues);
     append(m_blows, part.m_blows);
@@ -100,6 +126,7 @@ void Combatant::updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView
         } else {
             actor.age += seconds;
             part->synchronizeChild();
+            part->aimGaze(actor, seconds, players); // its head still turns (CritterLookAtPlayer)
         }
         intact &= part->alive();
         busy |= part->alive() && !actor.moveDone && part->moveType() != MoveDefinition::kReady;

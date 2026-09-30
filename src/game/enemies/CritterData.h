@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -53,6 +54,8 @@ public:
     std::span<const AttackPattern> patterns() const { return m_patterns; }
     std::span<const AttackDefinition> damages() const { return m_damages; }
     std::span<const CritterPart> parts() const { return m_parts; }
+    /** The nodes turned to its target: the head, then the eyes; either may name none. */
+    std::span<const LookDefinition> looks() const { return m_looks; }
     std::span<const CombatEffectDefinition> sounds() const { return m_sounds; }
     const AttackDefinition* damage(s32 index) const;
     const CombatEffectDefinition* sound(s32 index) const;
@@ -91,6 +94,7 @@ private:
     std::vector<AttackPattern> m_patterns;
     std::vector<AttackDefinition> m_damages;
     std::vector<CritterPart> m_parts;
+    std::array<LookDefinition, 2> m_looks;
     std::vector<CombatEffectDefinition> m_sounds;
     s32 m_hitSoundFar = -1;
     s32 m_hitSoundClose = -1;

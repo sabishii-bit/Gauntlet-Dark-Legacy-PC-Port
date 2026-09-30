@@ -217,6 +217,22 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
         }
         m_hitSoundFar = type.value("hitSoundFar", -1);
         m_hitSoundClose = type.value("hitSoundClose", -1);
+        // The head and the eyes it turns to its target (CritterLookAtPlayer); an older
+        // manifest has no record of them.
+        if (type.contains("typeFlags") && !type.contains("lookNode0")) {
+            log::warn("critter {}: no look-at nodes exported; re-run gdlunpack --only CRITTER",
+                      m_name);
+        }
+        constexpr u32 kLooksThroughParent = 0x10; ///< the head's parent turns (CritterNewInst)
+        m_looks[0].node = type.value("lookNode0", "");
+        m_looks[0].parent = (typeFlags & kLooksThroughParent) != 0;
+        m_looks[0].yawRate = type.value("lookYawRate0", 0.0f);
+        m_looks[0].pitchRate = type.value("lookPitchRate0", 0.0f);
+        m_looks[0].pitchBias = type.value("lookPitchBias0", 0.0f);
+        m_looks[1].node = type.value("lookNode1", "");
+        m_looks[1].yawRate = type.value("lookYawRate1", 0.0f);
+        m_looks[1].pitchRate = type.value("lookPitchRate1", 0.0f);
+        m_looks[1].pitchBias = type.value("lookPitchBias1", 0.0f);
         const s32 colBase = type.value("colBase", 0);
         const s32 colCount = type.value("colCount", 0);
         const auto nodes = root.value("nodes", Json::array());

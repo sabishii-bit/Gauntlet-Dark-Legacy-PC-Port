@@ -38,6 +38,12 @@ public:
     void blend(const TreePose& from, f32 t);
     /** Copies local animation within a branch, preserving this pose's other branches. */
     void overlaySubtree(const TreePose& from, usize root);
+    /** The pitch, yaw and roll the original reads off node `node`'s local rotation
+     * (`readAngles`), whatever order its track keys it in. */
+    Vec3 readAngles(usize node) const;
+    /** Turns node `node` to `angles` (pitch, yaw, roll, applied in that order) and rebuilds
+     * the matrices under it. */
+    void setPitchYawRoll(usize node, const Vec3& angles);
 
     bool posed() const { return m_tree != nullptr; }
     usize size() const { return m_poses.size(); }
@@ -51,6 +57,11 @@ public:
     static Mat4 localMatrix(const NodePose& pose, const Vec3& restPosition);
     /** An angle wrapped into (-pi, pi]. */
     static f32 wrapAngle(f32 angle);
+    /** The pitch, yaw and roll the original's ExtractPYR reads off a rotation matrix: exact
+     * for one built in yaw-pitch-roll order (the order most tracks key), and what the
+     * original then rebuilds pitch-yaw-roll with (NodeLookAtPos); a yaw within a
+     * ten-thousandth of a right angle locks the roll at nought. */
+    static Vec3 readAngles(const Mat4& rotation);
 
 private:
     void compose();

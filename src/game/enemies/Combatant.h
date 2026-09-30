@@ -18,6 +18,7 @@
 
 #include "game/enemies/CombatEvents.h"
 #include "game/enemies/CombatantAssets.h"
+#include "game/enemies/CombatantGaze.h"
 #include "game/enemies/CombatantProjectile.h"
 #include "game/enemies/CritterArea.h"
 #include "game/enemies/CritterPatrol.h"
@@ -211,6 +212,7 @@ private:
         Vec3 grabOffset{0};
         AnimationPlayer player;
         TreePose pose;
+        CombatantGaze gaze; ///< the turn of its head and eyes to its target
     };
 
     bool startMove(Actor& critter, usize index, bool recordUse = true);
@@ -220,6 +222,10 @@ private:
                     const Vec3& position, f32 yaw, const WorldCollision* collision,
                     const EnemyScales& scales, char realm);
     void updateChildren(s32 ticks, f32 seconds, std::span<const EnemyView> players);
+    /** Turns its head and eyes to its target on top of the pose (CritterLookAtPlayer): not
+     * at all through its entrance, and back to the animation while it dies, holds its head
+     * to a move, is frozen or blinded. A head with no target of its own takes the body's. */
+    static void aimGaze(Actor& critter, f32 seconds, std::span<const EnemyView> players);
     void inheritBodyPose();
     void synchronizeChild();
     void collectChildEvents(Combatant& part);

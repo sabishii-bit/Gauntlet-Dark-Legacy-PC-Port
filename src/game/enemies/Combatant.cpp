@@ -148,6 +148,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     // Frozen, it stands as it is: no move, no step, no one in its sights.
     if (critter.frozenTicks > 0) {
         critter.frozenTicks = std::max(critter.frozenTicks - ticks, 0);
+        aimGaze(critter, seconds, players);
         updateAreas(critter, i, players);
         carryGrab(critter, players);
         return;
@@ -198,6 +199,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         critter.pose.evaluate(*critter.stock->tree, critter.player.sequence(),
                               critter.player.frame());
         inheritBodyPose();
+        aimGaze(critter, seconds, players);
         const auto frame = static_cast<s32>(std::floor(critter.player.frame()));
         const auto active = [&](s32 start, s32 end) {
             const s32 last = end < start ? start : end;

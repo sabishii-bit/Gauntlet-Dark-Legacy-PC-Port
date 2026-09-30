@@ -904,6 +904,15 @@ void unpackCritter(const std::filesystem::path& file, const std::filesystem::pat
         json.beginObject();
         json.key("suffix").value(t.suffix);
         json.key("rootNode").value(t.rootNode);
+        json.key("lookNode0").value(t.lookNode0);
+        json.key("lookNode1").value(t.lookNode1);
+        json.key("noSkinNode").value(t.noSkinNode);
+        json.key("lookYawRate0").value(static_cast<f64>(t.lookYawRate0));
+        json.key("lookYawRate1").value(static_cast<f64>(t.lookYawRate1));
+        json.key("lookPitchRate0").value(static_cast<f64>(t.lookPitchRate0));
+        json.key("lookPitchRate1").value(static_cast<f64>(t.lookPitchRate1));
+        json.key("lookPitchBias0").value(static_cast<f64>(t.lookPitchBias0));
+        json.key("lookPitchBias1").value(static_cast<f64>(t.lookPitchBias1));
         json.key("descriptor").value(static_cast<int>(t.descriptorIndex));
         json.key("subtype").value(static_cast<int>(t.subtype));
         json.key("typeFlags").value(t.typeFlags);

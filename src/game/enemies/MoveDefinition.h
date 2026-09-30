@@ -148,6 +148,17 @@ struct MoveDefinition {
     s32 projectileTriggers(s32 previous, s32 current, bool second = false) const;
 };
 
+/** A node turned to the creature's target as it acts: the head, or the eyes
+ * (CritterLookAtPlayer's hitnode0 and hitnode1, TYPE +0x20/+0x30 and +0x60..+0x74). */
+struct LookDefinition {
+    std::string node;     ///< empty: none
+    bool parent = false;  ///< the node's parent is turned instead (TYPE flag 0x10, the head only)
+    f32 yawRate = 0.0f;   ///< radians it may be turned from its animation, about the upright
+    f32 pitchRate = 0.0f; ///< and up or down
+    f32 pitchBias = 0.0f; ///< pitch added to the way it looks
+    bool turns() const { return !node.empty() && (yawRate > 0.0f || pitchRate > 0.0f); }
+};
+
 /** A part of the body that can be struck. */
 struct CritterPart {
     std::string node;
