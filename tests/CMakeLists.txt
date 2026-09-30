@@ -204,6 +204,7 @@ add_executable(tests
     game/screens/PickupHudTests.cpp
     game/screens/BossMeterTests.cpp
     game/screens/ChallengeHudTests.cpp
+    game/screens/RuneMeterTests.cpp
     game/screens/PlaySceneChallengeTests.cpp
     game/world/SecretChallengeTests.cpp
     game/screens/BossVictoryTests.cpp

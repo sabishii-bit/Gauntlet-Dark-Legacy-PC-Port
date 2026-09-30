@@ -9,6 +9,7 @@ add_library(game STATIC
     screens/LevelOpponentsDeath.cpp
     world/SecretChallenge.cpp
     screens/ChallengeHud.cpp
+    screens/RuneMeter.cpp
     screens/PlaySceneChallenge.cpp
     world/DestructibleWalls.cpp
     world/MissileTarget.cpp

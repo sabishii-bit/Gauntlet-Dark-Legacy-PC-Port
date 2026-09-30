@@ -113,6 +113,27 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
         world.placeItem(device, item.name, item.position);
     }
     world.setPlayerCount(static_cast<s32>(m_players.size()));
+    if (!world.isTower()) {
+        const PlacedItems& items = world.placedItems();
+        for (usize i = 0; i < items.size(); ++i) {
+            const auto& item = items.item(i);
+            if (item.subtype == ItemInfo::kRunestone && !item.taken &&
+                item.shownTo(static_cast<s32>(m_players.size()))) {
+                m_runeItem = i;
+                m_runeMeter.begin(item.value, item.position,
+                                  world.layout().maxBounds() - world.layout().minBounds(),
+                                  world.ref().realmId, party);
+            }
+        }
+        if (m_runeMeter.visible()) {
+            if (const auto frame = m_staticTextures.find("THERMBASE")) {
+                m_runeFrame = &m_staticTextures.texture(device, *frame);
+            }
+            if (const auto column = m_staticTextures.find("THERMCOL")) {
+                m_runeColumn = &m_staticTextures.texture(device, *column);
+            }
+        }
+    }
     beginChallenge();
     if (world.ref().isSecret() && m_challenge.state() == SecretChallenge::State::Inactive) {
         close();
@@ -177,6 +198,10 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
 }
 
 void PlayScene::close() {
+    m_runeMeter.clear();
+    m_runeItem.reset();
+    m_runeFrame = nullptr;
+    m_runeColumn = nullptr;
     m_challenge.clear();
     m_challengeHud.clear();
     m_secretTravel = false;
@@ -924,6 +949,16 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         m_camera.update(followed.empty() ? subjects : followed, m_world->cameraMarkers(),
                         m_world->cameraRange(), cameraView(), seconds);
     }
+    if (m_runeItem) {
+        const auto& items = m_world->placedItems();
+        const bool available = *m_runeItem < items.size() && !items.item(*m_runeItem).taken;
+        const auto cue = m_runeMeter.update(m_camera.attention(), available);
+        if (cue != RuneMeter::Cue::None) {
+            const auto frame = CameraFrame::of(viewCamera());
+            m_audio.announceRune(cue == RuneMeter::Cue::Nearby, m_camera.attention(),
+                                 {frame.position, frame.right});
+        }
+    }
     updateAmbience();
     return PlayOutcome::Running;
 }
@@ -1064,6 +1099,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_names.draw(m_canvas, m_players, clip, width, height);
     if (!cut) {
         m_hud.drawStatus(m_canvas, m_players);
+        if (m_runeFrame != nullptr && m_runeColumn != nullptr) {
+            m_runeMeter.draw(m_canvas, *m_runeFrame, *m_runeColumn);
+        }
         if (m_challenge.state() != SecretChallenge::State::Inactive) {
             m_challengeHud.draw(m_canvas, m_challenge.remaining(), m_challenge.duration(),
                                 !spawning() && !m_messages.active());
