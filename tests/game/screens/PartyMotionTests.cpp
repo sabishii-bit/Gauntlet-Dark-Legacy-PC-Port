@@ -44,7 +44,7 @@ struct Fixture {
         .advanceTurbo = [](usize, s32, f32) { FAIL("No figure, no animation events"); },
         .thrownImpact = {},
         .aim = {},
-        .allowMovement = {},
+        .limitMovement = {},
         .attackDeed = {},
         .meleeSense = {},
         .grabDeath = {},
@@ -126,8 +126,8 @@ TEST_CASE("party motion consults the shared-view limit before reporting moved su
           "[game][party-motion][camera-limit]") {
     Fixture f;
     f.inputs[3].move = MoveInput{Vec2{0, 1}, 1};
-    f.events.allowMovement = [](const Vec3& before, const Vec3& after) {
-        return after.z <= before.z;
+    f.events.limitMovement = [](usize, const Vec3& before, const Vec3& after) {
+        return after.z <= before.z ? after : before;
     };
     const auto before = f.players[0].actor.position();
     const auto subjects = f.step();
@@ -154,6 +154,19 @@ TEST_CASE("quick melee creeps forward from its first input frame while slow mele
     CHECK(f.players[0].actor.position() == quick);
 }
 
+TEST_CASE("camera clipping preserves a diagonal step along the screen edge",
+          "[game][party-motion][camera-limit]") {
+    Fixture f;
+    f.inputs[3].move = MoveInput{glm::normalize(Vec2{1, 1}), 1};
+    f.events.limitMovement = [](usize, const Vec3& before, const Vec3& after) {
+        return Vec3{before.x, after.y, after.z};
+    };
+    const auto subjects = f.step();
+    CHECK(f.players[0].actor.position().x == Approx(0));
+    CHECK(f.players[0].actor.position().z > 0);
+    CHECK(subjects[0].feet == f.players[0].actor.position());
+}
+
 TEST_CASE("party motion resolves creatures before camera limits and snapshots",
           "[game][party-motion][collision]") {
     Fixture f;
@@ -161,9 +174,9 @@ TEST_CASE("party motion resolves creatures before camera limits and snapshots",
     f.events.resolveMovement = [](usize, const Vec3& from, const Vec3& to) {
         return Vec3{from.x, to.y, from.z};
     };
-    f.events.allowMovement = [](const Vec3& from, const Vec3& to) {
+    f.events.limitMovement = [](usize, const Vec3& from, const Vec3& to) {
         CHECK(from == to);
-        return true;
+        return to;
     };
     const auto subjects = f.step();
     CHECK(f.players[0].actor.position() == Vec3{0});

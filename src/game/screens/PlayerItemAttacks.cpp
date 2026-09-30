@@ -41,6 +41,9 @@ void PlayerAttacks::useItemAttack(usize index, std::span<PlayerRuntime> players)
         return;
     }
     ItemArea area;
+    if (selected->deed == PlayerDeed::Hammer && m_resources->shake != nullptr) {
+        m_resources->shake->start(CameraShake::Target::Attention, 0, 30, 0.3f, 200);
+    }
     area.attack = *selected;
     area.actor = index;
     if (const auto tree = m_resources->weapons.trees.find(selected->tree)) {

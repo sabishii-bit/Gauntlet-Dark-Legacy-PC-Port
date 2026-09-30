@@ -292,6 +292,9 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
                                  followed < stats->moveEffects.size();
          at = stats->moveEffects[static_cast<usize>(at)].next, ++followed) {
         const MoveEffect& effect = stats->moveEffects[static_cast<usize>(at)];
+        if ((effect.flags & 2U) != 0 && m_resources->shake != nullptr) {
+            m_resources->shake->start();
+        }
         // A particle record's names are a texture and a node, neither a tree nor a sound;
         // its emitter is not drawn yet.
         if (effect.particle()) {
@@ -395,6 +398,9 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
             const s32 mark = row.hitEffect;
             if (mark >= 0 && static_cast<usize>(mark) < stats->moveEffects.size()) {
                 const MoveEffect& effect = stats->moveEffects[static_cast<usize>(mark)];
+                if ((effect.flags & 2U) != 0 && m_resources->shake != nullptr) {
+                    m_resources->shake->start();
+                }
                 if (!effect.tree.empty() && archive->trees.find(effect.tree).has_value()) {
                     m_resources->effects.start(m_resources->device, *archive, effect.tree,
                                                target.base, effect.scale);

@@ -17,6 +17,28 @@ using Catch::Approx;
 
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 
+TEST_CASE("returning from a cut snaps attention without resetting camera angles",
+          "[game][world][camera]") {
+    std::vector<CameraSubject> party{{Vec3{0}, Vec3{0, 2.5f, 0}}};
+    TowerCamera camera;
+    const CameraRange range;
+    const CameraView view;
+    camera.reset(party, {}, range, view);
+    const f32 yaw = camera.yaw();
+    const f32 pitch = camera.pitch();
+    party[0] = {Vec3{12, 0, 8}, Vec3{12, 2.5f, 8}};
+    camera.snapAttention(party, range);
+    CHECK(camera.attention() == party[0].follow);
+    CHECK(camera.yaw() == yaw);
+    CHECK(camera.pitch() == pitch);
+    for (s32 i = 0; i < 30; ++i) {
+        camera.update(party, {}, range, view, 1.0f / 30);
+        CHECK(glm::distance(camera.attention(), party[0].follow) < 0.001f);
+    }
+    camera.snapAttention({}, range);
+    CHECK(camera.attention() == party[0].follow);
+}
+
 WorldLocator marker(const Vec3& position, f32 pitch, f32 yaw, u8 distance = 0) {
     WorldLocator out;
     out.kind = LocatorKind::TriggerCamera;

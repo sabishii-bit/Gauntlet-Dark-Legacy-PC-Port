@@ -59,8 +59,8 @@ public:
         std::function<void(usize, s32, f32)> advanceTurbo;
         std::function<void(usize, f32)> thrownImpact;
         std::function<std::optional<Vec3>(usize)> aim;
-        /** Consulted after collision, before attack events; false blocks the horizontal step. */
-        std::function<bool(const Vec3&, const Vec3&)> allowMovement;
+        /** Shared-view tangent projection, rechecked against world and creature collision. */
+        std::function<Vec3(usize, const Vec3&, const Vec3&)> limitMovement;
         /** What the attack buttons ask: strong or not, and whether the stick moves. */
         std::function<PlayerDeed(usize, bool, bool)> attackDeed;
         /** Where the nearest thing to strike lies, an attack button held or not. */

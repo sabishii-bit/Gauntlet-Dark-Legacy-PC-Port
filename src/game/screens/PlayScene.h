@@ -336,7 +336,7 @@ private:
     void handleTriggerEvents();
     PartyMotion::Events motionEvents();
     void perform(usize index, PartyMotion::Action action);
-    bool allowsStep(const Vec3& before, const Vec3& after) const;
+    Vec3 limitStep(usize index, const Vec3& before, const Vec3& after) const;
     void updateSumnerVisit(f32 seconds);
     void updateHints(const Inputs& inputs, s32 ticks);
     CameraView cameraView() const;
