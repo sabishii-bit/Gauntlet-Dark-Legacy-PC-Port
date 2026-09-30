@@ -100,6 +100,8 @@ public:
     void setAttackSpeed(bool rapid, bool speed) { m_animator.setAttackSpeed(rapid, speed); }
     void setShielded(bool shielded) { m_animator.setShielded(shielded); }
     void setPushed(bool pushed) { m_animator.setPushed(pushed); }
+    /** Whose combo the body is held or thrown in, and whether the dwarf's ride goes on. */
+    void setCombo(s32 grabberClass, bool ride) { m_animator.setCombo(grabberClass, ride); }
     /** Leaves the swing's ghosts of the weapon behind the body placed at `body` (the slow
      * swing, the spin and the middle power swing: action.c 816, 951, 976). */
     void updateTrail(const Mat4& body, s32 ticks);

@@ -144,6 +144,7 @@ add_executable(tests
     game/players/PlayerControlsTests.cpp
     game/players/PlayerActorTests.cpp
     game/players/PlayerCaptureTests.cpp
+    game/players/ComboMoveTests.cpp
     game/players/PlayerTransportTests.cpp
     game/players/PlayerAnimatorTests.cpp
     game/players/ItemAttackTests.cpp

@@ -8,6 +8,7 @@
 #include "engine/math/Math.h"
 
 #include "game/players/BodyGlow.h"
+#include "game/players/ComboMove.h"
 #include "game/players/ExitWait.h"
 #include "game/players/HeadGem.h"
 #include "game/players/Knockback.h"
@@ -28,6 +29,7 @@ enum class PlayerLife : u8 { Standing, Dying, InTower };
 struct PlayerRuntime {
     PlayerActor actor;
     PlayerCapture capture;
+    ComboState combo; ///< its side of a two-player combo, none outside one
     PlayerTransport transport;
     std::unique_ptr<PlayerFigure> figure; ///< null when character assets are unavailable
     std::optional<usize> slot;            ///< persistent save slot, not the input player id

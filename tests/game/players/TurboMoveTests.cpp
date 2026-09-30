@@ -7,6 +7,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/players/ComboMove.h"
 #include "game/players/TurboMove.h"
 namespace {
 using namespace gdl;
@@ -153,5 +154,28 @@ TEST_CASE("turbo volleys catch up skipped frames without repeating shots",
     f.advance(6);
     REQUIRE(f.shots.size() == 3);
     REQUIRE(f.meter.held() == 100);
+}
+
+TEST_CASE("the combo pays half the meter as it begins and runs its class's combo rows through "
+          "the first act",
+          "[game][players][turbo-move][combo]") {
+    Fixture f;
+    f.stats.moves.combo1 = 1; // the damaging row alone, at its second frame
+    f.stats.moveStrikes[1].help = 102;
+    REQUIRE(f.move.begin(Action::ComboAct1, &f.stats, f.meter).empty());
+    REQUIRE(f.meter.held() == 100 - ComboMove::kCost);
+    REQUIRE(f.move.owed() == 0);
+    f.advance(0, Action::ComboAct1);
+    REQUIRE(f.calls.empty());
+    f.advance(2, Action::ComboAct1);
+    REQUIRE(f.calls == std::vector<std::string>{"help102", "strike1"});
+    // Out of the act, nothing more runs; a class without rows still pays.
+    f.advance(3, Action::ComboAct2);
+    REQUIRE(f.calls.size() == 2);
+    f.stats.moves.combo1 = -1;
+    REQUIRE(f.move.begin(Action::ComboAct1, &f.stats, f.meter).empty());
+    REQUIRE(f.meter.held() == 100 - 2 * ComboMove::kCost);
+    f.advance(2, Action::ComboAct1);
+    REQUIRE(f.calls.size() == 2);
 }
 } // namespace

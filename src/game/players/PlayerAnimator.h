@@ -48,10 +48,13 @@ enum class PlayerDeed : u8 {
     Breathe,
     FireLeft,
     FireRight,
-    Pick,      ///< the gesture of an item picked up
-    Gag,       ///< retching at gas, Death's touch or food gone bad
-    DeathGrab, ///< a halo's hold on Death, drawing him off
-    Whirled    ///< swept up by a whirlwind
+    Pick,       ///< the gesture of an item picked up
+    Gag,        ///< retching at gas, Death's touch or food gone bad
+    DeathGrab,  ///< a halo's hold on Death, drawing him off
+    Whirled,    ///< swept up by a whirlwind
+    Combo,      ///< takes hold of a partner for the class's two-player combo
+    ComboHeld,  ///< in a partner's hands, playing the grabber's class's COMBO sequence
+    ComboThrown ///< let go of by the partner: the warrior's pinball, the dwarf's charger
 };
 
 /** How far the nearest thing to strike lies: within a swing, within a step, or beyond. */
@@ -211,11 +214,28 @@ public:
         DeathGrab,        ///< held on him, looped
         DeathGrabRelease, ///< and let go
         Whirled,          ///< flung up by a whirlwind (P_WHIRLWIND), then up again
-        Pushed            ///< shoved by another member, in place of standing or walking
+        Pushed,           ///< shoved by another member, in place of standing or walking
+        // The two-player combo: the grabber's move, then what its partner plays, in the
+        // original's order (COMBOACT1..3, COMBOWAR1..COMBOJES).
+        ComboAct1,
+        ComboAct2, ///< the dwarf's ride, looped while it lasts
+        ComboAct3,
+        ComboWar1, ///< in the warrior's hands
+        ComboWar2, ///< the pinball, looped while it flies
+        ComboWar3, ///< and its landing
+        ComboVal,  ///< lifting the valkyrie
+        ComboWiz,  ///< in the wizard's hands
+        ComboArc,  ///< lifting the archer
+        ComboDwf1, ///< the dwarf climbing on
+        ComboDwf2, ///< the charger, looped while it is steered
+        ComboDwf3, ///< and its end
+        ComboKni,  ///< in the knight's hands
+        ComboSor,  ///< in the sorceress's
+        ComboJes   ///< in the jester's
     };
     /** The foot that came down as a walk or run half cycle ended. */
     enum class Foot : u8 { None, First, Second };
-    static constexpr usize kActionCount = 117;
+    static constexpr usize kActionCount = 132;
     static constexpr std::array<std::string_view, kActionCount> kSequenceNames{
         "READY",        "IDLE1",        "IDLE2",        "IDLE2_LOOP",   "WALK1",
         "WALK2",        "RUN1",         "RUN2",         "START",        "THROW1S",
@@ -240,7 +260,10 @@ public:
         "ATTCHOP",      "ATTCHOPR",     "ATTBREATHE",   "ATTBREATHER",  "ATTFIREL",
         "ATTFIRELR",    "ATTFIRER",     "ATTFIRERR",    "PICK",         "STUN2",
         "SHIELD_READY", "SHIELD_RUN",   "DEATHGRABS",   "DEATHGRAB",    "DEATHGRABR",
-        "FLYUP",        "PUSHED"};
+        "FLYUP",        "PUSHED",       "COMBOACT1",    "COMBOACT2",    "COMBOACT3",
+        "COMBOWAR1",    "COMBOWAR2",    "COMBOWAR3",    "COMBOVAL",     "COMBOWIZ",
+        "COMBOARC",     "COMBODWF1",    "COMBODWF2",    "COMBODWF3",    "COMBOKNI",
+        "COMBOSOR",     "COMBOJES"};
     static constexpr f32 kReleaseFrame = 2.0f;     ///< of the wind-up, from which it gives way
     static constexpr f32 kGagHold = 10.0f;         ///< frames of retching before anything cuts in
     static constexpr s32 kFidgetTicks = 1800;      ///< standing still before the first fidget
@@ -262,6 +285,37 @@ public:
     void update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerDeed deed);
     /** What the close attack knows of its nearest target, set before each update. */
     void setMelee(const MeleeSense& sense) { m_melee = sense; }
+    /** The class of the partner making the combo this body is held or thrown in (which
+     * COMBO sequence it plays), and whether the dwarf's ride is to go on (COMBOACT2 loops
+     * while it is). Set before each update. */
+    void setCombo(s32 grabberClass, bool ride) {
+        m_comboClass = grabberClass;
+        m_comboRide = ride;
+    }
+    /** Whether the body is making its class's combo move (COMBOACT1..3). */
+    bool comboing() const {
+        return m_current >= Action::ComboAct1 && m_current <= Action::ComboAct3;
+    }
+    /** Whether the body is in a partner's combo: held, flying or landing. */
+    bool comboBound() const {
+        return m_current >= Action::ComboWar1 && m_current <= Action::ComboJes;
+    }
+    /** Whether the body is the warrior's pinball or the dwarf's charger. */
+    bool comboThrown() const {
+        return m_current == Action::ComboWar2 || m_current == Action::ComboDwf2;
+    }
+    /** Whether a partner may take hold of the body now (fn_80088EF4's actions 84 to 90 and
+     * from 107): not in a power swing, a turbo move, a potion, a guard, a reaction, its
+     * entrance, its death or a combo. */
+    bool comboTakeable() const {
+        return !entering() && !dying() && !reacting() && !turboing() && !conjuring() &&
+               !guarding() && !comboBound() && m_current != Action::PowerLow &&
+               m_current != Action::PowerLowRecover;
+    }
+    /** What a partner held by a grabber of `grabberClass` plays (PlayerMotion's case 38). */
+    static Action comboHeldActionOf(s32 grabberClass);
+    /** What a partner let go of by one plays (case 39): only the warrior's and the dwarf's. */
+    static Action comboThrownActionOf(s32 grabberClass);
     /** Whether the body is holding Death, or reaching for him or letting him go. */
     bool grabbingDeath() const {
         return m_current >= Action::DeathGrabStart && m_current <= Action::DeathGrabRelease;
@@ -333,8 +387,8 @@ public:
         if (webbed()) {
             return kWebPace;
         }
-        if (grabbingDeath()) {
-            return 0.0f;
+        if (grabbingDeath() || comboBound()) {
+            return 0.0f; // a body in a partner's combo goes where the combo takes it
         }
         if (shoving()) {
             return kChargePace; // the charge rushes on, faster than a run
@@ -386,7 +440,7 @@ public:
     bool turboing() const {
         return m_current == Action::TurboStrong || m_current == Action::TurboFull ||
                m_current == Action::Shove || strongThrowing() || specialShooting() ||
-               itemAttacking();
+               itemAttacking() || comboing();
     }
     /** Whether the body is in the special shot or recovering from it. */
     bool specialShooting() const {
@@ -499,6 +553,8 @@ private:
     bool m_rapid = false;
     bool m_speed = false;
     StrafeWay m_strafe = StrafeWay::None;
+    s32 m_comboClass = -1;      ///< the grabber's class, for a body held or thrown in a combo
+    bool m_comboRide = false;   ///< the dwarf's ride goes on: COMBOACT2 loops
     bool m_potionLatch = false; ///< a potion has gone for this press of its button
     f32 m_attackSeconds = 0.0f; ///< since the attack began, while it goes on
     s32 m_stillTicks = 0;       ///< ticks standing still
