@@ -87,6 +87,20 @@ TEST_CASE("loading replaces only the selected character after confirmation", "[s
     CHECK(f.menu.party()[1].save.toJson() == f.party[1].save.toJson());
     CHECK(readTextFile(f.slots.path(0)) == saved.toJson());
 }
+TEST_CASE("loading over a character kept in a slot needs no confirmation", "[save-menu]") {
+    // select.c 697-706: the load's confirmation step is skipped for a saved character.
+    Fixture f;
+    CharacterSave saved;
+    saved.name = "LOADED";
+    REQUIRE(f.slots.write(0, saved));
+    f.party[0].slot = 3;
+    f.open(SaveMenu::Mode::Load);
+    f.menu.choose(0);
+    REQUIRE(f.menu.state() == SaveMenu::State::Notice);
+    REQUIRE(f.menu.succeeded());
+    CHECK(f.menu.party()[0].save.name == "LOADED");
+    CHECK(f.menu.party()[0].slot == 0);
+}
 TEST_CASE("a save changing on disk or a failed write leaves the party untouched", "[save-menu]") {
     Fixture f;
     SECTION("load failure") {

@@ -6,9 +6,22 @@
 
 #include "game/menu/OptionMenu.h"
 #include "game/screens/AfterLevelScene.h"
+#include "game/screens/InventoryPanel.h"
 #include "game/screens/ShopLayout.h"
 
 namespace gdl::game {
+namespace {
+/** The magic perks' line of the level panel (shop_show_lv): MAGIC_ATT1 at level 25,
+ * MAGIC_ATT2 at 50, the page by the class (char_type), left-aligned at the lane's middle
+ * in 0xFF80C0. The unlockables' pages past the four are not there, so they see none. */
+constexpr s32 kMagicLineY = 224;
+constexpr s32 kMagicLineX = 64;
+constexpr s32 kMagicPerkLevel = 25;
+constexpr s32 kGreaterMagicPerkLevel = 50;
+constexpr Color kMagicLineColor = Color::rgba(255, 128, 192);
+constexpr Color kPriceFlash = Color::rgba(255, 0, 0);
+constexpr s32 kWizardClass = 2;
+} // namespace
 void AfterLevelScene::line(s32 x, s32 y, std::string_view value, f32 scale, Color color,
                            bool glow) {
     if (glow && m_glow != nullptr) {
@@ -114,9 +127,40 @@ void AfterLevelScene::drawStats(const ShopLane& lane, s32 x) {
          healthGlow && ticks < reveal[4] + 60);
     line(x + 88, 196, std::to_string(healthGlow ? after[4] : before[4]), 0.48f, Color::white(),
          healthGlow);
+    if (promotion) {
+        drawMagicLine(lane, x);
+    }
     if (lane.statsReady()) {
         prompt(x + 16, 280, 16);
         line(x + 40, 280, text("shop.continue"), 0.5f, Color::white(), true);
+    }
+}
+void AfterLevelScene::drawMagicLine(const ShopLane& lane, s32 x) {
+    const auto& save = lane.member.save;
+    const s32 level = experienceLevel(save.experience());
+    if (level != kMagicPerkLevel && level != kGreaterMagicPerkLevel) {
+        return;
+    }
+    const auto id = m_titles.find(level == kMagicPerkLevel ? "MAGIC_ATT1" : "MAGIC_ATT2");
+    if (!id) {
+        return;
+    }
+    const auto& message = m_titles.message(*id);
+    const auto page = static_cast<usize>(
+        save.character == kSumnerClass ? kWizardClass : save.character % kStartingClassCount);
+    if (page >= message.pages.size()) {
+        return;
+    }
+    std::string_view rest = message.pages[page];
+    s32 y = kMagicLineY;
+    while (!rest.empty()) {
+        const auto end = rest.find('\n');
+        line(x + kMagicLineX, y, rest.substr(0, end), message.scale, kMagicLineColor);
+        if (end == std::string_view::npos) {
+            break;
+        }
+        rest.remove_prefix(end + 1);
+        y += m_text.lineHeight(message.scale);
     }
 }
 void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
@@ -150,14 +194,17 @@ void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
         }
         const Color ink = Color::black().withAlpha(alpha);
         const Color label = selected ? Color::white() : ink;
+        // A traded row's price shows red for thirty ticks once the cursor leaves it.
+        const bool flashing = !selected && lane.flashTicks > 0 && i == lane.flashRow;
+        const Color price = flashing ? kPriceFlash.withAlpha(alpha) : label;
         image(item.texture, x + 20, y, Color::white().withAlpha(alpha));
         if (item.price > 0) {
             const bool owned = ownsShopItem(lane.member.save, item);
             line(x + 58, y + (owned ? -6 : 12), std::format("{}{}", text("shop.buy"), item.price),
-                 0.5f, label, selected);
+                 0.5f, price, selected);
             if (owned) {
                 line(x + 58, y + 12, std::format("{}{}", text("shop.sell"), item.price * 3 / 4),
-                     0.5f, label, selected);
+                     0.5f, price, selected);
             }
         }
         s32 textY = y + (item.texture.empty() ? 12 : 32);
@@ -180,6 +227,32 @@ void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
         image("MORE_DOWN", x + 32, 280);
     }
 }
+void AfterLevelScene::drawInventory(const ShopLane& lane, s32 x) {
+    for (const InventoryPiece& piece : lane.inventory.pieces(x)) {
+        const auto* art = texture(piece.texture);
+        if (art == nullptr) {
+            continue;
+        }
+        // The size is whole pixels, as the original projects its blits.
+        const auto width = static_cast<s32>(static_cast<f32>(art->width()) * piece.size);
+        const auto height = static_cast<s32>(static_cast<f32>(art->height()) * piece.size);
+        m_canvas.draw(*art,
+                      Rect{static_cast<f32>(piece.x), static_cast<f32>(piece.y),
+                           static_cast<f32>(width), static_cast<f32>(height)},
+                      Color::white().withAlpha(piece.opacity));
+    }
+    for (const InventoryCount& count : lane.inventory.counts(x)) {
+        const TextStyle style{count.scale, Color::white().withAlpha(count.opacity)};
+        const std::string have = std::to_string(count.n);
+        m_text.draw(m_canvas, count.x - m_text.measure(have, count.scale), count.y, have, style);
+        m_text.draw(m_canvas, count.x, count.y, std::format("/{}", count.m), style);
+    }
+    if (lane.inventory.showsPrompt()) {
+        prompt(x + InventoryPanel::kPromptX, InventoryPanel::kPromptY, InventoryPanel::kPromptSize);
+        line(x + InventoryPanel::kPromptLabelX, InventoryPanel::kPromptY, text("shop.continue"),
+             InventoryPanel::kPromptLabelScale, Color::white(), true);
+    }
+}
 void AfterLevelScene::drawLane(const ShopLane& lane) {
     const auto& save = lane.member.save;
     const s32 x = lane.member.player * 128;
@@ -188,6 +261,7 @@ void AfterLevelScene::drawLane(const ShopLane& lane) {
     case ShopPhase::BeforeStats:
     case ShopPhase::AfterStats: drawStats(lane, x); break;
     case ShopPhase::Shopping: drawShop(lane, x); break;
+    case ShopPhase::Inventory: drawInventory(lane, x); break;
     case ShopPhase::Done: break;
     }
     StatusBoxView status;

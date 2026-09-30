@@ -3,9 +3,22 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <utility>
 
 #include "engine/core/Error.h"
+#include "engine/core/Types.h"
 namespace gdl::game {
+namespace {
+constexpr f64 kTickRate = 60.0;
+constexpr f64 kLongestUpdate = 60.0;
+/** The whole 60 Hz ticks in `seconds`, the rest kept for the next update. */
+s32 takeTicks(f64& remainder, f64 seconds) {
+    remainder += std::min(seconds, kLongestUpdate) * kTickRate;
+    const auto ticks = static_cast<s32>(std::floor(remainder + 1e-9));
+    remainder -= ticks;
+    return ticks;
+}
+} // namespace
 std::array<s32, 5> ShopLane::statsValues(bool previous) const {
     const auto level = previous ? entryLevel : experienceLevel(member.save.experience());
     auto values = entryStats;
@@ -46,9 +59,11 @@ void ShopLane::rememberShopEntry() {
 }
 void ShopSession::start(std::span<const PartyMember> party, std::span<const LevelResults> results,
                         const std::array<s32, 3>& maxima, const ClassDataSet& classes,
-                        ShopCatalog catalog) {
+                        ShopCatalog catalog, ShopVisit visit) {
     m_lanes.clear();
+    m_events.clear();
     m_catalog = std::move(catalog);
+    m_visit = visit;
     if (party.empty() || party.size() > 4 || m_catalog.items().empty()) {
         throw FormatError("shop: missing party or catalog");
     }
@@ -77,19 +92,31 @@ void ShopSession::start(std::span<const PartyMember> party, std::span<const Leve
         lane.entryStats = member.save.character == kSumnerClass
                               ? masteryStats()
                               : displayStats(lane.stats, lane.entryLevel, member.save.progress());
-        if (member.fallen) {
-            lane.phase = ShopPhase::Done;
-        }
         m_lanes.push_back(std::move(lane));
     }
-}
-void ShopSession::skipTally() {
+    // A tower visit has no completed level to tally (do_shop's mode test), and one for the
+    // inventory alone opens on the panel.
     for (auto& lane : m_lanes) {
-        if (lane.phase == ShopPhase::Tally) {
+        if (lane.member.fallen) {
+            lane.phase = ShopPhase::Done;
+        } else if (visit == ShopVisit::Shop) {
             lane.phase = ShopPhase::Shopping;
             lane.rememberShopEntry();
+        } else if (visit == ShopVisit::Inventory) {
+            enterInventory(lane);
         }
     }
+}
+void ShopSession::enterInventory(ShopLane& lane) {
+    lane.phase = ShopPhase::Inventory;
+    lane.inventory.open(InventoryContents::of(lane.member.save.progress()));
+    cue(lane, ShopCue::InventoryShown);
+}
+void ShopSession::cue(const ShopLane& lane, ShopCue cue) {
+    m_events.push_back({lane.member.player, cue});
+}
+std::vector<ShopEvent> ShopSession::takeEvents() {
+    return std::exchange(m_events, {});
 }
 void ShopSession::update(f64 seconds, const Inputs& inputs) {
     if (!std::isfinite(seconds) || seconds < 0) {
@@ -97,9 +124,10 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
     }
     for (auto& lane : m_lanes) {
         lane.transacted = false;
-        lane.feedbackLeft = std::max(0.0, lane.feedbackLeft - seconds);
         const auto& input = inputs[static_cast<usize>(lane.member.player)];
         const auto previousPhase = lane.phase;
+        const s32 ticks = takeTicks(lane.tickRemainder, seconds);
+        lane.flashTicks = std::max(0, lane.flashTicks - ticks);
         lane.phaseSeconds += seconds;
         switch (lane.phase) {
         case ShopPhase::Tally: {
@@ -107,6 +135,7 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             lane.tally.update(seconds);
             // A press on the frame the tally ends cannot also leave it.
             if (ready && input.select) {
+                cue(lane, ShopCue::Select);
                 lane.phase = lane.entryLevel == experienceLevel(lane.member.save.experience())
                                  ? ShopPhase::Shopping
                                  : ShopPhase::BeforeStats;
@@ -115,6 +144,7 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
         }
         case ShopPhase::BeforeStats:
             if (lane.statsReady() && input.select) {
+                cue(lane, ShopCue::Select);
                 lane.phase = ShopPhase::Shopping;
             }
             break;
@@ -128,8 +158,10 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             const usize count = m_catalog.items().size();
             if (input.up || input.left) {
                 lane.cursor = (lane.cursor + count - 1) % count;
+                cue(lane, ShopCue::CursorPrevious);
             } else if (input.down || input.right) {
                 lane.cursor = (lane.cursor + 1) % count;
+                cue(lane, ShopCue::CursorNext);
             }
             const auto& item = m_catalog.items()[lane.cursor];
             if (input.select) {
@@ -138,15 +170,26 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
                 const s32 potion =
                     item.type == 3 ? std::uniform_int_distribution<s32>(1, 4)(random) : 1;
                 lane.feedback = buyShopItem(lane.member.save, lane.stats, item, potion);
-                lane.feedbackLeft = 1.5;
                 lane.transacted = true;
                 if (lane.feedback == ShopResult::Exit) {
                     lane.phase = ShopPhase::AfterStats;
+                } else if (lane.feedback == ShopResult::Bought) {
+                    cue(lane, ShopCue::Bought);
+                    lane.flashRow = lane.cursor;
+                    lane.flashTicks = ShopLane::kFlashTicks;
+                } else {
+                    cue(lane, ShopCue::Refused);
                 }
             } else if (input.back) {
                 lane.feedback = sellShopItem(lane.member.save, item);
-                lane.feedbackLeft = 1.5;
                 lane.transacted = true;
+                if (lane.feedback == ShopResult::Sold) {
+                    cue(lane, ShopCue::Sold);
+                    lane.flashRow = lane.cursor;
+                    lane.flashTicks = ShopLane::kFlashTicks;
+                } else {
+                    cue(lane, ShopCue::Refused);
+                }
             } else if (input.start) {
                 lane.cursor = 0;
             }
@@ -154,6 +197,19 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
         }
         case ShopPhase::AfterStats:
             if (lane.statsReady() && input.select) {
+                cue(lane, ShopCue::Select);
+                if (m_visit == ShopVisit::Level) {
+                    enterInventory(lane);
+                } else {
+                    lane.phase = ShopPhase::Done;
+                }
+            }
+            break;
+        case ShopPhase::Inventory:
+            if (lane.inventory.step(ticks, input.select)) {
+                cue(lane, ShopCue::Select);
+            }
+            if (lane.inventory.done()) {
                 lane.phase = ShopPhase::Done;
             }
             break;
@@ -163,6 +219,8 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             lane.phaseSeconds = 0;
             if (lane.phase == ShopPhase::Shopping) {
                 lane.rememberShopEntry();
+            } else if (lane.phase == ShopPhase::BeforeStats) {
+                cue(lane, ShopCue::LevelGained);
             }
         }
     }

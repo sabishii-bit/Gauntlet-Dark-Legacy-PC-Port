@@ -575,7 +575,7 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         m_play->scene.startGameOver();
         return;
     }
-    if (outcome == PauseOutcome::Shop) {
+    if (outcome == PauseOutcome::Shop || outcome == PauseOutcome::Inventory) {
         Journey journey;
         journey.destination = LevelRef::tower();
         journey.party = party;
@@ -583,8 +583,9 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         if (const auto* actor = m_play->scene.actor(source.pad)) {
             journey.options.position = actor->position();
         }
-        if (m_afterLevel.open(renderDevice(), context(), party, {}, {1000, 100, 1000},
-                              m_play->world.ref().name, true)) {
+        if (m_afterLevel.open(
+                renderDevice(), context(), party, {}, {1000, 100, 1000}, m_play->world.ref().name,
+                outcome == PauseOutcome::Shop ? ShopVisit::Shop : ShopVisit::Inventory)) {
             keepParty();
             m_play->scene.close();
             m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);

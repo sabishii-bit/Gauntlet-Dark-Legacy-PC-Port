@@ -17,6 +17,7 @@ add_executable(tests
     formats/ShopWadTests.cpp
     game/players/ShopTests.cpp
     game/screens/AfterLevelSceneTests.cpp
+    game/screens/InventoryPanelTests.cpp
     TestSupport.h
     FakeRenderDevice.h
     engine/core/TypesTests.cpp

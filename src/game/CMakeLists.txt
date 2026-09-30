@@ -20,6 +20,8 @@ add_library(game STATIC
     players/ShopPurchase.cpp
     players/LevelResults.h
     players/LevelResults.cpp
+    screens/InventoryPanel.h
+    screens/InventoryPanel.cpp
     screens/ShopSession.h
     screens/ShopSession.cpp
     screens/AfterLevelScene.h

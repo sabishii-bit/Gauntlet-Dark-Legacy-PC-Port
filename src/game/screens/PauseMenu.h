@@ -11,7 +11,7 @@
 #include "game/screens/SaveMenu.h"
 
 namespace gdl::game {
-enum class PauseOutcome : u8 { Running, Resume, Reload, Title, ReturnTower, Shop };
+enum class PauseOutcome : u8 { Running, Resume, Reload, Title, ReturnTower, Shop, Inventory };
 
 /** A paused party's menu. File operations never mutate a running scene directly. */
 class PauseMenu {
@@ -52,5 +52,6 @@ private:
     s32 m_player = 0;
     bool m_open = false;
     bool m_inTower = true;
+    bool m_inSecretWorld = false;
 };
 } // namespace gdl::game
