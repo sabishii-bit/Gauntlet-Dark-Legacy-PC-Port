@@ -92,7 +92,7 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
             continue;
         }
         const auto hasNode = [&](const MoveDefinition& m) {
-            return critter.stock->tree->findNode(m.colnode).has_value();
+            return nodeAvailable(critter, m.colnode);
         };
         if ((move.flags & kRequiresNode) != 0 &&
             (!hasNode(move) ||

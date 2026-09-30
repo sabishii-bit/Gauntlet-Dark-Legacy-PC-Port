@@ -221,6 +221,13 @@ Vec3 TreePose::readAngles(const Mat4& rotation) {
     return Vec3{pitch, std::atan2(-m[2], scaled), std::atan2(-m[1] / scaled, m[0] / scaled)};
 }
 
+void TreePose::setNodePose(usize node, const NodePose& pose) {
+    if (node < m_poses.size()) {
+        m_poses[node] = pose;
+        compose();
+    }
+}
+
 void TreePose::compose() {
     m_matrices.resize(m_poses.size());
     for (usize n = 0; n < m_poses.size(); ++n) {

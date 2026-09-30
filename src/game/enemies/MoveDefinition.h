@@ -168,7 +168,11 @@ struct CritterPart {
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.0f;
     f32 damageScale = 1.0f;
+    f32 healthScale = 1.0f;
+    s32 damageEffect = -1; ///< DAMG record emitted when this part breaks
     u32 flags = 0;
+    static constexpr u32 kBreakable = 2;
+    static constexpr u32 kRemoveChildren = 4;
     static constexpr u32 kSolid = 8; ///< stops movement, independently of accepting damage
 };
 

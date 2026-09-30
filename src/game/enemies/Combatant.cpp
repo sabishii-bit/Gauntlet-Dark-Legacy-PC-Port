@@ -95,6 +95,11 @@ bool Combatant::spawnActor(CombatantAssets& stock, const CritterData& definition
     critter.definition = &definition;
     critter.maxHealth = definition.maxHealth() * m_scales.health;
     critter.health = critter.maxHealth;
+    for (const auto& part : definition.parts()) {
+        HitNode node;
+        node.health = part.healthScale * critter.maxHealth;
+        critter.hitNodes.push_back(node);
+    }
     critter.position = position;
     if (m_collision != nullptr) {
         if (const auto floor = m_collision->floorAt(position, kDrop, kDrop)) {
@@ -139,6 +144,9 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     const CritterData& data = *critter.definition;
     critter.age += seconds;
     critter.flashTicks = std::max(critter.flashTicks - ticks, 0);
+    for (auto& node : critter.hitNodes) {
+        node.flashTicks = std::max(node.flashTicks - ticks, 0);
+    }
     critter.sinceHurt += seconds;
     for (CritterArea& area : critter.areas) {
         area.secondsLeft -= seconds;
@@ -151,6 +159,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     if (critter.frozenTicks > 0) {
         critter.frozenTicks = std::max(critter.frozenTicks - ticks, 0);
         aimGaze(critter, seconds, players);
+        holdBrokenPoses(critter);
         updateAreas(critter, i, players);
         carryGrab(critter, players);
         return;
@@ -207,6 +216,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                               critter.player.frame());
         inheritBodyPose();
         aimGaze(critter, seconds, players);
+        holdBrokenPoses(critter);
         const auto frame = static_cast<s32>(std::floor(critter.player.frame()));
         const auto active = [&](s32 start, s32 end) {
             const s32 last = end < start ? start : end;
@@ -431,40 +441,16 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     if (amount <= 0.0f) {
         return;
     }
-    // Hurt, it gives up its round of the lookouts (CritterDamage).
-    critter.patrol.end();
-    critter.patrolAim.reset();
-    critter.hurtPending += amount;
-    critter.hurtFlags |= flags;
-    critter.roarOwed += amount;
-    critter.sinceHurt = 0.0f;
     // A boss takes less the more there are to fight it, outside a legend item's rite
     // (CritterDamage's damage_mul).
+    const f32 counterDamage = amount;
+    critter.roarOwed += counterDamage;
     const s32 players = std::clamp(m_scales.players, 0, static_cast<s32>(kBossShares.size()) - 1);
     if (boss && !m_fullHarm) {
         amount *= kBossShares[static_cast<usize>(players)];
     }
     if (const f32 length = glm::length(hit.direction); length > 0.001f) {
         critter.hurtDirection = hit.direction / length;
-    }
-    // Where it was struck, its own mark of a hit: a missile's when it has one, else a blow's
-    // (CritterDamage's sfxIndex1 for source 2); an elemental hit shows the element's burst
-    // instead (fn_800945D0, half the creature's reach, turned its way), and a hit flagged
-    // not to mark shows nothing.
-    const Vec3 where = hit.where.value_or(partPosition(critter, {}));
-    const u32 element = damage::element(flags);
-    if (damage::marks(flags) && element != 0) {
-        CombatCue burst;
-        burst.critter = id;
-        burst.tree = damage::hitEffect(element, false);
-        burst.position = where;
-        burst.yaw = critter.yaw;
-        burst.scale = damage::kHitEffectScale * data.radius() * critter.scale;
-        m_cues.push_back(std::move(burst));
-    } else if (damage::marks(flags)) {
-        const s32 mark =
-            !hit.close && data.hitSoundFar() >= 0 ? data.hitSoundFar() : data.hitSoundClose();
-        cue(critter, id, mark, where);
     }
     // Every hit is worth its share of the creature's value to the one who dealt it (a boss's
     // times the players); then a character under the level the place is meant for does a
@@ -488,11 +474,38 @@ void Combatant::hurtActor(const EnemyHit& hit) {
         loss.position = critter.position;
         m_losses.push_back(loss);
     }
+    amount = damageNode(hit.node, amount, flags);
+    if (amount <= 0) {
+        return;
+    }
+    critter.patrol.end();
+    critter.patrolAim.reset();
+    critter.hurtPending += counterDamage;
+    critter.hurtFlags |= flags;
+    critter.sinceHurt = 0.0f;
+    const Vec3 where = hit.where.value_or(partPosition(critter, {}));
+    const u32 element = damage::element(flags);
+    if (damage::marks(flags) && element != 0) {
+        CombatCue burst;
+        burst.critter = id;
+        burst.tree = damage::hitEffect(element, false);
+        burst.position = where;
+        burst.yaw = critter.yaw;
+        burst.scale = damage::kHitEffectScale * data.radius() * critter.scale;
+        m_cues.push_back(std::move(burst));
+    } else if (damage::marks(flags)) {
+        const s32 mark =
+            !hit.close && data.hitSoundFar() >= 0 ? data.hitSoundFar() : data.hitSoundClose();
+        cue(critter, id, mark, where);
+    }
     loseHealth(amount);
     // A lethal blow goes straight to death, without starting a hit flash. Heavy surviving
-    // hits flash the whole body; light hits still need a struck-node identity for their flash.
+    // hits flash the whole body; light hits flash only the struck collision mesh.
     if (alive() && damage::marks(flags) && (flags & kFlashesWhole) != 0) {
         critter.flashTicks = kFlashTicks;
+    } else if (alive() && damage::marks(flags) && hit.node >= 0 &&
+               static_cast<usize>(hit.node) < critter.hitNodes.size()) {
+        critter.hitNodes[static_cast<usize>(hit.node)].flashTicks = kFlashTicks;
     }
     if (alive() && !m_children.empty()) {
         const auto count =

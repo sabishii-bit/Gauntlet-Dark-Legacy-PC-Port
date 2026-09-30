@@ -1014,9 +1014,10 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
             targets.fixtureEvents.help(HelpMessages::kSecretWalls, index);
         }
     } else if (id >= kBossTargetBase) {
-        const EnemyHit hit{
+        EnemyHit hit{
             damage, flags, direction, actor.player(), experienceLevel(actor.save().experience()),
             point,  true};
+        hit.node = target->node;
         Bosses& bosses = targets.opponents.bosses();
         const BossView before = bosses.view();
         bosses.hurt(hit, id - kBossTargetBase);
@@ -1027,7 +1028,7 @@ void PlayerAttacks::melee(usize index, std::span<PlayerRuntime> players, const T
         const Critters& critters = targets.opponents.critters();
         const bool standing = critters.alive(critter) && !critters.dying(critter);
         targets.opponents.strikeCritter(critter, damage, flags, direction, actor.player(), point,
-                                        true, players);
+                                        true, players, target->node);
         players[index].streak.record(!standing || !critters.alive(critter) ||
                                      critters.dying(critter));
     } else if (id >= kGeneratorTargetBase) {
@@ -1144,6 +1145,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
             hit.flags = impact.flags;
             hit.player = impact.owner;
             hit.where = impact.position;
+            hit.node = impact.node;
             for (const PlayerRuntime& runtime : players) {
                 const PlayerActor& actor = runtime.actor;
                 if (actor.player() == impact.owner) {
@@ -1164,7 +1166,7 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
             }
             targets.opponents.strikeCritter(impact.target - kCritterTargetBase, impact.damage,
                                             impact.flags, direction, impact.owner, impact.position,
-                                            false, players);
+                                            false, players, impact.node);
         } else if (impact.target >= kGeneratorTargetBase) {
             targets.opponents.strikeGenerator(impact.target - kGeneratorTargetBase, impact.damage,
                                               impact.owner, players);

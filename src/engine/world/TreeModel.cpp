@@ -189,8 +189,9 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
                     node.chrome ? Vec2{0.5f * (1.0f - normal.x), 0.5f * (1.0f - normal.y)} : v.uv;
                 const Vec4 placed = placement * Vec4{v.position, 1.0f};
                 // Glows add their whole texture; the original never lights them.
-                Color color =
-                    additive || m_unlit ? Color::white() : lighting.shade(Vec3{placed}, normal);
+                const bool flash = node.maskedTexture != nullptr && m_maskedTexture == nullptr;
+                Color color = additive || m_unlit || flash ? Color::white()
+                                                           : lighting.shade(Vec3{placed}, normal);
                 color.r = static_cast<u8>(static_cast<u32>(color.r) * m_tint.r / 255);
                 color.g = static_cast<u8>(static_cast<u32>(color.g) * m_tint.g / 255);
                 color.b = static_cast<u8>(static_cast<u32>(color.b) * m_tint.b / 255);
@@ -203,10 +204,11 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             DrawState state;
             state.cullBack = m_cullBack;
             state.blend = additive ? BlendMode::Additive : BlendMode::Alpha;
-            if (m_maskedTexture != nullptr && !blended) {
+            const Texture* mask = m_maskedTexture != nullptr ? m_maskedTexture : node.maskedTexture;
+            if (mask != nullptr && !blended) {
                 state.blend = BlendMode::Opaque;
             }
-            state.maskedTexture = m_maskedTexture;
+            state.maskedTexture = mask;
             state.alphaTest = blended ? DrawState::kTranslucentAlphaTest : 0.0f;
             state.depthWrite = node.depthWrite && m_depthWrite && !fading;
             state.depthTest = node.depthTest;
@@ -259,6 +261,7 @@ void TreeModel::resetTextures() {
         node.uvOffset.reset();
         node.uvScale = Vec2{1.0f};
         node.alpha = 1.0f;
+        node.maskedTexture = nullptr;
     }
 }
 
@@ -274,6 +277,22 @@ void TreeModel::setMeshAlpha(usize node, f32 alpha) {
     for (Node& part : m_nodes) {
         if (part.index == node) {
             part.alpha = std::clamp(alpha, 0.0f, 1.0f);
+        }
+    }
+}
+
+void TreeModel::setMeshMaskedTexture(usize index, const Texture* texture) {
+    for (Node& node : m_nodes) {
+        if (node.index == index) {
+            node.maskedTexture = texture;
+        }
+    }
+}
+
+void TreeModel::setNodeMaskedTexture(usize root, const Texture* texture) {
+    for (Node& node : m_nodes) {
+        if (std::ranges::find(node.ancestors, root) != node.ancestors.end()) {
+            node.maskedTexture = texture;
         }
     }
 }

@@ -111,6 +111,41 @@ TEST_CASE("a double-sided tree model draws without culling until it is cleared",
     CHECK(device.draws[0].state.cullBack);
 }
 
+TEST_CASE("node hit masks respect mesh scope, subtree scope and whole-body overrides",
+          "[world][model]") {
+    const auto dir = sampleFigure("tree-model-hit-mask");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    test::FakeRenderDevice device;
+    test::FakeTexture flash{1, 1};
+    test::FakeTexture frozen{1, 1};
+    TreeModel figure;
+    REQUIRE(figure.bind(trees.tree(0), models, textures, device));
+    figure.setMeshMaskedTexture(1, &flash);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == 2);
+    REQUIRE(device.draws[0].state.maskedTexture == &flash);
+    REQUIRE(device.draws[1].state.maskedTexture == nullptr);
+    device.draws.clear();
+    figure.setNodeMaskedTexture(1, &flash);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws[1].state.maskedTexture == &flash);
+    device.draws.clear();
+    figure.setMaskedTexture(&frozen);
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws[0].state.maskedTexture == &frozen);
+    REQUIRE(device.draws[1].state.maskedTexture == &frozen);
+    device.draws.clear();
+    figure.resetTextures();
+    figure.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws[0].state.maskedTexture == nullptr);
+    REQUIRE(device.draws[1].state.maskedTexture == nullptr);
+}
+
 TEST_CASE("authored fades hide only their subtree and reset on the next pose",
           "[world][model][animation]") {
     const auto dir = sampleFigure("tree-model-fade");

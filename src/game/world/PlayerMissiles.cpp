@@ -174,7 +174,7 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
                 m_impacts.push_back(MissileImpact{missile.position, missile.owner, missile.potion,
                                                   missile.potency, missile.damage, target.id,
                                                   missile.spec->impactTree, missile.wallSound,
-                                                  missile.flags});
+                                                  missile.flags, target.node});
                 missile.pierced.push_back(target.id);
                 if (!penetrates) {
                     missile.age = kLifeSeconds;

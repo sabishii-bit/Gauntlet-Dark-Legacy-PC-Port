@@ -1,5 +1,7 @@
 #pragma once
 #include <filesystem>
+#include <map>
+#include <string>
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
@@ -19,6 +21,7 @@ struct CombatantAssets {
     ItemArchive archive;
     const TreeInfo* tree = nullptr;
     TreeModel body;
+    std::map<std::string, TreeModel> brokenModels; ///< PREFIX + D + node name replacements
     TextureAnimator textures;
     BlobShadow shadow; ///< SHADOW1L1 of its archive, when its type lies one
     /** The GMETER bar over the body, when its type hangs one (CritterAddHealthMeter). */

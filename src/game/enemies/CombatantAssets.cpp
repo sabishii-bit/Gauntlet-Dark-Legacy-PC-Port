@@ -27,6 +27,7 @@ void CombatantAssets::clear() {
     shadow.clear();
     textures.clear();
     body.clear();
+    brokenModels.clear();
     tree = nullptr;
     archive.clear();
 }
@@ -75,6 +76,29 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         return false;
     }
     textures.bind(archive.trees.textureAnimations(), archive.textures, device);
+    const auto loadBroken = [&](const CritterData& partData) {
+        for (const auto& part : partData.parts()) {
+            if ((part.flags & CritterPart::kBreakable) == 0) {
+                continue;
+            }
+            const std::string object = std::format("{}D{}", partData.prefix(), part.node);
+            if (!archive.models.find(object).has_value() || brokenModels.contains(object)) {
+                continue;
+            }
+            TreeInfo replacement;
+            TreeNodeInfo node;
+            node.name = part.node;
+            node.object = object;
+            replacement.nodes.push_back(node);
+            if (!brokenModels[object].bind(replacement, archive.models, archive.textures, device)) {
+                brokenModels.erase(object);
+            }
+        }
+    };
+    loadBroken(data);
+    for (const auto& child : children) {
+        loadBroken(child);
+    }
     if (data.shadowed()) {
         shadow.bind(device, archive, kShadowObject);
     }

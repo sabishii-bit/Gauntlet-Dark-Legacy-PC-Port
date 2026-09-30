@@ -177,6 +177,7 @@ add_executable(tests
     game/enemies/ChimeraTests.cpp
     game/enemies/CombatantGazeTests.cpp
     game/enemies/CombatantGrabsTests.cpp
+    game/enemies/CombatantNodesTests.cpp
     game/world/CameraShakeTests.cpp
     game/enemies/CritterAttackSelectionTests.cpp
     game/enemies/CritterAreaTests.cpp

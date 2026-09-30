@@ -159,6 +159,12 @@ public:
 
 private:
     enum class State : u8 { Inactive, Active, Dying };
+    struct HitNode {
+        f32 health = 0;
+        s32 flashTicks = 0;
+        bool broken = false;
+        std::optional<NodePose> heldPose;
+    };
     struct Actor {
         State state = State::Inactive;
         bool hidden = false;
@@ -198,6 +204,7 @@ private:
         f32 roarOwed = 0.0f; ///< damage taken toward the next roar
         f32 sinceHurt = 0.0f;
         s32 flashTicks = 0;
+        std::vector<HitNode> hitNodes;
         f32 alpha = 1.0f;
         Color tint = Color::white();
         f32 scale = 1.0f;
@@ -239,6 +246,14 @@ private:
     void synchronizeChild();
     void collectChildEvents(Combatant& part);
     void hurtActor(const EnemyHit& hit);
+    f32 damageNode(s32 index, f32 amount, u32 flags);
+    static bool nodeAvailable(const Actor& actor, std::string_view name);
+    static bool nodeRemoved(const Actor& actor, usize node);
+    static void holdBrokenPoses(Actor& actor);
+    static void drawNodeState(const Actor& actor, const Texture* flash);
+    static void drawBrokenModels(const Actor& actor, RenderDevice& device, const Mat4& clip,
+                                 const WorldLighting& lighting, const Texture* frozen,
+                                 const Texture* flash);
     std::vector<MissileTarget> ownTargets(bool solidOnly) const;
     void loseHealth(f32 amount);
     void chooseMove(Actor& critter, std::span<const EnemyView> players);
