@@ -71,7 +71,8 @@ private:
     bool startLevel(const LevelRef& level, std::span<const PartyMember> party,
                     const PlayOptions& options = {});
     bool startScenario(const std::filesystem::path& file);
-    bool startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party = {});
+    bool startPlayerSelect(s32 startingPlayer, std::span<const PartyMember> party = {},
+                           bool manage = false);
     /** `player` joins the party in the tower by way of the select screen. */
     bool joinTower(s32 player);
     s32 playerPressingStart() const;

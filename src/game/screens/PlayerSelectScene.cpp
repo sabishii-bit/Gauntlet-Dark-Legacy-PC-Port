@@ -53,7 +53,7 @@ std::string_view PlayerSelectScene::text(std::string_view id) const {
 }
 
 bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
-                             std::span<const PartyMember> party) {
+                             std::span<const PartyMember> party, bool manage) {
     close();
     m_context = context;
     m_screen = MenuScreen{};
@@ -122,6 +122,9 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     }
     if (startingPlayer >= 0 && startingPlayer < kLaneCount) {
         m_lanes[static_cast<usize>(startingPlayer)].activate();
+        if (manage) {
+            m_lanes[static_cast<usize>(startingPlayer)].manage();
+        }
     }
     startMusic();
     return true;

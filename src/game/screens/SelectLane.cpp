@@ -156,6 +156,13 @@ void SelectLane::play(SelectSound sound) const {
     }
 }
 
+void SelectLane::manage() {
+    if (m_state == State::LockedIn) {
+        m_returnState = State::SaveMenu;
+        enter(State::SaveMenu);
+    }
+}
+
 std::string_view SelectLane::text(std::string_view id) const {
     return m_services != nullptr && m_services->strings != nullptr ? m_services->strings->get(id)
                                                                    : id;
@@ -595,8 +602,7 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
 
     case State::LockedIn:
         if (input.start) {
-            m_returnState = State::SaveMenu;
-            enter(State::SaveMenu);
+            manage();
         }
         break;
 

@@ -7,11 +7,11 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/menu/SettingsMenu.h"
+#include "game/players/Party.h"
 #include "game/screens/GameContext.h"
-#include "game/screens/SaveMenu.h"
 
 namespace gdl::game {
-enum class PauseOutcome : u8 { Running, Resume, Reload, Title, ReturnTower, Shop, Inventory };
+enum class PauseOutcome : u8 { Running, Resume, Manage, Title, ReturnTower, Shop, Inventory };
 
 /** A paused party's menu. File operations never mutate a running scene directly. */
 class PauseMenu {
@@ -33,10 +33,8 @@ public:
     const OptionMenu& menu() const { return m_menu; }
 
 private:
-    enum class Page : u8 { Main, Manage, Files, Options, Quit };
+    enum class Page : u8 { Main, Options, Quit };
     void showMain();
-    void showManage();
-    void showFiles();
     void showQuit();
     MenuDefinition backdrop() const;
     std::string text(std::string_view id) const;
@@ -49,8 +47,6 @@ private:
     Canvas m_canvas;
     OptionMenu m_menu;
     SettingsMenu m_settings;
-    SaveSlots m_slots;
-    SaveMenu m_files;
     std::vector<PartyMember> m_party;
     Page m_page = Page::Main;
     s32 m_player = 0;
