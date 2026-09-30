@@ -259,11 +259,12 @@ TEST_CASE("shop lanes independently tally buy sell and wait for sparse player ID
     session.update(0, input);
     REQUIRE(session.lanes()[0].phase == ShopPhase::AfterStats);
     session.update(0.5, input);
-    REQUIRE(session.lanes()[0].phase == ShopPhase::Done);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Inventory);
     REQUIRE_FALSE(session.finished());
     input = {};
     input[1].select = true;
-    for (s32 i = 0; i < 4; ++i) {
+    input[3].select = true;
+    for (s32 i = 0; i < 5; ++i) {
         session.update(1, input);
     }
     REQUIRE(session.finished());
@@ -287,11 +288,124 @@ TEST_CASE("fallen shop members cannot purchase and invalid parties are refused",
 TEST_CASE("tower shop starts shopping without tallying a fictitious level", "[shop]") {
     ShopSession session;
     const std::array<PartyMember, 1> party{{{2, shopper()}}};
-    session.start(party, {}, {}, classes(), catalog());
-    session.skipTally();
+    session.start(party, {}, {}, classes(), catalog(), ShopVisit::Shop);
     REQUIRE(session.lanes()[0].phase == ShopPhase::Shopping);
     REQUIRE(session.party()[0].save.gold == party[0].save.gold);
     REQUIRE(session.party()[0].save.experience() == party[0].save.experience());
+}
+
+TEST_CASE("shop cues are the retail sounds: clicks for the cursor, magic for a trade, the "
+          "buzzer for a refusal and nothing for Exit",
+          "[shop]") {
+    // GUNE5D do_shopping (8009AA48): AudioClick 0/1 (lbl_80343E2C: S_SECRETCLOCK2/1) as the
+    // cursor moves, fn_8009D038 (S_PICKUPMAGIC) for a row other than Exit bought or sold,
+    // AudioBuzzer otherwise; the traded row's price timer (shop.c 1918) runs 30 ticks.
+    ShopSession session;
+    const std::array<PartyMember, 1> party{{{2, shopper()}}};
+    session.start(party, {}, {}, classes(), catalog(), ShopVisit::Shop);
+    REQUIRE(session.takeEvents().empty());
+    ShopSession::Inputs input;
+    input[2].down = true;
+    session.update(0, input);
+    REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{2, ShopCue::CursorNext}});
+    input = {};
+    input[2].up = true;
+    session.update(0, input);
+    input = {};
+    input[2].right = true;
+    session.update(0, input);
+    REQUIRE(session.takeEvents() ==
+            std::vector<ShopEvent>{{2, ShopCue::CursorPrevious}, {2, ShopCue::CursorNext}});
+    REQUIRE(session.lanes()[0].cursor == 1);
+    input = {};
+    input[2].select = true;
+    session.update(0, input);
+    REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{2, ShopCue::Bought}});
+    REQUIRE(session.lanes()[0].flashRow == 1);
+    REQUIRE(session.lanes()[0].flashTicks == ShopLane::kFlashTicks);
+    session.update(0.25, {});
+    REQUIRE(session.lanes()[0].flashTicks == 15);
+    session.update(0.25, {});
+    REQUIRE(session.lanes()[0].flashTicks == 0);
+    input = {};
+    input[2].back = true;
+    session.update(0, input);
+    REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{2, ShopCue::Sold}});
+    REQUIRE(session.lanes()[0].flashTicks == ShopLane::kFlashTicks);
+    session.update(0, input); // nothing left to sell
+    REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{2, ShopCue::Refused}});
+    input = {};
+    input[2].start = true;
+    session.update(0, input);
+    input = {};
+    input[2].select = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::AfterStats);
+    REQUIRE(session.takeEvents().empty());
+    session.update(0.5, input);
+    REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{2, ShopCue::Select}});
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Done);
+    REQUIRE(session.finished());
+}
+
+TEST_CASE("a level's shop ends in the inventory panel and a level gained is announced",
+          "[shop][inventory-panel]") {
+    // do_shop (8009A0AC): mode 0 runs the tally, the level panel (AudioExp on entry), the
+    // shop, the stats and then the inventory panel (states 9-11, AudioTowerFX 2).
+    ShopSession session;
+    auto save = shopper();
+    save.progress().experience = levelExperience(3);
+    const std::array<PartyMember, 1> party{{{1, save}}};
+    const std::array<LevelResults, 1> results{{{1, {0, 0, levelExperience(3)}}}};
+    session.start(party, results, {1000, 100, 1000}, classes(), catalog());
+    REQUIRE(session.lanes()[0].entryLevel == 1);
+    ShopSession::Inputs input;
+    input[1].select = true;
+    session.update(60, input);
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::BeforeStats);
+    REQUIRE(session.takeEvents() ==
+            std::vector<ShopEvent>{{1, ShopCue::Select}, {1, ShopCue::LevelGained}});
+    session.update(10, input);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Shopping);
+    session.update(0, input); // Exit
+    REQUIRE(session.lanes()[0].phase == ShopPhase::AfterStats);
+    session.update(1, input);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Inventory);
+    REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{1, ShopCue::Select},
+                                                           {1, ShopCue::Select},
+                                                           {1, ShopCue::InventoryShown}});
+    REQUIRE(session.lanes()[0].inventory.phase() == InventoryPanel::Phase::Entering);
+    session.update(2, {});
+    REQUIRE(session.lanes()[0].inventory.phase() == InventoryPanel::Phase::Idle);
+    REQUIRE_FALSE(session.finished());
+    session.update(0, input);
+    REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{1, ShopCue::Select}});
+    REQUIRE(session.lanes()[0].inventory.phase() == InventoryPanel::Phase::Leaving);
+    session.update(0.25, {});
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Done);
+    REQUIRE(session.finished());
+    REQUIRE(session.takeEvents().empty());
+}
+
+TEST_CASE("the tower's inventory visit shows the panel alone", "[shop][inventory-panel]") {
+    // init_shop(2) from the tower menu: state 6 goes straight to 9.
+    ShopSession session;
+    auto save = shopper();
+    save.progress().relics.gargoylePieces = {4, 5, 6};
+    const std::array<PartyMember, 2> party{{{3, save}, {0, shopper(), std::nullopt, true}}};
+    session.start(party, {}, {}, classes(), catalog(), ShopVisit::Inventory);
+    REQUIRE(session.visit() == ShopVisit::Inventory);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Inventory);
+    REQUIRE(session.lanes()[1].phase == ShopPhase::Done);
+    REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{3, ShopCue::InventoryShown}});
+    REQUIRE(session.lanes()[0].inventory.contents().gargoylePieces == std::array<s32, 3>{4, 5, 6});
+    ShopSession::Inputs input;
+    input[3].select = true;
+    session.update(0, input);
+    session.update(0.25, {});
+    REQUIRE(session.finished());
+    REQUIRE(session.party()[0].save.gold == 5000);
 }
 
 TEST_CASE("retail piles grow from 20 to 64..208 pixels, largest first", "[shop][results]") {
@@ -347,8 +461,7 @@ TEST_CASE("post-shop stats retain the original values across multiple purchases"
         {"texture":"","description":"EXIT","scale":1,"type":0,"price":0,"amount":0},
         {"texture":"SHP_STRENGTH","description":"Strength","scale":1,"type":5,"price":1000,"amount":10}
     ]})");
-    session.start(party, {}, {}, classes(), std::move(items));
-    session.skipTally();
+    session.start(party, {}, {}, classes(), std::move(items), ShopVisit::Shop);
     const auto before = session.lanes()[0].statsValues(true);
     ShopSession::Inputs input;
     input[0].down = true;

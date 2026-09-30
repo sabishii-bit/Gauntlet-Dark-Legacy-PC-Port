@@ -2488,9 +2488,13 @@ Audio uses byte-valued Music/Sfx sliders and a two-choice Mono/Stereo row.
 row focus: only the active part receives the highlight and checkmark. The font's
 `~` glyph is a checkmark, never a separator. Master volume remains config-only.
 Title, tower and level settings have distinct entry lists. Tower Start offers
-Settings, Manage Character, Shop, Inventory (disabled until implemented), and
-Quit Game; level Start offers Settings and Quit Level. PC save-file management
-is not a claim of complete retail menu parity; multiplayer
+Settings, Manage Character, Shop, Inventory (`PauseOutcome::Inventory`, retail's
+`init_shop(2)`: the tower is left for the after-level screen showing only the
+panel) and Quit Game; level Start offers Settings and Quit Level, the latter
+greyed in the secret world (options.c 1462, world 12). A load from Manage
+Character is confirmed only for a character without a save slot (select.c 697:
+retail's `saved` byte; a slotted character is kept on every travel here). PC
+save-file management is not a claim of complete retail menu parity; multiplayer
 rules remain disabled until their gameplay is implemented.
 
 ## End-level shop ownership
@@ -2512,8 +2516,41 @@ by all growing piles, never restarted per frame, and stopped on completion/close
 Tests pin retail coordinates, captions, pile timing and mixed audio samples;
 they do not establish complete visual parity. Pile growth uses fixed 60 Hz
 one-tick integer updates (not the 90 px/s approximation). The user-reported
-per-pile completion cue remains unidentified. The separate post-shop inventory
-panel outro remains unimplemented. Test `[shop]` and use the unsaved
+per-pile completion cue remains unidentified. `ShopSession` reports `ShopCue`s
+through `takeEvents` and the scene plays them from COMMON: every confirm
+`S_OPTMENUSEL`, the cursor `S_SECRETCLOCK2` on and `S_SECRETCLOCK1` back
+(AudioClick 0/1; retail's own left/right steer the other way from ours), a buy
+or sale `S_PICKUPMAGIC`, a refusal `S_NO`, Exit nothing; a traded row's price
+is red for 30 ticks once the cursor leaves it (`ShopLane::flashTicks`). The
+level panel opens with the name, `S_HAS` and `S_GAINEDLEVEL` chained from the
+class, VOICE2 and VOICE1 banks (AudioExp), and at level 25/50 draws
+`MAGIC_ATT1/2` (`help.magic_att1/2.<page>`) left-aligned from the lane's middle
+in 0xFF80C0, the page by `character % 8` as retail's `char_type` has it, so the
+four later classes see none. The screen ends only once its effects have died
+away (do_shop's sndFxUpdate test). `ShopVisit` is retail's mode: `Level` runs
+tally, stats, shop, stats and the inventory panel; `Shop` the shop and stats;
+`Inventory` the panel alone.
+
+The inventory panel is `screens/InventoryPanel` (draw_inventory_panel, tables
+lbl_8011D568/658 and lbl_80124C70), one per `ShopLane`, drawn by
+`AfterLevelScene::drawInventory` from SELECT: `WINDOW_EMPTY`; `FANGS`, `FEATHER`,
+`CLAW` at (56, 116/140/164) counted n/12, /20, /28 at 0.5 from (30, 2) on; the
+eight crystals at x 6 and 64, y 200..248, n/15..250 (`LevelTriggers::
+kCrystalsToOpen`, realms 1 to 8) at 0.35 from (28, 2); the nine legend items by
+realm, `<name>_EMPTY` when not held; the eight boss glass pieces, each shown for
+runestone 1..8 as retail's PlayerHasRune gates them (not PlayerHasShard);
+`BUTTON_X` at (16, 280) with `shop.continue` glowing from 40 until it leaves. In:
+120 ticks, each piece from 60 out along cos/sin((x + y + 180 t^3) x 6 deg) at
+(1 - t) of that, size 2 - t^2, its blit transparency 255 (1 - t^2), the counts'
+255 (1 - t). Out on any accept, even mid-entry (`S_OPTMENUSEL`): 15 ticks,
+pushed from (64, 180) by ten times the distance, size 1 + 5 t, transparency
+255 t. `S_STNDGLASS` as it starts. A count over its maximum shows the maximum.
+Not drawn: the "Inv" title of the DOL (0x803473FC, black 0.45 at y 8), which no
+string table holds. Not established: the blits' draw order among themselves (ours:
+window, pieces, crystals, legends, glass). The counts use font handle 6, the
+shop's own, drawn as FONT32 like the rest of the screen. `[inventory-panel]`
+covers it without assets; the `[shop]`
+scene test draws it from SELECT. Test `[shop]` and use the unsaved
 `after-level-shop` scenario (which now reads WDATA maxima) when changing this flow.
 
 ## Git

@@ -61,17 +61,25 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
     CHECK_FALSE(device.draws.empty());
     SECTION("resume and quit confirmation") {
         CHECK(step(back) == PauseOutcome::Resume);
-        for (s32 i = 0; i < 3; ++i) {
+        for (s32 i = 0; i < 4; ++i) {
             step(down);
         }
         step(select);
         CHECK(step(select) == PauseOutcome::Running); // default No
-        for (s32 i = 0; i < 3; ++i) {
+        for (s32 i = 0; i < 4; ++i) {
             step(down);
         }
         step(select);
         step(down);
         CHECK(step(select) == PauseOutcome::Title);
+    }
+    SECTION("shop and inventory") {
+        // OPTMENU_TOWER: OPT_SHOP opens init_shop(1), OPT_INVENTORY init_shop(2).
+        step(down);
+        step(down);
+        CHECK(step(select) == PauseOutcome::Shop);
+        step(down);
+        CHECK(step(select) == PauseOutcome::Inventory);
     }
     SECTION("shared settings") {
         step(select);
@@ -96,10 +104,8 @@ TEST_CASE("pause menus save then load without mutating the live party", "[pause]
         CHECK(step(select) == PauseOutcome::Running); // acknowledge saved
         step(down);
         step(select);
-        step(select); // load -> slot -> confirm
-        CHECK(menu.menu().definition().title == strings.get("files.loadConfirm"));
-        step(down);
-        step(select);
+        step(select); // load -> slot: kept in one, the character needs no confirmation
+        CHECK(menu.menu().definition().title == strings.get("files.loaded"));
         CHECK(menu.party()[0].save.gold == 123);
         CHECK(step(back) == PauseOutcome::Reload);
     }
@@ -152,5 +158,42 @@ TEST_CASE("level abort uses the retail parchment dialog without character-file w
     const auto outcome = menu.update(1.0 / 60, select);
     CHECK(
         (outcome == PauseOutcome::ReturnTower || menu.update(1, {}) == PauseOutcome::ReturnTower));
+}
+
+TEST_CASE("the secret world cannot be quit from its menu", "[pause][unpacked]") {
+    // options.c 1462: OPT_QUITLEVEL's value is -1 (greyed) while sMusicTrackHi is 12.
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    const auto root = test::unpackedOrSkip("STATIC/textures.json").parent_path().parent_path();
+    // A level of the secret realm that is not unpacked: the world keeps the reference.
+    LevelRef secret;
+    secret.realm = "SECRET";
+    secret.realmId = LevelRef::kSecretRealm;
+    secret.name = "S1";
+    secret.directory = "LEVELS/LEVELS1-absent";
+    LevelWorld world;
+    REQUIRE_FALSE(world.load(device, root, secret));
+    REQUIRE(world.ref().isSecret());
+    GameContext context;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    context.strings = &strings;
+    const std::array party{PartyMember{}};
+    PauseMenu menu;
+    REQUIRE(menu.open(device, context, party, 0));
+    const auto& items = menu.menu().definition().items;
+    REQUIRE(items.size() == 2);
+    CHECK(items[0].text == strings.get("pause.settings"));
+    CHECK(items[0].enabled);
+    CHECK(items[1].text == strings.get("pause.quitLevel"));
+    CHECK_FALSE(items[1].enabled);
+    MenuInput down;
+    down.down = true;
+    MenuInput select;
+    select.select = true;
+    menu.update(1.0 / 60, down);
+    CHECK(menu.update(1.0 / 60, select) == PauseOutcome::Running);
+    CHECK(menu.menu().definition().items.size() == 2); // still the main page
 }
 } // namespace

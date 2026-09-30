@@ -116,7 +116,11 @@ void SaveMenu::choose(s32 code) {
         if (!available(m_target)) {
             return;
         }
-        if (m_mode == Mode::Load || m_slots->slot(m_target).occupied) {
+        // A load is confirmed only over a character that has never been kept (select.c
+        // 697: sel_step by the save's `saved`); overwriting a file always is.
+        const bool confirm = m_mode == Mode::Load ? !m_party[m_player].slot.has_value()
+                                                  : m_slots->slot(m_target).occupied;
+        if (confirm) {
             m_state = State::Confirm;
         } else {
             perform();

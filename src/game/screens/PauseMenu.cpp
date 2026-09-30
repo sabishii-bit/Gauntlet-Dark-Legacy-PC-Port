@@ -19,6 +19,7 @@ bool PauseMenu::open(RenderDevice& device, const GameContext& context,
     m_party.assign(party.begin(), party.end());
     m_player = player;
     m_inTower = context.tower == nullptr || context.tower->isTower();
+    m_inSecretWorld = context.tower != nullptr && context.tower->ref().isSecret();
     if (std::ranges::none_of(party,
                              [player](const auto& member) { return member.player == player; })) {
         return false;
@@ -84,11 +85,11 @@ void PauseMenu::showMain() {
     if (m_inTower) {
         menu.items.push_back({text("pause.manage"), 5});
         menu.items.push_back({text("pause.shop"), 6});
-        // Keep the retail entry visible, but do not pretend an unrelated screen is
-        // the character's inventory viewer. That viewer is not implemented yet.
-        menu.items.push_back({text("pause.inventory"), 7, 0, false});
+        menu.items.push_back({text("pause.inventory"), 7});
     }
-    menu.items.push_back({text(m_inTower ? "pause.quit" : "pause.quitLevel"), 4});
+    // The secret world cannot be quit (options.c 1462: OPT_QUITLEVEL greyed for world 12).
+    menu.items.push_back(
+        {text(m_inTower ? "pause.quit" : "pause.quitLevel"), 4, 0, m_inTower || !m_inSecretWorld});
     m_menu.open(menu, m_text, m_screen);
 }
 void PauseMenu::showManage() {
@@ -183,6 +184,8 @@ PauseOutcome PauseMenu::update(f64 seconds, const MenuInput& input) {
         showManage();
     } else if (event.code == 6) {
         return PauseOutcome::Shop;
+    } else if (event.code == 7) {
+        return PauseOutcome::Inventory;
     } else if (event.code == 4) {
         m_page = Page::Quit;
         auto menu = backdrop();

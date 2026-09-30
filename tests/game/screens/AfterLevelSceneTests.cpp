@@ -73,7 +73,8 @@ TEST_CASE("shop plays the authored music through realm changes without retaining
     }};
     for (const auto& [level, realm] : kCases) {
         CAPTURE(level, realm);
-        REQUIRE(scene.open(device, context, party, {}, {}, level, level.starts_with('L')));
+        REQUIRE(scene.open(device, context, party, {}, {}, level,
+                           level.starts_with('L') ? ShopVisit::Shop : ShopVisit::Level));
         SoundSet bank;
         REQUIRE(bank.load(root / "audio" / std::format("SHOP_{}", realm)));
         const auto cue = bank.find(std::format("S_SHOP_{}", realm));
@@ -194,11 +195,113 @@ TEST_CASE("after-level screen renders every phase with retail assets",
     REQUIRE_FALSE(scene.update(0, input));
     scene.render(device, projection, 512, 384);
     REQUIRE_FALSE(scene.update(0, input));
-    REQUIRE(scene.update(0.5, input));
+    REQUIRE_FALSE(scene.update(0.5, input));
+    // The stats confirmed, the inventory panel flies in over the column (shop.c 498-522).
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Inventory);
+    REQUIRE(scene.lastSounds() == std::vector<std::string>{"S_OPTMENUSEL", "S_STNDGLASS"});
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    REQUIRE_FALSE(device.draws.empty());
+    REQUIRE_FALSE(scene.update(2, {}));
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    const auto windows = artworkDraws("WINDOW_EMPTY");
+    REQUIRE(windows.size() == 1);
+    REQUIRE(test::minCorner(*windows[0]) == Vec2{256, 0});
+    REQUIRE(test::maxCorner(*windows[0]) == Vec2{320, 256});
+    const auto scimitars = artworkDraws("SCIMITAR_EMPTY");
+    REQUIRE(scimitars.size() == 1);
+    REQUIRE(test::minCorner(*scimitars[0]) == Vec2{352, 32});
+    REQUIRE(artworkDraws("SCIMITAR").empty());
+    REQUIRE(artworkDraws("LITCH_PIECE").empty());
+    REQUIRE(artworkDraws("FANGS").size() == 1);
+    REQUIRE(test::minCorner(*artworkDraws("FANGS")[0]) == Vec2{312, 116});
+    REQUIRE_FALSE(scene.update(0, input));
+    REQUIRE(scene.lastSounds() == std::vector<std::string>{"S_OPTMENUSEL"});
+    REQUIRE(scene.update(0.25, {}));
     scene.render(device, projection, 512, 384);
     REQUIRE(scene.session().party()[0].save.gold == 5000);
     scene.close();
     REQUIRE_FALSE(scene.isOpen());
+}
+
+TEST_CASE("the level panel names a level gained, shows the magic perks' line at 25, and a "
+          "traded price flashes red",
+          "[shop][screens][unpacked]") {
+    // GUNE5D shop_show_lv (8009A2C8): AudioExp on entry (S_HAS, S_GAINEDLEVEL after the
+    // name); string 184 (MAGIC_ATT1) at level 25, page char_type, at (xcol, 224) in
+    // 0xFF80C0; do_shopping's 30-tick price timer draws the row's price in 0xFF0000.
+    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+    test::unpackedOrSkip("SELECT/textures.json");
+    test::unpackedOrSkip("pdata/WAR.json");
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    GameContext context;
+    context.unpackedRoot = root;
+    context.strings = &strings;
+    CharacterSave save;
+    save.gold = 5000;
+    save.color = 1;
+    save.progress().health = 100;
+    save.progress().experience = levelExperience(25);
+    const std::array<PartyMember, 1> party{{{1, save}}};
+    const std::array<LevelResults, 1> results{{{1, {0, 0, levelExperience(25)}}}};
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, results, {1000, 100, 1000}, "G1"));
+    REQUIRE(scene.session().lanes()[0].entryLevel == 1);
+    REQUIRE_FALSE(scene.update(10, {}));
+    ShopSession::Inputs input;
+    input[1].select = true;
+    REQUIRE_FALSE(scene.update(0, input));
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::BeforeStats);
+    REQUIRE(scene.lastSounds() ==
+            std::vector<std::string>{"S_OPTMENUSEL", "S_BLUWAR2", "S_HAS", "S_GAINEDLEVEL"});
+    const Mat4 projection{1};
+    const auto drawnIn = [&](const Color& color) {
+        return std::ranges::any_of(device.draws, [&](const test::RecordedDraw& draw) {
+            return std::ranges::any_of(draw.vertices, [&](const ImmediateVertex& vertex) {
+                return vertex.color.r == color.r && vertex.color.g == color.g &&
+                       vertex.color.b == color.b;
+            });
+        });
+    };
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    REQUIRE(drawnIn(Color::rgba(255, 128, 192)));
+    REQUIRE_FALSE(drawnIn(Color::rgba(255, 0, 0)));
+    REQUIRE_FALSE(scene.update(10, input));
+    REQUIRE(scene.session().lanes()[0].phase == ShopPhase::Shopping);
+    REQUIRE(scene.lastSounds() == std::vector<std::string>{"S_OPTMENUSEL"});
+    input = {};
+    input[1].down = true;
+    REQUIRE_FALSE(scene.update(0, input));
+    REQUIRE(scene.lastSounds() == std::vector<std::string>{"S_SECRETCLOCK2"});
+    REQUIRE_FALSE(scene.update(0, input));
+    input = {};
+    input[1].select = true;
+    REQUIRE_FALSE(scene.update(0, input)); // a key
+    REQUIRE(scene.lastSounds() == std::vector<std::string>{"S_PICKUPMAGIC"});
+    REQUIRE(scene.session().lanes()[0].flashRow == 2);
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    REQUIRE_FALSE(drawnIn(Color::rgba(255, 0, 0))); // the selected row is white and glowing
+    input = {};
+    input[1].up = true;
+    REQUIRE_FALSE(scene.update(0, input));
+    REQUIRE(scene.lastSounds() == std::vector<std::string>{"S_SECRETCLOCK1"});
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    REQUIRE(drawnIn(Color::rgba(255, 0, 0)));
+    REQUIRE_FALSE(scene.update(0.5, {}));
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    REQUIRE_FALSE(drawnIn(Color::rgba(255, 0, 0)));
+    input = {};
+    input[1].back = true;
+    REQUIRE_FALSE(scene.update(0, input)); // nothing to sell on the cherry row
+    REQUIRE(scene.lastSounds() == std::vector<std::string>{"S_NO"});
+    scene.close();
 }
 
 TEST_CASE("shop layout uses catalog scale and line breaks rather than fixed rows",
@@ -290,7 +393,8 @@ TEST_CASE("retail realm tally loop is shared, audible, and stopped when piles se
         REQUIRE(sounds.voiceCount() == 0);
     }
     SECTION("tower shop does not play tally audio") {
-        REQUIRE(scene.open(device, context, party, {}, {}, std::format("{}1", realm), true));
+        REQUIRE(
+            scene.open(device, context, party, {}, {}, std::format("{}1", realm), ShopVisit::Shop));
         scene.update(0.1, {});
         REQUIRE(sounds.voiceCount() == 1);
         scene.close();
