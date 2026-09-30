@@ -35,6 +35,8 @@ struct TriggerOpening {
     bool fades = false;
     bool atOnce = false;
     s32 sound = -1;
+    s32 subtype = 0;
+    bool closed = false;
 };
 
 /** A switch's rising activation edge, naming its camera marker and moving target. */
@@ -179,6 +181,7 @@ public:
 private:
     std::vector<std::unique_ptr<ItemFigure>> m_figures;
     struct Target {
+        s32 subtype = 0;
         s32 object = -1;
         u32 kind = 0;
         bool animated = false;

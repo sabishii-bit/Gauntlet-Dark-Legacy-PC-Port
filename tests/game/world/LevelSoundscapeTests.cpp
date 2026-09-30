@@ -126,6 +126,136 @@ TEST_CASE("a narrator line the tower's ambience keeps is queued from there",
     soundscape.close();
 }
 
+TEST_CASE("character barks have a separate bounded queue and the retail gain",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-barks");
+    writeSecondBank(root, "VOICE1", {"LINE"});
+    writeSecondBank(root, "CHARACTER", {"BARK"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    SoundSet character;
+    REQUIRE(character.load(root / "audio/CHARACTER"));
+    REQUIRE(soundscape.bark(character, "BARK") != kNoSound);
+    std::array<f32, 512> samples{};
+    mixer.mix(samples);
+    CHECK(samples.back() == Catch::Approx(0.125f * LevelSoundscape::kBarkVolume));
+    soundscape.holdNarration(true);
+    REQUIRE(soundscape.bark(character, "BARK", LevelSoundscape::kPainVolume) != kNoSound);
+    CHECK(soundscape.bark(character, "BARK") == kNoSound);
+    soundscape.holdNarration(false);
+    REQUIRE(soundscape.queueNarration("LINE") != kNoSound);
+    CHECK(player.voiceCount() == 2);
+    CHECK(soundscape.narrationBacklog() == Catch::Approx(1));
+    CHECK(soundscape.barkBacklog() == Catch::Approx(2));
+    soundscape.close();
+    CHECK(soundscape.barkBacklog() == 0);
+}
+
+TEST_CASE("footstep variants and entrance play at their authored volumes",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-footsteps");
+    writeBank(root, "COMMON", {"S_STEPSTAIR2", "S_ENTRANCE"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    CHECK(LevelSoundscape::footingOf(8, 0) == Footing::Stair);
+    CHECK(LevelSoundscape::footingOf(8, 0x10000) == Footing::Metal);
+    CHECK(LevelSoundscape::footingOf(8, 0x10000, true) == Footing::Water);
+    CHECK(LevelSoundscape::footingOf(0x10000, 0) == Footing::Rock);
+    SECTION("steps attenuate and alternate") {
+        soundscape.playFootstep(false, Footing::Stair);
+        CHECK(player.voiceCount() == 0);
+        soundscape.playFootstep(true, Footing::Stair, 70);
+        CHECK(player.voiceCount() == 0);
+        soundscape.playFootstep(true, Footing::Stair, 45);
+        std::array<f32, 512> samples{};
+        mixer.mix(samples);
+        CHECK(samples.back() == Catch::Approx(0.25f * LevelSoundscape::kStepVolume * 0.5f));
+    }
+    SECTION("entrance has its own gain") {
+        soundscape.playEntrance();
+        std::array<f32, 512> samples{};
+        mixer.mix(samples);
+        CHECK(samples.back() == Catch::Approx(0.25f * LevelSoundscape::kEntranceVolume));
+    }
+    soundscape.close();
+}
+
+TEST_CASE("exit flame and hourglass loops keep one voice and stop independently",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-attached-loops");
+    writeBank(root, "COMMON", {"S_EXITFLAME", "S_HOURGLASS"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    for (s32 i = 0; i < 20; ++i) {
+        soundscape.updateExitFlame(Vec3{1, 0, 0}, {});
+        soundscape.updateHourglass(Vec3{-1, 0, 0}, {});
+    }
+    CHECK(player.voiceCount() == 2);
+    CHECK(soundscape.exitFlameOn());
+    CHECK(soundscape.hourglassOn());
+    soundscape.updateExitFlame(std::nullopt, {});
+    CHECK_FALSE(soundscape.exitFlameOn());
+    CHECK(soundscape.hourglassOn());
+    soundscape.stopCues();
+    CHECK_FALSE(soundscape.hourglassOn());
+    soundscape.close();
+}
+
+TEST_CASE("landing title chooses its level lesson once and obeys narration backlog",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-title-lesson");
+    writeSecondBank(root, "VOICE1", {"S_SHOTSSTUN", "S_GRAB"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, nullptr);
+    soundscape.announceTitle(0);
+    CHECK(soundscape.narrationBacklog() == 0);
+    soundscape.announceTitle(5);
+    CHECK(soundscape.narrationBacklog() == Catch::Approx(1));
+    soundscape.announceTitle(4);
+    CHECK(soundscape.narrationBacklog() == Catch::Approx(2));
+    soundscape.announceTitle(4);
+    CHECK(soundscape.narrationBacklog() == Catch::Approx(2));
+    soundscape.close();
+}
+
+TEST_CASE("bridges use direction cues and traps sound at each motion edge",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-motion");
+    writeBank(root, "LEVEL", {"S_BRIDOPA", "S_BRIDCLA", "S_TRAPA"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    const LevelAudioInfo info{.bank = "LEVEL", .stream = {}};
+    soundscape.open(root, &player, &info, 'A');
+    soundscape.opening({.atOnce = true, .subtype = 20});
+    CHECK(player.voiceCount() == 0);
+    soundscape.opening({.subtype = 20});
+    CHECK(player.voiceCount() == 1);
+    soundscape.settled({.subtype = 20});
+    CHECK(player.voiceCount() == 1);
+    soundscape.opening({.subtype = 22, .closed = true});
+    CHECK(player.voiceCount() == 2);
+    soundscape.opening({.sound = 10});
+    soundscape.settled({.sound = 10});
+    CHECK(player.voiceCount() == 4);
+    soundscape.close();
+    soundscape.open(root, &player, &info, 'A', true);
+    soundscape.opening({.subtype = 20});
+    soundscape.opening({.sound = 10});
+    std::array<f32, 512> samples{};
+    mixer.mix(samples);
+    player.update();
+    CHECK(player.voiceCount() == 0);
+}
+
 TEST_CASE("the narrator's queue plays lines in turn and turns away what would wait too long",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-queue");
@@ -739,6 +869,21 @@ TEST_CASE("music areas go over at once, after a fade or at the part's end",
         REQUIRE(f.soundscape.musicRequest() == 0);
         REQUIRE(f.player.isPlaying(f.soundscape.music()));
     }
+}
+
+TEST_CASE("a rune sting ducks music temporarily without losing area selection",
+          "[game][world][soundscape][music-areas]") {
+    AreaFixture f("soundscape-rune-duck");
+    f.soundscape.duckMusic(2, 0.5f);
+    f.frames(30);
+    CHECK(f.soundscape.musicArea() == 0);
+    CHECK(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel / 2);
+    f.frames(90);
+    CHECK(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    f.soundscape.duckMusic(10, 0.5f);
+    f.soundscape.selectMusicArea(1, MusicSwitch::Faded);
+    f.frames(100);
+    CHECK(f.soundscape.musicArea() == 1);
 }
 
 TEST_CASE("the zones ask the music for their areas and a boss waking asks for the second",

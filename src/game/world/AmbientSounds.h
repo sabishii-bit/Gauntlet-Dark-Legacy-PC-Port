@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -50,7 +51,7 @@ public:
     bool bind(const WorldLayout& layout, std::span<SoundSet* const> banks);
     /** Starts, adjusts and stops the loops for the listeners, at the level's sound volume. */
     void update(SoundPlayer& player, std::span<const Vec3> listeners, const AmbientEar& ear,
-                f32 levelVolume);
+                f32 levelVolume, std::optional<f32> volumeOverride = std::nullopt);
     void stop(SoundPlayer& player);
     void clear();
 

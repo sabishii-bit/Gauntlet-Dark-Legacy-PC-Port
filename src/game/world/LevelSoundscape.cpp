@@ -15,8 +15,17 @@
 
 namespace gdl::game {
 namespace {
-constexpr std::array<std::string_view, 2> kStepSounds{"S_STEPROCK1", "S_STEPROCK2"};
+// fn_8009EFCC's table (sounds_evt.c 90-93) by step kind, first and second foot.
+constexpr std::array<std::string_view, 5> kStepKinds{"ROCK", "WOOD", "STAIR", "MET", "WATER"};
 constexpr std::string_view kPickupSound = "S_PICKUPMAGIC";
+constexpr std::string_view kEntranceSound = "S_ENTRANCE";
+constexpr std::string_view kStunHint = "S_SHOTSSTUN";
+constexpr std::string_view kGrabHint = "S_GRAB";
+constexpr std::string_view kTrapMotion = "S_TRAP"; ///< plus the realm's letter
+constexpr std::string_view kQuakeMotion = "S_QUAKEC";
+constexpr std::string_view kClunkMotion = "S_ELVCNNK";
+constexpr char kPyramidRealm = 'C';
+constexpr char kSkyRealm = 'K';
 // sounds_evt.c's material table, not the order of sounds in any one bank.
 // In CATHEDRAL the ICE slot contains the heavy-door creak recordings.
 constexpr std::array<std::string_view, 6> kOpeningMaterials{"MET", "ROPE",  "CHAIN",
@@ -30,6 +39,8 @@ void LevelSoundscape::open(const std::filesystem::path& root, SoundPlayer* outpu
     m_realm = realm;
     m_boss = boss;
     m_output = output;
+    m_narration.bind(output);
+    m_barks.bind(output);
     if (info != nullptr) {
         m_level.load(root / "audio" / info->bank);
         m_stream = info->stream;
@@ -41,9 +52,6 @@ void LevelSoundscape::open(const std::filesystem::path& root, SoundPlayer* outpu
     m_narratorSecond.load(root / "audio/VOICE2");
     m_promotions.load(root / "audio/WIZTOWER");
     if (m_common.load(root / "audio/COMMON")) {
-        for (usize foot = 0; foot < kStepSounds.size(); ++foot) {
-            m_steps[foot] = m_common.find(kStepSounds[foot]);
-        }
         m_pickup = m_common.find(kPickupSound);
     }
 }
@@ -55,12 +63,18 @@ void LevelSoundscape::bindAmbience(const WorldLayout& layout) {
     const std::array<SoundSet*, 2> banks{&m_ambient, &m_level};
     m_ambience.bind(layout, banks);
     m_areas.bind(layout);
+    m_objectFlags.clear();
+    m_objectFlags.reserve(layout.objects().size());
+    for (const WorldObject& object : layout.objects()) {
+        m_objectFlags.push_back(object.flags);
+    }
 }
 
 void LevelSoundscape::updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear,
-                                     f32 volume) {
+                                     f32 volume, bool ducked) {
     if (m_output != nullptr) {
-        m_ambience.update(*m_output, listeners, ear, volume);
+        m_ambience.update(*m_output, listeners, ear, volume,
+                          ducked ? std::optional<f32>{kDuckedLevel} : std::nullopt);
     }
 }
 
@@ -122,6 +136,7 @@ void LevelSoundscape::startMusic(const AssetLocator* assets, f32 volume) {
     m_musicSwitch = MusicSwitch::AtPartEnd;
     m_musicLevel = kFullLevel;
     m_musicFrames = 0.0f;
+    m_musicDuck = 0.0f;
     playArea(0);
 }
 
@@ -137,10 +152,18 @@ void LevelSoundscape::bossAwake(bool awake) {
     m_bossAwake = awake;
 }
 
+void LevelSoundscape::duckMusic(f32 seconds, f32 scale) {
+    // AudioClampMusicVol: the scale is kept between a fifth and the whole.
+    constexpr f32 kLeastScale = 0.2f;
+    m_musicDuck = std::max(seconds, 0.0f);
+    m_musicDuckScale = scale < kLeastScale ? kLeastScale : std::min(scale, 1.0f);
+}
+
 void LevelSoundscape::updateMusic(f32 seconds) {
     if (m_output == nullptr || !m_musicOn) {
         return;
     }
+    m_musicDuck = std::max(m_musicDuck - seconds, 0.0f);
     m_musicFrames += seconds * kMusicRate;
     while (m_musicFrames >= 1.0f) {
         m_musicFrames -= 1.0f;
@@ -153,6 +176,8 @@ void LevelSoundscape::stepMusic() {
     s32 target = kFullLevel;
     if (m_musicSwitch == MusicSwitch::Faded && m_musicArea != m_playingArea && m_streamAreas > 1) {
         target = m_musicLevel > kFadedLevel ? m_musicLevel - kFadeStep : m_musicLevel;
+    } else if (m_musicDuck > 0.0f) {
+        target = static_cast<s32>(static_cast<f32>(kFullLevel) * m_musicDuckScale);
     }
     const s32 step = std::clamp(target - m_musicLevel, -kRiseStep, kRiseStep);
     if (step == 0) {
@@ -264,11 +289,14 @@ void LevelSoundscape::stopCues() {
         stop(sound.handle);
     }
     m_openings.clear();
+    stopLoop(m_exitFlame);
+    stopLoop(m_hourglass);
 }
 
 void LevelSoundscape::suspend() {
     stopCues();
-    clearNarration();
+    m_narration.clear();
+    m_barks.clear();
     for (const SoundHandle handle : m_voices) {
         stop(handle);
     }
@@ -282,13 +310,13 @@ void LevelSoundscape::close() {
     suspend();
     m_ambience.clear();
     m_areas.clear();
+    m_objectFlags.clear();
     m_common = SoundSet{};
     m_level = SoundSet{};
     m_ambient = SoundSet{};
     m_narrator = SoundSet{};
     m_narratorSecond = SoundSet{};
     m_promotions = SoundSet{};
-    m_steps.fill(std::nullopt);
     m_pickup.reset();
     m_stream.clear();
     m_streamAreas = 1;
@@ -298,8 +326,12 @@ void LevelSoundscape::close() {
     m_musicSwitch = MusicSwitch::AtPartEnd;
     m_musicLevel = kFullLevel;
     m_musicFrames = 0.0f;
+    m_musicDuck = 0.0f;
+    m_musicDuckScale = 1.0f;
     m_bossAwake = false;
     m_output = nullptr;
+    m_narration.bind(nullptr);
+    m_barks.bind(nullptr);
 }
 
 SoundHandle LevelSoundscape::track(SoundHandle handle) {
@@ -310,28 +342,49 @@ SoundHandle LevelSoundscape::track(SoundHandle handle) {
     return handle;
 }
 
-SoundHandle LevelSoundscape::playNamed(std::string_view name, f32 volume) {
-    if (m_output == nullptr || name.empty()) {
-        return kNoSound;
+SoundSet* LevelSoundscape::bankOf(std::string_view name, u32& sound) {
+    if (name.empty()) {
+        return nullptr;
     }
     for (SoundSet* bank : {&m_level, &m_common, &m_ambient}) {
         if (const auto found = bank->find(name); found.has_value()) {
-            try {
-                return track(
-                    m_output->play(bank->sequence(*found), volume, SoundCategory::Effects));
-            } catch (const std::exception& e) {
-                log::warn("Tower: sound {}: {}", name, e.what());
-                return kNoSound;
-            }
+            sound = *found;
+            return bank;
         }
     }
-    return kNoSound;
+    return nullptr;
 }
 
-SoundHandle LevelSoundscape::playFrom(SoundSet& bank, std::string_view name) {
+SoundHandle LevelSoundscape::playNamed(std::string_view name, f32 volume) {
+    if (m_output == nullptr) {
+        return kNoSound;
+    }
+    u32 sound = 0;
+    SoundSet* bank = bankOf(name, sound);
+    if (bank == nullptr) {
+        return kNoSound;
+    }
+    try {
+        return track(m_output->play(bank->sequence(sound), volume, SoundCategory::Effects));
+    } catch (const std::exception& e) {
+        log::warn("Tower: sound {}: {}", name, e.what());
+        return kNoSound;
+    }
+}
+
+f32 LevelSoundscape::lengthOf(std::string_view name) {
+    for (SoundSet* bank : {&m_level, &m_common, &m_ambient}) {
+        if (const auto found = bank->find(name); found.has_value()) {
+            return static_cast<f32>(VoiceQueue::lengthOf(bank->sequence(*found)));
+        }
+    }
+    return 0.0f;
+}
+
+SoundHandle LevelSoundscape::playFrom(SoundSet& bank, std::string_view name, f32 volume) {
     if (m_output != nullptr) {
         if (const auto found = bank.find(name); found.has_value()) {
-            return track(m_output->play(bank.sequence(*found), 1.0f, SoundCategory::Effects));
+            return track(m_output->play(bank.sequence(*found), volume, SoundCategory::Effects));
         }
     }
     return kNoSound;
@@ -366,22 +419,11 @@ SoundHandle LevelSoundscape::narrate(std::string_view name, Narrator which, Soun
 }
 
 bool LevelSoundscape::narrationRoom(f32 maxWait) const {
-    if (m_narrationHeld) {
-        return false;
-    }
-    const f64 backlog = narrationBacklog();
-    if (backlog > 0.0 && m_narrationEnds.size() >= kMostNarration) {
-        return false;
-    }
-    return maxWait < 0.0f || backlog <= static_cast<f64>(maxWait);
+    return m_narration.room(maxWait);
 }
 
 f64 LevelSoundscape::narrationBacklog() const {
-    // Lines stopped from elsewhere no longer wait, whatever the clock says.
-    if (m_narrationEnds.empty() || m_output == nullptr || !m_output->isPlaying(m_narrationTail)) {
-        return 0.0;
-    }
-    return std::max(m_narrationEnds.back() - m_narrationClock, 0.0);
+    return m_narration.backlog();
 }
 
 SoundHandle LevelSoundscape::queueNarration(std::string_view name, Narrator which) {
@@ -394,10 +436,9 @@ SoundHandle LevelSoundscape::queueNarration(std::string_view name, Narrator whic
         }
     }
     // Some of the narrator's lines live in the level's own banks (the tower's S_WAITINGL).
-    for (SoundSet* bank : {&m_level, &m_common, &m_ambient}) {
-        if (const auto found = bank->find(name); found.has_value()) {
-            return queue(*bank, *found);
-        }
+    u32 sound = 0;
+    if (SoundSet* bank = bankOf(name, sound); bank != nullptr) {
+        return queue(*bank, sound);
     }
     return kNoSound;
 }
@@ -408,29 +449,7 @@ SoundHandle LevelSoundscape::queueNarrationFrom(SoundSet& bank, std::string_view
 }
 
 SoundHandle LevelSoundscape::queue(SoundSet& bank, u32 sound) {
-    if (m_output == nullptr || m_narrationHeld) {
-        return kNoSound;
-    }
-    if (!m_output->isPlaying(m_narrationTail)) {
-        m_narrationEnds.clear();
-    }
-    if (m_narrationEnds.size() >= kMostNarration) {
-        return kNoSound;
-    }
-    const SoundSequence& sequence = bank.sequence(sound);
-    const SoundHandle handle =
-        track(m_output->playAfter(m_narrationTail, sequence, 1.0f, SoundCategory::Effects));
-    if (handle == kNoSound) {
-        return kNoSound;
-    }
-    f64 length = 0.0;
-    for (const SoundSequenceStep& step : sequence.steps) {
-        length += step.clip != nullptr ? step.clip->seconds() : 0.0;
-    }
-    const f64 start = m_narrationClock + narrationBacklog();
-    m_narrationEnds.push_back(start + length);
-    m_narrationTail = handle;
-    return handle;
+    return track(m_narration.queue(bank.sequence(sound), 1.0f));
 }
 
 bool LevelSoundscape::announce(SoundSet& characterBank, std::string_view name, bool pojo,
@@ -450,28 +469,109 @@ bool LevelSoundscape::announce(SoundSet& characterBank, std::string_view name, b
 }
 
 void LevelSoundscape::updateNarration(f32 seconds) {
-    m_narrationClock += seconds;
-    std::erase_if(m_narrationEnds, [this](f64 end) { return end <= m_narrationClock; });
+    m_narration.update(seconds);
+    m_barks.update(seconds);
 }
 
-void LevelSoundscape::clearNarration() {
-    m_narrationEnds.clear();
-    m_narrationTail = kNoSound;
-    m_narrationHeld = false;
+bool LevelSoundscape::barkRoom(f32 maxWait) const {
+    return m_barks.room(maxWait);
 }
 
-void LevelSoundscape::playCommon(std::optional<u32> sound) {
-    if (m_output != nullptr && sound.has_value()) {
-        track(m_output->play(m_common.sequence(*sound), 1.0f, SoundCategory::Effects));
+SoundHandle LevelSoundscape::bark(SoundSet& bank, std::string_view name, f32 volume, f32 maxWait) {
+    const auto found = bank.find(name);
+    if (!found.has_value() || !m_barks.room(maxWait)) {
+        return kNoSound;
     }
+    return track(m_barks.queue(bank.sequence(*found), volume));
+}
+
+SoundHandle LevelSoundscape::barkNamed(std::string_view name, f32 volume, f32 maxWait) {
+    u32 sound = 0;
+    SoundSet* bank = bankOf(name, sound);
+    if (bank == nullptr || !m_barks.room(maxWait)) {
+        return kNoSound;
+    }
+    return track(m_barks.queue(bank->sequence(sound), volume));
 }
 
 void LevelSoundscape::playPickup() {
-    playCommon(m_pickup);
+    if (m_output != nullptr && m_pickup.has_value()) {
+        track(m_output->play(m_common.sequence(*m_pickup), 1.0f, SoundCategory::Effects));
+    }
 }
 
-void LevelSoundscape::playFootstep(bool second) {
-    playCommon(m_steps[second ? 1 : 0]);
+f32 LevelSoundscape::attenuation(f32 distance) {
+    // sndFxPlay3DAtten: 1.4 - d / 50, held between nothing and the whole.
+    const f32 heard = 1.0f - (distance - kAttenuationNear) / (kAttenuationFar - kAttenuationNear);
+    return std::clamp(heard, 0.0f, 1.0f);
+}
+
+void LevelSoundscape::playFootstep(bool second, Footing footing, f32 distance) {
+    const f32 heard = attenuation(distance);
+    if (heard <= 0.0f) {
+        return;
+    }
+    const auto kind = kStepKinds[static_cast<usize>(footing)];
+    if (const auto found = m_common.find(std::format("S_STEP{}{}", kind, second ? 2 : 1));
+        found.has_value() && m_output != nullptr) {
+        track(
+            m_output->play(m_common.sequence(*found), kStepVolume * heard, SoundCategory::Effects));
+    }
+}
+
+Footing LevelSoundscape::footingOf(u32 floorFlags, u32 armorFlags, bool inWater) {
+    constexpr u32 kMetal = 0x10000;
+    constexpr u32 kStairs = 8;
+    if (inWater) {
+        return Footing::Water;
+    }
+    if ((armorFlags & kMetal) != 0) {
+        return Footing::Metal;
+    }
+    return (floorFlags & kStairs) != 0 ? Footing::Stair : Footing::Rock;
+}
+
+void LevelSoundscape::playEntrance() {
+    playNamed(kEntranceSound, kEntranceVolume);
+}
+
+void LevelSoundscape::announceTitle(u32 levelFlags) {
+    if ((levelFlags & kStunLevel) != 0) {
+        if (narrationRoom(kStunWait)) {
+            queueNarration(kStunHint, Narrator::Primary);
+        }
+    } else if ((levelFlags & kGrabLevel) != 0) {
+        if (narrationRoom(kGrabWait)) {
+            queueNarration(kGrabHint, Narrator::Primary);
+        }
+    }
+}
+
+void LevelSoundscape::placeLoop(PlacedLoop& loop, const std::optional<Vec3>& spot,
+                                const AmbientEar& ear) {
+    if (!spot.has_value() || m_output == nullptr) {
+        stopLoop(loop);
+        return;
+    }
+    if (loop.handle == kNoSound || !m_output->isPlaying(loop.handle)) {
+        loop.handle = playNamed(loop.name, loop.volume);
+    }
+    if (loop.handle != kNoSound) {
+        m_output->setPan(loop.handle, AmbientSounds::panOf(*spot, ear));
+    }
+}
+
+void LevelSoundscape::stopLoop(PlacedLoop& loop) {
+    stop(loop.handle);
+    loop.handle = kNoSound;
+}
+
+void LevelSoundscape::updateExitFlame(const std::optional<Vec3>& stander, const AmbientEar& ear) {
+    placeLoop(m_exitFlame, stander, ear);
+}
+
+void LevelSoundscape::updateHourglass(const std::optional<Vec3>& wearer, const AmbientEar& ear) {
+    placeLoop(m_hourglass, wearer, ear);
 }
 
 void LevelSoundscape::speakOverScroll(std::string_view name) {
@@ -483,12 +583,32 @@ void LevelSoundscape::opening(const TriggerOpening& event) {
     if (event.atOnce) {
         return;
     }
+    if (event.subtype == 20 || event.subtype == 22) {
+        if (!m_boss) {
+            playNamed(std::format("S_BRID{}{}", event.closed ? "CL" : "OP", m_realm),
+                      kMotionVolume);
+        }
+        return;
+    }
+    if (event.sound >= kMotionSlot) {
+        playMotion(event.sound, event.target, false);
+        return;
+    }
     if (const SoundHandle handle = playOpening(event.sound, false); handle != kNoSound) {
         m_openings.push_back(Opening{event.target, handle});
     }
 }
 
 void LevelSoundscape::settled(const TriggerOpening& event) {
+    if (event.subtype == 20 || event.subtype == 22) {
+        return;
+    }
+    if (event.sound >= kMotionSlot) {
+        if (!event.atOnce) {
+            playMotion(event.sound, event.target, true);
+        }
+        return;
+    }
     for (usize i = 0; i < m_openings.size();) {
         if (m_openings[i].target == event.target) {
             stop(m_openings[i].handle);
@@ -512,6 +632,28 @@ SoundHandle LevelSoundscape::playOpening(s32 slot, bool settled) {
     }
     return playNamed(
         std::format("S_ELV{}{}{}{}", material, settled ? "STP" : "", m_realm, m_boss ? "B" : ""));
+}
+
+/** AudioWorldObjectMotion (items.c 5236-5246): the trap slot sounds at either edge of the
+ * motion; the quake slot once as it starts, for a target flagged for it. */
+void LevelSoundscape::playMotion(s32 slot, s32 target, bool settled) {
+    if (m_boss) {
+        return;
+    }
+    if (slot == kMotionSlot) {
+        playNamed(std::format("{}{}", kTrapMotion, m_realm), kMotionVolume);
+        return;
+    }
+    if (slot != kMotionSlot + 1 || settled || target < 0 ||
+        static_cast<usize>(target) >= m_objectFlags.size() ||
+        (m_objectFlags[static_cast<usize>(target)] & kMotionFlags) == 0) {
+        return;
+    }
+    if (m_realm == kPyramidRealm) {
+        playNamed(kQuakeMotion, kMotionVolume);
+    } else if (m_realm == kSkyRealm) {
+        playNamed(kClunkMotion, kMotionVolume);
+    }
 }
 
 } // namespace gdl::game

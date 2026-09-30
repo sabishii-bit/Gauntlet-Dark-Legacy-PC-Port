@@ -74,7 +74,8 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
 }
 
 void AmbientSounds::update(SoundPlayer& player, std::span<const Vec3> listeners,
-                           const AmbientEar& ear, f32 levelVolume) {
+                           const AmbientEar& ear, f32 levelVolume,
+                           std::optional<f32> volumeOverride) {
     for (AmbientEmitter& emitter : m_emitters) {
         f32 nearest = -1.0f;
         for (const Vec3& listener : listeners) {
@@ -89,7 +90,8 @@ void AmbientSounds::update(SoundPlayer& player, std::span<const Vec3> listeners,
             }
             continue;
         }
-        const f32 volume = std::clamp(kPeak * emitter.loudness * levelVolume, 0.0f, 1.0f);
+        const f32 volume =
+            std::clamp(volumeOverride.value_or(kPeak * emitter.loudness * levelVolume), 0.0f, 1.0f);
         if (emitter.handle == kNoSound || !player.isPlaying(emitter.handle)) {
             try {
                 emitter.handle = player.play(emitter.bank->sequence(emitter.sound), volume,

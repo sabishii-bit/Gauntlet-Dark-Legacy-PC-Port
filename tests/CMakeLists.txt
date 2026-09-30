@@ -92,6 +92,7 @@ add_executable(tests
     game/enemies/SpiderQueenTests.cpp
     game/world/PlayerArsenalTests.cpp
     game/world/LevelSoundscapeTests.cpp
+    game/world/VoiceQueueTests.cpp
     game/menu/HintMenuTests.cpp
     game/world/PlacedItemsTests.cpp
     game/world/AmbientSoundsTests.cpp

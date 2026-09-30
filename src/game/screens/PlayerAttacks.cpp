@@ -457,6 +457,7 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
                                           kShieldTrees[look], actor.position(), setting);
     }
     m_resources->audio.playNamed(kShieldSounds[look]);
+    m_resources->audio.playNamed("S_TURBODEFENSE", LevelSoundscape::kStepVolume);
     m_shields.push_back(shield);
 }
 
@@ -789,9 +790,14 @@ void PlayerAttacks::cry(usize index, std::string_view which, std::span<PlayerRun
     }
     const std::string_view voice =
         classCode(players[index].actor.save().character % kStartingClassCount);
-    if (const auto sound = body->voice().find(std::format("S_{}{}", voice, which));
-        sound.has_value()) {
-        m_resources->sounds->play(body->voice().sequence(*sound), 1.0f, SoundCategory::Effects);
+    const std::string name = std::format("S_{}{}", voice, which);
+    if (which.starts_with("PAIN") || which == "DIE1") {
+        m_resources->audio.bark(body->voice(), name,
+                                which == "DIE1" ? LevelSoundscape::kBarkVolume
+                                                : LevelSoundscape::kPainVolume);
+    } else {
+        m_resources->audio.playFrom(body->voice(), name,
+                                    which == "POISON" ? LevelSoundscape::kPainVolume : 1.0f);
     }
 }
 

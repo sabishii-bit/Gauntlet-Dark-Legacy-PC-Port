@@ -249,6 +249,18 @@ void ExitPortals::animate(f32 seconds) {
     }
 }
 
+std::optional<Vec3> ExitPortals::flamePosition(std::span<const PortalVisitor> party) const {
+    for (const auto& visitor : party) {
+        for (const auto& portal : m_portals) {
+            if (!portal.shut && !portal.secret && !portal.consumed && visitor.still &&
+                standsOn(portal, visitor, 0)) {
+                return visitor.position;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 void ExitPortals::draw(RenderDevice& device, const Mat4& clip,
                        const WorldLighting& lighting) const {
     for (const Portal& portal : m_portals) {

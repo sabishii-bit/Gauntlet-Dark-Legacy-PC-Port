@@ -24,6 +24,7 @@ void LevelArrivalPresentation::clear() {
     m_frames = 0.0f;
     m_camera.stop();
     m_titleSlide = 0.0f;
+    m_titleLanded = false;
 }
 
 void LevelArrivalPresentation::begin(RenderDevice& device, ItemArchive& weapons,
@@ -101,10 +102,12 @@ void LevelArrivalPresentation::advance(s32 ticks, bool skip, const Vec3& followP
     }
     m_ticks = std::max(m_ticks - ticks, 0);
     m_camera.update(ticks, skip, followPosition, followAttention);
+    const bool sliding = m_titleSlide < kTitleSlideEnd;
     m_titleSlide += kTitleSlideRate * static_cast<f32>(ticks);
     if (m_camera.phase() != StartCamera::Phase::Hold || m_titleSlide > kTitleSlideEnd) {
         m_titleSlide = kTitleSlideEnd;
     }
+    m_titleLanded = m_titleLanded || (sliding && m_titleSlide == kTitleSlideEnd);
 }
 
 void LevelArrivalPresentation::drawEffects(RenderDevice& device, const Mat4& clip,

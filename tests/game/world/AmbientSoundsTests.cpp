@@ -122,6 +122,9 @@ TEST_CASE("a level's sound items loop while a listener is near and stop when non
     REQUIRE(ambience.emitter(0).loudness == Approx(0.5f));
     REQUIRE(player.voiceCount() == 1);
     // Beyond one and a half radii it stops; with nobody about too.
+    ambience.update(player, edge, ear, 1.0f, 16.0f / 255.0f);
+    CHECK(ambience.emitter(0).handle == handle);
+    CHECK(ambience.emitter(0).loudness == Approx(0.5f));
     const std::array<Vec3, 1> gone{Vec3{7.0f, 0.0f, 0.0f}};
     ambience.update(player, gone, ear, 1.0f);
     REQUIRE(ambience.playingCount() == 0);
