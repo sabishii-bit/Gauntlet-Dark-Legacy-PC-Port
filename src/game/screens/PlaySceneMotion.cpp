@@ -113,13 +113,16 @@ void PlayScene::perform(usize i, PartyMotion::Action action) {
     case PartyMotion::Action::UsePotion: m_attacks.usePotion(i, m_players); break;
     case PartyMotion::Action::ThrowPotion: m_arsenal.throwPotion(m_players[i].actor); break;
     case PartyMotion::Action::FirstFoot:
-    case PartyMotion::Action::SecondFoot:
+    case PartyMotion::Action::SecondFoot: {
+        const auto& actor = m_players[i].actor;
+        const auto water = m_world->collision().liquidAt(actor.position(), actor.height(), 0);
         m_audio.playFootstep(
             action == PartyMotion::Action::SecondFoot,
-            LevelSoundscape::footingOf(
-                m_players[i].floor.flags,
-                PowerupEffects::of(m_players[i].actor.save().progress().inventory).armor));
+            LevelSoundscape::footingOf(m_players[i].floor.flags,
+                                       PowerupEffects::of(actor.save().progress().inventory).armor,
+                                       water && water->y > actor.position().y));
         break;
+    }
     case PartyMotion::Action::Melee: m_attacks.melee(i, m_players, attackTargets()); break;
     case PartyMotion::Action::Tagged:
         postHelp(HelpMessages::kNowIt, i);
