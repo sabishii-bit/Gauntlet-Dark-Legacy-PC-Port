@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <exception>
 #include <format>
 #include <functional>
 #include <limits>
@@ -483,6 +484,16 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
     m_critters.setLookouts(LookoutRoute::of(world.layout().locators()));
     m_bosses.open(device, resources.root, &world.collision(), scales,
                   levelName.empty() ? 'G' : levelName.front());
+    // The white skin a hard hit flashes over a great one, the swarm's and the party's own.
+    if (const auto white = world.powerups().textures.find(kHitFlashSkin); white.has_value()) {
+        try {
+            const Texture* flash = &world.powerups().textures.texture(device, *white);
+            m_critters.setHitFlash(flash);
+            m_bosses.setHitFlash(flash);
+        } catch (const std::exception& e) {
+            log::warn("Critter hit skin {}: {}", kHitFlashSkin, e.what());
+        }
+    }
     m_critterExperienceOwed.fill(0.0f);
     const auto playerCount = static_cast<s32>(players.size());
     const std::span<const LevelEnemy> roster = level != nullptr

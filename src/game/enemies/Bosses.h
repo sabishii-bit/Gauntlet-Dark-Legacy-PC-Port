@@ -106,6 +106,9 @@ public:
     }
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
               const Texture* frozenTexture = nullptr) const;
+    /** The white skin a hard hit flashes over the body (`Combatant::flashing`); borrowed
+     * until close(), none for no flash. */
+    void setHitFlash(const Texture* texture) { m_hitFlash = texture; }
 
     bool present() const { return m_id.has_value(); }
     BossView view() const;
@@ -157,6 +160,7 @@ private:
     bool m_roarAsked = false;
     bool m_legendStruck = false;
     std::vector<LegendEvent> m_legendEvents;
+    const Texture* m_hitFlash = nullptr; ///< borrowed from the level
 };
 
 } // namespace gdl::game

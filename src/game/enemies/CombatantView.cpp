@@ -161,7 +161,8 @@ Combatant::meterPose(const CameraFrame* camera) const {
 }
 
 void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                     const Texture* frozenTexture, const CameraFrame* camera) const {
+                     const Texture* frozenTexture, const CameraFrame* camera,
+                     const Texture* hitFlash) const {
     const Actor& critter = m_actor;
     if (critter.state == State::Inactive || critter.stock == nullptr) {
         return;
@@ -174,6 +175,10 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
                                   critter.player.sequence(),
                                   static_cast<s32>(critter.player.frame()));
     critter.stock->body.setAppearance(false, critter.tint);
+    if (critter.flashTicks > 0 && hitFlash != nullptr) {
+        critter.stock->body.setMaskedTexture(hitFlash);
+        critter.stock->body.setAppearance(true, Color::white());
+    }
     // Retail flashes the normal skin on bit 3 in the final 180 frozen ticks.
     if (frozenTexture != nullptr && critter.frozenTicks > 0 &&
         (critter.frozenTicks >= kThawBlinkTicks || (critter.frozenTicks & kThawBlinkBit) == 0)) {

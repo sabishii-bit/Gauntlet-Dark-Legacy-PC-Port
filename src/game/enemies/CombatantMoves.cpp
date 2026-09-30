@@ -222,7 +222,7 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         return false;
     };
     // A hit shoves it by its flags, dead or alive, a golem less and a boss never.
-    const u32 flags = critter.hurtFlags;
+    u32 flags = critter.hurtFlags;
     if (critter.hurtPending >= 1.0f) {
         f32 scale = 0.0f;
         if (critter.state == State::Dying) {
@@ -242,6 +242,15 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
             }
         }
     }
+    // Consume the hit's shove before clearing reaction requests. Even during a flinch,
+    // a new impact can push the body without restarting its animation.
+    if (critter.sinceHurt > kRoarMemory ||
+        (current != nullptr && (current->type == MoveDefinition::kRoar || current->reaction()))) {
+        critter.roarOwed = 0.0f;
+        critter.hurtPending = 0.0f;
+        critter.hurtFlags = 0;
+        flags = 0;
+    }
     if (critter.state == State::Dying) {
         critter.hurtPending = 0.0f;
         critter.hurtFlags = 0;
@@ -256,18 +265,20 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         return; // The parent's pattern step, not this branch's end frame, advances the move.
     }
     // Only a hit flagged to do so moves it off what it is doing: knocked down, knocked back,
-    // a roar once enough is taken, then a flinch. Plain harm leaves it be.
+    // a roar once enough is taken, then a flinch. Rejected hit reactions are not queued;
+    // an authored link takes precedence. A roar can be retried while its damage remains.
     const bool hurt = critter.hurtPending >= 1.0f;
     critter.hurtPending = 0.0f;
     critter.hurtFlags = 0;
-    bool reacted = false;
-    if (hurt && (flags & kKnockOver) != 0) {
+    const bool linked = current != nullptr && current->link >= 0;
+    bool reacted = linked;
+    if (hurt && !reacted && (flags & kKnockOver) != 0) {
         reacted = cutIn(data.moveOfType(MoveDefinition::kKnockDown));
     }
     if (hurt && !reacted && (flags & (kKnockOver | kKnockedBack)) != 0) {
         reacted = cutIn(data.moveOfType(MoveDefinition::kKnockBack));
     }
-    if (!reacted && critter.roarOwed >= kRoarAfter &&
+    if (!reacted && critter.roarOwed >= roarThreshold(m_scales.players) &&
         cutIn(data.moveOfType(MoveDefinition::kRoar))) {
         critter.roarOwed = 0.0f;
         reacted = true;

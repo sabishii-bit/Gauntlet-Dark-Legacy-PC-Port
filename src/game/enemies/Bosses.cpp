@@ -22,6 +22,7 @@ void Bosses::open(RenderDevice& device, const std::filesystem::path& unpackedRoo
 void Bosses::close() {
     m_fighter.clear();
     m_assets.clear();
+    m_hitFlash = nullptr;
     m_device = nullptr;
     m_collision = nullptr;
     m_textureFrames = 0;
@@ -291,7 +292,7 @@ bool Bosses::reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& faci
 
 void Bosses::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                   const Texture* frozenTexture) const {
-    m_fighter.draw(device, clip, lighting, frozenTexture);
+    m_fighter.draw(device, clip, lighting, frozenTexture, nullptr, m_hitFlash);
 }
 
 BossView Bosses::view() const {

@@ -138,6 +138,8 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     const s32 i = m_id;
     const CritterData& data = *critter.definition;
     critter.age += seconds;
+    critter.flashTicks = std::max(critter.flashTicks - ticks, 0);
+    critter.sinceHurt += seconds;
     for (CritterArea& area : critter.areas) {
         area.secondsLeft -= seconds;
     }
@@ -392,8 +394,17 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     u32 flags = hit.flags;
     if (critter.move >= 0 &&
         data.moves()[static_cast<usize>(critter.move)].type == MoveDefinition::kBlock) {
+        const MoveDefinition& block = data.moves()[static_cast<usize>(critter.move)];
         amount *= kBlockShare;
         flags &= ~(EnemyHit::kFloors | EnemyHit::kKnockBack);
+        // A sound frame outside the animation is an on-hit cue, once per block.
+        constexpr s32 kOnBlockedHit = 1000;
+        constexpr u32 kMoveSoundGiven = 1U;
+        if (block.soundFrame >= kOnBlockedHit && block.sound >= 0 &&
+            (critter.soundsGiven & kMoveSoundGiven) == 0) {
+            critter.soundsGiven |= kMoveSoundGiven;
+            cue(critter, id, block.sound, critter.position);
+        }
     }
     const Damage modified =
         Damage::modify(amount, flags, data.shieldFlags(), data.armor(), m_scales.bossEncounter);
@@ -413,6 +424,7 @@ void Combatant::hurtActor(const EnemyHit& hit) {
     critter.hurtPending += amount;
     critter.hurtFlags |= flags;
     critter.roarOwed += amount;
+    critter.sinceHurt = 0.0f;
     // A boss takes less the more there are to fight it, outside a legend item's rite
     // (CritterDamage's damage_mul).
     const s32 players = std::clamp(m_scales.players, 0, static_cast<s32>(kBossShares.size()) - 1);
@@ -464,6 +476,11 @@ void Combatant::hurtActor(const EnemyHit& hit) {
         m_losses.push_back(loss);
     }
     loseHealth(amount);
+    // A lethal blow goes straight to death, without starting a hit flash. Heavy surviving
+    // hits flash the whole body; light hits still need a struck-node identity for their flash.
+    if (alive() && damage::marks(flags) && (flags & kFlashesWhole) != 0) {
+        critter.flashTicks = kFlashTicks;
+    }
     if (alive() && !m_children.empty()) {
         const auto count =
             std::ranges::count_if(m_children, [](const auto& part) { return part->alive(); });
@@ -582,6 +599,12 @@ void Combatant::hold(bool held) {
     if (Actor* critter = present() ? &m_actor : nullptr; critter != nullptr) {
         critter->held = held;
     }
+}
+
+f32 Combatant::roarThreshold(s32 players) {
+    const auto count =
+        static_cast<usize>(std::clamp(players, 0, static_cast<s32>(kRoarShares.size()) - 1));
+    return std::floor(kRoarAfter * kRoarShares[count]);
 }
 
 void Combatant::roar() {

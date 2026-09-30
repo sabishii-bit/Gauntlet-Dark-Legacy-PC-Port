@@ -115,6 +115,7 @@ struct MoveDefinition {
     static constexpr s32 kKnockDown = 66;
     static constexpr s32 kAttackFrom = 128; ///< attacks are this and over
     static constexpr s32 kTargetArea = 136; ///< snapshots the target before emitting its effects
+    static constexpr s32 kCutsIn = 0xF00; ///< bypasses priority comparison, not interrupt immunity
 
     s32 type = 0;
     u32 flags = 0;
@@ -142,6 +143,7 @@ struct MoveDefinition {
     f32 hold = 0.0f;
 
     bool attack() const { return type >= kAttackFrom && type < 240; }
+    bool reaction() const { return type >= kHitReact && type < kAttackFrom; }
     bool interrupts(const MoveDefinition& current) const;
     bool harms() const { return damage0 >= 0 || damage1 >= 0; }
     /** Projectile triggers crossed between integer animation frames; -1 precedes frame zero. */

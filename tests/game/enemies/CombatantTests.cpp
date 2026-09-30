@@ -883,4 +883,194 @@ TEST_CASE("shrunk, a great one is drawn at the shrinkers' scale, takes double an
     CHECK(blows[0].damage == Approx(5.0f));
     CHECK(blows[0].origin.z == Approx(-8 * 0.667f).margin(0.01f));
 }
+// Long sequences let these tests distinguish an interrupt from ordinary end-of-move selection.
+std::filesystem::path reactionAssets(s32 interrupt = 60, s32 link = -1) {
+    const auto root = familyAssets();
+    writeTextFile(root / "MONSTERS/GENERAL/LEVELG/animations.json", R"({"trees":[{
+      "name":"BODY","nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"STEP","frames":120}]}]})");
+    writeTextFile(root / "critter/GENERAL.json", R"({
+      "descriptors":[{"prefix":"BODY","name":"GENERAL","type":8}],
+      "types":[{"moveCount":6,"maxHealth":1000,"radius":1}],
+      "moves":[{"name":"READY","anim":"STEP","type":32,"interrupt":)" +
+                                                     std::to_string(interrupt) + R"(,"link":)" +
+                                                     std::to_string(link) + R"(},
+        {"name":"BLOCK","anim":"STEP","type":35,"interrupt":60,
+         "sfx":0,"sfxFrame":1000},
+        {"name":"KD","anim":"STEP","type":66,"priority":3840,"interrupt":60},
+        {"name":"FLINCH","anim":"STEP","type":64,"priority":3840,"interrupt":60},
+        {"name":"ROAR","anim":"STEP","type":34,"priority":3840,"interrupt":60},
+        {"name":"DEATH","anim":"STEP","type":17,"priority":4096}],
+      "sounds":[{"levelFormat":"BLOCKED"}]})");
+    return root;
+}
+
+TEST_CASE("critical moves bypass priority but never a locked interrupt policy",
+          "[combatant][hit-feedback]") {
+    MoveDefinition current;
+    current.priority = 5000;
+    MoveDefinition candidate;
+    candidate.priority = MoveDefinition::kCutsIn;
+    for (const s32 policy : {0, 20, 40, 60, 80, 90}) {
+        CAPTURE(policy);
+        current.interrupt = policy;
+        CHECK(candidate.interrupts(current) == (policy != 0));
+    }
+    candidate.priority = MoveDefinition::kCutsIn - 1;
+    current.interrupt = 40;
+    CHECK_FALSE(candidate.interrupts(current));
+}
+
+TEST_CASE("roar damage scales with party size and expires after a quiet interval",
+          "[combatant][hit-feedback]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, reactionAssets(), General::definition(), 'G'));
+    constexpr std::array kThresholds{50.0f, 75.0f, 100.0f, 100.0f};
+    for (s32 players = 1; players <= 4; ++players) {
+        CAPTURE(players);
+        const f32 threshold = kThresholds[static_cast<usize>(players - 1)];
+        CHECK(Combatant::roarThreshold(players) == threshold);
+        Combatant actor;
+        EnemyScales scales;
+        scales.players = players;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, scales, 'G'));
+        EnemyHit hit;
+        hit.damage = threshold - 1;
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, {});
+        CHECK(actor.moveName() == "READY");
+        hit.damage = 1;
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, {});
+        CHECK(actor.moveName() == "ROAR");
+    }
+    SECTION("old harm is not banked forever") {
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        EnemyHit hit;
+        hit.damage = 49;
+        actor.hurt(hit);
+        actor.update(182, 182.0f / 60, {});
+        hit.damage = 1;
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, {});
+        CHECK(actor.moveName() == "READY");
+    }
+    SECTION("a new hit refreshes the three second interval") {
+        Combatant actor;
+        REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+        EnemyHit hit;
+        hit.damage = 24;
+        actor.hurt(hit);
+        actor.update(120, 2, {});
+        actor.hurt(hit);
+        actor.update(120, 2, {});
+        hit.damage = 2;
+        actor.hurt(hit);
+        actor.update(2, 1.0f / 30, {});
+        CHECK(actor.moveName() == "ROAR");
+    }
+}
+
+TEST_CASE("a current reaction consumes incoming reaction flags instead of chaining flinches",
+          "[combatant][hit-feedback]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, reactionAssets(), General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyHit hit;
+    hit.damage = 5;
+    hit.flags = 0x100;
+    hit.direction = Vec3{1, 0, 0};
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, {});
+    REQUIRE(actor.moveName() == "KD");
+    hit.flags = 0x10;
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.moveName() == "KD");
+    CHECK(actor.health() == 990);
+    CHECK(actor.position().x == Approx((10.0f + 10.0f * 0.8f + 5.0f) / 30));
+}
+
+TEST_CASE("linked moves take precedence over hit reactions and block cues wait for impact",
+          "[combatant][hit-feedback]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, reactionAssets(60, 1), General::definition(), 'G'));
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    EnemyHit hit;
+    hit.damage = 8;
+    hit.flags = 0x100;
+    actor.hurt(hit);
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.moveName() == "READY");
+    actor.update(240, 4, {});
+    actor.update(2, 1.0f / 30, {});
+    REQUIRE(actor.moveName() == "BLOCK");
+    REQUIRE(actor.takeCues().empty());
+    actor.hurt(hit);
+    auto cues = actor.takeCues();
+    REQUIRE(cues.size() == 1);
+    CHECK(cues.front().sound == "BLOCKED");
+    actor.hurt(hit);
+    CHECK(actor.takeCues().empty());
+    CHECK(actor.health() == 988); // eight unblocked, two quarters of eight blocked
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.moveName() == "BLOCK");
+}
+
+TEST_CASE("heavy hit skin is brief full bright and cannot leak through the shared model",
+          "[combatant][hit-feedback]") {
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, familyAssets(), General::definition(), 'G'));
+    Combatant actor;
+    Combatant sibling;
+    REQUIRE(actor.spawn(assets, 0, {}, 0, nullptr, {}, 'G'));
+    REQUIRE(sibling.spawn(assets, 1, {}, 0, nullptr, {}, 'G'));
+    test::FakeTexture flash{1, 1};
+    test::FakeTexture frozen{1, 1};
+    WorldLighting dark;
+    dark.ambient = Vec3{0};
+    dark.lightColor = Vec3{0};
+    EnemyHit hit;
+    hit.damage = 1;
+    hit.flags = 0x100000;
+    actor.hurt(hit);
+    REQUIRE(actor.flashing());
+    actor.draw(device, Mat4{1}, dark, nullptr, nullptr, &flash);
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(device.draws.front().state.maskedTexture == &flash);
+    CHECK(device.draws.front().vertices.front().color == Color::white());
+    device.draws.clear();
+    sibling.draw(device, Mat4{1}, dark, nullptr, nullptr, &flash);
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(device.draws.front().state.maskedTexture == nullptr);
+    actor.update(2, 1.0f / 30, {});
+    CHECK(actor.flashing());
+    actor.update(2, 1.0f / 30, {});
+    CHECK_FALSE(actor.flashing());
+    device.draws.clear();
+    actor.draw(device, Mat4{1}, dark, nullptr, nullptr, &flash);
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(device.draws.front().state.maskedTexture == nullptr);
+    hit.flags |= 0x1000000; // suppressed hit visuals
+    actor.hurt(hit);
+    CHECK_FALSE(actor.flashing());
+    hit.flags = 0x100000;
+    actor.hurt(hit);
+    actor.freeze(300);
+    device.draws.clear();
+    actor.draw(device, Mat4{1}, dark, &frozen, nullptr, &flash);
+    REQUIRE_FALSE(device.draws.empty());
+    CHECK(device.draws.front().state.maskedTexture == &frozen);
+    hit.damage = 1000;
+    sibling.hurt(hit);
+    CHECK_FALSE(sibling.alive());
+    CHECK_FALSE(sibling.flashing());
+}
 } // namespace

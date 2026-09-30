@@ -32,6 +32,7 @@ void Critters::close() {
     m_spews.clear();
     m_shots.clear();
     m_rams.clear();
+    m_hitFlash = nullptr;
     m_device = nullptr;
     m_collision = nullptr;
     m_hazards = nullptr;
@@ -341,7 +342,7 @@ void Critters::drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& e
 void Critters::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                     const Texture* frozenTexture, const CameraFrame* camera) const {
     for (const auto& actor : m_critters) {
-        actor.draw(device, clip, lighting, frozenTexture, camera);
+        actor.draw(device, clip, lighting, frozenTexture, camera, m_hitFlash);
     }
 }
 } // namespace gdl::game
