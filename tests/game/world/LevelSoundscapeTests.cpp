@@ -2,6 +2,7 @@
 #include <bit>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -10,6 +11,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/assets/WorldLayout.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
@@ -17,6 +19,7 @@
 #include "TestSupport.h"
 #include "formats/WavWriter.h"
 #include "game/world/LevelSoundscape.h"
+#include "game/world/MusicAreas.h"
 
 namespace {
 using namespace gdl;
@@ -528,11 +531,8 @@ TEST_CASE("Wraith music resolves its numbered ADS parts and produces audio",
     soundscape.close();
 }
 
-TEST_CASE("level music loops in its own category and stops on replacement and teardown",
-          "[game][world][soundscape]") {
-    const auto root = test::scratchDirectory("soundscape-music");
-    std::filesystem::create_directories(root / "STREAMS");
-    // A single mono DSP frame with zero predictors and positive residuals.
+/** A stream of a single mono DSP frame with zero predictors and positive residuals. */
+std::vector<u8> dspStream() {
     test::ByteWriter stream;
     stream.putFourcc("dhSS");
     for (const u32 value : {24U, 32U, 48000U, 1U, 8U, 0xFFFFFFFFU, 0U}) {
@@ -543,18 +543,25 @@ TEST_CASE("level music loops in its own category and stops on replacement and te
     channel[3] = 14;
     const std::array<u8, 8> frame{0, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11};
     stream.putBytes(channel).putBytes(frame);
-    writeFile(root / "STREAMS/test.ads", stream.bytes());
+    return stream.bytes();
+}
+
+TEST_CASE("level music loops in its own category and stops on replacement and teardown",
+          "[game][world][soundscape]") {
+    const auto root = test::scratchDirectory("soundscape-music");
+    std::filesystem::create_directories(root / "STREAMS");
+    writeFile(root / "STREAMS/test.ads", dspStream());
     LevelAudioInfo info{.bank = {}, .stream = "test"};
     SECTION("single stream") {}
     SECTION("multipart stream without an unsuffixed file") {
-        writeFile(root / "STREAMS/parts_1.ads", stream.bytes());
-        writeFile(root / "STREAMS/parts_2.ads", stream.bytes());
+        writeFile(root / "STREAMS/parts_1.ads", dspStream());
+        writeFile(root / "STREAMS/parts_2.ads", dspStream());
         info.stream = "parts";
         info.parts[0] = 2;
     }
     SECTION("first area and its numbered parts") {
-        writeFile(root / "STREAMS/areaa_1.ads", stream.bytes());
-        writeFile(root / "STREAMS/areaa_2.ads", stream.bytes());
+        writeFile(root / "STREAMS/areaa_1.ads", dspStream());
+        writeFile(root / "STREAMS/areaa_2.ads", dspStream());
         info.stream = "area";
         info.areas = 2;
         info.parts[0] = 2;
@@ -588,6 +595,296 @@ TEST_CASE("level music loops in its own category and stops on replacement and te
     soundscape.close();
     REQUIRE_FALSE(player.isPlaying(third));
     REQUIRE(soundscape.music() == kNoSound);
+}
+
+/** A level of four areas under the stem "area": one stream, two parts, one, and one missing. */
+struct AreaFixture {
+    std::filesystem::path root;
+    LevelAudioInfo info{.bank = {}, .stream = "area"};
+    AudioMixer mixer{48000};
+    SoundPlayer player{mixer};
+    AssetLocator assets;
+    LevelSoundscape soundscape;
+
+    explicit AreaFixture(std::string_view name) : root(test::scratchDirectory(name)), assets(root) {
+        std::filesystem::create_directories(root / "STREAMS");
+        // The fourth area's stream is not written: asked for, it has nothing to play.
+        for (const std::string_view file : {"areaa", "areab_1", "areab_2", "areac"}) {
+            writeFile(root / "STREAMS" / std::format("{}.ads", file), dspStream());
+        }
+        info.areas = 4;
+        info.parts[0] = 1;
+        info.parts[1] = 2;
+        info.parts[2] = 1;
+        info.parts[3] = 1;
+        soundscape.open(root, &player, &info);
+        soundscape.startMusic(&assets, 0.5f);
+    }
+    ~AreaFixture() { soundscape.close(); }
+    AreaFixture(const AreaFixture&) = delete;
+    AreaFixture& operator=(const AreaFixture&) = delete;
+    AreaFixture(AreaFixture&&) = delete;
+    AreaFixture& operator=(AreaFixture&&) = delete;
+
+    /** So many of the music's frames of game time. */
+    void frames(s32 count) {
+        for (s32 i = 0; i < count; ++i) {
+            soundscape.updateMusic(1.0f / LevelSoundscape::kMusicRate);
+        }
+    }
+    /** Plays the queued sound out and feeds the stream again, so its parts move on. */
+    void drain() {
+        std::array<f32, 4096> output{};
+        for (s32 i = 0; i < 40; ++i) {
+            mixer.mix(output);
+        }
+        player.update();
+    }
+};
+
+TEST_CASE("music areas go over at once, after a fade or at the part's end",
+          "[game][world][soundscape][music-areas]") {
+    AreaFixture f("soundscape-areas");
+    const SoundHandle first = f.soundscape.music();
+    REQUIRE(f.player.isPlaying(first));
+    REQUIRE(f.soundscape.musicArea() == 0);
+    REQUIRE(f.soundscape.musicRequest() == 0);
+    REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    SECTION("at once") {
+        f.soundscape.selectMusicArea(2, MusicSwitch::AtOnce);
+        REQUIRE(f.soundscape.musicRequest() == 2);
+        REQUIRE(f.soundscape.musicArea() == 0);
+        f.frames(1);
+        const SoundHandle second = f.soundscape.music();
+        REQUIRE(second != first);
+        REQUIRE(f.player.isPlaying(second));
+        REQUIRE_FALSE(f.player.isPlaying(first));
+        REQUIRE(f.soundscape.musicArea() == 2);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+        // The same area asked for again changes nothing.
+        f.soundscape.selectMusicArea(2, MusicSwitch::AtOnce);
+        f.frames(5);
+        REQUIRE(f.soundscape.music() == second);
+    }
+    SECTION("after a fade") {
+        f.soundscape.selectMusicArea(1, MusicSwitch::Faded);
+        // Three a frame down to three: eighty-four frames of the old stream fading.
+        f.frames(1);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel - 3);
+        REQUIRE(f.soundscape.music() == first);
+        f.frames(83);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFadedLevel);
+        REQUIRE(f.soundscape.music() == first);
+        REQUIRE(f.soundscape.musicArea() == 0);
+        // Then the new stream from its first part, rising eight a frame back to full.
+        f.frames(1);
+        const SoundHandle second = f.soundscape.music();
+        REQUIRE(second != first);
+        REQUIRE_FALSE(f.player.isPlaying(first));
+        REQUIRE(f.player.isPlaying(second));
+        REQUIRE(f.soundscape.musicArea() == 1);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFadedLevel + 8);
+        f.frames(30);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFadedLevel + 8 * 31);
+        f.frames(1);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+        f.frames(10);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+        REQUIRE(f.soundscape.music() == second);
+    }
+    SECTION("at the part's end") {
+        // Asked for and withdrawn before the part ends, the switch waits and is dropped.
+        f.soundscape.selectMusicArea(2, MusicSwitch::AtPartEnd);
+        f.frames(1);
+        REQUIRE(f.soundscape.musicFollowing() == 2);
+        REQUIRE(f.soundscape.music() == first);
+        f.soundscape.selectMusicArea(0, MusicSwitch::AtPartEnd);
+        f.frames(1);
+        REQUIRE(f.soundscape.musicFollowing() == -1);
+        // Asked for and left standing, it goes through as the part playing runs out, on the
+        // same voice at full level.
+        f.soundscape.selectMusicArea(1, MusicSwitch::AtPartEnd);
+        f.frames(1);
+        REQUIRE(f.soundscape.musicFollowing() == 1);
+        REQUIRE(f.soundscape.musicArea() == 0);
+        f.drain();
+        f.frames(1);
+        REQUIRE(f.soundscape.musicArea() == 1);
+        REQUIRE(f.soundscape.musicFollowing() == -1);
+        REQUIRE(f.soundscape.music() == first);
+        REQUIRE(f.player.isPlaying(first));
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    }
+    SECTION("an area without a stream is silent until another is asked for") {
+        f.soundscape.selectMusicArea(7, MusicSwitch::AtOnce);
+        f.frames(1);
+        REQUIRE(f.soundscape.music() == kNoSound);
+        REQUIRE_FALSE(f.player.isPlaying(first));
+        REQUIRE(f.soundscape.musicArea() == 3); // clamped to the last area
+        f.frames(5);
+        REQUIRE(f.soundscape.music() == kNoSound);
+        f.soundscape.selectMusicArea(0, MusicSwitch::AtOnce);
+        f.frames(1);
+        REQUIRE(f.player.isPlaying(f.soundscape.music()));
+        REQUIRE(f.soundscape.musicArea() == 0);
+    }
+    SECTION("stopping the cues lets the music go until it is started again") {
+        f.soundscape.stopCues();
+        REQUIRE(f.soundscape.musicArea() == -1);
+        f.soundscape.selectMusicArea(1, MusicSwitch::AtOnce);
+        f.frames(3);
+        REQUIRE(f.soundscape.music() == kNoSound);
+        f.soundscape.startMusic(&f.assets, 1.0f);
+        REQUIRE(f.soundscape.musicArea() == 0);
+        REQUIRE(f.soundscape.musicRequest() == 0);
+        REQUIRE(f.player.isPlaying(f.soundscape.music()));
+    }
+}
+
+TEST_CASE("the zones ask the music for their areas and a boss waking asks for the second",
+          "[game][world][soundscape][music-areas]") {
+    AreaFixture f("soundscape-zones");
+    const auto level = test::scratchDirectory("soundscape-zones-level");
+    // One zone of ten units at (15, 0, 0) naming the second area, cutting over at once.
+    writeTextFile(level / "world.json", R"({
+  "objects": [{"name": "FLOOR", "position": [0, 0, 0], "next": -1, "child": -1}],
+  "locators": [],
+  "itemInfos": [{"type": 13, "subtype": 0, "name": ""}],
+  "itemInstances": [
+    {"info": 0, "minPlayers": 1, "name": "", "position": [15, 0, 0],
+     "rotation": [0, 0, 0], "params": [0, 0, 32, 65, 2, 0, 0, 0, 2, 0, 0, 0]}
+  ]
+})");
+    WorldLayout layout;
+    REQUIRE(layout.load(level));
+    f.soundscape.bindAmbience(layout);
+    REQUIRE(f.soundscape.musicAreas().size() == 1);
+    REQUIRE(f.soundscape.ambience().size() == 0);
+    const SoundHandle first = f.soundscape.music();
+    SECTION("a party crossing into a zone") {
+        const std::array<Vec3, 1> outside{Vec3{-30.0f, 0.0f, 0.0f}};
+        f.soundscape.updateMusicAreas(outside);
+        f.frames(1);
+        REQUIRE(f.soundscape.music() == first);
+        const std::array<Vec3, 1> inside{Vec3{15.0f, 0.0f, 0.0f}};
+        f.soundscape.updateMusicAreas(inside);
+        REQUIRE(f.soundscape.musicRequest() == 1);
+        f.frames(1);
+        REQUIRE(f.soundscape.musicArea() == 1);
+        const SoundHandle second = f.soundscape.music();
+        REQUIRE(second != first);
+        // Staying, or leaving for open ground, changes nothing more.
+        f.soundscape.updateMusicAreas(inside);
+        f.soundscape.updateMusicAreas(outside);
+        f.frames(3);
+        REQUIRE(f.soundscape.music() == second);
+        REQUIRE(f.soundscape.musicArea() == 1);
+    }
+    SECTION("the boss waking") {
+        f.soundscape.bossAwake(false);
+        f.frames(1);
+        REQUIRE(f.soundscape.musicRequest() == 0);
+        f.soundscape.bossAwake(true);
+        REQUIRE(f.soundscape.musicRequest() == 1);
+        f.frames(1);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel - 3);
+        f.frames(84);
+        REQUIRE(f.soundscape.musicArea() == 1);
+        const SoundHandle second = f.soundscape.music();
+        REQUIRE(second != first);
+        // Told again that it is awake, nothing more is asked.
+        f.soundscape.bossAwake(true);
+        f.frames(40);
+        REQUIRE(f.soundscape.music() == second);
+        REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    }
+}
+
+TEST_CASE("a level of one area ignores requests for others",
+          "[game][world][soundscape][music-areas]") {
+    const auto root = test::scratchDirectory("soundscape-one-area");
+    std::filesystem::create_directories(root / "STREAMS");
+    writeFile(root / "STREAMS/test.ads", dspStream());
+    const LevelAudioInfo info{.bank = {}, .stream = "test"};
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const AssetLocator assets(root);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, &info);
+    soundscape.startMusic(&assets, 1.0f);
+    const SoundHandle first = soundscape.music();
+    REQUIRE(player.isPlaying(first));
+    soundscape.selectMusicArea(1, MusicSwitch::AtOnce);
+    soundscape.updateMusic(1.0f / LevelSoundscape::kMusicRate);
+    REQUIRE(soundscape.music() == first);
+    REQUIRE(soundscape.musicRequest() == 0);
+    soundscape.selectMusicArea(1, MusicSwitch::Faded);
+    for (s32 i = 0; i < 100; ++i) {
+        soundscape.updateMusic(1.0f / LevelSoundscape::kMusicRate);
+    }
+    REQUIRE(soundscape.music() == first);
+    REQUIRE(soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    soundscape.close();
+}
+
+TEST_CASE("the dream's zones switch its music between eight areas",
+          "[game][world][soundscape][music-areas][assets][unpacked]") {
+    const auto disc = test::assetOrSkip("STREAMS/DREAM1A.ads").parent_path().parent_path();
+    test::assetOrSkip("STREAMS/dream1e_1.ads");
+    test::assetOrSkip("STREAMS/dream1e_2.ads");
+    const auto manifest = test::unpackedOrSkip("wdata/DREAM.json");
+    const auto root = manifest.parent_path().parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELJ1/world.json");
+    WorldData world;
+    REQUIRE(world.load(manifest));
+    const auto* level = world.level("J1");
+    REQUIRE(level != nullptr);
+    const auto* audio = world.audio(level->audioIndex);
+    REQUIRE(audio != nullptr);
+    REQUIRE(audio->areas == 8);
+    REQUIRE(audio->parts[4] == 2);
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELJ1"));
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape soundscape;
+    soundscape.open(root, &player, audio, 'J');
+    soundscape.bindAmbience(layout);
+    REQUIRE(soundscape.musicAreas().size() == 15);
+    const AssetLocator assets(disc);
+    soundscape.startMusic(&assets, 1.0f);
+    const SoundHandle first = soundscape.music();
+    REQUIRE(player.isPlaying(first));
+    // The zone of the fifth area (the two-part dream1e) fades the music over to it.
+    std::optional<Vec3> spot;
+    for (usize i = 0; i < soundscape.musicAreas().size(); ++i) {
+        const MusicZone& zone = soundscape.musicAreas().zone(i);
+        if (zone.area == 4) {
+            REQUIRE(zone.how == MusicSwitch::Faded);
+            spot = zone.position;
+        }
+    }
+    REQUIRE(spot.has_value());
+    const std::array<Vec3, 1> party{*spot};
+    soundscape.updateMusicAreas(party);
+    REQUIRE(soundscape.musicRequest() == 4);
+    for (s32 i = 0; i < 85; ++i) {
+        soundscape.updateMusic(1.0f / LevelSoundscape::kMusicRate);
+    }
+    REQUIRE(soundscape.musicArea() == 4);
+    REQUIRE(soundscape.music() != first);
+    REQUIRE(player.isPlaying(soundscape.music()));
+    std::array<f32, 2048> output{};
+    bool audible = false;
+    for (s32 i = 0; i < 100; ++i) {
+        player.update();
+        mixer.mix(output);
+        for (const f32 sample : output) {
+            audible |= sample > 0.001f || sample < -0.001f;
+        }
+    }
+    REQUIRE(audible);
+    soundscape.close();
 }
 
 } // namespace

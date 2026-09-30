@@ -7,6 +7,8 @@
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
 
+#include "game/world/MusicAreas.h"
+
 namespace gdl::game {
 
 f32 AmbientSounds::loudness(f32 distance, f32 radius) {
@@ -41,6 +43,10 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
         const ItemInstance& instance = instances[i];
         if (instance.info < 0 || static_cast<usize>(instance.info) >= infos.size() ||
             infos[static_cast<usize>(instance.info)].type != kSoundItem) {
+            continue;
+        }
+        // A zone naming a music area plays no loop of its own (items.c 4514-4522).
+        if (MusicAreas::areaOf(instance) > 0) {
             continue;
         }
         AmbientEmitter emitter;

@@ -639,6 +639,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         std::clamp(static_cast<s32>(std::lround(deltaSeconds * tickRate)), kMinTicks, kMaxTicks);
     const f32 seconds = static_cast<f32>(ticks) / tickRate;
     m_audio.updateNarration(seconds);
+    // The music's areas: the boss waking asks for the second, the zones for theirs.
+    m_audio.bossAwake(m_opponents.bosses().view().awake);
+    m_audio.updateMusic(seconds);
     // Once the good wizard appears the announcer keeps quiet (good_wiz_state past two).
     const BossVictory::Stage victory = m_bossSequence.victory().state().stage();
     m_audio.holdNarration(victory != BossVictory::Stage::None &&
@@ -916,6 +919,7 @@ void PlayScene::updateAmbience() {
     const LevelInfo* level = m_world->level();
     m_audio.updateAmbience(listeners, AmbientEar{frame.position, frame.right},
                            level != nullptr ? level->soundVolume : 1.0f);
+    m_audio.updateMusicAreas(listeners);
 }
 
 /** The party as the level's triggers see it. */
