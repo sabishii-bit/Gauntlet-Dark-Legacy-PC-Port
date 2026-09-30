@@ -42,6 +42,7 @@ void PartyHud::clear() {
     m_glowSheet = nullptr;
     m_relicTicks = 0;
     m_help.clear();
+    m_helpPosition.reset();
     m_pickups.clear();
     m_boxes.release();
 }
@@ -54,7 +55,7 @@ void PartyHud::drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players
     m_pickups.draw(canvas, m_boxes);
 }
 bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
-                        LevelSoundscape& audio, s32 number) {
+                        LevelSoundscape& audio, s32 number, std::optional<Vec3> position) {
     if (index >= players.size()) {
         return false;
     }
@@ -68,10 +69,11 @@ bool PartyHud::postHelp(s32 id, usize index, std::span<PlayerRuntime> players,
     const CharacterSave& named = players[index].actor.save();
     const HelpSpeaker speaker{named.character, PickupVoices::carriesPojo(named)};
     const HelpMessageSpec* spec =
-        m_help.post(id, players[index].actor.player(), readers, number, speaker);
+        m_help.post(id, position ? -1 : players[index].actor.player(), readers, number, speaker);
     if (spec == nullptr) {
         return false;
     }
+    m_helpPosition = position;
     {
         // A turbo attack's name is called from the character's own class's bank; the
         // narrator's lines are in either of its banks. Both wait in the narrator's queue, and
@@ -184,6 +186,9 @@ void PartyHud::drawHelp(Canvas& canvas, RenderDevice& device, TextureSet& textur
         return;
     }
     Vec2 head{width * 0.5f, height * 0.5f};
+    if (m_helpPosition) {
+        head = PartyNames::screenOf(clip, *m_helpPosition, width, height).value_or(head);
+    }
     for (const PlayerRuntime& runtime : players) {
         const PlayerActor& actor = runtime.actor;
         if (actor.player() != m_help.player()) {

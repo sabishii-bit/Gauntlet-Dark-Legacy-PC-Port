@@ -1,6 +1,7 @@
 #pragma once
 #include <algorithm>
 #include <array>
+#include <optional>
 #include <span>
 
 #include "engine/assets/MessageTable.h"
@@ -33,7 +34,7 @@ public:
     void stepSelector(PlayerActor& actor, const SelectorInput& input, s32 ticks,
                       LevelSoundscape& audio);
     bool postHelp(s32 id, usize index, std::span<PlayerRuntime> players, LevelSoundscape& audio,
-                  s32 number = -1);
+                  s32 number = -1, std::optional<Vec3> position = std::nullopt);
     static StatusBoxView status(s32 player, std::span<const PlayerRuntime> players);
     void drawStatus(Canvas& canvas, std::span<const PlayerRuntime> players);
     /** Shows the bosses' keys in the boxes a while (a level opening, a runestone found). */
@@ -58,6 +59,7 @@ private:
     StatusBoxPainter m_boxes;
     PickupHud m_pickups;
     HelpMessages m_help;
+    std::optional<Vec3> m_helpPosition;
     MessageTable m_strings;
     std::array<PowerupSelector, kPlayerCount> m_selectors;
     const Texture* m_glowSheet = nullptr;

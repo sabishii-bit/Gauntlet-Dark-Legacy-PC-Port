@@ -29,6 +29,8 @@ public:
     struct Events {
         std::function<bool(s32, usize)> help;                     ///< a lesson for a member
         std::function<bool(std::string_view, usize)> openMessage; ///< a scroll page
+        std::function<void()> shake;
+        std::function<bool(s32, const Vec3&)> helpAt;
     };
 
     /** The sounds a realm's turntables turn and stop to (fn_8009D7E4); none elsewhere. */

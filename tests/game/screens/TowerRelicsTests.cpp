@@ -133,6 +133,17 @@ TEST_CASE("all authored tower pieces retain settled meshes at their own world an
     display.bind(device, world, Vec3{0});
     REQUIRE_FALSE(display.active());
     REQUIRE(display.figures().count() == 21);
+    usize garmLifts = 0;
+    for (usize i = 0; i < world.triggers().size(); ++i) {
+        const auto& trigger = world.triggers().trigger(i);
+        if (trigger.id == 255) {
+            REQUIRE(trigger.forced);
+            REQUIRE(world.triggers().opened(trigger.target));
+            REQUIRE(world.triggers().settled(trigger.target));
+            ++garmLifts;
+        }
+    }
+    REQUIRE(garmLifts > 0);
     for (usize i = 0; i < display.figures().count(); ++i) {
         const auto& effect = display.figures().effect(i);
         REQUIRE(effect.player.frame() == static_cast<f32>(effect.player.frameCount() - 1));

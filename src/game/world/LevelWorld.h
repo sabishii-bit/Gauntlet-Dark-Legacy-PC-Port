@@ -72,6 +72,7 @@ public:
     /** Fires the triggers the visitors stand in and carries the fields' fades on. */
     void updateTriggers(f32 seconds, std::span<const TriggerVisitor> visitors);
     const LevelTriggers& triggers() const { return m_triggers; }
+    void activateTrigger(s32 id, bool atOnce);
     void shootTrigger(usize index) { m_triggers.shoot(index); }
     const Rotators& rotators() const { return m_rotators; }
     std::vector<RotatorCue> takeRotatorCues() { return std::exchange(m_rotatorCues, {}); }

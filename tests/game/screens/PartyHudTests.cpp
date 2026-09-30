@@ -53,6 +53,25 @@ TEST_CASE("level announcement queues gained-level behind the color and character
     audio.close();
 }
 
+TEST_CASE("world-anchored trap lessons use neutral ink and retain party history",
+          "[game][screens][party-hud]") {
+    const auto root = test::scratchDirectory("hud-trap-lesson");
+    writeTextFile(root / "messages.json",
+                  R"({"messages":[{"name":"TRAPMOVE","lines":["TRAPS MAKE SOME OBJECTS MOVE"]}]})");
+    MessageTable messages;
+    REQUIRE(messages.load(root / "messages.json"));
+    PartyHud hud;
+    hud.help().setTexts(&messages);
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(2, {}, nullptr, Vec3{0}, 0);
+    REQUIRE(hud.postHelp(HelpMessages::kTrapsMove, 0, players, audio, -1, Vec3{1, 2, 3}));
+    REQUIRE(hud.help().player() == -1);
+    REQUIRE(players[0].actor.save().helpSeen == std::vector<s32>{5});
+    REQUIRE(HelpMessages::specOf(5)->voice == "S_TRAPSMAKE");
+    REQUIRE_FALSE(hud.postHelp(5, 0, players, audio, -1, Vec3{1, 2, 3}));
+}
+
 TEST_CASE("party HUD status uses player identity rather than party order",
           "[game][screens][party-hud]") {
     std::array<PlayerRuntime, 2> players;

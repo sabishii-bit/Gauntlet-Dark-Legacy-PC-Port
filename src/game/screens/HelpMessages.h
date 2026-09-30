@@ -64,6 +64,7 @@ public:
     static constexpr s32 kChestNeedsKey = 2;
     static constexpr s32 kPotionsFull = 3;
     static constexpr s32 kKeysFull = 4;
+    static constexpr s32 kTrapsMove = 5;
     static constexpr s32 kNoPotion = 6;
     static constexpr s32 kTransporter = 9;  ///< on arriving by a transporter
     static constexpr s32 kSecretWalls = 20; ///< a blow on a wall that breaks

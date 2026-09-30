@@ -7,6 +7,31 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+TEST_CASE("shake requests retain priority, startup delay, radius and affected endpoints",
+          "[game][camera][shake]") {
+    CameraShake shake;
+    const WorldCamera camera;
+    const Vec3 attention{0, 0, 10};
+    shake.start(CameraShake::Target::Both, 4, 30, 0.3f, 200);
+    REQUIRE(shake.offset() == Vec3{0});
+    shake.start(); // the lower-priority hit must not replace the turbo request
+    shake.update(4);
+    REQUIRE(glm::length(shake.offset()) == Approx(0.3f));
+    const auto both = shake.apply(camera, attention);
+    REQUIRE(both.position == camera.position + shake.offset());
+    REQUIRE(both.yaw == Approx(camera.yaw));
+    REQUIRE(both.pitch == Approx(camera.pitch));
+    shake.start(CameraShake::Target::Eye, 0, 10, 0.5f, 200);
+    const auto eye = shake.apply(camera, attention);
+    REQUIRE(eye.position == camera.position + shake.offset());
+    REQUIRE(eye.yaw != camera.yaw);
+    shake.update(11);
+    REQUIRE_FALSE(shake.active());
+    shake.start();
+    REQUIRE(glm::length(shake.offset()) == Approx(0.1f));
+    shake.clear();
+    REQUIRE_FALSE(shake.active());
+}
 TEST_CASE("combat shake orbits attention without displacing or drifting the camera",
           "[game][yeti][camera]") {
     CameraShake shake;

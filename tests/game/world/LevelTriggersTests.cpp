@@ -40,13 +40,14 @@ struct SwitchFixture {
 
     explicit SwitchFixture(
         std::string_view instances,
-        std::string_view objects = R"({"name":"WALL","position":[0,10,0],"flags":4096})") {
+        std::string_view objects = R"({"name":"WALL","position":[0,10,0],"flags":4096})",
+        s32 subtype = 24) {
         const auto dir = test::sampleLevel("switch-modes");
         writeTextFile(dir / "world.json", std::format(R"({{
           "objects":[{}],
-          "itemInfos":[{{"type":5,"subtype":24,"name":"BRIDGEPAD","radius":1}}],
+          "itemInfos":[{{"type":5,"subtype":{},"name":"BRIDGEPAD","radius":1}}],
           "itemInstances":[{}]}})",
-                                                      objects, instances));
+                                                      objects, subtype, instances));
         REQUIRE(layout.load(dir));
         REQUIRE(models.load(dir));
         REQUIRE(textures.load(dir));
@@ -61,6 +62,38 @@ struct SwitchFixture {
     }
     f32 height() const { return scene.worldTransform(0)[3].y; }
 };
+
+TEST_CASE("subtype 23 supplies a movement lesson only when it has a target", "[triggers][help]") {
+    const SwitchFixture f(R"({"info":0,"position":[0,0,0],"params":[0,0,0,0,0,0,7,0,0,0,0,0]})",
+                          R"({"name":"WALL","position":[0,10,0],"flags":4096})", 23);
+    REQUIRE(f.triggers.trigger(0).movementLesson);
+    const SwitchFixture missing(
+        R"({"info":0,"position":[0,0,0],"params":[255,255,0,0,0,0,7,0,0,0,0,0]})",
+        R"({"name":"WALL","position":[0,10,0],"flags":4096})", 23);
+    REQUIRE_FALSE(missing.triggers.trigger(0).movementLesson);
+}
+
+TEST_CASE("special activation opens a chain and cannot be undone by an empty pad",
+          "[triggers][tower-relics]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],"params":[0,0,0,0,0,4,255,7,0,0,156,255]},
+                        {"info":0,"position":[0,0,0],"params":[1,0,0,0,0,4,7,0,0,0,156,255]})",
+                    R"({"name":"WALL","position":[0,10,0],"flags":4096},
+                        {"name":"WALL","position":[0,10,0],"flags":4096})");
+    f.triggers.activate(255, false, f.animator, f.scene, nullptr);
+    REQUIRE(f.triggers.opened(0));
+    REQUIRE(f.triggers.opened(1));
+    REQUIRE_FALSE(f.triggers.settled(0));
+    REQUIRE(f.triggers.takeOpenings().size() == 2);
+    f.step(3);
+    REQUIRE(f.triggers.settled(0));
+    REQUIRE(f.triggers.settled(1));
+    REQUIRE(f.height() == Approx(0));
+    f.step(3);
+    REQUIRE(f.height() == Approx(0));
+    REQUIRE(f.triggers.trigger(0).fired);
+    REQUIRE(f.triggers.trigger(1).fired);
+    REQUIRE(f.triggers.takeCameraCues().empty());
+}
 
 TEST_CASE("switch camera cues occur on activation and expose target completion",
           "[triggers][switch-camera]") {
@@ -83,6 +116,19 @@ TEST_CASE("switch camera cues occur on activation and expose target completion",
     }
     CHECK(f.triggers.settled(0));
     CHECK(f.triggers.takeCameraCues().empty());
+}
+
+TEST_CASE("shake triggers report an activation edge even without a camera marker",
+          "[triggers][switch-camera][shake]") {
+    SwitchFixture f(R"({"info":0,"position":[0,0,0],
+      "params":[0,0,2,16,0,4,7,0,0,0,156,255]})");
+    const std::array party{TriggerVisitor{.position = Vec3{0}}};
+    f.step(kStep, party);
+    const auto cues = f.triggers.takeCameraCues();
+    REQUIRE(cues.size() == 1);
+    REQUIRE(cues[0].shakes);
+    f.step(kStep, party);
+    REQUIRE(f.triggers.takeCameraCues().empty());
 }
 
 TEST_CASE("a pad flagged to wake a statue reports its spot once as it goes active",

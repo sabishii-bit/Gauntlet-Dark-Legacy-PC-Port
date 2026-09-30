@@ -80,6 +80,7 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         trigger.nextId = instance.params[7];
         trigger.shootable = info.subtype == LevelTrigger::kShootableSubtype;
         trigger.height = info.height;
+        trigger.movementLesson = info.subtype == 23 && trigger.target >= 0;
         // The slot is a signed byte in the data: 255 (and anything high) means none.
         const u8 slot = instance.params[5];
         trigger.sound = slot >= 0x80 ? -1 : static_cast<s32>(slot);
@@ -257,7 +258,7 @@ bool LevelTriggers::qualifies(const LevelTrigger& trigger,
         const s32 tier = std::clamp(trigger.id - 101, 0, 2);
         return std::ranges::any_of(visitors, [tier](const TriggerVisitor& visitor) {
             const auto index = static_cast<usize>(tier);
-            return visitor.gargoylePieces[index] < 0 ||
+            return visitor.sumner || visitor.gargoylePieces[index] < 0 ||
                    visitor.gargoylePieces[index] >= Relics::kGargoyleNeeded[index];
         });
     }
@@ -278,14 +279,14 @@ bool LevelTriggers::crystalsMet(const TriggerVisitor& visitor, s32 realm) {
 
 bool LevelTriggers::openTarget(Target& target, bool open, bool atOnce, WorldAnimator& animator,
                                WorldScene& scene, WorldCollision* collision) {
-    if (target.open == open) {
+    if ((!open && target.forced) || (target.open == open && (!atOnce || target.settled))) {
         return false;
     }
     target.open = open;
     target.returning = false;
     target.settled = atOnce; // only an opening before the party is worth reporting done
     if (target.animated) {
-        if ((target.kind & LevelTrigger::kOscillates) != 0 && !atOnce) {
+        if (!target.forced && (target.kind & LevelTrigger::kOscillates) != 0 && !atOnce) {
             animator.cycle(target.object, open);
         } else {
             animator.fire(target.object, open, atOnce);
@@ -312,6 +313,9 @@ void LevelTriggers::fire(usize index, bool active, bool atOnce, WorldAnimator& a
     for (auto at = static_cast<s32>(index); at >= 0 && followed++ < m_triggers.size();
          at = m_triggers[static_cast<usize>(at)].next) {
         LevelTrigger& trigger = m_triggers[static_cast<usize>(at)];
+        if (trigger.forced) {
+            continue;
+        }
         const bool contact =
             active || ((trigger.flags & LevelTrigger::kKeepContact) != 0 && trigger.fired);
         const bool wasFired = trigger.fired;
@@ -354,7 +358,7 @@ void LevelTriggers::fire(usize index, bool active, bool atOnce, WorldAnimator& a
             trigger.fired = contact;
         }
         if (trigger.fired && !wasFired && contact && !atOnce) {
-            m_cameraCues.push_back({trigger.id, trigger.target});
+            m_cameraCues.push_back({trigger.id, trigger.target, (trigger.flags & 0x1000U) != 0});
             if ((trigger.flags & LevelTrigger::kWakesStatue) != 0) {
                 m_wakes.push_back(trigger.spot);
             }
@@ -438,6 +442,30 @@ void LevelTriggers::openAtOnce(std::span<const s32> ids, WorldAnimator& animator
     }
 }
 
+void LevelTriggers::activate(s32 id, bool atOnce, WorldAnimator& animator, WorldScene& scene,
+                             WorldCollision* collision) {
+    for (usize i = 0; i < m_triggers.size(); ++i) {
+        if (m_triggers[i].id != id) {
+            continue;
+        }
+        s32 at = static_cast<s32>(i);
+        for (usize guard = 0; at >= 0 && guard < m_triggers.size(); ++guard) {
+            auto& trigger = m_triggers[static_cast<usize>(at)];
+            trigger.forced = true;
+            trigger.fired = true;
+            if (Target* target = targetOf(trigger.target)) {
+                target->forced = true;
+                if (openTarget(*target, true, atOnce, animator, scene, collision)) {
+                    target->spot = trigger.spot;
+                    target->sound = trigger.sound;
+                    m_openings.push_back(openingOf(*target, atOnce));
+                }
+            }
+            at = trigger.next;
+        }
+    }
+}
+
 void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors,
                            WorldAnimator& animator, WorldScene& scene, WorldCollision* collision) {
     m_emptyToggleDelay = visitors.empty() ? 0.0f : static_cast<f32>(visitors.size() - 1);
@@ -446,6 +474,9 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
     }
     for (usize i = 0; i < m_triggers.size(); ++i) {
         LevelTrigger& trigger = m_triggers[i];
+        if (trigger.forced) {
+            continue;
+        }
         if (trigger.refusalCooldown > 0.0f) {
             trigger.refusalCooldown = std::max(trigger.refusalCooldown - seconds, 0.0f);
         }
@@ -494,7 +525,7 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
     // An unoccupied pad must not cancel another pad's contact, or reset a target
     // registered as a latch by its first switch.
     for (Target& target : m_targets) {
-        if ((target.kind & 7U) == 0 && !target.pressed &&
+        if (!target.forced && (target.kind & 7U) == 0 && !target.pressed &&
             openTarget(target, false, false, animator, scene, collision)) {
             m_openings.push_back(openingOf(target, false));
         }
@@ -518,7 +549,8 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
                     if (std::abs(distance) > kHeightTolerance) {
                         m_settled.push_back(openingOf(target, false));
                     }
-                    if (target.open && (target.kind & LevelTrigger::kOscillates) != 0 &&
+                    if (!target.forced && target.open &&
+                        (target.kind & LevelTrigger::kOscillates) != 0 &&
                         target.openHeight != target.closedHeight) {
                         target.returning = !target.returning;
                         target.settled = false;

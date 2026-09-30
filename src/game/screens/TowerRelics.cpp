@@ -111,6 +111,9 @@ void TowerRelics::acknowledge(Relics& relics, const Entry& entry) {
 void TowerRelics::bind(RenderDevice& device, LevelWorld& world, const Vec3& partyCentre) {
     m_device = &device;
     m_world = &world;
+    if ((m_runes & Entry{Kind::Rune, 12}.bit()) != 0) {
+        world.activateTrigger(255, true);
+    }
     for (s32 i = 0; i < Relics::kRuneCount; ++i) {
         if ((m_runes & Entry{Kind::Rune, i}.bit()) != 0) {
             place({Kind::Rune, i}, true);
@@ -204,6 +207,9 @@ TowerRelics::Cue TowerRelics::update(s32 ticks, f32 seconds, bool voicePlaying) 
                    m_ticks >= static_cast<s32>(m_captions[m_current].size() * 2) + kReadingTicks) {
             m_phase = Phase::Placement;
             m_wizard.clear();
+            if (current()->kind == Kind::Rune && current()->index == 12 && m_world != nullptr) {
+                m_world->activateTrigger(255, false);
+            }
             m_placementLeft = place(*current(), false) + kPlacementHold;
             cue.placement = true;
         }
