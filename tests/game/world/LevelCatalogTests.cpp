@@ -67,6 +67,19 @@ TEST_CASE("an exit's tag names a realm by its letter and counts into the realm's
     REQUIRE(tower.directory == "LEVELS/LEVELL1");
     REQUIRE(tower == LevelRef::tower());
     REQUIRE_FALSE(tower == *fields);
+
+    // A level knows its place in the realm's order, which the tower's records go by, and
+    // the catalogue knows which is the realm's last: the boss's.
+    REQUIRE(fields->index == 0);
+    REQUIRE(catalog.byTag("a2")->index == 1);
+    REQUIRE(catalog.byName("A2")->index == 2);
+    REQUIRE(catalog.levelCount(1) == 3);
+    REQUIRE(catalog.levelCount(7) == 1);
+    REQUIRE(catalog.levelCount(9) == 0);
+    REQUIRE(catalog.isLastLevel(*fields));
+    REQUIRE(catalog.isLastLevel(*catalog.byName("A2")));
+    REQUIRE_FALSE(catalog.isLastLevel(*catalog.byTag("a2")));
+    REQUIRE_FALSE(catalog.isLastLevel(tower)); // no realm of its own in this catalogue
 }
 
 TEST_CASE("players lie shadows everywhere but Cloud9", "[game][world][shadow]") {

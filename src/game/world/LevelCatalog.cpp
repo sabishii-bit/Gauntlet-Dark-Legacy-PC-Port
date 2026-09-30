@@ -90,6 +90,7 @@ LevelRef LevelCatalog::refOf(const Realm& realm, usize index) {
     // A boss level has an item archive of its own, named like its folder.
     level.ownItems =
         std::string(kItemsDirectory) + "/" + prefix.substr(0, prefix.size() - 1) + level.name;
+    level.index = static_cast<s32>(index);
     return level;
 }
 
@@ -101,6 +102,20 @@ std::vector<s32> LevelCatalog::runesOf(std::string_view realmFile) const {
         }
     }
     return {};
+}
+
+usize LevelCatalog::levelCount(s32 realmId) const {
+    for (const Realm& realm : m_realms) {
+        if (realm.id == realmId) {
+            return realm.levels.size();
+        }
+    }
+    return 0;
+}
+
+bool LevelCatalog::isLastLevel(const LevelRef& level) const {
+    const usize count = levelCount(level.realmId);
+    return count > 0 && level.index == static_cast<s32>(count) - 1;
 }
 
 std::optional<LevelRef> LevelCatalog::byTag(std::string_view tag) const {

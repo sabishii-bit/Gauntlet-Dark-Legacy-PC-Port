@@ -6,6 +6,7 @@
 
 #include "game/players/ClassData.h"
 #include "game/players/Inventory.h"
+#include "game/players/LevelRecord.h"
 #include "game/players/Relics.h"
 
 namespace gdl::game {
@@ -37,6 +38,7 @@ struct ClassProgress {
     u32 unlocked = 0;                        ///< a bit per realm whose gate's opening was announced
     Inventory inventory; ///< the keys, potions and powerups carried as this class
     Relics relics;       ///< the runestones, legend items and gargoyle pieces gathered
+    LevelRecord levels;  ///< the levels beaten and the boss levels died on
     s32 appearanceLevel() const;
     bool promotionPending() const;
 };

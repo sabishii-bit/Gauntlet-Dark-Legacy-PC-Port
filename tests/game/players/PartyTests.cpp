@@ -45,4 +45,19 @@ TEST_CASE("a party is written back to the slots its members came from", "[game][
     REQUIRE(saveParty(slots, {}) == 0);
 }
 
+TEST_CASE("a level beaten is recorded by everyone standing, never by the fallen",
+          "[game][players][party][level-record]") {
+    std::vector<PartyMember> party(3);
+    party[1].fallen = true;
+    party[2].save.character = 3;
+    REQUIRE(recordLevelBeaten(party, 7, 0, 8, 0) == 2);
+    REQUIRE(party[0].save.progress().levels.hasBeaten(7, 0));
+    REQUIRE(party[0].save.progress().levels.runeLevels[0] == (1U << 7U));
+    REQUIRE_FALSE(party[1].save.progress().levels.hasBeaten(7, 0));
+    // Into the class each is playing.
+    REQUIRE(party[2].save.classes[3].levels.hasBeaten(7, 0));
+    REQUIRE_FALSE(party[2].save.classes[0].levels.hasBeaten(7, 0));
+    REQUIRE(recordLevelBeaten({}, 7, 0, 0, 0) == 0);
+}
+
 } // namespace
