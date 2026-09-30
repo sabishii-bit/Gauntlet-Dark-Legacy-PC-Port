@@ -59,6 +59,10 @@ public:
     static constexpr f32 kBlockShare = 0.25f;
     static constexpr f32 kKillShare = 0.2f;
     static constexpr f32 kRoarAfter = 50.0f;
+    static constexpr std::array<f32, 5> kRoarShares{1.0f, 1.0f, 1.5f, 2.0f, 2.0f};
+    static constexpr f32 kRoarMemory = 3.0f;
+    static constexpr s32 kFlashTicks = 4; ///< two 30 Hz frames
+    static constexpr u32 kFlashesWhole = 0x100000 | 0x200 | 0x100 | 0x20;
     static constexpr f32 kUnderLevelLoss = 0.02f;
     /** A boss's share of harm by how many are in the game (lbl_8011AEC0). */
     static constexpr std::array<f32, 5> kBossShares{1.0f, 1.0f, 0.5f, 0.3f, 0.2f};
@@ -112,6 +116,8 @@ public:
         return data() != nullptr ? data()->kind() : CombatantKind::Unknown;
     }
     f32 health() const { return m_actor.health; }
+    bool flashing() const { return m_actor.flashTicks > 0; }
+    static f32 roarThreshold(s32 players);
     f32 maxHealth() const { return m_actor.maxHealth; }
     const Vec3& position() const { return m_actor.position; }
     f32 yaw() const { return m_actor.yaw; }
@@ -139,7 +145,8 @@ public:
                     const WorldLighting& lighting) const;
     /** Its body, and the bar over it when its type hangs one, turned to `camera`. */
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr) const;
+              const Texture* frozenTexture = nullptr, const CameraFrame* camera = nullptr,
+              const Texture* hitFlash = nullptr) const;
     /** The GMETER bar's placement and its nodes' matrices, while it hangs over the body. */
     std::optional<std::pair<Mat4, std::vector<Mat4>>> meterPose(const CameraFrame* camera) const;
     std::vector<CombatBlow> takeBlows();
@@ -189,6 +196,8 @@ private:
         u32 hurtFlags = 0;
         Vec3 hurtDirection{0.0f, 0.0f, 0.0f};
         f32 roarOwed = 0.0f; ///< damage taken toward the next roar
+        f32 sinceHurt = 0.0f;
+        s32 flashTicks = 0;
         f32 alpha = 1.0f;
         Color tint = Color::white();
         f32 scale = 1.0f;

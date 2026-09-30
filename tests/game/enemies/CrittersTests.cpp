@@ -513,6 +513,23 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
         roared = roared || critters.moveOf(*id) == "ROAR";
     }
     REQUIRE(roared);
+    // A linked attack completes its chain before accepting a reaction. The hit must also
+    // arrive after ROAR/KB/KD, whose counter update consumes incoming reaction requests.
+    const auto waitForReactionWindow = [&] {
+        for (s32 frame = 0; frame < 300; ++frame) {
+            const auto moves = critters.dataOf(*id)->moves();
+            const auto current =
+                std::ranges::find(moves, critters.moveOf(*id), &MoveDefinition::name);
+            REQUIRE(current != moves.end());
+            if (current->link < 0 && current->interrupt != 0 && !current->reaction() &&
+                current->type != MoveDefinition::kRoar) {
+                return;
+            }
+            critters.update(kTicks, kStep, party);
+        }
+        FAIL("golem never entered a reaction window");
+    };
+    waitForReactionWindow();
     // Knocked back (0x20) it plays KB; knocked over (0x100) it goes down with KD
     // (CritterGetDoAction). A character under the place's level is paid less.
     EnemyHit knock = hit;
@@ -523,6 +540,7 @@ TEST_CASE("a golem walks up to the player it sees, strikes when in reach, and is
     for (s32 i = 0; i < 120 && critters.moveOf(*id) == "KB"; ++i) {
         critters.update(kTicks, kStep, party);
     }
+    waitForReactionWindow();
     knock.flags = 0x100;
     critters.hurt(*id, knock);
     critters.update(kTicks, kStep, party);

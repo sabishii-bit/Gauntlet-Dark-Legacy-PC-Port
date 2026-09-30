@@ -23,6 +23,9 @@ bool TargetCriteria::allowsPhase(f32 rateScale, f32 homeDistance) const {
 }
 
 bool MoveDefinition::interrupts(const MoveDefinition& current) const {
+    if (priority >= kCutsIn && current.interrupt != 0) {
+        return true;
+    }
     switch (current.interrupt) {
     case 0: return false;
     case 20: return (priority & ~0xFF) > (current.priority & ~0xFF);

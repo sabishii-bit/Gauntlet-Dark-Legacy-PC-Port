@@ -87,6 +87,9 @@ public:
     std::vector<s32> within(const Vec3& centre, f32 radius) const;
     std::vector<s32> reachedBy(const Vec3& centre, f32 radius, f32 arc, const Vec3& facing) const;
 
+    /** The white skin a hard hit flashes over a body (`Combatant::flashing`); borrowed
+     * until close(), none for no flash. */
+    void setHitFlash(const Texture* texture) { m_hitFlash = texture; }
     /** Optional frozen skin is borrowed for this draw only. */
     void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
                      const WorldLighting& lighting) const;
@@ -152,5 +155,6 @@ private:
     std::vector<CombatShot> m_shots;
     std::vector<CombatantRam> m_rams;
     f32 m_textureFrames = 0;
+    const Texture* m_hitFlash = nullptr; ///< borrowed from the level
 };
 } // namespace gdl::game

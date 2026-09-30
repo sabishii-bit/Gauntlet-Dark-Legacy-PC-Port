@@ -4,6 +4,7 @@
 #include <functional>
 #include <optional>
 #include <span>
+#include <string_view>
 #include <utility>
 
 #include "engine/core/Types.h"
@@ -205,6 +206,7 @@ private:
     std::vector<std::pair<s32, s32>> m_lessons;
     static constexpr s32 kStreakLesson = 10; ///< this many hits teach to destroy generators
     static constexpr s32 kGeneratorRamBase = 2000;
+    static constexpr std::string_view kHitFlashSkin = "AAAWHITE"; ///< of POWERUPS
     static constexpr f32 kShortGenerator = 3.0f; ///< a great one breaks one no taller
     std::vector<CombatantObstacle>
     critterObstacles(std::span<const CombatantObstacle> fixtures) const;
