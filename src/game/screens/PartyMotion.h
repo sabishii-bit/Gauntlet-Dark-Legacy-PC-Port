@@ -23,6 +23,7 @@ struct PlayInput {
     bool strafe = false;             ///< the strafe button is held
     bool strongAttack = false;       ///< the slow attack button is held
     bool turbo = false;              ///< the turbo button is held
+    bool combo = false;              ///< the combo button is held: a partner ahead is taken hold of
     bool chargePressed = false;      ///< the charge button went down this frame
     bool attackPressed = false;      ///< the attack button went down this frame
     bool turboAttackPressed = false; ///< resolved same-device chord, not two merged buttons
@@ -48,8 +49,9 @@ public:
         FirstFoot,
         SecondFoot,
         Melee,
-        Fallen, ///< its death played out, it is gone from the level
-        Tagged  ///< it is now it, touched by the one who was
+        Fallen,    ///< its death played out, it is gone from the level
+        Tagged,    ///< it is now it, touched by the one who was
+        ComboStart ///< it has taken hold of its combo partner (StartComboFX's sphere and burst)
     };
     struct Events {
         std::function<void(usize, Action)> perform;
@@ -71,6 +73,9 @@ public:
         /** Where a body fallen out of the world with nobody to stand beside goes: the
          * level's start, when there is one. */
         std::function<std::optional<Vec3>()> startPoint;
+        /** A combo's flier or charger (its index, its thrower's, the blow it deals) against
+         * the level's items; true when it struck one, which turns it. */
+        std::function<bool(usize, usize, f32)> comboImpact;
     };
     static constexpr f32 kLostDepth = 4.5f;   ///< under the world's lowest point a body is lost
     static constexpr f32 kTurnFrames = 30.0f; ///< the rate a partial turn is taken at, a second

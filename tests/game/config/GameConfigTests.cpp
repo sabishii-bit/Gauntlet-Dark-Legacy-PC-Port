@@ -69,8 +69,12 @@ TEST_CASE("GameCube controls and rebindable triggers and gestures round-trip", "
     REQUIRE(config.play.padTurbo == std::vector<PadButton>{PadButton::B});
     REQUIRE(config.play.padCharge == std::vector<PadButton>{PadButton::LeftTrigger});
     REQUIRE(config.play.padStrafe == std::vector<PadButton>{PadButton::RightTrigger});
+    REQUIRE(config.play.padCombo == std::vector<PadButton>{PadButton::RightBumper});
+    REQUIRE(config.play.combo == std::vector<Key>{Key::V});
     config.mergeJson(R"({"controls":{"play":{
-        "pad":{"attack":["RightTrigger"],"turbo":["LeftTrigger"],"usePotion":["Y"],"charge":[]},
+        "keyboard":{"combo":["G"]},
+        "pad":{"attack":["RightTrigger"],"turbo":["LeftTrigger"],"usePotion":["Y"],"charge":[],
+               "combo":["LeftBumper"]},
         "magicHoldSeconds":0.4,"magicDoubleTapSeconds":0.3,"actionChords":false,"padMagicGestures":false
     }}})");
     GameConfig roundTrip;
@@ -78,6 +82,8 @@ TEST_CASE("GameCube controls and rebindable triggers and gestures round-trip", "
     REQUIRE(roundTrip.toJson() == config.toJson());
     REQUIRE(roundTrip.play.padAttack == std::vector<PadButton>{PadButton::RightTrigger});
     REQUIRE(roundTrip.play.padCharge.empty());
+    REQUIRE(roundTrip.play.padCombo == std::vector<PadButton>{PadButton::LeftBumper});
+    REQUIRE(roundTrip.play.combo == std::vector<Key>{Key::G});
     REQUIRE_FALSE(roundTrip.play.actionChords);
     REQUIRE_FALSE(roundTrip.play.padMagicGestures);
 }
