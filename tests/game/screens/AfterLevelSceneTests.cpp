@@ -221,6 +221,15 @@ TEST_CASE("after-level screen renders every phase with retail assets",
     REQUIRE(experience.size() == 1);
     REQUIRE(gold.front() < bones.front());
     REQUIRE(bones.front() < experience.front());
+    // Piles at 63990 must be behind both frame halves at 63900, including
+    // the neighboring column's overlapping edge. Canvas order replaces GX depth.
+    for (const auto* name : {"S1_BORDER", "S2_BORDER"}) {
+        const auto borders = artworkDraws(name);
+        REQUIRE(borders.size() == 4);
+        for (const auto* border : borders) {
+            REQUIRE(experience.front() < border);
+        }
+    }
     ShopSession::Inputs input;
     input[2].select = true;
     REQUIRE_FALSE(scene.update(0, input));
@@ -231,6 +240,19 @@ TEST_CASE("after-level screen renders every phase with retail assets",
     REQUIRE(scrolls.size() == 1);
     REQUIRE(test::minCorner(*scrolls[0]) == Vec2{256, 0});
     REQUIRE(test::maxCorner(*scrolls[0]) == Vec2{384, 256});
+    const auto shopGold = artworkDraws("SHP_GOLD");
+    REQUIRE(shopGold.size() == 1);
+    REQUIRE(shopGold.front() < scrolls.front());
+    const auto lowerScrolls = artworkDraws("SHOP_SCROLL_2");
+    REQUIRE(lowerScrolls.size() == 1);
+    for (const auto* name : {"S1_BORDER", "S2_BORDER"}) {
+        const auto borders = artworkDraws(name);
+        REQUIRE(borders.size() == 4);
+        for (const auto* border : borders) {
+            REQUIRE(scrolls.front() < border);
+            REQUIRE(lowerScrolls.front() < border);
+        }
+    }
     // Crossing Exit to the last row uses write_shop_menu's negative-speed snap;
     // no elapsed time should be needed to see the wrapped selection.
     const auto& items = scene.session().catalog().items();
