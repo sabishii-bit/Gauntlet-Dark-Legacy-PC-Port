@@ -449,6 +449,7 @@ void LevelOpponents::close() {
     m_generators.clear();
     m_generatorRewards.clear();
     m_enemyMissiles.clear();
+    m_rockHits.clear();
     m_clouds.clear();
     m_deathShots.clear();
     m_yells.clear();
@@ -985,8 +986,20 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
                                           shotSound, &m_resources->world.collision());
         }
     }
+    const auto swarmHits = m_enemyMissiles.takeRockHits();
+    m_rockHits.insert(m_rockHits.end(), swarmHits.begin(), swarmHits.end());
+    for (MissileStop& item : inTheWay) {
+        for (const RockHit& hit : swarmHits) {
+            if (item.rock >= 0 && static_cast<usize>(item.rock) == hit.rock) {
+                item.rockHealth -= std::max(
+                    1, static_cast<s32>(std::round(hit.damage - static_cast<f32>(item.rockArmor))));
+            }
+        }
+    }
     m_combatantProjectiles.update(seconds, &m_resources->world.collision(), views,
-                                  m_resources->device, m_resources->effects, shotSound);
+                                  m_resources->device, m_resources->effects, shotSound, inTheWay);
+    const auto combatantHits = m_combatantProjectiles.takeRockHits();
+    m_rockHits.insert(m_rockHits.end(), combatantHits.begin(), combatantHits.end());
     for (const CombatantWorldHit& hit : m_combatantProjectiles.takeWorldHits()) {
         if (hit.object >= 0) {
             m_resources->world.explodeObject(hit.object, hit.position);

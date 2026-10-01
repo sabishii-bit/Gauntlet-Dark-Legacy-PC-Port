@@ -88,8 +88,12 @@ bool Obstacle::touchedBy(const Vec3& position, f32 radius, f32 margin) const {
 }
 
 bool Obstacle::blocksSegment(const Vec3& from, const Vec3& to, f32 radius) const {
+    return contact(from, to, radius).has_value();
+}
+
+std::optional<f32> Obstacle::contact(const Vec3& from, const Vec3& to, f32 radius) const {
     if (!solid) {
-        return false;
+        return std::nullopt;
     }
     radius = std::max(radius, 0.0f);
     f32 enter = 0.0f;
@@ -105,29 +109,32 @@ bool Obstacle::blocksSegment(const Vec3& from, const Vec3& to, f32 radius) const
         return enter <= leave;
     };
     if (!slab(from.y, to.y - from.y, centre.y - radius, centre.y + height + radius)) {
-        return false;
+        return std::nullopt;
     }
     const Vec2 start = localOf(*this, from);
     const Vec2 step = localOf(*this, to) - start;
     if (cylinderRadius <= 0.0f) {
-        return slab(start.x, step.x, -halfAcross - radius, halfAcross + radius) &&
-               slab(start.y, step.y, -halfAlong - radius, halfAlong + radius);
+        if (slab(start.x, step.x, -halfAcross - radius, halfAcross + radius) &&
+            slab(start.y, step.y, -halfAlong - radius, halfAlong + radius)) {
+            return enter;
+        }
+        return std::nullopt;
     }
     const f32 reach = cylinderRadius + radius;
     const f32 a = glm::dot(step, step);
     const f32 b = glm::dot(start, step);
     const f32 c = glm::dot(start, start) - reach * reach;
     if (a == 0.0f) {
-        return c <= 0.0f;
+        return c <= 0.0f ? std::optional<f32>{enter} : std::nullopt;
     }
     const f32 discriminant = b * b - a * c;
     if (discriminant < 0.0f) {
-        return false;
+        return std::nullopt;
     }
     const f32 root = std::sqrt(discriminant);
     enter = std::max(enter, (-b - root) / a);
     leave = std::min(leave, (-b + root) / a);
-    return enter <= leave;
+    return enter <= leave ? std::optional<f32>{enter} : std::nullopt;
 }
 
 bool ItemFigure::place(RenderDevice& device, ItemArchive& items, std::string_view name,

@@ -20,6 +20,7 @@
 #include "game/screens/PlayerHealth.h"
 #include "game/world/CombatantProjectiles.h"
 #include "game/world/LevelWorld.h"
+#include "game/world/SafeRocks.h"
 
 namespace {
 using namespace gdl;
@@ -80,11 +81,186 @@ struct Fixture {
         projectiles.launch(shot, archive, device, effects, sound);
     }
     void step(f32 seconds, std::span<const EnemyView> players = {},
-              const WorldCollision* collision = nullptr) {
+              const WorldCollision* collision = nullptr, std::span<const MissileStop> items = {}) {
         effects.update(seconds);
-        projectiles.update(seconds, collision, players, device, effects, sound);
+        projectiles.update(seconds, collision, players, device, effects, sound, items);
     }
 };
+
+TEST_CASE("combatant shots impact items without reflecting or hitting sheltered players",
+          "[game][boss-projectiles][safe-rocks]") {
+    Fixture f;
+    const bool rock = GENERATE(false, true);
+    Obstacle cover;
+    cover.centre = {0, 0, 2};
+    cover.height = 8;
+    cover.halfAcross = 5;
+    cover.halfAlong = 0.5f;
+    const std::array stops{MissileStop{.box = cover, .rock = rock ? 3 : -1, .rockHealth = 90}};
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 1; // reflective, but not piercing
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    shot.realm = 'I';
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array players{EnemyView{0, {0, 0, 5}, 1, 6}};
+    f.step(0.25f, players, nullptr, stops);
+    CHECK(f.projectiles.count() == 0);
+    CHECK(f.projectiles.takeHits().empty());
+    CHECK(f.projectiles.takeWorldHits().empty());
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "HIT");
+    CHECK(f.effects.effect(0).position.z ==
+          Approx(1.0f)); // full item radius, not world half-radius
+    CHECK(f.sounds == std::vector<std::string>{"S_IHIT"});
+    const auto hits = f.projectiles.takeRockHits();
+    REQUIRE(hits.size() == (rock ? 1U : 0U));
+    if (rock) {
+        CHECK(hits.front().rock == 3);
+        CHECK(hits.front().damage == 12);
+    }
+    CHECK(f.projectiles.takeRockHits().empty());
+}
+
+TEST_CASE("piercing combatant shots stop at surviving cover and pass destroyed cover",
+          "[game][boss-projectiles][safe-rocks]") {
+    Fixture f;
+    const bool survives = GENERATE(false, true);
+    Obstacle cover;
+    cover.centre = {0, 0, 4};
+    cover.height = 8;
+    cover.cylinderRadius = 1;
+    const std::array stops{MissileStop{.box = cover, .rock = 2, .rockHealth = survives ? 90 : 30}};
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 2; // 60 damage, piercing
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    f.step(0.3f, {}, nullptr, stops);
+    const auto hits = f.projectiles.takeRockHits();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits.front().damage == 60);
+    CHECK(f.projectiles.count() == (survives ? 0U : 1U));
+    if (survives) {
+        CHECK(f.effects.count() == 0); // surviving cover clears fxhit for DMG_SUPER
+    } else {
+        REQUIRE(f.effects.count() == 1);
+        CHECK(f.effects.effect(0).position.z > 8);
+    }
+}
+
+TEST_CASE("combatant item sweeps choose the nearest cover and account for earlier shots",
+          "[game][boss-projectiles][safe-rocks]") {
+    Fixture f;
+    Obstacle cover;
+    cover.centre = {0, 0, 2};
+    cover.height = 8;
+    cover.halfAcross = 5;
+    cover.halfAlong = 0.01f;
+    auto farther = cover;
+    farther.centre.z += 0.1f;
+    const std::array stops{MissileStop{.box = farther, .rock = 1, .rockHealth = 90},
+                           MissileStop{.box = cover, .rock = 0, .rockHealth = 10}};
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 1;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    f.step(0.2f, {}, nullptr, stops);
+    const auto hits = f.projectiles.takeRockHits();
+    REQUIRE(hits.size() == 2);
+    CHECK(hits[0].rock == 0);
+    CHECK(hits[1].rock == 1);
+    CHECK(f.projectiles.count() == 0);
+}
+
+TEST_CASE("retail Yeti ice attacks damage I5 cover and only pierce a destroyed rock",
+          "[game][boss-projectiles][safe-rocks][yeti][unpacked]") {
+    const s32 attack = GENERATE(2, 3, 9, 10, 13, 14);
+    const s32 fps = GENERATE(30, 60);
+    CAPTURE(attack, fps);
+    Fixture f;
+    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELI5/world.json");
+    test::unpackedOrSkip("ITEMS/LEVELI5/objects.json");
+    REQUIRE(f.data.load(root / "critter/YETI.json"));
+    REQUIRE(f.archive.load(root / "MONSTERS/YETI"));
+    WorldLayout layout;
+    ItemArchive items;
+    REQUIRE(layout.load(root / "LEVELS/LEVELI5"));
+    REQUIRE(items.load(root / "ITEMS/LEVELI5"));
+    SafeRocks rocks;
+    REQUIRE(rocks.bind(f.device, layout, items));
+    rocks.setPlayerCount(1);
+    rocks.hideForEruptions();
+    rocks.activate(3);
+    const auto& rock = rocks.rock(3);
+    REQUIRE(rock.health == 90);
+    const std::array stops{MissileStop{
+        .box = rock.obstacle, .rock = 3, .rockHealth = rock.health, .rockArmor = rock.armor}};
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = attack;
+    shot.origin = rock.obstacle.centre + Vec3{0, 3, -8};
+    shot.target = shot.origin + Vec3{0, 0, 30};
+    shot.realm = 'I';
+    // DAMG launch offsets have already been applied by the actor before it emits the shot.
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    std::vector<RockHit> hits;
+    for (s32 frame = 0; frame < fps && hits.empty(); ++frame) {
+        f.step(1.0f / static_cast<f32>(fps), {}, nullptr, stops);
+        hits = f.projectiles.takeRockHits();
+    }
+    REQUIRE(hits.size() == 1);
+    REQUIRE(hits[0].rock == 3);
+    CHECK(hits[0].damage == f.data.damage(attack)->damage);
+    const bool destroyed = rocks.strike(3, hits[0].damage);
+    CHECK(destroyed == (attack == 9 || attack == 10));
+    CHECK(f.projectiles.count() == (destroyed ? 1U : 0U));
+    if (!destroyed) {
+        REQUIRE_FALSE(f.sounds.empty());
+        CHECK(f.sounds.back() == "S_YETIPHIT");
+    }
+    CHECK(f.projectiles.takeHits().empty());
+}
+
+TEST_CASE("combatant item contacts respect ignore-world and nearer player contacts",
+          "[game][boss-projectiles][safe-rocks]") {
+    Fixture f;
+    const bool ignoresWorld = GENERATE(false, true);
+    const bool playerFirst = GENERATE(false, true);
+    const auto root = test::scratchDirectory("combatant-item-flags");
+    writeTextFile(root / "critter.json",
+                  R"({"types":[{"moveCount":1}],"moves":[{}],"descriptors":[{}],
+        "damages":[{"type":1,"radius":0.5,"damage":12,"minSpeed":30,"maxSpeed":30,
+        "sfxIndex":0,"sfx":1,"behaviorFlags":)" +
+                      std::to_string(ignoresWorld ? 73 : 9) + R"(}],
+        "sounds":[{"name":"LOOP","life":10},{"name":"HIT"}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    Obstacle cover;
+    cover.centre = {0, 0, 6};
+    cover.height = 8;
+    cover.halfAcross = 5;
+    cover.halfAlong = 0.5f;
+    const std::array stops{MissileStop{.box = cover, .rock = 0, .rockHealth = 90}};
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 0;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const std::array players{EnemyView{0, {0, 0, playerFirst ? 3.0f : 10.0f}, 1, 6}};
+    f.step(0.5f, players, nullptr, stops);
+    const bool rockHit = !ignoresWorld && !playerFirst;
+    CHECK(f.projectiles.takeRockHits().size() == (rockHit ? 1U : 0U));
+    CHECK(f.projectiles.takeHits().size() == (rockHit ? 0U : 1U));
+    CHECK(f.projectiles.count() == 0);
+}
 
 TEST_CASE("arrow orientation follows live velocity while ordinary projectiles keep their pose",
           "[boss-projectiles][garm]") {
