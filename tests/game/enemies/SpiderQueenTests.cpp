@@ -136,6 +136,13 @@ TEST_CASE("Spider Queen egg attacks create generators that breed the stage's spi
                                 << opponents.generators().positionOf(0).y << ", "
                                 << opponents.generators().positionOf(0).z);
     REQUIRE(bred);
+    for (usize i = before; i < opponents.generators().count(); ++i) {
+        const auto id = static_cast<s32>(i);
+        REQUIRE(opponents.generators().bodyShown(id));
+    }
+    device.draws.clear();
+    opponents.generators().draw(device, Mat4{1}, WorldLighting{});
+    REQUIRE_FALSE(device.draws.empty());
     EnemyHit hit;
     hit.damage = opponents.bosses().view().maxHealth * 2;
     hit.player = 0;

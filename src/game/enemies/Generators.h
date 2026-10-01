@@ -71,7 +71,7 @@ public:
     /** A boss effect leaves a tier-one generator. Its optional BOSSGEN art is borrowed. */
     bool placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items, Enemies& enemies,
                    s32 kind, const Mat4& placement, const WorldCollision* collision,
-                   std::string_view tree = "BOSSGEN");
+                   std::string_view tree = "BOSSGEN", bool settled = false);
 
     /** Runs the countdowns, breeding into `enemies` where a player is within reach. */
     /** What the camera takes in: a generator breeds only on screen; none takes all in. */

@@ -221,7 +221,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
 
 bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items,
                            Enemies& enemies, s32 kind, const Mat4& placement,
-                           const WorldCollision* collision, std::string_view tree) {
+                           const WorldCollision* collision, std::string_view tree, bool settled) {
     if (info.type != ItemInfo::kGenerator || info.name != "BOSSGEN" || kind < 0 ||
         kind >= kEnemyKindCount || !enemies.loadKind(kind)) {
         return false;
@@ -245,7 +245,11 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     generator.bossFigure = std::make_unique<ItemFigure>();
     // A missing BOSSGEN tree does not prevent PlaceItem from creating its gameplay object.
     generator.bossFigure->place(device, items, tree, instance, collision);
-    generator.bossFigure->play(0, true);
+    generator.bossFigure->play(0, !settled);
+    if (settled) {
+        // The projectile has already finished its landing before it leaves the generator.
+        generator.bossFigure->update(static_cast<f32>(generator.bossFigure->ticksOf(0)) / 60.0f);
+    }
     generator.position = generator.bossFigure->position();
     generator.placement = placement;
     generator.placement[3] = Vec4{generator.position, 1};

@@ -38,11 +38,14 @@ std::string_view bossArenaObject(s32 kind) {
     }
 }
 
-std::string_view bossGeneratorTree(s32 kind) {
-    // LICH supplies ATK12GEN, holding ATK12GEN2F50 in its ACTIVE pose,
-    // alongside the spit's ATK12PROJ and ATK12HIT. The archive does not alias it
-    // to the generic BOSSGEN name used by PlaceItem. Resolve the authored
-    // body explicitly instead of leaving the gameplay generator invisible.
-    return kind == 41 ? "ATK12GEN" : "BOSSGEN";
+BossGeneratorVisual bossGeneratorVisual(s32 kind) {
+    // The egg's impact leaves its L1 mesh at full size in the final pose.
+    // Lich has a separate generator tree whose ACTIVE sequence repeats.
+    // Neither archive exposes these bodies under the generic BOSSGEN name.
+    switch (kind) {
+    case 37: return {"GENPROJHIT", true};
+    case 41: return {"ATK12GEN", false};
+    default: return {};
+    }
 }
 } // namespace gdl::game
