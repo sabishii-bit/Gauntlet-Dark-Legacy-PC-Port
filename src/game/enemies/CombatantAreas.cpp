@@ -4,7 +4,6 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
-#include "engine/world/AnimationPlayer.h"
 
 #include "game/enemies/Combatant.h"
 #include "game/enemies/CombatantProjectile.h"
@@ -30,7 +29,7 @@ f32 arenaDistance(const Vec3& delta) {
 } // namespace
 
 bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound) {
-    constexpr u32 kAttachedAppearanceFlags = 1U | 2U | 4U | 0x40U | 0x800U;
+    constexpr u32 kAttachedAppearanceFlags = 1U | 2U | 4U | 0x10U | 0x40U | 0x800U;
     // Root attachment takes precedence over the saved-position flag (0x80).
     // Garm's invisible damage carrier moves; its visible arc is separately
     // animated. Do not turn that unsupported carrier into an instant full hit.
@@ -50,7 +49,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
         return std::nullopt;
     }
     // Other policies need a world-space/moving effect owner, not a guessed root.
-    if (!supportsArea(damage, sound) || (worldParent.has_value() && sound->flags != 0)) {
+    if (!supportsArea(damage, sound)) {
         log::warn("critter {}: unsupported attached area policy for {}", critter.definition->name(),
                   sound->tree);
         return std::nullopt;
@@ -61,19 +60,13 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
         // thirty frames, not a zero-length hit or a missing visual's lifetime.
         life = 1.0f;
         if (sound->tree != "NULLFX") {
-            const auto tree = critter.stock->archive.trees.find(sound->tree);
-            if (!tree.has_value()) {
+            const auto tree = critter.stock->effectLifetimes.find(sound->tree);
+            if (tree == critter.stock->effectLifetimes.end()) {
                 log::warn("critter {}: no area effect tree {}", critter.definition->name(),
                           sound->tree);
                 return std::nullopt;
             }
-            const auto& sequences = critter.stock->archive.trees.tree(*tree).sequences;
-            if (!sequences.empty()) {
-                const auto& sequence = sequences.front();
-                const s32 frames = sequence.frames > 0 ? sequence.frames : 30;
-                const s32 rate = sequence.frameRate > 0 ? sequence.frameRate : 30;
-                life = static_cast<f32>(frames * rate) * AnimationPlayer::kRateUnit;
-            }
+            life = tree->second;
         }
     }
     // Root-parent SFXX policies replace the supplied DAMG position outright.
@@ -84,7 +77,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
         offset =
             Vec3{modelTransform(critter) * Vec4{damage.offset, 0}} + sound->offset * critter.scale;
     }
-    if ((sound->flags & 0x40U) != 0) {
+    if ((sound->flags & 0x40U) != 0 && !worldParent.has_value()) {
         // Detached damage effects snapshot the hit node's world position. The
         // slam's hand can lift again without dragging the ground wave with it.
         const Vec3 position = Vec3{attachmentTransform(critter, node) * Vec4{sound->offset, 1}} +
@@ -92,6 +85,23 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
         // SfxSetMat copies the body's orientation, not the animated hand's.
         worldParent = glm::rotate(glm::translate(Mat4{1}, position), critter.yaw, Vec3{0, 1, 0});
         offset = Vec3{0};
+    }
+    if ((sound->flags & 0x10U) != 0 && damage.hitSound < 0 && m_collision != nullptr) {
+        const Mat4 parent = worldParent.value_or(attachmentTransform(critter, node));
+        const Vec3 position{parent * Vec4{offset, 1}};
+        const f32 radius = damage.radius * critter.scale;
+        if (const auto floor =
+                m_collision->floorAt(position, 1 + radius * 0.5f, 5 + radius * 0.5f)) {
+            Mat4 placement = glm::translate(Mat4{1}, Vec3{position.x, floor->y + 0.1f, position.z});
+            placement =
+                glm::rotate(placement, std::atan2(floor->normal.z, floor->normal.y), Vec3{1, 0, 0});
+            placement = glm::rotate(
+                placement,
+                -std::atan2(floor->normal.x, std::hypot(floor->normal.y, floor->normal.z)),
+                Vec3{0, 0, 1});
+            worldParent = placement;
+            offset = Vec3{0};
+        }
     }
     const Vec2 angles{damage.pitch, damage.yaw};
     CritterArea area;

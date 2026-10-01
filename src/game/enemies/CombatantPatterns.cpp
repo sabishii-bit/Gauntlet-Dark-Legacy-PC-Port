@@ -48,17 +48,26 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
                critter.stock->tree->findSequence(move.anim).has_value();
     };
     const s32 previousPattern = critter.pattern;
+    const auto canStart = [&](s32 index) {
+        return critter.move < 0 || critter.moveDone ||
+               (index != critter.move &&
+                (data.moves()[static_cast<usize>(critter.move)].hold <= 0 ||
+                 data.moves()[static_cast<usize>(index)].priority >= MoveDefinition::kCutsIn) &&
+                data.moves()[static_cast<usize>(index)].interrupts(
+                    data.moves()[static_cast<usize>(critter.move)]));
+    };
     if (previousPattern >= 0) {
         const auto& pattern = data.patterns()[static_cast<usize>(previousPattern)];
         const usize next = critter.patternStep + 1;
         // The chain itself authorizes subsequent moves, even if their individual
         // health/range gates now fail. Legend-item curbs still cancel it.
-        if (next < pattern.moves.size() && available(pattern.moves[next]) &&
-            startMove(critter, static_cast<usize>(pattern.moves[next]), false)) {
-            critter.patternStep = next;
-            return true;
+        if (next < pattern.moves.size() && available(pattern.moves[next])) {
+            if (canStart(pattern.moves[next]) &&
+                startMove(critter, static_cast<usize>(pattern.moves[next]), false)) {
+                critter.patternStep = next;
+            }
+            return true; // A queued continuation retains the chain until it can transition.
         }
-        critter.pattern = -1;
     }
     f32 oldest = std::numeric_limits<f32>::max();
     s32 patternChoice = -1;
@@ -125,7 +134,18 @@ bool Combatant::choosePatternAttack(Actor& critter, std::span<const EnemyView> p
             playerChoice = target;
         }
     }
-    if (moveChoice < 0 || !startMove(critter, static_cast<usize>(moveChoice), patternChoice < 0)) {
+    if (moveChoice < 0) {
+        if (critter.moveDone) {
+            critter.pattern = -1;
+        }
+        return false;
+    }
+    // Selection is evaluated during the animation. A rejected transition must
+    // not consume cooldowns, retarget the active attack, or advance its pattern.
+    if (!canStart(moveChoice)) {
+        return true;
+    }
+    if (!startMove(critter, static_cast<usize>(moveChoice), patternChoice < 0)) {
         return false;
     }
     critter.target = playerChoice;

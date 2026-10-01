@@ -12,6 +12,7 @@
 #include "engine/world/WorldCollision.h"
 
 #include "game/enemies/CombatantProjectile.h"
+#include "game/enemies/CritterArea.h"
 #include "game/enemies/Enemies.h"
 #include "game/world/EffectTrees.h"
 
@@ -64,7 +65,8 @@ private:
         bool stuck = false;   ///< stationary sticky impact, no longer a flying missile
         bool planted = false; ///< stationary DAMG area, with birth/hold/end phases
         f32 phaseSeconds = 0;
-        bool settled = false; ///< generator projectile's impact is finishing before placement
+        bool settled = false; ///< stationary impact, optionally followed by generator placement
+        std::optional<CritterArea> impactArea; ///< expanding damage after the flight ends
         bool leavesGenerator = false;
         bool summonsEnemies = false;
         f32 contactSeconds = 0; ///< sticky contacts advance on the authored 30 Hz game clock
@@ -74,6 +76,9 @@ private:
              const PlaySound& sound, f32 life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
     void stickyContacts(Flying& flying, f32 seconds, std::span<const EnemyView> players);
+    static bool startImpactArea(Flying& flying, u32 effect, EffectTrees& effects,
+                                const WorldCollision* collision);
+    void impactContacts(Flying& flying, f32 seconds, std::span<const EnemyView> players);
     void summon(Flying& flying);
     std::vector<Flying> m_flying;
     std::vector<u32> m_emittedEffects; ///< impacts and end effects still borrow the launch archive

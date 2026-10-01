@@ -320,29 +320,42 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         reacted = true;
     }
     if (hurt && !reacted && (flags & kShaken) != 0) {
-        cutIn(data.moveOfType(MoveDefinition::kHitReact));
+        reacted = cutIn(data.moveOfType(MoveDefinition::kHitReact));
     }
-    // A move plays out, then what it links to, then whatever is best.
-    if (current != nullptr && !critter.moveDone) {
+    if (reacted && !linked) {
         return;
     }
-    if (current != nullptr && current->link >= 0 &&
-        startMove(critter, static_cast<usize>(current->link))) {
+    const auto transition = [&](usize index) {
+        if (index >= data.moves().size()) {
+            return false;
+        }
+        if (current != nullptr && !critter.moveDone &&
+            ((current->hold > 0 && data.moves()[index].priority < MoveDefinition::kCutsIn) ||
+             static_cast<s32>(index) == critter.move ||
+             !data.moves()[index].interrupts(*current))) {
+            return false;
+        }
+        return startMove(critter, index);
+    };
+    // Linked continuations outrank a new choice, but still obey the current
+    // animation's interruption policy until it finishes.
+    if (current != nullptr && current->link >= 0) {
+        transition(static_cast<usize>(current->link));
         return;
     }
     // Asked to roar, it does so before anything else; held, it keeps to its stance.
     if (critter.roarWanted) {
-        critter.pattern = -1;
-        critter.roarWanted = false;
         if (const auto bellow = data.moveOfType(MoveDefinition::kRoar);
-            bellow.has_value() && startMove(critter, *bellow)) {
+            bellow.has_value() && transition(*bellow)) {
+            critter.pattern = -1;
+            critter.roarWanted = false;
             return;
         }
     }
     if (critter.held) {
         critter.pattern = -1;
         if (const auto ready = data.moveOfType(MoveDefinition::kReady); ready.has_value()) {
-            startMove(critter, *ready);
+            transition(*ready);
         }
         return;
     }
@@ -351,7 +364,9 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         return;
     }
     if (const auto next = bestMove(critter, players); next.has_value()) {
-        startMove(critter, *next);
+        if (!transition(*next)) {
+            return;
+        }
         if (data.moves()[*next].type == MoveDefinition::kStepToPoint) {
             if (const EnemyView* destination = viewOf(players, critter.target)) {
                 // CritterLookForReady supplies CritterGetTarget's player position.
@@ -362,7 +377,7 @@ void Combatant::chooseMove(Actor& critter, std::span<const EnemyView> players) {
         return;
     }
     if (const auto ready = data.moveOfType(MoveDefinition::kReady); ready.has_value()) {
-        startMove(critter, *ready);
+        transition(*ready);
     }
 }
 

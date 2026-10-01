@@ -223,6 +223,54 @@ std::filesystem::path areaArchive(bool expanding = false, bool arena = false, bo
     return root;
 }
 
+TEST_CASE("floor placed target attacks use shared animation duration and retain their snapshot",
+          "[game][boss-areas][floor-area]") {
+    const auto root = areaArchive();
+    std::filesystem::create_directories(root / "WEAPONS");
+    writeTextFile(root / "WEAPONS/animations.json", R"({"trees":[{"name":"EXPRING",
+      "nodes":[],"sequences":[{"name":"PLAY","frames":30,"rate":30}]}]})");
+    writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100}],"moves":[
+      {"name":"READY","anim":"STEP","type":32},
+      {"name":"SLAM","anim":"STEP","type":136,"priority":512,"cooldown":20,
+       "frameStart":1,"frameEnd":1,"damage0":0}],
+      "damages":[{"type":8,"damage":40,"radius":1,"maxDistance":10,"minDot":-1,"sfxIndex":0}],
+      "sounds":[{"name":"EXPRING","flags":86}]})");
+    WorldCollision floor;
+    CollisionTriangle triangle;
+    triangle.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 100}};
+    floor.build({triangle});
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, &floor, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    CHECK(fixture.assets.effectLifetimes.at("EXPRING") == Approx(1));
+    std::array players{playerAt({0, 0, 10})};
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    const auto cues = fixture.actor.takeCues();
+    REQUIRE(cues.size() == 1);
+    CHECK(cues[0].tree == "EXPRING");
+    CHECK(cues[0].position.y == Approx(0.1f));
+    CHECK(cues[0].position.z == Approx(10));
+    CHECK(cues[0].life == Approx(1));
+    CHECK_FALSE(cues[0].follows);
+    auto hits = fixture.actor.takeBlows();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].area);
+    fixture.actor.freeze(120);
+    players[0].position.z = 18;
+    fixture.update(6, 0.1f, players);
+    CHECK(fixture.actor.takeBlows().empty());
+    fixture.update(24, 0.4f, players);
+    hits = fixture.actor.takeBlows();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].origin.z == Approx(10));
+    CHECK(hits[0].damage < 40);
+    fixture.update(12, 0.2f, players);
+    CHECK(fixture.actor.takeBlows().empty());
+}
+
 TEST_CASE("moving NULLFX rings use area collision throughout their lifetime",
           "[game][boss-areas][garm]") {
     const auto root = areaArchive(true, false, false, false, true);

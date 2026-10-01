@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "engine/assets/ItemArchive.h"
+#include "engine/core/Types.h"
 #include "engine/world/TextureAnimator.h"
 #include "engine/world/TreeModel.h"
 
@@ -19,6 +20,7 @@ struct CombatantAssets {
     CritterData data;
     std::vector<CritterData> children;
     ItemArchive archive;
+    std::map<std::string, f32, std::less<>> effectLifetimes; ///< own and shared effect sequences
     const TreeInfo* tree = nullptr;
     TreeModel body;
     std::map<std::string, TreeModel> brokenModels; ///< PREFIX + D + node name replacements

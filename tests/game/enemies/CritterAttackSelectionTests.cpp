@@ -18,7 +18,7 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-std::filesystem::path attackTable(std::string_view table) {
+std::filesystem::path attackTable(std::string_view table, s32 frames = 3) {
     const auto root = test::scratchDirectory("boss-attack-selection");
     const auto archive = root / "MONSTERS/DJINN";
     std::filesystem::create_directories(root / "critter");
@@ -33,7 +33,8 @@ std::filesystem::path attackTable(std::string_view table) {
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"DJINN",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
-      "sequences":[{"name":"STEP","frames":3}]}]})");
+      "sequences":[{"name":"STEP","frames":)" + std::to_string(frames) +
+                                                   R"(}]}]})");
     writeTextFile(root / "critter/DJINN.json", std::string(table));
     return root;
 }
@@ -45,6 +46,95 @@ EnemyView targetAt(f32 z) {
     view.height = 6;
     view.radius = 1;
     return view;
+}
+
+TEST_CASE("ordinary attacks interrupt only when the current move permits their priority",
+          "[game][boss-attacks][attack-interruption]") {
+    for (const s32 policy : {0, 20, 40, 60, 80, 90}) {
+        CAPTURE(policy);
+        const auto root = attackTable(R"({"descriptors":[{"prefix":"DJINN","type":4}],
+          "types":[{"moveCount":3,"maxHealth":100}],"moves":[
+          {"name":"READY","anim":"STEP","type":32,"priority":0,"interrupt":90},
+          {"name":"FAR","anim":"STEP","type":128,"priority":512,"interrupt":)" +
+                                          std::to_string(policy) + R"(,"target":{"minDistance":10}},
+          {"name":"CLOSE","anim":"STEP","type":128,"priority":513,
+           "frameStart":15,"frameEnd":15,"damage0":0,"target":{"maxDistance":9}}],
+          "damages":[{"type":1,"sfxIndex":0}],"sounds":[{"name":"SHOT"}]})",
+                                      60);
+        test::FakeRenderDevice device;
+        test::CombatantFixture fixture;
+        fixture.open(device, root, nullptr, {}, 'C');
+        REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+        std::array party{targetAt(20)};
+        fixture.update(2, 1.0f / 30, party);
+        REQUIRE(fixture.actor.moveName() == "FAR");
+        party[0] = targetAt(5);
+        fixture.update(2, 1.0f / 30, party);
+        const bool permitted = policy != 0 && policy != 20;
+        CHECK(fixture.actor.moveName() == (permitted ? "CLOSE" : "FAR"));
+        CHECK(fixture.actor.takeShots().empty());
+        // A blocked attempt consumes no cooldown and takes over after completion.
+        for (s32 frame = 0; frame < 61; ++frame) {
+            fixture.update(2, 1.0f / 30, party);
+        }
+        CHECK(fixture.actor.moveName() == "CLOSE");
+        if (!permitted) {
+            // The locked FAR used its full sixty frames before CLOSE started.
+            for (s32 frame = 0; frame < 15; ++frame) {
+                fixture.update(2, 1.0f / 30, party);
+            }
+        }
+        CHECK(fixture.actor.takeShots().size() == 1);
+    }
+}
+
+TEST_CASE("queued pattern steps cannot skip a locked running animation",
+          "[game][boss-attacks][attack-interruption]") {
+    const auto root = attackTable(R"({"descriptors":[{"prefix":"DJINN","type":4}],
+      "types":[{"moveCount":3,"patternCount":1,"maxHealth":100}],"moves":[
+      {"name":"READY","anim":"STEP","type":32,"interrupt":90},
+      {"name":"FIRST","anim":"STEP","type":128,"priority":512,"interrupt":0,"flags":4},
+      {"name":"SECOND","anim":"STEP","type":128,"priority":1024,"flags":4}],
+      "patterns":[{"moves":[1,2],"cooldown":100}]})",
+                                  60);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'C');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    const std::array party{targetAt(8)};
+    for (s32 frame = 0; frame < 59; ++frame) {
+        fixture.update(2, 1.0f / 30, party);
+        REQUIRE(fixture.actor.moveName() == "FIRST");
+    }
+    fixture.update(4, 2.0f / 30, party);
+    fixture.update(2, 1.0f / 30, party);
+    CHECK(fixture.actor.moveName() == "SECOND");
+}
+
+TEST_CASE("an animation hold blocks ordinary cut-ins but not critical priority",
+          "[game][boss-attacks][attack-interruption]") {
+    for (const s32 priority : {513, MoveDefinition::kCutsIn}) {
+        CAPTURE(priority);
+        const auto root =
+            attackTable(R"({"descriptors":[{"prefix":"DJINN","type":4}],
+          "types":[{"moveCount":3,"maxHealth":100}],"moves":[
+          {"name":"READY","anim":"STEP","type":32,"interrupt":90},
+          {"name":"FAR","anim":"STEP","type":128,"priority":512,"interrupt":90,
+           "hold":1,"target":{"minDistance":10}},
+          {"name":"CLOSE","anim":"STEP","type":128,"priority":)" +
+                            std::to_string(priority) + R"(,"target":{"maxDistance":9}}]})",
+                        60);
+        test::FakeRenderDevice device;
+        test::CombatantFixture fixture;
+        fixture.open(device, root, nullptr, {}, 'C');
+        REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+        std::array party{targetAt(20)};
+        fixture.update(2, 1.0f / 30, party);
+        REQUIRE(fixture.actor.moveName() == "FAR");
+        party[0] = targetAt(5);
+        fixture.update(2, 1.0f / 30, party);
+        CHECK(fixture.actor.moveName() == (priority >= MoveDefinition::kCutsIn ? "CLOSE" : "FAR"));
+    }
 }
 
 TEST_CASE("boss health gates use exclusive upper bounds only above the lower bound",

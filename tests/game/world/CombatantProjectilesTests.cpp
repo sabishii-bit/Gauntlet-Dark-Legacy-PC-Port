@@ -119,6 +119,97 @@ TEST_CASE("arrow orientation follows live velocity while ordinary projectiles ke
     }
 }
 
+TEST_CASE("projectile impacts expand their damage then go harmless before the artwork ends",
+          "[boss-projectiles][projectile-impact]") {
+    Fixture f;
+    const auto root = test::scratchDirectory("projectile-impact-area");
+    writeTextFile(root / "critter.json", R"({"types":[{"moveCount":1}],"moves":[{}],
+      "descriptors":[{}],"damages":[{"type":1,"minSpeed":30,"maxSpeed":30,
+      "radius":0.5,"maxDistance":10,"minDot":-1,"damage":50,"flags":32,
+      "behaviorFlags":9,"sfxIndex":0,"sfx":1}],
+      "sounds":[{"name":"LOOP","life":3},{"name":"HIT","life":1}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    f.launch();
+    EnemyView contact;
+    contact.player = 0;
+    contact.position = {0, 0, 2};
+    contact.radius = 1;
+    contact.height = 6;
+    f.step(0.05f, std::span{&contact, 1});
+    const auto direct = f.projectiles.takeHits();
+    REQUIRE(direct.size() == 1);
+    CHECK(direct[0].damage == 100);
+    REQUIRE(f.projectiles.count() == 1);
+    EnemyView bystander = contact;
+    bystander.player = 1;
+    bystander.position = {7, 0, 0.5f};
+    f.step(0.05f, std::span{&bystander, 1});
+    CHECK(f.projectiles.takeHits().empty());
+    f.step(0.4f, std::span{&bystander, 1});
+    const auto splash = f.projectiles.takeHits();
+    REQUIRE(splash.size() == 1);
+    CHECK(splash[0].player == 1);
+    CHECK(splash[0].damage == Approx(33));
+    CHECK(splash[0].repeatGap == Approx(0.616667f));
+    f.step(0.25f, std::span{&bystander, 1});
+    CHECK(f.projectiles.takeHits().empty());
+    CHECK(f.effects.count() == 1);
+    f.step(0.31f, std::span{&bystander, 1});
+    CHECK(f.projectiles.count() == 0);
+    CHECK(f.effects.count() == 0);
+}
+
+TEST_CASE("timed-out explosive shots enter their impact phase without a collision",
+          "[boss-projectiles][projectile-impact]") {
+    Fixture f;
+    const auto root = test::scratchDirectory("timed-projectile-impact");
+    writeTextFile(root / "critter.json", R"({"types":[{"moveCount":1}],"moves":[{}],
+      "descriptors":[{}],"damages":[{"type":1,"radius":0.5,"maxDistance":10,
+      "minDot":-1,"damage":50,"sfxIndex":0,"sfx":1}],
+      "sounds":[{"name":"LOOP","life":0.1},{"name":"HIT","life":1}]})");
+    REQUIRE(f.data.load(root / "critter.json"));
+    f.launch();
+    f.step(0.11f);
+    REQUIRE(f.projectiles.count() == 1);
+    REQUIRE(f.effects.count() == 1);
+    CHECK(f.effects.effect(0).name == "HIT");
+    f.projectiles.clear(f.effects);
+    CHECK(f.effects.count() == 0);
+}
+
+TEST_CASE("shipped projectile cues are trees and their only custom links are particle trails",
+          "[boss-projectiles][projectile-trail][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path();
+    usize shots = 0;
+    usize trails = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(root)) {
+        if (entry.path().extension() != ".json") {
+            continue;
+        }
+        CritterData data;
+        REQUIRE(data.load(entry.path()));
+        // Attack tables are shared by every TYPE in an archive.
+        for (s32 i = 0; const auto* damage = data.damage(i); ++i) {
+            if (damage->type != AttackDefinition::kProjectile) {
+                continue;
+            }
+            const auto* cue = data.sound(damage->sound);
+            if (cue == nullptr) {
+                continue;
+            }
+            CAPTURE(entry.path().filename().string(), i, cue->tree);
+            CHECK((cue->flags & 0xF000000U) == 0);
+            ++shots;
+            if (const auto* link = data.sound(cue->link)) {
+                CHECK((link->flags & (0xF000000U | 0x4000U)) == 0x02004000U);
+                ++trails;
+            }
+        }
+    }
+    CHECK(shots > 50);
+    CHECK(trails > 0);
+}
+
 TEST_CASE("linked projectile fire emits behind its moving parent and stops at the authored time",
           "[boss-projectiles][projectile-trail]") {
     Fixture f;
@@ -392,18 +483,31 @@ TEST_CASE("Lich and Spider Queen egg records request stage generators",
                 const std::vector<EnemyView> players =
                     hitPlayer ? std::vector<EnemyView>{{0, {0, -10, 0}, 10, 30}}
                               : std::vector<EnemyView>{};
-                usize hits = 0;
+                usize directHits = 0;
+                usize areaHits = 0;
                 for (s32 frame = 0; frame < 900 && projectiles.count() > 0; ++frame) {
                     effects.update(1.0f / 30);
                     projectiles.update(1.0f / 30, nullptr, players, device, effects, {});
                     for (const auto& hit : projectiles.takeHits()) {
-                        ++hits;
+                        if (frame == 0) {
+                            ++directHits;
+                        } else {
+                            // The egg's impact expands before leaving a generator.
+                            // These contacts carry immunity time; they are not web ticks.
+                            ++areaHits;
+                            if (hit.damage > 2) {
+                                REQUIRE(hit.repeatGap > 0);
+                            } else {
+                                REQUIRE((hit.flags & 0x170U) == 0); // faint tail cannot stagger
+                            }
+                        }
                         REQUIRE((hit.flags & PlayerImpact::kSticky) == 0);
                         const PlayerImpact impact{hit.flags, hit.direction};
                         REQUIRE(impact.reaction(hit.damage, 0, false) != PlayerDeed::Webbed);
                     }
                 }
-                REQUIRE(hits == (hitPlayer ? 1 : 0));
+                REQUIRE(directHits == (hitPlayer ? 1 : 0));
+                REQUIRE((areaHits > 0) == hitPlayer);
                 REQUIRE(projectiles.takeGenerators().size() == 1);
                 ++eggs;
             }
