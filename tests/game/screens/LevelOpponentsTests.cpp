@@ -732,6 +732,56 @@ TEST_CASE("the town's IT stands for a party of three, with no body of its own",
     }
 }
 
+TEST_CASE("Trenches placed archers keep firing after their first arrow",
+          "[level-opponents][battle-archer][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELH1/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("H1");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    Enemies& enemies = opponents.enemies();
+    s32 archer = -1;
+    for (s32 id = 0; id < Enemies::kMost; ++id) {
+        if (enemies.alive(id) && enemies.variantOf(id) == kArcherStrength &&
+            enemies.algorithmOf(id) == kThrowWay) {
+            archer = id;
+            break;
+        }
+    }
+    REQUIRE(archer >= 0);
+    EnemyView player;
+    player.player = 0;
+    player.position = enemies.positionOf(archer) + Vec3{0, 0, 25};
+    player.radius = 1;
+    player.height = 6;
+    const std::array party{player};
+    EnemyMissiles missiles;
+    s32 releases = 0;
+    for (s32 frame = 0; frame < 180; ++frame) {
+        enemies.update(2, 1.0f / 30, party, {}, &missiles);
+        if (enemies.animatorOf(archer)->threw()) {
+            ++releases;
+        }
+    }
+    CHECK(releases >= 2);
+    usize arrows = 0;
+    for (usize i = 0; i < missiles.count(); ++i) {
+        arrows += missiles.missile(i).shooter == archer ? 1U : 0U;
+    }
+    CHECK(arrows >= 2);
+    opponents.close();
+}
+
 TEST_CASE("the placed enemies stand only once the camera comes to see them",
           "[level-opponents][unpacked]") {
     const auto root =

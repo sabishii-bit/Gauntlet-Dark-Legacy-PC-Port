@@ -205,4 +205,62 @@ TEST_CASE("repeated death requests finish once and never stand back up",
     }
 }
 
+TEST_CASE("throw stages carry fractional retail waits without blocking movement or reactions",
+          "[game][enemies][animation][battle-archer]") {
+    TreeInfo tree = gruntTree();
+    for (const auto* name : {"THROW1", "THROW2", "THROWF", "ATTTOREADY"}) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = name;
+        sequence.frames = 3;
+        sequence.repeats = false;
+        tree.sequences.push_back(sequence);
+    }
+    EnemyAnimator animator;
+    REQUIRE(animator.bind(tree));
+    REQUIRE(stepsUntil(animator, Action::Ready, Action::Ready, 30) < 30);
+    SECTION("an exact second stays in the carry until the next throw stage") {
+        animator.setThrowInterval(1.0f);
+        REQUIRE(stepsUntil(animator, Action::Throw, Action::Throw, 30) < 30);
+        CHECK(animator.idleSeconds() == 0.0f);
+        REQUIRE(stepsUntil(animator, Action::Throw, Action::ThrowFinish, 30) < 30);
+        CHECK(animator.threw());
+        CHECK(animator.idleSeconds() == Catch::Approx(1.1f));
+        animator.request(Action::Throw);
+        CHECK(animator.requested() == Action::Ready);
+        animator.request(Action::RunAttack);
+        CHECK(animator.requested() == Action::RunAttack);
+        animator.request(Action::HitReact1);
+        animator.update(kTicks, kStep);
+        CHECK(animator.action() == Action::HitReact1);
+        REQUIRE(stepsUntil(animator, Action::Ready, Action::Ready, 60) < 60);
+        for (s32 frame = 0; frame < 40; ++frame) {
+            animator.update(kTicks, kStep);
+        }
+        REQUIRE(stepsUntil(animator, Action::Throw, Action::Throw, 30) < 30);
+    }
+    SECTION("quarter seconds accumulate at stage changes, not every animation tick") {
+        animator.setThrowInterval(0.25f);
+        for (const Action next :
+             {Action::Throw, Action::ThrowFinish, Action::Throw2, Action::ThrowFinish}) {
+            REQUIRE(stepsUntil(animator, Action::Throw, next, 30) < 30);
+            CHECK(animator.idleSeconds() == 0.0f);
+        }
+        REQUIRE(stepsUntil(animator, Action::Throw, Action::Throw2, 30) < 30);
+        CHECK(animator.idleSeconds() == Catch::Approx(1.1f));
+    }
+    SECTION("the placement's no-wait interval never adds a pause") {
+        animator.setThrowInterval(0.0f);
+        for (s32 frame = 0; frame < 90; ++frame) {
+            animator.request(Action::Throw);
+            animator.update(kTicks, kStep);
+            CHECK(animator.idleSeconds() == 0.0f);
+        }
+    }
+    // Reusing an animator must not inherit either the interval or its fractional carry.
+    REQUIRE(animator.bind(tree));
+    REQUIRE(stepsUntil(animator, Action::Ready, Action::Ready, 30) < 30);
+    REQUIRE(stepsUntil(animator, Action::Throw, Action::Throw, 30) < 30);
+    CHECK(animator.idleSeconds() == 0.0f);
+}
+
 } // namespace

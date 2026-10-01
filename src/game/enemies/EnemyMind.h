@@ -35,7 +35,7 @@ struct MindMemory {
     s32 turns = 0;            ///< turns taken at dead ends
     s32 counter = 0;          ///< whatever a mind counts
     s32 mode = 0;             ///< which stage of its business a mind is at
-    s32 fuse = 0;             ///< ticks before a suicide's fuse is lit, or a thrower's next
+    s32 fuse = 0;             ///< AI hold (flag2), or ticks before a suicide's fuse is lit
     bool woken = false;       ///< a lurker has seen someone
     bool skirting = false;    ///< a chaser is going round something
     bool keepingOff = false;  ///< a skirmisher is backing away
@@ -76,8 +76,6 @@ struct MindSense {
     s32 otherSide = 1;        ///< which way round the enemy it bumped is nearer
     bool generatorGone = false;
     f32 targetVertical = 0.0f;               ///< how far above the body its player stands
-    bool threw = false;                      ///< the body let a missile go this tick
-    s32 idleTicks = 120;                     ///< ticks a thrower waits between throws
     EnemyAction action = EnemyAction::Ready; ///< what the body is doing
     u32 random = 0;                          ///< a fresh draw from the pool's generator
     bool onScreen = true; ///< in view (by a margin): off it, nothing is attacked from afar

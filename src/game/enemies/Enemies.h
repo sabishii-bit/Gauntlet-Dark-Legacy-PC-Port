@@ -117,7 +117,7 @@ struct EnemySpawn {
     s32 generator = -1;
     bool placed = false;                     ///< set exactly where asked, as a level's placement is
     bool asleep = false;                     ///< a placement of no strength waits to be woken
-    s32 idleTicks = 120;                     ///< a thrower's wait between throws
+    f32 throwInterval = 1.0f;                ///< seconds, before the level's missile-rate scale
     Priority priority = Priority::Offscreen; ///< replacement permission, independent of strength
     /** A placement's own sight radius, before the level's scale (the float after its strength
      * and way, SetItem items.c 5569); nought for the kind's thirty. */
@@ -318,8 +318,6 @@ private:
         s32 tier = 1;
         s32 algorithm = 0;
         s32 variant = 0; ///< the strength placed at: 4 an archer, 5 a bomber, 6 a suicide
-        s32 idleTicks = 120;
-        bool threw = false;
         s32 generator = -1;
         bool bred = false; ///< a generator bred it
         f32 health = 0.0f;

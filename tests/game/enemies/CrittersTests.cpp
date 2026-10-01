@@ -803,7 +803,9 @@ std::filesystem::path targetedCritter() {
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"DJINN",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
-      "sequences":[{"name":"READY","frames":1},{"name":"ROARATK","frames":25}]}]})");
+      "sequences":[{"name":"READY","frames":1},{"name":"ROARATK","frames":25}]},
+      {"name":"ROARFX","nodes":[],"sequences":[{"name":"PLAY","frames":30,"rate":30}]},
+      {"name":"IMPACT","nodes":[],"sequences":[{"name":"PLAY","frames":30,"rate":30}]}]})");
     writeTextFile(root / "critter/DJINN.json", R"({"name":"DJINN",
       "descriptors":[{"name":"djinn","prefix":"DJINN","type":4}],
       "types":[{"moveCount":2,"floorOffset":7,"vertDrift":10,"maxHealth":100}],
@@ -1124,7 +1126,11 @@ TEST_CASE("targeted rocks snapshot the player and keep the impact there after a 
     for (s32 i = 0; i < 28; ++i) {
         fixture.update(kTicks, kStep, party);
         for (const CombatBlow& blow : critters.takeBlows()) {
-            REQUIRE(blow.damage == 100);
+            // Expanding impacts stay active over their effect's lifetime. These are
+            // contact candidates; the player damage gate enforces their repeat gap.
+            REQUIRE(blow.area);
+            REQUIRE(blow.damage == Approx(100.5f - 5.0f * static_cast<f32>(hits)));
+            REQUIRE(blow.repeatGap == Approx(1.0f - static_cast<f32>(hits) / 30.0f + 0.066667f));
             REQUIRE(blow.flags == 0x20);
             ++hits;
         }
@@ -1135,7 +1141,11 @@ TEST_CASE("targeted rocks snapshot the player and keep the impact there after a 
     REQUIRE(impacts.size() == 1);
     REQUIRE(impacts[0].tree == "IMPACT");
     REQUIRE(impacts[0].position == Vec3{5, 1, 10});
-    REQUIRE(hits == (party[0].position.x == 5 ? 1 : 0));
+    if (party[0].position.x == 5) {
+        REQUIRE(hits > 1);
+    } else {
+        REQUIRE(hits == 0);
+    }
 }
 
 TEST_CASE("the genie's non-sweep sequences use the authored blank beam texture",

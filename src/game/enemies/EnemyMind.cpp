@@ -279,24 +279,24 @@ public:
 };
 
 /** Standing where it is, facing its player, and throwing whenever it may: the player in
- * sight and within ten above or below, the wait since the last throw over. */
+ * sight and within ten above or below. The animation sequencer owns firing cadence;
+ * the separate AI hold is counted down only while the player can be shot. */
 class ThrowMind : public EnemyMind {
 public:
     std::string_view name() const override { return "throw"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        if (sense.threw) {
-            memory.fuse = sense.idleTicks;
-        } else if (memory.fuse > 0) {
-            memory.fuse -= sense.ticks;
-        }
         MindIntent intent;
         intent.heading = sense.faceAngle(memory.heading);
         memory.heading = intent.heading;
         intent.pace = 0.0f;
         intent.action = EnemyAction::Ready;
         if (sense.onScreen && sense.target >= 0 && sense.targetDistance <= sense.sight &&
-            std::abs(sense.targetVertical) <= kThrowReach && memory.fuse <= 0) {
-            intent.throwing = true;
+            std::abs(sense.targetVertical) <= kThrowReach) {
+            if (memory.fuse <= 0) {
+                intent.throwing = true;
+            } else {
+                memory.fuse -= sense.ticks;
+            }
         }
         return intent;
     }
@@ -304,15 +304,12 @@ public:
 
 /** The archer's (move_logic16): facing its player and, when they are level with it, backing
  * off weapon up once they come within six tenths of its sight until they are beyond eight
- * tenths again, nudged off straight for each stop, and giving up after eight; the wait since
- * its last throw runs first, and only once it is out does it throw or back off. */
+ * tenths again, nudged off straight for each stop, and giving up after eight. Its AI hold
+ * runs first, but releasing a missile does not set it: firing cadence belongs to the body. */
 class SkirmishMind : public EnemyMind {
 public:
     std::string_view name() const override { return "skirmish"; }
     MindIntent think(MindMemory& memory, const MindSense& sense) const override {
-        if (sense.threw) {
-            memory.fuse = sense.idleTicks;
-        }
         // A fresh stop starts the nudges over.
         if (sense.blocked && memory.stuck == 0) {
             memory.turns = 0;
