@@ -222,7 +222,10 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
                     ? Vec3{attachmentTransform(critter, *node) * Vec4{record->offset, 1.0f}}
                     : position + record->offset * critter.scale;
             out.follows = false;
-            out.yaw = 0;
+            // CritterDoSfxSub's detached branch calls SfxSetMat with the body's
+            // orientation. In particular A13 must open ahead of the Lich, not
+            // along the world's +Z axis after he has turned.
+            out.yaw = critter.yaw;
         }
         if (out.node.has_value() || out.rootAttachment) {
             const Mat4 parent = out.rootAttachment ? modelTransform(critter)

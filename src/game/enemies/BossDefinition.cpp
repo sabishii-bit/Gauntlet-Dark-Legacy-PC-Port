@@ -37,4 +37,12 @@ std::string_view bossArenaObject(s32 kind) {
     default: return {};
     }
 }
+
+std::string_view bossGeneratorTree(s32 kind) {
+    // LICH supplies ATK12GEN, holding ATK12GEN2F50 in its ACTIVE pose,
+    // alongside the spit's ATK12PROJ and ATK12HIT. The archive does not alias it
+    // to the generic BOSSGEN name used by PlaceItem. Resolve the authored
+    // body explicitly instead of leaving the gameplay generator invisible.
+    return kind == 41 ? "ATK12GEN" : "BOSSGEN";
+}
 } // namespace gdl::game

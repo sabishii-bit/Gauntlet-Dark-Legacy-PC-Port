@@ -221,7 +221,7 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
 
 bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchive& items,
                            Enemies& enemies, s32 kind, const Mat4& placement,
-                           const WorldCollision* collision) {
+                           const WorldCollision* collision, std::string_view tree) {
     if (info.type != ItemInfo::kGenerator || info.name != "BOSSGEN" || kind < 0 ||
         kind >= kEnemyKindCount || !enemies.loadKind(kind)) {
         return false;
@@ -244,7 +244,7 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     instance.rotation.y = -yaw;
     generator.bossFigure = std::make_unique<ItemFigure>();
     // A missing BOSSGEN tree does not prevent PlaceItem from creating its gameplay object.
-    generator.bossFigure->place(device, items, "BOSSGEN", instance, collision);
+    generator.bossFigure->place(device, items, tree, instance, collision);
     generator.bossFigure->play(0, true);
     generator.position = generator.bossFigure->position();
     generator.placement = placement;

@@ -91,6 +91,7 @@ add_executable(tests
     game/world/FallingSceneryTests.cpp
     game/enemies/SkorneTests.cpp
     game/enemies/SpiderQueenTests.cpp
+    game/enemies/LichTests.cpp
     game/world/PlayerArsenalTests.cpp
     game/world/LevelSoundscapeTests.cpp
     game/world/VoiceQueueTests.cpp
