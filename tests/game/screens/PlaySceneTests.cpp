@@ -2310,6 +2310,72 @@ TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or ha
     CHECK(glm::distance(after.forward(), scene.viewCamera().forward()) < 0.05f);
 }
 
+TEST_CASE("Lich entrance uses its authored camera and seals the walkway before waking",
+          "[screens][lich-entrance][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELG5/world.json");
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    const auto scenario =
+        Scenario::load(test::dataDirectory().parent_path() / "tests/scenarios/level-g5-lich.json");
+    const s32 rate = GENERATE(30, 60);
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto level = levels.byName("G5");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, scenario.partyMembers(), scenario.tower));
+    const auto* start = world.startPoint(0);
+    REQUIRE(start);
+    CHECK(scene.actor(0)->position().x == Approx(start->position.x));
+    CHECK(scene.actor(0)->position().z == Approx(start->position.z));
+    REQUIRE(scene.startCamera().active());
+    REQUIRE(world.entranceCamera());
+    CHECK(scene.viewCamera().position == world.entranceCamera()->position);
+    // The approach marker nearest the start in XZ is (0.5, 31, 65), pitched 25 degrees.
+    CHECK(scene.bossCamera().pitch() == Approx(0.4363321f).margin(0.001f));
+    CHECK_FALSE(scene.bosses().view().awake);
+    constexpr usize kBlade = 337;
+    REQUIRE(world.layout().objects()[kBlade].name == "G5BLADE");
+    const f32 bladeStart = world.scene().worldTransform(kBlade)[3].y;
+    WorldCamera before = scene.viewCamera();
+    for (s32 frame = 0; frame < rate * 30 && awaitingEntrance(scene); ++frame) {
+        before = scene.viewCamera();
+        scene.update(1.0 / rate, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    CHECK(glm::distance(before.position, scene.viewCamera().position) < 0.5f);
+    CHECK(glm::distance(before.forward(), scene.viewCamera().forward()) < 0.05f);
+    CHECK_FALSE(scene.bosses().view().awake);
+    // Walk away from the burial, toward the blade behind the authored start.
+    PlayScene::Inputs walk{};
+    walk[0].move = {{0, -1}, 1};
+    for (s32 frame = 0; frame < rate * 6; ++frame) {
+        scene.update(1.0 / rate, walk);
+    }
+    CAPTURE(scene.actor(0)->position().z, world.scene().worldTransform(kBlade)[3].y);
+    CHECK(world.triggers().opened(kBlade));
+    CHECK(world.scene().worldTransform(kBlade)[3].y < bladeStart - 10);
+    CHECK(scene.actor(0)->position().z < 63);
+    CHECK_FALSE(scene.bosses().view().awake);
+    // Reverse direction: the boss wakes only on approaching the burial.
+    walk[0].move = {{0, 1}, 1};
+    for (s32 frame = 0; frame < rate * 15 && !scene.bosses().view().awake; ++frame) {
+        before = scene.viewCamera();
+        scene.update(1.0 / rate, walk);
+    }
+    CHECK(scene.bosses().view().awake);
+    CHECK(glm::distance(before.forward(), scene.viewCamera().forward()) < 0.1f);
+}
+
 TEST_CASE("in the town's crypt the lich rises for the party, its meter over the screen, and "
           "the book of protection brought to it is thrown and takes its quarter",
           "[game][screens][unpacked]") {
@@ -2348,17 +2414,19 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     REQUIRE(scene.bossView()->name == "LICH");
     REQUIRE(scene.bosses().legend().stage() == LegendRite::Stage::Carried);
     REQUIRE(scene.bossMeter().bound());
+    const f32 approachPitch = scene.bossCamera().pitch();
     const PlayScene::Inputs still{};
     for (s32 i = 0; i < 400 && awaitingEntrance(scene); ++i) {
         scene.update(1.0 / 60.0, still);
     }
     // The boss stands at its mark; the meter shows it whole; the fight's own camera looks
-    // from behind the party toward the boss, at the record's shallow pitch.
+    // from behind the party toward the boss. The approach pitch eases into the fight,
+    // rather than snapping to the combat record's shallow angle on the wake frame.
     REQUIRE(glm::distance(*scene.bosses().position(), Vec3{0.0f, 0.0f, -0.5f}) < 2.0f);
     REQUIRE(world.level()->bossCamera.has_value());
     REQUIRE(scene.bossCameraOn());
     REQUIRE(scene.viewCamera().position.z > scene.actor(0)->position().z);
-    REQUIRE(scene.viewCamera().pitch <= world.level()->bossCamera->maxPitch + 0.01f);
+    REQUIRE(scene.viewCamera().pitch < approachPitch);
     REQUIRE(scene.bossCamera().margin() >= 0.0f);
     REQUIRE(scene.bossMeter().showing());
     REQUIRE(scene.bossMeter().count() == 1);
@@ -2391,6 +2459,7 @@ TEST_CASE("in the town's crypt the lich rises for the party, its meter over the 
     }
     REQUIRE(scene.bosses().view().awake);
     REQUIRE(scene.bosses().legend().thrown());
+    REQUIRE(scene.viewCamera().pitch <= world.level()->bossCamera->maxPitch + 0.01f);
     REQUIRE(entrance);
     REQUIRE(held);
     // The level has gone dark for the rite, as for a great move, but the lich stands in
