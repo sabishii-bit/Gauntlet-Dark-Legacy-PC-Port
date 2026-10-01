@@ -68,6 +68,13 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.colorCode = entry.value("color", member.colorCode);
         member.name = entry.value("name", member.name);
         member.level = entry.value("level", 1);
+        const auto bonuses = entry.value("statBonuses", Json::object());
+        member.statBonuses.values = {bonuses.value("strength", 0), bonuses.value("speed", 0),
+                                     bonuses.value("armor", 0), bonuses.value("magic", 0)};
+        if (std::ranges::any_of(member.statBonuses.values,
+                                [](s32 value) { return value < 0 || value > kMaxStat; })) {
+            throw FormatError("scenario: a stat bonus is out of range");
+        }
         member.promotedLevel = entry.value("promotedLevel", -1);
         member.crystals = entry.value("crystals", std::vector<s32>{});
         member.gold = entry.value("gold", 0);
@@ -93,6 +100,16 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.legends = entry.value("legends", std::vector<s32>{});
         member.runes = entry.value("runes", std::vector<s32>{});
         member.shards = entry.value("shards", std::vector<s32>{});
+        member.gargoylePieces = entry.value("gargoylePieces", std::vector<s32>{});
+        if (member.gargoylePieces.size() > Relics::kGargoyleKinds) {
+            throw FormatError("scenario: too many gargoyle collections");
+        }
+        for (usize kind = 0; kind < member.gargoylePieces.size(); ++kind) {
+            if (member.gargoylePieces[kind] < 0 ||
+                member.gargoylePieces[kind] > Relics::kGargoyleNeeded[kind]) {
+                throw FormatError("scenario: a gargoyle collection is out of range");
+            }
+        }
         member.newRunes = entry.value("newRunes", std::vector<s32>{});
         member.newShards = entry.value("newShards", std::vector<s32>{});
         member.beaten = entry.value("beaten", std::vector<std::string>{});
@@ -172,6 +189,10 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         save.color = colorIndexOf(member.colorCode).value_or(0);
         ClassProgress& progress = save.progress();
         progress.experience = levelExperience(member.level);
+        progress.fightAdd = static_cast<f32>(member.statBonuses.strength());
+        progress.speedAdd = static_cast<f32>(member.statBonuses.speed());
+        progress.armorAdd = static_cast<f32>(member.statBonuses.armor());
+        progress.magicAdd = static_cast<f32>(member.statBonuses.magic());
         progress.lifetime = member.lifetime;
         progress.promotedLevel = member.promotedLevel;
         for (usize realm = 0; realm < member.crystals.size(); ++realm) {
@@ -181,6 +202,9 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         progress.health = member.health;
         progress.inventory.keys = member.keys;
         progress.inventory.potions = member.potions;
+        for (usize kind = 0; kind < member.gargoylePieces.size(); ++kind) {
+            progress.relics.gargoylePieces[kind] = member.gargoylePieces[kind];
+        }
         for (const s32 realm : member.legends) {
             progress.relics.addLegend(realm);
         }
