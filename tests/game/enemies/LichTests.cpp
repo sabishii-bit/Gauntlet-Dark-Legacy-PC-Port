@@ -176,6 +176,18 @@ TEST_CASE("Lich spit creates visible generators that breed the stage's maggots",
     CHECK(moves.contains("SPIT"));
     CHECK(opponents.generators().count() > before);
     CHECK(bred);
+    s32 livingBrood = 0;
+    for (s32 id = 0; id < Enemies::kMost; ++id) {
+        const auto& enemies = opponents.enemies();
+        if (!enemies.alive(id) || enemies.generatorOf(id) < static_cast<s32>(before)) {
+            continue;
+        }
+        ++livingBrood;
+        CHECK(enemies.kindOf(id) == 12);
+        const s32 way = enemies.algorithmOf(id);
+        CHECK((way == kProwlWay || way == kMirroredProwlWay));
+    }
+    CHECK(livingBrood > 0);
     for (usize i = before; i < opponents.generators().count(); ++i) {
         const auto id = static_cast<s32>(i);
         CHECK(opponents.generators().kindOf(id) == 12);
@@ -307,5 +319,129 @@ TEST_CASE("Lich ground hands damage and hinder the player standing in their gras
     INFO("Moves: " << Catch::StringMaker<decltype(moves)>::convert(moves));
     REQUIRE(hands);
     CHECK(hits > 0);
+}
+TEST_CASE("Lich stomp and spin keep authored damage reach and independent visual scale",
+          "[lich][lich-range][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    const bool stomp = GENERATE(false, true);
+    const s32 ticks = GENERATE(1, 2);
+    const f32 seconds = static_cast<f32>(ticks) / 60;
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'G');
+    REQUIRE(fixture.spawn("LICH", {}, 0));
+    EnemyHit phase;
+    phase.damage = fixture.actor.maxHealth() * 0.4f;
+    fixture.actor.hurt(phase);
+    const std::string wanted = stomp ? "STOMP" : "CHAIN";
+    const std::string effectName = stomp ? "ATK09FX" : "ATK10FX";
+    const std::string node = stomp ? "LEFTHEEL" : "UPPERTORSO";
+    const Vec3 offset = stomp ? Vec3{0} : Vec3{0, -5, 0};
+    const f32 radius = stomp ? 12.0f : 15.0f;
+    const auto* damage = fixture.actor.data()->damage(stomp ? 5 : 6);
+    REQUIRE(damage != nullptr);
+    CHECK(damage->maxDistance == radius);
+    CHECK(damage->minDot == -1);
+    std::array<EnemyView, 4> players;
+    for (s32 i = 0; i < 4; ++i) {
+        players[static_cast<usize>(i)].player = i;
+        players[static_cast<usize>(i)].height = 6;
+        players[static_cast<usize>(i)].radius = 0.25f;
+    }
+    bool began = false;
+    bool visual = false;
+    std::set<s32> hit;
+    for (s32 frame = 0; frame < 18000; ++frame) {
+        const Vec3 forward{std::sin(fixture.actor.yaw()), 0, std::cos(fixture.actor.yaw())};
+        players[0].position = fixture.actor.position() + forward * 10.0f;
+        const auto attachment = fixture.actor.nodeTransform(node);
+        REQUIRE(attachment);
+        const Vec3 origin{*attachment * Vec4{offset, 1}};
+        for (usize i = 1; i < players.size(); ++i) {
+            const std::array distances{radius * 0.5f, radius - 0.75f, radius + 2.0f};
+            players[i].position = origin + Vec3{distances[i - 1], -3, 0};
+            players[i].hidden = !began;
+        }
+        fixture.update(ticks, seconds, players);
+        if (fixture.actor.moveName() == wanted) {
+            began = true;
+        } else if (began) {
+            break;
+        }
+        for (const auto& cue : fixture.actor.takeCues()) {
+            if (!began || cue.tree != effectName) {
+                continue;
+            }
+            visual = true;
+            CHECK(cue.scale == 1);
+            CHECK(cue.follows);
+            REQUIRE(cue.placement);
+            const auto rootTransform = fixture.actor.rootTransform();
+            REQUIRE(rootTransform);
+            for (s32 column = 0; column < 4; ++column) {
+                for (s32 row = 0; row < 4; ++row) {
+                    CHECK((*cue.placement)[column][row] == Approx((*rootTransform)[column][row]));
+                }
+            }
+        }
+        for (const auto& blow : fixture.actor.takeBlows()) {
+            if (began && blow.area && blow.damage > 0) {
+                hit.insert(blow.player);
+            }
+        }
+        fixture.actor.takeShots();
+    }
+    REQUIRE(began);
+    REQUIRE(visual);
+    CHECK(hit.contains(1));
+    CHECK(hit.contains(2));
+    CHECK_FALSE(hit.contains(3));
+}
+
+TEST_CASE("Lich maggots pursue nearby players but resume prowling outside eight units",
+          "[lich][enemies][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/MAG/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(12));
+    EnemySpawn spawn;
+    spawn.kind = 12;
+    spawn.algorithm = 0;
+    spawn.generator = 0;
+    spawn.placed = true;
+    spawn.direction = {0, 0, 1};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    std::array<EnemyView, 1> players{{{0, {20, 0, 0}, 1, 6}}};
+    const auto walk = [&](const Vec3& relative) {
+        const Vec3 from = enemies.positionOf(*id);
+        for (s32 frame = 0; frame < 60; ++frame) {
+            players[0].position = enemies.positionOf(*id) + relative;
+            enemies.update(2, 1.0f / 30, players);
+        }
+        return enemies.positionOf(*id) - from;
+    };
+    // Small species select way 2/4 even when the generator requests way zero.
+    const auto way = enemies.algorithmOf(*id);
+    REQUIRE((way == kProwlWay || way == kMirroredProwlWay));
+    const Vec3 wandering = walk({20, 0, 0});
+    CHECK(wandering.z > 0);
+    CHECK(wandering.x == Approx(0).margin(0.01f));
+    const Vec3 pursuing = walk({7, 0, 0});
+    CHECK(pursuing.x > 0);
+    CHECK(pursuing.x > std::abs(pursuing.z));
+    // Let the eight-update target cadence observe the retreat before changing
+    // bearing. Until then its cached close distance still permits pursuit.
+    walk({20, 0, 0});
+    // Proximity does not permanently convert the maggot into a long-range chaser.
+    const Vec3 resumed = walk({0, 0, 20});
+    CHECK(resumed.x > 0);
+    CHECK(resumed.z == Approx(0).margin(0.01f));
+    CHECK(enemies.algorithmOf(*id) == way);
 }
 } // namespace
