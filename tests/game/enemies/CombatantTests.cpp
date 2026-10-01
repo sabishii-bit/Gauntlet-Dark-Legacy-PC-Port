@@ -102,6 +102,50 @@ TEST_CASE("boss targets preserve raised hit nodes independently of their floor a
     CHECK(bosses.targets().empty());
 }
 
+TEST_CASE("pattern bosses taunt between attacks without competing with ready priority",
+          "[combatant][boss][sound]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+        "descriptors":[{"prefix":"BODY","type":4}],
+        "types":[{"moveCount":3,"maxHealth":100,"radius":4,"floorOffset":18.5}],
+        "moves":[{"name":"READY","anim":"STEP","type":32,"priority":512},
+                 {"name":"TAUNT","anim":"STEP","type":33,"priority":512,
+                  "cooldown":10,"sfx":0,"sfxFrame":1},
+                 {"name":"LINKED","anim":"STEP","type":33,"flags":4,"sfx":1}],
+        "sounds":[{"levelFormat":"TAUNT","offset":[0,100,0]},
+                  {"levelFormat":"LINKED_ONLY"}]
+    })");
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, bossDefinition("LICH"), 'G'));
+    Combatant actor;
+    const Vec3 floor{3, -25, 6};
+    REQUIRE(actor.spawn(assets, 0, floor, 0, nullptr, {}, 'G'));
+    bool wounded = false;
+    SECTION("healthy taunts honor cooldown and keep audio independent of the effect") {}
+    SECTION("higher attack rate suppresses fallback taunts") {
+        EnemyHit hit;
+        hit.damage = 10;
+        actor.hurt(hit);
+        wounded = true;
+    }
+    s32 count = 0;
+    s32 previous = -1000;
+    for (s32 frame = 0; frame < 650; ++frame) {
+        actor.update(2, 1.0f / 30, {});
+        for (const auto& cue : actor.takeCues()) {
+            REQUIRE(cue.sound == "TAUNT");
+            CHECK(cue.soundPosition == floor + Vec3{0, 18.5f, 0});
+            CHECK(cue.position != cue.soundPosition);
+            CHECK(cue.attenuated);
+            CHECK(frame - previous >= 300);
+            previous = frame;
+            ++count;
+        }
+    }
+    CHECK(count == (wounded ? 0 : 3));
+}
+
 TEST_CASE("combatants preserve elemental immunity and sub-one damage", "[combatant][damage]") {
     for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
         CAPTURE(definition.name);

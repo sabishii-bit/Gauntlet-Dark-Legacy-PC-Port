@@ -53,6 +53,8 @@ struct CombatCue {
     /** Whether the sound fades with the players' distance: a death's does not (CritterDoSfx
      * plays it through sndFxPlay3D rather than sndFxPlay3DAtten). */
     bool attenuated = true;
+    /** CritterDoSfx sounds at the creature's root, independently of the effect's attachment. */
+    Vec3 soundPosition{0.0f};
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 yaw = 0.0f;
     f32 scale = 1.0f;

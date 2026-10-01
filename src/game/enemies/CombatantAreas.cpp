@@ -106,6 +106,7 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     cue.critter = id;
     cue.tree = sound->shows() ? sound->tree : std::string{};
     cue.sound = sound->soundFor(m_realm);
+    cue.soundPosition = Vec3{modelTransform(critter)[3]};
     const Mat4 parent = worldParent.value_or(attachmentTransform(critter, area.node));
     cue.position = Vec3{(parent * area.local)[3]};
     cue.scale = sound->scale * (worldParent.has_value() ? critter.scale : 1.0f);
