@@ -681,6 +681,61 @@ TEST_CASE("strafing steps in two halves the way it goes, shoots as it goes, and 
     REQUIRE(stepsUntil(animator, PlayerMotion::Stand, Action::GetUpBack, 120) < 120);
 }
 
+TEST_CASE("a single attack press interrupts either half of every walking strafe",
+          "[game][players][animation][strafe-press]") {
+    TreeInfo tree = classTree();
+    for (auto i = static_cast<usize>(Action::StrafeForward1);
+         i <= static_cast<usize>(Action::StrafeShootRight2); ++i) {
+        TreeSequenceInfo sequence = tree.sequences.front();
+        sequence.name = PlayerAnimator::kSequenceNames[i];
+        sequence.frames = 12;
+        tree.sequences.push_back(sequence);
+    }
+    for (const StrafeWay way :
+         {StrafeWay::Forward, StrafeWay::Back, StrafeWay::Left, StrafeWay::Right}) {
+        for (s32 phase = 0; phase < 30; ++phase) {
+            PlayerAnimator animator;
+            REQUIRE(animator.bind(tree, false));
+            animator.setStrafe(way);
+            for (s32 tick = 0; tick <= phase; ++tick) {
+                animator.update(PlayerMotion::Walk, kTicks, kStep);
+            }
+            INFO("direction " << static_cast<s32>(way) << " phase " << phase);
+            animator.update(PlayerMotion::Walk, kTicks, kStep, PlayerDeed::Attack);
+            REQUIRE(animator.released());
+            REQUIRE(animator.action() == PlayerAnimator::strafeStep(way, true));
+            animator.update(PlayerMotion::Walk, kTicks, kStep);
+            REQUIRE_FALSE(animator.released());
+        }
+    }
+}
+
+TEST_CASE("retail class animations accept lateral strafe attack taps throughout both steps",
+          "[game][players][animation][strafe-press][unpacked]") {
+    for (const char* code : {"WAR", "VAL", "WIZ", "ARC", "DWF", "KNI", "SOR", "JES"}) {
+        const auto path =
+            test::unpackedOrSkip(std::string("PLAYERS/") + code + "/ANIM/animations.json");
+        AnimationSet actions;
+        REQUIRE(actions.load(path.parent_path()));
+        const auto found = actions.find(code);
+        REQUIRE(found);
+        for (const StrafeWay way : {StrafeWay::Left, StrafeWay::Right}) {
+            for (s32 phase = 0; phase < 60; ++phase) {
+                PlayerAnimator animator;
+                REQUIRE(animator.bind(actions.tree(*found), false));
+                animator.setStrafe(way);
+                for (s32 tick = 0; tick <= phase; ++tick) {
+                    animator.update(PlayerMotion::Run, kTicks, kStep);
+                }
+                INFO(code << " direction " << static_cast<s32>(way) << " phase " << phase);
+                animator.update(PlayerMotion::Run, kTicks, kStep, PlayerDeed::Attack);
+                REQUIRE(animator.released());
+                REQUIRE(animator.action() == PlayerAnimator::strafeStep(way, true));
+            }
+        }
+    }
+}
+
 TEST_CASE("a whirlwind flings the body up once and it gets up after (action.c 1270)",
           "[game][players][animation]") {
     TreeInfo tree = classTree();

@@ -89,7 +89,7 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
         Vec3 target = m_position + stride;
         target = collision->resolveWalls(target, m_radius, target.y + kFootClearance,
                                          target.y + m_height - kFootClearance);
-        const auto floor = collision->floorAt(target, kStepUp, kDrop);
+        const auto floor = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
         if (!floor.has_value()) {
             return; // nothing to stand on there: stay put
         }
@@ -99,7 +99,7 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
 }
 
 bool PlayerActor::fall(f32 seconds, const WorldCollision& collision) {
-    const auto floor = collision.floorAt(m_position, kStepUp, kFallReach);
+    const auto floor = collision.floorAt(m_position, kStepUp, kFallReach, kFloorEdgeReach);
     if (floor.has_value() && floor->y >= m_position.y) {
         m_position.y = floor->y; // a floor that rose under it lifts it at once
         return false;
@@ -110,7 +110,7 @@ bool PlayerActor::fall(f32 seconds, const WorldCollision& collision) {
 }
 
 void PlayerActor::settle(const WorldCollision& collision) {
-    if (const auto floor = collision.floorAt(m_position, kDrop, kDrop)) {
+    if (const auto floor = collision.floorAt(m_position, kDrop, kDrop, kFloorEdgeReach)) {
         m_position.y = floor->y;
     }
 }

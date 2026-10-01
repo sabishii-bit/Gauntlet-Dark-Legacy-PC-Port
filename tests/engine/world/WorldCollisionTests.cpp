@@ -238,6 +238,31 @@ TEST_CASE("collision files load their world-space triangles, skipping decoration
     REQUIRE_FALSE(collision.load(test::scratchDirectory("world-collision-none"), layout));
 }
 
+TEST_CASE("floor contact margins stay bounded and do not change projectile or liquid probes",
+          "[world][collision][terrain-seams]") {
+    WorldCollision collision;
+    // Ends at a grid boundary; nearby contact must also search the adjacent cell.
+    collision.build({triangle({0, 0, 0}, {8, 0, 0}, {8, 0, 8}, {0, 1, 0}),
+                     triangle({0, 0, 0}, {8, 0, 8}, {0, 0, 8}, {0, 1, 0}),
+                     triangle({16, 2, 0}, {20, 2, 0}, {20, 2, 8}, {0, 1, 0})});
+    const Vec3 nearEdge{8.01f, 0, 4};
+    REQUIRE_FALSE(collision.floorAt(nearEdge, 1, 1));
+    REQUIRE(collision.floorAt(nearEdge, 1, 1, 0.03125f));
+    REQUIRE_FALSE(collision.floorAt({8.04f, 0, 4}, 1, 1, 0.03125f));
+    REQUIRE_FALSE(collision.floorAt({8.01f, 2, 4}, 1, 1, 0.03125f));
+    REQUIRE_FALSE(collision.floorAt(nearEdge, 1, 1, -1));
+    REQUIRE_FALSE(collision.projectileFloorAt(nearEdge, 1, 1));
+    REQUIRE_FALSE(collision.liquidAt(nearEdge, 1, 1));
+    // Corner distance is radial, not an expanded bounding rectangle.
+    REQUIRE_FALSE(collision.floorAt({8.025f, 0, 8.025f}, 1, 1, 0.03125f));
+    // A floor on a moving platform uses the same contact test after its placement.
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, 2, 0}));
+    const auto moved = collision.floorAt({8.01f, 2, 4}, 0.5f, 0.5f, 0.03125f);
+    REQUIRE(moved);
+    REQUIRE(moved->y == Approx(2));
+}
+
 TEST_CASE("the unpacked tower has floors under its start points", "[world][collision][unpacked]") {
     const std::filesystem::path dir =
         test::unpackedOrSkip("LEVELS/LEVELL1/collision.json").parent_path();

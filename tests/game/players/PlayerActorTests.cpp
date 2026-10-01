@@ -7,6 +7,7 @@
 #include "engine/core/Types.h"
 #include "engine/world/WorldCollision.h"
 
+#include "TestSupport.h"
 #include "game/players/CharacterSave.h"
 #include "game/players/ClassData.h"
 #include "game/players/PlayerActor.h"
@@ -200,6 +201,53 @@ TEST_CASE("a body sinks to a floor gone lower at sixteen a second, and rides one
     CHECK(actor.fall(1.0f, collision));
     CHECK(actor.position().y == Approx(-PlayerActor::kFallSpeed));
     CHECK(collision.lowest() == 0.0f);
+}
+
+TEST_CASE("walking crosses small cracks between separately packed slope triangles",
+          "[game][players][actor][terrain-seams]") {
+    // Separate collision faces need not share bit-identical endpoints. A point-only
+    // floor ray can fall between them despite the feet straddling both faces.
+    const Vec3 normal = glm::normalize(Vec3{-0.5f, 1, 0});
+    WorldCollision collision;
+    collision.build({
+        triangle({-4, -2, -4}, {0, 0, -4}, {0, 0, 4}, normal),
+        triangle({-4, -2, -4}, {0, 0, 4}, {-4, -2, 4}, normal),
+        triangle({0.02f, 0.01f, -4}, {4, 2, -4}, {4, 2, 4}, normal),
+        triangle({0.02f, 0.01f, -4}, {4, 2, 4}, {0.02f, 0.01f, 4}, normal),
+    });
+    for (const f32 sign : {-1.0f, 1.0f}) {
+        PlayerActor actor;
+        actor.spawn(0, CharacterSave{}, nullptr, {-sign, -sign * 0.5f, 0}, 0);
+        for (s32 tick = 0; tick < 400; ++tick) {
+            const Vec3 before = actor.position();
+            actor.update(push(sign, 0, 0.03f), 0, 1.0f / 30.0f, &collision);
+            REQUIRE((actor.position().x - before.x) * sign > 0.004f);
+            REQUIRE(actor.position().y == Approx(actor.position().x * 0.5f).margin(0.02f));
+        }
+    }
+}
+
+TEST_CASE("the tower's authored stair ramps allow continuous uphill and downhill movement",
+          "[game][players][actor][terrain-seams][unpacked]") {
+    const auto dir = test::unpackedOrSkip("LEVELS/LEVELL1/collision.json").parent_path();
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    WorldCollision collision;
+    REQUIRE(collision.load(dir, layout));
+    // Cross the join of L1STAIRS_LI#20 / L1STAIRS_LINE07, on the ramp's interior.
+    for (const f32 sign : {-1.0f, 1.0f}) {
+        PlayerActor actor;
+        actor.spawn(0, CharacterSave{}, nullptr, {-18, -3.9f, -4.4f - sign * 0.5f}, 0);
+        actor.settle(collision);
+        for (s32 tick = 0; tick < 1000; ++tick) {
+            const Vec3 before = actor.position();
+            actor.update(push(0, sign, 0.006f), 0, 1.0f / 30.0f, &collision);
+            actor.fall(1.0f / 30.0f, collision);
+            INFO("direction " << sign << " tick " << tick << " at " << before.x << ", " << before.y
+                              << ", " << before.z);
+            REQUIRE((actor.position().z - before.z) * sign > 0.0009f);
+        }
+    }
 }
 
 } // namespace
