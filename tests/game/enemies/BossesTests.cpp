@@ -232,7 +232,8 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
         if (cue.tree.starts_with("ATK")) {
             swingGlow = true;
             REQUIRE(cue.follows);
-            REQUIRE(cue.rootAttachment);
+            REQUIRE(cue.node == "GROUP1");
+            REQUIRE_FALSE(cue.rootAttachment);
         }
     }
     REQUIRE(entrance);

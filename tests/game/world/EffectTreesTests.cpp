@@ -20,6 +20,53 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("Garm eye ribbons inherit camera-facing parent transforms before drawing their mesh",
+          "[effects][garm][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/GARM/animations.json").parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root));
+    test::FakeRenderDevice device;
+    for (const std::string_view name : {"GAR1ATK1P1", "GAR1ATK1P2"}) {
+        INFO(name);
+        EffectTrees effects;
+        EffectTrees::Setting setting;
+        setting.yaw = 0.7f;
+        REQUIRE(effects.startSet(device, archive, name, {10, 15, 20}, setting));
+        effects.update(0.1f);
+        REQUIRE(effects.count() == 1);
+        const auto& effect = effects.effect(0);
+        const auto& tree = *effect.tree;
+        WorldCamera view;
+        view.position = {40, 30, -50};
+        view.yaw = -0.4f;
+        view.pitch = 0.2f;
+        const auto camera = CameraFrame::of(view);
+        std::vector<Mat4> expected(tree.nodes.size());
+        std::vector<Vec3> corners;
+        for (usize n = 0; n < tree.nodes.size(); ++n) {
+            const auto& node = tree.nodes[n];
+            const Mat4 parent =
+                node.parent >= 0 ? expected[static_cast<usize>(node.parent)] : effect.transform();
+            expected[n] =
+                camera.face(parent * TreePose::localMatrix(effect.pose.poses()[n], node.position),
+                            CameraFrame::facingOf(node.objectFlags));
+            if (!node.object.empty()) {
+                const auto mesh = archive.models.find(node.object);
+                REQUIRE(mesh);
+                corners.emplace_back(expected[n] *
+                                     Vec4{archive.models.mesh(*mesh).vertices[0].position, 1});
+            }
+        }
+        device.draws.clear();
+        effects.draw(device, Mat4{1}, {}, &camera);
+        REQUIRE(device.draws.size() == corners.size());
+        REQUIRE(corners.size() == 2);
+        for (usize i = 0; i < corners.size(); ++i) {
+            CHECK(glm::distance(device.draws[i].vertices[0].position, corners[i]) < 0.001f);
+        }
+    }
+}
+
 TEST_CASE("retail potion fades keep the startup visible and remove each mesh at its authored end",
           "[effects][vfx-timing][unpacked]") {
     const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();

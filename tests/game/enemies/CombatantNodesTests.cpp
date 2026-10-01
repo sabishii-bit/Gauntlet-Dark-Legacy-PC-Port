@@ -176,4 +176,39 @@ TEST_CASE("shipped Garm nodes emit their authored left and right brood projectil
         REQUIRE(shots.front().damageIndex == node + 1);
     }
 }
+
+TEST_CASE("Garm's hand-ball windup follows the animated root rather than its floor parent",
+          "[combatant-nodes][garm][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fighter;
+    fighter.open(device, root, nullptr, {}, 'H');
+    REQUIRE(fighter.spawn("GARM", Vec3{10, 0, 20}, 0.5f));
+    std::array<EnemyView, 1> players{{{0, {10, 0, 50}, 1, 6}}};
+    std::array<bool, 2> seen{};
+    for (s32 frame = 0; frame < 18000 && !(seen[0] && seen[1]); ++frame) {
+        players[0].position.x = frame % 1200 < 600 ? 40.0f : -20.0f;
+        fighter.update(2, 1.0f / 30, players);
+        for (const auto& cue : fighter.actor.takeCues()) {
+            if (cue.tree != "GAR1ATK4L" && cue.tree != "GAR1ATK4R") {
+                continue;
+            }
+            seen[cue.tree == "GAR1ATK4L" ? 0 : 1] = true;
+            REQUIRE(cue.node == "ROOT");
+            REQUIRE_FALSE(cue.rootAttachment);
+            REQUIRE(cue.follows);
+            REQUIRE(cue.placement);
+            const auto parent = fighter.actor.nodeTransform("ROOT");
+            REQUIRE(parent);
+            const Vec3 expected{*parent * Vec4{0, -14, 0, 1}};
+            CHECK(glm::distance(Vec3{(*cue.placement)[3]}, expected) < 0.001f);
+            CHECK(glm::distance(cue.position, expected) < 0.001f);
+        }
+        fighter.actor.takeShots();
+        fighter.actor.takeBlows();
+    }
+    REQUIRE(seen[0]);
+    REQUIRE(seen[1]);
+}
 } // namespace

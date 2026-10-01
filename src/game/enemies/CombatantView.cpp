@@ -101,14 +101,19 @@ std::vector<MissileTarget> Combatant::ownTargets(bool solidOnly) const {
         const f32 radius = part.radius * actor.scale;
         MissileTarget target{id(), centre - Vec3{0, radius, 0}, radius, 2 * radius};
         target.node = static_cast<s32>(i);
+        target.targetScoreScale = part.targetScoreScale;
+        target.maxTargetDistance = part.maxTargetDistance;
         out.push_back(target);
     }
     if (data()->parts().empty()) {
         out.push_back({id(), position(), radius() * actor.scale, 8 * actor.scale});
     } else if (!actor.branch.has_value()) {
         const Vec3 centre = partPosition(actor, {});
-        const f32 radius = (solidOnly ? data()->wallRadius() : data()->radius()) * actor.scale;
-        out.push_back({id(), centre - Vec3{0, radius, 0}, radius, 2 * radius});
+        // The body fallback is wallRadius wide and radius tall on either side
+        // of its centre (CritterMoveNodeCol), not a sphere of radius.
+        const f32 radius = data()->wallRadius() * actor.scale;
+        const f32 halfHeight = data()->radius() * actor.scale;
+        out.push_back({id(), centre - Vec3{0, halfHeight, 0}, radius, 2 * halfHeight});
     }
     return out;
 }

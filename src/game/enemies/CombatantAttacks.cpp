@@ -184,17 +184,22 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         // Without a root/entity/global parenting override, a move effect uses its
         // active animated node. Hit marks have no requested attachment.
         constexpr u32 kAlternateParent = 0x2000U | 0x800U | 0x80U | 0x40U | 1U;
-        // SFXX 0x800 selects the animation root's parent (the body transform).
-        // Chimera's SFIRE1/2 need rotated offsets, not translation-only following.
+        // SFXX 0x800 selects the animation root's parent; bit 1 selects the
+        // animated root itself. Garm's hand-ball tracks rely on that root's lift.
         const bool root = (record->flags & 0x801U) != 0 && (record->flags & (0x2000U | 0x40U)) == 0;
         if (root && !out.tree.empty()) {
-            out.rootAttachment = critter.parent == nullptr;
-            if (critter.parent != nullptr) {
-                out.node = std::string{critter.definition->rootNode()};
+            const usize rootIndex = critter.branch.value_or(0);
+            const auto& nodes = critter.stock->tree->nodes;
+            const s32 attachment = (record->flags & 0x800U) != 0 ? nodes[rootIndex].parent
+                                                                 : static_cast<s32>(rootIndex);
+            out.rootAttachment = attachment < 0;
+            if (attachment >= 0) {
+                out.node = nodes[static_cast<usize>(attachment)].name;
             }
             out.nodeOffset = offset;
-            out.position = Vec3{attachmentTransform(critter, critter.definition->rootNode()) *
-                                Vec4{offset, 1.0f}};
+            const Mat4 parent = out.rootAttachment ? modelTransform(critter)
+                                                   : attachmentTransform(critter, *out.node);
+            out.position = Vec3{parent * Vec4{offset, 1.0f}};
             out.scale = record->scale;
             out.follows = true;
         } else if ((record->flags & 0x80U) != 0 && (record->flags & 0x801U) == 0) {

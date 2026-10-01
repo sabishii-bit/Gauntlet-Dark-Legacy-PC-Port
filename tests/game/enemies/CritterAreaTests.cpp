@@ -540,7 +540,8 @@ TEST_CASE("Yeti stomp reaches the front of the arena from its root effect offset
         fixture.update(2, 1.0f / 30.0f, players);
         for (const auto& cue : actor.takeCues()) {
             if (cue.tree == "ATTACK4FX") {
-                REQUIRE(cue.rootAttachment);
+                REQUIRE_FALSE(cue.rootAttachment);
+                REQUIRE(cue.node == "NODE_6178");
                 REQUIRE(cue.nodeOffset == Vec3{0, -3, 0});
                 stomped = true;
             }

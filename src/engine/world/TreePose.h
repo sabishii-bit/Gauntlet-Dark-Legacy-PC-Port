@@ -8,6 +8,7 @@
 #include "engine/math/Math.h"
 
 namespace gdl {
+struct CameraFrame;
 
 /** One node's transform at a frame: Euler angles, offset from its rest position and scale. */
 struct NodePose {
@@ -52,6 +53,9 @@ public:
     std::span<const NodePose> poses() const { return m_poses; }
     /** Per node, its local transform composed with every ancestor's. */
     std::span<const Mat4> matrices() const { return m_matrices; }
+    /** World-space draw matrices: facing is applied at each node before its
+     * children, including meshless parents. Physics keeps the unfaced pose. */
+    std::vector<Mat4> drawMatrices(const Mat4& model, const CameraFrame& camera) const;
 
     /** The pose a track gives at `frame`, past its last key holding that key. */
     static NodePose sample(const TrackInfo& track, f32 frame);

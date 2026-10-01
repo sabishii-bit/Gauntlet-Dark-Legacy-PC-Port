@@ -33,6 +33,29 @@ TEST_CASE("target assist chooses the nearest forward surface without targeting b
     REQUIRE(TargetAssist::select(origin, facing, large, 30) == Vec3{0, 3, 14});
 }
 
+TEST_CASE("part selection uses authored weights before the same creature's body fallback",
+          "[game][target-assist][garm]") {
+    const Vec3 origin{0, 3, 0};
+    const Vec3 forward{0, 0, 1};
+    std::array targets{MissileTarget{0, {0, 0, 20}, 6, 6}, MissileTarget{0, {-2, 1, 20}, 2, 4},
+                       MissileTarget{0, {2, 1, 20}, 2, 4}};
+    targets[1].node = 0;
+    targets[2].node = 1;
+    targets[2].targetScoreScale = 7;
+    REQUIRE(TargetAssist::select(origin, forward, targets, 100) == Vec3{2, 3, 20});
+    std::swap(targets[0], targets[2]); // independent of body/node list ordering
+    REQUIRE(TargetAssist::select(origin, forward, targets, 100) == Vec3{2, 3, 20});
+    targets[0].maxTargetDistance = 10;
+    REQUIRE(TargetAssist::select(origin, forward, targets, 100) == Vec3{-2, 3, 20});
+    targets[1].targetScoreScale = 0;
+    REQUIRE(TargetAssist::select(origin, forward, targets, 100) == Vec3{0, 3, 20});
+    // Aim-disabled parts still participate in close melee and missile collision.
+    REQUIRE(TargetAssist::around({-2, 0, 18}, 6, std::span{&targets[1], 1}, 3));
+    CHECK(targets[1].touches({-2, 3, 20}, 1));
+    const std::array rivals{targets[0], MissileTarget{1, {0, 0, 10}, 1, 6}};
+    REQUIRE(TargetAssist::select(origin, forward, rivals, 100) == Vec3{0, 3, 10});
+}
+
 TEST_CASE("target assist extends range in boss encounters and rejects blocked targets",
           "[game][target-assist]") {
     const std::array target{MissileTarget{0, {0, 0, 60}, 4, 12}};

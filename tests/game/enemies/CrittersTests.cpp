@@ -977,11 +977,11 @@ TEST_CASE("move effects start at authored frames with distinct root node base an
                 REQUIRE(clock.frame() < 12); // visual wind-up must precede damage
             }
             if (cue.tree == "ROOTFX") {
-                REQUIRE(cue.rootAttachment);
+                REQUIRE_FALSE(cue.rootAttachment);
                 REQUIRE(cue.follows);
-                REQUIRE_FALSE(cue.node.has_value());
+                REQUIRE(cue.node == "BODY");
                 REQUIRE(cue.scale == 1); // parent carries the creature's scale exactly once
-                REQUIRE(glm::distance(cue.position, Vec3{10, 11, 4}) < 0.001f);
+                REQUIRE(glm::distance(cue.position, Vec3{14, 21, -2}) < 0.001f);
             } else if (cue.tree == "NODEFX" || cue.tree == "WORLDFX") {
                 REQUIRE(cue.follows == (cue.tree == "NODEFX"));
                 REQUIRE(cue.node.has_value() == (cue.tree == "NODEFX"));
