@@ -618,9 +618,10 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
             enemy.yaw = turnToward(enemy, enemy.mind.heading, ticks);
             move(enemy, i, ticks, seconds, Vec3{0.0f, 0.0f, 0.0f}, players, obstacles);
             enemy.animator.update(ticks, seconds, false);
-            // A completed dissolve retires the body even if its fall is still playing.
+            // No skin sequence (the small swarm), or a completed one, retires the body
+            // even if the fallback animation is still playing: do_enemies, DYING.
             const bool dissolved =
-                !enemy.deathSkin.empty() &&
+                enemy.deathSkinFrames <= 0 ||
                 enemy.deathSeconds * kDeathSkinRate >= static_cast<f32>(enemy.deathSkinFrames);
             if (dissolved || enemy.animator.dead() || !enemy.animator.reacting()) {
                 if (enemy.kind == kGarmBroodKind) {
@@ -1348,10 +1349,13 @@ void Enemies::hurt(s32 id, const EnemyHit& hit) {
     enemy.flashSeconds = killed ? 0.0f : 2.0f / 30.0f;
     if (killed) {
         enemy.killed = true;
+        enemy.state = State::Dying;
         if (!hit.selfInflicted) {
             enemy.deathSkin = feedback.deathSkin();
             enemy.deathSkinFrames = feedback.deathSkinFrames();
         }
+        // SetSkinFX starts at -rate so the first 30 Hz death update displays frame zero.
+        enemy.deathSeconds = -1.0f / 30.0f;
         // Whatever kills a suicide sets it off, a blast where it stood (enemy_dies); only a
         // hit cuts its yell short.
         if (enemy.algorithm == kSuicideWay) {
@@ -1391,7 +1395,8 @@ std::vector<EnemyDeathShot> Enemies::takeDeathShots() {
 
 void Enemies::aimDeathShot(const Enemy& enemy, s32 slot, std::span<const EnemyView> players) {
     const EnemyView* at = viewOf(players, enemy.target);
-    if (at == nullptr) {
+    if (at == nullptr || at->hidden) {
+        at = nullptr;
         for (const EnemyView& view : players) {
             if (!view.hidden) {
                 at = &view;
