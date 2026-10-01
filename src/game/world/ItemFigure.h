@@ -36,6 +36,8 @@ struct Obstacle {
     bool touchedBy(const Vec3& position, f32 radius, f32 margin = 0.3f) const;
     /** Swept line of the given radius, respecting height, shape, yaw and solidity. */
     bool blocksSegment(const Vec3& from, const Vec3& to, f32 radius) const;
+    /** First contact fraction on that sweep, or no contact. */
+    std::optional<f32> contact(const Vec3& from, const Vec3& to, f32 radius) const;
 };
 
 /**

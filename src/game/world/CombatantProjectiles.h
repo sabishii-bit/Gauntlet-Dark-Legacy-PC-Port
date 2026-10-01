@@ -14,6 +14,7 @@
 #include "game/enemies/CombatantProjectile.h"
 #include "game/enemies/CritterArea.h"
 #include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyMissiles.h"
 #include "game/world/EffectTrees.h"
 
 namespace gdl::game {
@@ -42,9 +43,11 @@ public:
                 EffectTrees& effects, const PlaySound& sound,
                 const WorldCollision* collision = nullptr);
     void update(f32 seconds, const WorldCollision* collision, std::span<const EnemyView> players,
-                RenderDevice& device, EffectTrees& effects, const PlaySound& sound);
+                RenderDevice& device, EffectTrees& effects, const PlaySound& sound,
+                std::span<const MissileStop> items = {});
     void clear(EffectTrees& effects);
     std::vector<CombatantProjectileHit> takeHits();
+    std::vector<RockHit> takeRockHits() { return std::exchange(m_rockHits, {}); }
     std::vector<CombatantWorldHit> takeWorldHits() { return std::exchange(m_worldHits, {}); }
     /** Expired SFXX 0x20000 effects leave a stage-owned BOSSGEN at this placement. */
     std::vector<Mat4> takeGenerators();
@@ -72,6 +75,12 @@ private:
         f32 contactSeconds = 0; ///< sticky contacts advance on the authored 30 Hz game clock
         s32 piercedPlayer = -1; ///< reflecting shots spend their pass-through on first contact
     };
+    struct ItemImpact {
+        f32 fraction = 0;
+        bool suppressEffect = false; ///< piercing shots stopped by surviving cover
+    };
+    std::optional<ItemImpact> hitItems(const Flying& flying, const Vec3& from, const Vec3& to,
+                                       f32 limit, std::span<const MissileStop> items);
     u32 show(Flying& flying, s32 index, RenderDevice& device, EffectTrees& effects,
              const PlaySound& sound, f32 life = 0.0f);
     static void place(const Flying& flying, EffectTrees& effects);
@@ -84,6 +93,7 @@ private:
     std::vector<u32> m_emittedEffects; ///< impacts and end effects still borrow the launch archive
     std::vector<CombatantProjectileHit> m_hits;
     std::vector<CombatantWorldHit> m_worldHits;
+    std::vector<RockHit> m_rockHits;
     std::vector<Mat4> m_generators;
     std::vector<Mat4> m_summons;
     std::mt19937 m_random;

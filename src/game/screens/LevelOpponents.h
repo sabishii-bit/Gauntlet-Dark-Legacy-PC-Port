@@ -75,8 +75,8 @@ public:
                 std::span<const CombatantObstacle> walkedInto = {});
     /** The great ones' blows on barrels they walked into since the last call (by index). */
     std::vector<CombatantRam> takeBarrelRams() { return std::exchange(m_barrelRams, {}); }
-    /** The swarm's missiles' blows on safe rocks since the last call, for the level. */
-    std::vector<RockHit> takeRockHits() { return m_enemyMissiles.takeRockHits(); }
+    /** Swarm and combatant projectile blows on safe rocks, for the level. */
+    std::vector<RockHit> takeRockHits() { return std::exchange(m_rockHits, {}); }
     /** Where the swarm's gas reached since the last call, for the level's food. */
     std::vector<GasReach> takeGasReaches() { return m_enemyMissiles.takeGasReaches(); }
     /** Drain hits from the last projectile/attack phase before a level transition freezes
@@ -199,6 +199,7 @@ private:
     Generators m_generators;
     Critters m_critters;
     std::vector<CombatantRam> m_barrelRams;
+    std::vector<RockHit> m_rockHits;
     /** Each player's hits on the swarm a generator bred since they last destroyed one (the
      * original's hit_streak), by player id. */
     static constexpr usize kPlayerIds = 4; ///< players are numbered 0 to 3

@@ -192,7 +192,8 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
 
 void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                                   std::span<const EnemyView> players, RenderDevice& device,
-                                  EffectTrees& effects, const PlaySound& sound) {
+                                  EffectTrees& effects, const PlaySound& sound,
+                                  std::span<const MissileStop> items) {
     if (seconds <= 0.0f) {
         return;
     }
@@ -334,15 +335,34 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     }
                 }
             }
-            // A blocking world overlap owns this small step; do not hit through its wall.
-            if (wall || victim != nullptr) {
-                flying.position = wall ? destination : glm::mix(from, to, nearest);
-                if (wall) {
+            const auto item = hitItems(flying, from, wall ? destination : to, nearest, items);
+            // Item impacts are not reflective world contacts (ProcessEffects mode 0).
+            // Query only the travelled segment so cover cannot be damaged through a wall.
+            if (wall || item || victim != nullptr) {
+                if (item) {
+                    flying.position = glm::mix(from, wall ? destination : to, item->fraction);
+                } else {
+                    flying.position = wall ? destination : glm::mix(from, to, nearest);
+                }
+                if (wall && !item) {
                     m_worldHits.push_back(
                         {flying.position, worldObject, liquid && (damage.flags & kReflect) == 0});
                 }
                 summon(flying);
-                if (wall && (damage.flags & kReflect) != 0) {
+                if (item && item->suppressEffect) {
+                    // Clearing fxhit suppresses the visual morph, not hit_audio.
+                    if (const auto* cue = flying.shot.data->sound(damage.hitSound);
+                        cue != nullptr && sound) {
+                        const std::string name = cue->soundFor(flying.shot.realm);
+                        if (!name.empty()) {
+                            sound(name);
+                        }
+                    }
+                    effects.stop(flying.effect);
+                    flying.effect = 0;
+                    break;
+                }
+                if (wall && !item && (damage.flags & kReflect) != 0) {
                     if (glm::dot(flying.velocity, normal) < 0) {
                         flying.velocity = glm::reflect(flying.velocity, normal);
                         if (flying.velocity.y > 0) {
@@ -352,7 +372,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     }
                     continue;
                 }
-                if (!wall) {
+                if (!wall && !item && victim != nullptr) {
                     if (flying.piercedPlayer == victim->player) {
                         effects.stop(flying.effect);
                         flying.effect = 0;
@@ -376,7 +396,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                         continue;
                     }
                 }
-                const PlaySound impactSound = liquid ? PlaySound{} : sound;
+                const PlaySound impactSound = liquid && !item ? PlaySound{} : sound;
                 effects.stop(flying.effect);
                 if ((damage.flags & kSticky) != 0 && damage.hitSound >= 0) {
                     flying.stuck = true;
@@ -509,8 +529,61 @@ void CombatantProjectiles::clear(EffectTrees& effects) {
     m_flying.clear();
     m_hits.clear();
     m_worldHits.clear();
+    m_rockHits.clear();
     m_generators.clear();
     m_summons.clear();
+}
+
+std::optional<CombatantProjectiles::ItemImpact>
+CombatantProjectiles::hitItems(const Flying& flying, const Vec3& from, const Vec3& to, f32 limit,
+                               std::span<const MissileStop> items) {
+    const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
+    if (items.empty() || (damage.behaviorFlags & CombatantProjectile::kIgnoreWorld) != 0) {
+        return std::nullopt;
+    }
+    std::vector<std::pair<f32, const MissileStop*>> contacts;
+    for (const MissileStop& item : items) {
+        if (const auto at = item.box.contact(from, to, damage.radius * flying.shot.scale);
+            at && *at <= limit) {
+            contacts.emplace_back(*at, &item);
+        }
+    }
+    std::ranges::stable_sort(contacts, {}, &decltype(contacts)::value_type::first);
+    const bool pierces = (damage.flags & kPassThrough) != 0 && flying.piercedPlayer < 0;
+    for (const auto& [at, item] : contacts) {
+        if (item->rock < 0) {
+            if (!pierces) {
+                return ItemImpact{at, false};
+            }
+            continue;
+        }
+        // Queued damage matters for subsequent iceballs in the same update. The
+        // scene applies these blows to the actual rock before the next update.
+        f32 health = static_cast<f32>(item->rockHealth);
+        for (const RockHit& hit : m_rockHits) {
+            if (hit.rock == static_cast<usize>(item->rock)) {
+                health -=
+                    std::max(1.0f, std::round(hit.damage - static_cast<f32>(item->rockArmor)));
+            }
+        }
+        if (health <= 0) {
+            continue;
+        }
+        // SfxSkipItem: hostile effects can hit safe rocks, but heal/gas and
+        // unbreakable armour do not take damage from these attacks.
+        constexpr u32 kHealOrGas = 0x200 | 0x800;
+        if (item->rockArmor >= 0 && (damage.flags & kHealOrGas) == 0) {
+            const f32 power = damage.damage * flying.shot.damageScale;
+            m_rockHits.push_back({static_cast<usize>(item->rock), power});
+            health -= std::max(1.0f, std::round(power - static_cast<f32>(item->rockArmor)));
+        }
+        // DMG_SUPER only passes cover its hit destroyed. Surviving cover clears
+        // fxhit, terminating even a reflective shot without its player-hit burst.
+        if (!pierces || health > 0) {
+            return ItemImpact{at, pierces};
+        }
+    }
+    return std::nullopt;
 }
 
 void CombatantProjectiles::summon(Flying& flying) {

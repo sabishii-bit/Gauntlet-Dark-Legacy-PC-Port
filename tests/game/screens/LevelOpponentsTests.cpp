@@ -1215,7 +1215,38 @@ TEST_CASE("Yeti POUND places a single I5 eruption and restores that arena obstac
     REQUIRE(rocks.standing(3));
     REQUIRE(rocks.obstacles().size() == 1);
     REQUIRE(rocks.rock(3).health == 90);
+    // Continue the actual fight with the player behind that freshly raised cover.
+    // The scene's typed item stops must reach boss shots, not only swarm missiles.
+    players[0].actor.spawn(0, {}, nullptr, rocks.rock(3).position + Vec3{0, 0, 10}, 0);
+    events.activateArena = [&](const CombatArenaActivation& activation) {
+        rocks.scheduleActivation(activation.index, activation.delay);
+    };
+    usize iceHits = 0;
+    for (s32 frame = 0; frame < 1800 && iceHits == 0; ++frame) {
+        rocks.update(1.0f / 30.0f);
+        std::vector<MissileStop> stops;
+        for (usize i = 0; i < rocks.size(); ++i) {
+            if (rocks.standing(i)) {
+                const auto& rock = rocks.rock(i);
+                stops.push_back({.box = rock.obstacle,
+                                 .rock = static_cast<s32>(i),
+                                 .rockHealth = rock.health,
+                                 .rockArmor = rock.armor});
+            }
+        }
+        opponents.update(2, 1.0f / 30.0f, players, rocks.obstacles(), events, stops);
+        for (const RockHit& hit : opponents.takeRockHits()) {
+            REQUIRE(rocks.standing(hit.rock));
+            const s32 before = rocks.rock(hit.rock).health;
+            rocks.strike(hit.rock, hit.damage);
+            CHECK(rocks.rock(hit.rock).health < before);
+            ++iceHits;
+        }
+        effects.update(1.0f / 30.0f);
+    }
+    REQUIRE(iceHits > 0);
     opponents.close();
+    CHECK(opponents.takeRockHits().empty());
     for (usize i = 0; i < effects.count(); ++i) {
         INFO("Surviving effect: " << effects.effect(i).name);
         REQUIRE(effects.count() == 0); // effects cannot retain a freed boss archive
