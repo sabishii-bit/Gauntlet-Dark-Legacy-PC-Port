@@ -3,10 +3,13 @@
 #include <cmath>
 #include <set>
 #include <string>
+#include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
+#include "engine/assets/SoundSet.h"
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
 
@@ -274,6 +277,43 @@ TEST_CASE("Skorne entrance taunts attacks and death reach the real sound bank",
         CHECK(taunts >= 2);
     }
     audio.close();
+}
+
+TEST_CASE("Skorne's attenuated attack voice reaches the mixer at the retail bank gain",
+          "[skorne][sound][dcs-gain][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("audio/SKORNE1/sounds.json").parent_path().parent_path().parent_path();
+    const f32 distance = GENERATE(20.0f, 55.0f);
+    CAPTURE(distance);
+    SoundSet bank;
+    REQUIRE(bank.load(root / "audio/SKORNE1"));
+    const auto index = bank.find("S_SKORN1ATTCK1");
+    REQUIRE(index.has_value());
+    const auto sequence = bank.sequence(*index);
+    REQUIRE(sequence.steps.size() == 1);
+    const auto& clip = *sequence.steps[0].clip;
+    REQUIRE(clip.channels == 1);
+    AudioMixer mixer(clip.sampleRate);
+    SoundPlayer player(mixer);
+    player.setCategoryVolume(SoundCategory::Effects, 128.0f / 255.0f);
+    LevelSoundscape audio;
+    const LevelAudioInfo info{.bank = "SKORNE1", .stream = {}};
+    audio.open(root, &player, &info, 'E', true);
+    // No directional offset from the listener: isolate attenuation and gain,
+    // retaining the actual decoded bank sample and normal level-audio path.
+    REQUIRE(audio.playAt("S_SKORN1ATTCK1", Vec3{0}, distance, 224.0f / 255.0f) != kNoSound);
+    const usize frames = std::min(clip.frames(), static_cast<usize>(clip.sampleRate));
+    std::vector<f32> mixed(frames * 2);
+    mixer.mix(mixed);
+    f64 sourceEnergy = 0;
+    f64 mixedEnergy = 0;
+    for (usize frame = 0; frame < frames; ++frame) {
+        sourceEnergy += static_cast<f64>(clip.samples[frame]) * clip.samples[frame];
+        mixedEnergy += static_cast<f64>(mixed[frame * 2]) * mixed[frame * 2];
+    }
+    REQUIRE(sourceEnergy > 0);
+    const f64 expectedGain = std::pow(10.0, (distance == 20.0f ? -72.0 : -125.0) / 200.0);
+    CHECK(std::sqrt(mixedEnergy / sourceEnergy) == Catch::Approx(expectedGain).margin(0.0001));
 }
 
 TEST_CASE("Skorne can be targeted and hit above his buried root with and without Savior",

@@ -42,8 +42,8 @@ public:
     SoundHandle playStream(std::shared_ptr<StreamSource> source, bool loop, f32 volume = 1.0f,
                            SoundCategory category = SoundCategory::Music);
 
-    /** Volumes in [0, 1]; a voice plays at master x category x the category's scale x its
-     * own volume. */
+    /** Controls in [0, 1]. Bank sequences use their DCS command-level curve;
+     * other sequences and streams use linear gain. Master remains a linear trim. */
     void setMasterVolume(f32 volume);
     void setCategoryVolume(SoundCategory category, f32 volume);
     /** A scale over a category's volume for what the game does to it for a while (the

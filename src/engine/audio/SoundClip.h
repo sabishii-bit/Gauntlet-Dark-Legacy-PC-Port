@@ -23,10 +23,14 @@ struct SoundSequenceStep {
     bool loopBack = false;  ///< after this clip, continue from the nearest earlier loop start
 };
 
+/** Interpretation of a sequence's volume controls before PCM mixing. */
+enum class SoundGainCurve : u8 { Linear, Dcs };
+
 /** A sound as the game triggers it: clips played back to back, possibly forever. */
 struct SoundSequence {
     std::vector<SoundSequenceStep> steps;
     f32 volume = 1.0f;
+    SoundGainCurve gainCurve = SoundGainCurve::Linear;
 
     bool loops() const;
 };

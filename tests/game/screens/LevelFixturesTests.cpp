@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <optional>
 #include <ranges>
@@ -987,7 +988,7 @@ TEST_CASE("a trapped chest sounds its fuse once on opening, not on a keyless tou
     CHECK(sounds.voiceCount() == 1);
     std::array<f32, 1024> output{};
     mixer.mix(output);
-    CHECK(output.back() == Catch::Approx(0.25f * 224.0f / 255.0f));
+    CHECK(output.back() == Catch::Approx(0.25f * std::pow(10.0f, -38.0f / 200.0f)));
     f.fixtures.update(1, 1.0f / 60, party, f.events);
     CHECK(sounds.voiceCount() == 1);
     f.fixtures.clear();

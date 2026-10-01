@@ -263,7 +263,8 @@ TEST_CASE("weapon throw audio follows the worn amulet or special shot",
         CHECK(sounds.voiceCount() == 1);
         std::array<f32, 512> samples{};
         mixer.mix(samples);
-        CHECK(samples.back() == Approx(0.25f * LevelSoundscape::kStepVolume));
+        // Command 127 becomes 126: -3.1 dB DCS master and -3 dB center pan.
+        CHECK(samples.back() == Approx(0.25f * std::pow(10.0f, -61.0f / 200.0f)));
         f.attacks.clear();
         f.audio.close();
     }

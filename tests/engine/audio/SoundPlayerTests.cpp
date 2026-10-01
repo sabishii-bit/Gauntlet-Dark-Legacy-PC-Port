@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <numbers>
 #include <vector>
@@ -53,6 +54,41 @@ TEST_CASE("one-shot sounds play once and are dropped when drained", "[audio][pla
     player.update();
     REQUIRE_FALSE(player.isPlaying(handle));
     REQUIRE(player.voiceCount() == 0);
+}
+
+TEST_CASE("DCS bank levels retain the retail gain curve after category and voice controls",
+          "[audio][player][dcs-gain]") {
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const SoundClip clip = tone(48000, 8000, 0.25f);
+    SoundSequence sequence;
+    sequence.steps.push_back({&clip, false, false});
+    sequence.gainCurve = SoundGainCurve::Dcs;
+    sequence.volume = 115.0f / 127.0f; // Skorne attack bank level
+    player.setCategoryVolume(SoundCategory::Effects, 128.0f / 255.0f);
+    const auto handle = player.play(sequence, 224.0f / 255.0f);
+    REQUIRE(handle != kNoSound);
+    auto out = pull(mixer, 1);
+    // (224 * 128 >> 8) * 115 / 127 = 101; the master is -4.2 dB,
+    // plus the centered stereo mix's -3 dB. It is not 101/255 amplitude.
+    CHECK(out[0] == Approx(0.25f * std::pow(10.0f, -72.0f / 200.0f)));
+    player.setVolume(handle, (224.0f / 255.0f) * 0.3f);
+    out = pull(mixer, kRampFrames);
+    // At 55 units: command 67, options 33, bank 29, master -9.5 dB.
+    const f32 distant = 0.25f * std::pow(10.0f, -125.0f / 200.0f);
+    CHECK(out.back() == Approx(distant));
+    player.setMasterVolume(0.5f); // custom master trim remains linear
+    out = pull(mixer, kRampFrames);
+    CHECK(out.back() == Approx(distant * 0.5f));
+    player.setCategoryVolume(SoundCategory::Effects, 0);
+    out = pull(mixer, kRampFrames);
+    CHECK(out.back() == 0);
+    player.setCategoryVolume(SoundCategory::Effects, 128.0f / 255.0f);
+    out = pull(mixer, kRampFrames);
+    CHECK(out.back() == Approx(distant * 0.5f));
+    player.setVolume(handle, 0);
+    out = pull(mixer, kRampFrames);
+    CHECK(out.back() == 0);
 }
 
 TEST_CASE("a voice's own volume and pan can change while it plays", "[audio][player]") {

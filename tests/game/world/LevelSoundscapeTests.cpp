@@ -1,5 +1,6 @@
 #include <array>
 #include <bit>
+#include <cmath>
 #include <filesystem>
 #include <format>
 #include <optional>
@@ -140,7 +141,8 @@ TEST_CASE("character barks have a separate bounded queue and the retail gain",
     REQUIRE(soundscape.bark(character, "BARK") != kNoSound);
     std::array<f32, 512> samples{};
     mixer.mix(samples);
-    CHECK(samples.back() == Catch::Approx(0.125f * LevelSoundscape::kBarkVolume));
+    // Command 192 -> 191 at the full options setting: -1.5 dB master, -3 dB center pan.
+    CHECK(samples.back() == Catch::Approx(0.125f * std::pow(10.0f, -45.0f / 200.0f)));
     soundscape.holdNarration(true);
     REQUIRE(soundscape.bark(character, "BARK", LevelSoundscape::kPainVolume) != kNoSound);
     CHECK(soundscape.bark(character, "BARK") == kNoSound);
@@ -165,7 +167,8 @@ TEST_CASE("runestone hints use the primary narrator, gain and bounded queue",
         REQUIRE(soundscape.announceRune(false, Vec3{0, 0, 10}, {}) != kNoSound);
         std::array<f32, 512> samples{};
         mixer.mix(samples);
-        CHECK(samples.back() == Catch::Approx(0.125f * 224.0f / 255.0f));
+        // Command 224 -> 223: -0.8 dB master and the centered stereo mix's -3 dB.
+        CHECK(samples.back() == Catch::Approx(0.125f * std::pow(10.0f, -38.0f / 200.0f)));
         REQUIRE(soundscape.announceRune(true, Vec3{0, 0, 10}, {}) != kNoSound);
         CHECK(soundscape.narrationBacklog() == Catch::Approx(2));
     }
@@ -203,13 +206,15 @@ TEST_CASE("footstep variants and entrance play at their authored volumes",
         soundscape.playFootstep(true, Footing::Stair, 45);
         std::array<f32, 512> samples{};
         mixer.mix(samples);
-        CHECK(samples.back() == Catch::Approx(0.25f * LevelSoundscape::kStepVolume * 0.5f));
+        // Half of command 127 truncates to 63, then 62 after the options scale;
+        // the DCS master curve gives -6.2 dB, plus -3 dB center pan.
+        CHECK(samples.back() == Catch::Approx(0.25f * std::pow(10.0f, -92.0f / 200.0f)));
     }
     SECTION("entrance has its own gain") {
         soundscape.playEntrance();
         std::array<f32, 512> samples{};
         mixer.mix(samples);
-        CHECK(samples.back() == Catch::Approx(0.25f * LevelSoundscape::kEntranceVolume));
+        CHECK(samples.back() == Catch::Approx(0.25f * std::pow(10.0f, -38.0f / 200.0f)));
     }
     soundscape.close();
 }
@@ -525,7 +530,8 @@ TEST_CASE("serpent wake audio requires nearby attention and attenuates at the ne
     CHECK(soundscape.playSerpent(Vec3{0}, Vec3{39, 0, 0}, 45, ear) != kNoSound);
     std::array<f32, 1024> output{};
     mixer.mix(output);
-    CHECK(output.back() == Catch::Approx(0.25f * LevelSoundscape::kMotionVolume * 0.5f));
+    // Half of command 224 becomes 111 after the options scale: -3.8 dB master.
+    CHECK(output.back() == Catch::Approx(0.25f * std::pow(10.0f, -68.0f / 200.0f)));
     soundscape.close();
 }
 

@@ -94,6 +94,7 @@ SoundSequence SoundSet::sequence(u32 index) {
     const SoundSetEntry& sound = entry(index);
     SoundSequence out;
     out.volume = sound.volume;
+    out.gainCurve = SoundGainCurve::Dcs;
     for (const SoundSetStep& step : sound.sequence) {
         if (step.sample >= m_samples.size()) {
             continue;

@@ -54,6 +54,7 @@ TEST_CASE("a sound set resolves names to sequences of decoded clips", "[assets][
     REQUIRE(music.steps[1].clip->sampleRate == 12000);
     REQUIRE(music.steps[1].clip->samples[1] == 0.5f);
     REQUIRE(music.volume == 63.0f / 127.0f);
+    REQUIRE(music.gainCurve == SoundGainCurve::Dcs);
 
     const SoundSequence blip = set.sequence(0);
     REQUIRE_FALSE(blip.loops());
