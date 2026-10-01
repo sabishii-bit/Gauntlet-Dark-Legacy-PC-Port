@@ -120,24 +120,38 @@ void BossVictory::say(std::string_view message, s32 pauseAfter, const std::strin
     }
 }
 
-/** A character every two ticks; a page done waits a second, then the next; past the last
- * page the caption comes down and the pause after is waited out. */
-bool BossVictory::type(s32 ticks, std::span<const usize> pageLengths) {
+/** CaptionTextSub spends 1.75 text units per character, two more at commas/periods,
+ * five for a tab and thirty for a carriage return; line feeds cost nothing.
+ * A page completes only when the scan has budget left to reach its terminator. */
+bool BossVictory::type(s32 ticks, std::span<const std::string> pages) {
     if (m_pagesOver) {
         m_pauseTicks += ticks;
         return m_pauseTicks >= m_pauseAfter;
     }
-    if (!m_caption.has_value() || m_caption->page >= pageLengths.size()) {
+    if (!m_caption.has_value() || m_caption->page >= pages.size()) {
         m_caption.reset();
         m_pagesOver = true;
         m_pauseTicks = ticks;
         return m_pauseTicks >= m_pauseAfter;
     }
-    const usize length = pageLengths[m_caption->page];
+    const std::string& page = pages[m_caption->page];
     if (!m_pageDone) {
         m_typeTicks += ticks;
-        m_caption->shown = std::min(static_cast<usize>(m_typeTicks / kTicksPerCharacter), length);
-        m_pageDone = m_caption->shown >= length;
+        const s32 textUnits = m_typeTicks / kTicksPerTextUnit; // whole units, like frame >> 1
+        f32 remaining = static_cast<f32>(textUnits);
+        usize shown = 0;
+        while (remaining > 0 && shown < page.size()) {
+            switch (page[shown++]) {
+            case '\r': remaining -= 30; break;
+            case '\n': break;
+            case '\t': remaining -= 5; break;
+            case ',':
+            case '.': remaining -= 2; [[fallthrough]];
+            default: remaining -= 1.75f; break;
+            }
+        }
+        m_caption->shown = shown;
+        m_pageDone = shown == page.size() && remaining > 0;
         m_pauseTicks = 0;
         return false;
     }
@@ -148,7 +162,7 @@ bool BossVictory::type(s32 ticks, std::span<const usize> pageLengths) {
         m_typeTicks = 0;
         m_pauseTicks = 0;
         m_pageDone = false;
-        if (m_caption->page >= pageLengths.size()) {
+        if (m_caption->page >= pages.size()) {
             m_caption.reset();
             m_pagesOver = true;
             return m_pauseAfter <= 0;
@@ -169,7 +183,8 @@ void BossVictory::setGoldLeft(bool left) {
     }
 }
 
-std::vector<VictoryVoice> BossVictory::update(s32 ticks, std::span<const usize> pageLengths) {
+std::vector<VictoryVoice> BossVictory::update(s32 ticks, std::span<const std::string> pages,
+                                              bool voicePlaying) {
     std::vector<VictoryVoice> voices;
     if (!running() || ticks <= 0) {
         return voices;
@@ -195,7 +210,7 @@ std::vector<VictoryVoice> BossVictory::update(s32 ticks, std::span<const usize> 
         }
         break;
     case Stage::Defeat:
-        if (type(ticks, pageLengths)) {
+        if (type(ticks, pages)) {
             const std::string voice = runeVoiceOf(m_kind, m_realm, m_quality);
             if (m_kind == kDemon) {
                 m_stage = Stage::Runes;
@@ -211,11 +226,14 @@ std::vector<VictoryVoice> BossVictory::update(s32 ticks, std::span<const usize> 
         }
         break;
     case Stage::Runes:
-        if (type(ticks, pageLengths)) {
+        if (type(ticks, pages)) {
             leave();
         }
         break;
     case Stage::Leaving:
+        if (voicePlaying) {
+            break;
+        }
         m_ticksLeft -= ticks;
         if (m_ticksLeft <= kExitSparkleTicks && !m_sparkling) {
             m_sparkling = true;

@@ -89,8 +89,10 @@ public:
     /** Stops every voice started here before releasing its borrowed clips. */
     void close();
 
-    /** Search level, common, then ambient banks; a broken first match stays silent. */
-    SoundHandle playNamed(std::string_view name, f32 volume = 1.0f);
+    /** Search level, common, then ambient banks; a broken first match stays silent.
+     * With `after`, wait for that voice to finish before starting this one. */
+    SoundHandle playNamed(std::string_view name, f32 volume = 1.0f, SoundHandle after = kNoSound);
+    bool isPlaying(SoundHandle handle) const;
     /** A one-shot attenuated from the nearest player and panned from the latest ambience ear. */
     SoundHandle playAt(std::string_view name, const Vec3& position, f32 playerDistance,
                        f32 volume = 1.0f);

@@ -89,21 +89,20 @@ void BossVictoryPresentation::bindWizard(RenderDevice& device, ItemArchive& item
 
 BossVictoryPresentation::Update BossVictoryPresentation::update(s32 ticks, f32 seconds,
                                                                 bool goldLeft,
-                                                                const MessageTable& strings) {
+                                                                const MessageTable& strings,
+                                                                bool voicePlaying) {
     Update result;
     if (!m_visit.running()) {
         return result;
     }
     m_visit.setGoldLeft(goldLeft);
-    std::vector<usize> pageLengths;
+    std::span<const std::string> pages;
     if (const auto& caption = m_visit.caption(); caption.has_value()) {
         if (const auto found = strings.find(caption->message); found.has_value()) {
-            for (const std::string& page : strings.message(*found).pages) {
-                pageLengths.push_back(page.size());
-            }
+            pages = strings.message(*found).pages;
         }
     }
-    result.voices = m_visit.update(ticks, pageLengths);
+    result.voices = m_visit.update(ticks, pages, voicePlaying);
     if (m_tree != nullptr && m_player.playing() && m_visit.wizardShown()) {
         m_player.advance(seconds, true);
         m_pose.evaluate(*m_tree, m_player.sequence(), m_player.frame());

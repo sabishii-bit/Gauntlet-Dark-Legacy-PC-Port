@@ -357,7 +357,11 @@ SoundSet* LevelSoundscape::bankOf(std::string_view name, u32& sound) {
     return nullptr;
 }
 
-SoundHandle LevelSoundscape::playNamed(std::string_view name, f32 volume) {
+bool LevelSoundscape::isPlaying(SoundHandle handle) const {
+    return m_output != nullptr && m_output->isPlaying(handle);
+}
+
+SoundHandle LevelSoundscape::playNamed(std::string_view name, f32 volume, SoundHandle after) {
     if (m_output == nullptr) {
         return kNoSound;
     }
@@ -367,7 +371,8 @@ SoundHandle LevelSoundscape::playNamed(std::string_view name, f32 volume) {
         return kNoSound;
     }
     try {
-        return track(m_output->play(bank->sequence(sound), volume, SoundCategory::Effects));
+        return track(
+            m_output->playAfter(after, bank->sequence(sound), volume, SoundCategory::Effects));
     } catch (const std::exception& e) {
         log::warn("Tower: sound {}: {}", name, e.what());
         return kNoSound;

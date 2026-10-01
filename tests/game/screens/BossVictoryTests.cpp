@@ -1,4 +1,5 @@
 #include <array>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -75,7 +76,7 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     }
     REQUIRE(fading == 64);
     REQUIRE(visit.wizardAlpha() == 1.0f);
-    // Then the defeat line, voiced from the level's bank, typed a character every two ticks.
+    // Then the defeat line, voiced from the level's bank, typed with weighted text units.
     REQUIRE(visit.stage() == Stage::Defeat);
     REQUIRE(voices.size() == 1);
     REQUIRE(voices[0].sound == "S_DEFEATVOXG");
@@ -83,10 +84,10 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     REQUIRE(visit.caption()->message == "LICH_SPEECH");
     REQUIRE(visit.caption()->page == 0);
     REQUIRE(visit.caption()->shown == 0);
-    const std::array<usize, 2> pages{10, 4};
+    const std::array<std::string, 2> pages{"ABCDEFGHIJ", "ABCD"};
     visit.update(2, pages);
     REQUIRE(visit.caption()->shown == 1);
-    visit.update(18, pages);
+    visit.update(34, pages);
     REQUIRE(visit.caption()->shown == 10);
     // A second's pause, and the next page; past the last, half a second, then the runes.
     visit.update(BossVictory::kPagePauseTicks - 1, pages);
@@ -94,7 +95,7 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     visit.update(1, pages);
     REQUIRE(visit.caption()->page == 1);
     REQUIRE(visit.caption()->shown == 0);
-    visit.update(8, pages);
+    visit.update(16, pages);
     REQUIRE(visit.caption()->shown == 4);
     visit.update(BossVictory::kPagePauseTicks, pages);
     REQUIRE_FALSE(visit.caption().has_value());
@@ -106,8 +107,8 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     REQUIRE(visit.caption()->message == "RUNE_PHRASE1");
     // Its one page read, a second's pause, and he sees them off: two seconds, the sparkle
     // over the last thirty-five ticks, then it is done.
-    const std::array<usize, 1> page{6};
-    visit.update(12, page);
+    const std::array<std::string, 1> page{"ABCDEF"};
+    visit.update(22, page);
     visit.update(BossVictory::kPagePauseTicks, page);
     REQUIRE_FALSE(visit.caption().has_value());
     visit.update(BossVictory::kAfterRunesTicks, {});
@@ -136,7 +137,7 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
         demon.update(1, {});
     }
     REQUIRE(demon.stage() == Stage::Defeat);
-    demon.update(BossVictory::kPagePauseTicks * 2, std::array<usize, 1>{0});
+    demon.update(BossVictory::kPagePauseTicks * 2, std::array<std::string, 1>{""});
     demon.update(BossVictory::kAfterDefeatTicks, {});
     REQUIRE(demon.stage() == Stage::Runes);
     REQUIRE(demon.caption()->message == "SKORNE1_RUNE_NO");
@@ -144,6 +145,73 @@ TEST_CASE("the wizard comes five seconds after the fall, fades in, types his two
     REQUIRE(demon.stage() == Stage::Leaving);
     demon.update(BossVictory::kExitTicks, {});
     REQUIRE(demon.stage() == Stage::Leaving);
+}
+
+TEST_CASE("boss speech uses retail character and punctuation budgets before the rune pause",
+          "[game][screens][victory]") {
+    // DoGoodWizard passes speech_frame >> 1 to CaptionTextSub. Its 1.75-unit
+    // characters and extra 2 units at '.' total 9 for ABC.; the terminator needs
+    // a positive remainder. Constants 0x80345a20/28 are 0.5/1.0 seconds, not ticks.
+    for (const s32 ticks : {1, 2}) {
+        CAPTURE(ticks);
+        BossVictory visit;
+        visit.begin(41, 'G', 1, 0, false);
+        visit.update(300, {});
+        visit.update(64, {});
+        const std::array<std::string, 1> pages{"ABC."};
+        for (s32 elapsed = 0; elapsed < 18; elapsed += ticks) {
+            REQUIRE(visit.update(ticks, pages).empty());
+        }
+        REQUIRE(visit.caption()->shown == 4);
+        // All glyphs visible is not end-of-page: punctuation still consumes time.
+        visit.update(2, pages);
+        REQUIRE(visit.caption()->page == 0);
+        for (s32 elapsed = 0; elapsed < 60; elapsed += ticks) {
+            REQUIRE(visit.update(ticks, pages).empty());
+        }
+        REQUIRE_FALSE(visit.caption());
+        for (s32 elapsed = 0; elapsed < 30 - ticks; elapsed += ticks) {
+            REQUIRE(visit.update(ticks, {}).empty());
+            REQUIRE(visit.stage() == Stage::Defeat);
+        }
+        const auto voices = visit.update(ticks, {});
+        REQUIRE(voices.size() == 1);
+        REQUIRE(voices.front().sound == "S_RUNEVOX0G");
+        REQUIRE(visit.stage() == Stage::Runes);
+        // Even missing captions retain the one-second post-rune pause.
+        for (s32 elapsed = 0; elapsed < 60 - ticks; elapsed += ticks) {
+            REQUIRE(visit.update(ticks, {}).empty());
+            REQUIRE(visit.stage() == Stage::Runes);
+        }
+        visit.update(ticks, {});
+        REQUIRE(visit.stage() == Stage::Leaving);
+        visit.update(600, {}, true);
+        REQUIRE(visit.stage() == Stage::Leaving);
+        REQUIRE_FALSE(visit.sparkling());
+        visit.update(85, {}, false);
+        REQUIRE(visit.sparkling());
+    }
+}
+
+TEST_CASE("boss caption line feeds are free but tabs and punctuation delay the next word",
+          "[game][screens][victory]") {
+    BossVictory visit;
+    visit.begin(41, 'G', 0, 0, false);
+    visit.update(300, {});
+    visit.update(64, {});
+    const std::array<std::string, 1> pages{"A,\n\tB"};
+    visit.update(2, pages);
+    REQUIRE(visit.caption()->shown == 1);
+    visit.update(2, pages);
+    REQUIRE(visit.caption()->shown == 2);
+    visit.update(6, pages);
+    REQUIRE(visit.caption()->shown == 2); // comma budget still exhausted
+    visit.update(2, pages);
+    REQUIRE(visit.caption()->shown == 4); // free newline followed by a five-unit tab
+    visit.update(8, pages);
+    REQUIRE(visit.caption()->shown == 4);
+    visit.update(2, pages);
+    REQUIRE(visit.caption()->shown == 5);
 }
 
 TEST_CASE("Skorne uses one combined voice and the first twelve runes for his follow-up",
