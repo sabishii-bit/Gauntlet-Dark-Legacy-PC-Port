@@ -610,6 +610,52 @@ TEST_CASE("standing generators block player movement and release it when destroy
     opponents.close();
 }
 
+TEST_CASE("the opponent movement recheck preserves player wall clearance",
+          "[level-opponents][collision][tower-wings]") {
+    const auto stage = test::sampleLevel("player-wall-clearance");
+    writeTextFile(stage / "world.json", R"({"objects":[
+      {"name":"GROUND","position":[0,0,0],"flags":4},
+      {"name":"LOWERED_GATE","position":[0,0,0],"flags":2},
+      {"name":"WALL","position":[0,0,0],"flags":2}]})");
+    writeTextFile(stage / "collision.json", R"({"objects":[
+      {"object":0,"normals":[0,1,0,0,1,0],
+       "vertices":[-10,0,-10,10,0,-10,10,0,10,-10,0,-10,10,0,10,-10,0,10]},
+      {"object":1,"normals":[-1,0,0,-1,0,0],
+       "vertices":[0,-8,-5,0,1.3,-5,0,1.3,5,0,-8,-5,0,1.3,5,0,-8,5]},
+      {"object":2,"normals":[-1,0,0,-1,0,0],
+       "vertices":[4,0,-5,4,5,-5,4,5,5,4,0,-5,4,5,5,4,0,5]}]})");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    LevelRef level;
+    level.name = "test";
+    level.items = "missing";
+    REQUIRE(world.load(device, stage, level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    PlayerActor& actor = players[0].actor;
+    actor.spawn(0, {}, nullptr, {-2, 0, 0}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, stage, 1}, players);
+    // Each walking step clears a lowered gate. A post-body recheck must not
+    // move it back to the other side using a different vertical collision span.
+    for (s32 step = 0; step < 80; ++step) {
+        const Vec3 before = actor.position();
+        actor.slide({0.05f, 0, 0}, &world.collision());
+        const Vec3 walked = actor.position();
+        const Vec3 rechecked = opponents.resolveMovement(actor, before, walked);
+        REQUIRE(glm::distance(walked, rechecked) < 1e-4f);
+        actor.place(rechecked);
+    }
+    CHECK(actor.position().x == Catch::Approx(2.0f).margin(0.001f));
+    // This is not a bypass of the second wall check: an opponent could push
+    // a body into a full-height wall, and that position must still be corrected.
+    const Vec3 blocked = opponents.resolveMovement(actor, actor.position(), {3.8f, 0, 0});
+    CHECK(blocked.x == Catch::Approx(4.0f - actor.radius()));
+    opponents.close();
+}
+
 TEST_CASE("mountain creatures stop a player in melee range and release collision on death",
           "[level-opponents][collision][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();

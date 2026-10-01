@@ -3383,4 +3383,69 @@ TEST_CASE("tower ceremony ghosts draw after Dream World scenery and retain depth
     REQUIRE(device.draws[*firstHead].blend() == BlendMode::Additive);
     scene.close();
 }
+TEST_CASE("fully unlocked Knight walks both tower wing gates in both directions",
+          "[game][screens][tower-wings][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("PLAYERS/KNI/GRE/animations.json");
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/tower-fully-unlocked.json");
+    const auto gate = GENERATE(usize{1997}, usize{2031});
+    test::FakeRenderDevice device;
+    LevelWorld tower;
+    REQUIRE(tower.load(device, root));
+    REQUIRE(tower.layout().objects()[gate].name == (gate == 1997 ? "L1TRAPWEASYA" : "L1TRAPWMEDA"));
+    const Mat4 closed = tower.scene().worldTransform(gate);
+    const Vec3 center{closed[3]};
+    const f32 outward = gate == 1997 ? 1.0f : -1.0f;
+    const Vec3 direction = glm::normalize(Vec3{closed * Vec4{outward, 0, 0, 0}});
+    const auto floor = tower.collision().floorAt(center, 0, 20);
+    REQUIRE(floor);
+    const Vec3 threshold{center.x, floor->y, center.z};
+    // Locked doors still block. The fix must not simply disable gate collision.
+    CHECK(glm::distance(tower.collision().resolveWalls(threshold, PlayerActor::kDefaultWidth * 0.5f,
+                                                       floor->y + PlayerActor::kFootClearance,
+                                                       floor->y + PlayerActor::kDefaultHeight -
+                                                           PlayerActor::kFootClearance),
+                        threshold) > 0.5f);
+    Vec3 start = center - direction * 6.0f;
+    const auto startFloor = tower.collision().floorAt(start, 0, 20);
+    REQUIRE(startFloor);
+    start.y = startFloor->y;
+    const GameConfig config;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    GameContext context;
+    context.config = &config;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    context.tower = &tower;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = start;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, tower, scenario.partyMembers(), options));
+    REQUIRE(tower.triggers().opened(static_cast<s32>(gate)));
+    for (s32 tick = 0; tick < 180; ++tick) {
+        scene.update(1.0 / 30, {});
+    }
+    // Run actual gameplay input, including the opponent/body post-collision check;
+    // testing PlayerActor alone missed the second check's different probe height.
+    for (const f32 sign : {1.0f, -1.0f}) {
+        for (s32 tick = 0;
+             tick < 90 && glm::dot(scene.actor(0)->position() - center, direction) * sign < 6;
+             ++tick) {
+            const f32 heading =
+                std::atan2(direction.x * sign, direction.z * sign) - scene.viewCamera().yaw;
+            PlayScene::Inputs input{};
+            input[0].move = MoveInput{Vec2{std::sin(heading), std::cos(heading)}, 1};
+            scene.update(1.0 / 30, input);
+        }
+        const Vec3 position = scene.actor(0)->position();
+        CAPTURE(gate, sign, position.x, position.y, position.z);
+        CHECK(glm::dot(position - center, direction) * sign >= 6);
+        REQUIRE(tower.triggers().opened(static_cast<s32>(gate)));
+    }
+    scene.close();
+}
+
 } // namespace
