@@ -155,11 +155,12 @@ struct MissileStop {
     static MissileStop of(const Obstacle& box) { return MissileStop{.box = box}; }
 };
 
-/** Where a gas blast's ring stands this step, for the level's food. */
-struct GasReach {
+/** Where a blast's ring stands this step, for damage to the level's pickups. */
+struct PickupBlastReach {
     Vec3 position{0.0f};
     f32 radius = 0.0f;
     f32 damage = 0.0f;
+    u32 flags = 0;
 };
 
 /** A missile's blow on a safe rock, for the level to deal. */
@@ -234,8 +235,8 @@ public:
     std::vector<EnemyMissileHit> takeHits();
     /** The blows on safe rocks since the last call. */
     std::vector<RockHit> takeRockHits();
-    /** Where the gas blasts reached since the last call. */
-    std::vector<GasReach> takeGasReaches() { return std::exchange(m_gasReaches, {}); }
+    /** Where damaging blasts reached since the last call, with their original damage type. */
+    std::vector<PickupBlastReach> takePickupBlasts() { return std::exchange(m_pickupBlasts, {}); }
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
     /** The lobs' red lights and their bursts'. */
     void lights(std::vector<PointLight>& out) const;
@@ -275,7 +276,7 @@ private:
     std::vector<Burst> m_bursts;
     std::vector<EnemyMissileHit> m_hits;
     std::vector<RockHit> m_rockHits;
-    std::vector<GasReach> m_gasReaches;
+    std::vector<PickupBlastReach> m_pickupBlasts;
     std::mt19937 m_random;
     f32 m_shrink = 1.0f;
     f32 m_ricochetIn = 0.0f; ///< before another ricochet is heard

@@ -102,6 +102,10 @@ public:
      * (fn_8005C1DC's DMG_POISONGAS: over two), telling the party once it has. */
     void spoilFood(const Vec3& position, f32 radius, f32 damage,
                    std::span<const PlayerRuntime> players, const Events& events);
+    /** Applies one already-expanded blast step to pickups, without advancing its clock or
+     * hurting characters again. Explosion damage shortens the item radius by 1.5. */
+    void blastPickups(const Vec3& position, f32 radius, f32 damage, u32 flags,
+                      std::span<const PlayerRuntime> players, const Events& events);
     /** Grows the blasts under way by `seconds` (the update does, after the fixtures). */
     void advanceBlasts(f32 seconds, std::span<PlayerRuntime> players, const Events& events);
     Chests& chests() { return m_chests; }
@@ -151,7 +155,7 @@ private:
         f32 damage = 0.0f;
         f32 seconds = kExplosionSeconds;
         f32 elapsed = 0.0f;
-        u32 flags = 0x420; ///< ordinary explosion + knockdown; world effects supply their own
+        u32 flags = 0x421; ///< fire + explosion + knockdown; world effects supply their own
         bool started = false;
         bool done = false;
         std::vector<usize> players; ///< party indices it has reached

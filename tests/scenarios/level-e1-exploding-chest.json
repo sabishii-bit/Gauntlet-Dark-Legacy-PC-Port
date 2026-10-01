@@ -1,0 +1,21 @@
+{
+  "screen": "tower",
+  "level": "E1",
+  "party": [
+    {
+      "player": 0,
+      "class": "JES",
+      "color": "GRE",
+      "name": "TEST",
+      "level": 60,
+      "keys": 1
+    }
+  ],
+  "position": [11.015625, 0.484375, 66.3359375],
+  "welcome": false,
+  "items": [
+    {"name": "APPLE", "position": [15, 0.484375, 68]},
+    {"name": "TREAS_GOLD", "position": [7, 0.484375, 68]},
+    {"name": "KEY", "position": [14, 0.484375, 71]}
+  ]
+}

@@ -222,6 +222,8 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
     const Vec3 origin{10000, 0, 10000};
     const usize first = f.world.placedItems().size();
     REQUIRE(f.world.placeItem(f.device, "APPLE", origin));
+    const Mat4 itemTransform = glm::rotate(glm::translate(Mat4{1}, origin), 0.7f, Vec3{0, 1, 0});
+    f.world.attachItem(first, itemTransform, false);
     REQUIRE(f.world.placeItem(f.device, "TREAS_GOLD", origin));
     // radius 12 - inset 1.5 + item radius 0.5: 11.1 must remain intact.
     REQUIRE(f.world.placeItem(f.device, "APPLE", origin + Vec3{11.1f, 0, 0}));
@@ -234,10 +236,50 @@ TEST_CASE("fixture blasts damage pickups within the reduced item radius and emit
     };
     f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
     const auto party = std::span{f.players}.first(1);
-    f.fixtures.blast(origin, 12, 5, party, f.events);
+    SECTION("fixture explosion") {
+        f.fixtures.blast(origin, 12, 5, party, f.events);
+    }
+    SECTION("enemy explosion forwards its already expanded step") {
+        EnemyMissiles missiles;
+        EnemyBlast blast;
+        blast.position = origin;
+        blast.radius = 12;
+        blast.damage = 5;
+        blast.flags = 0x421;
+        blast.stages = {1};
+        missiles.blast(blast);
+        missiles.update(1.0f / 30, nullptr, {});
+        const auto reaches = missiles.takePickupBlasts();
+        REQUIRE(reaches.size() == 1);
+        const auto& reached = reaches.front();
+        f.fixtures.blastPickups(reached.position, reached.radius, reached.damage, reached.flags,
+                                party, f.events);
+        CHECK(missiles.takePickupBlasts().empty());
+    }
     CHECK(f.world.placedItems().item(first).taken);
     CHECK(f.world.placedItems().item(first + 1).name == "TREAS_JUNK");
     CHECK_FALSE(f.world.placedItems().item(first + 2).taken);
+    REQUIRE(f.fixtures.rubble().size() == 1);
+    CHECK(f.fixtures.rubble().transform(0) == itemTransform);
+    f.device.draws.clear();
+    f.fixtures.rubble().draw(f.device, Mat4{1}, f.world.fullLighting());
+    REQUIRE_FALSE(f.device.draws.empty());
+    const auto slag = f.world.items().models.find(Rubble::kItem);
+    REQUIRE(slag.has_value());
+    const Mesh& mesh = f.world.items().models.mesh(*slag);
+    usize vertices = 0;
+    for (const auto& draw : f.device.draws) {
+        REQUIRE_FALSE(draw.vertices.empty());
+        CHECK(draw.state.depthTest);
+        vertices += draw.vertices.size();
+        for (const auto& vertex : draw.vertices) {
+            CHECK(std::ranges::any_of(mesh.vertices, [&](const MeshVertex& expected) {
+                return glm::distance(Vec3{itemTransform * Vec4{expected.position, 1}},
+                                     Vec3{vertex.position}) < 0.002f;
+            }));
+        }
+    }
+    CHECK(vertices == mesh.triangleCount() * 3);
     REQUIRE(helpCount == 1);
     REQUIRE(f.effects.count() == 4);
     for (usize i = 0; i < f.effects.count(); i += 2) {
@@ -941,6 +983,89 @@ TEST_CASE("chest pickups follow NULL1 while opening and cannot be collected earl
     const Vec3 openedPosition = f.world.placedItems().item(held).position;
     f.fixtures.update(60, 1, std::span{f.players}.first(1), f.events);
     CHECK(f.world.placedItems().item(held).position == openedPosition);
+    f.fixtures.clear();
+}
+
+TEST_CASE("a trapped chest has a short raised fireball and independently animated debris",
+          "[game][level-fixtures][chest-explosion][blast-items][unpacked]") {
+    // StartExplosion(29) starts effect 22 plus a separately oriented effect 29.
+    // GC constants at 80348140/803480A0/80348160 are 2.5f/1.0f/3.0 double.
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    Fixture f;
+    f.fixtures.clear();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(f.world.load(f.device, root, *catalog.byName("E1")));
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    f.fixtures.bind({f.device, f.world, f.weapons, f.effects, f.audio, 1});
+    f.fixtures.setPlayerCount(1);
+    f.events.help = [](s32, usize) { return true; };
+    f.events.hurt = [](usize, f32, HurtKind, bool) {};
+    f.events.opponents = [](const Vec3&, f32, f32, std::vector<s32>&, u32) {};
+    usize index = 0;
+    while (index < f.fixtures.chests().size()) {
+        const auto& chest = f.fixtures.chests().chest(index);
+        if (chest.shown && chest.subtype == Chests::kTrappedChest) {
+            break;
+        }
+        ++index;
+    }
+    REQUIRE(index < f.fixtures.chests().size());
+    const auto& chest = f.fixtures.chests().chest(index);
+    const Vec3 origin = chest.figure.position();
+    const Mat4 orientation = chest.figure.transform();
+    const usize food = f.world.placedItems().size();
+    REQUIRE(f.world.placeItem(f.device, "APPLE", origin));
+    REQUIRE(f.world.placeItem(f.device, "TREAS_GOLD", origin));
+    // Isolate the pickups from the floor query and any nearby authored containers.
+    f.world.attachItem(food, glm::translate(Mat4{1}, origin), false);
+    f.world.attachItem(food + 1, glm::translate(Mat4{1}, origin), false);
+    f.players[0].actor.place(chest.box.centre);
+    f.players[0].actor.save().progress().inventory.keys = 1;
+    const auto party = std::span{f.players}.first(1);
+    for (s32 frame = 0; frame < 150 && !chest.gone; ++frame) {
+        f.effects.update(1.0f / 30);
+        f.fixtures.update(2, 1.0f / 30, party, f.events);
+    }
+    REQUIRE(chest.gone);
+    CHECK(f.world.placedItems().item(food).taken);
+    CHECK(f.world.placedItems().item(food + 1).name == "TREAS_JUNK");
+    REQUIRE(f.fixtures.rubble().size() >= 1);
+    const auto findEffect = [&](std::string_view name) -> const EffectTrees::Effect* {
+        for (usize i = 0; i < f.effects.count(); ++i) {
+            if (f.effects.effect(i).name == name) {
+                return &f.effects.effect(i);
+            }
+        }
+        return nullptr;
+    };
+    const auto* fireball = findEffect("EXPLOSION");
+    REQUIRE(fireball != nullptr);
+    CHECK(fireball->position == origin + Vec3(0, 3, 0));
+    CHECK(fireball->stretch == Vec3(2.5f, 1, 2.5f));
+    CHECK(f.effects.remaining(fireball->id) == Catch::Approx(1));
+    const auto* debris = findEffect("EXPCHEST");
+    REQUIRE(debris != nullptr);
+    CHECK(debris->transform() == orientation);
+    CHECK(f.effects.remaining(debris->id) == Catch::Approx(2.5f));
+    f.device.draws.clear();
+    fireball->model.draw(f.device, Mat4{1}, fireball->transform(), {}, fireball->pose.matrices());
+    REQUIRE_FALSE(f.device.draws.empty());
+    CHECK_FALSE(f.device.draws.front().vertices.empty());
+    f.effects.update(1.1f);
+    CHECK(findEffect("EXPLOSION") == nullptr);
+    CHECK(findEffect("EXPCHEST") != nullptr);
+    f.fixtures.advanceBlasts(0.75f, party, f.events);
+    const usize lateFood = f.world.placedItems().size();
+    REQUIRE(f.world.placeItem(f.device, "APPLE", origin));
+    f.world.attachItem(lateFood, glm::translate(Mat4{1}, origin), false);
+    f.fixtures.advanceBlasts(1.0f / 30, party, f.events);
+    CHECK_FALSE(f.world.placedItems().item(lateFood).taken);
+    f.device.draws.clear();
+    f.fixtures.rubble().draw(f.device, Mat4{1}, f.world.fullLighting());
+    CHECK_FALSE(f.device.draws.empty());
     f.fixtures.clear();
 }
 

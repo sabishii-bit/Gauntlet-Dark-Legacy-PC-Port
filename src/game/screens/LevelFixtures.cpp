@@ -48,8 +48,9 @@ constexpr f32 kRingHeldFrom = 2.0f;  ///< a blow over this is not dealt the same
 constexpr f32 kRingKnockFrom = 5.0f; ///< under this a blast floors nobody
 constexpr f32 kShelterFrom = 10.0f;  ///< past this a wall between shelters a player
 constexpr f32 kShelterProbe = 0.1f;
-constexpr f32 kChestBlastSeconds = 2.5f; ///< EXPCHEST's seventy-five frames
-constexpr s32 kBarrelReached = 0;        ///< a blast's own ids for what it has reached
+constexpr f32 kChestBlastWidth = 2.5f;
+constexpr f32 kChestBlastHeight = 3.0f;
+constexpr s32 kBarrelReached = 0; ///< a blast's own ids for what it has reached
 constexpr s32 kWallReached = 1000;
 constexpr s32 kRockReached = 2000;
 constexpr s32 kTriggerReached = 3000;
@@ -261,14 +262,20 @@ void LevelFixtures::detonateChest(usize chest, std::optional<usize> opener,
         return;
     }
     const Vec3 position = m_chests.chest(chest).figure.position();
-    f32 seconds = kChestBlastSeconds;
+    const Vec3 blastPosition = position + Vec3{0, kChestBlastHeight, 0};
+    f32 seconds = kExplosionSeconds;
     if (m_resources->weapons.loaded()) {
         EffectTrees::Setting setting;
+        setting.stretch = Vec3{kChestBlastWidth, 1, kChestBlastWidth};
         setting.light = EffectTrees::Light{DynamicLights::blast(),
                                            DynamicLights::kBlastRadiusScale * kBlastRadius};
         const u32 id = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
-                                                     kChestBlast, position, setting);
+                                                     kBarrelBlast, blastPosition, setting);
         seconds = m_resources->effects.remaining(id).value_or(seconds);
+        // Flying fragments retain the chest's orientation and outlive its fireball.
+        const u32 debris = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                                         kChestBlast, position, {});
+        m_resources->effects.placeAt(debris, m_chests.chest(chest).figure.transform());
     }
     playRealmSound(kBarrelBlastSound);
     m_chests.remove(chest);
@@ -278,7 +285,8 @@ void LevelFixtures::detonateChest(usize chest, std::optional<usize> opener,
     if (told.has_value() && events.help) {
         events.help(HelpMessages::kChestsExplode, *told);
     }
-    blast(position, kBlastRadius, kChestBlastDamage * trapDamageScale(), players, events, seconds);
+    blast(blastPosition, kBlastRadius, kChestBlastDamage * trapDamageScale(), players, events,
+          seconds);
 }
 
 /** An explosion breaks the chests about it (fn_8005C1DC's container case, at a power of five
@@ -1068,8 +1076,22 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
     opponents();
     const bool destructive = (ring.flags & kExplosionDamage) != 0;
     blastFixtures(felt.position, reach, felt.damage, events, ring.reached, destructive);
-    const auto changes = m_resources->world.blastItems(m_resources->device, felt.position, reach,
-                                                       felt.damage, destructive);
+    blastPickups(felt.position, felt.radius, felt.damage, ring.flags, players, events);
+}
+
+void LevelFixtures::blastPickups(const Vec3& position, f32 radius, f32 damage, u32 flags,
+                                 std::span<const PlayerRuntime> players, const Events& events) {
+    if (!m_resources) {
+        return;
+    }
+    const bool destructive = (flags & kExplosionDamage) != 0;
+    const f32 reach = std::max(0.0f, radius - (destructive ? kItemBlastInset : 0.0f));
+    if ((flags & kPoisonDamage) != 0) {
+        spoilFood(position, reach, damage, players, events);
+        return;
+    }
+    const auto changes =
+        m_resources->world.blastItems(m_resources->device, position, reach, damage, destructive);
     bool destroyed = false;
     for (const auto& change : changes) {
         if (change.potion) {
@@ -1080,11 +1102,12 @@ void LevelFixtures::feel(Blast& ring, std::span<PlayerRuntime> players, const Ev
         }
         // The retail effect table maps both CHESTDEST and ITEMDEST to this tree.
         for (const std::string_view tree : {kChestDestroyed, kBarrelSmoke}) {
-            m_resources->effects.start(m_resources->device, m_resources->weapons, tree,
-                                       change.position);
+            const u32 id = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                                         tree, change.position, {});
+            m_resources->effects.placeAt(id, change.transform);
         }
         if (change.destroyed) {
-            leaveRubble(Rubble::kItem, glm::translate(Mat4{1.0f}, change.position));
+            leaveRubble(Rubble::kItem, change.transform);
         }
         destroyed |= change.destroyed;
     }

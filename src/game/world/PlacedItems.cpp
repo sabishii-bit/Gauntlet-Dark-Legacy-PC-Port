@@ -310,7 +310,7 @@ std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, c
         if (kind == ItemKind::Potion) {
             // Held chest contents never reach this branch until released.
             if (const auto broken = damagePotion(item, info, damage); broken.has_value()) {
-                changes.push_back({item.position, true, broken});
+                changes.push_back({item.position, true, broken, item.transform});
             }
             continue;
         }
@@ -340,7 +340,7 @@ std::vector<PlacedItems::BlastChange> PlacedItems::blast(RenderDevice& device, c
             item.taken = true;
             item.visible = false;
         }
-        changes.push_back({item.position, !treasure, std::nullopt});
+        changes.push_back({item.position, !treasure, std::nullopt, item.transform});
     }
     return changes;
 }

@@ -1059,7 +1059,7 @@ TEST_CASE("a standing safe rock takes a missile's blow, and stops even the garm'
     REQUIRE_FALSE(through.empty());
     CHECK(through[0].player == 0);
 }
-TEST_CASE("a gas blast's ring tells where it reaches, for the level's food; fire does not",
+TEST_CASE("blast rings forward their reach and damage type for the level's pickups",
           "[game][enemies][enemy-gas]") {
     EnemyMissiles missiles;
     EnemyBlast gas;
@@ -1070,21 +1070,29 @@ TEST_CASE("a gas blast's ring tells where it reaches, for the level's food; fire
     gas.stages = {1.0f};
     missiles.blast(gas);
     EnemyBlast fire = gas;
-    fire.flags = 0;
+    fire.flags = 0x421;
     missiles.blast(fire);
-    std::vector<GasReach> reaches;
+    std::vector<PickupBlastReach> reaches;
     for (s32 frame = 0; frame < 30; ++frame) {
         missiles.update(kStep, nullptr, {});
-        const auto taken = missiles.takeGasReaches();
+        const auto taken = missiles.takePickupBlasts();
+        CHECK(taken.size() % 2 == 0);
+        for (usize i = 0; i < taken.size(); i += 2) {
+            CHECK(taken[i].flags == EnemyBlast::kGas);
+            CHECK(taken[i + 1].flags == 0x421);
+            CHECK(taken[i].radius == taken[i + 1].radius);
+            CHECK(taken[i].damage == taken[i + 1].damage);
+        }
         reaches.insert(reaches.end(), taken.begin(), taken.end());
     }
     REQUIRE(reaches.size() > 2);
     CHECK(reaches.front().damage == Approx(15.0f * (1.0f - 0.33f)).margin(0.5f));
     CHECK(reaches.back().radius > reaches.front().radius);
     CHECK(reaches.back().radius <= 7.5f);
-    CHECK(reaches.size() < 30); // only the gas, and it stops two thirds through
+    CHECK(reaches.size() > 30); // both blasts, each stopping two thirds through
+    CHECK(reaches.size() < 60);
     missiles.clear();
-    CHECK(missiles.takeGasReaches().empty());
+    CHECK(missiles.takePickupBlasts().empty());
 }
 
 TEST_CASE("while the swarm is shrunk what it throws is that size and does half, and what was "
