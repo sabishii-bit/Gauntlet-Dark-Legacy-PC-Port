@@ -162,6 +162,7 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
         out.critter = id;
         out.tree = record->shows() ? record->tree : std::string{};
         out.sound = record->soundFor(m_realm);
+        out.soundPosition = Vec3{modelTransform(critter)[3]};
         // A dying great one's sounds carry whole; the rest fade with distance.
         out.attenuated = critter.move < 0 || data.moves()[static_cast<usize>(critter.move)].type !=
                                                  MoveDefinition::kDeath;

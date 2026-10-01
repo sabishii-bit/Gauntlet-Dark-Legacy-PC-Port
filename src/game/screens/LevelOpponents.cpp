@@ -97,7 +97,7 @@ void LevelOpponents::hearFrom(std::span<const PlayerRuntime> players) {
     m_hearers.clear();
     for (const PlayerRuntime& runtime : players) {
         if (runtime.life == PlayerLife::Standing) {
-            m_hearers.push_back(runtime.actor.followPoint());
+            m_hearers.push_back(runtime.actor.position());
         }
     }
 }
@@ -110,7 +110,9 @@ SoundHandle LevelOpponents::playAt(std::string_view name, f32 level, const Vec3&
     if (heard <= 0.0f) {
         return kNoSound;
     }
-    return m_resources->audio.playNamed(name, level / kFullLevel * heard);
+    // Distance was resolved against the nearest standing player above; still pan from
+    // the camera, as sndFxPlay3DAtten does. Zero avoids attenuating a second time.
+    return m_resources->audio.playAt(name, at, 0.0f, level / kFullLevel * heard);
 }
 
 void LevelOpponents::lights(std::vector<PointLight>& out) const {
@@ -1369,9 +1371,9 @@ void LevelOpponents::showCritterCue(const CombatCue& cue, ItemArchive* archive, 
     // The great ones' sounds play at 224 of 255 as heard from where the players stand
     // (CritterDoSfx: AudioPlay3DSel, sndFxPlay3DAtten); a death's at that level whole.
     if (!cue.sound.empty() && cue.attenuated) {
-        playAt(cue.sound, kLoudSound, cue.position);
+        playAt(cue.sound, kLoudSound, cue.soundPosition);
     } else if (!cue.sound.empty()) {
-        m_resources->audio.playNamed(cue.sound, kLoudSound / kFullLevel);
+        m_resources->audio.playAt(cue.sound, cue.soundPosition, 0.0f, kLoudSound / kFullLevel);
     }
 }
 

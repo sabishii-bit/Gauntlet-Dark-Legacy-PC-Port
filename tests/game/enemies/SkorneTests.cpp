@@ -1,10 +1,13 @@
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <set>
 #include <string>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
 
 #include "FakeRenderDevice.h"
@@ -92,7 +95,12 @@ TEST_CASE("Skorne entrance sends three masonry cues across both start animations
     REQUIRE(mark != nullptr);
     ItemArchive weapons;
     EffectTrees effects;
+    AudioMixer mixer(48000);
+    SoundPlayer sound(mixer);
     LevelSoundscape audio;
+    test::unpackedOrSkip("audio/SKORNE1/sounds.json");
+    audio.open(root, &sound, world.audio(), 'E', true);
+    audio.updateAmbience({}, {Vec3{100, 0, 0}, Vec3{1, 0, 0}}, 1);
     LevelOpponents opponents;
     std::array<PlayerRuntime, 1> players;
     players[0].actor.spawn(0, {}, nullptr, {0, -9.75f, 31}, 0);
@@ -109,13 +117,107 @@ TEST_CASE("Skorne entrance sends three masonry cues across both start animations
     events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
+    s32 audibleFrames = 0;
+    f32 leftEnergy = 0;
+    f32 rightEnergy = 0;
     for (s32 frame = 0; frame < 600; ++frame) {
         world.update(1.0f / 30);
         opponents.update(2, 1.0f / 30, players, {}, events);
         effects.update(1.0f / 30);
+        std::array<f32, 3200> output{}; // a game frame of stereo PCM, not just queued cue names
+        mixer.mix(output);
+        f32 energy = 0;
+        for (const f32 sample : output) {
+            energy += std::abs(sample);
+        }
+        for (usize i = 0; i < output.size(); i += 2) {
+            leftEnergy += std::abs(output[i]);
+            rightEnergy += std::abs(output[i + 1]);
+        }
+        audibleFrames += energy > 0.01f ? 1 : 0;
+        sound.update();
     }
     REQUIRE(world.skorneArena().phase() == 3);
+    CHECK(audibleFrames > 120);
+    CHECK(leftEnergy > rightEnergy);
     opponents.close();
+    audio.close();
+}
+
+TEST_CASE("Skorne entrance taunts attacks and death reach the real sound bank",
+          "[skorne][sound][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
+    test::unpackedOrSkip("audio/SKORNE1/sounds.json");
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'E');
+    REQUIRE(fixture.spawn("SKORNE1", {0, -25.375f, 0}, 0));
+    AudioMixer mixer(48000);
+    SoundPlayer sound(mixer);
+    LevelSoundscape audio;
+    const LevelAudioInfo info{.bank = "SKORNE1", .stream = {}};
+    audio.open(root, &sound, &info, 'E', true);
+    bool battle = false;
+    SECTION("idle fallback taunts") {}
+    SECTION("attacks followed by death") {
+        battle = true;
+    }
+    EnemyView target;
+    target.player = 0;
+    target.position = {0, -9.75f, 33};
+    target.height = 6;
+    target.radius = 1;
+    const std::array players{target};
+    std::set<std::string> heard;
+    s32 taunts = 0;
+    s32 lastTaunt = -1000;
+    for (s32 frame = 0; frame < 1400; ++frame) {
+        if (battle && frame == 1000) {
+            EnemyHit hit;
+            hit.damage = 2 * fixture.actor.maxHealth();
+            fixture.actor.hurt(hit);
+        }
+        fixture.update(2, 1.0f / 30,
+                       battle ? std::span<const EnemyView>{players} : std::span<const EnemyView>{});
+        for (const auto& cue : fixture.actor.takeCues()) {
+            if (cue.sound.empty()) {
+                continue;
+            }
+            CAPTURE(frame, cue.sound);
+            if (cue.sound == "S_SKORN1GEN1") {
+                CHECK(frame == 21); // first update advances to animation frame 1
+            } else if (cue.sound == "S_SKORN1GEN2") {
+                CHECK(frame == 49);
+            }
+            CHECK(cue.soundPosition == Vec3{0, -25.375f, 0});
+            REQUIRE(audio.playAt(cue.sound, cue.soundPosition, cue.attenuated ? 53.0f : 0.0f,
+                                 224.0f / 255) != kNoSound);
+            if (cue.sound == "S_SKORN1DEATH") {
+                CHECK_FALSE(cue.attenuated);
+            }
+            heard.insert(cue.sound);
+            if (cue.sound == "S_SKORN1TAUNT") {
+                CHECK(frame - lastTaunt >= 300);
+                lastTaunt = frame;
+                ++taunts;
+            }
+        }
+        std::array<f32, 3200> output{};
+        mixer.mix(output);
+        sound.update();
+    }
+    CHECK(heard.contains("S_SKORN1GEN1"));
+    CHECK(heard.contains("S_SKORN1GEN2"));
+    CHECK(heard.contains("S_SKORN1GEN3"));
+    if (battle) {
+        CHECK(heard.contains("S_SKORN1DEATH"));
+        CHECK(std::ranges::any_of(
+            heard, [](const auto& name) { return name.starts_with("S_SKORN1ATTCK"); }));
+    } else {
+        CHECK(taunts >= 2);
+    }
+    audio.close();
 }
 
 TEST_CASE("Skorne can be targeted and hit above his buried root with and without Savior",

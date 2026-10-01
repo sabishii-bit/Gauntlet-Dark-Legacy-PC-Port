@@ -154,16 +154,17 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
     }
     std::optional<usize> best;
     s32 bestPriority = -1;
+    const bool patterns =
+        critter.stock->definition.selection == CombatantDefinition::Selection::Patterns;
     for (usize i = 0; i < data.moves().size(); ++i) {
         const MoveDefinition& move = data.moves()[i];
         // Attacks, the steps (walks, turns and back-steps, types 48 to 63), the stance and
         // the taunt.
         const bool step =
             move.type >= MoveDefinition::kStepFrom && move.type < MoveDefinition::kStepTo;
-        const bool considered = (move.attack() && critter.stock->definition.selection ==
-                                                      CombatantDefinition::Selection::Priority) ||
-                                step || move.type == MoveDefinition::kReady ||
-                                move.type == MoveDefinition::kTaunt;
+        const bool considered =
+            step || (!patterns && (move.attack() || move.type == MoveDefinition::kReady ||
+                                   move.type == MoveDefinition::kTaunt));
         constexpr u32 kLinkedOnly = 4;
         if (!considered || critter.cooldowns[i] > 0.0f || (move.flags & kLinkedOnly) != 0) {
             continue;
@@ -183,7 +184,38 @@ std::optional<usize> Combatant::bestMove(const Actor& critter, std::span<const E
             best = i;
         }
     }
-    return best;
+    if (best.has_value() || !patterns) {
+        return best;
+    }
+    // CritterBossAI falls back to TAUNT below rateScale 0.8, then READY. These
+    // are not competing priorities: Skorne gives both 512, so ranking them together
+    // always picked the earlier, silent READY. CritterFindMoveType chooses the most
+    // overdue eligible move, measuring cooldown from the previous animation's end.
+    for (const s32 type : {MoveDefinition::kTaunt, MoveDefinition::kReady}) {
+        if (type == MoveDefinition::kTaunt && attackRate(critter) >= 0.8f) {
+            continue;
+        }
+        f32 earliest = 0.0f;
+        for (usize i = 0; i < data.moves().size(); ++i) {
+            const MoveDefinition& move = data.moves()[i];
+            if (move.type != type || (move.flags & 4U) != 0) {
+                continue;
+            }
+            const f32 remaining =
+                move.cooldown > 0.0f ? critter.moveTimes[i] + move.cooldown - critter.age : 0.0f;
+            if (type == MoveDefinition::kTaunt && remaining > 0.0f) {
+                continue;
+            }
+            if (!best.has_value() || remaining < earliest) {
+                best = i;
+                earliest = remaining;
+            }
+        }
+        if (best.has_value()) {
+            return best;
+        }
+    }
+    return std::nullopt;
 }
 
 bool Combatant::curbedMove(const Actor& critter, const MoveDefinition& move) {
