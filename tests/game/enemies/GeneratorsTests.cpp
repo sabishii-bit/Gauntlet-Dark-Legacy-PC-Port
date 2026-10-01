@@ -12,6 +12,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/enemies/BossDefinition.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 
@@ -206,6 +207,86 @@ TEST_CASE("boss generators use the stage record and breed after the birth delay"
     REQUIRE(event->destroyed);
     generators.update(600, enemies, party);
     REQUIRE(generators.bredOf(0) == 1);
+}
+
+TEST_CASE("boss generator artwork distinguishes a landed egg from looping bodies",
+          "[game][generators]") {
+    CHECK(bossGeneratorVisual(37).tree == "GENPROJHIT");
+    CHECK(bossGeneratorVisual(37).settled);
+    CHECK(bossGeneratorVisual(41).tree == "ATK12GEN");
+    CHECK_FALSE(bossGeneratorVisual(41).settled);
+    CHECK(bossGeneratorVisual(36).tree == "BOSSGEN");
+    CHECK_FALSE(bossGeneratorVisual(36).settled);
+}
+
+TEST_CASE("Spider Queen generators retain the landed egg pose until destroyed",
+          "[spider][spider-generator][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/DRIDER/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("MONSTERS/SPI/animations.json");
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(root / "MONSTERS/DRIDER"));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 17, {}, 3);
+    Generators generators;
+    ItemInfo info;
+    info.type = ItemInfo::kGenerator;
+    info.name = "BOSSGEN";
+    info.hitPoints = 10;
+    info.height = 5;
+    info.radius = 2;
+    const auto visual = bossGeneratorVisual(37);
+    CHECK(visual.tree == "GENPROJHIT");
+    REQUIRE(visual.settled);
+    REQUIRE(generators.placeBoss(device, info, archive, enemies, 9, Mat4{1}, nullptr, visual.tree,
+                                 visual.settled));
+    REQUIRE(generators.bodyShown(0));
+    const auto vertices = [&] {
+        device.draws.clear();
+        generators.draw(device, Mat4{1}, WorldLighting{});
+        std::vector<Vec3> result;
+        for (const auto& draw : device.draws) {
+            for (const auto& vertex : draw.vertices) {
+                result.push_back(vertex.position);
+            }
+        }
+        return result;
+    };
+    const auto landed = vertices();
+    REQUIRE_FALSE(landed.empty());
+    // Compare against the actual last pose of the same impact that left this egg.
+    ItemFigure impact;
+    const ItemInstance instance;
+    REQUIRE(impact.place(device, archive, "GENPROJHIT", instance, nullptr));
+    impact.play(0, false);
+    impact.update(static_cast<f32>(impact.ticksOf(0)) / 60);
+    REQUIRE(impact.finished());
+    const auto egg = impact.nodeTransform("L1");
+    REQUIRE(egg);
+    CHECK(glm::length(Vec3{(*egg)[0]}) > 0.99f);
+    CHECK(glm::length(Vec3{(*egg)[1]}) > 0.99f);
+    device.draws.clear();
+    impact.draw(device, Mat4{1}, WorldLighting{});
+    std::vector<Vec3> expected;
+    for (const auto& draw : device.draws) {
+        for (const auto& vertex : draw.vertices) {
+            expected.push_back(vertex.position);
+        }
+    }
+    CHECK(landed == expected);
+    // No repeated shrink/grow startup while it breeds or Stop Time is active.
+    for (s32 frame = 0; frame < 90; ++frame) {
+        generators.update(2, enemies, {}, {}, frame < 45);
+        REQUIRE(vertices() == landed);
+    }
+    const auto event = generators.strike(0, 1000, 0);
+    REQUIRE(event);
+    REQUIRE(event->destroyed);
+    CHECK_FALSE(generators.bodyShown(0));
+    CHECK(vertices().empty());
 }
 
 TEST_CASE("the fields place forty-seven generators for a party of one, of grunts and rats",
