@@ -175,7 +175,15 @@ TEST_CASE("a boss sleeps until the party comes near, then fights by its table, a
     REQUIRE(view.fraction() == 1.0f);
     REQUIRE(view.alive);
     REQUIRE_FALSE(view.awake);
-    REQUIRE(bosses.targets().size() == 1);
+    // Six authored hit nodes plus the origin-offset body volume, not a cylinder
+    // at the floor anchor. Keep the node identity used by missile damage routing.
+    const auto targets = bosses.targets();
+    REQUIRE(targets.size() == 7);
+    for (usize i = 0; i < 6; ++i) {
+        CHECK(targets[i].id == Bosses::kTargetId);
+        CHECK(targets[i].node == static_cast<s32>(i));
+    }
+    CHECK(targets.back().node == -1);
     // Its meter is two strips with backgrounds, capped 44 on the left and 53 on the right,
     // drawn from its own archive.
     const HealthMeterDefinition* meter = bosses.meter();
