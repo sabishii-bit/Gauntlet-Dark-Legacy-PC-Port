@@ -510,6 +510,48 @@ TEST_CASE("boss arenas propagate elemental scaling to summoned swarm enemies",
     effects.clear();
 }
 
+TEST_CASE("standing generators block player movement and release it when destroyed",
+          "[level-opponents][generator-collision]") {
+    const auto root = test::scratchDirectory("player-generator-collision");
+    writeMeleeEnemy(root, kGruntKind);
+    writeTextFile(root / "MONSTERS/GRU/objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
+      {"index":1,"name":"GEN_GRU1L1","file":"body.obj","meshTriangles":1}]})");
+    writeTextFile(root / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":3,"name":"GRU","radius":2,"height":5,
+        "xSize":3,"zSize":1,"hitPoints":10}],
+      "itemInstances":[{"info":0,"position":[0,0,0],"rotation":[0,0.7,0],
+        "params":[1,0,7,0,5,0,20,0,0,0,0,0]}]})");
+    test::FakeRenderDevice device;
+    LevelOpponents opponents;
+    WorldLayout layout;
+    REQUIRE(layout.load(root));
+    opponents.enemies().open(device, root, nullptr, 4, {}, 1);
+    REQUIRE(opponents.generators().bind(device, layout, opponents.enemies(), nullptr, {}, 1));
+    REQUIRE(opponents.generators().count() == 1);
+    const Obstacle box = opponents.generators().boxOf(0);
+    PlayerActor player;
+    const Vec3 from{0, 0, -12};
+    const Vec3 to{0, 0, 12};
+    player.spawn(0, {}, nullptr, from, 0);
+    Vec3 stopped = from;
+    for (s32 step = 0; step < 40; ++step) {
+        stopped = opponents.resolveMovement(player, stopped, stopped + Vec3{0, 0, 0.25f});
+        CHECK(glm::distance(box.pushOut(stopped, player.radius()), stopped) < 1e-4f);
+    }
+    CHECK(box.touchedBy(stopped, player.radius()));
+    const Vec3 swept = opponents.resolveMovement(player, from, to);
+    CHECK(glm::distance(swept, to) > player.radius()); // The rotated box deflects the step.
+    CHECK(glm::distance(box.pushOut(swept, player.radius()), swept) < 1e-4f);
+    const Vec3 above{0, box.height + 1, -12};
+    CHECK(opponents.resolveMovement(player, above, above + Vec3{0, 0, 24}) ==
+          above + Vec3{0, 0, 24});
+    opponents.generators().strike(0, 1000000, 0);
+    REQUIRE_FALSE(opponents.generators().standing(0));
+    CHECK(opponents.resolveMovement(player, from, to) == to);
+    opponents.close();
+}
+
 TEST_CASE("mountain creatures stop a player in melee range and release collision on death",
           "[level-opponents][collision][unpacked]") {
     const auto root = test::unpackedOrSkip("critter/GOLEM.json").parent_path().parent_path();

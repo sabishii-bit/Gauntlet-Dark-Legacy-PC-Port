@@ -160,6 +160,11 @@ void LevelTriggers::bindFigures(RenderDevice& device, const WorldLayout& layout,
     for (const auto& trigger : m_triggers) {
         const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
         const auto& info = layout.itemInfos()[static_cast<usize>(instance.info)];
+        constexpr u32 kNoGeometry = 2;
+        if ((instance.flags & kNoGeometry) != 0) {
+            m_figures.push_back(nullptr);
+            continue;
+        }
         auto figure = std::make_unique<ItemFigure>();
         // Marker-only triggers have no tree. Preserve authored height: these pads
         // may sit on a moving bridge rather than on the static collision floor.

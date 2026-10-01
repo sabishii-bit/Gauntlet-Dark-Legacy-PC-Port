@@ -102,8 +102,22 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
             }
         }
     }
-    if (!m_scene.build(m_layout, m_models, m_textures, device, m_lighting, lent,
-                       controlledObjects)) {
+    // A5's lightning sheets cross the arena in mesh space but belong behind it.
+    // Keep this presentation override local: the same sort-behind flag is used
+    // by L1's forcefields, reflections and glows, which must blend AFTER solids.
+    // In AddSortObject it biases the deferred queue; it never selects a backdrop.
+    std::vector<usize> backgroundObjects;
+    if (m_ref.name == "A5") {
+        constexpr u32 kLightningLayer = WorldObject::kSorted | WorldObject::kNoDepthWrite |
+                                        WorldObject::kSortBehind | WorldObject::kSortBack;
+        for (usize i = 0; i < m_layout.objects().size(); ++i) {
+            if ((m_layout.objects()[i].objectFlags & kLightningLayer) == kLightningLayer) {
+                backgroundObjects.push_back(i);
+            }
+        }
+    }
+    if (!m_scene.build(m_layout, m_models, m_textures, device, m_lighting, lent, controlledObjects,
+                       backgroundObjects)) {
         clear();
         return false;
     }

@@ -4,6 +4,34 @@
 #include <cmath>
 
 namespace gdl::game {
+Vec3 BodyCollision::resolveItems(const Vec3& from, const Vec3& to, f32 radius, f32 height,
+                                 std::span<const Obstacle> items) {
+    if (items.empty() || radius <= 0 || height <= 0) {
+        return to;
+    }
+    const f32 distance = glm::length(Vec2{to.x - from.x, to.z - from.z});
+    const auto steps = std::max(1, static_cast<s32>(std::ceil(distance / (radius * 0.5f))));
+    const Vec3 step = (to - from) / static_cast<f32>(steps);
+    Vec3 position = from;
+    for (s32 i = 0; i < steps; ++i) {
+        position += step;
+        for (const Obstacle& item : items) {
+            if (!item.solid || position.y >= item.centre.y + item.height ||
+                position.y + height <= item.centre.y) {
+                continue;
+            }
+            // Horizontal push-out uses the body's actual vertical overlap, not the item's
+            // own height as a substitute for the player's height.
+            const Vec3 probe{position.x, item.centre.y, position.z};
+            const Vec3 pushed = item.pushOut(probe, radius);
+            position.x = pushed.x;
+            position.z = pushed.z;
+        }
+    }
+    position.y = to.y;
+    return position;
+}
+
 Vec3 BodyCollision::resolve(const Vec3& from, const Vec3& to, f32 radius, f32 height,
                             std::span<const MissileTarget> bodies) {
     Vec2 position{from.x, from.z};

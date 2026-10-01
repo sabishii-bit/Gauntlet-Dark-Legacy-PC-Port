@@ -67,7 +67,8 @@ WorldScene::Slot& WorldScene::slotFor(u32 index, TextureSet& textures, RenderDev
 bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& textures,
                        RenderDevice& device, const WorldLighting& lighting,
                        std::span<TextureSet* const> lenders,
-                       std::span<const usize> controlledObjects) {
+                       std::span<const usize> controlledObjects,
+                       std::span<const usize> backgroundObjects) {
     clear();
     m_lighting = lighting;
     const std::vector<WorldObject>& objects = layout.objects();
@@ -139,15 +140,15 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         const bool prelit = object.prelit() && mesh->prelit;
         const bool depthWrite = (object.objectFlags & WorldObject::kNoDepthWrite) == 0;
         const u32 facing = CameraFrame::facingOf(object.objectFlags);
-        const bool unit = m_placements[i].moving || object.sorted() || facing != 0 ||
+        const bool background = std::ranges::find(backgroundObjects, i) != backgroundObjects.end();
+        const bool unit = background || m_placements[i].moving || object.sorted() || facing != 0 ||
                           std::ranges::find(controlledObjects, i) != controlledObjects.end();
         Unit placedUnit;
         placedUnit.object = i;
         placedUnit.mesh = mesh;
         placedUnit.chrome = chrome;
         placedUnit.sorted = object.sorted();
-        placedUnit.background =
-            object.sorted() && !depthWrite && (object.objectFlags & WorldObject::kSortBehind) != 0;
+        placedUnit.background = background;
         placedUnit.depthWrite = depthWrite;
         placedUnit.facing = facing;
         placedUnit.prelit = prelit;
@@ -461,7 +462,7 @@ void WorldScene::drawOpaque(RenderDevice& device, const Mat4& clip,
     }
     // Moving objects' solid parts join the opaque; everything blended sorts by depth.
     for (const Unit& unit : m_units) {
-        if (!unit.sorted) {
+        if (!unit.sorted && !unit.background) {
             drawUnit(device, unit, clip, camera, true, false);
         }
     }

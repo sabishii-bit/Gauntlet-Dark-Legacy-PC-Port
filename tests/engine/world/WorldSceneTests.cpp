@@ -39,9 +39,10 @@ struct Fixture {
         REQUIRE(lender.load(test::sampleLender(std::string(name) + "-lender")));
     }
 
-    bool build(std::span<const usize> controlled = {}) {
+    bool build(std::span<const usize> controlled = {}, std::span<const usize> background = {}) {
         const std::array<TextureSet*, 1> lenders{&lender};
-        return scene.build(layout, models, textures, device, WorldLighting{}, lenders, controlled);
+        return scene.build(layout, models, textures, device, WorldLighting{}, lenders, controlled,
+                           background);
     }
 };
 
@@ -188,7 +189,8 @@ TEST_CASE("depthless background lightning precedes solids and is not drawn again
       {"name":"FLAME","position":[0,0,1],"next":2,"child":-1,"objectFlags":13113472},
       {"name":"FLAME","position":[0,0,2],"next":-1,"child":-1,"objectFlags":8390784}]})");
     REQUIRE(f.layout.load(f.directory));
-    REQUIRE(f.build());
+    const std::array<usize, 1> background{1};
+    REQUIRE(f.build({}, background));
     const CameraFrame camera;
     f.scene.drawOpaque(f.device, Mat4{1}, camera);
     REQUIRE(f.device.draws.size() == 2);
@@ -199,6 +201,35 @@ TEST_CASE("depthless background lightning precedes solids and is not drawn again
     f.scene.drawDeferred(f.device, Mat4{1}, camera);
     REQUIRE(f.device.draws.size() == 1);
     CHECK(f.device.draws[0].vertices.front().position.z == 2); // ordinary flames still deferred
+}
+
+TEST_CASE("sort-behind forcefields blend after solids instead of disappearing beneath them",
+          "[world][scene][forcefield]") {
+    Fixture f("world-scene-forcefield");
+    // L1's forcefield has 0xc01880. Both sorting bits together are also only
+    // queue biases unless the level explicitly requests a backdrop.
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"WALL","position":[0,0,30],"next":1,"child":-1},
+      {"name":"FLAME","position":[0,0,1],"next":2,"child":-1,"objectFlags":12589184},
+      {"name":"FLAME","position":[0,0,2],"next":-1,"child":-1,"objectFlags":13113472}]})");
+    REQUIRE(f.layout.load(f.directory));
+    REQUIRE(f.build());
+    const CameraFrame camera;
+    f.scene.drawOpaque(f.device, Mat4{1}, camera);
+    REQUIRE(f.device.draws.size() == 1);
+    CHECK(f.device.draws.front().vertices.front().position.z == 30);
+    f.device.draws.clear();
+    f.scene.drawDeferred(f.device, Mat4{1}, camera);
+    REQUIRE(f.device.draws.size() == 2);
+    for (const auto& draw : f.device.draws) {
+        CHECK(draw.blend() == BlendMode::Additive);
+        CHECK_FALSE(draw.state.depthWrite);
+    }
+    f.scene.setObjectAlpha(1, 0);
+    f.scene.setObjectAlpha(2, 0);
+    f.device.draws.clear();
+    f.scene.drawDeferred(f.device, Mat4{1}, camera);
+    CHECK(f.device.draws.empty());
 }
 
 TEST_CASE("moving objects carry what stands under them", "[world][scene]") {

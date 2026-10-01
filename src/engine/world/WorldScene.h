@@ -43,11 +43,14 @@ public:
     /** Gathers every placed object that has a mesh; false when nothing could be placed.
      * Textures the level's set marks external are looked up by name in `lenders`.
      * `controlledObjects` stay individual units even without animation, so gameplay
-     * may hide them without affecting other geometry sharing the same texture. */
+     * may hide them without affecting other geometry sharing the same texture.
+     * `backgroundObjects` explicitly selects backdrop sheets drawn before solids;
+     * the model's sorting flags alone do not make geometry a backdrop. */
     bool build(const WorldLayout& layout, ModelSet& models, TextureSet& textures,
                RenderDevice& device, const WorldLighting& lighting = {},
                std::span<TextureSet* const> lenders = {},
-               std::span<const usize> controlledObjects = {});
+               std::span<const usize> controlledObjects = {},
+               std::span<const usize> backgroundObjects = {});
 
     void clear();
     bool built() const { return !m_batches.empty() || !m_units.empty(); }

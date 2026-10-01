@@ -400,6 +400,9 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
     bodies.insert(bodies.end(), critters.begin(), critters.end());
     bodies.insert(bodies.end(), bosses.begin(), bosses.end());
     Vec3 resolved = BodyCollision::resolve(from, to, player.radius(), player.height(), bodies);
+    const auto generators = m_generators.obstacles();
+    resolved =
+        BodyCollision::resolveItems(from, resolved, player.radius(), player.height(), generators);
     // A slide along a creature must still respect the level walls. If wall resolution
     // would move back inside a creature, retain the already-safe pre-step position.
     if (m_resources.has_value()) {
@@ -408,6 +411,11 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
         const Vec3 checked =
             BodyCollision::resolve(from, resolved, player.radius(), player.height(), bodies);
         if (glm::distance(checked, resolved) > 1e-4f) {
+            return {from.x, to.y, from.z};
+        }
+        const Vec3 itemChecked = BodyCollision::resolveItems(resolved, resolved, player.radius(),
+                                                             player.height(), generators);
+        if (glm::distance(itemChecked, resolved) > 1e-4f) {
             return {from.x, to.y, from.z};
         }
     }
