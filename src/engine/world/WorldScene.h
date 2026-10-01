@@ -36,7 +36,7 @@ public:
     /** The same at `position`, with the point lights added. */
     static Color shadeAt(bool additive, bool prelit, const MeshVertex& vertex, const Vec3& position,
                          const Vec3& normal, const WorldLighting& lighting);
-    /** The sort keys of objects flagged to draw behind the rest, and behind those. */
+    /** Negative depth biases defer flagged overlays until after ordinary sorted objects. */
     static constexpr f32 kSortBackBias = -10000.0f;
     static constexpr f32 kSortBehindBias = -20000.0f;
 
