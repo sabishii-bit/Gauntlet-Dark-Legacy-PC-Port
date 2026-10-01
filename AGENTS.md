@@ -127,7 +127,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   and drops a fallen player's keys; it borrows the scene per call through `Services`.
   `screens/PartyFigures` draws the party's figures, arm items, headwear, IT's sign and
   shadows, and adds dark-level lanterns; it keeps nothing between frames.
-  `screens/TowerWelcome` owns Sumner's beam, the spot before him and a new party's
+  `screens/TowerWelcome` owns the visit spot before Sumner and a new party's
   welcome (scroll, then the crystal cut). `screens/TriggerCues` answers the
   triggers' lessons, refusals, openings, camera cues and turntable sounds.
   `screens/PartyRecords` awards experience and builds the party handed on, the
@@ -2133,11 +2133,14 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   (`menu/BurnDialogueScroll`, the burn every scroll and the options menu
   share) and Sumner waves the player off. The labels are `hints.*` in
   `data/text/en.json`; `tests/scenarios/tower-sumner.json` starts before him.
-* Sumner's beam (`L1XPLIGHTRAY01`) starts unseen and comes up over 180 ticks
-  while a player is within `kBeamRadius` of him, going again once they
-  leave (`TowerWelcome::updateBeam`). The stained-glass light through the
-  window over the door (`kTempleLights`) starts dark until TowerRelics restores
-  the party's completed eight-piece window.
+* Sumner's beams (`L1XPLOWERLIGHTR` and `L1XPUPPERLIGHTR`, with SUMNERLIGHTRAY
+  textures) are children of `L1DRAWB69`. Authored trigger 40 reveals that
+  subtree while occupied and chains to 41 for the podium; `LevelTriggers`
+  owns their fade. The visit menu uses the separate trigger 240. Do not add
+  a second proximity-driven opacity controller. `L1XPLIGHTRAY01` is the
+  Temple window beam, owned only by `TowerRelics` and the completed eight-piece
+  window/reveal ceremony, never by approaching Sumner. `[tower-lights]` tests
+  repeated pad entry/exit with both incomplete and completed windows.
 * The welcome's cut to the crystals is letterboxed as the original's
   trigger cameras are (`kCutBarTop`/`kCutBarBottom`: 48 and 80 of the 384
   canvas rows) with the status boxes hidden.

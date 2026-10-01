@@ -16,8 +16,7 @@
 namespace gdl::game {
 
 /**
- * Sumner's side of the tower: his beam of light, which comes up while a player is near him,
- * the spot before him that makes a visit, and the welcome a new party gets once it has
+ * The spot before Sumner that makes a visit, and the welcome a new party gets once it has
  * materialised (his scroll, then the cut to the crystals while he gestures at them, the
  * controls held meanwhile). It borrows the world, the level's messages and his figure.
  */
@@ -27,13 +26,10 @@ public:
     enum class Intro : u8 { None, Scroll, Crystal, Done };
 
     static constexpr u32 kCrystalCamera = 198; ///< the trigger camera the welcome cuts to
-    static constexpr f32 kBeamRadius = 12.0f;  ///< how near Sumner his beam of light comes on
-    static constexpr s32 kBeamFadeTicks = 180; ///< and how long it takes to come up or go
     static constexpr s32 kCrystalTicks = 300;  ///< fifty frames of six ticks
     static constexpr s32 kSumnerSpot = 240;    ///< the id of the trigger before him
 
-    /** Finds the beam in `world` and puts it out; a welcome due hides the crystals until
-     * the cut reveals them. */
+    /** A welcome due hides the crystals until the cut reveals them. */
     void open(LevelWorld& world, bool welcome);
     void clear();
 
@@ -43,9 +39,6 @@ public:
     static std::optional<s32> visitorOf(const LevelTriggers& triggers,
                                         std::span<const PlayerRuntime> players);
 
-    /** The beam comes up over three seconds while a player is near Sumner, and goes again. */
-    void updateBeam(LevelWorld& world, std::span<const PlayerRuntime> players, const Vec3& sumner,
-                    s32 ticks);
     /** Once the party stands, the welcome due starts: the scroll, or without it the cut. */
     void arrived(RenderDevice& device, LevelMessages& messages, const StringTable* strings,
                  const WorldLayout& layout, SumnerFigure& sumner);
@@ -58,15 +51,12 @@ public:
     bool cutting() const { return m_intro == Intro::Crystal; }
     /** The cut's camera while it shows. */
     std::optional<WorldCamera> camera() const;
-    f32 beamAlpha() const { return m_beamAlpha; }
 
 private:
     void startCrystalCut(const WorldLayout& layout, SumnerFigure& sumner);
 
     WorldCamera m_cutCamera;
     s32 m_cutTicks = 0;
-    s32 m_beam = -1; ///< the level object that is Sumner's beam of light
-    f32 m_beamAlpha = 0.0f;
     bool m_pending = false;
     Intro m_intro = Intro::None;
 };

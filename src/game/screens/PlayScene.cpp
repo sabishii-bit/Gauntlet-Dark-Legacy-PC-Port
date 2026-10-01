@@ -23,7 +23,7 @@ constexpr std::string_view kWeaponsArchive = "WEAPONS";
 
 /** The stained-glass light through the window over the door: the Desecrated Temple's, lit once
  * its shards are all found. */
-constexpr std::array<std::string_view, 2> kTempleLights{"L1XPLOWERLIGHTR", "L1XPUPPERLIGHTR"};
+constexpr std::string_view kTempleLight = "L1XPLIGHTRAY01";
 constexpr f32 kCutBarTop = 48.0f / 384.0f;    ///< the cut's black bars, as the original's trigger
 constexpr f32 kCutBarBottom = 80.0f / 384.0f; ///< cameras draw them: shares of the height
 
@@ -95,8 +95,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     // The window light is restored from the collection after the party has been loaded.
     for (usize i = 0; i < world.layout().objects().size(); ++i) {
-        if (std::ranges::find(kTempleLights, world.layout().objects()[i].name) !=
-            kTempleLights.end()) {
+        if (world.layout().objects()[i].name == kTempleLight) {
             world.setObjectAlpha(i, 0.0f);
         }
     }
@@ -168,8 +167,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     }
     m_audio.startMusic(context.assets,
                        world.level() != nullptr ? world.level()->musicVolume : 1.0f);
-    // The party materialises first; Sumner's welcome, when it is due, follows, and his beam
-    // waits for the party.
+    // The party materialises first; Sumner's welcome, when it is due, follows.
     m_welcome.open(world,
                    world.isTower() && options.welcome.value_or(TowerWelcome::freshParty(party)));
     // The start camera holds at the level's entrance and rides in to a party that stands
@@ -779,7 +777,6 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         }
         m_world->update(seconds);
         updateAmbience();
-        m_welcome.updateBeam(*m_world, m_players, m_sumner.position(), ticks);
         const bool cameraHandoff = m_arrival.camera().active();
         // Ride to the camera that will actually take over. A boss entrance must not
         // approach the normal level camera and then cut to a different fight view.
@@ -891,7 +888,6 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     if (m_device != nullptr) {
         m_pickups.collect(*m_device, m_players, pickupServices());
     }
-    m_welcome.updateBeam(*m_world, m_players, m_sumner.position(), ticks);
     m_world->updateTriggers(seconds, visitors());
     handleTriggerEvents();
     if (m_switchCutscene.active()) {

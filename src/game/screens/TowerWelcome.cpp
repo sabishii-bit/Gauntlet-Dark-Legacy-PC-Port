@@ -11,19 +11,12 @@ namespace gdl::game {
 
 namespace {
 
-constexpr std::string_view kBeamObject = "L1XPLIGHTRAY01"; ///< the light on Sumner's lectern
 constexpr std::string_view kWelcomeMessage = "WELCOMEMESSAGE";
 
 } // namespace
 
 void TowerWelcome::open(LevelWorld& world, bool welcome) {
     clear();
-    for (usize i = 0; i < world.layout().objects().size(); ++i) {
-        if (world.layout().objects()[i].name == kBeamObject) {
-            m_beam = static_cast<s32>(i);
-            world.setObjectAlpha(i, 0.0f);
-        }
-    }
     m_pending = welcome;
     if (m_pending) {
         world.hideCrystals(); // Sumner reveals them once the scroll has gone
@@ -32,8 +25,6 @@ void TowerWelcome::open(LevelWorld& world, bool welcome) {
 
 void TowerWelcome::clear() {
     m_cutTicks = 0;
-    m_beam = -1;
-    m_beamAlpha = 0.0f;
     m_pending = false;
     m_intro = Intro::None;
 }
@@ -64,22 +55,6 @@ std::optional<s32> TowerWelcome::visitorOf(const LevelTriggers& triggers,
         }
     }
     return std::nullopt;
-}
-
-void TowerWelcome::updateBeam(LevelWorld& world, std::span<const PlayerRuntime> players,
-                              const Vec3& sumner, s32 ticks) {
-    if (m_beam < 0) {
-        return;
-    }
-    const bool near = std::ranges::any_of(players, [&](const PlayerRuntime& runtime) {
-        return glm::distance(runtime.actor.position(), sumner) <= kBeamRadius;
-    });
-    const f32 step = static_cast<f32>(ticks) / static_cast<f32>(kBeamFadeTicks);
-    const f32 alpha = std::clamp(m_beamAlpha + (near ? step : -step), 0.0f, 1.0f);
-    if (alpha != m_beamAlpha) {
-        m_beamAlpha = alpha;
-        world.setObjectAlpha(static_cast<usize>(m_beam), alpha);
-    }
 }
 
 void TowerWelcome::arrived(RenderDevice& device, LevelMessages& messages,
