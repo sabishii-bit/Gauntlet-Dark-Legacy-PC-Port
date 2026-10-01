@@ -1372,9 +1372,18 @@ TEST_CASE("opponent views preserve player identity and hide fallen participants"
     REQUIRE(views[0].position == players[0].actor.position());
     REQUIRE(views[0].radius == players[0].actor.radius());
     REQUIRE_FALSE(views[0].hidden);
+    REQUIRE(views[0].damageable);
     REQUIRE(views[0].invisible);
     REQUIRE(views[1].player == 1);
     REQUIRE(views[1].hidden);
+    REQUIRE_FALSE(views[1].damageable);
+    players[1].life = PlayerLife::Standing;
+    ComboMove::link(players[0].combo, 0, players[1].combo, 1, 0);
+    const auto protectedViews = LevelOpponents::enemyViews(players);
+    for (const auto& view : protectedViews) {
+        CHECK_FALSE(view.hidden); // immunity is not invisibility or untargetability
+        CHECK_FALSE(view.damageable);
+    }
 }
 
 TEST_CASE("opponent phases interleave legend victory and progression in order",

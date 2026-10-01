@@ -753,6 +753,7 @@ std::vector<EnemyView> LevelOpponents::enemyViews(std::span<const PlayerRuntime>
         view.height = actor.height();
         view.level = experienceLevel(actor.save().experience());
         view.hidden = player.life != PlayerLife::Standing;
+        view.damageable = PlayerHealth::canBeDamaged(player);
         const auto powerups = PowerupEffects::of(actor.save().progress().inventory);
         view.invisible = powerups.invisible();
         view.antiDeath = (powerups.armor & DeathRules::kProtection) != 0;
@@ -776,7 +777,7 @@ void LevelOpponents::applyEnemyBlow(const EnemyBlow& blow, std::span<PlayerRunti
     }
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
-        if (player.actor.player() != blow.player || player.life != PlayerLife::Standing) {
+        if (player.actor.player() != blow.player || !PlayerHealth::canBeDamaged(player)) {
             continue;
         }
         const LevelInfo* level = m_resources->world.level();
@@ -816,7 +817,7 @@ void LevelOpponents::applyCritterBlow(const CombatBlow& blow, std::span<PlayerRu
                                       const Events& events) {
     for (usize i = 0; i < players.size(); ++i) {
         PlayerRuntime& player = players[i];
-        if (player.actor.player() != blow.player || player.life != PlayerLife::Standing ||
+        if (player.actor.player() != blow.player || !PlayerHealth::canBeDamaged(player) ||
             ((blow.breath || blow.gated) && player.breathGap > 0.0f) ||
             (blow.area && player.effectGap > 0.0f)) {
             continue;
@@ -855,6 +856,9 @@ void LevelOpponents::applyGrab(const CombatGrab& grab, bool boss,
             continue;
         }
         if (grab.attachment.has_value()) {
+            if (!PlayerHealth::canBeDamaged(player)) {
+                continue;
+            }
             capture.attach(grab.critter, boss, *grab.attachment, player.actor);
             player.reaction = PlayerDeed::None;
             player.rammed.clear();

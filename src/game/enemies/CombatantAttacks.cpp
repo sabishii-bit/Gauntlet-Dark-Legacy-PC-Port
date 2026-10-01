@@ -52,8 +52,9 @@ void Combatant::strikeWith(Actor& critter, s32 id, const MoveDefinition& move, s
     // a targeted area once a move.
     const bool gated = breath.has_value() || damage->type == AttackDefinition::kBlow;
     for (const EnemyView& view : players) {
-        if (view.hidden || (!gated && std::ranges::find(critter.struckThisMove, view.player) !=
-                                          critter.struckThisMove.end())) {
+        if (view.hidden || !view.damageable ||
+            (!gated && std::ranges::find(critter.struckThisMove, view.player) !=
+                           critter.struckThisMove.end())) {
             continue;
         }
         const Vec3 feet = view.position;

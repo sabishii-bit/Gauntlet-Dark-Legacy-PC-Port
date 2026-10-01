@@ -102,6 +102,49 @@ TEST_CASE("boss targets preserve raised hit nodes independently of their floor a
     CHECK(bosses.targets().empty());
 }
 
+TEST_CASE("boss contact windows skip protected attacks without spending their hit",
+          "[combatant][attack-invulnerability]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "MONSTERS/DJINN/animations.json", R"({"trees":[{"name":"BODY",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"READY","frames":1},{"name":"ATTACK","frames":30}]}]})");
+    writeTextFile(root / "critter/DJINN.json", R"({
+      "descriptors":[{"prefix":"BODY","type":4}],
+      "types":[{"moveCount":2,"maxHealth":100,"patternCount":1}],
+      "moves":[{"name":"READY","anim":"READY","type":32},
+        {"name":"ATTACK","anim":"ATTACK","type":128,"priority":20,"cooldown":100,
+         "frameStart":0,"frameEnd":20,"damage0":0}],
+      "patterns":[{"moves":[1],"cooldown":100}],
+      "damages":[{"type":3,"maxDistance":10,"damage":100,"flags":32}]
+    })");
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'C');
+    REQUIRE(bosses.spawn(36, {}, 0, 100));
+    bosses.wake();
+    std::array<EnemyView, 2> players;
+    players[0].player = 0;
+    players[0].position = {0, 0, 3};
+    players[0].damageable = false;
+    players[1].player = 1;
+    players[1].position = {0, 0, 4};
+    std::vector<CombatBlow> blows;
+    for (s32 frame = 0; frame < 20 && blows.empty(); ++frame) {
+        bosses.update(2, 1.0f / 30, players);
+        blows = bosses.takeBlows();
+    }
+    REQUIRE(blows.size() == 1);
+    CHECK(blows.front().player == 1);
+    CHECK(blows.front().flags == EnemyHit::kKnockDown);
+    players[0].damageable = true;
+    bosses.update(2, 1.0f / 30, players);
+    blows = bosses.takeBlows();
+    REQUIRE(blows.size() == 1);
+    CHECK(blows.front().player == 0);
+    bosses.update(2, 1.0f / 30, players);
+    CHECK(bosses.takeBlows().empty());
+}
+
 TEST_CASE("pattern bosses taunt between attacks without competing with ready priority",
           "[combatant][boss][sound]") {
     const auto root = familyAssets();

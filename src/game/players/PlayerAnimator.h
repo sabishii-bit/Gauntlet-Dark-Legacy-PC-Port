@@ -447,6 +447,14 @@ public:
         return m_current == Action::SpecialShot || m_current == Action::SpecialShotRecover ||
                m_current == Action::SpecialShotRepeat;
     }
+    /** Attack-state invulnerability, including combo release/landing. Ordinary strong
+     * throws, power swings and shoves remain vulnerable despite locking their animation. */
+    bool damageProtected() const {
+        return m_current == Action::TurboStrong || m_current == Action::TurboFull ||
+               specialShooting() || m_current == Action::Hammer ||
+               m_current == Action::HammerRecover || m_current == Action::Breathe ||
+               m_current == Action::BreatheRecover || comboing() || comboBound();
+    }
     /** Whether the body is making a legend item's gesture: the moment its wind-up ends is
      * `legendReleased`, and no potion or weapon goes with it. */
     bool castingLegend() const { return m_legendAsked; }
