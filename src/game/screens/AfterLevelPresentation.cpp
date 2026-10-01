@@ -52,8 +52,11 @@ void AfterLevelScene::drawBackground(s32 player) {
     const s32 x = player * 128;
     image(std::format("S1_PLYR{}", player + 1), x, 0);
     image(std::format("S2_PLYR{}", player + 1), x, 256);
-    image("S1_BORDER", x, 0, Color::rgba(128, 128, 128, 128));
-    image("S2_BORDER", x, 256, Color::rgba(128, 128, 128, 128));
+    // init_shop's 0x80808080 is neutral, not half-dark/half-transparent:
+    // DrawBlit doubles/clamps alpha; the GX TEV stage doubles texture * RGB.
+    // Keep the texture's own transparent cutouts, without another vertex fade.
+    image("S1_BORDER", x, 0);
+    image("S2_BORDER", x, 256);
 }
 void AfterLevelScene::drawPile(usize pile, s32 x, f32 height) {
     constexpr std::array<std::string_view, 3> kPiles{"SHP_GOLD", "SHP_BONES", "SHP_EXP"};
