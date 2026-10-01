@@ -6,6 +6,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
@@ -605,6 +606,96 @@ TEST_CASE("enemy hits queue feedback once and animate masked death skins to comp
     enemies.hurt(*again, hit);
     enemies.close();
     CHECK(enemies.takeFeedback().empty());
+}
+
+TEST_CASE("small enemies retire on their first death update without an invented animation hold",
+          "[game][enemies][enemy-feedback][death-retirement]") {
+    const f32 step = GENERATE(1.0f / 60, 1.0f / 30, 1.0f / 15);
+    const auto root = test::scratchDirectory("enemy-death-retirement");
+    const auto dir = root / "MONSTERS/HAN";
+    std::filesystem::create_directories(dir);
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"HAN1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"READY","frames":30,"rate":30}]}]})");
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    REQUIRE(enemies.loadKind(22));
+    const auto id = enemies.spawn({.kind = 22, .placed = true}, {});
+    REQUIRE(id);
+    enemies.draw(device, Mat4{1}, {});
+    REQUIRE_FALSE(device.draws.empty());
+    EnemyHit hit;
+    hit.damage = 1000;
+    hit.player = 0;
+    enemies.hurt(*id, hit);
+    const auto feedback = enemies.takeFeedback();
+    REQUIRE(feedback.size() == 1);
+    REQUIRE(feedback[0].killed);
+    REQUIRE(feedback[0].deathSkin().empty());
+    const auto losses = enemies.takeLosses();
+    REQUIRE(losses.size() == 1);
+    CHECK(losses[0].killed);
+    // do_enemies' DYING case removes a body when skinfx.nframes <= 0,
+    // even when READY is the only animation available. The burst is a separate effect.
+    enemies.update(static_cast<s32>(std::lround(step * 60)), step, {});
+    CHECK(enemies.count() == 0);
+    device.draws.clear();
+    enemies.draw(device, Mat4{1}, {});
+    CHECK(device.draws.empty());
+    enemies.update(kTicks, kStep, {});
+    CHECK(enemies.takeLosses().empty());
+    CHECK(enemies.takeFeedback().empty());
+}
+
+TEST_CASE("Dream World hands vanish promptly while imps and warlocks play their death skins",
+          "[game][enemies][enemy-feedback][death-retirement][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::FakeRenderDevice device;
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    for (const s32 kind : {22, 23, 24}) {
+        for (const s32 tier : {1, 2, 3}) {
+            CAPTURE(kind, tier);
+            Enemies enemies;
+            enemies.open(device, root, nullptr, 1, {}, 1);
+            REQUIRE(enemies.loadKind(kind));
+            const auto id = enemies.spawn({.kind = kind, .tier = tier, .placed = true}, {});
+            REQUIRE(id);
+            EnemyHit hit;
+            hit.damage = 1000;
+            hit.player = 0;
+            enemies.hurt(*id, hit);
+            enemies.update(kTicks, kStep, {});
+            if (kind == 22) {
+                CHECK(enemies.count() == 0);
+            } else {
+                REQUIRE(enemies.count() == 1);
+                REQUIRE(enemies.animatorOf(*id)->dying());
+                device.draws.clear();
+                enemies.draw(device, Mat4{1}, {}, nullptr, &weapons);
+                REQUIRE_FALSE(device.draws.empty());
+                for (const auto& draw : device.draws) {
+                    CHECK(draw.state.maskedTexture != nullptr);
+                }
+            }
+            for (s32 frame = 0; frame < 22; ++frame) {
+                enemies.update(kTicks, kStep, {});
+            }
+            CHECK(enemies.count() == 0);
+            device.draws.clear();
+            enemies.draw(device, Mat4{1}, {}, nullptr, &weapons);
+            CHECK(device.draws.empty());
+        }
+    }
 }
 TEST_CASE("invisibility breaks swarm targeting without removing the physical player",
           "[game][items][enemies][unpacked]") {
