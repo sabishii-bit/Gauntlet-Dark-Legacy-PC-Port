@@ -359,6 +359,72 @@ TEST_CASE("shop held directions accelerate on retail repeat ticks and reset on r
     }
 }
 
+TEST_CASE("shop navigation skips unbuyable rows but retains owned items for resale",
+          "[shop][input]") {
+    ShopSession session;
+    auto save = shopper();
+    save.gold = 0;
+    save.progress().inventory.addPotions(1, 1);
+    const std::array<PartyMember, 1> party{{{0, save}}};
+    session.start(party, {}, {}, classes(), catalog(), ShopVisit::Shop);
+    ShopSession::Inputs input;
+    input[0].down = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].cursor == 2); // skip unowned key, retain owned potion
+    input = {};
+    input[0].back = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].feedback == ShopResult::Sold);
+    REQUIRE(session.party()[0].save.gold == 187);
+    REQUIRE(session.lanes()[0].cursor == 1); // potion no longer affordable; key now is
+    REQUIRE(session.lanes()[0].flashRow == 2);
+    input = {};
+    input[0].select = true;
+    session.update(0, input);
+    REQUIRE(session.party()[0].save.gold == 87);
+    REQUIRE(session.lanes()[0].cursor == 0); // retreat even though the key is owned
+    input = {};
+    input[0].up = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].cursor == 1); // wrap past unaffordable unowned potion
+    REQUIRE(session.lanes()[0].scrollJump);
+    input = {};
+    input[0].down = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].cursor == 0);
+}
+
+TEST_CASE("shop navigation at a stat cap or empty wallet always has a reachable exit",
+          "[shop][input]") {
+    auto save = shopper();
+    save.character = kSumnerClass;
+    auto items = ShopCatalog::fromJson(R"({"items":[
+        {"texture":"","description":"EXIT","scale":1,"type":0,"price":0,"amount":0},
+        {"texture":"","description":"Strength","scale":1,"type":5,"price":1000,"amount":10}
+    ]})");
+    ShopSession session;
+    const std::array<PartyMember, 1> party{{{0, save}}};
+    session.start(party, {}, {}, classes(), std::move(items), ShopVisit::Shop);
+    ShopSession::Inputs input;
+    input[0].down = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].cursor == 0);
+    input = {};
+    input[0].up = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].cursor == 0);
+    auto poor = shopper();
+    poor.gold = 0;
+    const std::array<PartyMember, 1> poorParty{{{0, poor}}};
+    session.start(poorParty, {}, {}, classes(), catalog(), ShopVisit::Shop);
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].cursor == 0);
+    input = {};
+    input[0].select = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::AfterStats);
+}
+
 TEST_CASE("shop opposed held directions cancel and Start snaps back to Exit", "[shop][input]") {
     ShopSession session;
     const auto data = classes();

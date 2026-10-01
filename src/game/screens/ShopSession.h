@@ -63,6 +63,8 @@ struct ShopLane {
     /** Confirm completes one pending adjustment, without leaving the stats page. */
     void skipStatsAdjustment();
     void rememberShopEntry();
+    /** Retail permits a row when it can be bought or an owned item can be sold. */
+    bool selectable(const ShopItem& item) const;
     /** Signed rows to move, with accelerating held input in 60 Hz ticks. */
     s32 navigation(const MenuInput& input, s32 ticks);
 };

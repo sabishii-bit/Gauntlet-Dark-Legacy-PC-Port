@@ -180,6 +180,8 @@ void AfterLevelScene::drawMagicLine(const ShopLane& lane, s32 x) {
     }
 }
 void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
+    // do_shopping: 8034840C ("Shop"), scale 80348364 (0.45), font 6, black.
+    line(-(x + 64), 8, text("shop.title"), 0.45f, Color::black());
     const auto& items = m_session.catalog().items();
     const auto layout = ShopLayout::make(items, lane.cursor, m_font.height());
     const f32 scroll = m_scroll[static_cast<usize>(lane.member.player)];
@@ -189,10 +191,7 @@ void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
         const auto& item = items[i];
         const s32 y = static_cast<s32>(static_cast<f32>(layout.rows[i]) + scroll);
         const bool selected = i == lane.cursor;
-        const bool available =
-            item.type == 0 ||
-            shopEligibility(lane.member.save, lane.stats, item) == ShopResult::Bought ||
-            ownsShopItem(lane.member.save, item);
+        const bool available = lane.selectable(item);
         up |= available && y < ShopLayout::kTop;
         down |= available && y > ShopLayout::kBottom;
         u8 alpha = ShopLayout::opacity(static_cast<f32>(y));

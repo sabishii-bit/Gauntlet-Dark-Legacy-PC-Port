@@ -229,13 +229,20 @@ bool AfterLevelScene::update(f64 seconds, const ShopSession::Inputs& inputs) {
     m_lastSounds.clear();
     m_time = std::fmod(m_time + seconds, 85.0 / 60.0);
     std::array<bool, 4> wasScrolling{};
+    auto heard = inputs;
     for (const auto& lane : m_session.lanes()) {
         const auto player = static_cast<usize>(lane.member.player);
         const auto layout =
             ShopLayout::make(m_session.catalog().items(), lane.cursor, m_font.height());
         wasScrolling[player] = m_scroll[player] != layout.target;
+        // do_shopping reads buy/sell edges only when the prior scroll speed is zero.
+        // Discard the edge rather than queueing a transaction for a different row.
+        if (lane.phase == ShopPhase::Shopping && wasScrolling[player]) {
+            heard[player].select = false;
+            heard[player].back = false;
+        }
     }
-    m_session.update(seconds, inputs);
+    m_session.update(seconds, heard);
     updateTallySound();
     for (const auto& lane : m_session.lanes()) {
         const auto player = static_cast<usize>(lane.member.player);

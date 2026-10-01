@@ -154,6 +154,115 @@ TEST_CASE("shop lane borders retain retail brightness and opacity in every colum
     }
 }
 
+TEST_CASE("shop header uses the retail caption scale and native marquee extent",
+          "[shop][screens][unpacked]") {
+    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+    test::unpackedOrSkip("SELECT/textures.json");
+    test::unpackedOrSkip("pdata/WAR.json");
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    GameContext context;
+    context.unpackedRoot = root;
+    context.strings = &strings;
+    std::array<PartyMember, 4> party;
+    for (usize i = 0; i < party.size(); ++i) {
+        party[i].player = static_cast<s32>(i);
+        party[i].save.color = static_cast<s32>(i);
+    }
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "G1", ShopVisit::Shop));
+    scene.render(device, Mat4{1}, 512, 384);
+    TextureSet art;
+    REQUIRE(art.load(root / "SELECT"));
+    BitmapFont font;
+    REQUIRE(font.load(root / "fonts/font32.json", 16));
+    TextureSet fontArt;
+    REQUIRE(fontArt.load(root / "STATIC"));
+    const auto fontId = fontArt.find("FONT32");
+    REQUIRE(fontId.has_value());
+    const auto& fontPixels = fontArt.image(*fontId).pixels;
+    for (s32 player = 0; player < 4; ++player) {
+        CAPTURE(player);
+        const auto capId = art.find(std::format("SHOP_TOP_{}", colorCode(player)));
+        REQUIRE(capId.has_value());
+        REQUIRE_FALSE(art.entry(*capId).halfResolution);
+        usize capCount = 0;
+        for (const auto& draw : device.draws) {
+            const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            if (texture != nullptr && texture->pixels == art.image(*capId).pixels) {
+                ++capCount;
+                REQUIRE(test::minCorner(draw) == Vec2{player * 128 + 32, 0});
+                REQUIRE(test::maxCorner(draw) == Vec2{player * 128 + 96, 32});
+            }
+        }
+        REQUIRE(capCount == 1);
+        test::FakeRenderDevice expected;
+        Canvas canvas;
+        TextPainter painter;
+        painter.setFont(&font, &fontArt.texture(expected, *fontId));
+        canvas.begin(expected, Mat4{1});
+        painter.draw(canvas, -(player * 128 + 64), 8, "Shop", TextStyle{0.45f, Color::black()});
+        canvas.end();
+        REQUIRE(expected.draws.size() == 1);
+        const auto& glyphs = expected.draws.front().vertices;
+        REQUIRE(glyphs.size() == 24); // four glyph quads, not just an unrelated 'S'
+        REQUIRE(std::ranges::any_of(device.draws, [&](const auto& draw) {
+            const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            return texture != nullptr && texture->pixels == fontPixels &&
+                   !std::ranges::search(draw.vertices, glyphs).empty();
+        }));
+    }
+}
+
+TEST_CASE("shop ignores transaction presses during scrolling without queuing a later purchase",
+          "[shop][screens][unpacked]") {
+    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+    test::unpackedOrSkip("SELECT/textures.json");
+    test::unpackedOrSkip("pdata/WAR.json");
+    test::FakeRenderDevice device;
+    GameContext context;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.gold = 5000;
+    save.progress().inventory.addKeys(1);
+    save.progress().health = 100; // keep both food rows available while navigating
+    const std::array<PartyMember, 1> party{{{0, save}}};
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "G1", ShopVisit::Shop));
+    ShopSession::Inputs input;
+    input[0].down = true;
+    for (s32 i = 0; i < 7; ++i) {
+        scene.update(0, input); // fire amulet: its target requires a real scroll
+    }
+    REQUIRE(scene.session().lanes()[0].cursor == 7);
+    input = {};
+    input[0].select = true;
+    scene.update(0, input);
+    REQUIRE_FALSE(scene.session().lanes()[0].transacted);
+    REQUIRE(scene.session().party()[0].save.gold == 5000);
+    scene.update(10, {});
+    REQUIRE(scene.session().party()[0].save.gold == 5000);
+    scene.update(0, input);
+    REQUIRE(scene.session().lanes()[0].feedback == ShopResult::Bought);
+    REQUIRE(scene.session().party()[0].save.gold == 4650);
+    input = {};
+    input[0].up = true;
+    for (s32 i = 0; i < 5; ++i) {
+        scene.update(0, input); // owned key, but the list has not moved back yet
+    }
+    REQUIRE(scene.session().lanes()[0].cursor == 2);
+    input = {};
+    input[0].back = true;
+    scene.update(0, input);
+    REQUIRE_FALSE(scene.session().lanes()[0].transacted);
+    REQUIRE(scene.session().party()[0].save.progress().inventory.keys == 1);
+    scene.update(10, {});
+    scene.update(0, input);
+    REQUIRE(scene.session().lanes()[0].feedback == ShopResult::Sold);
+    REQUIRE(scene.session().party()[0].save.gold == 4725);
+}
+
 TEST_CASE("after-level screen renders every phase with retail assets",
           "[shop][screens][unpacked]") {
     const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
@@ -384,6 +493,7 @@ TEST_CASE("the level panel names a level gained, shows the magic perks' line at 
     REQUIRE_FALSE(scene.update(0, input));
     input = {};
     input[1].select = true;
+    REQUIRE_FALSE(scene.update(2, {}));    // retail locks trading while the list scrolls
     REQUIRE_FALSE(scene.update(0, input)); // a key
     REQUIRE(scene.lastSounds() == std::vector<std::string>{"S_PICKUPMAGIC"});
     REQUIRE(scene.session().lanes()[0].flashRow == 2);
@@ -429,6 +539,7 @@ TEST_CASE("shop captions are the retail strings, not invented instructions", "[s
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     REQUIRE(strings.get("shop.stats") == "Stats");
+    REQUIRE(strings.get("shop.title") == "Shop"); // retail 8034840C
     REQUIRE(strings.get("shop.continue") == "Continue");
     REQUIRE(strings.get("shop.experience") == "Exp.");
     REQUIRE(strings.get("shop.buy") == "B:");

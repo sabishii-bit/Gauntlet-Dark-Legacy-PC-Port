@@ -86,6 +86,10 @@ void ShopLane::skipStatsAdjustment() {
     // With no changes, confirm may still finish the page's introductory pause.
     phaseSeconds = std::max(phaseSeconds, reveal.back() / kTickRate);
 }
+bool ShopLane::selectable(const ShopItem& item) const {
+    return item.type == 0 || shopEligibility(member.save, stats, item) == ShopResult::Bought ||
+           ownsShopItem(member.save, item);
+}
 void ShopLane::rememberShopEntry() {
     entryGold = member.save.gold;
     goldHeight = tally.targetHeight(0);
@@ -206,13 +210,16 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             const s32 movement = lane.navigation(input, ticks);
             lane.navigationSteps = std::abs(movement);
             for (s32 step = 0; step < lane.navigationSteps; ++step) {
-                if (movement < 0) {
-                    lane.scrollJump |= lane.cursor == 0;
-                    lane.cursor = (lane.cursor + count - 1) % count;
-                } else {
-                    lane.scrollJump |= lane.cursor + 1 == count;
-                    lane.cursor = (lane.cursor + 1) % count;
-                }
+                // Exit is always selectable, so even an empty wallet has a destination.
+                do {
+                    if (movement < 0) {
+                        lane.scrollJump |= lane.cursor == 0;
+                        lane.cursor = (lane.cursor + count - 1) % count;
+                    } else {
+                        lane.scrollJump |= lane.cursor + 1 == count;
+                        lane.cursor = (lane.cursor + 1) % count;
+                    }
+                } while (!lane.selectable(m_catalog.items()[lane.cursor]));
             }
             if (movement != 0) {
                 cue(lane, movement < 0 ? ShopCue::CursorPrevious : ShopCue::CursorNext);
@@ -247,6 +254,16 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             } else if (input.start) {
                 lane.cursor = 0;
                 lane.scrollJump = true;
+            }
+            if (lane.transacted &&
+                (lane.feedback == ShopResult::Bought || lane.feedback == ShopResult::Sold)) {
+                // do_shopping backs up after a trade if the selected price is now
+                // unaffordable, even if that row still owns an item for resale.
+                while (lane.cursor > 0 &&
+                       (lane.member.save.gold < m_catalog.items()[lane.cursor].price ||
+                        !lane.selectable(m_catalog.items()[lane.cursor]))) {
+                    --lane.cursor;
+                }
             }
             break;
         }
