@@ -107,6 +107,8 @@ public:
     /** Seconds the body idles after a throw before the next attack or throw. */
     void setIdle(f32 seconds) { m_idleSeconds = seconds; }
     f32 idleSeconds() const { return m_idleSeconds; }
+    /** DoEnemyAction's scaled interval; fractional seconds carry between throw stages. */
+    void setThrowInterval(f32 seconds) { m_throwInterval = seconds; }
     bool has(Action action) const { return m_sequences[static_cast<usize>(action)] >= 0; }
     /** The sequence an action plays, falling back to the stance when the tree lacks it. */
     u32 sequenceOf(Action action) const;
@@ -136,6 +138,8 @@ private:
     bool m_threw = false;
     bool m_dead = false;
     f32 m_idleSeconds = 0.0f;
+    f32 m_throwInterval = 0.0f;
+    f32 m_idleFraction = 0.0f;
     AnimationPlayer m_player;
     TreePose m_pose;
     TreePose m_previous;

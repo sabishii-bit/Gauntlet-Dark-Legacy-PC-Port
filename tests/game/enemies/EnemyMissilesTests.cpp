@@ -286,9 +286,9 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
     sense.targetPosition = Vec3{0.0f, 0.0f, 20.0f};
     sense.targetDistance = 20.0f;
     sense.sight = 30.0f;
-    sense.idleTicks = 100;
     sense.recognized = true;
-    // The thrower stands, faces, and throws; then waits its idle out.
+    // The thrower stands, faces, and asks to throw. An explicit AI hold delays requests;
+    // the body's firing cadence is tested by EnemyAnimator, not reset in the mind.
     const EnemyMind& thrower = enemyMindOf(kThrowWay);
     REQUIRE(enemyMindOf(kBombWay).name() == "throw");
     MindMemory memory;
@@ -296,15 +296,14 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
     REQUIRE(intent.pace == 0.0f);
     REQUIRE(intent.throwing);
     REQUIRE(intent.heading == Approx(0.0f));
-    sense.threw = true;
+    memory.fuse = 100;
     intent = thrower.think(memory, sense);
-    sense.threw = false;
-    REQUIRE(memory.fuse == 100);
+    REQUIRE(memory.fuse == 98);
     s32 waited = 0;
     while (!thrower.think(memory, sense).throwing && waited < 100) {
         ++waited;
     }
-    REQUIRE(waited == 49); // the tick of the throw counted too
+    REQUIRE(waited == 49); // the first think counted too
     // Too high above it, or out of sight: no throw.
     sense.targetVertical = 12.0f;
     REQUIRE_FALSE(thrower.think(memory, sense).throwing);
@@ -394,7 +393,7 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
     spawn.algorithm = kSkirmishWay;
     spawn.placed = true;
     spawn.position = Vec3{0.0f, 0.0f, 0.0f};
-    spawn.idleTicks = 90;
+    spawn.throwInterval = 1.5f;
     const auto archer = enemies.spawn(spawn, {});
     REQUIRE(archer.has_value());
     REQUIRE(enemies.variantOf(*archer) == kArcherStrength);
@@ -504,6 +503,41 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
         enemies.update(kTicks, kStep, near, {}, &missiles, 1.0f);
     }
     REQUIRE(enemies.takeBursts().empty());
+}
+
+TEST_CASE("Battleground skeleton archers release arrows at a visible player",
+          "[game][enemies][unpacked][battle-archer]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/SKE/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(floor());
+    Enemies enemies;
+    enemies.open(device, root, &collision, 19, {}, 5);
+    REQUIRE(enemies.loadKind(19));
+    EnemySpawn spawn;
+    spawn.kind = 19;
+    spawn.tier = kArcherStrength;
+    spawn.algorithm = GENERATE(kSkirmishWay, kThrowWay);
+    spawn.placed = true;
+    const auto archer = enemies.spawn(spawn, {});
+    REQUIRE(archer.has_value());
+    REQUIRE(enemies.animatorOf(*archer)->has(EnemyAction::Throw));
+    EnemyMissiles missiles;
+    const std::vector<EnemyView> party{playerAt(Vec3{0, 0, 25})};
+    for (s32 frame = 0; frame < 300 && missiles.count() == 0; ++frame) {
+        enemies.update(kTicks, kStep, party, {}, &missiles, 1.0f);
+    }
+    CAPTURE(enemies.algorithmOf(*archer), enemies.animatorOf(*archer)->action());
+    REQUIRE(missiles.count() > 0);
+    missiles.clear();
+    const std::vector<EnemyView> close{playerAt(Vec3{0, 0, 4})};
+    for (s32 frame = 0; frame < 300 && missiles.count() == 0; ++frame) {
+        enemies.update(kTicks, kStep, close, {}, &missiles, 1.0f);
+    }
+    CHECK(missiles.count() > 0);
 }
 
 TEST_CASE("a strength-three demon casts its own fireball from afar and fights hand to hand",

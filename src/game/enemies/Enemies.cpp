@@ -426,7 +426,6 @@ void Enemies::initialise(Enemy& enemy, const EnemySpawn& spawn, const EnemyKind&
     } else {
         enemy.tier = enemy.variant == kSuicideStrength ? 1 : 2;
     }
-    enemy.idleTicks = spawn.idleTicks;
     const bool mirrored = smallKind(spawn.kind) && (m_random() & 1U) != 0;
     enemy.algorithm = resolvedWayOf(spawn.kind, spawn.tier, spawn.algorithm, mirrored);
     enemy.generator = spawn.generator;
@@ -486,6 +485,7 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
         enemy = Enemy{};
         return std::nullopt;
     }
+    enemy.animator.setThrowInterval(spawn.throwInterval * m_scales.missileRate);
     const f32 facing = std::atan2(spawn.direction.x, spawn.direction.z);
     const auto settle = [this](Vec3 at, Vec3& out) {
         if (m_collision == nullptr) {
@@ -680,8 +680,7 @@ void Enemies::update(s32 ticks, f32 seconds, std::span<const EnemyView> players,
         if (enemy.kind == kVeilingKind) {
             veil(enemy, ticks);
         }
-        enemy.threw = enemy.animator.threw();
-        if (enemy.threw && missiles != nullptr) {
+        if (enemy.animator.threw() && missiles != nullptr) {
             shoot(enemy, i, players, *missiles, missileSpeedScale, obstacles);
         }
         decayPush(enemy, seconds);
@@ -1028,8 +1027,6 @@ MindSense Enemies::sense(const Enemy& enemy, s32 slot, s32 ticks,
     sense.generatorGone = enemy.generator < 0;
     sense.onScreen = enemy.onScreen;
     sense.lookouts = &m_lookouts;
-    sense.threw = enemy.threw;
-    sense.idleTicks = enemy.idleTicks;
     sense.action = enemy.animator.action();
     if (const EnemyView* view = viewOf(players, enemy.target); view != nullptr) {
         sense.targetVertical = view->position.y - enemy.position.y;

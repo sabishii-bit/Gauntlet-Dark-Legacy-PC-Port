@@ -46,6 +46,8 @@ void EnemyAnimator::unbind() {
     m_threw = false;
     m_dead = false;
     m_idleSeconds = 0.0f;
+    m_throwInterval = 0.0f;
+    m_idleFraction = 0.0f;
     m_player.stop();
 }
 
@@ -342,6 +344,24 @@ void EnemyAnimator::play(Decision decision, f32 seconds) {
     m_previous = m_pose;
     m_player.start(m_tree->sequences[target], target);
     m_current = now;
+    if (now >= Action::Throw && now <= Action::ThrowFinish) {
+        // DoEnemyAction banks fractional seconds at each throw-stage transition, not
+        // an AI fuse on projectile release. Its strict >1 leaves an exact second in
+        // the carry. A whole-second wait includes the newly started animation.
+        f32 duration = m_throwInterval + m_idleFraction;
+        if (duration > 0.0f) {
+            f32 whole = 0.0f;
+            while (duration > 1.0f) {
+                whole += 1.0f;
+                duration -= 1.0f;
+            }
+            m_idleFraction = duration;
+            m_idleSeconds = whole;
+            if (whole >= 1.0f) {
+                m_idleSeconds += static_cast<f32>(m_tree->sequences[target].frames) / 30.0f;
+            }
+        }
+    }
 }
 
 } // namespace gdl::game

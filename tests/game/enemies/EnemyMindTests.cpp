@@ -276,13 +276,11 @@ TEST_CASE("the skirmisher waits out its throw before it throws or backs off, is 
           "[game][enemies][mind]") {
     const EnemyMind& skirmish = enemyMindOf(kSkirmishWay);
     MindMemory archer;
-    MindSense close = senseAhead(10.0f); // within six tenths of thirty
-    close.idleTicks = 20;
-    close.threw = true;
+    const MindSense close = senseAhead(10.0f); // within six tenths of thirty
+    archer.fuse = 20;
     MindIntent intent = skirmish.think(archer, close);
     CHECK(archer.keepingOff);
     CHECK(intent.pace == 0.0f); // the wait runs first
-    close.threw = false;
     for (s32 i = 0; i < 9; ++i) {
         intent = skirmish.think(archer, close);
         CHECK(intent.pace == 0.0f);

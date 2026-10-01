@@ -610,8 +610,11 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         spawn.kind = *kind;
         spawn.tier = std::max(strength, 1);
         spawn.algorithm = Generators::paramOf(instance, 1);
-        if (const s32 interval = Generators::paramOf(instance, 3); interval > 0) {
-            spawn.idleTicks = interval;
+        // Enemy placements pack a float sight radius into words 2/3; their interval
+        // follows at byte 8. Unlike a generator's word 3, it is in tenths of a second
+        // (SetItem), with 1 meaning no wait and 0 retaining the default.
+        if (const s32 interval = Generators::paramOf(instance, 4); interval > 0) {
+            spawn.throwInterval = interval == 1 ? 0.0f : static_cast<f32>(interval) * 0.1f;
         }
         spawn.position = instance.position;
         spawn.direction = Vec3{stood[2][0], 0.0f, stood[2][2]};
