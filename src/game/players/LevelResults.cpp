@@ -41,6 +41,11 @@ void LevelTally::update(f64 seconds) {
         }
     }
 }
+void LevelTally::finish() {
+    m_heights = m_targets;
+    m_next = m_order.size();
+    m_tickRemainder = 0;
+}
 f32 LevelTally::fraction(usize pile) const {
     return pile < m_targets.size()
                ? (m_heights[pile] - kInitialHeight) / (m_targets[pile] - kInitialHeight)

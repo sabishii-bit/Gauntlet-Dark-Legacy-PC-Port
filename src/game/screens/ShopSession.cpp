@@ -11,6 +11,7 @@ namespace gdl::game {
 namespace {
 constexpr f64 kTickRate = 60.0;
 constexpr f64 kLongestUpdate = 60.0;
+constexpr std::array<s32, 13> kRepeatTicks{30, 20, 10, 6, 3, 3, 3, 3, 2, 2, 2, 2, 1};
 /** The whole 60 Hz ticks in `seconds`, the rest kept for the next update. */
 s32 takeTicks(f64& remainder, f64 seconds) {
     remainder += std::min(seconds, kLongestUpdate) * kTickRate;
@@ -19,6 +20,28 @@ s32 takeTicks(f64& remainder, f64 seconds) {
     return ticks;
 }
 } // namespace
+s32 ShopLane::navigation(const MenuInput& input, s32 ticks) {
+    const bool previous = input.up || input.left;
+    const bool next = input.down || input.right;
+    const bool previousHeld = input.upHeld || input.leftHeld;
+    const bool nextHeld = input.downHeld || input.rightHeld;
+    const s32 held = static_cast<s32>(nextHeld) - static_cast<s32>(previousHeld);
+    const s32 pressed = static_cast<s32>(next) - static_cast<s32>(previous);
+    if (pressed != 0 || held != heldDirection || held == 0) {
+        heldDirection = held;
+        repeatTicks = 0;
+        repeatStep = 0;
+        return pressed;
+    }
+    repeatTicks += ticks;
+    s32 steps = 0;
+    while (repeatTicks >= kRepeatTicks[repeatStep]) {
+        repeatTicks -= kRepeatTicks[repeatStep];
+        repeatStep = std::min(repeatStep + 1, kRepeatTicks.size() - 1);
+        steps += held;
+    }
+    return steps;
+}
 std::array<s32, 5> ShopLane::statsValues(bool previous) const {
     const auto level = previous ? entryLevel : experienceLevel(member.save.experience());
     auto values = entryStats;
@@ -124,6 +147,8 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
     }
     for (auto& lane : m_lanes) {
         lane.transacted = false;
+        lane.scrollJump = false;
+        lane.navigationSteps = 0;
         const auto& input = inputs[static_cast<usize>(lane.member.player)];
         const auto previousPhase = lane.phase;
         const s32 ticks = takeTicks(lane.tickRemainder, seconds);
@@ -139,6 +164,10 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
                 lane.phase = lane.entryLevel == experienceLevel(lane.member.save.experience())
                                  ? ShopPhase::Shopping
                                  : ShopPhase::BeforeStats;
+            } else if (!lane.tally.finished() && input.select) {
+                // Confirm first reveals the totals. A second press advances the lane.
+                lane.tally.finish();
+                cue(lane, ShopCue::Select);
             }
             break;
         }
@@ -156,12 +185,19 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             lane.goldHeight = std::max(
                 targetHeight, lane.goldHeight - static_cast<f32>(std::min(seconds, 60.0)) * 60);
             const usize count = m_catalog.items().size();
-            if (input.up || input.left) {
-                lane.cursor = (lane.cursor + count - 1) % count;
-                cue(lane, ShopCue::CursorPrevious);
-            } else if (input.down || input.right) {
-                lane.cursor = (lane.cursor + 1) % count;
-                cue(lane, ShopCue::CursorNext);
+            const s32 movement = lane.navigation(input, ticks);
+            lane.navigationSteps = std::abs(movement);
+            for (s32 step = 0; step < lane.navigationSteps; ++step) {
+                if (movement < 0) {
+                    lane.scrollJump |= lane.cursor == 0;
+                    lane.cursor = (lane.cursor + count - 1) % count;
+                } else {
+                    lane.scrollJump |= lane.cursor + 1 == count;
+                    lane.cursor = (lane.cursor + 1) % count;
+                }
+            }
+            if (movement != 0) {
+                cue(lane, movement < 0 ? ShopCue::CursorPrevious : ShopCue::CursorNext);
             }
             const auto& item = m_catalog.items()[lane.cursor];
             if (input.select) {
@@ -192,6 +228,7 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
                 }
             } else if (input.start) {
                 lane.cursor = 0;
+                lane.scrollJump = true;
             }
             break;
         }

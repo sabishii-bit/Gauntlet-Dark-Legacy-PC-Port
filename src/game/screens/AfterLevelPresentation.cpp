@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <format>
 #include <string>
@@ -64,11 +65,17 @@ void AfterLevelScene::drawPile(usize pile, s32 x, f32 height) {
 }
 void AfterLevelScene::drawTally(const ShopLane& lane, s32 x) {
     constexpr std::array<std::string_view, 3> kLabels{"shop.gold", "shop.kills", "shop.experience"};
-    for (usize rank = 0; rank < lane.tally.order().size(); ++rank) {
-        const usize pile = lane.tally.order()[rank];
+    // Growth follows height rank, but the equal-depth sprites retain their creation
+    // order: gold, bones, experience. A change in earnings must not change layering.
+    for (usize pile = 0; pile < kLabels.size(); ++pile) {
+        const auto& order = lane.tally.order();
+        const auto rank = static_cast<usize>(std::ranges::find(order, pile) - order.begin());
         if (rank <= lane.tally.growingRank()) {
             drawPile(pile, x, lane.tally.height(pile));
         }
+    }
+    for (usize rank = 0; rank < lane.tally.order().size(); ++rank) {
+        const usize pile = lane.tally.order()[rank];
         line(x + 16, 32 + static_cast<s32>(pile) * 20,
              std::format("{}: {}", text(kLabels[pile]), lane.tally.results().totals[pile]), 0.5f,
              Color::white(), rank == lane.tally.growingRank());

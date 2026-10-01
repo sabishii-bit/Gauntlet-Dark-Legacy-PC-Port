@@ -40,6 +40,11 @@ struct ShopLane {
     LevelTally tally;
     ShopPhase phase = ShopPhase::Tally;
     usize cursor = 0;
+    bool scrollJump = false; ///< wrap/Start must put the new selection in view immediately
+    s32 navigationSteps = 0; ///< rows moved this update, for scroll acceleration
+    s32 heldDirection = 0;
+    s32 repeatTicks = 0;
+    usize repeatStep = 0;
     ShopResult feedback = ShopResult::Invalid;
     bool transacted = false; ///< a one-update event, including refused attempts
     usize flashRow = 0;      ///< the row last traded, its price red while `flashTicks` last
@@ -56,6 +61,8 @@ struct ShopLane {
     std::array<s32, 5> statsRevealTicks() const;
     bool statsReady() const;
     void rememberShopEntry();
+    /** Signed rows to move, with accelerating held input in 60 Hz ticks. */
+    s32 navigation(const MenuInput& input, s32 ticks);
 };
 /** The end-level flow independent of rendering/audio. Input addresses player IDs, not
  * vector positions. Fallen members keep their rollback saves but cannot shop. */

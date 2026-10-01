@@ -21,6 +21,8 @@ public:
     static constexpr f32 kMaxHeight = 208;
     void start(const LevelResults& results, const std::array<s32, 3>& maxima);
     void update(f64 seconds);
+    /** Reveal final totals without awarding anything or leaving the results page. */
+    void finish();
     f32 fraction(usize pile) const;
     f32 height(usize pile) const { return m_heights.at(pile); }
     f32 targetHeight(usize pile) const { return m_targets.at(pile); }

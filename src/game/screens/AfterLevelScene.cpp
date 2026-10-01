@@ -28,6 +28,7 @@ constexpr std::string_view kHasSound = "S_HAS";
 constexpr std::string_view kGainedLevelSound = "S_GAINEDLEVEL";
 constexpr std::string_view kPojoName = "S_POJO2";
 constexpr std::string_view kSoundDirectory = "audio";
+constexpr s32 kInitialScrollSpeed = 2; ///< pixels per 60 Hz tick
 } // namespace
 bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
                            std::span<const PartyMember> party,
@@ -80,6 +81,7 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
             texture(std::format("S2_PLYR{}", player + 1));
             m_scroll[static_cast<usize>(player)] =
                 ShopLayout::make(m_session.catalog().items(), 0, m_font.height()).target;
+            m_scrollSpeed[static_cast<usize>(player)] = kInitialScrollSpeed;
         }
         for (const auto& lane : m_session.lanes()) {
             texture(std::format("SHOP_TOP_{}", colorCode(lane.member.save.color)));
@@ -226,14 +228,35 @@ bool AfterLevelScene::update(f64 seconds, const ShopSession::Inputs& inputs) {
     }
     m_lastSounds.clear();
     m_time = std::fmod(m_time + seconds, 85.0 / 60.0);
+    std::array<bool, 4> wasScrolling{};
+    for (const auto& lane : m_session.lanes()) {
+        const auto player = static_cast<usize>(lane.member.player);
+        const auto layout =
+            ShopLayout::make(m_session.catalog().items(), lane.cursor, m_font.height());
+        wasScrolling[player] = m_scroll[player] != layout.target;
+    }
     m_session.update(seconds, inputs);
     updateTallySound();
     for (const auto& lane : m_session.lanes()) {
         const auto player = static_cast<usize>(lane.member.player);
         const auto layout =
             ShopLayout::make(m_session.catalog().items(), lane.cursor, m_font.height());
-        const f32 step = static_cast<f32>(std::min(seconds, 60.0)) * 120;
-        m_scroll[player] += std::clamp(layout.target - m_scroll[player], -step, step);
+        if (lane.scrollJump) {
+            m_scroll[player] = layout.target;
+            m_scrollSpeed[player] = kInitialScrollSpeed;
+        } else {
+            if (wasScrolling[player]) {
+                m_scrollSpeed[player] += lane.navigationSteps;
+            } else {
+                m_scrollSpeed[player] = kInitialScrollSpeed;
+            }
+            const f32 step = static_cast<f32>(std::min(seconds, 60.0)) * 60 *
+                             static_cast<f32>(m_scrollSpeed[player]);
+            m_scroll[player] += std::clamp(layout.target - m_scroll[player], -step, step);
+            if (m_scroll[player] == layout.target) {
+                m_scrollSpeed[player] = kInitialScrollSpeed;
+            }
+        }
     }
     for (const auto& event : m_session.takeEvents()) {
         playCue(event);

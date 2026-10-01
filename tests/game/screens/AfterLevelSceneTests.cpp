@@ -166,6 +166,18 @@ TEST_CASE("after-level screen renders every phase with retail assets",
                 return vertex.uv.y;
             }).uv.y == 20.0f / 256);
     REQUIRE_FALSE(scene.update(10, {}));
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    // shop_setup creates GOLD, BONES, EXP blits at identical depths; MBDrawBlits
+    // traverses that append order. Height ranking must not reorder the sprites.
+    const auto gold = artworkDraws("SHP_GOLD");
+    const auto bones = artworkDraws("SHP_BONES");
+    const auto experience = artworkDraws("SHP_EXP");
+    REQUIRE(gold.size() == 1);
+    REQUIRE(bones.size() == 1);
+    REQUIRE(experience.size() == 1);
+    REQUIRE(gold.front() < bones.front());
+    REQUIRE(bones.front() < experience.front());
     ShopSession::Inputs input;
     input[2].select = true;
     REQUIRE_FALSE(scene.update(0, input));
@@ -176,6 +188,33 @@ TEST_CASE("after-level screen renders every phase with retail assets",
     REQUIRE(scrolls.size() == 1);
     REQUIRE(test::minCorner(*scrolls[0]) == Vec2{256, 0});
     REQUIRE(test::maxCorner(*scrolls[0]) == Vec2{384, 256});
+    // Crossing Exit to the last row uses write_shop_menu's negative-speed snap;
+    // no elapsed time should be needed to see the wrapped selection.
+    const auto& items = scene.session().catalog().items();
+    REQUIRE_FALSE(items.back().texture.empty());
+    input = {};
+    input[2].up = true;
+    scene.update(0, input);
+    REQUIRE(scene.session().lanes()[0].cursor == items.size() - 1);
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    const auto lastIcon = artworkDraws(items.back().texture);
+    REQUIRE_FALSE(lastIcon.empty());
+    REQUIRE(std::ranges::any_of(lastIcon, [](const auto* draw) {
+        return test::minCorner(*draw).y == ShopLayout::kBottom;
+    }));
+    input = {};
+    input[2].down = true;
+    scene.update(0, input);
+    REQUIRE(scene.session().lanes()[0].cursor == 0);
+    device.draws.clear();
+    scene.render(device, projection, 512, 384);
+    const auto firstIcon = artworkDraws(items[1].texture);
+    REQUIRE_FALSE(firstIcon.empty());
+    const auto firstRow = ShopLayout::make(items, 0, 32);
+    REQUIRE(std::ranges::any_of(firstIcon, [&](const auto* draw) {
+        return test::minCorner(*draw).y == firstRow.target + firstRow.rows[1];
+    }));
     // No opaque rectangle may hide the parchment. Only the full-screen clear is untextured.
     for (const auto& draw : device.draws) {
         if (draw.texture == &device.whiteTexture()) {
