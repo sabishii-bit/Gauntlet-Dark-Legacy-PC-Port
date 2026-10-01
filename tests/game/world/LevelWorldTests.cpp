@@ -342,6 +342,26 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     REQUIRE(flames);
     WorldCamera camera;
     camera.position = Vec3{0.0f, 20.0f, 0.0f};
+    constexpr u32 kFieldSlot = 141;
+    const Texture* fieldTexture = tower.scene().textureOf(kFieldSlot);
+    REQUIRE(fieldTexture != nullptr);
+    tower.scene().drawOpaque(device, Mat4{1}, CameraFrame::at(camera.position));
+    for (const auto& draw : device.draws) {
+        CHECK(draw.texture != fieldTexture); // A backdrop would be overwritten by tower solids.
+    }
+    device.draws.clear();
+    tower.scene().drawDeferred(device, Mat4{1}, CameraFrame::at(camera.position));
+    usize closedFields = 0;
+    for (const auto& draw : device.draws) {
+        if (draw.texture == fieldTexture) {
+            ++closedFields;
+            CHECK(draw.blend() == BlendMode::Additive);
+            CHECK_FALSE(draw.state.depthWrite);
+            CHECK(draw.vertices.front().color.a == 255);
+        }
+    }
+    CHECK(closedFields == 8);
+    device.draws.clear();
     tower.draw(device, Mat4{1.0f}, camera);
     REQUIRE(device.draws.size() > 1000);
     // The flames are drawn added onto the frame, after the geometry.
@@ -355,9 +375,6 @@ TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner hi
     // The force field across the first realm's gate: its two triangles added onto the frame
     // with the field texture (animated, so whichever frame the slot shows), at full
     // brightness whichever way it faces.
-    constexpr u32 kFieldSlot = 141;
-    const Texture* fieldTexture = tower.scene().textureOf(kFieldSlot);
-    REQUIRE(fieldTexture != nullptr);
     bool fieldDrawn = false;
     for (const auto& draw : device.draws) {
         if (draw.texture != fieldTexture || draw.state.blend != BlendMode::Additive ||

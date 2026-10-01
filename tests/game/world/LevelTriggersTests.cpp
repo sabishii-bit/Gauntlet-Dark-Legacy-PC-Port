@@ -435,6 +435,72 @@ TEST_CASE("unkeyed trigger targets translate their geometry to signed height end
     CHECK(triggers.takeSettled().empty());
 }
 
+TEST_CASE("marker-only switches stay invisible without losing trigger behavior",
+          "[triggers][trigger-visibility]") {
+    SwitchFixture f(
+        R"({"info":0,"flags":2,"position":[0,0,0],"params":[0,0,0,0,4,255,7,0,0,0,100,0]},
+                        {"info":0,"flags":3,"position":[10,0,0],"params":[255,255,0,0,4,255,8,0,0,0,0,0]},
+                        {"info":0,"flags":0,"position":[20,0,0],"params":[255,255,0,0,4,255,9,0,0,0,0,0]})");
+    const auto dir = test::sampleLevel("trigger-visibility-art");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"BRIDGEPAD",
+      "nodes":[{"name":"WALL","object":"WALL","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"OFF","frames":1,"rate":30}]}]})");
+    ItemArchive items;
+    REQUIRE(items.load(dir));
+    f.triggers.bindFigures(f.device, f.layout, items);
+    f.triggers.draw(f.device, Mat4{1}, {});
+    REQUIRE(f.device.draws.size() == 1);
+    CHECK(f.device.draws.front().vertices.front().position.x == Approx(20));
+    REQUIRE(f.triggers.size() == 3);
+    const std::array visitors{TriggerVisitor{.position = Vec3{0}}};
+    f.step(kStep, visitors);
+    CHECK(f.triggers.trigger(0).fired);
+    CHECK(f.triggers.opened(0));
+    f.triggers.clear(); // Figures borrow the item archive.
+}
+
+TEST_CASE("Tower and Province trigger figures respect their authored geometry exclusions",
+          "[triggers][trigger-visibility][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+    for (const std::string_view level : {"L1", "G1", "E1"}) {
+        CAPTURE(level);
+        test::unpackedOrSkip(std::format("LEVELS/LEVEL{}/world.json", level));
+        test::unpackedOrSkip(std::format("ITEMS/LEVEL{}/animations.json", level.front()));
+        test::FakeRenderDevice device;
+        WorldLayout layout;
+        REQUIRE(layout.load(root / "LEVELS" / std::format("LEVEL{}", level)));
+        WorldAnimator animator;
+        animator.bind(layout);
+        ItemArchive items;
+        REQUIRE(items.load(root / "ITEMS" / std::format("LEVEL{}", level.front())));
+        LevelTriggers triggers;
+        triggers.bind(layout, animator, nullptr);
+        triggers.bindFigures(device, layout, items);
+        triggers.draw(device, Mat4{1}, {});
+        const usize actual = device.draws.size();
+        device.draws.clear();
+        usize hidden = 0;
+        for (usize i = 0; i < triggers.size(); ++i) {
+            const auto& instance =
+                layout.itemInstances()[static_cast<usize>(triggers.trigger(i).instance)];
+            if ((instance.flags & 2) != 0) {
+                ++hidden;
+                continue;
+            }
+            ItemFigure visible;
+            if (visible.place(device, items,
+                              layout.itemInfos()[static_cast<usize>(instance.info)].name, instance,
+                              nullptr)) {
+                visible.draw(device, Mat4{1}, {});
+            }
+        }
+        CHECK(hidden > 0);
+        CHECK(actual == device.draws.size());
+        CHECK(actual > 0); // Real physical pads have not all been removed.
+    }
+}
+
 TEST_CASE("Temple bridge pads are visible and activate their authored world targets",
           "[game][world][triggers][unpacked]") {
     const auto root =

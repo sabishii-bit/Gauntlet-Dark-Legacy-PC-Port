@@ -127,7 +127,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         } else {
             events.named(kAboutToDieLine, kAboutToDieWait);
         }
-        if (kind == HurtKind::Blow) {
+        if (kind == HurtKind::Blow || kind == HurtKind::Gas) {
             runtime.painOwed += damage;
             landBlow(runtime, events, received.flags);
         }
@@ -141,7 +141,7 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         runtime.painOwed = 0.0f;
         break;
     case HurtKind::Pierce: events.cry("DIE1"); break;
-    case HurtKind::Gas: events.cry("POISON"); break;
+    case HurtKind::Gas:
     case HurtKind::Blow:
         // A heavy blow gets a cry at once; lesser ones add up to one, and land with the
         // sound of the hit itself now and then.
@@ -152,6 +152,9 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         } else if (runtime.painOwed >= kPainEvery) {
             runtime.painOwed -= kPainEvery;
             cryPain(events);
+            if ((received.flags & Damage::kGas) != 0) {
+                landBlow(runtime, events, received.flags);
+            }
         } else {
             landBlow(runtime, events, received.flags);
         }
@@ -162,6 +165,11 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
 /** A blow landing is heard now and then: an arrow's and a bolt's each their own
  * (AudioPlayerHit's rows). */
 void PlayerHealth::landBlow(PlayerRuntime& runtime, const Events& events, u32 flags) {
+    // Cloud damage uses the queued severe-pain bark, not the direct poison-trap voice.
+    if ((flags & Damage::kGas) != 0) {
+        events.cry("DIE1");
+        return;
+    }
     constexpr u32 kArrowHit = 0x20000;
     constexpr u32 kBoltHit = 0x40000;
     if (runtime.hitSoundGap <= 0) {

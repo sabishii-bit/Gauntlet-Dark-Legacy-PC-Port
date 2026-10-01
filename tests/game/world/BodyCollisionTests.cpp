@@ -20,6 +20,22 @@ TEST_CASE("body movement sweeps before contact instead of tunnelling through",
     CHECK(BodyCollision::resolve({0, -8, 0}, {0, -8, 20}, 1, 6, bodies) == Vec3{0, -8, 20});
 }
 
+TEST_CASE("item movement keeps box corners and height instead of substituting a round body",
+          "[game][collision][generator-collision]") {
+    std::array items{Obstacle{.centre = {0, 0, 5}, .halfAcross = 3, .halfAlong = 1, .height = 2}};
+    const Vec3 stop = BodyCollision::resolveItems({0, 0, 0}, {0, 0, 20}, 1, 6, items);
+    CHECK(stop == Vec3{0, 0, 3});
+    CHECK(BodyCollision::resolveItems({0, 3, 0}, {0, 3, 20}, 1, 6, items) == Vec3{0, 3, 20});
+    CHECK(BodyCollision::resolveItems({0, -7, 0}, {0, -7, 20}, 1, 6, items) == Vec3{0, -7, 20});
+    CHECK(BodyCollision::resolveItems({0, -4, 0}, {0, -4, 20}, 1, 6, items) == Vec3{0, -4, 3});
+    // Along the long side, outside a circle of the short radius, remains blocked.
+    CHECK(BodyCollision::resolveItems({2.5f, 0, 0}, {2.5f, 0, 20}, 1, 6, items).z == Approx(3));
+    CHECK(BodyCollision::resolveItems(stop, {2, 0, 3}, 1, 6, items) == Vec3{2, 0, 3});
+    CHECK(BodyCollision::resolveItems(stop, {0, 0, 0}, 1, 6, items) == Vec3{0, 0, 0});
+    items[0].solid = false;
+    CHECK(BodyCollision::resolveItems({0, 0, 0}, {0, 0, 20}, 1, 6, items) == Vec3{0, 0, 20});
+}
+
 TEST_CASE("body movement slides and lets an overlapping spawn escape", "[game][collision]") {
     const std::array bodies{MissileTarget{0, {0, 0, 5}, 2, 6}};
     const Vec3 slide = BodyCollision::resolve({0, 0, 0}, {4, 0, 10}, 1, 6, bodies);

@@ -23,6 +23,7 @@
 #include "game/players/Progression.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/PlayerAttacks.h"
+#include "game/screens/PlayerHealth.h"
 #include "game/world/Chests.h"
 #include "game/world/SafeRocks.h"
 namespace {
@@ -186,6 +187,44 @@ TEST_CASE("an elemental weapon's throw carries its effect, the wizard's the effe
         CHECK((thrown.model == nullptr) == (character == 2));
         f.attacks.clear();
     }
+}
+
+TEST_CASE("gas damage queues pain without overlapping direct choking voices",
+          "[game][player-attacks][gas-feedback]") {
+    const auto root = turboAssets();
+    const auto bank = root / "audio/WAR";
+    std::filesystem::create_directories(bank);
+    const std::vector<s16> tone(96000, 8192);
+    writeFile(bank / "tone.wav", formats::encodeWav(tone, 48000, 1));
+    writeTextFile(bank / "sounds.json", R"({"sounds":[
+      {"index":0,"name":"S_WARDIE1","id":0,"volume":127,"sequence":[{"sample":0}]},
+      {"index":1,"name":"S_WARPOISON","id":1,"volume":127,"sequence":[{"sample":0}]},
+      {"index":2,"name":"S_WARPAIN1","id":2,"volume":127,"sequence":[{"sample":0}]},
+      {"index":3,"name":"S_WARPAIN2","id":3,"volume":127,"sequence":[{"sample":0}]},
+      {"index":4,"name":"S_WARPAIN3","id":4,"volume":127,"sequence":[{"sample":0}]},
+      {"index":5,"name":"S_WARPAIN4","id":5,"volume":127,"sequence":[{"sample":0}]}],
+      "samples":[{"index":0,"file":"tone.wav"}]})");
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    Fixture f;
+    f.audio.open(root, &sounds, nullptr);
+    f.attacks.bind({f.device, f.classes, f.world, f.weapons, f.effects, f.audio, &sounds, f.arsenal,
+                    f.dimmer, &f.shake});
+    auto& player = f.players[0];
+    player.actor.save().progress().health = 1000;
+    player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+    REQUIRE(player.figure);
+    PlayerHealth health;
+    PlayerHealth::Events events;
+    events.cry = [&](std::string_view cue) { f.attacks.cry(0, cue, f.players); };
+    for (s32 pulse = 0; pulse < 6; ++pulse) {
+        health.hurt(player, 10, HurtKind::Gas, true, false, 1, events);
+    }
+    CHECK(player.actor.save().health() == 940);
+    CHECK(sounds.voiceCount() == 1); // The two-second bark occupies the bounded queue.
+    CHECK(f.audio.barkBacklog() == Approx(2));
+    f.attacks.clear();
+    f.audio.close();
 }
 
 TEST_CASE("weapon throw audio follows the worn amulet or special shot",
