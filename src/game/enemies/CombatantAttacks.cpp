@@ -193,12 +193,13 @@ void Combatant::cue(Actor& critter, s32 id, s32 index, const Vec3& position,
             const s32 attachment = (record->flags & 0x800U) != 0 ? nodes[rootIndex].parent
                                                                  : static_cast<s32>(rootIndex);
             out.rootAttachment = attachment < 0;
+            Mat4 parent = modelTransform(critter);
             if (attachment >= 0) {
-                out.node = nodes[static_cast<usize>(attachment)].name;
+                const auto& attachmentName = nodes[static_cast<usize>(attachment)].name;
+                out.node = attachmentName;
+                parent = attachmentTransform(critter, attachmentName);
             }
             out.nodeOffset = offset;
-            const Mat4 parent = out.rootAttachment ? modelTransform(critter)
-                                                   : attachmentTransform(critter, *out.node);
             out.position = Vec3{parent * Vec4{offset, 1.0f}};
             out.scale = record->scale;
             out.follows = true;

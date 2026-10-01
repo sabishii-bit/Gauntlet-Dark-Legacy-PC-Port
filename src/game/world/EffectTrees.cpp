@@ -335,9 +335,9 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                        const CameraFrame* camera) const {
     const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
     for (const std::unique_ptr<Effect>& effect : m_effects) {
-        const Mat4 placed = effect->flightDirection
-                                ? frame.along(effect->transform(), *effect->flightDirection)
-                                : effect->transform();
+        const auto direction = effect->flightDirection;
+        const Mat4 placed = direction.has_value() ? frame.along(effect->transform(), *direction)
+                                                  : effect->transform();
         if (!effect->retiring) {
             // Its last moments fade it out (ProcessEffects' fxfade).
             const f32 alpha =
