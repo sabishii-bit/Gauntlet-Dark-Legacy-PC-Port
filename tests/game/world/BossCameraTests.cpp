@@ -1,9 +1,11 @@
 #include <cmath>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
 
@@ -139,6 +141,39 @@ TEST_CASE("the boss camera keeps within the boss's facing when the record limits
     }
     const f32 off = std::abs(BossCamera::wrapAngle(camera.yaw() - (boss.facing + kPi)));
     REQUIRE(off == Approx(kPi / 4.0f).margin(0.02f));
+}
+
+TEST_CASE("boss pitch accelerates from rest when waking instead of snapping to the fight angle",
+          "[game][world][camera][boss-pitch]") {
+    const f32 seconds = GENERATE(1.0f / 30.0f, 1.0f / 60.0f);
+    const bool rising = GENERATE(false, true);
+    CAPTURE(seconds, rising);
+    auto record = cryptRecord();
+    record.minPlayerDistance = record.maxPlayerDistance = 60.0f;
+    if (rising) {
+        std::swap(record.minPitch, record.maxPitch);
+    }
+    BossCameraSubject boss;
+    const std::vector<CameraSubject> party{standing({0, 0, 30})};
+    BossCamera camera;
+    camera.reset(boss, party, record, {});
+    const f32 asleepPitch = camera.pitch();
+    boss.awake = true;
+    camera.update(boss, party, record, {}, 0.0f);
+    REQUIRE(camera.pitch() == asleepPitch);
+    camera.update(boss, party, record, {}, seconds);
+    const f32 firstStep = camera.pitch() - asleepPitch;
+    CHECK(std::abs(firstStep) ==
+          Approx(BossCamera::kPitchAcceleration * seconds * seconds).margin(1.0e-7f));
+    CHECK((rising ? firstStep : -firstStep) > 0.0f);
+    for (s32 frame = 0; frame < 600; ++frame) {
+        const f32 before = camera.pitch();
+        camera.update(boss, party, record, {}, seconds);
+        REQUIRE(std::isfinite(camera.pitch()));
+        REQUIRE(std::abs(BossCamera::wrapAngle(camera.pitch() - before)) <=
+                BossCamera::kPitchSpeed * seconds + 1.0e-6f);
+    }
+    CHECK(std::abs(camera.pitch() - asleepPitch) > 0.02f);
 }
 
 TEST_CASE("the dragon camera uses its authored yaw limit and elevated attention anchor",

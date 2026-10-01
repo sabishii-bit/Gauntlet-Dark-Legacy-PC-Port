@@ -778,8 +778,12 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         updateAmbience();
         m_welcome.updateBeam(*m_world, m_players, m_sumner.position(), ticks);
         const bool cameraHandoff = m_arrival.camera().active();
-        m_arrival.advance(ticks, anyButton(inputs), m_camera.camera().position,
-                          m_camera.attention());
+        // Ride to the camera that will actually take over. A boss entrance must not
+        // approach the normal level camera and then cut to a different fight view.
+        const bool bossView = bossCameraOn();
+        m_arrival.advance(ticks, anyButton(inputs),
+                          bossView ? m_bossCamera.camera().position : m_camera.camera().position,
+                          bossView ? m_bossCamera.attention() : m_camera.attention());
         if (m_arrival.takeTitleLanded()) {
             if (const LevelInfo* level = m_world->level();
                 level != nullptr && !m_world->isTower()) {
