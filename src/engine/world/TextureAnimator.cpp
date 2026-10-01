@@ -25,9 +25,10 @@ f32 fadeAlpha(s32 since, s32 duration, bool fadeOut) {
     const f32 fraction =
         duration > 0 ? std::clamp(static_cast<f32>(since) / static_cast<f32>(duration), 0.0f, 1.0f)
                      : 0.0f;
-    // Tree opacity is stored in an eight-bit channel, truncated rather than rounded.
-    const f32 alpha = fadeOut ? 1.0f - fraction : fraction;
-    return static_cast<f32>(static_cast<u8>(alpha * 255.0f)) / 255.0f;
+    // DoTexFadeSub passes truncated TRANSPARENCY to MBTreeSetAlpha, which stores
+    // 255 minus that value. Invert after quantizing, not before (halfway is 128).
+    const f32 transparency = fadeOut ? fraction : 1.0f - fraction;
+    return static_cast<f32>(255 - static_cast<u8>(transparency * 255.0f)) / 255.0f;
 }
 
 std::optional<Found> findFrame(std::string_view name, TextureSet& textures,

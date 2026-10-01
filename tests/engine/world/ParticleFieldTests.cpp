@@ -16,6 +16,52 @@ namespace {
 
 using namespace gdl;
 
+TEST_CASE("particle depth comparison remains independent of writes and batching",
+          "[world][particles][vfx-depth]") {
+    test::FakeRenderDevice device;
+    ParticleField field;
+    for (const bool compare : {true, false}) {
+        for (const bool write : {true, false}) {
+            ParticleDescriptor descriptor;
+            descriptor.rate = {1, 1, 1, 1};
+            descriptor.particleLife = 30;
+            descriptor.emitFrames = 30;
+            descriptor.depthTest = compare;
+            descriptor.depthWrite = write;
+            field.start(descriptor, Mat4{1}, &device.whiteTexture());
+        }
+    }
+    field.step(1.0f / 30);
+    REQUIRE(field.particleCount() == 4);
+    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+    REQUIRE(device.draws.size() == 4);
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        CHECK(device.draws[i].state.depthTest == (i < 2));
+        CHECK(device.draws[i].state.depthWrite == (i % 2 == 0));
+    }
+}
+
+TEST_CASE("placed particle templates preserve an explicit always-pass depth flag",
+          "[world][particles][vfx-depth]") {
+    const auto dir = test::scratchDirectory("particle-field-depth");
+    writeTextFile(dir / "world.json", R"({
+      "objects":[{"name":"PSYSA","position":[0,0,0],"flags":2048}],
+      "particles":[{"id":"A","flags":3072,"flagMask":3072,
+        "enables":544,"particleLife":[1,0],"rate":[30,30,30,30]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    test::FakeRenderDevice device;
+    TextureSet textures;
+    ParticleField field;
+    field.bind(layout, textures, device);
+    field.step(1.0f / 30);
+    REQUIRE(field.particleCount() == 1);
+    field.draw(device, Mat4{1}, Vec3{1, 0, 0}, Vec3{0, 1, 0});
+    REQUIRE(device.draws.size() == 1);
+    CHECK_FALSE(device.draws.front().state.depthTest);
+    CHECK_FALSE(device.draws.front().state.depthWrite);
+}
+
 TEST_CASE("particle emission and expiry are independent of render cadence", "[world][particles]") {
     const test::FakeRenderDevice device;
     ParticleDescriptor descriptor;

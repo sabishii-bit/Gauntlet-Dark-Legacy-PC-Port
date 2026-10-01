@@ -20,6 +20,83 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("retail potion fades keep the startup visible and remove each mesh at its authored end",
+          "[effects][vfx-timing][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path();
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root));
+    test::FakeRenderDevice device;
+    TextureAnimator animator;
+    animator.bind(weapons.trees.textureAnimations(), weapons.textures, device);
+    // Check the raw disk modes, not just fixtures built from the same runtime constants.
+    STATIC_REQUIRE(TextureAnimationInfo::kFadeIn == formats::TextureAnimation::kFadeIn);
+    STATIC_REQUIRE(TextureAnimationInfo::kFadeOut == formats::TextureAnimation::kFadeOut);
+    for (const std::string_view name : {"MP_LIGHT", "MP_FIRE"}) {
+        INFO(name);
+        const auto treeIndex = weapons.trees.find(name);
+        REQUIRE(treeIndex);
+        const auto& tree = weapons.trees.tree(*treeIndex);
+        REQUIRE(tree.sequences.size() == 1);
+        CHECK(tree.sequences[0].frameRate == 60); // 15 animation frames per second
+        usize fades = 0;
+        for (const auto& node : tree.nodes) {
+            if (node.textureAnimation < 0) {
+                continue;
+            }
+            const auto& mod =
+                weapons.trees.textureAnimations().at(static_cast<usize>(node.textureAnimation));
+            if (!mod.fades()) {
+                continue;
+            }
+            ++fades;
+            INFO(node.name);
+            REQUIRE(mod.source == -5);
+            REQUIRE(mod.frames > 0);
+            CHECK(animator.motionAt(node.textureAnimation, 0)->alpha == 1.0f);
+            CHECK(animator.motionAt(node.textureAnimation, mod.offset)->alpha == 1.0f);
+            CHECK(animator.motionAt(node.textureAnimation, mod.offset + mod.frames)->alpha == 0.0f);
+            CHECK(animator.motionAt(node.textureAnimation, tree.sequences[0].frames - 1)->alpha ==
+                  0.0f);
+        }
+        CHECK(fades == (name == "MP_LIGHT" ? 1 : 3));
+        EffectTrees effects;
+        REQUIRE(effects.start(device, weapons, name, Vec3{0}));
+        const auto drawMeshes = [&] {
+            device.draws.clear();
+            const auto& effect = effects.effect(0);
+            auto model = effect.model;
+            // Fire's sparks have their own texture/transform tracks and may
+            // outlive its rings. Isolate meshes governed by these fade nodes.
+            for (usize i = 0; i < tree.nodes.size(); ++i) {
+                bool faded = false;
+                for (s32 n = static_cast<s32>(i); n >= 0;
+                     n = tree.nodes[static_cast<usize>(n)].parent) {
+                    const s32 mod = tree.nodes[static_cast<usize>(n)].textureAnimation;
+                    if (mod >= 0 &&
+                        weapons.trees.textureAnimations()[static_cast<usize>(mod)].fades()) {
+                        faded = true;
+                        break;
+                    }
+                }
+                if (!faded) {
+                    model.setMeshAlpha(i, 0);
+                }
+            }
+            model.draw(device, Mat4{1}, effect.transform(), {}, effect.pose.matrices());
+        };
+        drawMeshes();
+        REQUIRE_FALSE(device.draws.empty());
+        // At 15 fps, LIGHT's subtree is clear by frame 12; FIRE's last ring by 32.
+        const s32 endFrame = name == "MP_LIGHT" ? 12 : 32;
+        for (s32 tick = 0; tick < endFrame * 2 + 1; ++tick) {
+            effects.update(1.0f / 30);
+        }
+        REQUIRE(effects.count() == 1); // authored animation still running, not lifetime culling
+        drawMeshes();
+        CHECK(device.draws.empty());
+    }
+}
+
 TEST_CASE("the melee ward gem flash emits both authored orange particle trails",
           "[effects][enemy-melee][unpacked]") {
     const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path();

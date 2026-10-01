@@ -223,6 +223,30 @@ TEST_CASE("Temple stained-glass light rays composite after the curtain meshes",
     CHECK(lastCurtain < firstRay);
 }
 
+TEST_CASE("world depth comparison flags survive batching and independent unit draws",
+          "[world][scene][vfx-depth]") {
+    Fixture f("world-scene-depth-compare");
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"WALL","position":[0,0,0],"next":1,"objectFlags":0},
+      {"name":"WALL","position":[10,0,0],"next":2,"objectFlags":64},
+      {"name":"WALL","position":[20,0,0],"next":3,"objectFlags":192},
+      {"name":"PANE","position":[30,0,0],"next":4,"objectFlags":2048},
+      {"name":"PANE","position":[40,0,0],"next":5,"objectFlags":2112},
+      {"name":"PANE","position":[50,0,0],"next":-1,"objectFlags":2240}]})");
+    REQUIRE(f.layout.load(f.directory));
+    REQUIRE(f.build());
+    REQUIRE(f.scene.batchCount() == 3);
+    REQUIRE(f.scene.unitCount() == 3);
+    f.scene.draw(f.device, Mat4{1}, CameraFrame{});
+    REQUIRE(f.device.draws.size() == 6);
+    for (const auto& draw : f.device.draws) {
+        const auto placement = static_cast<s32>(draw.vertices.front().position.x / 10);
+        INFO(placement);
+        CHECK(draw.state.depthTest == (placement % 3 == 0));
+        CHECK(draw.state.depthWrite == (placement % 3 != 2));
+    }
+}
+
 TEST_CASE("world transparency can be deferred until dynamic solid objects have drawn",
           "[world][scene]") {
     Fixture f("world-scene-deferred");

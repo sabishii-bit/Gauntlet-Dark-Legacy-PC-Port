@@ -220,11 +220,11 @@ TEST_CASE("keyed subtree fades clamp at their offset and end without resolving a
     REQUIRE(f.animator.size() == 3);
     REQUIRE(f.animator.motionAt(0, 0)->alpha == 1.0f);
     REQUIRE(f.animator.motionAt(0, 18)->alpha == 1.0f);
-    REQUIRE(*f.animator.motionAt(0, 28)->alpha == Approx(127.0f / 255));
+    REQUIRE(*f.animator.motionAt(0, 28)->alpha == Approx(128.0f / 255));
     REQUIRE(f.animator.motionAt(0, 38)->alpha == 0.0f);
     REQUIRE(f.animator.motionAt(0, 500)->alpha == 0.0f);
     REQUIRE(f.animator.motionAt(1, 0)->alpha == 0.0f);
-    REQUIRE(*f.animator.motionAt(1, 28)->alpha == Approx(127.0f / 255));
+    REQUIRE(*f.animator.motionAt(1, 28)->alpha == Approx(128.0f / 255));
     REQUIRE(f.animator.motionAt(1, 38)->alpha == 1.0f);
     REQUIRE(f.animator.motionAt(2, 500)->alpha == 0.0f);
     f.animator.step(f.scene, 100);

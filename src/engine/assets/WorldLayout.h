@@ -54,6 +54,7 @@ struct WorldObject {
     static constexpr u32 kReverse = 0x100000; ///< its animation plays backwards, once
     static constexpr u32 kOnce = 0x200000;    ///< its animation plays forwards, once
     /** Model layer flags. */
+    static constexpr u32 kNoDepthTest = 0x40;
     static constexpr u32 kNoDepthWrite = 0x80;
     static constexpr u32 kSorted = 0x800; ///< drawn after the opaque, farthest first
     static constexpr u32 kChrome = 0x8000;

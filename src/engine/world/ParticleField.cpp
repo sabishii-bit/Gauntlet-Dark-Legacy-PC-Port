@@ -82,6 +82,7 @@ void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, Render
         entry.state.blend = descriptor.additive ? BlendMode::Additive : BlendMode::Alpha;
         entry.state.alphaTest = WorldScene::kAlphaTest;
         entry.state.depthWrite = descriptor.depthWrite;
+        entry.state.depthTest = descriptor.depthTest;
         m_entries.push_back(std::move(entry));
     }
     // Emitters sharing a texture and state draw as one.
@@ -103,6 +104,7 @@ usize ParticleField::start(const ParticleDescriptor& descriptor, const Mat4& nod
     entry.state.blend = descriptor.additive ? BlendMode::Additive : BlendMode::Alpha;
     entry.state.alphaTest = WorldScene::kAlphaTest;
     entry.state.depthWrite = descriptor.depthWrite;
+    entry.state.depthTest = descriptor.depthTest;
     m_entries.push_back(std::move(entry));
     return m_entries.size() - 1;
 }

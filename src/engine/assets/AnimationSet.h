@@ -112,8 +112,8 @@ struct TextureAnimationInfo {
     static constexpr s32 kByName = -1;
     static constexpr s32 kScrollU = -2;
     static constexpr s32 kScrollV = -3;
-    static constexpr s32 kFadeOut = -4;
-    static constexpr s32 kFadeIn = -5;
+    static constexpr s32 kFadeIn = -4;
+    static constexpr s32 kFadeOut = -5;
     static constexpr s32 kFreeRunning = -1; ///< the flag of one stepped on the game clock
 
     std::string name;
