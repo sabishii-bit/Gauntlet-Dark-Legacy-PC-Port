@@ -56,7 +56,7 @@ struct Fixture {
 
 std::filesystem::path turboAssets() {
     const auto root = test::scratchDirectory("turbo-contacts");
-    for (const auto* name : {"PLAYERS/WAR/YEL", "MONSTERS/GRU"}) {
+    for (const auto* name : {"PLAYERS/WAR/YEL", "PLAYERS/WAR/SFXYEL", "MONSTERS/GRU"}) {
         const auto dir = root / name;
         std::filesystem::create_directories(dir);
         writeTextFile(dir / "body.obj",
@@ -79,11 +79,14 @@ std::filesystem::path turboAssets() {
       {"name":"READY","frames":60,"rate":30},
       {"name":"ATTPWRB","frames":60,"rate":30},
       {"name":"ATTPWRC","frames":60,"rate":30}]}]})");
+    writeTextFile(root / "PLAYERS/WAR/SFXYEL/animations.json", R"({"trees":[{"name":"BURST",
+      "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"ACTIVE","frames":60,"rate":30}]}]})");
     std::filesystem::create_directories(root / "pdata");
     writeTextFile(root / "pdata/WAR.json", R"({"height":6,"width":2,
       "fight":[200,600],"speed":[200,600],"armor":[200,600],"magic":[200,600],
-      "moves":{"turboB":0,"turboC1":1},"moveStrikes":[
-      {"type":4,"startFrame":1,"radius":12,"arc":-1,"delay":0.1,"amount":50},
+      "moves":{"turboB":0,"turboC1":1},"moveEffects":[{"tree":"BURST"}],"moveStrikes":[
+      {"type":4,"startFrame":1,"radius":12,"arc":-1,"delay":0.1,"amount":50,"effect":0},
       {"type":2,"startFrame":1,"hitRadius":10,"arc":-1,"offset":[0,9,2],
        "speedMin":30,"speedMax":30,"maxTime":6,"amount":70,"flags":64,
        "damageType":1048576}]})");
@@ -453,6 +456,72 @@ TEST_CASE("every exported class can damage enemies with both turbo attacks",
             f.attacks.clear();
             f.opponents.close();
         }
+    }
+}
+
+TEST_CASE("Sonic Boom reaches distant enemies during the clap rather than the wind-up",
+          "[game][screens][player-attacks][sonic-timing][unpacked]") {
+    const auto root = test::unpackedOrSkip("pdata/JES.json").parent_path().parent_path();
+    test::unpackedOrSkip("PLAYERS/JES/SFXYEL/animations.json");
+    test::unpackedOrSkip("MONSTERS/GRU/animations.json");
+    for (const s32 hz : {30, 60, 120}) {
+        CAPTURE(hz);
+        Fixture f;
+        REQUIRE(f.classes.load(root / "pdata"));
+        f.opponents.open({f.device, f.world, f.weapons, f.effects, f.audio, root, 1}, f.players);
+        auto& player = f.players[0];
+        player.actor.save().character = 7;
+        player.figure = PlayerFigure::load(f.device, root, player.actor.save(), false);
+        REQUIRE(player.figure);
+        const auto* stats = f.classes.stats(7);
+        REQUIRE(stats);
+        const auto& row = stats->moveStrikes[static_cast<usize>(stats->moves.turboB)];
+        REQUIRE(row.startFrame == 1);
+        REQUIRE(row.delay == Approx(0.5f));
+        REQUIRE(row.radius == 12);
+        auto& enemies = f.opponents.enemies();
+        EnemyScales scales;
+        scales.health = 100;
+        enemies.open(f.device, root, nullptr, 4, scales, 1);
+        REQUIRE(enemies.loadKind(kGruntKind));
+        EnemySpawn spawn;
+        spawn.kind = kGruntKind;
+        spawn.placed = true;
+        spawn.position = Vec3{0, 0, 3};
+        const auto near = enemies.spawn(spawn, {});
+        REQUIRE(near);
+        spawn.position.z = 11;
+        const auto far = enemies.spawn(spawn, {});
+        REQUIRE(far);
+        std::array<f32, 2> firstFrame{-1, -1};
+        std::array<s32, 2> contacts{};
+        const std::array<s32, 2> ids{*near, *far};
+        player.turbo.add(50);
+        const f32 seconds = 1.0f / static_cast<f32>(hz);
+        for (s32 step = 0; step < hz * 3; ++step) {
+            player.figure->animate(0, 1, seconds,
+                                   step == 0 ? PlayerDeed::TurboStrong : PlayerDeed::None);
+            f.attacks.updateTurbo(0, 1, seconds, f.players, [](s32, usize) {});
+            const std::array<f32, 2> before{enemies.healthOf(*near), enemies.healthOf(*far)};
+            f.attacks.updateStrikes(seconds, f.players, f.targets);
+            f.effects.update(seconds);
+            for (usize i = 0; i < ids.size(); ++i) {
+                if (enemies.healthOf(ids[i]) < before[i]) {
+                    if (contacts[i]++ == 0) {
+                        firstFrame[i] = player.figure->animator().player().frame();
+                    }
+                }
+            }
+        }
+        CAPTURE(firstFrame, contacts);
+        CHECK(firstFrame[0] >= 15);
+        CHECK(firstFrame[0] <= 18);
+        CHECK(firstFrame[1] >= 30);
+        CHECK(firstFrame[1] <= 43);
+        CHECK(contacts[0] == 1);
+        CHECK(contacts[1] == 1);
+        f.attacks.clear();
+        f.opponents.close();
     }
 }
 

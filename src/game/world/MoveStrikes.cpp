@@ -45,11 +45,12 @@ Vec3 MoveStrikes::originOf(const MoveStrike& strike, const Vec3& position, const
 }
 
 u32 MoveStrikes::start(const MoveStrike& strike, s32 owner, const Vec3& position,
-                       const Vec3& facing, f32 ownDamage) {
+                       const Vec3& facing, f32 ownDamage, f32 effectSeconds) {
     Strike started;
     started.id = m_next++;
     started.owner = owner;
     started.flies = strike.type == MoveStrike::kFlies;
+    started.expanding = strike.type == MoveStrike::kBursts;
     constexpr s32 kIgnoresWorld = 0x40;
     started.collidesWorld = (strike.flags & kIgnoresWorld) == 0;
     started.position = originOf(strike, position, facing);
@@ -60,7 +61,8 @@ u32 MoveStrikes::start(const MoveStrike& strike, s32 owner, const Vec3& position
     started.arc = started.flies ? -1.0f : strike.arc;
     started.damage = damageOf(strike, ownDamage);
     started.delayLeft = strike.delay;
-    started.secondsLeft = strike.maxTime;
+    started.secondsLeft = started.flies ? strike.maxTime : effectSeconds;
+    started.damageTime = effectSeconds - strike.delay;
     m_strikes.push_back(started);
     return started.id;
 }
@@ -78,10 +80,34 @@ std::vector<StrikeHit> MoveStrikes::update(f32 seconds, const WorldCollision* co
                              strike.damage, from,         strike.flies};
         };
         if (!strike.flies) {
-            strike.delayLeft -= seconds;
-            if (strike.delayLeft <= 0.0f) {
-                hits.push_back(hit());
-                strike.secondsLeft = 0.0f;
+            // Sample long updates too, so crossing the entire active window does not
+            // erase the wave. The effect's last third is visual recovery only.
+            constexpr f32 kFrame = 1.0f / 30.0f;
+            constexpr f32 kTail = 0.33f;
+            f32 left = seconds;
+            while (left > 0 && strike.secondsLeft > 0) {
+                const f32 step = std::min(left, kFrame);
+                left -= step;
+                strike.secondsLeft -= step;
+                if (strike.secondsLeft <= 0) {
+                    break;
+                }
+                StrikeHit area = hit();
+                if (strike.expanding) {
+                    if (strike.secondsLeft > strike.damageTime) {
+                        continue;
+                    }
+                    const f32 phase =
+                        strike.damageTime <= kFrame ? 1.0f : strike.secondsLeft / strike.damageTime;
+                    if (phase <= kTail) {
+                        continue;
+                    }
+                    area.radius *= 1.0f + kTail - phase;
+                    area.damage *= 1.5f * (phase - kTail);
+                }
+                area.hitGap = strike.expanding ? strike.secondsLeft + 0.066667f
+                                               : std::min(1.0f, strike.secondsLeft);
+                hits.push_back(area);
             }
             continue;
         }
@@ -108,10 +134,7 @@ std::vector<StrikeHit> MoveStrikes::update(f32 seconds, const WorldCollision* co
             hits.push_back(hit());
         }
     }
-    std::erase_if(m_strikes, [](const Strike& strike) {
-        return strike.flies ? strike.secondsLeft <= 0.0f
-                            : strike.delayLeft <= 0.0f && strike.secondsLeft <= 0.0f;
-    });
+    std::erase_if(m_strikes, [](const Strike& strike) { return strike.secondsLeft <= 0.0f; });
     return hits;
 }
 
