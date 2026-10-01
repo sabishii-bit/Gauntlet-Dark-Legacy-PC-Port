@@ -74,6 +74,57 @@ f32 playingIndex(const PlayerAnimator& animator) {
     return animator.pose().matrices()[0][3].x;
 }
 
+TEST_CASE("attack invulnerability follows turbo and combo animations through recovery",
+          "[player-animation][attack-invulnerability]") {
+    TreeInfo tree;
+    tree.name = "WAR";
+    tree.nodes.emplace_back();
+    for (const auto name : PlayerAnimator::kSequenceNames) {
+        TreeSequenceInfo sequence;
+        sequence.name = name;
+        sequence.frames = 6;
+        sequence.frameRate = 30;
+        tree.sequences.push_back(sequence);
+    }
+    struct Case {
+        PlayerDeed deed;
+        Action action;
+        bool protectedAttack;
+    };
+    const std::array cases{Case{PlayerDeed::TurboFull, Action::TurboFull, true},
+                           Case{PlayerDeed::TurboStrong, Action::TurboStrong, true},
+                           Case{PlayerDeed::Combo, Action::ComboAct1, true},
+                           Case{PlayerDeed::ComboHeld, Action::ComboWar1, true},
+                           Case{PlayerDeed::SuperShot, Action::SpecialShot, true},
+                           Case{PlayerDeed::Hammer, Action::Hammer, true},
+                           Case{PlayerDeed::Breathe, Action::Breathe, true},
+                           Case{PlayerDeed::StrongAttack, Action::StrongThrow, false},
+                           Case{PlayerDeed::Shove, Action::Shove, false},
+                           Case{PlayerDeed::FireLeft, Action::FireLeft, false},
+                           Case{PlayerDeed::FireRight, Action::FireRight, false},
+                           Case{PlayerDeed::UsePotion, Action::UsePotion, false}};
+    // player_can_be_damaged + PlayerAttackType: the >=11 attack groups, not every
+    // action which locks input. In particular ordinary strong throws remain vulnerable.
+    for (const auto& entry : cases) {
+        CAPTURE(entry.action);
+        PlayerAnimator animator;
+        REQUIRE(animator.bind(tree, false));
+        animator.setCombo(0, false);
+        CHECK_FALSE(animator.damageProtected());
+        animator.update(PlayerMotion::Stand, kTicks, kStep, entry.deed);
+        REQUIRE(animator.action() == entry.action);
+        s32 frames = 0;
+        while (animator.action() != Action::Ready && frames < 100) {
+            CHECK(animator.damageProtected() == entry.protectedAttack);
+            animator.update(PlayerMotion::Stand, kTicks, kStep);
+            ++frames;
+        }
+        REQUIRE(frames > 0);
+        REQUIRE(animator.action() == Action::Ready);
+        CHECK_FALSE(animator.damageProtected());
+    }
+}
+
 TEST_CASE("super shots repeat their firing cycle and interruptions never release a shot",
           "[game][items][player-animation]") {
     auto tree = classTree();

@@ -41,10 +41,15 @@ f32 PlayerHealth::guarded(const PlayerRuntime& runtime, f32 damage, bool directe
     return figure->animator().shoving() ? damage * 0.5f : damage;
 }
 
+bool PlayerHealth::canBeDamaged(const PlayerRuntime& runtime) {
+    return runtime.life == PlayerLife::Standing && !runtime.combo.active() &&
+           (runtime.figure == nullptr || !runtime.figure->animator().damageProtected());
+}
+
 void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed,
                         bool inTower, f32 damageScale, const Events& events,
                         const PlayerImpact& impact, bool bossEncounter, const ClassStats* stats) {
-    if (runtime.life != PlayerLife::Standing || inTower || damage <= 0.0f) {
+    if (!canBeDamaged(runtime) || inTower || damage <= 0.0f) {
         return;
     }
     if (damage > 1.0f && kind != HurtKind::DeathDrain) {

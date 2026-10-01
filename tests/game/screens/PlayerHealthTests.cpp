@@ -8,6 +8,8 @@
 
 #include "engine/core/Types.h"
 
+#include "FakeRenderDevice.h"
+#include "TestSupport.h"
 #include "game/combat/Damage.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/PlayerHealth.h"
@@ -37,6 +39,84 @@ struct Fixture {
         health.hurt(player, damage, kind, false, tower, scale, events);
     }
 };
+
+TEST_CASE("both combo participants reject damage and reactions until unlinked",
+          "[player-health][attack-invulnerability]") {
+    Fixture grabber;
+    Fixture partner;
+    ComboMove::link(grabber.player.combo, 0, partner.player.combo, 1, 0);
+    const auto checkProtected = [](Fixture& f) {
+        REQUIRE_FALSE(PlayerHealth::canBeDamaged(f.player));
+        f.health.hurt(f.player, 10000, HurtKind::Blow, true, false, 1, f.events,
+                      {PlayerImpact::kKnockDown, Vec3{1, 0, 0}});
+        f.health.hurt(f.player, 30, HurtKind::Pierce, true, false, 1, f.events,
+                      {PlayerImpact::kSticky});
+        f.hit(30, HurtKind::Gas);
+        CHECK(f.player.actor.save().health() == 1000);
+        CHECK(f.player.life == PlayerLife::Standing);
+        CHECK(f.player.reaction == PlayerDeed::None);
+        CHECK_FALSE(f.player.knockback.pending());
+        CHECK(f.player.hitFlashTicks == 0);
+        CHECK(f.player.gagSeconds == 0);
+        CHECK(f.sounds.empty());
+        CHECK(f.cries.empty());
+        CHECK(f.blockLessons == 0);
+    };
+    checkProtected(grabber);
+    checkProtected(partner);
+    ComboMove::advance(grabber.player.combo, partner.player.combo,
+                       {.act1 = true, .frame = ComboMove::kThrowFrame}, 2);
+    REQUIRE(partner.player.combo.role == ComboRole::Thrown);
+    checkProtected(grabber);
+    checkProtected(partner);
+    ComboMove::clear(grabber.player.combo);
+    ComboMove::clear(partner.player.combo);
+    for (Fixture* f : {&grabber, &partner}) {
+        CHECK(PlayerHealth::canBeDamaged(f->player));
+        f->hit(30);
+        CHECK(f->player.actor.save().health() == 970);
+    }
+}
+
+TEST_CASE("turbo animation blocks boss knockdown throughout the move but not afterward",
+          "[player-health][attack-invulnerability][unpacked]") {
+    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    for (const auto deed : {PlayerDeed::TurboFull, PlayerDeed::TurboStrong}) {
+        Fixture f;
+        f.player.figure = PlayerFigure::load(device, root, f.player.actor.save(), false);
+        REQUIRE(f.player.figure);
+        auto& figure = *f.player.figure;
+        figure.animate(0, 2, 1.0f / 30, deed);
+        REQUIRE(figure.animator().damageProtected());
+        // Empty meter after spending must not end protection ahead of the animation.
+        f.player.turbo.reset();
+        s32 frames = 0;
+        while (figure.animator().damageProtected() && frames < 300) {
+            f.health.hurt(f.player, 150, HurtKind::Blow, true, false, 1, f.events,
+                          {PlayerImpact::kKnockDown, Vec3{1, 0, 0}}, true);
+            f.hit(5, HurtKind::Gas);
+            CHECK(f.player.actor.save().health() == 1000);
+            CHECK(f.player.reaction == PlayerDeed::None);
+            CHECK_FALSE(f.player.knockback.pending());
+            figure.animate(0, 2, 1.0f / 30);
+            ++frames;
+        }
+        REQUIRE(frames > 0);
+        REQUIRE_FALSE(figure.animator().damageProtected());
+        CHECK(f.sounds.empty());
+        CHECK(f.cries.empty());
+        f.health.hurt(f.player, 150, HurtKind::Blow, true, false, 1, f.events,
+                      {PlayerImpact::kKnockDown, Vec3{1, 0, 0}}, true);
+        CHECK(f.player.actor.save().health() == 850);
+        CHECK(f.player.reaction != PlayerDeed::None);
+        CHECK(f.player.knockback.pending());
+    }
+}
 
 TEST_CASE("player armor is subtracted before elemental affinity but not from gas",
           "[player-health][damage]") {

@@ -37,6 +37,9 @@ public:
     };
     static constexpr f32 kBlockLessonFrom = 15.0f; ///< over this a blow teaches the guard
     static constexpr u32 kHeavyFlags = 0x10160;    ///< knock-back, knock-down and knock-over
+    /** Action/partner protection shared by incoming damage and combatant contact checks.
+     * Does not hide a player from targeting or replace armor's damage modifiers. */
+    static bool canBeDamaged(const PlayerRuntime& runtime);
     void hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool directed, bool inTower,
               f32 damageScale, const Events& events, const PlayerImpact& impact = {},
               bool bossEncounter = false, const ClassStats* stats = nullptr);

@@ -57,11 +57,6 @@ void PlayScene::hurt(usize index, f32 damage, HurtKind kind, bool directed,
     if (index >= m_players.size()) {
         return;
     }
-    // Nothing hurts either side of a two-player combo while it lasts (player_can_be_damaged,
-    // player.c 3266: a partner held, or a partner at all).
-    if (m_players[index].combo.active()) {
-        return;
-    }
     const LevelInfo* level = m_world->level();
     PlayerRuntime& runtime = m_players[index];
     const bool stood = runtime.life == PlayerLife::Standing;

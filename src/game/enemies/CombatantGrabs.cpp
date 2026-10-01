@@ -36,7 +36,7 @@ void Combatant::grab(Actor& actor, const MoveDefinition& move, const AttackDefin
         const f32 distance = glm::length(Vec2{delta.x, delta.z});
         const Vec3 toBody = player.position - actor.position;
         const f32 bodyDistance = glm::length(Vec2{toBody.x, toBody.z});
-        if (!player.hidden && !player.captured && bodyDistance < nearest &&
+        if (!player.hidden && player.damageable && !player.captured && bodyDistance < nearest &&
             distance <= player.radius + damage.maxDistance &&
             std::abs(delta.y) <= player.height * 0.5f + damage.maxDistance) {
             nearest = bodyDistance;

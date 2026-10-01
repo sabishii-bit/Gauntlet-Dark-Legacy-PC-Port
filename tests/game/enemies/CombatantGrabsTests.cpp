@@ -106,6 +106,21 @@ TEST_CASE("missed grabs do not throw and death frees a held player without damag
         f.fighter.update(2, 101.0f / 30, f.players);
         REQUIRE(f.fighter.actor.takeGrabs().empty());
     }
+    SECTION("protected attacks reject grabs without hiding the target") {
+        f.players[0].damageable = false;
+        f.players[1].damageable = false;
+        f.fighter.update(2, 25.0f / 30, f.players);
+        REQUIRE(f.fighter.actor.moveName() == "GRAB");
+        CHECK(f.fighter.actor.takeGrabs().empty());
+        CHECK(f.fighter.actor.takeCues().empty());
+        // The contact window is still open when the player's protected move ends.
+        f.players[0].damageable = true;
+        f.fighter.update(2, 1.0f / 30, f.players);
+        const auto grabs = f.fighter.actor.takeGrabs();
+        REQUIRE(grabs.size() == 1);
+        CHECK(grabs.front().player == f.players[0].player);
+        CHECK(grabs.front().attachment.has_value());
+    }
     SECTION("death while holding") {
         f.fighter.update(2, 25.0f / 30, f.players);
         REQUIRE(f.fighter.actor.takeGrabs().size() == 1);

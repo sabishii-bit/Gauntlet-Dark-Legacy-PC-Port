@@ -58,8 +58,9 @@ struct EnemyView {
     bool invisible = false; ///< not a sight target, but still vulnerable to contact and hazards
     EnemyMeleeWard meleeWard = EnemyMeleeWard::None;
     bool antiDeath = false;
-    bool reflects = false; ///< its armour turns the swarm's missiles back
-    bool it = false;       ///< tagged by IT: every enemy that can see it goes for it
+    bool reflects = false;  ///< its armour turns the swarm's missiles back
+    bool it = false;        ///< tagged by IT: every enemy that can see it goes for it
+    bool damageable = true; ///< action/partner immunity; still visible to enemy targeting
 };
 
 /** A blow an enemy has landed on a player. */
