@@ -26,6 +26,7 @@ public:
 private:
     std::optional<Mat4> m_body;
     Vec3 m_velocity{0};
+    f32 m_supportHeight = 0; ///< floor envelope before the animation takes over the body
     f32 m_damage = 0;
     bool m_flying = false;
     s32 m_owner = -1;
