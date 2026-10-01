@@ -17,6 +17,16 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("Chimera scenario preserves the authored stair entrance and camera ride",
+          "[game][scenario][chimera]") {
+    const auto file = test::dataDirectory().parent_path() / "tests/scenarios/level-a5-chimera.json";
+    const auto scenario = Scenario::load(file);
+    REQUIRE(scenario.level == "A5");
+    REQUIRE(scenario.party.size() == 1);
+    REQUIRE_FALSE(scenario.tower.position.has_value());
+    REQUIRE_FALSE(scenario.afterLevel);
+}
+
 TEST_CASE("Desecrated Temple scenario starts an unsaved level 60 Jester at the entrance",
           "[game][scenario][desecrated-temple]") {
     const auto file =

@@ -33,8 +33,8 @@ struct BossCameraSubject {
  * the party's line to the boss, swung no further about the boss's facing than the record
  * allows; it looks down at the record's pitch, steeper the closer it is; and it backs off
  * or comes in, within the record's distances, so that the boss and every player stay in
- * view. Before the boss wakes it keeps the same angle on the party alone, at the record's
- * player distances.
+ * view. Before the boss wakes it follows the party alone from the level camera markers,
+ * at the record's player distances.
  */
 class BossCamera {
 public:
@@ -52,9 +52,11 @@ public:
 
     /** Stands the camera up at once, as the level starts. */
     void reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-               const BossCameraInfo& record, const CameraView& view);
+               const BossCameraInfo& record, const CameraView& view,
+               std::span<const WorldLocator> markers = {});
     void update(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-                const BossCameraInfo& record, const CameraView& view, f32 seconds);
+                const BossCameraInfo& record, const CameraView& view, f32 seconds,
+                std::span<const WorldLocator> markers = {});
 
     const WorldCamera& camera() const { return m_camera; }
     f32 yaw() const { return m_camera.yaw; }
@@ -76,6 +78,7 @@ private:
                    const CameraView& view) const;
     void place();
     void followPitch(f32 target, f32 seconds);
+    const WorldLocator* approachMarker(std::span<const WorldLocator> markers, const Vec3& near);
 
     WorldCamera m_camera;
     Vec3 m_attention{0.0f, 0.0f, 0.0f};
@@ -83,6 +86,7 @@ private:
     f32 m_margin = 0.0f;
     f32 m_stepOwed = 0.0f; ///< seconds not yet stepped
     f32 m_pitchVelocity = 0.0f;
+    s32 m_marker = -1;
 };
 
 } // namespace gdl::game

@@ -4,7 +4,6 @@
     "party": [
         {"player": 0, "class": "WAR", "color": "BLU", "name": "TEST", "level": 30, "health": 2000}
     ],
-    "position": [0, 0, 10],
     "yaw": 3.1415923,
     "welcome": false
 }
