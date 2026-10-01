@@ -1,0 +1,10 @@
+{
+    "screen": "shop",
+    "level": "H4",
+    "party": [
+        {"player": 0, "class": "WAR", "color": "GRE", "name": "FINAL", "level": 80, "gold": 5000, "health": 2400,
+         "results": {"gold": 1200, "kills": 32, "experience": 1500},
+         "lifetime": {"enemiesKilled": 12345, "generatorsDestroyed": 678, "goldFound": 54321, "playSeconds": 93780}}
+    ],
+    "welcome": false
+}

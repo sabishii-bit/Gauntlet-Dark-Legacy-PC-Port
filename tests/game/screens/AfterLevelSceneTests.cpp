@@ -17,11 +17,42 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/screens/AfterLevelScene.h"
+#include "game/screens/ShopFrameLight.h"
 #include "game/screens/ShopLayout.h"
 #include "game/screens/ShopMusic.h"
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+TEST_CASE("retail frame sweep travels across corners every 150 ticks", "[shop][render]") {
+    CHECK(shopFrameLight(0, 0, 0) == 128);
+    CHECK(shopFrameLight(0, 0, 2.5 / 7) == 255);
+    CHECK(shopFrameLight(448, 0, 2.5 * 3 / 7) == 255);
+    CHECK(shopFrameLight(512, 384, 2.5 * 6 / 7) == 255);
+    for (s32 tick = 0; tick < 150; ++tick) {
+        for (s32 x = 0; x <= 512; x += 128) {
+            CAPTURE(tick, x);
+            CHECK(shopFrameLight(x, 384, tick / 60.0) >= 128);
+            CHECK(shopFrameLight(x, 384, tick / 60.0) == shopFrameLight(x, 384, tick / 60.0 + 2.5));
+        }
+    }
+    CHECK(DrawState{}.colorScale == 1);
+}
+
+TEST_CASE("only the end of H4 selects Final Stats in the production screen", "[shop][unpacked]") {
+    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    GameContext context;
+    context.unpackedRoot = root;
+    const std::array<PartyMember, 1> party{{{0, CharacterSave{}}}};
+    AfterLevelScene scene;
+    for (const auto* level : {"G5", "E2", "F2", "H3", "H4"}) {
+        REQUIRE(scene.open(device, context, party, {}, {}, level));
+        CHECK(scene.session().visit() ==
+              (std::string_view(level) == "H4" ? ShopVisit::Completion : ShopVisit::Level));
+    }
+    REQUIRE(scene.open(device, context, party, {}, {}, "H4", ShopVisit::Shop));
+    CHECK(scene.session().visit() == ShopVisit::Shop);
+}
 TEST_CASE("shop music follows the departed realm including non-gameplay fallbacks",
           "[shop][screens][audio]") {
     // GUNE5D ShopMusicStart 800a0da8 and LevelLetter 80057a6c.
@@ -34,6 +65,110 @@ TEST_CASE("shop music follows the departed realm including non-gameplay fallback
     CHECK(shopMusicRealm("T1") == 'G');
     CHECK(shopMusicRealm("") == 'A');
     CHECK(shopMusicRealm("?") == 'A');
+}
+
+TEST_CASE("Final Stats renders retail captions and staggered lifetime totals",
+          "[shop][final-stats][unpacked]") {
+    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
+    GameContext context;
+    context.unpackedRoot = root;
+    context.strings = &strings;
+    CharacterSave save;
+    save.progress().lifetime = {12345, 678, 54321, 93780};
+    const std::array<PartyMember, 1> party{{{0, save}}};
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "H4", ShopVisit::FinalStats));
+    BitmapFont font;
+    REQUIRE(font.load(root / "fonts/font32.json", 16));
+    TextureSet art;
+    REQUIRE(art.load(root / "STATIC"));
+    const auto fontId = art.find("FONT32");
+    REQUIRE(fontId);
+    const auto& pixels = art.image(*fontId).pixels;
+    const auto hasText = [&](s32 y, std::string_view value, f32 scale = 0.48f) {
+        test::FakeRenderDevice expected;
+        Canvas canvas;
+        TextPainter painter;
+        painter.setFont(&font, &art.texture(expected, *fontId));
+        canvas.begin(expected, Mat4{1});
+        painter.draw(canvas, -64, y, value, TextStyle{scale, Color::white()});
+        canvas.end();
+        const auto& glyphs = expected.draws.front().vertices;
+        return std::ranges::any_of(device.draws, [&](const auto& draw) {
+            const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            return texture != nullptr && texture->pixels == pixels &&
+                   !std::ranges::search(draw.vertices, glyphs).empty();
+        });
+    };
+    const auto render = [&] {
+        device.draws.clear();
+        scene.render(device, Mat4{1}, 512, 384);
+    };
+    render();
+    CHECK(hasText(32, "Final Stats", 0.56f));
+    CHECK(hasText(60, "Enemies Killed"));
+    CHECK(hasText(98, "Generators"));
+    CHECK(hasText(116, "Destroyed"));
+    CHECK(hasText(154, "Gold Found"));
+    CHECK(hasText(192, "Total Playtime"));
+    CHECK_FALSE(hasText(78, "12345"));
+    scene.update(1.5, {});
+    render();
+    CHECK_FALSE(hasText(78, "12345"));
+    scene.update(1.0 / 60, {});
+    render();
+    CHECK(hasText(78, "12345"));
+    CHECK_FALSE(hasText(134, "678"));
+    scene.update(1, {});
+    render();
+    CHECK(hasText(134, "678"));
+    CHECK_FALSE(hasText(172, "54321"));
+    scene.update(1, {});
+    render();
+    CHECK(hasText(172, "54321"));
+    CHECK_FALSE(hasText(210, "1 Days"));
+    scene.update(1, {});
+    render();
+    CHECK(hasText(210, "1 Days")); // authored format does not singularize
+    CHECK(hasText(228, "2 Hours"));
+    CHECK(hasText(246, "3 Minutes"));
+    CHECK_FALSE(scene.session().lanes()[0].finalStatsReady());
+    scene.update(1, {});
+    CHECK(scene.session().lanes()[0].finalStatsReady());
+}
+
+TEST_CASE("frame lighting varies at corners without fading alpha or illuminating other UI",
+          "[shop][render][unpacked]") {
+    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    GameContext context;
+    context.unpackedRoot = root;
+    const std::array<PartyMember, 1> party{{{0, CharacterSave{}}}};
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "G1", ShopVisit::Shop));
+    scene.update(1, {});
+    scene.render(device, Mat4{1}, 512, 384);
+    usize frames = 0;
+    bool varied = false;
+    for (const auto& draw : device.draws) {
+        if (draw.state.colorScale != 2) {
+            CHECK(draw.state.colorScale == 1);
+            continue;
+        }
+        ++frames;
+        for (const auto& vertex : draw.vertices) {
+            CHECK(vertex.color.a == 255);
+            CHECK(vertex.position.z == 0.5f);
+            CHECK(vertex.color.r == shopFrameLight(static_cast<s32>(vertex.position.x),
+                                                   384 - static_cast<s32>(vertex.position.y), 1));
+            varied |= vertex.color != draw.vertices.front().color;
+        }
+    }
+    CHECK(frames == 8);
+    CHECK(varied);
 }
 
 TEST_CASE("shop plays the authored music through realm changes without retaining the old theme",
@@ -147,8 +282,10 @@ TEST_CASE("shop lane borders retain retail brightness and opacity in every colum
             columns[column] = true;
             REQUIRE_FALSE(draw.vertices.empty());
             for (const auto& vertex : draw.vertices) {
-                REQUIRE(vertex.color == Color::white());
+                REQUIRE(vertex.color == Color::rgba(128, 128, 128, 255));
+                REQUIRE(vertex.position.z == 0.5f);
             }
+            REQUIRE(draw.state.colorScale == 2);
         }
         REQUIRE(std::ranges::all_of(columns, [](bool drawn) { return drawn; }));
     }

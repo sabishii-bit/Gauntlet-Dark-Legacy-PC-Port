@@ -17,6 +17,7 @@ void PartyRecords::award(std::span<PlayerRuntime> players, s32 player, s32 amoun
         }
         if (kill) {
             ++runtime.levelKills;
+            ++runtime.actor.save().progress().lifetime.enemiesKilled;
         }
         if (amount <= 0) {
             continue;
@@ -38,6 +39,22 @@ void PartyRecords::award(std::span<PlayerRuntime> players, s32 player, s32 amoun
             static_cast<usize>(partner) < players.size() &&
             players[static_cast<usize>(partner)].life == PlayerLife::Standing) {
             players[static_cast<usize>(partner)].actor.save().progress().experience += won;
+        }
+    }
+}
+
+void PartyRecords::destroyedGenerator(std::span<PlayerRuntime> players, s32 player) {
+    for (auto& runtime : players) {
+        if (runtime.actor.player() == player && runtime.life == PlayerLife::Standing) {
+            ++runtime.actor.save().progress().lifetime.generatorsDestroyed;
+        }
+    }
+}
+
+void PartyRecords::advanceTime(std::span<PlayerRuntime> players, f64 seconds) {
+    for (auto& runtime : players) {
+        if (!runtime.departed && runtime.life == PlayerLife::Standing) {
+            runtime.actor.save().progress().lifetime.playSeconds += seconds;
         }
     }
 }

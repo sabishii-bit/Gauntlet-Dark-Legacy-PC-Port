@@ -533,6 +533,8 @@ LevelOpponents::Events PlayScene::opponentEvents() {
         .levels = [this] { updateLevels(); },
         .award = [this](s32 player, s32 amount,
                         bool kill) { awardExperience(player, amount, kill); },
+        .destroyedGenerator =
+            [this](s32 player) { PartyRecords::destroyedGenerator(m_players, player); },
         .blocksBreath =
             [this](const Vec3& from, const Vec3& to) {
                 return m_fixtures.safeRocks().blocksBreath(from, to);
@@ -856,6 +858,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
         m_players, inputs, held, bossCameraOn() ? m_bossCamera.yaw() : m_camera.yaw(), ticks,
         seconds, m_world->collision(), motionEvents());
     m_playSeconds += seconds;
+    if (!held) {
+        PartyRecords::advanceTime(m_players, seconds);
+    }
     m_shake.update(ticks);
     m_hud.help().update(ticks);
     updateFixtures(ticks, seconds);

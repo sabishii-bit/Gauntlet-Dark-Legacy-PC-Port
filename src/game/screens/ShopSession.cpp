@@ -145,6 +145,8 @@ void ShopSession::start(std::span<const PartyMember> party, std::span<const Leve
             lane.rememberShopEntry();
         } else if (visit == ShopVisit::Inventory) {
             enterInventory(lane);
+        } else if (visit == ShopVisit::FinalStats) {
+            lane.phase = ShopPhase::FinalStats;
         }
     }
 }
@@ -172,6 +174,8 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
         const s32 ticks = takeTicks(lane.tickRemainder, seconds);
         lane.flashTicks = std::max(0, lane.flashTicks - ticks);
         lane.phaseSeconds += seconds;
+        const auto afterPromotion =
+            m_visit == ShopVisit::Completion ? ShopPhase::FinalStats : ShopPhase::Shopping;
         switch (lane.phase) {
         case ShopPhase::Tally: {
             const bool ready = lane.tally.finished();
@@ -180,7 +184,7 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             if (ready && input.select) {
                 cue(lane, ShopCue::Select);
                 lane.phase = lane.entryLevel == experienceLevel(lane.member.save.experience())
-                                 ? ShopPhase::Shopping
+                                 ? afterPromotion
                                  : ShopPhase::BeforeStats;
             } else if (!lane.tally.finished() && input.select) {
                 // Confirm first reveals the totals. A second press advances the lane.
@@ -193,7 +197,7 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             if (input.select) {
                 cue(lane, ShopCue::Select);
                 if (lane.statsReady()) {
-                    lane.phase = ShopPhase::Shopping;
+                    lane.phase = afterPromotion;
                 } else {
                     lane.skipStatsAdjustment();
                 }
@@ -284,6 +288,12 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
                 cue(lane, ShopCue::Select);
             }
             if (lane.inventory.done()) {
+                lane.phase = ShopPhase::Done;
+            }
+            break;
+        case ShopPhase::FinalStats:
+            if (lane.finalStatsReady() && input.select) {
+                cue(lane, ShopCue::Select);
                 lane.phase = ShopPhase::Done;
             }
             break;

@@ -120,7 +120,7 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
             journey.options.welcome = false;
             journey.options.arriving = true;
             if (!m_afterLevel.open(renderDevice(), sceneContext, journey.party, scenario.results,
-                                   level->shopMaxima, levelName)) {
+                                   level->shopMaxima, levelName, scenario.shopVisit)) {
                 return false;
             }
             m_loadingPicture.load(renderDevice(), m_options.unpackedDirectory);

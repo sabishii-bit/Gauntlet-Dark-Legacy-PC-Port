@@ -38,6 +38,7 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
     m_context = context;
     m_device = &device;
     m_time = 0;
+    m_frameTime = 0;
     try {
         ShopCatalog catalog;
         ClassDataSet classes;
@@ -62,6 +63,10 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
             return false;
         }
         m_text.setFont(&m_font, font);
+        // do_shop branches to state 20 for saved realm 8, level index 3 (H4).
+        if (visit == ShopVisit::Level && levelName == "H4") {
+            visit = ShopVisit::Completion;
+        }
         m_session.start(party, results, maxima, classes, std::move(catalog), visit);
         // Decode the complete screen before exposing a transaction to the player.
         for (const auto& item : m_session.catalog().items()) {
@@ -228,6 +233,7 @@ bool AfterLevelScene::update(f64 seconds, const ShopSession::Inputs& inputs) {
     }
     m_lastSounds.clear();
     m_time = std::fmod(m_time + seconds, 85.0 / 60.0);
+    m_frameTime = std::fmod(m_frameTime + seconds, 2.5);
     std::array<bool, 4> wasScrolling{};
     auto heard = inputs;
     for (const auto& lane : m_session.lanes()) {

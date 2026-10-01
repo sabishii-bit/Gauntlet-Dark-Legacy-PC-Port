@@ -124,6 +124,8 @@ ItemTaking takeItem(CharacterSave& save, const ItemOffer& offer, f32 powerupTime
     switch (static_cast<ItemKind>(offer.kind)) {
     case ItemKind::Gold:
         save.gold = std::min(save.gold + offer.amount, kMostGold);
+        // do_got_it records the offered gold independently of the capped wallet.
+        save.progress().lifetime.goldFound += offer.amount;
         return taken(offer.amount, offer.amount > kRealGold ? "GOLD" : "JUNK", kMagicSound);
     case ItemKind::Keys: {
         const s32 got = inventory.addKeys(offer.amount);

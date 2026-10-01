@@ -34,5 +34,6 @@ void main() {
         discard;
     }
     // What a draw is darkened by, as when the level's ambient light is pulled down.
+    outColor.rgb = clamp(outColor.rgb * pc.scale.w, 0.0, 1.0);
     outColor.rgb *= 1.0 - pc.params.w;
 }

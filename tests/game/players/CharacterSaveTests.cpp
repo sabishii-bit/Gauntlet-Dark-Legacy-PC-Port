@@ -40,6 +40,23 @@ CharacterSave sampleSave() {
     return save;
 }
 
+TEST_CASE("lifetime totals persist per class and old saves do not fabricate history",
+          "[save][shop]") {
+    auto save = sampleSave();
+    save.progress().lifetime = {123, 45, 6789, 93780.5};
+    const auto loaded = CharacterSave::fromJson(save.toJson());
+    CHECK(loaded.progress().lifetime.enemiesKilled == 123);
+    CHECK(loaded.progress().lifetime.generatorsDestroyed == 45);
+    CHECK(loaded.progress().lifetime.goldFound == 6789);
+    CHECK(loaded.progress().lifetime.playSeconds == 93780.5);
+    CHECK(loaded.classes[0].lifetime.enemiesKilled == 0);
+    const auto old = CharacterSave::fromJson(
+        R"({"name":"OLD","character":0,"gold":500,"classes":{"WAR":{"experience":5000}}})");
+    CHECK(old.progress().lifetime.goldFound == 0);
+    CHECK(old.progress().lifetime.enemiesKilled == 0);
+    CHECK(old.progress().lifetime.playSeconds == 0);
+}
+
 TEST_CASE("a character round-trips through JSON", "[game][players][save]") {
     const CharacterSave save = sampleSave();
     const CharacterSave loaded = CharacterSave::fromJson(save.toJson());

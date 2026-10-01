@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <exception>
 #include <format>
 #include <string_view>
@@ -124,6 +125,11 @@ Json progressJson(const ClassProgress& progress) {
                 {"speedAdd", progress.speedAdd},
                 {"crystals", progress.crystals},
                 {"unlocked", progress.unlocked},
+                {"lifetime",
+                 {{"enemiesKilled", progress.lifetime.enemiesKilled},
+                  {"generatorsDestroyed", progress.lifetime.generatorsDestroyed},
+                  {"goldFound", progress.lifetime.goldFound},
+                  {"playSeconds", progress.lifetime.playSeconds}}},
                 {"inventory", inventoryJson(progress.inventory)},
                 {"relics", relicsJson(progress.relics)},
                 {"levels", levelsJson(progress.levels)}};
@@ -141,6 +147,14 @@ ClassProgress progressFromJson(const Json& object) {
     progress.magicAdd = object.value("magicAdd", 0.0f);
     progress.speedAdd = object.value("speedAdd", 0.0f);
     progress.unlocked = object.value("unlocked", 0U);
+    const auto totals = object.value("lifetime", Json::object());
+    progress.lifetime = {std::max(0, totals.value("enemiesKilled", 0)),
+                         std::max(0, totals.value("generatorsDestroyed", 0)),
+                         std::max(0, totals.value("goldFound", 0)),
+                         std::max(0.0, totals.value("playSeconds", 0.0))};
+    if (!std::isfinite(progress.lifetime.playSeconds) || progress.lifetime.playSeconds > 1e12) {
+        throw FormatError("character save: invalid lifetime playtime");
+    }
     if (object.contains("inventory")) {
         progress.inventory = inventoryFromJson(object.at("inventory"));
     }

@@ -26,7 +26,7 @@ public:
     VkPipelineLayout layout() const { return m_layout; }
 
     /** What every draw pushes: its transform, then the coordinate offset, alpha test and
-     * darkening, then the coordinate scale and masked-texture mode. */
+     * darkening, then the coordinate scale, masked-texture mode and RGB combiner scale. */
     struct PushConstants {
         Mat4 transform;
         Vec4 params;

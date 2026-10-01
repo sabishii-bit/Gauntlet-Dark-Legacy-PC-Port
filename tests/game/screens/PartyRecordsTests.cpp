@@ -23,6 +23,27 @@ std::array<PlayerRuntime, 2> twoPlayers() {
     }
     return players;
 }
+TEST_CASE("lifetime counters separate kills from generators and count only live players",
+          "[party-records][shop]") {
+    auto players = twoPlayers();
+    PartyRecords::award(players, 2, 0, true, nullptr);
+    PartyRecords::award(players, 2, 50, false, nullptr);
+    PartyRecords::destroyedGenerator(players, 2);
+    PartyRecords::advanceTime(players, 1.5);
+    const auto& stats = players[0].actor.save().progress().lifetime;
+    CHECK(stats.enemiesKilled == 1);
+    CHECK(stats.generatorsDestroyed == 1);
+    CHECK(stats.playSeconds == 1.5);
+    CHECK(players[0].levelKills == 1);
+    CHECK(players[0].turbo.held() == 0);
+    players[0].life = PlayerLife::Dying;
+    players[1].departed = true;
+    PartyRecords::advanceTime(players, 10);
+    PartyRecords::destroyedGenerator(players, 2);
+    CHECK(stats.playSeconds == 1.5);
+    CHECK(stats.generatorsDestroyed == 1);
+    CHECK(players[1].actor.save().progress().lifetime.playSeconds == 1.5);
+}
 
 TEST_CASE("experience won goes to its player by identity and feeds the meter on a kill",
           "[game][screens][party-records]") {

@@ -26,6 +26,9 @@ public:
      * middle of a turbo move. The fallen win nothing. */
     static void award(std::span<PlayerRuntime> players, s32 player, s32 amount, bool kill,
                       const LevelInfo* level);
+    static void destroyedGenerator(std::span<PlayerRuntime> players, s32 player);
+    /** Called only while players are in live gameplay, not paused or in a menu. */
+    static void advanceTime(std::span<PlayerRuntime> players, f64 seconds);
     /** The party as it stands, with all it has gathered, for the next level. */
     static std::vector<PartyMember> members(std::span<const PlayerRuntime> players);
     /** `party` as it leaves a level it gives up: everyone as they came in, keeping only what

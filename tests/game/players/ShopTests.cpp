@@ -46,6 +46,58 @@ CharacterSave shopper() {
     save.progress().health = 100;
     return save;
 }
+TEST_CASE("Garm completion replaces shopping with final stats after tally and promotion",
+          "[shop][final-stats]") {
+    const bool gained = GENERATE(false, true);
+    auto save = shopper();
+    save.progress().experience = levelExperience(gained ? 2 : 1);
+    save.progress().lifetime = {500, 40, 12000, 93780};
+    const std::array<PartyMember, 1> party{{{2, save}}};
+    const std::array<LevelResults, 1> results{{{2, {100, 3, gained ? save.experience() : 0}}}};
+    ShopSession session;
+    session.start(party, results, {100, 10, 100}, classes(), catalog(), ShopVisit::Completion);
+    ShopSession::Inputs inputs{};
+    inputs[2].select = true;
+    session.update(0, inputs); // finish piles, do not leave the page
+    CHECK(session.lanes()[0].phase == ShopPhase::Tally);
+    session.update(0, inputs);
+    if (gained) {
+        REQUIRE(session.lanes()[0].phase == ShopPhase::BeforeStats);
+        session.update(10, {});
+        session.update(0, inputs);
+    }
+    REQUIRE(session.lanes()[0].phase == ShopPhase::FinalStats);
+    CHECK(session.lanes()[0].phaseSeconds == 0);
+    session.update(329.0 / 60, inputs);
+    CHECK_FALSE(session.finished());
+    session.update(1.0 / 60, {});
+    CHECK(session.lanes()[0].finalStatsReady());
+    CHECK_FALSE(session.finished());
+    session.update(0, inputs);
+    CHECK(session.finished());
+    CHECK(session.party()[0].save.gold == save.gold);
+    CHECK(session.party()[0].save.progress().lifetime.enemiesKilled == 500);
+}
+
+TEST_CASE("Final Stats preview respects individual lanes and fallen players",
+          "[shop][final-stats]") {
+    const std::array<PartyMember, 3> party{
+        {{0, shopper()}, {2, shopper()}, {3, shopper(), {}, true}}};
+    ShopSession session;
+    session.start(party, {}, {}, classes(), catalog(), ShopVisit::FinalStats);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::FinalStats);
+    REQUIRE(session.lanes()[2].phase == ShopPhase::Done);
+    session.update(6, {});
+    ShopSession::Inputs inputs{};
+    inputs[0].select = true;
+    session.update(0, inputs);
+    CHECK_FALSE(session.finished());
+    CHECK(session.lanes()[1].phase == ShopPhase::FinalStats);
+    inputs = {};
+    inputs[2].select = true;
+    session.update(0, inputs);
+    CHECK(session.finished());
+}
 TEST_CASE("shop catalog requires an exit and rejects malformed rows", "[shop][assets-model]") {
     REQUIRE(catalog().items().size() == 3);
     REQUIRE(catalog().items()[1].price == 100);

@@ -1,0 +1,12 @@
+{
+    "screen": "shop",
+    "shopVisit": "final-stats",
+    "level": "H4",
+    "party": [
+        {"player": 0, "class": "WAR", "color": "YEL", "name": "FINAL", "level": 99, "gold": 5000, "health": 2400,
+         "lifetime": {"enemiesKilled": 12345, "generatorsDestroyed": 678, "goldFound": 54321, "playSeconds": 93780}},
+        {"player": 1, "class": "WIZ", "color": "BLU", "name": "FINAL", "level": 80, "gold": 3500, "health": 1500,
+         "lifetime": {"enemiesKilled": 8765, "generatorsDestroyed": 432, "goldFound": 32100, "playSeconds": 16440}}
+    ],
+    "welcome": false
+}
