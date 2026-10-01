@@ -412,6 +412,13 @@ SoundHandle LevelSoundscape::playPromotion(std::string_view name, SoundHandle af
                                              SoundCategory::Effects));
         }
     }
+    u32 sound = 0;
+    if (m_output != nullptr) {
+        if (SoundSet* bank = bankOf(name, sound)) {
+            return track(
+                m_output->playAfter(after, bank->sequence(sound), 1.0f, SoundCategory::Effects));
+        }
+    }
     // The shared level-99 speech is in the main narrator bank, not WIZTOWER.
     const SoundHandle shared = narrate(name, Narrator::Primary, after);
     return shared != kNoSound ? shared : after;

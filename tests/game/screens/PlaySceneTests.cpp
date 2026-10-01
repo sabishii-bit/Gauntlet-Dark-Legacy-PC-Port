@@ -3204,8 +3204,8 @@ TEST_CASE("the tower scene refuses to open without the level", "[game][screens]"
     REQUIRE_FALSE(scene.isOpen());
 }
 
-TEST_CASE("the promotion wizard is drawn after the tower's translucent scenery",
-          "[game][screens][promotion][unpacked]") {
+TEST_CASE("tower ceremony ghosts draw after Dream World scenery and retain depth testing",
+          "[game][screens][promotion][tower-relics][unpacked]") {
     const auto root = unpackedRoot();
     test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
     const GameConfig config;
@@ -3224,22 +3224,36 @@ TEST_CASE("the promotion wizard is drawn after the tower's translucent scenery",
     context.unpackedRoot = root;
     CharacterSave save;
     save.progress().experience = levelExperience(30);
-    save.progress().promotedLevel = 29;
+    save.progress().crystals[8] = LevelTriggers::crystalsNeeded(8);
+    bool promotion = false;
+    SECTION("level promotion") {
+        save.progress().promotedLevel = 29;
+        promotion = true;
+    }
+    SECTION("collection congratulations") {
+        save.progress().promotedLevel = 30;
+        save.progress().relics.addShard(8);
+    }
     const std::vector<PartyMember> party{PartyMember{3, save}};
     PlayOptions options;
     options.welcome = false;
-    // Back from the town: the wizard stands among its portals, inside their horizon sheet,
+    // Back from Dream World: the wizard stands among its portals, inside their horizon sheet,
     // which the level draws translucent after everything solid.
-    options.arrivalWorld = 7;
+    options.arrivalWorld = 10;
     PlayScene scene;
     REQUIRE(scene.open(device, context, world, party, options));
-    REQUIRE(scene.promotion().active());
+    REQUIRE(scene.promotion().active() == promotion);
+    REQUIRE(scene.towerRelics().active() == !promotion);
     const PlayScene::Inputs still{};
     for (s32 frame = 0; frame < 500 && awaitingEntrance(scene); ++frame) {
         scene.update(1.0 / 60.0, still);
     }
     REQUIRE_FALSE(awaitingEntrance(scene));
-    REQUIRE(scene.promotion().active());
+    REQUIRE(scene.promotion().active() == promotion);
+    REQUIRE(scene.towerRelics().active() == !promotion);
+    REQUIRE(world.startPoint(8) != nullptr);
+    REQUIRE(scene.actor(3) != nullptr);
+    REQUIRE(glm::distance(scene.actor(3)->position(), world.startPoint(8)->position) < 5);
     // The wizard's head, by the texture its node's mesh wears.
     ItemArchive& items = world.items();
     const auto wizard = items.trees.find("WIZARD");
@@ -3278,6 +3292,9 @@ TEST_CASE("the promotion wizard is drawn after the tower's translucent scenery",
     REQUIRE(lastScenery.has_value());
     // He adds onto the frame without writing depth: scenery blended after him covers him.
     REQUIRE(*lastScenery < *firstHead);
+    REQUIRE(device.draws[*firstHead].state.depthTest);
+    REQUIRE_FALSE(device.draws[*firstHead].state.depthWrite);
+    REQUIRE(device.draws[*firstHead].blend() == BlendMode::Additive);
     scene.close();
 }
 } // namespace

@@ -17,6 +17,7 @@ struct Relics {
     static constexpr s32 kRuneCount = 13;
     static constexpr s32 kRealmCount = 16;
     static constexpr usize kGargoyleKinds = 3;
+    static constexpr u16 kTowerCeremonyMask = 0x1f;
     /** How many pieces of each kind the statues want. */
     static constexpr std::array<s32, kGargoyleKinds> kGargoyleNeeded{12, 20, 28};
 
@@ -25,6 +26,7 @@ struct Relics {
     u16 shards = 0;       ///< the bosses' shards, a bit per realm in the tower's order
     u16 pendingRunes = 0; ///< collected, but not yet presented in the tower
     u16 pendingShards = 0;
+    u16 pendingCeremonies = 0; ///< interrupted tower follow-ups, separate from installed pieces
     std::array<s32, kGargoyleKinds> gargoylePieces{};
 
     bool hasShard(s32 order) const {

@@ -2290,6 +2290,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   JSON path in the existing Release build. `--list` lists scenarios, `--build`
   builds first through build.py, `--preset` selects a build, and `--frames`
   bounds a smoke run. Additional game arguments follow `--`.
+  Keep visible smoke tests and scenario previews at 60 FPS or below, with
+  vsync enabled. Do not pass `--no-vsync` to speed up tests on the user's display;
+  check saved settings as well as the shipped 60-FPS menu / 30-FPS play defaults.
 * Lighting: `engine/world/WorldLighting` is the original's vertex shade, a grey
   ambient plus one directional light where a surface faces it, clamped per
   channel; `WorldLighting::forLevel` takes a level's record (the light
@@ -2558,8 +2561,21 @@ from ownership; absent fields in legacy saves mean already installed. A party
 member's installed piece satisfies the shared display without replay for others.
 Only completed placements clear pending bits. Use `[tower-relics]` and
 `python scripts/scenario.py tower-relics`; scenario `runes`/`shards` are installed,
-`newRunes`/`newShards` are awaiting presentation. Follow-up completion speeches,
-progression-gate choreography and exact camera blends are not implemented by this path.
+`newRunes`/`newShards` are awaiting presentation. `TowerCompletion` selects the
+follow-up speeches from new party acquisitions: MoreShards/AllShards, the twelve
+stones before or after temple Skorne, and the thirteenth stone with all twelve
+others. The window, Underworld portal and Garm route reveal over 180 ticks at
+cameras 204/201/205; Garm also activates trigger 255. Controls remain held through
+the paged captions and voice. `Relics::pendingCeremonies` retains unfinished
+follow-ups after their pieces are installed, with absent legacy fields meaning
+no pending speech. Shard 9 is the temple victory (no window piece); its new
+acquisition can finish the Underworld route after the runes were installed.
+`playPromotion` searches WIZTOWER then the ordinary level/common/ambient banks
+before VOICE1: S_4KEYVOX is in TOWAMB and S_STNDGLASS in COMMON.
+Test `[tower-completion],[tower-relics],[promotion],[soundscape],[portals]`;
+scenarios `tower-completion-window`, `tower-completion-runes`, and
+`tower-completion-garm` exercise the three route reveals. Exact camera blends
+and the failed-battlefield-return Rune13No reminder are not implemented here.
 
 `TextureAnimator` also applies keyed subtree opacity: source -4 fades out,
 -5 fades in, measured from the animation offset over its frame count. These

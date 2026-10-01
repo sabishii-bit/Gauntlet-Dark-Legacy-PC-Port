@@ -83,6 +83,14 @@ TEST_CASE("a level's exit items become portals that know where they lead",
     REQUIRE(fields.action == 0);
     REQUIRE(f.portals.portal(1).tag == "z9");
     REQUIRE_FALSE(f.portals.portal(1).destination.has_value());
+    f.portals.setAlpha("g1", 0.5f);
+    REQUIRE(f.portals.portal(0).alpha == 0.5f);
+    REQUIRE(f.portals.portal(1).alpha == 1.0f);
+    REQUIRE_FALSE(f.portals.portal(0).shut);
+    f.portals.setAlpha("g1", -1);
+    REQUIRE(f.portals.portal(0).alpha == 0);
+    f.portals.setAlpha("g1", 2);
+    REQUIRE(f.portals.portal(0).alpha == 1);
     f.portals.clear();
     REQUIRE(f.portals.size() == 0);
 }
@@ -140,6 +148,15 @@ TEST_CASE("exit portal artwork retains authored yaw pitch and roll", "[portals][
         CHECK(glm::distance(draw.vertices[2].position - draw.vertices[0].position, right[i]) <
               0.0001f);
     }
+    // These synthetic portals share an empty tag. A fully hidden reveal submits
+    // no geometry; restoring alpha retains all three authored transforms.
+    portals.setAlpha("", 0);
+    device.draws.clear();
+    portals.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.empty());
+    portals.setAlpha("", 1);
+    portals.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 3);
     portals.clear();
 }
 

@@ -41,7 +41,7 @@ bool Relics::addShard(s32 order) {
         return false;
     }
     shards |= bit(order);
-    if (order >= 1 && order <= 8) {
+    if (order >= 1 && order <= 9) {
         pendingShards |= bit(order);
     }
     return true;

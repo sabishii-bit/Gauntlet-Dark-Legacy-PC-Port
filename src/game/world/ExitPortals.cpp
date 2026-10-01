@@ -128,6 +128,13 @@ void ExitPortals::clear() {
     m_tree = nullptr;
     m_sequences.fill(-1);
 }
+void ExitPortals::setAlpha(std::string_view tag, f32 alpha) {
+    for (auto& portal : m_portals) {
+        if (portal.tag == tag) {
+            portal.alpha = std::clamp(alpha, 0.0f, 1.0f);
+        }
+    }
+}
 
 std::vector<ExitPortals::ShutGate> ExitPortals::shutGates() const {
     std::vector<ShutGate> gates;
@@ -274,9 +281,10 @@ void ExitPortals::draw(RenderDevice& device, const Mat4& clip,
             continue;
         }
         if (portal.shut) {
-            portal.model.draw(device, clip, portal.transform, lighting);
+            portal.model.draw(device, clip, portal.transform, lighting, {}, nullptr, portal.alpha);
         } else {
-            portal.model.draw(device, clip, portal.transform, lighting, portal.pose.matrices());
+            portal.model.draw(device, clip, portal.transform, lighting, portal.pose.matrices(),
+                              nullptr, portal.alpha);
         }
     }
 }

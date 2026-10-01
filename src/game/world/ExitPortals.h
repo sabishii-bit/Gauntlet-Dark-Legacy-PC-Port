@@ -58,6 +58,7 @@ public:
         bool secret = false;
         bool consumed = false;
         bool shut = false; ///< the tower has not opened it: it wears EXIT_OFF and takes nobody
+        f32 alpha = 1.0f;  ///< tower route reveal; does not change progression eligibility
         std::optional<Vec3> departurePosition;
         s32 minPlayers = 1;
         ItemFigure icon;
@@ -93,6 +94,7 @@ public:
     void consume(usize index) { m_portals[index].consumed = true; }
     /** The gates of the portals bound shut, whose glows the tower puts out. */
     std::vector<ShutGate> shutGates() const;
+    void setAlpha(std::string_view tag, f32 alpha);
 
     /** Steps every portal by `ticks` (`seconds` long); returns the portal ready to transport
      * the whole party, retaining its raised glow while the departure plays. */

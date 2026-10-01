@@ -1076,7 +1076,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                            frameProjection);
     const CameraFrame companionCamera = CameraFrame::of(camera);
     m_world->drawOpaque(device, clip, camera);
-    m_towerRelics.draw(device, clip, m_world->lighting(), camera, relicCeremonyOn());
+    m_towerRelics.draw(device, clip, m_world->lighting(), camera);
     m_sumner.draw(device, clip, m_world->lighting());
     m_figures.draw(device, m_players, figureScene(), clip, companionCamera);
     m_portals.draw(device, clip, m_world->lighting());
@@ -1099,6 +1099,9 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     // them (the portals' horizon sheets) must be down first or it paints over them.
     if (!spawning()) {
         m_promotion.draw(device, clip, m_world->lighting());
+    }
+    if (relicCeremonyOn()) {
+        m_towerRelics.drawWizard(device, clip, m_world->lighting(), camera);
     }
     m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.missiles().draw(device, clip, m_world->lighting());
@@ -1170,7 +1173,8 @@ void PlayScene::setSaveSlot(s32 player, std::optional<usize> slot) {
 
 bool PlayScene::canPause(s32 player) const {
     return m_open && !m_leaving && !m_gameOver.active() && !m_switchCutscene.active() &&
-           actor(player) != nullptr && !fallen(player);
+           !m_promotion.active() && !m_towerRelics.active() && actor(player) != nullptr &&
+           !fallen(player);
 }
 
 bool PlayScene::canJoin(s32 player) const {

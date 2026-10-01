@@ -10,6 +10,7 @@
 #include "engine/ui/TextPainter.h"
 
 #include "game/players/Relics.h"
+#include "game/screens/TowerCompletion.h"
 #include "game/world/EffectTrees.h"
 #include "game/world/LevelWorld.h"
 
@@ -19,7 +20,7 @@ namespace gdl::game {
  * archive; clear before unloading it. Saving and acknowledging rewards belong to the scene. */
 class TowerRelics {
 public:
-    enum class Kind : u8 { Rune, Shard };
+    enum class Kind : u8 { Rune, Shard, Followup };
     struct Entry {
         Kind kind = Kind::Rune;
         s32 index = 0;
@@ -28,12 +29,14 @@ public:
         std::string_view anchor() const;
         u32 camera() const;
         std::string_view voice() const;
+        TowerCompletion::Kind followup() const { return static_cast<TowerCompletion::Kind>(index); }
     };
-    enum class Phase : u8 { Speech, Placement, Done };
+    enum class Phase : u8 { Speech, Placement, Reveal, Done };
     struct Cue {
         std::string_view voice;
         std::optional<Entry> completed;
         bool placement = false;
+        std::string_view sound;
     };
     void begin(std::span<const Relics> party, const MessageTable& strings);
     void bind(RenderDevice& device, LevelWorld& world, const Vec3& partyCentre);
@@ -41,7 +44,10 @@ public:
     Cue update(s32 ticks, f32 seconds, bool voicePlaying);
     void animate(f32 seconds);
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const WorldCamera& camera, bool ceremony) const;
+              const WorldCamera& camera) const;
+    /** Additive apparition: submit after the world's translucent scenery, with depth testing. */
+    void drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                    const WorldCamera& camera) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, f32 width, f32 height) const;
     bool active() const { return m_current < m_entries.size(); }
     const Entry* current() const { return active() ? &m_entries[m_current] : nullptr; }
@@ -50,19 +56,29 @@ public:
     u16 displayedRunes() const { return m_runes; }
     u16 displayedShards() const { return m_shards; }
     const EffectTrees& figures() const { return m_figures; }
+    u16 pendingCeremonies() const { return m_pendingCeremonies; }
+    f32 revealAlpha(TowerCompletion::Kind kind) const;
+    usize captionPage() const { return m_page; }
+    std::string_view caption() const;
     static void acknowledge(Relics& relics, const Entry& entry);
 
 private:
     f32 place(const Entry& entry, bool settled);
     void prepareSpeech();
+    void prepareEntry();
+    void appendFollowup(TowerCompletion::Kind kind, const MessageTable& strings);
+    void finish(Cue& cue);
     void updateLights();
     std::vector<Entry> m_entries;
-    std::vector<std::string> m_captions;
+    std::vector<std::vector<std::string>> m_captions;
+    usize m_page = 0;
     usize m_current = 0;
     u16 m_runes = 0;
     u16 m_shards = 0;
+    u16 m_pendingCeremonies = 0;
     s32 m_ticks = -120;
     bool m_spoken = false;
+    bool m_revealStarted = false;
     Phase m_phase = Phase::Speech;
     f32 m_placementLeft = 0;
     RenderDevice* m_device = nullptr;
