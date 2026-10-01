@@ -29,6 +29,9 @@ public:
     static constexpr f32 kFallSpeed = 16.0f;   ///< how fast a body sinks to a floor gone lower
     static constexpr f32 kFallReach = 1000.0f; ///< how far under it a floor is looked for
     static constexpr f32 kFootClearance = 0.2f;
+    // Two packed 1/64-unit offsets of contact margin across separately reconstructed
+    // collision edges. Tower stair joins differ by hundredths; real gaps still stop us.
+    static constexpr f32 kFloorEdgeReach = 1.0f / 32.0f;
     static constexpr f32 kDefaultHeight = 5.0f;
     static constexpr f32 kDefaultWidth = 1.5f;
     static constexpr f32 kDefaultFollowHeight = 2.5f;

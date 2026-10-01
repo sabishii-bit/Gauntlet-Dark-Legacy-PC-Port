@@ -714,6 +714,13 @@ PlayerAnimator::Decision PlayerAnimator::decide(Action requested) const {
         if (strafing() && requested == firstHalfOf(m_current)) {
             d.action = otherHalfOf(m_current);
         }
+        // AnimAction's walking-strafe cases use mode 2 for an attack: it cuts in
+        // immediately. Waiting for the footstep's end loses short button presses.
+        // Shooting strafes still finish each half before releasing another weapon.
+        if (m_current >= Action::StrafeForward1 && m_current <= Action::StrafeRight2 &&
+            requested >= Action::StrafeShootForward1 && requested <= Action::StrafeShootRight2) {
+            d.cut = Cut::IfDifferent;
+        }
         break;
     }
     // A partner's combo takes the body at once (action.c 558's mode 2 for P_FALL_DOWN to

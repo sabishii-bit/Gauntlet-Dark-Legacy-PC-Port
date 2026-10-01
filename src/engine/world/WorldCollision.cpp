@@ -333,8 +333,9 @@ std::vector<u32> WorldCollision::candidates(f32 minX, f32 minZ, f32 maxX, f32 ma
     return out;
 }
 
-std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above, f32 below) const {
-    return surfaceAt(position, above, below, false);
+std::optional<FloorHit> WorldCollision::floorAt(const Vec3& position, f32 above, f32 below,
+                                                f32 edgeReach) const {
+    return surfaceAt(position, above, below, false, std::max(0.0f, edgeReach));
 }
 
 std::optional<FloorHit> WorldCollision::liquidAt(const Vec3& position, f32 above, f32 below) const {
@@ -349,28 +350,52 @@ std::optional<FloorHit> WorldCollision::projectileFloorAt(const Vec3& position, 
 }
 
 std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 above, f32 below,
-                                                  bool liquid) const {
+                                                  bool liquid, f32 edgeReach) const {
     std::optional<FloorHit> best;
     const f32 highest = position.y + above;
     const f32 lowest = position.y - below;
-    eachTriangle(
-        position.x, position.z, position.x, position.z, [&](const CollisionTriangle& triangle) {
-            if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
-                ((triangle.objectFlags & kLiquidSurface) != 0) != liquid ||
-                triangle.normal.y < kFloorNormalY || !insideXZ(triangle, position.x, position.z)) {
-                return;
-            }
-            const Vec3& v = triangle.vertices[0];
-            const f32 y = v.y - (triangle.normal.x * (position.x - v.x) +
-                                 triangle.normal.z * (position.z - v.z)) /
-                                    triangle.normal.y;
-            if (y > highest || y < lowest) {
-                return;
-            }
-            if (!best.has_value() || y > best->y) {
-                best = FloorHit{y, triangle.normal, triangle.object, triangle.objectFlags};
-            }
-        });
+    eachTriangle(position.x - edgeReach, position.z - edgeReach, position.x + edgeReach,
+                 position.z + edgeReach, [&](const CollisionTriangle& triangle) {
+                     if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
+                         ((triangle.objectFlags & kLiquidSurface) != 0) != liquid ||
+                         triangle.normal.y < kFloorNormalY) {
+                         return;
+                     }
+                     Vec2 point{position.x, position.z};
+                     if (!insideXZ(triangle, point.x, point.y)) {
+                         if (edgeReach <= 0.0f) {
+                             return;
+                         }
+                         f32 nearest = edgeReach * edgeReach;
+                         bool found = false;
+                         for (usize i = 0; i < triangle.vertices.size(); ++i) {
+                             const Vec3& a = triangle.vertices[i];
+                             const Vec3& b = triangle.vertices[(i + 1) % triangle.vertices.size()];
+                             const Vec2 edge =
+                                 closestOnSegment({a.x, a.z}, {b.x, b.z}, {position.x, position.z});
+                             const Vec2 delta = edge - Vec2{position.x, position.z};
+                             const f32 distance = glm::dot(delta, delta);
+                             if (distance <= nearest) {
+                                 nearest = distance;
+                                 point = edge;
+                                 found = true;
+                             }
+                         }
+                         if (!found) {
+                             return;
+                         }
+                     }
+                     const Vec3& v = triangle.vertices[0];
+                     const f32 y = v.y - (triangle.normal.x * (point.x - v.x) +
+                                          triangle.normal.z * (point.y - v.z)) /
+                                             triangle.normal.y;
+                     if (y > highest || y < lowest) {
+                         return;
+                     }
+                     if (!best.has_value() || y > best->y) {
+                         best = FloorHit{y, triangle.normal, triangle.object, triangle.objectFlags};
+                     }
+                 });
     return best;
 }
 

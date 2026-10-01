@@ -137,7 +137,10 @@ TEST_CASE("Temple spawning and entrance movement reject the wall-only underlay",
         }
         CAPTURE(direction.x, direction.y, actor.position().x, actor.position().z);
         CHECK(actor.position().y >= -4);
-        CHECK(actor.position().z <= 105);
+        // Feet may straddle the boundary by the small floor-contact margin, but
+        // cannot reach the apron or keep walking past the last supporting face.
+        CHECK(actor.position().z <= 105 + PlayerActor::kFloorEdgeReach);
+        CHECK(collision.floorAt(actor.position(), 0.01f, 0.01f, PlayerActor::kFloorEdgeReach));
         CHECK(std::abs(actor.position().x) <= 20.001f);
     }
 }

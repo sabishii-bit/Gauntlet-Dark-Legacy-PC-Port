@@ -84,8 +84,10 @@ public:
     /** The lowest point of the still triangles; nought with none. */
     f32 lowest() const { return m_triangles.empty() ? 0.0f : m_min.y; }
 
-    /** The highest floor under `position`, from `above` over it down to `below` under it. */
-    std::optional<FloorHit> floorAt(const Vec3& position, f32 above, f32 below) const;
+    /** Highest floor in the vertical range. A nonzero edge reach also accepts the closest
+     * point on a face within that horizontal distance, for a body's small contact margin. */
+    std::optional<FloorHit> floorAt(const Vec3& position, f32 above, f32 below,
+                                    f32 edgeReach = 0.0f) const;
     /** Highest secondary-channel surface in the probe range. It never supports a body. */
     std::optional<FloorHit> liquidAt(const Vec3& position, f32 above, f32 below) const;
     /** Highest solid or liquid surface for a weapon; liquids never support walking bodies. */
@@ -100,8 +102,8 @@ public:
                       std::vector<WallContact>* contacts = nullptr) const;
 
 private:
-    std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below,
-                                      bool liquid) const;
+    std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below, bool liquid,
+                                      f32 edgeReach = 0.0f) const;
     /** An object whose triangles move with it. */
     struct MovingObject {
         s32 object = -1;
