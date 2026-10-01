@@ -20,7 +20,8 @@ void messages(MessageTable& table) {
     const auto file = test::scratchDirectory("tower-relics") / "text.json";
     writeTextFile(file, R"({"messages":[
         {"name":"NEWSHARDS","lines":["Unused","Town glass","Mountain glass"]},
-        {"name":"NEWRUNES","lines":["Runestone"]}]})");
+        {"name":"NEWRUNES","lines":["Runestone"]},
+        {"name":"MORESHARDS","lines":["Continue","More shards"]}]})");
     REQUIRE(table.load(file));
 }
 
@@ -94,6 +95,11 @@ TEST_CASE("tower ceremonies hold for speech then placement and complete once in 
     REQUIRE(complete.has_value());
     REQUIRE(complete->kind == TowerRelics::Kind::Shard);
     REQUIRE(display.displayedShards() == 2);
+    REQUIRE(display.current()->kind == TowerRelics::Kind::Followup);
+    REQUIRE(display.update(120, 0, false).voice == "S_CONTINUEVOX");
+    REQUIRE_FALSE(display.update(2000, 0, false).completed);
+    REQUIRE(display.captionPage() == 1);
+    REQUIRE(display.update(2000, 0, false).completed.has_value());
     REQUIRE(display.current()->tree() == "RUNE1");
     REQUIRE(display.update(120, 2, false).voice == "S_FNDRUNEYOU");
     REQUIRE(display.update(2000, 0, false).placement);

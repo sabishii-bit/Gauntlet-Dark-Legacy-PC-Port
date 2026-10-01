@@ -1,0 +1,9 @@
+{
+  "welcome": false,
+  "arrivalWorld": 10,
+  "party": [
+    { "class": "WAR", "color": "YEL", "level": 60,
+      "crystals": [0, 15, 100, 125, 150, 175, 200, 225, 250],
+      "shards": [1, 2, 3, 4, 5, 6, 7], "newShards": [8] }
+  ]
+}

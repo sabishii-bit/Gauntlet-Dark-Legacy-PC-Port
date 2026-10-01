@@ -184,6 +184,7 @@ add_library(game STATIC
     world/FallingScenery.cpp
     screens/TowerPromotion.cpp
     screens/TowerRelics.cpp
+    screens/TowerCompletion.cpp
     screens/PlaySceneRelics.cpp
     screens/PlayScenePromotion.cpp
     world/PlayerArsenal.cpp

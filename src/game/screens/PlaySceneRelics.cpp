@@ -25,6 +25,32 @@ void PlayScene::beginTowerRelics() {
         auto& relics = runtime.actor.save().progress().relics;
         relics.pendingRunes &= static_cast<u16>(~m_towerRelics.displayedRunes());
         relics.pendingShards &= static_cast<u16>(~m_towerRelics.displayedShards());
+        relics.pendingCeremonies = m_towerRelics.pendingCeremonies();
+        // The temple boss has no window piece. Its return can instead complete
+        // the Underworld route, now retained by the follow-up's pending bit.
+        relics.pendingShards &= static_cast<u16>(~(1U << 9));
+    }
+    revealTowerRoutes();
+}
+void PlayScene::revealTowerRoutes() {
+    for (const auto kind : {TowerCompletion::Kind::Window, TowerCompletion::Kind::Underworld,
+                            TowerCompletion::Kind::Garm}) {
+        const auto tag = TowerCompletion::portal(kind);
+        const f32 alpha = m_towerRelics.revealAlpha(kind);
+        m_portals.setAlpha(tag, alpha);
+        const auto glow = TowerAccess::glowObjectName(TowerAccess::worldOfLetter(tag[0]),
+                                                      ExitPortals::gateOf(tag));
+        for (usize i = 0; i < m_portals.size(); ++i) {
+            if (m_portals.portal(i).tag != tag || m_portals.portal(i).shut) {
+                continue;
+            }
+            const auto& objects = m_world->layout().objects();
+            for (usize object = 0; object < objects.size(); ++object) {
+                if (objects[object].name == glow) {
+                    m_world->setObjectAlpha(object, alpha);
+                }
+            }
+        }
     }
 }
 void PlayScene::updateTowerRelics(s32 ticks, f32 seconds) {
@@ -37,6 +63,15 @@ void PlayScene::updateTowerRelics(s32 ticks, f32 seconds) {
         }
     }
     m_world->update(seconds);
+    m_world->updateTriggers(seconds, {});
+    for (const auto& opening : m_world->takeTriggerOpenings()) {
+        m_audio.opening(opening);
+    }
+    for (const auto& settled : m_world->takeTriggerSettled()) {
+        m_audio.settled(settled);
+    }
+    // The ceremony owns these views; do not replay a trigger cut afterwards.
+    m_world->takeTriggerCameraCues();
     m_sumner.update(seconds);
     m_effects.update(seconds);
     updateAmbience();
@@ -48,23 +83,14 @@ void PlayScene::updateTowerRelics(s32 ticks, f32 seconds) {
     if (!cue.voice.empty()) {
         m_relicVoice = m_audio.playPromotion(cue.voice);
     }
-    if (cue.placement) {
-        const auto* entry = m_towerRelics.current();
-        constexpr u16 kCompleteWindow = 0x1fe;
-        std::string_view sound = "S_RUNEFALL";
-        if (entry->kind == TowerRelics::Kind::Shard) {
-            // The shipped dispatch uses these names in this order despite
-            // their counterintuitive suffixes: completion selects S_SHRDS127.
-            sound = (m_towerRelics.displayedShards() | entry->bit()) == kCompleteWindow
-                        ? "S_SHRDS127"
-                        : "S_SHRD8";
-        }
-        m_audio.playPromotion(sound);
+    if (!cue.sound.empty()) {
+        m_audio.playPromotion(cue.sound);
     }
     if (cue.completed) {
         for (auto& runtime : m_players) {
             TowerRelics::acknowledge(runtime.actor.save().progress().relics, *cue.completed);
         }
     }
+    revealTowerRoutes();
 }
 } // namespace gdl::game

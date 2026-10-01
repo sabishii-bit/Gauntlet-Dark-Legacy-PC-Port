@@ -319,6 +319,7 @@ private:
     void updateLevels();
     void updatePromotion(s32 ticks, f32 seconds);
     void beginTowerRelics();
+    void revealTowerRoutes();
     void updateTowerRelics(s32 ticks, f32 seconds);
     bool relicCeremonyOn() const;
     static constexpr f32 kLevelUpHealth = 100.0f;

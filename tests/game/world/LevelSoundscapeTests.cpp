@@ -51,6 +51,36 @@ void writeBank(const std::filesystem::path& root, std::string_view bank,
                               sounds, broken ? "missing.wav" : "sample.wav"));
 }
 
+TEST_CASE("tower ceremony cues reach wizard common and tower banks and stop on close",
+          "[game][tower-completion][soundscape]") {
+    const auto root = test::scratchDirectory("tower-completion-sounds");
+    writeBank(root, "WIZTOWER", {"S_RUNE13YES", "S_RUNEHIT"});
+    writeBank(root, "COMMON", {"S_STNDGLASS"});
+    writeBank(root, "TOWAMB", {"S_4KEYVOX"});
+    writeBank(root, "VOICE1", {"S_EXP99ALL"});
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    LevelSoundscape sounds;
+    sounds.open(root, &player, nullptr);
+    std::vector<SoundHandle> voices;
+    for (const auto* name :
+         {"S_RUNE13YES", "S_RUNEHIT", "S_STNDGLASS", "S_4KEYVOX", "S_EXP99ALL"}) {
+        INFO(name);
+        const auto voice = sounds.playPromotion(name);
+        REQUIRE(voice != kNoSound);
+        REQUIRE(player.isPlaying(voice));
+        voices.push_back(voice);
+    }
+    std::array<f32, 128> output{};
+    mixer.mix(output);
+    REQUIRE(output.back() > 0);
+    REQUIRE(sounds.playPromotion("MISSING") == kNoSound);
+    sounds.close();
+    for (const auto voice : voices) {
+        REQUIRE_FALSE(player.isPlaying(voice));
+    }
+}
+
 TEST_CASE("level sound lookup preserves bank precedence and broken first matches",
           "[game][world][soundscape]") {
     const auto root = test::scratchDirectory("soundscape-lookup");

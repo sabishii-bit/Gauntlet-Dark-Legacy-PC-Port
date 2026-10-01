@@ -62,6 +62,7 @@ Json relicsJson(const Relics& relics) {
                 {"shards", relics.shards},
                 {"pendingRunes", relics.pendingRunes},
                 {"pendingShards", relics.pendingShards},
+                {"pendingCeremonies", relics.pendingCeremonies},
                 {"gargoylePieces", relics.gargoylePieces}};
 }
 
@@ -74,6 +75,8 @@ Relics relicsFromJson(const Json& object) {
     // replay a ceremony, including a return interrupted by saving and quitting.
     relics.pendingRunes = static_cast<u16>(object.value("pendingRunes", 0U) & relics.runes);
     relics.pendingShards = static_cast<u16>(object.value("pendingShards", 0U) & relics.shards);
+    relics.pendingCeremonies =
+        static_cast<u16>(object.value("pendingCeremonies", 0U) & Relics::kTowerCeremonyMask);
     const auto pieces = object.value("gargoylePieces", std::vector<s32>{});
     for (usize kind = 0; kind < relics.gargoylePieces.size() && kind < pieces.size(); ++kind) {
         relics.gargoylePieces[kind] = pieces[kind];

@@ -1,0 +1,9 @@
+{
+  "welcome": false,
+  "arrivalWorld": 5,
+  "party": [
+    { "class": "WAR", "color": "YEL", "level": 60,
+      "shards": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      "runes": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "newRunes": [11] }
+  ]
+}

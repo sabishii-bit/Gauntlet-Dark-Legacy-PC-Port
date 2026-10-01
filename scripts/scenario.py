@@ -4,7 +4,7 @@
     python scripts/scenario.py genie
     python scripts/scenario.py --list
     python scripts/scenario.py dragon --build
-    python scripts/scenario.py genie --frames 600 -- --no-vsync
+    python scripts/scenario.py genie --frames 600
     python scripts/scenario.py demo --build
     python scripts/scenario.py screensaver --build
 
@@ -71,7 +71,7 @@ def main(argv=None) -> int:
     parser.add_argument("--preset", default=devenv.release_preset(), help="build preset to run")
     parser.add_argument("--build", action="store_true", help="build before launching")
     parser.add_argument("--frames", type=positive_frames, help="quit after this many frames")
-    parser.epilog = "Additional game options go after -- (for example: -- --no-vsync)."
+    parser.epilog = "Additional game options go after -- (for example: -- --validation)."
     args = parser.parse_args(argv)
     if args.list or args.name is None:
         print("Available scenarios:")

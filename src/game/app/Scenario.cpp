@@ -77,7 +77,8 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.newShards = entry.value("newShards", std::vector<s32>{});
         member.beaten = entry.value("beaten", std::vector<std::string>{});
         const auto invalidRune = [](s32 rune) { return rune < 0 || rune >= Relics::kRuneCount; };
-        const auto invalidShard = [](s32 shard) { return shard < 1 || shard > 8; };
+        // The last two bits record victories over Skorne, not window pieces.
+        const auto invalidShard = [](s32 shard) { return shard < 1 || shard > 10; };
         const auto invalidLevel = [](const std::string& tag) {
             return tag.size() != 2 || TowerAccess::worldOfLetter(tag[0]) < 0 ||
                    ExitPortals::gateOf(tag) < 0;
