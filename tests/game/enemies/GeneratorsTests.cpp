@@ -15,6 +15,7 @@
 #include "game/enemies/BossDefinition.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
+#include "game/screens/LevelOpponents.h"
 
 namespace {
 
@@ -217,6 +218,137 @@ TEST_CASE("boss generator artwork distinguishes a landed egg from looping bodies
     CHECK_FALSE(bossGeneratorVisual(41).settled);
     CHECK(bossGeneratorVisual(36).tree == "BOSSGEN");
     CHECK_FALSE(bossGeneratorVisual(36).settled);
+}
+
+TEST_CASE("boss generators can borrow their body from the summoned species archive",
+          "[game][generators][genie-generators]") {
+    const auto root = test::scratchDirectory("boss-generator-brood-art");
+    const auto archive = root / "MONSTERS/WIND";
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BOSSGEN",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
+        "sequences":[{"name":"ACTIVE","frames":30,"frameRate":30,"repeats":true}]}]})");
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 4, {}, 1);
+    ItemArchive supplied;
+    SECTION("missing level and boss art falls back to the summoned species") {}
+    SECTION("explicitly supplied art keeps precedence") {
+        REQUIRE(supplied.load(archive));
+    }
+    Generators generators;
+    ItemInfo info;
+    info.type = ItemInfo::kGenerator;
+    info.name = "BOSSGEN";
+    info.hitPoints = 10;
+    info.radius = 2;
+    info.height = 5;
+    constexpr s32 kWindKind = 26;
+    const Vec3 position{10, 3, 20};
+    REQUIRE(generators.placeBoss(device, info, supplied, enemies, kWindKind,
+                                 glm::translate(Mat4{1}, position), nullptr));
+    REQUIRE(generators.bodyShown(0));
+    generators.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 1);
+    REQUIRE(device.draws.front().vertices.size() == 3);
+    CHECK(device.draws.front().vertices.front().position == position);
+    ItemArchive* expected = supplied.loaded() ? &supplied : enemies.archive(kWindKind);
+    REQUIRE(expected != nullptr);
+    CHECK(device.draws.front().texture == &expected->textures.texture(device, 0));
+    const auto hit = generators.strike(0, 1000, 0);
+    REQUIRE(hit);
+    REQUIRE(hit->destroyed);
+    device.draws.clear();
+    generators.draw(device, Mat4{1}, {});
+    CHECK(device.draws.empty());
+}
+
+TEST_CASE("Genie whirlwind attacks leave visible animated generators that breed wind enemies",
+          "[game][generators][genie-generators][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELC5/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/DJINN/animations.json");
+    test::unpackedOrSkip("MONSTERS/WIND/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("C5");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {47.203125f, 10, -1.203125f}, -1.5707963f);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.bosses().wake();
+    // WINDGEN becomes available at rate .75, below roughly 94% health.
+    EnemyHit phase;
+    phase.damage = opponents.bosses().view().maxHealth * 0.1f;
+    opponents.bosses().hurt(phase);
+    LevelOpponents::Events events;
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.blast = [](const Vec3&, f32, f32) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    REQUIRE(opponents.generators().count() == 0);
+    bool bred = false;
+    for (s32 frame = 0; frame < 9000 && !bred; ++frame) {
+        opponents.update(2, kStep, players, {}, events);
+        effects.update(kStep);
+        for (usize i = 0; i < opponents.generators().count(); ++i) {
+            bred |= opponents.generators().bredOf(static_cast<s32>(i)) > 0;
+        }
+    }
+    REQUIRE(opponents.generators().count() > 0);
+    REQUIRE(bred);
+    auto& generators = opponents.generators();
+    ItemArchive* wind = opponents.enemies().archive(26);
+    REQUIRE(wind != nullptr);
+    REQUIRE(wind->trees.find("BOSSGEN"));
+    for (usize i = 0; i < generators.count(); ++i) {
+        CHECK(generators.kindOf(static_cast<s32>(i)) == 26);
+        REQUIRE(generators.bodyShown(static_cast<s32>(i)));
+    }
+    const auto vertices = [&] {
+        device.draws.clear();
+        generators.draw(device, Mat4{1}, {});
+        std::vector<Vec3> result;
+        for (const auto& draw : device.draws) {
+            CHECK(draw.texture != nullptr);
+            for (const auto& vertex : draw.vertices) {
+                result.push_back(vertex.position);
+            }
+        }
+        return result;
+    };
+    const auto first = vertices();
+    REQUIRE_FALSE(first.empty());
+    generators.update(10, opponents.enemies(), {}, {}, true);
+    const auto next = vertices();
+    CHECK(next.size() == first.size());
+    CHECK(next != first);
+    for (usize i = 0; i < generators.count(); ++i) {
+        const auto hit = generators.strike(static_cast<s32>(i), 100000, 0);
+        REQUIRE(hit);
+        CHECK(hit->destroyed);
+    }
+    CHECK(vertices().empty());
 }
 
 TEST_CASE("Spider Queen generators retain the landed egg pose until destroyed",
