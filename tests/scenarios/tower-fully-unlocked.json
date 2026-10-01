@@ -1,0 +1,33 @@
+{
+  "screen": "tower",
+  "welcome": false,
+  "party": [
+    {
+      "player": 0,
+      "class": "KNI",
+      "color": "GRE",
+      "name": "TEST",
+      "level": 99,
+      "promotedLevel": 99,
+      "statBonuses": {"strength": 250, "speed": 300, "armor": 150, "magic": 350},
+      "health": 9999,
+      "gold": 99999,
+      "crystals": [0, 15, 100, 125, 150, 175, 200, 225, 250],
+      "runes": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "shards": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "gargoylePieces": [12, 20, 28],
+      "beaten": [
+        "a1", "a2", "a3", "a4", "a5", "a6",
+        "b1", "b2", "b3", "b4", "b5", "b6",
+        "c1", "c2", "c3", "c4", "c5",
+        "d1", "d2", "d3", "d4", "d5",
+        "e1", "e2", "f1", "f2",
+        "g1", "g2", "g3", "g4", "g5",
+        "h1", "h2", "h3", "h4",
+        "i1", "i2", "i3", "i4", "i5",
+        "j1", "j2", "j3", "j4", "j5", "j6",
+        "k1", "k2", "k3", "k4", "k5"
+      ]
+    }
+  ]
+}

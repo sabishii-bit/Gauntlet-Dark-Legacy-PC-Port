@@ -1,4 +1,6 @@
 
+#include <array>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include "engine/core/Error.h"
@@ -11,11 +13,76 @@
 #include "game/players/LevelRecord.h"
 #include "game/players/Progression.h"
 #include "game/world/LevelWorld.h"
+#include "game/world/TowerAccess.h"
 
 namespace {
 
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("fully unlocked tower scenario supplies a maxed green Knight without pending ceremonies",
+          "[scenario][tower-access]") {
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/tower-fully-unlocked.json");
+    const auto party = scenario.partyMembers();
+    REQUIRE(party.size() == 1);
+    const auto& save = party.front().save;
+    CHECK(save.character == classIndexOf("KNI").value());
+    CHECK(save.color == colorIndexOf("GRE").value());
+    CHECK(experienceLevel(save.experience()) == 99);
+    CHECK(save.progress().appearanceLevel() == 99);
+    CHECK_FALSE(save.progress().promotionPending());
+    CHECK(save.health() == 9999);
+    CHECK(save.gold == 99999);
+    CHECK_FALSE(party.front().slot.has_value());
+    CHECK_FALSE(scenario.tower.welcome.value_or(true));
+    CHECK(scenario.level.empty());
+    CHECK(save.progress().relics.runeCount() == Relics::kRuneCount);
+    CHECK(save.progress().relics.pendingRunes == 0);
+    CHECK(save.progress().relics.pendingShards == 0);
+    CHECK(save.progress().relics.pendingCeremonies == 0);
+    CHECK(save.progress().relics.gargoylePieces == Relics::kGargoyleNeeded);
+    const TowerAccess access(party);
+    CHECK(access.liftsOpen());
+    constexpr std::array<s32, 12> kLevelCounts = {0, 6, 6, 5, 5, 2, 2, 5, 4, 5, 6, 5};
+    for (s32 realm = 1; realm <= 11; ++realm) {
+        CAPTURE(realm);
+        CHECK(access.worldOpen(realm));
+        for (s32 gate = 0; gate < kLevelCounts[static_cast<usize>(realm)]; ++gate) {
+            CHECK(access.portalOpen(realm, gate));
+        }
+    }
+}
+
+TEST_CASE("fully unlocked Knight reaches all four stat caps with the shipped class data",
+          "[scenario][unpacked]") {
+    const auto directory = test::unpackedOrSkip("pdata/KNI.json").parent_path();
+    ClassDataSet classes;
+    REQUIRE(classes.load(directory));
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/tower-fully-unlocked.json");
+    const auto party = scenario.partyMembers();
+    const auto& save = party.front().save;
+    const auto* stats = classes.stats(save.character);
+    REQUIRE(stats != nullptr);
+    const auto shown = displayStats(*stats, experienceLevel(save.experience()), save.progress());
+    for (const s32 value : shown.values) {
+        CHECK(value == kMaxStat);
+    }
+}
+
+TEST_CASE("scenario bonuses and gargoyle collections are optional and bounded", "[scenario]") {
+    const auto empty = Scenario::fromJson(R"({"party":[{}]})").partyMembers();
+    CHECK(empty[0].save.progress().fightAdd == 0);
+    CHECK(empty[0].save.progress().relics.gargoylePieces[0] == 0);
+    for (const auto* invalid :
+         {R"({"party":[{"statBonuses":{"strength":-1}}]})",
+          R"({"party":[{"statBonuses":{"magic":1000}}]})", R"({"party":[{"gargoylePieces":[13]}]})",
+          R"({"party":[{"gargoylePieces":[0,-1]}]})",
+          R"({"party":[{"gargoylePieces":[0,0,0,0]}]})"}) {
+        CHECK_THROWS_AS(Scenario::fromJson(invalid), FormatError);
+    }
+}
 
 TEST_CASE("shop visual scenarios open directly without changing saved characters",
           "[scenario][shop]") {

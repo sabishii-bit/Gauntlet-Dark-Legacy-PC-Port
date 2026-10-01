@@ -19,6 +19,7 @@ struct ScenarioMember {
     std::string colorCode = "YEL";
     std::string name = "TEST";
     s32 level = 1;
+    StatBlock statBonuses;     ///< permanent bought bonuses, before the displayed stat cap
     s32 promotedLevel = -1;    ///< an earlier award stages a tower-return promotion
     std::vector<s32> crystals; ///< per realm, as many as given
     s32 gold = 0;
@@ -32,6 +33,7 @@ struct ScenarioMember {
     std::vector<s32> legends;          ///< the legend items carried, by the realm of their boss
     std::vector<s32> runes;            ///< installed runestones, indexed from zero
     std::vector<s32> shards;           ///< installed window pieces, tower realm order 1..8
+    std::vector<s32> gargoylePieces;   ///< serpent, eagle and lion collection counts
     std::vector<s32> newRunes;         ///< awaiting the return ceremony
     std::vector<s32> newShards;
     std::vector<std::string> beaten; ///< levels beaten, by exit tag ("g1"): the tower opens
