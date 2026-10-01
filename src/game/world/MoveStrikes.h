@@ -22,6 +22,7 @@ struct StrikeHit {
     f32 damage = 0.0f;
     Vec3 from{0.0f}; ///< beginning of a flying strike's swept contact segment
     bool swept = false;
+    f32 hitGap = 0.0f; ///< area-contact immunity, independent of projectile contacts
 
     /** Whether something standing at `position` is caught by it. */
     bool reaches(const Vec3& position, f32 targetRadius, f32 targetHeight) const;
@@ -29,7 +30,7 @@ struct StrikeHit {
 
 /**
  * The strikes of the party's moves, as the original's class data describes them: a burst
- * harms what is about it once, its delay after it starts; what flies goes off along the
+ * expands after its delay over its effect's lifetime; what flies goes off along the
  * character's facing at its speed, harming what it passes, until its time is up or a wall
  * stops it.
  */
@@ -40,6 +41,7 @@ public:
         u32 id = 0;
         s32 owner = 0;
         bool flies = false;
+        bool expanding = false;
         bool collidesWorld = true;
         Vec3 position{0.0f, 0.0f, 0.0f};
         Vec3 facing{0.0f, 0.0f, 1.0f};
@@ -48,7 +50,8 @@ public:
         f32 arc = -1.0f;
         f32 damage = 0.0f;
         f32 delayLeft = 0.0f;
-        f32 secondsLeft = 0.0f; ///< of what flies
+        f32 secondsLeft = 0.0f;
+        f32 damageTime = 0.0f; ///< effect lifetime less the burst's wind-up
     };
 
     /** What a character's own harm is multiplied by when a strike's amount is negative. */
@@ -57,9 +60,10 @@ public:
     static Vec3 originOf(const MoveStrike& strike, const Vec3& position, const Vec3& facing);
 
     /** Starts `strike` for `owner` standing at `position` and facing `facing` (level, unit
-     * length); its number, which its hits carry. */
+     * length); its number, which its hits carry. Area lifetime comes from the first effect's
+     * sequence, not the projectile morph time in the damage row. */
     u32 start(const MoveStrike& strike, s32 owner, const Vec3& position, const Vec3& facing,
-              f32 ownDamage);
+              f32 ownDamage, f32 effectSeconds = 0.0f);
     std::vector<StrikeHit> update(f32 seconds, const WorldCollision* collision);
     void clear();
 

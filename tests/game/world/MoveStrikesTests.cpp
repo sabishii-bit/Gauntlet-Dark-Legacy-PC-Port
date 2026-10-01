@@ -13,7 +13,7 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-TEST_CASE("a burst harms what is about it once, its delay after it starts",
+TEST_CASE("a burst expands after its wind-up and loses damage before its visual tail",
           "[game][world][strikes]") {
     MoveStrike burst;
     burst.type = MoveStrike::kBursts;
@@ -23,7 +23,7 @@ TEST_CASE("a burst harms what is about it once, its delay after it starts",
     burst.offset = Vec3{1.0f, 0.0f, 2.0f};
     MoveStrikes strikes;
     const Vec3 facing{0.0f, 0.0f, -1.0f};
-    const u32 id = strikes.start(burst, 2, Vec3{10.0f, 0.0f, 10.0f}, facing, 8.0f);
+    const u32 id = strikes.start(burst, 2, Vec3{10.0f, 0.0f, 10.0f}, facing, 8.0f, 2.0f);
     REQUIRE(id != 0);
     REQUIRE(strikes.count() == 1);
     // Its offset is in the body's space: two ahead, one to its side.
@@ -31,17 +31,52 @@ TEST_CASE("a burst harms what is about it once, its delay after it starts",
     REQUIRE(strikes.strike(0).position.x == Approx(9.0f));
     REQUIRE(strikes.update(0.25f, nullptr).empty());
     const std::vector<StrikeHit> hits = strikes.update(0.3f, nullptr);
-    REQUIRE(hits.size() == 1);
+    REQUIRE_FALSE(hits.empty());
     REQUIRE(hits[0].strike == id);
     REQUIRE(hits[0].owner == 2);
-    REQUIRE(hits[0].damage == 50.0f);
-    REQUIRE(hits[0].radius == 12.0f);
+    CHECK(hits.back().damage == Approx(47.75f));
+    CHECK(hits.back().radius == Approx(4.36f));
+    CHECK(hits.back().hitGap > 1.45f);
+    const auto later = strikes.update(0.7f, nullptr);
+    REQUIRE_FALSE(later.empty());
+    CHECK(later.back().radius == Approx(9.96f));
+    CHECK(later.back().damage == Approx(12.75f));
+    strikes.update(0.3f, nullptr);
+    CHECK(strikes.update(0.1f, nullptr).empty());
+    CHECK(strikes.count() == 1); // effect still lives after its harmful interval
+    strikes.update(0.5f, nullptr);
     REQUIRE(strikes.count() == 0);
     REQUIRE(strikes.find(id) == nullptr);
     REQUIRE(strikes.update(1.0f, nullptr).empty());
     // A negative amount is so many times the character's own harm.
     burst.amount = -1.5f;
     REQUIRE(MoveStrikes::damageOf(burst, 8.0f) == 12.0f);
+}
+
+TEST_CASE("area strikes preserve constant-radius mode and survive coarse updates",
+          "[game][world][strikes]") {
+    MoveStrike burst;
+    burst.radius = 12;
+    burst.amount = 50;
+    burst.delay = 0.5f;
+    MoveStrikes strikes;
+    strikes.start(burst, 0, Vec3{0}, Vec3{0, 0, 1}, 1, 2);
+    const auto crossed = strikes.update(3, nullptr);
+    REQUIRE_FALSE(crossed.empty());
+    CHECK(crossed.front().radius < crossed.back().radius);
+    CHECK(crossed.front().damage > crossed.back().damage);
+    CHECK(strikes.count() == 0);
+    burst.type = MoveStrike::kSpreads;
+    strikes.start(burst, 0, Vec3{0}, Vec3{0, 0, 1}, 1, 2);
+    const auto constant = strikes.update(0.1f, nullptr);
+    REQUIRE_FALSE(constant.empty());
+    CHECK(constant.front().radius == 12);
+    CHECK(constant.front().damage == 50);
+    strikes.clear();
+    burst.type = MoveStrike::kBursts;
+    strikes.start(burst, 0, Vec3{0}, Vec3{0, 0, 1}, 1, 0);
+    CHECK(strikes.update(1, nullptr).empty()); // no effect lifetime, no invented pulse
+    CHECK(strikes.count() == 0);
 }
 
 TEST_CASE("a hit reaches what stands within it, and within its arc when it has one",

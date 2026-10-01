@@ -8,6 +8,7 @@
 
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
+#include "engine/world/AnimationPlayer.h"
 
 #include "game/combat/Damage.h"
 #include "game/combat/DamageTypes.h"
@@ -274,6 +275,24 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
     const PlayerActor& actor = players[index].actor;
     const Vec3 facing = actor.facing();
     const Vec3 base = at.value_or(actor.position());
+    ItemArchive* archive = moveEffectsOf(index, players);
+    f32 effectSeconds = 0;
+    if (archive != nullptr && strike.effect >= 0 &&
+        static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
+        if (const auto tree =
+                archive->trees.find(stats->moveEffects[static_cast<usize>(strike.effect)].tree)) {
+            const auto& sequences = archive->trees.tree(*tree).sequences;
+            if (!sequences.empty()) {
+                const auto& sequence = sequences.front();
+                constexpr s32 kEmptyFrames = 30;
+                const auto frames =
+                    static_cast<f32>(sequence.frames > 0 ? sequence.frames : kEmptyFrames);
+                const f32 rate = sequence.frameRate > 0 ? static_cast<f32>(sequence.frameRate)
+                                                        : AnimationPlayer::kDefaultRate;
+                effectSeconds = frames * rate * AnimationPlayer::kRateUnit;
+            }
+        }
+    }
     // A span that only lasts, or a volley, harms nothing of itself; the rest are set going.
     u32 id = 0;
     if (strike.harms()) {
@@ -281,12 +300,12 @@ void PlayerAttacks::fireStrike(usize index, s32 strikeIndex, std::span<PlayerRun
         if (strike.effect >= 0 && static_cast<usize>(strike.effect) < stats->moveEffects.size()) {
             volume.offset += stats->moveEffects[static_cast<usize>(strike.effect)].offset;
         }
-        id = m_strikes.start(volume, actor.player(), base, facing, ownDamageOf(index, players));
+        id = m_strikes.start(volume, actor.player(), base, facing, ownDamageOf(index, players),
+                             effectSeconds);
         m_strikeSources.push_back(StrikeSource{id, index, strikeIndex, {}});
     }
     const Vec3 origin = MoveStrikes::originOf(strike, base, facing);
     const MoveStrikes::Strike* started = m_strikes.find(id);
-    ItemArchive* archive = moveEffectsOf(index, players);
     // An effect may bring another with it.
     usize followed = 0;
     for (s32 at = strike.effect; at >= 0 && static_cast<usize>(at) < stats->moveEffects.size() &&
@@ -382,10 +401,11 @@ void PlayerAttacks::updateStrikes(f32 seconds, std::span<PlayerRuntime> players,
             constexpr u32 kPassThrough = 0x100000;
             constexpr f32 kProjectileGap = 0.25f;
             constexpr f32 kPassThroughExtraGap = 3.0f;
-            const f32 gap = hit.damage > 2 ? kProjectileGap + ((row.damageType & kPassThrough) != 0
-                                                                   ? kPassThroughExtraGap
-                                                                   : 0.0f)
-                                           : 0.0f;
+            const f32 baseGap = hit.swept ? kProjectileGap : hit.hitGap;
+            const f32 gap =
+                hit.damage > 2
+                    ? baseGap + ((row.damageType & kPassThrough) != 0 ? kPassThroughExtraGap : 0.0f)
+                    : 0.0f;
             if (contact == source->contacts.end()) {
                 source->contacts.push_back({target.id, gap});
             } else {
