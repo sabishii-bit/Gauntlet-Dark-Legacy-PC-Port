@@ -121,6 +121,7 @@ private:
         bool translucent = false;
         bool additive = false;
         bool depthWrite = true;
+        bool depthTest = true;
     };
     struct UnitPart {
         u32 slot = 0;
@@ -144,6 +145,7 @@ private:
         bool background = false; ///< depthless, far-layer scenery (e.g. A5 lightning sheets)
         bool visible = true;
         bool depthWrite = true;
+        bool depthTest = true;
     };
     struct Placement {
         Mat4 local{1.0f}; ///< relative to the parent

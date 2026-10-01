@@ -14,6 +14,7 @@ namespace {
 constexpr u32 kLightmapShift = 20U;
 constexpr u64 kAdditiveKey = u64{1} << 40U;
 constexpr u64 kNoDepthKey = u64{1} << 41U;
+constexpr u64 kNoDepthTestKey = u64{1} << 42U;
 
 /** The coordinates a chromed surface samples: its normal's x and y folded into the map. */
 Vec2 chromeUv(const Vec3& normal) {
@@ -95,9 +96,11 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
     // Still geometry is keyed by texture and lightmap, the glows and the objects that keep
     // depth unwritten apart from the rest.
     std::unordered_map<u64, usize> batchByKey;
-    const auto batchFor = [&](u32 slot, u32 lightmap, bool additive, bool depthWrite) -> Batch& {
+    const auto batchFor = [&](u32 slot, u32 lightmap, bool additive, bool depthWrite,
+                              bool depthTest) -> Batch& {
         const u64 key = u64{slot} | (u64{lightmap} << kLightmapShift) |
-                        (additive ? kAdditiveKey : 0) | (depthWrite ? 0 : kNoDepthKey);
+                        (additive ? kAdditiveKey : 0) | (depthWrite ? 0 : kNoDepthKey) |
+                        (depthTest ? 0 : kNoDepthTestKey);
         if (const auto found = batchByKey.find(key); found != batchByKey.end()) {
             return m_batches[found->second];
         }
@@ -112,6 +115,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         batch.translucent = m_slots[slot].translucent;
         batch.additive = additive;
         batch.depthWrite = depthWrite;
+        batch.depthTest = depthTest;
         batch.geometry.begin(PrimitiveTopology::TriangleList);
         m_batches.push_back(std::move(batch));
         batchByKey[key] = m_batches.size() - 1;
@@ -139,6 +143,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         const bool additive = object.additive();
         const bool prelit = object.prelit() && mesh->prelit;
         const bool depthWrite = (object.objectFlags & WorldObject::kNoDepthWrite) == 0;
+        const bool depthTest = (object.objectFlags & WorldObject::kNoDepthTest) == 0;
         const u32 facing = CameraFrame::facingOf(object.objectFlags);
         const bool background = std::ranges::find(backgroundObjects, i) != backgroundObjects.end();
         const bool unit = background || m_placements[i].moving || object.sorted() || facing != 0 ||
@@ -150,6 +155,7 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
         placedUnit.sorted = object.sorted();
         placedUnit.background = background;
         placedUnit.depthWrite = depthWrite;
+        placedUnit.depthTest = depthTest;
         placedUnit.facing = facing;
         placedUnit.prelit = prelit;
         if ((object.objectFlags & WorldObject::kSortBehind) != 0) {
@@ -180,7 +186,8 @@ bool WorldScene::build(const WorldLayout& layout, ModelSet& models, TextureSet& 
                     unitPart.additive = additive;
                     placedUnit.parts.push_back(unitPart);
                 } else {
-                    Batch& batch = batchFor(part.texture, part.lightmap, additive, depthWrite);
+                    Batch& batch =
+                        batchFor(part.texture, part.lightmap, additive, depthWrite, depthTest);
                     for (const u32 index : part.indices) {
                         const MeshVertex& v = mesh->vertices[index];
                         const Vec3 at = v.position + offset;
@@ -355,6 +362,7 @@ void WorldScene::drawBatch(RenderDevice& device, const Batch& batch, const Mat4&
     state.alphaTest = batch.translucent ? kAlphaTest : 0.0f;
     state.cullBack = true;
     state.depthWrite = batch.depthWrite;
+    state.depthTest = batch.depthTest;
     state.darken = batch.additive ? 0.0f : m_darken;
     // Where a point light reaches it, a copy with the lights added is drawn instead.
     const Vec3 centre = (batch.lowest + batch.highest) * 0.5f;
@@ -435,6 +443,7 @@ void WorldScene::drawUnit(RenderDevice& device, const Unit& unit, const Mat4& cl
         state.alphaTest = part.translucent ? kAlphaTest : 0.0f;
         state.cullBack = true;
         state.depthWrite = unit.depthWrite && unit.alpha >= 1.0f;
+        state.depthTest = unit.depthTest;
         state.darken = part.additive ? 0.0f : m_darken;
         device.draw(m_scratch, *slot.current(), clip, state);
     }

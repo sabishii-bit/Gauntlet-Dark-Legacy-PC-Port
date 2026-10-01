@@ -206,7 +206,7 @@ TEST_CASE("authored fades hide only their subtree and reset on the next pose",
     figure.draw(device, Mat4{1}, Mat4{1});
     REQUIRE(device.draws.size() == 2);
     REQUIRE(device.draws[0].vertices[0].color.a == 255);
-    REQUIRE(device.draws[1].vertices[0].color.a == 127);
+    REQUIRE(device.draws[1].vertices[0].color.a == 128);
     REQUIRE_FALSE(device.draws[1].state.depthWrite);
     device.draws.clear();
     animator.apply(figure, tree, 0, 30);

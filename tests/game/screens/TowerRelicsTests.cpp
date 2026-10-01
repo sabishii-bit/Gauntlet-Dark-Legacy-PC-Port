@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 
 #include <catch2/catch_test_macros.hpp>
@@ -165,10 +166,43 @@ TEST_CASE("all authored tower pieces retain settled meshes at their own world an
                           effect.pose.matrices());
         REQUIRE_FALSE(device.draws.empty());
         if (i < 12) {
-            // Each stone has a black duplicate shell under an authored fade-out
-            // node. Once installed, that shell must not draw over the stone.
+            INFO(i);
+            // TEXFADEIN reveals a flattened ground shadow, not an opaque shell.
+            // Its parent keys Y scale to .001; check the posed geometry rather
+            // than hiding the entire mesh by reversing the authored fade.
+            auto shadow = effect.model;
+            for (usize node = 0; node < effect.tree->nodes.size(); ++node) {
+                const auto& info = effect.tree->nodes[node];
+                bool faded = false;
+                for (s32 ancestor = info.parent; ancestor >= 0;
+                     ancestor = effect.tree->nodes[static_cast<usize>(ancestor)].parent) {
+                    const s32 mod =
+                        effect.tree->nodes[static_cast<usize>(ancestor)].textureAnimation;
+                    if (mod < 0 ||
+                        !world.items().trees.textureAnimations()[static_cast<usize>(mod)].fades()) {
+                        continue;
+                    }
+                    faded = true;
+                    break;
+                }
+                if (!faded) {
+                    shadow.setMeshAlpha(node, 0);
+                }
+            }
+            device.draws.clear();
+            shadow.draw(device, Mat4{1}, effect.transform(), world.lighting(),
+                        effect.pose.matrices());
+            REQUIRE_FALSE(device.draws.empty());
             for (const auto& draw : device.draws) {
-                REQUIRE(draw.texture != &world.items().textures.texture(device, 122));
+                f32 low = draw.vertices.front().position.y;
+                f32 high = low;
+                for (const auto& vertex : draw.vertices) {
+                    low = std::min(low, vertex.position.y);
+                    high = std::max(high, vertex.position.y);
+                }
+                INFO(low);
+                INFO(high);
+                REQUIRE(high - low < 0.02f);
             }
         }
     }
