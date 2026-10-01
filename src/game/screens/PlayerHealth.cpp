@@ -79,6 +79,13 @@ void PlayerHealth::hurt(PlayerRuntime& runtime, f32 damage, HurtKind kind, bool 
         events.learnBlock();
     }
     if (damage <= 0.0f) {
+        // damage_player retains DMG_STICKY after armor absorbs the hit.
+        // PlayerKnockback tests it before hit_damage, but invulnerability's
+        // 0x10000 shield clears all reactions first (pmotion.c).
+        if ((received.flags & PlayerImpact::kSticky) != 0 &&
+            (worn.armor & Damage::kInvulnerable) == 0) {
+            runtime.reaction = PlayerImpact::combine(runtime.reaction, PlayerDeed::Webbed);
+        }
         return;
     }
     if (damage > 1.0f) {

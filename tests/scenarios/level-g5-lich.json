@@ -12,11 +12,5 @@
                       "legends":  [7]
                   }
               ],
-    "position":  [
-                     0,
-                     0.2,
-                     30
-                 ],
-    "yaw":  3.14,
     "welcome":  false
 }

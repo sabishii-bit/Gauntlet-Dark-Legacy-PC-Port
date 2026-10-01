@@ -8,6 +8,7 @@
 
 #include "engine/core/Types.h"
 
+#include "game/combat/Damage.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/PlayerHealth.h"
 namespace {
@@ -56,6 +57,27 @@ TEST_CASE("player armor is subtracted before elemental affinity but not from gas
     CHECK(f.player.actor.save().health() == 964); // acid immunity remains zero
     f.health.hurt(f.player, 20, HurtKind::Gas, false, false, 1, f.events, {}, false, &stats);
     CHECK(f.player.actor.save().health() == 944);
+}
+
+TEST_CASE("armor absorbs ground-hand damage without preventing its sticky reaction",
+          "[player-health][lich-hands]") {
+    Fixture f;
+    ClassStats stats;
+    stats.armorMin = 400;
+    stats.armorMax = 800;
+    const PlayerImpact impact{.flags = PlayerImpact::kSticky};
+    f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
+    CHECK(f.player.actor.save().health() == 1000);
+    CHECK(f.player.reaction == PlayerDeed::Webbed);
+    CHECK(f.sounds.empty());
+    CHECK(f.cries.empty());
+    f.player.reaction = PlayerDeed::FallBack;
+    f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
+    CHECK(f.player.reaction == PlayerDeed::FallBack);
+    f.player.actor.save().progress().inventory.addPowerup(6, Damage::kInvulnerable, 0, 60);
+    f.player.reaction = PlayerDeed::None;
+    f.health.hurt(f.player, 1, HurtKind::Pierce, true, false, 1, f.events, impact, true, &stats);
+    CHECK(f.player.reaction == PlayerDeed::None);
 }
 
 TEST_CASE("externally sounded melee retains damage and pain without an extra impact or cry",

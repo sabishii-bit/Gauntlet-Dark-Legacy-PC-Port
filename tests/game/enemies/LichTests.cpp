@@ -247,4 +247,65 @@ TEST_CASE("Lich chain spin delivers damage in the crypt encounter", "[lich][unpa
     REQUIRE(chain);
     CHECK(hits > 0);
 }
+TEST_CASE("Lich ground hands damage and hinder the player standing in their grasp",
+          "[lich][lich-hands][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG5/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("G5");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, {0, 0.2f, 45}, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    opponents.bosses().wake();
+    // HANDGRAB becomes eligible at the damaged boss's faster attack rate.
+    EnemyHit phase;
+    phase.damage = opponents.bosses().view().maxHealth * 0.6f;
+    opponents.bosses().hurt(phase);
+    LevelOpponents::Events events;
+    s32 hits = 0;
+    events.hurt = [&](usize, f32 damage, HurtKind, bool, const PlayerImpact& impact) {
+        if ((impact.flags & PlayerImpact::kSticky) != 0) {
+            CHECK(damage > 0);
+            CHECK(impact.reaction(damage, 0, false) == PlayerDeed::Webbed);
+            ++hits;
+        }
+    };
+    events.blast = [](const Vec3&, f32, f32) {};
+    events.settleBlasts = [] {};
+    events.legend = [](const LegendEvent&) {};
+    events.advanceLegend = [](f32) {};
+    events.fallen = [](const Vec3&) {};
+    events.spew = [](const CombatSpew&) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    bool hands = false;
+    std::set<std::string> moves;
+    for (s32 frame = 0; frame < 9000 && hits == 0; ++frame) {
+        if (!hands) {
+            players[0].actor.place(*opponents.bosses().position() + Vec3{0, 0.2f, 45});
+        }
+        opponents.update(2, 1.0f / 30, players, {}, events);
+        moves.emplace(opponents.bosses().moveName());
+        for (usize i = 0; i < effects.count(); ++i) {
+            if (effects.effect(i).name == "ATK14GENFX") {
+                hands = true;
+            }
+        }
+        effects.update(1.0f / 30);
+    }
+    INFO("Moves: " << Catch::StringMaker<decltype(moves)>::convert(moves));
+    REQUIRE(hands);
+    CHECK(hits > 0);
+}
 } // namespace

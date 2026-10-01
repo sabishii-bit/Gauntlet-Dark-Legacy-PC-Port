@@ -27,6 +27,14 @@ TEST_CASE("Chimera scenario preserves the authored stair entrance and camera rid
     REQUIRE_FALSE(scenario.afterLevel);
 }
 
+TEST_CASE("Lich scenario preserves the crypt entrance and camera ride", "[scenario][lich]") {
+    const auto file = test::dataDirectory().parent_path() / "tests/scenarios/level-g5-lich.json";
+    const auto scenario = Scenario::load(file);
+    REQUIRE(scenario.level == "G5");
+    REQUIRE_FALSE(scenario.tower.position.has_value());
+    REQUIRE_FALSE(scenario.tower.yaw.has_value());
+}
+
 TEST_CASE("Desecrated Temple scenario starts an unsaved level 60 Jester at the entrance",
           "[game][scenario][desecrated-temple]") {
     const auto file =
