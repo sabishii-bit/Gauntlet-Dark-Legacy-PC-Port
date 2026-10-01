@@ -140,8 +140,10 @@ void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,
         return;
     }
     if ((cue->flags & kCustomEffect) != 0) {
-        log::warn("combatant {}: custom projectile effect {} is not implemented", shot.data->name(),
-                  cue->tree);
+        // CritterDoParticle returns no effect handle for CritterDoDamageFX to
+        // endow with projectile physics or damage. Shipped particles are links.
+        log::warn("combatant {}: particle-only cue {} cannot carry projectile damage",
+                  shot.data->name(), cue->tree);
         return;
     }
     std::uniform_real_distribution<f32> spread{-1.0f, 1.0f};
@@ -228,6 +230,12 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                 flying.morphed = true;
                 flying.effect = show(flying, damage.morph, device, effects, sound,
                                      damage.morphLife > 0.0f ? damage.morphLife : kMorphLife);
+            } else if (!flying.settled && !flying.stuck && damage.maxDistance > 0 &&
+                       damage.hitSound >= 0 &&
+                       startImpactArea(flying,
+                                       show(flying, damage.hitSound, device, effects, sound),
+                                       effects, collision)) {
+                place(flying, effects);
             } else {
                 if (flying.morphed) {
                     show(flying, damage.morphEnd, device, effects, sound);
@@ -245,6 +253,9 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             continue;
         }
         if (flying.settled) {
+            if (flying.impactArea.has_value()) {
+                impactContacts(flying, seconds, players);
+            }
             continue;
         }
         if (!flying.morphed && damage.morph >= 0 &&
@@ -387,7 +398,10 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                     break;
                 }
                 const u32 impact = show(flying, damage.hitSound, device, effects, impactSound);
-                if (flying.leavesGenerator) {
+                if (startImpactArea(flying, impact, effects, collision)) {
+                    // The impact owns a new damage lifetime. It is not an
+                    // immediate full-radius second hit on the contact frame.
+                } else if (flying.leavesGenerator) {
                     flying.settled = true;
                     flying.effect = impact;
                     if (impact == 0) {
@@ -406,6 +420,66 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
     }
     std::erase_if(m_flying, [](const Flying& flying) { return flying.effect == 0; });
     std::erase_if(m_emittedEffects, [&](u32 effect) { return !effects.playing(effect); });
+}
+
+bool CombatantProjectiles::startImpactArea(Flying& flying, u32 effect, EffectTrees& effects,
+                                           const WorldCollision* collision) {
+    const AttackDefinition& damage = *flying.shot.data->damage(flying.shot.damageIndex);
+    const auto life = effects.remaining(effect);
+    if (damage.maxDistance <= 0 || !life.has_value() || *life <= 0) {
+        return false;
+    }
+    CritterArea area;
+    area.radius = damage.maxDistance * flying.shot.scale;
+    area.minDot = damage.minDot;
+    area.damage = damage.damage * flying.shot.damageScale;
+    area.flags = damage.flags;
+    area.lifetime = area.secondsLeft = *life;
+    area.expanding = true;
+    flying.impactArea = area;
+    flying.effect = effect;
+    flying.settled = true;
+    flying.velocity = flying.spin = Vec3{0};
+    flying.rotation = Vec3{0};
+    const auto* impact = flying.shot.data->sound(damage.hitSound);
+    if (collision != nullptr && impact != nullptr && (impact->flags & 0x10U) != 0) {
+        const f32 radius = damage.radius * flying.shot.scale * 0.5f;
+        if (const auto floor = collision->floorAt(flying.position, 1 + radius, 5 + radius)) {
+            flying.position.y = floor->y + kFloorClearance;
+            flying.rotation.x = std::atan2(floor->normal.z, floor->normal.y);
+            flying.rotation.z =
+                -std::atan2(floor->normal.x, std::hypot(floor->normal.y, floor->normal.z));
+        }
+    }
+    return true;
+}
+
+void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
+                                          std::span<const EnemyView> players) {
+    CritterArea& area = *flying.impactArea;
+    area.secondsLeft -= seconds;
+    const auto& damage = *flying.shot.data->damage(flying.shot.damageIndex);
+    if ((damage.behaviorFlags & CombatantProjectile::kNoPlayerDamage) != 0) {
+        return;
+    }
+    Mat4 parent = glm::translate(Mat4{1}, flying.position);
+    parent = glm::rotate(parent, flying.rotation.x, Vec3{1, 0, 0});
+    parent = glm::rotate(parent, flying.rotation.z, Vec3{0, 0, 1});
+    for (const EnemyView& player : players) {
+        if (!area.touches(parent, player)) {
+            continue;
+        }
+        const Vec3 away = player.position - flying.position;
+        const f32 length = std::hypot(away.x, away.z);
+        const Vec3 push = length > 0 ? Vec3{away.x, 0, away.z} * (0.25f / length) : Vec3{0};
+        u32 flags = area.flags;
+        if (area.currentDamage() < 5) {
+            constexpr u32 kHeavyHitFlags = 0x170;
+            constexpr u32 kNoHitEffect = 0x1000000;
+            flags = (flags & ~kHeavyHitFlags) | kNoHitEffect;
+        }
+        m_hits.push_back({player.player, area.currentDamage(), flags, push, area.hitGap()});
+    }
 }
 
 void CombatantProjectiles::stickyContacts(Flying& flying, f32 seconds,

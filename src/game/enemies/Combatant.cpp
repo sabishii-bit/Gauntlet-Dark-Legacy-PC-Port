@@ -309,11 +309,16 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
                     return;
                 }
                 if (harm->type == AttackDefinition::kAttachedArea ||
-                    (harm->type == AttackDefinition::kRing &&
+                    ((harm->type == AttackDefinition::kRing || targeted) &&
                      supportsArea(*harm, data.sound(harm->sound)))) {
                     if ((critter.soundsGiven & bit) == 0) {
                         critter.soundsGiven |= bit;
-                        startArea(critter, i, *harm, move->colnode);
+                        if (targeted) {
+                            startArea(critter, i, *harm, {},
+                                      glm::translate(Mat4{1}, *critter.attackTarget));
+                        } else {
+                            startArea(critter, i, *harm, move->colnode);
+                        }
                     }
                     return;
                 }

@@ -482,7 +482,6 @@ void PlayerAttacks::shieldPotion(usize index, std::span<PlayerRuntime> players) 
     m_shields.push_back(shield);
 }
 
-/** The rings follow their bearers and harm nearby creatures and breakable fixtures. */
 /** The halo's hold on Death (PlayerMotion, pmotion.c 1621): with Death the nearest thing
  * ahead within thirty (PlayerGetTarget; one already held while he is anywhere in the half
  * ahead), the wearer stands facing him and, each 30 Hz frame, draws a point off him as a hit
@@ -503,6 +502,8 @@ std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowe
         runtime.deathHeldEffect = 0;
         m_resources->audio.stop(runtime.deathHeldSuck);
         runtime.deathHeldSuck = kNoSound;
+        m_resources->audio.stop(runtime.deathHeldCry);
+        runtime.deathHeldCry = kNoSound;
         return std::nullopt;
     };
     const PlayerActor& actor = runtime.actor;
@@ -521,13 +522,21 @@ std::optional<Vec3> PlayerAttacks::grabDeath(usize index, s32 ticks, bool allowe
         if (flat < 1e-4f || facingLength < 1e-4f) {
             continue;
         }
-        const bool held = target.id == kEnemyTargetBase + runtime.deathHeld;
-        const f32 dot = (toward.x * facing.x + toward.z * facing.z) / (flat * facingLength);
-        if (dot < (held ? kHeldCone : kGrabCone)) {
+        const bool held =
+            runtime.deathHeld >= 0 && target.id == kEnemyTargetBase + runtime.deathHeld;
+        // PlayerGetTarget retains an acquired enemy with a 3D dot of 0.5.
+        // closest_enemy instead narrows its acquisition cone toward maximum
+        // range and rejects enemies more than ten units above or below.
+        const f32 length = glm::length(toward);
+        const f32 distance = length - target.radius;
+        const f32 dot = (toward.x * facing.x + toward.z * facing.z) / facingLength;
+        const f32 threshold = held ? length * kHeldCone
+                                   : flat * (kGrabCone + distance * (1 - kGrabCone) / kGrabReach);
+        constexpr f32 kAcquisitionHeight = 10;
+        if ((!held && std::abs(toward.y) > kAcquisitionHeight) || dot < threshold) {
             continue;
         }
-        if (const f32 distance = TargetAssist::distanceTo(actor.position(), actor.height(), target);
-            distance < best) {
+        if (distance < best) {
             best = distance;
             nearest = target;
         }

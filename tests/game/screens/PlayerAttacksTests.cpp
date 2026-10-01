@@ -9,6 +9,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
@@ -1243,6 +1244,7 @@ TEST_CASE("close attacks resolve to melee while distant attacks still throw",
 
 TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws him off",
           "[game][screens][player-attacks][death][unpacked]") {
+    const s32 tier = GENERATE(1, 2);
     const auto root =
         test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
@@ -1255,8 +1257,8 @@ TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws 
     scales.health = 20;
     enemies.open(f.device, test::deathArchive(), nullptr, 2, scales, 1);
     REQUIRE(enemies.loadKind(kDeathKind));
-    const auto death =
-        enemies.spawn({.kind = kDeathKind, .tier = 1, .position = {0, 0, 10}, .placed = true}, {});
+    const auto death = enemies.spawn(
+        {.kind = kDeathKind, .tier = tier, .position = {0, 0, 10}, .placed = true}, {});
     REQUIRE(death);
     PlayerActor& actor = f.players[0].actor;
     actor.turnTo(0.0f); // facing him
@@ -1284,6 +1286,39 @@ TEST_CASE("a halo wearer with Death the nearest thing ahead holds him and draws 
     actor.turnTo(0.0f);
     REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets).has_value());
     CHECK_FALSE(f.attacks.grabDeath(0, 2, false, f.players, f.targets).has_value());
+    const f32 beforeEscape = enemies.healthOf(*death);
+    actor.place({12, 0, -10});
+    // At this range closest_enemy's cone is narrower than the near 0.707 cone.
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    CHECK(enemies.healthOf(*death) == beforeEscape);
+    actor.place({0, -11, 0});
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    actor.place({0, 0, 0});
+    REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    const f32 beforeVerticalEscape = enemies.healthOf(*death);
+    actor.place({0, -40, 0});
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    CHECK(enemies.healthOf(*death) == beforeVerticalEscape);
+    CHECK(f.players[0].deathHeld == -1);
+    CHECK(f.players[0].deathHeldEffect == 0);
+    actor.place({0, 0, -40});
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    actor.place({0, 0, 0});
+    const std::array views{EnemyView{.player = 0, .position = actor.position(), .antiDeath = true}};
+    const Vec3 beforeRetreat = enemies.positionOf(*death);
+    for (s32 frame = 0; frame < 45; ++frame) {
+        enemies.update(2, 1.0f / 30, views);
+    }
+    REQUIRE(enemies.positionOf(*death).z > beforeRetreat.z);
+    // Retreat alone does not end a legal target: it must escape the range/cone.
+    actor.place(enemies.positionOf(*death) - Vec3{0, 0, 10});
+    const f32 beforeRetreatDrain = enemies.healthOf(*death);
+    REQUIRE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    CHECK(enemies.healthOf(*death) == beforeRetreatDrain - 1);
+    actor.place({0, 0, -100});
+    CHECK_FALSE(f.attacks.grabDeath(0, 2, true, f.players, f.targets));
+    CHECK(enemies.healthOf(*death) == beforeRetreatDrain - 1);
+    CHECK(f.players[0].deathHeld == -1);
     f.opponents.close();
 }
 

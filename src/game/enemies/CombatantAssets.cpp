@@ -8,6 +8,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/world/AnimationPlayer.h"
 namespace gdl::game {
 namespace {
 /** Every instance is made with subtype nought: the first of SHADOW1L1..3L1. */
@@ -30,6 +31,7 @@ void CombatantAssets::clear() {
     brokenModels.clear();
     tree = nullptr;
     archive.clear();
+    effectLifetimes.clear();
 }
 bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& root,
                            const CombatantDefinition& family, char realm) {
@@ -51,6 +53,28 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     if (!archive.load(directory)) {
         return false;
     }
+    // Shared effects such as a golem's EXPRING are rendered from WEAPONS.
+    // Their damage clock must use that same sequence, not a guessed duration.
+    AnimationSet shared;
+    const auto commonPath = root / "WEAPONS/animations.json";
+    if (std::filesystem::is_regular_file(commonPath)) {
+        shared.load(commonPath.parent_path());
+    }
+    const auto recordLifetimes = [&](const AnimationSet& animations) {
+        for (u32 i = 0; i < animations.size(); ++i) {
+            const auto& effect = animations.tree(i);
+            f32 life = 1;
+            if (!effect.sequences.empty()) {
+                const auto& sequence = effect.sequences.front();
+                const s32 frames = sequence.frames > 0 ? sequence.frames : 30;
+                const s32 rate = sequence.frameRate > 0 ? sequence.frameRate : 30;
+                life = static_cast<f32>(frames * rate) * AnimationPlayer::kRateUnit;
+            }
+            effectLifetimes.emplace(effect.name, life);
+        }
+    };
+    recordLifetimes(archive.trees);
+    recordLifetimes(shared); // Own trees win; child combatants may reference either archive.
     const auto index = archive.trees.find(data.tree());
     if (!index.has_value()) {
         log::warn("combatant {}: no tree {}", definition.name, data.tree());

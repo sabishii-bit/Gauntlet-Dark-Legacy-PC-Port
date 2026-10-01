@@ -1086,9 +1086,7 @@ TEST_CASE("linked moves take precedence over hit reactions and block cues wait f
     hit.flags = 0x100;
     actor.hurt(hit);
     actor.update(2, 1.0f / 30, {});
-    CHECK(actor.moveName() == "READY");
-    actor.update(240, 4, {});
-    actor.update(2, 1.0f / 30, {});
+    // Policy 60 permits the equal-priority linked BLOCK immediately, not KD.
     REQUIRE(actor.moveName() == "BLOCK");
     REQUIRE(actor.takeCues().empty());
     actor.hurt(hit);
@@ -1099,7 +1097,7 @@ TEST_CASE("linked moves take precedence over hit reactions and block cues wait f
     CHECK(actor.takeCues().empty());
     CHECK(actor.health() == 988); // eight unblocked, two quarters of eight blocked
     actor.update(2, 1.0f / 30, {});
-    CHECK(actor.moveName() == "BLOCK");
+    CHECK(actor.moveName() == "READY"); // BLOCK also allows the equal-priority ready move.
 }
 
 TEST_CASE("heavy hit skin is brief full bright and cannot leak through the shared model",
