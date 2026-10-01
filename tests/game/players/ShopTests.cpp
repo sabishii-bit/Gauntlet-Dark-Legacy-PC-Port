@@ -294,6 +294,92 @@ TEST_CASE("tower shop starts shopping without tallying a fictitious level", "[sh
     REQUIRE(session.party()[0].save.experience() == party[0].save.experience());
 }
 
+TEST_CASE("confirm reveals a player's tally without advancing or awarding totals twice",
+          "[shop][results]") {
+    ShopSession session;
+    const auto data = classes();
+    const std::array<PartyMember, 2> party{{{3, shopper()}, {1, shopper()}}};
+    session.start(party, {}, {}, data, catalog());
+    ShopSession::Inputs input;
+    input[3].select = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].tally.finished());
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Tally);
+    REQUIRE_FALSE(session.lanes()[1].tally.finished());
+    for (usize pile = 0; pile < 3; ++pile) {
+        REQUIRE(session.lanes()[0].tally.height(pile) ==
+                session.lanes()[0].tally.targetHeight(pile));
+    }
+    REQUIRE(session.party()[0].save.gold == 5000);
+    session.update(1.0 / 60, {});
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Tally);
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::Shopping);
+    REQUIRE(session.party()[0].save.gold == 5000);
+}
+
+TEST_CASE("shop held directions accelerate on retail repeat ticks and reset on release",
+          "[shop][input]") {
+    for (const s32 fps : {30, 60, 120}) {
+        CAPTURE(fps);
+        ShopSession session;
+        const auto data = classes();
+        const std::array<PartyMember, 2> party{{{3, shopper()}, {1, shopper()}}};
+        session.start(party, {}, {}, data, catalog(), ShopVisit::Shop);
+        ShopSession::Inputs input;
+        input[3].down = input[3].downHeld = true;
+        session.update(0, input);
+        REQUIRE(session.lanes()[0].cursor == 1);
+        input[3].down = false;
+        for (s32 frame = 1; frame < fps / 2; ++frame) {
+            session.update(1.0 / fps, input);
+            REQUIRE(session.lanes()[0].cursor == 1);
+        }
+        session.update(1.0 / fps, input);
+        REQUIRE(session.lanes()[0].cursor == 2); // first repeat after 30 ticks
+        session.update(20.0 / 60, input);
+        REQUIRE(session.lanes()[0].cursor == 0);
+        REQUIRE(session.lanes()[0].scrollJump);
+        session.update(10.0 / 60, input);
+        REQUIRE(session.lanes()[0].cursor == 1);
+        REQUIRE_FALSE(session.lanes()[0].scrollJump);
+        REQUIRE(session.lanes()[1].cursor == 0); // a different player never repeats
+        session.update(0, {});
+        input = {};
+        input[3].up = input[3].upHeld = true;
+        session.update(0, input);
+        REQUIRE(session.lanes()[0].cursor == 0);
+        input[3].up = false;
+        session.update(29.0 / 60, input);
+        REQUIRE(session.lanes()[0].cursor == 0);
+        session.update(1.0 / 60, input);
+        REQUIRE(session.lanes()[0].cursor == 2);
+        REQUIRE(session.lanes()[0].scrollJump);
+        REQUIRE(session.party()[0].save.gold == 5000);
+    }
+}
+
+TEST_CASE("shop opposed held directions cancel and Start snaps back to Exit", "[shop][input]") {
+    ShopSession session;
+    const auto data = classes();
+    const std::array<PartyMember, 1> party{{{0, shopper()}}};
+    session.start(party, {}, {}, data, catalog(), ShopVisit::Shop);
+    ShopSession::Inputs input;
+    input[0].up = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].cursor == 2);
+    REQUIRE(session.lanes()[0].scrollJump);
+    input = {};
+    input[0].upHeld = input[0].downHeld = true;
+    session.update(1, input);
+    REQUIRE(session.lanes()[0].cursor == 2);
+    input = {};
+    input[0].start = true;
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].cursor == 0);
+    REQUIRE(session.lanes()[0].scrollJump);
+}
+
 TEST_CASE("shop cues are the retail sounds: clicks for the cursor, magic for a trade, the "
           "buzzer for a refusal and nothing for Exit",
           "[shop]") {

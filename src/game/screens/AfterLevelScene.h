@@ -66,6 +66,7 @@ private:
     MessageTable m_titles;
     const Texture* m_glow = nullptr;
     std::array<f32, 4> m_scroll{};
+    std::array<s32, 4> m_scrollSpeed{};
     f64 m_time = 0;
     StatusBoxPainter m_boxes;
     Canvas m_canvas;
