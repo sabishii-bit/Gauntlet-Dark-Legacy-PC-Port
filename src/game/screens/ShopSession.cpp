@@ -72,6 +72,20 @@ bool ShopLane::statsReady() const {
         ticks.back() + (statsValues(true).back() != statsValues(false).back() ? 60 : 0);
     return phaseSeconds * 60 >= last;
 }
+void ShopLane::skipStatsAdjustment() {
+    const auto reveal = statsRevealTicks();
+    const auto before = statsValues(true);
+    const auto after = statsValues(false);
+    for (usize i = 0; i < reveal.size(); ++i) {
+        const f64 endSeconds = (reveal[i] + 60) / kTickRate;
+        if (before[i] != after[i] && phaseSeconds < endSeconds) {
+            phaseSeconds = endSeconds;
+            return;
+        }
+    }
+    // With no changes, confirm may still finish the page's introductory pause.
+    phaseSeconds = std::max(phaseSeconds, reveal.back() / kTickRate);
+}
 void ShopLane::rememberShopEntry() {
     entryGold = member.save.gold;
     goldHeight = tally.targetHeight(0);
@@ -172,9 +186,13 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             break;
         }
         case ShopPhase::BeforeStats:
-            if (lane.statsReady() && input.select) {
+            if (input.select) {
                 cue(lane, ShopCue::Select);
-                lane.phase = ShopPhase::Shopping;
+                if (lane.statsReady()) {
+                    lane.phase = ShopPhase::Shopping;
+                } else {
+                    lane.skipStatsAdjustment();
+                }
             }
             break;
         case ShopPhase::Shopping: {
@@ -233,9 +251,11 @@ void ShopSession::update(f64 seconds, const Inputs& inputs) {
             break;
         }
         case ShopPhase::AfterStats:
-            if (lane.statsReady() && input.select) {
+            if (input.select) {
                 cue(lane, ShopCue::Select);
-                if (m_visit == ShopVisit::Level) {
+                if (!lane.statsReady()) {
+                    lane.skipStatsAdjustment();
+                } else if (m_visit == ShopVisit::Level) {
                     enterInventory(lane);
                 } else {
                     lane.phase = ShopPhase::Done;

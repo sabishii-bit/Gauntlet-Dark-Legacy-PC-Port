@@ -533,14 +533,77 @@ TEST_CASE("retail level-up stats reveal changes before accepting Continue", "[sh
     REQUIRE(lane.statsRevealTicks() == std::array<s32, 5>{90, 150, 210, 270, 330});
     REQUIRE(lane.statsValues(true)[4] == 500);
     REQUIRE(lane.statsValues(false)[4] == 600);
-    session.update(6, input);
+    session.update(6, {});
     REQUIRE(lane.phase == ShopPhase::BeforeStats);
+    REQUIRE_FALSE(lane.statsReady());
     session.update(0.5, input);
     REQUIRE(lane.phase == ShopPhase::Shopping);
     REQUIRE(session.party()[0].save.gold == save.gold);
 }
 
-TEST_CASE("post-shop stats retain the original values across multiple purchases", "[shop]") {
+TEST_CASE("confirm skips one level-up adjustment at a time without leaving the page",
+          "[shop][results][input]") {
+    auto save = shopper();
+    save.progress().experience = levelExperience(2);
+    const std::array<PartyMember, 2> party{{{3, save}, {1, save}}};
+    const std::array<LevelResults, 2> results{
+        {{3, {0, 0, levelExperience(2)}}, {1, {0, 0, levelExperience(2)}}}};
+    ShopSession session;
+    session.start(party, results, {1000, 100, 1000}, classes(), catalog());
+    session.update(10, {});
+    ShopSession::Inputs input;
+    input[3].select = input[1].select = true;
+    session.update(0, input);
+    const auto& lane = session.lanes()[0];
+    const auto before = lane.statsValues(true);
+    const auto after = lane.statsValues(false);
+    session.takeEvents();
+    input[1].select = false;
+    for (const s32 endTick : {150, 210, 270, 330, 390}) {
+        session.update(0, input);
+        REQUIRE(lane.phaseSeconds == Approx(endTick / 60.0));
+        REQUIRE(lane.phase == ShopPhase::BeforeStats);
+        REQUIRE(lane.statsReady() == (endTick == 390));
+        REQUIRE(lane.statsValues(true) == before);
+        REQUIRE(lane.statsValues(false) == after);
+        REQUIRE(session.lanes()[1].phaseSeconds == 0);
+        REQUIRE(session.lanes()[1].phase == ShopPhase::BeforeStats);
+        REQUIRE(session.takeEvents() == std::vector<ShopEvent>{{3, ShopCue::Select}});
+        session.update(0, {});
+        REQUIRE(lane.phase == ShopPhase::BeforeStats);
+        REQUIRE(session.takeEvents().empty());
+    }
+    session.update(0, input);
+    REQUIRE(lane.phase == ShopPhase::Shopping);
+    REQUIRE(session.party()[0].save.gold == save.gold);
+    REQUIRE(session.party()[0].save.experience() == save.experience());
+    REQUIRE(session.party()[0].save.health() == save.health());
+}
+
+TEST_CASE("stat skips respect natural progress and ignore unchanged rows", "[shop][results]") {
+    ShopLane lane;
+    lane.phase = ShopPhase::BeforeStats;
+    lane.member.save = shopper();
+    lane.member.save.progress().experience = levelExperience(2);
+    lane.stats = *classes().stats(0);
+    lane.entryStats = displayStats(lane.stats, 1, lane.member.save.progress());
+    lane.phaseSeconds = 3; // Strength completed; armor is in progress.
+    lane.skipStatsAdjustment();
+    REQUIRE(lane.phaseSeconds == 3.5);
+    lane.skipStatsAdjustment();
+    REQUIRE(lane.phaseSeconds == 4.5);
+    lane.entryStats = displayStats(lane.stats, 2, lane.member.save.progress());
+    lane.phaseSeconds = 0; // All four attributes unchanged; only max health differs.
+    REQUIRE(lane.statsRevealTicks() == std::array<s32, 5>{90, 90, 90, 90, 90});
+    lane.skipStatsAdjustment();
+    REQUIRE(lane.phaseSeconds == 2.5);
+    REQUIRE(lane.statsReady());
+    lane.skipStatsAdjustment();
+    REQUIRE(lane.phaseSeconds == 2.5);
+}
+
+TEST_CASE("post-shop stats retain purchased values and confirm skips their presentation",
+          "[shop]") {
     ShopSession session;
     const std::array<PartyMember, 1> party{{{0, shopper()}}};
     auto items = ShopCatalog::fromJson(R"({"items":[
@@ -559,6 +622,22 @@ TEST_CASE("post-shop stats retain the original values across multiple purchases"
     session.update(0, input);
     REQUIRE(session.lanes()[0].statsValues(true) == before);
     REQUIRE(session.lanes()[0].statsValues(false)[0] == before[0] + 20);
+    input = {};
+    input[0].start = true;
+    session.update(0, input);
+    input = {};
+    input[0].select = true;
+    session.update(0, input); // Exit opens the post-shop stats, without skipping them.
+    REQUIRE(session.lanes()[0].phase == ShopPhase::AfterStats);
+    REQUIRE(session.lanes()[0].phaseSeconds == 0);
+    session.update(0, input);
+    REQUIRE(session.lanes()[0].phase == ShopPhase::AfterStats);
+    REQUIRE(session.lanes()[0].phaseSeconds == 1.5);
+    REQUIRE(session.lanes()[0].statsReady());
+    REQUIRE(session.lanes()[0].statsValues(false)[0] == before[0] + 20);
+    REQUIRE(session.party()[0].save.gold == 3000);
+    session.update(0, input);
+    REQUIRE(session.finished());
 }
 
 TEST_CASE("Sumner shops using Wizard data without a fictitious SUM class record", "[shop]") {

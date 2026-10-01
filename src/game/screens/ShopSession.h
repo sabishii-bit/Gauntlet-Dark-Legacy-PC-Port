@@ -60,6 +60,8 @@ struct ShopLane {
     std::array<s32, 5> statsValues(bool previous) const;
     std::array<s32, 5> statsRevealTicks() const;
     bool statsReady() const;
+    /** Confirm completes one pending adjustment, without leaving the stats page. */
+    void skipStatsAdjustment();
     void rememberShopEntry();
     /** Signed rows to move, with accelerating held input in 60 Hz ticks. */
     s32 navigation(const MenuInput& input, s32 ticks);
