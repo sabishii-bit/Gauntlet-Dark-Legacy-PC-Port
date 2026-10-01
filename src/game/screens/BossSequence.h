@@ -4,6 +4,7 @@
 #include <optional>
 #include <random>
 #include <span>
+#include <vector>
 
 #include "engine/core/Types.h"
 
@@ -63,6 +64,8 @@ private:
     std::optional<Resources> m_resources;
     std::mt19937 m_coinRandom{0xC01Eu};
     BossVictoryPresentation m_victory;
+    SoundHandle m_victoryVoice = kNoSound;
+    std::vector<SoundHandle> m_victoryVoices;
     Vec3 m_shardPosition{0};
     std::unique_ptr<LegendPresentation> m_legend;
 };

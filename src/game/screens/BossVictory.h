@@ -24,11 +24,11 @@ struct VictoryVoice {
 
 /**
  * The end of a boss fight, as the original stages it: a while after the boss falls, the
- * good wizard fades in over the party and, page by page (typed out a character every two
- * ticks, a second's pause between pages), says the boss is beaten and its shard recovered,
+ * good wizard fades in over the party and, page by page (typed with punctuation delays
+ * and a second's pause between pages), says the boss is beaten and its shard recovered,
  * then how many of the realm's runestones the party has found; then the party is
  * teleported out. The words are the game's own messages; the voices the level's bank's.
- * What is said is looked up by whoever shows it: `update` is told the pages' lengths.
+ * What is said is looked up by whoever shows it: `update` receives the caption pages.
  */
 class BossVictory {
 public:
@@ -37,10 +37,10 @@ public:
     static constexpr s32 kWaitTicks = 300;     ///< five seconds after the fall
     static constexpr s32 kLongWaitTicks = 600; ///< ten for the demon and the garm
     static constexpr s32 kFadeStep = 4;        ///< of 255, a tick, as the wizard comes
-    static constexpr s32 kTicksPerCharacter = 2;
+    static constexpr s32 kTicksPerTextUnit = 2;
     static constexpr s32 kPagePauseTicks = 60;
-    static constexpr s32 kAfterDefeatTicks = 15; ///< half a second before the rune line
-    static constexpr s32 kAfterRunesTicks = 30;  ///< a second before he sees them off
+    static constexpr s32 kAfterDefeatTicks = 30; ///< half a second before the rune line
+    static constexpr s32 kAfterRunesTicks = 60;  ///< a second before he sees them off
     static constexpr s32 kExitTicks = 120;       ///< then the party is taken out
     static constexpr s32 kExitLongTicks = 600;   ///< or later, with gold still lying about
     static constexpr s32 kExitSparkleTicks = 35; ///< the teleport shows this long before
@@ -54,9 +54,10 @@ public:
     void setGoldLeft(bool left);
     void clear();
 
-    /** Moves it `ticks` on, told how long each page of the caption up is (none without
-     * one). Returns the voices to start. */
-    std::vector<VictoryVoice> update(s32 ticks, std::span<const usize> pageLengths);
+    /** Advances in 60 Hz ticks using the current caption's pages. Returns voices to queue.
+     * The departure countdown waits for queued speech to finish. */
+    std::vector<VictoryVoice> update(s32 ticks, std::span<const std::string> pages,
+                                     bool voicePlaying = false);
 
     Stage stage() const { return m_stage; }
     s32 kind() const { return m_kind; }
@@ -86,7 +87,7 @@ private:
     void say(std::string_view message, s32 pauseAfter, const std::string& voice,
              std::vector<VictoryVoice>& voices);
     /** Types the caption on; true once every page has been read and the pause is over. */
-    bool type(s32 ticks, std::span<const usize> pageLengths);
+    bool type(s32 ticks, std::span<const std::string> pages);
     void leave();
 
     Stage m_stage = Stage::None;

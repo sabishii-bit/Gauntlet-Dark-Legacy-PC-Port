@@ -32,6 +32,13 @@ void BossSequence::bind(Resources resources) {
             [this](SoundHandle handle) { m_resources->audio.stop(handle); }});
 }
 void BossSequence::clear() {
+    if (m_resources) {
+        for (const SoundHandle voice : m_victoryVoices) {
+            m_resources->audio.stop(voice);
+        }
+    }
+    m_victoryVoice = kNoSound;
+    m_victoryVoices.clear();
     m_legend.reset(); // stops its loop while audio and effects remain available
     m_victory.clear();
     m_shardPosition = Vec3{0};
@@ -169,9 +176,15 @@ bool BossSequence::advanceVictory(s32 ticks, f32 seconds, std::span<const Player
         return false;
     }
     auto& r = *m_resources;
-    const auto result = m_victory.update(ticks, seconds, r.world.goldLeft(), strings);
+    const auto result = m_victory.update(ticks, seconds, r.world.goldLeft(), strings,
+                                         r.audio.isPlaying(m_victoryVoice));
     for (const VictoryVoice& voice : result.voices) {
-        r.audio.playNamed(voice.sound);
+        // Wizard speech is serialized even if a caption is absent or finishes early.
+        const SoundHandle next = r.audio.playNamed(voice.sound, 1.0f, m_victoryVoice);
+        if (next != kNoSound) {
+            m_victoryVoice = next;
+            m_victoryVoices.push_back(next);
+        }
     }
     if (result.sparkle) {
         if (r.weapons.loaded()) {

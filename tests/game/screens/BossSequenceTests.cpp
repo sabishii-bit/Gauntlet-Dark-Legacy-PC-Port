@@ -5,11 +5,13 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "formats/WavWriter.h"
 #include "game/screens/BossSequence.h"
 
 namespace {
@@ -149,5 +151,54 @@ TEST_CASE("boss victory rewards the entire party once and signals completion onc
     REQUIRE_FALSE(f.sequence.victory().state().finished());
     f.sequence.fallen(Vec3{0}, f.bosses, f.players);
     REQUIRE(f.players[0].actor.save().progress().relics.hasShard(LevelRef::orderOf(7)));
+}
+
+TEST_CASE("boss victory queues rune speech and waits for audio before departing",
+          "[game][screens][boss-sequence][victory]") {
+    AudioMixer mixer(48000);
+    SoundPlayer output(mixer);
+    Fixture f;
+    f.loadLevel();
+    const auto root = test::scratchDirectory("boss-victory-speech");
+    const auto bank = root / "audio/COMMON";
+    std::filesystem::create_directories(bank);
+    const std::array<s16, 4> pcm{8192, 8192, 8192, 8192};
+    writeFile(bank / "voice.wav", formats::encodeWav(pcm, 48000, 1));
+    // Keep the first voice playing while simulation advances. This proves the second
+    // waits for playback, rather than relying on a predicted clip length or text length.
+    writeTextFile(bank / "sounds.json", R"({"sounds":[
+        {"index":0,"name":"S_DEFEATVOXG","sequence":[
+            {"sample":0,"loopStart":true,"loopBack":true}]},
+        {"index":1,"name":"S_RUNEVOX0G","sequence":[
+            {"sample":0,"loopStart":true,"loopBack":true}]}],
+        "samples":[{"index":0,"name":"voice","file":"voice.wav",
+                    "sampleRate":48000,"frames":4}]})");
+    f.audio.open(root, &output, nullptr);
+    f.audio.holdNarration(true); // gameplay announcements must not block Sumner himself
+    f.sequence.fallen(Vec3{0}, f.bosses, f.players);
+    f.sequence.advanceVictory(300, 5, f.players, f.strings);
+    f.sequence.advanceVictory(64, 64.0f / 60, f.players, f.strings);
+    REQUIRE(output.voiceCount() == 1);
+    f.sequence.advanceVictory(30, 0.5f, f.players, f.strings);
+    REQUIRE(f.sequence.victory().state().stage() == BossVictory::Stage::Runes);
+    REQUIRE(output.voiceCount() == 1); // rune line is pending, not a simultaneous voice
+    f.sequence.advanceVictory(60, 1, f.players, f.strings);
+    REQUIRE(f.sequence.victory().state().stage() == BossVictory::Stage::Leaving);
+    REQUIRE_FALSE(f.sequence.advanceVictory(600, 10, f.players, f.strings));
+    REQUIRE_FALSE(f.sequence.victory().state().sparkling());
+
+    SECTION("clearing stops both active and queued victory lines") {
+        f.sequence.clear();
+        std::array<f32, 2048> silence{};
+        mixer.mix(silence);
+        output.update();
+        REQUIRE(output.voiceCount() == 0);
+    }
+    SECTION("finishing audio releases the departure countdown") {
+        output.stopAll();
+        f.sequence.advanceVictory(85, 85.0f / 60, f.players, f.strings);
+        REQUIRE(f.sequence.victory().state().sparkling());
+        REQUIRE(f.sequence.advanceVictory(35, 35.0f / 60, f.players, f.strings));
+    }
 }
 } // namespace

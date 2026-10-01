@@ -39,7 +39,8 @@ public:
     void bindWizard(RenderDevice& device, ItemArchive& items, const Vec3& boss,
                     std::span<const Vec3> party);
     void clear();
-    Update update(s32 ticks, f32 seconds, bool goldLeft, const MessageTable& strings);
+    Update update(s32 ticks, f32 seconds, bool goldLeft, const MessageTable& strings,
+                  bool voicePlaying = false);
     void drawWizard(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                     const CameraFrame* camera = nullptr) const;
     void drawCaption(Canvas& canvas, const TextPainter& text, const MessageTable& strings,

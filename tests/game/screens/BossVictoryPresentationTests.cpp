@@ -50,6 +50,41 @@ void loadCaptions(MessageTable& table) {
     REQUIRE(table.load(root / "text.json"));
 }
 
+TEST_CASE("retail boss captions keep the rune report behind the full defeat reading time",
+          "[game][screens][victory-presentation]") {
+    const auto root = test::unpackedOrSkip("text/english.json");
+    MessageTable strings;
+    REQUIRE(strings.load(root));
+    // Actual GUNE5D English pages: 105.25 / 117.5 / 108.75 text units.
+    // speech_frame >> 1 must exceed those budgets to reach the terminator;
+    // then the page holds 60 ticks and the next speech waits 0.5 seconds (30).
+    struct Reading {
+        s32 kind;
+        char realm;
+        s32 runeTick;
+    };
+    for (const auto [kind, realm, runeTick] :
+         {Reading{34, 'B', 302}, Reading{37, 'D', 326}, Reading{41, 'G', 308}}) {
+        for (const s32 step : {1, 2}) {
+            CAPTURE(kind, step);
+            BossVictoryPresentation presentation;
+            presentation.begin(kind, realm, 1, 0, false);
+            presentation.update(300, 5, false, strings);
+            REQUIRE(presentation.update(64, 64.0f / 60, false, strings).voices.size() == 1);
+            for (s32 tick = step; tick < runeTick; tick += step) {
+                REQUIRE(presentation.update(step, static_cast<f32>(step) / 60, false, strings)
+                            .voices.empty());
+                REQUIRE(presentation.state().stage() == Stage::Defeat);
+            }
+            const auto followup =
+                presentation.update(step, static_cast<f32>(step) / 60, false, strings);
+            REQUIRE(followup.voices.size() == 1);
+            REQUIRE(followup.voices.front().sound == BossVictory::runeVoiceOf(kind, realm, 0));
+            REQUIRE(presentation.state().stage() == Stage::Runes);
+        }
+    }
+}
+
 TEST_CASE("victory presentation is inert when cleared and tolerates an absent wizard",
           "[game][screens][victory-presentation]") {
     test::FakeRenderDevice device;
@@ -201,7 +236,7 @@ TEST_CASE("a static victory wizard needs no animation sequence and can be reboun
     presentation.clear();
 }
 
-TEST_CASE("victory captions use the table's page lengths and render typed multiline text",
+TEST_CASE("victory captions use the table's weighted text and render typed multiline text",
           "[game][screens][victory-presentation]") {
     MessageTable strings;
     loadCaptions(strings);
@@ -212,7 +247,7 @@ TEST_CASE("victory captions use the table's page lengths and render typed multil
     presentation.update(2, 0.0f, false, strings);
     REQUIRE(presentation.state().caption().has_value());
     REQUIRE(presentation.state().caption()->shown == 1);
-    presentation.update(6, 0.0f, false, strings);
+    presentation.update(10, 0.0f, false, strings);
     REQUIRE(presentation.state().caption().has_value());
     REQUIRE(presentation.state().caption()->shown == 4);
     const BitmapFont font = BitmapFont::fromGlyphs(10, 4, {{'A', 6, 0, 0}, {'B', 8, 6, 0}});
