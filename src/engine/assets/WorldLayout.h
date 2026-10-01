@@ -57,8 +57,8 @@ struct WorldObject {
     static constexpr u32 kNoDepthWrite = 0x80;
     static constexpr u32 kSorted = 0x800; ///< drawn after the opaque, farthest first
     static constexpr u32 kChrome = 0x8000;
-    static constexpr u32 kSortBack = 0x80000;    ///< sorted as if farther, behind the rest
-    static constexpr u32 kSortBehind = 0x400000; ///< sorted farther still
+    static constexpr u32 kSortBack = 0x80000;    ///< subtracts 10000 from the deferred depth key
+    static constexpr u32 kSortBehind = 0x400000; ///< subtracts 20000; drawn after ordinary surfaces
     static constexpr u32 kAdditive = 0x800000;   ///< added onto the frame: glows and flames
 
     bool particles() const { return (flags & kParticles) != 0; }

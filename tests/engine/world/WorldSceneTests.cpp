@@ -148,7 +148,9 @@ TEST_CASE("a world scene places every object that has a mesh and draws it in pas
 
     // Seen from beyond the far pane, the sorted units come the other way round.
     f.device.draws.clear();
-    f.scene.draw(f.device, Mat4{1.0f}, Vec3{10.0f, 0.0f, 200.0f});
+    CameraFrame reverse = CameraFrame::at(Vec3{10.0f, 0.0f, 200.0f});
+    reverse.forward = Vec3{0, 0, -1};
+    f.scene.draw(f.device, Mat4{1.0f}, reverse);
     REQUIRE(f.device.draws[4].vertices[0].position == Vec3{10.0f, 0.0f, 30.0f});
     REQUIRE(f.device.draws[6].vertices[0].position == Vec3{10.0f, 0.0f, 100.0f});
 
@@ -157,6 +159,68 @@ TEST_CASE("a world scene places every object that has a mesh and draws it in pas
     f.device.draws.clear();
     f.scene.draw(f.device, Mat4{1.0f});
     REQUIRE(f.device.draws.empty());
+}
+
+TEST_CASE("deferred depth biases layer light sheets after curtains without disabling depth",
+          "[world][scene][temple-occlusion]") {
+    Fixture f("world-scene-depth-bias");
+    writeTextFile(f.directory / "world.json", R"({"objects":[
+      {"name":"PANE","position":[100,0,5],"next":1,"child":-1,"objectFlags":2048},
+      {"name":"PANE","position":[0,0,20],"next":2,"child":-1,"objectFlags":2048},
+      {"name":"FLAME","position":[0,0,40],"next":3,"child":-1,"objectFlags":13113472},
+      {"name":"FLAME","position":[0,0,50],"next":-1,"child":-1,"objectFlags":8915072}]})");
+    REQUIRE(f.layout.load(f.directory));
+    REQUIRE(f.build());
+    f.scene.drawDeferred(f.device, Mat4{1}, CameraFrame{});
+    REQUIRE(f.device.draws.size() == 4);
+    // Sideways distance must not outrank view depth. Of the biased sheets, the one
+    // with both bits uses -20000, not their sum, and follows the -10000 sheet.
+    CHECK(f.device.draws[0].vertices.front().position.z == 20);
+    CHECK(f.device.draws[1].vertices.front().position.z == 5);
+    CHECK(f.device.draws[2].vertices.front().position.z == 50);
+    CHECK(f.device.draws[3].vertices.front().position.z == 40);
+    for (const auto& draw : f.device.draws) {
+        CHECK(draw.state.depthTest);
+    }
+    CHECK_FALSE(f.device.draws[3].state.depthWrite);
+}
+
+TEST_CASE("Temple stained-glass light rays composite after the curtain meshes",
+          "[world][scene][temple-occlusion][unpacked]") {
+    const auto root = test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path();
+    test::FakeRenderDevice device;
+    ModelSet models;
+    TextureSet textures;
+    WorldLayout layout;
+    WorldScene scene;
+    REQUIRE(models.load(root));
+    REQUIRE(textures.load(root));
+    REQUIRE(layout.load(root));
+    REQUIRE(scene.build(layout, models, textures, device));
+    const auto* rays = scene.textureOf(54);     // LIGHTRAY
+    const auto* curtains = scene.textureOf(84); // REDBACKCURTAIN2
+    REQUIRE(rays);
+    REQUIRE(curtains);
+    REQUIRE(rays != curtains);
+    scene.draw(device, Mat4{1}, CameraFrame{});
+    usize firstRay = device.draws.size();
+    usize lastCurtain = 0;
+    usize curtainCount = 0;
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        const auto& draw = device.draws[i];
+        if (draw.texture == rays) {
+            firstRay = std::min(firstRay, i);
+            CHECK(draw.state.depthTest);
+            CHECK_FALSE(draw.state.depthWrite);
+        }
+        if (draw.texture == curtains) {
+            lastCurtain = i;
+            ++curtainCount;
+        }
+    }
+    REQUIRE(curtainCount > 0);
+    REQUIRE(firstRay < device.draws.size());
+    CHECK(lastCurtain < firstRay);
 }
 
 TEST_CASE("world transparency can be deferred until dynamic solid objects have drawn",

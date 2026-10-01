@@ -479,17 +479,17 @@ void WorldScene::drawDeferred(RenderDevice& device, const Mat4& clip,
     while (next < m_batches.size() && !m_batches[next].additive) {
         drawBatch(device, m_batches[next++], clip);
     }
-    // Farthest first, like the original's sorted objects: their key is the depth away from
-    // the eye, and the biases push the flagged ones behind everything else.
+    // Larger view depths draw first. Negative authored biases defer overlays until after
+    // ordinary translucent surfaces; depth testing still occludes them behind solid walls.
     m_order.resize(m_units.size());
     std::vector<f32> keys(m_units.size());
     for (usize i = 0; i < m_units.size(); ++i) {
         m_order[i] = i;
         const Vec3 origin{worldOf(m_units[i].object)[3]};
-        keys[i] = -glm::distance(eye, origin) + m_units[i].sortBias;
+        keys[i] = glm::dot(origin - eye, camera.forward) + m_units[i].sortBias;
     }
     std::stable_sort(m_order.begin(), m_order.end(),
-                     [&](usize a, usize b) { return keys[a] < keys[b]; });
+                     [&](usize a, usize b) { return keys[a] > keys[b]; });
     for (const usize i : m_order) {
         const Unit& unit = m_units[i];
         if (!unit.background) {
