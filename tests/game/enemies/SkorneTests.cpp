@@ -14,6 +14,7 @@
 #include "TestSupport.h"
 #include "game/enemies/CombatantFixture.h"
 #include "game/enemies/SkorneRelics.h"
+#include "game/players/PlayerCapture.h"
 #include "game/screens/BossSequence.h"
 #include "game/world/LevelWorld.h"
 #include "game/world/TargetAssist.h"
@@ -21,6 +22,61 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Skorne grab releases the player onto the altar rather than outside the map",
+          "[skorne][capture][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELE2/collision.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("E2");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    const auto* mark = world.layout().findLocator(LocatorKind::Boss);
+    REQUIRE(mark != nullptr);
+    test::CombatantFixture fighter;
+    fighter.open(device, root, &world.collision(), {}, 'E');
+    REQUIRE(fighter.spawn("SKORNE1", mark->position, 0));
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, {0, -9.75f, 13}, 0);
+    PlayerCapture capture;
+    bool caught = false;
+    bool released = false;
+    bool landed = false;
+    for (s32 frame = 0; frame < 6000 && !landed; ++frame) {
+        EnemyView target;
+        target.player = 0;
+        target.position = actor.position();
+        target.height = actor.height();
+        target.radius = actor.radius();
+        target.captured = capture.active();
+        const std::array players{target};
+        fighter.update(2, 1.0f / 30, players);
+        for (const auto& grab : fighter.actor.takeGrabs()) {
+            if (grab.attachment) {
+                capture.attach(grab.critter, true, *grab.attachment, actor);
+                caught = true;
+            } else {
+                CHECK(grab.damage == 70);
+                capture.release(grab.velocity, grab.damage);
+                released = true;
+            }
+        }
+        landed = capture.update(1.0f / 30, actor, world.collision()).has_value();
+        fighter.actor.takeCues();
+        fighter.actor.takeBlows();
+        fighter.actor.takeShots();
+    }
+    CAPTURE(actor.position().x, actor.position().y, actor.position().z);
+    REQUIRE(caught);
+    REQUIRE(released);
+    REQUIRE(landed);
+    REQUIRE_FALSE(capture.active());
+    REQUIRE(world.collision().floorAt(actor.position(), 0.2f, 0.2f));
+}
 
 TEST_CASE("Temple Skorne drops four relics in a fixed arc without coin speed scaling", "[skorne]") {
     const auto drops = SkorneRelics::spray({0, 30, 40}, 1);

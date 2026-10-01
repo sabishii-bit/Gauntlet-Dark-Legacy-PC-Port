@@ -7,6 +7,9 @@
 
 namespace gdl::game {
 void PlayerCapture::attach(s32 owner, bool boss, const Mat4& contact, PlayerActor& actor) {
+    if (!held()) {
+        m_supportHeight = actor.position().y;
+    }
     m_owner = owner;
     m_boss = boss;
     m_flying = false;
@@ -49,7 +52,15 @@ std::optional<f32> PlayerCapture::update(f32 seconds, PlayerActor& actor,
                                          dt;
         to = collision.resolveWalls(to, actor.radius(), to.y + PlayerActor::kFootClearance,
                                     to.y + actor.height());
-        const auto floor = collision.floorAt(to, 0.2f + kDescent * dt, 0.2f);
+        // Parenting bypasses floor collision. Skorne's wrist carries the body below
+        // the altar before releasing it, so a foot-only downward probe would never
+        // see the platform again. Retain the pre-grab support envelope while finding
+        // the landing surface, rather than searching arbitrary floors above the player.
+        // Retail PlayerMotion/PlayerCollideFloor keep floor state across parenting;
+        // this bounds recovery in our simpler point-based solver, not its trajectory.
+        const f32 above =
+            std::max(0.2f + kDescent * dt, m_supportHeight + PlayerActor::kStepUp - to.y);
+        const auto floor = collision.floorAt(to, above, 0.2f);
         if (floor.has_value() && to.y <= floor->y + 0.2f) {
             to.y = floor->y;
             actor.place(to);
