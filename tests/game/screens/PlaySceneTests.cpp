@@ -41,6 +41,17 @@ using Catch::Approx;
 
 constexpr f32 kPi = std::numbers::pi_v<f32>;
 
+f32 sumnerBeamAlpha(const LevelWorld& world) {
+    const auto& objects = world.layout().objects();
+    for (usize i = 0; i < objects.size(); ++i) {
+        if (objects[i].name == "L1XPLOWERLIGHTR") {
+            return world.objectAlpha(i);
+        }
+    }
+    FAIL("Sumner's authored beam is missing");
+    return -1;
+}
+
 bool awaitingEntrance(const PlayScene& scene) {
     if (scene.spawning()) {
         return true;
@@ -428,7 +439,7 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
     // Over the cut every crystal has glowed in, the nearest first; Sumner's beam stays dark
     // with the party far from him.
     REQUIRE_FALSE(world.placedItems().revealing());
-    REQUIRE(scene.beamAlpha() == 0.0f);
+    REQUIRE(sumnerBeamAlpha(world) == 0.0f);
     REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
 
     // Half a second of walking forward moves the character and the camera follows.
@@ -486,7 +497,7 @@ TEST_CASE("the party enters the tower at its entrance and walks under control",
 }
 
 TEST_CASE("a scenario's options place the party and skip the welcome",
-          "[game][screens][unpacked]") {
+          "[game][screens][tower-lights][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     StringTable strings;
@@ -528,7 +539,7 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     REQUIRE(scene.figureDirectory(0)->filename() == "YEL00");
     REQUIRE(scene.weaponHeld(0));
     // Far from Sumner his beam stays dark.
-    REQUIRE(scene.beamAlpha() == 0.0f);
+    REQUIRE(sumnerBeamAlpha(world) == 0.0f);
     // Standing among the crystals, the party picks one up on the first step: it counts for
     // the first realm's gate.
     REQUIRE(actor->save().progress().crystals[1] == 0);
@@ -572,17 +583,23 @@ TEST_CASE("a scenario's options place the party and skip the welcome",
     REQUIRE(scene.ambience().playingCount() >= 1);
     scene.close();
     REQUIRE(scene.ambience().size() == 0);
-    // Standing at Sumner's lectern, his beam of light comes up over three seconds.
+    // Standing at Sumner's lectern activates the authored beam pad after arrival.
     REQUIRE(scene.open(device, context, world, party, options));
     const Vec3 lectern = scene.sumner().position();
     scene.close();
     options.position = lectern + Vec3{2.0f, 0.0f, 2.0f};
     REQUIRE(scene.open(device, context, world, party, options));
-    REQUIRE(scene.beamAlpha() == 0.0f);
+    const auto& objects = world.layout().objects();
+    const auto window = std::ranges::find(objects, "L1XPLIGHTRAY01", &WorldObject::name);
+    REQUIRE(window != objects.end());
+    const auto windowIndex = static_cast<usize>(window - objects.begin());
+    REQUIRE(world.objectAlpha(windowIndex) == 0.0f);
+    REQUIRE(sumnerBeamAlpha(world) == 0.0f);
     for (s32 i = 0; i < 120; ++i) {
         scene.update(1.0 / 60.0, still);
     }
-    REQUIRE(scene.beamAlpha() == Approx(120.0f / PlayScene::kBeamFadeTicks).margin(0.02f));
+    REQUIRE(sumnerBeamAlpha(world) > 0.0f);
+    REQUIRE(world.objectAlpha(windowIndex) == 0.0f); // Sumner cannot reveal the Temple's beam
     REQUIRE(world.placedItems().size() > 0);
     scene.close();
 }

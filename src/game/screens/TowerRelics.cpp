@@ -352,7 +352,7 @@ void TowerRelics::updateLights() {
     }
     const auto& objects = m_world->layout().objects();
     for (usize i = 0; i < objects.size(); ++i) {
-        if (objects[i].name == "L1XPLOWERLIGHTR" || objects[i].name == "L1XPUPPERLIGHTR") {
+        if (objects[i].name == "L1XPLIGHTRAY01") {
             m_world->setObjectAlpha(
                 i, m_shards == kWindowShards ? revealAlpha(TowerCompletion::Kind::Window) : 0.0f);
         }

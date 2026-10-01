@@ -215,7 +215,7 @@ TEST_CASE("all authored tower pieces retain settled meshes at their own world an
     display.animate(1000);
     REQUIRE(display.figures().count() == 21);
     for (usize i = 0; i < world.layout().objects().size(); ++i) {
-        if (world.layout().objects()[i].name == "L1XPLOWERLIGHTR") {
+        if (world.layout().objects()[i].name == "L1XPLIGHTRAY01") {
             REQUIRE(world.objectAlpha(i) == 1);
         }
     }

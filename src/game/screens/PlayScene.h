@@ -125,7 +125,6 @@ public:
     static constexpr s32 kPlayerCount = 4;
     static constexpr f32 kSpawnSpacing = 2.0f; ///< between party members at the entrance
     static constexpr s32 kSpawnTicks = LevelArrivalPresentation::kSpawnTicks;
-    static constexpr s32 kBeamFadeTicks = TowerWelcome::kBeamFadeTicks;
     static constexpr s32 kCrystalTicks = TowerWelcome::kCrystalTicks;
     static constexpr f32 kGreetingSeconds = SumnerVisit::kGreetingSeconds;
     using Inputs = std::array<PlayInput, kPlayerCount>;
@@ -262,7 +261,6 @@ public:
     const RuneMeter& runeMeter() const { return m_runeMeter; }
     const AmbientSounds& ambience() const { return m_audio.ambience(); }
     /** How far Sumner's beam of light has come up, 0 to 1. */
-    f32 beamAlpha() const { return m_welcome.beamAlpha(); }
     /** Whether the party is still materialising: held under the level's title until the start
      * camera has ridden in, or for the effect's life when there is no start camera. */
     bool spawning() const { return m_arrival.active(); }
