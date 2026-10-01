@@ -1446,7 +1446,15 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   first enemy kind, forty-tick birth delay and ordinary population/rate scales;
   generators can be destroyed. Spider Queen and Lich share this path. The D5
   integration test requires actual spider births, not merely egg visuals.
-  Missing BOSSGEN art is not replaced with an invented mesh.
+  Generator art first checks the level archive, then the boss archive. Lich's
+  shipped archive has no BOSSGEN alias: `bossGeneratorTree` explicitly selects
+  its authored ATK12GEN/ATK12GEN2F50 body. This is a reconstructed binding, not
+  a verified retail alias; no invented mesh is used. `[lich]` checks both SPIT
+  health bands, visible floor-resting bodies, maggot births and destruction.
+  Full health does not permit SPIT; its MOVE rate bands are .75..1.5 and >=2.6.
+  Detached SFXX 0x40 copies the body's orientation (CritterDoSfxSub/SfxSetMat),
+  including the Lich's A13 fissure. Tests cover both spins and crypt damage
+  delivery, but do not establish visual-edge parity with a Dolphin recording.
   A zero-frame effect sequence lasts thirty frames at its authored rate unless
   an explicit lifetime overrides it; immediately expiring it creates eggs in
   midair before their trajectory can reach the floor.

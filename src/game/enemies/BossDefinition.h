@@ -11,4 +11,6 @@ std::string_view bossNameOf(s32 kind);
 /** The stage mesh hidden by an SFXX arena cue, or empty when the boss has none.
  * This is the named world's object, not a mesh in the boss's animation tree. */
 std::string_view bossArenaObject(s32 kind);
+/** Authored generator body in the boss archive, when the level has no BOSSGEN tree. */
+std::string_view bossGeneratorTree(s32 kind);
 } // namespace gdl::game

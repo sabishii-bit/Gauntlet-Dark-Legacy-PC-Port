@@ -1005,8 +1005,21 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         }
         for (const ItemInfo& info : m_resources->world.layout().itemInfos()) {
             if (info.type == ItemInfo::kGenerator && info.name == "BOSSGEN") {
-                m_generators.placeBoss(m_resources->device, info, m_resources->world.items(),
-                                       m_enemies, kind, placement, &m_resources->world.collision());
+                ItemArchive* archive = &m_resources->world.items();
+                std::string_view tree = "BOSSGEN";
+                // AtreeMatchAnyHeader searches loaded monster archives too.
+                // A boss's generator body is not necessarily in ITEMS/LEVEL*.
+                if (!archive->trees.find(tree)) {
+                    if (ItemArchive* boss = m_bosses.archive(); boss != nullptr) {
+                        const auto body = bossGeneratorTree(level->bossType);
+                        if (boss->trees.find(body)) {
+                            archive = boss;
+                            tree = body;
+                        }
+                    }
+                }
+                m_generators.placeBoss(m_resources->device, info, *archive, m_enemies, kind,
+                                       placement, &m_resources->world.collision(), tree);
                 break;
             }
         }

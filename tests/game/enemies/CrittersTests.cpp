@@ -847,6 +847,11 @@ TEST_CASE("move effects without an animated node use the root rather than the bo
     for (const auto& cue : cues) {
         REQUIRE(glm::distance(cue.position, Vec3{10, 11, 4}) < 0.001f);
         REQUIRE(cue.follows == (cue.tree == "GRAVEL"));
+        // Detached SFXX 0x40 copies the body's basis (SfxSetMat), even
+        // without an animated attachment. It must not face world +Z.
+        if (cue.tree == "WORLD") {
+            REQUIRE(cue.yaw == Approx(kPi / 2));
+        }
     }
     REQUIRE(cues[0].node.has_value());
     const auto parent = critters.nodeTransform(*cues[0].node);
