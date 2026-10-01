@@ -123,9 +123,37 @@ void BossCamera::place() {
     m_camera.position = m_attention - m_camera.forward() * m_distance;
 }
 
+void BossCamera::followPitch(f32 target, f32 seconds) {
+    // BossCamBossCalc and BossCamPlayerCalc both use LimitCamVal2 for pitch.
+    // Retain that velocity across the wake transition instead of assigning the
+    // new distance-derived angle in one frame.
+    const f32 delta = wrapAngle(target - m_camera.pitch);
+    const f32 distance = std::abs(delta);
+    const f32 speed = std::abs(m_pitchVelocity);
+    const f32 acceleration = kPitchAcceleration * seconds;
+    const f32 stop = seconds * kPitchStopScale * kPitchSpeed;
+    if (speed < stop && distance < stop) {
+        m_pitchVelocity = 0.0f;
+    } else if (distance < seconds * (speed + acceleration)) {
+        m_pitchVelocity = delta / seconds;
+    } else {
+        if (speed > 0.0f && speed / kPitchAcceleration >= distance / speed) {
+            // Brake without reversing when there is less than a stopping distance left.
+            m_pitchVelocity = m_pitchVelocity > 0.0f
+                                  ? std::max(m_pitchVelocity - acceleration, 0.0f)
+                                  : std::min(m_pitchVelocity + acceleration, 0.0f);
+        } else {
+            m_pitchVelocity += delta > 0.0f ? acceleration : -acceleration;
+        }
+        m_pitchVelocity = std::clamp(m_pitchVelocity, -kPitchSpeed, kPitchSpeed);
+    }
+    m_camera.pitch = wrapAngle(m_camera.pitch + m_pitchVelocity * seconds);
+}
+
 void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                        const BossCameraInfo& record, const CameraView& view) {
     m_stepOwed = 0.0f;
+    m_pitchVelocity = 0.0f;
     m_distance = boss.awake ? record.minDistance : record.minPlayerDistance;
     // The first look is along the line from the boss to the party, whether it sleeps or not.
     const Vec3 toParty = middleOf(party) - boss.position;
@@ -137,8 +165,10 @@ void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubj
     // Then it settles: backed off until everyone is in view.
     for (s32 i = 0; i < 200; ++i) {
         const f32 before = m_distance;
+        const f32 pitchBefore = m_camera.pitch;
         update(boss, party, record, view, 1.0f / kFrameRate);
-        if (std::abs(m_distance - before) < 0.01f) {
+        if (std::abs(m_distance - before) < 0.01f &&
+            std::abs(m_camera.pitch - pitchBefore) < 1.0e-6f) {
             break;
         }
     }
@@ -160,7 +190,7 @@ void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSub
     const f32 farthest = boss.awake ? record.maxDistance : record.maxPlayerDistance;
     const f32 range = farthest - nearest;
     const f32 t = range > 0.01f ? std::clamp((m_distance - nearest) / range, 0.0f, 1.0f) : 1.0f;
-    m_camera.pitch = record.minPitch + (record.maxPitch - record.minPitch) * t;
+    followPitch(record.minPitch + (record.maxPitch - record.minPitch) * t, seconds);
     place();
     // Frame by frame, as the original steps: out fast when something is cut off, out a
     // little when it is close to the edge, in when there is room to spare.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <numbers>
 #include <optional>
 #include <span>
 
@@ -45,6 +46,9 @@ public:
     static constexpr f32 kFarthest = 2.0f;     ///< of the record's greatest distance
     static constexpr f32 kTurnRate = 2.0f;     ///< radians a second the yaw may swing
     static constexpr f32 kEase = 6.0f;         ///< how quickly the look point follows
+    static constexpr f32 kPitchSpeed = std::numbers::pi_v<f32> / 2.0f;
+    static constexpr f32 kPitchAcceleration = std::numbers::pi_v<f32> / 12.0f;
+    static constexpr f32 kPitchStopScale = 0.1f;
 
     /** Stands the camera up at once, as the level starts. */
     void reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,
@@ -71,12 +75,14 @@ private:
     f32 viewMargin(const BossCameraSubject& boss, std::span<const CameraSubject> party,
                    const CameraView& view) const;
     void place();
+    void followPitch(f32 target, f32 seconds);
 
     WorldCamera m_camera;
     Vec3 m_attention{0.0f, 0.0f, 0.0f};
     f32 m_distance = 0.0f;
     f32 m_margin = 0.0f;
     f32 m_stepOwed = 0.0f; ///< seconds not yet stepped
+    f32 m_pitchVelocity = 0.0f;
 };
 
 } // namespace gdl::game

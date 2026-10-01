@@ -2161,6 +2161,61 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     scene.close();
 }
 
+TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or handoff cut",
+          "[game][screens][camera][garm-arrival][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELH4/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
+    test::unpackedOrSkip("critter/GARM.json");
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto chamber = levels.byName("H4");
+    REQUIRE(chamber.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *chamber));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.progress().experience = levelExperience(99);
+    save.progress().health = 10000;
+    const std::array party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.bossCameraOn());
+    REQUIRE(scene.startCamera().active());
+    REQUIRE(scene.startCamera().mode() == StartCamera::Mode::Legacy);
+    // Both boss entrance solvers look at the party before it wakes. The ordinary level
+    // camera is not an intermediate destination on the way to the boss camera.
+    const Vec3 attention = scene.bossCamera().attention();
+    REQUIRE(glm::distance(scene.startCamera().attention(), attention) < 0.01f);
+    WorldCamera before = scene.viewCamera();
+    for (s32 frame = 0; frame < rate * 30 && scene.spawning(); ++frame) {
+        before = scene.viewCamera();
+        scene.update(1.0 / rate, {});
+        if (scene.startCamera().active()) {
+            REQUIRE(glm::distance(scene.startCamera().attention(), attention) < 0.01f);
+        }
+    }
+    REQUIRE_FALSE(scene.spawning());
+    const WorldCamera after = scene.viewCamera();
+    CHECK(glm::distance(before.position, after.position) < StartCamera::kArrival + 0.01f);
+    CHECK(glm::distance(before.forward(), after.forward()) < 0.02f);
+    CHECK(after.position == scene.bossCamera().camera().position);
+    // The next update wakes Garm and follows the same camera, not a second abrupt cut.
+    scene.update(1.0 / rate, {});
+    REQUIRE(scene.bosses().view().awake);
+    CHECK(glm::distance(after.forward(), scene.viewCamera().forward()) < 0.05f);
+}
+
 TEST_CASE("in the town's crypt the lich rises for the party, its meter over the screen, and "
           "the book of protection brought to it is thrown and takes its quarter",
           "[game][screens][unpacked]") {
