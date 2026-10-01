@@ -40,6 +40,57 @@ CameraSubject standing(const Vec3& feet) {
     return CameraSubject{feet, feet + Vec3{0.0f, 3.0f, 0.0f}};
 }
 
+TEST_CASE("a sleeping boss does not pull the approach camera away from the stairs",
+          "[game][world][camera][chimera]") {
+    const auto record = cryptRecord();
+    const std::vector<CameraSubject> party{standing({0, -7, 38})};
+    BossCameraSubject boss;
+    boss.position = Vec3{0, 24, -48};
+    BossCamera camera;
+    camera.reset(boss, party, record, {});
+    const f32 distance = camera.distance();
+    boss.position.y += 200;
+    camera.reset(boss, party, record, {});
+    CHECK(camera.distance() == Approx(distance));
+    CHECK(distance == Approx(record.minPlayerDistance));
+    CHECK(camera.attention() == party[0].follow);
+}
+
+TEST_CASE("boss approach follows horizontal camera markers until the boss wakes",
+          "[game][world][camera][chimera]") {
+    auto record = cryptRecord();
+    record.maxYaw = kPi;
+    BossCameraSubject boss;
+    boss.position = Vec3{0, 24, -48};
+    std::vector<CameraSubject> party{standing({0, -7, 38})};
+    std::vector<WorldLocator> markers(2);
+    markers[0].position = Vec3{0, 200, 38}; // altitude must not change the selection
+    markers[0].rotation = Vec3{0.645772f, 2.8f, 0};
+    markers[1].position = Vec3{0, 0, 10};
+    markers[1].rotation = Vec3{0.523599f, kPi, 0};
+    BossCamera camera;
+    camera.reset(boss, party, record, {}, markers);
+    CHECK(camera.yaw() == Approx(markers[0].rotation.y));
+    CHECK(camera.pitch() == Approx(markers[0].rotation.x));
+    party[0] = standing({0, 0, 23}); // slightly nearer second, but within hysteresis
+    camera.update(boss, party, record, {}, 1.0f / 60, markers);
+    CHECK(camera.yaw() == Approx(markers[0].rotation.y));
+    party[0] = standing({0, 0, 10});
+    for (s32 frame = 0; frame < 600; ++frame) {
+        camera.update(boss, party, record, {}, 1.0f / 60, markers);
+    }
+    CHECK(std::abs(BossCamera::wrapAngle(camera.yaw() - kPi)) < 0.001f);
+    CHECK(camera.pitch() == Approx(markers[1].rotation.x).margin(0.001f));
+    boss.awake = true;
+    const f32 before = camera.pitch();
+    camera.update(boss, party, record, {}, 1.0f / 60, markers);
+    CHECK(std::abs(camera.pitch() - before) < 0.001f);
+    for (s32 frame = 0; frame < 600; ++frame) {
+        camera.update(boss, party, record, {}, 1.0f / 60, markers);
+    }
+    CHECK(camera.pitch() < markers[1].rotation.x - 0.05f);
+}
+
 TEST_CASE("victory camera uses wizard and shard offsets instead of combat attention",
           "[game][world][camera]") {
     auto record = cryptRecord();

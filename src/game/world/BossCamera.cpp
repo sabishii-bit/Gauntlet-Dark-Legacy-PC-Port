@@ -109,8 +109,12 @@ f32 BossCamera::viewMargin(const BossCameraSubject& boss, std::span<const Camera
         least = std::min(least, (z * tanX - std::abs(x)) / normX - radius);
         least = std::min(least, (z * tanY - std::abs(y)) / normY - radius);
     };
-    consider(boss.position, boss.radius);
-    consider(boss.position + Vec3{0.0f, boss.height, 0.0f}, 0.0f);
+    // BossCamPlayerCalc fits only the players. Including the sleeping boss pulls the
+    // camera back to frame the raised arena before the party has climbed its stairs.
+    if (boss.awake || boss.focus != BossCameraSubject::Focus::Combat) {
+        consider(boss.position, boss.radius);
+        consider(boss.position + Vec3{0.0f, boss.height, 0.0f}, 0.0f);
+    }
     for (const CameraSubject& subject : party) {
         consider(subject.feet, 0.0f);
         consider(subject.follow, 0.0f);
@@ -150,23 +154,55 @@ void BossCamera::followPitch(f32 target, f32 seconds) {
     m_camera.pitch = wrapAngle(m_camera.pitch + m_pitchVelocity * seconds);
 }
 
+const WorldLocator* BossCamera::approachMarker(std::span<const WorldLocator> markers,
+                                               const Vec3& near) {
+    if (markers.empty()) {
+        m_marker = -1;
+        return nullptr;
+    }
+    // The boss approach selects by horizontal distance, retaining its marker until
+    // another is at least 1.5 times nearer (the BossCamPlayerCalc transmitter query).
+    usize best = 0;
+    f32 distance = flatLength(near - markers[0].position);
+    for (usize i = 1; i < markers.size(); ++i) {
+        const f32 candidate = flatLength(near - markers[i].position);
+        if (candidate < distance) {
+            best = i;
+            distance = candidate;
+        }
+    }
+    if (m_marker < 0 || static_cast<usize>(m_marker) >= markers.size() ||
+        distance <= 0.667f * flatLength(near - markers[static_cast<usize>(m_marker)].position)) {
+        m_marker = static_cast<s32>(best);
+    }
+    return &markers[static_cast<usize>(m_marker)];
+}
+
 void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-                       const BossCameraInfo& record, const CameraView& view) {
+                       const BossCameraInfo& record, const CameraView& view,
+                       std::span<const WorldLocator> markers) {
     m_stepOwed = 0.0f;
     m_pitchVelocity = 0.0f;
+    m_marker = -1;
     m_distance = boss.awake ? record.minDistance : record.minPlayerDistance;
-    // The first look is along the line from the boss to the party, whether it sleeps or not.
+    // With no approach markers, fall back to the line from the boss to the party.
     const Vec3 toParty = middleOf(party) - boss.position;
     m_camera.yaw = flatLength(toParty) > 0.5f ? wrapAngle(std::atan2(toParty.x, toParty.z) + kPi)
                                               : boss.facing;
     m_camera.pitch = record.minPitch;
+    if (!boss.awake) {
+        if (const auto* marker = approachMarker(markers, middleOf(party)); marker != nullptr) {
+            m_camera.yaw = marker->rotation.y;
+            m_camera.pitch = marker->rotation.x;
+        }
+    }
     m_attention = lookPoint(boss, party, record);
     place();
     // Then it settles: backed off until everyone is in view.
     for (s32 i = 0; i < 200; ++i) {
         const f32 before = m_distance;
         const f32 pitchBefore = m_camera.pitch;
-        update(boss, party, record, view, 1.0f / kFrameRate);
+        update(boss, party, record, view, 1.0f / kFrameRate, markers);
         if (std::abs(m_distance - before) < 0.01f &&
             std::abs(m_camera.pitch - pitchBefore) < 1.0e-6f) {
             break;
@@ -175,14 +211,17 @@ void BossCamera::reset(const BossCameraSubject& boss, std::span<const CameraSubj
 }
 
 void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSubject> party,
-                        const BossCameraInfo& record, const CameraView& view, f32 seconds) {
+                        const BossCameraInfo& record, const CameraView& view, f32 seconds,
+                        std::span<const WorldLocator> markers) {
     if (seconds <= 0.0f) {
         return;
     }
     // The look point follows, and the yaw swings at its rate toward the party's line.
     const f32 ease = 1.0f - std::exp(-kEase * seconds);
     m_attention += (lookPoint(boss, party, record) - m_attention) * ease;
-    const f32 turn = wrapAngle(wantedYaw(boss, party, record) - m_camera.yaw);
+    const WorldLocator* marker = !boss.awake ? approachMarker(markers, middleOf(party)) : nullptr;
+    const f32 yaw = marker != nullptr ? marker->rotation.y : wantedYaw(boss, party, record);
+    const f32 turn = wrapAngle(yaw - m_camera.yaw);
     const f32 most = kTurnRate * seconds;
     m_camera.yaw = wrapAngle(m_camera.yaw + std::clamp(turn, -most, most));
     // Steeper the closer it stands.
@@ -190,7 +229,9 @@ void BossCamera::update(const BossCameraSubject& boss, std::span<const CameraSub
     const f32 farthest = boss.awake ? record.maxDistance : record.maxPlayerDistance;
     const f32 range = farthest - nearest;
     const f32 t = range > 0.01f ? std::clamp((m_distance - nearest) / range, 0.0f, 1.0f) : 1.0f;
-    followPitch(record.minPitch + (record.maxPitch - record.minPitch) * t, seconds);
+    followPitch(marker != nullptr ? marker->rotation.x
+                                  : record.minPitch + (record.maxPitch - record.minPitch) * t,
+                seconds);
     place();
     // Frame by frame, as the original steps: out fast when something is cut off, out a
     // little when it is close to the edge, in when there is room to spare.

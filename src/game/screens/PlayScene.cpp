@@ -163,7 +163,8 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     m_camera.reset(subjects, world.cameraMarkers(), world.cameraRange(), cameraView());
     if (const LevelInfo* level = world.level();
         level != nullptr && level->bossCamera.has_value() && bossCameraOn()) {
-        m_bossCamera.reset(bossSubject(), subjects, *level->bossCamera, cameraView());
+        m_bossCamera.reset(bossSubject(), subjects, *level->bossCamera, cameraView(),
+                           world.cameraMarkers());
     }
     m_audio.startMusic(context.assets,
                        world.level() != nullptr ? world.level()->musicVolume : 1.0f);
@@ -965,7 +966,7 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
     if (const LevelInfo* level = m_world->level();
         level != nullptr && level->bossCamera.has_value() && bossCameraOn()) {
         m_bossCamera.update(bossSubject(), followed.empty() ? subjects : followed,
-                            *level->bossCamera, cameraView(), seconds);
+                            *level->bossCamera, cameraView(), seconds, m_world->cameraMarkers());
     } else {
         m_camera.update(followed.empty() ? subjects : followed, m_world->cameraMarkers(),
                         m_world->cameraRange(), cameraView(), seconds);

@@ -21,6 +21,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/app/Scenario.h"
 #include "game/config/GameConfig.h"
 #include "game/enemies/Enemies.h"
 #include "game/menu/ScrollBox.h"
@@ -2159,6 +2160,99 @@ TEST_CASE("the fields' zombies are bred from their generators, chase the party, 
     REQUIRE_FALSE(scene.generators().standing(nearest));
     (void)before;
     scene.close();
+}
+
+TEST_CASE("Chimera scenario walks up the stairs before lowering the occupied platform",
+          "[game][screens][camera][chimera-approach][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELA5/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/level-a5-chimera.json");
+    REQUIRE_FALSE(scenario.tower.position.has_value());
+    const s32 rate = GENERATE(30, 60);
+    CAPTURE(rate);
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    const auto arena = levels.byName(scenario.level);
+    REQUIRE(arena.has_value());
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *arena));
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, scenario.partyMembers(), scenario.tower));
+    const auto* start = world.startPoint(0);
+    const auto* boss = world.layout().findLocator(LocatorKind::Boss);
+    REQUIRE(start != nullptr);
+    REQUIRE(boss != nullptr);
+    REQUIRE(scene.actor(0) != nullptr);
+    CHECK(scene.actor(0)->position().x == Approx(start->position.x));
+    CHECK(scene.actor(0)->position().z == Approx(start->position.z));
+    const auto entranceFloor = world.collision().floorAt(start->position, 4, 10);
+    REQUIRE(entranceFloor.has_value());
+    CHECK(scene.actor(0)->position().y == Approx(entranceFloor->y));
+    REQUIRE(scene.bosses().position() != nullptr);
+    const Vec3 initialBoss = *scene.bosses().position();
+    CHECK(glm::distance(initialBoss, boss->position) < 1.01f);
+    CHECK(scene.bosses().facing() == Approx(boss->rotation.y));
+    constexpr usize kElevator = 25;
+    REQUIRE(world.layout().objects()[kElevator].name == "A5ELEVATOR");
+    const f32 initialLift = world.scene().worldTransform(kElevator)[3].y;
+    REQUIRE(scene.startCamera().active());
+    REQUIRE(world.entranceCamera().has_value());
+    CHECK(scene.viewCamera().position == world.entranceCamera()->position);
+    CHECK(scene.bossCamera().pitch() == Approx(0.645772f).margin(0.001f));
+    CHECK(scene.bossCamera().distance() == Approx(30.0f));
+    WorldCamera previous = scene.viewCamera();
+    for (s32 frame = 0; frame < rate * 30 && awaitingEntrance(scene); ++frame) {
+        previous = scene.viewCamera();
+        scene.update(1.0 / rate, {});
+    }
+    REQUIRE_FALSE(awaitingEntrance(scene));
+    CHECK(glm::distance(previous.position, scene.viewCamera().position) < 0.5f);
+    CHECK_FALSE(scene.bosses().view().awake);
+    // Waiting at the bottom must not count as stepping on the pressure region.
+    for (s32 frame = 0; frame < rate * 2; ++frame) {
+        scene.update(1.0 / rate, {});
+    }
+    CHECK_FALSE(world.triggers().opened(kElevator));
+    CHECK(world.scene().worldTransform(kElevator)[3].y == Approx(initialLift));
+    CHECK(*scene.bosses().position() == initialBoss);
+    PlayScene::Inputs walking{};
+    walking[0].move = {{0, 1}, 1};
+    bool halfway = false;
+    bool reachedTop = false;
+    for (s32 frame = 0; frame < rate * 25; ++frame) {
+        if (scene.actor(0)->position().z <= 10) {
+            walking[0].move = {};
+        }
+        scene.update(1.0 / rate, walking);
+        reachedTop |= scene.actor(0)->position().y > -0.5f;
+        const f32 descent = initialLift - world.scene().worldTransform(kElevator)[3].y;
+        if (!halfway && descent > 10 && descent < 20) {
+            halfway = true;
+            CHECK(scene.bosses().position()->y == Approx(initialBoss.y - descent).margin(0.2f));
+            CHECK(reachedTop);
+        }
+    }
+    CAPTURE(scene.actor(0)->position().y, scene.actor(0)->position().z);
+    CHECK(reachedTop);
+    CHECK(halfway);
+    CHECK(world.triggers().opened(kElevator));
+    CHECK(world.scene().worldTransform(kElevator)[3].y == Approx(initialLift - 23));
+    CHECK(scene.bosses().position()->y == Approx(initialBoss.y - 23).margin(0.2f));
+    CHECK(scene.bosses().position()->x == Approx(initialBoss.x));
+    // Its authored STEP moves may advance it within the TYPE's twelve-unit home
+    // radius after waking; the boss is not pinned to its initial z throughout combat.
+    CHECK(std::abs(scene.bosses().position()->z - initialBoss.z) <= 12.01f);
+    CHECK(scene.bosses().view().awake);
+    CHECK(scene.viewCamera().position.z > scene.actor(0)->position().z);
 }
 
 TEST_CASE("Garm's entrance rides to the boss camera without a floor detour or handoff cut",
