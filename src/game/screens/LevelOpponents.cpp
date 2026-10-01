@@ -413,8 +413,11 @@ Vec3 LevelOpponents::resolveMovement(const PlayerActor& player, const Vec3& from
     // A slide along a creature must still respect the level walls. If wall resolution
     // would move back inside a creature, retain the already-safe pre-step position.
     if (m_resources.has_value()) {
+        // Use the same body clearance as PlayerActor::travel. A lower second probe
+        // catches the buried edge of the tower's lowered gate and undoes a valid step.
         resolved = m_resources->world.collision().resolveWalls(
-            resolved, player.radius(), resolved.y, resolved.y + player.height());
+            resolved, player.radius(), resolved.y + PlayerActor::kFootClearance,
+            resolved.y + player.height() - PlayerActor::kFootClearance);
         const Vec3 checked =
             BodyCollision::resolve(from, resolved, player.radius(), player.height(), bodies);
         if (glm::distance(checked, resolved) > 1e-4f) {
