@@ -67,6 +67,41 @@ std::filesystem::path familyAssets(s32 readyInterrupt = 60, u32 shield = 0) {
     return root;
 }
 
+TEST_CASE("boss targets preserve raised hit nodes independently of their floor anchor",
+          "[combatant][boss][target-assist]") {
+    const auto root = familyAssets();
+    writeTextFile(root / "critter/LICH.json", R"({
+        "descriptors":[{"prefix":"BODY","type":4}],
+        "types":[{"moveCount":1,"maxHealth":100,"radius":4,
+                  "originOffset":[0,28,0],"colCount":1}],
+        "moves":[{"name":"READY","anim":"STEP","type":32}],
+        "nodes":[{"nodeName":"BODY","position":[0,28,0],"radius":4,
+                  "healthScale":1,"damageScale":1}]
+    })");
+    test::FakeRenderDevice device;
+    Bosses bosses;
+    bosses.open(device, root, nullptr, {}, 'G');
+    REQUIRE(bosses.spawn(41, {0, -25, 0}, 0));
+    bosses.wake();
+    const auto targets = bosses.targets();
+    REQUIRE(targets.size() == 2);
+    CHECK(targets[0].node == 0);
+    CHECK(targets[0].base == Vec3{0, -1, 0});
+    CHECK(targets[0].height == 8);
+    CHECK(targets[0].touches({0, 3, 0}, 1));
+    CHECK_FALSE(targets[0].touches({0, -21, 0}, 1));
+    CHECK(targets[1].node == -1);
+    CHECK(targets[1].base == targets[0].base);
+    EnemyHit hit;
+    hit.damage = 20;
+    hit.node = targets[0].node;
+    bosses.hurt(hit, targets[0].id);
+    CHECK(bosses.view().health == 80);
+    hit.damage = 200;
+    bosses.hurt(hit);
+    CHECK(bosses.targets().empty());
+}
+
 TEST_CASE("combatants preserve elemental immunity and sub-one damage", "[combatant][damage]") {
     for (const auto& definition : {Golem::definition(), bossDefinition("LICH")}) {
         CAPTURE(definition.name);

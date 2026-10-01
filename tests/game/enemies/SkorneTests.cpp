@@ -13,6 +13,7 @@
 #include "game/enemies/SkorneRelics.h"
 #include "game/screens/BossSequence.h"
 #include "game/world/LevelWorld.h"
+#include "game/world/TargetAssist.h"
 
 namespace {
 using namespace gdl;
@@ -115,6 +116,74 @@ TEST_CASE("Skorne entrance sends three masonry cues across both start animations
     }
     REQUIRE(world.skorneArena().phase() == 3);
     opponents.close();
+}
+
+TEST_CASE("Skorne can be targeted and hit above his buried root with and without Savior",
+          "[skorne][target-assist][legend][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
+    test::unpackedOrSkip("LEVELS/LEVELE2/world.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto level = catalog.byName("E2");
+    REQUIRE(level);
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *level));
+    Bosses bosses;
+    bosses.open(device, root, &world.collision(), {}, 'E');
+    REQUIRE(bosses.spawn(42, {0, -25.375f, 0}, 0));
+    EnemyView player;
+    player.player = 0;
+    player.position = {0, -9.75f, 33};
+    player.height = 6;
+    player.radius = 1;
+    const std::array players{player};
+    for (s32 frame = 0; frame < 600; ++frame) {
+        bosses.update(2, 1.0f / 30, players);
+    }
+    REQUIRE(bosses.view().awake);
+    const auto shoot = [&] {
+        const Vec3 origin = player.position + Vec3{0, player.height * 0.5f, 0};
+        const auto aim = TargetAssist::select(origin, {0, 0, -1}, bosses.targets(),
+                                              TargetAssist::kBossRange, &world.collision());
+        REQUIRE(aim);
+        // The old eight-unit cylinder ended below the platform, at -17.375.
+        REQUIRE(aim->y > -17.375f);
+        MissileLaunch shot;
+        shot.position = origin;
+        shot.direction = {0, 0, -1};
+        shot.speed = 60;
+        shot.reach = TargetAssist::kBossRange;
+        shot.spec = &MissileSpec::of(0);
+        shot.velocity = TargetAssist::velocity(origin, *aim, shot.speed, shot.spec->weight);
+        shot.damage = 100;
+        PlayerMissiles missiles;
+        REQUIRE(missiles.launch(shot));
+        for (s32 frame = 0; frame < 180 && missiles.count() != 0; ++frame) {
+            bosses.update(1, 1.0f / 60, players);
+            missiles.update(1.0f / 60, &world.collision(), bosses.targets());
+        }
+        const auto impacts = missiles.takeImpacts();
+        REQUIRE(impacts.size() == 1);
+        REQUIRE(impacts.front().target == Bosses::kTargetId);
+        const f32 health = bosses.view().health;
+        EnemyHit hit;
+        hit.damage = impacts.front().damage;
+        hit.player = 0;
+        hit.node = impacts.front().node;
+        bosses.hurt(hit, impacts.front().target);
+        REQUIRE(bosses.view().health < health);
+    };
+    shoot();
+    REQUIRE(bosses.bringLegend(0));
+    for (s32 frame = 0; frame < 900 && !bosses.legend().thrown(); ++frame) {
+        bosses.update(2, 1.0f / 30, players);
+    }
+    REQUIRE(bosses.legend().thrown());
+    bosses.landLegend();
+    REQUIRE(bosses.curbed());
+    shoot();
 }
 
 TEST_CASE("Skorne health and range windows expose his authored attack families",
