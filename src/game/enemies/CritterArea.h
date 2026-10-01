@@ -15,6 +15,8 @@ struct CritterArea {
     Mat4 local{1.0f};
     std::string node;
     std::optional<Mat4> worldParent; ///< static arena placement, independent of the fighter
+    Vec3 velocity{0};
+    Vec3 displacement{0}; ///< world-space travel, independent of attachment motion
     f32 radius = 0.0f;
     f32 minDot = -1.0f;
     f32 damage = 0.0f;
@@ -25,6 +27,7 @@ struct CritterArea {
 
     /** The effect's translation is not rotated by its own directional angles. */
     static Mat4 placement(const Mat4& parent, const Vec3& offset, const Vec2& pitchYaw);
+    Mat4 transform(const Mat4& parent) const;
     bool touches(const Mat4& parent, const EnemyView& player) const;
     f32 currentRadius() const;
     f32 currentDamage() const;

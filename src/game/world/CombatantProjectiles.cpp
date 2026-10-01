@@ -116,7 +116,13 @@ void CombatantProjectiles::place(const Flying& flying, EffectTrees& effects) {
     transform = glm::rotate(transform, flying.rotation.y, Vec3{0, 1, 0});
     transform = glm::rotate(transform, flying.rotation.x, Vec3{1, 0, 0});
     transform = glm::rotate(transform, flying.rotation.z, Vec3{0, 0, 1});
-    effects.placeAt(flying.effect, transform);
+    const auto* damage = flying.shot.data->damage(flying.shot.damageIndex);
+    constexpr u32 kArrow = 0x20000;
+    // ProcessEffects aligns arrow effects with velocity every frame, including
+    // its vertical component. Garm's eye ribbons use this, not a yaw-only pose.
+    const bool directed = !flying.stuck && (damage->flags & kArrow) != 0;
+    effects.placeAt(flying.effect, transform,
+                    directed ? std::optional<Vec3>{flying.velocity} : std::nullopt);
 }
 
 void CombatantProjectiles::launch(const CombatShot& shot, ItemArchive& archive,

@@ -91,10 +91,11 @@ public:
         Color tint = Color::white();
         f32 playbackRate = 1.0f;
         std::optional<Light> light;
-        f32 lived = 0.0f;               ///< seconds since it started
-        ParticleField trails;           ///< code-created emitters following the effect's root
-        TreeParticles particles;        ///< particle nodes authored in the archive
-        std::optional<Mat4> attachment; ///< full posed parent, rather than world yaw alone
+        f32 lived = 0.0f;                    ///< seconds since it started
+        ParticleField trails;                ///< code-created emitters following the effect's root
+        TreeParticles particles;             ///< particle nodes authored in the archive
+        std::optional<Mat4> attachment;      ///< full posed parent, rather than world yaw alone
+        std::optional<Vec3> flightDirection; ///< arrow effects follow 3D travel, not yaw alone
         Mat4 transform() const;
     };
 
@@ -117,7 +118,8 @@ public:
     /** Puts effect number `id` at `position`, as one that goes about with a character. */
     void moveTo(u32 id, const Vec3& position);
     /** Places an effect on a fully posed attachment. Its own scale still applies. */
-    void placeAt(u32 id, const Mat4& attachment);
+    void placeAt(u32 id, const Mat4& attachment,
+                 std::optional<Vec3> flightDirection = std::nullopt);
     /** Attaches an emitter to the effect root; existing particles remain in world space
      * unless its descriptor explicitly requests dynamic particles. */
     void attachTrail(u32 id, const ParticleDescriptor& descriptor, const Texture& texture);

@@ -23,7 +23,8 @@ public:
     enum class Phase : u8 { Off, Hold, Ride };
     enum class Mode : u8 { Standard, Legacy };
 
-    /** Starts the hold at `marker`, looking as far along its facing as `party` lies from it. */
+    /** Holds at the marker; standard entrances use its facing, boss/legacy
+     * entrances aim at the supplied party focus instead. */
     void start(const WorldCamera& marker, const Vec3& party, Mode mode = Mode::Standard);
     void stop() { m_phase = Phase::Off; }
     /** Advances toward the follow camera's position/attention; false when arrived.

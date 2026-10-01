@@ -25,6 +25,12 @@ void StartCamera::start(const WorldCamera& marker, const Vec3& party, Mode mode)
     m_camera = marker;
     m_camera.roll = 0.0f;
     m_attention = marker.position + m_camera.forward() * glm::distance(marker.position, party);
+    if (mode == Mode::Legacy) {
+        // BossCamStartCalc uses the transmitter's position but aims at the
+        // party. Its authored Euler angles do not define the entrance view.
+        m_attention = party;
+        look();
+    }
     m_mode = mode;
     m_ticks = mode == Mode::Standard ? kHoldTicks : kLegacyHoldTicks;
     m_rideTicks = 0;

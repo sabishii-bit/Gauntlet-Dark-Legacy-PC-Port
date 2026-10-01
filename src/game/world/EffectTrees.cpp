@@ -17,11 +17,12 @@ Mat4 EffectTrees::Effect::transform() const {
     return glm::scale(basis, Vec3{scale} * stretch);
 }
 
-void EffectTrees::placeAt(u32 id, const Mat4& attachment) {
+void EffectTrees::placeAt(u32 id, const Mat4& attachment, std::optional<Vec3> flightDirection) {
     for (const std::unique_ptr<Effect>& effect : m_effects) {
         if (effect->id == id) {
             effect->attachment = attachment;
             effect->position = Vec3{attachment[3]};
+            effect->flightDirection = flightDirection;
             return;
         }
     }
@@ -334,7 +335,9 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                        const CameraFrame* camera) const {
     const CameraFrame frame = camera != nullptr ? *camera : CameraFrame{};
     for (const std::unique_ptr<Effect>& effect : m_effects) {
-        const Mat4 placed = effect->transform();
+        const Mat4 placed = effect->flightDirection
+                                ? frame.along(effect->transform(), *effect->flightDirection)
+                                : effect->transform();
         if (!effect->retiring) {
             // Its last moments fade it out (ProcessEffects' fxfade).
             const f32 alpha =

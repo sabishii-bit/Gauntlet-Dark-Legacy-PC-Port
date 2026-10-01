@@ -128,6 +128,29 @@ CameraFrame CameraFrame::at(const Vec3& eye) {
     return frame;
 }
 
+Mat4 CameraFrame::along(const Mat4& placement, const Vec3& direction) const {
+    const f32 length = glm::length(direction);
+    if (length < 0.0001f) {
+        return placement;
+    }
+    const Vec3 z = direction / length;
+    Vec3 y = glm::cross(z, forward);
+    if (glm::length(y) < 0.0001f) {
+        // Collinear travel/view has no unique roll. Retain a stable frame
+        // instead of normalizing a zero vector.
+        y = glm::cross(z, up);
+        if (glm::length(y) < 0.0001f) {
+            y = glm::cross(z, right);
+        }
+    }
+    y = glm::normalize(y);
+    Mat4 result = placement;
+    result[0] = Vec4{glm::cross(y, z) * glm::length(Vec3{placement[0]}), 0};
+    result[1] = Vec4{y * glm::length(Vec3{placement[1]}), 0};
+    result[2] = Vec4{z * glm::length(Vec3{placement[2]}), 0};
+    return result;
+}
+
 Mat4 CameraFrame::face(const Mat4& placement, u32 mode) const {
     if (mode == 0) {
         return placement;

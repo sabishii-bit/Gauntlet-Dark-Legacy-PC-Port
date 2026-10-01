@@ -7,6 +7,7 @@
 #include "engine/world/AnimationPlayer.h"
 
 #include "game/enemies/Combatant.h"
+#include "game/enemies/CombatantProjectile.h"
 
 namespace gdl::game {
 namespace {
@@ -30,9 +31,15 @@ f32 arenaDistance(const Vec3& delta) {
 
 bool Combatant::supportsArea(const AttackDefinition& damage, const CombatEffectDefinition* sound) {
     constexpr u32 kAttachedAppearanceFlags = 1U | 2U | 4U | 0x40U | 0x800U;
-    return sound != nullptr && (sound->flags & ~kAttachedAppearanceFlags) == 0 &&
+    // Root attachment takes precedence over the saved-position flag (0x80).
+    // Garm's invisible damage carrier moves; its visible arc is separately
+    // animated. Do not turn that unsupported carrier into an instant full hit.
+    const u32 allowed =
+        kAttachedAppearanceFlags | (sound != nullptr && (sound->flags & 0x801U) != 0 ? 0x80U : 0U);
+    return sound != nullptr && (sound->flags & ~allowed) == 0 &&
            ((sound->flags & 0x40U) == 0 || (sound->flags & 0x801U) == 0) &&
-           damage.behaviorFlags == 0 && damage.speed == 0 && damage.morph < 0 &&
+           (damage.behaviorFlags & ~0x2000U) == 0 && damage.gravity == 0 &&
+           (damage.speed == 0 || sound->tree == "NULLFX") && damage.morph < 0 &&
            damage.morphEnd < 0 && sound->link < 0;
 }
 
@@ -101,6 +108,18 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
         }
     }
     area.local = CritterArea::placement(Mat4{1}, offset, angles);
+    if (damage.speed > 0) {
+        CombatShot motion;
+        motion.forward = Vec3{std::sin(critter.yaw), 0, std::cos(critter.yaw)};
+        motion.rate = attackRate(critter);
+        AttackDefinition physics = damage;
+        // DAMG pitch/yaw rotate the area basis, not its non-projectile velocity.
+        physics.pitch = physics.yaw = physics.yawSpread = 0;
+        area.velocity = CombatantProjectile::velocity(physics, motion, 0);
+        // SfxSetPhysics applies launch yaw to the effect's local basis.
+        area.local =
+            glm::rotate(area.local, std::atan2(area.velocity.x, area.velocity.z), Vec3{0, 1, 0});
+    }
     area.radius = damage.maxDistance * critter.scale;
     area.minDot = damage.minDot;
     area.damage = damage.damage * m_scales.damage;
@@ -193,7 +212,7 @@ void Combatant::updateAreas(Actor& critter, s32 id, std::span<const EnemyView> p
                 constexpr u32 kNoHitEffect = 0x1000000;
                 blow.flags = (blow.flags & ~kHeavyHitFlags) | kNoHitEffect;
             }
-            blow.origin = Vec3{(parent * area.local)[3]};
+            blow.origin = Vec3{area.transform(parent)[3]};
             const Vec3 away = player.position - blow.origin;
             const f32 distance = glm::length(Vec2{away.x, away.z});
             blow.direction = distance > 0 ? Vec3{away.x, 0, away.z} * (0.25f / distance) : Vec3{0};

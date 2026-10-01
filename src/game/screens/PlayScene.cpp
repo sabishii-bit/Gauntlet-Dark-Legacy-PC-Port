@@ -1210,11 +1210,18 @@ void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
     }
     std::vector<Vec3> positions;
     positions.reserve(m_players.size());
+    std::optional<Vec3> low;
+    Vec3 high{0};
     for (const PlayerRuntime& runtime : m_players) {
         positions.push_back(runtime.actor.position());
+        const Vec3 follow = runtime.actor.followPoint();
+        high = low ? glm::max(high, follow) : follow;
+        low = low ? glm::min(*low, follow) : follow;
     }
     m_arrival.begin(device, m_weapons, positions, marker,
-                    bossCameraOn() ? StartCamera::Mode::Legacy : StartCamera::Mode::Standard);
+                    bossCameraOn() ? StartCamera::Mode::Legacy : StartCamera::Mode::Standard,
+                    bossCameraOn() && low ? std::optional<Vec3>{(*low + high) * 0.5f}
+                                          : std::nullopt);
     if (!positions.empty()) {
         m_audio.playEntrance();
     }

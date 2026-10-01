@@ -150,6 +150,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     critter.sinceHurt += seconds;
     for (CritterArea& area : critter.areas) {
         area.secondsLeft -= seconds;
+        area.displacement += area.velocity * seconds;
     }
     std::erase_if(critter.areas, [](const CritterArea& area) { return area.secondsLeft <= 0; });
     for (f32& cooldown : critter.cooldowns) {
