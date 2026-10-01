@@ -111,6 +111,49 @@ TEST_CASE("after-level screen fails safely without its portable catalog", "[shop
     scene.close();
     scene.close();
 }
+TEST_CASE("shop lane borders retain retail brightness and opacity in every column",
+          "[shop][screens][unpacked]") {
+    // init_shop 8009A504/8009A52C sets 0x80808080; DrawBlit 800B47D0 doubles
+    // alpha and clamps it to 255. The TEV color scale at 80067D98 is GX_CS_SCALE_2.
+    // Copying those raw bytes into our normalized vertex colors fades/darkens twice.
+    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+    test::unpackedOrSkip("SELECT/textures.json");
+    test::unpackedOrSkip("INVENTORY/textures.json");
+    test::unpackedOrSkip("pdata/WAR.json");
+    const auto visit = GENERATE(ShopVisit::Level, ShopVisit::Shop, ShopVisit::Inventory);
+    test::FakeRenderDevice device;
+    GameContext context;
+    context.unpackedRoot = root;
+    const std::array<PartyMember, 1> party{{{2, CharacterSave{}}}};
+    AfterLevelScene scene;
+    REQUIRE(scene.open(device, context, party, {}, {}, "G1", visit));
+    scene.render(device, Mat4{1}, 512, 384);
+    TextureSet art;
+    REQUIRE(art.load(root / "SELECT"));
+    for (const auto* name : {"S1_BORDER", "S2_BORDER"}) {
+        CAPTURE(name, visit);
+        const auto id = art.find(name);
+        REQUIRE(id.has_value());
+        const auto& pixels = art.image(*id).pixels;
+        std::array<bool, 4> columns{};
+        for (const auto& draw : device.draws) {
+            const auto* texture = dynamic_cast<const test::FakeTexture*>(draw.texture);
+            if (texture == nullptr || texture->pixels != pixels) {
+                continue;
+            }
+            const usize column = static_cast<usize>(test::minCorner(draw).x / 128);
+            REQUIRE(column < columns.size());
+            REQUIRE_FALSE(columns[column]);
+            columns[column] = true;
+            REQUIRE_FALSE(draw.vertices.empty());
+            for (const auto& vertex : draw.vertices) {
+                REQUIRE(vertex.color == Color::white());
+            }
+        }
+        REQUIRE(std::ranges::all_of(columns, [](bool drawn) { return drawn; }));
+    }
+}
+
 TEST_CASE("after-level screen renders every phase with retail assets",
           "[shop][screens][unpacked]") {
     const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
