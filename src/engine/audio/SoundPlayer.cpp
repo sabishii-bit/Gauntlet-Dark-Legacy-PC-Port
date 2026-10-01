@@ -20,6 +20,36 @@ bool playable(const SoundSequence& sequence) {
            sequence.steps[0].clip->sampleRate != 0 && sequence.steps[0].clip->channels != 0;
 }
 
+/** DCS command levels are not linear PCM gains. dcsVoiceSetMaster reduces a
+ * halved level by 3 dB, interpolating between powers of two in tenths of a dB.
+ * The centered AX stereo mix adds -3 dB; AudioStream's pan is unity at center. */
+f32 dcsGain(f32 requested, f32 bank, f32 category) {
+    constexpr s32 kCommandMax = 255;
+    constexpr s32 kBankMax = 127;
+    constexpr s32 kMasterMax = 0x3FFF;
+    const auto call = static_cast<s32>(std::clamp(requested, 0.0f, 1.0f) * kCommandMax);
+    const auto setting = static_cast<s32>(std::lround(category * kCommandMax));
+    const auto bankLevel = static_cast<s32>(std::lround(bank * kBankMax));
+    // sndFxStartVoice applies the options setting first, then dcsVoiceStart
+    // applies the bank's level. Preserve their integer truncation order.
+    const s32 level = ((call * setting) >> 8) * bankLevel / kBankMax;
+    const s32 scaled = std::clamp(level * kMasterMax / kCommandMax, 0, kMasterMax);
+    if (scaled == 0) {
+        return 0.0f;
+    }
+    s32 decibels = 0;
+    if (scaled < kMasterMax) {
+        s32 bit = 0x2000;
+        decibels = -30;
+        while ((scaled & bit) == 0) {
+            bit >>= 1;
+            decibels -= 30;
+        }
+        decibels += ((bit >> 1) + (scaled - bit) * 30) / bit;
+    }
+    return std::pow(10.0f, static_cast<f32>(decibels - 30) / 200.0f);
+}
+
 } // namespace
 
 SoundHandle SoundPlayer::play(const SoundSequence& sequence, f32 volume, SoundCategory category) {
@@ -67,7 +97,7 @@ SoundHandle SoundPlayer::start(const SoundSequence& sequence, f32 volume, SoundC
     const SoundClip& first = *sequence.steps[0].clip;
     voice.stream = m_mixer.createStream(AudioStreamDesc{first.sampleRate, first.channels});
     voice.category = category;
-    voice.volume = volume * sequence.volume;
+    voice.volume = volume;
     applyVolume(voice);
     feed(voice);
     m_voices.push_back(std::move(voice));
@@ -109,15 +139,17 @@ f32 SoundPlayer::categoryScale(SoundCategory category) const {
 }
 
 void SoundPlayer::applyVolume(Voice& voice) const {
-    voice.stream->setVolume(std::clamp(m_masterVolume * categoryVolume(voice.category) *
-                                           categoryScale(voice.category) * voice.volume,
-                                       0.0f, 1.0f));
+    const f32 category = categoryVolume(voice.category) * categoryScale(voice.category);
+    const f32 gain = voice.sequence.gainCurve == SoundGainCurve::Dcs
+                         ? dcsGain(voice.volume, voice.sequence.volume, category)
+                         : category * voice.volume * voice.sequence.volume;
+    voice.stream->setVolume(std::clamp(m_masterVolume * gain, 0.0f, 1.0f));
 }
 
 void SoundPlayer::setVolume(SoundHandle handle, f32 volume) {
     for (Voice& voice : m_voices) {
         if (voice.handle == handle) {
-            voice.volume = std::clamp(volume, 0.0f, 1.0f) * voice.sequence.volume;
+            voice.volume = std::clamp(volume, 0.0f, 1.0f);
             applyVolume(voice);
         }
     }
