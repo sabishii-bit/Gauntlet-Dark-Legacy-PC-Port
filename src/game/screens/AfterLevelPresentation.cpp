@@ -52,11 +52,6 @@ void AfterLevelScene::drawBackground(s32 player) {
     const s32 x = player * 128;
     image(std::format("S1_PLYR{}", player + 1), x, 0);
     image(std::format("S2_PLYR{}", player + 1), x, 256);
-    // init_shop's 0x80808080 is neutral, not half-dark/half-transparent:
-    // DrawBlit doubles/clamps alpha; the GX TEV stage doubles texture * RGB.
-    // Keep the texture's own transparent cutouts, without another vertex fade.
-    image("S1_BORDER", x, 0);
-    image("S2_BORDER", x, 256);
 }
 void AfterLevelScene::drawPile(usize pile, s32 x, f32 height) {
     constexpr std::array<std::string_view, 3> kPiles{"SHP_GOLD", "SHP_BONES", "SHP_EXP"};
@@ -66,17 +61,28 @@ void AfterLevelScene::drawPile(usize pile, s32 x, f32 height) {
                       Rect{0, 0, 1, height / 256}, Color::white());
     }
 }
+void AfterLevelScene::drawLaneBackdrop(const ShopLane& lane) {
+    const s32 x = lane.member.player * 128;
+    if (lane.phase == ShopPhase::Tally) {
+        // Growth follows height rank, but equal-depth sprites retain their creation
+        // order: gold, bones, experience. Earnings must not change layering.
+        const auto& order = lane.tally.order();
+        for (usize pile = 0; pile < order.size(); ++pile) {
+            const auto rank = static_cast<usize>(std::ranges::find(order, pile) - order.begin());
+            if (rank <= lane.tally.growingRank()) {
+                drawPile(pile, x, lane.tally.height(pile));
+            }
+        }
+    } else if (lane.phase == ShopPhase::Shopping) {
+        if (lane.member.save.gold > 0) {
+            drawPile(0, x, lane.goldHeight);
+        }
+        image("SHOP_SCROLL_1", x, 0);
+        image("SHOP_SCROLL_2", x, 256);
+    }
+}
 void AfterLevelScene::drawTally(const ShopLane& lane, s32 x) {
     constexpr std::array<std::string_view, 3> kLabels{"shop.gold", "shop.kills", "shop.experience"};
-    // Growth follows height rank, but the equal-depth sprites retain their creation
-    // order: gold, bones, experience. A change in earnings must not change layering.
-    for (usize pile = 0; pile < kLabels.size(); ++pile) {
-        const auto& order = lane.tally.order();
-        const auto rank = static_cast<usize>(std::ranges::find(order, pile) - order.begin());
-        if (rank <= lane.tally.growingRank()) {
-            drawPile(pile, x, lane.tally.height(pile));
-        }
-    }
     for (usize rank = 0; rank < lane.tally.order().size(); ++rank) {
         const usize pile = lane.tally.order()[rank];
         line(x + 16, 32 + static_cast<s32>(pile) * 20,
@@ -174,12 +180,6 @@ void AfterLevelScene::drawMagicLine(const ShopLane& lane, s32 x) {
     }
 }
 void AfterLevelScene::drawShop(const ShopLane& lane, s32 x) {
-    if (lane.member.save.gold > 0) {
-        drawPile(0, x, lane.goldHeight);
-    }
-    image("SHOP_SCROLL_1", x, 0);
-    image("SHOP_SCROLL_2", x, 256);
-    image(std::format("SHOP_TOP_{}", colorCode(lane.member.save.color)), x + 32, 0);
     const auto& items = m_session.catalog().items();
     const auto layout = ShopLayout::make(items, lane.cursor, m_font.height());
     const f32 scroll = m_scroll[static_cast<usize>(lane.member.player)];
@@ -297,6 +297,18 @@ void AfterLevelScene::render(RenderDevice& device, const Mat4& projection, f32 w
     m_canvas.fill(Rect{0, 0, 512, 384}, Color::black());
     for (s32 player = 0; player < 4; ++player) {
         drawBackground(player);
+    }
+    // Retail depth: background 64000, piles 63990, parchment 63980, frames
+    // 63900, colored caps 63800. Canvas uses submission order for these layers.
+    for (const auto& lane : m_session.lanes()) {
+        drawLaneBackdrop(lane);
+    }
+    for (s32 player = 0; player < 4; ++player) {
+        // init_shop's 0x80808080 is neutral, not half-dark/half-transparent:
+        // DrawBlit doubles/clamps alpha; the GX TEV stage doubles texture * RGB.
+        // Keep the texture's own transparent cutouts, without another vertex fade.
+        image("S1_BORDER", player * 128, 0);
+        image("S2_BORDER", player * 128, 256);
         StatusBoxView empty;
         empty.color = player;
         m_boxes.draw(m_canvas, player, empty, false);

@@ -45,6 +45,7 @@ private:
     void image(std::string_view name, s32 x, s32 y, Color color = Color::white());
     void prompt(s32 x, s32 y, s32 size);
     void drawBackground(s32 player);
+    void drawLaneBackdrop(const ShopLane& lane);
     void drawPile(usize pile, s32 x, f32 height);
     std::string_view rank(const ShopLane& lane) const;
     void loadVoices(std::span<const PartyMember> party);
