@@ -18,6 +18,28 @@ bool near(const Vec3& a, const Vec3& b, f32 tolerance = 1e-4f) {
     return near(a.x, b.x, tolerance) && near(a.y, b.y, tolerance) && near(a.z, b.z, tolerance);
 }
 
+TEST_CASE("arrow effects align with sloping travel and use the view direction for roll",
+          "[world][camera][garm]") {
+    WorldCamera view;
+    view.yaw = 0.8f;
+    view.pitch = 0.4f;
+    const auto camera = CameraFrame::of(view);
+    const Mat4 placed = glm::scale(glm::translate(Mat4{1}, Vec3{7, 12, 30}), Vec3{2, 3, 4});
+    const Vec3 direction{10, -20, 40};
+    const Mat4 aligned = camera.along(placed, direction);
+    const Vec3 z = glm::normalize(direction);
+    const Vec3 y = glm::normalize(glm::cross(z, camera.forward));
+    REQUIRE(near(Vec3{aligned[2]}, z * 4.0f));
+    REQUIRE(near(Vec3{aligned[1]}, y * 3.0f));
+    REQUIRE(near(Vec3{aligned[0]}, glm::cross(y, z) * 2.0f));
+    REQUIRE(aligned[3] == placed[3]);
+    REQUIRE(camera.along(placed, Vec3{0}) == placed);
+    const Mat4 parallel = camera.along(placed, camera.forward);
+    REQUIRE(near(Vec3{parallel[2]}, camera.forward * 4.0f));
+    REQUIRE(near(glm::length(Vec3{parallel[0]}), 2));
+    REQUIRE(near(glm::length(Vec3{parallel[1]}), 3));
+}
+
 TEST_CASE("billboards retain animated size while replacing orientation", "[world][camera]") {
     const CameraFrame camera = CameraFrame::at({5, 10, -20});
     for (const u32 mode : {1U, CameraFrame::kFacingFull}) {

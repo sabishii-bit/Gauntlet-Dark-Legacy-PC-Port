@@ -1,5 +1,6 @@
 #include <array>
 #include <filesystem>
+#include <numbers>
 #include <string>
 
 #include <catch2/catch_approx.hpp>
@@ -69,6 +70,29 @@ TEST_CASE("arrival without art still holds the party for the spawn interval",
     arrival.clear();
     arrival.clear();
     REQUIRE_FALSE(arrival.active());
+}
+
+TEST_CASE("boss arrival aims at player follow points without lifting the spawn effects",
+          "[game][screens][arrival][garm]") {
+    ItemArchive archive;
+    REQUIRE(archive.load(spawnFixture("boss-arrival", false)));
+    test::FakeRenderDevice device;
+    LevelArrivalPresentation arrival;
+    const std::array<Vec3, 1> feet{Vec3{1.5f, 0, 25.8515625f}};
+    const Vec3 focus = feet[0] + Vec3{0, 3, 0};
+    WorldCamera marker;
+    marker.position = {1.5f, 10, 45.96875f};
+    marker.pitch = 0.785397f;
+    marker.yaw = std::numbers::pi_v<f32>;
+    arrival.begin(device, archive, feet, marker, StartCamera::Mode::Legacy, focus);
+    CHECK(arrival.camera().camera().position == marker.position);
+    CHECK(arrival.camera().attention() == focus);
+    CHECK(glm::dot(arrival.camera().camera().forward(), glm::normalize(focus - marker.position)) >
+          0.9999f);
+    CHECK(arrival.camera().camera().pitch == Approx(0.33484f).margin(0.001f));
+    arrival.drawEffects(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 1);
+    CHECK(device.draws[0].vertices[0].position == feet[0]);
 }
 
 TEST_CASE("arrival camera frames the party and outlasts the spawn effects",

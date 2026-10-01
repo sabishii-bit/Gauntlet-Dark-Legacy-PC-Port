@@ -2034,6 +2034,7 @@ TEST_CASE("in the town a suicide leaves a poison cloud that turns through its th
 
 TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at the party",
           "[level-opponents][death-shot][unpacked]") {
+    const Vec3 toward = GENERATE(Vec3{0, 0, 1}, Vec3{1, 0, 0}, Vec3{-0.6f, 0, -0.8f});
     const auto root = test::unpackedOrSkip("MONSTERS/GRM/animations.json")
                           .parent_path()
                           .parent_path()
@@ -2044,7 +2045,7 @@ TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at 
     EffectTrees effects;
     LevelSoundscape audio;
     std::array<PlayerRuntime, 1> players;
-    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 14}, 0);
+    players[0].actor.spawn(0, {}, nullptr, toward * 14.0f, 0);
     players[0].actor.save().progress().health = 1000;
     LevelOpponents opponents;
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
@@ -2076,6 +2077,16 @@ TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at 
         }
         return false;
     };
+    const auto checkFacing = [&](std::string_view tree) {
+        bool found = false;
+        for (usize e = 0; e < effects.count(); ++e) {
+            if (effects.effect(e).name == tree) {
+                found = true;
+                CHECK(glm::dot(Vec3{effects.effect(e).transform()[2]}, toward) > 0.99f);
+            }
+        }
+        REQUIRE(found);
+    };
     step();
     opponents.strikeEnemy(*brood, 1000.0f, 0, Vec3{0, 0, 1}, 0, players);
     s32 frames = 0;
@@ -2088,6 +2099,7 @@ TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at 
     REQUIRE(opponents.missiles().count() == 1);
     CHECK(opponents.missiles().missile(0).heldLeft > 0.0f);
     CHECK(showing("DEATHFX1"));
+    checkFacing("DEATHFX1");
     CHECK_FALSE(showing("DEATHFX2"));
     const Vec3 lay = opponents.missiles().missile(0).position;
     while (showing("DEATHFX1") && frames < 400) {
@@ -2103,6 +2115,7 @@ TEST_CASE("a garm brood's corpse bursts where it lay, then its shot flies on at 
     CHECK(hurts.empty());
     step();
     CHECK(showing("DEATHFX2"));
+    checkFacing("DEATHFX2");
     for (s32 frame = 0; frame < 30; ++frame) {
         step();
     }

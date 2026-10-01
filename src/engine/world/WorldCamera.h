@@ -79,6 +79,9 @@ struct CameraFrame {
     /** Face the camera fully, about a ribbon's authored z (kFacingTop), or about the
      * world vertical for ordinary upright sprites. */
     Mat4 face(const Mat4& placement, u32 mode) const;
+    /** Align a travelling effect's z to its velocity, with roll determined by
+     * the view direction (CreateDirMatrix). Translation and scale are kept. */
+    Mat4 along(const Mat4& placement, const Vec3& direction) const;
 };
 
 } // namespace gdl

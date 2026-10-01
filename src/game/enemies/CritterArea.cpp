@@ -13,12 +13,18 @@ Mat4 CritterArea::placement(const Mat4& parent, const Vec3& offset, const Vec2& 
     return parent * local;
 }
 
+Mat4 CritterArea::transform(const Mat4& parent) const {
+    Mat4 world = parent * local;
+    world[3] += Vec4{displacement, 0};
+    return world;
+}
+
 bool CritterArea::touches(const Mat4& parent, const EnemyView& player) const {
     const f32 activeRadius = currentRadius();
     if (player.hidden || secondsLeft <= 0 || activeRadius <= 0) {
         return false;
     }
-    const Mat4 world = parent * local;
+    const Mat4 world = transform(parent);
     const Vec3 delta = player.position + Vec3{0, player.height * 0.5f, 0} - Vec3{world[3]};
     const f32 distance = glm::length(Vec2{delta.x, delta.z});
     const f32 reach = activeRadius + player.radius;

@@ -124,8 +124,60 @@ TEST_CASE("expanding damage starts near the source then fades before the effect 
     REQUIRE(area.currentDamage() == 0);
 }
 
+TEST_CASE("a moving expanding sector reaches distant players after launch, not immediately",
+          "[game][boss-areas][garm]") {
+    CritterArea area;
+    area.expanding = true;
+    area.secondsLeft = area.lifetime = 4;
+    area.radius = 55;
+    area.minDot = 0.1736481f;
+    area.velocity = {0, -5, 10};
+    area.local = glm::translate(Mat4{1}, Vec3{0, 5, -18});
+    const auto player = playerAt({0, 0, 45});
+    REQUIRE_FALSE(area.touches(Mat4{1}, player));
+    area.secondsLeft = 2;
+    area.displacement = area.velocity * 2.0f;
+    REQUIRE(area.touches(Mat4{1}, player));
+    REQUIRE_FALSE(area.touches(Mat4{1}, playerAt({0, 0, -45})));
+    REQUIRE(Vec3{area.transform(Mat4{1})[3]} == Vec3{0, -5, 2});
+}
+
+TEST_CASE("Garm's shipped stomp launches a persistent expanding sector instead of an instant hit",
+          "[game][boss-areas][garm][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'H');
+    REQUIRE(fixture.spawn("GARM", Vec3{0}, 0));
+    const std::array<EnemyView, 1> players{playerAt({0, 0, 45})};
+    s32 launch = -1;
+    s32 hit = -1;
+    for (s32 frame = 0; frame < 3600 && hit < 0; ++frame) {
+        fixture.update(2, 1.0f / 30, players);
+        for (const auto& cue : fixture.actor.takeCues()) {
+            // The invisible damage carrier carries the shake at frame 30;
+            // the visible wave is a separate move cue at frame 34.
+            if (fixture.actor.moveName() == "STOMP" && cue.shakes && cue.tree.empty()) {
+                launch = frame;
+            }
+        }
+        for (const auto& blow : fixture.actor.takeBlows()) {
+            if (fixture.actor.moveName() == "STOMP" || launch >= 0) {
+                REQUIRE(blow.area);
+                REQUIRE(launch >= 0);
+                CHECK(frame - launch > 15);
+                CHECK(blow.origin.z > -18);
+                hit = frame;
+            }
+        }
+        fixture.actor.takeShots();
+    }
+    REQUIRE(launch >= 0);
+    REQUIRE(hit > launch);
+}
+
 std::filesystem::path areaArchive(bool expanding = false, bool arena = false, bool eruption = false,
-                                  bool detached = false) {
+                                  bool detached = false, bool moving = false) {
     const auto root = test::scratchDirectory("boss-area-attacks");
     const auto archive = root / "MONSTERS/DJINN";
     std::filesystem::create_directories(root / "critter");
@@ -152,16 +204,44 @@ std::filesystem::path areaArchive(bool expanding = false, bool arena = false, bo
     if (detached) {
         flags = "64";
     }
-    writeTextFile(root / "critter/DJINN.json", R"({"descriptors":[{"prefix":"DJINN","type":4}],
+    if (moving) {
+        flags = "131";
+    }
+    const std::string motion = moving ? R"("behaviorFlags":8192,"minSpeed":10,"maxSpeed":10,)" : "";
+    writeTextFile(root / "critter/DJINN.json",
+                  R"({"descriptors":[{"prefix":"DJINN","type":4}],
       "types":[{"moveCount":2,"maxHealth":100,"originOffset":[0,50,0]}],
       "moves":[{"name":"READY","anim":"STEP","type":32},
         {"name":"WHIP","anim":"STEP","type":130,"priority":10,"cooldown":20,
          "frameStart":1,"frameEnd":1,"damage0":0}],
-      "damages":[{"type":)" + type + R"(,"damage":40,"flags":32,"radius":0.1,"maxDistance":10,
+      "damages":[{)" + motion +
+                      R"("type":)" + type +
+                      R"(,"damage":40,"flags":32,"radius":0.1,"maxDistance":10,
                    "minDot":0.8,"offset":[0,3,0],"sfxIndex":0}],
-      "sounds":[{"name":"NULLFX","flags":)" + flags +
-                                                   R"(,"life":0.5,"offset":[0,2,0]}]})");
+      "sounds":[{"name":"NULLFX","flags":)" +
+                      flags + R"(,"life":0.5,"offset":[0,2,0]}]})");
     return root;
+}
+
+TEST_CASE("moving NULLFX rings use area collision throughout their lifetime",
+          "[game][boss-areas][garm]") {
+    const auto root = areaArchive(true, false, false, false, true);
+    test::FakeRenderDevice device;
+    test::CombatantFixture fixture;
+    fixture.open(device, root, nullptr, {}, 'H');
+    REQUIRE(fixture.spawn("DJINN", Vec3{0}, 0));
+    const std::array<EnemyView, 1> players{playerAt({0, 0, 8})};
+    fixture.update(6, 0.1f, players);
+    fixture.update(6, 0.1f, players);
+    CHECK(fixture.actor.takeBlows().empty());
+    fixture.update(6, 0.1f, players);
+    CHECK(fixture.actor.takeBlows().empty());
+    fixture.update(6, 0.1f, players);
+    const auto hits = fixture.actor.takeBlows();
+    REQUIRE(hits.size() == 1);
+    CHECK(hits[0].area);
+    CHECK(hits[0].origin.z == Approx(2));
+    CHECK(hits[0].damage < 40);
 }
 
 TEST_CASE("invisible areas outlive their attack window and remain rooted while frozen",

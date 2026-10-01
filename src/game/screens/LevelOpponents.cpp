@@ -349,8 +349,10 @@ void LevelOpponents::fireDeathShot(const EnemyDeathShot& shot) {
     pending.velocity = shot.direction * kind.speed;
     ItemArchive* archive = m_enemies.archive(shot.kind);
     if (archive != nullptr && archive->trees.find(kDeathBurst).has_value()) {
+        EffectTrees::Setting setting;
+        setting.yaw = std::atan2(shot.direction.x, shot.direction.z);
         pending.burst = m_resources->effects.startSet(m_resources->device, *archive, kDeathBurst,
-                                                      shot.position, EffectTrees::Setting{});
+                                                      shot.position, setting);
         if (pending.burst != 0) {
             m_cueEffects.push_back(pending.burst);
             kind.held = m_resources->effects.remaining(pending.burst).value_or(0.0f);
@@ -377,6 +379,9 @@ void LevelOpponents::advanceDeathShots() {
         }
         EffectTrees::Setting setting;
         setting.velocity = shot.velocity;
+        // StartEnemyDeathFX turns the burst toward its launch velocity; the
+        // morph retains that orientation instead of returning to world +z.
+        setting.yaw = std::atan2(shot.velocity.x, shot.velocity.z);
         setting.seconds = EnemyMissiles::kLife;
         setting.loop = false;
         const u32 id = m_resources->effects.startSet(m_resources->device, *archive, kDeathShot,

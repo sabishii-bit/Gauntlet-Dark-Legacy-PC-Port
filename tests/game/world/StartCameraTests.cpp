@@ -45,15 +45,14 @@ TEST_CASE("the legacy start camera holds at the marker, then rides at its pace",
     REQUIRE(camera.active());
     REQUIRE(camera.phase() == StartCamera::Phase::Hold);
     REQUIRE(camera.ticksLeft() == StartCamera::kLegacyHoldTicks);
-    // It stands at the marker, level, looking the marker's way as far off as the party.
+    // Boss entrances retain the marker's position but look at the party,
+    // regardless of the marker's authored pitch.
     requireNear(camera.camera().position, marker.position);
-    REQUIRE(camera.camera().pitch == Approx(0.5f));
+    REQUIRE(camera.camera().pitch == Approx(std::atan2(20.0f, 30.0f)));
     REQUIRE(camera.camera().yaw == Approx(kPi));
     REQUIRE(camera.camera().roll == 0.0f);
-    WorldCamera level = marker;
-    level.roll = 0.0f;
-    requireNear(camera.attention(),
-                marker.position + level.forward() * glm::distance(marker.position, party));
+    requireNear(camera.attention(), party);
+    requireNear(camera.camera().forward(), glm::normalize(party - marker.position));
 
     // The hold counts down; a button means nothing until most of it has passed.
     REQUIRE(camera.update(2, true, followPosition, followAttention));

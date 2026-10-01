@@ -86,6 +86,39 @@ struct Fixture {
     }
 };
 
+TEST_CASE("arrow orientation follows live velocity while ordinary projectiles keep their pose",
+          "[boss-projectiles][garm]") {
+    for (const bool arrow : {false, true}) {
+        Fixture f;
+        const auto root = test::scratchDirectory("directed-projectile");
+        writeTextFile(root / "critter.json",
+                      R"({"types":[{"moveCount":1}],"moves":[{}],"descriptors":[{}],
+            "damages":[{"type":1,"minSpeed":30,"maxSpeed":30,"gravity":6,
+            "sfxIndex":0,"behaviorFlags":9,"flags":)" +
+                          std::to_string(arrow ? 0x20000 : 0) +
+                          R"(}],"sounds":[{"name":"LOOP","life":3}]})");
+        REQUIRE(f.data.load(root / "critter.json"));
+        CombatShot shot;
+        shot.data = &f.data;
+        shot.damageIndex = 0;
+        shot.origin = {0, 20, 0};
+        shot.target = Vec3{10, 0, 30};
+        f.projectiles.launch(shot, f.archive, f.device, f.effects, {});
+        REQUIRE(f.effects.count() == 1);
+        REQUIRE(f.effects.effect(0).flightDirection.has_value() == arrow);
+        const Vec3 initial = glm::normalize(*shot.target - shot.origin) * 30.0f;
+        f.step(0.25f);
+        REQUIRE(f.effects.count() == 1);
+        if (arrow) {
+            REQUIRE(f.effects.effect(0).flightDirection);
+            CHECK(glm::distance(*f.effects.effect(0).flightDirection, initial + Vec3{0, -1.5f, 0}) <
+                  0.001f);
+        } else {
+            CHECK_FALSE(f.effects.effect(0).flightDirection);
+        }
+    }
+}
+
 TEST_CASE("linked projectile fire emits behind its moving parent and stops at the authored time",
           "[boss-projectiles][projectile-trail]") {
     Fixture f;
@@ -378,6 +411,55 @@ TEST_CASE("Lich and Spider Queen egg records request stage generators",
             projectiles.clear(effects);
         }
     }
+}
+
+TEST_CASE("Garm eye ribbons follow their descending trajectory rather than horizontal yaw",
+          "[boss-projectiles][garm][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
+    CritterData data;
+    REQUIRE(data.load(root / "critter/GARM.json"));
+    ItemArchive archive;
+    REQUIRE(archive.load(root / "MONSTERS/GARM"));
+    test::FakeRenderDevice device;
+    EffectTrees effects;
+    CombatantProjectiles shots;
+    CombatShot shot;
+    shot.data = &data;
+    shot.damageIndex = 3;
+    shot.origin = {0, 16, 0};
+    shot.target = Vec3{15, 3, 30};
+    shots.launch(shot, archive, device, effects, {});
+    REQUIRE(shots.count() == 1);
+    REQUIRE(effects.count() == 1);
+    const auto& effect = effects.effect(0);
+    REQUIRE(effect.flightDirection);
+    CHECK(glm::dot(glm::normalize(*effect.flightDirection),
+                   glm::normalize(*shot.target - shot.origin)) > 0.9999f);
+    WorldCamera view;
+    view.position = {10, 25, 55};
+    view.yaw = 3.0f;
+    view.pitch = 0.3f;
+    const auto camera = CameraFrame::of(view);
+    effects.draw(device, Mat4{1}, {}, &camera);
+    REQUIRE(device.draws.size() == 2);
+    const Vec3 heading = glm::normalize(*shot.target - shot.origin);
+    // Top-facing ribbons keep z. Their actual world vertices must span the
+    // downward flight axis, not the horizontal plane from the old yaw pose.
+    const auto& vertices = device.draws[0].vertices;
+    f32 longest = 0;
+    Vec3 along{0};
+    for (const auto& a : vertices) {
+        for (const auto& b : vertices) {
+            const Vec3 delta = b.position - a.position;
+            if (glm::length(delta) > longest) {
+                longest = glm::length(delta);
+                along = delta;
+            }
+        }
+    }
+    REQUIRE(longest > 20);
+    CHECK(std::abs(glm::dot(glm::normalize(along), heading)) > 0.98f);
+    shots.clear(effects);
 }
 
 TEST_CASE("Garm's two body-break projectiles request summons without player damage",
