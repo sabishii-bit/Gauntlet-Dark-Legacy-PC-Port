@@ -243,8 +243,17 @@ bool Generators::placeBoss(RenderDevice& device, const ItemInfo& info, ItemArchi
     const f32 yaw = std::atan2(placement[2].x, placement[2].z);
     instance.rotation.y = -yaw;
     generator.bossFigure = std::make_unique<ItemFigure>();
+    // AtreeMatchAnyHeader also searches the summoned species' loaded archive.
+    // The Genie's BOSSGEN tree lives with WIND, not with DJINN or the level items.
+    ItemArchive* art = &items;
+    if (!items.trees.find(tree)) {
+        if (ItemArchive* brood = enemies.archive(kind);
+            brood != nullptr && brood->trees.find(tree)) {
+            art = brood;
+        }
+    }
     // A missing BOSSGEN tree does not prevent PlaceItem from creating its gameplay object.
-    generator.bossFigure->place(device, items, tree, instance, collision);
+    generator.bossFigure->place(device, *art, tree, instance, collision);
     generator.bossFigure->play(0, !settled);
     if (settled) {
         // The projectile has already finished its landing before it leaves the generator.
