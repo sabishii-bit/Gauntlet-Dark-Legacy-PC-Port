@@ -6,6 +6,7 @@
 #include "engine/assets/AnimationSet.h"
 #include "engine/core/Types.h"
 #include "engine/world/TreePose.h"
+#include "engine/world/WorldCamera.h"
 
 namespace {
 
@@ -70,6 +71,38 @@ bool near(const Mat4& a, const Mat4& b) {
         }
     }
     return true;
+}
+
+TEST_CASE("draw poses inherit facing through meshless parents without changing physics",
+          "[world][pose][effects]") {
+    TreeInfo tree = sampleTree();
+    tree.nodes[0].objectFlags = CameraFrame::kFacingFull << 24;
+    tree.nodes[1].position = {2, 1, 3};
+    TreePose pose;
+    pose.evaluate(tree, 0, 2);
+    const Mat4 physics = pose.matrices()[1];
+    WorldCamera view;
+    view.position = {10, 20, -30};
+    view.yaw = 0.8f;
+    view.pitch = 0.3f;
+    const auto camera = CameraFrame::of(view);
+    const Mat4 model = glm::translate(Mat4{1}, Vec3{4, 5, 6});
+    for (const f32 scale : {0.0f, 0.5f, 2.0f}) {
+        auto root = pose.poses()[0];
+        root.scale = Vec3{scale};
+        pose.setNodePose(0, root);
+        const auto matrices = pose.drawMatrices(model, camera);
+        REQUIRE(matrices.size() == 2);
+        const Mat4 expectedRoot = camera.face(
+            model * TreePose::localMatrix(root, tree.nodes[0].position), CameraFrame::kFacingFull);
+        CHECK(near(matrices[1], expectedRoot * glm::translate(Mat4{1}, tree.nodes[1].position)));
+    }
+    pose.evaluate(tree, 0, 2);
+    CHECK(near(pose.matrices()[1], physics));
+    tree.nodes[0].objectFlags = 0;
+    const auto unfaced = pose.drawMatrices(model, camera);
+    CHECK(near(unfaced[1], model * physics));
+    CHECK(TreePose{}.drawMatrices(model, camera).empty());
 }
 
 TEST_CASE("a track samples between keys, holds across large angle steps and past its end",

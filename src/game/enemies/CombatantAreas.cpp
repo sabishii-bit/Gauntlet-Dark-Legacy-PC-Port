@@ -91,6 +91,14 @@ std::optional<f32> Combatant::startArea(Actor& critter, s32 id, const AttackDefi
     area.worldParent = worldParent;
     if (!rootParent) {
         area.node = node;
+    } else {
+        const usize root = critter.branch.value_or(0);
+        const auto& nodes = critter.stock->tree->nodes;
+        const s32 attachment =
+            (sound->flags & 0x800U) != 0 ? nodes[root].parent : static_cast<s32>(root);
+        if (attachment >= 0) {
+            area.node = nodes[static_cast<usize>(attachment)].name;
+        }
     }
     area.local = CritterArea::placement(Mat4{1}, offset, angles);
     area.radius = damage.maxDistance * critter.scale;

@@ -341,8 +341,16 @@ void EffectTrees::draw(RenderDevice& device, const Mat4& clip, const WorldLighti
                 effect->fadeSeconds > 0.0f
                     ? std::clamp(secondsLeftOf(*effect) / effect->fadeSeconds, 0.0f, 1.0f)
                     : 1.0f;
-            effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), camera,
-                               alpha);
+            if (camera != nullptr) {
+                // Traverse facing parents before their children, as for any
+                // other local transform. Facing only the final mesh loses
+                // offsets/rotations under Garm's laser-ribbon effect nodes.
+                const auto matrices = effect->pose.drawMatrices(placed, *camera);
+                effect->model.draw(device, clip, Mat4{1}, lighting, matrices, nullptr, alpha);
+            } else {
+                effect->model.draw(device, clip, placed, lighting, effect->pose.matrices(), nullptr,
+                                   alpha);
+            }
         }
         effect->particles.draw(device, clip, frame.right, frame.up);
         effect->trails.draw(device, clip, frame.right, frame.up);

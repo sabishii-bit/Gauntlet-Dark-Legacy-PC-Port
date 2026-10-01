@@ -320,6 +320,64 @@ TEST_CASE("enemy melee plays a dedicated impact on each contact including warded
     CHECK(sound.voiceCount() == 0);
 }
 
+TEST_CASE("ordinary aimed shots break Garm's limbs and spawn brood in his actual arena",
+          "[level-opponents][garm][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELH4/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
+    test::unpackedOrSkip("MONSTERS/GRM/animations.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("H4")));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, {});
+    auto& boss = opponents.bosses();
+    REQUIRE(boss.present());
+    REQUIRE(boss.position());
+    boss.wake();
+    const Vec3 origin = *boss.position() + Vec3{0, 3, 35};
+    const auto targets = boss.targets();
+    const auto aim = TargetAssist::select(origin, Vec3{0, 0, -1}, targets, 100);
+    REQUIRE(aim);
+    PlayerMissiles missiles;
+    MissileLaunch launch;
+    launch.position = origin;
+    launch.velocity = TargetAssist::velocity(origin, *aim, 60, MissileSpec::of(0).weight);
+    launch.spec = &MissileSpec::of(0);
+    launch.damage = 1000;
+    REQUIRE(missiles.launch(launch));
+    for (s32 step = 0; step < 180 && missiles.count() > 0; ++step) {
+        missiles.update(1.0f / 60, &world.collision(), targets);
+    }
+    const auto impacts = missiles.takeImpacts();
+    REQUIRE(impacts.size() == 1);
+    CAPTURE(*aim, impacts[0].target, impacts[0].node);
+    REQUIRE(impacts[0].target == Bosses::kTargetId);
+    REQUIRE(impacts[0].node >= 0);
+    EnemyHit hit;
+    hit.damage = impacts[0].damage;
+    hit.node = impacts[0].node;
+    boss.hurt(hit);
+    const usize before = opponents.enemies().count();
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    for (s32 frame = 0; frame < 300 && opponents.enemies().count() == before; ++frame) {
+        opponents.update(2, 1.0f / 30, {}, {}, events);
+        effects.update(1.0f / 30);
+    }
+    REQUIRE(opponents.enemies().count() == before + 2);
+    opponents.close();
+}
+
 TEST_CASE("Chimera arena binds and updates head health meters through the opponent phase",
           "[game][screens][level-opponents][chimera][unpacked]") {
     const auto root =

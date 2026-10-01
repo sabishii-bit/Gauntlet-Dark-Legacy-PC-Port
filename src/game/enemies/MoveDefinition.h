@@ -174,6 +174,8 @@ struct CritterPart {
     f32 healthScale = 1.0f;
     s32 damageEffect = -1; ///< DAMG record emitted when this part breaks
     u32 flags = 0;
+    f32 targetScoreScale = 0.0f;  ///< NODE aim preference; zero disables assisted selection
+    f32 maxTargetDistance = 0.0f; ///< zero leaves the caller's range in force
     static constexpr u32 kBreakable = 2;
     static constexpr u32 kRemoveChildren = 4;
     static constexpr u32 kSolid = 8; ///< stops movement, independently of accepting damage

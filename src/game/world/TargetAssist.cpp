@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace gdl::game {
 f32 TargetAssist::distanceTo(const Vec3& feet, f32 height, const MissileTarget& target) {
@@ -32,7 +33,11 @@ std::optional<MissileTarget> TargetAssist::around(const Vec3& feet, f32 height,
         // Facing it, the line to it must be clear of walls.
         const Vec3 toward = target.pointNear(origin) - origin;
         const bool coincident = std::hypot(toward.x, toward.z) < 1e-5f;
-        if (!coincident && !select(origin, Vec3{toward.x, 0.0f, toward.z}, std::span{&target, 1},
+        // A melee contact only asks about visibility, not NODE aim preference.
+        // Untargetable parts remain hittable at close range.
+        MissileTarget sight = target;
+        sight.node = -1;
+        if (!coincident && !select(origin, Vec3{toward.x, 0.0f, toward.z}, std::span{&sight, 1},
                                    kBossRange, collision)
                                 .has_value()) {
             continue;
@@ -50,8 +55,14 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
     if (facingLength < 1e-5f || range <= 0.0f) {
         return std::nullopt;
     }
-    std::optional<Vec3> best;
-    f32 bestDistance = range;
+    struct Candidate {
+        s32 id;
+        bool part;
+        Vec3 point;
+        f32 distance;
+        f32 score;
+    };
+    std::vector<Candidate> candidates;
     for (const MissileTarget& target : targets) {
         if (target.id < 0 || target.radius <= 0.0f || target.height <= 0.0f) {
             continue;
@@ -61,9 +72,25 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
         const f32 flat = std::hypot(offset.x, offset.z);
         const f32 targetRadius = target.surface.empty() ? target.radius : 0.0f;
         const f32 distance = glm::length(offset) - targetRadius;
-        if (flat < 1e-5f || distance >= bestDistance ||
+        if (flat < 1e-5f || distance >= range ||
             (offset.x * facing.x + offset.z * facing.z) / (flat * facingLength) < kFacingDot) {
             continue;
+        }
+        f32 score = distance;
+        const bool part = target.node >= 0;
+        if (part) {
+            // CritterLineRootColSub chooses a weighted live NODE first. The
+            // broad body is only a fallback when no part can be aimed at.
+            const f32 length = glm::length(offset);
+            const f32 dot = (offset.x * facing.x + offset.z * facing.z) / (length * facingLength);
+            const f32 threshold =
+                flat / length * (distance * (1 - kFacingDot) / range + kFacingDot);
+            if (target.targetScoreScale <= 0 || length > range ||
+                (target.maxTargetDistance > 0 && length > target.maxTargetDistance) ||
+                dot <= threshold) {
+                continue;
+            }
+            score = distance / (target.targetScoreScale * (dot - threshold));
         }
         // Use missile collision geometry up to the target's near surface: its
         // own world geometry must not hide it from selection.
@@ -88,11 +115,17 @@ std::optional<Vec3> TargetAssist::select(const Vec3& origin, const Vec3& facing,
             }
         }
         if (!blocked) {
-            best = point;
-            bestDistance = distance;
+            const Candidate candidate{target.id, part, point, distance, score};
+            const auto prior = std::ranges::find(candidates, target.id, &Candidate::id);
+            if (prior == candidates.end()) {
+                candidates.push_back(candidate);
+            } else if ((part && !prior->part) || (part == prior->part && score < prior->score)) {
+                *prior = candidate;
+            }
         }
     }
-    return best;
+    const auto best = std::ranges::min_element(candidates, {}, &Candidate::distance);
+    return best != candidates.end() ? std::optional{best->point} : std::nullopt;
 }
 
 Vec3 TargetAssist::velocity(const Vec3& origin, const Vec3& target, f32 speed, f32 gravity) {

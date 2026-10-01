@@ -78,6 +78,8 @@ struct MissileTarget {
     std::span<const CollisionTriangle>
         surface{}; // NOLINT(readability-redundant-member-init): intentional aggregate default
     s32 node = -1; ///< collision-part index; id still identifies the owning creature
+    f32 targetScoreScale = 1.0f; ///< for choosing between one creature's live parts
+    f32 maxTargetDistance = 0.0f;
     Vec3 pointNear(const Vec3& point) const;
     bool touches(const Vec3& point, f32 reach) const;
     bool reachedBy(const StrikeHit& strike) const;

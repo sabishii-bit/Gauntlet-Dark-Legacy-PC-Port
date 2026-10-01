@@ -6,6 +6,7 @@
 
 #include "engine/core/Assert.h"
 #include "engine/core/Types.h"
+#include "engine/world/WorldCamera.h"
 
 namespace gdl {
 
@@ -226,6 +227,19 @@ void TreePose::setNodePose(usize node, const NodePose& pose) {
         m_poses[node] = pose;
         compose();
     }
+}
+
+std::vector<Mat4> TreePose::drawMatrices(const Mat4& model, const CameraFrame& camera) const {
+    std::vector<Mat4> matrices(m_poses.size());
+    for (usize n = 0; n < m_poses.size(); ++n) {
+        const TreeNodeInfo& node = m_tree->nodes[n];
+        const Mat4& parent = node.parent >= 0 && static_cast<usize>(node.parent) < n
+                                 ? matrices[static_cast<usize>(node.parent)]
+                                 : model;
+        matrices[n] = camera.face(parent * localMatrix(m_poses[n], node.position),
+                                  CameraFrame::facingOf(node.objectFlags));
+    }
+    return matrices;
 }
 
 void TreePose::compose() {
