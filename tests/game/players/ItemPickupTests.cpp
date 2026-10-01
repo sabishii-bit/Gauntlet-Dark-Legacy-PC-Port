@@ -32,6 +32,7 @@ TEST_CASE("gold adds up to its limit and shows as treasure or junk", "[game][pla
     save.gold = 99990;
     takeItem(save, offer(ItemKind::Gold, 500));
     REQUIRE(save.gold == 99999);
+    REQUIRE(save.progress().lifetime.goldFound == 710);
 }
 
 TEST_CASE("keys are taken while there is room, a ring leaving what does not fit",

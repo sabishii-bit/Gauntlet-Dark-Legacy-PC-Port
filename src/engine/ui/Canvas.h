@@ -23,7 +23,8 @@ public:
 
     /** Draws a prepared batch with `local` applied before the canvas transform, after any
      * pending sprites. */
-    void submit(const ImmediateBatch& batch, const Texture& texture, const Mat4& local);
+    void submit(const ImmediateBatch& batch, const Texture& texture, const Mat4& local,
+                const DrawState& state = {});
 
     /** Submits what is pending; must be called before the frame ends. */
     void end();

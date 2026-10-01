@@ -1,0 +1,10 @@
+{
+    "screen": "shop",
+    "shopVisit": "shop",
+    "level": "G1",
+    "party": [
+        {"player": 0, "class": "WAR", "color": "YEL", "name": "SHOP", "level": 20, "gold": 5000, "health": 700},
+        {"player": 1, "class": "WIZ", "color": "BLU", "name": "SHOP", "level": 20, "gold": 5000, "health": 700}
+    ],
+    "welcome": false
+}

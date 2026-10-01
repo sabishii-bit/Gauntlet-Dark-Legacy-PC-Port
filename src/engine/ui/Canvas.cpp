@@ -44,11 +44,12 @@ void Canvas::fill(const Rect& area, Color color) {
     draw(m_device->whiteTexture(), area, color);
 }
 
-void Canvas::submit(const ImmediateBatch& batch, const Texture& texture, const Mat4& local) {
+void Canvas::submit(const ImmediateBatch& batch, const Texture& texture, const Mat4& local,
+                    const DrawState& state) {
     GDL_VERIFY(m_device != nullptr, "Canvas::submit outside begin/end");
     flush();
     if (!batch.empty()) {
-        m_device->draw(batch, texture, m_transform * local);
+        m_device->draw(batch, texture, m_transform * local, state);
     }
 }
 

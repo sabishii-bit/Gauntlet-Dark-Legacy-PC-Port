@@ -17,6 +17,30 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("shop visual scenarios open directly without changing saved characters",
+          "[scenario][shop]") {
+    const auto directory = test::dataDirectory().parent_path() / "tests/scenarios";
+    const auto frames = Scenario::load(directory / "shop-frame-highlights.json");
+    CHECK(frames.afterLevel);
+    CHECK(frames.shopVisit == ShopVisit::Shop);
+    const auto final = Scenario::load(directory / "final-stats.json");
+    CHECK(final.afterLevel);
+    CHECK(final.shopVisit == ShopVisit::FinalStats);
+    const auto party = final.partyMembers();
+    REQUIRE(party.size() == 2);
+    CHECK_FALSE(party[0].slot.has_value());
+    CHECK(party[0].save.progress().lifetime.enemiesKilled == 12345);
+    CHECK(party[0].save.progress().lifetime.playSeconds == 93780);
+    const auto completion = Scenario::load(directory / "after-garm-results.json");
+    CHECK(completion.level == "H4");
+    CHECK(completion.shopVisit == ShopVisit::Level);
+    CHECK_THROWS_AS(Scenario::fromJson(R"({"screen":"shop","shopVisit":"bad","party":[{}]})"),
+                    FormatError);
+    CHECK_THROWS_AS(Scenario::fromJson(R"({"shopVisit":"shop","party":[{}]})"), FormatError);
+    CHECK_THROWS_AS(Scenario::fromJson(R"({"party":[{"lifetime":{"playSeconds":-1}}]})"),
+                    FormatError);
+}
+
 TEST_CASE("Chimera scenario preserves the authored stair entrance and camera ride",
           "[game][scenario][chimera]") {
     const auto file = test::dataDirectory().parent_path() / "tests/scenarios/level-a5-chimera.json";

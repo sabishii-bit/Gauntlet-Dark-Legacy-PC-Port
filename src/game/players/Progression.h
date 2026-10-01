@@ -25,6 +25,15 @@ s32 experienceLevel(s32 experience);
 /** The realms the tower keeps records for, the tower itself first. */
 inline constexpr usize kRealmCount = 14;
 
+/** Per-class P_SAVE_STATS counters used by shop_show_final_stats. Old saves
+ * start these at zero; wallet balance and experience cannot reconstruct them. */
+struct LifetimeStats {
+    s32 enemiesKilled = 0;
+    s32 generatorsDestroyed = 0;
+    s32 goldFound = 0;
+    f64 playSeconds = 0;
+};
+
 struct ClassProgress {
     s32 experience = 0;
     s32 promotedLevel =
@@ -39,6 +48,7 @@ struct ClassProgress {
     Inventory inventory; ///< the keys, potions and powerups carried as this class
     Relics relics;       ///< the runestones, legend items and gargoyle pieces gathered
     LevelRecord levels;  ///< the levels beaten and the boss levels died on
+    LifetimeStats lifetime;
     s32 appearanceLevel() const;
     bool promotionPending() const;
 };

@@ -48,6 +48,8 @@ struct DrawState {
     bool depthWrite = true;
     bool depthTest = true; ///< false accepts every depth, independently of depth writes
     f32 darken = 0.0f;     ///< how much of its colour is taken away: 0 none, 1 all
+    f32 colorScale =
+        1.0f; ///< RGB combiner scale, clamped before alpha blending; leaves alpha alone
 
     bool operator==(const DrawState&) const = default;
 };

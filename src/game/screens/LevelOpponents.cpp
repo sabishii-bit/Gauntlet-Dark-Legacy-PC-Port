@@ -1152,7 +1152,11 @@ void LevelOpponents::awardEnemyLosses(const Events& events) {
         events.award(loss.player, loss.experience, loss.killed);
     }
     for (const GeneratorReward& reward : m_generatorRewards) {
-        events.award(reward.player, reward.experience, reward.destroyed);
+        // combat.c awards generator experience with AddExp's kill flag clear.
+        events.award(reward.player, reward.experience, false);
+        if (reward.destroyed && events.destroyedGenerator) {
+            events.destroyedGenerator(reward.player);
+        }
     }
     m_generatorRewards.clear();
 }

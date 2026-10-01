@@ -1,6 +1,7 @@
 #include "game/app/Scenario.h"
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <string>
 
@@ -46,6 +47,17 @@ Scenario Scenario::fromJson(std::string_view text) {
     }
     Scenario scenario;
     scenario.afterLevel = screen == "shop";
+    const std::string visit = root.value("shopVisit", std::string("level"));
+    if (visit == "shop") {
+        scenario.shopVisit = ShopVisit::Shop;
+    } else if (visit == "final-stats") {
+        scenario.shopVisit = ShopVisit::FinalStats;
+    } else if (visit != "level") {
+        throw FormatError("scenario: unknown shop visit " + visit);
+    }
+    if (!scenario.afterLevel && root.contains("shopVisit")) {
+        throw FormatError("scenario: shopVisit requires the shop screen");
+    }
     if (!root.contains("party") || !root.at("party").is_array() || root.at("party").empty()) {
         throw FormatError("scenario: the party is missing or empty");
     }
@@ -59,6 +71,14 @@ Scenario Scenario::fromJson(std::string_view text) {
         member.promotedLevel = entry.value("promotedLevel", -1);
         member.crystals = entry.value("crystals", std::vector<s32>{});
         member.gold = entry.value("gold", 0);
+        const auto totals = entry.value("lifetime", Json::object());
+        member.lifetime = {totals.value("enemiesKilled", 0), totals.value("generatorsDestroyed", 0),
+                           totals.value("goldFound", 0), totals.value("playSeconds", 0.0)};
+        if (member.lifetime.enemiesKilled < 0 || member.lifetime.generatorsDestroyed < 0 ||
+            member.lifetime.goldFound < 0 || !std::isfinite(member.lifetime.playSeconds) ||
+            member.lifetime.playSeconds < 0 || member.lifetime.playSeconds > 1e12) {
+            throw FormatError("scenario: invalid lifetime statistics");
+        }
         if (scenario.afterLevel) {
             const auto& result = entry.value("results", Json::object());
             scenario.results.push_back({member.player,
@@ -152,6 +172,7 @@ std::vector<PartyMember> Scenario::partyMembers() const {
         save.color = colorIndexOf(member.colorCode).value_or(0);
         ClassProgress& progress = save.progress();
         progress.experience = levelExperience(member.level);
+        progress.lifetime = member.lifetime;
         progress.promotedLevel = member.promotedLevel;
         for (usize realm = 0; realm < member.crystals.size(); ++realm) {
             progress.crystals[realm] = member.crystals[realm];

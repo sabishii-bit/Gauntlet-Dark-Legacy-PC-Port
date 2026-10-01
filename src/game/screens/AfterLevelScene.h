@@ -37,6 +37,7 @@ private:
     void drawLane(const ShopLane& lane);
     void drawTally(const ShopLane& lane, s32 x);
     void drawStats(const ShopLane& lane, s32 x);
+    void drawFinalStats(const ShopLane& lane, s32 x);
     void drawMagicLine(const ShopLane& lane, s32 x);
     void drawShop(const ShopLane& lane, s32 x);
     void drawInventory(const ShopLane& lane, s32 x);
@@ -45,6 +46,7 @@ private:
     void image(std::string_view name, s32 x, s32 y, Color color = Color::white());
     void prompt(s32 x, s32 y, s32 size);
     void drawBackground(s32 player);
+    void drawFrame(std::string_view name, s32 x, s32 y);
     void drawLaneBackdrop(const ShopLane& lane);
     void drawPile(usize pile, s32 x, f32 height);
     std::string_view rank(const ShopLane& lane) const;
@@ -69,6 +71,7 @@ private:
     std::array<f32, 4> m_scroll{};
     std::array<s32, 4> m_scrollSpeed{};
     f64 m_time = 0;
+    f64 m_frameTime = 0;
     StatusBoxPainter m_boxes;
     Canvas m_canvas;
     SoundSet m_musicBank;

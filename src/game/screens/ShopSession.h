@@ -12,10 +12,11 @@
 #include "game/players/ShopPurchase.h"
 #include "game/screens/InventoryPanel.h"
 namespace gdl::game {
-enum class ShopPhase : u8 { Tally, BeforeStats, Shopping, AfterStats, Inventory, Done };
+enum class ShopPhase : u8 { Tally, BeforeStats, Shopping, AfterStats, Inventory, FinalStats, Done };
 /** What the screen is opened for (init_shop's mode): a level's tally, shop and inventory
- * panel; the tower's shop alone; or the tower's inventory panel alone. */
-enum class ShopVisit : u8 { Level, Shop, Inventory };
+ * panel; the tower's shop or inventory alone; Garm's tally/promotion/final results;
+ * or a direct Final Stats preview. */
+enum class ShopVisit : u8 { Level, Shop, Inventory, Completion, FinalStats };
 /** What the flow asks to be heard, in the original's order of events. */
 enum class ShopCue : u8 {
     Select,         ///< a page confirmed (AudioCursorSelect)
@@ -60,6 +61,7 @@ struct ShopLane {
     std::array<s32, 5> statsValues(bool previous) const;
     std::array<s32, 5> statsRevealTicks() const;
     bool statsReady() const;
+    bool finalStatsReady() const { return phaseSeconds >= 330.0 / 60.0; }
     /** Confirm completes one pending adjustment, without leaving the stats page. */
     void skipStatsAdjustment();
     void rememberShopEntry();

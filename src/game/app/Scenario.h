@@ -8,6 +8,7 @@
 #include "engine/core/Types.h"
 
 #include "game/screens/PlayScene.h"
+#include "game/screens/ShopSession.h"
 
 namespace gdl::game {
 
@@ -21,6 +22,7 @@ struct ScenarioMember {
     s32 promotedLevel = -1;    ///< an earlier award stages a tower-return promotion
     std::vector<s32> crystals; ///< per realm, as many as given
     s32 gold = 0;
+    LifetimeStats lifetime;
     s32 health = 0; ///< none leaves it full
     s32 keys = 0;
     s32 slot = -1;            ///< the save slot the character is kept in; none when negative
@@ -46,6 +48,7 @@ struct Scenario {
     PlayOptions tower;
     std::string level;       ///< the level to open onto, such as G1; none is the tower
     bool afterLevel = false; ///< tally/shop preview before returning to the tower
+    ShopVisit shopVisit = ShopVisit::Level;
     std::vector<LevelResults> results;
 
     /** Throws FormatError on malformed text, an unknown class or colour, or an empty party. */

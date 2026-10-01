@@ -1059,21 +1059,28 @@ TEST_CASE("exit settlement credits a last-frame generator kill once without adva
     // The destroying blow earns five times the bred kind's row (PlayerDamagedItem).
     const s32 worth = generatorExperience(opponents.generators().kindOf(generator), true);
     CHECK(worth > 0);
+    s32 destroyed = 0;
     LevelOpponents::Events events;
     events.award = [&](s32 player, s32 amount, bool killed) {
         REQUIRE(player == 3);
         REQUIRE(amount == worth);
-        REQUIRE(killed);
+        REQUIRE_FALSE(killed); // generators are not enemy kills and do not feed turbo
         ++credited;
+    };
+    events.destroyedGenerator = [&](s32 player) {
+        CHECK(player == 3);
+        ++destroyed;
     };
     events.levels = [] {};
     opponents.strikeGenerator(generator, 1000000, 3);
     REQUIRE_FALSE(opponents.generators().standing(generator));
     opponents.settleRewards(players, events);
     REQUIRE(credited == 1);
+    REQUIRE(destroyed == 1);
     opponents.strikeGenerator(generator, 1000000, 3);
     opponents.settleRewards(players, events);
     REQUIRE(credited == 1);
+    REQUIRE(destroyed == 1);
     opponents.close();
     effects.clear();
 }
@@ -1323,6 +1330,7 @@ TEST_CASE("opponent phases interleave legend victory and progression in order",
             },
         .levels = [&] { phases.emplace_back("levels"); },
         .award = [](s32, s32, bool) { FAIL("No kills"); },
+        .destroyedGenerator = [](s32) { FAIL("No generators"); },
         .blocksBreath = {},
         .blocksArea = {},
         .arenaAnchors = {},

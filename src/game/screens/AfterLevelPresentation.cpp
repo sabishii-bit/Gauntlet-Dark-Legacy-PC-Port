@@ -8,6 +8,7 @@
 #include "game/menu/OptionMenu.h"
 #include "game/screens/AfterLevelScene.h"
 #include "game/screens/InventoryPanel.h"
+#include "game/screens/ShopFrameLight.h"
 #include "game/screens/ShopLayout.h"
 
 namespace gdl::game {
@@ -52,6 +53,24 @@ void AfterLevelScene::drawBackground(s32 player) {
     const s32 x = player * 128;
     image(std::format("S1_PLYR{}", player + 1), x, 0);
     image(std::format("S2_PLYR{}", player + 1), x, 256);
+}
+void AfterLevelScene::drawFrame(std::string_view name, s32 x, s32 y) {
+    const auto* art = texture(name);
+    if (art == nullptr) {
+        return;
+    }
+    ImmediateBatch batch;
+    batch.begin(PrimitiveTopology::TriangleStrip);
+    for (const Vec2& uv : {Vec2{0, 0}, Vec2{1, 0}, Vec2{0, 1}, Vec2{1, 1}}) {
+        const auto px = x + static_cast<s32>(uv.x * static_cast<f32>(art->width()));
+        const auto py = y + static_cast<s32>(uv.y * static_cast<f32>(art->height()));
+        const u8 light = shopFrameLight(px, 384 - py, m_frameTime);
+        batch.vertex(Vec3{px, py, 0.5f}, Color::rgba(light, light, light, 255), uv);
+    }
+    batch.end();
+    DrawState state;
+    state.colorScale = 2;
+    m_canvas.submit(batch, *art, Mat4{1}, state);
 }
 void AfterLevelScene::drawPile(usize pile, s32 x, f32 height) {
     constexpr std::array<std::string_view, 3> kPiles{"SHP_GOLD", "SHP_BONES", "SHP_EXP"};
@@ -269,6 +288,7 @@ void AfterLevelScene::drawLane(const ShopLane& lane) {
     case ShopPhase::Tally: drawTally(lane, x); break;
     case ShopPhase::BeforeStats:
     case ShopPhase::AfterStats: drawStats(lane, x); break;
+    case ShopPhase::FinalStats: drawFinalStats(lane, x); break;
     case ShopPhase::Shopping: drawShop(lane, x); break;
     case ShopPhase::Inventory: drawInventory(lane, x); break;
     case ShopPhase::Done: break;
@@ -306,8 +326,8 @@ void AfterLevelScene::render(RenderDevice& device, const Mat4& projection, f32 w
         // init_shop's 0x80808080 is neutral, not half-dark/half-transparent:
         // DrawBlit doubles/clamps alpha; the GX TEV stage doubles texture * RGB.
         // Keep the texture's own transparent cutouts, without another vertex fade.
-        image("S1_BORDER", player * 128, 0);
-        image("S2_BORDER", player * 128, 256);
+        drawFrame("S1_BORDER", player * 128, 0);
+        drawFrame("S2_BORDER", player * 128, 256);
         StatusBoxView empty;
         empty.color = player;
         m_boxes.draw(m_canvas, player, empty, false);
