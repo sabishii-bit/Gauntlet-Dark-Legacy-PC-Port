@@ -180,6 +180,7 @@ public:
         Vec3 position{0};
         bool destroyed = false;    ///< otherwise treasure was reduced to junk
         std::optional<s32> potion; ///< shattered bottle; zero selects the next magic color
+        Mat4 transform{1};         ///< the destroyed item's placement, including orientation
     };
     /** Explosions destroy exposed food/powerups and reduce treasure to junk.
      * Quest pickups are protected; shattered potions request an ownerless magic wave. */
