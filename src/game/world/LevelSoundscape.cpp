@@ -76,6 +76,9 @@ void LevelSoundscape::updateAmbience(std::span<const Vec3> listeners, const Ambi
     if (m_output != nullptr) {
         m_ambience.update(*m_output, listeners, ear, volume,
                           ducked ? std::optional<f32>{kDuckedLevel} : std::nullopt);
+        if (const auto scale = m_ambience.musicScale(); scale.has_value()) {
+            duckMusic(AmbientSounds::kMusicDuckHold, *scale);
+        }
     }
 }
 

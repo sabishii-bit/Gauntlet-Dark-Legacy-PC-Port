@@ -994,6 +994,61 @@ TEST_CASE("a rune sting ducks music temporarily without losing area selection",
     CHECK(f.soundscape.musicArea() == 1);
 }
 
+TEST_CASE("flagged proximity sounds duck music while near and release after leaving",
+          "[game][world][ambience][soundscape][music-areas]") {
+    AreaFixture f("soundscape-proximity-duck");
+    writeBank(f.root, "TOWAMB", {"S_SPEECH", "S_FIRE"});
+    f.soundscape.open(f.root, &f.player, &f.info);
+    f.soundscape.startMusic(&f.assets, 1.0f);
+    writeTextFile(f.root / "world.json", R"({
+      "objects": [{"name":"FLOOR","position":[0,0,0],"next":-1,"child":-1}],
+      "locators": [],
+      "itemInfos": [{"type":13,"subtype":0,"name":""}],
+      "itemInstances": [
+        {"info":0,"name":"S_speech","position":[0,0,0],
+         "params":[0,0,128,64,0,0,0,0,1,0,0,0]},
+        {"info":0,"name":"S_fire","position":[20,0,0],
+         "params":[0,0,128,64,0,0,0,0,2,0,0,0]}
+      ]
+    })");
+    WorldLayout layout;
+    REQUIRE(layout.load(f.root));
+    f.soundscape.bindAmbience(layout);
+    REQUIRE(f.soundscape.ambience().size() == 2);
+    const AmbientEar ear;
+    const std::array<Vec3, 1> near{Vec3{0.0f}};
+    const std::array<Vec3, 1> edge{Vec3{5.0f, 0.0f, 0.0f}};
+    const std::array<Vec3, 1> far{Vec3{20.0f, 0.0f, 0.0f}};
+    f.soundscape.updateAmbience(far, ear, 1.0f);
+    f.frames(30);
+    REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    REQUIRE_FALSE(f.soundscape.ambience().musicScale().has_value());
+    const auto approach = [&](const auto& party, bool ducked = false) {
+        for (s32 frame = 0; frame < 30; ++frame) {
+            f.soundscape.updateAmbience(party, ear, 1.0f, ducked);
+            f.frames(1);
+        }
+    };
+    approach(near);
+    REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel / 2);
+    const SoundHandle speech = f.soundscape.ambience().emitter(0).handle;
+    REQUIRE(f.player.isPlaying(speech));
+    approach(edge);
+    REQUIRE(f.soundscape.musicLevel() == 191); // 255 * (1 - .5 * .5)
+    REQUIRE(f.soundscape.ambience().emitter(0).handle == speech);
+    approach(near, true); // trigger-camera attenuation does not cancel the item's music flag
+    REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel / 2);
+    f.soundscape.updateAmbience(far, ear, 1.0f);
+    REQUIRE_FALSE(f.player.isPlaying(speech));
+    f.frames(3);
+    REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel / 2);
+    f.frames(45);
+    REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel);
+    approach(near);
+    REQUIRE(f.soundscape.musicLevel() == LevelSoundscape::kFullLevel / 2);
+    REQUIRE(f.soundscape.ambience().emitter(0).handle != speech);
+}
+
 TEST_CASE("the zones ask the music for their areas and a boss waking asks for the second",
           "[game][world][soundscape][music-areas]") {
     AreaFixture f("soundscape-zones");
