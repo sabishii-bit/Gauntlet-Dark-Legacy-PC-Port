@@ -63,7 +63,9 @@ struct Fixture {
                 {"type":1,"flags":0,"behaviorFlags":9,"radius":0.5,"damage":0,
                  "minSpeed":30,"maxSpeed":30,"sfxIndex":5,"sfx":2},
                 {"type":8,"flags":67108864,"radius":3,"maxDistance":3,"damage":1,
-                 "sfxIndex":0,"morph":1,"morphEnd":2,"morphLife":5}],
+                 "sfxIndex":0,"morph":1,"morphEnd":2,"morphLife":5},
+                {"type":1,"flags":3145760,"behaviorFlags":9,"radius":0.5,"damage":12,
+                 "minSpeed":30,"maxSpeed":30,"sfxIndex":3,"sfx":2}],
             "sounds":[{"name":"SHOT","levelFormat":"S_%cSHOT"},{"name":"LOOP"},
                       {"name":"HIT","flags":16,"levelFormat":"S_%cHIT"},{"name":"LOOP","life":100},
                       {"name":"SHOT","flags":131072},{"name":"SHOT","flags":4194304}]})");
@@ -210,6 +212,7 @@ TEST_CASE("retail Yeti ice attacks damage I5 cover and only pierce a destroyed r
     shot.target = shot.origin + Vec3{0, 0, 30};
     shot.realm = 'I';
     // DAMG launch offsets have already been applied by the actor before it emits the shot.
+    shot.endVisual = bossDefinition("YETI").projectileEndVisual;
     f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
     std::vector<RockHit> hits;
     for (s32 frame = 0; frame < fps && hits.empty(); ++frame) {
@@ -225,8 +228,143 @@ TEST_CASE("retail Yeti ice attacks damage I5 cover and only pierce a destroyed r
     if (!destroyed) {
         REQUIRE_FALSE(f.sounds.empty());
         CHECK(f.sounds.back() == "S_YETIPHIT");
+        REQUIRE(f.effects.count() == 1);
+        CHECK(f.effects.effect(0).name == "ATTACK8FXC");
+        f.effects.update(1.0f / static_cast<f32>(fps));
+        f.effects.draw(f.device, Mat4{1}, WorldLighting{});
+        CHECK_FALSE(f.device.draws.empty());
     }
     CHECK(f.projectiles.takeHits().empty());
+}
+
+TEST_CASE("projectile end visuals are opt-in and never add damage or completion callbacks",
+          "[game][boss-projectiles][projectile-end]") {
+    const bool visibleEnd = GENERATE(false, true);
+    Fixture f;
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = 7;
+    shot.origin = {0, 3, 0};
+    shot.target = Vec3{0, 3, 30};
+    shot.realm = 'I';
+    shot.endVisual = visibleEnd;
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    bool cleared = false;
+    usize rockHits = 0;
+    SECTION("natural expiry") {
+        f.step(101);
+    }
+    SECTION("surviving cover") {
+        Obstacle cover;
+        cover.centre = {0, 0, 2};
+        cover.height = 8;
+        cover.halfAcross = 5;
+        cover.halfAlong = 0.5f;
+        const std::array stops{MissileStop{.box = cover, .rock = 0, .rockHealth = 90}};
+        f.step(0.1f, {}, nullptr, stops);
+        rockHits = 1;
+    }
+    SECTION("shortened rebound lifetime") {
+        WorldCollision world;
+        CollisionTriangle wall;
+        wall.normal = {0, 0, -1};
+        wall.vertices = {Vec3{-10, 0, 2}, Vec3{0, 20, 2}, Vec3{10, 0, 2}};
+        world.build({wall});
+        f.step(0.1f, {}, &world);
+        REQUIRE(f.projectiles.count() == 1);
+        REQUIRE(f.effects.effect(0).name == "LOOP");
+        REQUIRE(f.effects.effect(0).secondsLeft == 10);
+        REQUIRE(f.sounds.empty());
+        f.step(11);
+    }
+    SECTION("teardown is silent") {
+        f.projectiles.clear(f.effects);
+        cleared = true;
+    }
+    REQUIRE(f.projectiles.count() == 0);
+    REQUIRE(f.projectiles.takeHits().empty());
+    REQUIRE(f.projectiles.takeRockHits().size() == rockHits);
+    REQUIRE(f.projectiles.takeGenerators().empty());
+    REQUIRE(f.projectiles.takeSummons().empty());
+    const bool shows = visibleEnd && !cleared;
+    REQUIRE(f.effects.count() == (shows ? 1U : 0U));
+    if (shows) {
+        CHECK(f.effects.effect(0).name == "HIT");
+        f.effects.draw(f.device, Mat4{1}, WorldLighting{});
+        CHECK_FALSE(f.device.draws.empty());
+    }
+    CHECK(f.sounds.size() == (shows || rockHits != 0 ? 1U : 0U));
+    const usize sounds = f.sounds.size();
+    const std::array players{EnemyView{0, {0, 0, 0}, 100, 100}};
+    f.step(2, players);
+    CHECK(f.effects.count() == 0);
+    CHECK(f.projectiles.takeHits().empty());
+    CHECK(f.projectiles.takeRockHits().empty());
+    CHECK(f.projectiles.takeGenerators().empty());
+    CHECK(f.projectiles.takeSummons().empty());
+    CHECK(f.sounds.size() == sounds);
+}
+
+TEST_CASE("Yeti iceball expiry plays the authored break once without splash damage",
+          "[game][boss-projectiles][yeti][projectile-end][unpacked]") {
+    const s32 attack = GENERATE(2, 3, 9, 10, 13, 14);
+    const s32 fps = GENERATE(30, 120);
+    const bool curbed = GENERATE(false, true);
+    CAPTURE(attack, fps, curbed);
+    Fixture f;
+    const auto root = test::unpackedOrSkip("critter/YETI.json").parent_path().parent_path();
+    test::unpackedOrSkip("MONSTERS/YETI/animations.json");
+    REQUIRE(f.data.load(root / "critter/YETI.json"));
+    REQUIRE(f.archive.load(root / "MONSTERS/YETI"));
+    REQUIRE(bossDefinition("YETI").projectileEndVisual);
+    for (s32 kind = 34; kind <= 44; ++kind) {
+        CHECK(bossDefinition(bossNameOf(kind)).projectileEndVisual == (kind == 39));
+    }
+    CombatShot shot;
+    shot.data = &f.data;
+    shot.damageIndex = attack;
+    shot.origin = {0, 10, 0};
+    shot.target = Vec3{0, 10, 30};
+    shot.realm = 'I';
+    shot.endVisual = bossDefinition("YETI").projectileEndVisual;
+    shot.birthLife = curbed ? 0.25f : 0;
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    const f32 dt = 1.0f / static_cast<f32>(fps);
+    f.step(dt);
+    REQUIRE(f.effects.effect(0).name == "ATTACK8FXB");
+    const Vec3 endPosition = f.effects.effect(0).position;
+    const auto life = f.effects.remaining(f.effects.effect(0).id);
+    REQUIRE(life.has_value());
+    // End the authored/curbed timer without introducing a floor or player impact.
+    f.effects.update(*life + dt);
+    const std::array players{EnemyView{0, endPosition - Vec3{0, 3, 0}, 1, 6}};
+    f.projectiles.update(dt, nullptr, players, f.device, f.effects, f.sound);
+    REQUIRE(f.projectiles.count() == 0);
+    REQUIRE(f.effects.count() == 1);
+    const auto& end = f.effects.effect(0);
+    REQUIRE(end.name == "ATTACK8FXC");
+    CHECK(end.position == endPosition);
+    REQUIRE(end.tree != nullptr);
+    REQUIRE_FALSE(end.tree->sequences.empty());
+    const auto duration = f.effects.remaining(end.id);
+    REQUIRE(duration.has_value());
+    CHECK(*duration ==
+          Approx(static_cast<f32>(end.tree->sequences[0].frames) * end.player.secondsPerFrame()));
+    CHECK_FALSE(end.timed);
+    f.effects.update(dt);
+    f.effects.draw(f.device, Mat4{1}, WorldLighting{});
+    CHECK_FALSE(f.device.draws.empty());
+    CHECK(f.sounds == std::vector<std::string>{"S_YETIPHIT"});
+    f.step(*duration + dt, players);
+    CHECK(f.effects.count() == 0);
+    CHECK(f.projectiles.takeHits().empty());
+    CHECK(f.projectiles.takeGenerators().empty());
+    CHECK(f.projectiles.takeSummons().empty());
+    CHECK(f.sounds.size() == 1);
+    f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
+    f.projectiles.clear(f.effects);
+    CHECK(f.effects.count() == 0);
+    CHECK(f.sounds.size() == 1);
 }
 
 TEST_CASE("combatant item contacts respect ignore-world and nearer player contacts",
@@ -1066,6 +1204,7 @@ TEST_CASE("Yeti iceballs bounce off floors and remain harmful afterward",
     shot.origin = {0, 10, 0};
     shot.target = Vec3{0, 0, 30};
     shot.realm = 'I';
+    shot.endVisual = bossDefinition("YETI").projectileEndVisual;
     f.projectiles.launch(shot, f.archive, f.device, f.effects, f.sound);
     bool bounced = false;
     f32 previousY = shot.origin.y;
@@ -1089,6 +1228,12 @@ TEST_CASE("Yeti iceballs bounce off floors and remain harmful afterward",
     REQUIRE(hits.front().player == 3);
     REQUIRE(hits.front().damage == 100);
     REQUIRE(f.effects.effect(0).name == "ATTACK8FXC");
+    REQUIRE(f.sounds == std::vector<std::string>{"S_YETIPHIT"});
+    f.step(0.1f, players, &world);
+    CHECK(f.projectiles.takeHits().empty());
+    CHECK(f.sounds.size() == 1);
+    f.projectiles.clear(f.effects);
+    CHECK(f.effects.count() == 0);
 }
 
 TEST_CASE("Yeti mouth-conjured throw survives its launch in the I5 arena",
@@ -1118,6 +1263,7 @@ TEST_CASE("Yeti mouth-conjured throw survives its launch in the I5 arena",
         for (const auto& shot : fixture.actor.takeShots()) {
             if (shot.damageIndex == 9 || shot.damageIndex == 10) {
                 INFO("Launch " << shot.origin.x << ", " << shot.origin.y << ", " << shot.origin.z);
+                REQUIRE(shot.endVisual);
                 projectiles.launch(shot, fixture.assets.archive, device, effects, {});
                 launched = true;
                 break;

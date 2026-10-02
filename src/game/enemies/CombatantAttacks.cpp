@@ -116,6 +116,7 @@ void Combatant::shoot(const Actor& critter, s32 id, const MoveDefinition& move, 
     shot.rate = attackRate(critter);
     shot.scale = critter.scale;
     shot.damageScale = m_scales.damage;
+    shot.endVisual = critter.stock->definition.projectileEndVisual;
     if ((damage->behaviorFlags & AttackDefinition::kCurbed) != 0 && critter.curbSeconds > 0.0f) {
         shot.birthLife = critter.curbSeconds;
     }

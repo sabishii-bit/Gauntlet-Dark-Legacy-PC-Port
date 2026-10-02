@@ -19,7 +19,8 @@ struct CombatShot {
     f32 rate = 1.0f;
     f32 scale = 1.0f;
     f32 damageScale = 1.0f;
-    f32 birthLife = 0.0f; ///< a legend-item curb can shorten a projectile's first effect
+    f32 birthLife = 0.0f;   ///< a legend-item curb can shorten a projectile's first effect
+    bool endVisual = false; ///< presentation only; silent flight endings reuse the impact cue
     char realm = 'G';
 };
 

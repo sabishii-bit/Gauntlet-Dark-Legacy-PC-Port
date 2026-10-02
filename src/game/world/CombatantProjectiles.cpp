@@ -240,6 +240,10 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             } else {
                 if (flying.morphed) {
                     show(flying, damage.morphEnd, device, effects, sound);
+                } else if (flying.shot.endVisual && !flying.settled && !flying.stuck) {
+                    // The family can make a silent flight expiry visible without
+                    // starting an impact area or changing its completion callbacks.
+                    show(flying, damage.hitSound, device, effects, sound);
                 }
                 if (flying.leavesGenerator) {
                     Mat4 placement = glm::translate(Mat4{1}, flying.position);
@@ -350,9 +354,12 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
                 }
                 summon(flying);
                 if (item && item->suppressEffect) {
-                    // Clearing fxhit suppresses the visual morph, not hit_audio.
-                    if (const auto* cue = flying.shot.data->sound(damage.hitSound);
-                        cue != nullptr && sound) {
+                    // Surviving cover ends the piercing flight. An optional end
+                    // visual changes only its presentation, never its damage.
+                    if (flying.shot.endVisual) {
+                        show(flying, damage.hitSound, device, effects, sound);
+                    } else if (const auto* cue = flying.shot.data->sound(damage.hitSound);
+                               cue != nullptr && sound) {
                         const std::string name = cue->soundFor(flying.shot.realm);
                         if (!name.empty()) {
                             sound(name);
