@@ -27,6 +27,7 @@ void CombatantAssets::clear() {
     meterFill = -1;
     shadow.clear();
     textures.clear();
+    skins.clear();
     body.clear();
     brokenModels.clear();
     tree = nullptr;
@@ -100,6 +101,19 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
         return false;
     }
     textures.bind(archive.trees.textureAnimations(), archive.textures, device);
+    for (const auto& animation : archive.trees.textureAnimations()) {
+        if (!animation.cycles() || animation.source < 0 || skins.contains(animation.name)) {
+            continue;
+        }
+        auto& frames = skins[animation.name];
+        for (s32 frame = 0; frame < animation.frames; ++frame) {
+            const auto slot = static_cast<u32>(animation.source + frame);
+            if (slot >= archive.textures.size()) {
+                break;
+            }
+            frames.push_back(&archive.textures.texture(device, slot));
+        }
+    }
     const auto loadBroken = [&](const CritterData& partData) {
         for (const auto& part : partData.parts()) {
             if ((part.flags & CritterPart::kBreakable) == 0) {

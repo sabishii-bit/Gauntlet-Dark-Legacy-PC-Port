@@ -997,6 +997,7 @@ TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
     REQUIRE(world.load(device, root, *catalog.byName("G1")));
     world.setPlayerCount(4);
     ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
     EffectTrees effects;
     LevelSoundscape audio;
     LevelOpponents opponents;
@@ -1027,6 +1028,9 @@ TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
     REQUIRE(general.has_value());
     std::vector<s32> helps;
     LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
     events.levels = [] {};
     events.award = [](s32, s32, bool) {};
     events.help = [&](s32 id, usize) {
@@ -1038,16 +1042,105 @@ TEST_CASE("a general carries the pickup it stands on and lets it go when slain",
     hit.damage = 1000000;
     opponents.critters().hurt(*general, hit);
     opponents.settleRewards(players, events);
+    CHECK(items.item(*held).carried);
+    CHECK_FALSE(items.item(*held).visible);
+    bool sawThrow = false;
+    bool sawLanding = false;
+    Vec3 dropSpot = post;
+    f32 highest = post.y;
+    for (s32 frame = 0; frame < 180; ++frame) {
+        world.update(1.0f / 30);
+        effects.update(1.0f / 30);
+        opponents.update(2, 1.0f / 30, players, {}, events);
+        opponents.settleRewards(players, events);
+        for (usize i = 0; i < effects.count(); ++i) {
+            const auto& effect = effects.effect(i);
+            if (effect.name == "BAG_THROW" || effect.name == "BAG_HIT") {
+                CHECK_FALSE(items.item(*held).visible);
+                CHECK_FALSE(items.item(*held).takeable());
+                highest = std::max(highest, effect.position.y);
+                dropSpot = effect.position;
+                sawThrow |= effect.name == "BAG_THROW";
+                sawLanding |= effect.name == "BAG_HIT";
+            }
+        }
+    }
+    CHECK(sawThrow);
+    CHECK(sawLanding);
+    CHECK(highest > post.y + 2);
     CHECK_FALSE(items.item(*held).carried);
     CHECK(items.item(*held).visible);
-    CHECK(items.item(*held).thrown); // it goes up in its bag and comes down
     CHECK(helps == std::vector<s32>{HelpMessages::kGeneralsCarry});
-    for (s32 frame = 0; frame < 120; ++frame) {
-        world.update(1.0f / 30);
-    }
     CHECK(items.item(*held).takeable());
-    CHECK(std::hypot(items.item(*held).position.x - post.x, items.item(*held).position.z - post.z) <
-          3.0f);
+    CHECK(items.item(*held).position.x == Catch::Approx(dropSpot.x));
+    CHECK(items.item(*held).position.z == Catch::Approx(dropSpot.z));
+    opponents.close();
+}
+
+TEST_CASE("B1 gargoyle reveals its eagle piece only after its sack lands and opens",
+          "[level-opponents][carried][gargoyle-loot][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELB1/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("B1")));
+    world.setPlayerCount(1);
+    ItemArchive weapons;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    EffectTrees effects;
+    LevelSoundscape audio;
+    LevelOpponents opponents;
+    std::array<PlayerRuntime, 1> players;
+    const Vec3 post{0.6328125f, 98.4296875f, -11.6640625f};
+    const Vec3 start = post + Vec3{0, 0, 8};
+    const auto floor = world.collision().floorAt(start, 2, 10);
+    REQUIRE(floor.has_value());
+    REQUIRE(std::abs(floor->y - post.y) < 2);
+    players[0].actor.spawn(0, {}, nullptr, start, 0);
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    const auto id = opponents.critters().spawn(CombatantKind::Gargoyle, post, 0.239736f);
+    REQUIRE(id.has_value());
+    const usize originalCount = world.placedItems().size();
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 1000000;
+    opponents.critters().hurt(*id, hit);
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    bool thrown = false;
+    bool landed = false;
+    for (s32 frame = 0; frame < 110; ++frame) {
+        world.update(1.0f / 30);
+        effects.update(1.0f / 30);
+        opponents.update(2, 1.0f / 30, players, {}, events);
+        for (usize i = 0; i < effects.count(); ++i) {
+            const auto& effect = effects.effect(i);
+            if (effect.name == "BAG_THROW" || effect.name == "BAG_HIT") {
+                REQUIRE(world.placedItems().size() == originalCount);
+                device.draws.clear();
+                effects.draw(device, Mat4{1}, {});
+                REQUIRE_FALSE(device.draws.empty());
+                thrown |= effect.name == "BAG_THROW";
+                landed |= effect.name == "BAG_HIT";
+            }
+        }
+    }
+    REQUIRE(thrown);
+    REQUIRE(landed);
+    REQUIRE(world.placedItems().size() == originalCount + 1);
+    const auto& reward = world.placedItems().item(originalCount);
+    REQUIRE(reward.name == "GARGEAGL");
+    REQUIRE(reward.takeable());
+    const auto landedOn = world.collision().floorAt(reward.position, 2, 10);
+    REQUIRE(landedOn.has_value());
+    REQUIRE(reward.position.y == Catch::Approx(landedOn->y + PlacedItems::kThrownFloorLift));
     opponents.close();
 }
 

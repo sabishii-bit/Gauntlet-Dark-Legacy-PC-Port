@@ -190,6 +190,21 @@ private:
     Vec3 m_attention{0.0f};
     /** What each of the great ones carries, by its place in the pool. */
     std::array<std::optional<usize>, Critters::kMost> m_carried{};
+    struct Bag {
+        std::optional<usize> item;
+        std::string name;
+        Vec3 position{0};
+        f32 velocity = 20;
+        f32 age = 0;
+        f32 pitch = 0;
+        f32 spin = 0;
+        u32 effect = 0;
+        bool landed = false;
+    };
+    std::vector<Bag> m_bags;
+    u32 m_bagSeed = 1;
+    void updateBags(f32 seconds);
+    void releaseBag(const Bag& bag);
     /** A great one slain lets what it carried go, a gargoyle its piece of the wings if it
      * carried nothing (CritterDropItem), with the lesson its kind teaches. */
     void dropCarried(const CombatLoss& loss, std::span<const PlayerRuntime> players,

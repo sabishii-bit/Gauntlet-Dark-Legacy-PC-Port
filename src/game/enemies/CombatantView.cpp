@@ -183,6 +183,18 @@ void Combatant::draw(RenderDevice& device, const Mat4& clip, const WorldLighting
                                   critter.player.sequence(),
                                   static_cast<s32>(critter.player.frame()));
     critter.stock->body.setAppearance(false, critter.tint);
+    if (critter.skin != nullptr) {
+        const auto& skin = *critter.skin;
+        const s32 count = static_cast<s32>(skin.life * 30.0f);
+        const s32 frame = static_cast<s32>(critter.skinAge * 30.0f * skin.particleRate);
+        const auto found = critter.stock->skins.find(skin.tree);
+        if (count > 0 && frame < count * (skin.skinLoops + 1) &&
+            found != critter.stock->skins.end() &&
+            static_cast<usize>(frame % count) < found->second.size()) {
+            critter.stock->body.setMaskedTexture(found->second[static_cast<usize>(frame % count)]);
+            critter.stock->body.setAppearance(true, critter.tint);
+        }
+    }
     if (critter.flashTicks > 0 && hitFlash != nullptr) {
         critter.stock->body.setMaskedTexture(hitFlash);
         critter.stock->body.setAppearance(true, Color::white());

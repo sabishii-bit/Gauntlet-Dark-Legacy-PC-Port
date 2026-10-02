@@ -25,6 +25,7 @@ struct CombatantAssets {
     TreeModel body;
     std::map<std::string, TreeModel> brokenModels; ///< PREFIX + D + node name replacements
     TextureAnimator textures;
+    std::map<std::string, std::vector<const Texture*>, std::less<>> skins;
     BlobShadow shadow; ///< SHADOW1L1 of its archive, when its type lies one
     /** The GMETER bar over the body, when its type hangs one (CritterAddHealthMeter). */
     const TreeInfo* meterTree = nullptr;
