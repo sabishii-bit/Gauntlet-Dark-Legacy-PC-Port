@@ -354,8 +354,12 @@ void LevelWorld::clear() {
     m_audio = nullptr;
 }
 
-std::optional<WorldCamera> LevelWorld::entranceCamera() const {
-    const WorldLocator* locator = m_layout.findLocator(LocatorKind::CameraStart);
+std::optional<WorldCamera> LevelWorld::entranceCamera(u32 startIndex) const {
+    const WorldLocator* locator =
+        m_layout.findLocator(LocatorKind::CameraStart, isTower() ? startIndex : 0);
+    if (locator == nullptr) {
+        locator = m_layout.findLocator(LocatorKind::CameraStart);
+    }
     if (locator == nullptr) {
         locator = m_layout.findLocator(LocatorKind::CameraGame);
     }
@@ -397,7 +401,7 @@ const WorldLocator* LevelWorld::startPoint(u32 index) const {
 }
 
 u32 LevelWorld::towerMarkerOf(u32 realm) {
-    constexpr std::array<u32, 14> kMarkers{0, 3, 2, 6, 5, 0, 0, 1, 0, 7, 8, 4, 0, 0};
+    constexpr std::array<u32, 14> kMarkers{0, 3, 2, 6, 5, 9, 10, 1, 11, 7, 8, 4, 0, 0};
     return realm < kMarkers.size() ? kMarkers[realm] : 0;
 }
 

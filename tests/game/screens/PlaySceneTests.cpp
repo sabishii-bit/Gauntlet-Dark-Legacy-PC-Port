@@ -1532,8 +1532,8 @@ TEST_CASE("spikes make whoever they catch flinch where they stand", "[game][scre
     scene.close();
 }
 
-TEST_CASE("a party back from a realm materialises among its portals, the camera on it",
-          "[game][screens][unpacked]") {
+TEST_CASE("a party back from a realm descends from that wing's entrance camera",
+          "[game][screens][tower-return-camera][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
     const GameConfig config;
     test::FakeRenderDevice device;
@@ -1559,23 +1559,59 @@ TEST_CASE("a party back from a realm materialises among its portals, the camera 
     const Vec3 ring{37.8f, -6.3f, -117.5f};
     REQUIRE(glm::distance(scene.actor(0)->position(), ring) < 3.0f);
     REQUIRE_FALSE(scene.fallen(0));
-    // No ride in from the entrance hall: the view is the follow camera's, looking at them,
-    // while they play their entrance under the level's title.
-    REQUIRE_FALSE(scene.startCamera().active());
+    const auto marker = world.entranceCamera(1);
+    REQUIRE(marker);
+    REQUIRE(scene.startCamera().active());
     REQUIRE(scene.spawning());
-    REQUIRE(scene.viewCamera().position == scene.camera().camera().position);
-    REQUIRE(scene.viewCamera().yaw == scene.camera().camera().yaw);
-    REQUIRE(scene.viewCamera().pitch == scene.camera().camera().pitch);
+    REQUIRE(scene.viewCamera().position == marker->position);
+    REQUIRE(scene.viewCamera().yaw == marker->yaw);
+    REQUIRE(scene.viewCamera().pitch == marker->pitch);
+    REQUIRE(scene.viewCamera().position != world.entranceCamera()->position);
+    REQUIRE(scene.viewCamera().position.y > scene.camera().camera().position.y);
     REQUIRE(glm::distance(scene.viewCamera().position, ring) < 60.0f);
+    const Vec3 spawn = scene.actor(0)->position();
     scene.update(1.0 / 60.0, PlayScene::Inputs{});
     REQUIRE(scene.animator(0) != nullptr);
     REQUIRE(scene.animator(0)->action() == PlayerAnimator::Action::Start);
+    PlayScene::Inputs walking{};
+    walking[0].move = MoveInput{Vec2{1, 0}, 1};
+    walking[0].menu.select = true; // Standard arrival cannot be skipped by attack/confirm.
+    for (s32 tick = 1; tick < StartCamera::kHoldTicks; ++tick) {
+        scene.update(1.0 / 60.0, walking);
+        CHECK(scene.actor(0)->position() == spawn);
+    }
+    REQUIRE(scene.startCamera().phase() == StartCamera::Phase::Ride);
+    f32 lastY = scene.viewCamera().position.y;
+    for (s32 tick = 0; tick < StartCamera::kRideTicks; ++tick) {
+        scene.update(1.0 / 60.0, walking);
+        CHECK(scene.actor(0)->position() == spawn);
+        CHECK(scene.viewCamera().position.y <= lastY + 0.001f);
+        lastY = scene.viewCamera().position.y;
+    }
+    CHECK_FALSE(scene.startCamera().active());
+    CHECK(glm::distance(scene.viewCamera().position, scene.camera().camera().position) < 0.001f);
     scene.close();
     // At the tower's own entrance the start camera still holds and rides in.
     PlayOptions fresh;
     fresh.welcome = false;
     REQUIRE(scene.open(device, context, world, party, fresh));
     REQUIRE(scene.startCamera().active());
+    CHECK(scene.viewCamera().position == world.entranceCamera()->position);
+    scene.close();
+    // Explicit debug/scenario positions still bypass the entrance flight.
+    back.position = spawn;
+    REQUIRE(scene.open(device, context, world, party, back));
+    CHECK_FALSE(scene.startCamera().active());
+    CHECK(scene.viewCamera().position == scene.camera().camera().position);
+    scene.close();
+    // A locked realm falls back as a pair: both spawn and camera use the tower entrance.
+    const CharacterSave locked;
+    const std::vector<PartyMember> lockedParty{PartyMember{0, locked}};
+    back.position.reset();
+    REQUIRE(scene.open(device, context, world, lockedParty, back));
+    CHECK(scene.startCamera().active());
+    CHECK(scene.viewCamera().position == world.entranceCamera()->position);
+    CHECK(glm::distance(scene.actor(0)->position(), world.startPoint(0)->position) < 3);
     scene.close();
 }
 

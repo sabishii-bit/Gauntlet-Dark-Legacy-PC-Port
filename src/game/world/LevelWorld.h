@@ -210,8 +210,9 @@ public:
     std::vector<TriggerOpening> takeTriggerSettled() { return m_triggers.takeSettled(); }
     bool hasLevelData() const { return m_level != nullptr; }
 
-    /** The camera the tower is first seen from: the first camera start marker. */
-    std::optional<WorldCamera> entranceCamera() const;
+    /** The start camera paired with a spawn marker; missing indexed cameras fall back to
+     * marker zero without changing the party's spawn. */
+    std::optional<WorldCamera> entranceCamera(u32 startIndex = 0) const;
 
     /** The level's start marker number `index` (0 is its entrance). */
     const WorldLocator* startPoint(u32 index) const;

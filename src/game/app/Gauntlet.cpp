@@ -119,6 +119,7 @@ bool Gauntlet::startScenario(const std::filesystem::path& file) {
             journey.party = scenario.partyMembers();
             journey.options.welcome = false;
             journey.options.arriving = true;
+            journey.options.arrivalWorld = static_cast<u32>(std::max(reference->realmId, 0));
             if (!m_afterLevel.open(renderDevice(), sceneContext, journey.party, scenario.results,
                                    level->shopMaxima, levelName, scenario.shopVisit)) {
                 return false;
@@ -182,6 +183,8 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         updatePause(deltaSeconds);
     } else if (m_afterLevel.isOpen()) {
         updateAfterLevel(deltaSeconds);
+    } else if (m_select.isOpen()) {
+        updateSelect(deltaSeconds);
     } else if (m_journey.has_value()) {
         updateJourney(deltaSeconds);
     } else if (m_demo.isOpen()) {
@@ -190,8 +193,6 @@ void Gauntlet::onUpdate(f64 deltaSeconds) {
         updateMovie(deltaSeconds);
     } else if (m_title.isOpen()) {
         updateTitle(deltaSeconds);
-    } else if (m_select.isOpen()) {
-        updateSelect(deltaSeconds);
     } else if (m_play->scene.isOpen()) {
         updateTower(deltaSeconds);
     }
@@ -313,23 +314,18 @@ void Gauntlet::updateSelect(f64 deltaSeconds) {
     if (outcome == SelectOutcome::Running) {
         return;
     }
-    std::vector<PartyMember> party;
-    for (s32 player = 0; player < PlayerSelectScene::kLaneCount; ++player) {
-        const SelectLane& lane = m_select.lane(player);
-        if (lane.lockedIn()) {
-            PartyMember member{player, lane.save(), lane.slotInUse()};
-            // Who stayed the same character keeps what it has been told this session.
-            for (const PartyMember& before : m_joining) {
-                if (before.player == player && before.save.name == member.save.name &&
-                    before.save.character == member.save.character) {
-                    member.helpHeard = before.helpHeard;
-                }
-            }
-            party.push_back(std::move(member));
-        }
-    }
-    m_joining.clear();
+    std::vector<PartyMember> party = m_select.party();
     m_select.close();
+    if (m_journey.has_value()) {
+        if (outcome == SelectOutcome::Done) {
+            m_journey->party = std::move(party);
+            finishJourney();
+            return;
+        }
+        m_journey.reset();
+        m_loadingPicture.release();
+        m_levelLoading.close();
+    }
     if (outcome == SelectOutcome::Done && startTower(party)) {
         return;
     }
@@ -389,7 +385,6 @@ bool Gauntlet::joinTower(s32 player) {
         return false;
     }
     m_play->scene.close();
-    m_joining = std::move(party);
     for (auto& controls : m_controls) {
         controls.reset();
     }
@@ -569,7 +564,6 @@ void Gauntlet::updatePause(f64 deltaSeconds) {
         keepParty(party);
         if (startPlayerSelect(source.pad, party, true)) {
             m_play->scene.close();
-            m_joining = std::move(party);
         }
         return;
     }
@@ -634,8 +628,13 @@ void Gauntlet::updateAfterLevel(f64 deltaSeconds) {
     if (m_afterLevel.update(deltaSeconds, inputs)) {
         GDL_VERIFY(m_journey.has_value(), "Shop requires a pending journey");
         m_journey->party = m_afterLevel.session().party();
+        const bool manageCharacters = m_afterLevel.session().visit() == ShopVisit::Level;
         keepParty();
         m_afterLevel.close();
+        if (manageCharacters &&
+            !m_select.openAfterLevel(renderDevice(), context(), m_journey->party)) {
+            log::warn("Post-level character menu unavailable; keeping rewards and returning.");
+        }
     }
 }
 
@@ -731,6 +730,10 @@ void Gauntlet::onRender(RenderDevice& device) {
         m_afterLevel.render(device, projection, frameWidth, frameHeight);
         return;
     }
+    if (m_select.isOpen()) {
+        m_select.render(device, projection, frameWidth, frameHeight);
+        return;
+    }
     if (m_journey.has_value()) {
         if (m_journey->movieStarted) {
             m_movie.render(device, projection, Rect{0, 0, frameWidth, frameHeight});
@@ -759,10 +762,6 @@ void Gauntlet::onRender(RenderDevice& device) {
         m_title.render(device, projection, frameWidth, frameHeight);
         return;
     }
-    if (m_select.isOpen()) {
-        m_select.render(device, projection, frameWidth, frameHeight);
-        return;
-    }
     if (m_play->scene.isOpen()) {
         m_play->scene.render(device, projection, frameWidth, frameHeight);
         if (m_pause.isOpen()) {
@@ -781,6 +780,8 @@ void Gauntlet::keepParty() {
         party = m_pause.party();
     } else if (m_afterLevel.isOpen()) {
         party = m_afterLevel.session().party();
+    } else if (m_select.isOpen()) {
+        party = m_select.party();
     } else if (m_play->scene.isOpen()) {
         party = m_play->scene.party();
     } else if (m_journey.has_value()) {

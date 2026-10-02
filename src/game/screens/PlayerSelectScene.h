@@ -6,6 +6,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 #include "engine/assets/BitmapFont.h"
 #include "engine/assets/SoundSet.h"
@@ -46,6 +47,11 @@ public:
      * of `party` (a game in progress) stand locked in their lanes. False when absent. */
     bool open(RenderDevice& device, const GameContext& context, s32 startingPlayer,
               std::span<const PartyMember> party = {}, bool manage = false);
+    /** After a level, every surviving character gets Save/Change/Load/Quit/Done. */
+    bool openAfterLevel(RenderDevice& device, const GameContext& context,
+                        std::span<const PartyMember> party);
+    /** Current characters, including those still choosing; dropped lanes are omitted. */
+    std::vector<PartyMember> party() const;
     void close();
     bool isOpen() const { return m_open; }
 
@@ -112,6 +118,7 @@ private:
     SaveSlots m_saves;
     LaneServices m_services;
     std::array<SelectLane, kLaneCount> m_lanes{};
+    std::vector<PartyMember> m_entryParty;
     f64 m_tickRemainder = 0.0;
     s32 m_time = 0;
     s32 m_idleFrames = 0;

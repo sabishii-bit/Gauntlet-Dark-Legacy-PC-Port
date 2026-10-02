@@ -1,0 +1,12 @@
+{
+  "welcome": false,
+  "arrivalWorld": 10,
+  "party": [
+    {
+      "class": "KNI",
+      "color": "GRE",
+      "level": 60,
+      "crystals": [0, 15, 25, 50, 75, 100, 150, 200, 250]
+    }
+  ]
+}

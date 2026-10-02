@@ -226,4 +226,143 @@ TEST_CASE("Sumner greets a locked-in character by costume and class", "[game][se
     REQUIRE_FALSE(scene.speaking());
 }
 
+TEST_CASE("post-shop prompts surviving lanes and retains fallen character checkpoints",
+          "[game][select][post-shop][unpacked]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-after-shop");
+    PlayerSelectScene scene;
+    CharacterSave alive;
+    alive.name = "ALIVE";
+    alive.gold = 4321;
+    CharacterSave fallen;
+    fallen.name = "FALLEN";
+    const std::array party{PartyMember{0, alive, std::nullopt, false, 0, {14, 27}},
+                           PartyMember{2, alive, 1}, PartyMember{3, fallen, 2, true}};
+    REQUIRE(scene.openAfterLevel(device, f.context(), party));
+    CHECK(scene.lane(0).state() == SelectLane::State::SaveMenu);
+    CHECK(scene.lane(2).state() == SelectLane::State::SaveMenu);
+    CHECK(scene.lane(3).lockedIn());
+    CHECK_FALSE(scene.lane(1).active());
+    CHECK(scene.step(60, player(0, false, true)) == SelectOutcome::Running);
+    CHECK(scene.lane(0).state() == SelectLane::State::SaveMenu);
+    scene.step(1, player(0, true)); // Done; the other survivor still owns its menu.
+    CHECK(scene.lane(0).lockedIn());
+    CHECK(scene.step(60, nobody()) == SelectOutcome::Running);
+    scene.step(1, player(2, true));
+    SelectOutcome outcome = SelectOutcome::Running;
+    for (s32 i = 0; i <= PlayerSelectScene::kIdleFrames; ++i) {
+        outcome = scene.step(1, nobody());
+    }
+    CHECK(outcome == SelectOutcome::Done);
+    const auto result = scene.party();
+    REQUIRE(result.size() == 3);
+    CHECK(result[0].save.toJson() == alive.toJson());
+    CHECK(result[0].helpHeard == std::vector<s32>{14, 27});
+    CHECK(result[1].slot == 1);
+    CHECK(result[2].fallen);
+    CHECK(result[2].save.toJson() == fallen.toJson());
+}
+
+TEST_CASE("post-shop lanes cannot race for another lane's pending save slot",
+          "[game][select][post-shop][unpacked]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-after-shop-reservations");
+    PlayerSelectScene scene;
+    CharacterSave first;
+    first.name = "FIRST";
+    CharacterSave second;
+    second.name = "SECOND";
+    const std::array party{PartyMember{0, first, std::nullopt, false, 0, {14}},
+                           PartyMember{1, second}};
+    REQUIRE(scene.openAfterLevel(device, f.context(), party));
+    PlayerSelectScene::Inputs both{};
+    both[0].up = both[1].up = true;
+    for (s32 i = 0; i < 3; ++i) {
+        scene.step(1, both); // Done -> Quit -> Change -> Save; no files to load.
+    }
+    both = {};
+    both[0].select = both[1].select = true;
+    scene.step(1, both);
+    REQUIRE(scene.lane(0).state() == SelectLane::State::SavePick);
+    REQUIRE(scene.lane(1).state() == SelectLane::State::SavePick);
+    scene.step(1, both);
+    CHECK(scene.lane(0).state() == SelectLane::State::Saving);
+    CHECK(scene.lane(1).state() == SelectLane::State::SavePick);
+    CHECK(scene.lane(0).reservedSlot() == 0);
+    scene.step(SelectLane::kOperationStepTicks * 3, nobody());
+    CharacterSave saved;
+    REQUIRE(scene.saves().load(0, saved));
+    CHECK(saved.name == "FIRST");
+    CHECK(scene.party()[0].slot == 0);
+    CHECK(scene.party()[0].helpHeard == std::vector<s32>{14});
+    CHECK_FALSE(scene.party()[1].slot.has_value());
+    scene.step(1, player(1, true));
+    CHECK(scene.lane(1).state() == SelectLane::State::SavePick);
+}
+
+TEST_CASE("post-shop keeps Done selected and protects an existing save when overwrite is refused",
+          "[game][select][post-shop][unpacked]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-after-shop-focus");
+    SaveSlots slots;
+    REQUIRE(slots.open(f.config.saveDirectory(), f.config.save.slots));
+    CharacterSave save;
+    save.name = "EXIST";
+    REQUIRE(slots.write(0, save));
+    save.gold = 4567;
+    const std::array party{PartyMember{0, save, 0}};
+    PlayerSelectScene scene;
+    REQUIRE(scene.openAfterLevel(device, f.context(), party));
+    // The GameCube card-directory probe returns at most one, selecting Done.
+    PlayerSelectScene::Inputs up{};
+    up[0].up = true;
+    for (s32 i = 0; i < 4; ++i) {
+        scene.step(1, up);
+    }
+    scene.step(1, player(0, true));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::SavePick);
+    scene.step(1, player(0, true));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::OverwriteConfirm);
+    scene.step(1, player(0, true)); // No is the default; leave the old file alone.
+    CharacterSave before;
+    REQUIRE(slots.load(0, before));
+    CHECK(before.gold != save.gold);
+    CHECK(scene.party()[0].save.gold == save.gold);
+}
+
+TEST_CASE("post-shop snapshots follow a loaded character rather than the pending journey",
+          "[game][select][post-shop][unpacked]") {
+    test::FakeRenderDevice device;
+    const Fixture f("select-after-shop-load");
+    SaveSlots slots;
+    REQUIRE(slots.open(f.config.saveDirectory(), f.config.save.slots));
+    CharacterSave saved;
+    saved.name = "SAME";
+    saved.gold = 250;
+    REQUIRE(slots.write(0, saved));
+    CharacterSave live = saved;
+    live.gold = 600;
+    const std::array party{PartyMember{0, live, 0, false, 0, {14}}};
+    PlayerSelectScene scene;
+    REQUIRE(scene.openAfterLevel(device, f.context(), party));
+    PlayerSelectScene::Inputs up{};
+    up[0].up = true;
+    scene.step(1, up); // Quit
+    scene.step(1, up); // Load
+    scene.step(1, player(0, true));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::LoadPick);
+    scene.step(1, player(0, true));
+    REQUIRE(scene.lane(0).state() == SelectLane::State::Loading);
+    CHECK(scene.party()[0].save.gold == 600); // No speculative replacement.
+    scene.step(SelectLane::kOperationStepTicks * 3, nobody());
+    REQUIRE(scene.party().size() == 1);
+    CHECK(scene.party()[0].save.gold == 250);
+    CHECK(scene.party()[0].helpHeard.empty()); // Loading resets even an identical name/class.
+    scene.step(SelectLane::kNoticeTicks, nobody());
+    REQUIRE(scene.lane(0).state() == SelectLane::State::ClassPick);
+    scene.step(1, player(0, false, false, false, true));
+    CHECK(scene.lane(0).pickedClass() == 1);
+    CHECK(scene.party()[0].save.character == 0); // Browsing has not committed the choice.
+}
+
 } // namespace

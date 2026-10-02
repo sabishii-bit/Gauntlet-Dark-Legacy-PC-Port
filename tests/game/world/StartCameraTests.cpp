@@ -185,4 +185,30 @@ TEST_CASE("arrival timing carries coarse frames across the hold and ends without
     }
 }
 
+TEST_CASE("a translated realm entrance descends locally without a detour to the tower centre",
+          "[camera][arrival][tower-return-camera]") {
+    constexpr Vec3 kWing{-80, 10, 166};
+    WorldCamera marker;
+    marker.position = kWing + Vec3{20, 25, -35};
+    marker.pitch = 0.6f;
+    marker.yaw = -0.4f;
+    const Vec3 focus = kWing + Vec3{0, 3, 0};
+    const Vec3 destination = kWing + Vec3{7, 15, -20};
+    StartCamera camera;
+    camera.start(marker, focus);
+    CHECK(glm::distance(camera.camera().position, camera.attention()) ==
+          Approx(glm::distance(marker.position, focus)));
+    camera.update(StartCamera::kHoldTicks, true, destination, focus);
+    f32 previousHeight = marker.position.y;
+    for (s32 tick = 0; tick < StartCamera::kRideTicks; ++tick) {
+        camera.update(1, true, destination, focus);
+        CHECK(camera.camera().position.y < previousHeight);
+        CHECK(glm::distance(camera.camera().position, kWing) < 50);
+        previousHeight = camera.camera().position.y;
+    }
+    CHECK_FALSE(camera.active());
+    requireNear(camera.camera().position, destination);
+    requireNear(camera.attention(), focus);
+}
+
 } // namespace

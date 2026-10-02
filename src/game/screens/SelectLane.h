@@ -126,6 +126,10 @@ public:
     s32 x() const { return m_index * kWidth; }
     const CharacterSave& save() const { return m_save; }
     bool saved() const { return m_saved; }
+    bool hasCharacter() const { return m_hasCharacter; }
+    bool retainsEntryCharacter() const { return m_retainsEntryCharacter; }
+    /** A slot being confirmed or accessed is unavailable to the other lanes. */
+    std::optional<usize> reservedSlot() const;
     s32 pickedClass() const { return m_pickClass; }
     s32 pickedColor() const { return m_pickColor; }
     std::optional<usize> slotInUse() const { return m_slotInUse; }
@@ -182,7 +186,8 @@ private:
     s32 m_step = 0;
     s32 m_timer = 0;
     bool m_saved = false;
-    bool m_hasCharacter = false; ///< a character was locked in at least once
+    bool m_hasCharacter = false;          ///< a character was locked in at least once
+    bool m_retainsEntryCharacter = false; ///< loading replaces session-only history
     bool m_operationFailed = false;
     bool m_promptStart = false; ///< others still choosing: show the Start prompt
     CharacterSave m_save;

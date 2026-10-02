@@ -172,12 +172,11 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     // The party materialises first; Sumner's welcome, when it is due, follows.
     m_welcome.open(world,
                    world.isTower() && options.welcome.value_or(TowerWelcome::freshParty(party)));
-    // The start camera holds at the level's entrance and rides in to a party that stands
-    // there; one back among a realm's portals (as when it has fallen, or come out of a level)
-    // materialises with the follow camera already on it.
-    const bool atEntrance =
-        world.arrivalPoint(options.arrivalWorld, &m_towerAccess) == world.startPoint(0);
-    beginSpawn(device, !options.position.has_value() && atEntrance);
+    // Every tower spawn has its own entrance view, including returns to a realm's wing.
+    const WorldLocator* arrival = world.arrivalPoint(options.arrivalWorld, &m_towerAccess);
+    beginSpawn(device, options.position.has_value()
+                           ? std::nullopt
+                           : world.entranceCamera(arrival != nullptr ? arrival->next : 0));
     m_arsenal.bind({device, m_classes, m_weapons, world.collision(), m_effects, m_audio,
                     context.sounds, world.wallHitSound(), world.isTower(),
                     world.level() != nullptr && world.level()->bossType >= 0, &world.powerups()},
@@ -1217,14 +1216,10 @@ const PlayerAnimator* PlayScene::animator(s32 player) const {
     return nullptr;
 }
 
-/** Stands the materialising effect at every character's feet and, with `ride`, the start
- * camera at the entrance marker to hold and ride in; the party holds still for it. (The
+/** Stands the materialising effect at every character's feet and the optional start
+ * camera at its arrival marker to hold and ride in; the party holds still for it. (The
  * realm's entering sound belongs to the loading screen, not to this.) */
-void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
-    const auto marker = ride ? m_world->entranceCamera() : std::nullopt;
-    if (ride && !marker.has_value()) {
-        log::warn("Tower: no start camera; the party appears under the follow camera");
-    }
+void PlayScene::beginSpawn(RenderDevice& device, const std::optional<WorldCamera>& marker) {
     if (!m_weapons.loaded()) {
         m_weapons.load(m_context.unpackedRoot / kWeaponsArchive);
     }
@@ -1240,8 +1235,7 @@ void PlayScene::beginSpawn(RenderDevice& device, bool ride) {
     }
     m_arrival.begin(device, m_weapons, positions, marker,
                     bossCameraOn() ? StartCamera::Mode::Legacy : StartCamera::Mode::Standard,
-                    bossCameraOn() && low ? std::optional<Vec3>{(*low + high) * 0.5f}
-                                          : std::nullopt);
+                    low ? std::optional<Vec3>{(*low + high) * 0.5f} : std::nullopt);
     if (!positions.empty()) {
         m_audio.playEntrance();
     }
