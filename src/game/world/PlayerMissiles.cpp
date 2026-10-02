@@ -120,7 +120,8 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
         missile.effect = m_visuals.startSet(
             *m_device, *launch.archive, launch.tree, missile.position, setting,
             launch.textureLender != nullptr ? std::span{lenders} : std::span<TextureSet* const>{});
-        m_visuals.placeAt(missile.effect, transformOf(missile));
+        m_visuals.placeAt(missile.effect, transformOf(missile),
+                          missile.spec->spin == 0 ? std::optional{missile.velocity} : std::nullopt);
     }
     if (m_device != nullptr && launch.riderArchive != nullptr && !launch.riderTree.empty()) {
         EffectTrees::Setting setting;
@@ -129,7 +130,8 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
         missile.rider = m_visuals.startSet(
             *m_device, *launch.riderArchive, launch.riderTree, missile.position, setting,
             launch.textureLender != nullptr ? std::span{lenders} : std::span<TextureSet* const>{});
-        m_visuals.placeAt(missile.rider, transformOf(missile));
+        m_visuals.placeAt(missile.rider, transformOf(missile),
+                          missile.spec->spin == 0 ? std::optional{missile.velocity} : std::nullopt);
     }
     m_missiles.push_back(missile);
     return true;
@@ -240,8 +242,10 @@ void PlayerMissiles::update(f32 seconds, const WorldCollision* collision,
         }
     }
     for (const Missile& missile : m_missiles) {
-        m_visuals.placeAt(missile.effect, transformOf(missile));
-        m_visuals.placeAt(missile.rider, transformOf(missile));
+        m_visuals.placeAt(missile.effect, transformOf(missile),
+                          missile.spec->spin == 0 ? std::optional{missile.velocity} : std::nullopt);
+        m_visuals.placeAt(missile.rider, transformOf(missile),
+                          missile.spec->spin == 0 ? std::optional{missile.velocity} : std::nullopt);
         if (missile.age >= kLifeSeconds) {
             m_visuals.finish(missile.effect);
             m_visuals.finish(missile.rider);
@@ -268,7 +272,11 @@ void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLig
                           const CameraFrame* camera) const {
     for (const Missile& missile : m_missiles) {
         if (missile.effect == 0 && missile.model != nullptr && missile.model->bound()) {
-            missile.model->draw(device, clip, transformOf(missile), lighting, {}, camera);
+            Mat4 placement = transformOf(missile);
+            if (camera != nullptr && missile.spec->spin == 0) {
+                placement = camera->along(placement, missile.velocity);
+            }
+            missile.model->draw(device, clip, placement, lighting, {}, camera);
         }
     }
     m_visuals.draw(device, clip, lighting, camera);

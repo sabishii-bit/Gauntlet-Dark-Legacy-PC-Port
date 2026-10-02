@@ -63,6 +63,12 @@ void PlayerArsenal::bind(const Resources& resources, std::span<TextureSet* const
     }
 }
 void PlayerArsenal::clear() {
+    if (m_resources) {
+        for (const auto& cast : m_castEffects) {
+            m_resources->effects.stop(cast.effect);
+        }
+    }
+    m_castEffects.clear();
     m_missiles.clear();
     m_superShot.clear();
     m_phoenixShot.clear();
@@ -402,6 +408,7 @@ std::optional<MissileImpact> PlayerArsenal::usePotion(PlayerActor& actor) {
         burst.potency = potionPowerOf(actor, kind);
         burst.damage = kPotionDamage * bonus; // start_magic: the magic stat sets the radius.
         burst.flags = damage::magicHeal(experienceLevel(actor.save().experience()));
+        healingCast(actor, burst.potency);
         return burst;
     }
     return std::nullopt;
@@ -433,5 +440,35 @@ void PlayerArsenal::throwPotion(PlayerActor& actor, s32 heldTicks) {
     launch.archive = &m_resources->weapons;
     launch.tree = potionLook(kind).bottle;
     m_missiles.launch(launch);
+    healingCast(actor, potionPowerOf(actor, kind));
+}
+
+void PlayerArsenal::healingCast(const PlayerActor& actor, f32 power) {
+    if (!m_resources || m_resources->powerups == nullptr ||
+        experienceLevel(actor.save().experience()) < 75) {
+        return;
+    }
+    EffectTrees::Setting setting;
+    setting.scale = std::min(kBurstPerPower * power, 1.0f);
+    const u32 id = m_resources->effects.startSet(m_resources->device, *m_resources->powerups,
+                                                 "MAGICHEALTH", actor.position(), setting);
+    if (id != 0) {
+        m_castEffects.push_back({actor.player(), id});
+        followCaster(actor);
+    }
+}
+
+void PlayerArsenal::followCaster(const PlayerActor& actor) {
+    if (!m_resources) {
+        return;
+    }
+    std::erase_if(m_castEffects, [&](const CastEffect& cast) {
+        return !m_resources->effects.playing(cast.effect);
+    });
+    for (const auto& cast : m_castEffects) {
+        if (cast.owner == actor.player()) {
+            m_resources->effects.placeAt(cast.effect, actor.transform());
+        }
+    }
 }
 } // namespace gdl::game

@@ -22,6 +22,54 @@ using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
 
+TEST_CASE("Super Shot rolls its flat bolt toward the camera while preserving flight direction",
+          "[game][missiles][super-shot-facing][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    ItemArchive archive;
+    REQUIRE(archive.load(root / "WEAPONS"));
+    test::FakeRenderDevice device;
+    PlayerMissiles missiles;
+    missiles.bindVisuals(device);
+    MissileLaunch launch;
+    launch.spec = &MissileSpec::superShot();
+    launch.position = {1, 20, 3};
+    launch.velocity = Vec3{20, 5, 30};
+    launch.archive = &archive;
+    launch.tree = "SUPERARROW";
+    REQUIRE(missiles.launch(launch));
+    for (const f32 yaw : {0.0f, 1.0f, 2.0f}) {
+        missiles.update(0.01f, nullptr);
+        REQUIRE(missiles.visuals().effect(0).flightDirection == missiles.missile(0).velocity);
+        WorldCamera view;
+        view.yaw = yaw;
+        view.pitch = 0.6f;
+        const auto camera = CameraFrame::of(view);
+        device.draws.clear();
+        missiles.draw(device, Mat4{1}, {});
+        REQUIRE_FALSE(device.draws.empty());
+        const auto unfaced = device.draws.front().vertices;
+        const Mat4 local = glm::inverse(CameraFrame{}.along(
+            PlayerMissiles::transformOf(missiles.missile(0)), missiles.missile(0).velocity));
+        device.draws.clear();
+        missiles.draw(device, Mat4{1}, {}, &camera);
+        REQUIRE_FALSE(device.draws.empty());
+        const auto expected = camera.along(PlayerMissiles::transformOf(missiles.missile(0)),
+                                           missiles.missile(0).velocity);
+        REQUIRE(device.draws.front().vertices.size() == unfaced.size());
+        for (usize i = 0; i < unfaced.size(); ++i) {
+            const Vec3 point{expected * local * Vec4{unfaced[i].position, 1}};
+            CHECK(glm::distance(device.draws.front().vertices[i].position, point) < 0.0001f);
+        }
+    }
+    missiles.clear();
+    missiles.bindVisuals(device);
+    launch.spec = &MissileSpec::of(0); // Tumbling weapons keep their own angular motion.
+    REQUIRE(missiles.launch(launch));
+    missiles.update(0.01f, nullptr);
+    CHECK_FALSE(missiles.visuals().effect(0).flightDirection);
+    missiles.clear();
+}
+
 TEST_CASE("weapons strike water above the floor without making water walkable",
           "[missiles][projectile-impact]") {
     WorldCollision collision;

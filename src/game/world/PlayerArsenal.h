@@ -2,6 +2,7 @@
 #include <array>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include "engine/core/Types.h"
 
@@ -28,6 +29,7 @@ public:
         std::string_view wallHitSound; ///< resolved from the level's audio record
         bool tower = false;
         bool bossEncounter = false;
+        ItemArchive* powerups = nullptr; ///< borrowed potion-cast feedback archive
     };
     PlayerArsenal() = default;
     ~PlayerArsenal() = default;
@@ -46,6 +48,8 @@ public:
                         std::optional<Vec3> target = std::nullopt);
     std::optional<MissileImpact> usePotion(PlayerActor& actor);
     void throwPotion(PlayerActor& actor, s32 heldTicks = 0);
+    /** Keep short-lived cast effects attached without retaining a player address. */
+    void followCaster(const PlayerActor& actor);
     void burstPotion(s32 kind, const Vec3& position, f32 power, bool castSound = true);
     /** Present a collision once, without applying target damage or expiry effects. */
     void presentImpact(const MissileImpact& impact, f32 playerDistance = 0);
@@ -59,6 +63,12 @@ public:
 
 private:
     void loadPotionModels();
+    void healingCast(const PlayerActor& actor, f32 power);
+    struct CastEffect {
+        s32 owner;
+        u32 effect;
+    };
+    std::vector<CastEffect> m_castEffects;
     std::optional<Resources> m_resources;
     std::array<TreeModel, 5> m_potionModels;
     TreeModel m_superShot;
