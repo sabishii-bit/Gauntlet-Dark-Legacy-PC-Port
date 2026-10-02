@@ -50,7 +50,7 @@ public:
     /** WorldObjCollide's secondary channel, not the solid floor result. */
     static constexpr u32 kLiquidSurface = 0x200;
 
-    /** Reads `directory/collision.json`, whose triangles are already in world space, leaving
+    /** Reads WORLDS.PS2 (or legacy collision.json), leaving
      * out the objects `layout` marks as decoration; false (with a warning) when missing or
      * malformed. */
     bool load(const std::filesystem::path& directory, const WorldLayout& layout);

@@ -146,10 +146,10 @@ struct TreeInfo {
     std::optional<u32> findNode(std::string_view wanted) const;
 };
 
-/** The animation trees of one unpacked archive. */
+/** The animation trees of one archive. */
 class AnimationSet {
 public:
-    /** Reads `directory/animations.json`; false (with a warning) when missing or malformed. */
+    /** Prefers anim.ps2; accepts animations.json for legacy inspection exports. */
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return !m_trees.empty(); }
@@ -162,6 +162,7 @@ public:
     const std::vector<ParticleTemplate>& particleTemplates() const { return m_particles; }
 
 private:
+    bool loadNative(const std::filesystem::path& file);
     std::vector<TreeInfo> m_trees;
     std::vector<TextureAnimationInfo> m_textureAnimations;
     std::vector<ParticleTemplate> m_particles;

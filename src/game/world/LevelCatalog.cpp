@@ -4,11 +4,11 @@
 #include <array>
 #include <exception>
 
-#include <nlohmann/json.hpp>
-
+#include "engine/assets/WorldData.h"
 #include "engine/core/Log.h"
+#include "engine/core/Strings.h"
 #include "engine/core/Types.h"
-#include "engine/io/File.h"
+#include "engine/io/AssetLocator.h"
 
 namespace gdl::game {
 
@@ -43,27 +43,37 @@ s32 LevelRef::orderOf(s32 realmId) {
 
 bool LevelCatalog::load(const std::filesystem::path& unpackedRoot) {
     m_realms.clear();
-    const std::filesystem::path directory = unpackedRoot / kWorldDataDirectory;
+    const auto directory = AssetLocator(unpackedRoot)
+                               .find(kWorldDataDirectory)
+                               .value_or(unpackedRoot / kWorldDataDirectory);
     std::error_code error;
     if (!std::filesystem::is_directory(directory, error)) {
         log::warn("Level catalogue: no realm data under {}", directory.string());
         return false;
     }
     for (const auto& entry : std::filesystem::directory_iterator(directory, error)) {
-        if (entry.path().extension() != ".json") {
+        const auto extension = toLowerAscii(entry.path().extension().string());
+        if (extension != ".wad" && extension != ".json") {
+            continue;
+        }
+        // A neighboring export must not duplicate (or replace a corrupt) native realm.
+        if (extension == ".json" &&
+            AssetLocator(directory).find(entry.path().stem().string() + ".wad")) {
             continue;
         }
         try {
-            const std::vector<u8> bytes = readFile(entry.path());
-            const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
+            WorldData data;
+            if (!data.load(entry.path())) {
+                continue;
+            }
             Realm realm;
             realm.file = upper(entry.path().stem().string());
-            realm.id = root.value("realm", -1);
-            realm.prefix = root.value("prefix", std::string{});
-            for (const nlohmann::json& level : root.value("levels", nlohmann::json::array())) {
-                realm.levels.push_back(upper(level.value("name", std::string{})));
-                realm.titles.push_back(level.value("title", std::string{}));
-                realm.runes.push_back(level.value("rune", 0));
+            realm.id = static_cast<s32>(data.realm());
+            realm.prefix = data.prefix();
+            for (const auto& level : data.levels()) {
+                realm.levels.push_back(upper(level.name));
+                realm.titles.push_back(level.title);
+                realm.runes.push_back(level.rune);
             }
             if (!realm.prefix.empty() && !realm.levels.empty()) {
                 m_realms.push_back(std::move(realm));
@@ -145,8 +155,9 @@ std::optional<LevelRef> LevelCatalog::byName(std::string_view name) const {
 }
 
 bool LevelCatalog::unpacked(const std::filesystem::path& unpackedRoot, const LevelRef& level) {
-    std::error_code error;
-    return std::filesystem::exists(unpackedRoot / level.directory / "world.json", error);
+    const AssetLocator files(unpackedRoot);
+    return files.find(level.directory + "/worlds.ps2").has_value() ||
+           files.find(level.directory + "/world.json").has_value();
 }
 
 } // namespace gdl::game

@@ -7,8 +7,12 @@
 
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
+
+#include "formats/TextRom.h"
 
 namespace gdl {
 
@@ -28,6 +32,35 @@ bool MessageTable::load(const std::filesystem::path& file) {
     m_lists.clear();
     m_byName.clear();
     try {
+        const auto native = AssetLocator(file.parent_path()).find(file.stem().string() + ".rom");
+        if (native || toLowerAscii(file.extension().string()) == ".rom") {
+            auto source = formats::TextRom::parse(readFile(native.value_or(file)));
+            m_fonts = std::move(source.fonts);
+            for (auto& entry : source.messages) {
+                MessageInfo info;
+                info.name = std::move(entry.name);
+                info.font = entry.font;
+                info.scale = entry.scale;
+                info.shadowScale = entry.shadowScale;
+                for (auto& page : entry.lines) {
+                    info.pages.push_back(cleanPage(std::move(page)));
+                }
+                m_byName.try_emplace(info.name, static_cast<u32>(m_messages.size()));
+                m_messages.push_back(std::move(info));
+            }
+            for (auto& entry : source.lists) {
+                MessageList list;
+                list.name = std::move(entry.name);
+                for (const auto index : entry.messages) {
+                    if (index >= m_messages.size()) {
+                        throw std::runtime_error("message list index out of range");
+                    }
+                    list.messages.push_back(static_cast<s32>(index));
+                }
+                m_lists.push_back(std::move(list));
+            }
+            return !m_messages.empty();
+        }
         const std::vector<u8> bytes = readFile(file);
         const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
         m_fonts = root.value("fonts", std::vector<std::string>{});
@@ -53,6 +86,7 @@ bool MessageTable::load(const std::filesystem::path& file) {
         m_fonts.clear();
         m_messages.clear();
         m_lists.clear();
+        m_byName.clear();
         return false;
     }
     for (u32 i = 0; i < m_messages.size(); ++i) {

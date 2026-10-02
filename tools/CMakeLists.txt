@@ -15,7 +15,7 @@ add_executable(gdlunpack
     gdlunpack/main.cpp
     vqdump/StbImplementation.cpp)
 
-target_link_libraries(gdlunpack PRIVATE gdl::formats)
+target_link_libraries(gdlunpack PRIVATE gdl::formats gdl::engine)
 target_include_directories(gdlunpack SYSTEM PRIVATE ${Stb_INCLUDE_DIR})
 gdl_apply_compiler_options(gdlunpack)
 

@@ -10,6 +10,8 @@
 #include "engine/core/Types.h"
 #include "engine/render/Mesh.h"
 
+#include "formats/ModelArchive.h"
+
 namespace gdl {
 
 struct ModelSetEntry {
@@ -18,10 +20,10 @@ struct ModelSetEntry {
     u32 triangles = 0;
 };
 
-/** One unpacked archive's objects: named meshes loaded from their OBJ files on first use. */
+/** Named meshes decoded on first use from a native archive or an inspection export. */
 class ModelSet {
 public:
-    /** Reads `directory/objects.json`; false (with a warning) when missing or malformed. */
+    /** Prefers objects.ngc; accepts objects.json for legacy inspection exports. */
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return !m_entries.empty(); }
@@ -33,6 +35,8 @@ public:
     const Mesh& mesh(u32 index);
 
 private:
+    bool loadNative(const std::filesystem::path& file);
+    std::optional<formats::ModelArchive> m_native;
     std::vector<ModelSetEntry> m_entries;
     std::unordered_map<std::string, u32> m_byName;
     std::vector<Mesh> m_meshes;

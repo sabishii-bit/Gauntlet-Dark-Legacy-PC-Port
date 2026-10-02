@@ -48,6 +48,7 @@ add_executable(tests
     engine/core/StringsTests.cpp
     engine/assets/PngImageTests.cpp
     engine/assets/TextureSetTests.cpp
+    engine/assets/NativeAssetsTests.cpp
     engine/assets/BitmapFontTests.cpp
     engine/assets/WavFileTests.cpp
     engine/assets/SoundSetTests.cpp

@@ -10,6 +10,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -130,6 +131,9 @@ bool AnimationSet::load(const std::filesystem::path& directory) {
     m_byName.clear();
     m_textureAnimations.clear();
     m_particles.clear();
+    if (const auto file = AssetLocator(directory).find("anim.ps2")) {
+        return loadNative(*file);
+    }
     const std::filesystem::path manifest = directory / kManifestName;
     try {
         const std::vector<u8> bytes = readFile(manifest);

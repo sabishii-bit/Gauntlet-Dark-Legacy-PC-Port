@@ -13,6 +13,8 @@
 #include "engine/render/RenderDevice.h"
 #include "engine/render/RenderTypes.h"
 
+#include "formats/ModelArchive.h"
+
 namespace gdl {
 
 struct TextureSetEntry {
@@ -38,12 +40,12 @@ struct TextureSetEntry {
 };
 
 /**
- * One unpacked texture directory: its manifest of named images, decoded and uploaded on
+ * One texture archive: its named images, decoded and uploaded on
  * first use. Names match ignoring case; an animation's frames follow its first entry.
  */
 class TextureSet {
 public:
-    /** Reads `directory/textures.json`; false (with a warning) when missing or malformed. */
+    /** Prefers objects.ngc/textures.ngc; accepts textures.json for inspection exports. */
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return !m_entries.empty(); }
@@ -61,6 +63,9 @@ public:
     void releaseTextures();
 
 private:
+    bool loadNative(const std::filesystem::path& directory, const std::filesystem::path& objects);
+    std::vector<formats::ArchiveBitmap> m_nativeBitmaps;
+    std::vector<u8> m_nativePixels;
     std::filesystem::path m_directory;
     std::vector<TextureSetEntry> m_entries;
     std::unordered_map<std::string, u32> m_byName;

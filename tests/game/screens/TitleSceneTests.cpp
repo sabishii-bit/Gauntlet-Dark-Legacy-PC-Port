@@ -60,6 +60,31 @@ TEST_CASE("the title screen refuses to open without unpacked data", "[game][titl
     REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
 }
 
+TEST_CASE("the title menu renders and plays music directly from the retail tree",
+          "[game][title][assets][native-assets]") {
+    const auto root = test::assetOrSkip("TITLE/objects.ngc").parent_path().parent_path();
+    REQUIRE_FALSE(std::filesystem::exists(root / "TITLE/textures.json"));
+    test::FakeRenderDevice device;
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const Fixture fixture;
+    TitleScene scene;
+    REQUIRE(scene.open(device, fixture.context(&player, root)));
+    REQUIRE(scene.arrowBound());
+    REQUIRE(scene.musicPlaying());
+    REQUIRE(player.voiceCount() == 1);
+    scene.step(60, MenuInput{});
+    scene.render(device, makeScreenProjection(640.0f, 448.0f), 640.0f, 448.0f);
+    REQUIRE(device.draws.size() >= 6);
+    REQUIRE(scene.step(1, press(true)) == TitleOutcome::Running);
+    REQUIRE(scene.menuOpen());
+    REQUIRE(scene.step(1, press(false, true)) == TitleOutcome::Running);
+    REQUIRE(scene.loading());
+    REQUIRE(scene.step(TitleScene::kLoadingTicks, MenuInput{}) == TitleOutcome::StartGame);
+    scene.close();
+    REQUIRE_FALSE(scene.isOpen());
+}
+
 TEST_CASE("the glow fades in and the screen times out when idle", "[game][title][unpacked]") {
     test::FakeRenderDevice device;
     const Fixture f;

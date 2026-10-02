@@ -6,8 +6,12 @@
 #include <nlohmann/json.hpp>
 
 #include "engine/core/Log.h"
+#include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
+
+#include "formats/FontFile.h"
 
 namespace gdl {
 
@@ -24,7 +28,21 @@ bool BitmapFont::load(const std::filesystem::path& file, s32 spaceWidth) {
     m_height = 0;
     m_spaceWidth = spaceWidth;
     m_glyphs.clear();
+    m_lookup.fill(-1);
     try {
+        const auto native = AssetLocator(file.parent_path()).find(file.stem().string() + ".fnt");
+        if (native || toLowerAscii(file.extension().string()) == ".fnt") {
+            const auto source = formats::FontFile::parse(readFile(native.value_or(file)));
+            if (source.height <= 0) {
+                throw std::runtime_error("font height must be positive");
+            }
+            for (const auto& glyph : source.glyphs) {
+                m_glyphs.push_back({glyph.code, glyph.width, glyph.x, glyph.y});
+            }
+            m_height = source.height;
+            index();
+            return true;
+        }
         const std::vector<u8> bytes = readFile(file);
         const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
         const auto height = root.at("height").get<s32>();

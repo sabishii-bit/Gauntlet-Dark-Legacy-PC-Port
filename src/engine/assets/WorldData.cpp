@@ -7,6 +7,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -139,6 +140,11 @@ bool WorldData::load(const std::filesystem::path& file) {
     m_cameras.clear();
     m_audio.clear();
     m_sounds.clear();
+    m_realm = 0;
+    m_prefix.clear();
+    if (const auto native = AssetLocator(file.parent_path()).find(file.stem().string() + ".wad")) {
+        return loadNative(*native);
+    }
     try {
         const std::vector<u8> bytes = readFile(file);
         const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());

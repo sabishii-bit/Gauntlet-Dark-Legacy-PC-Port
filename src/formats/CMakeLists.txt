@@ -1,5 +1,4 @@
-# Readers for the console-specific asset files. The game never links this; the unpack
-# tool converts those files into standard formats that the engine loads instead.
+# Native asset readers shared by the runtime and optional inspection/export tools.
 add_library(formats STATIC
     ModelArchive.h
     ModelArchive.cpp
@@ -46,6 +45,6 @@ add_library(formats STATIC
 
 add_library(gdl::formats ALIAS formats)
 
-target_link_libraries(formats PUBLIC gdl::engine)
+target_link_libraries(formats PUBLIC gdl::engine_base)
 gdl_apply_compiler_options(formats)
 set_target_properties(formats PROPERTIES FOLDER "formats")

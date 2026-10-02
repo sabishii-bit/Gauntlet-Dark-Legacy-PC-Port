@@ -7,7 +7,9 @@
 #include "engine/assets/WavFile.h"
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
+#include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -24,6 +26,11 @@ bool SoundSet::load(const std::filesystem::path& directory) {
     m_entries.clear();
     m_byName.clear();
     m_samples.clear();
+    const AssetLocator audio(directory.parent_path());
+    if (toLowerAscii(directory.extension().string()) == ".vbk" || audio.find("audatps2.rom") ||
+        audio.find(directory.filename().string() + ".vbk")) {
+        return loadNative(directory);
+    }
     const std::filesystem::path manifest = directory / kManifestName;
     try {
         const std::vector<u8> bytes = readFile(manifest);
@@ -79,7 +86,9 @@ const SoundClip& SoundSet::sample(u32 index) {
     GDL_VERIFY(index < m_samples.size(), "sample index out of range");
     SampleInfo& info = m_samples[index];
     if (info.clip.samples.empty()) {
-        const WavData wav = loadWav(info.file);
+        const WavData wav = info.native ? WavData{info.native->sampleRate, 1,
+                                                  formats::decodeBankSample(*info.native)}
+                                        : loadWav(info.file);
         info.clip.sampleRate = wav.sampleRate;
         info.clip.channels = wav.channels;
         info.clip.samples.resize(wav.samples.size());
