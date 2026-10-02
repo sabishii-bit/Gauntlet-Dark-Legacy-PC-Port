@@ -58,6 +58,7 @@ void Rotators::bind(const WorldLayout& layout) {
         rotator.origin = objects[static_cast<usize>(object)].position;
         rotator.spot = instance.position;
         rotator.radius = info.radius;
+        rotator.height = info.height;
         m_rotators.push_back(std::move(rotator));
     }
 }
@@ -97,7 +98,7 @@ std::vector<RotatorCue> Rotators::update(f32 seconds, std::span<const TriggerVis
                 const Vec3 away = visitor.position - rotator.spot;
                 const f32 reach = rotator.radius + visitor.radius;
                 if (away.x * away.x + away.z * away.z <= reach * reach &&
-                    std::abs(away.y) <= kReach) {
+                    std::abs(away.y) <= rotator.height + visitor.height * 0.5f) {
                     rotator.started = true;
                 }
             }

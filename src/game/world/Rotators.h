@@ -36,7 +36,6 @@ public:
     static constexpr s32 kSpinning = 0;
     static constexpr s32 kTurnedByPad = 2;
     static constexpr f32 kTicksPerSecond = 60.0f; ///< the record's pace is a turn per tick
-    static constexpr f32 kReach = LevelTriggers::kReach;
 
     struct Rotator {
         s32 instance = -1;
@@ -48,6 +47,7 @@ public:
         Vec3 origin{0.0f, 0.0f, 0.0f}; ///< the object's place under its parent
         Vec3 spot{0.0f, 0.0f, 0.0f};   ///< the pad, where it is stepped on
         f32 radius = 0.0f;
+        f32 height = 0.0f;
         bool started = false;
         bool done = false;
         std::unique_ptr<ItemFigure> pad;

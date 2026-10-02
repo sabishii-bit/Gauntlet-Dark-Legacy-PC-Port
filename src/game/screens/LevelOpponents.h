@@ -111,7 +111,7 @@ public:
     const Generators& generators() const { return m_generators; }
     Critters& critters() { return m_critters; }
     const Critters& critters() const { return m_critters; }
-    /** The golems and gargoyles still standing as statues. */
+    /** The golems, gargoyles and Deaths still standing as item statues. */
     const CritterStatues& statues() const { return m_statues; }
     /** A blow on a statue wakes it (fn_8005C1DC's placed-enemy case). */
     void wakeStatue(usize index) { m_statues.wake(index); }

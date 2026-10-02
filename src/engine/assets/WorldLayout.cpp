@@ -56,6 +56,7 @@ ItemInfo readItemInfo(const Json& entry) {
     info.xSize = entry.value("xSize", 0.0f);
     info.zSize = entry.value("zSize", 0.0f);
     info.collisionType = entry.value("collisionType", 0);
+    info.collisionFlags = entry.value("collisionFlags", 0U);
     info.choices = entry.value("choices", std::vector<s32>{});
     if (entry.contains("collisionOffset")) {
         info.collisionOffset = readVec3(entry.at("collisionOffset"));

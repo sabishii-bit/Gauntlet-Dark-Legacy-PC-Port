@@ -1,10 +1,13 @@
 #include <array>
 #include <format>
+#include <set>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
@@ -43,14 +46,15 @@ struct SwitchFixture {
     explicit SwitchFixture(
         std::string_view instances,
         std::string_view objects = R"({"name":"WALL","position":[0,10,0],"flags":4096})",
-        s32 subtype = 24, std::string_view animations = "", f32 height = 0.0f) {
+        s32 subtype = 24, std::string_view animations = "", f32 height = 0.0f,
+        u32 collisionFlags = 0) {
         const auto dir = test::sampleLevel("switch-modes");
         writeTextFile(dir / "world.json",
                       std::format(R"({{
           "objects":[{}],
-          "itemInfos":[{{"type":5,"subtype":{},"name":"BRIDGEPAD","radius":1,"height":{}}}],
+          "itemInfos":[{{"type":5,"subtype":{},"name":"BRIDGEPAD","radius":1,"height":{},"collisionFlags":{}}}],
           "itemInstances":[{}],"animations":[{}]}})",
-                                  objects, subtype, height, instances, animations));
+                                  objects, subtype, height, collisionFlags, instances, animations));
         REQUIRE(layout.load(dir));
         REQUIRE(models.load(dir));
         REQUIRE(textures.load(dir));
@@ -98,7 +102,7 @@ TEST_CASE("a switch and its artwork follow the floor from its rest pose through 
     collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, 30, 0}));
     f.triggers.bind(f.layout, f.animator, &collision);
     REQUIRE(f.triggers.trigger(0).floor == 0);
-    CHECK(f.triggers.trigger(0).spot == Vec3{1, 35, 0});
+    CHECK(f.triggers.trigger(0).spot.y == Approx(30.1f));
     // An initial pose outside the floor probe must not prevent rest-pose attachment.
     CHECK((*collision.objectTransform(0))[3].y == Approx(30));
     const auto dir = test::sampleLevel("trigger-moving-art");
@@ -110,11 +114,11 @@ TEST_CASE("a switch and its artwork follow the floor from its rest pose through 
     f.triggers.bindFigures(f.device, f.layout, items);
     f.triggers.draw(f.device, Mat4{1}, {});
     REQUIRE(f.device.draws.size() == 1);
-    CHECK(f.device.draws.front().vertices.front().position.y == Approx(35));
+    CHECK(f.device.draws.front().vertices.front().position.y == Approx(30.1f));
     std::array party{TriggerVisitor{.position = Vec3{1, 15, 0}}};
     f.triggers.update(kStep, party, f.animator, f.scene, &collision);
     CHECK_FALSE(f.triggers.trigger(0).fired);
-    party[0].position = Vec3{1, 35, 0};
+    party[0].position = Vec3{1, 30, 0};
     f.triggers.update(kStep, party, f.animator, f.scene, &collision);
     CHECK(f.triggers.trigger(0).fired);
     const Mat4 moved =
@@ -123,7 +127,7 @@ TEST_CASE("a switch and its artwork follow the floor from its rest pose through 
     f.triggers.update(kStep, party, f.animator, f.scene, &collision);
     CHECK_FALSE(f.triggers.trigger(0).fired);
     CHECK(f.triggers.trigger(0).spot.x == Approx(10));
-    CHECK(f.triggers.trigger(0).spot.y == Approx(9));
+    CHECK(f.triggers.trigger(0).spot.y == Approx(4.1f));
     CHECK(f.triggers.trigger(0).spot.z == Approx(-1));
     party[0].position = f.triggers.trigger(0).spot;
     f.triggers.update(kStep, party, f.animator, f.scene, &collision);
@@ -131,8 +135,36 @@ TEST_CASE("a switch and its artwork follow the floor from its rest pose through 
     f.device.draws.clear();
     f.triggers.draw(f.device, Mat4{1}, {});
     REQUIRE(f.device.draws.size() == 1);
-    CHECK(f.device.draws.front().vertices.front().position.y == Approx(9));
+    CHECK(f.device.draws.front().vertices.front().position.y == Approx(4.1f));
     f.triggers.clear();
+}
+
+TEST_CASE("floor-bound party pads require that floor while no-snap markers keep their height",
+          "[triggers][platform-contact]") {
+    const bool noSnap = GENERATE(false, true);
+    SwitchFixture f(R"({"info":0,"position":[1,15,0],"params":[0,0,0,4,0,255,0,0,0,0,0,0]})",
+                    R"({"name":"WALL","position":[0,10,0],"flags":4096})", 24, "", 3,
+                    noSnap ? 1U : 0U);
+    CollisionTriangle floor;
+    floor.object = 0;
+    floor.objectFlags |= WorldObject::kAnimated;
+    floor.normal = Vec3{0, 1, 0};
+    floor.vertices = {Vec3{-10, 0, -10}, Vec3{10, 0, -10}, Vec3{0, 0, 10}};
+    WorldCollision collision;
+    collision.build({floor});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, 30, 0}));
+    f.triggers.bind(f.layout, f.animator, &collision);
+    const auto& pad = f.triggers.trigger(0);
+    CHECK(pad.spot.y == Approx(noSnap ? 15 : 30.1f));
+    CHECK(pad.floor == (noSnap ? -1 : 0));
+    CHECK(((pad.flags & LevelTrigger::kOnTarget) != 0) == !noSnap);
+    std::array visitors{TriggerVisitor{.position = pad.spot}};
+    f.triggers.update(kStep, visitors, f.animator, f.scene, &collision);
+    CHECK(pad.fired == noSnap);
+    visitors[0].floorObject = 0;
+    f.triggers.update(kStep, visitors, f.animator, f.scene, &collision);
+    CHECK(pad.fired);
 }
 
 TEST_CASE("subtype 23 supplies a movement lesson only when it has a target", "[triggers][help]") {
@@ -651,6 +683,7 @@ TEST_CASE("Temple floor contact opens the altar gates and both switch chains",
     LevelWorld world;
     REQUIRE(world.load(device, root, *ref));
     world.startTriggers({});
+    world.updateTriggers(0, {});
     // The two altar approach gates have their markers below the traversable
     // floor. Touch them at floor height, never by teleporting to the marker.
     for (const s32 instance : {110, 112, 130, 159}) {
@@ -699,6 +732,119 @@ TEST_CASE("Temple floor contact opens the altar gates and both switch chains",
             CHECK(world.triggers().opened(next.target));
         }
     }
+}
+
+TEST_CASE("lift pads activate from the lowered deck rather than their authored marker height",
+          "[triggers][platform-contact][unpacked]") {
+    const auto [name, instance] = GENERATE(std::pair{"G1", 418}, std::pair{"G1", 313},
+                                           std::pair{"D4", 342}, std::pair{"J3", 483});
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto ref = catalog.byName(name);
+    REQUIRE(ref);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    world.startTriggers({});
+    world.updateTriggers(0, {});
+    usize index = 0;
+    while (index < world.triggers().size() &&
+           world.triggers().trigger(index).instance != instance) {
+        ++index;
+    }
+    REQUIRE(index < world.triggers().size());
+    const auto trigger = world.triggers().trigger(index);
+    PlayerActor actor;
+    const auto surface = world.collision().floorAt(trigger.spot + Vec3{0, 3, 0}, 0, 30);
+    REQUIRE(surface);
+    actor.spawn(0, {}, nullptr, Vec3{trigger.spot.x, surface->y, trigger.spot.z}, 0);
+    actor.settle(world.collision());
+    const auto floor = world.collision().floorAt(actor.position(), 0.5f, 1.0f);
+    REQUIRE(floor);
+    CAPTURE(name, instance, trigger.target, trigger.floor, trigger.spot.y, actor.position().y,
+            floor->object);
+    const std::array visitors{TriggerVisitor{.position = actor.position(),
+                                             .radius = actor.radius(),
+                                             .floorObject = floor->object,
+                                             .height = actor.height()}};
+    world.updateTriggers(kStep, visitors);
+    CHECK(world.triggers().trigger(index).fired);
+    CHECK(world.triggers().opened(trigger.target));
+}
+
+TEST_CASE("catalogued platform pads respond at their actual supporting surface",
+          "[platform-census][unpacked]") {
+    const auto root = test::unpackedOrSkip("wdata/TOWN.json").parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    usize tested = 0;
+    std::set<s32> subtypes;
+    for (const auto& realm : catalog.realms()) {
+        for (const auto& name : realm.levels) {
+            const auto ref = catalog.byName(name);
+            REQUIRE(ref);
+            test::unpackedOrSkip(ref->directory + "/world.json");
+            WorldLayout layout;
+            REQUIRE(layout.load(root / ref->directory));
+            WorldAnimator preview;
+            preview.bind(layout);
+            LevelTriggers inventory;
+            inventory.bind(layout, preview, nullptr);
+            bool hasPlatforms = false;
+            for (usize i = 0; i < inventory.size(); ++i) {
+                hasPlatforms |= (inventory.trigger(i).flags & LevelTrigger::kOnTarget) != 0;
+            }
+            if (!hasPlatforms) {
+                continue;
+            }
+            test::FakeRenderDevice device;
+            LevelWorld world;
+            REQUIRE(world.load(device, root, *ref));
+            world.startTriggers({});
+            for (usize i = 0; i < world.triggers().size(); ++i) {
+                const auto& candidate = world.triggers().trigger(i);
+                if (candidate.chained || candidate.target < 0 ||
+                    (candidate.flags & LevelTrigger::kOnTarget) == 0 ||
+                    (candidate.flags & (LevelTrigger::kCloses | LevelTrigger::kRequirement)) != 0) {
+                    continue;
+                }
+                WorldCollision collision = world.collision();
+                // Bind against world floors only, just as LevelWorld does before
+                // adding collision for destructible items.
+                for (usize item = 0; item < layout.itemInstances().size(); ++item) {
+                    collision.setSolid(static_cast<s32>(layout.objects().size() + item), false);
+                }
+                WorldAnimator animator;
+                animator.bind(layout);
+                LevelTriggers triggers;
+                triggers.bind(layout, animator, &collision);
+                const auto trigger = triggers.trigger(i);
+                const auto floor = collision.floorAt(trigger.spot, 4, 30);
+                CAPTURE(name, trigger.instance, trigger.target, trigger.floor, trigger.spot.y);
+                CHECK(floor);
+                if (!floor) {
+                    continue;
+                }
+                const s32 parent = layout.objects()[static_cast<usize>(floor->object)].parent;
+                CAPTURE(floor->object, parent, floor->y);
+                CHECK((floor->object == trigger.target || parent == trigger.target));
+                const std::array visitors{
+                    TriggerVisitor{.position = Vec3{trigger.spot.x, floor->y, trigger.spot.z},
+                                   .floorObject = floor->object}};
+                WorldScene scene;
+                triggers.update(kStep, visitors, animator, scene, &collision);
+                CHECK(triggers.trigger(i).fired);
+                const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
+                subtypes.insert(layout.itemInfos()[static_cast<usize>(instance.info)].subtype);
+                ++tested;
+            }
+        }
+    }
+    CAPTURE(tested, subtypes.size());
+    CHECK(tested > 50);
+    CHECK(subtypes.size() >= 3);
 }
 
 TEST_CASE("Underworld switch artwork remains visible before and after trigger contact",

@@ -6,11 +6,13 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/ModelSet.h"
 #include "engine/assets/TextureSet.h"
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 #include "engine/world/WorldScene.h"
 
 #include "FakeRenderDevice.h"
@@ -24,6 +26,27 @@ using namespace gdl::game;
 using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 30.0f;
+
+TEST_CASE("turntable pads use the authored contact height and the player's half height",
+          "[rotators][platform-contact]") {
+    const f32 height = GENERATE(3.5f, 7.5f, 7.6f);
+    const auto dir = test::scratchDirectory("rotator-contact");
+    // One turntable: .01 radians per tick, stopping at one radian.
+    writeTextFile(dir / "world.json", R"({
+      "objects":[{"name":"TABLE","position":[0,0,0],"flags":4096}],
+      "itemInfos":[{"type":12,"subtype":2,"name":"BRIDGEPAD","radius":3,"height":5}],
+      "itemInstances":[{"info":0,"position":[0,0,0],
+        "params":[0,0,0,0,10,215,35,60,0,0,128,63]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    Rotators rotators;
+    rotators.bind(layout);
+    REQUIRE(rotators.size() == 1);
+    WorldScene scene;
+    const std::array visitors{TriggerVisitor{.position = Vec3{0, height, 0}}};
+    rotators.update(kStep, visitors, scene);
+    CHECK(rotators.rotator(0).started == (height <= 7.5f));
+}
 
 TEST_CASE("the mines' gears spin for ever and a bridge pad turns its turntable into place once",
           "[game][world][rotators][unpacked]") {

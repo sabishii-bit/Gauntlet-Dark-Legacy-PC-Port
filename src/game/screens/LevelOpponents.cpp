@@ -624,6 +624,27 @@ void LevelOpponents::open(const Resources& resources, std::span<const PlayerRunt
         spawn.placed = true;
         spawn.priority = EnemySpawn::Priority::Visible;
         spawn.asleep = strength == 0 && *kind != kDeathKind;
+        if (*kind == kDeathKind) {
+            // SetItem's Death placement values are not ordinary strength tiers:
+            // 0/1 are red, 2/3 black; only the odd values start awakened.
+            // fn_80060114 creates the live enemy AFTER the statue item wakes.
+            spawn.tier = strength >= 2 ? 2 : 1;
+            CritterStatues::Placement statue;
+            statue.enemy = spawn;
+            statue.instance = instance;
+            statue.radius = info.radius;
+            statue.height = info.height;
+            statue.viewRadius = placement.viewRadius;
+            statue.sight = placement.sight;
+            statue.activeOn = info.activeOn;
+            ItemArchive* archive = m_enemies.archive(kDeathKind);
+            if (archive != nullptr && m_statues.add(device, *archive, statue, &world.collision())) {
+                if ((strength & 1) != 0) {
+                    m_statues.wake(m_statues.count() - 1);
+                }
+                continue;
+            }
+        }
         m_pending.push_back(placement);
     }
     if (!resources.standOnSight) {
@@ -676,6 +697,11 @@ void LevelOpponents::updateStatues(s32 ticks, f32 seconds, std::span<PlayerRunti
     m_statues.update(ticks, seconds,
                      [this](const Vec3& at, f32 radius) { return inView(at, radius); });
     for (const CritterStatues::Placement& risen : m_statues.takeRisen()) {
+        if (risen.enemy) {
+            m_enemies.spawn(*risen.enemy, {}, m_generators.obstacles());
+            m_resources->audio.playNamed("S_DEATHSHATTER");
+            continue;
+        }
         const Mat4 stood = itemPlacement(risen.instance.position, risen.instance.rotation);
         Placement placement;
         placement.kind = risen.kind == CombatantKind::Golem ? kGolemEnemyKind : kGargoyleEnemyKind;

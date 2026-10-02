@@ -19,6 +19,7 @@ constexpr f32 kHeightTolerance = 0.001f;
 constexpr f32 kFloorAbove = 4.0f;
 constexpr f32 kFloorBelow = 10.0f;
 constexpr f32 kFloorRadius = 1.0f;
+constexpr f32 kFloorLift = 0.1f;
 
 s16 paramS16(const ItemInstance& instance, usize at) {
     s16 value = 0;
@@ -65,12 +66,19 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         trigger.instance = static_cast<s32>(i);
         trigger.spot = instance.position;
         trigger.placement = itemPlacement(instance.position, instance.rotation);
-        if (authoredCollision != nullptr) {
-            if (const auto floor = authoredCollision->floorAt(trigger.spot, kFloorAbove,
-                                                              kFloorBelow, kFloorRadius);
-                floor && (floor->objectFlags & WorldObject::kAnimated) != 0) {
-                if (const auto placement = authoredCollision->objectTransform(floor->object)) {
-                    trigger.floor = floor->object;
+        std::optional<FloorHit> support;
+        if (authoredCollision != nullptr && (info.collisionFlags & 1U) == 0) {
+            support =
+                authoredCollision->floorAt(trigger.spot, kFloorAbove, kFloorBelow, kFloorRadius);
+            if (support) {
+                // AddItemSub first rests the item on its floor, then parents it.
+                // Several lift markers are authored well above the deck itself.
+                trigger.spot.y = support->y + kFloorLift;
+                trigger.placement[3] = Vec4{trigger.spot, 1};
+            }
+            if (support && (support->objectFlags & WorldObject::kAnimated) != 0) {
+                if (const auto placement = authoredCollision->objectTransform(support->object)) {
+                    trigger.floor = support->object;
                     trigger.localPlacement = glm::inverse(*placement) * trigger.placement;
                     if (const auto current = collision->objectTransform(trigger.floor)) {
                         trigger.placement = *current * trigger.localPlacement;
@@ -98,6 +106,12 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         default: break;
         }
         flags |= params & ~0xFFU;
+        if (support && trigger.target >= 0 && (flags & LevelTrigger::kWholeParty) != 0 &&
+            (support->object == trigger.target ||
+             (support->object >= 0 && static_cast<usize>(support->object) < m_parents.size() &&
+              m_parents[static_cast<usize>(support->object)] == trigger.target))) {
+            flags |= LevelTrigger::kOnTarget;
+        }
         trigger.flags = flags;
         trigger.kind = flags & 0xFFU;
         trigger.radius =
