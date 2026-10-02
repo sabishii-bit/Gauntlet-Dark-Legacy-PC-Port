@@ -11,6 +11,9 @@ constexpr f32 kPickupDelay = 10.0f / 60.0f;
 } // namespace
 
 void LevelOpponents::releaseBag(const Bag& bag) {
+    if (!m_resources.has_value()) {
+        return;
+    }
     auto& resources = *m_resources;
     if (bag.item) {
         resources.world.releaseItem(*bag.item, bag.position, Vec3{0}, kPickupDelay);
@@ -20,6 +23,9 @@ void LevelOpponents::releaseBag(const Bag& bag) {
 }
 
 void LevelOpponents::updateBags(f32 seconds) {
+    if (!m_resources.has_value()) {
+        return;
+    }
     auto& resources = *m_resources;
     for (Bag& bag : m_bags) {
         bag.age += seconds;
