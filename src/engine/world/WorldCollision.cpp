@@ -284,6 +284,20 @@ bool WorldCollision::moving(s32 object) const {
                                [&](const MovingObject& mover) { return mover.object == object; });
 }
 
+void WorldCollision::setContactOnly(s32 object, bool contactOnly) {
+    if (contactOnly) {
+        if (!this->contactOnly(object)) {
+            m_contactOnly.push_back(object);
+        }
+    } else {
+        std::erase(m_contactOnly, object);
+    }
+}
+
+bool WorldCollision::contactOnly(s32 object) const {
+    return std::ranges::find(m_contactOnly, object) != m_contactOnly.end();
+}
+
 std::optional<Mat4> WorldCollision::objectTransform(s32 object) const {
     const auto found = std::ranges::find_if(
         m_moving, [&](const MovingObject& mover) { return mover.object == object; });
@@ -321,6 +335,7 @@ void WorldCollision::clear() {
     m_triangles.clear();
     m_moving.clear();
     m_hidden.clear();
+    m_contactOnly.clear();
     m_blockedFloorExits.clear();
     m_cells.clear();
     m_columns = 0;
@@ -541,7 +556,7 @@ Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f3
             std::min(position.y, destination.y) - radius,
             std::max(position.x, destination.x) + radius,
             std::max(position.y, destination.y) + radius, [&](const CollisionTriangle& triangle) {
-                if ((triangle.objectFlags & kWallQueryFlags) == 0 ||
+                if (contactOnly(triangle.object) || (triangle.objectFlags & kWallQueryFlags) == 0 ||
                     (triangle.objectFlags & kLiquidSurface) != 0 ||
                     std::abs(triangle.normal.y) >= kFloorNormalY) {
                     return;
@@ -600,6 +615,9 @@ Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f3
                                  })) {
                                  contacts->push_back(WallContact{
                                      triangle.object, Vec3{nearest.x, height, nearest.y}});
+                             }
+                             if (contactOnly(triangle.object)) {
+                                 continue;
                              }
                              // Push straight away from the wall when in front of it, else out along
                              // its normal so a mover never ends up behind it.

@@ -1,0 +1,11 @@
+{
+  "screen": "tower",
+  "welcome": false,
+  "arrivalWorld": 2,
+  "position": [-35.2265625, -6.6796875, -122.0234375],
+  "yaw": 0.507516,
+  "party": [
+    {"player": 0, "class": "WAR", "color": "BLU", "name": "SPOUTS", "level": 12,
+     "crystals": [15, 0]}
+  ]
+}
