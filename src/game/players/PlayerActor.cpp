@@ -91,9 +91,21 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
                                          target.y + m_height - kFootClearance);
         const auto floor = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
         if (!floor.has_value()) {
-            return; // nothing to stand on there: stay put
+            const auto edge =
+                collision->slideAlongFloor(m_position, target, kStepUp, kDrop, kFloorEdgeReach);
+            if (!edge) {
+                return;
+            }
+            target = collision->resolveWalls(*edge, m_radius, edge->y + kFootClearance,
+                                             edge->y + m_height - kFootClearance);
+            const auto support = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
+            if (!support) {
+                return;
+            }
+            target.y = support->y;
+        } else {
+            target.y = floor->y;
         }
-        target.y = floor->y;
         m_position = target;
     }
 }

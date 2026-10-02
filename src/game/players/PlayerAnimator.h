@@ -359,6 +359,8 @@ public:
     /** Whether this tick's step began a potion's release: its magic goes off, or it flies. */
     bool potionUsed() const { return m_potionUsed; }
     bool potionThrown() const { return m_potionThrown; }
+    /** Held game ticks during the potion's wind-up; frozen on first release. */
+    s32 potionThrowTicks() const { return m_potionThrowTicks; }
     /** Whether the weapon has left the hand and the body is recovering from the throw. */
     bool recovering() const {
         return m_current == Action::ThrowRecover || m_current == Action::ThrowMovingRecover;
@@ -548,6 +550,8 @@ private:
     bool m_pushed = false;
     bool m_potionUsed = false;
     bool m_potionThrown = false;
+    s32 m_potionThrowTicks = 0;
+    bool m_potionThrowReleased = false;
     bool m_dead = false;
     bool m_turboBegan = false;
     bool m_strongReleased = false;

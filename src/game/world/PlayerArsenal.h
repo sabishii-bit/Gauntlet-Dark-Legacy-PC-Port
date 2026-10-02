@@ -45,7 +45,7 @@ public:
     void launchFamiliar(const PlayerActor& actor, PlayerFigure* body,
                         std::optional<Vec3> target = std::nullopt);
     std::optional<MissileImpact> usePotion(PlayerActor& actor);
-    void throwPotion(PlayerActor& actor);
+    void throwPotion(PlayerActor& actor, s32 heldTicks = 0);
     void burstPotion(s32 kind, const Vec3& position, f32 power, bool castSound = true);
     /** Present a collision once, without applying target damage or expiry effects. */
     void presentImpact(const MissileImpact& impact, f32 playerDistance = 0);

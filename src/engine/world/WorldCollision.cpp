@@ -342,6 +342,65 @@ std::optional<FloorHit> WorldCollision::liquidAt(const Vec3& position, f32 above
     return surfaceAt(position, above, below, true);
 }
 
+std::optional<Vec3> WorldCollision::slideAlongFloor(const Vec3& from, const Vec3& to, f32 above,
+                                                    f32 below, f32 margin) const {
+    if (!floorAt(from, above, below, margin)) {
+        return std::nullopt; // a floor removed from under the body is a fall, not an edge slide
+    }
+    const Vec2 step{to.x - from.x, to.z - from.z};
+    const f32 reach = glm::length(step);
+    if (reach <= kEpsilon) {
+        return std::nullopt;
+    }
+    std::optional<Vec3> best;
+    f32 bestDistance = reach * reach;
+    eachTriangle(
+        to.x - reach, to.z - reach, to.x + reach, to.z + reach,
+        [&](const CollisionTriangle& triangle) {
+            if ((triangle.objectFlags & kFloorQueryFlags) == 0 ||
+                (triangle.objectFlags & kLiquidSurface) != 0 || triangle.normal.y < kFloorNormalY) {
+                return;
+            }
+            for (usize i = 0; i < triangle.vertices.size(); ++i) {
+                const auto& a = triangle.vertices[i];
+                const auto& b = triangle.vertices[(i + 1) % triangle.vertices.size()];
+                const Vec2 point = closestOnSegment({a.x, a.z}, {b.x, b.z}, {to.x, to.z});
+                const Vec2 correction = point - Vec2{to.x, to.z};
+                const f32 distance = glm::dot(correction, correction);
+                const Vec2 travel = point - Vec2{from.x, from.z};
+                if (distance >= bestDistance || glm::dot(travel, step) <= 0 ||
+                    glm::length(travel) > reach + kEpsilon) {
+                    continue;
+                }
+                const f32 y = a.y - (triangle.normal.x * (point.x - a.x) +
+                                     triangle.normal.z * (point.y - a.z)) /
+                                        triangle.normal.y;
+                if (y > from.y + above || y < from.y - below) {
+                    continue;
+                }
+                // A nearby disconnected platform is not a route around the edge.
+                // Test the whole short path at the same contact margin used for steps.
+                const f32 spacing = std::max(margin, kEpsilon);
+                const auto samples =
+                    std::max(1, static_cast<s32>(std::ceil(glm::length(travel) / spacing)));
+                bool connected = true;
+                for (s32 sample = 1; sample <= samples; ++sample) {
+                    const Vec2 along = Vec2{from.x, from.z} + travel * (static_cast<f32>(sample) /
+                                                                        static_cast<f32>(samples));
+                    if (!floorAt({along.x, from.y, along.y}, above, below, margin)) {
+                        connected = false;
+                        break;
+                    }
+                }
+                if (connected) {
+                    best = Vec3{point.x, y, point.y};
+                    bestDistance = distance;
+                }
+            }
+        });
+    return best;
+}
+
 std::optional<FloorHit> WorldCollision::projectileFloorAt(const Vec3& position, f32 above,
                                                           f32 below) const {
     const auto floor = floorAt(position, above, below);
