@@ -75,7 +75,7 @@ std::optional<usize> PartyCollision::resolve(std::span<const PlayerRuntime> play
 }
 
 void PartyCollision::step(std::span<PlayerRuntime> players, usize mover, const Vec3& from,
-                          f32 seconds) {
+                          f32 seconds, const WorldCollision* collision) {
     if (mover >= players.size()) {
         return;
     }
@@ -84,7 +84,11 @@ void PartyCollision::step(std::span<PlayerRuntime> players, usize mover, const V
     Vec3 to = meant;
     if (const auto other = resolve(players, mover, from, to)) {
         players[*other].knockback.shove(meant - from, seconds);
-        actor.place(to);
+        if (collision != nullptr) {
+            actor.slide(to - actor.position(), collision);
+        } else {
+            actor.place(to);
+        }
     }
 }
 

@@ -421,9 +421,10 @@ void LevelFixtures::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> play
         }
         Vec3 position = actor.position();
         for (const Obstacle& box : boxes) {
-            position = box.pushOut(position, actor.radius());
+            const Vec3 resolved = box.pushOut(position, actor.radius());
+            actor.slide(resolved - position, &m_resources->world.collision());
+            position = actor.position();
         }
-        actor.place(position);
         // The rocks and leaves that give way to a body brushing them (fn_8005D730's case 10).
         playFallingCues(m_resources->world.fallingScenery().touch(position, actor.radius()));
         const PowerupEffects worn = PowerupEffects::of(actor.save().progress().inventory);
