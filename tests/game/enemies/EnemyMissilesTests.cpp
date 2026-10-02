@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 #include <vector>
 
@@ -8,6 +9,8 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
+#include "engine/world/WorldCamera.h"
 #include "engine/world/WorldCollision.h"
 
 #include "FakeRenderDevice.h"
@@ -24,6 +27,116 @@ using Catch::Approx;
 
 constexpr s32 kTicks = 2;
 constexpr f32 kStep = 1.0f / 30.0f;
+
+void checkBillboard(const test::RecordedDraw& draw, const CameraFrame& camera) {
+    REQUIRE(draw.vertices.size() >= 3);
+    const Vec3 across = draw.vertices[1].position - draw.vertices[0].position;
+    const Vec3 up = draw.vertices[2].position - draw.vertices[0].position;
+    REQUIRE(glm::length(glm::cross(across, up)) > 0.001f);
+    const Vec3 normal = glm::normalize(glm::cross(across, up));
+    CHECK(std::abs(glm::dot(normal, camera.forward)) == Approx(1.0f).margin(0.0001f));
+}
+
+void checkSpriteFacing(const std::filesystem::path& root, std::string_view missileTree,
+                       std::string_view missileArchive) {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 1, {}, 1);
+    EnemySpawn spawn;
+    spawn.kind = 21;
+    spawn.placed = true;
+    REQUIRE(enemies.loadKind(spawn.kind));
+    REQUIRE(enemies.spawn(spawn, {}).has_value());
+    ItemArchive archive;
+    REQUIRE(archive.load(root / "MONSTERS" / missileArchive));
+    const auto tree = archive.trees.find(missileTree);
+    REQUIRE(tree.has_value());
+    TreeModel model;
+    REQUIRE(model.bind(archive.trees.tree(*tree), archive.models, archive.textures, device));
+    model.setFrame(0, 0);
+    EnemyMissiles missiles;
+    missiles.launch(EnemyMissileKind::arrow(), Vec3{0, 4, 0}, Vec3{15, 7, 20}, 1, &model, 0);
+    REQUIRE(missiles.count() == 1);
+    for (const f32 yaw : {0.0f, 1.3f, 3.0f}) {
+        WorldCamera view;
+        view.position = Vec3{20, 12, -15};
+        view.yaw = yaw;
+        view.pitch = 0.7f;
+        view.roll = 0.2f;
+        const CameraFrame camera = CameraFrame::of(view);
+        for (const f32 scale : {1.0f, 0.667f}) {
+            enemies.setShrink(scale);
+            device.draws.clear();
+            enemies.draw(device, Mat4{1}, {}, nullptr, nullptr, &camera);
+            REQUIRE(device.draws.size() == 1);
+            checkBillboard(device.draws.front(), camera);
+            const f32 bodyEdge = glm::distance(device.draws[0].vertices[0].position,
+                                               device.draws[0].vertices[1].position);
+            device.draws.clear();
+            enemies.setShrink(1);
+            enemies.draw(device, Mat4{1}, {}, nullptr, nullptr, &camera);
+            CHECK(bodyEdge == Approx(scale * glm::distance(device.draws[0].vertices[0].position,
+                                                           device.draws[0].vertices[1].position)));
+        }
+        device.draws.clear();
+        missiles.draw(device, Mat4{1}, {}, &camera);
+        REQUIRE(device.draws.size() == 1);
+        checkBillboard(device.draws.front(), camera);
+    }
+}
+
+TEST_CASE("swarm sprites and missiles receive the tilted camera frame", "[enemy-facing]") {
+    const auto root = test::scratchDirectory("enemy-facing");
+    const auto archive = root / "MONSTERS/ACI";
+    std::filesystem::create_directories(archive);
+    writeTextFile(archive / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(archive / "objects.json", R"({"objects":[
+        {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(archive / "skin.png", test::kTinyPng);
+    writeTextFile(archive / "textures.json", R"({"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(archive / "animations.json", R"({"trees":[{"name":"ACI1",
+        "nodes":[{"name":"BODY","object":"BODY","parent":-1,
+                  "position":[0,0,0],"objectFlags":67108864}],
+        "sequences":[{"name":"READY","frames":30,"frameRate":30}]}]})");
+    checkSpriteFacing(root, "ACI1", "ACI");
+
+    // A real three-dimensional projectile keeps its flight orientation.
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    REQUIRE(items.load(archive));
+    TreeInfo tree = items.trees.tree(0);
+    tree.nodes[0].objectFlags = 0;
+    TreeModel model;
+    REQUIRE(model.bind(tree, items.models, items.textures, device));
+    EnemyMissiles missiles;
+    missiles.launch(EnemyMissileKind::arrow(), Vec3{0, 4, 0}, Vec3{15, 7, 20}, 1, &model, 0);
+    missiles.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() == 1);
+    const auto original = device.draws.front().vertices;
+    WorldCamera view;
+    view.yaw = 1.3f;
+    view.pitch = 0.7f;
+    const auto camera = CameraFrame::of(view);
+    device.draws.clear();
+    missiles.draw(device, Mat4{1}, {}, &camera);
+    REQUIRE(device.draws.size() == 1);
+    REQUIRE(device.draws[0].vertices.size() == original.size());
+    for (usize i = 0; i < original.size(); ++i) {
+        CHECK(device.draws[0].vertices[i].position == original[i].position);
+    }
+}
+
+TEST_CASE("retail Sky Dominion acid blobs and demon fireballs face pitched rotated cameras",
+          "[enemy-facing][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/ACI/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip("MONSTERS/DEM/animations.json");
+    checkSpriteFacing(root, "DEM_FBALL", "DEM");
+}
 
 EnemyView playerAt(const Vec3& position, s32 player = 0) {
     EnemyView view;

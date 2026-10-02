@@ -3,6 +3,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/assets/WorldLayout.h"
 #include "engine/core/Types.h"
@@ -98,23 +99,31 @@ TEST_CASE("wall generators share their authored facing across rendering collisio
     REQUIRE(found);
 }
 
-TEST_CASE("Temple special generators load their own multi-node trees and cycle species",
+TEST_CASE("Temple and Underworld special generators draw their authored trees and breed",
           "[game][generators][unpacked]") {
-    const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
-    for (const auto* kind : {"ICE", "IMP", "PLA", "ZOM"}) {
+    const s32 realm = GENERATE(5, 6);
+    const bool temple = realm == 5;
+    const auto* level = temple ? "LEVELS/LEVELE1" : "LEVELS/LEVELF1";
+    const auto* archive = temple ? "ITEMS/LEVELE" : "ITEMS/LEVELF";
+    const auto root = test::unpackedOrSkip(std::string(level) + "/world.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::unpackedOrSkip(std::string(archive) + "/animations.json");
+    const std::array templeKinds{"ICE", "IMP", "PLA", "ZOM"};
+    const std::array hellKinds{"DEM", "WAR", "GHO", "SKY"};
+    for (const auto* kind : temple ? templeKinds : hellKinds) {
         test::unpackedOrSkip(std::string("MONSTERS/") + kind + "/animations.json");
     }
     test::FakeRenderDevice device;
     WorldLayout layout;
-    REQUIRE(layout.load(root / "LEVELS/LEVELE1"));
+    REQUIRE(layout.load(root / level));
     ItemArchive items;
-    REQUIRE(items.load(root / "ITEMS/LEVELE"));
+    REQUIRE(items.load(root / archive));
     Enemies enemies;
     enemies.open(device, root, nullptr, Enemies::kMost, {}, 1);
     Generators generators;
-    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1, {}, 5, &items));
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1, {}, realm, &items));
     usize expected = 0;
     for (const auto& instance : layout.itemInstances()) {
         if (layout.itemInfos()[static_cast<usize>(instance.info)].type == ItemInfo::kGenerator &&
@@ -125,9 +134,9 @@ TEST_CASE("Temple special generators load their own multi-node trees and cycle s
     REQUIRE(expected > 0);
     REQUIRE(generators.count() == expected);
     for (s32 i = 0; i < static_cast<s32>(generators.count()); ++i) {
-        CHECK(generators.kindOf(i) == -2);
-        CHECK(generators.tierOf(i) == 2);
-        CHECK(generators.stateOf(i) == 2);
+        CHECK(generators.kindOf(i) == (temple ? -2 : -3));
+        CHECK(generators.tierOf(i) == (temple ? 2 : 3));
+        CHECK(generators.stateOf(i) == (temple ? 2 : 3));
         CHECK(generators.bodyShown(i));
     }
     const std::array views{EnemyView{.position = generators.positionOf(0)}};
@@ -135,7 +144,19 @@ TEST_CASE("Temple special generators load their own multi-node trees and cycle s
     REQUIRE(enemies.count() > 0);
     generators.draw(device, Mat4{1}, {});
     REQUIRE_FALSE(device.draws.empty());
-    generators.strike(0, 100000, 0);
+    const s32 initialState = temple ? 2 : 3;
+    const f32 stateHealth = generators.healthOf(0) / static_cast<f32>(initialState);
+    for (s32 state = initialState - 1; state >= 0; --state) {
+        REQUIRE(generators.strike(0, stateHealth, 0).has_value());
+        CHECK(generators.stateOf(0) == state);
+        CHECK(generators.bodyShown(0));
+        device.draws.clear();
+        generators.draw(device, Mat4{1}, {});
+        REQUIRE_FALSE(device.draws.empty());
+        for (const auto& draw : device.draws) {
+            CHECK(draw.texture != &device.whiteTexture());
+        }
+    }
     CHECK(generators.stateOf(0) == 0);
     CHECK(generators.bodyShown(0)); // broken ruin remains
 }

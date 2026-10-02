@@ -1603,7 +1603,7 @@ std::vector<s32> Enemies::reachedBy(const Vec3& centre, f32 radius, f32 arc,
 // ---- looking -----------------------------------------------------------------------------
 
 void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-                   const Texture* hitFlash, ItemArchive* weapons) {
+                   const Texture* hitFlash, ItemArchive* weapons, const CameraFrame* camera) {
     for (s32 i = 0; i < m_most; ++i) {
         const Enemy& enemy = m_enemies[static_cast<usize>(i)];
         if (enemy.state == State::Inactive || !enemy.animator.bound() ||
@@ -1658,9 +1658,9 @@ void Enemies::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& 
             continue; // gone from sight altogether
         }
         if (enemy.kind == kDeathKind && enemy.state == State::Asleep) {
-            body.draw(device, clip, model, lighting);
+            body.draw(device, clip, model, lighting, {}, camera);
         } else {
-            body.draw(device, clip, model, lighting, enemy.animator.pose().matrices(), nullptr,
+            body.draw(device, clip, model, lighting, enemy.animator.pose().matrices(), camera,
                       alpha);
         }
     }
