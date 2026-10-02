@@ -19,6 +19,7 @@ namespace {
 using Json = nlohmann::json;
 
 constexpr f32 kEpsilon = 0.001f;
+constexpr f32 kSweepEpsilon = 1.0e-6f;
 constexpr s32 kPasses = 4;
 /** Heights within a cylinder at which walls are checked: about the knees and the chest. */
 constexpr std::array<f32, 2> kProbeFractions{0.25f, 0.75f};
@@ -84,6 +85,62 @@ Vec2 closestOnSegment(const Vec2& a, const Vec2& b, const Vec2& point) {
     }
     const f32 t = std::clamp(glm::dot(point - a, edge) / length, 0.0f, 1.0f);
     return a + edge * t;
+}
+
+struct WallSweep {
+    f32 time = 1.0f;
+    Vec2 normal{0};
+    bool hit = false;
+};
+
+/** The first contact of a moving circle with a segment and its round ends. */
+void sweepSegment(const Vec2& from, const Vec2& step, const Slice& slice, f32 radius,
+                  WallSweep& nearest) {
+    const auto accept = [&](f32 time, const Vec2& normal) {
+        if (time >= 0 && time <= nearest.time && glm::dot(step, normal) < -kSweepEpsilon) {
+            nearest = WallSweep{time, normal, true};
+        }
+    };
+    const Vec2 away = from - closestOnSegment(slice.a, slice.b, from);
+    const f32 distance = glm::length(away);
+    if (distance > kEpsilon && distance <= radius) {
+        accept(0, away / distance);
+        // A body already overlapping can move out, but cannot move further into this side.
+        return;
+    }
+    const Vec2 edge = slice.b - slice.a;
+    const f32 length = glm::length(edge);
+    const Vec2 tangent = edge / length;
+    const Vec2 normal{-tangent.y, tangent.x};
+    const f32 normalSpeed = glm::dot(step, normal);
+    if (distance <= kSweepEpsilon) {
+        accept(0, normalSpeed > 0 ? -normal : normal);
+        return;
+    }
+    if (std::abs(normalSpeed) > kSweepEpsilon) {
+        for (const f32 side : {-1.0f, 1.0f}) {
+            const f32 time = (side * radius - glm::dot(from - slice.a, normal)) / normalSpeed;
+            const f32 along = glm::dot(from + time * step - slice.a, tangent);
+            if (along >= 0 && along <= length) {
+                accept(time, side * normal);
+            }
+        }
+    }
+    const f32 speedSquared = glm::dot(step, step);
+    for (const Vec2& end : {slice.a, slice.b}) {
+        const Vec2 offset = from - end;
+        const f32 projected = glm::dot(offset, step);
+        const f32 discriminant =
+            projected * projected - speedSquared * (glm::dot(offset, offset) - radius * radius);
+        if (discriminant >= 0) {
+            const f32 time = (-projected - std::sqrt(discriminant)) / speedSquared;
+            const Vec2 contact = from + time * step - end;
+            const f32 reach = glm::length(contact);
+            if (reach > kEpsilon) {
+                accept(time, contact / reach);
+            }
+        }
+    }
 }
 
 Vec3 readVec3(const Json& array, usize first) {
@@ -470,6 +527,41 @@ std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 abov
                      }
                  });
     return best;
+}
+
+Vec3 WorldCollision::sweepWalls(const Vec3& from, const Vec3& to, f32 radius, f32 bottom,
+                                f32 top) const {
+    Vec2 position{from.x, from.z};
+    Vec2 remaining{to.x - from.x, to.z - from.z};
+    for (s32 pass = 0; pass < kPasses && glm::length(remaining) > kSweepEpsilon; ++pass) {
+        WallSweep nearest;
+        const Vec2 destination = position + remaining;
+        eachTriangle(
+            std::min(position.x, destination.x) - radius,
+            std::min(position.y, destination.y) - radius,
+            std::max(position.x, destination.x) + radius,
+            std::max(position.y, destination.y) + radius, [&](const CollisionTriangle& triangle) {
+                if ((triangle.objectFlags & kWallQueryFlags) == 0 ||
+                    (triangle.objectFlags & kLiquidSurface) != 0 ||
+                    std::abs(triangle.normal.y) >= kFloorNormalY) {
+                    return;
+                }
+                for (const f32 fraction : kProbeFractions) {
+                    const Slice slice = sliceAt(triangle, bottom + (top - bottom) * fraction);
+                    if (slice.valid) {
+                        sweepSegment(position, remaining, slice, radius, nearest);
+                    }
+                }
+            });
+        if (!nearest.hit) {
+            position += remaining;
+            break;
+        }
+        position += nearest.time * remaining;
+        remaining *= 1.0f - nearest.time;
+        remaining -= glm::dot(remaining, nearest.normal) * nearest.normal;
+    }
+    return Vec3{position.x, to.y, position.y};
 }
 
 Vec3 WorldCollision::resolveWalls(const Vec3& centre, f32 radius, f32 bottom, f32 top,

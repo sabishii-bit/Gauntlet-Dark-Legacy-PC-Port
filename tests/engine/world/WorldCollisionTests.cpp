@@ -82,6 +82,45 @@ TEST_CASE("a cylinder is pushed out of walls but left alone elsewhere", "[world]
     REQUIRE(over.x == Approx(4.8f));
 }
 
+TEST_CASE("wall sweeps stop thin-wall crossings and preserve the starting side",
+          "[world][collision][wall-sweep]") {
+    WorldCollision collision;
+    auto triangles = room();
+    triangles.push_back(triangle({5.1f, 0, -10}, {5.1f, 3, 10}, {5.1f, 3, -10}, {1, 0, 0}, 2));
+    triangles.push_back(triangle({5.1f, 0, -10}, {5.1f, 0, 10}, {5.1f, 3, 10}, {1, 0, 0}, 2));
+    collision.build(triangles);
+    const Vec3 stopped = collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f);
+    CHECK(stopped.x == Approx(4.5f));
+    const Vec3 back = collision.sweepWalls({9, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f);
+    CHECK(back.x == Approx(5.6f));
+    const Vec3 slide = collision.sweepWalls({0, 0, 0}, {9, 0, 3}, 0.5f, 0.2f, 2.8f);
+    CHECK(slide.x == Approx(4.5f));
+    CHECK(slide.z == Approx(3));
+    // Contact and initial overlap permit separation, not travel through the wall.
+    CHECK(collision.sweepWalls({4.5f, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f).x == 0);
+    CHECK(collision.sweepWalls({4.8f, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(4.8f));
+    CHECK(collision.sweepWalls({4.8f, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f).x == 0);
+    CHECK(collision.sweepWalls({5, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == 5);
+    CHECK(collision.sweepWalls({0, 0, 10.6f}, {9, 0, 10.6f}, 0.5f, 0.2f, 2.8f).x == 9);
+    const Vec3 rounded = collision.sweepWalls({0, 0, 10.4f}, {9, 0, 10.4f}, 0.5f, 0.2f, 2.8f);
+    CHECK(rounded.z > 10.4f);
+    CHECK(collision.sweepWalls({0, 4, 0}, {9, 4, 0}, 0.5f, 4.2f, 6).x == 9);
+    collision.setSolid(1, false);
+    collision.setSolid(2, false);
+    CHECK(collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == 9);
+    collision.setSolid(1, true);
+    collision.setMovingObjects(std::array<s32, 1>{1});
+    collision.setObjectTransform(1, glm::translate(Mat4{1}, Vec3{-2, 0, 0}));
+    CHECK(collision.sweepWalls({0, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(2.5f));
+    auto corner = room();
+    corner.push_back(triangle({-10, 0, 5}, {10, 3, 5}, {10, 0, 5}, {0, 0, -1}));
+    corner.push_back(triangle({-10, 0, 5}, {-10, 3, 5}, {10, 3, 5}, {0, 0, -1}));
+    collision.build(corner);
+    const Vec3 stoppedCorner = collision.sweepWalls({0, 0, 0}, {9, 0, 9}, 0.5f, 0.2f, 2.8f);
+    CHECK(stoppedCorner.x == Approx(4.5f));
+    CHECK(stoppedCorner.z == Approx(4.5f));
+}
+
 TEST_CASE("floor edges retain tangential travel without bridging disconnected floors",
           "[world][collision][cliff]") {
     WorldCollision collision;
