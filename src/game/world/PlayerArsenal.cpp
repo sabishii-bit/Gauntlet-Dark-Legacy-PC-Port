@@ -26,6 +26,7 @@ constexpr std::array<PotionLook, 5> kPotions{{{"POT_RED_TW", "MP_FIRE", "S_POTIO
                                               {"POT_YEL_TW", "MP_LIGHT", "S_POTION3"},
                                               {"POT_GRE_TW", "MP_ACID", "S_POTION4"}}};
 constexpr f32 kPotionToss = 5.0f;       ///< how hard a potion is thrown
+constexpr f32 kPotionCharge = 1.5f;     ///< extra launch speed per held game tick
 constexpr f32 kThrownShare = 0.75f;     ///< of that power a thrown potion keeps
 constexpr f32 kPotionLoft = 0.707f;     ///< as much up as forwards
 constexpr f32 kPotionHandHeight = 4.0f; ///< over the feet, where it leaves
@@ -406,7 +407,7 @@ std::optional<MissileImpact> PlayerArsenal::usePotion(PlayerActor& actor) {
     return std::nullopt;
 }
 
-void PlayerArsenal::throwPotion(PlayerActor& actor) {
+void PlayerArsenal::throwPotion(PlayerActor& actor, s32 heldTicks) {
     if (!m_resources.has_value()) {
         return;
     }
@@ -420,8 +421,8 @@ void PlayerArsenal::throwPotion(PlayerActor& actor) {
     launch.direction = facing;
     launch.position =
         actor.position() + facing * kPotionHandReach + Vec3{0.0f, kPotionHandHeight, 0.0f};
-    launch.velocity =
-        Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} * kPotionToss;
+    launch.velocity = Vec3{facing.x * kPotionLoft, kPotionLoft, facing.z * kPotionLoft} *
+                      (kPotionToss + kPotionCharge * static_cast<f32>(std::max(0, heldTicks)));
     launch.potion = kind;
     launch.potency = kThrownShare * potionPowerOf(actor, kind);
     launch.damage = kPotionDamage * damage::colourBonus(actor.save().color, static_cast<u32>(kind));

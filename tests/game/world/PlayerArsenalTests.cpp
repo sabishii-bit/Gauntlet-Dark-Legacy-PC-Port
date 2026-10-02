@@ -384,6 +384,34 @@ TEST_CASE("player arsenal throws the next potion from its owner's hand",
     CHECK((usedLater->flags & damage::kHeal) != 0);
 }
 
+TEST_CASE("held potion throws fly forward on the retail ballistic arc",
+          "[game][world][player-arsenal][potion-throw]") {
+    Fixture f;
+    f.actor.save().progress().inventory.addPotions(1, 1);
+    f.arsenal.throwPotion(f.actor, 30);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    const auto bottle = f.arsenal.missiles().missile(0);
+    CHECK(bottle.velocity == Vec3(0, 0.707f * 50, 0.707f * 50));
+    CHECK(bottle.spec->weight == 100);
+    CHECK(bottle.spec->radius == 0.5f);
+    CollisionTriangle floor;
+    floor.normal = {0, 1, 0};
+    floor.vertices = {Vec3{-100, 0, -100}, Vec3{100, 0, -100}, Vec3{0, 0, 200}};
+    f.collision.build({floor});
+    f.arsenal.missiles().update(0.25f, &f.collision);
+    REQUIRE(f.arsenal.missiles().count() == 1);
+    CHECK(f.arsenal.missiles().missile(0).position.z > bottle.position.z + 8);
+    CHECK(f.arsenal.missiles().missile(0).position.y > bottle.position.y + 5);
+    for (s32 frame = 0; frame < 120 && f.arsenal.missiles().count() != 0; ++frame) {
+        f.arsenal.missiles().update(1.0f / 60, &f.collision);
+    }
+    const auto impacts = f.arsenal.missiles().takeImpacts();
+    REQUIRE(impacts.size() == 1);
+    CHECK(impacts.front().potion == 1);
+    CHECK(impacts.front().position.z > bottle.position.z + 25);
+    CHECK(impacts.front().position.z < bottle.position.z + 30);
+}
+
 TEST_CASE("a potion of the caster's own colour goes off a tenth stronger",
           "[game][world][player-arsenal][damage-types]") {
     Fixture f;

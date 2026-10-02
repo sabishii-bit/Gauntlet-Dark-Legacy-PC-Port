@@ -335,6 +335,40 @@ TEST_CASE("a potion is raised, then released once, however long its button is he
     REQUIRE_FALSE(animator.throwing());
 }
 
+TEST_CASE("potion throw strength counts held wind-up ticks and stops at release",
+          "[game][players][animation][potion-throw]") {
+    const TreeInfo tree = classTree();
+    PlayerAnimator animator;
+    REQUIRE(animator.bind(tree, false));
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ThrowPotion);
+    REQUIRE(animator.potionThrowTicks() == 0);
+    for (s32 frame = 0; frame < 4; ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ThrowPotion);
+    }
+    REQUIRE(animator.potionThrowTicks() == 8);
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::None);
+    for (s32 frame = 0; frame < 60 && !animator.potionThrown(); ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ThrowPotion);
+    }
+    REQUIRE(animator.potionThrown());
+    REQUIRE(animator.potionThrowTicks() == 8); // a second press cannot resume this throw's charge
+    for (s32 frame = 0; frame < 60; ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::None);
+    }
+    animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ThrowPotion);
+    REQUIRE(animator.potionThrowTicks() == 0);
+    s32 held = 0;
+    for (s32 frame = 0; frame < 60 && !animator.potionThrown(); ++frame) {
+        animator.update(PlayerMotion::Stand, kTicks, kStep, PlayerDeed::ThrowPotion);
+        held += kTicks;
+    }
+    REQUIRE(animator.potionThrown());
+    REQUIRE(animator.potionThrowTicks() == held);
+    REQUIRE(held > 8);
+    animator.unbind();
+    REQUIRE(animator.potionThrowTicks() == 0);
+}
+
 TEST_CASE("an attack from the first half of a walk or run takes the moving wind-up",
           "[game][players][animation]") {
     const TreeInfo tree = classTree();

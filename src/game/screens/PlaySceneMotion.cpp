@@ -111,7 +111,12 @@ void PlayScene::perform(usize i, PartyMotion::Action action) {
     case PartyMotion::Action::ShieldPotion: m_attacks.shieldPotion(i, m_players); break;
     case PartyMotion::Action::ItemAttack: m_attacks.useItemAttack(i, m_players); break;
     case PartyMotion::Action::UsePotion: m_attacks.usePotion(i, m_players); break;
-    case PartyMotion::Action::ThrowPotion: m_arsenal.throwPotion(m_players[i].actor); break;
+    case PartyMotion::Action::ThrowPotion:
+        m_arsenal.throwPotion(m_players[i].actor,
+                              m_players[i].figure != nullptr
+                                  ? m_players[i].figure->animator().potionThrowTicks()
+                                  : 0);
+        break;
     case PartyMotion::Action::FirstFoot:
     case PartyMotion::Action::SecondFoot: {
         const auto& actor = m_players[i].actor;

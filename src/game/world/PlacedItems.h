@@ -65,9 +65,9 @@ class PlacedItems {
 public:
     static constexpr f32 kFloorLift = 0.1f;
     static constexpr f32 kThrownFloorLift = 1.0f; ///< ProcessSpewItems rests coins above the floor
-    static constexpr f32 kFloorReachAbove = 0.5f; ///< a floor this far over the instance
-    static constexpr f32 kFloorReachBelow = 3.0f; ///< or this far under it
-    static constexpr s32 kExactPlayersMark = 10;  ///< a minimum past this means exactly
+    static constexpr f32 kFloorReachAbove = 4.0f; ///< FloorPos starts four units above the instance
+    static constexpr f32 kFloorReachBelow = 10.0f; ///< and searches ten units beneath it
+    static constexpr s32 kExactPlayersMark = 10;   ///< a minimum past this means exactly
     static constexpr f32 kFrameRate = 30.0f;
     static constexpr f32 kRevealSpread = 15.0f;        ///< units a second the reveal moves out
     static constexpr f32 kRevealLead = 1.75f;          ///< seconds' worth it starts out at

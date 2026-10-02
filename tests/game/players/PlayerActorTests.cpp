@@ -133,13 +133,55 @@ TEST_CASE("walls stop an actor and missing floors keep it where it stands",
 
     actor.spawn(0, save, nullptr, Vec3{-9.5f, 0.0f, 0.0f}, 0.0f);
     actor.update(push(-1.0f, 0.0f), 0.0f, 1.0f, &collision);
-    REQUIRE(actor.position().x > -10.0f); // it walks to the floor's edge and no further
+    REQUIRE(actor.position().x >= -10.0f); // it walks to the floor's edge and no further
     REQUIRE(actor.position().x < -9.5f);
 
     // Without collision the actor is free to go anywhere.
     const f32 edge = actor.position().x;
     actor.update(push(-1.0f, 0.0f), 0.0f, 1.0f, nullptr);
     REQUIRE(actor.position().x == Approx(edge - 5.0f));
+}
+
+TEST_CASE("a player slides along a cliff without stepping down it or stopping its tangent",
+          "[game][players][actor][cliff]") {
+    f32 angle = 0;
+    SECTION("axis aligned") {}
+    SECTION("diagonal") {
+        angle = kPi / 4;
+    }
+    const Mat4 rotation = glm::rotate(Mat4{1}, angle, Vec3{0, 1, 0});
+    const auto point = [&](Vec3 p) { return Vec3(rotation * Vec4(p, 1)); };
+    WorldCollision floor;
+    floor.build(
+        {triangle(point({-20, 0, -20}), point({0, 0, -20}), point({0, 0, 20}), {0, 1, 0}),
+         triangle(point({-20, 0, -20}), point({0, 0, 20}), point({-20, 0, 20}), {0, 1, 0}),
+         triangle(point({0, -10, -20}), point({20, -10, -20}), point({20, -10, 20}), {0, 1, 0}),
+         triangle(point({0, -10, -20}), point({20, -10, 20}), point({0, -10, 20}), {0, 1, 0})});
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, point({-0.1f, 0, -5}), 0);
+    for (s32 frame = 0; frame < 120; ++frame) {
+        actor.update(push(1, 1), angle, 1.0f / 60, &floor);
+    }
+    const Vec3 local = Vec3(glm::inverse(rotation) * Vec4(actor.position(), 1));
+    CHECK(local.x <= PlayerActor::kFloorEdgeReach + 0.001f);
+    CHECK(local.x > -0.2f);
+    CHECK(local.z > 1);
+    CHECK(local.y == 0);
+}
+
+TEST_CASE("cliff sliding cannot pass through a wall or cling to a removed floor",
+          "[game][players][actor][cliff]") {
+    auto collision = room();
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, Vec3{4, 0, 9.8f}, 0);
+    for (s32 frame = 0; frame < 120; ++frame) {
+        actor.update(push(1, 1), 0, 1.0f / 60, &collision);
+    }
+    CHECK(actor.position().x <= 5 - actor.radius() + 0.001f);
+    CHECK(actor.position().z <= 10 + PlayerActor::kFloorEdgeReach);
+    // No remaining floor means the separate falling path must handle it.
+    collision.clear();
+    CHECK_FALSE(collision.slideAlongFloor({0, 0, 0}, {0.2f, 0, 0.2f}, 1.5f, 3, 0.03f));
 }
 
 TEST_CASE("a strafing character steps where it is sent without turning to it",
@@ -171,7 +213,7 @@ TEST_CASE("a knock slides the body along the ground, never through a wall or off
     CHECK(actor.position().x == Approx(5.0f - actor.radius()).margin(0.01f));
     actor.place(Vec3{-9.5f, 0.0f, 0.0f});
     actor.slide(Vec3{-5.0f, 0.0f, 0.0f}, &collision);
-    CHECK(actor.position().x > -10.0f);
+    CHECK(actor.position().x >= -10.0f);
     CHECK(actor.position().y == 0.0f);
     actor.turnTo(1.0f);
     CHECK(actor.yaw() == 1.0f);

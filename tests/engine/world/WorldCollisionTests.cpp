@@ -75,6 +75,37 @@ TEST_CASE("a cylinder is pushed out of walls but left alone elsewhere", "[world]
     REQUIRE(over.x == Approx(4.8f));
 }
 
+TEST_CASE("floor edges retain tangential travel without bridging disconnected floors",
+          "[world][collision][cliff]") {
+    WorldCollision collision;
+    const auto patch = [](f32 left, f32 right, f32 back, f32 front) {
+        return std::vector<CollisionTriangle>{
+            triangle({left, 0, back}, {right, 0, back}, {right, 0, front}, {0, 1, 0}),
+            triangle({left, 0, back}, {right, 0, front}, {left, 0, front}, {0, 1, 0})};
+    };
+    auto floor = patch(-10, 0, -10, 10);
+    collision.build(floor);
+    const auto slide = collision.slideAlongFloor({-0.1f, 0, 0}, {0.2f, 0, 0.4f}, 1.5f, 3, 0.01f);
+    REQUIRE(slide);
+    CHECK(slide->x == Approx(0));
+    CHECK(slide->z == Approx(0.4f));
+    const auto stopped = collision.slideAlongFloor({-0.1f, 0, 0}, {0.2f, 0, 0}, 1.5f, 3, 0.01f);
+    REQUIRE(stopped);
+    CHECK(*stopped == Vec3{0, 0, 0});
+    // The nearer destination floor is separated by a gap. Sliding must stay
+    // on the starting floor instead of snapping across to the other island.
+    auto island = patch(0.15f, 0.4f, 0.2f, 0.6f);
+    floor.insert(floor.end(), island.begin(), island.end());
+    collision.build(floor);
+    const auto connected =
+        collision.slideAlongFloor({-0.1f, 0, 0}, {0.45f, 0, 0.4f}, 1.5f, 3, 0.01f);
+    REQUIRE(connected);
+    CHECK(connected->x == Approx(0));
+    CHECK(connected->z == Approx(0.4f));
+    collision.clear();
+    CHECK_FALSE(collision.slideAlongFloor({0, 0, 0}, {0.2f, 0, 0.4f}, 1.5f, 3));
+}
+
 TEST_CASE("world query flags distinguish walkable surfaces from wall-only geometry",
           "[world][collision]") {
     auto floor = triangle({-10, -5, -10}, {10, -5, -10}, {0, -5, 10}, {0, 1, 0});

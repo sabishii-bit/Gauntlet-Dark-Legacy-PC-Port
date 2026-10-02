@@ -43,12 +43,18 @@ TEST_CASE("pickups bind to authored floors and ride the current platform pose",
         dir / "animations.json",
         R"({"trees":[{"name":"FOOD","nodes":[{"name":"FOOD","object":"FOOD","parent":-1,"position":[0,0,0]}]}]})");
     // A nested platform's rest position includes its parent's translation.
-    writeTextFile(dir / "world.json", R"({"objects":[
+    auto worldText = std::string{R"({"objects":[
         {"name":"ROOT","position":[100,10,50],"child":1},
         {"name":"LIFT","position":[0,0,0],"flags":4100}],
         "itemInfos":[{"type":1,"subtype":3,"name":"FOOD","radius":0.5,"height":2}],
         "itemInstances":[{"info":0,"position":[101,10,50],"minPlayers":1},
-                         {"info":0,"position":[1,0,0],"minPlayers":1}]})");
+                         {"info":0,"position":[1,0,0],"minPlayers":1}]})"};
+    // FloorPos also binds authored markers above or slightly below the floor.
+    // A narrow player-step probe leaves these detached as the platform moves.
+    const auto authoredY = GENERATE(10, 14, 7);
+    CAPTURE(authoredY);
+    worldText.replace(worldText.find("101,10,50"), 9, "101," + std::to_string(authoredY) + ",50");
+    writeTextFile(dir / "world.json", worldText);
     WorldLayout layout;
     REQUIRE(layout.load(dir));
     ItemArchive archive;

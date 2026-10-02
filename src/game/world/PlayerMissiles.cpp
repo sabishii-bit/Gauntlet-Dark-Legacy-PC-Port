@@ -67,7 +67,7 @@ std::string MissileSpec::treeName(s32 classIndex, s32 level, bool* inCostume) {
 }
 
 const MissileSpec& MissileSpec::potion() {
-    static constexpr MissileSpec kPotion{"POT", kCostumeTiers, 0.7f, kTumble, 12.0f, false};
+    static constexpr MissileSpec kPotion{"POT", kCostumeTiers, 0.5f, kTumble, 100.0f, false};
     return kPotion;
 }
 

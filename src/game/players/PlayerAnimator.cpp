@@ -76,6 +76,8 @@ void PlayerAnimator::unbind() {
     m_potionUsed = false;
     m_potionThrown = false;
     m_potionLatch = false;
+    m_potionThrowTicks = 0;
+    m_potionThrowReleased = false;
     m_dead = false;
     m_turboBegan = false;
     m_strongReleased = false;
@@ -208,6 +210,15 @@ void PlayerAnimator::update(PlayerMotion motion, s32 ticks, f32 seconds, PlayerD
     m_potionUsed = false;
     m_potionThrown = false;
     m_turboBegan = false;
+    // THROWPOTIONS accumulates throw_str while held; letting go latches its value
+    // until the release sequence creates the bottle, even if the button is pressed again.
+    if (m_current == Action::ThrowPotion) {
+        if (deed != PlayerDeed::ThrowPotion && deed != PlayerDeed::UsePotion) {
+            m_potionThrowReleased = true;
+        } else if (!m_potionThrowReleased) {
+            m_potionThrowTicks += std::max(0, ticks);
+        }
+    }
     m_strongReleased = false;
     m_potionShielded = false;
     m_legendReleased = false;
@@ -1092,6 +1103,10 @@ void PlayerAnimator::play(const Decision& decision, f32 seconds) {
     }
     if (decision.action == Action::UsePotion || decision.action == Action::ThrowPotion) {
         m_potionLatch = true;
+    }
+    if (decision.action == Action::ThrowPotion) {
+        m_potionThrowTicks = 0;
+        m_potionThrowReleased = false;
     }
     m_potionUsed = decision.action == Action::UsePotionRelease && !m_shieldAsked && !m_legendAsked;
     m_potionShielded = decision.action == Action::UsePotionRelease && m_shieldAsked;
