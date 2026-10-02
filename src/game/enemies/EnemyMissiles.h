@@ -237,7 +237,8 @@ public:
     std::vector<RockHit> takeRockHits();
     /** Where damaging blasts reached since the last call, with their original damage type. */
     std::vector<PickupBlastReach> takePickupBlasts() { return std::exchange(m_pickupBlasts, {}); }
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const CameraFrame* camera = nullptr) const;
     /** The lobs' red lights and their bursts'. */
     void lights(std::vector<PointLight>& out) const;
     void clear();

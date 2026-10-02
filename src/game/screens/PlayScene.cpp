@@ -1087,7 +1087,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.statues().draw(device, clip, m_world->lighting(), &effectCamera);
     m_opponents.generators().draw(device, clip, m_world->lighting());
-    m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons);
+    m_opponents.enemies().draw(device, clip, m_world->lighting(), m_figures.hitFlash(), &m_weapons,
+                               &effectCamera);
     m_opponents.critters().draw(device, clip, m_world->lighting(), nullptr, &effectCamera);
     // The boss stands out in the level's own light while the rite darkens the rest.
     m_opponents.bosses().draw(device, clip,
@@ -1106,7 +1107,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
         m_towerRelics.drawWizard(device, clip, m_world->lighting(), camera);
     }
     m_bossSequence.victory().drawWizard(device, clip, m_world->lighting(), &effectCamera);
-    m_opponents.missiles().draw(device, clip, m_world->lighting());
+    m_opponents.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_arsenal.missiles().draw(device, clip, m_world->lighting(), &effectCamera);
     m_effects.draw(device, clip, m_world->fullLighting(), &effectCamera);
     m_arrival.drawEffects(device, clip, m_world->lighting());

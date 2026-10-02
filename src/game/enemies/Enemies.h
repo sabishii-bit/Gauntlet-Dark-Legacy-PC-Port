@@ -262,7 +262,8 @@ public:
     void drawShadows(RenderDevice& device, const Mat4& clip, const Vec3& eye,
                      const WorldLighting& lighting) const;
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
-              const Texture* hitFlash = nullptr, ItemArchive* weapons = nullptr);
+              const Texture* hitFlash = nullptr, ItemArchive* weapons = nullptr,
+              const CameraFrame* camera = nullptr);
 
     bool alive(s32 id) const;
     bool dying(s32 id) const;

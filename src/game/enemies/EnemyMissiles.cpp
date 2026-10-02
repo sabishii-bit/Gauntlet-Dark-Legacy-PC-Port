@@ -663,8 +663,8 @@ std::vector<EnemyMissileHit> EnemyMissiles::takeHits() {
     return std::exchange(m_hits, {});
 }
 
-void EnemyMissiles::draw(RenderDevice& device, const Mat4& clip,
-                         const WorldLighting& lighting) const {
+void EnemyMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                         const CameraFrame* camera) const {
     for (const EnemyMissile& missile : m_missiles) {
         if (missile.model == nullptr || !missile.model->bound()) {
             continue;
@@ -685,7 +685,7 @@ void EnemyMissiles::draw(RenderDevice& device, const Mat4& clip,
         if (missile.scale != 1.0f) {
             model = glm::scale(model, Vec3{missile.scale});
         }
-        missile.model->draw(device, clip, model, lighting);
+        missile.model->draw(device, clip, model, lighting, {}, camera);
     }
 }
 
