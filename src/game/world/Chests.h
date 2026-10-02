@@ -123,7 +123,8 @@ public:
     s32 holdingTouchedBy(const ChestVisitor& visitor) const;
     /** An emptied chest goes, as the original's does. */
     void remove(usize chest);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const CameraFrame* camera = nullptr) const;
 
     /** The item record a container's first parameter leads to: itself, or the pick from a
      * list by the original's rule, which moves `seed` on. */

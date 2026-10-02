@@ -106,7 +106,9 @@ public:
     std::optional<Vec3> flamePosition(std::span<const PortalVisitor> party) const;
     /** Continues the selected sequences while gameplay is held for transportation. */
     void animate(f32 seconds);
-    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
+    void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+              const CameraFrame* camera = nullptr,
+              TreeModel::Pass pass = TreeModel::Pass::All) const;
 
     /** The two characters of an exit's parameters that name where it leads. */
     static std::string tagOf(const ItemInstance& instance);

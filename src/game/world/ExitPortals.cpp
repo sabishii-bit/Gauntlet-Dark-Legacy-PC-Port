@@ -269,12 +269,12 @@ std::optional<Vec3> ExitPortals::flamePosition(std::span<const PortalVisitor> pa
     return std::nullopt;
 }
 
-void ExitPortals::draw(RenderDevice& device, const Mat4& clip,
-                       const WorldLighting& lighting) const {
+void ExitPortals::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
+                       const CameraFrame* camera, TreeModel::Pass pass) const {
     for (const Portal& portal : m_portals) {
         if (portal.secret) {
             if (!portal.consumed) {
-                portal.icon.draw(device, clip, lighting);
+                portal.icon.draw(device, clip, lighting, 1, 1, camera, pass);
             }
             continue;
         }
@@ -282,10 +282,11 @@ void ExitPortals::draw(RenderDevice& device, const Mat4& clip,
             continue;
         }
         if (portal.shut) {
-            portal.model.draw(device, clip, portal.transform, lighting, {}, nullptr, portal.alpha);
+            portal.model.draw(device, clip, portal.transform, lighting, {}, camera, portal.alpha,
+                              pass);
         } else {
             portal.model.draw(device, clip, portal.transform, lighting, portal.pose.matrices(),
-                              nullptr, portal.alpha);
+                              camera, portal.alpha, pass);
         }
     }
 }

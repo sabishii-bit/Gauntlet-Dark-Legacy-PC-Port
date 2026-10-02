@@ -193,4 +193,74 @@ TEST_CASE("markers without a template or texture are skipped or drawn white",
     REQUIRE(field.emitter(0).descriptor().speed == 1.5f); // the preset's
 }
 
+TEST_CASE("named world emitters repeat while independently started effects expire",
+          "[world][particles][visual-parity]") {
+    const auto dir = test::scratchDirectory("particle-field-repeat");
+    writeTextFile(dir / "world.json", R"({
+      "objects":[{"name":"PSYSA","position":[0,0,0],"flags":2048}],
+      "particles":[{"id":"A","enables":560,"emitterLife":[0.1,0.1],
+        "particleLife":[0.1,0],"rate":[30,30,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    test::FakeRenderDevice device;
+    TextureSet textures;
+    ParticleField world;
+    world.bind(layout, textures, device);
+    REQUIRE(world.size() == 1);
+    CHECK(world.emitter(0).descriptor().forever);
+    ParticleField effects;
+    const auto descriptor = ParticleDescriptor::fromTemplate(*layout.findParticleTemplate('A'));
+    REQUIRE_FALSE(descriptor.forever);
+    effects.start(descriptor, Mat4{1}, &device.whiteTexture());
+    usize lateBirths = 0;
+    for (s32 frame = 0; frame < 300; ++frame) {
+        world.step(1.0f / 30);
+        effects.step(1.0f / 30);
+        if (frame > 270 && world.particleCount() > 0) {
+            ++lateBirths;
+        }
+    }
+    CHECK(lateBirths > 0);
+    CHECK(world.active(0));
+    CHECK_FALSE(effects.active(0));
+}
+
+TEST_CASE("tower mountain sparks keep erupting after the arrival camera finishes",
+          "[world][particles][visual-parity][unpacked]") {
+    const auto directory = test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path();
+    WorldLayout layout;
+    TextureSet textures;
+    REQUIRE(layout.load(directory));
+    REQUIRE(textures.load(directory));
+    TextureSet items;
+    REQUIRE(items.load(test::unpackedOrSkip("ITEMS/LEVELL/textures.json").parent_path()));
+    const std::array<TextureSet*, 1> lenders{&items};
+    test::FakeRenderDevice device;
+    ParticleField field;
+    field.bind(layout, textures, device, lenders);
+    usize sparks = 0;
+    for (usize i = 0; i < field.size(); ++i) {
+        if (field.emitter(i).descriptor().texture == "EMBER_SPARK2") {
+            ++sparks;
+            REQUIRE(field.emitter(i).descriptor().forever);
+            REQUIRE(field.textureOf(i) != &device.whiteTexture());
+        }
+    }
+    REQUIRE(sparks == 5);
+    usize lateDraws = 0;
+    for (s32 frame = 0; frame < 1200; ++frame) {
+        field.step(1.0f / 30);
+        if (frame < 900) {
+            continue;
+        }
+        for (usize i = 0; i < field.size(); ++i) {
+            if (field.emitter(i).descriptor().texture == "EMBER_SPARK2" &&
+                !field.emitter(i).particles().empty()) {
+                ++lateDraws;
+            }
+        }
+    }
+    CHECK(lateDraws > 300);
+}
+
 } // namespace

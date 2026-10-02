@@ -1086,7 +1086,8 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
     m_towerRelics.draw(device, clip, m_world->lighting(), camera);
     m_sumner.draw(device, clip, m_world->lighting());
     m_figures.draw(device, m_players, figureScene(), clip, companionCamera);
-    m_portals.draw(device, clip, m_world->lighting());
+    m_portals.draw(device, clip, m_world->lighting(), &companionCamera,
+                   TreeModel::Pass::DepthWriting);
     m_transporters.draw(device, clip, m_world->lighting());
     const CameraFrame effectCamera = companionCamera;
     m_fixtures.draw(device, clip, m_world->lighting(), &effectCamera);
@@ -1101,6 +1102,7 @@ void PlayScene::render(RenderDevice& device, const Mat4& frameProjection, f32 fr
                                                                       : m_world->lighting(),
                               m_bossSequence.frozenTexture());
     m_world->drawDeferred(device, clip, camera);
+    m_portals.draw(device, clip, m_world->lighting(), &effectCamera, TreeModel::Pass::Effects);
     m_fixtures.drawEffects(device, clip, m_world->lighting(), &effectCamera);
     drawShadows(device, clip, camera.position);
     // The wizards add onto the frame without writing depth, so the translucent scenery behind

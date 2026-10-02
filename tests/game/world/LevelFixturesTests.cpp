@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -554,4 +555,149 @@ TEST_CASE("potion magic stops a trap for 600 ticks, or disarms it for good",
         REQUIRE(traps.update(2, 1.0f / 30, party).empty());
     }
 }
+TEST_CASE("chests pass the camera to their authored bomb sprites", "[fixtures][visual-parity]") {
+    Fixture f("chest-camera");
+    const auto directory = test::scratchDirectory("chest-camera-art");
+    writeTextFile(directory / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(directory / "objects.json", R"({"objects":[
+      {"index":0,"name":"BOMB","file":"body.obj","meshTriangles":1}]})");
+    writeFile(directory / "skin.png", test::kTinyPng);
+    writeTextFile(directory / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(directory / "animations.json", R"({"trees":[{"name":"CHEST",
+      "nodes":[{"name":"FF_BOMB","object":"BOMB","parent":-1,"position":[0,0,0],"objectFlags":16783360}],
+      "sequences":[{"name":"CLOSED","frames":0}]}]})");
+    REQUIRE(f.items.load(directory));
+    Chests chests;
+    REQUIRE(chests.bind(f.device, f.layout, f.items, nullptr));
+    chests.setPlayerCount(1);
+    for (const Vec3 eye : {Vec3{20, 12, -30}, Vec3{-20, 15, 30}}) {
+        const auto camera = CameraFrame::at(eye);
+        f.device.draws.clear();
+        chests.draw(f.device, Mat4{1}, {}, &camera);
+        REQUIRE_FALSE(f.device.draws.empty());
+        const auto& vertices = f.device.draws.front().vertices;
+        REQUIRE(vertices.size() == 3);
+        const Vec3 normal = glm::normalize(glm::cross(vertices[1].position - vertices[0].position,
+                                                      vertices[2].position - vertices[0].position));
+        const Vec3 toward = glm::normalize(Vec3{eye.x, 0, eye.z});
+        CHECK(std::abs(glm::dot(normal, toward)) == Approx(1).margin(0.0001));
+    }
+}
+
+TEST_CASE("desert light walls play startup steady and reversed shutdown textures",
+          "[fixtures][visual-parity][unpacked]") {
+    const auto directory = test::unpackedOrSkip("ITEMS/LEVELC/animations.json").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive items;
+    REQUIRE(items.load(directory));
+    ItemFigure figure;
+    REQUIRE(figure.place(device, items, "FORCEF", ItemInstance{}, nullptr));
+    const auto texture = [&](std::string_view name) {
+        const auto slot = items.textures.find(name);
+        REQUIRE(slot.has_value());
+        return &items.textures.texture(device, *slot);
+    };
+    const Texture* startup = texture("FFGEN00");
+    const Texture* steady = texture("FFIELD00");
+    const Texture* end = texture("FFGEN14");
+    const auto shown = [&](const Texture* wanted) {
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, {});
+        return std::ranges::any_of(device.draws, [&](const auto& draw) {
+            return draw.texture == wanted && draw.state.depthTest;
+        });
+    };
+    figure.play(1, false);
+    CHECK(shown(startup));
+    figure.update(14.0f / 30);
+    CHECK(shown(end));
+    figure.play(2, false);
+    CHECK(shown(steady));
+    figure.play(3, false);
+    CHECK(shown(end));
+    figure.update(14.0f / 30);
+    CHECK(shown(startup));
+    figure.play(0, true);
+    CHECK_FALSE(shown(startup));
+    // OFF returns to the archive's one-frame global FFIELD/FFGEN defaults.
+    CHECK(shown(steady));
+    CHECK(shown(end));
+
+    const auto dir = test::scratchDirectory("desert-forcefield-cycle");
+    writeTextFile(dir / "world.json", R"({"objects":[{"name":"GROUND","position":[0,0,0]}],
+      "itemInfos":[{"type":8,"subtype":2,"name":"FORCEF","activeOff":1}],
+      "itemInstances":[{"info":0,"position":[0,0,0],"rotation":[0,0,0]}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    for (const s32 ticks : {1, 2}) {
+        Traps traps;
+        REQUIRE(traps.bind(device, layout, items, nullptr));
+        traps.setPlayerCount(1);
+        for (s32 cycle = 0; cycle < 2; ++cycle) {
+            for (const s32 state : {0, 1, 2, 3}) {
+                CAPTURE(ticks, cycle, state);
+                REQUIRE(traps.trap(0).action == state);
+                const s32 duration = std::array{2, 30, 40, 30}[static_cast<usize>(state)];
+                REQUIRE(traps.trap(0).ticksLeft == duration);
+                for (s32 elapsed = 0; elapsed < duration; elapsed += ticks) {
+                    CHECK(traps.trap(0).action == state);
+                    traps.update(ticks, static_cast<f32>(ticks) / 60, {});
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("C1 trapped chest bomb faces the camera throughout its fuse",
+          "[fixtures][visual-parity][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELC1/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    ItemArchive items;
+    REQUIRE(layout.load(root / "LEVELS/LEVELC1"));
+    REQUIRE(items.load(root / "ITEMS/LEVELC"));
+    Chests chests;
+    REQUIRE(chests.bind(device, layout, items, nullptr));
+    chests.setPlayerCount(1);
+    usize index = 0;
+    while (index < chests.size() &&
+           (!chests.chest(index).shown || chests.chest(index).subtype != Chests::kTrappedChest)) {
+        ++index;
+    }
+    REQUIRE(index < chests.size());
+    const auto& chest = chests.chest(index);
+    const std::array party{ChestVisitor{chest.box.centre, 0.75f, 1}};
+    chests.update(0, party);
+    REQUIRE(chest.state == Chests::kOpening);
+    const auto bomb = items.models.find("CHESTEXPFRM1");
+    REQUIRE(bomb.has_value());
+    const auto& mesh = items.models.mesh(*bomb);
+    REQUIRE_FALSE(mesh.parts.empty());
+    const Texture* skin = &items.textures.texture(device, mesh.parts.front().texture);
+    for (s32 sample = 0; sample < 3; ++sample) {
+        chests.update(0.3f, {});
+        const auto transform = chest.figure.nodeTransform("FRM1");
+        REQUIRE(transform.has_value());
+        for (const Vec3 offset : {Vec3{20, 12, -30}, Vec3{-20, 15, 30}}) {
+            const auto camera = CameraFrame::at(chest.figure.position() + offset);
+            const Mat4 expected = camera.face(*transform, 1);
+            device.draws.clear();
+            chests.draw(device, Mat4{1}, {}, &camera);
+            const auto found = std::ranges::find_if(device.draws, [&](const auto& draw) {
+                return draw.texture == skin && !draw.vertices.empty() &&
+                       glm::distance(
+                           draw.vertices.front().position,
+                           Vec3{expected *
+                                Vec4{mesh.vertices[mesh.parts.front().indices[0]].position, 1}}) <
+                           0.001f;
+            });
+            REQUIRE(found != device.draws.end());
+            CHECK(found->state.depthTest);
+        }
+    }
+}
+
 } // namespace
