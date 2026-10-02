@@ -2,6 +2,8 @@
 #include <array>
 #include <cmath>
 #include <filesystem>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/catch_approx.hpp>
@@ -16,6 +18,8 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/enemies/Enemies.h"
+#include "game/enemies/EnemyMind.h"
+#include "game/enemies/EnemyMissiles.h"
 #include "game/world/HazardSurfaces.h"
 
 namespace {
@@ -94,6 +98,73 @@ s32 stepsUntil(Enemies& enemies, std::span<const EnemyView> players, const auto&
         ++steps;
     }
     return steps;
+}
+
+TEST_CASE("battlefield archers keep aiming and shooting at close players while retreating",
+          "[game][enemies][battlefield-archer][unpacked]") {
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    constexpr s32 kBattlefieldKind = 19;
+    REQUIRE(enemies.loadKind(kBattlefieldKind));
+    EnemySpawn spawn;
+    spawn.kind = kBattlefieldKind;
+    spawn.tier = kArcherStrength;
+    spawn.algorithm = kSkirmishWay;
+    spawn.placed = true;
+    spawn.direction = Vec3{0, 0, -1};
+    spawn.throwInterval = 0.2f;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    EnemyMissiles missiles;
+    for (s32 frame = 0; frame < 120; ++frame) {
+        // Stay close on the opposite side of its initial facing, outside body contact.
+        const std::array party{playerAt(enemies.positionOf(*id) + Vec3{0, 0, 8})};
+        enemies.update(kTicks, kStep, party, {}, &missiles);
+    }
+    CHECK(std::cos(enemies.yawOf(*id)) > 0.99f);
+    CHECK(missiles.count() > 0);
+}
+
+TEST_CASE("the battlefield entrance archers remain on their authored perches and fire nearby",
+          "[game][enemies][battlefield-archer][unpacked]") {
+    const auto* level = GENERATE("LEVELH1", "LEVELH3");
+    const auto root = unpackedRoot();
+    const auto directory = root / "LEVELS" / level;
+    test::unpackedOrSkip(std::string{"LEVELS/"} + level + "/collision.json");
+    WorldLayout layout;
+    REQUIRE(layout.load(directory));
+    WorldCollision collision;
+    REQUIRE(collision.load(directory, layout));
+    const Vec3 perch = std::string_view{level} == "LEVELH1" ? Vec3{56.875f, 20.125f, 41.5f}
+                                                            : Vec3{17.25f, 6.484375f, 58.125f};
+    const auto placed = std::ranges::find(layout.itemInstances(), perch, &ItemInstance::position);
+    REQUIRE(placed != layout.itemInstances().end());
+    REQUIRE(placed->params[0] == kArcherStrength);
+    REQUIRE(placed->params[2] == kThrowWay);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, root, &collision, 1, {}, 7);
+    REQUIRE(enemies.loadKind(19));
+    EnemySpawn spawn;
+    spawn.kind = 19;
+    spawn.tier = kArcherStrength;
+    spawn.algorithm = placed->params[2];
+    spawn.position = perch;
+    spawn.direction = Vec3{std::sin(placed->rotation.y), 0, std::cos(placed->rotation.y)};
+    spawn.placed = true;
+    spawn.throwInterval = 0.2f;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    EnemyMissiles missiles;
+    const Vec3 initial = enemies.positionOf(*id);
+    const Vec3 player = initial - spawn.direction * 8.0f;
+    const std::array party{playerAt(player)};
+    for (s32 frame = 0; frame < 300; ++frame) {
+        enemies.update(kTicks, kStep, party, {}, &missiles);
+        REQUIRE(enemies.positionOf(*id) == initial);
+    }
+    CHECK(missiles.count() > 0);
 }
 
 TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and strikes on touch",

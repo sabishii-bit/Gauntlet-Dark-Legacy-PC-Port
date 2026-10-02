@@ -101,8 +101,9 @@ struct MindSense {
 /** What a mind decides for the tick. */
 struct MindIntent {
     f32 heading = 0.0f;
-    f32 pace = 1.0f;  ///< of the body's; nought stands still
-    bool turn = true; ///< whether the body turns to the heading
+    f32 pace = 1.0f;           ///< of the body's; nought stands still
+    bool turn = true;          ///< whether the body turns to the heading
+    std::optional<f32> facing; ///< an independent facing while moving backward
     EnemyAction action = EnemyAction::Walk;
     std::optional<s32> become; ///< another way to go about from now on
     bool expire = false;       ///< the body is done with (a loiterer whose generator is gone)

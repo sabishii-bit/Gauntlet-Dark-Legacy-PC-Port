@@ -344,6 +344,7 @@ public:
             // Away from the player, facing them still.
             intent.heading = wrapAngle(face + kPi + nudge);
             intent.turn = false;
+            intent.facing = face;
             intent.pace = kKeepOffPace;
             intent.action = EnemyAction::RunAttack;
         }

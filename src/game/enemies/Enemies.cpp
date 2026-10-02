@@ -1148,8 +1148,8 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
     } else {
         enemy.animator.request(intent.action);
     }
-    if (intent.turn) {
-        enemy.yaw = turnToward(enemy, intent.heading, ticks);
+    if (intent.facing.has_value() || intent.turn) {
+        enemy.yaw = turnToward(enemy, intent.facing.value_or(intent.heading), ticks);
     }
     const Vec3 step = Vec3{std::sin(intent.heading), 0.0f, std::cos(intent.heading)} *
                       (paceOf(enemy.kind) * intent.pace * static_cast<f32>(ticks));

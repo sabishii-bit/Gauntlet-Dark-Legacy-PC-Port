@@ -289,6 +289,8 @@ TEST_CASE("the skirmisher waits out its throw before it throws or backs off, is 
     CHECK(intent.pace == Approx(0.8f));
     CHECK(std::abs(intent.heading) == Approx(kPi));
     CHECK(intent.action == EnemyAction::RunAttack);
+    REQUIRE(intent.facing.has_value());
+    CHECK(*intent.facing == Approx(0.0f));
     // Stopped, it is nudged off straight a step at a time; the ninth stop gives it up.
     MindSense stopped = close;
     stopped.blocked = true;
