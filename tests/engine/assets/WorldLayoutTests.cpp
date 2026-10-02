@@ -38,7 +38,7 @@ std::filesystem::path sampleLayout(std::string_view name) {
     {"type": 1, "subtype": 15, "name": "gemorange", "radius": 0.1, "height": 2,
      "value": 4, "armor": -1, "activeType": 16},
     {"type": 2, "subtype": 46, "name": "CHEST", "xSize": 1.2, "zSize": 0.9,
-     "collisionType": 3},
+     "collisionType": 3, "collisionFlags": 1},
     {"type": -1, "subtype": 2, "name": "", "choices": [0, 1]}
   ],
   "itemInstances": [
@@ -120,6 +120,8 @@ TEST_CASE("a layout carries its animations and tells its objects' roles", "[asse
     REQUIRE(layout.itemInfos()[1].xSize == 1.2f);
     REQUIRE(layout.itemInfos()[1].zSize == 0.9f);
     REQUIRE(layout.itemInfos()[1].collisionType == 3);
+    CHECK(layout.itemInfos()[1].collisionFlags == 1);
+    CHECK(layout.itemInfos()[0].collisionFlags == 0);
     REQUIRE(layout.itemInfos()[1].choices.empty());
     REQUIRE(layout.itemInfos()[2].type == ItemInfo::kChoiceList);
     REQUIRE(layout.itemInfos()[2].choices == std::vector<s32>{0, 1});

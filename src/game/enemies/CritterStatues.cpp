@@ -22,7 +22,10 @@ s32 CritterStatues::activeTicks(s32 frames, s32 rate) {
 
 bool CritterStatues::add(RenderDevice& device, ItemArchive& archive, const Placement& placement,
                          const WorldCollision* collision) {
-    const std::string_view tree = treeOf(placement.kind);
+    std::string_view tree = treeOf(placement.kind);
+    if (placement.enemy && placement.enemy->kind == kDeathKind) {
+        tree = placement.enemy->tier == 2 ? "DEATHSTATUE2" : "DEATHSTATUE1";
+    }
     if (tree.empty()) {
         return false;
     }

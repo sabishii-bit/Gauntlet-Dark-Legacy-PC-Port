@@ -1002,7 +1002,8 @@ TEST_CASE("the castle's golem and gargoyle stand as statues until walked into, s
         }
         return found;
     };
-    REQUIRE(opponents.statues().count() == 2);
+    // The third item is the red Death's sleeping statue (placement strength 0).
+    REQUIRE(opponents.statues().count() == 3);
     CHECK_FALSE(standing(CombatantKind::Golem).has_value());
     CHECK_FALSE(standing(CombatantKind::Gargoyle).has_value());
     const usize generals = opponents.critters().count();
@@ -1037,11 +1038,11 @@ TEST_CASE("the castle's golem and gargoyle stand as statues until walked into, s
     // Its ACTIVE sequence (fifteen frames at fifteen a second) plays out, and the golem
     // stands in its place, facing as the statue was placed.
     s32 rose = 0;
-    for (s32 frame = 0; frame < 40 && opponents.statues().count() == 2; ++frame) {
+    for (s32 frame = 0; frame < 40 && statueNear(golem).has_value(); ++frame) {
         step();
         ++rose;
     }
-    REQUIRE(opponents.statues().count() == 1);
+    REQUIRE(opponents.statues().count() == 2);
     CHECK(rose == 30); // sixty ticks, two a step
     REQUIRE(opponents.critters().count() == generals + 1);
     const auto risen = standing(CombatantKind::Golem);
@@ -1059,15 +1060,17 @@ TEST_CASE("the castle's golem and gargoyle stand as statues until walked into, s
     world.updateTriggers(1.0f / 30, pad);
     step();
     CHECK(opponents.statues().woken(*statueNear(gargoyle)));
-    for (s32 frame = 0; frame < 120 && opponents.statues().count() == 1; ++frame) {
+    for (s32 frame = 0; frame < 120 && statueNear(gargoyle).has_value(); ++frame) {
         step();
     }
-    CHECK(opponents.statues().count() == 0);
+    REQUIRE(opponents.statues().count() == 1);
+    CHECK(opponents.statues().placement(0).enemy.has_value());
+    CHECK_FALSE(opponents.statues().woken(0));
     CHECK(standing(CombatantKind::Gargoyle).has_value());
     // A blow wakes one too.
     opponents.close();
     opponents.open({device, world, weapons, effects, audio, root, 1}, players);
-    REQUIRE(opponents.statues().count() == 2);
+    REQUIRE(opponents.statues().count() == 3);
     opponents.wakeStatue(*statueNear(gargoyle));
     CHECK(opponents.statues().woken(*statueNear(gargoyle)));
     CHECK_FALSE(opponents.statues().woken(*statueNear(golem)));

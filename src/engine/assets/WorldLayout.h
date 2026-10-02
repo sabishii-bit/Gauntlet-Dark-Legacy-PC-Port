@@ -102,6 +102,7 @@ struct ItemInfo {
     f32 xSize = 0.0f; ///< half its box across, for the box-shaped
     f32 zSize = 0.0f; ///< and along
     s32 collisionType = 0;
+    u32 collisionFlags = 0; ///< bit 0 keeps the authored height instead of snapping to a floor
     Vec3 collisionOffset{0.0f, 0.0f, 0.0f};
     u32 objectFlags = 0;
     u32 properties = 0;

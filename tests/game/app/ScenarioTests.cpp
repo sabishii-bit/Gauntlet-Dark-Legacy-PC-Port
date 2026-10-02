@@ -20,6 +20,20 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
+TEST_CASE("platform and Death statue scenarios load the affected level locations without saves",
+          "[scenario][platform-contact][death]") {
+    const auto root = test::dataDirectory().parent_path() / "tests/scenarios";
+    const auto lift = Scenario::load(root / "level-g1-elevator.json");
+    REQUIRE(lift.level == "G1");
+    REQUIRE(lift.tower.position == Vec3{46.875f, 19.4f, -208.28125f});
+    REQUIRE_FALSE(lift.partyMembers().front().slot);
+    const auto statue = Scenario::load(root / "level-e1-death-statue.json");
+    REQUIRE(statue.level == "E1");
+    REQUIRE(statue.tower.position == Vec3{54.75f, 0.3f, 0});
+    REQUIRE(statue.partyMembers().front().save.character == classIndexOf("JES").value());
+    REQUIRE_FALSE(statue.partyMembers().front().slot);
+}
+
 TEST_CASE("fully unlocked tower scenario supplies a maxed green Knight without pending ceremonies",
           "[scenario][tower-access]") {
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /

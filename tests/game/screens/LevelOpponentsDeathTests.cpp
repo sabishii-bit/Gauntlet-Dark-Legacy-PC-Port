@@ -6,6 +6,7 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include "engine/audio/AudioMixer.h"
+#include "engine/world/SampleLevel.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
@@ -19,6 +20,41 @@
 namespace {
 using namespace gdl;
 using namespace gdl::game;
+
+TEST_CASE("Death placement strengths select statue color and initial wake flag independently",
+          "[death][death-statue]") {
+    const s32 strength = GENERATE(0, 1, 2, 3);
+    const auto stage = test::sampleLevel("death-placement");
+    writeTextFile(stage / "world.json", R"({"objects":[{"name":"FLOOR","position":[0,0,0]}],
+      "itemInfos":[{"type":4,"name":"DEATH","radius":1,"height":2}],
+      "itemInstances":[{"info":0,"position":[0,0,0],"params":[)" +
+                                            std::to_string(strength) +
+                                            R"(,0,3,0,0,0,0,65,0,0,0,0]}]})");
+    writeTextFile(stage / "collision.json", R"({"objects":[]})");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    LevelRef level;
+    level.name = "G1";
+    REQUIRE(world.load(device, stage, level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 10}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, test::deathArchive()}, players);
+    REQUIRE(opponents.statues().count() == 1);
+    CHECK(opponents.enemies().count() == 0);
+    const auto& placed = opponents.statues().placement(0);
+    REQUIRE(placed.enemy);
+    CHECK(placed.enemy->kind == kDeathKind);
+    CHECK(placed.enemy->tier == (strength >= 2 ? 2 : 1));
+    CHECK(placed.enemy->algorithm == 3);
+    CHECK_FALSE(placed.enemy->asleep); // the eventual live enemy, not the statue item
+    CHECK(opponents.statues().woken(0) == ((strength & 1) != 0));
+    opponents.close();
+}
+
 TEST_CASE("Death drains bypass armor without bypassing invulnerability or normal death handling",
           "[death][player-health]") {
     const bool invulnerable = GENERATE(false, true);
@@ -195,6 +231,48 @@ TEST_CASE("Authored Red and Black Death placements enter the level roster",
     LevelOpponents opponents;
     opponents.open({device, world, weapons, effects, audio, root}, players);
     const Vec3 expected = black ? Vec3{82, -6.84375f, 61.96875f} : Vec3{60.75f, 0.15625f, 0};
+    // These even-valued placements are statues, not already-active Deaths.
+    // Being on screen or waiting near them must not bypass the item wake gate.
+    usize statue = 0;
+    while (statue < opponents.statues().count() &&
+           glm::distance(Vec2{opponents.statues().positionOf(statue).x,
+                              opponents.statues().positionOf(statue).z},
+                         Vec2{expected.x, expected.z}) > 0.1f) {
+        ++statue;
+    }
+    REQUIRE(statue < opponents.statues().count());
+    REQUIRE(opponents.statues().placement(statue).enemy);
+    CHECK(opponents.statues().placement(statue).enemy->tier == (black ? 2 : 1));
+    const Vec3 statuePosition = opponents.statues().positionOf(statue);
+    for (auto& player : players) {
+        player.actor.place(statuePosition + Vec3{0, 0, 6});
+    }
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    events.help = [](s32, usize) { return true; };
+    for (s32 frame = 0; frame < 60; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+        REQUIRE_FALSE(opponents.statues().woken(statue));
+        REQUIRE(opponents.statues().positionOf(statue) == statuePosition);
+    }
+    const s32 wakeMethod = GENERATE(0, 1, 2);
+    if (wakeMethod == 0) {
+        opponents.wakeStatueNear(statuePosition); // a wake trigger
+    } else if (wakeMethod == 1) {
+        opponents.wakeStatue(statue); // a projectile or melee blow
+    } else {
+        players[0].actor.place(statuePosition); // walking into it
+    }
+    const usize before = opponents.statues().count();
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    REQUIRE(opponents.statues().rising(statue));
+    opponents.update(2, 1.0f / 30, players, {}, events);
+    CHECK(opponents.statues().count() == before - 1);
     s32 found = -1;
     for (s32 id = 0; id < Enemies::kMost; ++id) {
         const Vec3 at = opponents.enemies().positionOf(id);

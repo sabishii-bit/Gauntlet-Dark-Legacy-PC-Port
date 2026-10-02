@@ -15,11 +15,12 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/enemies/CombatantKind.h"
+#include "game/enemies/Enemies.h"
 #include "game/world/ItemFigure.h"
 #include "game/world/PlayerMissiles.h"
 
 namespace gdl::game {
-/** The golems and gargoyles a level places stand as statues, the `GOL_STATUE` or
+/** The golems, gargoyles and Deaths a level places stand as item statues, the `GOL_STATUE` or
  * `GAR_STATUE` tree of the great one's own archive where the placement is (SetItem, items.c
  * 6798), until woken: by a player walking into one (fn_8005D730), by a blow (fn_8005C1DC) or
  * by a trigger flagged to wake the nearest (fn_800606FC). Woken and in view, a statue plays
@@ -30,6 +31,9 @@ public:
     /** A placement standing as a statue, and what it becomes. */
     struct Placement {
         CombatantKind kind = CombatantKind::Unknown;
+        /** Death is a swarm enemy, not a CRITTER family. Its spawn is held until
+         * the placed DEATHSTATUE1/2 item has been awakened. */
+        std::optional<EnemySpawn> enemy;
         std::string form;      ///< a gargoyle's ("GAR_EAGL"); empty for the default
         ItemInstance instance; ///< where the level puts it
         f32 radius = 0.0f;     ///< the record's: what stops a player, and where a touch counts

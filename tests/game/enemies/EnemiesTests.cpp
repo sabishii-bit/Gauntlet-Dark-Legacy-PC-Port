@@ -267,6 +267,31 @@ TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and
     REQUIRE(enemies.targetOf(*id) < 0);
 }
 
+TEST_CASE("first-tier spear grunts land repeated blows at point-blank contact",
+          "[game][enemies][spear-contact][unpacked]") {
+    const s32 kind = GENERATE(kGruntKind, 5, 10, 13, 19);
+    const f32 distance = GENERATE(0.0f, 0.5f, 2.0f);
+    const s32 ticks = GENERATE(1, 2);
+    test::FakeRenderDevice device;
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kind));
+    EnemySpawn spawn;
+    spawn.kind = kind;
+    spawn.tier = 1;
+    spawn.placed = true;
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const std::array party{playerAt(enemies.positionOf(*id) + Vec3{0, 0, distance})};
+    s32 blows = 0;
+    for (s32 frame = 0; frame < 600 / ticks; ++frame) {
+        enemies.update(ticks, static_cast<f32>(ticks) / 60.0f, party);
+        blows += static_cast<s32>(enemies.takeBlows().size());
+    }
+    CAPTURE(kind, distance, ticks, enemies.animatorOf(*id)->action());
+    CHECK(blows >= 8);
+}
+
 TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its experience",
           "[game][enemies][unpacked]") {
     test::FakeRenderDevice device;
