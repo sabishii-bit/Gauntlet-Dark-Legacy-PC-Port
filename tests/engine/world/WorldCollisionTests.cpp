@@ -99,6 +99,7 @@ TEST_CASE("wall sweeps stop thin-wall crossings and preserve the starting side",
     // Contact and initial overlap permit separation, not travel through the wall.
     CHECK(collision.sweepWalls({4.5f, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f).x == 0);
     CHECK(collision.sweepWalls({4.8f, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(4.8f));
+    CHECK(collision.sweepWalls({4.9999f, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(4.9999f));
     CHECK(collision.sweepWalls({4.8f, 0, 0}, {0, 0, 0}, 0.5f, 0.2f, 2.8f).x == 0);
     CHECK(collision.sweepWalls({5, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == 5);
     CHECK(collision.sweepWalls({0, 0, 10.6f}, {9, 0, 10.6f}, 0.5f, 0.2f, 2.8f).x == 9);

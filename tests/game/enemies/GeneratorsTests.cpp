@@ -17,6 +17,8 @@
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/screens/LevelOpponents.h"
+#include "game/world/LevelCatalog.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 
@@ -712,5 +714,92 @@ TEST_CASE("a player's blow on a generator earns five times its kind's row of the
     CHECK(generatorExperience(-3, false) == 15); // and the third
     CHECK(generatorExperience(-7, true) == 5);   // any other below nought as the first
     CHECK(generatorExperience(34, true) == 0);
+}
+
+TEST_CASE("worm pits allow walking and birth at their centre without losing their target body",
+          "[game][generators][enemy-collision][unpacked]") {
+    const auto root = test::unpackedOrSkip("MONSTERS/WRM/animations.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(sampleLevel("worm-generator")));
+    Enemies enemies;
+    enemies.open(device, root, nullptr, 8, {}, 3);
+    const std::array roster{LevelEnemy{kWormKind, kMediumClass, {}}};
+    Generators generators;
+    REQUIRE(generators.bind(device, layout, enemies, nullptr, {}, 1, roster));
+    REQUIRE(generators.kindOf(0) == kWormKind);
+    REQUIRE(generators.obstacles().size() == 2);
+    REQUIRE(generators.enemyObstacles().size() == 1);
+    REQUIRE(generators.struckBy({-8, 2, 0}, {8, 2, 0}, 0.5f) == 0);
+    const std::array party{EnemyView{.position = Vec3{0, 0, 30}}};
+    generators.setView(lookingAt(generators.positionOf(0)));
+    generators.update(kTicks, enemies, party);
+    REQUIRE(generators.bredOf(0) == 1);
+    REQUIRE(enemies.generatorOf(0) == 0);
+    CHECK(enemies.positionOf(0) == generators.positionOf(0));
+    Enemies walkers;
+    walkers.open(device, root, nullptr, 1, {}, 7);
+    REQUIRE(walkers.loadKind(kGruntKind));
+    const auto walker = walkers.spawn({.position = Vec3{0, 0, -8}, .placed = true}, {});
+    REQUIRE(walker);
+    const std::array destination{EnemyView{.player = 0, .position = Vec3{0, 0, 8}}};
+    const auto bodies = generators.enemyObstacles();
+    for (s32 frame = 0; frame < 180; ++frame) {
+        walkers.update(kTicks, kStep, destination, bodies);
+    }
+    CHECK(walkers.positionOf(*walker).z > 0);
+}
+
+TEST_CASE("Desert C1 births retain the roster and a clear path from each authored generator",
+          "[game][generators][desert-births][unpacked]") {
+    const auto root = test::unpackedOrSkip("LEVELS/LEVELC1/collision.json")
+                          .parent_path()
+                          .parent_path()
+                          .parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    test::unpackedOrSkip("wdata/DESERT.json");
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    const auto level = catalog.byName("C1");
+    REQUIRE(level);
+    REQUIRE(world.load(device, root, *level));
+    REQUIRE(world.level());
+    Enemies enemies;
+    enemies.open(device, root, &world.collision(), Enemies::kMost, {}, 7);
+    Generators generators;
+    REQUIRE(generators.bind(device, world.layout(), enemies, &world.collision(), {}, 1,
+                            world.level()->enemies));
+    REQUIRE(generators.count() > 20);
+    usize low = 0;
+    for (s32 i = 0; i < static_cast<s32>(generators.count()); ++i) {
+        if (generators.kindOf(i) == 6) {
+            ++low;
+            CHECK(generators.boxOf(i).height == 2.5f);
+            CHECK(generators.boxOf(i).cylinderRadius == 2);
+        }
+    }
+    REQUIRE(low > 0);
+    REQUIRE(world.startPoint(0));
+    const std::array party{EnemyView{.position = world.startPoint(0)->position}};
+    generators.update(kTicks, enemies, party);
+    REQUIRE(enemies.count() > 5);
+    for (s32 i = 0; i < Enemies::kMost; ++i) {
+        if (!enemies.alive(i)) {
+            continue;
+        }
+        const Vec3 from = generators.positionOf(enemies.generatorOf(i));
+        const Vec3 to = enemies.positionOf(i);
+        CAPTURE(i, from.x, from.y, from.z, to.x, to.y, to.z);
+        CHECK((enemies.kindOf(i) == 7 || enemies.kindOf(i) == 6));
+        const Vec3 stopped = world.collision().sweepWalls(
+            from, to, enemies.radiusOf(i), to.y + 0.1f, to.y + enemies.heightOf(i) - 0.1f);
+        CHECK(glm::distance(stopped, to) < 0.01f);
+    }
+    // These snake pits are not the worm-generator exception.
+    CHECK(generators.enemyObstacles().size() == generators.obstacles().size());
 }
 } // namespace

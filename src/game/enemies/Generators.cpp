@@ -153,6 +153,18 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         if (!named.has_value()) {
             continue;
         }
+        // Small-class placements use the LOW body before the level remaps their species.
+        const ItemInfo* body = &info;
+        if (*named == kRatKind) {
+            const auto low =
+                std::ranges::find_if(layout.itemInfos(), [&](const ItemInfo& candidate) {
+                    return candidate.type == info.type && candidate.name == "LOW" &&
+                           (info.subtype <= 0 || candidate.subtype == info.subtype);
+                });
+            if (low != layout.itemInfos().end()) {
+                body = &*low;
+            }
+        }
         const s32 specialTier = realm == 5 ? 2 : 3;
         const s32 strength = special ? specialTier : std::max(paramOf(instance, 0), 1);
         const s32 kind = levelKindOf(roster, *named, kGeneratorKindStrength);
@@ -206,13 +218,14 @@ bool Generators::bind(RenderDevice& device, const WorldLayout& layout, Enemies& 
         } else {
             generator.direction = Vec3{0.0f, 0.0f, 1.0f};
         }
-        generator.clearance = info.height;
+        generator.clearance = body->height;
         generator.viewRadius = 2.0f * std::max(info.radius, info.height);
         generator.box.centre = generator.position;
         generator.box.yaw = generator.yaw;
-        generator.box.halfAcross = info.xSize > 0.0f ? info.xSize : info.radius;
-        generator.box.halfAlong = info.zSize > 0.0f ? info.zSize : info.radius;
-        generator.box.height = info.height;
+        generator.box.halfAcross = body->xSize > 0.0f ? body->xSize : body->radius;
+        generator.box.halfAlong = body->zSize > 0.0f ? body->zSize : body->radius;
+        generator.box.height = body->height;
+        generator.box.cylinderRadius = body->collisionType == 1 ? body->radius : 0.0f;
         generator.countdown = 0;
         m_generators.push_back(std::move(generator));
     }
@@ -337,7 +350,13 @@ void Generators::update(s32 ticks, Enemies& enemies, std::span<const EnemyView> 
         spawn.direction = generator.direction;
         spawn.clearance = generator.clearance;
         spawn.generator = static_cast<s32>(g);
-        if (!enemies.spawn(spawn, players, obstacles).has_value()) {
+        std::vector<Obstacle> birthObstacles{obstacles.begin(), obstacles.end()};
+        for (usize other = 0; other < m_generators.size(); ++other) {
+            if (other != g && m_generators[other].state > 0) {
+                birthObstacles.push_back(m_generators[other].box);
+            }
+        }
+        if (!enemies.spawn(spawn, players, birthObstacles).has_value()) {
             continue;
         }
         ++generator.bred;
@@ -456,6 +475,16 @@ std::vector<Obstacle> Generators::obstacles() const {
     std::vector<Obstacle> out;
     for (const Generator& generator : m_generators) {
         if (generator.state > 0) {
+            out.push_back(generator.box);
+        }
+    }
+    return out;
+}
+
+std::vector<Obstacle> Generators::enemyObstacles() const {
+    std::vector<Obstacle> out;
+    for (const Generator& generator : m_generators) {
+        if (generator.state > 0 && generator.kind != kWormKind) {
             out.push_back(generator.box);
         }
     }

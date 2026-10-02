@@ -397,6 +397,7 @@ private:
     const TreeModel* bodyOf(const Enemy& enemy);
     void move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
               std::span<const EnemyView> players, std::span<const Obstacle> obstacles);
+    Vec3 travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const;
     bool probeClear(const Enemy& enemy, const Vec3& at, std::span<const Obstacle> obstacles,
                     s32 self) const;
     static f32 turnToward(const Enemy& enemy, f32 wanted, s32 ticks);

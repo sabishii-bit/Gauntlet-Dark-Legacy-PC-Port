@@ -21,6 +21,8 @@
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
 #include "game/world/HazardSurfaces.h"
+#include "game/world/LevelCatalog.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 
@@ -98,6 +100,87 @@ s32 stepsUntil(Enemies& enemies, std::span<const EnemyView> players, const auto&
         ++steps;
     }
     return steps;
+}
+
+TEST_CASE("generator births cannot cross a wall to an unobstructed destination",
+          "[game][enemies][enemy-collision][unpacked]") {
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(yard());
+    Enemies enemies;
+    const bool itemWall = GENERATE(false, true);
+    enemies.open(device, unpackedRoot(), itemWall ? nullptr : &collision, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kGruntKind));
+    EnemySpawn spawn;
+    spawn.position = Vec3{0, 0, 16};
+    spawn.clearance = 12;
+    const std::array boxes{
+        Obstacle{.centre = Vec3{0, 0, 20}, .halfAcross = 40, .halfAlong = 0.25f, .height = 8}};
+    const auto id =
+        enemies.spawn(spawn, {}, itemWall ? std::span{boxes} : std::span<const Obstacle>{});
+    REQUIRE_FALSE(id.has_value());
+}
+
+TEST_CASE("a newly released Death cannot be pushed through a wall by an item body",
+          "[game][enemies][enemy-collision][unpacked]") {
+    test::FakeRenderDevice device;
+    WorldCollision collision;
+    collision.build(yard());
+    Enemies enemies;
+    enemies.open(device, unpackedRoot(), &collision, 1, {}, 7);
+    REQUIRE(enemies.loadKind(kDeathKind));
+    EnemySpawn spawn;
+    spawn.kind = kDeathKind;
+    spawn.placed = true;
+    spawn.position = Vec3{0, 0, 17};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id.has_value());
+    const std::array boxes{
+        Obstacle{.centre = Vec3{0, 0, 15}, .halfAcross = 10, .halfAlong = 6, .height = 8}};
+    enemies.update(kTicks, kStep, {}, boxes);
+    CHECK(enemies.positionOf(*id).z < 20);
+}
+
+TEST_CASE("Temple enemies cannot walk through the closed front doors",
+          "[game][enemies][temple-doors][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELE1/collision.json");
+    test::unpackedOrSkip("wdata/TEMPLE.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    const auto level = catalog.byName("E1");
+    REQUIRE(level);
+    REQUIRE(world.load(device, root, *level));
+    Enemies enemies;
+    enemies.open(device, root, &world.collision(), 1, {}, 7);
+    REQUIRE(enemies.loadKind(23));
+    EnemySpawn spawn;
+    spawn.kind = 23;
+    spawn.placed = true;
+    spawn.algorithm = 7;
+    spawn.position = Vec3{2, 0, 78};
+    const auto id = enemies.spawn(spawn, {});
+    REQUIRE(id);
+    const std::array party{playerAt(Vec3{2, 0, 94})};
+    SECTION("knockback also checks the path through the door") {
+        for (s32 frame = 0; frame < 16; ++frame) {
+            enemies.update(kTicks, kStep, {});
+        }
+        EnemyHit hit;
+        hit.damage = 1;
+        hit.flags = EnemyHit::kKnockDown;
+        enemies.hurt(*id, hit);
+        enemies.update(30, 0.5f, {});
+        CHECK(enemies.positionOf(*id).z < 85);
+    }
+    SECTION("ordinary pursuit stays on its side") {
+        for (s32 frame = 0; frame < 300; ++frame) {
+            enemies.update(kTicks, kStep, party);
+            REQUIRE(enemies.positionOf(*id).z < 85);
+        }
+    }
 }
 
 TEST_CASE("battlefield archers keep aiming and shooting at close players while retreating",
