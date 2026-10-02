@@ -30,6 +30,61 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("level pickups follow triggered floors from their initial poses",
+          "[game][world][pickup-platform][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    usize supported = 0;
+    usize moved = 0;
+    for (const auto* name : {"E1", "G1"}) {
+        CAPTURE(name);
+        const auto level = catalog.byName(name);
+        REQUIRE(level);
+        test::FakeRenderDevice device;
+        LevelWorld world;
+        REQUIRE(world.load(device, root, *level));
+        std::vector<std::pair<usize, Vec3>> riders;
+        for (usize i = 0; i < world.placedItems().size(); ++i) {
+            const auto& item = world.placedItems().item(i);
+            if (!item.floor) {
+                continue;
+            }
+            ++supported;
+            riders.emplace_back(i, item.position);
+            const auto object = static_cast<usize>(item.floor->object);
+            CAPTURE(item.name, object);
+            const auto& instance =
+                world.layout().itemInstances()[static_cast<usize>(item.instance)];
+            const Vec3 rest = world.layout().worldPosition(object);
+            // The authored horizontal placement must survive in the floor's local frame.
+            CHECK(item.floor->local[3].x == Approx(instance.position.x - rest.x).margin(0.001f));
+            CHECK(item.floor->local[3].z == Approx(instance.position.z - rest.z).margin(0.001f));
+            CHECK(glm::distance(item.position, Vec3{world.scene().worldTransform(object) *
+                                                    item.floor->local[3]}) < 0.001f);
+        }
+        // The public trigger route must carry pickups even for instantaneous openings,
+        // without requiring a later animation tick or a visible party.
+        for (usize i = 0; i < world.triggers().size(); ++i) {
+            world.activateTrigger(world.triggers().trigger(i).id, true);
+        }
+        for (const auto& [index, before] : riders) {
+            const auto& item = world.placedItems().item(index);
+            if (item.floor) {
+                const auto object = static_cast<usize>(item.floor->object);
+                CHECK(glm::distance(item.position, Vec3{world.scene().worldTransform(object) *
+                                                        item.floor->local[3]}) < 0.001f);
+                moved += glm::distance(before, item.position) > 0.1f ? 1 : 0;
+            }
+        }
+    }
+    CAPTURE(supported, moved);
+    REQUIRE(supported > 0);
+    REQUIRE(moved > 0);
+}
+
 TEST_CASE("Chimera approach lowers the chained arena elevator",
           "[game][world][chimera][unpacked]") {
     const auto root =

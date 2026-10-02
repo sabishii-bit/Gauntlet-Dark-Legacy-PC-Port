@@ -180,6 +180,7 @@ void LevelWorld::syncCollision() {
     for (const s32 object : m_movingObjects) {
         m_collision.setObjectTransform(object, m_scene.worldTransform(static_cast<usize>(object)));
     }
+    m_placedItems.syncFloors();
 }
 
 bool LevelWorld::setObjectVisible(std::string_view name, bool visible) {

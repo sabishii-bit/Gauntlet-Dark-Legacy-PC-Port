@@ -13,6 +13,7 @@ namespace gdl::game {
 void PlacedItems::attach(usize index, const Mat4& transform, bool contained) {
     if (index < m_items.size()) {
         Item& item = m_items[index];
+        item.floor.reset();
         item.transform = transform;
         item.position = Vec3{transform[3]};
         item.contained = contained;
@@ -55,6 +56,17 @@ s32 PlacedItems::Item::realm() const {
 bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
                        const WorldCollision* collision, std::span<ItemArchive* const> archives) {
     clear();
+    m_collision = collision;
+    // Authored pickup positions describe the layout's rest pose. Find their
+    // supporting objects there, then let the current animation pose carry them.
+    std::optional<WorldCollision> restCollision;
+    if (collision != nullptr && collision->movingObjectCount() != 0) {
+        restCollision = *collision;
+        for (usize i = 0; i < layout.objects().size(); ++i) {
+            restCollision->setObjectTransform(static_cast<s32>(i),
+                                              glm::translate(Mat4{1.0f}, layout.worldPosition(i)));
+        }
+    }
     m_archives.assign(archives.begin(), archives.end());
     m_infos.clear();
     for (ItemArchive* archive : archives) {
@@ -99,18 +111,47 @@ bool PlacedItems::bind(RenderDevice& device, const WorldLayout& layout,
             continue;
         }
         item.position = instance.position;
-        if (collision != nullptr) {
-            if (const auto floor =
-                    collision->floorAt(instance.position, kFloorReachAbove, kFloorReachBelow);
-                floor.has_value()) {
-                item.position.y = floor->y + kFloorLift;
-            }
-        }
         item.transform = itemPlacement(item.position, instance.rotation);
+        restOnFloor(item, restCollision ? &*restCollision : collision, kFloorLift);
         item.visible = item.shownTo(m_players);
         m_items.push_back(std::move(item));
     }
+    syncFloors();
     return !m_items.empty();
+}
+
+void PlacedItems::restOnFloor(Item& item, const WorldCollision* collision, f32 lift) {
+    item.floor.reset();
+    if (collision == nullptr) {
+        return;
+    }
+    const auto floor = collision->floorAt(item.position, kFloorReachAbove, kFloorReachBelow);
+    if (!floor) {
+        return;
+    }
+    item.position.y = floor->y + lift;
+    item.transform[3] = Vec4{item.position, 1.0f};
+    if (const auto placement = collision->objectTransform(floor->object)) {
+        item.floor = Item::Floor{floor->object, glm::inverse(*placement) * item.transform};
+    }
+}
+
+void PlacedItems::syncFloors() {
+    if (m_collision == nullptr) {
+        return;
+    }
+    for (Item& item : m_items) {
+        if (!item.floor || item.taken || item.carried || item.contained || item.thrown) {
+            continue;
+        }
+        const auto placement = m_collision->objectTransform(item.floor->object);
+        if (!placement || !m_collision->solid(item.floor->object)) {
+            item.floor.reset();
+            continue;
+        }
+        item.transform = *placement * item.floor->local;
+        item.position = Vec3{item.transform[3]};
+    }
 }
 
 void PlacedItems::clear() {
@@ -405,13 +446,11 @@ bool PlacedItems::placeRecord(RenderDevice& device, s32 record, const Vec3& posi
         return false;
     }
     item.position = position;
-    if (collision != nullptr) {
-        if (const auto floor = collision->floorAt(position, kFloorReachAbove, kFloorReachBelow);
-            floor.has_value()) {
-            item.position.y = floor->y + kFloorLift;
-        }
-    }
     item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
+    restOnFloor(item, collision, kFloorLift);
+    if (collision != nullptr) {
+        m_collision = collision;
+    }
     item.visible = true;
     m_items.push_back(std::move(item));
     return true;
@@ -426,6 +465,7 @@ bool PlacedItems::throwItem(RenderDevice& device, std::string_view name, const V
         return false;
     }
     Item& item = m_items.back();
+    item.floor.reset();
     item.noGrabSeconds = noGrabSeconds;
     if (strength.has_value()) {
         item.strength = *strength;
@@ -456,6 +496,7 @@ std::optional<usize> PlacedItems::claim(const Vec3& position, f32 reach, f32 ris
         }
     }
     if (nearest.has_value()) {
+        m_items[*nearest].floor.reset();
         m_items[*nearest].carried = true;
         m_items[*nearest].visible = false;
     }
@@ -469,6 +510,7 @@ bool PlacedItems::release(usize index, const Vec3& position, const Vec3& velocit
     }
     Item& item = m_items[index];
     item.carried = false;
+    item.floor.reset();
     item.visible = !item.taken && item.shownTo(m_players);
     item.position = position;
     item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
@@ -663,10 +705,12 @@ void PlacedItems::fly(Item& item, f32 seconds) {
     item.transform = itemPlacement(item.position, Vec3{0.0f, 0.0f, 0.0f});
     if (item.velocity == Vec3{0.0f, 0.0f, 0.0f}) {
         item.thrown = false;
+        restOnFloor(item, m_collision, kThrownFloorLift);
     }
 }
 
 void PlacedItems::update(f32 seconds) {
+    syncFloors();
     // The archives' texture animations step once a game frame: the sheen on the crystals.
     m_frameRemainder += seconds * kFrameRate;
     const f32 whole = std::floor(m_frameRemainder);
