@@ -183,6 +183,57 @@ TEST_CASE("party motion resolves creatures before camera limits and snapshots",
     CHECK(subjects[0].feet == Vec3{0});
 }
 
+TEST_CASE("collision corrections cannot push a player through a level wall",
+          "[game][party-motion][collision][push-wall]") {
+    Fixture f;
+    CollisionTriangle floor;
+    floor.vertices = {Vec3{-10, 0, -10}, Vec3{10, 0, -10}, Vec3{0, 0, 10}};
+    floor.normal = Vec3{0, 1, 0};
+    CollisionTriangle wall;
+    wall.vertices = {Vec3{1, 0, -10}, Vec3{1, 10, -10}, Vec3{1, 0, 10}};
+    wall.normal = Vec3{-1, 0, 0};
+    f.collision.build({floor, wall});
+    SECTION("large creature or fixture correction crosses a thin wall") {
+        f.events.resolveMovement = [](usize i, const Vec3&, const Vec3& to) {
+            return i == 0 ? to + Vec3{4, 0, 0} : to;
+        };
+    }
+    SECTION("another party member crowds the player against the wall") {
+        f.players[1].actor.place(Vec3{-0.5f, 0, 0});
+    }
+    const auto subjects = f.step();
+    CHECK(f.players[0].actor.position().x <= 1 - f.players[0].actor.radius() + 0.001f);
+    CHECK(f.players[0].actor.position().y == Approx(0));
+    CHECK(subjects[0].feet == f.players[0].actor.position());
+}
+
+TEST_CASE("creature corrections stay on the Desert entrance walkway",
+          "[game][party-motion][collision][push-wall][unpacked]") {
+    const auto dir = test::unpackedOrSkip("LEVELS/LEVELC1/collision.json").parent_path();
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    Fixture f;
+    REQUIRE(f.collision.load(dir, layout));
+    f.players[1].life = PlayerLife::InTower;
+    // The first authored General stands on this narrow bridge, between the start
+    // and the main island. Both lateral pushes must preserve the walkable surface.
+    for (const f32 direction : {-1.0f, 1.0f}) {
+        f.players[0].actor.place(Vec3{-60.875f, 0.7265625f, 29.8125f});
+        f.players[0].actor.settle(f.collision);
+        const f32 startHeight = f.players[0].actor.position().y;
+        f.events.resolveMovement = [direction](usize i, const Vec3&, const Vec3& to) {
+            return i == 0 ? to + Vec3{direction * 4, 0, 0} : to;
+        };
+        for (s32 tick = 0; tick < 30; ++tick) {
+            f.step();
+            const Vec3 at = f.players[0].actor.position();
+            CAPTURE(direction, tick, at.x, at.y, at.z);
+            REQUIRE(at.y >= startHeight - 0.1f);
+            REQUIRE(f.collision.floorAt(at, 1.5f, 3, PlayerActor::kFloorEdgeReach).has_value());
+        }
+    }
+}
+
 TEST_CASE("party motion routes sparse input ids and snapshots after movement",
           "[game][screens][party-motion]") {
     Fixture f;

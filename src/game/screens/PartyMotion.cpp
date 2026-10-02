@@ -351,10 +351,13 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
         actor.update(charging ? chargeInput(actor, move, cameraYaw) : attackMove, cameraYaw,
                      seconds, &collision, pace, strafes);
         if (!down && events.resolveMovement) {
-            actor.place(events.resolveMovement(i, before, actor.position()));
+            // A body/fixture push is still movement, not a teleport. Sweep the
+            // correction through the same walls and floor edges as the step.
+            actor.slide(events.resolveMovement(i, before, actor.position()) - actor.position(),
+                        &collision);
         }
         if (!down) {
-            PartyCollision::step(players, i, before, seconds);
+            PartyCollision::step(players, i, before, seconds, &collision);
             FloorRiding::land(players, i, before, collision);
         }
         if (!down && events.limitMovement) {
@@ -363,11 +366,13 @@ std::vector<CameraSubject> PartyMotion::step(std::span<PlayerRuntime> players,
                 actor.place(before);
                 actor.slide(limited - before, &collision);
                 if (events.resolveMovement) {
-                    actor.place(events.resolveMovement(i, before, actor.position()));
+                    actor.slide(events.resolveMovement(i, before, actor.position()) -
+                                    actor.position(),
+                                &collision);
                 }
                 Vec3 position = actor.position();
                 PartyCollision::resolve(players, i, before, position);
-                actor.place(position);
+                actor.slide(position - actor.position(), &collision);
                 FloorRiding::land(players, i, before, collision);
             }
         }
