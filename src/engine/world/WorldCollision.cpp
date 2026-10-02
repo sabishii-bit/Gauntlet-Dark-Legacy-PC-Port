@@ -103,7 +103,7 @@ void sweepSegment(const Vec2& from, const Vec2& step, const Slice& slice, f32 ra
     };
     const Vec2 away = from - closestOnSegment(slice.a, slice.b, from);
     const f32 distance = glm::length(away);
-    if (distance > kEpsilon && distance <= radius) {
+    if (distance > kSweepEpsilon && distance <= radius) {
         accept(0, away / distance);
         // A body already overlapping can move out, but cannot move further into this side.
         return;

@@ -76,6 +76,7 @@ public:
     /** Runs the countdowns, breeding into `enemies` where a player is within reach. */
     /** What the camera takes in: a generator breeds only on screen; none takes all in. */
     void setView(std::optional<ViewVolume> view) { m_view = view; }
+    /** Obstacles supplied here are fixtures; the other generators are included internally. */
     void update(s32 ticks, Enemies& enemies, std::span<const EnemyView> players,
                 std::span<const Obstacle> obstacles = {}, bool timeStopped = false);
 
@@ -86,6 +87,8 @@ public:
     std::vector<s32> within(const Vec3& centre, f32 radius) const;
     /** The standing generators' boxes. */
     std::vector<Obstacle> obstacles() const;
+    /** Worm pits allow enemies to walk across, but remain targets and block other births. */
+    std::vector<Obstacle> enemyObstacles() const;
 
     void draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting) const;
 

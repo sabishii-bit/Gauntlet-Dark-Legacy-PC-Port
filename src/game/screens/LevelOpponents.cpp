@@ -688,7 +688,8 @@ void LevelOpponents::updateStatues(s32 ticks, f32 seconds, std::span<PlayerRunti
     for (PlayerRuntime& player : players) {
         if (player.life == PlayerLife::Standing) {
             PlayerActor& actor = player.actor;
-            actor.place(m_statues.touch(actor.position(), actor.radius()));
+            const Vec3 pushed = m_statues.touch(actor.position(), actor.radius());
+            actor.slide(pushed - actor.position(), &m_resources->world.collision());
         }
     }
     for (const Vec3& spot : m_resources->world.takeTriggerWakes()) {
@@ -938,12 +939,12 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
     updateBags(seconds);
     shrinkOpponents(players);
     const std::vector<EnemyView> views = enemyViews(players);
-    std::vector<Obstacle> boxes = m_generators.obstacles();
+    std::vector<Obstacle> boxes = m_generators.enemyObstacles();
     boxes.insert(boxes.end(), fixtures.begin(), fixtures.end());
     const LevelInfo* level = m_resources->world.level();
     const f32 missileSpeed = level != nullptr ? level->tuning.enemyMissileSpeed : 1.0f;
     const bool timeStopped = PlayerPowerups::timeStopped(players);
-    m_generators.update(ticks, m_enemies, views, boxes, timeStopped);
+    m_generators.update(ticks, m_enemies, views, fixtures, timeStopped);
     m_enemies.update(ticks, seconds, views, boxes, &m_enemyMissiles, missileSpeed, timeStopped);
     std::vector<MissileStop> inTheWay;
     for (const Obstacle& box : m_generators.obstacles()) {

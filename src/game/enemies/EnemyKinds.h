@@ -44,6 +44,7 @@ inline constexpr s32 kEnemyKindCount = 34;
 inline constexpr s32 kSwarmKindCount = 28; ///< the kinds that come in tiers
 inline constexpr s32 kGruntKind = 4;
 inline constexpr s32 kRatKind = 3;
+inline constexpr s32 kWormKind = 17;
 inline constexpr s32 kDeathKind = 30;
 inline constexpr s32 kItKind = 31;
 inline constexpr s32 kGarmBroodKind = 27; ///< what Garm breeds

@@ -506,7 +506,7 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
     if (spawn.placed) {
         placed = settle(spawn.position, where);
     } else {
-        const f32 out = spawn.clearance + enemy.radius;
+        const f32 out = spawn.kind == kWormKind ? 0.0f : spawn.clearance + enemy.radius;
         const Vec3 v = spawn.direction * out;
         u32 mask = octantMaskOf(spawn.kind);
         const s32 directions = 8;
@@ -519,11 +519,18 @@ std::optional<s32> Enemies::spawn(const EnemySpawn& spawn, std::span<const Enemy
                 Vec3 at = spawn.position + offset;
                 bool clear = settle(at, at) && std::abs(at.y - spawn.position.y) <= kSpawnDrop;
                 if (clear && m_collision != nullptr) {
-                    const Vec3 pushed =
-                        m_collision->resolveWalls(at, enemy.radius, at.y + kFootClearance,
-                                                  at.y + enemy.height - kFootClearance);
-                    clear = flatDistance(pushed, at) < 0.01f;
+                    // A clear destination is not sufficient: the birth must not cross a wall.
+                    const f32 bottom = at.y + kFootClearance;
+                    const f32 top = at.y + enemy.height - kFootClearance;
+                    const Vec3 swept =
+                        m_collision->sweepWalls(spawn.position, at, enemy.radius, bottom, top);
+                    const Vec3 pushed = m_collision->resolveWalls(at, enemy.radius, bottom, top);
+                    clear = flatDistance(swept, at) < 0.01f && flatDistance(pushed, at) < 0.01f;
                 }
+                clear =
+                    clear && std::ranges::none_of(obstacles, [&](const Obstacle& box) {
+                        return box.solid && box.contact(spawn.position, at, 0.5f * enemy.radius);
+                    });
                 if (!clear) {
                     mask |= 1U << static_cast<u32>(d);
                 } else if (clearAt(enemy, at, players, obstacles, *slot)) {
@@ -1159,6 +1166,30 @@ void Enemies::think(Enemy& enemy, s32 slot, s32 ticks, std::span<const EnemyView
 
 // ---- bodies ------------------------------------------------------------------------------
 
+Vec3 Enemies::travel(const Enemy& enemy, const Vec3& from, const Vec3& to) const {
+    if (m_collision == nullptr) {
+        return to;
+    }
+    const Vec3 offset = to - from;
+    const auto steps =
+        std::max(1, static_cast<s32>(std::ceil(glm::length(offset) / (0.5f * enemy.radius))));
+    const Vec3 stride = offset / static_cast<f32>(steps);
+    Vec3 position = from;
+    for (s32 i = 0; i < steps; ++i) {
+        const Vec3 wanted = position + stride;
+        Vec3 next = m_collision->sweepWalls(position, wanted, enemy.radius * kWallRadiusScale,
+                                            wanted.y + kFootClearance,
+                                            wanted.y + enemy.height - kFootClearance);
+        const auto floor = m_collision->floorAt(next, kStepUp, kDrop);
+        if (!floor) {
+            break;
+        }
+        next.y = floor->y;
+        position = next;
+    }
+    return position;
+}
+
 void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& step,
                    std::span<const EnemyView> players, std::span<const Obstacle> obstacles) {
     Vec3 translation = step;
@@ -1222,17 +1253,8 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
         return;
     }
     if (m_collision != nullptr && glm::length(translation) > 0.0f) {
-        const f32 wallRadius = enemy.radius * kWallRadiusScale;
-        Vec3 target = m_collision->resolveWalls(to, wallRadius, to.y + kFootClearance,
-                                                to.y + enemy.height - kFootClearance);
+        const Vec3 target = travel(enemy, from, to);
         const bool wall = flatDistance(target, to) > 0.001f;
-        const auto floor = m_collision->floorAt(target, kStepUp, kDrop);
-        if (!floor.has_value()) {
-            enemy.bumpedWall = true;
-            enemy.blocked = true;
-            return;
-        }
-        target.y = floor->y;
         if (wall) {
             // A slide along the wall that still gets somewhere is no bump; a dead stop is.
             const f32 kept = flatDistance(target, from);
@@ -1246,10 +1268,23 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
     }
     for (const Obstacle& box : obstacles) {
         if (box.solid) {
+            // Short steps resolve by overlap below, retaining the tangential slide. A long
+            // push can skip the body entirely, so clip that path before resolving contact.
+            if (flatDistance(from, to) > enemy.radius && box.pushOut(from, enemy.radius) == from &&
+                box.pushOut(to, enemy.radius) == to) {
+                if (const auto contact = box.contact(from, to, enemy.radius)) {
+                    const Vec3 clipped = from + (to - from) * *contact;
+                    if (flatDistance(clipped, to) > 0.001f) {
+                        enemy.bumpedWall = true;
+                        enemy.blocked = flatDistance(clipped, from) < kStopped;
+                    }
+                    to = clipped;
+                }
+            }
             const Vec3 pushed = box.pushOut(to, enemy.radius);
             if (pushed != to) {
                 enemy.bumpedWall = true;
-                to = pushed;
+                to = travel(enemy, to, pushed);
                 if (flatDistance(to, from) < kStopped &&
                     flatDistance(from + translation, from) >= kStopped) {
                     enemy.blocked = true;
@@ -1269,7 +1304,7 @@ void Enemies::move(Enemy& enemy, s32 slot, s32 ticks, f32 seconds, const Vec3& s
             enemy.bumpedOther = true;
             if (enemy.pushMagnitude > 1.0f && enemy.animator.reacting()) {
                 other.push += 0.5f * enemy.push;
-                other.position += 0.5f * translation;
+                other.position = travel(other, other.position, other.position + 0.5f * translation);
             } else {
                 enemy.blocked = true;
                 enemy.otherSide = turnDirection(from, other.position);
