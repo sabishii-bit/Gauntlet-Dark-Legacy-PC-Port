@@ -342,6 +342,15 @@ std::optional<FloorHit> WorldCollision::liquidAt(const Vec3& position, f32 above
     return surfaceAt(position, above, below, true);
 }
 
+std::optional<FloorHit> WorldCollision::floorAhead(const Vec3& position, const Vec3& step,
+                                                   f32 above, f32 below, f32 radius) const {
+    const Vec2 direction{step.x, step.z};
+    if (glm::dot(direction, direction) <= kEpsilon * kEpsilon) {
+        return std::nullopt;
+    }
+    return surfaceAt(position, above, below, false, std::max(0.0f, radius), &direction);
+}
+
 std::optional<Vec3> WorldCollision::slideAlongFloor(const Vec3& from, const Vec3& to, f32 above,
                                                     f32 below, f32 margin) const {
     if (!floorAt(from, above, below, margin)) {
@@ -409,7 +418,8 @@ std::optional<FloorHit> WorldCollision::projectileFloorAt(const Vec3& position, 
 }
 
 std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 above, f32 below,
-                                                  bool liquid, f32 edgeReach) const {
+                                                  bool liquid, f32 edgeReach,
+                                                  const Vec2* direction) const {
     std::optional<FloorHit> best;
     const f32 highest = position.y + above;
     const f32 lowest = position.y - below;
@@ -445,6 +455,10 @@ std::optional<FloorHit> WorldCollision::surfaceAt(const Vec3& position, f32 abov
                          }
                      }
                      const Vec3& v = triangle.vertices[0];
+                     if (direction != nullptr &&
+                         glm::dot(point - Vec2{position.x, position.z}, *direction) < 0) {
+                         return;
+                     }
                      const f32 y = v.y - (triangle.normal.x * (point.x - v.x) +
                                           triangle.normal.z * (point.y - v.z)) /
                                              triangle.normal.y;

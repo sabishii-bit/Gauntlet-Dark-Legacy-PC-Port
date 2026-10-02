@@ -49,6 +49,13 @@ TEST_CASE("the floor under a point is found within the probe range", "[world][co
     REQUIRE(hit->y == Approx(0.0f));
     REQUIRE(hit->normal.y == 1.0f);
     REQUIRE(hit->object == 0);
+    // A footprint touching the edge can approach it, never walk away from it.
+    const auto edge = collision.floorAt({10.4f, 1, 0}, 2, 3, 0.75f);
+    REQUIRE(edge);
+    CHECK_FALSE(collision.floorAt({10.8f, 1, 0}, 2, 3, 0.75f));
+    CHECK(collision.floorAhead({10.4f, 1, 0}, {-0.1f, 0, 0}, 2, 3, 0.75f));
+    CHECK_FALSE(collision.floorAhead({10.4f, 1, 0}, {0.1f, 0, 0}, 2, 3, 0.75f));
+    CHECK_FALSE(collision.floorAhead({10.4f, 1, 0}, {0, 0, 0}, 2, 3, 0.75f));
 
     REQUIRE_FALSE(collision.floorAt(Vec3{0.0f, 10.0f, 0.0f}, 2.0f, 3.0f).has_value());
     REQUIRE_FALSE(collision.floorAt(Vec3{30.0f, 1.0f, 0.0f}, 2.0f, 3.0f).has_value());

@@ -1,0 +1,9 @@
+{
+  "screen": "tower",
+  "level": "F1",
+  "party": [
+    {"player": 0, "class": "KNI", "color": "GRE", "name": "TEST", "level": 60, "health": 4000}
+  ],
+  "position": [60.75, 5.9, 92.875],
+  "welcome": false
+}

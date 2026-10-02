@@ -22,6 +22,54 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("a player activates and crosses the first Underworld descending pillar",
+          "[pillar-crossing][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("F1")));
+    GameConfig config;
+    REQUIRE(config.loadFile(test::dataDirectory() / "config.json"));
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.unpackedRoot = root;
+    context.levels = &catalog;
+    PlayOptions options;
+    options.welcome = false;
+    options.position = Vec3{58.75f, 5.9f, 89.875f};
+    const std::array party{PartyMember{0, CharacterSave{}}};
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    // Isolate terrain traversal from the nearby generators and crowd collision.
+    scene.enemies().close();
+    scene.generators().clear();
+    constexpr s32 kPillar = 55;
+    const Vec3 destination = world.layout().worldPosition(kPillar);
+    for (s32 frame = 0; frame < 900; ++frame) {
+        PlayScene::Inputs inputs{};
+        const Vec3 toward = destination - scene.actor(0)->position();
+        if (frame > 540 && glm::length(Vec2{toward.x, toward.z}) > 1) {
+            const f32 heading = std::atan2(toward.x, toward.z) - scene.viewCamera().yaw;
+            inputs[0].move = MoveInput{Vec2{std::sin(heading), std::cos(heading)}, 1};
+        }
+        scene.update(1.0 / 60, inputs);
+    }
+    const Vec3 position = scene.actor(0)->position();
+    CAPTURE(position.x, position.y, position.z);
+    REQUIRE(scene.runtime(0)->life == PlayerLife::Standing);
+    CHECK(world.triggers().opened(kPillar));
+    CHECK(glm::length(Vec2{position.x - destination.x, position.z - destination.z}) < 1.1f);
+    const auto support = world.collision().floorAt(position, 1, 1);
+    REQUIRE(support);
+    CHECK(support->object == kPillar);
+}
+
 TEST_CASE("the Fields elevators carry a standing player through the gameplay loop",
           "[platform-contact][unpacked]") {
     const auto root =
