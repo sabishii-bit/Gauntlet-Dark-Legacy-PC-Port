@@ -130,6 +130,43 @@ TEST_CASE("gargoyle death skins follow the death cue and the sack waits for the 
     }
 }
 
+TEST_CASE("each gargoyle form emits its realm roar after enough damage",
+          "[game][enemies][gargoyle][gargoyle-roar][unpacked]") {
+    const auto* form = GENERATE("GAR_EAGL", "GAR_LION", "GAR_SERP");
+    const auto root = test::unpackedOrSkip("critter/GAR_EAGL.json").parent_path().parent_path();
+    test::FakeRenderDevice device;
+    CombatantAssets assets;
+    REQUIRE(assets.load(device, root, Gargoyle::definition(form), 'H'));
+    const auto start = assets.data.moveNamed("START");
+    REQUIRE(start.has_value());
+    // Awakening itself has no authored sound; ROAR is the damage reaction.
+    CHECK(assets.data.moves()[*start].sound == -1);
+    CHECK(assets.data.moves()[*start].sound2 == -1);
+    Combatant actor;
+    REQUIRE(actor.spawn(assets, 0, Vec3{0}, 0, nullptr, {}, 'H'));
+    actor.hold(true);
+    for (s32 frame = 0; frame < 120; ++frame) {
+        actor.update(kTicks, kStep, {});
+    }
+    CHECK(actor.takeCues().empty());
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 100;
+    actor.hurt(hit);
+    s32 roars = 0;
+    for (s32 frame = 0; frame < 90; ++frame) {
+        actor.update(kTicks, kStep, {});
+        for (const auto& cue : actor.takeCues()) {
+            if (cue.sound == "S_GRGHROAR") {
+                CHECK(cue.tree.empty());
+                CHECK(cue.attenuated);
+                ++roars;
+            }
+        }
+    }
+    CHECK(roars == 1);
+}
+
 TEST_CASE("skin cues and death completion run without retail assets", "[gargoyle][critter-death]") {
     const auto root = test::scratchDirectory("gargoyle-skin");
     const auto archive = root / "MONSTERS/GAR_EAGL";

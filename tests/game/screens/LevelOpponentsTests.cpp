@@ -18,6 +18,7 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/combat/Damage.h"
+#include "game/enemies/EnemyMind.h"
 #include "game/players/PowerupEffects.h"
 #include "game/screens/HelpMessages.h"
 #include "game/screens/LevelFixtures.h"
@@ -49,6 +50,36 @@ void writeMeleeEnemy(const std::filesystem::path& root, s32 kind) {
                      {"name":"ATTACK3R","frames":2,"rate":30},
                      {"name":"HIT1","frames":10,"rate":30},
                      {"name":"HIT2","frames":10,"rate":30}]}]})");
+}
+
+TEST_CASE("battlefield entrance tower placements keep their stationary archer algorithm",
+          "[level-opponents][battlefield-archer][unpacked]") {
+    const auto* name = GENERATE("H1", "H3");
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELH1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip(std::string{"LEVELS/LEVEL"} + name + "/world.json");
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName(name)));
+    ItemArchive weapons;
+    EffectTrees effects;
+    LevelSoundscape audio;
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    const Vec3 perch = std::string_view{name} == "H1" ? Vec3{56.875f, 20.125f, 41.5f}
+                                                      : Vec3{17.25f, 6.484375f, 58.125f};
+    const auto& enemies = opponents.enemies();
+    const auto nearby = enemies.within(perch, 2);
+    REQUIRE(nearby.size() == 1);
+    CHECK(enemies.kindOf(nearby.front()) == 19);
+    CHECK(enemies.variantOf(nearby.front()) == kArcherStrength);
+    CHECK(enemies.algorithmOf(nearby.front()) == kThrowWay);
+    CHECK_FALSE(enemies.bred(nearby.front()));
+    opponents.close();
 }
 
 TEST_CASE("an archer's world hit detonates explosive scenery once without player credit",
@@ -530,6 +561,64 @@ TEST_CASE("Temple generator damage plays realm particles and each accepted hit s
     CHECK(std::ranges::any_of(samples, [](f32 value) { return value != 0; }));
     opponents.close();
     CHECK(effects.count() == 0);
+    audio.close();
+}
+
+TEST_CASE("a damaged gargoyle's authored roar reaches the battlefield sound bank and mixer",
+          "[level-opponents][gargoyle-roar][unpacked]") {
+    const auto root = test::unpackedOrSkip("critter/GAR_EAGL.json").parent_path().parent_path();
+    test::unpackedOrSkip("audio/BATTLE/sounds.json");
+    const auto stage = test::sampleLevel("gargoyle-roar-audio");
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    LevelRef level;
+    level.name = "test";
+    level.items = "missing";
+    REQUIRE(world.load(device, stage, level));
+    ItemArchive weapons;
+    EffectTrees effects;
+    AudioMixer mixer(48000);
+    SoundPlayer sound(mixer);
+    LevelSoundscape audio;
+    LevelAudioInfo bank;
+    bank.bank = "BATTLE";
+    audio.open(root, &sound, &bank, 'H');
+    std::array<PlayerRuntime, 1> players;
+    players[0].actor.spawn(0, {}, nullptr, Vec3{0, 0, 20}, 0);
+    LevelOpponents opponents;
+    opponents.open({device, world, weapons, effects, audio, root, 1}, players);
+    auto& critters = opponents.critters();
+    critters.open(device, root, nullptr, {}, 'H');
+    const auto id = critters.spawnGargoyle(Vec3{0}, 0, "GAR_EAGL");
+    REQUIRE(id);
+    critters.hold(*id, true);
+    LevelOpponents::Events events;
+    events.settleBlasts = [] {};
+    events.advanceLegend = [](f32) {};
+    events.advanceVictory = [](s32, f32) {};
+    events.levels = [] {};
+    events.award = [](s32, s32, bool) {};
+    events.hurt = [](usize, f32, HurtKind, bool, const PlayerImpact&) {};
+    for (s32 frame = 0; frame < 120; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    REQUIRE(sound.voiceCount() == 0);
+    EnemyHit hit;
+    hit.player = 0;
+    hit.damage = 100;
+    critters.hurt(*id, hit);
+    // Discard the immediate impact cue so only the move's roar reaches this mixer.
+    const auto impact = critters.takeCues();
+    REQUIRE(impact.size() == 1);
+    REQUIRE(impact.front().sound == "S_GRGHHIT");
+    for (s32 frame = 0; frame < 90; ++frame) {
+        opponents.update(2, 1.0f / 30, players, {}, events);
+    }
+    CHECK(sound.voiceCount() == 1);
+    std::array<f32, 8192> samples{};
+    mixer.mix(samples);
+    CHECK(std::ranges::any_of(samples, [](f32 value) { return value != 0; }));
+    opponents.close();
     audio.close();
 }
 
