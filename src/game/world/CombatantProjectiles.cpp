@@ -258,9 +258,7 @@ void CombatantProjectiles::update(f32 seconds, const WorldCollision* collision,
             continue;
         }
         if (flying.settled) {
-            if (flying.impactArea.has_value()) {
-                impactContacts(flying, seconds, players);
-            }
+            impactContacts(flying, seconds, players);
             continue;
         }
         if (!flying.morphed && damage.morph >= 0 &&
@@ -483,6 +481,9 @@ bool CombatantProjectiles::startImpactArea(Flying& flying, u32 effect, EffectTre
 
 void CombatantProjectiles::impactContacts(Flying& flying, f32 seconds,
                                           std::span<const EnemyView> players) {
+    if (!flying.impactArea.has_value()) {
+        return;
+    }
     CritterArea& area = *flying.impactArea;
     area.secondsLeft -= seconds;
     const auto& damage = *flying.shot.data->damage(flying.shot.damageIndex);
