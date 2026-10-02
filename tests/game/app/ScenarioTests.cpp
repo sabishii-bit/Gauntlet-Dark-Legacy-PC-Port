@@ -73,8 +73,8 @@ TEST_CASE("fully unlocked tower scenario supplies a maxed green Knight without p
 }
 
 TEST_CASE("fully unlocked Knight reaches all four stat caps with the shipped class data",
-          "[scenario][unpacked]") {
-    const auto directory = test::unpackedOrSkip("pdata/KNI.json").parent_path();
+          "[scenario][assets]") {
+    const auto directory = test::assetOrSkip("PDATA/KNI.WAD").parent_path();
     ClassDataSet classes;
     REQUIRE(classes.load(directory));
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
@@ -204,9 +204,9 @@ TEST_CASE("mountain creature scenarios provide unsaved level 99 green knights",
 }
 
 TEST_CASE("mountain creature scenario starts have walkable clearance near their placed enemy",
-          "[game][scenario][mountain-creatures][unpacked]") {
+          "[game][scenario][mountain-creatures][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELB5/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELB5/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog levels;
     REQUIRE(levels.load(root));

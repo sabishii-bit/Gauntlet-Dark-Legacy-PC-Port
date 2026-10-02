@@ -96,13 +96,9 @@ add_library(engine STATIC
     assets/TextureSet.cpp
     assets/BitmapFont.h
     assets/BitmapFont.cpp
-    assets/WavFile.h
-    assets/WavFile.cpp
     assets/SoundSet.h
     assets/SoundSet.cpp
     assets/NativeSoundSet.cpp
-    assets/ObjModel.h
-    assets/ObjModel.cpp
     assets/ModelSet.h
     assets/ModelSet.cpp
     assets/ItemArchive.h

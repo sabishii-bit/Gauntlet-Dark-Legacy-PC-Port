@@ -208,8 +208,8 @@ TEST_CASE("collision corrections cannot push a player through a level wall",
 }
 
 TEST_CASE("creature corrections stay on the Desert entrance walkway",
-          "[game][party-motion][collision][push-wall][unpacked]") {
-    const auto dir = test::unpackedOrSkip("LEVELS/LEVELC1/collision.json").parent_path();
+          "[game][party-motion][collision][push-wall][assets]") {
+    const auto dir = test::assetOrSkip("LEVELS/LEVELC1/WORLDS.PS2").parent_path();
     WorldLayout layout;
     REQUIRE(layout.load(dir));
     Fixture f;
@@ -310,8 +310,8 @@ TEST_CASE("pending web reactions slow movement without swallowing the escape inp
 }
 
 TEST_CASE("arrival locks movement turning and buttons until the player animation ends",
-          "[game][screens][party-motion][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/WAR/RED/objects.json")
+          "[game][screens][party-motion][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/RED/objects.ngc")
                           .parent_path()
                           .parent_path()
                           .parent_path()
@@ -345,13 +345,13 @@ TEST_CASE("arrival locks movement turning and buttons until the player animation
 }
 
 TEST_CASE("boss impacts reach retail player animations and lock input through recovery",
-          "[game][screens][party-motion][player-impact][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/WAR/RED/objects.json")
+          "[game][screens][party-motion][player-impact][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/RED/objects.ngc")
                           .parent_path()
                           .parent_path()
                           .parent_path()
                           .parent_path();
-    test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json");
+    test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2");
     test::FakeRenderDevice device;
     Fixture f;
     PlayerRuntime& player = f.players[0];
@@ -521,8 +521,8 @@ TEST_CASE("charge steering and strafe directions remain camera relative",
     REQUIRE(PartyMotion::strafeWayOf(-1.0f, 0) == StrafeWay::Left);
 }
 TEST_CASE("held close attack input advances slowly and dispatches melee contacts instead of throws",
-          "[game][screens][party-motion][melee][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+          "[game][screens][party-motion][melee][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
                           .parent_path()
@@ -707,8 +707,8 @@ TEST_CASE("a member walking into another is stopped and shoves them along",
     CHECK_FALSE(f.players[1].knockback.sliding());
 }
 
-TEST_CASE("a levitating body walks without a footfall", "[game][screens][party-motion][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+TEST_CASE("a levitating body walks without a footfall", "[game][screens][party-motion][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
                           .parent_path()
@@ -741,8 +741,8 @@ TEST_CASE("a levitating body walks without a footfall", "[game][screens][party-m
 
 TEST_CASE("the combo button with half the meter lifts a warrior's partner ahead, flings it at "
           "frame thirty and lets it go four seconds on",
-          "[game][screens][party-motion][combo][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+          "[game][screens][party-motion][combo][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
                           .parent_path()

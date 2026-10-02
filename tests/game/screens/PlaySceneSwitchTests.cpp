@@ -23,9 +23,9 @@ using namespace gdl::game;
 using Catch::Approx;
 
 TEST_CASE("a player activates and crosses the first Underworld descending pillar",
-          "[pillar-crossing][unpacked]") {
+          "[pillar-crossing][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELF1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     test::FakeRenderDevice device;
@@ -71,9 +71,9 @@ TEST_CASE("a player activates and crosses the first Underworld descending pillar
 }
 
 TEST_CASE("the Fields elevators carry a standing player through the gameplay loop",
-          "[platform-contact][unpacked]") {
+          "[platform-contact][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     test::FakeRenderDevice device;
@@ -115,9 +115,9 @@ TEST_CASE("the Fields elevators carry a standing player through the gameplay loo
 }
 
 TEST_CASE("Temple switch shots letterbox the target while combat and controls wait",
-          "[switch-camera][unpacked]") {
+          "[switch-camera][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto ref = catalog.byName("E1");

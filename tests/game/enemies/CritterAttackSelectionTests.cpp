@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/CombatantFixture.h"
 #include "game/enemies/CritterData.h"
@@ -31,6 +32,7 @@ std::filesystem::path attackTable(std::string_view table, s32 frames = 3) {
     writeFile(archive / "textures/skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"DJINN",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"STEP","frames":)" + std::to_string(frames) +
@@ -154,9 +156,9 @@ TEST_CASE("boss health gates use exclusive upper bounds only above the lower bou
 
 TEST_CASE(
     "Dragon claws stay inside their authored range while distant players receive ranged attacks",
-    "[game][boss-attacks][unpacked][dragon-ranges]") {
-    const auto root = test::unpackedOrSkip("critter/DRAGON.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/DRAGON/animations.json");
+    "[game][boss-attacks][assets][dragon-ranges]") {
+    const auto root = test::assetOrSkip("CRITTER/DRAGON.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DRAGON/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'B');

@@ -15,6 +15,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
 #include "game/world/ItemFigure.h"
@@ -407,6 +408,7 @@ TEST_CASE("traps prefer level-specific figures and fall back to the realm archiv
         directory / "animations.json",
         R"({"trees":[{"name":"SPIKES","nodes":[{"name":"BODY","object":"SPIKESBODY","parent":-1,"position":[0,0,0]}],
                     "sequences":[{"name":"OFF","frames":1},{"name":"ON","frames":20}]}]})");
+    test::convertModelFixture(directory);
     REQUIRE(f.items.load(directory));
     ItemArchive missing;
     Traps traps;
@@ -568,6 +570,7 @@ TEST_CASE("chests pass the camera to their authored bomb sprites", "[fixtures][v
     writeTextFile(directory / "animations.json", R"({"trees":[{"name":"CHEST",
       "nodes":[{"name":"FF_BOMB","object":"BOMB","parent":-1,"position":[0,0,0],"objectFlags":16783360}],
       "sequences":[{"name":"CLOSED","frames":0}]}]})");
+    test::convertModelFixture(directory);
     REQUIRE(f.items.load(directory));
     Chests chests;
     REQUIRE(chests.bind(f.device, f.layout, f.items, nullptr));
@@ -587,8 +590,8 @@ TEST_CASE("chests pass the camera to their authored bomb sprites", "[fixtures][v
 }
 
 TEST_CASE("desert light walls play startup steady and reversed shutdown textures",
-          "[fixtures][visual-parity][unpacked]") {
-    const auto directory = test::unpackedOrSkip("ITEMS/LEVELC/animations.json").parent_path();
+          "[fixtures][visual-parity][assets]") {
+    const auto directory = test::assetOrSkip("ITEMS/LEVELC/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
     ItemArchive items;
     REQUIRE(items.load(directory));
@@ -651,9 +654,9 @@ TEST_CASE("desert light walls play startup steady and reversed shutdown textures
 }
 
 TEST_CASE("C1 trapped chest bomb faces the camera throughout its fuse",
-          "[fixtures][visual-parity][unpacked]") {
+          "[fixtures][visual-parity][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELC1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELC1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     ItemArchive items;

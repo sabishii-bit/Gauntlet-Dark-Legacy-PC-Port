@@ -65,8 +65,8 @@ TEST_CASE("attract scene fails cleanly when no level catalog is supplied", "[gam
 }
 
 TEST_CASE("attract scene cycles eligible levels and returns to title on input",
-          "[game][attract][unpacked]") {
-    const auto root = test::unpackedOrSkip("wdata/TOWN.json").parent_path().parent_path();
+          "[game][attract][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog levels;
     REQUIRE(levels.load(root));

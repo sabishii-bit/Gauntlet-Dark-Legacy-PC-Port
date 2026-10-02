@@ -9,6 +9,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/world/Breakables.h"
 #include "game/world/Chests.h"
 #include "game/world/ExitPortals.h"
@@ -108,6 +109,7 @@ TEST_CASE("placed item art falls back per tree without replacing level-specific 
                                                          : R"({"trees":[{"name":"OTHER","nodes":[
                          {"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
                          "sequences":[{"name":"IDLE","frames":20,"rate":30}]}]})");
+        test::convertModelFixture(directory);
     };
     writeArchive(root / "own", override, true);
     writeArchive(root / "realm", true, false);
@@ -185,10 +187,10 @@ TEST_CASE("placed item art falls back per tree without replacing level-specific 
 }
 
 TEST_CASE("every catalogued transporter has a partner, a landing floor and animated art",
-          "[transporters][unpacked]") {
+          "[transporters][assets]") {
     const s32 players = GENERATE(1, 2, 3, 4);
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELA1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     usize count = 0;
@@ -198,8 +200,7 @@ TEST_CASE("every catalogued transporter has a partner, a landing floor and anima
             const auto ref = catalog.byName(name);
             REQUIRE(ref);
             WorldLayout layout;
-            const auto directory =
-                test::unpackedOrSkip(ref->directory + "/world.json").parent_path();
+            const auto directory = test::assetOrSkip(ref->directory + "/WORLDS.PS2").parent_path();
             REQUIRE(layout.load(directory));
             bool hasPads = false;
             for (const auto& info : layout.itemInfos()) {
@@ -210,9 +211,9 @@ TEST_CASE("every catalogued transporter has a partner, a landing floor and anima
             }
             CAPTURE(name);
             test::FakeRenderDevice device;
-            test::unpackedOrSkip(ref->items + "/animations.json");
-            test::unpackedOrSkip(ref->directory + "/objects.json");
-            test::unpackedOrSkip(ref->directory + "/collision.json");
+            test::assetOrSkip(ref->items + "/ANIM.PS2");
+            test::assetOrSkip(ref->directory + "/objects.ngc");
+            test::assetOrSkip(ref->directory + "/WORLDS.PS2");
             LevelWorld world;
             REQUIRE(world.load(device, root, *ref));
             LevelTransporters pads;

@@ -27,19 +27,23 @@ messages and pull requests; the code and its tests are the documentation.
 Game data is never committed. It lives under `assets/GUNE5D/` (ignored by
 git, see `assets/README.md`); the build bakes `assets/GUNE5D/Gauntlet` in as
 the developer fallback asset directory. The runtime defaults to the original
-`Gauntlet/` beside the executable, without required unpacking. `ModelSet`, `TextureSet` and `AnimationSet`
-prefer `objects.ngc`, `textures.ngc` and `ANIM.PS2` in their supplied directory.
+`Gauntlet/` beside the executable, without required unpacking. `ModelSet` requires
+`objects.ngc`; `TextureSet` and `AnimationSet` prefer `textures.ngc` and `ANIM.PS2`
+in their supplied directory.
 `SoundSet` accepts a native `.VBK` or an AUDIO/bank-name path and gets names
 and timing from `AUDATPS2.ROM`. Fonts and message tables accept `.fnt`/`.rom`.
 `WorldLayout` and `WorldCollision` read `WORLDS.PS2`; `WorldData` reads the
 realm's `WDATA/*.WAD` directly, including cameras, tuning and sound selections.
 These paths decode directly into runtime structures, not generated JSON or
-temporary PNG/OBJ/WAV files. Existing export readers remain for inspection
-and comparison during migration; a malformed native file must fail, never
+temporary PNG/OBJ/WAV files. OBJ and WAV readers live only under `tests/fixtures`
+for independent export comparisons, not in the engine. Synthetic model/audio
+fixtures emit native archives before runtime loading; do not reintroduce an
+export fallback to satisfy a test. Other export readers remain during migration;
+a malformed native file must fail, never
 silently use a stale export. Player tuning reads `PDATA/*.WAD`, combatant
 tuning reads `CRITTER/*.WAD`, and shop inventory reads `SHPDATA/SHOP.WAD`.
-`--assets` selects both gameplay and media roots; `--unpacked` is an explicit
-legacy-fixture override only. The internal `unpackedRoot`/`unpackedDirectory`
+`--assets` selects both gameplay and media roots; `--unpacked` is retired.
+The internal `unpackedRoot`/`unpackedDirectory`
 field names are retained for compatibility, not an export requirement. The
 Python build/scenario launchers do not auto-export for native launches.
 `gdlunpack` remains an optional inspection/comparison tool; movies and audio
@@ -325,9 +329,10 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   speech and trigger cameras (sounds.c 909), and the rune pickup halving the
   music (sounds_evt.c 1948). Tests: `[music-areas]`.
 * Lighting: the level files carry a colour block per vertex (five bits a
-  channel, the lighting the level was built with), which the decoder reads
-  into `MeshVertex::color` and marks the mesh `prelit`; gdlunpack writes it
-  as the OBJ vertex-colour extension and `ObjModel` reads it back. The scene
+  channel, the lighting the level was built with), which the native decoder
+  reads into `MeshVertex::color` and marks the mesh `prelit`. The optional
+  exporter preserves it as the OBJ vertex-colour extension for inspection.
+  The scene
   shades an object flagged `WorldObject::kPrelit` (0x2, most of a level) by
   those colours, additive parts unlit, and everything else by
   `WorldLighting`. Items and characters are lit by the lights, as the
@@ -2436,7 +2441,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   [0, 0.45] so the 2D layers at 0.5 and 0.75 always draw on top. Levels are
   unpacked only with `gdlunpack --levels` (or `--only <level>`), about 20 MB
   each.
-* Sounds are `assets/SoundSet` entries (a bank's `sounds.json`) played through
+* Sounds are `assets/SoundSet` entries (a native VBK plus `AUDATPS2.ROM`) played through
   `audio/SoundPlayer` in a `SoundCategory` (effects or music, scaled by the
   audio settings), which feeds sample sequences and loops into mixer
   streams; the game calls `SoundPlayer::update()` once per frame. A stream
@@ -2557,8 +2562,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   and clean lint/editor checks scoped to the affected files as described above.
   Add or update regression tests for changed behavior and extracted boundaries.
   For runtime changes, also check that `gauntlet --frames 120` runs to a clean
-  shutdown (with `--title` too when the change touches the 2D screens;
-  `python scripts/build.py --unpack` first).
+  shutdown (with `--title` too when the change touches the 2D screens).
   Do not default to project-wide tests or lint for narrow changes; reserve broader
   validation for broader impact. For documentation-only edits, check the changed
   Markdown and run `git diff --check`; C++ lint does not validate Markdown. State

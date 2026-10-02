@@ -114,9 +114,9 @@ TEST_CASE("safe rocks keep three health tiers, leave a ruin and can be reactivat
 }
 
 TEST_CASE("Yeti ice rocks stay invisible until their eruption completes",
-          "[game][world][safe-rocks][yeti][unpacked]") {
-    const auto root = test::unpackedOrSkip("LEVELS/LEVELI5/world.json").parent_path();
-    const auto itemRoot = test::unpackedOrSkip("ITEMS/LEVELI5/objects.json").parent_path();
+          "[game][world][safe-rocks][yeti][assets]") {
+    const auto root = test::assetOrSkip("LEVELS/LEVELI5/WORLDS.PS2").parent_path();
+    const auto itemRoot = test::assetOrSkip("ITEMS/LEVELI5/objects.ngc").parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(root));
@@ -193,9 +193,9 @@ TEST_CASE("round arena cover pushes radially rather than using a square bounding
 }
 
 TEST_CASE("the dragon's lair renders all six safe rocks and every retail damage model",
-          "[game][world][safe-rocks][unpacked]") {
-    const auto root = test::unpackedOrSkip("LEVELS/LEVELB6/world.json").parent_path();
-    const auto itemRoot = test::unpackedOrSkip("ITEMS/LEVELB6/objects.json").parent_path();
+          "[game][world][safe-rocks][assets]") {
+    const auto root = test::assetOrSkip("LEVELS/LEVELB6/WORLDS.PS2").parent_path();
+    const auto itemRoot = test::assetOrSkip("ITEMS/LEVELB6/objects.ngc").parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(root));

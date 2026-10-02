@@ -29,8 +29,8 @@ TEST_CASE("the hourglass crops its two sand reservoirs as time elapses", "[secre
 }
 
 TEST_CASE("hourglass uses the shipped sand animation and draws both cropped halves",
-          "[secret][hud][unpacked]") {
-    const auto directory = test::unpackedOrSkip("POWERUPS/textures.json").parent_path();
+          "[secret][hud][assets]") {
+    const auto directory = test::assetOrSkip("POWERUPS/textures.ngc").parent_path();
     test::FakeRenderDevice device;
     ItemArchive archive;
     REQUIRE(archive.load(directory));

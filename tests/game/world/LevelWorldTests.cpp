@@ -36,9 +36,9 @@ using namespace gdl::game;
 using Catch::Approx;
 
 TEST_CASE("mountain spouts survive complete tower updates and draw submission",
-          "[game][world][spout-integration][unpacked]") {
+          "[game][world][spout-integration][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld world;
     REQUIRE(world.load(device, root));
@@ -111,9 +111,9 @@ TEST_CASE("mountain spouts survive complete tower updates and draw submission",
 }
 
 TEST_CASE("Underworld molten balls keep contact damage without solid body response",
-          "[game][world][molten-balls][unpacked]") {
+          "[game][world][molten-balls][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELF1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -159,9 +159,9 @@ TEST_CASE("Underworld molten balls keep contact damage without solid body respon
 }
 
 TEST_CASE("Underworld lowered pillars can be crossed from their switches",
-          "[game][world][pillar-crossing][unpacked]") {
+          "[game][world][pillar-crossing][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELF1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     for (const s32 target : {55, 324}) {
@@ -215,10 +215,10 @@ TEST_CASE("Underworld lowered pillars can be crossed from their switches",
 }
 
 TEST_CASE("level pickups follow triggered floors from their initial poses",
-          "[game][world][pickup-platform][unpacked]") {
+          "[game][world][pickup-platform][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     usize supported = 0;
@@ -269,11 +269,10 @@ TEST_CASE("level pickups follow triggered floors from their initial poses",
     REQUIRE(moved > 0);
 }
 
-TEST_CASE("Chimera approach lowers the chained arena elevator",
-          "[game][world][chimera][unpacked]") {
+TEST_CASE("Chimera approach lowers the chained arena elevator", "[game][world][chimera][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELA5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
+        test::assetOrSkip("LEVELS/LEVELA5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -325,11 +324,11 @@ TEST_CASE("Chimera approach lowers the chained arena elevator",
 }
 
 TEST_CASE("Temple spawning and entrance movement reject the wall-only underlay",
-          "[game][world][collision][temple][unpacked]") {
+          "[game][world][collision][temple][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
     for (const auto* kind : {"ICE", "IMP", "PLA", "ZOM"}) {
-        test::unpackedOrSkip(std::string("MONSTERS/") + kind + "/animations.json");
+        test::assetOrSkip(std::string("MONSTERS/") + kind + "/ANIM.PS2");
     }
     test::FakeRenderDevice device;
     LevelCatalog catalog;
@@ -385,9 +384,9 @@ TEST_CASE("Temple spawning and entrance movement reject the wall-only underlay",
 }
 
 TEST_CASE("unanimated Desert bridges appear on contact and vanish after release",
-          "[game][world][triggers][unpacked]") {
+          "[game][world][triggers][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELA3/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELA3/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("A3");
@@ -411,11 +410,9 @@ TEST_CASE("unanimated Desert bridges appear on contact and vanish after release"
 }
 
 TEST_CASE("the tower loads its geometry, collision, start points and camera markers",
-          "[game][world][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("LEVELS/LEVELL1/collision.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
+          "[game][world][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld tower;
     REQUIRE_FALSE(tower.built());
@@ -463,10 +460,10 @@ TEST_CASE("the tower loads its geometry, collision, start points and camera mark
 }
 
 TEST_CASE("the tower takes its light, camera range and sounds from the realm's data",
-          "[game][world][unpacked]") {
-    test::unpackedOrSkip("LEVELS/LEVELL1/world.json");
+          "[game][world][assets]") {
+    test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2");
     const std::filesystem::path root =
-        test::unpackedOrSkip("wdata/TOWER.json").parent_path().parent_path();
+        test::assetOrSkip("WDATA/TOWER.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld tower;
     REQUIRE(tower.load(device, root));
@@ -491,9 +488,9 @@ TEST_CASE("the tower takes its light, camera range and sounds from the realm's d
 }
 
 TEST_CASE("returning parties do not respawn the province's introductory tower crystals",
-          "[tower-crystals][unpacked]") {
+          "[tower-crystals][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld tower;
     REQUIRE(tower.load(device, root));
@@ -524,12 +521,10 @@ TEST_CASE("returning parties do not respawn the province's introductory tower cr
 }
 
 TEST_CASE("the tower moves its objects, flickers its torches and lends Sumner his archive",
-          "[game][world][unpacked]") {
-    test::unpackedOrSkip("LEVELS/LEVELL1/animations.json");
-    const std::filesystem::path root = test::unpackedOrSkip("ITEMS/LEVELL/textures.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
+          "[game][world][assets]") {
+    test::assetOrSkip("LEVELS/LEVELL1/ANIM.PS2");
+    const std::filesystem::path root =
+        test::assetOrSkip("ITEMS/LEVELL/textures.ngc").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld tower;
     REQUIRE(tower.load(device, root));
@@ -662,12 +657,12 @@ TEST_CASE("the tower reports a missing level without building", "[game][world]")
 }
 
 TEST_CASE("boss arenas can borrow torch particles from the realm beside their own items",
-          "[game][world][boss-arena][unpacked]") {
+          "[game][world][boss-arena][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELD5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELD5/animations.json");
-    test::unpackedOrSkip("ITEMS/LEVELD/animations.json");
-    test::unpackedOrSkip("wdata/FOREST.json");
+        test::assetOrSkip("LEVELS/LEVELD5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELD5/ANIM.PS2");
+    test::assetOrSkip("ITEMS/LEVELD/ANIM.PS2");
+    test::assetOrSkip("WDATA/FOREST.WAD");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("D5");
@@ -694,9 +689,9 @@ TEST_CASE("boss arenas can borrow torch particles from the realm beside their ow
 
 TEST_CASE("the tower puts out a shut portal's glow, opens the lifts and stands a party back "
           "from a shut world at the entrance",
-          "[game][world][tower-access][unpacked]") {
+          "[game][world][tower-access][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelWorld tower;
     REQUIRE(tower.load(device, root));

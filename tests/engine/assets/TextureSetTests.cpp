@@ -129,8 +129,8 @@ TEST_CASE("a missing or malformed manifest fails to load", "[assets][textures]")
     REQUIRE(set.size() == 0);
 }
 
-TEST_CASE("the unpacked title set names the backdrop tiles", "[assets][textures][unpacked]") {
-    const auto dir = test::unpackedOrSkip("TITLE/textures.json").parent_path();
+TEST_CASE("the native title set names the backdrop tiles", "[assets][textures]") {
+    const auto dir = test::assetOrSkip("TITLE/textures.ngc").parent_path();
     TextureSet set;
     REQUIRE(set.load(dir));
     REQUIRE(set.size() == 16);

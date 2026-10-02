@@ -7,6 +7,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/world/BlobShadow.h"
 
 namespace {
@@ -26,6 +27,7 @@ std::filesystem::path shadowArchive() {
         {"index":0,"name":"SHADOW","file":"skin.png","width":2,"height":2,"flags":0}]})");
     writeTextFile(root / "animations.json", R"({"trees":[{"name":"BODY",
         "nodes":[{"name":"BODY","object":"SHADOW2L1","position":[0,0,0]}],"sequences":[]}]})");
+    test::convertModelFixture(root);
     return root;
 }
 

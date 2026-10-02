@@ -12,6 +12,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/world/PlayerMissiles.h"
 
 namespace {
@@ -74,8 +75,8 @@ TEST_CASE("missile streak follows velocity and camera with retail head and tail 
 }
 
 TEST_CASE("Super Shot rolls its flat bolt toward the camera while preserving flight direction",
-          "[game][missiles][super-shot-facing][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+          "[game][missiles][super-shot-facing][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
     ItemArchive archive;
     REQUIRE(archive.load(root / "WEAPONS"));
     test::FakeRenderDevice device;
@@ -157,10 +158,10 @@ TEST_CASE("weapons strike water above the floor without making water walkable",
 }
 
 TEST_CASE("gauntlet missiles own independent moving particle trees and retire with live tails",
-          "[game][missiles][effects][unpacked]") {
-    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELB/animations.json");
-    test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json");
+          "[game][missiles][effects][assets]") {
+    const auto root = test::assetOrSkip("WEAPONS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELB/ANIM.PS2");
+    test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2");
     ItemArchive weapons;
     ItemArchive items;
     ItemArchive player;
@@ -240,6 +241,7 @@ TEST_CASE("an effect riding a missile goes with it and is finished with it",
        "nodes":[{"name":"XN","object":"GLOW","parent":-1,"position":[0,0,0]}],
        "sequences":[{"name":"ACTIVE","frames":0,"rate":30}]}]})");
     ItemArchive archive;
+    test::convertModelFixture(root);
     REQUIRE(archive.load(root));
     test::FakeRenderDevice device;
     PlayerMissiles missiles;

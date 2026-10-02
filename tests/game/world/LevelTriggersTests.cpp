@@ -455,8 +455,8 @@ TEST_CASE("fading a target hides and unblocks its entire subtree", "[game][world
 }
 
 TEST_CASE("every catalogued level retains and activates its ordinary root switches",
-          "[game][world][switch-census][unpacked]") {
-    const auto root = test::unpackedOrSkip("wdata/TOWN.json").parent_path().parent_path();
+          "[game][world][switch-census][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     usize levels = 0;
@@ -466,7 +466,7 @@ TEST_CASE("every catalogued level retains and activates its ordinary root switch
         for (const auto& name : realm.levels) {
             const auto ref = catalog.byName(name);
             REQUIRE(ref.has_value());
-            const auto file = test::unpackedOrSkip(ref->directory + "/world.json");
+            const auto file = test::assetOrSkip(ref->directory + "/WORLDS.PS2");
             WorldLayout layout;
             REQUIRE(layout.load(file.parent_path()));
             ++levels;
@@ -564,13 +564,13 @@ TEST_CASE("marker-only switches stay invisible without losing trigger behavior",
 }
 
 TEST_CASE("Tower and Province trigger figures respect their authored geometry exclusions",
-          "[triggers][trigger-visibility][unpacked]") {
+          "[triggers][trigger-visibility][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
     for (const std::string_view level : {"L1", "G1", "E1"}) {
         CAPTURE(level);
-        test::unpackedOrSkip(std::format("LEVELS/LEVEL{}/world.json", level));
-        test::unpackedOrSkip(std::format("ITEMS/LEVEL{}/animations.json", level.front()));
+        test::assetOrSkip(std::format("LEVELS/LEVEL{}/WORLDS.PS2", level));
+        test::assetOrSkip(std::format("ITEMS/LEVEL{}/ANIM.PS2", level.front()));
         test::FakeRenderDevice device;
         WorldLayout layout;
         REQUIRE(layout.load(root / "LEVELS" / std::format("LEVEL{}", level)));
@@ -606,10 +606,10 @@ TEST_CASE("Tower and Province trigger figures respect their authored geometry ex
 }
 
 TEST_CASE("Temple bridge pads are visible and activate their authored world targets",
-          "[game][world][triggers][unpacked]") {
+          "[game][world][triggers][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELE/ANIM.PS2");
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELE1"));
@@ -671,10 +671,10 @@ TEST_CASE("Temple bridge pads are visible and activate their authored world targ
 }
 
 TEST_CASE("Temple floor contact opens the altar gates and both switch chains",
-          "[triggers][temple-gates][unpacked]") {
+          "[triggers][temple-gates][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELE/ANIM.PS2");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto ref = catalog.byName("E1");
@@ -735,11 +735,11 @@ TEST_CASE("Temple floor contact opens the altar gates and both switch chains",
 }
 
 TEST_CASE("lift pads activate from the lowered deck rather than their authored marker height",
-          "[triggers][platform-contact][unpacked]") {
+          "[triggers][platform-contact][assets]") {
     const auto [name, instance] = GENERATE(std::pair{"G1", 418}, std::pair{"G1", 313},
                                            std::pair{"D4", 342}, std::pair{"J3", 483});
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto ref = catalog.byName(name);
@@ -775,8 +775,8 @@ TEST_CASE("lift pads activate from the lowered deck rather than their authored m
 }
 
 TEST_CASE("catalogued platform pads respond at their actual supporting surface",
-          "[platform-census][unpacked]") {
-    const auto root = test::unpackedOrSkip("wdata/TOWN.json").parent_path().parent_path();
+          "[platform-census][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     usize tested = 0;
@@ -785,7 +785,7 @@ TEST_CASE("catalogued platform pads respond at their actual supporting surface",
         for (const auto& name : realm.levels) {
             const auto ref = catalog.byName(name);
             REQUIRE(ref);
-            test::unpackedOrSkip(ref->directory + "/world.json");
+            test::assetOrSkip(ref->directory + "/WORLDS.PS2");
             WorldLayout layout;
             REQUIRE(layout.load(root / ref->directory));
             WorldAnimator preview;
@@ -848,10 +848,10 @@ TEST_CASE("catalogued platform pads respond at their actual supporting surface",
 }
 
 TEST_CASE("Underworld switch artwork remains visible before and after trigger contact",
-          "[triggers][underworld-switches][unpacked]") {
+          "[triggers][underworld-switches][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELF/animations.json");
+        test::assetOrSkip("LEVELS/LEVELF1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELF/ANIM.PS2");
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELF1"));
@@ -885,9 +885,9 @@ TEST_CASE("Underworld switch artwork remains visible before and after trigger co
 }
 
 TEST_CASE("a target on the wall is set off by what hits it, and walking past does nothing",
-          "[game][world][triggers][unpacked]") {
+          "[game][world][triggers][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELC3/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELC3/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELC3"));

@@ -29,9 +29,9 @@ TEST_CASE("the narrator counts the party's runestones as the original does",
 }
 
 TEST_CASE("the party's pickups are shared, taught, gestured and handed to the scene",
-          "[game][screens][pickups][unpacked]") {
+          "[game][screens][pickups][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     LevelCatalog levels;
     REQUIRE(levels.load(root));

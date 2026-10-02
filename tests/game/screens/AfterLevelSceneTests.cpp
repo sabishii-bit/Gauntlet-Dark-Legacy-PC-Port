@@ -38,8 +38,8 @@ TEST_CASE("retail frame sweep travels across corners every 150 ticks", "[shop][r
     CHECK(DrawState{}.colorScale == 1);
 }
 
-TEST_CASE("only the end of H4 selects Final Stats in the production screen", "[shop][unpacked]") {
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+TEST_CASE("only the end of H4 selects Final Stats in the production screen", "[shop][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     GameContext context;
     context.unpackedRoot = root;
@@ -68,8 +68,8 @@ TEST_CASE("shop music follows the departed realm including non-gameplay fallback
 }
 
 TEST_CASE("Final Stats renders retail captions and staggered lifetime totals",
-          "[shop][final-stats][unpacked]") {
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+          "[shop][final-stats][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
@@ -82,7 +82,7 @@ TEST_CASE("Final Stats renders retail captions and staggered lifetime totals",
     AfterLevelScene scene;
     REQUIRE(scene.open(device, context, party, {}, {}, "H4", ShopVisit::FinalStats));
     BitmapFont font;
-    REQUIRE(font.load(root / "fonts/font32.json", 16));
+    REQUIRE(font.load(root / "FONTS/font32.fnt", 16));
     TextureSet art;
     REQUIRE(art.load(root / "STATIC"));
     const auto fontId = art.find("FONT32");
@@ -141,8 +141,8 @@ TEST_CASE("Final Stats renders retail captions and staggered lifetime totals",
 }
 
 TEST_CASE("frame lighting varies at corners without fading alpha or illuminating other UI",
-          "[shop][render][unpacked]") {
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+          "[shop][render][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     GameContext context;
     context.unpackedRoot = root;
@@ -172,10 +172,10 @@ TEST_CASE("frame lighting varies at corners without fading alpha or illuminating
 }
 
 TEST_CASE("shop plays the authored music through realm changes without retaining the old theme",
-          "[shop][screens][audio][unpacked]") {
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
+          "[shop][screens][audio][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
     for (char realm = 'A'; realm <= 'K'; ++realm) {
-        test::unpackedOrSkip(std::format("audio/SHOP_{}/sounds.json", realm));
+        test::assetOrSkip(std::format("audio/SHOP_{}.vbk", realm));
     }
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
@@ -247,14 +247,14 @@ TEST_CASE("after-level screen fails safely without its portable catalog", "[shop
     scene.close();
 }
 TEST_CASE("shop lane borders retain retail brightness and opacity in every column",
-          "[shop][screens][unpacked]") {
+          "[shop][screens][assets]") {
     // init_shop 8009A504/8009A52C sets 0x80808080; DrawBlit 800B47D0 doubles
     // alpha and clamps it to 255. The TEV color scale at 80067D98 is GX_CS_SCALE_2.
     // Copying those raw bytes into our normalized vertex colors fades/darkens twice.
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
-    test::unpackedOrSkip("SELECT/textures.json");
-    test::unpackedOrSkip("INVENTORY/textures.json");
-    test::unpackedOrSkip("pdata/WAR.json");
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip("SELECT/textures.ngc");
+    test::assetOrSkip("INVENTORY/textures.ngc");
+    test::assetOrSkip("PDATA/WAR.WAD");
     const auto visit = GENERATE(ShopVisit::Level, ShopVisit::Shop, ShopVisit::Inventory);
     test::FakeRenderDevice device;
     GameContext context;
@@ -292,10 +292,10 @@ TEST_CASE("shop lane borders retain retail brightness and opacity in every colum
 }
 
 TEST_CASE("shop header uses the retail caption scale and native marquee extent",
-          "[shop][screens][unpacked]") {
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
-    test::unpackedOrSkip("SELECT/textures.json");
-    test::unpackedOrSkip("pdata/WAR.json");
+          "[shop][screens][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip("SELECT/textures.ngc");
+    test::assetOrSkip("PDATA/WAR.WAD");
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
@@ -313,7 +313,7 @@ TEST_CASE("shop header uses the retail caption scale and native marquee extent",
     TextureSet art;
     REQUIRE(art.load(root / "SELECT"));
     BitmapFont font;
-    REQUIRE(font.load(root / "fonts/font32.json", 16));
+    REQUIRE(font.load(root / "FONTS/font32.fnt", 16));
     TextureSet fontArt;
     REQUIRE(fontArt.load(root / "STATIC"));
     const auto fontId = fontArt.find("FONT32");
@@ -353,10 +353,10 @@ TEST_CASE("shop header uses the retail caption scale and native marquee extent",
 }
 
 TEST_CASE("shop ignores transaction presses during scrolling without queuing a later purchase",
-          "[shop][screens][unpacked]") {
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
-    test::unpackedOrSkip("SELECT/textures.json");
-    test::unpackedOrSkip("pdata/WAR.json");
+          "[shop][screens][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip("SELECT/textures.ngc");
+    test::assetOrSkip("PDATA/WAR.WAD");
     test::FakeRenderDevice device;
     GameContext context;
     context.unpackedRoot = root;
@@ -400,12 +400,11 @@ TEST_CASE("shop ignores transaction presses during scrolling without queuing a l
     REQUIRE(scene.session().party()[0].save.gold == 4725);
 }
 
-TEST_CASE("after-level screen renders every phase with retail assets",
-          "[shop][screens][unpacked]") {
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
-    test::unpackedOrSkip("SELECT/textures.json");
-    test::unpackedOrSkip("INVENTORY/textures.json");
-    test::unpackedOrSkip("pdata/WAR.json");
+TEST_CASE("after-level screen renders every phase with retail assets", "[shop][screens][assets]") {
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip("SELECT/textures.ngc");
+    test::assetOrSkip("INVENTORY/textures.ngc");
+    test::assetOrSkip("PDATA/WAR.WAD");
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
@@ -577,13 +576,13 @@ TEST_CASE("after-level screen renders every phase with retail assets",
 
 TEST_CASE("the level panel names a level gained, shows the magic perks' line at 25, and a "
           "traded price flashes red",
-          "[shop][screens][unpacked]") {
+          "[shop][screens][assets]") {
     // GUNE5D shop_show_lv (8009A2C8): AudioExp on entry (S_HAS, S_GAINEDLEVEL after the
     // name); string 184 (MAGIC_ATT1) at level 25, page char_type, at (xcol, 224) in
     // 0xFF80C0; do_shopping's 30-tick price timer draws the row's price in 0xFF0000.
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
-    test::unpackedOrSkip("SELECT/textures.json");
-    test::unpackedOrSkip("pdata/WAR.json");
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip("SELECT/textures.ngc");
+    test::assetOrSkip("PDATA/WAR.WAD");
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
@@ -684,12 +683,12 @@ TEST_CASE("shop captions are the retail strings, not invented instructions", "[s
 }
 
 TEST_CASE("retail realm tally loop is shared, audible, and stopped when piles settle",
-          "[shop][screens][audio][unpacked]") {
+          "[shop][screens][audio][assets]") {
     // 8009FCA8 selects 80123454[world], starts only if absent, kills when statsFlag is zero.
     const char realm = GENERATE('G', 'J');
     const std::string bank = std::format("SHOP_{}", realm);
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
-    test::unpackedOrSkip(std::format("audio/{}/sounds.json", bank));
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip(std::format("audio/{}.vbk", bank));
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
     SoundPlayer sounds(mixer);

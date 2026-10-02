@@ -6,6 +6,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
 
 #include "engine/assets/AnimationSet.h"
 #include "engine/assets/BitmapFont.h"
@@ -24,6 +25,8 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/ReferenceObj.h"
+#include "fixtures/ReferenceWav.h"
 #include "formats/AnimationTree.h"
 #include "formats/GeometryStream.h"
 #include "formats/ModelArchive.h"
@@ -263,14 +266,16 @@ TEST_CASE("retail meshes textures and animation metadata load directly",
         const auto source = test::assetOrSkip(std::string(name) + "/objects.ngc").parent_path();
         const auto exportPath = referenceExport(name);
         ItemArchive native;
-        ItemArchive exported;
+        AnimationSet exportedTrees;
+        TextureSet exportedTextures;
         REQUIRE(native.load(source));
-        REQUIRE(exported.load(exportPath));
-        compareAnimations(native.trees, exported.trees);
-        REQUIRE(native.textures.size() == exported.textures.size());
+        REQUIRE(exportedTrees.load(exportPath));
+        REQUIRE(exportedTextures.load(exportPath));
+        compareAnimations(native.trees, exportedTrees);
+        REQUIRE(native.textures.size() == exportedTextures.size());
         for (u32 i = 0; i < native.textures.size(); ++i) {
             const auto& a = native.textures.entry(i);
-            const auto& b = exported.textures.entry(i);
+            const auto& b = exportedTextures.entry(i);
             CAPTURE(i, a.name);
             REQUIRE(a.name == b.name);
             REQUIRE(a.width == b.width);
@@ -282,14 +287,17 @@ TEST_CASE("retail meshes textures and animation metadata load directly",
             REQUIRE(a.halfResolution == b.halfResolution);
             REQUIRE(a.noPicture == b.noPicture);
             if (!a.external()) {
-                REQUIRE(native.textures.image(i).pixels == exported.textures.image(i).pixels);
+                REQUIRE(native.textures.image(i).pixels == exportedTextures.image(i).pixels);
             }
         }
         const auto archive = formats::ModelArchive::parse(readFile(source / "objects.ngc"));
-        REQUIRE(native.models.size() == exported.models.size());
+        const auto exportedModels =
+            nlohmann::json::parse(readTextFile(exportPath / "objects.json")).at("objects");
+        REQUIRE(native.models.size() == exportedModels.size());
         for (u32 i = 0; i < native.models.size(); ++i) {
             CAPTURE(i);
-            REQUIRE(native.models.entry(i).name == exported.models.entry(i).name);
+            REQUIRE(native.models.entry(i).name ==
+                    normalizeAssetName(exportedModels[i].at("name").get<std::string>()));
             Mesh decoded;
             for (const auto& sub : archive.objects()[i].subObjects) {
                 formats::decodeGeometryStream(sub.geometry, sub.textureIndex, sub.lightmapIndex,
@@ -304,7 +312,9 @@ TEST_CASE("retail meshes textures and animation metadata load directly",
                 REQUIRE(mesh.parts[p].lightmap == decoded.parts[p].lightmap);
                 REQUIRE(mesh.parts[p].indices == decoded.parts[p].indices);
             }
-            REQUIRE(mesh.triangleCount() == exported.models.mesh(i).triangleCount());
+            const auto exportedMesh =
+                test::loadObj(exportPath / exportedModels[i].at("file").get<std::string>());
+            REQUIRE(mesh.triangleCount() == exportedMesh.triangleCount());
         }
     }
 }
@@ -316,27 +326,34 @@ TEST_CASE("native bank calls and decoded samples agree with exported audio",
         CAPTURE(name);
         const auto exportedPath = referenceExport(std::string("audio/") + name);
         SoundSet native;
-        SoundSet exported;
+        const auto exported = nlohmann::json::parse(readTextFile(exportedPath / "sounds.json"));
+        const auto& sounds = exported.at("sounds");
         REQUIRE(native.load(audio / name));
-        REQUIRE(exported.load(exportedPath));
-        REQUIRE(native.size() == exported.size());
+        REQUIRE(native.size() == sounds.size());
         for (u32 i = 0; i < native.size(); ++i) {
             const auto& a = native.entry(i);
-            const auto& b = exported.entry(i);
-            REQUIRE(a.name == b.name);
-            REQUIRE(a.id == b.id);
-            REQUIRE(a.volume == b.volume);
-            REQUIRE(a.duration == b.duration);
-            REQUIRE(a.sequence.size() == b.sequence.size());
+            const auto& b = sounds[i];
+            REQUIRE(a.name == normalizeAssetName(b.at("name").get<std::string>()));
+            REQUIRE(a.id == b.at("id").get<u32>());
+            REQUIRE(a.volume == static_cast<f32>(b.at("volume").get<s32>()) / 127.0f);
+            REQUIRE(a.duration == b.at("duration").get<f32>());
+            REQUIRE(a.sequence.size() == b.at("sequence").size());
             for (usize j = 0; j < a.sequence.size(); ++j) {
-                REQUIRE(a.sequence[j].sample == b.sequence[j].sample);
-                REQUIRE(a.sequence[j].loopStart == b.sequence[j].loopStart);
-                REQUIRE(a.sequence[j].loopBack == b.sequence[j].loopBack);
+                const auto& step = b.at("sequence")[j];
+                REQUIRE(a.sequence[j].sample == step.at("sample").get<u32>());
+                REQUIRE(a.sequence[j].loopStart == step.at("loopStart").get<bool>());
+                REQUIRE(a.sequence[j].loopBack == step.at("loopBack").get<bool>());
                 const auto& x = native.sample(a.sequence[j].sample);
-                const auto& y = exported.sample(b.sequence[j].sample);
+                const auto& sample = exported.at("samples")[a.sequence[j].sample];
+                const auto y = test::loadWav(exportedPath / sample.at("file").get<std::string>());
                 REQUIRE(x.sampleRate == y.sampleRate);
                 REQUIRE(x.channels == y.channels);
-                REQUIRE(x.samples == y.samples);
+                REQUIRE(x.samples.size() == y.samples.size());
+                std::vector<f32> expected(y.samples.size());
+                for (usize k = 0; k < x.samples.size(); ++k) {
+                    expected[k] = static_cast<f32>(y.samples[k]) / 32768.0f;
+                }
+                REQUIRE(x.samples == expected);
             }
         }
     }

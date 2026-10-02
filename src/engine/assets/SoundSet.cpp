@@ -1,23 +1,12 @@
 #include "engine/assets/SoundSet.h"
 
-#include <exception>
-
-#include <nlohmann/json.hpp>
-
-#include "engine/assets/WavFile.h"
 #include "engine/core/Assert.h"
-#include "engine/core/Log.h"
-#include "engine/core/Strings.h"
 #include "engine/core/Types.h"
-#include "engine/io/AssetLocator.h"
-#include "engine/io/File.h"
 
 namespace gdl {
 
 namespace {
 
-constexpr std::string_view kManifestName = "sounds.json";
-constexpr f32 kMaxVolume = 127.0f;
 constexpr f32 kSampleScale = 1.0f / 32768.0f;
 
 } // namespace
@@ -26,47 +15,7 @@ bool SoundSet::load(const std::filesystem::path& directory) {
     m_entries.clear();
     m_byName.clear();
     m_samples.clear();
-    const AssetLocator audio(directory.parent_path());
-    if (toLowerAscii(directory.extension().string()) == ".vbk" || audio.find("audatps2.rom") ||
-        audio.find(directory.filename().string() + ".vbk")) {
-        return loadNative(directory);
-    }
-    const std::filesystem::path manifest = directory / kManifestName;
-    try {
-        const std::vector<u8> bytes = readFile(manifest);
-        const nlohmann::json root = nlohmann::json::parse(bytes.begin(), bytes.end());
-        for (const nlohmann::json& sound : root.at("sounds")) {
-            SoundSetEntry entry;
-            entry.name = sound.at("name").get<std::string>();
-            entry.id = sound.value("id", 0U);
-            entry.volume = static_cast<f32>(sound.value("volume", 127)) / kMaxVolume;
-            entry.duration = sound.value("duration", 0.0f);
-            if (sound.contains("sequence")) {
-                for (const nlohmann::json& step : sound.at("sequence")) {
-                    SoundSetStep s;
-                    s.sample = step.at("sample").get<u32>();
-                    s.loopStart = step.value("loopStart", false);
-                    s.loopBack = step.value("loopBack", false);
-                    entry.sequence.push_back(s);
-                }
-            }
-            m_entries.push_back(std::move(entry));
-        }
-        for (const nlohmann::json& sample : root.at("samples")) {
-            SampleInfo info;
-            info.file = directory / sample.at("file").get<std::string>();
-            m_samples.push_back(std::move(info));
-        }
-    } catch (const std::exception& e) {
-        log::warn("Sound set {}: {}", manifest.string(), e.what());
-        m_entries.clear();
-        m_samples.clear();
-        return false;
-    }
-    for (u32 i = 0; i < m_entries.size(); ++i) {
-        m_byName.try_emplace(m_entries[i].name, i);
-    }
-    return !m_entries.empty();
+    return loadNative(directory);
 }
 
 const SoundSetEntry& SoundSet::entry(u32 index) const {
@@ -86,14 +35,12 @@ const SoundClip& SoundSet::sample(u32 index) {
     GDL_VERIFY(index < m_samples.size(), "sample index out of range");
     SampleInfo& info = m_samples[index];
     if (info.clip.samples.empty()) {
-        const WavData wav = info.native ? WavData{info.native->sampleRate, 1,
-                                                  formats::decodeBankSample(*info.native)}
-                                        : loadWav(info.file);
-        info.clip.sampleRate = wav.sampleRate;
-        info.clip.channels = wav.channels;
-        info.clip.samples.resize(wav.samples.size());
-        for (usize i = 0; i < wav.samples.size(); ++i) {
-            info.clip.samples[i] = static_cast<f32>(wav.samples[i]) * kSampleScale;
+        const auto samples = formats::decodeBankSample(info.native);
+        info.clip.sampleRate = info.native.sampleRate;
+        info.clip.channels = 1;
+        info.clip.samples.resize(samples.size());
+        for (usize i = 0; i < samples.size(); ++i) {
+            info.clip.samples[i] = static_cast<f32>(samples[i]) * kSampleScale;
         }
     }
     return info.clip;

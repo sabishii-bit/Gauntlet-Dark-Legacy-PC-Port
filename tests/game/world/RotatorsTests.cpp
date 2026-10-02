@@ -49,9 +49,9 @@ TEST_CASE("turntable pads use the authored contact height and the player's half 
 }
 
 TEST_CASE("the mines' gears spin for ever and a bridge pad turns its turntable into place once",
-          "[game][world][rotators][unpacked]") {
+          "[game][world][rotators][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELI2/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELI2/WORLDS.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELI2"));

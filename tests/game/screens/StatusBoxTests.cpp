@@ -16,10 +16,9 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 
-TEST_CASE("status boxes draw a player's panel and a dimmed empty slot",
-          "[game][screens][unpacked]") {
+TEST_CASE("status boxes draw a player's panel and a dimmed empty slot", "[game][screens][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("STATIC/textures.json").parent_path().parent_path();
+        test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     test::FakeRenderDevice device;
     StatusBoxPainter painter;
     REQUIRE_FALSE(painter.loaded());
@@ -110,9 +109,9 @@ TEST_CASE("status boxes draw a player's panel and a dimmed empty slot",
 }
 
 TEST_CASE("the runestones held line the box, the bosses' keys a while as a level opens",
-          "[game][screens][relic-strip][unpacked]") {
+          "[game][screens][relic-strip][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("STATIC/textures.json").parent_path().parent_path();
+        test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     test::FakeRenderDevice device;
     StatusBoxPainter painter;
     REQUIRE(painter.load(device, root, nullptr));

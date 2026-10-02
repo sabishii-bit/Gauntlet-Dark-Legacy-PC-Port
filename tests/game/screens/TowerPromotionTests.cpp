@@ -139,11 +139,9 @@ TEST_CASE("promotion captions stay in the bottom bar while typing", "[game][prom
 }
 
 TEST_CASE("tower wizard exports include and render his animated body",
-          "[game][promotion][unpacked]") {
-    const auto root = test::unpackedOrSkip("ITEMS/LEVELL/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][promotion][assets]") {
+    const auto root =
+        test::assetOrSkip("ITEMS/LEVELL/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     ItemArchive items;
     REQUIRE(items.load(root / "ITEMS/LEVELL"));
@@ -177,11 +175,9 @@ TEST_CASE("tower wizard exports include and render his animated body",
 }
 
 TEST_CASE("the tower wizard's posed head and hands ride above his robe",
-          "[game][promotion][unpacked]") {
-    const auto root = test::unpackedOrSkip("ITEMS/LEVELL/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][promotion][assets]") {
+    const auto root =
+        test::assetOrSkip("ITEMS/LEVELL/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     ItemArchive items;
     REQUIRE(items.load(root / "ITEMS/LEVELL"));

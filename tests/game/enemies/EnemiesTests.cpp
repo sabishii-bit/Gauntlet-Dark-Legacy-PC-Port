@@ -17,6 +17,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
@@ -35,10 +36,7 @@ constexpr f32 kStep = 1.0f / 30.0f;
 constexpr Vec3 kFarEye{0.0f, 1.0e6f, 0.0f}; ///< so high that a shadow is pulled straight up
 
 std::filesystem::path unpackedRoot() {
-    return test::unpackedOrSkip("MONSTERS/GRU/animations.json")
-        .parent_path()
-        .parent_path()
-        .parent_path();
+    return test::assetOrSkip("MONSTERS/GRU/ANIM.PS2").parent_path().parent_path().parent_path();
 }
 
 /** A one-triangle IT, enough to stand and walk. */
@@ -53,6 +51,7 @@ std::filesystem::path itArchive() {
     writeFile(dir / "skin.png", test::kTinyPng);
     writeTextFile(dir / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(dir);
     writeTextFile(dir / "animations.json", R"({"trees":[{"name":"IT1",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":13,"rate":30},
@@ -103,7 +102,7 @@ s32 stepsUntil(Enemies& enemies, std::span<const EnemyView> players, const auto&
 }
 
 TEST_CASE("generator births cannot cross a wall to an unobstructed destination",
-          "[game][enemies][enemy-collision][unpacked]") {
+          "[game][enemies][enemy-collision][assets]") {
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build(yard());
@@ -122,7 +121,7 @@ TEST_CASE("generator births cannot cross a wall to an unobstructed destination",
 }
 
 TEST_CASE("a newly released Death cannot be pushed through a wall by an item body",
-          "[game][enemies][enemy-collision][unpacked]") {
+          "[game][enemies][enemy-collision][assets]") {
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build(yard());
@@ -142,10 +141,10 @@ TEST_CASE("a newly released Death cannot be pushed through a wall by an item bod
 }
 
 TEST_CASE("Temple enemies cannot walk through the closed front doors",
-          "[game][enemies][temple-doors][unpacked]") {
+          "[game][enemies][temple-doors][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("LEVELS/LEVELE1/collision.json");
-    test::unpackedOrSkip("wdata/TEMPLE.json");
+    test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2");
+    test::assetOrSkip("WDATA/TEMPLE.WAD");
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     test::FakeRenderDevice device;
@@ -184,7 +183,7 @@ TEST_CASE("Temple enemies cannot walk through the closed front doors",
 }
 
 TEST_CASE("battlefield archers keep aiming and shooting at close players while retreating",
-          "[game][enemies][battlefield-archer][unpacked]") {
+          "[game][enemies][battlefield-archer][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 1, {}, 7);
@@ -210,11 +209,11 @@ TEST_CASE("battlefield archers keep aiming and shooting at close players while r
 }
 
 TEST_CASE("the battlefield entrance archers remain on their authored perches and fire nearby",
-          "[game][enemies][battlefield-archer][unpacked]") {
+          "[game][enemies][battlefield-archer][assets]") {
     const auto* level = GENERATE("LEVELH1", "LEVELH3");
     const auto root = unpackedRoot();
     const auto directory = root / "LEVELS" / level;
-    test::unpackedOrSkip(std::string{"LEVELS/"} + level + "/collision.json");
+    test::assetOrSkip(std::string{"LEVELS/"} + level + "/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(directory));
     WorldCollision collision;
@@ -251,7 +250,7 @@ TEST_CASE("the battlefield entrance archers remain on their authored perches and
 }
 
 TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and strikes on touch",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     EnemyScales scales;
@@ -351,7 +350,7 @@ TEST_CASE("a grunt is bred ahead of its generator, chases the player it sees and
 }
 
 TEST_CASE("first-tier spear grunts land repeated blows at point-blank contact",
-          "[game][enemies][spear-contact][unpacked]") {
+          "[game][enemies][spear-contact][assets]") {
     const s32 kind = GENERATE(kGruntKind, 5, 10, 13, 19);
     const f32 distance = GENERATE(0.0f, 0.5f, 2.0f);
     const s32 ticks = GENERATE(1, 2);
@@ -376,7 +375,7 @@ TEST_CASE("first-tier spear grunts land repeated blows at point-blank contact",
 }
 
 TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its experience",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 13, EnemyScales{}, 1);
@@ -478,7 +477,7 @@ TEST_CASE("a grunt struck flinches, thrown down gets up, and killed is worth its
 
 TEST_CASE("a grunt gets round a wall between it and its player, stops at a ledge, and does "
           "not walk through another",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build(yard());
@@ -570,7 +569,7 @@ TEST_CASE("a grunt gets round a wall between it and its player, stops at a ledge
 }
 
 TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sleeps until woken",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 2, EnemyScales{}, 1);
@@ -678,7 +677,7 @@ TEST_CASE("the swarm is found by missiles, sweeps and strikes, is capped, and sl
 }
 
 TEST_CASE("swarm elemental hits use arena multipliers but retain their minimum damage",
-          "[enemies][damage][unpacked]") {
+          "[enemies][damage][assets]") {
     const auto root = unpackedRoot();
     test::FakeRenderDevice device;
     for (const bool bossEncounter : {false, true}) {
@@ -707,9 +706,9 @@ TEST_CASE("swarm elemental hits use arena multipliers but retain their minimum d
 }
 
 TEST_CASE("enemy hits queue feedback once and animate masked death skins to completion",
-          "[game][enemies][enemy-feedback][unpacked]") {
+          "[game][enemies][enemy-feedback][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, root, nullptr, 4, {}, 7);
@@ -800,6 +799,7 @@ TEST_CASE("small enemies retire on their first death update without an invented 
     writeFile(dir / "skin.png", test::kTinyPng);
     writeTextFile(dir / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(dir);
     writeTextFile(dir / "animations.json", R"({"trees":[{"name":"HAN1",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":30,"rate":30}]}]})");
@@ -835,9 +835,9 @@ TEST_CASE("small enemies retire on their first death update without an invented 
 }
 
 TEST_CASE("Dream World hands vanish promptly while imps and warlocks play their death skins",
-          "[game][enemies][enemy-feedback][death-retirement][unpacked]") {
+          "[game][enemies][enemy-feedback][death-retirement][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("WEAPONS/animations.json");
+    test::assetOrSkip("WEAPONS/ANIM.PS2");
     test::FakeRenderDevice device;
     ItemArchive weapons;
     REQUIRE(weapons.load(root / "WEAPONS"));
@@ -877,7 +877,7 @@ TEST_CASE("Dream World hands vanish promptly while imps and warlocks play their 
     }
 }
 TEST_CASE("invisibility breaks swarm targeting without removing the physical player",
-          "[game][items][enemies][unpacked]") {
+          "[game][items][enemies][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 4, {}, 7);
@@ -909,6 +909,7 @@ std::filesystem::path routingAssets() {
     writeFile(archive / "skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"GRU1",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":10,"rate":30},
@@ -928,6 +929,7 @@ std::filesystem::path blobAssets() {
     writeFile(archive / "skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"ACI1",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":10,"rate":30},
@@ -1072,10 +1074,10 @@ TEST_CASE("the acid blob is rooted: a knock-back leaves it as it was and a floor
 }
 
 TEST_CASE("the garm brood sends its death shot from its corpse at its player as the body goes",
-          "[game][enemies][unpacked][death-shot]") {
+          "[game][enemies][assets][death-shot]") {
     // kill_enemy's fn_8004F1DC: toward its target, else the first standing player; nobody
     // standing, nothing.
-    test::unpackedOrSkip("MONSTERS/GRM/animations.json");
+    test::assetOrSkip("MONSTERS/GRM/ANIM.PS2");
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 4, {}, 5);
@@ -1130,6 +1132,7 @@ TEST_CASE("the warlock comes and goes: seen a while, faded out, unseen a while, 
     writeFile(archive / "skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"WAR1",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]}],
         "sequences":[{"name":"READY","frames":10,"rate":30},
@@ -1182,6 +1185,7 @@ TEST_CASE("a swarm body lies the shadow of its tier under it", "[game][enemies][
     writeTextFile(archive / "objects.json", R"({"objects":[
         {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1},
         {"index":1,"name":"SHADOW2L1","file":"flat.obj","meshTriangles":1}]})");
+    test::convertModelFixture(archive);
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, root, nullptr, 4, {}, 3);
@@ -1211,9 +1215,9 @@ TEST_CASE("a swarm body lies the shadow of its tier under it", "[game][enemies][
 }
 
 TEST_CASE("the zombies' own archive lies a shadow under each tier",
-          "[game][enemies][shadow][unpacked]") {
+          "[game][enemies][shadow][assets]") {
     const auto root = unpackedRoot();
-    test::unpackedOrSkip("MONSTERS/ZOM/animations.json");
+    test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2");
     constexpr s32 kZombieKind = 13;
     REQUIRE(enemyKind(kZombieKind).name == std::string_view{"ZOM"});
     test::FakeRenderDevice device;
@@ -1245,7 +1249,7 @@ TEST_CASE("the zombies' own archive lies a shadow under each tier",
 }
 
 TEST_CASE("off screen the swarm waits unless its player is in sight, and never strikes",
-          "[game][enemies][unpacked]") {
+          "[game][enemies][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 4, {}, 3);
@@ -1397,7 +1401,7 @@ TEST_CASE("an item that cancels a walking step reports a blocked body to its min
 }
 
 TEST_CASE("an enemy on a burning floor is burned every update it stands there",
-          "[game][enemies][hazards][unpacked]") {
+          "[game][enemies][hazards][assets]") {
     const auto dir = test::scratchDirectory("enemy-hazard-floor");
     writeTextFile(dir / "world.json", R"({
   "objects": [{"name": "EMBERS", "position": [0, 0, 0], "flags": 65540, "next": -1,
@@ -1435,7 +1439,7 @@ TEST_CASE("an enemy on a burning floor is burned every update it stands there",
     enemies.close();
 }
 
-TEST_CASE("the swarm runs from a lit suicide bomber near it", "[game][enemies][unpacked]") {
+TEST_CASE("the swarm runs from a lit suicide bomber near it", "[game][enemies][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 13, EnemyScales{}, 2);
@@ -1503,8 +1507,7 @@ TEST_CASE("a way of nought is filled in by kind and strength as the original doe
     CHECK(resolvedWayOf(kGruntKind, 1, 10, false) == 7);
 }
 
-TEST_CASE("a placement past the known variants keeps its tier's body",
-          "[game][enemies][unpacked]") {
+TEST_CASE("a placement past the known variants keeps its tier's body", "[game][enemies][assets]") {
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, unpackedRoot(), nullptr, 13, EnemyScales{}, 1);

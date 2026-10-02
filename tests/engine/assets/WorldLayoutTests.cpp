@@ -173,9 +173,8 @@ TEST_CASE("a missing or malformed layout fails to load", "[assets][world]") {
     REQUIRE(layout.objects().empty());
 }
 
-TEST_CASE("the unpacked tower layout places its objects and cameras", "[assets][world][unpacked]") {
-    const std::filesystem::path dir =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path();
+TEST_CASE("the native tower layout places its objects and cameras", "[assets][world]") {
+    const std::filesystem::path dir = test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path();
     WorldLayout layout;
     REQUIRE(layout.load(dir));
     REQUIRE(layout.objects().size() > 3000);

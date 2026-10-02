@@ -1,4 +1,4 @@
-#include "engine/assets/ObjModel.h"
+#include "fixtures/ReferenceObj.h"
 
 #include <charconv>
 #include <format>
@@ -11,7 +11,7 @@
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
-namespace gdl {
+namespace gdl::test {
 
 namespace {
 
@@ -204,4 +204,4 @@ Mesh loadObj(const std::filesystem::path& path) {
     return parseObj(std::string(bytes.begin(), bytes.end()));
 }
 
-} // namespace gdl
+} // namespace gdl::test

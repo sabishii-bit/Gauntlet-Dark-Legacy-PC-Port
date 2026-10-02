@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/Combatant.h"
 #include "game/enemies/Critters.h"
 #include "game/enemies/Gargoyle.h"
@@ -56,9 +57,9 @@ TEST_CASE("the gargoyle's family names its form and its key, and stands as a sta
 }
 
 TEST_CASE("gargoyle death skins follow the death cue and the sack waits for the final pose",
-          "[game][enemies][gargoyle][critter-death][unpacked]") {
+          "[game][enemies][gargoyle][critter-death][assets]") {
     const auto* form = GENERATE("GAR_EAGL", "GAR_LION", "GAR_SERP");
-    const auto root = test::unpackedOrSkip("critter/GAR_EAGL.json").parent_path().parent_path();
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     CombatantAssets assets;
     REQUIRE(assets.load(device, root, Gargoyle::definition(form), 'B'));
@@ -131,9 +132,9 @@ TEST_CASE("gargoyle death skins follow the death cue and the sack waits for the 
 }
 
 TEST_CASE("each gargoyle form emits its realm roar after enough damage",
-          "[game][enemies][gargoyle][gargoyle-roar][unpacked]") {
+          "[game][enemies][gargoyle][gargoyle-roar][assets]") {
     const auto* form = GENERATE("GAR_EAGL", "GAR_LION", "GAR_SERP");
-    const auto root = test::unpackedOrSkip("critter/GAR_EAGL.json").parent_path().parent_path();
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
     test::FakeRenderDevice device;
     CombatantAssets assets;
     REQUIRE(assets.load(device, root, Gargoyle::definition(form), 'H'));
@@ -182,6 +183,7 @@ TEST_CASE("skin cues and death completion run without retail assets", "[gargoyle
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2},
       {"index":1,"name":"FADE0","file":"textures/skin.png","width":2,"height":2},
       {"index":2,"name":"FADE1","file":"textures/skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"textureAnimations":[
       {"name":"FADE","texture":0,"source":1,"frames":2,"rate":2,"flag":-1}],
       "trees":[{"name":"GAR1","nodes":[
@@ -229,9 +231,9 @@ TEST_CASE("skin cues and death completion run without retail assets", "[gargoyle
 
 TEST_CASE("the eagle gargoyle breathes fire on a player near and throws its fireball at one "
           "further off, which flies to them and bursts",
-          "[game][enemies][gargoyle][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GAR_EAGL.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json");
+          "[game][enemies][gargoyle][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GAR_EAGL.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GAR_EAGL/ANIM.PS2");
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build({triangle({-100, 0, -100}, {100, 0, -100}, {100, 0, 100}),

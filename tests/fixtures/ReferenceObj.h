@@ -5,7 +5,7 @@
 
 #include "engine/render/Mesh.h"
 
-namespace gdl {
+namespace gdl::test {
 
 /**
  * Parses a Wavefront OBJ (positions, texture coordinates, normals, faces, `usemtl tex<N>`
@@ -18,4 +18,4 @@ Mesh parseObj(std::string_view text);
 /** Reads and parses an OBJ file; throws FileError or FormatError. */
 Mesh loadObj(const std::filesystem::path& path);
 
-} // namespace gdl
+} // namespace gdl::test

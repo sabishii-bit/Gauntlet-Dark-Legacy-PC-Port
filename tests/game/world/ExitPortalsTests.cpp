@@ -13,6 +13,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/players/Progression.h"
 #include "game/world/ExitPortals.h"
 #include "game/world/TowerAccess.h"
@@ -139,6 +140,7 @@ TEST_CASE("exit portal artwork retains authored yaw pitch and roll", "[portals][
     const LevelCatalog catalog;
     ItemArchive art;
     ExitPortals portals;
+    test::convertModelFixture(dir);
     REQUIRE(layout.load(dir));
     REQUIRE(art.load(dir));
     REQUIRE(portals.bind(device, layout, art, catalog, nullptr));
@@ -219,9 +221,9 @@ TEST_CASE("a portal left alone plays itself out and goes back to idle", "[game][
 }
 
 TEST_CASE("the real portal holds ACTIVE2 without replaying ACTIVE1 for a waiting party",
-          "[portals][unpacked]") {
+          "[portals][assets]") {
     Fixture f("portals-real-loop");
-    const auto archive = test::unpackedOrSkip("ITEMS/LEVELL/animations.json").parent_path();
+    const auto archive = test::assetOrSkip("ITEMS/LEVELL/ANIM.PS2").parent_path();
     REQUIRE(f.items.load(archive));
     REQUIRE(f.portals.bind(f.device, f.layout, f.items, f.catalog, nullptr));
     const std::array split{PortalVisitor{Vec3{10, 0, 10}}, PortalVisitor{Vec3{30, 0, 10}}};
@@ -369,10 +371,10 @@ TEST_CASE("a portal the tower keeps shut never wakes and takes nobody",
 }
 
 TEST_CASE("the real tower shuts the portals past what the party has beaten, wearing EXIT_OFF",
-          "[game][world][portals][tower-access][unpacked]") {
+          "[game][world][portals][tower-access][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
-    const auto archive = test::unpackedOrSkip("ITEMS/LEVELL/animations.json").parent_path();
+        test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    const auto archive = test::assetOrSkip("ITEMS/LEVELL/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
     WorldLayout layout;
     LevelCatalog catalog;
@@ -451,6 +453,7 @@ TEST_CASE("portal solid platforms and depthless columns draw in separate passes"
     const LevelCatalog catalog;
     ItemArchive art;
     ExitPortals portals;
+    test::convertModelFixture(dir);
     REQUIRE(layout.load(dir));
     REQUIRE(art.load(dir));
     REQUIRE(portals.bind(device, layout, art, catalog, nullptr));

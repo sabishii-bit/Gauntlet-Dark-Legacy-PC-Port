@@ -1,4 +1,4 @@
-"""The build launcher forwards preview arguments after building the selected preset."""
+"""Build/run orchestration never requires exported gameplay assets."""
 import json
 import pathlib
 import subprocess
@@ -12,230 +12,110 @@ import build
 
 
 class BuildLaunchTests(unittest.TestCase):
-    def test_player_streak_data_is_upgraded_once_and_verified(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            binary = root / "build/debug"
-            (binary / "bin").mkdir(parents=True)
-            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
-            (root / "raw/PDATA").mkdir(parents=True)
-            manifest = root / "export/pdata/KNI.json"
-            manifest.parent.mkdir(parents=True)
-            manifest.write_text('{}', encoding="utf-8")
-            args = ["--assets", "raw", "--unpacked", "export"]
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="gdl build ")
+        self.addCleanup(temporary.cleanup)
+        self.root = pathlib.Path(temporary.name)
+        for target, field, value in (
+            (build, "ROOT", self.root),
+            (build.devenv, "default_preset", lambda: "debug"),
+            (build.devenv, "release_preset", lambda: "release"),
+        ):
+            patch = mock.patch.object(target, field, value)
+            patch.start()
+            self.addCleanup(patch.stop)
+        (self.root / "CMakePresets.json").write_text(json.dumps({"buildPresets": [
+            {"name": "debug", "configurePreset": "debug-config"},
+            {"name": "release", "configurePreset": "release-config"},
+        ]}), encoding="utf-8")
 
-            def unpack(_command):
-                manifest.write_text('{"streakForward":0}', encoding="utf-8")
+    def configured(self, preset="release-config", text=""):
+        binary = self.root / "build" / preset
+        binary.mkdir(parents=True, exist_ok=True)
+        (binary / "CMakeCache.txt").write_text(text, encoding="utf-8")
+        return binary
 
-            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
-                build.refresh_player_data(binary, args, root)
-                run.assert_called_once_with([
-                    str(binary / "bin" / f"gdlunpack{build.EXE}"), str(root / "raw"),
-                    str(root / "export"), "--only", "PDATA"])
-                run.reset_mock()
-                build.refresh_player_data(binary, args, root)
-                run.assert_not_called()
-                manifest.write_text('{}', encoding="utf-8")
-                run.side_effect = None
-                with self.assertRaisesRegex(ValueError, "did not upgrade"):
-                    build.refresh_player_data(binary, args, root)
-                with self.assertRaisesRegex(ValueError, "original PDATA"):
-                    build.refresh_player_data(binary, ["--unpacked", "export"], root)
+    def launch(self, args, code=0):
+        with mock.patch.object(sys, "argv", ["build.py", *args]), \
+                mock.patch.object(build.devenv, "run",
+                                  return_value=subprocess.CompletedProcess([], code)) as run:
+            result = build.main()
+        return result, run.call_args_list
 
-    def test_missing_realm_items_export_once_and_verify_all_manifests(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            binary = root / "build/debug"
-            (binary / "bin").mkdir(parents=True)
-            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
-            (root / "raw/ITEMS").mkdir(parents=True)
-            manifest = root / "export/wdata/HELL.json"
-            manifest.parent.mkdir(parents=True)
-            manifest.write_text('{"prefix":"levelF","levels":[{"name":"F1"}]}',
-                                encoding="utf-8")
-            world = root / "export/LEVELS/LEVELF1/world.json"
-            world.parent.mkdir(parents=True)
-            world.write_text('{}', encoding="utf-8")
-            items = root / "export/ITEMS/LEVELF"
-            args = ["--assets", "raw", "--data", "configuration", "--unpacked", "export"]
+    def test_presets_keep_configure_mapping(self):
+        self.assertEqual(build.build_presets(),
+                         {"debug": "debug-config", "release": "release-config"})
 
-            def unpack(_command):
-                items.mkdir(parents=True, exist_ok=True)
-                for name in ("animations", "objects", "textures"):
-                    (items / (name + ".json")).write_text('{}', encoding="utf-8")
+    def test_first_build_configures_and_uses_debug(self):
+        result, calls = self.launch([])
+        self.assertEqual(result, 0)
+        self.assertEqual(calls, [mock.call(["cmake", "--preset", "debug-config"]),
+                                mock.call(["cmake", "--build", "--preset", "debug"])])
 
-            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
-                build.refresh_level_items(binary, args, root)
-                run.assert_called_once_with([
-                    str(binary / "bin" / f"gdlunpack{build.EXE}"), str(root / "raw"),
-                    str(root / "export"), "--only", "LEVELF"])
-                run.reset_mock()
-                build.refresh_level_items(binary, args, root)
-                run.assert_not_called()
-                (items / "objects.json").unlink()
-                run.side_effect = None
-                with self.assertRaisesRegex(ValueError, "still missing"):
-                    build.refresh_level_items(binary, args, root)
-                with self.assertRaisesRegex(ValueError, "original ITEMS"):
-                    build.refresh_level_items(binary, ["--unpacked", "export"], root)
+    def test_existing_cache_avoids_configuration(self):
+        self.configured("debug-config")
+        result, calls = self.launch(["--test"])
+        self.assertEqual(result, 0)
+        self.assertEqual(calls, [mock.call(["cmake", "--build", "--preset", "debug"]),
+                                mock.call(["ctest", "--preset", "debug", "-LE", "gpu"])])
 
-    def test_challenge_export_upgrade_is_verified_and_runs_once(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            binary = root / "build/release"
-            (binary / "bin").mkdir(parents=True)
-            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
-            (root / "raw/WDATA").mkdir(parents=True)
-            manifest = root / "export/wdata/SECRET.json"
-            manifest.parent.mkdir(parents=True)
-            manifest.write_text('{"levels":[{"flags":4}]}', encoding="utf-8")
-            args = ["--assets", "raw", "--data", "configuration", "--unpacked", "export"]
+    def test_native_previews_preserve_arguments_and_exit_code(self):
+        binary = self.configured()
+        for flag in ("--demo", "--screensaver", "--title"):
+            with self.subTest(flag=flag):
+                args = [flag, "--frames", "120", "--assets", "native path with spaces"]
+                result, calls = self.launch(["--run", "--", *args], 17)
+                self.assertEqual(result, 17)
+                self.assertEqual(calls, [
+                    mock.call(["cmake", "--build", "--preset", "release"]),
+                    mock.call([str(binary / "bin" / f"gauntlet{build.EXE}"), *args]),
+                ])
 
-            def unpack(_command):
-                manifest.write_text('{"levels":[{"flags":4,"timeLimit":70}]}',
-                                    encoding="utf-8")
+    def test_explicit_debug_run_remains_debug(self):
+        binary = self.configured("debug-config")
+        _, calls = self.launch(["debug", "--run"])
+        self.assertEqual(calls[-1], mock.call([str(binary / "bin" / f"gauntlet{build.EXE}")]))
+        self.assertEqual(calls[0], mock.call(["cmake", "--build", "--preset", "debug"]))
 
-            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
-                build.refresh_challenge_data(binary, args, root)
-                run.assert_called_once_with([
-                    str(binary / "bin" / f"gdlunpack{build.EXE}"), str(root / "raw"),
-                    str(root / "export"), "--only", "WDATA"])
-                run.reset_mock()
-                build.refresh_challenge_data(binary, args, root)
-                run.assert_not_called()
-                manifest.write_text('{"levels":[{"flags":4}]}', encoding="utf-8")
-                run.side_effect = None
-                with self.assertRaisesRegex(ValueError, "still missing"):
-                    build.refresh_challenge_data(binary, args, root)
+    def test_native_launch_ignores_malformed_legacy_exports(self):
+        self.configured()
+        path = self.root / "assets/unpacked/PLAYERS/JES/SFXGRE/animations.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("not JSON", encoding="utf-8")
+        result, calls = self.launch(["--run"])
+        self.assertEqual(result, 0)
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(any("gdlunpack" in str(call) for call in calls))
+        self.assertEqual(path.read_text(encoding="utf-8"), "not JSON")
 
-    def test_item_collision_refreshes_only_incomplete_levels_and_verifies_output(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            binary = root / "build/release"
-            (binary / "bin").mkdir(parents=True)
-            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
-            (root / "raw/LEVELS").mkdir(parents=True)
-            manifest = root / "export/LEVELS/LEVELE1/world.json"
-            manifest.parent.mkdir(parents=True)
-            stale = {"itemInstances": [{"triangleCount": 1}]}
-            manifest.write_text(json.dumps(stale), encoding="utf-8")
-            current = {"itemInstances": [{"triangleCount": 1, "collision": [{}]}]}
-            args = ["--assets", "raw", "--data", "configuration", "--unpacked", "export"]
+    def test_explicit_inspection_export_remains_available(self):
+        binary = self.configured("debug-config",
+                                 "GDL_ASSET_DIR:PATH=original files\n"
+                                 "GDL_UNPACKED_DIR:PATH=inspection output\n")
+        result, calls = self.launch(["--unpack", "--levels"])
+        self.assertEqual(result, 0)
+        self.assertEqual(calls, [
+            mock.call(["cmake", "--build", "--preset", "debug"]),
+            mock.call([str(binary / "bin" / f"gdlunpack{build.EXE}"),
+                       "original files", "inspection output", "--levels"]),
+        ])
 
-            def unpack(_command):
-                manifest.write_text(json.dumps(current), encoding="utf-8")
+    def test_cache_path_handles_absent_empty_and_supported_types(self):
+        fallback = self.root / "default"
+        self.assertEqual(build.cache_path(self.root / "missing", "LOCATION", fallback), fallback)
+        for kind in ("PATH", "FILEPATH", "STRING"):
+            binary = self.configured(text=f"LOCATION:{kind}=some directory\n")
+            self.assertEqual(build.cache_path(binary, "LOCATION", fallback),
+                             pathlib.Path("some directory"))
+        binary = self.configured(text="LOCATION:PATH=\n")
+        self.assertEqual(build.cache_path(binary, "LOCATION", fallback), fallback)
 
-            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
-                build.refresh_item_collision(binary, args, root)
-                run.assert_called_once_with([
-                    str(binary / "bin" / f"gdlunpack{build.EXE}"), str(root / "raw"),
-                    str(root / "export"), "--only", "LEVELE1"])
-                run.reset_mock()
-                build.refresh_item_collision(binary, args, root)
-                run.assert_not_called()
-                manifest.write_text(json.dumps(stale), encoding="utf-8")
-                run.side_effect = None
-                with self.assertRaisesRegex(ValueError, "did not upgrade"):
-                    build.refresh_item_collision(binary, args, root)
-            with self.assertRaisesRegex(ValueError, "needs re-exporting"):
-                build.refresh_item_collision(binary, ["--unpacked", "export"], root)
-
-    def test_legacy_player_exports_refresh_once_before_launch(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            binary = root / "build/release"
-            (binary / "bin").mkdir(parents=True)
-            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
-            (root / "original files/PLAYERS").mkdir(parents=True)
-            manifest = root / "assets/unpacked/PLAYERS/JES/SFXYEL/animations.json"
-            manifest.parent.mkdir(parents=True)
-            manifest.write_text('{"trees":[]}', encoding="utf-8")
-            args = ["--assets", "original files", "--data", "configuration",
-                    "--unpacked", "assets/unpacked"]
-            def unpack(_command):
-                manifest.write_text(json.dumps({"textureBindingVersion": 1, "trees": []}),
-                                    encoding="utf-8")
-
-            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
-                build.refresh_player_effects(binary, args, root)
-                run.assert_called_once_with([
-                    str(binary / "bin" / f"gdlunpack{build.EXE}"),
-                    str(root / "original files"), str(root / "assets/unpacked"),
-                    "--only", "PLAYERS"])
-                run.reset_mock()
-                # Optional node/sequence links may legitimately be absent. The
-                # exporter version, not their presence, establishes freshness.
-                manifest.write_text(json.dumps({"textureBindingVersion": 1, "trees": []}),
-                                    encoding="utf-8")
-                build.refresh_player_effects(binary, args, root)
-                run.assert_not_called()
-                manifest.write_text('{}', encoding="utf-8")
-                run.side_effect = None
-                with self.assertRaisesRegex(ValueError, "did not upgrade"):
-                    build.refresh_player_effects(binary, args, root)
-
-    def test_asset_free_builds_do_not_run_unpacker(self):
-        with tempfile.TemporaryDirectory() as directory, \
-                mock.patch.object(build.devenv, "run") as run:
-            root = pathlib.Path(directory)
-            build.refresh_player_effects(root / "build/release", [], root)
-            build.refresh_player_data(root / "build/release", [], root)
-            build.refresh_item_collision(root / "build/release", [], root)
-            build.refresh_level_items(root / "build/release", [], root)
-            build.refresh_challenge_data(root / "build/release", [], root)
+    def test_unknown_preset_does_not_run_commands(self):
+        with mock.patch.object(build.devenv, "run") as run, \
+                mock.patch.object(sys, "argv", ["build.py", "unknown"]):
+            with self.assertRaisesRegex(SystemExit, "Unknown build preset"):
+                build.main()
             run.assert_not_called()
-
-    def test_native_launch_ignores_even_malformed_legacy_exports(self):
-        with tempfile.TemporaryDirectory() as directory, \
-                mock.patch.object(build.devenv, "run") as run:
-            root = pathlib.Path(directory)
-            for name in ("PLAYERS/WAR/SFXRED/animations.json", "pdata/WAR.json",
-                         "LEVELS/LEVELG1/world.json", "wdata/SECRET.json"):
-                manifest = root / "assets/unpacked" / name
-                manifest.parent.mkdir(parents=True, exist_ok=True)
-                manifest.write_text("not JSON", encoding="utf-8")
-            for args in ([], ["--assets", "native/Gauntlet"]):
-                build.refresh_legacy_exports(root / "build/release", args, root)
-                build.refresh_player_effects(root / "build/release", args, root)
-                build.refresh_player_data(root / "build/release", args, root)
-                build.refresh_item_collision(root / "build/release", args, root)
-                build.refresh_level_items(root / "build/release", args, root)
-                build.refresh_challenge_data(root / "build/release", args, root)
-            run.assert_not_called()
-
-    def test_custom_asset_paths_are_respected_and_missing_raw_assets_fail_clearly(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory)
-            manifest = root / "custom output/PLAYERS/JES/SFXYEL/animations.json"
-            manifest.parent.mkdir(parents=True)
-            manifest.write_text('{}', encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "need re-exporting"):
-                build.refresh_player_effects(root / "build/release",
-                                             ["--unpacked", "custom output"], root)
-
-    def test_previews_use_release_and_preserve_forwarded_arguments(self):
-        with tempfile.TemporaryDirectory(prefix="gdl build ") as directory:
-            root = pathlib.Path(directory)
-            binary = root / "build" / "release-config"
-            binary.mkdir(parents=True)
-            (binary / "CMakeCache.txt").touch()
-            for flag in ("--demo", "--screensaver"):
-                with self.subTest(flag=flag), \
-                        mock.patch.object(build, "ROOT", root), \
-                        mock.patch.object(build, "build_presets",
-                                          return_value={"release": "release-config"}), \
-                        mock.patch.object(build.devenv, "release_preset", return_value="release"), \
-                        mock.patch.object(build.devenv, "run",
-                                          return_value=subprocess.CompletedProcess([], 0)) as run, \
-                        mock.patch.object(sys, "argv", ["build.py", "--run", "--", flag,
-                                                         "--frames", "120", "--unpacked",
-                                                         "a path with spaces"]):
-                    self.assertEqual(build.main(), 0)
-                    self.assertEqual(run.call_args_list, [
-                        mock.call(["cmake", "--build", "--preset", "release"]),
-                        mock.call([str(binary / "bin" / f"gauntlet{build.EXE}"), flag,
-                                   "--frames", "120", "--unpacked", "a path with spaces"]),
-                    ])
 
 
 if __name__ == "__main__":

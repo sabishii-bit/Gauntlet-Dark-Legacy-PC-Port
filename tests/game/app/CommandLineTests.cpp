@@ -45,16 +45,16 @@ TEST_CASE("options override the defaults", "[game][commandline]") {
     REQUIRE(result.desc.maxFrames == 42);
 }
 
-TEST_CASE("explicit legacy gameplay roots are independent of option order", "[game][commandline]") {
+TEST_CASE("retired export roots fail with native asset guidance", "[game][commandline]") {
     constexpr std::array<std::string_view, 4> kAssetsFirst{"--assets", "retail/Gauntlet",
                                                            "--unpacked", "legacy/export"};
     constexpr std::array<std::string_view, 4> kLegacyFirst{"--unpacked", "legacy/export",
                                                            "--assets", "retail/Gauntlet"};
     for (const auto& args : {kAssetsFirst, kLegacyFirst}) {
         const auto result = parseCommandLine(args, defaults());
-        REQUIRE(result.action == CommandLineAction::Run);
-        REQUIRE(result.desc.assetDirectory == "retail/Gauntlet");
-        REQUIRE(result.options.unpackedDirectory == "legacy/export");
+        REQUIRE(result.action == CommandLineAction::Fail);
+        REQUIRE(result.message.contains("--unpacked is retired"));
+        REQUIRE(result.message.contains("--assets"));
     }
     constexpr std::array<std::string_view, 1> kMissing{"--unpacked"};
     REQUIRE(parseCommandLine(kMissing, defaults()).action == CommandLineAction::Fail);

@@ -14,9 +14,9 @@ using namespace gdl;
 using namespace gdl::game;
 
 TEST_CASE("the castle transporter moves a player without leaving the level or bouncing back",
-          "[transporters][unpacked]") {
+          "[transporters][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELA1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELA1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto ref = catalog.byName("A1");

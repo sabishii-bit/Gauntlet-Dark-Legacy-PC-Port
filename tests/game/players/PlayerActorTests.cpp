@@ -321,8 +321,8 @@ TEST_CASE("a footprint does not bridge a broad gap or climb an unreachable landi
 }
 
 TEST_CASE("the tower's authored stair ramps allow continuous uphill and downhill movement",
-          "[game][players][actor][terrain-seams][unpacked]") {
-    const auto dir = test::unpackedOrSkip("LEVELS/LEVELL1/collision.json").parent_path();
+          "[game][players][actor][terrain-seams][assets]") {
+    const auto dir = test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2").parent_path();
     WorldLayout layout;
     REQUIRE(layout.load(dir));
     WorldCollision collision;

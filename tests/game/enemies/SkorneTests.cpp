@@ -27,10 +27,10 @@ using namespace gdl;
 using namespace gdl::game;
 
 TEST_CASE("Skorne grab releases the player onto the altar rather than outside the map",
-          "[skorne][capture][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELE2/collision.json");
+          "[skorne][capture][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/SKORNE1.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/SKORNE1/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELE2/WORLDS.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -98,11 +98,11 @@ TEST_CASE("Temple Skorne drops four relics in a fixed arc without coin speed sca
 }
 
 TEST_CASE("Temple Skorne death creates collectable timed relics from the level records",
-          "[skorne][boss-sequence][unpacked]") {
+          "[skorne][boss-sequence][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE2/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELE2/animations.json");
-    test::unpackedOrSkip("POWERUPS/animations.json");
+        test::assetOrSkip("LEVELS/LEVELE2/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELE2/ANIM.PS2");
+    test::assetOrSkip("POWERUPS/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -139,10 +139,10 @@ TEST_CASE("Temple Skorne death creates collectable timed relics from the level r
 }
 
 TEST_CASE("Skorne entrance sends three masonry cues across both start animations",
-          "[skorne][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELE2/world.json");
+          "[skorne][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/SKORNE1.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/SKORNE1/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELE2/WORLDS.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -157,7 +157,7 @@ TEST_CASE("Skorne entrance sends three masonry cues across both start animations
     AudioMixer mixer(48000);
     SoundPlayer sound(mixer);
     LevelSoundscape audio;
-    test::unpackedOrSkip("audio/SKORNE1/sounds.json");
+    test::assetOrSkip("audio/SKORNE1.vbk");
     audio.open(root, &sound, world.audio(), 'E', true);
     audio.updateAmbience({}, {Vec3{100, 0, 0}, Vec3{1, 0, 0}}, 1);
     LevelOpponents opponents;
@@ -204,10 +204,10 @@ TEST_CASE("Skorne entrance sends three masonry cues across both start animations
 }
 
 TEST_CASE("Skorne entrance taunts attacks and death reach the real sound bank",
-          "[skorne][sound][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
-    test::unpackedOrSkip("audio/SKORNE1/sounds.json");
+          "[skorne][sound][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/SKORNE1.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/SKORNE1/ANIM.PS2");
+    test::assetOrSkip("audio/SKORNE1.vbk");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'E');
@@ -280,9 +280,8 @@ TEST_CASE("Skorne entrance taunts attacks and death reach the real sound bank",
 }
 
 TEST_CASE("Skorne's attenuated attack voice reaches the mixer at the retail bank gain",
-          "[skorne][sound][dcs-gain][unpacked]") {
-    const auto root =
-        test::unpackedOrSkip("audio/SKORNE1/sounds.json").parent_path().parent_path().parent_path();
+          "[skorne][sound][dcs-gain][assets]") {
+    const auto root = test::assetOrSkip("audio/SKORNE1.vbk").parent_path().parent_path();
     const f32 distance = GENERATE(20.0f, 55.0f);
     CAPTURE(distance);
     SoundSet bank;
@@ -317,10 +316,10 @@ TEST_CASE("Skorne's attenuated attack voice reaches the mixer at the retail bank
 }
 
 TEST_CASE("Skorne can be targeted and hit above his buried root with and without Savior",
-          "[skorne][target-assist][legend][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
-    test::unpackedOrSkip("LEVELS/LEVELE2/world.json");
+          "[skorne][target-assist][legend][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/SKORNE1.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/SKORNE1/ANIM.PS2");
+    test::assetOrSkip("LEVELS/LEVELE2/WORLDS.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -385,9 +384,9 @@ TEST_CASE("Skorne can be targeted and hit above his buried root with and without
 }
 
 TEST_CASE("Skorne health and range windows expose his authored attack families",
-          "[skorne][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
+          "[skorne][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/SKORNE1.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/SKORNE1/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'E');
@@ -438,9 +437,9 @@ TEST_CASE("Skorne health and range windows expose his authored attack families",
 }
 
 TEST_CASE("Savior weakens Skorne on release and death finishes before the victory notice",
-          "[skorne][legend][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/SKORNE1.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/SKORNE1/animations.json");
+          "[skorne][legend][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/SKORNE1.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/SKORNE1/ANIM.PS2");
     test::FakeRenderDevice device;
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'E');

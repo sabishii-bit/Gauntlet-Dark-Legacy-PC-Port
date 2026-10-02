@@ -15,6 +15,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/EnemyMind.h"
 #include "game/enemies/EnemyMissiles.h"
@@ -96,6 +97,7 @@ TEST_CASE("swarm sprites and missiles receive the tilted camera frame", "[enemy-
     writeFile(archive / "skin.png", test::kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
         {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"ACI1",
         "nodes":[{"name":"BODY","object":"BODY","parent":-1,
                   "position":[0,0,0],"objectFlags":67108864}],
@@ -129,18 +131,16 @@ TEST_CASE("swarm sprites and missiles receive the tilted camera frame", "[enemy-
 }
 
 TEST_CASE("retail Sky Dominion acid blobs and demon fireballs face pitched rotated cameras",
-          "[enemy-facing][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/ACI/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip("MONSTERS/DEM/animations.json");
+          "[enemy-facing][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/ACI/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/DEM/ANIM.PS2");
     checkSpriteFacing(root, "DEM_FBALL", "DEM");
 }
 
 TEST_CASE("Desert sorcerer projectile halos respect solid-world occlusion",
-          "[enemy-facing][enemy-projectile-depth][unpacked]") {
-    const auto dir = test::unpackedOrSkip("MONSTERS/SOR/animations.json").parent_path();
+          "[enemy-facing][enemy-projectile-depth][assets]") {
+    const auto dir = test::assetOrSkip("MONSTERS/SOR/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
     ItemArchive archive;
     REQUIRE(archive.load(dir));
@@ -527,11 +527,9 @@ TEST_CASE("the thrower shoots on its wait, the skirmisher keeps its distance, an
 
 TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suicide blows up "
           "against them",
-          "[game][enemies][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/ZOM/animations.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
+          "[game][enemies][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("MONSTERS/ZOM/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build(floor());
@@ -662,11 +660,9 @@ TEST_CASE("a zombie archer shoots the player it sees, a bomber lobs, and a suici
 }
 
 TEST_CASE("Battleground skeleton archers release arrows at a visible player",
-          "[game][enemies][unpacked][battle-archer]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/SKE/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[game][enemies][assets][battle-archer]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/SKE/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     WorldCollision collision;
     collision.build(floor());
@@ -697,11 +693,9 @@ TEST_CASE("Battleground skeleton archers release arrows at a visible player",
 }
 
 TEST_CASE("a strength-three demon casts its own fireball from afar and fights hand to hand",
-          "[game][enemies][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/DEM/animations.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
+          "[game][enemies][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("MONSTERS/DEM/ANIM.PS2").parent_path().parent_path().parent_path();
     constexpr s32 kDemonKind = 2;
     test::FakeRenderDevice device;
     WorldCollision collision;
@@ -732,11 +726,9 @@ TEST_CASE("a strength-three demon casts its own fireball from afar and fights ha
 }
 
 TEST_CASE("a range-keeping sorcerer backs off, then casts its own bolt, and only ahead of it",
-          "[game][enemies][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("MONSTERS/SOR/animations.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
+          "[game][enemies][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("MONSTERS/SOR/ANIM.PS2").parent_path().parent_path().parent_path();
     constexpr s32 kSorcererKind = 7;
     test::FakeRenderDevice device;
     WorldCollision collision;

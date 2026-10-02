@@ -120,11 +120,9 @@ TEST_CASE("Anti Death repels Death and returns its resource, while magic kills o
     CHECK(losses[0].killed);
 }
 
-TEST_CASE("retail Death bodies and drain effects are present", "[death][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/DEATH/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+TEST_CASE("retail Death bodies and drain effects are present", "[death][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/DEATH/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, root, nullptr, 2, {}, 1);

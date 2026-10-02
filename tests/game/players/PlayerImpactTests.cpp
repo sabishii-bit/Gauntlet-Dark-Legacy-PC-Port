@@ -63,8 +63,8 @@ TEST_CASE("a whirlwind sweeps the player up before any other knock",
             PlayerDeed::Whirled);
 }
 
-TEST_CASE("the genie's wind is the whirlwind", "[game][players][player-impact][unpacked]") {
-    const std::filesystem::path file = test::unpackedOrSkip("critter/DJINN.json");
+TEST_CASE("the genie's wind is the whirlwind", "[game][players][player-impact][assets]") {
+    const std::filesystem::path file = test::assetOrSkip("CRITTER/DJINN.WAD");
     CritterData djinn;
     REQUIRE(djinn.load(file));
     s32 winds = 0;

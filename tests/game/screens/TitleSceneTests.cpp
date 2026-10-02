@@ -32,7 +32,7 @@ MenuInput press(bool start, bool select = false, bool down = false, bool back = 
 }
 
 std::filesystem::path unpackedRoot() {
-    return test::unpackedOrSkip("TITLE/textures.json").parent_path().parent_path();
+    return test::assetOrSkip("TITLE/textures.ngc").parent_path().parent_path();
 }
 
 struct Fixture {
@@ -85,7 +85,7 @@ TEST_CASE("the title menu renders and plays music directly from the retail tree"
     REQUIRE_FALSE(scene.isOpen());
 }
 
-TEST_CASE("the glow fades in and the screen times out when idle", "[game][title][unpacked]") {
+TEST_CASE("the glow fades in and the screen times out when idle", "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
@@ -107,8 +107,7 @@ TEST_CASE("the glow fades in and the screen times out when idle", "[game][title]
     REQUIRE(scene.glowOpacity() == 0);
 }
 
-TEST_CASE("start opens the menu and choosing start leads into the game",
-          "[game][title][unpacked]") {
+TEST_CASE("start opens the menu and choosing start leads into the game", "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
@@ -137,7 +136,7 @@ TEST_CASE("start opens the menu and choosing start leads into the game",
     REQUIRE(ticks == TitleScene::kLoadingTicks);
 }
 
-TEST_CASE("the options menu opens over the title menu and fades away", "[game][title][unpacked]") {
+TEST_CASE("the options menu opens over the title menu and fades away", "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
@@ -159,7 +158,7 @@ TEST_CASE("the options menu opens over the title menu and fades away", "[game][t
     REQUIRE(scene.menuOpen());
 }
 
-TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][unpacked]") {
+TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
@@ -180,9 +179,9 @@ TEST_CASE("rendering draws the backdrop, glow and text", "[game][title][unpacked
     REQUIRE_FALSE(scene.isOpen());
 }
 
-TEST_CASE("the title screen plays its music and menu sounds", "[game][title][unpacked]") {
-    test::unpackedOrSkip("audio/SELECT/sounds.json");
-    test::unpackedOrSkip("audio/COMMON/sounds.json");
+TEST_CASE("the title screen plays its music and menu sounds", "[game][title][assets]") {
+    test::assetOrSkip("audio/SELECT.vbk");
+    test::assetOrSkip("audio/COMMON.vbk");
     test::FakeRenderDevice device;
     AudioMixer mixer(48000);
     SoundPlayer player(mixer);
@@ -223,7 +222,7 @@ TEST_CASE("the title screen plays its music and menu sounds", "[game][title][unp
 }
 
 TEST_CASE("backing out of the options burns the scroll and blanks the controls",
-          "[game][title][unpacked]") {
+          "[game][title][assets]") {
     test::FakeRenderDevice device;
     const Fixture f;
     TitleScene scene;
@@ -258,7 +257,7 @@ TEST_CASE("backing out of the options burns the scroll and blanks the controls",
     REQUIRE_FALSE(scene.menuOpen());
 }
 
-TEST_CASE("the clock and screen come from the configuration", "[game][title][unpacked]") {
+TEST_CASE("the clock and screen come from the configuration", "[game][title][assets]") {
     test::FakeRenderDevice device;
     Fixture f;
     f.config.timing.tickRate = 120;
@@ -275,7 +274,7 @@ TEST_CASE("the clock and screen come from the configuration", "[game][title][unp
 }
 
 TEST_CASE("title options persist edits without beginning a game",
-          "[game][title][settings][unpacked]") {
+          "[game][title][settings][assets]") {
     test::FakeRenderDevice device;
     Fixture f;
     auto context = f.context(nullptr);

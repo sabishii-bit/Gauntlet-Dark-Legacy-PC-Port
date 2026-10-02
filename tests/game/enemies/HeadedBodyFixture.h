@@ -6,6 +6,7 @@
 #include "engine/io/File.h"
 
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 
 namespace gdl::test {
 /** A synthetic boss with two heads of its own: the body's HEAD looks about, each head is a
@@ -24,6 +25,7 @@ inline std::filesystem::path headedBodyAssets() {
     writeFile(archive / "textures/skin.png", kTinyPng);
     writeTextFile(archive / "textures.json", R"({"bitmaps":[
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(archive);
     writeTextFile(archive / "animations.json", R"({"trees":[{"name":"BODY",
       "nodes":[{"name":"BODY","object":"BODY","parent":-1,"position":[0,0,0]},
                {"name":"NECK","object":"BODY","parent":0,"position":[0,5,0]},

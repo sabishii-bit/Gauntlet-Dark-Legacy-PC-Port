@@ -22,8 +22,7 @@ TEST_CASE("pause menu refuses absent artwork or a player outside the party", "[p
     CHECK_FALSE(menu.open(device, context, party, 0));
     CHECK_FALSE(menu.isOpen());
 }
-TEST_CASE("pause menus route character management and preserve the live party",
-          "[pause][unpacked]") {
+TEST_CASE("pause menus route character management and preserve the live party", "[pause][assets]") {
     test::FakeRenderDevice device;
     GameConfig config;
     config.save.directory = test::scratchDirectory("pause-files").string();
@@ -32,7 +31,7 @@ TEST_CASE("pause menus route character management and preserve the live party",
     GameContext context;
     context.config = &config;
     context.strings = &strings;
-    context.unpackedRoot = test::unpackedOrSkip("STATIC/textures.json").parent_path().parent_path();
+    context.unpackedRoot = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     bool settingsSaved = false;
     context.saveSettings = [&](const GameConfig& next) {
         config = next;
@@ -138,12 +137,12 @@ TEST_CASE("pause menus route character management and preserve the live party",
 }
 
 TEST_CASE("level abort uses the retail parchment dialog without character-file warnings",
-          "[pause][unpacked]") {
+          "[pause][assets]") {
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     const auto level = catalog.byName("G1");
@@ -184,12 +183,12 @@ TEST_CASE("level abort uses the retail parchment dialog without character-file w
         (outcome == PauseOutcome::ReturnTower || menu.update(1, {}) == PauseOutcome::ReturnTower));
 }
 
-TEST_CASE("the secret world cannot be quit from its menu", "[pause][unpacked]") {
+TEST_CASE("the secret world cannot be quit from its menu", "[pause][assets]") {
     // options.c 1462: OPT_QUITLEVEL's value is -1 (greyed) while sMusicTrackHi is 12.
     test::FakeRenderDevice device;
     StringTable strings;
     REQUIRE(strings.load(test::dataDirectory() / "text", "en"));
-    const auto root = test::unpackedOrSkip("STATIC/textures.json").parent_path().parent_path();
+    const auto root = test::assetOrSkip("STATIC/textures.ngc").parent_path().parent_path();
     // A level of the secret realm that is not unpacked: the world keeps the reference.
     LevelRef secret;
     secret.realm = "SECRET";

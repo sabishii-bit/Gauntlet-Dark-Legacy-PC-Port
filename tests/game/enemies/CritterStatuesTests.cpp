@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/CritterStatues.h"
 
 namespace {
@@ -32,6 +33,7 @@ std::filesystem::path statueArchive() {
     writeFile(root / "textures/skin.png", test::kTinyPng);
     writeTextFile(root / "textures.json", R"({"bitmaps":[
       {"index":0,"name":"SKIN","file":"textures/skin.png","width":2,"height":2,"flags":0}]})");
+    test::convertModelFixture(root);
     writeTextFile(root / "animations.json", R"({"trees":[{"name":"GOL_STATUE",
       "nodes":[{"name":"STONE","object":"STONE","parent":-1,"position":[0,0,0]}],
       "sequences":[{"name":"IDLE","frames":0,"frameRate":30},
@@ -146,8 +148,8 @@ TEST_CASE("a golem's statue stops and wakes a player walking into it, takes a bl
 }
 
 TEST_CASE("a gargoyle's statue comes alive over the eighty-five frames of its ACTIVE sequence",
-          "[game][enemies][critter-statues][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/GAR_EAGL/animations.json").parent_path();
+          "[game][enemies][critter-statues][assets]") {
+    const auto root = test::assetOrSkip("MONSTERS/GAR_EAGL/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
     ItemArchive archive;
     REQUIRE(archive.load(root));

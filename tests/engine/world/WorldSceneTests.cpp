@@ -186,8 +186,8 @@ TEST_CASE("deferred depth biases layer light sheets after curtains without disab
 }
 
 TEST_CASE("Temple stained-glass light rays composite after the curtain meshes",
-          "[world][scene][temple-occlusion][unpacked]") {
-    const auto root = test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path();
+          "[world][scene][temple-occlusion][assets]") {
+    const auto root = test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path();
     test::FakeRenderDevice device;
     ModelSet models;
     TextureSet textures;
@@ -397,7 +397,7 @@ TEST_CASE("a prelit object is shaded by its vertices, not the lights", "[world][
     bool dim = false;
     bool lit = false;
     for (const ImmediateVertex& v : vertices) {
-        dim = dim || v.color.r == 51; // 0.2 of the way, its own colour
+        dim = dim || v.color.r == 48; // the fixture's 0.2 quantized to native five-bit colour
         lit = lit || v.color.r > 200; // the lit copy, facing the light
     }
     REQUIRE(dim);
@@ -424,7 +424,7 @@ TEST_CASE("point lights brighten the baked geometry they reach, prelit or not",
         return most;
     };
     const u8 plain = reddest();
-    REQUIRE(plain == 51); // its own baked colour
+    REQUIRE(plain == 48); // its own baked colour, quantized to native five-bit precision
     // A red light on every side of it, whichever way it faces.
     std::vector<PointLight> lights;
     for (const Vec3 side : {Vec3{3, 0, 0}, Vec3{-3, 0, 0}, Vec3{0, 3, 0}, Vec3{0, -3, 0},

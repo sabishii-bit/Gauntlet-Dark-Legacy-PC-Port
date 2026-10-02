@@ -15,7 +15,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "formats/WavWriter.h"
+#include "fixtures/NativeSoundBank.h"
 #include "game/world/AmbientSounds.h"
 #include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
@@ -32,20 +32,19 @@ struct Fixture {
     std::filesystem::path level;
 
     explicit Fixture(std::string_view name) {
-        bank = test::scratchDirectory(std::string(name) + "-bank");
+        bank = test::scratchDirectory(std::string(name) + "-bank") / "TEST";
         std::filesystem::create_directories(bank / "samples");
         const std::array<s16, 4> kCrackle{8192, -8192, 8192, -8192};
-        writeFile(bank / "samples/000.wav", formats::encodeWav(kCrackle, 48000, 1));
-        writeTextFile(bank / "sounds.json", R"({
+        const std::array<test::NativeSoundSample, 1> bankSamples{
+            {{48000, {kCrackle.begin(), kCrackle.end()}}}};
+        test::writeNativeSoundBank(bank, R"({
   "bank": "TEST",
   "sounds": [
     {"index": 0, "name": "S_SFIREL", "id": 0, "duration": -1.0, "volume": 127, "duck": 0,
      "priority": 0, "sequence": [{"sample": 0, "loopStart": true, "loopBack": true}]}
-  ],
-  "samples": [
-    {"index": 0, "name": "fire", "file": "samples/000.wav", "sampleRate": 48000, "frames": 4}
   ]
-})");
+})",
+                                   bankSamples);
         level = test::scratchDirectory(std::string(name) + "-level");
         writeTextFile(level / "world.json", R"({
   "objects": [
@@ -223,9 +222,9 @@ TEST_CASE("a level's sound items loop while a listener is near and stop when non
 }
 
 TEST_CASE("the Temple trigger repeatedly brings its organist sound and light into range",
-          "[game][world][ambience][organist-trigger][unpacked]") {
+          "[game][world][ambience][organist-trigger][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path().parent_path().parent_path();
     LevelCatalog levels;
     REQUIRE(levels.load(root));
     REQUIRE(levels.byName("E1"));
@@ -288,10 +287,10 @@ TEST_CASE("the Temple trigger repeatedly brings its organist sound and light int
 }
 
 TEST_CASE("the tower's ambience stands at the realms' portals and its braziers",
-          "[game][world][ambience][unpacked]") {
+          "[game][world][ambience][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("audio/TOWAMB/sounds.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELL1/world.json");
+        test::assetOrSkip("audio/TOWAMB.vbk").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2");
     SoundSet ambient;
     REQUIRE(ambient.load(root / "audio/TOWAMB"));
     WorldLayout layout;
@@ -316,9 +315,9 @@ TEST_CASE("the tower's ambience stands at the realms' portals and its braziers",
 }
 
 TEST_CASE("authored Temple organist and Battlefield hoop sound items are audible on approach",
-          "[game][world][ambience][soundscape][unpacked][assets]") {
+          "[game][world][ambience][soundscape][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("audio/TOWAMB/sounds.json").parent_path().parent_path().parent_path();
+        test::assetOrSkip("audio/TOWAMB.vbk").parent_path().parent_path();
     struct Example {
         std::string_view level;
         std::string_view bank;
@@ -332,9 +331,9 @@ TEST_CASE("authored Temple organist and Battlefield hoop sound items are audible
          {Example{"LEVELE1", "CATHEDRAL", "TEMPLE", "E1", "S_ORGANIST", 2, true},
           Example{"LEVELH3", "BATTLE", "BATTLE", "H3", "S_SCATHEAD", 4, false}}) {
         CAPTURE(example.level);
-        test::unpackedOrSkip(std::string("audio/") + std::string(example.bank) + "/sounds.json");
-        const auto world = test::unpackedOrSkip(std::string("LEVELS/") +
-                                                std::string(example.level) + "/world.json");
+        test::assetOrSkip("AUDIO/AUDATPS2.ROM");
+        const auto world =
+            test::assetOrSkip(std::string("LEVELS/") + std::string(example.level) + "/WORLDS.PS2");
         WorldLayout layout;
         REQUIRE(layout.load(world.parent_path()));
         const auto item =
@@ -345,7 +344,7 @@ TEST_CASE("authored Temple organist and Battlefield hoop sound items are audible
         LevelSoundscape sounds;
         WorldData data;
         const auto manifest =
-            test::unpackedOrSkip(std::string("wdata/") + std::string(example.manifest) + ".json");
+            test::assetOrSkip(std::string("wdata/") + std::string(example.manifest) + ".WAD");
         REQUIRE(data.load(manifest));
         const LevelInfo* level = data.level(example.levelName);
         REQUIRE(level != nullptr);

@@ -6,6 +6,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/combat/Damage.h"
 #include "game/world/DestructibleWalls.h"
 
@@ -30,6 +31,7 @@ TEST_CASE("Shootable walls own removable geometry, health and party visibility",
     TextureSet textures;
     WorldCollision collision;
     test::FakeRenderDevice device;
+    test::convertModelFixture(directory);
     REQUIRE(layout.load(directory));
     REQUIRE(models.load(directory));
     REQUIRE(textures.load(directory));
@@ -69,9 +71,9 @@ TEST_CASE("Shootable walls own removable geometry, health and party visibility",
 }
 
 TEST_CASE("Temple's five shootable walls load their level meshes and authored surfaces",
-          "[walls][unpacked]") {
-    const auto directory = test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELE1/objects.json");
+          "[walls][assets]") {
+    const auto directory = test::assetOrSkip("LEVELS/LEVELE1/WORLDS.PS2").parent_path();
+    test::assetOrSkip("LEVELS/LEVELE1/objects.ngc");
     WorldLayout layout;
     ModelSet models;
     TextureSet textures;

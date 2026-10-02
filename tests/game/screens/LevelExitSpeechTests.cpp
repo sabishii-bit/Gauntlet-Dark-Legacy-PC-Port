@@ -9,11 +9,10 @@
 
 #include "engine/audio/AudioMixer.h"
 #include "engine/core/Types.h"
-#include "engine/io/File.h"
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
-#include "formats/WavWriter.h"
+#include "fixtures/NativeSoundBank.h"
 #include "game/screens/LevelExitSpeech.h"
 #include "game/world/LevelSoundscape.h"
 #include "game/world/LevelWorld.h"
@@ -29,26 +28,19 @@ constexpr std::array<std::string_view, 8> kCues{"S_SKORNTAUNT1", "S_TOOHASTY",  
 std::filesystem::path voiceBank() {
     const auto root = test::scratchDirectory("exit-speech");
     const auto bank = root / "audio/VOICE1";
-    std::filesystem::create_directories(bank);
     std::string sounds;
-    std::string samples;
+    std::vector<test::NativeSoundSample> samples;
     for (usize i = 0; i < kCues.size(); ++i) {
-        const auto file = std::format("{}.wav", i);
-        const std::vector<s16> pcm(usize{48000} * 6, static_cast<s16>((i + 1) * 1024));
-        writeFile(bank / file, formats::encodeWav(pcm, 48000, 1));
+        samples.push_back(
+            {48000, std::vector<s16>(usize{48000} * 6, static_cast<s16>((i + 1) * 1024))});
         if (i != 0) {
             sounds += ',';
-            samples += ',';
         }
         sounds += std::format(R"({{"index":{},"name":"{}","id":{},"duration":6,
             "volume":127,"sequence":[{{"sample":{}}}]}})",
                               i, kCues[i], i, i);
-        samples += std::format(R"({{"index":{},"name":"tone","file":"{}",
-            "sampleRate":48000,"frames":288000}})",
-                               i, file);
     }
-    writeTextFile(bank / "sounds.json",
-                  std::format(R"({{"sounds":[{}],"samples":[{}]}})", sounds, samples));
+    test::writeNativeSoundBank(bank, std::format(R"({{"sounds":[{}]}})", sounds), samples);
     return root;
 }
 
@@ -155,10 +147,10 @@ TEST_CASE("exit speech tolerates disabled audio and unavailable clips", "[exit-s
 }
 
 TEST_CASE("Fields exit uses its actual runestone and collection removes the reminder",
-          "[exit-speech][unpacked]") {
+          "[exit-speech][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG1/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("ITEMS/LEVELG/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("ITEMS/LEVELG/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -184,8 +176,8 @@ TEST_CASE("Fields exit uses its actual runestone and collection removes the remi
     world.clear();
 }
 
-TEST_CASE("all exit taunts decode from the original narrator bank", "[exit-speech][unpacked]") {
-    const auto directory = test::unpackedOrSkip("audio/VOICE1/sounds.json").parent_path();
+TEST_CASE("all exit taunts decode from the original narrator bank", "[exit-speech][assets]") {
+    const auto directory = test::assetOrSkip("audio/VOICE1.vbk");
     SoundSet bank;
     REQUIRE(bank.load(directory));
     for (const auto name : kCues) {

@@ -6,6 +6,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/world/Rubble.h"
 
 namespace {
@@ -28,6 +29,7 @@ TEST_CASE("rubble is the named mesh of the first archive that has it, left where
        "sequences":[{"name":"ACTIVE","frames":1,"frameRate":30}]}]})");
     ItemArchive empty;
     ItemArchive items;
+    test::convertModelFixture(root);
     REQUIRE(items.load(root));
     test::FakeRenderDevice device;
     Rubble rubble;

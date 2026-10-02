@@ -110,8 +110,8 @@ TEST_CASE("a body is hurt by a harmful wall it is against or a harmful floor it 
     CHECK(floor->away == Vec3{0.0f});
 }
 
-TEST_CASE("the fields keep their harmful floors and rollers", "[game][world][hazards][unpacked]") {
-    const auto file = test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+TEST_CASE("the fields keep their harmful floors and rollers", "[game][world][hazards][assets]") {
+    const auto file = test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(file.parent_path()));
     HazardSurfaces hazards;

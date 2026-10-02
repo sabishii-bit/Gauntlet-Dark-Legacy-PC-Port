@@ -28,10 +28,10 @@ struct SoundSetEntry {
     std::vector<SoundSetStep> sequence;
 };
 
-/** Named sound calls and lazily decoded samples from a native bank or inspection export. */
+/** Named sound calls and lazily decoded samples from a native bank. */
 class SoundSet {
 public:
-    /** Accepts AUDIO/<bank name>, a .vbk path, or a legacy directory/sounds.json. */
+    /** Accepts AUDIO/<bank name> or a .vbk path, with optional AUDATPS2.ROM names. */
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return !m_entries.empty(); }
@@ -48,8 +48,7 @@ public:
 private:
     bool loadNative(const std::filesystem::path& path);
     struct SampleInfo {
-        std::filesystem::path file;
-        std::optional<formats::BankSample> native;
+        formats::BankSample native;
         SoundClip clip;
     };
 

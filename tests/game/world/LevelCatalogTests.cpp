@@ -107,10 +107,10 @@ TEST_CASE("only the first Temple and Underworld stages continue directly to thei
     }
 }
 
-TEST_CASE("the unpacked realm data finds the tower's first portals' levels",
-          "[game][world][levels][unpacked]") {
+TEST_CASE("the native realm data finds the tower's first portals' levels",
+          "[game][world][levels][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("wdata/TOWN.json").parent_path().parent_path();
+        test::assetOrSkip("WDATA/TOWN.WAD").parent_path().parent_path();
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
     REQUIRE(catalog.realms().size() >= 13);

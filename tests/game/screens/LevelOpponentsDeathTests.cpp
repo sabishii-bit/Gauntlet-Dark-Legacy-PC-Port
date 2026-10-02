@@ -97,11 +97,10 @@ TEST_CASE("Anti Death is exposed by player identity only while the item is activ
 }
 
 void verifyDeathTransfers(s32 tier, bool realAssets) {
-    const auto root = realAssets ? test::unpackedOrSkip("MONSTERS/DEATH/animations.json")
-                                       .parent_path()
-                                       .parent_path()
-                                       .parent_path()
-                                 : test::deathArchive();
+    const auto root =
+        realAssets
+            ? test::assetOrSkip("MONSTERS/DEATH/ANIM.PS2").parent_path().parent_path().parent_path()
+            : test::deathArchive();
     test::FakeRenderDevice device;
     LevelWorld world;
     ItemArchive weapons;
@@ -202,18 +201,16 @@ TEST_CASE("Death transfers affect only its contact player and stop effects on se
     verifyDeathTransfers(GENERATE(1, 2), false);
 }
 TEST_CASE("Death plays its retail drain artwork and releases its looping audio",
-          "[death][level-opponents][unpacked]") {
+          "[death][level-opponents][assets]") {
     verifyDeathTransfers(GENERATE(1, 2), true);
 }
 
 TEST_CASE("Authored Red and Black Death placements enter the level roster",
-          "[death][level-opponents][unpacked]") {
+          "[death][level-opponents][assets]") {
     const bool black = GENERATE(false, true);
-    const auto root = test::unpackedOrSkip("MONSTERS/DEATH/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
-    test::unpackedOrSkip(black ? "LEVELS/LEVELA1/world.json" : "LEVELS/LEVELE1/world.json");
+    const auto root =
+        test::assetOrSkip("MONSTERS/DEATH/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip(black ? "LEVELS/LEVELA1/WORLDS.PS2" : "LEVELS/LEVELE1/WORLDS.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));

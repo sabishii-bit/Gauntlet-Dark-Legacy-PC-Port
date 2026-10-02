@@ -38,8 +38,8 @@ TEST_CASE("portal departure sinks and spins for fifty ticks even without artwork
 }
 
 TEST_CASE("portal departure uses the animated lightning skin, not spawn flames",
-          "[portal-departure][unpacked]") {
-    const auto path = test::unpackedOrSkip("WEAPONS/textures.json");
+          "[portal-departure][assets]") {
+    const auto path = test::assetOrSkip("WEAPONS/textures.ngc");
     test::FakeRenderDevice device;
     TextureSet textures;
     REQUIRE(textures.load(path.parent_path()));
@@ -58,10 +58,10 @@ TEST_CASE("portal departure uses the animated lightning skin, not spawn flames",
 }
 
 TEST_CASE("transport uses the tunnel one-shot rather than the looping portal flame",
-          "[portal-departure][unpacked]") {
-    const auto path = test::unpackedOrSkip("audio/COMMON/sounds.json");
+          "[portal-departure][assets]") {
+    const auto path = test::assetOrSkip("audio/COMMON.vbk");
     SoundSet sounds;
-    REQUIRE(sounds.load(path.parent_path()));
+    REQUIRE(sounds.load(path));
     const auto tunnel = sounds.find(PortalDeparture::kSound);
     REQUIRE(tunnel);
     CHECK(sounds.entry(*tunnel).id == 4);

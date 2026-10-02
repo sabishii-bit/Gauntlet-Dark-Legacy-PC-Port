@@ -79,8 +79,8 @@ TEST_CASE("both combo participants reject damage and reactions until unlinked",
 }
 
 TEST_CASE("turbo animation blocks boss knockdown throughout the move but not afterward",
-          "[player-health][attack-invulnerability][unpacked]") {
-    const auto root = test::unpackedOrSkip("PLAYERS/WAR/ANIM/animations.json")
+          "[player-health][attack-invulnerability][assets]") {
+    const auto root = test::assetOrSkip("PLAYERS/WAR/ANIM/ANIM.PS2")
                           .parent_path()
                           .parent_path()
                           .parent_path()

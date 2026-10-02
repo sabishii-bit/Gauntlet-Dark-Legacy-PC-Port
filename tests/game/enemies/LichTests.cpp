@@ -19,9 +19,9 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
-TEST_CASE("Lich fissure snapshots the body's facing when detached", "[lich][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+TEST_CASE("Lich fissure snapshots the body's facing when detached", "[lich][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'G');
@@ -48,9 +48,9 @@ TEST_CASE("Lich fissure snapshots the body's facing when detached", "[lich][unpa
     REQUIRE(seen);
 }
 
-TEST_CASE("Lich chain spin reaches nearby players around its body", "[lich][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+TEST_CASE("Lich chain spin reaches nearby players around its body", "[lich][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'G');
@@ -87,9 +87,9 @@ TEST_CASE("Lich chain spin reaches nearby players around its body", "[lich][unpa
     CHECK(struck == std::set<s32>{0, 1, 2, 3});
 }
 
-TEST_CASE("Lich charging spin damages players in its path", "[lich][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+TEST_CASE("Lich charging spin damages players in its path", "[lich][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fixture;
     fixture.open(device, root, nullptr, {}, 'G');
@@ -118,11 +118,11 @@ TEST_CASE("Lich charging spin damages players in its path", "[lich][unpacked]") 
 }
 
 TEST_CASE("Lich spit creates visible generators that breed the stage's maggots",
-          "[lich][level-opponents][unpacked]") {
+          "[lich][level-opponents][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
-    test::unpackedOrSkip("MONSTERS/MAG/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/MAG/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -206,10 +206,10 @@ TEST_CASE("Lich spit creates visible generators that breed the stage's maggots",
     }
 }
 
-TEST_CASE("Lich chain spin delivers damage in the crypt encounter", "[lich][unpacked]") {
+TEST_CASE("Lich chain spin delivers damage in the crypt encounter", "[lich][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -260,10 +260,10 @@ TEST_CASE("Lich chain spin delivers damage in the crypt encounter", "[lich][unpa
     CHECK(hits > 0);
 }
 TEST_CASE("Lich ground hands damage and hinder the player standing in their grasp",
-          "[lich][lich-hands][unpacked]") {
+          "[lich][lich-hands][assets]") {
     const auto root =
-        test::unpackedOrSkip("LEVELS/LEVELG5/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+        test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     test::FakeRenderDevice device;
     LevelCatalog catalog;
     REQUIRE(catalog.load(root));
@@ -321,9 +321,9 @@ TEST_CASE("Lich ground hands damage and hinder the player standing in their gras
     CHECK(hits > 0);
 }
 TEST_CASE("Lich stomp and spin keep authored damage reach and independent visual scale",
-          "[lich][lich-range][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/LICH.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/LICH/animations.json");
+          "[lich][lich-range][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/LICH.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/LICH/ANIM.PS2");
     const bool stomp = GENERATE(false, true);
     const s32 ticks = GENERATE(1, 2);
     const f32 seconds = static_cast<f32>(ticks) / 60;
@@ -400,11 +400,9 @@ TEST_CASE("Lich stomp and spin keep authored damage reach and independent visual
 }
 
 TEST_CASE("Lich maggots pursue nearby players but resume prowling outside eight units",
-          "[lich][enemies][unpacked]") {
-    const auto root = test::unpackedOrSkip("MONSTERS/MAG/animations.json")
-                          .parent_path()
-                          .parent_path()
-                          .parent_path();
+          "[lich][enemies][assets]") {
+    const auto root =
+        test::assetOrSkip("MONSTERS/MAG/ANIM.PS2").parent_path().parent_path().parent_path();
     test::FakeRenderDevice device;
     Enemies enemies;
     enemies.open(device, root, nullptr, 1, {}, 1);

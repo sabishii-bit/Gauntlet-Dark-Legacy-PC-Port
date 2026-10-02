@@ -7,6 +7,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/players/PowerupEffects.h"
 #include "game/world/WeaponGlow.h"
 
@@ -32,6 +33,7 @@ std::filesystem::path glowArchive() {
       {"name":"WEAP_TW_R",
        "nodes":[{"name":"XN","object":"GLOW","parent":-1,"position":[0,0,0]}],
        "sequences":[{"name":"ACTIVE","frames":0,"rate":30}]}]})");
+    test::convertModelFixture(root);
     return root;
 }
 
@@ -115,8 +117,8 @@ TEST_CASE("the glow is kept in the hand while its element is worn and put out af
 }
 
 TEST_CASE("the classes' effects hold every element's glow and throw effect",
-          "[game][world][weapon-glow][damage-types][unpacked]") {
-    const auto path = test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json").parent_path();
+          "[game][world][weapon-glow][damage-types][assets]") {
+    const auto path = test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
     ItemArchive archive;
     REQUIRE(archive.load(path));

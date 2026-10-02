@@ -120,10 +120,10 @@ TEST_CASE("a crossing asks for the area once and the highest area wins where zon
 }
 
 TEST_CASE("the shipped levels' music zones name their realm's stream areas",
-          "[game][world][music-areas][unpacked]") {
+          "[game][world][music-areas][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("LEVELS/LEVELJ3/world.json").parent_path().parent_path().parent_path();
-    test::unpackedOrSkip("audio/TOWAMB/sounds.json");
+        test::assetOrSkip("LEVELS/LEVELJ3/WORLDS.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("audio/TOWAMB.vbk");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELJ3"));
     MusicAreas areas;

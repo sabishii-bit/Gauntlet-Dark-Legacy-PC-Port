@@ -27,8 +27,8 @@ TEST_CASE("permanent familiar tiers are awarded at thirty and eighty", "[game][f
 }
 
 TEST_CASE("both permanent familiars bind the authored animated assets",
-          "[game][familiar][unpacked]") {
-    const auto path = test::unpackedOrSkip("PLAYERS/WAR/SFXYEL/animations.json").parent_path();
+          "[game][familiar][assets]") {
+    const auto path = test::assetOrSkip("PLAYERS/WAR/SFXYEL/ANIM.PS2").parent_path();
     test::FakeRenderDevice device;
     ItemArchive archive;
     REQUIRE(archive.load(path));

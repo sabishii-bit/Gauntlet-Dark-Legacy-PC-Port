@@ -6,7 +6,7 @@
 
 #include "engine/core/Types.h"
 
-namespace gdl {
+namespace gdl::test {
 
 /** Interleaved 16-bit PCM read from a RIFF WAVE file. */
 struct WavData {
@@ -23,4 +23,4 @@ WavData decodeWav(std::span<const u8> bytes);
 /** Reads and parses a WAVE file; throws FileError or FormatError. */
 WavData loadWav(const std::filesystem::path& path);
 
-} // namespace gdl
+} // namespace gdl::test

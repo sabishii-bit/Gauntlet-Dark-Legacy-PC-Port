@@ -16,6 +16,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/players/ItemPickup.h"
 #include "game/world/PlacedItems.h"
 
@@ -56,6 +57,7 @@ TEST_CASE("pickups bind to authored floors and ride the current platform pose",
     worldText.replace(worldText.find("101,10,50"), 9, "101," + std::to_string(authoredY) + ",50");
     writeTextFile(dir / "world.json", worldText);
     WorldLayout layout;
+    test::convertModelFixture(dir);
     REQUIRE(layout.load(dir));
     ItemArchive archive;
     REQUIRE(archive.load(dir));
@@ -176,6 +178,7 @@ TEST_CASE("food poisoning preserves missing artwork and uses record kind rather 
          "armor":-2,"hitPoints":2,"value":10,"collisionOffset":[2,0,0]}],
         "itemInstances":[{"info":0,"position":[0,0,0],"minPlayers":1}]})");
     WorldLayout layout;
+    test::convertModelFixture(dir);
     REQUIRE(layout.load(dir));
     ItemArchive archive;
     REQUIRE(archive.load(dir));
@@ -205,9 +208,9 @@ TEST_CASE("food poisoning preserves missing artwork and uses record kind rather 
 }
 
 TEST_CASE("explosions destroy exposed food and powerups but preserve quest pickups",
-          "[game][world][blast-items][unpacked]") {
-    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+          "[game][world][blast-items][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELG1"));
     ItemArchive powerups;
@@ -263,9 +266,9 @@ TEST_CASE("explosions destroy exposed food and powerups but preserve quest picku
 }
 
 TEST_CASE("gas poisons food models and pickup values without moving or consuming them",
-          "[game][world][poison-food][unpacked]") {
-    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELG1/world.json");
+          "[game][world][poison-food][assets]") {
+    const auto root = test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELG1/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELG1"));
     ItemArchive powerups;
@@ -341,10 +344,10 @@ TEST_CASE("gas poisons food models and pickup values without moving or consuming
 }
 
 TEST_CASE("the tower's crystals stand on the floor for a party large enough",
-          "[game][world][unpacked]") {
+          "[game][world][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELL1/collision.json");
+        test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
     WorldCollision collision;
@@ -430,10 +433,10 @@ TEST_CASE("the tower's crystals stand on the floor for a party large enough",
     REQUIRE(items.size() == 0);
 }
 
-TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world][unpacked]") {
+TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELL1/collision.json");
+        test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
     ItemArchive powerups;
@@ -512,10 +515,10 @@ TEST_CASE("a collector on a crystal takes it and its burst plays", "[game][world
 }
 
 TEST_CASE("items can be dropped by their record's name and left lying or part taken",
-          "[game][world][unpacked]") {
+          "[game][world][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELL1/world.json");
+        test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
     ItemArchive powerups;
@@ -575,9 +578,9 @@ TEST_CASE("items can be dropped by their record's name and left lying or part ta
 }
 
 TEST_CASE("the crystals can start unseen and be revealed from the origin outward",
-          "[game][world][unpacked]") {
+          "[game][world][assets]") {
     const std::filesystem::path root =
-        test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+        test::assetOrSkip("POWERUPS/ANIM.PS2").parent_path().parent_path();
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELL1"));
     ItemArchive powerups;
@@ -646,6 +649,7 @@ TEST_CASE("thrown coins cross gaps and fast landings but are removed below the l
       "itemInfos":[{"type":1,"subtype":6,"name":"COIN","value":100}],"itemInstances":[]})");
     WorldLayout layout;
     ItemArchive archive;
+    test::convertModelFixture(dir);
     REQUIRE(layout.load(dir));
     REQUIRE(archive.load(dir));
     // The landing starts at z=2; nothing supports the flight before then.
@@ -679,12 +683,10 @@ TEST_CASE("thrown coins cross gaps and fast landings but are removed below the l
 
 TEST_CASE("a thrown item sails out, bounces to rest on the floor and can be taken only after "
           "a while",
-          "[game][world][unpacked]") {
-    const std::filesystem::path root = test::unpackedOrSkip("ITEMS/LEVELG5/animations.json")
-                                           .parent_path()
-                                           .parent_path()
-                                           .parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELG5/collision.json");
+          "[game][world][assets]") {
+    const std::filesystem::path root =
+        test::assetOrSkip("ITEMS/LEVELG5/ANIM.PS2").parent_path().parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELG5/WORLDS.PS2");
     WorldLayout layout;
     REQUIRE(layout.load(root / "LEVELS/LEVELG5"));
     WorldCollision collision;
@@ -785,6 +787,7 @@ TEST_CASE("bottles use authored health and armor rather than the food blast thre
         "collisionOffset":[2,0,0]}],
         "itemInstances":[{"info":0,"position":[0,0,0],"minPlayers":1}]})");
     WorldLayout layout;
+    test::convertModelFixture(dir);
     REQUIRE(layout.load(dir));
     ItemArchive archive;
     REQUIRE(archive.load(dir));

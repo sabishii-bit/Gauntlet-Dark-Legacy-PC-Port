@@ -21,11 +21,11 @@ using namespace gdl;
 using namespace gdl::game;
 
 TEST_CASE("completed shop saves its character before returning to the province wing",
-          "[post-shop-return][shop][select][unpacked]") {
+          "[post-shop-return][shop][select][assets]") {
     // game_main's do_shop result 2 enters init_player_select(2), then resumes
     // at the realm's SetPlayerStartPos marker rather than the tower entrance.
-    const auto root = test::unpackedOrSkip("shop/catalog.json").parent_path().parent_path();
-    test::unpackedOrSkip("LEVELS/LEVELL1/world.json");
+    const auto root = test::assetOrSkip("SHPDATA/SHOP.WAD").parent_path().parent_path();
+    test::assetOrSkip("LEVELS/LEVELL1/WORLDS.PS2");
     const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
                                          "tests/scenarios/after-level-return-province.json");
     const auto initial = scenario.partyMembers();

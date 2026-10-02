@@ -10,6 +10,7 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "fixtures/NativeModelFixture.h"
 #include "game/enemies/CombatantFixture.h"
 
 namespace {
@@ -32,6 +33,7 @@ struct Fixture {
         writeFile(archive / "skin.png", test::kTinyPng);
         writeTextFile(archive / "textures.json", R"({"bitmaps":[
           {"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+        test::convertModelFixture(archive);
         writeTextFile(archive / "animations.json", R"({"trees":[{"name":"GARM","nodes":[
           {"name":"ROOT","object":"BODY","position":[0,0,0],"parent":-1},
           {"name":"ARM","object":"BODY","position":[5,0,0],"parent":0},
@@ -155,9 +157,9 @@ TEST_CASE("a light hit flashes only its collision mesh and expires without leaki
 }
 
 TEST_CASE("shipped Garm nodes emit their authored left and right brood projectiles",
-          "[combatant-nodes][garm][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
+          "[combatant-nodes][garm][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GARM.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GARM/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fighter;
     fighter.open(device, root, nullptr, {}, 'B');
@@ -178,9 +180,9 @@ TEST_CASE("shipped Garm nodes emit their authored left and right brood projectil
 }
 
 TEST_CASE("Garm's hand-ball windup follows the animated root rather than its floor parent",
-          "[combatant-nodes][garm][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/GARM.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/GARM/animations.json");
+          "[combatant-nodes][garm][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/GARM.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/GARM/ANIM.PS2");
     test::FakeRenderDevice device;
     test::CombatantFixture fighter;
     fighter.open(device, root, nullptr, {}, 'H');

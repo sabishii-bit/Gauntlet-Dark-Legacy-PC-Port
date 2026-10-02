@@ -64,10 +64,10 @@ TEST_CASE("multipart meters retain independent eased health and clear every laye
 }
 
 TEST_CASE("Chimera draws its three head fills on one shared frame and drains the struck head",
-          "[game][screens][hud][chimera][unpacked]") {
-    const auto root = test::unpackedOrSkip("critter/CHIMERA.json").parent_path().parent_path();
-    test::unpackedOrSkip("MONSTERS/CHIMERA/animations.json");
-    test::unpackedOrSkip("MONSTERS/CHIMERA/textures.json");
+          "[game][screens][hud][chimera][assets]") {
+    const auto root = test::assetOrSkip("CRITTER/CHIMERA.WAD").parent_path().parent_path();
+    test::assetOrSkip("MONSTERS/CHIMERA/ANIM.PS2");
+    test::assetOrSkip("MONSTERS/CHIMERA/textures.ngc");
     test::FakeRenderDevice device;
     Bosses bosses;
     bosses.open(device, root, nullptr, {}, 'A');
@@ -187,9 +187,9 @@ TEST_CASE("a boss meter fills its two strips by the original's arithmetic and ea
 }
 
 TEST_CASE("a boss meter is drawn from the boss's own archive across the top of the screen",
-          "[game][screens][hud][unpacked]") {
+          "[game][screens][hud][assets]") {
     const std::filesystem::path archiveDirectory =
-        test::unpackedOrSkip("MONSTERS/LICH/textures.json").parent_path();
+        test::assetOrSkip("MONSTERS/LICH/textures.ngc").parent_path();
     test::FakeRenderDevice device;
     ItemArchive archive;
     REQUIRE(archive.load(archiveDirectory));
