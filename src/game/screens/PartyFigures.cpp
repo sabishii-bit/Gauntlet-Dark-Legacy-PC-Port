@@ -97,6 +97,7 @@ void PartyFigures::draw(RenderDevice& device, std::span<const PlayerRuntime> pla
             scene.departure.transform(runtime.capture.body().value_or(runtime.actor.transform())),
             runtime.actor.save(), worn);
         figure.setSkinTexture(skinOf(runtime, worn, scene.departure));
+        figure.setWeaponPowerups(device, world.powerups(), scene.weapons, worn);
         // On the second hand: the left gauntlet, else a shield (PlayerProcessPowerups).
         if ((worn.special & powerup::kLeftGauntlet) != 0) {
             figure.holdOnArm(device, &world.powerups(), kGauntletObject);

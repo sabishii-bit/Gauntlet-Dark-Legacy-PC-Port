@@ -277,7 +277,7 @@ void PlayerFigure::updateTrail(const Mat4& body, s32 ticks) {
                           action == PlayerAnimator::Action::PowerMed;
     const auto hand = static_cast<usize>(std::max(m_handNode, 0));
     const Mat4 wrist = hand < m_transforms.size() ? m_transforms[hand] : Mat4{1.0f};
-    m_trail.step(ticks, body * wrist, swinging && heldWeaponBound());
+    m_trail.step(ticks, body * wrist, swinging && heldWeaponBound() && !m_handItemHeld);
 }
 
 void PlayerFigure::setCompanionPowerups(RenderDevice& device, ItemArchive& powerups,
@@ -351,14 +351,18 @@ void PlayerFigure::draw(RenderDevice& device, const Mat4& clip, const Mat4& body
             m_arm.draw(device, clip, *arm, lighting, {}, nullptr, alpha);
         }
     }
-    if (heldWeaponBound() && !hideWeapon && (!thrown || m_staysInHand)) {
+    if (m_handItemHeld) {
+        if (const auto hand = handAttachment(body)) {
+            m_handItem.draw(device, clip, *hand, lighting, {}, nullptr, alpha);
+        }
+    } else if (heldWeaponBound() && !hideWeapon && (!thrown || m_staysInHand)) {
         const auto hand = static_cast<usize>(m_handNode);
         const Mat4 wrist = hand < m_transforms.size()
                                ? m_transforms[hand]
                                : glm::translate(Mat4{1.0f}, m_costume->worldPosition(hand));
         m_weapon.draw(device, clip, body * wrist, lighting, {}, nullptr, alpha);
     }
-    if (heldWeaponBound()) {
+    if (heldWeaponBound() && !m_handItemHeld) {
         for (const WeaponTrail::Ghost& ghost : m_trail.ghosts()) {
             if (ghost.shown) {
                 m_weapon.draw(device, clip, ghost.placement, lighting, {}, nullptr,
@@ -432,6 +436,30 @@ void PlayerFigure::holdOnArm(RenderDevice& device, ItemArchive* archive, std::st
     m_armHeld = held && m_arm.bound();
     if (m_armHidden >= 0) {
         m_model.setMeshAlpha(static_cast<usize>(m_armHidden), m_armHeld ? 0.0f : 1.0f);
+    }
+}
+
+void PlayerFigure::setWeaponPowerups(RenderDevice& device, ItemArchive& powerups,
+                                     ItemArchive& weapons, const PowerupEffects& worn) {
+    // PlayerProcessPowerups gives the right gauntlet priority over the crossbow and hammer.
+    ItemArchive* archive = &weapons;
+    std::string_view object;
+    if ((worn.special & powerup::kRightGauntlet) != 0) {
+        archive = &powerups;
+        object = "BOSSGAUNTR";
+    } else if ((worn.weapon & powerup::kSuperShot) != 0) {
+        object = "SUPERXBOW";
+    } else if ((worn.weapon & powerup::kThunderHammer) != 0) {
+        object = "HAMMER_HD";
+    }
+    const bool held = m_handNode >= 0 && archive->loaded() && !object.empty() &&
+                      archive->models.find(object).has_value();
+    if (held) {
+        bindObject(device, *archive, object, m_handItemTree, m_handItem);
+    }
+    m_handItemHeld = held && m_handItem.bound();
+    if (m_handItemHeld) {
+        m_trail.clear();
     }
 }
 

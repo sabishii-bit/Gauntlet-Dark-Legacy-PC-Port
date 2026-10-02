@@ -81,6 +81,10 @@ public:
      * on, none when empty; the valkyrie's and knight's own shield and the jester's hand are
      * hidden meanwhile (PlayerProcessPowerups). The archive must outlive this figure. */
     void holdOnArm(RenderDevice& device, ItemArchive* archive, std::string_view object);
+    /** Replaces the normal hand weapon with the equipped gauntlet, crossbow or hammer.
+     * Both archives must outlive this figure's borrowed models. */
+    void setWeaponPowerups(RenderDevice& device, ItemArchive& powerups, ItemArchive& weapons,
+                           const PowerupEffects& worn);
     /** Where the second hand is, when the body has one. */
     std::optional<Mat4> armAttachment(const Mat4& body) const;
     /** A posed hand, if available; callers choose their own fallback attachment. */
@@ -141,6 +145,9 @@ private:
     std::filesystem::path m_directory;
     TreeInfo m_weaponTree;
     TreeModel m_weapon;
+    TreeInfo m_handItemTree;
+    TreeModel m_handItem;
+    bool m_handItemHeld = false;
     TreeInfo m_headwearTree;
     TreeModel m_headwear;
     TreeInfo m_gemTree;
