@@ -14,6 +14,38 @@
 
 namespace gdl::game {
 
+namespace {
+
+void makeMoltenBallsContactOnly(const WorldLayout& layout, WorldCollision& collision) {
+    const auto& objects = layout.objects();
+    for (usize i = 0; i < objects.size(); ++i) {
+        if (objects[i].name.starts_with("F1FFNSXCLAVA#")) {
+            collision.setContactOnly(static_cast<s32>(i), true);
+        }
+        if (!objects[i].name.starts_with("F1NSLAVABALL#")) {
+            continue;
+        }
+        const s32 root = objects[i].parent;
+        if (root < 0) {
+            continue;
+        }
+        for (usize child = 0; child < objects.size(); ++child) {
+            s32 at = static_cast<s32>(child);
+            for (usize guard = 0;
+                 at >= 0 && static_cast<usize>(at) < objects.size() && guard < objects.size();
+                 ++guard) {
+                if (at == root) {
+                    collision.setContactOnly(static_cast<s32>(child), true);
+                    break;
+                }
+                at = objects[static_cast<usize>(at)].parent;
+            }
+        }
+    }
+}
+
+} // namespace
+
 bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpackedRoot,
                       const LevelRef& level) {
     clear();
@@ -150,6 +182,11 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_walls.bind(device, m_layout, m_models, m_textures, m_collision);
     std::erase_if(m_movingObjects, [&](s32 object) { return !m_collision.moving(object); });
     m_hazards.bind(m_layout);
+    if (m_ref.name == "F1") {
+        // Requested damage-only molten balls: retail marks these animated bodies and
+        // their glow planes as walls. Keep their contact damage, not solid-body response.
+        makeMoltenBallsContactOnly(m_layout, m_collision);
+    }
     m_triggers.bindFigures(device, m_layout, m_items);
     m_rotators.bind(m_layout);
     m_rotators.bindFigures(device, m_layout, m_items);

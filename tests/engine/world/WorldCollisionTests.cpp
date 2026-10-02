@@ -63,6 +63,44 @@ TEST_CASE("the floor under a point is found within the probe range", "[world][co
     REQUIRE(collision.floorAt(Vec3{5.0f, 1.0f, 0.0f}, 2.0f, 3.0f)->y == Approx(0.0f));
 }
 
+TEST_CASE("contact-only walls retain contacts without blocking and leave other walls solid",
+          "[world][collision][contact-only]") {
+    auto triangles = room();
+    for (auto surface : room()) {
+        if (surface.object != 1) {
+            continue;
+        }
+        surface.object = 2;
+        for (Vec3& vertex : surface.vertices) {
+            vertex.x += 3;
+        }
+        triangles.push_back(surface);
+    }
+    WorldCollision collision;
+    collision.build(std::move(triangles));
+    collision.setContactOnly(1, true);
+    collision.setContactOnly(1, true);
+    CHECK(collision.contactOnly(1));
+    CHECK_FALSE(collision.contactOnly(2));
+    std::vector<WallContact> contacts;
+    const Vec3 position{4.8f, 0, 0};
+    CHECK(collision.resolveWalls(position, 0.5f, 0.2f, 2.8f, &contacts) == position);
+    REQUIRE(contacts.size() == 1);
+    CHECK(contacts.front().object == 1);
+    CHECK(collision.sweepWalls({4, 0, 0}, {6, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(6));
+    CHECK(collision.sweepWalls({4, 0, 0}, {9, 0, 0}, 0.5f, 0.2f, 2.8f).x == Approx(7.5f));
+    collision.setSolid(1, false);
+    contacts.clear();
+    collision.resolveWalls(position, 0.5f, 0.2f, 2.8f, &contacts);
+    CHECK(contacts.empty());
+    collision.setSolid(1, true);
+    collision.setContactOnly(1, false);
+    CHECK(collision.resolveWalls(position, 0.5f, 0.2f, 2.8f).x == Approx(4.5f));
+    collision.setContactOnly(1, true);
+    collision.clear();
+    CHECK_FALSE(collision.contactOnly(1));
+}
+
 TEST_CASE("a cylinder is pushed out of walls but left alone elsewhere", "[world][collision]") {
     WorldCollision collision;
     collision.build(room());

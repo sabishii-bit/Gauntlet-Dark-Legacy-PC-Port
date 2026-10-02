@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -15,11 +16,15 @@
 
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
+#include "game/app/Scenario.h"
+#include "game/config/GameConfig.h"
 #include "game/enemies/Bosses.h"
 #include "game/enemies/Enemies.h"
 #include "game/enemies/Generators.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/Progression.h"
+#include "game/screens/GameContext.h"
+#include "game/screens/PlayScene.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelWorld.h"
 #include "game/world/TowerAccess.h"
@@ -29,6 +34,129 @@ namespace {
 using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
+
+TEST_CASE("mountain spouts survive complete tower updates and draw submission",
+          "[game][world][spout-integration][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELL1/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root));
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/tower-mountain-spouts.json");
+    const auto party = scenario.partyMembers();
+    REQUIRE(scenario.tower.position.has_value());
+    REQUIRE(world.collision().floorAt(*scenario.tower.position, 1, 1).has_value());
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, scenario.tower));
+    usize mostVertices = 0;
+    const Texture* sparks = nullptr;
+    std::vector<usize> spouts;
+    for (usize i = 0; i < world.particles().size(); ++i) {
+        if (world.particles().emitter(i).descriptor().texture == "EMBER_SPARK2") {
+            sparks = world.particles().textureOf(i);
+            spouts.push_back(i);
+        }
+    }
+    REQUIRE(sparks);
+    REQUIRE(spouts.size() == 5);
+    std::array<bool, 5> fired{};
+    for (s32 frame = 0; frame < 1200; ++frame) {
+        REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        for (usize i = 0; i < spouts.size(); ++i) {
+            for (const auto& particle : world.particles().emitter(spouts[i]).particles()) {
+                if (particle.age < 1) {
+                    fired[i] = true;
+                }
+            }
+        }
+        if (frame % 15 != 0) {
+            continue;
+        }
+        device.draws.clear();
+        scene.render(device, Mat4{1}, 640, 448);
+        usize vertices = 0;
+        usize sparkVertices = 0;
+        for (const auto& draw : device.draws) {
+            vertices += draw.vertices.size();
+            if (draw.texture == sparks) {
+                sparkVertices += draw.vertices.size();
+            }
+        }
+        usize expectedVertices = 0;
+        for (const usize spout : spouts) {
+            const auto& emitter = world.particles().emitter(spout);
+            CHECK(emitter.active());
+            expectedVertices += emitter.particles().size() * 6;
+        }
+        CHECK(sparkVertices == expectedVertices);
+        mostVertices = std::max(mostVertices, vertices);
+        // Each authored spout must birth fresh particles in every five-second window,
+        // and all of its current quads must reach the complete play-scene submission.
+        if (frame % 150 == 135) {
+            CAPTURE(frame);
+            for (const bool seen : fired) {
+                CHECK(seen);
+            }
+            fired.fill(false);
+        }
+    }
+    // The Vulkan immediate buffer holds 2^18 vertices; late effects must still fit.
+    CHECK(mostVertices <= 262144);
+}
+
+TEST_CASE("Underworld molten balls keep contact damage without solid body response",
+          "[game][world][molten-balls][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path().parent_path().parent_path();
+    test::FakeRenderDevice device;
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *catalog.byName("F1")));
+    usize contactOnly = 0;
+    for (usize object = 0; object < world.layout().objects().size(); ++object) {
+        contactOnly += world.collision().contactOnly(static_cast<s32>(object)) ? 1 : 0;
+    }
+    CHECK(contactOnly == 20); // Five transform/ball/spinner groups and five glow planes.
+    constexpr std::array<s32, 5> kBalls{528, 531, 537, 540, 545};
+    for (s32 frame = 0; frame < 180; ++frame) {
+        world.update(1.0f / 30);
+        if (frame % 30 != 0) {
+            continue;
+        }
+        for (const s32 ball : kBalls) {
+            CAPTURE(frame, ball);
+            WorldCollision collision = world.collision();
+            for (usize object = 0; object < world.layout().objects().size(); ++object) {
+                collision.setSolid(static_cast<s32>(object), static_cast<s32>(object) == ball);
+            }
+            const Vec3 centre{world.scene().worldTransform(static_cast<usize>(ball))[3]};
+            const Vec3 from = centre - Vec3{5, 0, 0};
+            const Vec3 to = centre + Vec3{5, 0, 0};
+            const Vec3 swept = collision.sweepWalls(from, to, 0.6f, centre.y - 1, centre.y + 1);
+            CHECK(swept.x == Approx(to.x).margin(1e-5f));
+            CHECK(swept.y == Approx(to.y).margin(1e-5f));
+            CHECK(swept.z == Approx(to.z).margin(1e-5f));
+            bool touched = false;
+            for (s32 sample = -12; sample <= 12; ++sample) {
+                const Vec3 position = centre + Vec3{static_cast<f32>(sample) * 0.25f, -1, 0};
+                CHECK(collision.resolveWalls(position, 0.6f, centre.y - 0.5f, centre.y + 1) ==
+                      position);
+                if (const auto touch = world.hazards().touching(collision, position, 0.6f, 2)) {
+                    CHECK(touch->harm.damage == 10);
+                    touched = true;
+                }
+            }
+            CHECK(touched);
+        }
+    }
+}
 
 TEST_CASE("Underworld lowered pillars can be crossed from their switches",
           "[game][world][pillar-crossing][unpacked]") {
