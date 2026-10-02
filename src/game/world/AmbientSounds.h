@@ -17,6 +17,7 @@ struct AmbientEmitter {
     s32 instance = -1;
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.0f;
+    u16 flags = 0; ///< sound-item flags, distinct from music-zone switching modes
     SoundSet* bank = nullptr;
     u32 sound = 0;
     SoundHandle handle = kNoSound;
@@ -41,6 +42,8 @@ public:
     static constexpr s32 kSoundItem = 13;
     static constexpr f32 kPeak = 224.0f / 255.0f; ///< the original's loudest
     static constexpr f32 kSilentAt = 1.5f;        ///< radii out where a loop has faded away
+    static constexpr u16 kDuckMusic = 1;
+    static constexpr f32 kMusicDuckHold = 0.5f; ///< AudioSecretProc renews this while in range
 
     /** How loud a loop of `radius` is `distance` away: 1 within, 0 past kSilentAt radii. */
     static f32 loudness(f32 distance, f32 radius);
@@ -58,6 +61,8 @@ public:
     usize size() const { return m_emitters.size(); }
     const AmbientEmitter& emitter(usize index) const { return m_emitters[index]; }
     usize playingCount() const;
+    /** The last audible flagged item's music scale (AudioSecretProc), or no request. */
+    std::optional<f32> musicScale() const;
 
 private:
     std::vector<AmbientEmitter> m_emitters;

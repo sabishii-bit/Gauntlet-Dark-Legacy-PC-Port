@@ -1,4 +1,6 @@
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <filesystem>
 
 #include <catch2/catch_approx.hpp>
@@ -14,6 +16,7 @@
 #include "TestSupport.h"
 #include "formats/WavWriter.h"
 #include "game/world/AmbientSounds.h"
+#include "game/world/LevelSoundscape.h"
 
 namespace {
 
@@ -52,8 +55,8 @@ struct Fixture {
     {"type": 1, "subtype": 15, "name": "GEMORANGE"}
   ],
   "itemInstances": [
-    {"info": 0, "minPlayers": 1, "name": "S_SFIREL", "position": [0, 0, 0],
-     "rotation": [0, 0, 0], "params": [0, 0, 128, 64, 0, 0, 0, 0, 0, 0, 0, 0]},
+    {"info": 0, "minPlayers": 1, "name": "S_sfirel", "position": [0, 0, 0],
+     "rotation": [0, 0, 0], "params": [0, 0, 128, 64, 0, 0, 0, 0, 1, 0, 0, 0]},
     {"info": 0, "minPlayers": 1, "name": "S_NOWHERE", "position": [50, 0, 0],
      "rotation": [0, 0, 0], "params": [0, 0, 128, 64, 0, 0, 0, 0, 0, 0, 0, 0]},
     {"info": 1, "minPlayers": 1, "position": [5, 0, 5], "rotation": [0, 0, 0],
@@ -108,18 +111,25 @@ TEST_CASE("a level's sound items loop while a listener is near and stop when non
     ambience.update(player, far, ear, 1.0f);
     REQUIRE(ambience.playingCount() == 0);
     REQUIRE(player.voiceCount() == 0);
+    REQUIRE_FALSE(ambience.musicScale().has_value());
     const std::array<Vec3, 2> party{Vec3{30.0f, 0.0f, 0.0f}, Vec3{3.0f, 0.0f, 0.0f}};
     ambience.update(player, party, ear, 1.0f);
     REQUIRE(ambience.playingCount() == 1);
     REQUIRE(ambience.emitter(0).loudness == 1.0f);
+    REQUIRE(ambience.emitter(0).flags == AmbientSounds::kDuckMusic);
+    REQUIRE(ambience.musicScale() == 0.5f);
     REQUIRE(player.isPlaying(ambience.emitter(0).handle));
     REQUIRE(player.voiceCount() == 1);
+    std::array<f32, 1600> output{};
+    mixer.mix(output);
+    REQUIRE(std::ranges::any_of(output, [](f32 sample) { return std::abs(sample) > 0.01f; }));
     // Halfway out it plays on, quieter; the handle is kept rather than restarted.
     const SoundHandle handle = ambience.emitter(0).handle;
     const std::array<Vec3, 1> edge{Vec3{5.0f, 0.0f, 0.0f}};
     ambience.update(player, edge, ear, 1.0f);
     REQUIRE(ambience.emitter(0).handle == handle);
     REQUIRE(ambience.emitter(0).loudness == Approx(0.5f));
+    REQUIRE(ambience.musicScale() == 0.75f);
     REQUIRE(player.voiceCount() == 1);
     // Beyond one and a half radii it stops; with nobody about too.
     ambience.update(player, edge, ear, 1.0f, 16.0f / 255.0f);
@@ -129,8 +139,15 @@ TEST_CASE("a level's sound items loop while a listener is near and stop when non
     ambience.update(player, gone, ear, 1.0f);
     REQUIRE(ambience.playingCount() == 0);
     REQUIRE_FALSE(player.isPlaying(handle));
+    REQUIRE_FALSE(ambience.musicScale().has_value());
+    mixer.mix(output); // drain the stop ramp
+    mixer.mix(output);
+    REQUIRE(std::ranges::all_of(output, [](f32 sample) { return sample == 0.0f; }));
     ambience.update(player, party, ear, 1.0f);
     REQUIRE(ambience.playingCount() == 1);
+    REQUIRE(ambience.emitter(0).handle != handle);
+    mixer.mix(output);
+    REQUIRE(std::ranges::any_of(output, [](f32 sample) { return std::abs(sample) > 0.01f; }));
     ambience.update(player, {}, ear, 1.0f);
     REQUIRE(ambience.playingCount() == 0);
     // Stopping and clearing leave nothing behind.
@@ -138,6 +155,7 @@ TEST_CASE("a level's sound items loop while a listener is near and stop when non
     ambience.stop(player);
     REQUIRE(ambience.playingCount() == 0);
     REQUIRE(ambience.size() == 1);
+    REQUIRE_FALSE(ambience.musicScale().has_value());
     ambience.clear();
     REQUIRE(ambience.size() == 0);
     // Without a bank that holds anything, there is nothing to bind.
@@ -172,6 +190,132 @@ TEST_CASE("the tower's ambience stands at the realms' portals and its braziers",
     }
     REQUIRE(drums == 1);
     REQUIRE(fires == 43);
+}
+
+TEST_CASE("authored Temple organist and Battlefield hoop sound items are audible on approach",
+          "[game][world][ambience][soundscape][unpacked][assets]") {
+    const std::filesystem::path root =
+        test::unpackedOrSkip("audio/TOWAMB/sounds.json").parent_path().parent_path().parent_path();
+    struct Example {
+        std::string_view level;
+        std::string_view bank;
+        std::string_view manifest;
+        std::string_view levelName;
+        std::string_view cue;
+        usize emitters;
+        bool loop;
+    };
+    for (const Example& example :
+         {Example{"LEVELE1", "CATHEDRAL", "TEMPLE", "E1", "S_ORGANIST", 2, true},
+          Example{"LEVELH3", "BATTLE", "BATTLE", "H3", "S_SCATHEAD", 4, false}}) {
+        CAPTURE(example.level);
+        test::unpackedOrSkip(std::string("audio/") + std::string(example.bank) + "/sounds.json");
+        const auto world = test::unpackedOrSkip(std::string("LEVELS/") +
+                                                std::string(example.level) + "/world.json");
+        WorldLayout layout;
+        REQUIRE(layout.load(world.parent_path()));
+        const auto item =
+            std::ranges::find(layout.itemInstances(), example.cue, &ItemInstance::name);
+        REQUIRE(item != layout.itemInstances().end());
+        AudioMixer mixer(48000);
+        SoundPlayer player(mixer);
+        LevelSoundscape sounds;
+        WorldData data;
+        const auto manifest =
+            test::unpackedOrSkip(std::string("wdata/") + std::string(example.manifest) + ".json");
+        REQUIRE(data.load(manifest));
+        const LevelInfo* level = data.level(example.levelName);
+        REQUIRE(level != nullptr);
+        const LevelAudioInfo* info = data.audio(level->audioIndex);
+        REQUIRE(info != nullptr);
+        REQUIRE(info->bank == example.bank);
+        sounds.open(root, &player, info);
+        sounds.bindAmbience(layout);
+        const AmbientSounds& ambience = sounds.ambience();
+        REQUIRE(ambience.size() == example.emitters);
+        usize index = ambience.size();
+        for (usize i = 0; i < ambience.size(); ++i) {
+            if (ambience.emitter(i).instance == item - layout.itemInstances().begin()) {
+                index = i;
+            }
+        }
+        REQUIRE(index < ambience.size());
+        const AmbientEmitter& emitter = ambience.emitter(index);
+        REQUIRE(emitter.bank->entry(emitter.sound).name == example.cue);
+        REQUIRE(emitter.bank->sequence(emitter.sound).loops() == example.loop);
+        REQUIRE((emitter.flags & AmbientSounds::kDuckMusic) != 0);
+        const AmbientEar ear{.position = item->position};
+        const std::array<Vec3, 1> far{item->position + Vec3{10000.0f, 0.0f, 0.0f}};
+        const std::array<Vec3, 1> near{item->position};
+        std::array<f32, 1600> output{}; // one sixtieth of a second, stereo
+        sounds.updateAmbience(far, ear, 1.0f);
+        REQUIRE(ambience.playingCount() == 0);
+        mixer.mix(output);
+        REQUIRE(std::ranges::all_of(output, [](f32 sample) { return sample == 0.0f; }));
+        sounds.updateAmbience(near, ear, 1.0f);
+        const SoundHandle first = emitter.handle;
+        REQUIRE(player.isPlaying(first));
+        REQUIRE(ambience.playingCount() == 1); // only this authored emitter can contribute
+        f32 peak = 0.0f;
+        // Cross the organist's 25.298-second loop and the basket's 6.178-second one-shot.
+        const s32 frames = example.loop ? 27 * 60 : 8 * 60;
+        for (s32 frame = 0; frame < frames; ++frame) {
+            player.update();
+            sounds.updateAmbience(near, ear, 1.0f);
+            mixer.mix(output);
+            for (const f32 sample : output) {
+                peak = std::max(peak, std::abs(sample));
+            }
+            if (example.loop || frame < 60) {
+                REQUIRE(emitter.handle == first); // approaching again must not restart it
+            }
+        }
+        REQUIRE(peak > 0.01f);
+        if (!example.loop) {
+            // ProcessItems/AudioSecretProc renews a completed voice while still in range.
+            REQUIRE(emitter.handle != first);
+        }
+        const SoundHandle playing = emitter.handle;
+        sounds.updateAmbience(far, ear, 1.0f);
+        REQUIRE_FALSE(player.isPlaying(playing));
+        REQUIRE(ambience.playingCount() == 0);
+        mixer.mix(output);
+        mixer.mix(output);
+        REQUIRE(std::ranges::all_of(output, [](f32 sample) { return sample == 0.0f; }));
+        sounds.updateAmbience(near, ear, 1.0f);
+        REQUIRE(player.isPlaying(emitter.handle));
+        REQUIRE(emitter.handle != playing);
+        peak = 0.0f;
+        for (s32 frame = 0; frame < 60; ++frame) {
+            player.update();
+            sounds.updateAmbience(near, ear, 1.0f);
+            mixer.mix(output);
+            for (const f32 sample : output) {
+                peak = std::max(peak, std::abs(sample));
+            }
+        }
+        REQUIRE(peak > 0.01f);
+        // These authored flags also ask the real level's soundtrack to make room.
+        const auto disc =
+            test::assetOrSkip("STREAMS/" + info->stream + ".ads").parent_path().parent_path();
+        const AssetLocator assets(disc);
+        sounds.startMusic(&assets, level->musicVolume);
+        REQUIRE(player.isPlaying(sounds.music()));
+        for (s32 frame = 0; frame < 60; ++frame) {
+            sounds.updateAmbience(near, ear, level->soundVolume);
+            sounds.updateMusic(1.0f / 60.0f);
+        }
+        REQUIRE(sounds.musicLevel() == LevelSoundscape::kFullLevel / 2);
+        sounds.updateAmbience(far, ear, level->soundVolume);
+        sounds.updateMusic(0.1f);
+        REQUIRE(sounds.musicLevel() == LevelSoundscape::kFullLevel / 2);
+        sounds.updateMusic(1.0f);
+        REQUIRE(sounds.musicLevel() == LevelSoundscape::kFullLevel);
+        sounds.close();
+        mixer.mix(output);
+        mixer.mix(output);
+        REQUIRE(std::ranges::all_of(output, [](f32 sample) { return sample == 0.0f; }));
+    }
 }
 
 } // namespace

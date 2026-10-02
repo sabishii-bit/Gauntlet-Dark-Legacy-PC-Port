@@ -54,6 +54,7 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
         emitter.position = instance.position;
         // The radius leads the parameters as a float.
         std::memcpy(&emitter.radius, instance.params.data(), sizeof(emitter.radius));
+        std::memcpy(&emitter.flags, &instance.params[8], sizeof(emitter.flags));
         for (SoundSet* bank : banks) {
             if (bank == nullptr) {
                 continue;
@@ -127,6 +128,18 @@ void AmbientSounds::clear() {
 usize AmbientSounds::playingCount() const {
     return static_cast<usize>(std::ranges::count_if(
         m_emitters, [](const AmbientEmitter& emitter) { return emitter.handle != kNoSound; }));
+}
+
+std::optional<f32> AmbientSounds::musicScale() const {
+    std::optional<f32> scale;
+    for (const AmbientEmitter& emitter : m_emitters) {
+        if ((emitter.flags & kDuckMusic) != 0 && emitter.loudness > 0.0f) {
+            // AudioSecretProc, sounds.c 965: each audible flagged item overwrites the
+            // request, in authored order. The normal proximity range gives 0.5..1.
+            scale = 1.0f - 0.5f * emitter.loudness;
+        }
+    }
+    return scale;
 }
 
 } // namespace gdl::game
