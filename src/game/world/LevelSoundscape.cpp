@@ -642,7 +642,8 @@ void LevelSoundscape::speakOverScroll(std::string_view name) {
 }
 
 void LevelSoundscape::opening(const TriggerOpening& event) {
-    if (event.atOnce) {
+    // ProcessItemWobjs tests its signed sound slot before bridge and motion dispatch too.
+    if (event.atOnce || event.sound < 0) {
         return;
     }
     if (event.subtype == 20 || event.subtype == 22) {

@@ -300,20 +300,23 @@ TEST_CASE("bridges use direction cues and traps sound at each motion edge",
     LevelSoundscape soundscape;
     const LevelAudioInfo info{.bank = "LEVEL", .stream = {}};
     soundscape.open(root, &player, &info, 'A');
-    soundscape.opening({.atOnce = true, .subtype = 20});
+    soundscape.opening({.atOnce = true, .sound = 0, .subtype = 20});
     CHECK(player.voiceCount() == 0);
-    soundscape.opening({.subtype = 20});
+    soundscape.opening({.sound = -1, .subtype = 20});
+    soundscape.opening({.sound = -1, .subtype = 22, .closed = true});
+    CHECK(player.voiceCount() == 0); // a silent authored bridge must not dispatch its cue
+    soundscape.opening({.sound = 0, .subtype = 20});
     CHECK(player.voiceCount() == 1);
     soundscape.settled({.subtype = 20});
     CHECK(player.voiceCount() == 1);
-    soundscape.opening({.subtype = 22, .closed = true});
+    soundscape.opening({.sound = 0, .subtype = 22, .closed = true});
     CHECK(player.voiceCount() == 2);
     soundscape.opening({.sound = 10});
     soundscape.settled({.sound = 10});
     CHECK(player.voiceCount() == 4);
     soundscape.close();
     soundscape.open(root, &player, &info, 'A', true);
-    soundscape.opening({.subtype = 20});
+    soundscape.opening({.sound = 0, .subtype = 20});
     soundscape.opening({.sound = 10});
     std::array<f32, 512> samples{};
     mixer.mix(samples);

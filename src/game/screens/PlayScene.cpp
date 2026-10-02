@@ -12,7 +12,9 @@
 
 #include "game/menu/CompassHud.h"
 #include "game/players/ClassData.h"
+#include "game/players/PowerupEffects.h"
 #include "game/players/Progression.h"
+#include "game/screens/PartyRecords.h"
 #include "game/screens/PlayerPowerups.h"
 
 namespace gdl::game {
@@ -579,11 +581,11 @@ void PlayScene::startGameOver() {
     log::info("The game is being quit; game over");
 }
 
-/** Ordinary stage exits return to the tower; tower routes and secret challenges
- * use their authored destination when its assets are available. */
+/** Ordinary stages return to the tower, except the Temple/Underworld boss approaches.
+ * Those, tower routes and secret challenges use their available authored destination. */
 bool PlayScene::leaveBy(usize portal) {
     const ExitPortals::Portal& exit = m_portals.portal(portal);
-    if (!m_world->isTower() && !exit.secret) {
+    if (!m_world->isTower() && !exit.secret && !m_world->ref().continuesToBoss()) {
         m_destination = LevelRef::tower();
         log::info("Portal {}: back to the tower", exit.tag);
         return true;
@@ -944,6 +946,9 @@ PlayOutcome PlayScene::update(f64 deltaSeconds, const Inputs& inputs) {
             }
         }
         if (const auto portal = reached; portal.has_value() && leaveBy(*portal)) {
+            // The leaving branch no longer updates waiting visitors. Release their
+            // activation loop before S_TUNNEL takes over for the descent.
+            m_audio.updateExitFlame(std::nullopt, {});
             m_opponents.settleRewards(m_players, opponentEvents());
             if (m_portals.portal(*portal).secret) {
                 m_secretTravel = true;

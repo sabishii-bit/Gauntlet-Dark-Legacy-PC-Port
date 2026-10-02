@@ -1006,6 +1006,60 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
     REQUIRE(world.isTower());
 }
 
+TEST_CASE("Temple and Underworld exits descend directly to their boss arenas",
+          "[game][screens][unpacked][portal-travel]") {
+    const std::string stage = GENERATE(std::string{"E1"}, std::string{"F1"});
+    const std::string arena = stage == "E1" ? "E2" : "F2";
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVEL" + stage + "/world.json");
+    test::unpackedOrSkip("LEVELS/LEVEL" + arena + "/world.json");
+    test::unpackedOrSkip("audio/COMMON/sounds.json");
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName(stage)));
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    GameContext context;
+    context.config = &config;
+    context.sounds = &sounds;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.name = "AB";
+    PlayOptions options;
+    options.welcome = false;
+    options.position = stage == "E1" ? Vec3{0.25f, 5.12f, -175.57f} : Vec3{-21.75f, 5.04f, -421.0f};
+    PlayScene scene;
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    REQUIRE(scene.open(device, context, world, party, options));
+    REQUIRE(scene.portals().size() == 1);
+    REQUIRE(scene.portals().portal(0).destination->name == arena);
+    bool heardFlame = false;
+    s32 departing = 0;
+    PlayOutcome outcome = PlayOutcome::Running;
+    std::array<f32, 1600> samples{};
+    for (s32 tick = 0; tick < 900 && outcome == PlayOutcome::Running; ++tick) {
+        outcome = scene.update(1.0 / 60.0, {});
+        heardFlame |= scene.exitFlameOn();
+        if (scene.leaving()) {
+            ++departing;
+            CHECK_FALSE(scene.exitFlameOn()); // S_TUNNEL must not retain S_EXITFLAME
+        }
+        mixer.mix(samples);
+        sounds.update();
+    }
+    REQUIRE(heardFlame);
+    REQUIRE(departing >= 165);
+    REQUIRE(outcome == PlayOutcome::Travel);
+    REQUIRE(scene.destination().name == arena);
+    REQUIRE(scene.destination().index == 1);
+    REQUIRE_FALSE(scene.destination().isTower()); // no after-level tally/shop interlude
+}
+
 TEST_CASE("in the fields a key opens a chest, which gives up what it held",
           "[game][screens][unpacked]") {
     const std::filesystem::path root = unpackedRoot();
