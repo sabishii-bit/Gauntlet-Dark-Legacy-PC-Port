@@ -138,6 +138,49 @@ TEST_CASE("retail Sky Dominion acid blobs and demon fireballs face pitched rotat
     checkSpriteFacing(root, "DEM_FBALL", "DEM");
 }
 
+TEST_CASE("Desert sorcerer projectile halos respect solid-world occlusion",
+          "[enemy-facing][enemy-projectile-depth][unpacked]") {
+    const auto dir = test::unpackedOrSkip("MONSTERS/SOR/animations.json").parent_path();
+    test::FakeRenderDevice device;
+    ItemArchive archive;
+    REQUIRE(archive.load(dir));
+    const auto index = archive.trees.find("SOR_FBALL");
+    REQUIRE(index);
+    const auto& tree = archive.trees.tree(*index);
+    REQUIRE(std::ranges::any_of(
+        tree.nodes, [](const auto& node) { return !node.object.empty() && !node.testsDepth(); }));
+    TreeModel model;
+    REQUIRE(model.bind(tree, archive.models, archive.textures, device));
+    model.setFrame(0, 0);
+    model.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(
+        std::ranges::any_of(device.draws, [](const auto& draw) { return !draw.state.depthTest; }));
+    const auto authored = device.draws;
+    device.draws.clear();
+    EnemyMissiles missiles;
+    missiles.launch(*enemyMissileOf(7, EnemyMissileKind::kBolt), {0, 4, 0}, {0, 4, 20}, 1, &model,
+                    0);
+    WorldCamera view;
+    view.position = Vec3{10, 12, -15};
+    view.yaw = 0.3f;
+    view.pitch = 0.7f;
+    const auto camera = CameraFrame::of(view);
+    missiles.draw(device, Mat4{1}, {}, &camera);
+    REQUIRE(device.draws.size() == authored.size());
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        CHECK(device.draws[i].state.depthTest);
+        CHECK(device.draws[i].state.depthWrite == authored[i].state.depthWrite);
+        CHECK(device.draws[i].state.blend == authored[i].state.blend);
+    }
+    // The draw policy must not mutate a model shared with another effect.
+    device.draws.clear();
+    model.draw(device, Mat4{1}, Mat4{1});
+    REQUIRE(device.draws.size() == authored.size());
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        CHECK(device.draws[i].state.depthTest == authored[i].state.depthTest);
+    }
+}
+
 EnemyView playerAt(const Vec3& position, s32 player = 0) {
     EnemyView view;
     view.player = player;

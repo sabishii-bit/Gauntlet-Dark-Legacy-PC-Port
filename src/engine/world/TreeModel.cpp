@@ -148,17 +148,18 @@ void TreeModel::selectFrame(Node& node, u32 sequence, s32 frame) {
 
 void TreeModel::draw(RenderDevice& device, const Mat4& clip, const Mat4& model,
                      const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
-                     const CameraFrame* camera, f32 alpha, Pass pass) const {
+                     const CameraFrame* camera, f32 alpha, Pass pass, Occlusion occlusion) const {
     if (alpha <= 0.0f) {
         return;
     }
-    drawParts(device, clip, model, lighting, nodeTransforms, camera, alpha, false, pass);
-    drawParts(device, clip, model, lighting, nodeTransforms, camera, alpha, true, pass);
+    drawParts(device, clip, model, lighting, nodeTransforms, camera, alpha, false, pass, occlusion);
+    drawParts(device, clip, model, lighting, nodeTransforms, camera, alpha, true, pass, occlusion);
 }
 
 void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& model,
                           const WorldLighting& lighting, std::span<const Mat4> nodeTransforms,
-                          const CameraFrame* camera, f32 alpha, bool translucent, Pass pass) const {
+                          const CameraFrame* camera, f32 alpha, bool translucent, Pass pass,
+                          Occlusion occlusion) const {
     for (const Node& node : m_nodes) {
         const f32 opacity = alpha * node.alpha;
         const bool fading = opacity < 1.0f;
@@ -215,7 +216,7 @@ void TreeModel::drawParts(RenderDevice& device, const Mat4& clip, const Mat4& mo
             state.maskedTexture = mask;
             state.alphaTest = blended ? DrawState::kTranslucentAlphaTest : 0.0f;
             state.depthWrite = depthWrite;
-            state.depthTest = node.depthTest;
+            state.depthTest = node.depthTest || occlusion == Occlusion::SolidWorld;
             state.uvOffset = textureOffset(shape.slots[p]);
             state.uvScale = textureScale(shape.slots[p]);
             if (node.uvOffset.has_value()) {

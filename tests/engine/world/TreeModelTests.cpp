@@ -51,6 +51,34 @@ std::filesystem::path sampleFigure(std::string_view name) {
     return dir;
 }
 
+TEST_CASE("world occlusion is a per-draw policy and preserves authored halo blending",
+          "[world][model][enemy-projectile-depth]") {
+    const auto dir = sampleFigure("tree-model-world-occlusion");
+    ModelSet models;
+    TextureSet textures;
+    AnimationSet trees;
+    REQUIRE(models.load(dir));
+    REQUIRE(textures.load(dir));
+    REQUIRE(trees.load(dir));
+    TreeInfo tree = trees.tree(0);
+    tree.nodes[2].objectFlags = TreeNodeInfo::kAdditiveFlag | TreeNodeInfo::kNoDepthWriteFlag |
+                                TreeNodeInfo::kNoDepthTestFlag;
+    test::FakeRenderDevice device;
+    TreeModel figure;
+    REQUIRE(figure.bind(tree, models, textures, device));
+    for (const auto policy : {TreeModel::Occlusion::Authored, TreeModel::Occlusion::SolidWorld,
+                              TreeModel::Occlusion::Authored}) {
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, Mat4{1}, {}, {}, nullptr, 1, TreeModel::Pass::All, policy);
+        REQUIRE(device.draws.size() == 2);
+        CHECK(device.draws[0].state.depthTest);
+        CHECK(device.draws[0].state.depthWrite);
+        CHECK(device.draws[1].state.depthTest == (policy == TreeModel::Occlusion::SolidWorld));
+        CHECK_FALSE(device.draws[1].state.depthWrite);
+        CHECK(device.draws[1].state.blend == BlendMode::Additive);
+    }
+}
+
 TEST_CASE("tree effects can composite after scenery without redrawing depth-writing parts",
           "[world][model][effect-pass]") {
     const auto dir = sampleFigure("tree-model-passes");

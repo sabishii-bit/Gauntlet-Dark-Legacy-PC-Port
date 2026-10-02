@@ -685,7 +685,12 @@ void EnemyMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLigh
         if (missile.scale != 1.0f) {
             model = glm::scale(model, Vec3{missile.scale});
         }
-        missile.model->draw(device, clip, model, lighting, {}, camera);
+        // SOR_FBALL's CFXO_H halo authors no depth test. Missiles draw after
+        // the opaque scene here, so that flag would paint it through walls.
+        // Constrain only this world-bound draw; keep its blend/depth-write
+        // settings and the shared model's authored policy intact.
+        missile.model->draw(device, clip, model, lighting, {}, camera, 1.0f, TreeModel::Pass::All,
+                            TreeModel::Occlusion::SolidWorld);
     }
 }
 
