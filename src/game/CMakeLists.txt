@@ -7,6 +7,7 @@ add_library(game STATIC
     enemies/DeathRules.cpp
     enemies/EnemiesDeath.cpp
     screens/LevelOpponentsDeath.cpp
+    screens/LevelOpponentsLoot.cpp
     world/SecretChallenge.cpp
     screens/ChallengeHud.cpp
     screens/RuneMeter.cpp

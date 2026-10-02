@@ -78,6 +78,7 @@ struct CombatEffectDefinition {
     static constexpr u32 kShakes = 0x2;            ///< shakes the camera
     static constexpr u32 kArenaCue = 0x20;         ///< invokes the current boss arena's callback
     static constexpr u32 kUntilNextMove = 0x40000; ///< removed when its owner's move changes
+    static constexpr u32 kSkin = 0x100; ///< texture sequence applied to the creature itself
 
     std::string tree;        ///< "ATK01FX"; "NULLFX" or empty shows nothing
     std::string soundFormat; ///< "S_GOL%cSWING"
@@ -89,6 +90,7 @@ struct CombatEffectDefinition {
 
     f32 particleRate = 0.0f;  ///< custom emitter births per 30 Hz frame
     f32 particleSpeed = 0.0f; ///< custom emitter speed in world units per second
+    s32 skinLoops = 0;        ///< additional passes of a skin sequence (SFXX custom0)
 
     bool shows() const { return !tree.empty() && tree != "NULLFX"; }
     bool follows() const { return (flags & kFollows) != 0; }

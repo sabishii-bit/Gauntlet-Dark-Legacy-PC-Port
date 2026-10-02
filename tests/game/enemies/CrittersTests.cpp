@@ -664,7 +664,10 @@ TEST_CASE("a general comes with the realm's costume and is found by missiles and
     REQUIRE(critters.radiusOf(*general) == 3.5f);
     const auto targets = critters.targets();
     REQUIRE(targets.size() == critters.dataOf(*general)->parts().size() + 1);
-    REQUIRE(targets.back().radius == 3.5f); // the root fallback accompanies animated nodes
+    // CritterMoveNodeCol's fallback cylinder uses wallRadius horizontally,
+    // independently of the vertical body radius.
+    REQUIRE(targets.back().radius == 2.0f);
+    REQUIRE(targets.back().height == 7.0f);
     for (const auto& target : targets) {
         REQUIRE(target.id == *general); // several hit volumes still represent one enemy
     }

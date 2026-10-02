@@ -61,8 +61,6 @@ constexpr f32 kSmokeFade = 0.5f;
 constexpr f32 kBlastSeconds = 1.0f; ///< the blast's and the cloud's first stage without art
 constexpr f32 kCarryReach = 2.0f;   ///< how far along the ground a great one's pickup may lie
 constexpr f32 kCarryRise = 3.0f;    ///< and up or down
-constexpr f32 kBagSpeed = 20.0f;    ///< its bag leaves straight up this fast
-constexpr f32 kBagSeconds = 1.25f;  ///< about the bag's flight, when the pickup can be taken
 constexpr f32 kCloudSeconds = 2.0f / 3.0f;
 constexpr f32 kPlacementReach = 50.0f;     ///< a placement stands seen from no further off
 constexpr f32 kPlacementWakeReach = 10.0f; ///< a trigger wakes the placed enemy nearest within
@@ -439,6 +437,9 @@ void LevelOpponents::close() {
     clearDeaths();
     if (m_resources.has_value()) {
         m_combatantProjectiles.clear(m_resources->effects);
+        for (const Bag& bag : m_bags) {
+            m_resources->effects.stop(bag.effect);
+        }
         for (const CritterEffect& cue : m_critterEffects) {
             m_resources->effects.stop(cue.effect);
         }
@@ -447,6 +448,7 @@ void LevelOpponents::close() {
         }
     }
     m_critterEffects.clear();
+    m_bags.clear();
     m_moveEffects.clear();
     m_cueEffects.clear();
     m_generators.clear();
@@ -907,6 +909,7 @@ void LevelOpponents::update(s32 ticks, f32 seconds, std::span<PlayerRuntime> pla
         player.effectGap = std::max(0.0f, player.effectGap - std::max(seconds, 0.0f));
     }
     hearFrom(players);
+    updateBags(seconds);
     shrinkOpponents(players);
     const std::vector<EnemyView> views = enemyViews(players);
     std::vector<Obstacle> boxes = m_generators.obstacles();
@@ -1556,22 +1559,36 @@ void LevelOpponents::dropCarried(const CombatLoss& loss, std::span<const PlayerR
     if (!m_resources.has_value()) {
         return;
     }
-    // It comes out in a bag thrown straight up, and lies where the bag lands (StartBagFX).
-    const Vec3 up{0.0f, kBagSpeed, 0.0f};
-    bool dropped = false;
+    Bag bag;
+    bag.position = loss.position;
     if (loss.critter >= 0 && static_cast<usize>(loss.critter) < m_carried.size()) {
         std::optional<usize>& carried = m_carried[static_cast<usize>(loss.critter)];
         if (carried.has_value()) {
-            dropped = m_resources->world.releaseItem(*carried, loss.position, up, kBagSeconds);
+            bag.item = carried;
             carried.reset();
         }
     }
-    if (!dropped && loss.kind == CombatantKind::Gargoyle && !loss.form.empty()) {
+    if (!bag.item && loss.kind == CombatantKind::Gargoyle && !loss.form.empty()) {
         // A gargoyle carrying nothing leaves the piece its form is named by.
-        dropped = m_resources->world.throwItem(m_resources->device, "GARG" + loss.form,
-                                               loss.position, up, kBagSeconds);
+        bag.name = "GARG" + loss.form;
     }
-    if (!dropped || !events.help) {
+    if (!bag.item && bag.name.empty()) {
+        return;
+    }
+    EffectTrees::Setting settings;
+    settings.seconds = 3;
+    bag.effect = m_resources->effects.startSet(m_resources->device, m_resources->weapons,
+                                               "BAG_THROW", bag.position, settings);
+    m_bagSeed = m_bagSeed * 1664525U + 1013904223U;
+    constexpr f32 kMinSpin = 0.261799388f;
+    constexpr f32 kSpinRange = 1.04719758f;
+    bag.spin = kMinSpin + kSpinRange * static_cast<f32>(m_bagSeed >> 8) / 16777216.0f;
+    if (bag.effect != 0) {
+        m_bags.push_back(std::move(bag));
+    } else {
+        releaseBag(bag); // Missing optional artwork must not lose the reward.
+    }
+    if (!events.help) {
         return;
     }
     s32 lesson = 0;
@@ -1598,8 +1615,9 @@ void LevelOpponents::awardCritterLosses(std::span<const PlayerRuntime> players,
         return;
     }
     for (const CombatLoss& loss : m_critters.takeLosses()) {
-        if (loss.killed) {
+        if (loss.drop) {
             dropCarried(loss, players, events);
+            continue;
         }
         for (const PlayerRuntime& runtime : players) {
             const PlayerActor& actor = runtime.actor;

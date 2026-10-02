@@ -91,6 +91,7 @@ struct CombatLoss {
     s32 player = -1;
     f32 experience = 0.0f;
     bool killed = false;
+    bool drop = false; ///< animation finished; release the carried item at the final position
     Vec3 position{0.0f, 0.0f, 0.0f};
 };
 

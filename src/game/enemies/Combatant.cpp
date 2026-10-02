@@ -206,6 +206,7 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     const MoveDefinition* move =
         critter.move >= 0 ? &data.moves()[static_cast<usize>(critter.move)] : nullptr;
     // The move plays; over its harmful frames its part strikes.
+    critter.skinAge += seconds;
     if (move != nullptr && critter.player.playing()) {
         const bool wasFinished = critter.player.finished();
         critter.player.advance(seconds, false);
@@ -370,7 +371,8 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
     if (glm::length(critter.push) < 0.01f) {
         critter.push = Vec3{0.0f, 0.0f, 0.0f};
     }
-    // The fallen fades once its death has played out, and is gone.
+    // Great ones drop their carried item at the end of the authored death;
+    // bosses keep their separate death hold for the victory sequence.
     if (critter.parent != nullptr) {
         return; // Dead branches retain their attachment for persistent stump effects.
     }
@@ -381,6 +383,26 @@ void Combatant::update(s32 ticks, f32 seconds, std::span<const EnemyView> player
         const f32 remaining = move->hold - critter.finishedSeconds;
         critter.alpha = std::clamp(remaining / kBossDeathFade, 0.0f, 1.0f);
         if (critter.moveDone) {
+            critter = Actor{};
+        }
+    } else if (critter.state == State::Dying &&
+               critter.stock->definition.kind != CombatantKind::Boss) {
+        if (move != nullptr && move->type == MoveDefinition::kDeath && !critter.moveDone) {
+            const auto& sequence = critter.stock->tree->sequences[critter.player.sequence()];
+            if (move->frameStart > 0 && sequence.frames > move->frameStart) {
+                critter.alpha = std::clamp(
+                    1.0f - (critter.player.frame() - static_cast<f32>(move->frameStart)) /
+                               static_cast<f32>(sequence.frames - move->frameStart),
+                    0.0f, 1.0f);
+            }
+        } else {
+            CombatLoss drop;
+            drop.critter = m_id;
+            drop.kind = data.kind();
+            drop.form = form();
+            drop.drop = true;
+            drop.position = critter.position;
+            m_losses.push_back(std::move(drop));
             critter = Actor{};
         }
     } else if (critter.state == State::Dying &&

@@ -210,6 +210,7 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
             sound.offset = vecOf(s, "offset");
             sound.life = s.value("life", 0.0f);
             sound.particleRate = s.value("rate", 0.0f);
+            sound.skinLoops = s.value("custom0", 0);
             sound.particleSpeed = 0.01f * s.value("custom1", 0.0f);
             sound.scale = s.value("scale", 1.0f);
             if (sound.scale <= 0.0f) {

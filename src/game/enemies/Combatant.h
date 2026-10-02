@@ -204,6 +204,8 @@ private:
         f32 roarOwed = 0.0f; ///< damage taken toward the next roar
         f32 sinceHurt = 0.0f;
         s32 flashTicks = 0;
+        const CombatEffectDefinition* skin = nullptr;
+        f32 skinAge = 0;
         std::vector<HitNode> hitNodes;
         f32 alpha = 1.0f;
         Color tint = Color::white();
