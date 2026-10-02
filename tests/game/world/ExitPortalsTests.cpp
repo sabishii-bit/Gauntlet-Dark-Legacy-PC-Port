@@ -95,13 +95,21 @@ TEST_CASE("a level's exit items become portals that know where they lead",
     REQUIRE(f.portals.size() == 0);
 }
 
-TEST_CASE("exit flame follows only a still visitor on a usable portal", "[game][world][portals]") {
+TEST_CASE("exit flame stays on while a visitor walks around a usable portal",
+          "[game][world][portals]") {
     Fixture f("portals-flame");
     std::array<PortalVisitor, 1> party{{{.position = Vec3{10, 0, 10}, .party = 0, .still = false}}};
-    CHECK_FALSE(f.portals.flamePosition(party));
+    REQUIRE(f.portals.flamePosition(party));
+    for (s32 frame = 0; frame < 10; ++frame) {
+        party[0].position.x += 0.1f;
+        party[0].still = frame % 2 == 0;
+        f.portals.update(2, 1.0f / 30.0f, party);
+        REQUIRE(f.portals.flamePosition(party));
+        CHECK(*f.portals.flamePosition(party) == Vec3{10, 0, 10});
+    }
     party[0].still = true;
     REQUIRE(f.portals.flamePosition(party));
-    CHECK(*f.portals.flamePosition(party) == party[0].position);
+    CHECK(*f.portals.flamePosition(party) == Vec3{10, 0, 10});
     party[0].position.y = 30;
     CHECK_FALSE(f.portals.flamePosition(party));
     party[0].position.y = 0;

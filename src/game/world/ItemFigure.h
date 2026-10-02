@@ -82,6 +82,8 @@ public:
     f32 yaw() const { return m_yaw; }
     /** How the figure is placed in the world. */
     const Mat4& transform() const { return m_transform; }
+    /** Moves the entire figure with an authored attachment, retaining its animation. */
+    void placeAt(const Mat4& placement);
     /** Rocks the figure where it stands: pitched by `pitch` and turned `yaw` off its facing. */
     void tilt(f32 pitch, f32 yaw);
     /** Stands the figure back as it was placed. */

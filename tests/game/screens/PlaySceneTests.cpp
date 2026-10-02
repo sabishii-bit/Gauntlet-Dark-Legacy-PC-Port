@@ -962,8 +962,8 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
         REQUIRE(scene.party().size() == 1);
         REQUIRE(scene.party()[0].save.gold == 321); // what is carried goes along
     }
-    // The fields load in the tower's place, without Sumner, and lead on; with the next level
-    // not unpacked their exit brings the party back to the tower.
+    // The fields load in the tower's place, without Sumner. Completing the stage
+    // returns to the tower even when its authored next stage is unpacked.
     const std::vector<PartyMember> party = scene.party();
     const LevelRef fields = scene.destination();
     scene.close();
@@ -1000,8 +1000,7 @@ TEST_CASE("the whole party on one of the tower's portals travels to the level it
         outcome = scene.update(1.0 / 60.0, still);
     }
     REQUIRE(outcome == PlayOutcome::Travel);
-    const bool nextUnpacked = LevelCatalog::unpacked(root, *levels.byTag("g2"));
-    REQUIRE(scene.destination().name == (nextUnpacked ? "G2" : "L1"));
+    REQUIRE(scene.destination().isTower());
     scene.close();
     REQUIRE(world.load(device, root)); // and the tower loads again after it
     REQUIRE(world.isTower());

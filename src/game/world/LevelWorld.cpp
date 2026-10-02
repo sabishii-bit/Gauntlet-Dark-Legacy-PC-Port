@@ -144,6 +144,7 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     m_collision.setMovingObjects(m_movingObjects);
     m_walls.bind(device, m_layout, m_models, m_textures, m_collision);
     std::erase_if(m_movingObjects, [&](s32 object) { return !m_collision.moving(object); });
+    syncCollision();
     m_triggers.bind(m_layout, m_worldAnimator, &m_collision);
     m_hazards.bind(m_layout);
     m_triggers.bindFigures(device, m_layout, m_items);

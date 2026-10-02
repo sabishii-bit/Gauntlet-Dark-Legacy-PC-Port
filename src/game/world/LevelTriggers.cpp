@@ -16,6 +16,9 @@ constexpr u8 kTinyRadius = 0xFF;
 constexpr f32 kToggleDelay = 2.0f;
 constexpr f32 kHeightSpeed = 4.0f;
 constexpr f32 kHeightTolerance = 0.001f;
+constexpr f32 kFloorAbove = 4.0f;
+constexpr f32 kFloorBelow = 10.0f;
+constexpr f32 kFloorRadius = 1.0f;
 
 s16 paramS16(const ItemInstance& instance, usize at) {
     s16 value = 0;
@@ -35,6 +38,17 @@ s32 LevelTriggers::crystalsNeeded(s32 realm) {
 void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
                          WorldCollision* collision) {
     clear();
+    // AddItemSub attaches an item to its animated floor in the authored rest pose,
+    // before that floor's initial animation frame moves it elsewhere.
+    std::optional<WorldCollision> restCollision;
+    if (collision != nullptr && collision->movingObjectCount() != 0) {
+        restCollision = *collision;
+        for (usize i = 0; i < layout.objects().size(); ++i) {
+            restCollision->setObjectTransform(static_cast<s32>(i),
+                                              glm::translate(Mat4{1.0f}, layout.worldPosition(i)));
+        }
+    }
+    const WorldCollision* authoredCollision = restCollision ? &*restCollision : collision;
     for (const auto& object : layout.objects()) {
         m_parents.push_back(object.parent);
     }
@@ -50,6 +64,21 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
         LevelTrigger trigger;
         trigger.instance = static_cast<s32>(i);
         trigger.spot = instance.position;
+        trigger.placement = itemPlacement(instance.position, instance.rotation);
+        if (authoredCollision != nullptr) {
+            if (const auto floor = authoredCollision->floorAt(trigger.spot, kFloorAbove,
+                                                              kFloorBelow, kFloorRadius);
+                floor && (floor->objectFlags & WorldObject::kAnimated) != 0) {
+                if (const auto placement = authoredCollision->objectTransform(floor->object)) {
+                    trigger.floor = floor->object;
+                    trigger.localPlacement = glm::inverse(*placement) * trigger.placement;
+                    if (const auto current = collision->objectTransform(trigger.floor)) {
+                        trigger.placement = *current * trigger.localPlacement;
+                        trigger.spot = Vec3{trigger.placement[3]};
+                    }
+                }
+            }
+        }
         const s16 object = paramS16(instance, 0);
         trigger.target =
             object >= 0 && static_cast<usize>(object) < layout.objects().size() ? object : -1;
@@ -123,7 +152,6 @@ void LevelTriggers::bind(const WorldLayout& layout, WorldAnimator& animator,
             }
         }
     }
-    (void)collision;
     // Chains: a trigger's next is the one whose id it names, never one wanting crystals.
     for (LevelTrigger& trigger : m_triggers) {
         if (trigger.nextId == 0) {
@@ -170,6 +198,8 @@ void LevelTriggers::bindFigures(RenderDevice& device, const WorldLayout& layout,
         // may sit on a moving bridge rather than on the static collision floor.
         if (!figure->place(device, items, info.name, instance, nullptr)) {
             figure.reset();
+        } else {
+            figure->placeAt(trigger.placement);
         }
         m_figures.push_back(std::move(figure));
     }
@@ -397,7 +427,8 @@ bool LevelTriggers::reaches(const LevelTrigger& trigger, f32 radius,
     }
     const Vec3 away = visitor.position - trigger.spot;
     const f32 reach = radius + visitor.radius;
-    return away.x * away.x + away.z * away.z <= reach * reach && std::abs(away.y) <= kReach;
+    return away.x * away.x + away.z * away.z <= reach * reach &&
+           std::abs(away.y) <= trigger.height + visitor.height * 0.5f;
 }
 
 bool LevelTriggers::visited(const LevelTrigger& trigger, f32 radius,
@@ -485,6 +516,19 @@ void LevelTriggers::update(f32 seconds, std::span<const TriggerVisitor> visitors
     for (Target& target : m_targets) {
         target.pressed = false;
         target.wholePartyReady = false;
+    }
+    for (usize i = 0; i < m_triggers.size(); ++i) {
+        LevelTrigger& trigger = m_triggers[i];
+        if (collision != nullptr && trigger.floor >= 0) {
+            if (const auto floor = collision->objectTransform(trigger.floor)) {
+                const Mat4 placement = *floor * trigger.localPlacement;
+                trigger.placement = placement;
+                trigger.spot = Vec3{placement[3]};
+                if (i < m_figures.size() && m_figures[i] != nullptr) {
+                    m_figures[i]->placeAt(placement);
+                }
+            }
+        }
     }
     for (usize i = 0; i < m_triggers.size(); ++i) {
         LevelTrigger& trigger = m_triggers[i];

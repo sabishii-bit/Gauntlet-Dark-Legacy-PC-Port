@@ -257,11 +257,12 @@ void ExitPortals::animate(f32 seconds) {
 }
 
 std::optional<Vec3> ExitPortals::flamePosition(std::span<const PortalVisitor> party) const {
+    const f32 extra = party.empty() ? 0.0f : static_cast<f32>(party.size() - 1);
     for (const auto& visitor : party) {
         for (const auto& portal : m_portals) {
-            if (!portal.shut && !portal.secret && !portal.consumed && visitor.still &&
-                standsOn(portal, visitor, 0)) {
-                return visitor.position;
+            if (!portal.shut && !portal.secret && !portal.consumed &&
+                standsOn(portal, visitor, extra)) {
+                return portal.position;
             }
         }
     }

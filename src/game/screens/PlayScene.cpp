@@ -579,21 +579,20 @@ void PlayScene::startGameOver() {
     log::info("The game is being quit; game over");
 }
 
-/** The whole party has gone through a portal: where to? Its own level when that is unpacked;
- * from a realm's level whose next is not, back to the tower, so that no one is stranded;
- * from the tower, nowhere, with a word in the log. */
+/** Ordinary stage exits return to the tower; tower routes and secret challenges
+ * use their authored destination when its assets are available. */
 bool PlayScene::leaveBy(usize portal) {
     const ExitPortals::Portal& exit = m_portals.portal(portal);
+    if (!m_world->isTower() && !exit.secret) {
+        m_destination = LevelRef::tower();
+        log::info("Portal {}: back to the tower", exit.tag);
+        return true;
+    }
     const bool reachable = exit.destination.has_value() &&
                            LevelCatalog::unpacked(m_context.unpackedRoot, *exit.destination);
     if (reachable) {
         m_destination = *exit.destination;
         log::info("Portal {}: on to {} ({})", exit.tag, m_destination.name, m_destination.title);
-        return true;
-    }
-    if (!m_world->isTower() && !exit.secret) {
-        m_destination = LevelRef::tower();
-        log::info("Portal {}: its level is not unpacked; back to the tower", exit.tag);
         return true;
     }
     if (m_refusedPortal != static_cast<s32>(portal)) {
@@ -1027,6 +1026,7 @@ std::vector<TriggerVisitor> PlayScene::visitors() const {
         TriggerVisitor visitor;
         visitor.position = presenceOf(i);
         visitor.radius = actor.radius();
+        visitor.height = actor.height();
         visitor.crystals = actor.save().progress().crystals;
         visitor.gargoylePieces = actor.save().progress().relics.gargoylePieces;
         visitor.sumner = actor.save().character == kSumnerClass;

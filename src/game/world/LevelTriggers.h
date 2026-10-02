@@ -54,7 +54,8 @@ struct TriggerVisitor {
     std::array<s32, Relics::kGargoyleKinds> gargoylePieces{};
     bool sumner = false; ///< Sumner passes every crystal gate
     s32 floorObject = -1;
-    s32 party = -1; ///< who it is, by place in the party
+    s32 party = -1;    ///< who it is, by place in the party
+    f32 height = 5.0f; ///< full body height; collision tests use half of it
 };
 
 /** A player stepped alone onto a spot the whole party must stand on (items.c 3017-3049):
@@ -87,6 +88,9 @@ struct LevelTrigger {
     bool occupied = false;       ///< someone was on it the last update
     bool movementLesson = false; ///< subtype 23's lesson, posted while its target exists
     bool forced = false;         ///< a special trigger remains activated without a visitor
+    s32 floor = -1;              ///< animated supporting floor, when attached
+    Mat4 localPlacement{1.0f};   ///< item placement in its supporting floor's space
+    Mat4 placement{1.0f};        ///< current world placement, shared by contact and artwork
 
     /** Whether it wants every visitor to carry a realm's crystals first. */
     bool needsCrystals() const { return (flags & kRequirement) != 0 && id < kGargoyleIds; }
@@ -124,7 +128,7 @@ public:
     static constexpr f32 kRefusalCooldown =
         2.5625f; ///< the original's, between two refusals ///< of full alpha, per game frame
     static constexpr f32 kFrameRate = 30.0f;
-    static constexpr f32 kReach = 3.0f; ///< how far above or below a trigger a visitor counts
+    static constexpr f32 kReach = 3.0f; ///< legacy vertical reach, also used by rotator switches
     static constexpr f32 kMetReach =
         2.0f; ///< how much wider a crystal gate's spot is to a party that qualifies
 
