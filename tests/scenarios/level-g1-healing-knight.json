@@ -1,0 +1,20 @@
+{
+  "screen": "tower",
+  "level": "G1",
+  "welcome": false,
+  "party": [
+    {
+      "player": 0,
+      "class": "KNI",
+      "color": "GRE",
+      "name": "TEST",
+      "level": 75,
+      "promotedLevel": 75,
+      "health": 800,
+      "potions": [1, 2, 3, 4, 1, 2, 3, 4],
+      "powerups": [
+        {"kind": 5, "flags": 1048576, "charge": 30, "strength": -1}
+      ]
+    }
+  ]
+}

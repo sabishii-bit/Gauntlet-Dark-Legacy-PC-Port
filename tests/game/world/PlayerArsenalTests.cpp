@@ -35,6 +35,80 @@ struct Fixture {
     }
 };
 
+TEST_CASE("level 75 potion casts wear the authored healing hearts without granting free health",
+          "[game][player-arsenal][magic-hearts][unpacked]") {
+    const auto root = test::unpackedOrSkip("POWERUPS/animations.json").parent_path().parent_path();
+    ItemArchive powerups;
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    Fixture f;
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    REQUIRE(f.classes.load(root / "pdata"));
+    f.arsenal.bind({f.device,
+                    f.classes,
+                    f.weapons,
+                    f.collision,
+                    f.effects,
+                    f.audio,
+                    nullptr,
+                    {},
+                    false,
+                    false,
+                    &powerups});
+    s32 level = 75;
+    bool thrown = false;
+    SECTION("burst") {}
+    SECTION("thrown") {
+        thrown = true;
+    }
+    SECTION("level 74 has no hearts") {
+        level = 74;
+    }
+    f.actor.save().character = 5; // Knight; the casting perk is shared by every class.
+    f.actor.save().progress().experience = levelExperience(level);
+    f.actor.save().progress().health = 200;
+    auto& inventory = f.actor.save().progress().inventory;
+    inventory.addPotions(1, 1);
+    const auto cast = [&] {
+        if (thrown) {
+            f.arsenal.throwPotion(f.actor);
+        } else {
+            f.arsenal.usePotion(f.actor);
+        }
+    };
+    cast();
+    usize hearts = 0;
+    u32 id = 0;
+    for (usize i = 0; i < f.effects.count(); ++i) {
+        const auto& effect = f.effects.effect(i);
+        if (effect.name == "MAGICHEALTH") {
+            ++hearts;
+            id = effect.id;
+            CHECK(effect.scale == Approx(std::min(1.0f, f.arsenal.potionPowerOf(f.actor, 1) / 32)));
+            REQUIRE(effect.attachment);
+            CHECK(*effect.attachment == f.actor.transform());
+        }
+    }
+    REQUIRE(hearts == (level >= 75 ? 1 : 0));
+    CHECK(f.actor.save().health() == 200); // Actual damage, not the visual, awards healing.
+    const auto count = f.effects.count();
+    cast(); // Empty inventory must not create another cast effect.
+    CHECK(f.effects.count() == count);
+    f.actor.place({20, 0, 40});
+    f.arsenal.followCaster(f.actor);
+    for (usize i = 0; i < f.effects.count(); ++i) {
+        if (f.effects.effect(i).id == id) {
+            CHECK(*f.effects.effect(i).attachment == f.actor.transform());
+        }
+    }
+    for (s32 i = 0; i < 600; ++i) {
+        f.effects.update(1.0f / 30);
+        f.arsenal.followCaster(f.actor);
+    }
+    CHECK_FALSE(f.effects.playing(id));
+    f.arsenal.clear();
+    f.effects.clear();
+}
+
 TEST_CASE("Phoenix fires fixed fire damage without a permanent familiar or weapon enchantments",
           "[game][items][player-arsenal][phoenix][unpacked]") {
     const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();

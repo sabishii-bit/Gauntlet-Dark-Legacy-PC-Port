@@ -180,7 +180,7 @@ bool PlayScene::open(RenderDevice& device, const GameContext& context, LevelWorl
     beginSpawn(device, !options.position.has_value() && atEntrance);
     m_arsenal.bind({device, m_classes, m_weapons, world.collision(), m_effects, m_audio,
                     context.sounds, world.wallHitSound(), world.isTower(),
-                    world.level() != nullptr && world.level()->bossType >= 0},
+                    world.level() != nullptr && world.level()->bossType >= 0, &world.powerups()},
                    effectTextures);
     m_attacks.bind({device, m_classes, world, m_weapons, m_effects, m_audio, context.sounds,
                     m_arsenal, m_dimmer, &m_shake});

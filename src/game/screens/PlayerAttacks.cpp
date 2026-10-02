@@ -1151,6 +1151,9 @@ void PlayerAttacks::updateProjectiles(f32 seconds, std::span<PlayerRuntime> play
         missileTargets.push_back(
             MissileTarget{stop++, box.centre, std::max(box.halfAcross, box.halfAlong), box.height});
     }
+    for (const auto& player : players) {
+        m_resources->arsenal.followCaster(player.actor);
+    }
     m_resources->arsenal.missiles().update(seconds, &m_resources->world.collision(),
                                            missileTargets);
     // A weapon still flying brings down the SHOOTFALL scenery it passes (fn_8005EE18).
