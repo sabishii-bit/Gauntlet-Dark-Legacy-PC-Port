@@ -20,7 +20,7 @@ namespace gdl::game {
 /** What the original keeps of a great creature in its `CRITTER/<NAME>.WAD`. */
 class CritterData {
 public:
-    /** Loads `critter/<NAME>.json`; false when it is not there or holds no type. */
+    /** Loads the native WAD first, accepting a legacy JSON path or fixture as well. */
     bool load(const std::filesystem::path& file, usize typeIndex = 0);
     s32 childIndex() const { return m_childIndex; }
     s32 parentIndex() const { return m_parentIndex; }
@@ -32,6 +32,7 @@ public:
     std::string_view prefix() const { return m_prefix; }     ///< "GOLEM"
     std::string tree() const { return m_prefix + m_suffix; } ///< "GOLEM1"
     CombatantKind kind() const { return m_kind; } ///< descriptor family, not a boss encounter id
+    u32 typeFlags() const { return m_typeFlags; }
     f32 radius() const { return m_radius; }
     f32 wallRadius() const { return m_wallRadius; }
     const CritterMovement& movement() const { return m_movement; }
@@ -67,6 +68,8 @@ public:
     std::optional<usize> moveNamed(std::string_view name) const;
 
 private:
+    bool loadNative(const std::filesystem::path& file, usize typeIndex);
+
     s32 m_childIndex = -1;
     s32 m_parentIndex = -1;
     std::string m_rootNode;
@@ -75,6 +78,7 @@ private:
     std::string m_prefix;
     std::string m_suffix;
     CombatantKind m_kind = CombatantKind::Unknown;
+    u32 m_typeFlags = 0;
     f32 m_radius = 1.0f;
     f32 m_wallRadius = 1.0f;
     CritterMovement m_movement;

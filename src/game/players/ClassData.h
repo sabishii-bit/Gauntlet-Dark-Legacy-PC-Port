@@ -106,7 +106,7 @@ struct ClassMoves {
     s32 comboHit = -1;
 };
 
-/** A class's stat ranges and body size, from its unpacked data file. */
+/** A class's stat ranges and body size, from its player data file. */
 struct ClassStats {
     f32 fightMin = 0.0f;
     f32 fightMax = 0.0f;
@@ -137,10 +137,11 @@ struct ClassStats {
     std::vector<s32> strikesOf(s32 first) const;
 };
 
-/** Every class's stats, read from `<directory>/<CODE>.json`. */
+/** Every class's stats, preferring `<directory>/<CODE>.WAD` to legacy JSON exports. */
 class ClassDataSet {
 public:
-    /** Loads what is there; false (with a warning) when no class file could be read. */
+    /** Loads what is there; malformed native files never fall back to exports.
+     * False (with a warning) when no class file could be read. */
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return m_loadedCount > 0; }

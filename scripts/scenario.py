@@ -98,11 +98,7 @@ def main(argv=None) -> int:
             if not executable.is_file():
                 raise ValueError(f"Game executable not found: {executable}\n"
                                  "Add --build to build it before launching.")
-            build.refresh_player_effects(executable.parent.parent, launch_args, ROOT)
-            build.refresh_player_data(executable.parent.parent, launch_args, ROOT)
-            build.refresh_item_collision(executable.parent.parent, launch_args, ROOT)
-            build.refresh_level_items(executable.parent.parent, launch_args, ROOT)
-            build.refresh_challenge_data(executable.parent.parent, launch_args, ROOT)
+            build.refresh_legacy_exports(executable.parent.parent, launch_args, ROOT)
             command = [str(executable), *launch_args]
         display = subprocess.list2cmdline(command) if devenv.WINDOWS else shlex.join(command)
         print(display, flush=True)

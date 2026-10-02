@@ -8,6 +8,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 
 #include "game/players/ClassData.h"
 #include "game/players/Progression.h"
@@ -58,7 +59,8 @@ std::filesystem::path PlayerFigure::costumeDirectory(const std::filesystem::path
         unpackedRoot / kPlayersDirectory / std::string(cls) / std::string(costume);
     const s32 tier = save.progress().appearanceLevel() / kLevelsPerTier;
     const std::filesystem::path tiered = base.parent_path() / std::format("{}{}0", costume, tier);
-    return std::filesystem::exists(tiered / "objects.json") ? tiered : base;
+    const AssetLocator files(tiered);
+    return files.find("objects.ngc") || files.find("objects.json") ? files.root() : base;
 }
 
 std::unique_ptr<PlayerFigure> PlayerFigure::load(RenderDevice& device,
@@ -178,17 +180,15 @@ void PlayerFigure::loadWeapon(const CharacterSave& save, RenderDevice& device) {
 std::filesystem::path PlayerFigure::classFolder(const std::filesystem::path& root, s32 character,
                                                 std::string_view sub) {
     const std::filesystem::path players = root / kPlayersDirectory;
-    std::filesystem::path own = players / classCode(character) / sub;
-    if (std::filesystem::exists(own)) {
-        return own;
+    if (const auto found = AssetLocator(players / classCode(character)).find(sub)) {
+        return *found;
     }
     return players / classCode(character % kStartingClassCount) / sub;
 }
 
 std::string_view PlayerFigure::actionsClassOf(const std::filesystem::path& root, s32 character) {
-    const std::filesystem::path own =
-        root / kPlayersDirectory / classCode(character) / kClassAnimations;
-    return classCode(std::filesystem::exists(own) ? character : character % kStartingClassCount);
+    const AssetLocator own(root / kPlayersDirectory / classCode(character));
+    return classCode(own.find(kClassAnimations) ? character : character % kStartingClassCount);
 }
 
 void PlayerFigure::loadActions(const std::filesystem::path& root, const CharacterSave& save,

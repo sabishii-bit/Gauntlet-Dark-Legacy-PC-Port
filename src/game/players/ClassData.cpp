@@ -10,7 +10,10 @@
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
+
+#include "game/players/NativeClassData.h"
 
 namespace gdl::game {
 
@@ -213,16 +216,20 @@ bool classUnlocked(s32 classIndex, u16 unlockMask) {
 bool ClassDataSet::load(const std::filesystem::path& directory) {
     m_classes = {};
     m_loadedCount = 0;
+    const AssetLocator assets(directory);
     for (s32 i = 0; i < kClassCount; ++i) {
-        const std::filesystem::path file = directory / (std::string(classCode(i)) + ".json");
-        if (!std::filesystem::exists(file)) {
+        const std::string code(classCode(i));
+        const auto native = assets.find(code + ".wad");
+        const auto file = native ? native : assets.find(code + ".json");
+        if (!file) {
             continue;
         }
         try {
-            m_classes[static_cast<usize>(i)] = parseClassStats(readTextFile(file));
+            m_classes[static_cast<usize>(i)] = native ? parseNativeClassStats(readFile(*file))
+                                                      : parseClassStats(readTextFile(*file));
             ++m_loadedCount;
         } catch (const std::exception& e) {
-            log::warn("Class data: {}: {}", file.string(), e.what());
+            log::warn("Class data: {}: {}", file->string(), e.what());
         }
     }
     if (m_loadedCount == 0) {

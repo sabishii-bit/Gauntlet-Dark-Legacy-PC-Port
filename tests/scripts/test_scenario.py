@@ -124,6 +124,16 @@ class ScenarioTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(run.call_args.args[0][0], str(executable))
 
+    def test_native_scenario_ignores_stale_exports(self):
+        self.executable()
+        manifest = self.root / "assets/unpacked/PLAYERS/WAR/SFXRED/animations.json"
+        manifest.parent.mkdir(parents=True)
+        manifest.write_text("invalid JSON", encoding="utf-8")
+        with mock.patch.object(scenario.build.devenv, "run") as exporter:
+            result, _ = self.run_main(["genie", "--", "--assets", "original/Gauntlet"])
+            self.assertEqual(result, 0)
+            exporter.assert_not_called()
+
     def test_build_uses_existing_build_launcher_even_without_binary(self):
         result, run = self.run_main(["genie", "--build", "--frames", "120"], code=3)
         self.assertEqual(result, 3)

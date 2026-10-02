@@ -12,9 +12,11 @@
 #include "engine/core/Assert.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/io/File.h"
 #include "engine/math/Math.h"
 #include "engine/render/RenderTypes.h"
 
+#include "formats/TplFile.h"
 #include "game/app/Scenario.h"
 #include "game/menu/MenuInput.h"
 #include "game/players/PlayerControls.h"
@@ -33,17 +35,28 @@ constexpr std::string_view kWindowIcon = "carddemo/icon0.png"; ///< unpacked mem
 Gauntlet::Gauntlet(ApplicationDesc desc, GameOptions options, GameConfig config)
     : Application(std::move(desc)), m_options(std::move(options)), m_config(std::move(config)) {}
 
-/** The memory-card icon as the window's icon, when the card art has been unpacked. */
+/** Use the original sibling carddemo icon, retaining PNG support for exported fixtures. */
 void Gauntlet::applyWindowIcon() {
-    const std::filesystem::path file = m_options.unpackedDirectory / kWindowIcon;
-    if (!std::filesystem::exists(file)) {
+    const auto native =
+        AssetLocator(m_options.unpackedDirectory.parent_path()).find("carddemo/icon.tpl");
+    const auto exported = AssetLocator(m_options.unpackedDirectory).find(kWindowIcon);
+    if (!native && !exported) {
         return;
     }
     try {
-        const Image icon = loadImageFile(file);
+        Image icon;
+        if (native) {
+            auto images = formats::parseTplFile(readFile(*native));
+            if (images.empty()) {
+                return;
+            }
+            icon = std::move(images.front().image);
+        } else {
+            icon = loadImageFile(*exported);
+        }
         window().setIcon(std::span<const Image>(&icon, 1));
     } catch (const std::exception& e) {
-        log::warn("Window icon {} unusable: {}", file.string(), e.what());
+        log::warn("Window icon unusable: {}", e.what());
     }
 }
 

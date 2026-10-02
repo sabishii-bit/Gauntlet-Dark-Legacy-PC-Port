@@ -9,16 +9,15 @@
 #include "engine/app/Application.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/platform/Paths.h"
 
+#include "game/app/AssetRoots.h"
 #include "game/app/CommandLine.h"
 #include "game/app/Gauntlet.h"
 #include "game/config/GameConfig.h"
 
 #ifndef GDL_DEFAULT_ASSET_DIR
 #define GDL_DEFAULT_ASSET_DIR ""
-#endif
-#ifndef GDL_DEFAULT_UNPACKED_DIR
-#define GDL_DEFAULT_UNPACKED_DIR ""
 #endif
 #ifndef GDL_DEFAULT_DATA_DIR
 #define GDL_DEFAULT_DATA_DIR ""
@@ -32,14 +31,16 @@ int runGauntlet(std::span<char*> rawArgs) {
         args.emplace_back(arg);
     }
 
+    const auto roots = gdl::game::resolveAssetRoots(gdl::paths::executableDirectory(),
+                                                    GDL_DEFAULT_ASSET_DIR, GDL_DEFAULT_DATA_DIR);
     gdl::ApplicationDesc defaults;
     defaults.window.title = "Gauntlet Dark Legacy";
-    defaults.assetDirectory = GDL_DEFAULT_ASSET_DIR;
+    defaults.assetDirectory = roots.assets;
     defaults.enableValidation = GDL_DEBUG != 0;
 
     gdl::game::GameOptions defaultOptions;
-    defaultOptions.unpackedDirectory = GDL_DEFAULT_UNPACKED_DIR;
-    defaultOptions.dataDirectory = GDL_DEFAULT_DATA_DIR;
+    defaultOptions.unpackedDirectory = roots.assets;
+    defaultOptions.dataDirectory = roots.data;
 
     gdl::game::CommandLineResult parsed =
         gdl::game::parseCommandLine(args, std::move(defaults), std::move(defaultOptions));

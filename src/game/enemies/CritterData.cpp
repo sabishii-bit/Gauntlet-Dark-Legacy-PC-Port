@@ -9,6 +9,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
 namespace gdl::game {
@@ -52,6 +53,10 @@ std::string lower(std::string_view text) {
 bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
     *this = CritterData{};
     try {
+        if (const auto native =
+                AssetLocator(file.parent_path()).find(file.stem().string() + ".wad")) {
+            return loadNative(*native, typeIndex);
+        }
         const Json root = Json::parse(readTextFile(file), nullptr, true, true);
         const auto types = root.value("types", Json::array());
         const auto descriptors = root.value("descriptors", Json::array());
@@ -82,6 +87,7 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
         m_originOffset = vecOf(type, "originOffset");
         m_sight = targetOf(type);
         const u32 typeFlags = type.value("typeFlags", 0U);
+        m_typeFlags = typeFlags;
         m_movement = CritterMovement{};
         // Older unpacked manifests mislabeled TYPE +0xAC as speed. MOVE +0x84 is
         // the actual pace; this value limits the boss's displacement from home.
@@ -258,9 +264,14 @@ bool CritterData::load(const std::filesystem::path& file, usize typeIndex) {
             part.flags = n.value("flags", 0U);
             m_parts.push_back(part);
         }
-        return loaded();
+        if (!loaded()) {
+            *this = CritterData{};
+            return false;
+        }
+        return true;
     } catch (const std::exception& e) {
         log::warn("critter data {}: {}", file.string(), e.what());
+        *this = CritterData{};
         return false;
     }
 }

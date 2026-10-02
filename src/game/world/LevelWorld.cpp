@@ -9,6 +9,7 @@
 
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 
 #include "game/enemies/BossDefinition.h"
 
@@ -51,9 +52,9 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
     clear();
     m_ref = level;
     const std::filesystem::path directory = unpackedRoot / m_ref.directory;
-    if (!std::filesystem::exists(directory / "world.json")) {
-        log::info("Level: not unpacked ({}); run gdlunpack with --levels or --only <level>",
-                  directory.string());
+    const AssetLocator levelFiles(directory);
+    if (!levelFiles.find("worlds.ps2") && !levelFiles.find("world.json")) {
+        log::info("Level: no world data under {}", directory.string());
         return false;
     }
     loadLevelData(unpackedRoot);
@@ -62,19 +63,21 @@ bool LevelWorld::load(RenderDevice& device, const std::filesystem::path& unpacke
         return false;
     }
     if (!m_animations.load(directory)) {
-        log::warn("Level: no animations manifest; its textures stand still");
+        log::warn("Level: no animation data; its textures stand still");
     }
     // A boss level's own item archive (which holds the wizard who comes at the end) over
     // the realm's.
-    const bool own = !m_ref.ownItems.empty() &&
-                     std::filesystem::exists(unpackedRoot / m_ref.ownItems / "animations.json") &&
+    const auto hasAnimations = [](const std::filesystem::path& path) {
+        const AssetLocator files(path);
+        return files.find("anim.ps2").has_value() || files.find("animations.json").has_value();
+    };
+    const bool own = !m_ref.ownItems.empty() && hasAnimations(unpackedRoot / m_ref.ownItems) &&
                      m_items.load(unpackedRoot / m_ref.ownItems);
     if (!own && !m_items.load(unpackedRoot / m_ref.items)) {
         log::warn(
             "Level: without the realm's item archive its borrowed textures and figures are absent");
     }
-    if (own && m_ref.items != m_ref.ownItems &&
-        std::filesystem::exists(unpackedRoot / m_ref.items / "animations.json")) {
+    if (own && m_ref.items != m_ref.ownItems && hasAnimations(unpackedRoot / m_ref.items)) {
         m_realmItems.load(unpackedRoot / m_ref.items);
     }
     // Boss-specific items take precedence, but realm textures (including torch particles)

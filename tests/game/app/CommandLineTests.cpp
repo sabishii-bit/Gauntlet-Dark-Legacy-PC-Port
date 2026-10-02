@@ -26,6 +26,7 @@ TEST_CASE("no arguments keeps the defaults", "[game][commandline]") {
     const CommandLineResult result = parseCommandLine({}, defaults());
     REQUIRE(result.action == CommandLineAction::Run);
     REQUIRE(result.desc.assetDirectory == "default/assets");
+    REQUIRE(result.options.unpackedDirectory == "default/assets");
     REQUIRE(result.desc.vsync);
     REQUIRE(result.desc.enableValidation);
     REQUIRE(result.desc.maxFrames == 0);
@@ -38,9 +39,25 @@ TEST_CASE("options override the defaults", "[game][commandline]") {
     const CommandLineResult result = parseCommandLine(kArgs, defaults());
     REQUIRE(result.action == CommandLineAction::Run);
     REQUIRE(result.desc.assetDirectory == "W:/data");
+    REQUIRE(result.options.unpackedDirectory == "W:/data");
     REQUIRE_FALSE(result.desc.vsync);
     REQUIRE_FALSE(result.desc.enableValidation);
     REQUIRE(result.desc.maxFrames == 42);
+}
+
+TEST_CASE("explicit legacy gameplay roots are independent of option order", "[game][commandline]") {
+    constexpr std::array<std::string_view, 4> kAssetsFirst{"--assets", "retail/Gauntlet",
+                                                           "--unpacked", "legacy/export"};
+    constexpr std::array<std::string_view, 4> kLegacyFirst{"--unpacked", "legacy/export",
+                                                           "--assets", "retail/Gauntlet"};
+    for (const auto& args : {kAssetsFirst, kLegacyFirst}) {
+        const auto result = parseCommandLine(args, defaults());
+        REQUIRE(result.action == CommandLineAction::Run);
+        REQUIRE(result.desc.assetDirectory == "retail/Gauntlet");
+        REQUIRE(result.options.unpackedDirectory == "legacy/export");
+    }
+    constexpr std::array<std::string_view, 1> kMissing{"--unpacked"};
+    REQUIRE(parseCommandLine(kMissing, defaults()).action == CommandLineAction::Fail);
 }
 
 TEST_CASE("the validation flag forces the layer on", "[game][commandline]") {
@@ -48,6 +65,17 @@ TEST_CASE("the validation flag forces the layer on", "[game][commandline]") {
     desc.enableValidation = false;
     constexpr std::array<std::string_view, 1> kArgs{"--validation"};
     REQUIRE(parseCommandLine(kArgs, desc).desc.enableValidation);
+}
+
+TEST_CASE("asset overrides replace both configured roots", "[game][commandline]") {
+    GameOptions options;
+    options.unpackedDirectory = "configured/gameplay";
+    options.dataDirectory = "configured/data";
+    constexpr std::array<std::string_view, 2> kArgs{"--assets", "chosen/Gauntlet"};
+    const auto result = parseCommandLine(kArgs, defaults(), options);
+    REQUIRE(result.desc.assetDirectory == "chosen/Gauntlet");
+    REQUIRE(result.options.unpackedDirectory == "chosen/Gauntlet");
+    REQUIRE(result.options.dataDirectory == "configured/data");
 }
 
 TEST_CASE("the movie flag selects a single movie to play", "[game][commandline]") {
