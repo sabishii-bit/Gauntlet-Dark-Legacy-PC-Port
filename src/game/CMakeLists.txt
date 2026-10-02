@@ -37,6 +37,8 @@ add_library(game STATIC
     app/MusicDuck.cpp
     app/CommandLine.h
     app/CommandLine.cpp
+    app/AssetRoots.h
+    app/AssetRoots.cpp
     app/Scenario.h
     app/Scenario.cpp
     app/AttractSequencer.h
@@ -47,6 +49,8 @@ add_library(game STATIC
     players/MagicPerks.h
     players/MagicPerks.cpp
     players/ClassData.cpp
+    players/NativeClassData.h
+    players/NativeClassData.cpp
     players/Progression.h
     players/Progression.cpp
     players/CharacterSave.h
@@ -117,6 +121,7 @@ add_library(game STATIC
     enemies/Enemies.cpp
     enemies/Generators.cpp
     enemies/CritterData.cpp
+    enemies/NativeCritterData.cpp
     enemies/CritterMovement.cpp
     enemies/CritterPatrol.cpp
     enemies/CritterStatues.cpp
@@ -298,7 +303,7 @@ add_library(gdl::game ALIAS game)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 
-target_link_libraries(game PUBLIC gdl::engine PRIVATE nlohmann_json::nlohmann_json)
+target_link_libraries(game PUBLIC gdl::engine PRIVATE gdl::formats nlohmann_json::nlohmann_json)
 gdl_apply_compiler_options(game)
 set_target_properties(game PROPERTIES FOLDER "game")
 
@@ -327,7 +332,6 @@ endif()
 
 target_compile_definitions(gauntlet PRIVATE
     GDL_DEFAULT_ASSET_DIR="${GDL_ASSET_DIR}"
-    GDL_DEFAULT_UNPACKED_DIR="${GDL_UNPACKED_DIR}"
     GDL_DEFAULT_DATA_DIR="${GDL_DATA_DIR}")
 
 gdl_apply_compiler_options(gauntlet)

@@ -27,6 +27,10 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
     result.desc = std::move(defaults);
     result.options = std::move(defaultOptions);
     ApplicationDesc& desc = result.desc;
+    if (result.options.unpackedDirectory.empty()) {
+        result.options.unpackedDirectory = desc.assetDirectory;
+    }
+    bool explicitUnpacked = false;
 
     for (usize i = 0; i < args.size(); ++i) {
         const std::string_view arg = args[i];
@@ -37,6 +41,9 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
                 return fail(std::move(desc), "--assets requires a directory");
             }
             desc.assetDirectory = args[++i];
+            if (!explicitUnpacked) {
+                result.options.unpackedDirectory = desc.assetDirectory;
+            }
         } else if (arg == "--movie") {
             if (!hasValue) {
                 return fail(std::move(desc), "--movie requires a movie name");
@@ -47,6 +54,7 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
                 return fail(std::move(desc), "--unpacked requires a directory");
             }
             result.options.unpackedDirectory = args[++i];
+            explicitUnpacked = true;
         } else if (arg == "--data") {
             if (!hasValue) {
                 return fail(std::move(desc), "--data requires a directory");
@@ -95,10 +103,10 @@ CommandLineResult parseCommandLine(std::span<const std::string_view> args, Appli
 
 const char* usageText() {
     return "gauntlet [options]\n"
-           "  --assets <dir>     game asset directory (the GUNE5D/Gauntlet tree)\n"
+           "  --assets <dir>     retail Gauntlet tree for gameplay, movies and streams\n"
            "  --movie <name>     play one VQ movie (e.g. opening) and quit\n"
-           "  --unpacked <dir>   gdlunpack output directory (default assets/unpacked)\n"
-           "  --data <dir>       configuration and text directory (default data/)\n"
+           "  --unpacked <dir>   explicit legacy gdlunpack gameplay override (optional)\n"
+           "  --data <dir>       configuration and text directory (default beside executable)\n"
            "  --title            start at the title screen instead of the intro movies\n"
            "  --demo             preview a level flyby without the title wait\n"
            "  --screensaver      preview the idle weapons; any input exits\n"
@@ -107,7 +115,9 @@ const char* usageText() {
            "  --validation       force the Vulkan validation layer on\n"
            "  --no-validation    force it off (default on in Debug builds)\n"
            "  --frames <n>       quit after n frames (smoke testing)\n"
-           "  --help             this text";
+           "  --help             this text\n"
+           "Defaults use Gauntlet/ beside the executable, then the configured developer tree.\n"
+           "Keep the original carddemo/ alongside Gauntlet/. No export step is required.";
 }
 
 } // namespace gdl::game

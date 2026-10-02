@@ -42,7 +42,7 @@ bool AfterLevelScene::open(RenderDevice& device, const GameContext& context,
     try {
         ShopCatalog catalog;
         ClassDataSet classes;
-        if (!catalog.load(context.unpackedRoot / "shop/catalog.json") ||
+        if (!catalog.loadRoot(context.unpackedRoot) ||
             !classes.load(context.unpackedRoot / "pdata") ||
             !m_select.load(context.unpackedRoot / "SELECT") ||
             !m_inventory.load(context.unpackedRoot / "INVENTORY") ||

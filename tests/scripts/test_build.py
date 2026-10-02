@@ -150,7 +150,8 @@ class BuildLaunchTests(unittest.TestCase):
             manifest = root / "assets/unpacked/PLAYERS/JES/SFXYEL/animations.json"
             manifest.parent.mkdir(parents=True)
             manifest.write_text('{"trees":[]}', encoding="utf-8")
-            args = ["--assets", "original files", "--data", "configuration"]
+            args = ["--assets", "original files", "--data", "configuration",
+                    "--unpacked", "assets/unpacked"]
             def unpack(_command):
                 manifest.write_text(json.dumps({"textureBindingVersion": 1, "trees": []}),
                                     encoding="utf-8")
@@ -182,6 +183,24 @@ class BuildLaunchTests(unittest.TestCase):
             build.refresh_item_collision(root / "build/release", [], root)
             build.refresh_level_items(root / "build/release", [], root)
             build.refresh_challenge_data(root / "build/release", [], root)
+            run.assert_not_called()
+
+    def test_native_launch_ignores_even_malformed_legacy_exports(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                mock.patch.object(build.devenv, "run") as run:
+            root = pathlib.Path(directory)
+            for name in ("PLAYERS/WAR/SFXRED/animations.json", "pdata/WAR.json",
+                         "LEVELS/LEVELG1/world.json", "wdata/SECRET.json"):
+                manifest = root / "assets/unpacked" / name
+                manifest.parent.mkdir(parents=True, exist_ok=True)
+                manifest.write_text("not JSON", encoding="utf-8")
+            for args in ([], ["--assets", "native/Gauntlet"]):
+                build.refresh_legacy_exports(root / "build/release", args, root)
+                build.refresh_player_effects(root / "build/release", args, root)
+                build.refresh_player_data(root / "build/release", args, root)
+                build.refresh_item_collision(root / "build/release", args, root)
+                build.refresh_level_items(root / "build/release", args, root)
+                build.refresh_challenge_data(root / "build/release", args, root)
             run.assert_not_called()
 
     def test_custom_asset_paths_are_respected_and_missing_raw_assets_fail_clearly(self):

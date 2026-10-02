@@ -26,8 +26,8 @@ messages and pull requests; the code and its tests are the documentation.
 
 Game data is never committed. It lives under `assets/GUNE5D/` (ignored by
 git, see `assets/README.md`); the build bakes `assets/GUNE5D/Gauntlet` in as
-the default asset directory. The runtime is migrating to the original asset
-tree, without required unpacking. `ModelSet`, `TextureSet` and `AnimationSet`
+the developer fallback asset directory. The runtime defaults to the original
+`Gauntlet/` beside the executable, without required unpacking. `ModelSet`, `TextureSet` and `AnimationSet`
 prefer `objects.ngc`, `textures.ngc` and `ANIM.PS2` in their supplied directory.
 `SoundSet` accepts a native `.VBK` or an AUDIO/bank-name path and gets names
 and timing from `AUDATPS2.ROM`. Fonts and message tables accept `.fnt`/`.rom`.
@@ -36,11 +36,24 @@ realm's `WDATA/*.WAD` directly, including cameras, tuning and sound selections.
 These paths decode directly into runtime structures, not generated JSON or
 temporary PNG/OBJ/WAV files. Existing export readers remain for inspection
 and comparison during migration; a malformed native file must fail, never
-silently use a stale export. The application still supplies its legacy
-`GDL_UNPACKED_DIR` until the remaining gameplay-table consumers and application-path
-migration is complete. Do not claim the complete game is independent of
-unpacking yet. `gdlunpack` remains an export tool; movies and audio streams
-already use their disc containers.
+silently use a stale export. Player tuning reads `PDATA/*.WAD`, combatant
+tuning reads `CRITTER/*.WAD`, and shop inventory reads `SHPDATA/SHOP.WAD`.
+`--assets` selects both gameplay and media roots; `--unpacked` is an explicit
+legacy-fixture override only. The internal `unpackedRoot`/`unpackedDirectory`
+field names are retained for compatibility, not an export requirement. The
+Python build/scenario launchers do not auto-export for native launches.
+`gdlunpack` remains an optional inspection/comparison tool; movies and audio
+streams use their disc containers. Native regression comparisons use freshly
+generated fixtures selected by `GDL_NATIVE_REFERENCE_DIR`, not stale installed
+exports. The old `ITEMS/DEMO` v4 model archive is unsupported by both readers;
+current attract scenes select the normal WDATA level archives, not that archive.
+
+`python scripts/package.py --assets <original-Gauntlet-directory> --output <new-directory>`
+stages the built Release executable, shaders, runtime libraries and versioned
+`data/` beside unchanged `Gauntlet/` and `carddemo/` trees. It refuses existing
+destinations and never edits the originals. `--dry-run` validates and lists the
+copy. This packages original compiled files; it does not recover authoring
+sources or convert NGC into WAD. No game assets belong in Git.
 
 `data/` is versioned and ships with the game: `config.json` (the settings
 defaults) and `text/<language>.json` (every user-facing string by identifier).
@@ -90,7 +103,7 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   it travels between levels, leaves for the title screen or the game shuts
   down. A character never saved has no slot and is not kept. A scenario
   member may name a `slot` to be kept the same way; the shipped scenarios do
-  not, so running one never overwrites a real save. Per-class tuning comes from `assets/unpacked/pdata/<CLASS>.json`
+  not, so running one never overwrites a real save. Per-class tuning comes from `Gauntlet/PDATA/<CLASS>.WAD`
   through `players/ClassData`; class and colour codes (`WAR`, `RED`) are asset
   names and live in code, everything a player reads comes from the text
   tables.

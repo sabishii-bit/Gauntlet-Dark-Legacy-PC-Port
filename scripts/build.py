@@ -50,6 +50,8 @@ def refresh_player_effects(binary_dir: pathlib.Path, app_args: list[str],
     Inspect the actual schema rather than mtimes: a new executable alone cannot
     repair old unpacked assets. No asset tree means an ordinary asset-free build.
     """
+    if "--unpacked" not in app_args:
+        return
     root = ROOT if root is None else root
     assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
     unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
@@ -79,6 +81,8 @@ def refresh_player_effects(binary_dir: pathlib.Path, app_args: list[str],
 
 def refresh_player_data(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
     """Recover missile streak tuning missing from older PDATA exports before launch."""
+    if "--unpacked" not in app_args:
+        return
     root = ROOT if root is None else root
     assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
     unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
@@ -105,6 +109,8 @@ def refresh_player_data(binary_dir: pathlib.Path, app_args: list[str], root=None
 
 def refresh_item_collision(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
     """Re-export levels whose old manifests omitted their items' collision triangles."""
+    if "--unpacked" not in app_args:
+        return
     root = ROOT if root is None else root
     assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
     unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
@@ -138,6 +144,8 @@ def refresh_item_collision(binary_dir: pathlib.Path, app_args: list[str], root=N
 
 def refresh_level_items(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
     """Export missing realm artwork required by already unpacked levels before launch."""
+    if "--unpacked" not in app_args:
+        return
     root = ROOT if root is None else root
     assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
     unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
@@ -175,6 +183,8 @@ def refresh_level_items(binary_dir: pathlib.Path, app_args: list[str], root=None
 
 def refresh_challenge_data(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
     """Upgrade realm exports lacking the authored timed-level durations."""
+    if "--unpacked" not in app_args:
+        return
     root = ROOT if root is None else root
     assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
     unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
@@ -200,6 +210,17 @@ def refresh_challenge_data(binary_dir: pathlib.Path, app_args: list[str], root=N
     devenv.run([str(unpacker), str(assets), str(unpacked), "--only", "WDATA"])
     if incomplete():
         raise ValueError("Challenge durations are still missing after WDATA refresh.")
+
+
+def refresh_legacy_exports(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
+    """Refresh only an explicitly selected legacy gameplay tree; native launches never export."""
+    if "--unpacked" not in app_args:
+        return
+    refresh_player_effects(binary_dir, app_args, root)
+    refresh_player_data(binary_dir, app_args, root)
+    refresh_item_collision(binary_dir, app_args, root)
+    refresh_level_items(binary_dir, app_args, root)
+    refresh_challenge_data(binary_dir, app_args, root)
 
 
 def main() -> int:
@@ -247,11 +268,7 @@ def main() -> int:
         devenv.run(unpack_args)
 
     if args.run:
-        refresh_player_effects(binary_dir, app_args)
-        refresh_player_data(binary_dir, app_args)
-        refresh_item_collision(binary_dir, app_args)
-        refresh_level_items(binary_dir, app_args)
-        refresh_challenge_data(binary_dir, app_args)
+        refresh_legacy_exports(binary_dir, app_args)
         return devenv.run([str(bin_dir / f"gauntlet{EXE}"), *app_args]).returncode
     return 0
 

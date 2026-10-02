@@ -8,6 +8,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/world/AnimationPlayer.h"
 namespace gdl::game {
 namespace {
@@ -57,9 +58,9 @@ bool CombatantAssets::load(RenderDevice& device, const std::filesystem::path& ro
     // Shared effects such as a golem's EXPRING are rendered from WEAPONS.
     // Their damage clock must use that same sequence, not a guessed duration.
     AnimationSet shared;
-    const auto commonPath = root / "WEAPONS/animations.json";
-    if (std::filesystem::is_regular_file(commonPath)) {
-        shared.load(commonPath.parent_path());
+    const AssetLocator common(root / "WEAPONS");
+    if (common.find("anim.ps2") || common.find("animations.json")) {
+        shared.load(common.root());
     }
     const auto recordLifetimes = [&](const AnimationSet& animations) {
         for (u32 i = 0; i < animations.size(); ++i) {

@@ -49,6 +49,7 @@ add_executable(tests
     engine/assets/PngImageTests.cpp
     engine/assets/TextureSetTests.cpp
     engine/assets/NativeAssetsTests.cpp
+    engine/assets/NativeShopTests.cpp
     engine/assets/BitmapFontTests.cpp
     engine/assets/WavFileTests.cpp
     engine/assets/SoundSetTests.cpp
@@ -127,6 +128,10 @@ add_executable(tests
     game/screens/AttractSceneTests.cpp
     game/config/GameConfigTests.cpp
     game/players/ClassDataTests.cpp
+    game/players/NativeClassDataTests.cpp
+    game/enemies/NativeCritterDataTests.cpp
+    game/app/AssetRootsTests.cpp
+    game/screens/NativeGameplayTests.cpp
     game/players/MagicPerksTests.cpp
     game/players/ProgressionTests.cpp
     game/players/CharacterSaveTests.cpp

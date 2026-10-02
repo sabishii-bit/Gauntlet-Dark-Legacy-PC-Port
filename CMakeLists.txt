@@ -28,7 +28,7 @@ option(GDL_BUILD_TESTS "Build the test suite" ON)
 set(GDL_ASSET_DIR "${CMAKE_SOURCE_DIR}/assets/GUNE5D/Gauntlet" CACHE PATH
     "Game asset directory (the GUNE5D/Gauntlet tree)")
 set(GDL_UNPACKED_DIR "${CMAKE_SOURCE_DIR}/assets/unpacked" CACHE PATH
-    "Directory gdlunpack writes to and the game reads unpacked assets from")
+    "Optional gdlunpack output and legacy comparison-test fixtures")
 set(GDL_DATA_DIR "${CMAKE_SOURCE_DIR}/data" CACHE PATH
     "Shipped configuration defaults and text tables")
 
