@@ -431,15 +431,31 @@ TEST_CASE("the tower loads its geometry, collision, start points and camera mark
     REQUIRE(entrance->kind == LocatorKind::Start);
     REQUIRE(tower.collision().floorAt(entrance->position, 3.0f, 3.0f).has_value());
     REQUIRE(tower.startPoint(99) == nullptr);
-    // Back from the town realm (7) the party stands among its portals, which is the tower's
-    // second start marker; from a realm with no ring of its own, at the entrance.
+    // Each realm's return spawn and camera are paired by crystal_order, including the
+    // temple, underworld and battlefield entries that have no crystal gate of their own.
     REQUIRE(LevelWorld::towerMarkerOf(7) == 1);
     REQUIRE(LevelWorld::towerMarkerOf(2) == 2);
     REQUIRE(LevelWorld::towerMarkerOf(13) == 0);
     REQUIRE(LevelWorld::towerMarkerOf(99) == 0);
+    REQUIRE(LevelWorld::towerMarkerOf(5) == 9);
+    REQUIRE(LevelWorld::towerMarkerOf(6) == 10);
+    REQUIRE(LevelWorld::towerMarkerOf(8) == 11);
     REQUIRE(tower.arrivalPoint(7) == tower.startPoint(1));
     REQUIRE(glm::distance(tower.arrivalPoint(7)->position, Vec3{37.8f, -6.3f, -117.5f}) < 0.5f);
     REQUIRE(tower.arrivalPoint(13) == entrance);
+    for (u32 index = 0; index < 12; ++index) {
+        CAPTURE(index);
+        const WorldLocator* marker = tower.layout().findLocator(LocatorKind::CameraStart, index);
+        REQUIRE(marker != nullptr);
+        const auto camera = tower.entranceCamera(index);
+        REQUIRE(camera);
+        CHECK(camera->position == marker->position);
+        CHECK(camera->pitch == marker->rotation.x);
+        CHECK(camera->yaw == marker->rotation.y);
+    }
+    REQUIRE(tower.entranceCamera(99));
+    CHECK(tower.entranceCamera(99)->position == tower.entranceCamera()->position);
+    CHECK(tower.arrivalPoint(7) == tower.startPoint(1)); // Camera fallback cannot move the party.
 
     tower.clear();
     REQUIRE_FALSE(tower.built());

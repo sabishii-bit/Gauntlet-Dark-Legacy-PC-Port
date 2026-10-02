@@ -107,6 +107,7 @@ void SelectLane::reset(s32 index, LaneServices* services) {
     m_timer = 0;
     m_saved = false;
     m_hasCharacter = false;
+    m_retainsEntryCharacter = false;
     m_operationFailed = false;
     m_save = CharacterSave{};
     m_pickClass = 0;
@@ -124,6 +125,7 @@ void SelectLane::activate() {
     m_save = CharacterSave{};
     m_saved = true; // nothing to lose yet, so no unsaved-character prompts
     m_hasCharacter = false;
+    m_retainsEntryCharacter = false;
     m_slotInUse.reset();
     m_pickClass = 0;
     m_pickColor = 0;
@@ -135,6 +137,7 @@ void SelectLane::resume(const CharacterSave& save, std::optional<usize> slot) {
     m_save = save;
     m_saved = slot.has_value();
     m_hasCharacter = true;
+    m_retainsEntryCharacter = true;
     m_slotInUse = slot;
     m_pickClass = save.character;
     m_pickColor = save.color;
@@ -161,6 +164,13 @@ void SelectLane::manage() {
         m_returnState = State::SaveMenu;
         enter(State::SaveMenu);
     }
+}
+
+std::optional<usize> SelectLane::reservedSlot() const {
+    return m_state == State::OverwriteConfirm || m_state == State::Saving ||
+                   m_state == State::Loading
+               ? m_slotTarget
+               : std::nullopt;
 }
 
 std::string_view SelectLane::text(std::string_view id) const {
@@ -573,12 +583,16 @@ SelectLane::Result SelectLane::update(const MenuInput& input, s32 ticks, const F
                 m_timer = 0;
                 bool ok = false;
                 if (m_services != nullptr && m_services->slots != nullptr &&
-                    m_slotTarget.has_value()) {
+                    m_slotTarget.has_value() && (frame.slotsInUse & (1U << *m_slotTarget)) == 0) {
                     ok = m_state == State::Loading
                              ? m_services->slots->load(*m_slotTarget, m_save)
                              : m_services->slots->write(*m_slotTarget, m_save);
                     if (ok) {
                         m_saved = true;
+                        m_hasCharacter = true;
+                        if (m_state == State::Loading) {
+                            m_retainsEntryCharacter = false;
+                        }
                         m_slotInUse = m_slotTarget;
                     }
                 }

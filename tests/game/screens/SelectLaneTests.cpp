@@ -376,4 +376,36 @@ TEST_CASE("the status box follows the lane's state", "[game][select]") {
     REQUIRE(f.lane.boxMode() == SelectLane::BoxMode::Status);
 }
 
+TEST_CASE("a save refused at execution keeps the character and its previous slot intact",
+          "[game][select][post-shop]") {
+    Fixture f("select-save-refused");
+    CharacterSave original;
+    original.name = "ORIGIN";
+    original.gold = 777;
+    REQUIRE(f.slots.write(2, original));
+    f.lane.resume(original, 2);
+    f.lane.manage();
+    for (s32 i = 0; i < 4; ++i) {
+        f.step(press(false, false, false, true)); // Done -> Save.
+    }
+    f.step(press(true));
+    REQUIRE(f.lane.state() == SelectLane::State::SavePick);
+    f.step(press(true));
+    REQUIRE(f.lane.reservedSlot() == 0);
+    SelectLane::Frame conflict;
+    SECTION("another lane claimed the slot") {
+        conflict.slotsInUse = 1U;
+    }
+    SECTION("the filesystem rejects replacement") {
+        REQUIRE(std::filesystem::create_directory(f.slots.path(0)));
+    }
+    f.step({}, SelectLane::kOperationStepTicks * 3, conflict);
+    CHECK_FALSE(f.slots.slot(0).exists);
+    CHECK(f.lane.slotInUse() == 2);
+    CHECK(f.lane.save().toJson() == original.toJson());
+    f.step({}, SelectLane::kNoticeTicks, conflict);
+    CHECK(f.lane.state() == SelectLane::State::SaveMenu);
+    CHECK_FALSE(f.lane.reservedSlot().has_value());
+}
+
 } // namespace

@@ -81,6 +81,7 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     m_tickRemainder = 0.0;
     m_time = 0;
     m_idleFrames = 0;
+    m_entryParty.assign(party.begin(), party.end());
     loadSounds(m_context.unpackedRoot);
     loadTower(device);
 
@@ -130,6 +131,39 @@ bool PlayerSelectScene::open(RenderDevice& device, const GameContext& context, s
     return true;
 }
 
+bool PlayerSelectScene::openAfterLevel(RenderDevice& device, const GameContext& context,
+                                       std::span<const PartyMember> party) {
+    if (!open(device, context, -1, party)) {
+        return false;
+    }
+    for (const PartyMember& member : party) {
+        if (!member.fallen && member.player >= 0 && member.player < kLaneCount) {
+            m_lanes[static_cast<usize>(member.player)].manage();
+        }
+    }
+    return true;
+}
+
+std::vector<PartyMember> PlayerSelectScene::party() const {
+    std::vector<PartyMember> result;
+    for (const SelectLane& lane : m_lanes) {
+        if (!lane.active() || !lane.hasCharacter()) {
+            continue;
+        }
+        PartyMember member{lane.index(), lane.save(), lane.slotInUse()};
+        for (const PartyMember& before : m_entryParty) {
+            if (lane.retainsEntryCharacter() && before.player == member.player &&
+                before.save.name == member.save.name &&
+                before.save.character == member.save.character) {
+                member.helpHeard = before.helpHeard;
+                member.fallen = before.fallen;
+            }
+        }
+        result.push_back(std::move(member));
+    }
+    return result;
+}
+
 void PlayerSelectScene::close() {
     if (m_context.sounds != nullptr && m_music != kNoSound) {
         m_context.sounds->stop(m_music);
@@ -139,6 +173,7 @@ void PlayerSelectScene::close() {
         m_lanes[static_cast<usize>(i)].reset(i, nullptr);
     }
     m_camera.reset();
+    m_entryParty.clear();
     m_tower = nullptr;
     m_boxes.release();
     m_selectTextures.releaseTextures();
@@ -363,6 +398,9 @@ SelectOutcome PlayerSelectScene::step(s32 ticks, const Inputs& inputs) {
             frame.othersSelecting = frame.othersSelecting || other.selecting();
             if (other.slotInUse().has_value()) {
                 frame.slotsInUse |= 1U << *other.slotInUse();
+            }
+            if (other.reservedSlot().has_value()) {
+                frame.slotsInUse |= 1U << *other.reservedSlot();
             }
         }
         const SelectLane::Result result =

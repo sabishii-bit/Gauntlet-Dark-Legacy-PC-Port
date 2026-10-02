@@ -330,7 +330,7 @@ private:
     /** Where the level finds a character: nowhere once it has fallen. */
     Vec3 presenceOf(usize index) const;
     void updateAmbience();
-    void beginSpawn(RenderDevice& device, bool ride);
+    void beginSpawn(RenderDevice& device, const std::optional<WorldCamera>& marker);
     bool anyButton(const Inputs& inputs) const;
     bool openMessage(std::string_view name, usize page);
     void handleTriggerEvents();

@@ -1896,12 +1896,19 @@ shaders/  assets/  cmake/  scripts/  .vscode/
   rune count never). Game over, the countdown and scroll speech play at once.
 * Back from a realm the party stands at the tower's start marker among that
   realm's portals: `LevelWorld::towerMarkerOf` is the original's realm to
-  marker table (town 7 -> 1, mountain 2 -> 2), not the realm id itself. There
-  it materialises as anywhere (the spawn effect, the START sequence, the
-  level's title) with the follow camera already on it: the start camera's
-  hold and ride in belong only to a party standing at the level's own
-  entrance (`arrivalPoint(...) == startPoint(0)`), so neither a party out of
-  a level nor one that fell is shown Sumner's hall first.
+  marker table (town 7 -> 1, mountain 2 -> 2, temple 5 -> 9, underworld 6 -> 10,
+  battlefield 8 -> 11), not the crystal-gate table. SetPlayerStartPos pairs
+  that spawn with the same-index `cameraStart`; only a missing camera falls
+  back to camera zero without moving the party. A locked realm instead falls
+  back to both entrance spawn and entrance camera. `PlayScene` uses that
+  local wing view for the materialisation, then descends to the follow camera.
+  The active standard camera holds three seconds (world_update's 3.0-second
+  boundary), then blends angles, distance and attention over ten 30 Hz updates;
+  it does not use the older camera.c 91-tick path or its button skip. The
+  initial distance is measured to the party's follow-point bounds midpoint.
+  Explicit scenario positions still bypass this arrival flight. Test
+  `[tower-return-camera]`; `python scripts/scenario.py tower-return-dream`
+  previews the Dream wing's authored return camera.
   Scenarios: `level-g1-chest.json`, `level-g1-gate.json`,
   `level-g1-trap.json`, `level-g1-nokey.json`, `level-g1-barrel.json`,
   `level-g1-death.json`, `level-g1-turbo.json`; in the tower
