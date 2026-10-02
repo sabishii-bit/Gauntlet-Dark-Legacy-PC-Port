@@ -25,6 +25,7 @@ CombatantDefinition bossDefinition(std::string_view name) {
     out.kind = CombatantKind::Boss;
     out.selection = CombatantDefinition::Selection::Patterns;
     out.boundsToHome = true;
+    out.projectileEndVisual = out.name == "YETI";
     return out;
 }
 
