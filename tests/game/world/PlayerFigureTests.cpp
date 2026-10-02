@@ -5,6 +5,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "engine/io/File.h"
 
@@ -21,6 +22,100 @@ using namespace gdl::game;
 
 static_assert(!std::is_move_constructible_v<PlayerFigure>);
 static_assert(!std::is_copy_constructible_v<PlayerFigure>);
+
+TEST_CASE("equipped hand powerups replace the class weapon and restore it when switched off",
+          "[game][figure][held-powerup][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/objects.json").parent_path().parent_path();
+    test::unpackedOrSkip("POWERUPS/objects.json");
+    test::FakeRenderDevice device;
+    ItemArchive weapons;
+    ItemArchive powerups;
+    REQUIRE(weapons.load(root / "WEAPONS"));
+    REQUIRE(powerups.load(root / "POWERUPS"));
+    CharacterSave save;
+    save.character = GENERATE(0, 5, 7); // axe, sword, and jester's thrown weapon
+    CAPTURE(save.character);
+    auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    REQUIRE(figure->heldWeaponBound());
+    const Mat4 body = glm::translate(Mat4{1}, Vec3{5, 2, 9});
+    const auto hand = figure->handAttachment(body);
+    REQUIRE(hand);
+    figure->draw(device, Mat4{1}, body, {}, 1, true);
+    const usize bodyDraws = device.draws.size();
+    device.draws.clear();
+    figure->draw(device, Mat4{1}, body, {}, 1, false);
+    const auto original = device.draws;
+    REQUIRE(original.size() > bodyDraws);
+
+    const auto checkHeld = [&](ItemArchive& archive, std::string_view object) {
+        TreeInfo tree;
+        TreeNodeInfo node;
+        node.name = object;
+        node.object = object;
+        tree.nodes.push_back(node);
+        TreeModel model;
+        REQUIRE(model.bind(tree, archive.models, archive.textures, device));
+        device.draws.clear();
+        model.draw(device, Mat4{1}, *hand, {}, {}, nullptr, 1);
+        const auto expected = device.draws;
+        REQUIRE_FALSE(expected.empty());
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, body, {}, 1, false);
+        // Exactly the body plus the replacement: never the ordinary weapon alongside it.
+        REQUIRE(device.draws.size() == bodyDraws + expected.size());
+        for (usize i = 0; i < expected.size(); ++i) {
+            const auto& actual = device.draws[bodyDraws + i];
+            CHECK(actual.texture == expected[i].texture);
+            REQUIRE(actual.vertices.size() == expected[i].vertices.size());
+            for (usize v = 0; v < actual.vertices.size(); ++v) {
+                CHECK(actual.vertices[v].position == expected[i].vertices[v].position);
+            }
+        }
+    };
+    const auto checkRestored = [&] {
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, body, {}, 1, false);
+        REQUIRE(device.draws.size() == original.size());
+        for (usize i = bodyDraws; i < original.size(); ++i) {
+            CHECK(device.draws[i].texture == original[i].texture);
+            REQUIRE(device.draws[i].vertices.size() == original[i].vertices.size());
+            CHECK(device.draws[i].vertices.front().position ==
+                  original[i].vertices.front().position);
+        }
+    };
+
+    Inventory inventory;
+    inventory.addPowerup(powerup::kWeapon, powerup::kThunderHammer, 1, -1);
+    figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
+    checkHeld(weapons, "HAMMER_HD");
+    inventory.powerups[0].on = false;
+    figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
+    checkRestored();
+    inventory.powerups[0].on = true;
+    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 1, -1);
+    figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
+    checkHeld(weapons, "SUPERXBOW");
+    inventory.addPowerup(powerup::kSpecial, powerup::kRightGauntlet, 0, 1);
+    figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
+    checkHeld(powerups, "BOSSGAUNTR");
+    inventory.advance(2);
+    figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
+    checkHeld(weapons, "SUPERXBOW");
+    REQUIRE(inventory.spendPowerup(powerup::kWeapon, powerup::kSuperShot, false));
+    figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
+    checkHeld(weapons, "HAMMER_HD");
+    REQUIRE(inventory.spendPowerup(powerup::kWeapon, powerup::kThunderHammer, false));
+    figure->setWeaponPowerups(device, powerups, weapons, PowerupEffects::of(inventory));
+    checkRestored();
+
+    // Missing optional art must not leave the player empty-handed.
+    ItemArchive absent;
+    PowerupEffects worn;
+    worn.weapon = powerup::kThunderHammer;
+    figure->setWeaponPowerups(device, powerups, absent, worn);
+    checkRestored();
+}
 
 TEST_CASE("Phoenix activation follows enabled inventory and expires without requiring art",
           "[game][figure][phoenix]") {
@@ -385,6 +480,66 @@ TEST_CASE("an unloaded player figure is safe to animate and draw", "[game][world
     REQUIRE(device.draws.empty());
     REQUIRE(PlayerFigure::load(device, test::scratchDirectory("figure-missing"), CharacterSave{}) ==
             nullptr);
+}
+
+TEST_CASE("hand replacement priority and restoration render without retail assets",
+          "[game][figure][held-powerup]") {
+    const auto root = costumeFixture("figure-hand-items", false);
+    const auto gear = root / "GEAR";
+    std::filesystem::create_directories(gear);
+    writeTextFile(gear / "hammer.obj",
+                  "v 10 0 0\nv 11 0 0\nv 10 1 0\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(gear / "bow.obj",
+                  "v 20 0 0\nv 21 0 0\nv 20 1 0\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(gear / "gauntlet.obj",
+                  "v 30 0 0\nv 31 0 0\nv 30 1 0\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeFile(gear / "skin.png", test::kTinyPng);
+    writeTextFile(gear / "objects.json", R"({"objects":[
+        {"index":0,"name":"HAMMER_HD","file":"hammer.obj","meshTriangles":1},
+        {"index":1,"name":"SUPERXBOW","file":"bow.obj","meshTriangles":1},
+        {"index":2,"name":"BOSSGAUNTR","file":"gauntlet.obj","meshTriangles":1}]})");
+    writeTextFile(gear / "textures.json", R"({"defs":[],"bitmaps":[
+        {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2,"flags":0}]})");
+    writeTextFile(
+        gear / "animations.json",
+        R"({"trees":[{"name":"HAMMER","nodes":[{"name":"HAMMER_HD","object":"HAMMER_HD","position":[0,0,0]}]}]})");
+    ItemArchive archive;
+    REQUIRE(archive.load(gear));
+    test::FakeRenderDevice device;
+    CharacterSave save;
+    save.color = 1;
+    const auto figure = PlayerFigure::load(device, root, save, false);
+    REQUIRE(figure);
+    const auto checkWeapon = [&](f32 x, bool hideNormal = false) {
+        device.draws.clear();
+        figure->draw(device, Mat4{1}, Mat4{1}, {}, 1, hideNormal);
+        REQUIRE(device.draws.size() == 3); // two body nodes and exactly one hand weapon
+        CHECK(device.draws.back().vertices.front().position == Vec3{x, 2, 3});
+    };
+    PowerupEffects worn;
+    checkWeapon(1);
+    worn.weapon = powerup::kThunderHammer;
+    figure->setWeaponPowerups(device, archive, archive, worn);
+    checkWeapon(11);
+    worn.weapon |= powerup::kSuperShot;
+    figure->setWeaponPowerups(device, archive, archive, worn);
+    checkWeapon(21);
+    checkWeapon(21, true); // the held crossbow does not vanish with the thrown class weapon
+    worn.special = powerup::kRightGauntlet;
+    figure->setWeaponPowerups(device, archive, archive, worn);
+    checkWeapon(31);
+    worn = {};
+    worn.special = powerup::kLeftGauntlet;
+    figure->setWeaponPowerups(device, archive, archive, worn);
+    checkWeapon(1); // the off-hand gauntlet does not replace the weapon
+    worn.special = 0;
+    worn.weapon = 1; // elemental overlays keep the ordinary weapon
+    figure->setWeaponPowerups(device, archive, archive, worn);
+    checkWeapon(1);
+    worn.weapon = powerup::kThunderHammer;
+    ItemArchive absent;
+    figure->setWeaponPowerups(device, absent, absent, worn);
+    checkWeapon(1);
 }
 
 TEST_CASE("player figures select costume tiers without requiring a scene",
