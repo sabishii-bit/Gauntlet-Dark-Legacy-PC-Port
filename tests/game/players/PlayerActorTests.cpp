@@ -343,4 +343,25 @@ TEST_CASE("the tower's authored stair ramps allow continuous uphill and downhill
     }
 }
 
+TEST_CASE("pushing against opposing faces of a thin wall cannot select its far side",
+          "[game][players][actor][push-wall]") {
+    WorldCollision collision;
+    const Vec3 up{0, 1, 0};
+    collision.build({triangle({-10, 0, -10}, {10, 0, -10}, {10, 0, 10}, up),
+                     triangle({-10, 0, -10}, {10, 0, 10}, {-10, 0, 10}, up),
+                     triangle({5, 0, -10}, {5, 5, -10}, {5, 5, 10}, {-1, 0, 0}),
+                     triangle({5, 0, -10}, {5, 5, 10}, {5, 0, 10}, {-1, 0, 0}),
+                     triangle({5.1f, 0, -10}, {5.1f, 5, 10}, {5.1f, 5, -10}, {1, 0, 0}),
+                     triangle({5.1f, 0, -10}, {5.1f, 0, 10}, {5.1f, 5, 10}, {1, 0, 0})});
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, {4, 0, 0}, 0);
+    actor.slide({4, 0, 1}, &collision);
+    CHECK(actor.position().x <= 5 - actor.radius() + 0.001f);
+    CHECK(actor.position().z == Approx(1).margin(0.001f));
+    actor.place({6, 0, 0});
+    actor.slide({-4, 0, 1}, &collision);
+    CHECK(actor.position().x >= 5.1f + actor.radius() - 0.001f);
+    CHECK(actor.position().z == Approx(1).margin(0.001f));
+}
+
 } // namespace

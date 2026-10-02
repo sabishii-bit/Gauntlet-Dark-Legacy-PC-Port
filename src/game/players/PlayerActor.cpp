@@ -87,8 +87,8 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
     const Vec3 stride = offset / static_cast<f32>(steps);
     for (s32 i = 0; i < steps; ++i) {
         Vec3 target = m_position + stride;
-        target = collision->resolveWalls(target, m_radius, target.y + kFootClearance,
-                                         target.y + m_height - kFootClearance);
+        target = collision->sweepWalls(m_position, target, m_radius, target.y + kFootClearance,
+                                       target.y + m_height - kFootClearance);
         auto floor = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
         if (!floor) {
             // Floor contact spans the body's radius, not just a ray under its
@@ -102,8 +102,8 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
             if (!edge) {
                 return;
             }
-            target = collision->resolveWalls(*edge, m_radius, edge->y + kFootClearance,
-                                             edge->y + m_height - kFootClearance);
+            target = collision->sweepWalls(m_position, *edge, m_radius, edge->y + kFootClearance,
+                                           edge->y + m_height - kFootClearance);
             const auto support = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
             if (!support) {
                 return;
