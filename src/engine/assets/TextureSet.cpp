@@ -1,16 +1,21 @@
 #include "engine/assets/TextureSet.h"
 
 #include <exception>
+#include <format>
 #include <string>
 
 #include <nlohmann/json.hpp>
 
 #include "engine/assets/PngImage.h"
 #include "engine/core/Assert.h"
+#include "engine/core/Error.h"
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
+
+#include "formats/GcTexture.h"
 
 namespace gdl {
 
@@ -28,7 +33,14 @@ bool TextureSet::load(const std::filesystem::path& directory) {
     m_entries.clear();
     m_byName.clear();
     m_images.clear();
+    m_textures.clear();
+    m_nativeBitmaps.clear();
+    m_nativePixels.clear();
     m_directory = directory;
+
+    if (const auto file = AssetLocator(directory).find("objects.ngc")) {
+        return loadNative(directory, *file);
+    }
 
     const std::filesystem::path manifest = directory / kManifestName;
     std::vector<u8> bytes;
@@ -99,7 +111,16 @@ const Image& TextureSet::image(u32 index) {
         // texture's, filled from frames kept elsewhere): those are clear, so that what wears
         // them is unseen rather than the whole model failing.
         if (!m_entries[index].noPicture) {
-            image = loadImageFile(m_entries[index].file);
+            if (!m_nativeBitmaps.empty()) {
+                if (m_entries[index].external()) {
+                    throw FileError("external texture requires its owning archive: " +
+                                    m_entries[index].name);
+                }
+                image = formats::decodeGcTexture(m_nativeBitmaps[index], m_nativePixels);
+                image.bleedIntoTransparent();
+            } else {
+                image = loadImageFile(m_entries[index].file);
+            }
         } else {
             image.width = 1;
             image.height = 1;
@@ -129,6 +150,64 @@ const Texture& TextureSet::texture(RenderDevice& device, u32 index) {
 void TextureSet::releaseTextures() {
     for (std::unique_ptr<Texture>& texture : m_textures) {
         texture.reset();
+    }
+}
+
+bool TextureSet::loadNative(const std::filesystem::path& directory,
+                            const std::filesystem::path& objects) {
+    try {
+        const auto archive = formats::ModelArchive::parse(readFile(objects));
+        m_nativeBitmaps = archive.bitmaps();
+        // External and animation-only slots need no companion pixel file.
+        if (const auto pixels = AssetLocator(directory).find("textures.ngc")) {
+            m_nativePixels = readFile(*pixels);
+        }
+        m_entries.resize(m_nativeBitmaps.size());
+        for (const auto& def : archive.bitmapDefs()) {
+            if (def.textureIndex >= m_entries.size()) {
+                throw FormatError("bitmap definition index out of range");
+            }
+            const auto name = normalizeAssetName(def.name);
+            auto& entry = m_entries[def.textureIndex];
+            if (entry.name.empty()) {
+                entry.name = name;
+            }
+            m_byName[name] = def.textureIndex;
+        }
+        std::string base = "UNNAMED";
+        u32 frame = 0;
+        for (u32 i = 0; i < m_entries.size(); ++i) {
+            auto& entry = m_entries[i];
+            const auto& bitmap = m_nativeBitmaps[i];
+            if (entry.name.empty()) {
+                entry.name = std::format("{}+{}", base, ++frame);
+            } else {
+                base = entry.name;
+                frame = 0;
+            }
+            entry.width = bitmap.width;
+            entry.height = bitmap.height;
+            entry.flags = bitmap.flags;
+            entry.frames = bitmap.frameCount;
+            entry.noPicture = (bitmap.flags & formats::bitmap_flags::kInvalid) != 0;
+            entry.halfResolution = (bitmap.flags & formats::bitmap_flags::kHalfResolution) != 0;
+            entry.clampU = (bitmap.flags & formats::bitmap_flags::kClampU) != 0;
+            entry.clampV = (bitmap.flags & formats::bitmap_flags::kClampV) != 0;
+            if (!entry.noPicture && !entry.external() && m_nativePixels.empty()) {
+                throw FileError("archive has local textures but no textures.ngc pixels");
+            }
+            m_byName.try_emplace(entry.name, i);
+        }
+        m_images.resize(m_entries.size());
+        m_textures.resize(m_entries.size());
+        return !m_entries.empty();
+    } catch (const std::exception& e) {
+        log::warn("Native texture set {}: {}", objects.string(), e.what());
+        m_entries.clear();
+        m_byName.clear();
+        m_nativeBitmaps.clear();
+        m_nativePixels.clear();
+        return false;
     }
 }
 

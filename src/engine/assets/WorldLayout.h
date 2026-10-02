@@ -143,10 +143,10 @@ struct WorldLocator {
     Vec3 rotation{0.0f, 0.0f, 0.0f}; ///< pitch, yaw, roll in radians
 };
 
-/** One unpacked level's layout: where its objects stand and its marker points. */
+/** One level's layout: where its objects stand and its marker points. */
 class WorldLayout {
 public:
-    /** Reads `directory/world.json`; false (with a warning) when missing or malformed. */
+    /** Reads WORLDS.PS2, or a legacy world.json if no native file exists. */
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return !m_objects.empty(); }
@@ -168,6 +168,7 @@ public:
     Vec3 worldPosition(usize index) const;
 
 private:
+    bool loadNative(const std::filesystem::path& file);
     void resolveParents();
 
     std::vector<WorldObject> m_objects;

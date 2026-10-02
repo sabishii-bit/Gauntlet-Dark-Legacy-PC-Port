@@ -10,6 +10,8 @@
 #include "engine/audio/SoundClip.h"
 #include "engine/core/Types.h"
 
+#include "formats/SoundBank.h"
+
 namespace gdl {
 
 struct SoundSetStep {
@@ -26,10 +28,10 @@ struct SoundSetEntry {
     std::vector<SoundSetStep> sequence;
 };
 
-/** One unpacked sound bank: named sounds and the sample clips they sequence, decoded on demand. */
+/** Named sound calls and lazily decoded samples from a native bank or inspection export. */
 class SoundSet {
 public:
-    /** Reads `directory/sounds.json`; false (with a warning) when missing or malformed. */
+    /** Accepts AUDIO/<bank name>, a .vbk path, or a legacy directory/sounds.json. */
     bool load(const std::filesystem::path& directory);
 
     bool loaded() const { return !m_entries.empty(); }
@@ -44,8 +46,10 @@ public:
     SoundSequence sequence(u32 index);
 
 private:
+    bool loadNative(const std::filesystem::path& path);
     struct SampleInfo {
         std::filesystem::path file;
+        std::optional<formats::BankSample> native;
         SoundClip clip;
     };
 

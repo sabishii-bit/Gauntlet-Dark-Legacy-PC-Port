@@ -37,7 +37,26 @@ std::optional<std::filesystem::path> matchComponent(const std::filesystem::path&
 
 } // namespace
 
-AssetLocator::AssetLocator(std::filesystem::path root) : m_root(std::move(root)) {}
+AssetLocator::AssetLocator(std::filesystem::path root) : m_root(std::move(root)) {
+    // Runtime callers append logical archive names to the game root. Disc directory
+    // casing is inconsistent, so resolving only the final filename is insufficient on Linux.
+    std::error_code error;
+    if (std::filesystem::exists(m_root, error)) {
+        return;
+    }
+    const auto absolute = std::filesystem::absolute(m_root, error);
+    if (!error && absolute != absolute.root_path()) {
+        auto resolved = absolute.root_path();
+        for (const auto& component : absolute.relative_path()) {
+            const auto found = matchComponent(resolved, component.string());
+            if (!found) {
+                return;
+            }
+            resolved = *found;
+        }
+        m_root = std::move(resolved);
+    }
+}
 
 std::optional<std::filesystem::path> AssetLocator::find(std::string_view relative) const {
     std::filesystem::path current = m_root;

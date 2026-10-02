@@ -21,7 +21,7 @@ class BitmapFont {
 public:
     static BitmapFont fromGlyphs(s32 height, s32 spaceWidth, std::vector<BitmapGlyph> glyphs);
 
-    /** Reads an unpacked font manifest; false (with a warning) when missing or malformed. */
+    /** Reads a native .fnt or a legacy manifest; a sibling .fnt takes precedence. */
     bool load(const std::filesystem::path& file, s32 spaceWidth);
 
     bool loaded() const { return m_height > 0; }

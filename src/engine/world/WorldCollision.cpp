@@ -10,7 +10,10 @@
 #include "engine/core/Error.h"
 #include "engine/core/Log.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
+
+#include "formats/WorldFile.h"
 
 namespace gdl {
 
@@ -154,6 +157,32 @@ bool WorldCollision::load(const std::filesystem::path& directory, const WorldLay
     clear();
     const std::filesystem::path file = directory / "collision.json";
     try {
+        if (const auto native = AssetLocator(directory).find("worlds.ps2")) {
+            const auto world = formats::WorldFile::parse(readFile(*native));
+            if (world.objects.size() != layout.objects().size()) {
+                throw FormatError("collision and layout object rosters differ");
+            }
+            std::vector<CollisionTriangle> triangles;
+            for (usize i = 0; i < world.objects.size(); ++i) {
+                const auto& object = world.objects[i];
+                if (layout.objects()[i].noCollision || object.collisionTriangleCount <= 0 ||
+                    object.collisionTriangleIndex < 0) {
+                    continue;
+                }
+                const auto first = static_cast<usize>(object.collisionTriangleIndex);
+                const auto count = static_cast<usize>(object.collisionTriangleCount);
+                if (first + count > world.collision.size()) {
+                    throw FormatError("object collision outside world triangle table");
+                }
+                for (usize t = first; t < first + count; ++t) {
+                    const auto& from = world.collision[t];
+                    triangles.push_back({from.normal, from.vertices, static_cast<s32>(i),
+                                         layout.objects()[i].flags});
+                }
+            }
+            build(std::move(triangles));
+            return loaded();
+        }
         const Json root = Json::parse(readTextFile(file), nullptr, true, true);
         std::vector<CollisionTriangle> triangles;
         for (const Json& entry : root.at("objects")) {

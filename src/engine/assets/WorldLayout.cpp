@@ -11,6 +11,7 @@
 #include "engine/core/Log.h"
 #include "engine/core/Strings.h"
 #include "engine/core/Types.h"
+#include "engine/io/AssetLocator.h"
 #include "engine/io/File.h"
 
 namespace gdl {
@@ -110,6 +111,11 @@ bool WorldLayout::load(const std::filesystem::path& directory) {
     m_particles.clear();
     m_itemInfos.clear();
     m_itemInstances.clear();
+    m_minBounds = Vec3{0};
+    m_maxBounds = Vec3{0};
+    if (const auto native = AssetLocator(directory).find("worlds.ps2")) {
+        return loadNative(*native);
+    }
     const std::filesystem::path file = directory / "world.json";
     try {
         const Json root = Json::parse(readTextFile(file), nullptr, true, true);

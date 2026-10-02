@@ -8,6 +8,18 @@ find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 find_package(Stb REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
+# Shared value types, byte I/O and codecs sit below both the native readers and runtime.
+add_library(engine_base STATIC
+    core/Log.cpp core/Assert.cpp core/Clock.cpp core/Strings.cpp
+    io/File.cpp io/AssetLocator.cpp render/Image.cpp codec/DspAdpcm.cpp)
+add_library(gdl::engine_base ALIAS engine_base)
+target_include_directories(engine_base PUBLIC ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(engine_base PUBLIC glm::glm)
+target_compile_definitions(engine_base PUBLIC
+    GLM_FORCE_RADIANS GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_ENABLE_EXPERIMENTAL)
+gdl_apply_compiler_options(engine_base)
+set_target_properties(engine_base PROPERTIES FOLDER "engine")
+
 add_library(engine STATIC
     assets/ShopCatalog.h
     assets/ShopCatalog.cpp
@@ -15,19 +27,13 @@ add_library(engine STATIC
     core/SpecialMembers.h
     core/Error.h
     core/Log.h
-    core/Log.cpp
     core/Assert.h
-    core/Assert.cpp
     core/Clock.h
-    core/Clock.cpp
     core/Strings.h
-    core/Strings.cpp
     math/Math.h
     io/ByteReader.h
     io/File.h
-    io/File.cpp
     io/AssetLocator.h
-    io/AssetLocator.cpp
     platform/Window.h
     platform/Input.h
     platform/Input.cpp
@@ -39,7 +45,6 @@ add_library(engine STATIC
     render/VulkanHandles.h
     render/Mesh.h
     render/Image.h
-    render/Image.cpp
     render/ImmediateBatch.h
     render/ImmediateBatch.cpp
     render/RenderDevice.h
@@ -65,7 +70,6 @@ add_library(engine STATIC
     codec/VqVideoDecoder.h
     codec/VqVideoDecoder.cpp
     codec/DspAdpcm.h
-    codec/DspAdpcm.cpp
     codec/AdsAudio.h
     codec/AdsAudio.cpp
     codec/MoviePlayback.h
@@ -96,6 +100,7 @@ add_library(engine STATIC
     assets/WavFile.cpp
     assets/SoundSet.h
     assets/SoundSet.cpp
+    assets/NativeSoundSet.cpp
     assets/ObjModel.h
     assets/ObjModel.cpp
     assets/ModelSet.h
@@ -107,6 +112,10 @@ add_library(engine STATIC
     assets/ParticleTemplate.cpp
     assets/AnimationSet.h
     assets/AnimationSet.cpp
+    assets/NativeAnimationSet.cpp
+    assets/NativeParticleTemplate.cpp
+    assets/NativeWorldLayout.cpp
+    assets/NativeWorldData.cpp
     assets/WorldData.h
     assets/WorldData.cpp
     assets/MessageTable.h
@@ -157,8 +166,10 @@ target_include_directories(engine SYSTEM PRIVATE ${MINIAUDIO_INCLUDE_DIR} ${Stb_
 
 target_link_libraries(engine
     PUBLIC
+        gdl::engine_base
         glm::glm
     PRIVATE
+        gdl::formats
         glfw
         nlohmann_json::nlohmann_json
         Vulkan::Headers

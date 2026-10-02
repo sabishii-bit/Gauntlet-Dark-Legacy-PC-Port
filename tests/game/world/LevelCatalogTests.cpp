@@ -120,4 +120,20 @@ TEST_CASE("the unpacked realm data finds the tower's first portals' levels",
     REQUIRE(*catalog.byTag("l1") == LevelRef::tower());
 }
 
+TEST_CASE("the native realm catalogue discovers levels with no exported manifests",
+          "[game][world][levels][native-assets][assets]") {
+    const auto root = test::assetOrSkip("WDATA/TOWER.WAD").parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    REQUIRE(catalog.realms().size() == 14);
+    const auto tower = catalog.byTag("l1");
+    REQUIRE(tower);
+    REQUIRE(*tower == LevelRef::tower());
+    const auto fields = catalog.byTag("g1");
+    REQUIRE(fields);
+    REQUIRE(fields->title == "Fields");
+    REQUIRE(LevelCatalog::unpacked(root, *fields));
+    REQUIRE(catalog.byTag("a2")->name == "A6");
+}
+
 } // namespace

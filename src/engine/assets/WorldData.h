@@ -150,6 +150,7 @@ public:
     const LevelAudioInfo* audio(s32 index) const;
 
 private:
+    bool loadNative(const std::filesystem::path& file);
     u32 m_realm = 0;
     std::string m_prefix;
     std::vector<LevelInfo> m_levels;

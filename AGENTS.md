@@ -26,13 +26,21 @@ messages and pull requests; the code and its tests are the documentation.
 
 Game data is never committed. It lives under `assets/GUNE5D/` (ignored by
 git, see `assets/README.md`); the build bakes `assets/GUNE5D/Gauntlet` in as
-the default asset directory. The console-specific files (`objects.ngc`,
-`textures.ngc`, `ANIM.PS2`, `*.VBK` sound banks, `*.fnt`, `*.rom`) are
-converted once by `gdlunpack` into PNG images, OBJ meshes, WAV samples and
-JSON manifests under `assets/unpacked/` (also ignored, baked in as
-`GDL_UNPACKED_DIR`). The game reads only those standard files; the console
-formats are parsed solely in `src/formats/` and `tools/gdlunpack/`. Movies and
-audio streams stay in the disc's own containers, decoded by `engine/codec`.
+the default asset directory. The runtime is migrating to the original asset
+tree, without required unpacking. `ModelSet`, `TextureSet` and `AnimationSet`
+prefer `objects.ngc`, `textures.ngc` and `ANIM.PS2` in their supplied directory.
+`SoundSet` accepts a native `.VBK` or an AUDIO/bank-name path and gets names
+and timing from `AUDATPS2.ROM`. Fonts and message tables accept `.fnt`/`.rom`.
+`WorldLayout` and `WorldCollision` read `WORLDS.PS2`; `WorldData` reads the
+realm's `WDATA/*.WAD` directly, including cameras, tuning and sound selections.
+These paths decode directly into runtime structures, not generated JSON or
+temporary PNG/OBJ/WAV files. Existing export readers remain for inspection
+and comparison during migration; a malformed native file must fail, never
+silently use a stale export. The application still supplies its legacy
+`GDL_UNPACKED_DIR` until the remaining gameplay-table consumers and application-path
+migration is complete. Do not claim the complete game is independent of
+unpacking yet. `gdlunpack` remains an export tool; movies and audio streams
+already use their disc containers.
 
 `data/` is versioned and ships with the game: `config.json` (the settings
 defaults) and `text/<language>.json` (every user-facing string by identifier).
@@ -54,8 +62,9 @@ shaders/  assets/  cmake/  scripts/  .vscode/
 * Headers sit next to their sources. A class `Foo` in engine module `render`
   is `src/engine/render/Foo.h` + `Foo.cpp`, included as
   `"engine/render/Foo.h"`; game files follow the same shape, `"game/menu/Foo.h"`.
-* CMake targets: `engine` (static library), `formats` (static library on top
-  of the engine; the game never links it), `game` (static library with
+* CMake targets: `engine_base` (shared value support, byte I/O and codecs),
+  `formats` (native readers on top of that base), `engine` (runtime, using
+  the readers without a cyclic dependency), `game` (static library with
   everything but `main.cpp`, so tests can link it), `gauntlet` (executable),
   `tests` (Catch2 executable), `vqdump` and `gdlunpack` (tools).
 * Layering, lowest first: `core`, `math`, `io`, `platform`, `render`, `codec`,

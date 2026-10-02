@@ -63,7 +63,7 @@ public:
         std::vector<s32> runes; ///< the runestone each level holds, from one; nought for none
     };
 
-    /** Reads every realm file in `wdata` under `unpackedRoot`; false when none could be. */
+    /** Reads native WDATA realm WADs or legacy exports; false when none could be. */
     bool load(const std::filesystem::path& unpackedRoot);
     bool loaded() const { return !m_realms.empty(); }
     const std::vector<Realm>& realms() const { return m_realms; }
@@ -79,7 +79,7 @@ public:
     /** Whether the level is the last of its realm's order: the one its boss is fought in,
      * which is where a death counts as a try at the boss (playerGiveGargItem). */
     bool isLastLevel(const LevelRef& level) const;
-    /** Whether the level's files are unpacked under `unpackedRoot`. */
+    /** Whether native world data or a legacy layout is present under the supplied root. */
     static bool unpacked(const std::filesystem::path& unpackedRoot, const LevelRef& level);
 
 private:
