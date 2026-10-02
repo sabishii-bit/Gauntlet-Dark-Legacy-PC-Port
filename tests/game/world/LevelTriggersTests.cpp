@@ -18,8 +18,10 @@
 #include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "game/enemies/CritterStatues.h"
+#include "game/players/PlayerActor.h"
 #include "game/world/LevelCatalog.h"
 #include "game/world/LevelTriggers.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 
@@ -41,13 +43,14 @@ struct SwitchFixture {
     explicit SwitchFixture(
         std::string_view instances,
         std::string_view objects = R"({"name":"WALL","position":[0,10,0],"flags":4096})",
-        s32 subtype = 24, std::string_view animations = "") {
+        s32 subtype = 24, std::string_view animations = "", f32 height = 0.0f) {
         const auto dir = test::sampleLevel("switch-modes");
-        writeTextFile(dir / "world.json", std::format(R"({{
+        writeTextFile(dir / "world.json",
+                      std::format(R"({{
           "objects":[{}],
-          "itemInfos":[{{"type":5,"subtype":{},"name":"BRIDGEPAD","radius":1}}],
+          "itemInfos":[{{"type":5,"subtype":{},"name":"BRIDGEPAD","radius":1,"height":{}}}],
           "itemInstances":[{}],"animations":[{}]}})",
-                                                      objects, subtype, instances, animations));
+                                  objects, subtype, height, instances, animations));
         REQUIRE(layout.load(dir));
         REQUIRE(models.load(dir));
         REQUIRE(textures.load(dir));
@@ -62,6 +65,75 @@ struct SwitchFixture {
     }
     f32 height() const { return scene.worldTransform(0)[3].y; }
 };
+
+TEST_CASE("trigger contact uses authored height and the visitor's half height",
+          "[triggers][temple-gates]") {
+    SwitchFixture f(R"({"info":0,"position":[0,-5,0],"params":[0,0,0,0,0,255,0,0,0,0,0,0]})",
+                    R"({"name":"WALL","position":[0,10,0]})", 24, "", 3.0f);
+    std::array party{TriggerVisitor{.position = Vec3{0}, .height = 3.0f}};
+    f.step(kStep, party);
+    CHECK_FALSE(f.triggers.trigger(0).fired);
+    party[0].height = 5.0f;
+    f.step(kStep, party);
+    CHECK(f.triggers.trigger(0).fired);
+    party[0].position.y = 0.51f;
+    f.step(kStep, party);
+    CHECK_FALSE(f.triggers.trigger(0).fired);
+    party[0].position = Vec3{3, 0, 0};
+    f.step(kStep, party);
+    CHECK_FALSE(f.triggers.trigger(0).fired);
+}
+
+TEST_CASE("a switch and its artwork follow the floor from its rest pose through motion",
+          "[triggers][temple-gates][trigger-visibility]") {
+    SwitchFixture f(R"({"info":0,"position":[1,15,0],"params":[0,0,0,0,0,255,0,0,0,0,0,0]})");
+    CollisionTriangle floor;
+    floor.object = 0;
+    floor.objectFlags |= WorldObject::kAnimated;
+    floor.normal = Vec3{0, 1, 0};
+    floor.vertices = {Vec3{-10, 0, -10}, Vec3{10, 0, -10}, Vec3{0, 0, 10}};
+    WorldCollision collision;
+    collision.build({floor});
+    collision.setMovingObjects(std::array<s32, 1>{0});
+    collision.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{0, 30, 0}));
+    f.triggers.bind(f.layout, f.animator, &collision);
+    REQUIRE(f.triggers.trigger(0).floor == 0);
+    CHECK(f.triggers.trigger(0).spot == Vec3{1, 35, 0});
+    // An initial pose outside the floor probe must not prevent rest-pose attachment.
+    CHECK((*collision.objectTransform(0))[3].y == Approx(30));
+    const auto dir = test::sampleLevel("trigger-moving-art");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"BRIDGEPAD",
+      "nodes":[{"name":"WALL","object":"WALL","parent":-1,"position":[0,0,0]}],
+      "sequences":[{"name":"OFF","frames":1,"rate":30}]}]})");
+    ItemArchive items;
+    REQUIRE(items.load(dir));
+    f.triggers.bindFigures(f.device, f.layout, items);
+    f.triggers.draw(f.device, Mat4{1}, {});
+    REQUIRE(f.device.draws.size() == 1);
+    CHECK(f.device.draws.front().vertices.front().position.y == Approx(35));
+    std::array party{TriggerVisitor{.position = Vec3{1, 15, 0}}};
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    CHECK_FALSE(f.triggers.trigger(0).fired);
+    party[0].position = Vec3{1, 35, 0};
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    CHECK(f.triggers.trigger(0).fired);
+    const Mat4 moved =
+        glm::rotate(glm::translate(Mat4{1}, Vec3{10, 4, 0}), glm::radians(90.0f), Vec3{0, 1, 0});
+    collision.setObjectTransform(0, moved);
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    CHECK_FALSE(f.triggers.trigger(0).fired);
+    CHECK(f.triggers.trigger(0).spot.x == Approx(10));
+    CHECK(f.triggers.trigger(0).spot.y == Approx(9));
+    CHECK(f.triggers.trigger(0).spot.z == Approx(-1));
+    party[0].position = f.triggers.trigger(0).spot;
+    f.triggers.update(kStep, party, f.animator, f.scene, &collision);
+    CHECK(f.triggers.trigger(0).fired);
+    f.device.draws.clear();
+    f.triggers.draw(f.device, Mat4{1}, {});
+    REQUIRE(f.device.draws.size() == 1);
+    CHECK(f.device.draws.front().vertices.front().position.y == Approx(9));
+    f.triggers.clear();
+}
 
 TEST_CASE("subtype 23 supplies a movement lesson only when it has a target", "[triggers][help]") {
     const SwitchFixture f(R"({"info":0,"position":[0,0,0],"params":[0,0,0,0,0,0,7,0,0,0,0,0]})",
@@ -564,6 +636,106 @@ TEST_CASE("Temple bridge pads are visible and activate their authored world targ
         }
     }
     REQUIRE(tested);
+}
+
+TEST_CASE("Temple floor contact opens the altar gates and both switch chains",
+          "[triggers][temple-gates][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELE/animations.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto ref = catalog.byName("E1");
+    REQUIRE(ref);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    world.startTriggers({});
+    // The two altar approach gates have their markers below the traversable
+    // floor. Touch them at floor height, never by teleporting to the marker.
+    for (const s32 instance : {110, 112, 130, 159}) {
+        if (instance == 159) {
+            // The preceding switch lowers E1ELEV1, which carries the final pad.
+            for (usize i = 0; i < world.triggers().size(); ++i) {
+                if (world.triggers().trigger(i).id == 7) {
+                    const std::array visitors{
+                        TriggerVisitor{.position = world.triggers().trigger(i).spot}};
+                    world.updateTriggers(kStep, visitors);
+                }
+            }
+            for (s32 frame = 0; frame < 60; ++frame) {
+                world.update(kStep);
+                world.updateTriggers(kStep, {});
+            }
+        }
+        usize index = 0;
+        while (index < world.triggers().size() &&
+               world.triggers().trigger(index).instance != instance) {
+            ++index;
+        }
+        REQUIRE(index < world.triggers().size());
+        const auto trigger = world.triggers().trigger(index);
+        CAPTURE(instance, trigger.id);
+        PlayerActor actor;
+        const Vec3 approach = trigger.spot + Vec3{0, 6, 0};
+        const auto floor = world.collision().floorAt(approach, 0, 20);
+        REQUIRE(floor);
+        actor.spawn(0, {}, nullptr, Vec3{trigger.spot.x, floor->y, trigger.spot.z + 3}, 0);
+        actor.settle(world.collision());
+        for (s32 frame = 0; frame < 24; ++frame) {
+            actor.update(MoveInput{.direction = Vec2{0, -1}, .magnitude = 1}, 0, kStep,
+                         &world.collision());
+            const std::array visitors{
+                TriggerVisitor{.position = actor.position(), .radius = actor.radius()}};
+            world.update(kStep);
+            world.updateTriggers(kStep, visitors);
+        }
+        CAPTURE(actor.position().x, actor.position().y, actor.position().z, trigger.spot.y);
+        CHECK(world.triggers().trigger(index).fired);
+        CHECK(world.triggers().opened(trigger.target));
+        if (trigger.next >= 0) {
+            const auto& next = world.triggers().trigger(static_cast<usize>(trigger.next));
+            CHECK(next.fired);
+            CHECK(world.triggers().opened(next.target));
+        }
+    }
+}
+
+TEST_CASE("Underworld switch artwork remains visible before and after trigger contact",
+          "[triggers][underworld-switches][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path().parent_path().parent_path();
+    test::unpackedOrSkip("ITEMS/LEVELF/animations.json");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    REQUIRE(layout.load(root / "LEVELS/LEVELF1"));
+    ItemArchive items;
+    REQUIRE(items.load(root / "ITEMS/LEVELF"));
+    WorldAnimator animator;
+    animator.bind(layout);
+    LevelTriggers triggers;
+    triggers.bind(layout, animator, nullptr);
+    triggers.bindFigures(device, layout, items);
+    REQUIRE(triggers.size() == 11);
+    WorldScene scene;
+    for (usize i = 0; i < triggers.size(); ++i) {
+        const auto& trigger = triggers.trigger(i);
+        CAPTURE(i);
+        const auto& instance = layout.itemInstances()[static_cast<usize>(trigger.instance)];
+        const auto& info = layout.itemInfos()[static_cast<usize>(instance.info)];
+        ItemFigure figure;
+        REQUIRE(figure.place(device, items, info.name, instance, nullptr));
+        device.draws.clear();
+        figure.draw(device, Mat4{1}, {});
+        REQUIRE_FALSE(device.draws.empty());
+        const std::array visitors{TriggerVisitor{.position = trigger.spot}};
+        triggers.update(kStep, visitors, animator, scene, nullptr);
+        CHECK(trigger.fired);
+    }
+    device.draws.clear();
+    triggers.draw(device, Mat4{1}, {});
+    REQUIRE(device.draws.size() >= triggers.size());
+    triggers.clear();
 }
 
 TEST_CASE("a target on the wall is set off by what hits it, and walking past does nothing",

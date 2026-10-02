@@ -54,7 +54,7 @@ def refresh_player_effects(binary_dir: pathlib.Path, app_args: list[str],
     assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
     unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
     for flag, value in zip(app_args, app_args[1:]):
-        if flag == "--data":
+        if flag == "--assets":
             assets = root / value
         elif flag == "--unpacked":
             unpacked = root / value
@@ -83,7 +83,7 @@ def refresh_item_collision(binary_dir: pathlib.Path, app_args: list[str], root=N
     assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
     unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
     for flag, value in zip(app_args, app_args[1:]):
-        if flag == "--data":
+        if flag == "--assets":
             assets = root / value
         elif flag == "--unpacked":
             unpacked = root / value
@@ -110,13 +110,50 @@ def refresh_item_collision(binary_dir: pathlib.Path, app_args: list[str], root=N
                              "Rebuild gdlunpack and check the original asset files.")
 
 
+def refresh_level_items(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
+    """Export missing realm artwork required by already unpacked levels before launch."""
+    root = ROOT if root is None else root
+    assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
+    unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
+    for flag, value in zip(app_args, app_args[1:]):
+        if flag == "--assets":
+            assets = root / value
+        elif flag == "--unpacked":
+            unpacked = root / value
+    manifests = ("animations.json", "objects.json", "textures.json")
+    needed = set()
+    for manifest in sorted((unpacked / "wdata").glob("*.json")):
+        realm = json.loads(manifest.read_text(encoding="utf-8"))
+        prefix = realm.get("prefix", "").upper()
+        if not re.fullmatch(r"LEVEL[A-Z]", prefix):
+            continue
+        for level in realm.get("levels", []):
+            name = level.get("name", "").upper()
+            if not re.fullmatch(r"[A-Z][0-9]+", name):
+                continue
+            if (unpacked / "LEVELS" / (prefix[:-1] + name) / "world.json").is_file():
+                needed.add(prefix)
+    unpacker = binary_dir / "bin" / f"gdlunpack{EXE}"
+    for prefix in sorted(needed):
+        directory = unpacked / "ITEMS" / prefix
+        if all((directory / name).is_file() for name in manifests):
+            continue
+        if not (assets / "ITEMS").is_dir() or not unpacker.is_file():
+            raise ValueError(f"Level artwork {prefix} is missing. Provide the original ITEMS "
+                             "assets and build gdlunpack before launching.")
+        print(f"Exporting missing level artwork {prefix}", flush=True)
+        devenv.run([str(unpacker), str(assets), str(unpacked), "--only", prefix])
+        if not all((directory / name).is_file() for name in manifests):
+            raise ValueError(f"Level artwork {prefix} is still missing after export.")
+
+
 def refresh_challenge_data(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
     """Upgrade realm exports lacking the authored timed-level durations."""
     root = ROOT if root is None else root
     assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
     unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
     for flag, value in zip(app_args, app_args[1:]):
-        if flag == "--data":
+        if flag == "--assets":
             assets = root / value
         elif flag == "--unpacked":
             unpacked = root / value
@@ -186,6 +223,7 @@ def main() -> int:
     if args.run:
         refresh_player_effects(binary_dir, app_args)
         refresh_item_collision(binary_dir, app_args)
+        refresh_level_items(binary_dir, app_args)
         refresh_challenge_data(binary_dir, app_args)
         return devenv.run([str(bin_dir / f"gauntlet{EXE}"), *app_args]).returncode
     return 0

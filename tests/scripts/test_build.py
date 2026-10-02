@@ -12,6 +12,43 @@ import build
 
 
 class BuildLaunchTests(unittest.TestCase):
+    def test_missing_realm_items_export_once_and_verify_all_manifests(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            binary = root / "build/debug"
+            (binary / "bin").mkdir(parents=True)
+            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
+            (root / "raw/ITEMS").mkdir(parents=True)
+            manifest = root / "export/wdata/HELL.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('{"prefix":"levelF","levels":[{"name":"F1"}]}',
+                                encoding="utf-8")
+            world = root / "export/LEVELS/LEVELF1/world.json"
+            world.parent.mkdir(parents=True)
+            world.write_text('{}', encoding="utf-8")
+            items = root / "export/ITEMS/LEVELF"
+            args = ["--assets", "raw", "--data", "configuration", "--unpacked", "export"]
+
+            def unpack(_command):
+                items.mkdir(parents=True, exist_ok=True)
+                for name in ("animations", "objects", "textures"):
+                    (items / (name + ".json")).write_text('{}', encoding="utf-8")
+
+            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
+                build.refresh_level_items(binary, args, root)
+                run.assert_called_once_with([
+                    str(binary / "bin" / f"gdlunpack{build.EXE}"), str(root / "raw"),
+                    str(root / "export"), "--only", "LEVELF"])
+                run.reset_mock()
+                build.refresh_level_items(binary, args, root)
+                run.assert_not_called()
+                (items / "objects.json").unlink()
+                run.side_effect = None
+                with self.assertRaisesRegex(ValueError, "still missing"):
+                    build.refresh_level_items(binary, args, root)
+                with self.assertRaisesRegex(ValueError, "original ITEMS"):
+                    build.refresh_level_items(binary, ["--unpacked", "export"], root)
+
     def test_challenge_export_upgrade_is_verified_and_runs_once(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -22,7 +59,7 @@ class BuildLaunchTests(unittest.TestCase):
             manifest = root / "export/wdata/SECRET.json"
             manifest.parent.mkdir(parents=True)
             manifest.write_text('{"levels":[{"flags":4}]}', encoding="utf-8")
-            args = ["--data", "raw", "--unpacked", "export"]
+            args = ["--assets", "raw", "--data", "configuration", "--unpacked", "export"]
 
             def unpack(_command):
                 manifest.write_text('{"levels":[{"flags":4,"timeLimit":70}]}',
@@ -53,7 +90,7 @@ class BuildLaunchTests(unittest.TestCase):
             stale = {"itemInstances": [{"triangleCount": 1}]}
             manifest.write_text(json.dumps(stale), encoding="utf-8")
             current = {"itemInstances": [{"triangleCount": 1, "collision": [{}]}]}
-            args = ["--data", "raw", "--unpacked", "export"]
+            args = ["--assets", "raw", "--data", "configuration", "--unpacked", "export"]
 
             def unpack(_command):
                 manifest.write_text(json.dumps(current), encoding="utf-8")
@@ -79,31 +116,32 @@ class BuildLaunchTests(unittest.TestCase):
             binary = root / "build/release"
             (binary / "bin").mkdir(parents=True)
             (binary / "bin" / f"gdlunpack{build.EXE}").touch()
-            (root / "assets/GUNE5D/Gauntlet/PLAYERS").mkdir(parents=True)
+            (root / "original files/PLAYERS").mkdir(parents=True)
             manifest = root / "assets/unpacked/PLAYERS/JES/SFXYEL/animations.json"
             manifest.parent.mkdir(parents=True)
             manifest.write_text('{"trees":[]}', encoding="utf-8")
+            args = ["--assets", "original files", "--data", "configuration"]
             def unpack(_command):
                 manifest.write_text(json.dumps({"textureBindingVersion": 1, "trees": []}),
                                     encoding="utf-8")
 
             with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
-                build.refresh_player_effects(binary, [], root)
+                build.refresh_player_effects(binary, args, root)
                 run.assert_called_once_with([
                     str(binary / "bin" / f"gdlunpack{build.EXE}"),
-                    str(root / "assets/GUNE5D/Gauntlet"), str(root / "assets/unpacked"),
+                    str(root / "original files"), str(root / "assets/unpacked"),
                     "--only", "PLAYERS"])
                 run.reset_mock()
                 # Optional node/sequence links may legitimately be absent. The
                 # exporter version, not their presence, establishes freshness.
                 manifest.write_text(json.dumps({"textureBindingVersion": 1, "trees": []}),
                                     encoding="utf-8")
-                build.refresh_player_effects(binary, [], root)
+                build.refresh_player_effects(binary, args, root)
                 run.assert_not_called()
                 manifest.write_text('{}', encoding="utf-8")
                 run.side_effect = None
                 with self.assertRaisesRegex(ValueError, "did not upgrade"):
-                    build.refresh_player_effects(binary, [], root)
+                    build.refresh_player_effects(binary, args, root)
 
     def test_asset_free_builds_do_not_run_unpacker(self):
         with tempfile.TemporaryDirectory() as directory, \
@@ -111,6 +149,7 @@ class BuildLaunchTests(unittest.TestCase):
             root = pathlib.Path(directory)
             build.refresh_player_effects(root / "build/release", [], root)
             build.refresh_item_collision(root / "build/release", [], root)
+            build.refresh_level_items(root / "build/release", [], root)
             build.refresh_challenge_data(root / "build/release", [], root)
             run.assert_not_called()
 

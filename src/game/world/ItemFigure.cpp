@@ -190,6 +190,13 @@ void ItemFigure::tilt(f32 pitch, f32 yaw) {
     m_transform = itemPlacement(m_position, Vec3{pitch, m_yaw + yaw, 0.0f});
 }
 
+void ItemFigure::placeAt(const Mat4& placement) {
+    m_transform = placement;
+    m_placement = placement;
+    m_position = Vec3{placement[3]};
+    m_yaw = std::atan2(placement[2].x, placement[2].z);
+}
+
 void ItemFigure::play(s32 index, bool loop) {
     const bool hadPose = m_index >= 0;
     m_index = index;
