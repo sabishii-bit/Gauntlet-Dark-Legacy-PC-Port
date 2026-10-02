@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <array>
 #include <filesystem>
 
@@ -34,6 +35,55 @@ struct Fixture {
         arsenal.bind({device, classes, weapons, collision, effects, audio, nullptr, {}});
     }
 };
+
+TEST_CASE("every Super Shot volley renders the authored weapon streak until expiry",
+          "[game][player-arsenal][super-shot-streak][unpacked]") {
+    const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();
+    Fixture f;
+    REQUIRE(f.weapons.load(root / "WEAPONS"));
+    REQUIRE(f.classes.load(root / "pdata"));
+    f.arsenal.bind({f.device, f.classes, f.weapons, f.collision, f.effects, f.audio, nullptr, {}});
+    auto& inventory = f.actor.save().progress().inventory;
+    inventory.addPowerup(powerup::kWeapon, powerup::kSuperShot, 2, -1);
+    inventory.addPowerup(powerup::kWeapon, powerup::kThreeWayShot, 0, 30);
+    PlayerFigure figure;
+    const auto slot = f.weapons.textures.find("WEP_STREAK");
+    REQUIRE(slot);
+    const auto* texture = &f.weapons.textures.texture(f.device, *slot);
+    const auto& image = f.weapons.textures.image(*slot);
+    REQUIRE(std::ranges::any_of(image.pixels, [](u8 value) { return value != 0; }));
+    WorldCamera view;
+    view.pitch = 0.6f;
+    const auto camera = CameraFrame::of(view);
+    for (s32 volley = 0; volley < 2; ++volley) {
+        f.arsenal.launchSuperShot(f.actor, &figure);
+        REQUIRE(f.arsenal.missiles().count() == 3);
+        f.arsenal.missiles().update(0.1f, nullptr);
+        f.device.draws.clear();
+        f.arsenal.missiles().draw(f.device, Mat4{1}, {}, &camera);
+        usize streaks = 0;
+        for (const auto& draw : f.device.draws) {
+            if (draw.texture != texture) {
+                continue;
+            }
+            ++streaks;
+            REQUIRE(draw.vertices.size() == 6);
+            CHECK(draw.state.depthTest);
+            CHECK(draw.vertices.front().color == Color::rgba(255, 255, 255, 190));
+            CHECK(glm::length(glm::cross(draw.vertices[1].position - draw.vertices[0].position,
+                                         draw.vertices[2].position - draw.vertices[0].position)) >
+                  0);
+        }
+        CHECK(streaks == 3);
+        CHECK(f.arsenal.missiles().missile(0).streak.forward ==
+              f.classes.stats(f.actor.save().character)->streakForward);
+        f.arsenal.missiles().update(PlayerMissiles::kLifeSeconds, nullptr);
+        f.device.draws.clear();
+        f.arsenal.missiles().draw(f.device, Mat4{1}, {}, &camera);
+        CHECK(f.device.draws.empty());
+    }
+    f.arsenal.clear();
+}
 
 TEST_CASE("level 75 potion casts wear the authored healing hearts without granting free health",
           "[game][player-arsenal][magic-hearts][unpacked]") {

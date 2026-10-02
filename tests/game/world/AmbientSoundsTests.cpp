@@ -13,10 +13,12 @@
 #include "engine/core/Types.h"
 #include "engine/io/File.h"
 
+#include "FakeRenderDevice.h"
 #include "TestSupport.h"
 #include "formats/WavWriter.h"
 #include "game/world/AmbientSounds.h"
 #include "game/world/LevelSoundscape.h"
+#include "game/world/LevelWorld.h"
 
 namespace {
 
@@ -83,6 +85,62 @@ TEST_CASE("loudness holds within the radius and fades to nothing half a radius o
     REQUIRE(AmbientSounds::panOf(Vec3{0.0f, 0.0f, 7.0f}, ear) == Approx(0.0f));
     REQUIRE(AmbientSounds::panOf(Vec3{1.0f, 0.0f, 1.0f}, ear) == Approx(0.7071f).margin(1e-3f));
     REQUIRE(AmbientSounds::panOf(ear.position, ear) == 0.0f);
+}
+
+TEST_CASE("sound items follow their nearest animated parent through repeated activations",
+          "[game][world][ambience][ambient-parent]") {
+    const Fixture f("ambient-parent");
+    writeTextFile(f.level / "world.json", R"({
+      "objects": [
+        {"name":"MAN", "position":[1,0,0]},
+        {"name":"OTHER", "position":[5,0,0]},
+        {"name":"STATIC", "position":[0,0,0]}],
+      "animations": [
+        {"object":1,"frames":2,"track":{"flags":16,"frames":[0,1],"values":[0,1]}},
+        {"object":0,"frames":2,"track":{"flags":16,"frames":[0,1],"values":[0,1]}}],
+      "itemInfos":[{"type":13}],
+      "itemInstances":[{"info":0,"name":"S_SFIREL","position":[0,0,0],
+        "params":[0,0,128,64,0,0,0,0,1,0,0,0]}]
+    })");
+    WorldLayout layout;
+    SoundSet bank;
+    REQUIRE(layout.load(f.level));
+    REQUIRE(bank.load(f.bank));
+    AmbientSounds ambience;
+    const std::array banks{&bank};
+    REQUIRE(ambience.bind(layout, banks));
+    REQUIRE(ambience.emitter(0).parent == 0);
+    test::FakeRenderDevice device;
+    ModelSet models;
+    TextureSet textures;
+    WorldScene world;
+    // No meshes are needed to retain and animate the sound parent's placement.
+    CHECK_FALSE(world.build(layout, models, textures, device));
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    const std::array listeners{Vec3{20, 0, 0}};
+    AmbientEar ear;
+    ear.position = listeners.front();
+    std::array<f32, 1600> output{};
+    SoundHandle previous = kNoSound;
+    for (s32 activation = 0; activation < 3; ++activation) {
+        world.setObjectTransform(0, glm::translate(Mat4{1}, Vec3{1, 0, 0}));
+        ambience.update(player, listeners, ear, 1, std::nullopt, &world);
+        CHECK(ambience.playingCount() == 0);
+        CHECK_FALSE(player.isPlaying(previous));
+        mixer.mix(output);
+        mixer.mix(output);
+        CHECK(std::ranges::all_of(output, [](f32 sample) { return sample == 0; }));
+        world.setObjectTransform(0, glm::translate(Mat4{1}, listeners.front()));
+        ambience.update(player, listeners, ear, 1, std::nullopt, &world);
+        CHECK(ambience.emitter(0).position == listeners.front());
+        REQUIRE(ambience.playingCount() == 1);
+        REQUIRE(ambience.emitter(0).handle != previous);
+        previous = ambience.emitter(0).handle;
+        mixer.mix(output);
+        CHECK(std::ranges::any_of(output, [](f32 sample) { return std::abs(sample) > 0.01f; }));
+    }
+    ambience.stop(player);
 }
 
 TEST_CASE("a level's sound items loop while a listener is near and stop when none is",
@@ -162,6 +220,71 @@ TEST_CASE("a level's sound items loop while a listener is near and stop when non
     SoundSet empty;
     const std::array<SoundSet*, 1> none{&empty};
     REQUIRE_FALSE(ambience.bind(layout, none));
+}
+
+TEST_CASE("the Temple trigger repeatedly brings its organist sound and light into range",
+          "[game][world][ambience][organist-trigger][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELE1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    REQUIRE(levels.byName("E1"));
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("E1")));
+    SoundSet bank;
+    REQUIRE(bank.load(root / "audio/CATHEDRAL"));
+    AmbientSounds ambience;
+    const std::array banks{&bank};
+    REQUIRE(ambience.bind(world.layout(), banks));
+    usize organ = ambience.size();
+    for (usize i = 0; i < ambience.size(); ++i) {
+        if (bank.entry(ambience.emitter(i).sound).name == "S_ORGANIST") {
+            organ = i;
+        }
+    }
+    REQUIRE(organ < ambience.size());
+    REQUIRE(ambience.emitter(organ).parent == 667);
+    AudioMixer mixer(48000);
+    SoundPlayer player(mixer);
+    std::array<f32, 3200> output{};
+    const Vec3 near{30.09375f, 0.1640625f, -117.1328125f};
+    const Vec3 far{0, 0, 0};
+    const auto standAt = [&](const Vec3& position) {
+        const std::array visitors{TriggerVisitor{.position = position, .height = 5}};
+        const std::array listeners{position};
+        AmbientEar ear;
+        ear.position = position;
+        f32 peak = 0;
+        for (s32 tick = 0; tick < 120; ++tick) {
+            world.update(1.0f / 30);
+            world.updateTriggers(1.0f / 30, visitors);
+            player.update();
+            ambience.update(player, listeners, ear, 1, std::nullopt, &world.scene());
+            mixer.mix(output);
+            for (const f32 sample : output) {
+                peak = std::max(peak, std::abs(sample));
+            }
+        }
+        return peak;
+    };
+    SoundHandle previous = kNoSound;
+    for (s32 visit = 0; visit < 3; ++visit) {
+        standAt(far);
+        CHECK_FALSE(world.triggers().opened(663));
+        CHECK_FALSE(world.triggers().opened(667));
+        CHECK_FALSE(player.isPlaying(previous));
+        CHECK(ambience.emitter(organ).loudness == 0);
+        CHECK(standAt(near) > 0.01f);
+        CHECK(world.triggers().opened(663));
+        CHECK(world.triggers().opened(667));
+        REQUIRE(player.isPlaying(ambience.emitter(organ).handle));
+        CHECK(ambience.emitter(organ).handle != previous);
+        CHECK(glm::distance(ambience.emitter(organ).position,
+                            Vec3{world.scene().worldTransform(667)[3]}) < 0.001f);
+        previous = ambience.emitter(organ).handle;
+    }
+    ambience.stop(player);
 }
 
 TEST_CASE("the tower's ambience stands at the realms' portals and its braziers",
@@ -258,13 +381,20 @@ TEST_CASE("authored Temple organist and Battlefield hoop sound items are audible
         REQUIRE(ambience.playingCount() == 1); // only this authored emitter can contribute
         f32 peak = 0.0f;
         // Cross the organist's 25.298-second loop and the basket's 6.178-second one-shot.
-        const s32 frames = example.loop ? 27 * 60 : 8 * 60;
+        const s32 frames = example.loop ? 80 * 60 : 8 * 60;
+        f32 windowPeak = 0.0f;
         for (s32 frame = 0; frame < frames; ++frame) {
             player.update();
             sounds.updateAmbience(near, ear, 1.0f);
             mixer.mix(output);
             for (const f32 sample : output) {
                 peak = std::max(peak, std::abs(sample));
+                windowPeak = std::max(windowPeak, std::abs(sample));
+            }
+            if (frame % (5 * 60) == 5 * 60 - 1) {
+                CAPTURE(frame);
+                CHECK(windowPeak > 0.01f);
+                windowPeak = 0.0f;
             }
             if (example.loop || frame < 60) {
                 REQUIRE(emitter.handle == first); // approaching again must not restart it

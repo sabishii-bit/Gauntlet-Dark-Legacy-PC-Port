@@ -166,7 +166,8 @@ AttractOutcome AttractScene::update(f64 seconds, const MenuInput& input) {
     const Vec3 eye = m_rail.camera().position;
     const AmbientEar ear{eye, m_rail.camera().right()};
     m_audio.updateAmbience(std::span<const Vec3>(&eye, 1), ear,
-                           m_world.level() != nullptr ? m_world.level()->soundVolume : 1.0f);
+                           m_world.level() != nullptr ? m_world.level()->soundVolume : 1.0f, false,
+                           &m_world.scene());
     return m_rail.finished() || m_elapsed >= kMaxSeconds ? AttractOutcome::Finished
                                                          : AttractOutcome::Running;
 }

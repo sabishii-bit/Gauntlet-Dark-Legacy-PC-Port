@@ -15,6 +15,7 @@
 #include "engine/world/WorldLighting.h"
 
 #include "game/world/EffectTrees.h"
+#include "game/world/MissileStreak.h"
 
 namespace gdl::game {
 struct StrikeHit;
@@ -65,6 +66,7 @@ struct MissileLaunch {
     f32 scale = 1.0f;             ///< how large it is drawn: a strong throw's is doubled
     MissileWallSound wallSound = MissileWallSound::Level;
     u32 flags = 0;
+    MissileStreak streak;
 };
 
 /** Something a missile stops against: a cylinder, or an authored triangle surface. */
@@ -140,6 +142,7 @@ public:
         MissileWallSound wallSound = MissileWallSound::Level;
         u32 flags = 0;
         std::vector<s32> pierced;
+        MissileStreak streak;
     };
 
     /** A missile's pace from the stat that throws it. */

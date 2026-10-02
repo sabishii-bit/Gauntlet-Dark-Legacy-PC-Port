@@ -12,6 +12,36 @@ import build
 
 
 class BuildLaunchTests(unittest.TestCase):
+    def test_player_streak_data_is_upgraded_once_and_verified(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            binary = root / "build/debug"
+            (binary / "bin").mkdir(parents=True)
+            (binary / "bin" / f"gdlunpack{build.EXE}").touch()
+            (root / "raw/PDATA").mkdir(parents=True)
+            manifest = root / "export/pdata/KNI.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text('{}', encoding="utf-8")
+            args = ["--assets", "raw", "--unpacked", "export"]
+
+            def unpack(_command):
+                manifest.write_text('{"streakForward":0}', encoding="utf-8")
+
+            with mock.patch.object(build.devenv, "run", side_effect=unpack) as run:
+                build.refresh_player_data(binary, args, root)
+                run.assert_called_once_with([
+                    str(binary / "bin" / f"gdlunpack{build.EXE}"), str(root / "raw"),
+                    str(root / "export"), "--only", "PDATA"])
+                run.reset_mock()
+                build.refresh_player_data(binary, args, root)
+                run.assert_not_called()
+                manifest.write_text('{}', encoding="utf-8")
+                run.side_effect = None
+                with self.assertRaisesRegex(ValueError, "did not upgrade"):
+                    build.refresh_player_data(binary, args, root)
+                with self.assertRaisesRegex(ValueError, "original PDATA"):
+                    build.refresh_player_data(binary, ["--unpacked", "export"], root)
+
     def test_missing_realm_items_export_once_and_verify_all_manifests(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -148,6 +178,7 @@ class BuildLaunchTests(unittest.TestCase):
                 mock.patch.object(build.devenv, "run") as run:
             root = pathlib.Path(directory)
             build.refresh_player_effects(root / "build/release", [], root)
+            build.refresh_player_data(root / "build/release", [], root)
             build.refresh_item_collision(root / "build/release", [], root)
             build.refresh_level_items(root / "build/release", [], root)
             build.refresh_challenge_data(root / "build/release", [], root)

@@ -52,6 +52,21 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
         AmbientEmitter emitter;
         emitter.instance = static_cast<s32>(i);
         emitter.position = instance.position;
+        // Sound items follow the nearest animated node within ten units. Use the
+        // authored placement to bind it, then its current world position to listen.
+        f32 nearest = 10.0f;
+        for (const auto& animation : layout.animations()) {
+            if (animation.object < 0 ||
+                static_cast<usize>(animation.object) >= layout.objects().size()) {
+                continue;
+            }
+            const f32 distance = glm::distance(
+                instance.position, layout.worldPosition(static_cast<usize>(animation.object)));
+            if (distance < nearest) {
+                nearest = distance;
+                emitter.parent = animation.object;
+            }
+        }
         // The radius leads the parameters as a float.
         std::memcpy(&emitter.radius, instance.params.data(), sizeof(emitter.radius));
         std::memcpy(&emitter.flags, &instance.params[8], sizeof(emitter.flags));
@@ -76,8 +91,11 @@ bool AmbientSounds::bind(const WorldLayout& layout, std::span<SoundSet* const> b
 
 void AmbientSounds::update(SoundPlayer& player, std::span<const Vec3> listeners,
                            const AmbientEar& ear, f32 levelVolume,
-                           std::optional<f32> volumeOverride) {
+                           std::optional<f32> volumeOverride, const WorldScene* world) {
     for (AmbientEmitter& emitter : m_emitters) {
+        if (world != nullptr && emitter.parent >= 0) {
+            emitter.position = Vec3{world->worldTransform(static_cast<usize>(emitter.parent))[3]};
+        }
         f32 nearest = -1.0f;
         for (const Vec3& listener : listeners) {
             const f32 distance = glm::distance(listener, emitter.position);

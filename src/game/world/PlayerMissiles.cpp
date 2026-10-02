@@ -113,6 +113,7 @@ bool PlayerMissiles::launch(const MissileLaunch& launch) {
     missile.model = launch.model;
     missile.wallSound = launch.wallSound;
     missile.flags = launch.flags;
+    missile.streak = launch.streak;
     if (m_device != nullptr && launch.archive != nullptr && !launch.tree.empty()) {
         EffectTrees::Setting setting;
         setting.persistent = true;
@@ -280,6 +281,19 @@ void PlayerMissiles::draw(RenderDevice& device, const Mat4& clip, const WorldLig
         }
     }
     m_visuals.draw(device, clip, lighting, camera);
+    if (camera != nullptr) {
+        for (const Missile& missile : m_missiles) {
+            if (missile.streak.texture == nullptr) {
+                continue;
+            }
+            const auto batch = missile.streak.geometry(missile.position, missile.velocity,
+                                                       missile.age, missile.spec->radius, *camera);
+            // MBPolyInst: alpha blend, alpha compare > 2, depth test and depth write.
+            DrawState state;
+            state.alphaTest = DrawState::kTranslucentAlphaTest;
+            device.draw(batch, *missile.streak.texture, clip, state);
+        }
+    }
 }
 
 void PlayerMissiles::clear() {

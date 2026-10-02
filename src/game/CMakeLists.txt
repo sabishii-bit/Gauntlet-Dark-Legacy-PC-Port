@@ -175,6 +175,7 @@ add_library(game STATIC
     world/SumnerHints.cpp
     world/PlayerMissiles.h
     world/PlayerMissiles.cpp
+    world/MissileStreak.cpp
     world/TargetAssist.cpp
     world/BlobShadow.cpp
     world/PlayerFigure.cpp

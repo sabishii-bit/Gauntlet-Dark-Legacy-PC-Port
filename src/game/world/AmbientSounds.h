@@ -9,12 +9,14 @@
 #include "engine/audio/SoundPlayer.h"
 #include "engine/core/Types.h"
 #include "engine/math/Math.h"
+#include "engine/world/WorldScene.h"
 
 namespace gdl::game {
 
 /** One of the level's sound items: a loop at a spot, heard within its radius. */
 struct AmbientEmitter {
     s32 instance = -1;
+    s32 parent = -1; ///< nearby animated world node, when the sound follows one
     Vec3 position{0.0f, 0.0f, 0.0f};
     f32 radius = 0.0f;
     u16 flags = 0; ///< sound-item flags, distinct from music-zone switching modes
@@ -54,7 +56,8 @@ public:
     bool bind(const WorldLayout& layout, std::span<SoundSet* const> banks);
     /** Starts, adjusts and stops the loops for the listeners, at the level's sound volume. */
     void update(SoundPlayer& player, std::span<const Vec3> listeners, const AmbientEar& ear,
-                f32 levelVolume, std::optional<f32> volumeOverride = std::nullopt);
+                f32 levelVolume, std::optional<f32> volumeOverride = std::nullopt,
+                const WorldScene* world = nullptr);
     void stop(SoundPlayer& player);
     void clear();
 

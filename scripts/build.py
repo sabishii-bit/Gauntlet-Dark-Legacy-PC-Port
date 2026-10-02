@@ -77,6 +77,32 @@ def refresh_player_effects(binary_dir: pathlib.Path, app_args: list[str],
                              "Rebuild gdlunpack and check the original asset files.")
 
 
+def refresh_player_data(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
+    """Recover missile streak tuning missing from older PDATA exports before launch."""
+    root = ROOT if root is None else root
+    assets = cache_path(binary_dir, "GDL_ASSET_DIR", root / "assets/GUNE5D/Gauntlet")
+    unpacked = cache_path(binary_dir, "GDL_UNPACKED_DIR", root / "assets/unpacked")
+    for flag, value in zip(app_args, app_args[1:]):
+        if flag == "--assets":
+            assets = root / value
+        elif flag == "--unpacked":
+            unpacked = root / value
+    stale = [path for path in sorted((unpacked / "pdata").glob("*.json"))
+             if "streakForward" not in json.loads(path.read_text(encoding="utf-8"))]
+    if not stale:
+        return
+    unpacker = binary_dir / "bin" / f"gdlunpack{EXE}"
+    if not (assets / "PDATA").is_dir() or not unpacker.is_file():
+        raise ValueError("Player streaks need re-exporting. Provide the original PDATA assets "
+                         "and build gdlunpack before launching.")
+    print(f"Refreshing missile streak tuning in {len(stale)} player records", flush=True)
+    devenv.run([str(unpacker), str(assets), str(unpacked), "--only", "PDATA"])
+    for path in stale:
+        if "streakForward" not in json.loads(path.read_text(encoding="utf-8")):
+            raise ValueError(f"Player data refresh did not upgrade {path}. "
+                             "Rebuild gdlunpack and check the original asset files.")
+
+
 def refresh_item_collision(binary_dir: pathlib.Path, app_args: list[str], root=None) -> None:
     """Re-export levels whose old manifests omitted their items' collision triangles."""
     root = ROOT if root is None else root
@@ -222,6 +248,7 @@ def main() -> int:
 
     if args.run:
         refresh_player_effects(binary_dir, app_args)
+        refresh_player_data(binary_dir, app_args)
         refresh_item_collision(binary_dir, app_args)
         refresh_level_items(binary_dir, app_args)
         refresh_challenge_data(binary_dir, app_args)
