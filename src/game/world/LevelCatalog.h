@@ -29,6 +29,9 @@ struct LevelRef {
     /** Sumner's tower, which needs no catalogue to be found. */
     static LevelRef tower();
     bool isTower() const { return realmId == kTowerRealm; }
+    /** game_main sends the first Temple and Underworld stages straight to their bosses,
+     * without the ordinary stage's tower/shop interlude. */
+    bool continuesToBoss() const { return index == 0 && (realmId == 5 || realmId == 6); }
     /** Whether the players lie their shadows here: everywhere but the secret realm's ninth,
      * Cloud9 (InitPlayer: world 12, level 8). */
     bool playerShadows() const { return !(isSecret() && name == kShadowlessLevel); }

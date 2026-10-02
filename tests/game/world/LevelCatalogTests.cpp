@@ -95,6 +95,18 @@ TEST_CASE("players lie shadows everywhere but Cloud9", "[game][world][shadow]") 
     CHECK(LevelRef::tower().playerShadows());
 }
 
+TEST_CASE("only the first Temple and Underworld stages continue directly to their bosses",
+          "[game][world][levels]") {
+    for (s32 realm = 0; realm <= LevelRef::kTowerRealm; ++realm) {
+        for (s32 index = 0; index < 9; ++index) {
+            LevelRef level;
+            level.realmId = realm;
+            level.index = index;
+            CHECK(level.continuesToBoss() == (index == 0 && (realm == 5 || realm == 6)));
+        }
+    }
+}
+
 TEST_CASE("the unpacked realm data finds the tower's first portals' levels",
           "[game][world][levels][unpacked]") {
     const std::filesystem::path root =

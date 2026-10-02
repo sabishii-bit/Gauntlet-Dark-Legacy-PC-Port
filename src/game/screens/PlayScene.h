@@ -24,7 +24,6 @@
 #include "game/players/Party.h"
 #include "game/players/PlayerActor.h"
 #include "game/players/PlayerAnimator.h"
-#include "game/players/PowerupEffects.h"
 #include "game/players/TurboMeter.h"
 #include "game/screens/BossSequence.h"
 #include "game/screens/ChallengeHud.h"
@@ -39,7 +38,6 @@
 #include "game/screens/PartyMotion.h"
 #include "game/screens/PartyNames.h"
 #include "game/screens/PartyPickups.h"
-#include "game/screens/PartyRecords.h"
 #include "game/screens/PlayerAttacks.h"
 #include "game/screens/PlayerHealth.h"
 #include "game/screens/PortalDeparture.h"
@@ -162,6 +160,7 @@ public:
     /** The sound of the target that opened before the party most recently and is still
      * opening (a gate's force field humming as it thins, a lift, a gate), kNoSound otherwise. */
     SoundHandle fieldSound() const { return m_audio.fieldSound(); }
+    bool exitFlameOn() const { return m_audio.exitFlameOn(); }
     Intro intro() const { return m_welcome.intro(); }
     const ScrollBox& scroll() const { return m_messages.scroll(); }
     const HintMenu& hints() const { return m_sumnerVisit.menu(); }
