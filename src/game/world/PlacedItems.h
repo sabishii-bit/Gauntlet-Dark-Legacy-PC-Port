@@ -87,6 +87,11 @@ public:
 
     /** One placed pickup and its figure. */
     struct Item {
+        struct Floor {
+            s32 object = -1;
+            Mat4 local{1.0f}; ///< pickup placement in the supporting object's space
+        };
+        std::optional<Floor> floor;
         std::string name;
         s32 instance = -1; ///< which of the layout's instances it is
         s32 info = -1;
@@ -223,6 +228,8 @@ public:
     bool goldLeft() const;
     /** Turns the figures, flies what was thrown and plays the bursts on by `seconds`. */
     void update(f32 seconds);
+    /** Carries resting pickups with their supporting world objects, without advancing time. */
+    void syncFloors();
     // How a thrown item flies, as the original's coins do.
     static constexpr f32 kGravity = 32.0f; ///< units a second each second
     static constexpr f32 kBounce = 0.4f;   ///< of the fall's speed, back up
@@ -269,6 +276,7 @@ private:
     bool exposedWithin(const Item& item, const Vec3& position, f32 radius) const;
     /** Flies a thrown item `seconds` on. */
     void fly(Item& item, f32 seconds);
+    static void restOnFloor(Item& item, const WorldCollision* collision, f32 lift);
     std::vector<ArchiveMotion> m_motions;
     const WorldCollision* m_collision = nullptr; ///< the floor thrown items land on
     s32 m_players = 0;

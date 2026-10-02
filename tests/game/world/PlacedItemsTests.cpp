@@ -25,6 +25,124 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("pickups bind to authored floors and ride the current platform pose",
+          "[game][world][placed-items][pickup-platform]") {
+    const auto dir = test::scratchDirectory("pickup-platform");
+    std::filesystem::create_directories(dir / "models");
+    std::filesystem::create_directories(dir / "textures");
+    writeTextFile(dir / "models/FOOD.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 1 0\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(
+        dir / "objects.json",
+        R"({"objects":[{"index":0,"name":"FOOD","file":"models/FOOD.obj","meshTriangles":1}]})");
+    writeFile(dir / "textures/FOOD.png", test::kTinyPng);
+    writeTextFile(
+        dir / "textures.json",
+        R"({"defs":[],"bitmaps":[{"index":0,"name":"FOOD","file":"textures/FOOD.png","width":2,"height":2,"flags":0}]})");
+    writeTextFile(
+        dir / "animations.json",
+        R"({"trees":[{"name":"FOOD","nodes":[{"name":"FOOD","object":"FOOD","parent":-1,"position":[0,0,0]}]}]})");
+    // A nested platform's rest position includes its parent's translation.
+    writeTextFile(dir / "world.json", R"({"objects":[
+        {"name":"ROOT","position":[100,10,50],"child":1},
+        {"name":"LIFT","position":[0,0,0],"flags":4100}],
+        "itemInfos":[{"type":1,"subtype":3,"name":"FOOD","radius":0.5,"height":2}],
+        "itemInstances":[{"info":0,"position":[101,10,50],"minPlayers":1},
+                         {"info":0,"position":[1,0,0],"minPlayers":1}]})");
+    WorldLayout layout;
+    REQUIRE(layout.load(dir));
+    ItemArchive archive;
+    REQUIRE(archive.load(dir));
+    WorldCollision collision;
+    const std::array<Vec3, 3> face{Vec3{-4, 0, -4}, Vec3{4, 0, -4}, Vec3{0, 0, 4}};
+    collision.build({{{0, 1, 0}, face, 1, 4100}, {{0, 1, 0}, face, 2, 4}});
+    collision.setMovingObjects(std::array<s32, 1>{1});
+    const Mat4 initial = glm::translate(Mat4{1}, Vec3{120, -10, 50});
+    collision.setObjectTransform(1, initial);
+    test::FakeRenderDevice device;
+    PlacedItems items;
+    const std::array archives{&archive};
+    REQUIRE(items.bind(device, layout, &collision, archives));
+    REQUIRE(items.size() == 2);
+    REQUIRE(items.item(0).floor);
+    CHECK(items.item(0).floor->object == 1);
+    const Mat4 local = items.item(0).floor->local;
+    CHECK(glm::distance(items.item(0).position, Vec3{121, -9.9f, 50}) < 0.0001f);
+    CHECK_FALSE(items.item(1).floor);
+    CHECK(items.item(1).position.y == Approx(0.1f));
+    CHECK(collision.objectTransform(1) == initial); // binding never mutates live collision
+    items.setPlayerCount(1);
+
+    const Mat4 moved =
+        glm::translate(Mat4{1}, Vec3{110, 5, 40}) * glm::rotate(Mat4{1}, 1.0f, Vec3{0, 1, 0});
+    SECTION("resting and hidden items follow translation and rotation without accumulating drift") {
+        items.setPlayerCount(0);
+        collision.setObjectTransform(1, moved);
+        items.update(0);
+        const Mat4 expected = moved * local;
+        CHECK(glm::distance(items.item(0).position, Vec3{expected[3]}) < 0.0001f);
+        for (s32 i = 0; i < 100; ++i) {
+            items.syncFloors();
+        }
+        CHECK(items.item(0).transform == expected);
+        CHECK(items.item(1).position == Vec3{1, 0.1f, 0});
+        items.setPlayerCount(1);
+        const std::array collectors{Collector{items.item(0).position, 1, 1}};
+        const auto got = items.collect(device, collectors);
+        REQUIRE(got.size() == 1);
+        CHECK(got[0].item == 0);
+        CHECK(got[0].position == Vec3{expected[3]});
+        collision.setObjectTransform(1, initial);
+        items.syncFloors();
+        CHECK(items.item(0).transform == expected); // a taken item no longer rides
+    }
+    SECTION("container attachment takes ownership away from the floor") {
+        const Mat4 chest = glm::translate(Mat4{1}, Vec3{5, 6, 7});
+        items.attach(0, chest, true);
+        collision.setObjectTransform(1, moved);
+        items.syncFloors();
+        CHECK_FALSE(items.item(0).floor);
+        CHECK(items.item(0).transform == chest);
+    }
+    SECTION("claimed items detach and released items reattach only after landing") {
+        const Vec3 position = items.item(0).position;
+        REQUIRE(items.claim(position, 2, 2) == 0);
+        CHECK_FALSE(items.item(0).floor);
+        collision.setObjectTransform(1, moved);
+        items.syncFloors();
+        CHECK(items.item(0).position == position);
+        REQUIRE(items.release(0, Vec3{110, 8, 40}, Vec3{0}, &collision, 0));
+        CHECK(items.item(0).thrown);
+        CHECK_FALSE(items.item(0).floor);
+        for (s32 i = 0; i < 150; ++i) {
+            items.update(1.0f / 30.0f);
+        }
+        REQUIRE_FALSE(items.item(0).thrown);
+        REQUIRE(items.item(0).floor);
+        CHECK(items.item(0).position.y == Approx(6));
+        const Mat4 landed = items.item(0).floor->local;
+        collision.setObjectTransform(1, initial);
+        items.syncFloors();
+        CHECK(glm::distance(items.item(0).position, Vec3{initial * landed[3]}) < 0.0001f);
+    }
+    SECTION("runtime drops bind to the current floor rather than its authored pose") {
+        REQUIRE(items.place(device, "FOOD", Vec3{120, -10, 50}, &collision));
+        REQUIRE(items.item(2).floor);
+        CHECK(items.item(2).position.y == Approx(-9.9f));
+        collision.setObjectTransform(1, moved);
+        items.syncFloors();
+        CHECK(glm::distance(items.item(2).position, Vec3{moved * Vec4{0, 0.1f, 0, 1}}) < 0.0001f);
+    }
+    SECTION("disabling the supporting object stops its attachment") {
+        collision.setSolid(1, false);
+        items.syncFloors();
+        CHECK_FALSE(items.item(0).floor);
+        collision.setObjectTransform(1, moved);
+        items.syncFloors();
+        CHECK(glm::distance(items.item(0).position, Vec3{121, -9.9f, 50}) < 0.0001f);
+    }
+}
+
 TEST_CASE("food poisoning preserves missing artwork and uses record kind rather than value",
           "[game][world][poison-food][blast-items]") {
     const bool missingFigure = GENERATE(false, true);
