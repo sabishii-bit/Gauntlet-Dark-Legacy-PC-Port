@@ -32,6 +32,10 @@ TEST_CASE("platform and Death statue scenarios load the affected level locations
     REQUIRE(statue.tower.position == Vec3{54.75f, 0.3f, 0});
     REQUIRE(statue.partyMembers().front().save.character == classIndexOf("JES").value());
     REQUIRE_FALSE(statue.partyMembers().front().slot);
+    const auto pillar = Scenario::load(root / "level-f1-pillar.json");
+    REQUIRE(pillar.level == "F1");
+    REQUIRE(pillar.tower.position == Vec3{60.75f, 5.9f, 92.875f});
+    REQUIRE_FALSE(pillar.partyMembers().front().slot);
 }
 
 TEST_CASE("fully unlocked tower scenario supplies a maxed green Knight without pending ceremonies",

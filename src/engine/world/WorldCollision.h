@@ -88,6 +88,10 @@ public:
      * point on a face within that horizontal distance, for a body's small contact margin. */
     std::optional<FloorHit> floorAt(const Vec3& position, f32 above, f32 below,
                                     f32 edgeReach = 0.0f) const;
+    /** Support within a body's footprint in its direction of travel. Used when the
+     * centre is over a seam; a ledge behind the body cannot support walking away. */
+    std::optional<FloorHit> floorAhead(const Vec3& position, const Vec3& step, f32 above, f32 below,
+                                       f32 radius) const;
     /** Project a refused short walking step onto its nearest reachable floor edge.
      * Keeps tangential movement without bridging gaps or snapping onto another storey. */
     std::optional<Vec3> slideAlongFloor(const Vec3& from, const Vec3& to, f32 above, f32 below,
@@ -107,7 +111,7 @@ public:
 
 private:
     std::optional<FloorHit> surfaceAt(const Vec3& position, f32 above, f32 below, bool liquid,
-                                      f32 edgeReach = 0.0f) const;
+                                      f32 edgeReach = 0.0f, const Vec2* direction = nullptr) const;
     /** An object whose triangles move with it. */
     struct MovingObject {
         s32 object = -1;

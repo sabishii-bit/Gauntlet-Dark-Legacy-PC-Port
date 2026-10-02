@@ -30,6 +30,62 @@ using namespace gdl;
 using namespace gdl::game;
 using Catch::Approx;
 
+TEST_CASE("Underworld lowered pillars can be crossed from their switches",
+          "[game][world][pillar-crossing][unpacked]") {
+    const auto root =
+        test::unpackedOrSkip("LEVELS/LEVELF1/world.json").parent_path().parent_path().parent_path();
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    for (const s32 target : {55, 324}) {
+        test::FakeRenderDevice device;
+        LevelWorld world;
+        REQUIRE(world.load(device, root, *catalog.byName("F1")));
+        usize index = 0;
+        while (index < world.triggers().size() &&
+               world.triggers().trigger(index).target != target) {
+            ++index;
+        }
+        REQUIRE(index < world.triggers().size());
+        const Vec3 spot = world.triggers().trigger(index).spot;
+        const std::array visitors{TriggerVisitor{.position = spot}};
+        world.startTriggers({});
+        for (s32 tick = 0; tick < 360; ++tick) {
+            world.update(1.0f / 30);
+            world.updateTriggers(1.0f / 30, visitors);
+        }
+        REQUIRE(world.triggers().trigger(index).fired);
+        CHECK(world.scene().worldTransform(static_cast<usize>(target))[3].y ==
+              Approx(world.layout().worldPosition(static_cast<usize>(target)).y));
+        const Vec3 destination = world.layout().worldPosition(static_cast<usize>(target));
+        const Vec2 direction = glm::normalize(Vec2{destination.x - spot.x, destination.z - spot.z});
+        PlayerActor actor;
+        actor.spawn(0, {}, nullptr, spot, 0);
+        actor.settle(world.collision());
+        for (s32 tick = 0; tick < 300; ++tick) {
+            actor.update(MoveInput{direction, 1}, 0, 1.0f / 60, &world.collision());
+            actor.fall(1.0f / 60, world.collision());
+            if (glm::length(Vec2{actor.position().x - destination.x,
+                                 actor.position().z - destination.z}) < 1) {
+                break;
+            }
+        }
+        CAPTURE(target, spot.x, spot.y, spot.z, destination.x, destination.y, destination.z,
+                actor.position().x, actor.position().y, actor.position().z);
+        const auto floor = world.collision().floorAt(actor.position(), 1.5f, 3, 0.03125f);
+        REQUIRE(floor);
+        CHECK(floor->object == target);
+        for (s32 tick = 0; tick < 300; ++tick) {
+            const Vec2 back{spot.x - actor.position().x, spot.z - actor.position().z};
+            if (glm::length(back) < 0.5f) {
+                break;
+            }
+            actor.update(MoveInput{glm::normalize(back), 1}, 0, 1.0f / 60, &world.collision());
+            actor.fall(1.0f / 60, world.collision());
+        }
+        CHECK(glm::length(Vec2{actor.position().x - spot.x, actor.position().z - spot.z}) < 0.5f);
+    }
+}
+
 TEST_CASE("level pickups follow triggered floors from their initial poses",
           "[game][world][pickup-platform][unpacked]") {
     const auto root =

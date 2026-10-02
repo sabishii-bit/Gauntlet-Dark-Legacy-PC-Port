@@ -89,7 +89,13 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
         Vec3 target = m_position + stride;
         target = collision->resolveWalls(target, m_radius, target.y + kFootClearance,
                                          target.y + m_height - kFootClearance);
-        const auto floor = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
+        auto floor = collision->floorAt(target, kStepUp, kDrop, kFloorEdgeReach);
+        if (!floor) {
+            // Floor contact spans the body's radius, not just a ray under its
+            // centre. Only a landing ahead supports crossing a seam; support
+            // behind us must not allow walking away from a cliff.
+            floor = collision->floorAhead(target, target - m_position, kStepUp, kDrop, m_radius);
+        }
         if (!floor.has_value()) {
             const auto edge =
                 collision->slideAlongFloor(m_position, target, kStepUp, kDrop, kFloorEdgeReach);
@@ -111,7 +117,13 @@ void PlayerActor::travel(const Vec3& offset, const WorldCollision* collision) {
 }
 
 bool PlayerActor::fall(f32 seconds, const WorldCollision& collision) {
-    const auto floor = collision.floorAt(m_position, kStepUp, kFallReach, kFloorEdgeReach);
+    auto floor = collision.floorAt(m_position, kStepUp, kDrop, kFloorEdgeReach);
+    if (!floor) {
+        floor = collision.floorAt(m_position, kStepUp, kDrop, m_radius);
+    }
+    if (!floor) {
+        floor = collision.floorAt(m_position, kStepUp, kFallReach, kFloorEdgeReach);
+    }
     if (floor.has_value() && floor->y >= m_position.y) {
         m_position.y = floor->y; // a floor that rose under it lifts it at once
         return false;

@@ -269,6 +269,57 @@ TEST_CASE("walking crosses small cracks between separately packed slope triangle
     }
 }
 
+TEST_CASE("a body footprint can step onto a nearby higher landing without walking off cliffs",
+          "[game][players][actor][terrain-seams]") {
+    const Vec3 up{0, 1, 0};
+    WorldCollision collision;
+    collision.build({triangle({-10, 0, -4}, {0, 0, -4}, {0, 0, 4}, up),
+                     triangle({-10, 0, -4}, {0, 0, 4}, {-10, 0, 4}, up),
+                     triangle({0.4f, 0.7f, -4}, {10, 0.7f, -4}, {10, 0.7f, 4}, up),
+                     triangle({0.4f, 0.7f, -4}, {10, 0.7f, 4}, {0.4f, 0.7f, 4}, up)});
+    for (const f32 direction : {-1.0f, 1.0f}) {
+        PlayerActor actor;
+        const Vec3 start = direction > 0 ? Vec3{-2, 0, 0} : Vec3{2, 0.7f, 0};
+        actor.spawn(0, {}, nullptr, start, 0);
+        for (s32 tick = 0; tick < 60; ++tick) {
+            actor.update(push(direction, 0), 0, 1.0f / 60, &collision);
+            actor.fall(1.0f / 60, collision);
+        }
+        CAPTURE(direction, actor.position().x, actor.position().y);
+        CHECK(actor.position().x * direction > 2.5f);
+        CHECK(actor.position().y == Approx(direction > 0 ? 0.7f : 0));
+    }
+}
+
+TEST_CASE("a footprint does not bridge a broad gap or climb an unreachable landing",
+          "[game][players][actor][cliff]") {
+    f32 gap = 2;
+    f32 height = 0;
+    SECTION("broad gap") {}
+    SECTION("landing too high") {
+        gap = 0.4f;
+        height = 2;
+    }
+    SECTION("landing too low") {
+        gap = 0.4f;
+        height = -4;
+    }
+    WorldCollision collision;
+    const Vec3 up{0, 1, 0};
+    collision.build({triangle({-10, 0, -4}, {0, 0, -4}, {0, 0, 4}, up),
+                     triangle({-10, 0, -4}, {0, 0, 4}, {-10, 0, 4}, up),
+                     triangle({gap, height, -4}, {10, height, -4}, {10, height, 4}, up),
+                     triangle({gap, height, -4}, {10, height, 4}, {gap, height, 4}, up)});
+    PlayerActor actor;
+    actor.spawn(0, {}, nullptr, {-2, 0, 0}, 0);
+    for (s32 tick = 0; tick < 120; ++tick) {
+        actor.update(push(1, 0), 0, 1.0f / 60, &collision);
+        actor.fall(1.0f / 60, collision);
+    }
+    CHECK(actor.position().x <= PlayerActor::kFloorEdgeReach);
+    CHECK(actor.position().y == 0);
+}
+
 TEST_CASE("the tower's authored stair ramps allow continuous uphill and downhill movement",
           "[game][players][actor][terrain-seams][unpacked]") {
     const auto dir = test::unpackedOrSkip("LEVELS/LEVELL1/collision.json").parent_path();
