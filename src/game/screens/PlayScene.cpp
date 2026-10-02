@@ -1006,7 +1006,8 @@ void PlayScene::updateAmbience() {
     const LevelInfo* level = m_world->level();
     m_audio.updateAmbience(listeners, AmbientEar{frame.position, frame.right},
                            level != nullptr ? level->soundVolume : 1.0f,
-                           m_switchCutscene.active() || m_promotion.active() || relicCeremonyOn());
+                           m_switchCutscene.active() || m_promotion.active() || relicCeremonyOn(),
+                           &m_world->scene());
     std::optional<Vec3> hourglass;
     for (const auto& runtime : m_players) {
         if (runtime.life == PlayerLife::Standing &&

@@ -127,7 +127,8 @@ struct ClassStats {
     static constexpr usize kGlowTiers = 10;
     std::array<Vec3, kGlowTiers> weaponGlowOffsets{};
     std::array<Vec3, kGlowTiers> weaponGlowScales{};
-    f32 powerupTime = 1.0f; ///< how much longer (or shorter) powerups last this class
+    f32 powerupTime = 1.0f;   ///< how much longer (or shorter) powerups last this class
+    f32 streakForward = 0.0f; ///< missile streak head lead from PDAT, in thirtieths of a second
     ClassMoves moves;
     std::vector<MoveEffect> moveEffects;
     std::vector<MoveStrike> moveStrikes;

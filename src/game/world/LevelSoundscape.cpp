@@ -71,11 +71,11 @@ void LevelSoundscape::bindAmbience(const WorldLayout& layout) {
 }
 
 void LevelSoundscape::updateAmbience(std::span<const Vec3> listeners, const AmbientEar& ear,
-                                     f32 volume, bool ducked) {
+                                     f32 volume, bool ducked, const WorldScene* world) {
     m_ear = ear;
     if (m_output != nullptr) {
         m_ambience.update(*m_output, listeners, ear, volume,
-                          ducked ? std::optional<f32>{kDuckedLevel} : std::nullopt);
+                          ducked ? std::optional<f32>{kDuckedLevel} : std::nullopt, world);
         if (const auto scale = m_ambience.musicScale(); scale.has_value()) {
             duckMusic(AmbientSounds::kMusicDuckHold, *scale);
         }

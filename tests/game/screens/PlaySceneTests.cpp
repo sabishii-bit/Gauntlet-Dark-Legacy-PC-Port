@@ -88,6 +88,126 @@ TEST_CASE("a closed play scene has no per-player state", "[game][screens]") {
     REQUIRE(scene.actorCount() == 0);
 }
 
+TEST_CASE("Temple organist remains audible over three loops in the scenario scene",
+          "[game][screens][organist-loop][unpacked]") {
+    const auto root = unpackedRoot();
+    test::unpackedOrSkip("LEVELS/LEVELE1/world.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto ref = catalog.byName("E1");
+    REQUIRE(ref);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    const GameConfig config;
+    StringTable strings;
+    REQUIRE(strings.load(test::dataDirectory() / "text", config.text.language));
+    AudioMixer mixer(48000);
+    SoundPlayer sounds(mixer);
+    GameContext context;
+    context.config = &config;
+    context.strings = &strings;
+    context.sounds = &sounds;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/level-e1-organist.json");
+    auto options = scenario.tower;
+    const auto floor = world.collision().floorAt(*options.position, 100, 100);
+    REQUIRE(floor);
+    CAPTURE(floor->y);
+    options.position->y = floor->y;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, scenario.partyMembers(), options));
+    usize organ = scene.ambience().size();
+    for (usize i = 0; i < scene.ambience().size(); ++i) {
+        const auto& emitter = scene.ambience().emitter(i);
+        if (emitter.bank->entry(emitter.sound).name == "S_ORGANIST") {
+            organ = i;
+        }
+    }
+    REQUIRE(organ < scene.ambience().size());
+    REQUIRE(scene.ambience().emitter(organ).parent == 667);
+    std::array<f32, 3200> output{};
+    f32 peak = 0;
+    const auto listenFor = [&](s32 seconds) {
+        for (s32 frame = 0; frame < seconds * 30; ++frame) {
+            REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+            sounds.update();
+            mixer.mix(output);
+            for (const auto sample : output) {
+                peak = std::max(peak, std::abs(sample));
+            }
+            if (frame % 150 == 149) {
+                CAPTURE(frame, scene.actor(0)->position().x, scene.actor(0)->position().y,
+                        scene.actor(0)->position().z);
+                REQUIRE(scene.ambience().emitter(organ).loudness > 0);
+                CHECK(world.triggers().opened(663)); // E1LITEBEAM shares the man's trigger chain.
+                CHECK(world.triggers().opened(667));
+                REQUIRE(sounds.isPlaying(scene.ambience().emitter(organ).handle));
+                CHECK(peak > 0.01f);
+                peak = 0;
+            }
+        }
+    };
+    listenFor(80);
+    scene.close();
+}
+
+TEST_CASE("normal attack input emits visible Super Shot streaks on successive shots",
+          "[game][screens][super-shot-scene][unpacked]") {
+    const auto root = unpackedRoot();
+    const auto scenario = Scenario::load(test::dataDirectory().parent_path() /
+                                         "tests/scenarios/level-g1-healing-knight.json");
+    LevelCatalog catalog;
+    REQUIRE(catalog.load(root));
+    const auto ref = catalog.byName(scenario.level);
+    REQUIRE(ref);
+    test::FakeRenderDevice device;
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *ref));
+    const GameConfig config;
+    GameContext context;
+    context.config = &config;
+    context.levels = &catalog;
+    context.tower = &world;
+    context.unpackedRoot = root;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, scenario.partyMembers(), scenario.tower));
+    for (s32 shot = 0; shot < 2; ++shot) {
+        for (s32 tick = 0; tick < 120; ++tick) {
+            REQUIRE(scene.update(1.0 / 30, {}) == PlayOutcome::Running);
+        }
+        REQUIRE(scene.missiles().count() == 0);
+        for (s32 tick = 0; tick < 90 && scene.missiles().count() == 0; ++tick) {
+            PlayScene::Inputs input{};
+            input[0].attack = true;
+            input[0].attackPressed = tick == 0;
+            REQUIRE(scene.update(1.0 / 30, input) == PlayOutcome::Running);
+        }
+        REQUIRE(scene.missiles().count() > 0);
+        const auto& missile = scene.missiles().missile(0);
+        REQUIRE((missile.flags & powerup::kSuperShot) != 0);
+        REQUIRE(missile.streak.texture != nullptr);
+        device.draws.clear();
+        scene.render(device, makeScreenProjection(640, 448), 640, 448);
+        bool visible = false;
+        for (const auto& draw : device.draws) {
+            if (draw.texture != missile.streak.texture) {
+                continue;
+            }
+            REQUIRE(draw.vertices.size() == 6);
+            CHECK(draw.vertices.front().color.a == 190);
+            CHECK(draw.state.depthTest);
+            visible =
+                glm::length(glm::cross(draw.vertices[1].position - draw.vertices[0].position,
+                                       draw.vertices[2].position - draw.vertices[0].position)) > 0;
+        }
+        REQUIRE(visible);
+    }
+    scene.close();
+}
+
 TEST_CASE("Temple floor pickups can be switched off through mapped D-pad presses",
           "[game][screens][temple-selector][unpacked]") {
     const auto root =

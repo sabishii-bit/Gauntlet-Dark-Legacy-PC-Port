@@ -99,6 +99,7 @@ def main(argv=None) -> int:
                 raise ValueError(f"Game executable not found: {executable}\n"
                                  "Add --build to build it before launching.")
             build.refresh_player_effects(executable.parent.parent, launch_args, ROOT)
+            build.refresh_player_data(executable.parent.parent, launch_args, ROOT)
             build.refresh_item_collision(executable.parent.parent, launch_args, ROOT)
             build.refresh_level_items(executable.parent.parent, launch_args, ROOT)
             build.refresh_challenge_data(executable.parent.parent, launch_args, ROOT)

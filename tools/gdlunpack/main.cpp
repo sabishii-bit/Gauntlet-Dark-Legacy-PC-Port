@@ -1084,6 +1084,7 @@ void unpackClassData(const std::filesystem::path& file, const std::filesystem::p
     json.key("attachY").value(static_cast<f64>(record.attachY));
     json.key("collisionY").value(static_cast<f64>(record.collisionY));
     json.key("powerupTime").value(static_cast<f64>(record.powerupTime));
+    json.key("streakForward").value(static_cast<f64>(record.streakForward));
     json.key("weaponOffset").beginArray();
     for (const f32 axis : record.weaponOffset) {
         json.value(static_cast<f64>(axis));

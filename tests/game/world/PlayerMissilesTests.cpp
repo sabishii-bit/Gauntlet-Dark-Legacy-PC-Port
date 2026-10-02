@@ -22,6 +22,57 @@ using Catch::Approx;
 
 constexpr f32 kStep = 1.0f / 60.0f;
 
+TEST_CASE("missile streak follows velocity and camera with retail head and tail dimensions",
+          "[game][missiles][missile-streak]") {
+    test::FakeRenderDevice device;
+    PlayerMissiles missiles;
+    MissileLaunch launch;
+    launch.spec = &MissileSpec::superShot();
+    launch.position = {0, 0, 0};
+    launch.velocity = Vec3{0, 0, 30};
+    launch.streak = {&device.whiteTexture(), Color::rgba(255, 255, 255, 190), 2};
+    REQUIRE(missiles.launch(launch));
+    missiles.update(0.5f, nullptr);
+    CameraFrame camera;
+    camera.forward = {0, -1, 0};
+    missiles.draw(device, Mat4{1}, {}, &camera);
+    REQUIRE(device.draws.size() == 1);
+    const auto& draw = device.draws.front();
+    REQUIRE(draw.vertices.size() == 6);
+    CHECK(draw.texture == launch.streak.texture);
+    CHECK(draw.state.blend == BlendMode::Alpha);
+    CHECK(draw.state.depthTest);
+    CHECK(draw.state.depthWrite);
+    CHECK(draw.state.alphaTest == DrawState::kTranslucentAlphaTest);
+    // At t=.5: the tail remains at the muzzle and the head leads by two ticks.
+    CHECK(glm::distance(draw.vertices[0].position, Vec3{0.5f, 0, 0}) < 0.0001f);
+    CHECK(glm::distance(draw.vertices[1].position, Vec3{4, 0, 17}) < 0.0001f);
+    CHECK(glm::distance(draw.vertices[2].position, Vec3{-4, 0, 17}) < 0.0001f);
+    for (const auto& vertex : draw.vertices) {
+        CHECK(vertex.color == launch.streak.color);
+    }
+    camera.forward = {1, 0, 0};
+    device.draws.clear();
+    missiles.draw(device, Mat4{1}, {}, &camera);
+    CHECK(glm::distance(device.draws.front().vertices[1].position, Vec3{0, 4, 17}) < 0.0001f);
+    camera.forward = {0, 0, 1};
+    device.draws.clear();
+    missiles.draw(device, Mat4{1}, {}, &camera);
+    for (const auto& vertex : device.draws.front().vertices) {
+        CHECK(std::isfinite(vertex.position.x));
+        CHECK(std::isfinite(vertex.position.y));
+        CHECK(std::isfinite(vertex.position.z));
+    }
+    missiles.update(PlayerMissiles::kLifeSeconds, nullptr);
+    device.draws.clear();
+    missiles.draw(device, Mat4{1}, {}, &camera);
+    CHECK(device.draws.empty());
+    launch.streak = {};
+    REQUIRE(missiles.launch(launch));
+    missiles.draw(device, Mat4{1}, {}, &camera);
+    CHECK(device.draws.empty());
+}
+
 TEST_CASE("Super Shot rolls its flat bolt toward the camera while preserving flight direction",
           "[game][missiles][super-shot-facing][unpacked]") {
     const auto root = test::unpackedOrSkip("WEAPONS/animations.json").parent_path().parent_path();

@@ -216,6 +216,16 @@ void PlayerArsenal::launchSuperShot(PlayerActor& actor, PlayerFigure* body,
     launch.model = &m_superShot;
     launch.archive = &m_resources->weapons;
     launch.tree = "SUPERARROW";
+    if (const auto texture = m_resources->weapons.textures.find("WEP_STREAK")) {
+        launch.streak.texture =
+            &m_resources->weapons.textures.texture(m_resources->device, *texture);
+        // StartMissile's white Super Shot streak uses transparency 64. MBPolyInst
+        // packs (255 - transparency) / 2, then doubles it for GX: opacity 190.
+        launch.streak.color = Color::rgba(255, 255, 255, 190);
+        if (const auto* stats = m_resources->classes.stats(actor.save().character)) {
+            launch.streak.forward = stats->streakForward;
+        }
+    }
     for (const auto& direction : PlayerMissiles::spread(launch.direction, worn.shots())) {
         launch.velocity = direction * launch.speed;
         m_missiles.launch(launch);

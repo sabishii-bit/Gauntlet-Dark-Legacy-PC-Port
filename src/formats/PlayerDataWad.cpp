@@ -23,6 +23,7 @@ constexpr usize kGlowOffsets = 0x68;
 constexpr usize kGlowScales = 0xE0;
 constexpr usize kFamiliarOffset = 0x164;
 constexpr usize kFamiliarShotOffset = 0x170;
+constexpr usize kStreakForwardOffset = 0x17C;
 
 } // namespace
 
@@ -38,6 +39,7 @@ PlayerClassRecord parsePlayerDataWad(std::span<const u8> bytes) {
     }
     PlayerClassRecord record;
     record.effectCount = readWadU16(bytes, offset, kWhat);
+    record.streakForward = readWadF32(bytes, offset + kStreakForwardOffset, kWhat);
     for (usize axis = 0; axis < record.familiarOffset.size(); ++axis) {
         record.familiarOffset[axis] = readWadF32(bytes, offset + kFamiliarOffset + axis * 4, kWhat);
         record.familiarShotOffset[axis] =
