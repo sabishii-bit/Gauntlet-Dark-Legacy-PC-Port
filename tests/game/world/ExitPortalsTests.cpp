@@ -432,4 +432,37 @@ TEST_CASE("the real tower shuts the portals past what the party has beaten, wear
     portals.clear();
 }
 
+TEST_CASE("portal solid platforms and depthless columns draw in separate passes",
+          "[portals][visual-parity]") {
+    const auto dir = sampleLevel("portal-passes");
+    writeTextFile(dir / "body.obj",
+                  "v 0 0 0\nv 1 0 0\nv 0 1 0\nvn 0 0 1\nusemtl tex0\nf 1//1 2//1 3//1\n");
+    writeTextFile(dir / "objects.json", R"({"objects":[
+      {"index":0,"name":"BODY","file":"body.obj","meshTriangles":1}]})");
+    writeFile(dir / "skin.png", test::kTinyPng);
+    writeTextFile(dir / "textures.json", R"({"bitmaps":[
+      {"index":0,"name":"SKIN","file":"skin.png","width":2,"height":2}]})");
+    writeTextFile(dir / "animations.json", R"({"trees":[{"name":"EXIT_PORTAL",
+      "nodes":[{"name":"BASE","object":"BODY","parent":-1,"position":[0,0,0]},
+        {"name":"COLUMN","object":"BODY","parent":0,"position":[0,0,0],"objectFlags":128}],
+      "sequences":[{"name":"IDLE","frames":10}]}]})");
+    test::FakeRenderDevice device;
+    WorldLayout layout;
+    const LevelCatalog catalog;
+    ItemArchive art;
+    ExitPortals portals;
+    REQUIRE(layout.load(dir));
+    REQUIRE(art.load(dir));
+    REQUIRE(portals.bind(device, layout, art, catalog, nullptr));
+    for (const auto pass : {TreeModel::Pass::DepthWriting, TreeModel::Pass::Effects}) {
+        device.draws.clear();
+        portals.draw(device, Mat4{1}, {}, nullptr, pass);
+        REQUIRE(device.draws.size() == 2);
+        for (const auto& draw : device.draws) {
+            CHECK(draw.state.depthWrite == (pass == TreeModel::Pass::DepthWriting));
+            CHECK(draw.state.depthTest);
+        }
+    }
+}
+
 } // namespace

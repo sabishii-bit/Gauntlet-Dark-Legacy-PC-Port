@@ -70,7 +70,9 @@ void ParticleField::bind(const WorldLayout& layout, TextureSet& textures, Render
             continue;
         }
         Entry entry;
-        const ParticleDescriptor descriptor = ParticleDescriptor::fromTemplate(*source);
+        ParticleDescriptor descriptor = ParticleDescriptor::fromTemplate(*source);
+        // Named world systems repeat their emission envelope until deactivated.
+        descriptor.forever = true;
         entry.emitter.start(descriptor, glm::translate(Mat4{1.0f}, layout.worldPosition(i)),
                             seed + static_cast<u32>(i));
         entry.texture = findTexture(descriptor.texture, textures, device, lenders);

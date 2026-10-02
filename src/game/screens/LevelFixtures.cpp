@@ -217,7 +217,7 @@ std::vector<CombatantObstacle> LevelFixtures::critterObstacles() const {
 
 void LevelFixtures::draw(RenderDevice& device, const Mat4& clip, const WorldLighting& lighting,
                          const CameraFrame* camera) const {
-    m_chests.draw(device, clip, lighting);
+    m_chests.draw(device, clip, lighting, camera);
     m_gates.draw(device, clip, lighting);
     m_traps.draw(device, clip, lighting, camera, TreeModel::Pass::DepthWriting);
     m_barrels.draw(device, clip, lighting);

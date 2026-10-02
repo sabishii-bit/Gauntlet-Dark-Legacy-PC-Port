@@ -3436,6 +3436,82 @@ TEST_CASE("tower ceremony ghosts draw after Dream World scenery and retain depth
     REQUIRE(device.draws[*firstHead].blend() == BlendMode::Additive);
     scene.close();
 }
+TEST_CASE("tower portal columns draw after horizon sheets while retaining wall occlusion",
+          "[game][screens][visual-parity][unpacked]") {
+    const auto root = unpackedRoot();
+    const GameConfig config;
+    test::FakeRenderDevice device;
+    LevelCatalog levels;
+    REQUIRE(levels.load(root));
+    LevelWorld world;
+    REQUIRE(world.load(device, root, *levels.byName("L1")));
+    ExitPortals probe;
+    REQUIRE(probe.bind(device, world.layout(), world.items(), levels, &world.collision()));
+    std::optional<Vec3> position;
+    for (usize i = 0; i < probe.size(); ++i) {
+        if (probe.portal(i).tag == "b1") {
+            position = probe.portal(i).position;
+        }
+    }
+    REQUIRE(position.has_value());
+    GameContext context;
+    context.config = &config;
+    context.tower = &world;
+    context.levels = &levels;
+    context.unpackedRoot = root;
+    CharacterSave save;
+    save.progress().crystals[2] = LevelTriggers::crystalsNeeded(2);
+    const std::vector<PartyMember> party{PartyMember{0, save}};
+    PlayOptions options;
+    options.welcome = false;
+    options.position = position;
+    PlayScene scene;
+    REQUIRE(scene.open(device, context, world, party, options));
+    const PlayScene::Inputs still{};
+    bool lit = false;
+    for (s32 frame = 0; frame < 300 && !lit; ++frame) {
+        scene.update(1.0 / 30, still);
+        for (usize i = 0; i < scene.portals().size(); ++i) {
+            const auto& portal = scene.portals().portal(i);
+            lit = lit || (portal.tag == "b1" && portal.action == ExitPortals::kWaiting);
+        }
+    }
+    REQUIRE(lit);
+    const auto camera = CameraFrame::of(scene.viewCamera());
+    device.draws.clear();
+    scene.portals().draw(device, Mat4{1}, {}, &camera, TreeModel::Pass::Effects);
+    std::set<const Texture*> flame;
+    for (const auto& draw : device.draws) {
+        flame.insert(draw.texture);
+        CHECK(draw.state.depthTest);
+        CHECK_FALSE(draw.state.depthWrite);
+    }
+    REQUIRE_FALSE(flame.empty());
+    device.draws.clear();
+    world.scene().drawDeferred(device, Mat4{1}, camera);
+    std::set<const Texture*> background;
+    for (const auto& draw : device.draws) {
+        background.insert(draw.texture);
+    }
+    device.draws.clear();
+    scene.render(device, makeScreenProjection(640, 448), 640, 448);
+    std::optional<usize> firstFlame;
+    std::optional<usize> lastBackground;
+    for (usize i = 0; i < device.draws.size(); ++i) {
+        const auto* texture = device.draws[i].texture;
+        if (flame.contains(texture) && !firstFlame.has_value()) {
+            firstFlame = i;
+        }
+        if (background.contains(texture)) {
+            lastBackground = i;
+        }
+    }
+    REQUIRE(firstFlame.has_value());
+    REQUIRE(lastBackground.has_value());
+    CHECK(*lastBackground < *firstFlame);
+    scene.close();
+}
+
 TEST_CASE("fully unlocked Knight walks both tower wing gates in both directions",
           "[game][screens][tower-wings][unpacked]") {
     const auto root = unpackedRoot();
